@@ -111,18 +111,25 @@ func (h *Hub) SetToken(token string) { h.token = token }
 
 // auth wraps the mux with the bearer check. The comparison is
 // constant-time and runs on every request (no early exits on the
-// header shape), mirroring the ingest token handling.
+// header shape), mirroring the ingest token handling. The scheme is
+// matched case-insensitively (RFC 7235) and rejections carry a
+// WWW-Authenticate challenge plus an actionable error body, so an
+// operator hitting the 401 knows exactly which knob to set.
 func (h *Hub) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if h.token == "" || r.URL.Path == "/api/health" {
 			next.ServeHTTP(w, r)
 			return
 		}
-		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if subtle.ConstantTimeCompare([]byte(got), []byte(h.token)) != 1 {
+		got := r.Header.Get("Authorization")
+		const prefix = "Bearer "
+		ok := len(got) > len(prefix) && strings.EqualFold(got[:len(prefix)], prefix) &&
+			subtle.ConstantTimeCompare([]byte(got[len(prefix):]), []byte(h.token)) == 1
+		if !ok {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="security-framework api"`)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
-			fmt.Fprintln(w, `{"error":"unauthorized: missing or invalid bearer token"}`)
+			fmt.Fprintln(w, `{"error":"unauthorized: send 'Authorization: Bearer <token>' (configure it with -api-token/SF_API_TOKEN)"}`)
 			log.Printf("[API] 401 unauthorized: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
 			return
 		}

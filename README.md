@@ -287,18 +287,14 @@ bin/engine -webhook http://siem.internal:8080/ingest \
 # or:  export SF_WEBHOOK_TOKEN=...  (flag wins)
 ```
 
-The receiver then validates the `Authorization: Bearer` header. Per-
-rule `actions.webhook` entries keep their own independent `secret`
-config (see *Rule actions*); when both are set the per-action secret
-applies to that action only and the global token to the engine-level
-connector. A webhook running without any token prints a startup
-reminder listing the flag and the env var.
-
-Deliveries can authenticate themselves with `-webhook-token` (or the
-`SF_WEBHOOK_TOKEN` env var, flag wins): every POST then carries
-`Authorization: Bearer <token>`, so a receiver that is reachable from
-more than the engine's host can reject unauthenticated or spoofed
-posts instead of ingesting fake alerts into the SIEM.
+The receiver then validates the `Authorization: Bearer` header, so a
+receiver reachable from more than the engine's host can reject
+unauthenticated or spoofed posts instead of ingesting fake alerts into
+the SIEM. Per-rule `actions.webhook` entries keep their own independent
+`secret` config (see *Rule actions*); when both are set the per-action
+secret applies to that action only and the global token to the
+engine-level connector. A webhook running without any token prints a
+startup reminder listing the flag and the env var.
 
 ## One-command install (Windows)
 
@@ -546,6 +542,7 @@ the engine.
 cmd/engine/       detection engine binary (Go)
 cmd/devsensor/    demo sensor for development (Go): scripted scenario,
                   simulated data - the only simulated piece in the repo
+cmd/bench/        load and latency harness (measures ingest→alert p50/p99)
 internal/ingest/  NDJSON TCP listener + schema validation
 internal/enrich/  enrichment pipeline (context, not evidence mutation)
 internal/rules/   YAML parser, rule index and evaluator
@@ -573,6 +570,41 @@ docs/             architecture document, OpenAPI spec (docs/api/),
                   diagram assets and agent round reports (docs/agentes/)
 web/console/          Next.js console (live feed, triage, AI analyst)
 web/console-service/  realtime telemetry hub (bun + socket.io)
+```
+
+## Measured performance
+
+The phase-1 promise (p99 < 10 ms) is now measured, not assumed.
+`cmd/bench` is a load and latency harness: it streams process.create
+events that deterministically fire one seeded rule, listens on the
+engine SSE stream and measures every alert on the same clock — from
+the NDJSON line leaving the client to the alert frame arriving, i.e.
+the full pipeline (ingest parse, rule evaluation, alert build,
+broadcast) plus the SSE hop the console experiences.
+
+Measured with `go run ./cmd/bench -n 2000 -rate 1000` against a live
+engine (loopback, Linux development VM, 23 rules loaded), three
+consecutive runs, 2000/2000 alerts produced and sampled each time:
+
+```
+latency p50 : 133-139 µs      latency p90 : 187-211 µs
+latency p99 : 319-434 µs      latency max : 0.73-5.9 ms
+throughput  : ~830 ev/s sustained at that rate cap
+```
+
+Two honest caveats the harness documents by design: the numbers are
+loopback on a development host — a Windows endpoint under real Sysmon
+load will see higher ingest-side latency, and the bench measures the
+engine, not the sensor; and the SSE fan-out is best-effort (slow
+subscribers miss frames instead of stalling the engine), so a burst at
+unlimited speed (~128k ev/s) shows the alerts still produced 2000/2000
+while the bench client's frames arrive late — backpressure, not loss.
+
+Run it yourself against a live engine:
+
+```bash
+go build -o bin/bench ./cmd/bench
+bin/bench -addr 127.0.0.1:7777 -api 127.0.0.1:7778 -n 2000 -rate 1000
 ```
 
 ## Roadmap

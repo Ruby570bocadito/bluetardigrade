@@ -371,3 +371,65 @@ func TestBearerAuth(t *testing.T) {
 		t.Fatalf("events with token: body is not JSON: %v", err)
 	}
 }
+
+// Delta de convergencia (ronda 20h10): tres garantías que el test
+// anterior no cubre — el challenge WWW-Authenticate en cada 401, la
+// aceptación del esquema en cualquier combinación de mayúsculas
+// (RFC 7235) y el stream SSE autenticado entregando su primer frame.
+func TestBearerAuthChallengeAndStream(t *testing.T) {
+	h, addr := newTestHub(t)
+	h.SetToken("s3cret-api")
+
+	// todo 401 debe llevar el challenge estándar Bearer
+	res, err := http.Get(fmt.Sprintf("http://%s/api/stats", addr))
+	if err != nil {
+		t.Fatalf("stats sin token: %v", err)
+	}
+	io.Copy(io.Discard, res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("stats sin token: status %d, want 401", res.StatusCode)
+	}
+	if ch := res.Header.Get("WWW-Authenticate"); !strings.HasPrefix(ch, "Bearer ") {
+		t.Fatalf("WWW-Authenticate = %q, want Bearer challenge", ch)
+	}
+
+	// el esquema es case-insensitive: 'bearer' minúscula también entra
+	req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s/api/stats", addr), nil)
+	req.Header.Set("Authorization", "bearer s3cret-api")
+	res2, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("stats con esquema minúscula: %v", err)
+	}
+	io.Copy(io.Discard, res2.Body)
+	res2.Body.Close()
+	if res2.StatusCode != http.StatusOK {
+		t.Fatalf("stats con 'bearer' minúscula: status %d, want 200 (RFC 7235)", res2.StatusCode)
+	}
+
+	// stream SSE con credencial correcta entrega el primer frame
+	req, _ = http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s/api/stream", addr), nil)
+	req.Header.Set("Authorization", "Bearer s3cret-api")
+	res3, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("stream con token: %v", err)
+	}
+	defer res3.Body.Close()
+	if res3.StatusCode != http.StatusOK {
+		t.Fatalf("stream con token: status %d, want 200", res3.StatusCode)
+	}
+	buf := make([]byte, 64)
+	first := make(chan error, 1)
+	go func() {
+		_, err := res3.Body.Read(buf)
+		first <- err
+	}()
+	select {
+	case err := <-first:
+		if err != nil {
+			t.Fatalf("stream primer frame: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("stream primer frame: timeout (sin retry frame)")
+	}
+}

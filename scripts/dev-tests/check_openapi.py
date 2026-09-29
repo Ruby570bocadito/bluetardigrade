@@ -16,7 +16,10 @@ Catches spec drift without needing a running engine:
      entry plus an anonymous `{}` entry, because the token is only
      demanded when the engine runs with `-api-token`; and any path the
      middleware exempts (parsed from auth(): r.URL.Path == ...)
-     must force anonymous access with `security: []`. If the code
+     must force anonymous access with `security: []`. Protected operations
+     must also document their `401` response (the middleware answers it
+     with a WWW-Authenticate challenge when -api-token is set), and
+     exempt paths must not (auth() passes them through untouched). If the code
      registers no middleware, the spec must not demand bearer anywhere.
 
 Exit code 0 = in sync; 1 = drift found (details on stderr).
@@ -141,11 +144,18 @@ def run_checks(spec: dict, go_src: str) -> tuple[list[str], dict]:
                 if method not in HTTP_METHODS or not isinstance(op, dict):
                     continue
                 sec = op_security(op)
+                has_401 = "401" in (op.get("responses", {}) or {})
                 if path in exempt:
                     if sec != []:
                         errors.append(
                             f"{method.upper()} {path}: the middleware exempts this path, "
                             "the spec must force anonymous access with security: []"
+                        )
+                    if has_401:
+                        errors.append(
+                            f"{method.upper()} {path}: the middleware exempts this path; "
+                            "it must not document a 401 response (auth() passes it "
+                            "through untouched)"
                         )
                 elif sec is None:
                     errors.append(
@@ -165,6 +175,12 @@ def run_checks(spec: dict, go_src: str) -> tuple[list[str], dict]:
                         )
                     if offers_bearer(sec):
                         gated_ops += 1
+                        if not has_401:
+                            errors.append(
+                                f"{method.upper()} {path}: protected operation does not "
+                                "document a 401 response (the middleware answers 401 "
+                                "with a WWW-Authenticate challenge when -api-token is set)"
+                            )
     else:
         if "bearerAuth" in schemes:
             errors.append(
@@ -195,29 +211,29 @@ def run_checks(spec: dict, go_src: str) -> tuple[list[str], dict]:
 GO_FIXTURE = """package api
 
 import (
-	"net/http"
-	"time"
+        "net/http"
+        "time"
 )
 
 func setup(mux *http.ServeMux, h *Hub) {
-	mux.HandleFunc("GET /api/stats", h.handleStats)
-	mux.HandleFunc("GET /api/health", h.handleHealth)
-	h.srv = &http.Server{Handler: h.auth(mux), ReadHeaderTimeout: 5 * time.Second}
+        mux.HandleFunc("GET /api/stats", h.handleStats)
+        mux.HandleFunc("GET /api/health", h.handleHealth)
+        h.srv = &http.Server{Handler: h.auth(mux), ReadHeaderTimeout: 5 * time.Second}
 }
 
 func (h *Hub) auth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if h.token == "" || r.URL.Path == "/api/health" {
-			next.ServeHTTP(w, r)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                if h.token == "" || r.URL.Path == "/api/health" {
+                        next.ServeHTTP(w, r)
+                        return
+                }
+                next.ServeHTTP(w, r)
+        })
 }
 
 type statsPayload struct {
-	Uptime float64 `json:"uptime"`
-	Events uint64  `json:"events_total"`
+        Uptime float64 `json:"uptime"`
+        Events uint64  `json:"events_total"`
 }
 """
 
@@ -232,7 +248,10 @@ def good_spec() -> dict:
                 "get": {
                     "operationId": "getStats",
                     "security": copy.deepcopy(OPTIONAL_AUTH),
-                    "responses": {"200": {"description": "ok"}},
+                    "responses": {
+                        "200": {"description": "ok"},
+                        "401": {"$ref": "#/components/responses/Unauthorized"},
+                    },
                 }
             },
             "/api/health": {
@@ -294,6 +313,18 @@ def self_test() -> int:
                 "security", [{"bearerAuth": []}]
             ),
             "lacks the anonymous entry",
+        ),
+        (
+            "protected op without documented 401",
+            lambda s: s["paths"]["/api/stats"]["get"]["responses"].pop("401"),
+            "does not document a 401",
+        ),
+        (
+            "exempt health documenting a 401",
+            lambda s: s["paths"]["/api/health"]["get"]["responses"].__setitem__(
+                "401", {"$ref": "#/components/responses/Unauthorized"}
+            ),
+            "must not document a 401",
         ),
     ]
     for name, mutate, expect in variants:
