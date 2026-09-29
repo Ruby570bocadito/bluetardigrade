@@ -456,19 +456,23 @@ The uninstaller stops the processes, removes the logon entries (HKCU Run and any
 
 The repo ships an early browser console: live telemetry feed, KPI dashboard, severity triage, the YAML rule pack, the kill-chain chains the correlator has armed, operator suppressions, and an AI analyst that explains each alert like a senior SOC analyst would. Both the alert queue and the live feed support free-text search (rule, host, user, command line, MITRE tag) on top of the dropdown filters, so triage can narrow down a noisy host or a single technique in seconds. The hub (`web/console-service`) contains NO simulator: it forwards only what the Go engine's API (:7778) really delivers, and the header chip names the actual source of the events you are looking at - `sf-sensor (Sysmon real)` for real host telemetry, or `sf-devsensor (demo)` while the scripted scenario is replaying. If the engine is unreachable the console says so and shows no data, instead of inventing any.
 
-The interface carries a restrained motion layer adapted from [React Bits](https://reactbits.dev) — every effect communicates a state change and none is decoration: a pointer-reactive dot-grid canvas behind the shell, view titles that blur in on section change, KPI halos that follow the mouse, an animated 1px border on the AI analyst while it is working, a gradient pulse on the critical counter while critical alerts exist, and a brand tagline that decrypts once on load. Everything respects `prefers-reduced-motion` (static fallbacks) and the whole layer adds zero runtime dependencies beyond `motion`.
+The interface carries a restrained motion layer adapted from [React Bits](https://reactbits.dev) — every effect communicates a state change and none is decoration: a pointer-reactive dot-grid canvas behind the shell, view titles that blur in on section change, KPI halos that follow the mouse, an animated 1px border on the AI analyst while it is working, a gradient pulse on the critical counter while critical alerts exist, a status chip that scales in when a triage decision lands, and a brand tagline that decrypts once on load. Everything respects `prefers-reduced-motion` (static fallbacks) and the whole layer adds zero runtime dependencies beyond `motion`.
 
 Operations dashboard: KPIs, sensor activity, top kill-chain alerts and the live event sample in one view.
 
 ![Console operations dashboard: KPIs, sensor activity chart, kill-chain alerts and recent telemetry](docs/assets/console-panel.png)
 
-Alert triage queue with severity badges, MITRE tags and expandable details. The expanded panel is also where the triage actions live (r6): status chips (`reconocida`/`cerrada`), a free-text note, and the reconocer / cerrar / reabrir buttons — the decision round-trips console → hub → engine and every connected console updates live through the `alert_lifecycle` stream:
+Alert triage queue with severity badges, MITRE tags and expandable details. Selecting a row opens the detail panel: the rendered rule message, matched fields, declared actions and enrichment, plus the triage actions (r6) at the end of the panel:
 
-![Console alert queue: 18 alerts with severity badges, MITRE tags and kill-chain names](docs/assets/console-alertas.png)
+![Console alert queue with the detail panel open: rule message, matched fields, tags, enrichment](docs/assets/console-alertas.png)
 
-Free-text search on top of the dropdown filters - typing narrows the queue live (from 18 alerts to the 3 that mention `lsass`):
+The `Ciclo de vida` section is the operator queue surface: a free-text note and the reconocer / cerrar / reabrir buttons. The decision round-trips console → engine proxy → engine API and every connected console updates live through the `alert_lifecycle` stream — this capture IS the recorded state: the row carries the `reconocida` chip and the panel shows who decided, when, and the note (persisted with `-lifecycle`):
 
-![Console search GIF: typing lsass filters the alert queue from 18 to 3](docs/assets/console-busqueda.gif)
+![Console alert detail with a real triage decision recorded: reconocida chip on the row, note and decision metadata in the Ciclo de vida panel](docs/assets/console-alertas-triaje.png)
+
+Free-text search on top of the dropdown filters - typing narrows the queue live to the alerts that mention `lsass`:
+
+![Console search GIF: typing lsass filters the alert queue down to the matching alerts](docs/assets/console-busqueda.gif)
 
 The loaded rule pack, rendered with each rule's conditions and MITRE mapping:
 

@@ -10,7 +10,8 @@
 //     elsewhere, or pass executablePath explicitly)
 //
 // Usage:  node docs/assets/src/capture_console.mjs
-// Output: console-panel.png, console-alertas.png, console-cadenas.png,
+// Output: console-panel.png, console-alertas.png,
+//         console-alertas-triaje.png, console-cadenas.png,
 //         console-reglas.png, console-supresiones.png
 //         and per-frame PNGs in the system temp dir (assemble the GIF
 //         from those frames; frames are 2x viewport of `main`).
@@ -43,18 +44,55 @@ const page = await ctx.newPage()
 await page.goto('http://localhost:3000', { waitUntil: 'networkidle' })
 await page.waitForTimeout(5000) // let the socket fill KPIs and charts
 
-const navBtn = (name) =>
-  page
+const navOn = (pg) => (name) =>
+  pg
     .getByRole('navigation', { name: 'Secciones de la consola' })
     .getByRole('button', { name })
+const navBtn = (name) => navOn(page)(name)
 
 await page.screenshot({ path: path.join(ASSETS, 'console-panel.png') })
 console.log('shot: console-panel.png')
 
 await navBtn('Alertas').click()
 await page.waitForTimeout(1200)
+
+// Expand the first alert: the detail panel carries the rendered rule
+// message, matched fields, enrichment and the triage panel (Ciclo de
+// vida) - the operator queue the README documents (r6).
+const firstRow = page.locator('tbody tr').first()
+await firstRow.click()
+await page.getByLabel('Detalle de la alerta seleccionada').waitFor({ timeout: 8000 })
+await page.waitForTimeout(400)
 await page.screenshot({ path: path.join(ASSETS, 'console-alertas.png') })
 console.log('shot: console-alertas.png')
+
+// Apply a REAL triage decision end to end (console -> engine proxy ->
+// engine POST; the row updates itself through the alert_lifecycle
+// stream) and capture the recorded state as a second still. The detail
+// panel is ~1050px tall (the grid row stretches to it and the PAGE
+// scrolls), so this shot runs on a taller viewport page: chip on the
+// row, recorded note and the cerrar/reabrir buttons share one frame
+// with no scroll choreography.
+const tallPage = await ctx.newPage()
+await tallPage.setViewportSize({ width: 1280, height: 1240 })
+await tallPage.goto('http://localhost:3000', { waitUntil: 'networkidle' })
+await tallPage.waitForTimeout(4000)
+await navOn(tallPage)('Alertas').click()
+await tallPage.waitForTimeout(1200)
+const tallRow = tallPage.locator('tbody tr').first()
+await tallRow.click()
+await tallPage.getByLabel('Detalle de la alerta seleccionada').waitFor({ timeout: 8000 })
+await tallPage.getByLabel('Nota de triaje').fill('visto - investigando con el equipo de TI (INC-4187)')
+await tallPage.getByRole('button', { name: 'Reconocer' }).click()
+await tallPage.getByText('reconocida', { exact: true }).first().waitFor({ timeout: 8000 })
+await tallPage.waitForTimeout(400)
+await tallPage.screenshot({ path: path.join(ASSETS, 'console-alertas-triaje.png') })
+console.log('shot: console-alertas-triaje.png')
+await tallPage.close()
+
+// Close the detail panel so the search GIF stays focused on the queue.
+await firstRow.click()
+await page.waitForTimeout(300)
 
 const search = page.getByPlaceholder('buscar regla, host, usuario...')
 await search.click()

@@ -55,7 +55,18 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
   const [sevFilter, setSevFilter] = useState<string>('all')
   const [query, setQuery] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
-  const [selected, setSelected] = useState<SfAlert | null>(null)
+  // The detail panel follows the LIVE alert, not a click-time snapshot:
+  // the lifecycle frame patches the ring immutably, so the selection is
+  // stored as a key and the object is derived on every render. A triage
+  // decision lands in the panel the moment the stream delivers it (the
+  // buttons swap to cerrar/reabrir, the note and by/when appear) - no
+  // re-selection needed. If the alert leaves the ring, the panel closes
+  // instead of showing a ghost.
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const selected = useMemo(
+    () => (selectedKey === null ? null : (alerts.find((a) => alertKey(a) === selectedKey) ?? null)),
+    [alerts, selectedKey],
+  )
   const [announcement, setAnnouncement] = useState('')
   const knownTop = useRef<string | null>(null)
 
@@ -250,13 +261,13 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
                 <tbody className="divide-y divide-zinc-800/80">
                   {visible.map((al) => {
                     const key = alertKey(al)
-                    const isSelected = selected !== null && alertKey(selected) === key
+                    const isSelected = selectedKey === key
                     const mitre = (al.tags ?? []).find((t) => t.startsWith('attack.t'))
                     return (
                       <tr
                         key={key}
                         aria-selected={isSelected}
-                        onClick={() => setSelected(isSelected ? null : al)}
+                        onClick={() => setSelectedKey(isSelected ? null : key)}
                         className={`group cursor-pointer align-middle transition-colors focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring ${
                           isSelected ? 'bg-zinc-800/60' : 'hover:bg-zinc-800/40'
                         }`}
@@ -273,7 +284,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation()
-                              setSelected(isSelected ? null : al)
+                              setSelectedKey(isSelected ? null : key)
                             }}
                             className="block w-full max-w-full truncate text-left text-[13px] font-medium text-zinc-100 focus-visible:outline-none"
                             title={`${al.rule_name}: ${al.summary}`}
@@ -325,7 +336,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
               aria-label="Detalle de la alerta seleccionada"
               className="min-w-0 rounded-lg border border-zinc-800 bg-zinc-900"
             >
-              <AlertDetail alert={selected} onClose={() => setSelected(null)} onAnalyze={onAnalyze} />
+              <AlertDetail alert={selected} onClose={() => setSelectedKey(null)} onAnalyze={onAnalyze} />
             </motion.aside>
           )}
         </div>
@@ -461,22 +472,35 @@ export function AlertDetailBody({ alert, onAnalyze }: { alert: SfAlert; onAnalyz
 }
 
 // Status chip: "new" is NOT rendered (a chip on every fresh alert would
-// be noise - the absence of a chip IS the new state).
+// be noise - the absence of a chip IS the new state). The chip animates
+// in on mount because it mounting IS the state change: a triage decision
+// just landed through the alert_lifecycle stream (MOTION 3). Static
+// under prefers-reduced-motion.
 function StatusChip({ status }: { status?: SfAlertStatus }) {
+  const reduce = useReducedMotion()
+  const reveal = reduce ? {} : { initial: { opacity: 0, scale: 0.85 }, animate: { opacity: 1, scale: 1 } }
   if (status === 'acknowledged') {
     return (
-      <span className="flex shrink-0 items-center gap-1 rounded-md border border-sky-400/30 bg-sky-400/10 px-1.5 py-0.5 text-[10px] text-sky-300">
+      <motion.span
+        {...reveal}
+        transition={{ duration: 0.18, ease: 'easeOut' }}
+        className="flex shrink-0 origin-left items-center gap-1 rounded-md border border-sky-400/30 bg-sky-400/10 px-1.5 py-0.5 text-[10px] text-sky-300"
+      >
         <Eye size={11} weight="fill" aria-hidden />
         reconocida
-      </span>
+      </motion.span>
     )
   }
   if (status === 'closed') {
     return (
-      <span className="flex shrink-0 items-center gap-1 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
+      <motion.span
+        {...reveal}
+        transition={{ duration: 0.18, ease: 'easeOut' }}
+        className="flex shrink-0 origin-left items-center gap-1 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] text-emerald-300"
+      >
         <CheckCircle size={11} weight="fill" aria-hidden />
         cerrada
-      </span>
+      </motion.span>
     )
   }
   return null
@@ -484,8 +508,9 @@ function StatusChip({ status }: { status?: SfAlertStatus }) {
 
 // Triage actions (r6): reconocer / cerrar / reabrir with an optional
 // note. The POST travels console -> engine proxy -> engine API; the row
-// updates itself through the alert_lifecycle SSE frame (single source
-// of truth), so this panel only tracks the in-flight/error state.
+// AND this panel re-render from the same patched alert (the lifecycle
+// SSE frame is the single source of truth), so only the in-flight and
+// error states are tracked locally.
 function TriagePanel({ alert }: { alert: SfAlert }) {
   const status: SfAlertStatus = alert.status ?? 'new'
   const [noteDraft, setNoteDraft] = useState('')
