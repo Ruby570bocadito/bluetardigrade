@@ -409,6 +409,10 @@ Spanish; see `web/console/README.md` for details.
 ## Building the real sensor (Windows)
 
 Requirements: Rust stable with the `x86_64-pc-windows-msvc` target.
+Use **1.85 or newer**: the committed `Cargo.lock` resolves `time-core
+0.1.9`, which needs the edition-2024 Cargo feature — older toolchains
+fail to parse that dependency's manifest even though this crate itself
+is edition 2021.
 
 ```bash
 make build-sensor-windows
