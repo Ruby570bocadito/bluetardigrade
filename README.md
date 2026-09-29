@@ -120,7 +120,8 @@ stable columns and neutralizes spreadsheet formula injection on
 attacker-controlled fields. When `-webhook` is set, `/api/stats`
 additionally reports `webhook_sent` / `webhook_failed` /
 `webhook_dropped` so the delivery pipeline can be sized from the
-outside.
+outside. The machine-readable contract for the whole surface lives
+in OpenAPI 3.0 at [`docs/api/openapi.yaml`](docs/api/openapi.yaml).
 
 ### Ingest authentication (shared token)
 
@@ -231,8 +232,11 @@ Tools), `-AutoStart` registers engine and console as logon entries
 remote sensors (domain and private network profiles only) and asks for
 elevation via UAC when needed; it only matters when the engine is
 explicitly started with `-addr 0.0.0.0:7777`, since the default bind is
-loopback. Install location defaults to `%LOCALAPPDATA%\security-framework`
-and can be changed with `-InstallDir <path>`.
+loopback. `-WebhookUrl http://siem.internal:8080/ingest` persists the
+alert webhook so the engine autostart POSTs every alert there as JSON
+(re-run with `-WebhookUrl ''` to clear it). Install
+location defaults to `%LOCALAPPDATA%\security-framework` and can be
+changed with `-InstallDir <path>`.
 
 To uninstall:
 

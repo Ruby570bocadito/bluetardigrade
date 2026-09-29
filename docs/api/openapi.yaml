@@ -1,0 +1,575 @@
+# OpenAPI specification for the security-framework local engine API.
+#
+# Source of truth: internal/api/api.go + internal/api/export.go (handlers
+# and payloads), pkg/model (Event) and internal/alert (Alert). When the
+# API surface changes, update this file in the same round - the README
+# links here as the contract for SIEM taps and console consumers.
+#
+# Lint/validate with any OpenAPI 3.0 tooling, e.g.:
+#   npx @redocly/cli lint docs/api/openapi.yaml
+openapi: 3.0.3
+info:
+  title: security-framework local API
+  version: 0.1.0
+  description: |
+    Read-only HTTP API served by the Go detection engine (default
+    `127.0.0.1:7778`, loopback-only; start with `-api 0` to disable).
+    The web console hub
+    (`web/console-service`) consumes it, and SIEM/SOAR taps can too.
+
+    Design constraints worth knowing before integrating:
+
+    - Everything is **read-only**: the engine is configured by flags and
+      YAML rules, never through this API.
+    - `GET /api/events` and `GET /api/alerts` return the **in-memory
+      ring** (last 1000 events / 256 alerts), newest first. For bulk
+      download use the `/export` endpoints.
+    - `GET /api/stream` is Server-Sent Events: one connection, live
+      frames of `event: event` and `event: alert`, `retry: 2000`,
+      heartbeat comments every 15 s.
+    - All timestamps are RFC 3339 (UTC, nanosecond precision).
+
+    The alert webhook (engine `-webhook` flag) pushes the same `Alert`
+    object defined here as JSON to an external collector.
+servers:
+  - url: http://127.0.0.1:7778
+    description: local engine API (default -api address, loopback only)
+tags:
+  - name: status
+    description: liveness and runtime counters
+  - name: telemetry
+    description: recent events and alerts (in-memory rings)
+  - name: rules
+    description: live detection rule set
+  - name: stream
+    description: real-time Server-Sent Events feed
+  - name: export
+    description: bulk download (JSONL / CSV) for SIEM import and forensics
+paths:
+  /api/health:
+    get:
+      tags: [status]
+      operationId: getHealth
+      summary: Liveness probe
+      description: Cheap check that the engine API is up. Used by the console bridge and by `sf-engine` to detect an already-running instance.
+      responses:
+        '200':
+          description: Engine alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /api/stats:
+    get:
+      tags: [status]
+      operationId: getStats
+      summary: Runtime counters
+      description: |
+        Uptime, ingest counters, per-severity alert totals and rule
+        stats. When the engine runs with `-webhook`, the three
+        `webhook_*` counters report delivery health from the outside:
+        `webhook_sent` delivered (2xx), `webhook_failed` exhausted
+        retries, `webhook_dropped` discarded because the bounded queue
+        saturated.
+      responses:
+        '200':
+          description: Current stats snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Stats'
+  /api/events:
+    get:
+      tags: [telemetry]
+      operationId: listEvents
+      summary: Recent events (newest first)
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Up to `limit` events from the ring buffer
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Event'
+  /api/alerts:
+    get:
+      tags: [telemetry]
+      operationId: listAlerts
+      summary: Recent alerts (newest first)
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Up to `limit` alerts from the ring buffer
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Alert'
+  /api/rules:
+    get:
+      tags: [rules]
+      operationId: listRules
+      summary: Live rule set
+      description: |
+        The rules currently loaded (hot-reload aware, sorted by id).
+        `mitre` and `tactic` are derived from the rule tags: the
+        `attack.txxxxxx` tag upper-cased, the first `attack.<tactic>`
+        tag title-cased. Conditions mirror the YAML rule format.
+      responses:
+        '200':
+          description: Current rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Rule'
+  /api/stream:
+    get:
+      tags: [stream]
+      operationId: streamFeed
+      summary: Server-Sent Events feed of live events and alerts
+      description: |
+        Long-lived `text/event-stream`. Frame types:
+
+        - `event: event` - data is one `Event` JSON
+        - `event: alert` - data is one `Alert` JSON (rule hits and
+          kill-chain completions from the correlator)
+
+        Control lines: `retry: 2000`, heartbeat comments (`: hb`) every
+        15 s. Slow consumers with a full per-client buffer miss frames
+        instead of blocking the engine; reconnect and re-sync with
+        `/api/events` and `/api/alerts`.
+      responses:
+        '200':
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                example: |
+                  retry: 2000
+
+                  event: event
+                  data: {"id":"9c1f...","timestamp":"2026-09-29T16:20:11.512Z","type":"process.create","source":"sf-sensor","host":"LAB-WKS-01","process":{"pid":4212,"name":"powershell.exe","command_line":"powershell -enc SQBF..."}}
+
+                  : hb
+  /api/events/export:
+    get:
+      tags: [export]
+      operationId: exportEvents
+      summary: Bulk download of the event ring
+      description: |
+        JSONL round-trips the full `Event` records (same contract as the
+        NDJSON wire). CSV flattens to stable columns (`id`, `timestamp`,
+        `type`, `source`, `host`, `user`, `process_name`,
+        `process_pid`, `process_command_line`, `file_path`,
+        `network_destination`, `network_port`, `registry_key`) and
+        neutralizes spreadsheet formula injection on
+        attacker-controlled cells (leading `= + - @`, tab or CR are
+        quoted). Response carries `Content-Disposition: attachment`
+        with a dated filename.
+      parameters:
+        - $ref: '#/components/parameters/ExportFormat'
+      responses:
+        '200':
+          description: Full event ring in the requested format
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+                description: one Event JSON object per line
+            text/csv:
+              schema:
+                type: string
+                description: header row + one row per event
+        '400':
+          description: Unknown `format` value
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: 'unsupported format: use jsonl or csv'
+  /api/alerts/export:
+    get:
+      tags: [export]
+      operationId: exportAlerts
+      summary: Bulk download of the alert ring
+      description: |
+        Same semantics as `/api/events/export` for alerts. CSV columns:
+        `timestamp`, `severity`, `rule_id`, `rule_name`, `event_type`,
+        `host`, `user`, `summary`, `matched_on` (space-joined),
+        `tags` (space-joined), `message`, `notify`.
+      parameters:
+        - $ref: '#/components/parameters/ExportFormat'
+      responses:
+        '200':
+          description: Full alert ring in the requested format
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+                description: one Alert JSON object per line
+            text/csv:
+              schema:
+                type: string
+                description: header row + one row per alert
+        '400':
+          description: Unknown `format` value
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: 'unsupported format: use jsonl or csv'
+components:
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: |
+        Maximum items to return. Non-numeric values fall back to the
+        default; anything above 1000 (the ring size) is capped.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+        maximum: 1000
+        default: 200
+    ExportFormat:
+      name: format
+      in: query
+      required: false
+      description: Download format. Defaults to `jsonl` when omitted.
+      schema:
+        type: string
+        enum: [jsonl, csv]
+        default: jsonl
+  schemas:
+    Health:
+      type: object
+      required: [status, mode]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        mode:
+          type: string
+          enum: [engine]
+    Stats:
+      type: object
+      required:
+        - uptime_s
+        - events_total
+        - dropped
+        - events_per_min
+        - alerts_total
+        - by_severity
+        - rules_count
+        - rules_types
+        - events_buffered
+        - webhook_sent
+        - webhook_failed
+        - webhook_dropped
+        - mode
+      properties:
+        uptime_s:
+          type: integer
+          description: seconds since the API hub started
+        events_total:
+          type: integer
+          format: int64
+          description: events ingested since start (accepted by the TCP listener)
+        dropped:
+          type: integer
+          format: int64
+          description: events discarded because the ingest channel was full
+        events_per_min:
+          type: integer
+          description: events received in the last 60 seconds
+        alerts_total:
+          type: integer
+          description: alerts raised since start (dedup excluded)
+        by_severity:
+          type: object
+          additionalProperties:
+            type: integer
+          description: alerts_total broken down by severity
+        rules_count:
+          type: integer
+          description: currently loaded rules (hot-reload aware)
+        rules_types:
+          type: array
+          items:
+            type: string
+          description: distinct event types covered by the rule set
+        events_buffered:
+          type: integer
+          description: events currently held in the API ring (max 1000)
+        webhook_sent:
+          type: integer
+          format: int64
+          description: webhook deliveries acknowledged with 2xx
+        webhook_failed:
+          type: integer
+          format: int64
+          description: webhook deliveries that exhausted their 3 attempts
+        webhook_dropped:
+          type: integer
+          format: int64
+          description: alerts discarded because the webhook queue (512) saturated
+        mode:
+          type: string
+          enum: [engine]
+    Event:
+      type: object
+      description: |
+        Unified event schema (the wire contract, pkg/model). Sensors
+        emit it, the engine validates and enriches it. Exactly one of
+        the payload objects (process / access / file / network /
+        registry) is populated depending on `type`; `target` appears
+        only on `process.access`.
+      required: [id, timestamp, type, source, host]
+      properties:
+        id:
+          type: string
+          description: event UUID (set by the sensor)
+        timestamp:
+          type: string
+          format: date-time
+        type:
+          type: string
+          enum:
+            - process.create
+            - process.terminate
+            - process.access
+            - file.write
+            - network.connect
+            - image.load
+            - registry.set
+        source:
+          type: string
+          description: emitting sensor, e.g. sf-sensor or sf-devsensor
+        host:
+          type: string
+        user:
+          type: string
+        process:
+          $ref: '#/components/schemas/Process'
+        target:
+          $ref: '#/components/schemas/Process'
+        access:
+          type: object
+          description: process-handle telemetry (Sysmon EID 10)
+          properties:
+            granted_access:
+              type: string
+              description: hex access mask, e.g. 0x1010
+            call_trace:
+              type: string
+        file:
+          type: object
+          properties:
+            path:
+              type: string
+            extension:
+              type: string
+            size_bytes:
+              type: integer
+              format: int64
+            hashes:
+              type: object
+              additionalProperties:
+                type: string
+              description: digests keyed by algorithm (sha256, md5)
+        network:
+          type: object
+          properties:
+            protocol:
+              type: string
+            source_ip:
+              type: string
+            source_port:
+              type: integer
+            destination_ip:
+              type: string
+            destination_port:
+              type: integer
+            domain:
+              type: string
+        registry:
+          type: object
+          properties:
+            key:
+              type: string
+              example: HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+            value_name:
+              type: string
+            value:
+              type: string
+              description: data written
+            operation:
+              type: string
+              enum: [SetValue, CreateKey, DeleteKey, RenameKey]
+        tags:
+          type: array
+          items:
+            type: string
+        enrichment:
+          type: object
+          additionalProperties:
+            type: string
+          description: added by the engine, never mutates the evidence fields
+    Process:
+      type: object
+      required: [pid, name]
+      properties:
+        pid:
+          type: integer
+        ppid:
+          type: integer
+        name:
+          type: string
+        command_line:
+          type: string
+        image:
+          type: string
+        hashes:
+          type: object
+          additionalProperties:
+            type: string
+    Alert:
+      type: object
+      description: |
+        Structured alert raised by a rule hit (or a kill-chain
+        completion). Identical payload on the JSON log line, the
+        webhook body and the console/hub stream, so consumers speak
+        one format. `message` and `notify` are rendered from the
+        firing rule's `alert` action, when it declares one.
+      required:
+        - timestamp
+        - rule_id
+        - rule_name
+        - severity
+        - host
+        - event_id
+        - event_type
+        - summary
+        - matched_on
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        rule_id:
+          type: string
+          format: uuid
+        rule_name:
+          type: string
+        severity:
+          type: string
+          enum: [critical, high, medium, low]
+        host:
+          type: string
+        user:
+          type: string
+        event_id:
+          type: string
+          description: id of the event that triggered the alert
+        event_type:
+          type: string
+        summary:
+          type: string
+          description: human-readable one-liner (may contain attacker-controlled text)
+        message:
+          type: string
+          description: rendered from the rule's alert action template, when present ({host}-style placeholders already substituted)
+        notify:
+          type: boolean
+          description: the rule asks for external notification (alert action config)
+        matched_on:
+          type: array
+          items:
+            type: string
+          description: dotted fields whose conditions matched
+        tags:
+          type: array
+          items:
+            type: string
+          description: MITRE ATT&CK tags of the rule
+        actions:
+          type: array
+          items:
+            type: string
+          description: action names declared by the rule (empty so far)
+        enrichment:
+          type: object
+          additionalProperties:
+            type: string
+    Rule:
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - severity
+        - event_type
+        - tags
+        - conditions
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        severity:
+          type: string
+          enum: [critical, high, medium, low]
+        event_type:
+          type: string
+        mitre:
+          type: string
+          description: derived from tags, e.g. T1059.001 (empty when the rule has no attack.t tag)
+        tactic:
+          type: string
+          description: derived from tags, e.g. Execution (empty when absent)
+        tags:
+          type: array
+          items:
+            type: string
+        conditions:
+          type: array
+          items:
+            type: object
+            required: [field, operator, value]
+            properties:
+              field:
+                type: string
+                description: dotted path into the event, e.g. process.command_line
+              operator:
+                type: string
+                enum:
+                  - eq
+                  - neq
+                  - contains
+                  - contains_any
+                  - startswith
+                  - endswith
+                  - regex
+                  - in
+                  - not_in
+                  - gt
+                  - lt
+              value:
+                oneOf:
+                  - type: string
+                  - type: array
+                    items:
+                      type: string
+                  - type: number

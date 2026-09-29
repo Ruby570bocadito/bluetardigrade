@@ -26,6 +26,8 @@
 #                        private profiles only (asks via UAC); pair it
 #                        with:  sf-engine -addr 0.0.0.0:7777
 #   -AutoStart           start engine + console at logon (HKCU Run, no admin)
+#   -WebhookUrl <url>    POST every alert as JSON to this SIEM/SOAR endpoint;
+#                        persisted, engine autostart delivers it (empty clears)
 #   -Update              refresh an existing install and rebuild
 #   -SkipBuild           fetch sources + tools but skip compiling (debug)
 #   -SourceReady         internal: source already fetched (the updater
@@ -40,6 +42,7 @@ param(
     [switch]$WithSensor,
     [switch]$Firewall,
     [switch]$AutoStart,
+    [string]$WebhookUrl = '',
     [switch]$Update,
     [switch]$SkipBuild,
     [switch]$SourceReady
@@ -507,11 +510,38 @@ function Add-FirewallRule {
     }
 }
 
+function Set-WebhookConfig {
+    # Persists the alert webhook URL under tools\config\ (tools\ is the
+    # one folder non-git source refreshes keep, so the setting survives
+    # updates that rebuild the tree). Empty URL clears the setting.
+    # Returns the effective URL ('' when disabled).
+    param([string]$File, [string]$Url)
+    $u = $Url.Trim()
+    if ($u -eq '') {
+        if (Test-Path $File) {
+            Remove-Item $File -Force
+            Write-Ok "webhook removed ($File)"
+        } else {
+            Write-Ok "webhook not configured"
+        }
+        return ''
+    }
+    if ($u -notmatch '^https?://\S+$') {
+        throw "invalid -WebhookUrl '$u': must be an http(s) URL"
+    }
+    New-Item -ItemType Directory -Path (Split-Path $File -Parent) -Force | Out-Null
+    [IO.File]::WriteAllText($File, $u + "`r`n")
+    Write-Ok "webhook saved: $u"
+    return $u
+}
+
 function Register-Autostart {
     # HKCU Run entries: always writable by the current user, no admin needed
-    param([string]$Root)
+    param([string]$Root, [string]$WebhookUrl = '')
     $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-    $engineCmd  = "powershell.exe -NoProfile -WindowStyle Minimized -ExecutionPolicy Bypass -Command `"& '$Root\bin\engine.exe' -rules '$Root\rules'`""
+    $engineArgs = "-rules '$Root\rules'"
+    if ($WebhookUrl) { $engineArgs = "$engineArgs -webhook '$WebhookUrl'" }
+    $engineCmd  = "powershell.exe -NoProfile -WindowStyle Minimized -ExecutionPolicy Bypass -Command `"& '$Root\bin\engine.exe' $engineArgs`""
     $consoleCmd = "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Root\scripts\sf-console.ps1`" -NoBrowser"
     try {
         if (-not (Test-Path $runKey)) { New-Item -Path $runKey -Force | Out-Null }
@@ -519,7 +549,9 @@ function Register-Autostart {
         New-ItemProperty -Path $runKey -Name 'security-framework-console' -Value $consoleCmd -PropertyType String -Force | Out-Null
         $chk = Get-ItemProperty -Path $runKey
         if ($chk.'security-framework-engine' -and $chk.'security-framework-console') {
-            Write-Ok "autostart at logon registered (engine minimized + console hidden)"
+            $note = 'engine minimized + console hidden'
+            if ($WebhookUrl) { $note += ", alerts POST to $WebhookUrl" }
+            Write-Ok "autostart at logon registered ($note)"
         } else {
             Write-Warn2 "autostart entries could not be verified in the registry"
         }
@@ -589,7 +621,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         (Test-InstallerStale -Root $root -RunningPath $scriptInstallerPath -RunningHash $scriptInstallerHash)) {
         Write-Step "Installer updated - re-running with the fresh version"
         $fwd = @{ Update = $true; InstallDir = $root; SourceReady = $true }
-        foreach ($k in @('Repo','Branch','NoConsole','WithSensor','Firewall','AutoStart','SkipBuild')) {
+        foreach ($k in @('Repo','Branch','NoConsole','WithSensor','Firewall','AutoStart','WebhookUrl','SkipBuild')) {
             if ($PSBoundParameters.ContainsKey($k)) { $fwd[$k] = $PSBoundParameters[$k] }
         }
         & (Join-Path $root 'install.ps1') @fwd
@@ -621,7 +653,29 @@ if ($MyInvocation.InvocationName -ne '.') {
     $env:Path = "$binDir;" + $env:Path
 
     if ($Firewall)   { Add-FirewallRule }
-    if ($AutoStart)  { Register-Autostart -Root $root }
+
+    # webhook: -WebhookUrl rewrites the persisted URL (empty clears it);
+    # without the flag an existing one is picked up, so sf-update and
+    # re-installs keep the delivery config untouched
+    $webhook = ''
+    $whFile = Join-Path $tools 'config\webhook.url'
+    if ($PSBoundParameters.ContainsKey('WebhookUrl')) {
+        $webhook = Set-WebhookConfig -File $whFile -Url $WebhookUrl
+    } elseif (Test-Path $whFile) {
+        $raw = Get-Content $whFile -First 1 -ErrorAction SilentlyContinue
+        if ($null -ne $raw) { $webhook = $raw.Trim() }
+    }
+
+    # autostart: register when asked; on plain updates refresh the engine
+    # entry if it already exists, so a webhook change reaches the Run key
+    # without requiring -AutoStart again
+    $register = [bool]$AutoStart
+    if (-not $register) {
+        $cur = Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' `
+            -Name 'security-framework-engine' -ErrorAction SilentlyContinue
+        if ($cur -and $cur.'security-framework-engine') { $register = $true }
+    }
+    if ($register) { Register-Autostart -Root $root -WebhookUrl $webhook }
 
     if (Test-PortLocal $ENGINE_PORT) {
         Write-Warn2 "port $ENGINE_PORT is busy: an engine may already be running"
@@ -632,6 +686,9 @@ if ($MyInvocation.InvocationName -ne '.') {
     Write-Host '============================================================'
     Write-Host " security-framework installed in $([int]$sw.Elapsed.TotalSeconds)s"
     Write-Host " location : $root"
+    if ($webhook) {
+        Write-Host " webhook  : alerts POST to $webhook"
+    }
     Write-Host '------------------------------------------------------------'
     Write-Host ' commands  :'
     Write-Host '   sf-engine      detection engine, prints alerts live'

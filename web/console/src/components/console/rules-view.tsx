@@ -2,21 +2,79 @@
 
 // Detection rules on display: the YAML contract as the engine sees it.
 // Grouped blocks with hairlines instead of card soup (cockpit density).
+// Free-text search narrows the pack by anything an analyst remembers:
+// rule name, id, MITRE technique, tactic, event type, condition fields
+// or the values the conditions match on.
 
+import { useMemo, useState } from 'react'
+import { MagnifyingGlass } from '@phosphor-icons/react'
+import { Input } from '@/components/ui/input'
 import { useConsole } from './socket-provider'
 import { EmptyState, SectionHeader, SeverityBadge } from './ui-bits'
+import type { RuleMeta } from '@/lib/console-types'
+
+function ruleHaystack(r: RuleMeta): string {
+  const values = r.conditions.map((c) =>
+    Array.isArray(c.value) ? c.value.join(' ') : String(c.value),
+  )
+  return [
+    r.name, r.id, r.description, r.mitre, r.tactic, r.event_type,
+    ...r.tags, ...r.conditions.map((c) => c.field), ...values,
+  ].join(' ').toLowerCase()
+}
 
 export function RulesView() {
   const { rules } = useConsole()
+  const [query, setQuery] = useState('')
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return rules
+    return rules.filter((r) => ruleHaystack(r).includes(q))
+  }, [rules, query])
+
+  const filtering = query.trim() !== ''
 
   return (
     <section aria-label="Reglas de detección">
-      <SectionHeader title="Reglas cargadas" count={rules.length} />
+      <SectionHeader
+        title="Reglas cargadas"
+        count={visible.length}
+        action={
+          <div className="flex items-center gap-2">
+            {filtering && (
+              <span className="hidden font-mono text-[11px] text-zinc-600 sm:inline">de {rules.length}</span>
+            )}
+            <div className="relative">
+              <MagnifyingGlass
+                size={13}
+                aria-hidden
+                className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500"
+              />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setQuery('')
+                }}
+                placeholder="buscar regla, MITRE, táctica..."
+                aria-label="Buscar en reglas"
+                className="h-8 w-[210px] border-white/10 bg-transparent pl-7 font-mono text-xs text-zinc-200 placeholder:text-zinc-600"
+              />
+            </div>
+          </div>
+        }
+      />
       {rules.length === 0 ? (
         <EmptyState title="Aún no hay reglas en el búfer" hint="Se rellenan al recibir la primera instantánea del motor" />
+      ) : visible.length === 0 ? (
+        <EmptyState
+          title="Sin resultados"
+          hint="Ninguna regla coincide con la búsqueda actual"
+        />
       ) : (
         <div className="divide-y divide-white/[0.08] border-y border-white/[0.08]">
-          {rules.map((r) => (
+          {visible.map((r) => (
             <article key={r.id} className="grid gap-6 py-6 md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
