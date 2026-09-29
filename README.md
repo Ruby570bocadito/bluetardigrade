@@ -55,9 +55,11 @@ A behavioral detection framework built by an offensive-security practitioner, in
 - [Real telemetry with Sysmon](#real-telemetry-with-sysmon-recommended)
 - [Web console (preview)](#web-console-preview)
 - [Building the real sensor (Windows)](#building-the-real-sensor-windows)
+- [How it compares](#how-it-compares)
 - [Detection rules](#detection-rules)
   - [Kill-chain correlation](#kill-chain-correlation)
   - [Rule actions](#rule-actions)
+- [Engine CLI reference](#engine-cli-reference)
 - [Development & CI](#development--ci)
 - [Measured performance](#measured-performance)
 - [Repository layout](#repository-layout)
@@ -163,6 +165,40 @@ Representative output on the engine terminal (the rule pack grows over time, so 
 Each alert is also emitted as a structured JSON line for downstream consumers (SIEM connectors, the web console).
 
 ![Tracer bullet pipeline: devsensor, NDJSON/TCP, engine, rules, alert](docs/assets/diagram_tracer.png)
+
+### Docker
+
+```bash
+make docker-build
+docker run --rm -p 7777:7777 -p 7778:7778 security-framework-engine
+```
+
+The image is built from the repo `Dockerfile` (Go 1.22 builder, alpine
+runtime, non-root user) and exposes TCP 7777 (NDJSON ingest) and 7778
+(HTTP API, bound to `0.0.0.0` inside the container so a console on the
+host can reach it). Replay the demo scenario against the container from
+the repo root:
+
+```bash
+go run ./cmd/devsensor -addr 127.0.0.1:7777
+```
+
+For anything beyond a local lab, set a token and publish the ports
+deliberately: see [Ingest authentication](#ingest-authentication-shared-token).
+
+### Build from source
+
+```bash
+make build          # produces bin/engine and bin/devsensor
+./bin/engine        # same behavior as make run-engine
+./bin/devsensor     # same behavior as make run-devsensor
+```
+
+Other Makefile targets: `make test` (Go unit tests), `make vet`,
+`make fmt`, `make build-sensor` / `make build-sensor-windows` (Rust
+sensor), `make docker-build`, `make console-install`,
+`make console-service` and `make console`.
+
 
 ### Local HTTP API
 
@@ -299,6 +335,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `-store` / `-store-retention` | off / `72h` | SQLite persistence / pruning window (`0` keeps everything) |
 | `-v` | off | print every event received |
 | `-pidfile` | — | write the engine PID to a file |
+| `-i`, `--interactive` | off | interactive TUI over the running engine (degrades to the classic flat run without a TTY) — see [Engine CLI reference](#engine-cli-reference) |
 
 **Environment variables:**
 
@@ -309,8 +346,13 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `SF_API_TOKEN` | engine + console-service | one entry protects both the API and the bridge |
 | `SF_WEBHOOK_TOKEN` | engine | Bearer on outbound alert deliveries |
 | `NEXT_PUBLIC_CONSOLE_URL` | web console | point the UI at a remote hub |
+| `NEXT_PUBLIC_ENGINE_API` | web console | direct engine API base for polling (default same-origin proxy `/api/engine`) |
 | `ANALYST_BASE_URL` / `ANALYST_API_KEY` / `ANALYST_MODEL` | console-service | OpenAI-compatible endpoint for the AI triage analyst |
 | `PORT` / `CONSOLE_SERVICE_PORT`, `CONSOLE_HOST`, `CONSOLE_CORS_ORIGIN` | console-service | hub networking and allowed origins |
+
+The AI analyst is optional: without the three `ANALYST_*` variables the
+analyst panel says so clearly and the rest of the console keeps working.
+Details in [`web/console/README.md`](web/console/README.md).
 
 ## One-command install (Windows)
 
@@ -444,9 +486,55 @@ Rules live in `rules/` as YAML, are validated at load, and hot-reload every 15 s
 
 Operators (v0.1): `eq`, `neq`, `contains`, `contains_any`, `startswith`, `endswith`, `regex`, `in`, `not_in`, `gt`, `lt`.
 
+The full shipped pack lives in `rules/` (YAML, several files): 23 rules
+over 6 event types, severities 6 critical / 15 high / 2 medium. Every
+rule documents its source TTP and the lab evidence that validates it.
+This table is generated from the YAML files themselves, so it matches
+what the engine loads:
+
+| ID | Rule | Severity | Event type | ATT&CK | Tactic |
+|----|------|----------|------------|--------|--------|
+| `d37e8fa6` | Acceso a memoria de LSASS | critical | `process.access` | T1003.001 | credential-access |
+| `b8d5f6e2` | Borrado de instantaneas VSS | critical | `process.create` | T1490 | impact |
+| `a7c4e5f1` | Manipulacion de Windows Defender | critical | `process.create` | T1562.001 | defense-evasion |
+| `4f7b0d26` | Volcado de LSASS con procdump | critical | `process.create` | T1003.001 | credential-access |
+| `5b7e1f38` | Volcado de LSASS via comsvcs.dll | critical | `process.create` | T1003.001 | credential-access |
+| `3e6a9c15` | Volcado del registro SAM | critical | `process.create` | T1003.002 | credential-access |
+| `8dbf416a` | Borrado de registros de eventos | high | `process.create` | T1070.001 | defense-evasion |
+| `e8a1c72d` | Creacion de tarea programada | high | `process.create` | T1053.005 | persistence |
+| `8e2f3a51` | Defensa antivirus desactivada via registro | high | `registry.set` | T1562.001 | defense-evasion |
+| `c1d24e9b` | Descarga con certutil o bitsadmin | high | `process.create` | T1105 | command-and-control |
+| `9f31c2a4` | Ejecucion de PowerShell codificado | high | `process.create` | T1059.001 | execution |
+| `d4e5f6a7` | Ejecucion desde directorio temporal | high | `process.create` | T1059 | execution |
+| `f3b2d98e` | Ejecucion de procesos via WMI | high | `process.create` | T1047 | execution |
+| `b1c2d3e4` | Ejecucion de script VBS/VBScript | high | `process.create` | T1059.005 | execution |
+| `a1b2c3d4` | Servicios de Windows deshabilitados | high | `process.create` | T1562.001 | defense-evasion |
+| `e5f6a7b8` | Uso de rundll32 para ejecucion | high | `process.create` | T1218.011 | defense-evasion |
+| `f7a8b9c0` | Windows Defender exclusiones via linea de comandos | high | `process.create` | T1562.001 | defense-evasion |
+| `d5e6f7a8` | Cambio de politica de ejecucion de PowerShell | medium | `registry.set` | T1112 | defense-evasion |
+| `e9f0a1b2` | Consulta DNS a dominio generado (posible DGA) | medium | `network.connect` | T1568.002 | command-and-control |
+| `f0a1b2c3` | Escritura de script en ruta de arranque | high | `file.write` | T1547.001 | persistence |
+| `a9b8c7d6` | Nueva tarea remota via at o schtasks | high | `process.create` | T1053.002 | execution |
+| `b7c8d9e0` | Persistencia en clave Run via registro | high | `registry.set` | T1547.001 | persistence |
+| `c8d9e0f1` | Escritura de driver sin firmar | high | `image.load` | T1553.002 | defense-evasion |
+
+Nota: los nombres de reglas y secuencias se mantienen en espanol, tal
+como viven en los YAML del repositorio; no se traducen en la doc.
+
+
 ### Kill-chain correlation
 
 Beyond per-event rules, the engine ships a sequence correlator: `sequences/*.yaml` lists named steps (exact rule names) that, when all observed on the same host inside a `window` (e.g. `5m`), raise a single high-signal alert describing the campaign. The shipped pack models credential-dump campaigns, full intrusion chains, defensive shutdown and registry-based persistence. Sequences hot-reload together with the rules. Load-time caps keep the config surface bounded (4 MiB/file, nesting depth 512, 512 sequences, 64 steps/chain, window ≤ 7 days, id/name/tag length caps, no control runes in strings that reach logs or alerts): an oversized or hostile file fails the load loudly instead of degrading a running engine. Steps naming rules that do not exist are reported as a WARNING at startup and on every reload, because a chain waiting on a ghost rule can never complete. Note: suppressing a rule also removes it from every chain it feeds on that host (accepted-state semantics — see [docs/false-positive-control.md](docs/false-positive-control.md)).
+
+The shipped pack (`sequences/kill-chains.yaml`) defines 4 sequences, all
+`critical`, window `5m`:
+
+| ID | Sequence | Severity | Window | Steps (rules, unordered) |
+|----|----------|----------|--------|--------------------------|
+| `c0a5e7d1-1a2b-4c3d-8e4f-a5b6c7d8e9f0` | Campana de robo de credenciales | critical | 5m | Volcado de LSASS via comsvcs.dll + Volcado de LSASS con procdump + Volcado del registro SAM |
+| `d1b6f8e2-2b3c-4d4e-9f50-b6c7d8e9f0a1` | Campana de intrusion completa | critical | 5m | Descarga con certutil o bitsadmin + Creacion de tarea programada + Borrado de instantaneas VSS |
+| `e2c7a9f3-3c4d-4e5f-a061-c7d8e9f0a1b2` | Apagon defensivo | critical | 5m | Manipulacion de Windows Defender + Desactivacion del firewall de Windows + Borrado de registros de eventos |
+| `f3d8ba64-4d5e-4f60-b172-d8e9f0a1b2c3` | Instalacion de persistencia | critical | 5m | Descarga con certutil o bitsadmin + Persistencia en clave Run via registro |
 
 The correlator is observable from the outside: `/api/sequences` lists the armed chains (steps, window, tags) as loaded right now, and `/api/stats` carries `correlator_states` (in-flight (sequence, host) chains) against `correlator_cap` (8192) — a hostile feed inventing hostnames pushes states toward the cap, and past it NEW hosts would silently stop being tracked, so the number is meant to be watched. The console surfaces both: the `correlador N/cap` chip in the header turns red the moment the cap is reached, and the Cadenas view lists each chain with its steps and flags any step whose rule is not loaded (a chain that can never complete).
 
@@ -477,6 +565,52 @@ Rules can declare an `actions` list; the engine executes it every time the rule 
 
 Delivery failures are logged on stderr and never surface as detection errors; a dead webhook endpoint degrades to log noise, not data loss in the engine.
 
+## Engine CLI reference
+
+The engine binary is `engine` (`make build` puts it in `bin/`; the
+Windows installer installs it as `sf-engine`). Subcommands:
+
+| Command | What it does |
+|---------|--------------|
+| `engine run [flags]` | start the full pipeline: ingest, enrichment, rules, correlator, suppressions, API, webhook |
+| `engine rules [-rules dir]` | print the loaded rule pack as a table and exit |
+| `engine validate [-rules dir] [-sequences dir]` | validate rules and sequences, print a report; exit code 0 when everything loads, non-zero on error (CI-friendly) |
+| `engine version` | print the engine version and exit |
+
+### `engine run` flags
+
+Every runtime flag below works identically on the classic single-dash
+path (no subcommand) and on `engine run`.
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `-addr host:port` | `127.0.0.1:7777` | NDJSON ingest listen address (`0.0.0.0:7777` to accept remote sensors) |
+| `-api host:port` | `127.0.0.1:7778` | read-only HTTP API; `0` disables it |
+| `-rules dir` | `./rules` | rules directory (falls back to the directory next to the executable) |
+| `-sequences dir` | `./sequences` | kill-chain sequences directory for the correlator |
+| `-v` | off | print every event received |
+| `-reload-every dur` | `15s` | hot-reload interval for rules, sequences and suppressions; `0` disables |
+| `-webhook url` | empty | POST every alert as JSON to this URL (SIEM/SOAR connector) |
+| `-webhook-token t` | empty | Bearer token on every webhook delivery (falls back to `SF_WEBHOOK_TOKEN`) |
+| `-api-token t` | empty | bearer token the local API requires on `/api/*` (falls back to `SF_API_TOKEN`); `/api/health` stays open |
+| `-token t` | empty | shared ingest token (falls back to `SF_INGEST_TOKEN`); empty disables auth |
+| `-token-previous t` | empty | previous ingest token, still accepted during a rotation window (falls back to `SF_INGEST_TOKEN_PREVIOUS`) |
+| `-suppressions file` | `./suppressions.yaml` | operator allowlist YAML silencing rule/host pairs (expirations supported); empty disables |
+| `-store path` | empty | SQLite file persisting events and alerts beyond the in-memory rings (e.g. `./sf-store.db`); empty disables — see [Persistent storage](#persistent-storage-sqlite-opt-in) |
+| `-store-retention dur` | `72h` | delete stored events/alerts older than this on a 5-minute ticker; `0` keeps everything |
+| `-pidfile path` | empty | write the process PID at startup and remove it on shutdown (lets `sf-console -Stop` stop an engine it did not start) |
+| `-i`, `--interactive` | off | interactive TUI: live stats and alert feed in the terminal (degrades to the classic flat run when stdout is not a TTY) |
+
+### Backward compatibility
+
+Invoking the binary without a subcommand keeps the historical behavior:
+the single-dash flags above apply directly, exactly as in `engine run`:
+
+```bash
+bin/engine -addr :7777 -v    # same as: bin/engine run -addr :7777 -v
+bin/engine run -i            # interactive TUI
+```
+
 ## Development & CI
 
 Every push and pull request runs the same checks the maintainers run locally (`.github/workflows/ci.yml`, three jobs):
@@ -492,6 +626,27 @@ make ci
 ```
 
 There are no mocked tests in the product path: the same rule of honesty the runtime follows applies to CI — what it verifies is what runs.
+
+## How it compares
+
+security-framework is a small, readable detection stack for Windows
+telemetry, built for lab and educational use: one Go binary, YAML rules
+you can read in an afternoon, and a kill-chain correlator you can audit
+line by line. It is not a production SIEM or a managed EDR and does not
+try to be. Where it sits next to tools you may already run:
+
+| Project | What it is | How security-framework differs |
+|---------|-----------|-------------------------------|
+| Wazuh | full SIEM platform: manager, agents, compliance packs, dashboards, fleet management | Wazuh is a production deployment with real operational weight; this is a single binary plus a rule folder - useful to understand and extend a detection pipeline end to end, not to run a SOC |
+| Velociraptor | DFIR tool for remote hunting and forensics at fleet scale | Velociraptor collects and hunts with its own query language, mostly on demand; this streams a narrow event schema into always-on rules and sequence correlation |
+| Falco | runtime threat detection for Linux and containers (syscall events) | Falco covers Linux/syscall telemetry; this covers Windows ETW/Sysmon with process, registry, file and handle context, plus its own kill-chain correlator |
+| osquery | fleet-wide SQL queries over host state | osquery answers point-in-time questions over a fleet; this is continuous detection over an event stream |
+| Sigma | vendor-neutral rule format shared across SIEMs | Sigma is a specification, not a product; this ships its own small YAML format (also mapped to ATT&CK) tied to its evaluator - a deliberate trade: no format ecosystem, but rules, sequences and engine live in the same repo and hot-reload together |
+
+If you need retention, analyst dashboards, agent fleet management or
+compliance reporting, run a SIEM and ship the alerts there: the engine
+webhook (`-webhook`) and the export endpoints (`/api/alerts/export`,
+`/api/events/export`) exist precisely to feed a bigger pipeline.
 
 ## Repository layout
 

@@ -1,6 +1,6 @@
 {
   "name": "security-framework-console-service",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "start": "bun index.ts",
@@ -11,6 +11,7 @@
     "socket.io": "^4.8.4"
   },
   "devDependencies": {
-    "@types/bun": "^1.2.23"
+    "@types/bun": "^1.2.23",
+    "socket.io-client": "^4.8.4"
   }
 }

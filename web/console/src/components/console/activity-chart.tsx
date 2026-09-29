@@ -1,12 +1,11 @@
 'use client'
 
 // Event rate over the last 4 minutes, bucketed in 5s windows from the
-// client-side event buffer. Bar height animates on update: the motion
-// communicates that the feed is alive (state transition), nothing else.
+// client-side event buffer. Bars animate only when the data changes:
+// the motion communicates that the feed is alive, nothing else.
 
 import { useMemo } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { EmptyState } from './ui-bits'
 import type { SfEvent } from '@/lib/console-types'
 
 const WINDOW_MS = 4 * 60 * 1000
@@ -19,39 +18,44 @@ export function ActivityChart({ events }: { events: SfEvent[] }) {
   const buckets = useMemo(() => {
     const now = Date.now()
     const out: number[] = new Array(BUCKETS).fill(0)
-    let offensive = 0
     for (const ev of events) {
       const t = new Date(ev.timestamp).getTime()
       if (Number.isNaN(t) || now - t > WINDOW_MS) continue
       const idx = BUCKETS - 1 - Math.floor((now - t) / BUCKET_MS)
-      if (idx >= 0 && idx < BUCKETS) {
-        out[idx]++
-        if (ev.process && ev.process.name && ['powershell.exe', 'certutil.exe', 'rundll32.exe'].includes(ev.process.name)) offensive++
-      }
+      if (idx >= 0 && idx < BUCKETS) out[idx]++
     }
-    return { counts: out, offensive }
+    return out
   }, [events])
 
-  const max = Math.max(1, ...buckets.counts)
+  const max = Math.max(1, ...buckets)
+  const total = buckets.reduce((a, b) => a + b, 0)
 
   return (
     <div>
-      <div className="flex h-28 items-end gap-[3px]" role="img" aria-label={`Actividad de eventos en los últimos 4 minutos, máximo ${max} eventos por intervalo`}>
-        {buckets.counts.map((c, i) => (
+      <div
+        role="img"
+        aria-label={`Actividad de eventos en los últimos 4 minutos: ${total} eventos, máximo ${max} por intervalo de 5 segundos`}
+        className="flex h-28 items-end gap-[3px] border-b border-zinc-800"
+      >
+        {buckets.map((c, i) => (
           <motion.div
             key={i}
-            className="min-w-[3px] flex-1 rounded-t-[2px] bg-emerald-400/70"
+            className="min-w-[3px] flex-1 rounded-t-sm bg-emerald-500/80"
             initial={false}
-            animate={{ height: `${Math.max(c === 0 ? 2 : 8, (c / max) * 100)}%`, opacity: c === 0 ? 0.25 : 0.4 + (c / max) * 0.6 }}
-            transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 140, damping: 22 }}
+            animate={{
+              height: `${Math.max(c === 0 ? 2 : 8, (c / max) * 100)}%`,
+              opacity: c === 0 ? 0.3 : 0.5 + (c / max) * 0.5,
+            }}
+            transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 160, damping: 26 }}
           />
         ))}
       </div>
-      <div className="mt-2 flex items-baseline justify-between border-t border-white/[0.08] pt-2">
+      <div className="flex items-baseline justify-between pt-2">
         <p className="text-xs text-zinc-500">Eventos por intervalo de 5s, últimos 4 minutos</p>
-        <p className="font-mono text-xs text-zinc-400">pico {max}</p>
+        <p className="font-mono text-xs tabular-nums text-zinc-400">
+          pico <span className="text-zinc-200">{max}</span>
+        </p>
       </div>
-      {buckets.counts.every((c) => c === 0) && <EmptyState title="Sin actividad registrada todavía" hint="El sensor está arrancando o la cola está vacía" />}
     </div>
   )
 }

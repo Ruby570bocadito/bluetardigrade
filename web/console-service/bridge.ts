@@ -20,6 +20,9 @@ export type EngineBridgeCallbacks = {
 
 const RETRY_MS = 3000
 const PROBE_TIMEOUT_MS = 1200
+// Initial one-shot sync fetches can move up to a full ring buffer of
+// events, so they get a larger budget than the liveness probe.
+const SYNC_TIMEOUT_MS = 5000
 const STATS_POLL_MS = 2000
 // Bearer token for the engine API, same env var the engine honors
 // (SF_API_TOKEN): when the API is started with -api-token, every /api
@@ -30,6 +33,18 @@ const API_TOKEN = process.env.SF_API_TOKEN || ''
 
 function authHeaders(): Record<string, string> {
   return API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}
+}
+
+// Header-phase budget for the SSE stream itself (see establish()).
+const STREAM_HEADERS_TIMEOUT_MS = 8000
+
+export type EngineBridgeOptions = {
+  /** Engine API root override (tests). Default: ENGINE_API env or 127.0.0.1:7778. */
+  engineApi?: string
+  /** How many events to replay on connect; matches the hub ring buffer. */
+  maxEvents?: number
+  /** How many alerts to replay on connect; matches the hub ring buffer. */
+  maxAlerts?: number
 }
 
 function sleep(ms: number) {
@@ -45,6 +60,8 @@ function shortTimeout(ms: number): AbortSignal {
 
 export class EngineBridge {
   private base: string
+  private maxEvents: number
+  private maxAlerts: number
   private ctrl: AbortController | null = null
   private statsTimer: ReturnType<typeof setInterval> | null = null
   private stopped = false
@@ -53,8 +70,13 @@ export class EngineBridge {
   private lastSuppressions = ''
   private lastSequences = ''
 
-  constructor(private cb: EngineBridgeCallbacks) {
-    this.base = process.env.ENGINE_API || 'http://127.0.0.1:7778'
+  constructor(
+    private cb: EngineBridgeCallbacks,
+    options: EngineBridgeOptions = {},
+  ) {
+    this.base = options.engineApi ?? process.env.ENGINE_API ?? 'http://127.0.0.1:7778'
+    this.maxEvents = options.maxEvents ?? 160
+    this.maxAlerts = options.maxAlerts ?? 48
   }
 
   get endpoint(): string {
@@ -101,8 +123,8 @@ export class EngineBridge {
     // one-shot sync of the current state before going live
     const [rules, events, alerts] = await Promise.all([
       this.getJson<unknown[]>(`${this.base}/api/rules`),
-      this.getJson<unknown[]>(`${this.base}/api/events?limit=160`),
-      this.getJson<unknown[]>(`${this.base}/api/alerts?limit=48`),
+      this.getJson<unknown[]>(`${this.base}/api/events?limit=${this.maxEvents}`),
+      this.getJson<unknown[]>(`${this.base}/api/alerts?limit=${this.maxAlerts}`),
     ])
     this.cb.onRules(rules.map((r) => mapRule(r as Record<string, unknown>)))
     // API returns newest first; replay oldest first so the ring order holds
@@ -110,7 +132,17 @@ export class EngineBridge {
     for (let i = alerts.length - 1; i >= 0; i--) this.cb.onAlert(mapAlert(alerts[i] as Record<string, unknown>))
 
     this.ctrl = new AbortController()
-    const res = await fetch(`${this.base}/api/stream`, { signal: this.ctrl.signal, headers: authHeaders() })
+    // Bound only the header phase: a server that accepts the request but
+    // never flushes headers (or an idle proxy) must not hang the bridge
+    // forever. Once headers arrive the race is decided and the signal
+    // keeps governing the whole stream lifetime as before.
+    const res = await Promise.race([
+      fetch(`${this.base}/api/stream`, { signal: this.ctrl.signal, headers: authHeaders() }),
+      new Promise<never>((_, reject) => {
+        const t = setTimeout(() => reject(new Error('engine stream: no headers')), STREAM_HEADERS_TIMEOUT_MS)
+        t.unref?.()
+      }),
+    ])
     if (!res.ok || !res.body) throw new Error(`stream failed (${res.status})`)
 
     this.cb.onUp()
@@ -152,8 +184,8 @@ export class EngineBridge {
     }
   }
 
-  private async getJson<T>(url: string): Promise<T> {
-    const res = await fetch(url, { signal: shortTimeout(PROBE_TIMEOUT_MS), headers: authHeaders() })
+  private async getJson<T>(url: string, timeoutMs = SYNC_TIMEOUT_MS): Promise<T> {
+    const res = await fetch(url, { signal: shortTimeout(timeoutMs), headers: authHeaders() })
     if (!res.ok) throw new Error(`${url} -> ${res.status}`)
     return (await res.json()) as T
   }
