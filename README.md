@@ -64,15 +64,34 @@ make run-devsensor
 Expected output on the engine terminal:
 
 ```
-[ENGINE] 3 rules loaded from ./rules (types: [process.create])
+[ENGINE] 7 rules loaded from ./rules (types: [process.create])
 [ENGINE] listening on :7777 (NDJSON, 1 event per line)
+[ENGINE] api on :7778 (stats / events / alerts / rules / stream)
 [ALERT] HIGH     9f31c2a4... powershell.exe -nop -w hidden -enc SQBF... host=LAB-WKS-01
 [ALERT] HIGH     c1d24e9b... certutil.exe -urlcache -split -f https://... host=LAB-WKS-01
 [ALERT] CRITICAL 5b7e1f38... rundll32.exe C:\Windows\...\comsvcs.dll, MiniDump... host=LAB-WKS-01
+[ALERT] HIGH     e8a1c72d... schtasks.exe /create /tn MicrosoftEdgeUpdaterCore... host=LAB-WKS-01
+[ALERT] HIGH     f3b2d98e... wmic.exe /node:LAB-WKS-02 process call create... host=LAB-WKS-01
+[ALERT] CRITICAL a7c4e5f1... powershell.exe -c Set-MpPreference -DisableRealtimeMonitoring... host=LAB-WKS-01
+[ALERT] CRITICAL b8d5f6e2... vssadmin.exe delete shadows /all /quiet host=LAB-WKS-01
 ```
 
 Each alert is also emitted as a structured JSON line for downstream
 consumers (SIEM connectors, the web console).
+
+### Local HTTP API
+
+The engine serves a small read-only API (default `:7778`, `-api 0`
+disables) used by the web console and handy for SIEM taps:
+
+| Endpoint | Returns |
+|----------|---------|
+| `GET /api/health` | liveness + mode |
+| `GET /api/stats` | uptime, counters, per-severity totals, rule count |
+| `GET /api/events?limit=200` | recent events, newest first |
+| `GET /api/alerts?limit=100` | recent alerts, newest first |
+| `GET /api/rules` | live rule set (hot-reload aware) |
+| `GET /api/stream` | Server-Sent Events with live events + alerts |
 
 ## One-command install (Windows)
 
@@ -129,18 +148,25 @@ created. Toolchains you had before are left alone.
 
 The repo ships an early browser console: live telemetry feed, KPI
 dashboard, severity triage, the YAML rule pack and an AI analyst that
-explains each alert like a senior SOC analyst would. It runs against a
-simulated telemetry hub (the devsensor scenarios plus the three seeded
-rules, ported to TypeScript), so no Windows host is required.
+explains each alert like a senior SOC analyst would. The hub
+(`web/console-service`) auto-detects a running engine: while the Go
+engine's API (:7778) answers, the console shows REAL telemetry and the
+status chip reads `engine real`; the moment the engine goes away it
+falls back to the built-in simulator (same NDJSON contract) and the
+chip reads `simulación`. No Windows host is required for the simulated
+mode.
 
 Requirements: [bun](https://bun.sh).
 
 ```bash
-# terminal 1 — realtime hub (socket.io on :3003)
+# terminal 1 — realtime hub (socket.io on :3003, engine bridge on :7778)
 cd web/console-service && bun install && bun run dev
 
 # terminal 2 — console (Next.js on :3000)
 cd web/console && bun install && bun run dev
+
+# optional terminal 3 — real engine to feed the console
+make run-engine
 ```
 
 Open http://localhost:3000. Point the UI at a remote hub with

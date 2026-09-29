@@ -64,7 +64,9 @@ export function ConsoleShell() {
             </ul>
           </nav>
           <p className="px-4 py-4 text-[11px] leading-relaxed text-zinc-600">
-            Consola del tracer bullet. Telemetría simulada con el mismo contrato NDJSON que el sensor Rust.
+            {stats?.mode === 'engine'
+              ? 'Conectada al motor Go real: eventos y alertas del pipeline NDJSON en directo.'
+              : 'Consola del tracer bullet. Telemetría simulada con el mismo contrato NDJSON que el sensor Rust.'}
           </p>
         </aside>
 
@@ -94,7 +96,9 @@ export function ConsoleShell() {
               <span className="text-xs text-zinc-400">
                 {status === 'live' ? 'En vivo' : status === 'connecting' ? 'Conectando' : 'Reconectando'}
               </span>
-              <span className="hidden font-mono text-[11px] text-zinc-600 sm:inline">ETW · simulación</span>
+              <span className="hidden font-mono text-[11px] text-zinc-600 sm:inline">
+                ETW · {stats?.mode === 'engine' ? 'engine real' : 'simulación'}
+              </span>
             </div>
           </header>
 

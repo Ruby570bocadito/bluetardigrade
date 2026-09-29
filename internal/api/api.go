@@ -1,0 +1,377 @@
+// Package api exposes a local read-only HTTP API on the engine: recent
+// events and alerts as JSON, the live rule set, and an SSE stream for
+// real-time consumers (the web console bridge). Deliberately
+// dependency-free so the tracer bullet stays easy to audit.
+package api
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"net"
+	"net/http"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/Ruby570bocadito/security-framework/internal/alert"
+	"github.com/Ruby570bocadito/security-framework/internal/rules"
+	"github.com/Ruby570bocadito/security-framework/pkg/model"
+)
+
+const (
+	maxEvents      = 1000 // ring of recent events
+	maxAlerts      = 256  // ring of recent alerts
+	sseBuffer      = 64   // messages per slow subscriber before drops
+	heartbeatEvery = 15 * time.Second
+)
+
+// Hub serves the local API and fans out live records to SSE clients.
+type Hub struct {
+	listener net.Listener
+	srv      *http.Server
+
+	mu          sync.Mutex
+	events      []*model.Event // oldest first, trimmed to maxEvents
+	alerts      []alert.Alert  // oldest first, trimmed to maxAlerts
+	subs        map[chan []byte]struct{}
+	started     time.Time
+	alertsTotal int
+	bySeverity  map[string]int
+	rules       *rules.Engine
+	received    func() (uint64, uint64) // ingested, dropped
+}
+
+// New binds the API listener. Use addr ":0" in tests to pick a free port.
+func New(addr string) (*Hub, error) {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("api: listen %s: %w", addr, err)
+	}
+	h := &Hub{
+		listener:   ln,
+		subs:       make(map[chan []byte]struct{}),
+		started:    time.Now(),
+		bySeverity: map[string]int{},
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/stats", h.handleStats)
+	mux.HandleFunc("GET /api/events", h.handleEvents)
+	mux.HandleFunc("GET /api/alerts", h.handleAlerts)
+	mux.HandleFunc("GET /api/rules", h.handleRules)
+	mux.HandleFunc("GET /api/stream", h.handleStream)
+	mux.HandleFunc("GET /api/health", h.handleHealth)
+	h.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	return h, nil
+}
+
+// Addr returns the bound address (useful when listening on :0).
+func (h *Hub) Addr() string { return h.listener.Addr().String() }
+
+// SetRules points the hub at the (hot-reloading) rule engine.
+func (h *Hub) SetRules(re *rules.Engine) {
+	h.mu.Lock()
+	h.rules = re
+	h.mu.Unlock()
+}
+
+// SetCounters wires the ingest counters into /api/stats.
+func (h *Hub) SetCounters(received func() (uint64, uint64)) {
+	h.mu.Lock()
+	h.received = received
+	h.mu.Unlock()
+}
+
+// Run serves until Shutdown is called.
+func (h *Hub) Run() error {
+	err := h.srv.Serve(h.listener)
+	if err == http.ErrServerClosed {
+		return nil
+	}
+	return err
+}
+
+// Shutdown closes every SSE subscriber and the listener immediately.
+func (h *Hub) Shutdown() {
+	h.mu.Lock()
+	for ch := range h.subs {
+		close(ch)
+	}
+	h.subs = make(map[chan []byte]struct{})
+	h.mu.Unlock()
+	_ = h.srv.Close()
+}
+
+// RecordEvent stores an event in the ring and streams it to subscribers.
+func (h *Hub) RecordEvent(ev *model.Event) {
+	if ev == nil {
+		return
+	}
+	h.mu.Lock()
+	h.events = append(h.events, ev)
+	if len(h.events) > maxEvents {
+		h.events = h.events[len(h.events)-maxEvents:]
+	}
+	h.mu.Unlock()
+	h.broadcast("event", ev)
+}
+
+// RecordAlert stores an alert in the ring and streams it to subscribers.
+func (h *Hub) RecordAlert(a alert.Alert) {
+	h.mu.Lock()
+	h.alerts = append(h.alerts, a)
+	h.alertsTotal++
+	h.bySeverity[a.Severity]++
+	if len(h.alerts) > maxAlerts {
+		h.alerts = h.alerts[len(h.alerts)-maxAlerts:]
+	}
+	h.mu.Unlock()
+	h.broadcast("alert", a)
+}
+
+// broadcast marshals once and ships to every subscriber; slow clients
+// with a full buffer miss messages instead of blocking the engine.
+func (h *Hub) broadcast(topic string, payload any) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	msg := fmt.Sprintf("event: %s\ndata: %s\n\n", topic, data)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for ch := range h.subs {
+		select {
+		case ch <- []byte(msg):
+		default: // subscriber too slow: drop the frame
+		}
+	}
+}
+
+// ------------------------------------------------------------- handlers
+
+type statsPayload struct {
+	UptimeS        int64          `json:"uptime_s"`
+	EventsTotal    uint64         `json:"events_total"`
+	Dropped        uint64         `json:"dropped"`
+	EventsPerMin   int            `json:"events_per_min"`
+	AlertsTotal    int            `json:"alerts_total"`
+	BySeverity     map[string]int `json:"by_severity"`
+	RulesCount     int            `json:"rules_count"`
+	RulesTypes     []string       `json:"rules_types"`
+	EventsBuffered int            `json:"events_buffered"`
+	Mode           string         `json:"mode"`
+}
+
+func (h *Hub) handleStats(w http.ResponseWriter, _ *http.Request) {
+	h.mu.Lock()
+	evCount := len(h.events)
+	last60 := 0
+	alTotal := h.alertsTotal
+	bySev := make(map[string]int, len(h.bySeverity))
+	for k, v := range h.bySeverity {
+		bySev[k] = v
+	}
+	if evCount > 0 {
+		for i := evCount - 1; i >= 0; i-- {
+			if time.Since(h.events[i].Timestamp) <= time.Minute {
+				last60++
+			} else {
+				break
+			}
+		}
+	}
+	var received, dropped uint64
+	if h.received != nil {
+		received, dropped = h.received()
+	}
+	rulesCount, rulesTypes := 0, []string{}
+	if h.rules != nil {
+		rulesCount = h.rules.Count()
+		rulesTypes = h.rules.Types()
+	}
+	h.mu.Unlock()
+
+	writeJSON(w, statsPayload{
+		UptimeS:        int64(time.Since(h.started) / time.Second),
+		EventsTotal:    received,
+		Dropped:        dropped,
+		EventsPerMin:   last60,
+		AlertsTotal:    alTotal,
+		BySeverity:     bySev,
+		RulesCount:     rulesCount,
+		RulesTypes:     rulesTypes,
+		EventsBuffered: evCount,
+		Mode:           "engine",
+	})
+}
+
+func (h *Hub) handleEvents(w http.ResponseWriter, r *http.Request) {
+	limit := limitFrom(r, 200)
+	h.mu.Lock()
+	out := make([]*model.Event, 0, limit)
+	for i := len(h.events) - 1; i >= 0 && len(out) < limit; i-- {
+		out = append(out, h.events[i])
+	}
+	h.mu.Unlock()
+	writeJSON(w, out)
+}
+
+func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
+	limit := limitFrom(r, 100)
+	h.mu.Lock()
+	out := make([]alert.Alert, 0, limit)
+	for i := len(h.alerts) - 1; i >= 0 && len(out) < limit; i-- {
+		out = append(out, h.alerts[i])
+	}
+	h.mu.Unlock()
+	writeJSON(w, out)
+}
+
+type conditionPayload struct {
+	Field    string `json:"field"`
+	Operator string `json:"operator"`
+	Value    any    `json:"value"`
+}
+
+type rulePayload struct {
+	ID          string             `json:"id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description"`
+	Severity    string             `json:"severity"`
+	EventType   string             `json:"event_type"`
+	Mitre       string             `json:"mitre"`
+	Tactic      string             `json:"tactic"`
+	Tags        []string           `json:"tags"`
+	Conditions  []conditionPayload `json:"conditions"`
+}
+
+func (h *Hub) handleRules(w http.ResponseWriter, _ *http.Request) {
+	h.mu.Lock()
+	re := h.rules
+	h.mu.Unlock()
+	out := []rulePayload{}
+	if re != nil {
+		for _, r := range re.Snapshot() {
+			mitre, tactic := mitreAndTactic(r.Tags)
+			conds := make([]conditionPayload, 0, len(r.Conditions))
+			for _, c := range r.Conditions {
+				conds = append(conds, conditionPayload{Field: c.Field, Operator: c.Operator, Value: c.Value})
+			}
+			out = append(out, rulePayload{
+				ID: r.ID, Name: r.Name, Description: r.Description,
+				Severity: r.Severity, EventType: r.EventType,
+				Mitre: mitre, Tactic: tactic, Tags: r.Tags, Conditions: conds,
+			})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	writeJSON(w, out)
+}
+
+func (h *Hub) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, map[string]string{"status": "ok", "mode": "engine"})
+}
+
+// handleStream keeps an SSE connection open pushing live events/alerts.
+func (h *Hub) handleStream(w http.ResponseWriter, r *http.Request) {
+	fl, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	ch := make(chan []byte, sseBuffer)
+	h.mu.Lock()
+	h.subs[ch] = struct{}{}
+	h.mu.Unlock()
+	defer func() {
+		h.mu.Lock()
+		if _, ok := h.subs[ch]; ok {
+			delete(h.subs, ch)
+			close(ch)
+		}
+		h.mu.Unlock()
+	}()
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	fmt.Fprint(w, "retry: 2000\n\n")
+	fl.Flush()
+
+	hb := time.NewTicker(heartbeatEvery)
+	defer hb.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-hb.C:
+			if _, err := fmt.Fprint(w, ": hb\n\n"); err != nil {
+				return
+			}
+			fl.Flush()
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
+			if _, err := w.Write(msg); err != nil {
+				return
+			}
+			fl.Flush()
+		}
+	}
+}
+
+// ------------------------------------------------------------- helpers
+
+func limitFrom(r *http.Request, def int) int {
+	q := r.URL.Query().Get("limit")
+	if q == "" {
+		return def
+	}
+	n := 0
+	for _, c := range q {
+		if c < '0' || c > '9' {
+			return def
+		}
+		n = n*10 + int(c-'0')
+		if n > maxEvents {
+			return maxEvents
+		}
+	}
+	if n <= 0 {
+		return def
+	}
+	return n
+}
+
+// mitreAndTactic derives the console fields from the rule tags:
+// "attack.t1003.001" -> "T1003.001", "attack.credential-access" ->
+// "Credential Access".
+func mitreAndTactic(tags []string) (string, string) {
+	mitre, tactic := "", ""
+	for _, t := range tags {
+		if strings.HasPrefix(t, "attack.t") {
+			mitre = strings.ToUpper(t[len("attack."):len("attack.")+1]) + t[len("attack.")+1:]
+			continue
+		}
+		if tactic == "" && strings.HasPrefix(t, "attack.") {
+			parts := strings.Split(strings.TrimPrefix(t, "attack."), "-")
+			for i, p := range parts {
+				if p != "" {
+					parts[i] = strings.ToUpper(p[:1]) + p[1:]
+				}
+			}
+			tactic = strings.Join(parts, " ")
+		}
+	}
+	return mitre, tactic
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	if err := enc.Encode(v); err != nil {
+		log.Printf("api: encode: %v", err)
+	}
+}

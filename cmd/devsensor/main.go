@@ -59,6 +59,34 @@ var scenario = []*model.Event{
                         CommandLine: `rundll32.exe C:\Windows\System32\comsvcs.dll, MiniDump 744 C:\Windows\Temp\lsass.dmp full`,
                         Image:       `C:\Windows\System32\rundll32.exe`},
         }),
+        // T1053.005 - scheduled task persistence (offensive)
+        offensive(&model.Event{
+                Type: model.TypeProcessCreate,
+                Process: &model.Process{PID: 6733, PPID: 6612, Name: "schtasks.exe",
+                        CommandLine: `schtasks.exe /create /tn "MicrosoftEdgeUpdaterCore" /sc onlogon /ru SYSTEM /tr "C:\Users\Public\payload.exe"`,
+                        Image:       `C:\Windows\System32\schtasks.exe`},
+        }),
+        // T1047 - WMI process execution (offensive)
+        offensive(&model.Event{
+                Type: model.TypeProcessCreate,
+                Process: &model.Process{PID: 6744, PPID: 6612, Name: "wmic.exe",
+                        CommandLine: `wmic.exe /node:LAB-WKS-02 process call create "cmd.exe /c C:\Users\Public\payload.exe"`,
+                        Image:       `C:\Windows\System32\wbem\WMIC.exe`},
+        }),
+        // T1562.001 - Defender tampering (offensive)
+        offensive(&model.Event{
+                Type: model.TypeProcessCreate,
+                Process: &model.Process{PID: 6755, PPID: 6612, Name: "powershell.exe",
+                        CommandLine: "powershell.exe -c Set-MpPreference -DisableRealtimeMonitoring $true",
+                        Image:       `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`},
+        }),
+        // T1490 - inhibit recovery, VSS deletion (offensive)
+        offensive(&model.Event{
+                Type: model.TypeProcessCreate,
+                Process: &model.Process{PID: 6766, PPID: 6612, Name: "vssadmin.exe",
+                        CommandLine: "vssadmin.exe delete shadows /all /quiet",
+                        Image:       `C:\Windows\System32\vssadmin.exe`},
+        }),
         benign(&model.Event{
                 Type: model.TypeProcessTerminate,
                 Process: &model.Process{PID: 4212, Name: "notepad.exe"},

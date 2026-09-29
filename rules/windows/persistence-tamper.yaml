@@ -1,0 +1,106 @@
+# Persistence / defense evasion / impact detections (process.create).
+# Same schema as the seeded pack: one YAML list per file, indexed by
+# event_type, hot-reloaded every 15s.
+# T1053.005 - Scheduled task creation for persistence
+# Source TTP: surviving reboots with schtasks /create under a benign
+# task name. Validated in lab: fires on schtasks /create /tn /sc.
+- name: "Creacion de tarea programada"
+  id: "e8a1c72d-4b6f-4f39-9a52-0d3b7c5f1a11"
+  description: >
+    Detecta la creacion de tareas programadas con schtasks.exe, un
+    mecanismo clasico de persistencia y ejecucion remota que sobrevive
+    a reinicios y se disimula bien entre tareas legitimas del sistema.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: eq
+      value: "schtasks.exe"
+    - field: process.command_line
+      operator: contains
+      value: "/create"
+  actions:
+    - type: alert
+      config:
+        message: "Tarea programada creada en {host} por {user} - revisar accion y trigger"
+        notify: "true"
+  tags: ["attack.t1053.005", "attack.persistence"]
+  enabled: true
+# T1047 - Process creation via WMI
+# Source TTP: lateral movement and stealth execution through
+# wmic process call create. Validated in lab: fires on the classic call.
+- name: "Ejecucion de procesos via WMI"
+  id: "f3b2d98e-7c15-4a58-8e0a-2c4d6e8f0b22"
+  description: >
+    Detecta la creacion de procesos mediante WMI (wmic process call
+    create), tecnica de ejecucion y movimiento lateral que apenas deja
+    rastro en disco y abuse de herramientas administrativas nativas.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: eq
+      value: "wmic.exe"
+    - field: process.command_line
+      operator: contains
+      value: "process call create"
+  actions:
+    - type: alert
+      config:
+        message: "Ejecucion via WMI detectada en {host} - correlacionar con logons remotos"
+        notify: "true"
+  tags: ["attack.t1047", "attack.execution"]
+  enabled: true
+# T1562.001 - Defender tampering
+# Source TTP: impairing real-time protection or adding exclusions before
+# dropping payloads. Validated in lab: fires on Set-MpPreference switches.
+- name: "Manipulacion de Windows Defender"
+  id: "a7c4e5f1-9d28-4b36-8f47-1e5a9c3d6b33"
+  description: >
+    Detecta intentos de debilitar Windows Defender desde PowerShell:
+    desactivar la proteccion en tiempo real, el monitoreo de
+    comportamiento o anadir exclusiones para esconder payloads.
+  severity: critical
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: eq
+      value: "powershell.exe"
+    - field: process.command_line
+      operator: contains
+      value: "Set-MpPreference"
+    - field: process.command_line
+      operator: contains_any
+      value: ["-DisableRealtimeMonitoring", "-DisableBehaviorMonitoring", "-ExclusionPath"]
+  actions:
+    - type: alert
+      config:
+        message: "Intento de desactivar Defender en {host} - posible fase de intrusion"
+        notify: "true"
+  tags: ["attack.t1562.001", "attack.defense-evasion"]
+  enabled: true
+# T1490 - Inhibit system recovery (shadow copies)
+# Source TTP: ransomware pre-impact step deleting VSS snapshots.
+# Validated in lab: fires on vssadmin delete shadows /all.
+- name: "Borrado de instantaneas VSS"
+  id: "b8d5f6e2-0e39-4c47-9a58-2f6b0d4e7c44"
+  description: >
+    Detecta el borrado de instantaneas de sombra con vssadmin, paso
+    tipico de ransomware para impedir la recuperacion del sistema antes
+    del cifrado masivo de ficheros.
+  severity: critical
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: eq
+      value: "vssadmin.exe"
+    - field: process.command_line
+      operator: contains
+      value: "delete shadows"
+  actions:
+    - type: alert
+      config:
+        message: "Borrado de instantaneas VSS en {host} - contencion urgente, posible ransomware"
+        notify: "true"
+  tags: ["attack.t1490", "attack.impact"]
+  enabled: true

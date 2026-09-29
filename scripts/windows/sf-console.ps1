@@ -25,6 +25,8 @@ $run      = Join-Path $root 'run'
 $tools    = Join-Path $root 'tools'
 $bunExe   = Join-Path $tools 'bun.exe'
 $nodeExe  = Join-Path $tools 'node\node.exe'
+$engineExe = Join-Path $root 'bin\sf-engine.exe'
+if (-not (Test-Path $engineExe)) { $engineExe = Join-Path $root 'bin\engine.exe' }
 if (-not (Test-Path $bunExe))  { $bunExe  = 'bun' }
 if (-not (Test-Path $nodeExe)) { $nodeExe = 'node' }
 
@@ -62,7 +64,7 @@ function Write-PidFile {
 }
 
 function Stop-Tracked {
-    foreach ($f in @('console.pid', 'console-service.pid')) {
+    foreach ($f in @('engine.pid', 'console.pid', 'console-service.pid')) {
         $procId = Read-PidFile -Name $f
         if ($procId) {
             Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
@@ -107,6 +109,24 @@ if ($Stop) {
 if (-not (Test-Path (Join-Path $web 'console-service\index.ts'))) {
     Write-Host '  [x] console sources not found; reinstall with sf-update' -ForegroundColor Red
     return
+}
+
+# engine first: the console bridge picks it up from :7778
+if (-not (Test-PortLocal 7777)) {
+    if (Test-Path $engineExe) {
+        $eng = Start-Process -FilePath $engineExe -ArgumentList "-rules `"$root\rules`"" `
+            -WindowStyle Hidden -PassThru
+        Write-PidFile -Name 'engine.pid' -Value $eng.Id
+        if (Wait-Port -Port 7777 -Seconds 10) {
+            Write-Host '  engine started (:7777 + api :7778)'
+        } else {
+            Write-Host '  [!] engine did not come up on :7777' -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host '  [!] engine binary not found; install first (sf-update)' -ForegroundColor Yellow
+    }
+} else {
+    Write-Host '  engine already running'
 }
 
 if (-not (Test-PortLocal $ServicePort)) {

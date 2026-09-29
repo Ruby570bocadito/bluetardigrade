@@ -70,7 +70,7 @@ export type SimStats = {
   events_per_min: number
   uptime_s: number
   interval_ms: number
-  mode: 'simulacion'
+  mode: 'simulacion' | 'engine'
 }
 
 export type ConsoleSnapshot = {

@@ -16,6 +16,7 @@ import (
         "time"
 
         "github.com/Ruby570bocadito/security-framework/internal/alert"
+        "github.com/Ruby570bocadito/security-framework/internal/api"
         "github.com/Ruby570bocadito/security-framework/internal/enrich"
         "github.com/Ruby570bocadito/security-framework/internal/ingest"
         "github.com/Ruby570bocadito/security-framework/internal/rules"
@@ -24,6 +25,7 @@ import (
 
 var (
         addr      = flag.String("addr", ":7777", "TCP listen address for sensor streams")
+        apiAddr   = flag.String("api", ":7778", "local HTTP API for the console (stats/events/alerts/stream); 0 disables")
         rulesDir  = flag.String("rules", "./rules", "directory with YAML rules")
         verbose   = flag.Bool("v", false, "print every event received")
         reloadEvery = flag.Duration("reload-every", 15*time.Second,
@@ -64,8 +66,31 @@ func main() {
         go server.Serve()
         fmt.Printf("[ENGINE] listening on %s (NDJSON, 1 event per line)\n", server.Addr())
 
+        // local read-only API: stats, recent events/alerts, rules, SSE
+        var hub *api.Hub
+        if *apiAddr != "0" {
+                hub, err = api.New(*apiAddr)
+                if err != nil {
+                        log.Printf("[ENGINE] api disabled: %v", err)
+                        hub = nil
+                } else {
+                        hub.SetRules(engine)
+                        hub.SetCounters(func() (uint64, uint64) { return server.Received(), server.Dropped() })
+                        go func() {
+                                if err := hub.Run(); err != nil {
+                                        log.Printf("[ENGINE] api: %v", err)
+                                }
+                        }()
+                        fmt.Printf("[ENGINE] api on %s (stats / events / alerts / rules / stream)\n", hub.Addr())
+                }
+        }
+
         enricher := enrich.New()
-        alerts := alert.New(os.Stdout)
+        alerts := alert.New(os.Stdout, func(a alert.Alert) {
+                if hub != nil {
+                        hub.RecordAlert(a)
+                }
+        })
 
         if *reloadEvery > 0 {
                 go func() {
@@ -95,12 +120,18 @@ func main() {
                         os.Exit(130)
                 }()
                 server.Shutdown() // closes the events channel: main loop drains and exits
+                if hub != nil {
+                        hub.Shutdown()
+                }
         }()
 
         processed := 0
         start := time.Now()
         for ev := range events {
                 enricher.Apply(ev)
+                if hub != nil {
+                        hub.RecordEvent(ev)
+                }
                 if *verbose {
                         log.Printf("[EVENT] %-18s %s pid=%d host=%s",
                                 ev.Type, describe(ev), pidOf(ev), ev.Host)

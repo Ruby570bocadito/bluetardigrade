@@ -32,8 +32,8 @@ func loadTestEngine(t *testing.T) *Engine {
         if err != nil {
                 t.Fatalf("LoadDir: %v", err)
         }
-        if e.Count() != 3 {
-                t.Fatalf("expected 3 seeded rules, got %d", e.Count())
+        if e.Count() != 7 {
+                t.Fatalf("expected the seeded rule count, got %d", e.Count())
         }
         return e
 }
