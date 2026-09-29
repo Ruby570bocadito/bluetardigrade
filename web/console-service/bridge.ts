@@ -5,7 +5,7 @@
 // no simulation). SSE frames are parsed by hand so the same code runs
 // on bun and node.
 
-import type { SfEvent, SfAlert, HubStats, RuleMeta, SfSuppression, SfSequence } from './types'
+import type { SfEvent, SfAlert, HubStats, RuleMeta, SfSuppression, SfSequence, SfAlertLifecycle } from './types'
 
 export type EngineBridgeCallbacks = {
   onEvent: (ev: SfEvent) => void
@@ -14,6 +14,7 @@ export type EngineBridgeCallbacks = {
   onRules: (rules: RuleMeta[]) => void
   onSuppressions: (entries: SfSuppression[]) => void
   onSequences: (seqs: SfSequence[]) => void
+  onLifecycle: (entry: SfAlertLifecycle) => void
   onUp: () => void
   onDown: () => void
 }
@@ -231,6 +232,7 @@ export class EngineBridge {
       const payload = JSON.parse(data)
       if (topic === 'event') this.cb.onEvent(payload as SfEvent)
       else if (topic === 'alert') this.cb.onAlert(mapAlert(payload))
+      else if (topic === 'alert_lifecycle') this.cb.onLifecycle(payload as SfAlertLifecycle)
     } catch {
       /* malformed frame: ignore */
     }
@@ -262,8 +264,9 @@ function mapAlert(a: Record<string, unknown>): SfAlert {
   const severity = String(a.severity ?? 'low')
   const known: SfAlert['severity'][] = ['critical', 'high', 'medium', 'low']
   return {
-    // engine alerts have no id of their own: event + rule is unique
-    id: `${String(a.event_id)}:${String(a.rule_id)}`,
+    // engine-assigned alert id (r6, the lifecycle key); older engines
+    // without it fall back to the event+rule synthesized id
+    id: a.id ? String(a.id) : `${String(a.event_id)}:${String(a.rule_id)}`,
     timestamp: String(a.timestamp ?? new Date().toISOString()),
     rule_id: String(a.rule_id ?? ''),
     rule_name: String(a.rule_name ?? ''),
@@ -277,7 +280,16 @@ function mapAlert(a: Record<string, unknown>): SfAlert {
     notify: a.notify === true,
     matched_on: (a.matched_on as string[]) ?? [],
     tags: (a.tags as string[]) ?? [],
+    // lifecycle overlay (GET /api/alerts merges it read-side)
+    status: isStatus(a.status) ? (a.status as SfAlert['status']) : undefined,
+    status_note: a.status_note ? String(a.status_note) : undefined,
+    status_by: a.status_by ? String(a.status_by) : undefined,
+    status_at: a.status_at ? String(a.status_at) : undefined,
   }
+}
+
+function isStatus(v: unknown): boolean {
+  return v === 'new' || v === 'acknowledged' || v === 'closed'
 }
 
 function mapRule(r: Record<string, unknown>): RuleMeta {

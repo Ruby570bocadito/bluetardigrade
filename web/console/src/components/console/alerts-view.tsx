@@ -12,11 +12,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import {
+  ArrowCounterClockwise,
   BellRinging,
   CaretDown,
+  CheckCircle,
+  CircleNotch,
+  Eye,
   MagnifyingGlass,
   Sparkle,
   Tray,
+  XCircle,
 } from '@phosphor-icons/react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
@@ -24,11 +29,13 @@ import { Button } from '@/components/ui/button'
 import { useEngine } from './engine-provider'
 import { EmptyState, LiveAnnouncer, SectionHeader, SeverityBadge, SkeletonRows } from './ui-bits'
 import { ExportButtons } from './export-menu'
+import { postAlertStatus } from '@/lib/lifecycle'
 import {
   formatDateTime,
   formatTime,
   SEVERITY_STYLE,
   type SfAlert,
+  type SfAlertStatus,
 } from '@/lib/console-types'
 
 type Props = {
@@ -37,7 +44,9 @@ type Props = {
 }
 
 export function alertKey(a: SfAlert): string {
-  return `${a.event_id}:${a.rule_id}`
+  // r6: the engine assigns a unique id; older engines fall back to
+  // event+rule (the pre-lifecycle natural key)
+  return a.id ?? `${a.event_id}:${a.rule_id}`
 }
 
 export function AlertsView({ compact = false, onAnalyze }: Props) {
@@ -74,7 +83,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
       // triage search: anything an analyst remembers about the alert
       const haystack = [
         a.rule_name, a.rule_id, a.summary, a.host, a.user ?? '',
-        a.event_type, ...a.tags ?? [], ...a.matched_on,
+        a.event_type, a.status_note ?? '', ...a.tags ?? [], ...a.matched_on,
       ].join(' ').toLowerCase()
       return haystack.includes(q)
     })
@@ -157,6 +166,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
                     <span className="min-w-0 flex-1">
                       <span className="flex flex-wrap items-center gap-2">
                         <SeverityBadge severity={al.severity} />
+                        <StatusChip status={al.status} />
                         <span className="truncate text-sm text-zinc-100">{al.rule_name}</span>
                         {al.notify && <BellRinging size={13} weight="fill" aria-label="Notifica a canales externos" className="shrink-0 text-amber-400" />}
                       </span>
@@ -255,6 +265,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
                           <span className="flex items-center gap-2">
                             <span aria-hidden className={`h-4 w-[3px] rounded-full ${SEVERITY_STYLE[al.severity]?.bar ?? 'bg-sky-400'}`} />
                             <SeverityBadge severity={al.severity} />
+                            <StatusChip status={al.status} />
                           </span>
                         </td>
                         <td className="max-w-0 px-3 py-2.5 align-middle">
@@ -442,6 +453,110 @@ export function AlertDetailBody({ alert, onAnalyze }: { alert: SfAlert; onAnalyz
             Analizar con IA
           </Button>
         </div>
+      )}
+
+      <TriagePanel alert={alert} />
+    </div>
+  )
+}
+
+// Status chip: "new" is NOT rendered (a chip on every fresh alert would
+// be noise - the absence of a chip IS the new state).
+function StatusChip({ status }: { status?: SfAlertStatus }) {
+  if (status === 'acknowledged') {
+    return (
+      <span className="flex shrink-0 items-center gap-1 rounded-md border border-sky-400/30 bg-sky-400/10 px-1.5 py-0.5 text-[10px] text-sky-300">
+        <Eye size={11} weight="fill" aria-hidden />
+        reconocida
+      </span>
+    )
+  }
+  if (status === 'closed') {
+    return (
+      <span className="flex shrink-0 items-center gap-1 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] text-emerald-300">
+        <CheckCircle size={11} weight="fill" aria-hidden />
+        cerrada
+      </span>
+    )
+  }
+  return null
+}
+
+// Triage actions (r6): reconocer / cerrar / reabrir with an optional
+// note. The POST travels console -> engine proxy -> engine API; the row
+// updates itself through the alert_lifecycle SSE frame (single source
+// of truth), so this panel only tracks the in-flight/error state.
+function TriagePanel({ alert }: { alert: SfAlert }) {
+  const status: SfAlertStatus = alert.status ?? 'new'
+  const [noteDraft, setNoteDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function apply(next: SfAlertStatus) {
+    if (!alert.id || busy) return
+    setBusy(true)
+    setError(null)
+    const ack = await postAlertStatus({ alert_id: alert.id, status: next, note: noteDraft.trim(), by: 'consola' })
+    setBusy(false)
+    if (!ack.ok) {
+      setError(ack.error)
+      return
+    }
+    setNoteDraft('')
+  }
+
+  return (
+    <div className="mt-5 rounded-md border border-zinc-800 bg-zinc-950/60 p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[10px] uppercase tracking-wider text-zinc-500">Ciclo de vida</p>
+        <p className="font-mono text-[10px] text-zinc-500">
+          {alert.id ? `id ${alert.id}` : 'sin id del motor'}
+          {alert.status_by ? ` · ${alert.status_by}` : ''}
+          {alert.status_at ? ` · ${formatTime(alert.status_at)}` : ''}
+        </p>
+      </div>
+      {alert.status_note && status !== 'new' && (
+        <p className="mb-2 border-l-2 border-zinc-700 pl-2 text-xs leading-relaxed text-zinc-300">{alert.status_note}</p>
+      )}
+      <Input
+        value={noteDraft}
+        onChange={(e) => setNoteDraft(e.target.value)}
+        maxLength={2000}
+        placeholder="nota de triaje (opcional): qué se vio, qué se hizo..."
+        aria-label="Nota de triaje"
+        className="mb-2 h-8 rounded-md border-zinc-800 bg-zinc-900 font-mono text-xs text-zinc-200 placeholder:text-zinc-500"
+      />
+      {!alert.id ? (
+        <p className="text-[11px] text-zinc-500">
+          Este alerta no lleva id del motor (motor anterior a r6): el triaje requiere reiniciar el motor actualizado.
+        </p>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          {status === 'new' && (
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => apply('acknowledged')} className="gap-1.5 rounded-md">
+              {busy ? <CircleNotch size={13} className="animate-spin" aria-hidden /> : <Eye size={13} aria-hidden />}
+              Reconocer
+            </Button>
+          )}
+          {status !== 'closed' && (
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => apply('closed')} className="gap-1.5 rounded-md">
+              {busy ? <CircleNotch size={13} className="animate-spin" aria-hidden /> : <XCircle size={13} aria-hidden />}
+              Cerrar
+            </Button>
+          )}
+          {status === 'closed' && (
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => apply('new')} className="gap-1.5 rounded-md">
+              {busy ? <CircleNotch size={13} className="animate-spin" aria-hidden /> : <ArrowCounterClockwise size={13} aria-hidden />}
+              Reabrir
+            </Button>
+          )}
+          {status === 'new' && <span className="text-[10px] text-zinc-600">sin decisiones registradas</span>}
+        </div>
+      )}
+      {error && (
+        <p role="alert" className="mt-2 rounded-md border border-red-400/30 bg-red-400/10 px-2 py-1.5 text-xs text-red-300">
+          {error}
+        </p>
       )}
     </div>
   )

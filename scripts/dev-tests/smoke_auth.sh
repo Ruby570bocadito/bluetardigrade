@@ -16,10 +16,12 @@
 #        engine reports webhook_failed
 #   7. local API auth (-api-token)                    -> /api/* 401 without the
 #        Bearer token, 200 with it; /api/health stays open
+#   8. alert lifecycle write is gated too             -> POST /api/alerts/{id}/status
+#        401 without the Bearer token, 200 with it (r6)
 #
 # Usage: scripts/dev-tests/smoke_auth.sh [engine-binary] [devsensor-binary]
 # Missing binaries are built automatically (requires go >= 1.22 in PATH).
-# Exit 0 only if all seven scenarios behave as documented in README.md
+# Exit 0 only if all eight scenarios behave as documented in README.md
 # ("Ingest authentication (shared token)" + "Rotating the token without
 # downtime" + the webhook and local API auth sections).
 
@@ -241,8 +243,34 @@ CHALLENGE_HEALTH=$(curl -s -D - -o /dev/null "http://127.0.0.1:$((API+50))/api/h
 kill "${PIDS[-1]}" 2>/dev/null; wait "${PIDS[-1]}" 2>/dev/null
 log "  api auth: no_token=$RC_NOAUTH bearer=$RC_AUTH health=$RC_HEALTH challenge=ok body=ok"
 
+# --- scenario 8: the WRITE surface is gated too -> POST /api/alerts/{id}/status
+# 401 without the Bearer token, 200 with it. A triage endpoint that could be
+# called unauthenticated would let anyone rewrite the operator's queue.
+log "scenario 8: alert lifecycle write is bearer-gated"
+API_TOKEN="smoke-lifecycle-token"
+PORT=$((API+51))
+"$ENGINE" -addr "127.0.0.1:$((PORT+1))" -api "127.0.0.1:$PORT" -api-token "$API_TOKEN" \
+  -rules "$ROOT/rules" -lifecycle "$WORK/s8-lifecycle.json" > "$WORK/s8.log" 2>&1 &
+PIDS+=("$!")
+for _ in $(seq 1 50); do curl -sf "http://127.0.0.1:$PORT/api/health" >/dev/null && break; sleep 0.2; done
+curl -sf "http://127.0.0.1:$PORT/api/health" >/dev/null \
+  || bail_with_log "scenario 8: authed lifecycle engine did not come up" "$WORK/s8.log"
+RC_LC_NOAUTH=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H 'Content-Type: application/json' \
+  -d '{"status":"closed"}' "http://127.0.0.1:$PORT/api/alerts/ffffffffffffffff/status")
+RC_LC_AUTH=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -d '{"status":"acknowledged","by":"smoke"}' "http://127.0.0.1:$PORT/api/alerts/ffffffffffffffff/status")
+[ "$RC_LC_NOAUTH" = "401" ] || fail "scenario 8: lifecycle POST without token answered $RC_LC_NOAUTH, expected 401"
+[ "$RC_LC_AUTH" = "200" ] || fail "scenario 8: lifecycle POST with Bearer answered $RC_LC_AUTH, expected 200"
+CHALLENGE_LC=$(curl -s -D - -o /dev/null -X POST -H 'Content-Type: application/json' \
+  -d '{"status":"closed"}' "http://127.0.0.1:$PORT/api/alerts/ffffffffffffffff/status" | tr -d '\r' | grep -i '^www-authenticate:')
+echo "$CHALLENGE_LC" | grep -qi 'bearer' \
+  || fail "scenario 8: lifecycle 401 without WWW-Authenticate Bearer challenge"
+kill "${PIDS[-1]}" 2>/dev/null; wait "${PIDS[-1]}" 2>/dev/null
+log "  lifecycle auth: no_token=$RC_LC_NOAUTH bearer=$RC_LC_AUTH challenge=ok"
+
 if [ $FAILED -eq 0 ]; then
-  log "ALL 7 SCENARIOS OK"
+  log "ALL 8 SCENARIOS OK"
 else
   log "FAILURES DETECTED (see lines above)"
 fi

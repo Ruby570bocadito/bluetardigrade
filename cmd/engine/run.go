@@ -23,6 +23,7 @@ import (
 	"github.com/Ruby570bocadito/security-framework/internal/correlate"
 	"github.com/Ruby570bocadito/security-framework/internal/enrich"
 	"github.com/Ruby570bocadito/security-framework/internal/ingest"
+	"github.com/Ruby570bocadito/security-framework/internal/lifecycle"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
 	"github.com/Ruby570bocadito/security-framework/internal/store"
 	"github.com/Ruby570bocadito/security-framework/internal/suppress"
@@ -46,6 +47,7 @@ type options struct {
 	token            string
 	prevToken        string
 	suppressionsFile string
+	lifecycleFile    string
 	storePath        string
 	storeRetention   time.Duration
 	pidFile          string
@@ -86,6 +88,8 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 		"previous ingest token, still accepted during a rotation window (falls back to SF_INGEST_TOKEN_PREVIOUS); requires -token")
 	fs.StringVar(&o.suppressionsFile, "suppressions", "./suppressions.yaml",
 		"operator allowlist YAML silencing rule/host pairs (expires supported); empty disables")
+	fs.StringVar(&o.lifecycleFile, "lifecycle", "./alert-lifecycle.json",
+		"JSON file persisting alert triage status (acknowledged/closed + notes); empty keeps statuses in memory only")
 	fs.StringVar(&o.storePath, "store", "",
 		"SQLite file persisting events and alerts beyond the in-memory rings (e.g. ./sf-store.db); empty disables")
 	fs.DurationVar(&o.storeRetention, "store-retention", 72*time.Hour,
@@ -192,6 +196,28 @@ func runEngine(o *options, interactive bool) error {
 	}
 
 	events := make(chan *model.Event, 1024)
+
+	// alert lifecycle (r6): operator triage state (acknowledged/closed +
+	// notes) served by POST /api/alerts/{id}/status. A malformed file
+	// is FATAL, same standard as suppressions: silently starting with
+	// every alert back in "new" would undo triage work the operator
+	// believes is recorded.
+	lifePath := ""
+	if o.lifecycleFile != "" {
+		lifePath = resolveDataFile(o.lifecycleFile, "alert-lifecycle.json")
+	}
+	lifeStore, err := lifecycle.New(lifePath)
+	if err != nil {
+		log.Fatalf("[ENGINE] %v", err)
+	}
+	if lifePath != "" {
+		if n := lifeStore.Count(); n > 0 {
+			fmt.Printf("[ENGINE] alert lifecycle: %d triage states loaded from %s\n", n, lifePath)
+		}
+	} else {
+		fmt.Println("[ENGINE] alert lifecycle: in-memory only (-lifecycle unset: statuses reset on restart)")
+	}
+
 	server, err := ingest.New(o.addr, events)
 	if err != nil {
 		// A bind failure almost always means another engine
@@ -271,6 +297,7 @@ func runEngine(o *options, interactive bool) error {
 				return corr.States(), corr.Count(), correlate.MaxTrackedStates
 			})
 			hub.SetSequences(corr)
+			hub.SetLifecycle(lifeStore)
 			// same standard as the ingest token: flag wins, env fallback
 			apiTok := o.apiToken
 			if apiTok == "" {

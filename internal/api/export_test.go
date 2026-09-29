@@ -91,16 +91,17 @@ func TestAlertsExportCSV(t *testing.T) {
 		t.Fatalf("expected header + 1 row, got %d rows", len(rows))
 	}
 	header := rows[0]
-	if header[0] != "timestamp" || header[1] != "severity" || header[3] != "rule_name" {
+	// r6: id and status lead the row (the lifecycle key and triage state)
+	if header[0] != "id" || header[1] != "status" || header[2] != "timestamp" || header[5] != "rule_name" {
 		t.Fatalf("unexpected header: %v", header)
 	}
 	row := rows[1]
-	if row[1] != "critical" || row[3] != "regla csv" {
+	if row[1] != "new" || row[3] != "critical" || row[5] != "regla csv" {
 		t.Fatalf("unexpected row values: %v", row)
 	}
 	// formula injection must be neutralized: leading '=' gets a quote prefix
-	if !strings.HasPrefix(row[7], "'=") {
-		t.Fatalf("summary not sanitized against formula injection: %q", row[7])
+	if !strings.HasPrefix(row[9], "'=") {
+		t.Fatalf("summary not sanitized against formula injection: %q", row[9])
 	}
 }
 

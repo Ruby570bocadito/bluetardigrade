@@ -12,7 +12,7 @@
 // "offline" state and never invents data.
 
 import { useEffect, useRef, useState } from 'react'
-import type { EngineStats, RuleMeta, SfAlert, SfEvent, SfSequence, SfSuppression } from '@/lib/console-types'
+import type { EngineStats, RuleMeta, SfAlert, SfAlertLifecycle, SfEvent, SfSequence, SfSuppression } from '@/lib/console-types'
 import { severityOf } from '@/lib/console-types'
 
 export type EngineStatus = 'connecting' | 'live' | 'down'
@@ -47,15 +47,18 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-// The engine does not assign ids to alerts: event_id + rule_id is the
-// key. A monotonic counter keeps React keys unique even if the engine
-// ever replays the same pair.
+// The engine assigns a unique 16-hex id to every alert since r6 (the
+// lifecycle key); older engines without it fall back to the
+// event_id + rule_id key. A monotonic counter keeps React keys unique
+// even if the engine ever replays the same pair.
 let alertSeq = 0
 function mapAlert(raw: Record<string, unknown>): SfAlert {
   alertSeq += 1
   const tags = Array.isArray(raw.tags) ? (raw.tags as string[]) : []
   const matched = Array.isArray(raw.matched_on) ? (raw.matched_on as string[]) : []
+  const status = raw.status
   return {
+    id: raw.id ? String(raw.id) : undefined,
     timestamp: String(raw.timestamp ?? ''),
     rule_id: String(raw.rule_id ?? ''),
     rule_name: String(raw.rule_name ?? ''),
@@ -71,6 +74,10 @@ function mapAlert(raw: Record<string, unknown>): SfAlert {
     tags,
     actions: Array.isArray(raw.actions) ? (raw.actions as string[]) : undefined,
     enrichment: (raw.enrichment as Record<string, string>) ?? undefined,
+    status: status === 'new' || status === 'acknowledged' || status === 'closed' ? status : undefined,
+    status_note: raw.status_note ? String(raw.status_note) : undefined,
+    status_by: raw.status_by ? String(raw.status_by) : undefined,
+    status_at: raw.status_at ? String(raw.status_at) : undefined,
   }
 }
 
@@ -211,6 +218,23 @@ export function useEngineStream(): EngineState {
       }
       es.addEventListener('event', onFrame('event'))
       es.addEventListener('alert', onFrame('alert'))
+      // triage decisions (r6): the engine broadcasts one frame per POST;
+      // patch the matching alert in place so every view (queue, detail
+      // panel, dashboard widget) reflects the operator's decision live.
+      es.addEventListener('alert_lifecycle', (e: MessageEvent<string>) => {
+        try {
+          const entry = JSON.parse(e.data) as SfAlertLifecycle
+          setAlerts((prev) =>
+            prev.map((a) =>
+              a.id === entry.alert_id
+                ? { ...a, status: entry.status, status_note: entry.note, status_by: entry.by, status_at: entry.at }
+                : a,
+            ),
+          )
+        } catch {
+          /* malformed frame: ignore */
+        }
+      })
       es.onopen = () => {
         // first open or browser-side reconnect: fill any gap in the rings
         void syncAll()

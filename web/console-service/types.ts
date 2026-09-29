@@ -49,6 +49,23 @@ export type SfAlert = {
   notify?: boolean
   matched_on: string[]
   tags: string[]
+  // lifecycle overlay (r6): merged by GET /api/alerts read-side, and
+  // updated live through the `alert_lifecycle` SSE frame. undefined on
+  // an alert that just arrived means "new".
+  status?: 'new' | 'acknowledged' | 'closed'
+  status_note?: string
+  status_by?: string
+  status_at?: string
+}
+
+// One lifecycle record as the engine stores and broadcasts it
+// (POST /api/alerts/{id}/status response and `alert_lifecycle` frame).
+export type SfAlertLifecycle = {
+  alert_id: string
+  status: 'new' | 'acknowledged' | 'closed'
+  note?: string
+  by?: string
+  at: string
 }
 
 export type RuleMeta = {

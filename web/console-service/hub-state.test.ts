@@ -82,6 +82,13 @@ describe('HubState health', () => {
       uptime_s: 90,
       interval_ms: 0,
       mode: 'engine',
+      webhook_sent: 0,
+      webhook_failed: 0,
+      webhook_dropped: 0,
+      suppressions_active: 0,
+      correlator_states: 0,
+      correlator_sequences: 0,
+      correlator_cap: 0,
     }
     st.setStats(stats)
     st.recordEvent(ev('e1'))
@@ -115,7 +122,7 @@ describe('HubState health', () => {
   test('setDown resets the last stats so stale numbers never leak', () => {
     const st = new HubState({})
     st.setUp('http://e')
-    st.setStats({ events_total: 9, alerts_total: 0, by_severity: {}, events_per_min: 1, uptime_s: 10, interval_ms: 0, mode: 'engine' })
+    st.setStats({ events_total: 9, alerts_total: 0, by_severity: {}, events_per_min: 1, uptime_s: 10, interval_ms: 0, mode: 'engine', webhook_sent: 0, webhook_failed: 0, webhook_dropped: 0, suppressions_active: 0, correlator_states: 0, correlator_sequences: 0, correlator_cap: 0 })
     st.setDown()
     expect(st.stats().events_total).toBe(0)
     expect(st.stats().mode).toBe('sin-motor')

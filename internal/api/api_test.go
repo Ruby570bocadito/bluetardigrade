@@ -266,14 +266,15 @@ func TestAlertsExportCSVMessageNotify(t *testing.T) {
 		t.Fatalf("filas = %d, want 3 (cabecera + 2 alertas)", len(rows))
 	}
 	header := strings.Join(rows[0], ",")
-	if !strings.Contains(header, "severity") || !strings.Contains(header, "message") {
+	if !strings.Contains(header, "severity") || !strings.Contains(header, "message") || !strings.Contains(header, "status") {
 		t.Errorf("cabecera inesperada: %v", rows[0])
 	}
-	// the comma inside "persistencia, clave Run" must be quoted, not split
-	if rows[1][3] != "persistencia, clave Run" {
-		t.Errorf("campo con coma mal escapado: %q", rows[1][3])
+	// r6 layout: id(0) status(1) timestamp(2) severity(3) rule_id(4) rule_name(5)...
+	// the comma inside the rule name "persistencia, clave Run" must be quoted
+	if rows[1][5] != "persistencia, clave Run" {
+		t.Errorf("campo con coma mal escapado: %q", rows[1][5])
 	}
-	if rows[2][1] != "critical" || rows[2][11] != "false" {
+	if rows[2][3] != "critical" || rows[2][13] != "false" {
 		t.Errorf("fila lsass incorrecta: %v", rows[2])
 	}
 }

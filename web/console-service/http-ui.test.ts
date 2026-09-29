@@ -29,6 +29,13 @@ function upState(): HubState {
     uptime_s: 5400,
     interval_ms: 0,
     mode: 'engine',
+    webhook_sent: 0,
+    webhook_failed: 0,
+    webhook_dropped: 0,
+    suppressions_active: 0,
+    correlator_states: 0,
+    correlator_sequences: 0,
+    correlator_cap: 0,
   })
   st.setRules([
     { id: 'r1', name: 'lsass-access', description: '', severity: 'critical', event_type: 'process.access', mitre: 'T1003.001', tactic: 'Credential Access', tags: [], conditions: [] },

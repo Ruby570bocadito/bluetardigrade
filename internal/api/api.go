@@ -1,16 +1,20 @@
-// Package api exposes a local read-only HTTP API on the engine: recent
-// events and alerts as JSON, the live rule set, and an SSE stream for
-// real-time consumers (the web console bridge). Deliberately
-// dependency-free so the tracer bullet stays easy to audit.
+// Package api exposes the local HTTP API on the engine: recent events
+// and alerts as JSON, the live rule set, an SSE stream for real-time
+// consumers (the web console bridge) and the ONE write surface — the
+// operator triage endpoint POST /api/alerts/{id}/status backed by
+// internal/lifecycle. Deliberately dependency-free so the tracer
+// bullet stays easy to audit.
 package api
 
 import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -19,6 +23,7 @@ import (
 
 	"github.com/Ruby570bocadito/security-framework/internal/alert"
 	"github.com/Ruby570bocadito/security-framework/internal/correlate"
+	"github.com/Ruby570bocadito/security-framework/internal/lifecycle"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
 	"github.com/Ruby570bocadito/security-framework/internal/store"
 	"github.com/Ruby570bocadito/security-framework/internal/suppress"
@@ -52,6 +57,7 @@ type Hub struct {
 	correlator  func() (int, int, int)          // in-flight states, loaded sequences, tracking cap
 	sequences   *correlate.Manager              // kill-chain sequences (read-only view)
 	store       *store.Store                    // optional SQLite persistence (nil = rings only)
+	lifecycle   *lifecycle.Store                // alert triage state (status overlay)
 
 	storeFails uint64 // throttles store write-error logging (atomic)
 }
@@ -67,11 +73,13 @@ func New(addr string) (*Hub, error) {
 		subs:       make(map[chan []byte]struct{}),
 		started:    time.Now(),
 		bySeverity: map[string]int{},
+		lifecycle:  mustMemoryLifecycle(),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/stats", h.handleStats)
 	mux.HandleFunc("GET /api/events", h.handleEvents)
 	mux.HandleFunc("GET /api/alerts", h.handleAlerts)
+	mux.HandleFunc("POST /api/alerts/{id}/status", h.handleAlertStatus)
 	mux.HandleFunc("GET /api/rules", h.handleRules)
 	mux.HandleFunc("GET /api/suppressions", h.handleSuppressions)
 	mux.HandleFunc("GET /api/sequences", h.handleSequences)
@@ -218,6 +226,34 @@ func (h *Hub) persistAlert(a alert.Alert) {
 	}
 }
 
+// SetLifecycle wires the alert triage store. When no store is set the
+// hub keeps the private memory-only one created in New, so the write
+// endpoint always answers consistently (statuses live for the process
+// lifetime); the engine swaps in the file-backed store at startup via
+// this setter. A nil argument keeps the current store (wiring code
+// should just skip the call instead of trying to "disable" the
+// endpoint: a console button that 500s is worse than a status that
+// resets on restart).
+func (h *Hub) SetLifecycle(s *lifecycle.Store) {
+	if s == nil {
+		return
+	}
+	h.mu.Lock()
+	h.lifecycle = s
+	h.mu.Unlock()
+}
+
+// mustMemoryLifecycle gives every hub a working default store so the
+// POST endpoint never dereferences nil. lifecycle.New("") cannot fail
+// (no file to read); the panic guard is for future refactors only.
+func mustMemoryLifecycle() *lifecycle.Store {
+	s, err := lifecycle.New("")
+	if err != nil {
+		panic(fmt.Sprintf("api: memory lifecycle store: %v", err))
+	}
+	return s
+}
+
 // Run serves until Shutdown is called.
 func (h *Hub) Run() error {
 	err := h.srv.Serve(h.listener)
@@ -256,8 +292,14 @@ func (h *Hub) RecordEvent(ev *model.Event) {
 }
 
 // RecordAlert stores an alert in the ring, persists it (store attached)
-// and streams it to subscribers.
+// and streams it to subscribers. Alerts reaching the ring without an id
+// (hand-built by tests or future producers) get one here: every alert
+// the API serves must carry the lifecycle key, or
+// POST /api/alerts/{id}/status could not reference it.
 func (h *Hub) RecordAlert(a alert.Alert) {
+	if a.ID == "" {
+		a.ID = alert.NewID()
+	}
 	h.mu.Lock()
 	h.alerts = append(h.alerts, a)
 	h.alertsTotal++
@@ -439,6 +481,31 @@ func (h *Hub) handleEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
+// alertView is the wire form of an alert with the lifecycle overlay
+// applied. Embedding flattens the JSON, so the shape is the Alert
+// payload plus the four optional status fields — downstream consumers
+// keep parsing the same fields they already know.
+type alertView struct {
+	alert.Alert
+	Status     string `json:"status,omitempty"`      // new (implicit), acknowledged, closed
+	StatusNote string `json:"status_note,omitempty"` // operator free-text triage note
+	StatusBy   string `json:"status_by,omitempty"`   // who set it (unauthenticated free text)
+	StatusAt   string `json:"status_at,omitempty"`   // RFC 3339 when the status was set
+}
+
+// withLifecycle merges the store's entry (when any) into an alert.
+func (h *Hub) withLifecycle(a alert.Alert) alertView {
+	v := alertView{Alert: a}
+	v.Status = "new" // explicit default: readers never special-case missing fields
+	if e, ok := h.lifecycle.Get(a.ID); ok {
+		v.Status = string(e.Status)
+		v.StatusNote = e.Note
+		v.StatusBy = e.By
+		v.StatusAt = e.At
+	}
+	return v
+}
+
 func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 	limit := limitFrom(r, 100)
 	f, ok := parseRecordFilter(w, r)
@@ -460,17 +527,90 @@ func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 		if out == nil {
 			out = []alert.Alert{}
 		}
-		writeJSON(w, out)
+		// store mode serves the same lifecycle overlay as ring mode:
+		// triage state must not depend on which backend answered
+		views := make([]alertView, 0, len(out))
+		for _, a := range out {
+			views = append(views, h.withLifecycle(a))
+		}
+		writeJSON(w, views)
 		return
 	}
-	out := make([]alert.Alert, 0, limit)
+	out := make([]alertView, 0, limit)
 	for i := len(h.alerts) - 1; i >= 0 && len(out) < limit; i-- {
 		a := h.alerts[i]
 		if ts, err := time.Parse(time.RFC3339Nano, a.Timestamp); err == nil && f.matchAlert(a, ts) {
-			out = append(out, a)
+			out = append(out, h.withLifecycle(a))
 		}
 	}
 	writeJSON(w, out)
+}
+
+// ------------------------------------------------------- alert status
+
+// alertIDPattern is the shape alert.NewID generates (16 lowercase hex
+// characters). Validating the path parameter keeps arbitrary strings
+// out of the store keys and the log lines.
+var alertIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
+
+// statusRequest is the POST /api/alerts/{id}/status body.
+type statusRequest struct {
+	Status string `json:"status"`
+	Note   string `json:"note"`
+	By     string `json:"by"`
+}
+
+// handleAlertStatus records the operator triage decision for one
+// alert. The lifecycle store is the source of truth for STATUS: the
+// target alert does NOT need to be in the 256-entry ring (an alert
+// evicted from the ring can legitimately be closed). Success
+// broadcasts an `alert_lifecycle` SSE frame so live consumers update
+// without polling.
+func (h *Hub) handleAlertStatus(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !alertIDPattern.MatchString(id) {
+		writeErr(w, http.StatusBadRequest,
+			fmt.Sprintf("malformed alert id %q: want 16 lowercase hex characters (the id field of the alert)", id))
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 8192))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "unreadable or oversized request body (8 KiB limit)")
+		return
+	}
+	var req statusRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeErr(w, http.StatusBadRequest,
+			`invalid JSON body: want {"status":"acknowledged|closed|new","note":"...","by":"..."}`)
+		return
+	}
+	st := lifecycle.Status(req.Status)
+	if !lifecycle.Valid(st) {
+		writeErr(w, http.StatusBadRequest,
+			fmt.Sprintf("invalid status %q: valid values are new, acknowledged, closed", req.Status))
+		return
+	}
+	e, err := h.lifecycle.Set(id, st, req.Note, req.By)
+	if err != nil {
+		// Validation failures carry a lifecycle: prefix and are the
+		// client's fault; persistence failures are the server's.
+		if strings.Contains(err.Error(), "lifecycle: persisted state NOT saved") {
+			log.Printf("[API] alert lifecycle persist FAILED for %s: %v", id, err)
+			writeErr(w, http.StatusInternalServerError, "status recorded in memory but persistence failed: "+err.Error())
+			return
+		}
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	log.Printf("[API] alert %s -> %s (by=%s)", id, e.Status, e.By)
+	h.broadcast("alert_lifecycle", e)
+	writeJSON(w, e)
+}
+
+func writeErr(w http.ResponseWriter, code int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
 type conditionPayload struct {

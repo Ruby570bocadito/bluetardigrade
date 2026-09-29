@@ -57,10 +57,12 @@ export type SfEvent = {
 }
 
 // alert.Alert (internal/alert) as served by /api/alerts and /api/stream.
-// The engine does not assign an id of its own: event_id + rule_id is the
-// natural key (the provider derives a stable React key from both plus a
-// monotonic counter).
+// Since r6 the engine assigns a unique 16-hex id to every alert (the
+// lifecycle key); older engines without it fall back to the
+// event_id + rule_id natural key (the provider derives a stable React
+// key from what is available plus a monotonic counter).
 export type SfAlert = {
+  id?: string
   timestamp: string
   rule_id: string
   rule_name: string
@@ -80,7 +82,29 @@ export type SfAlert = {
   actions?: string[]
   // threat intel / context attached by internal/enrich
   enrichment?: Record<string, string>
+  // lifecycle overlay (r6): triage state merged by the engine read-side
+  // and updated live via the alert_lifecycle SSE frame. undefined = new.
+  status?: SfAlertStatus
+  status_note?: string
+  status_by?: string
+  status_at?: string
 }
+
+export type SfAlertStatus = 'new' | 'acknowledged' | 'closed'
+
+// One lifecycle record (engine POST /api/alerts/{id}/status response
+// and the alert_lifecycle SSE frame).
+export type SfAlertLifecycle = {
+  alert_id: string
+  status: SfAlertStatus
+  note?: string
+  by?: string
+  at: string
+}
+
+export type LifecycleAck =
+  | { ok: true; entry: SfAlertLifecycle | null }
+  | { ok: false; error: string }
 
 // rulePayload served by /api/rules: the YAML contract as the engine
 // sees it, with mitre/tactic derived from the attack.* tags.

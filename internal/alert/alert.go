@@ -3,6 +3,8 @@
 package alert
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -46,6 +48,12 @@ type Manager struct {
 // Alert is the structured JSON payload emitted for downstream
 // consumers (SIEM connectors, the web console, webhooks).
 type Alert struct {
+	// ID is the unique alert identifier, assigned by the engine at
+	// raise/emit time. It is the lifecycle key: operators acknowledge
+	// or close an alert by this id (POST /api/alerts/{id}/status), so
+	// it must stay stable across every surface that repeats the alert
+	// (JSON log line, webhook, SSE, API ring).
+	ID        string            `json:"id"`
 	Timestamp string            `json:"timestamp"`
 	RuleID    string            `json:"rule_id"`
 	RuleName  string            `json:"rule_name"`
@@ -72,6 +80,21 @@ func New(out io.Writer, onAlert func(Alert)) *Manager {
 		colored: isTerminal(),
 		onAlert: onAlert,
 	}
+}
+
+// NewID returns a fresh 16-hex-character alert identifier from the
+// cryptographic random source (8 bytes = 64 bits: collision odds are
+// negligible at alert volumes, and the short charset keeps the id
+// comfortable in URLs, CSV columns and console chips).
+func NewID() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// crypto/rand failing means the system entropy source is broken:
+		// fall back to a timestamp-derived id rather than emitting an
+		// empty one (lifecycle lookups would silently collide).
+		return fmt.Sprintf("%016x", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b[:])
 }
 
 // SetPreparer wires an executor for the actions declared by the rule
@@ -113,6 +136,9 @@ func (m *Manager) Raise(ev *model.Event, hit rules.Hit) {
 	m.mu.Unlock()
 
 	a := buildAlert(ev, hit)
+	if a.ID == "" {
+		a.ID = NewID()
+	}
 	if m.prepare != nil {
 		m.prepare(&a, hit.Rule.Actions)
 	}
@@ -128,6 +154,9 @@ func (m *Manager) Raise(ev *model.Event, hit rules.Hit) {
 // pipeline as Raise, without deduplication: completions are
 // inherently rate-limited by their own re-arm semantics.
 func (m *Manager) Emit(a Alert) {
+	if a.ID == "" {
+		a.ID = NewID()
+	}
 	if m.prepare != nil {
 		m.prepare(&a, nil)
 	}

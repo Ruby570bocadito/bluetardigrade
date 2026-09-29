@@ -12,21 +12,24 @@ info:
   title: security-framework local API
   version: 0.1.0
   description: |
-    Read-only HTTP API served by the Go detection engine (default
-    `127.0.0.1:7778`, loopback-only; start with `-api 0` to disable).
-    The web console hub
-    (`web/console-service`) consumes it, and SIEM/SOAR taps can too.
+    Read-only-plus-triage HTTP API served by the Go detection engine
+    (default `127.0.0.1:7778`, loopback-only; start with `-api 0` to
+    disable). The web console hub (`web/console-service`) consumes it,
+    and SIEM/SOAR taps can too.
 
     Design constraints worth knowing before integrating:
 
-    - Everything is **read-only**: the engine is configured by flags and
-      YAML rules, never through this API.
+    - The API is **read-only with ONE exception**: alert triage via
+      `POST /api/alerts/{id}/status` (acknowledge / close / reopen with
+      a note). Everything else — configuration, rules, suppressions —
+      stays flag/YAML-driven, never writable through this API.
     - `GET /api/events` and `GET /api/alerts` return the **in-memory
       ring** (last 1000 events / 256 alerts), newest first. For bulk
       download use the `/export` endpoints.
     - `GET /api/stream` is Server-Sent Events: one connection, live
-      frames of `event: event` and `event: alert`, `retry: 2000`,
-      heartbeat comments every 15 s.
+      frames of `event: event`, `event: alert` and
+      `event: alert_lifecycle`, `retry: 2000`, heartbeat comments every
+      15 s.
     - All timestamps are RFC 3339 (UTC, nanosecond precision).
     - **Authentication is optional**: loopback deployments run open by
       default; starting the engine with `-api-token`/`SF_API_TOKEN`
@@ -190,13 +193,19 @@ paths:
     get:
       tags: [telemetry]
       operationId: listAlerts
-      summary: Recent alerts (newest first)
+      summary: Recent alerts (newest first) with triage status
       security:
         - bearerAuth: []
         - {}
-      description: Same filter semantics as `/api/events`. When the engine runs
-        with `-store`, this list reads the persistent SQLite store (full history,
-        subject to the configured retention) instead of the in-memory ring.
+      description: |
+        Same filter semantics as `/api/events`. Each alert carries the
+        lifecycle overlay merged at read time: `status` (always present,
+        `new` when no operator decision exists), plus `status_note`,
+        `status_by` and `status_at` when the alert has been triaged via
+        `POST /api/alerts/{id}/status`. When the engine runs with
+        `-store`, this list reads the persistent SQLite store (full
+        history, subject to the configured retention) instead of the
+        in-memory ring — the overlay applies in both modes.
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Host'
@@ -217,6 +226,64 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Alert'
+  /api/alerts/{id}/status:
+    post:
+      tags: [telemetry]
+      operationId: setAlertStatus
+      summary: Record the operator triage decision for one alert
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The WRITE surface of the alert lifecycle. `status` is one of
+        `acknowledged` (seen, under investigation), `closed` (handled)
+        or `new` (explicit reopen). The optional `note` is the triage
+        note (max 2000 chars) and `by` a free-text operator name (max
+        200 chars; the API has a single shared bearer token, so `by`
+        is informational and NOT authenticated).
+
+        The lifecycle store is the source of truth for STATUS: the
+        target alert does not need to be in the 256-entry ring (an
+        evicted alert can legitimately be closed). Without
+        `-lifecycle` the engine keeps statuses in memory only and they
+        reset on restart; with it, the JSON file is written atomically
+        on every change. Success broadcasts an `alert_lifecycle` SSE
+        frame so live consumers update without polling.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: alert id (16 lowercase hex characters, the `id` field of the alert)
+          schema:
+            type: string
+            pattern: '^[0-9a-f]{16}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertStatusUpdate'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '200':
+          description: The stored lifecycle entry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertLifecycle'
+        '400':
+          description: |
+            Malformed alert id, invalid JSON body, unknown status, or
+            note/by over their length limits. The JSON body names the
+            problem (`{"error":"..."}`).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
   /api/rules:
     get:
       tags: [rules]
@@ -255,6 +322,8 @@ paths:
         - `event: event` - data is one `Event` JSON
         - `event: alert` - data is one `Alert` JSON (rule hits and
           kill-chain completions from the correlator)
+        - `event: alert_lifecycle` - data is one `AlertLifecycle` JSON
+          (a triage decision recorded via `POST /api/alerts/{id}/status`)
 
         Control lines: `retry: 2000`, heartbeat comments (`: hb`) every
         15 s. Slow consumers with a full per-client buffer miss frames
@@ -337,12 +406,12 @@ paths:
         - {}
       description: |
         Same semantics as `/api/events/export` for alerts. CSV columns:
-        `timestamp`, `severity`, `rule_id`, `rule_name`, `event_type`,
-        `host`, `user`, `summary`, `matched_on` (space-joined),
-        `tags` (space-joined), `message`, `notify`. When the engine runs
-        with `-store`, the export reads the persistent SQLite store
-        (full history, subject to the configured retention) instead of
-        the alert ring.
+        `id`, `status`, `timestamp`, `severity`, `rule_id`, `rule_name`,
+        `event_type`, `host`, `user`, `summary`, `matched_on`
+        (space-joined), `tags` (space-joined), `message`, `notify`,
+        `status_note`, `status_by`. When the engine runs with `-store`,
+        the export reads the persistent SQLite store (full history,
+        subject to the configured retention) instead of the alert ring.
       parameters:
         - $ref: '#/components/parameters/ExportFormat'
         - $ref: '#/components/parameters/Host'
@@ -734,7 +803,15 @@ components:
         webhook body and the console/hub stream, so consumers speak
         one format. `message` and `notify` are rendered from the
         firing rule's `alert` action, when it declares one.
+
+        The `status*` fields are the lifecycle overlay merged by
+        GET /api/alerts (and the alerts export): `status` is always
+        present there (`new` when no operator decision exists), the
+        rest appear once the alert has been triaged. The raw payloads
+        (log line, webhook, SSE alert frames) carry no status fields —
+        an alert raised seconds ago is new by definition.
       required:
+        - id
         - timestamp
         - rule_id
         - rule_name
@@ -745,6 +822,10 @@ components:
         - summary
         - matched_on
       properties:
+        id:
+          type: string
+          pattern: '^[0-9a-f]{16}$'
+          description: unique alert id assigned by the engine (the lifecycle key)
         timestamp:
           type: string
           format: date-time
@@ -793,6 +874,55 @@ components:
           type: object
           additionalProperties:
             type: string
+        status:
+          type: string
+          enum: [new, acknowledged, closed]
+          description: operator triage state (read-side overlay, always present)
+        status_note:
+          type: string
+          description: free-text triage note from the operator decision
+        status_by:
+          type: string
+          description: operator name as free text (the shared token does not identify users)
+        status_at:
+          type: string
+          format: date-time
+          description: when the status was recorded
+    AlertStatusUpdate:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [new, acknowledged, closed]
+          description: '`new` doubles as the explicit reopen'
+        note:
+          type: string
+          maxLength: 2000
+          description: triage note (what was seen, what was done)
+        by:
+          type: string
+          maxLength: 200
+          description: operator name, informational only
+    AlertLifecycle:
+      type: object
+      description: One lifecycle record as stored (also the `alert_lifecycle` SSE frame payload)
+      required: [alert_id, status, at]
+      properties:
+        alert_id:
+          type: string
+          pattern: '^[0-9a-f]{16}$'
+        status:
+          type: string
+          enum: [new, acknowledged, closed]
+        note:
+          type: string
+        by:
+          type: string
+        at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC timestamp of the decision
     Rule:
       type: object
       required:

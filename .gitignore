@@ -46,3 +46,7 @@ captures/
 # Agent tooling residue (not part of the product)
 .agents/
 .claude/
+
+# Engine runtime state (alert triage, r6): operator-owned, never committed
+alert-lifecycle.json
+alert-lifecycle.json.tmp

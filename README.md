@@ -50,6 +50,7 @@ A behavioral detection framework built by an offensive-security practitioner, in
   - [Ingest authentication (shared token)](#ingest-authentication-shared-token)
   - [Alert webhook (SIEM/SOAR connector)](#alert-webhook-siemsoar-connector)
   - [Alert suppressions (operator allowlist)](#alert-suppressions-operator-allowlist)
+  - [Alert triage (lifecycle)](#alert-triage-lifecycle)
 - [Configuration reference](#configuration-reference)
 - [One-command install (Windows)](#one-command-install-windows)
 - [Real telemetry with Sysmon](#real-telemetry-with-sysmon)
@@ -85,7 +86,7 @@ And one engineering rule that shapes everything else: **no simulated data in the
 | **Telemetry** | Rust ETW sensor (Kernel-Process) + Sysmon ingestion path; NDJSON/TCP feed with schema validation and enrichment (user, command line, network context) |
 | **Detection** | YAML rules with 11 operators (`eq`, `regex`, `contains_any`, …), hot-reload every 15 s, per-rule MITRE ATT&CK tags and actions |
 | **Correlation** | Kill-chain sequencer: named steps across the same host within a time window raise one high-signal campaign alert |
-| **Response** | Operator suppressions (rule/host, expiry, hot-reload), alert webhook with Bearer auth and bounded retries |
+| **Response** | Alert triage lifecycle (acknowledge / close / reopen with notes, persisted via `-lifecycle`), operator suppressions (rule/host, expiry, hot-reload), alert webhook with Bearer auth and bounded retries |
 | **API** | Local REST API with OpenAPI 3.0 spec (drift-guarded in CI), SSE live stream, filters, JSONL/CSV export with formula-injection neutralization |
 | **Console** | Live feed, KPI dashboard, severity triage with free-text search, rule browser, kill-chain chains view, suppressions view, AI analyst (bring-your-own OpenAI-compatible endpoint) |
 | **Storage** | Opt-in SQLite persistence (`-store`): events and alerts outlive restarts, retention pruner, lists and exports read the full history |
@@ -312,7 +313,24 @@ Point the engine at it with `-suppressions <path>` (default `./suppressions.yaml
 - A suppressed hit raises NO alert, does NOT reach the webhook, and does NOT feed the kill-chain correlator — a host with a silenced rule is treated as being in an accepted state. Each suppressed hit is logged as `[SUPPRESS] rule=<id> host=<host>`, never silently.
 - An entry without `expires` stays active until you remove it; expired entries stop matching on their own.
 - A malformed file is FATAL at startup (a typo must not disable a control you believe is armed) and rejected — keeping the previous set — on hot reload, loudly.
-- The live set is observable read-only at `GET /api/suppressions` and counted in `/api/stats` (`suppressions_active`). Entries are edited in the YAML file, never through the API: the local API stays read-only.
+- The live set is observable read-only at `GET /api/suppressions` and counted in `/api/stats` (`suppressions_active`). Entries are edited in the YAML file, never through the API.
+
+### Alert triage (lifecycle)
+
+Detecting is only half of the job — the other half is working the queue. Every alert carries a unique engine-assigned `id`, and the operator triage state travels with it:
+
+```bash
+# acknowledge an alert, with an optional note
+curl -X POST http://127.0.0.1:7778/api/alerts/<id>/status \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"acknowledged","note":"visto, investigando","by":"ana"}'
+
+# close it, reopen it ("new"), same endpoint — statuses: new, acknowledged, closed
+```
+
+`GET /api/alerts` merges the current status into every alert (`status`, `status_note`, `status_by`, `status_at`), a `alert_lifecycle` SSE frame announces each decision live, and the web console renders the status chips plus the reconocer/cerrar/reabrir actions in the alert panel (the write goes console → hub → engine; the API token never leaves the hub). The API token gates the write endpoint exactly like every read endpoint.
+
+Statuses persist across engine restarts with `-lifecycle <file>` (default `./alert-lifecycle.json`, falling back to the install root; `-lifecycle ""` keeps them in memory only). The file is written atomically on every decision and is FATAL to load if malformed — the same fail-loud standard as suppressions: triage work silently resetting to "new" would be a lie. One honest interim note: the alert ring itself is in-memory, so after a restart the file preserves the audit record while the alerts it refers to are gone — when the SQLite store lands (roadmap phase 2), alert and lifecycle persist together and the status stays visible end to end.
 
 ## Configuration reference
 
@@ -323,10 +341,11 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | Flag | Default | Purpose |
 |------|---------|---------|
 | `-addr` | `127.0.0.1:7777` | NDJSON ingest listener (loopback unless you decide otherwise) |
-| `-api` | `127.0.0.1:7778` | local read-only API (`0` disables it) |
+| `-api` | `127.0.0.1:7778` | local API — read endpoints + the alert triage write (`0` disables it) |
 | `-rules` | `./rules` | YAML rules directory (hot-reload aware) |
 | `-sequences` | `./sequences` | kill-chain sequences directory (correlator) |
 | `-suppressions` | `./suppressions.yaml` | operator allowlist (hot-reload aware) |
+| `-lifecycle` | `./alert-lifecycle.json` | alert triage state file (acknowledged/closed + notes; empty keeps statuses in memory only) |
 | `-reload-every` | `15s` | hot-reload cadence for rules/sequences/suppressions (`0` disables) |
 | `-token` / `-token-previous` | — | ingest shared token / previous token during a rotation window |
 | `-api-token` | — | Bearer required on every `/api/*` route (`/api/health` stays open) |
@@ -421,7 +440,7 @@ Operations dashboard: KPIs, sensor activity, top kill-chain alerts and the live 
 
 ![Console operations dashboard: KPIs, sensor activity chart, kill-chain alerts and recent telemetry](docs/assets/console-panel.png)
 
-Alert triage queue with severity badges, MITRE tags and expandable details:
+Alert triage queue with severity badges, MITRE tags and expandable details. The expanded panel is also where the triage actions live (r6): status chips (`reconocida`/`cerrada`), a free-text note, and the reconocer / cerrar / reabrir buttons — the decision round-trips console → hub → engine and every connected console updates live through the `alert_lifecycle` stream:
 
 ![Console alert queue: 18 alerts with severity badges, MITRE tags and kill-chain names](docs/assets/console-alertas.png)
 
@@ -662,10 +681,11 @@ internal/rules/   YAML parser, rule index and evaluator
 internal/correlate/  kill-chain sequence correlator
 internal/alert/   alert rendering, dedup, structured JSON
 internal/actions/ rule action executor (message templates, webhooks)
-internal/api/     local read-only HTTP API + SSE stream + JSONL/CSV export
+internal/api/     local HTTP API (read + alert triage write) + SSE stream + JSONL/CSV export
 internal/store/   optional SQLite persistence (events/alerts history,
                   retention pruner; pure-Go driver, WAL)
 internal/suppress/  operator allowlist: rule/host suppressions with expiry
+internal/lifecycle/ alert triage state (acknowledged/closed + notes, JSON-persisted)
 internal/webhook/ alert webhook delivery (bounded queue, retries)
 pkg/model/        unified event schema (the wire contract)
 sensor/           Rust ETW sensor (collector is Windows-gated)
