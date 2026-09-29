@@ -270,6 +270,26 @@ the actual source of the events you are looking at - `sf-sensor
 the scripted scenario is replaying. If the engine is unreachable the
 console says so and shows no data, instead of inventing any.
 
+Operations dashboard: KPIs, sensor activity, top kill-chain alerts and
+the live event sample in one view.
+
+![Console operations dashboard: KPIs, sensor activity chart, kill-chain alerts and recent telemetry](docs/assets/console-panel.png)
+
+Alert triage queue with severity badges, MITRE tags and expandable
+details:
+
+![Console alert queue: 18 alerts with severity badges, MITRE tags and kill-chain names](docs/assets/console-alertas.png)
+
+Free-text search on top of the dropdown filters - typing narrows the
+queue live (from 18 alerts to the 3 that mention `lsass`):
+
+![Console search GIF: typing lsass filters the alert queue from 18 to 3](docs/assets/console-busqueda.gif)
+
+The loaded rule pack, rendered with each rule's conditions and MITRE
+mapping:
+
+![Console rules view: 23 loaded rules with conditions and ATT&CK mapping](docs/assets/console-reglas.png)
+
 Requirements: [bun](https://bun.sh).
 
 ```bash

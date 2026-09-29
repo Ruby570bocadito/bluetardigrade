@@ -70,7 +70,7 @@ func TestSequenceCompletesOnSameHost(t *testing.T) {
 	if m.Count() != 1 {
 		t.Fatalf("sequences = %d, want 1", m.Count())
 	}
-	m.Observe(ev("H1", 0), "Regla B")   // unordered steps
+	m.Observe(ev("H1", 0), "Regla B") // unordered steps
 	m.Observe(ev("H1", time.Second), "Regla A")
 	m.Observe(ev("H2", time.Second), "Regla C") // other host: no completion
 	if c.count() != 0 {
