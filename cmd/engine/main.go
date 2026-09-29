@@ -74,8 +74,15 @@ func main() {
 
         go func() {
                 <-ctx.Done()
-                fmt.Println("\n[ENGINE] shutting down...")
-                server.Shutdown()
+                fmt.Println("\n[ENGINE] shutting down... (Ctrl+C again to force quit)")
+                // second signal = hard exit, whatever the graceful path does
+                go func() {
+                        second := make(chan os.Signal, 1)
+                        signal.Notify(second, os.Interrupt, syscall.SIGTERM)
+                        <-second
+                        os.Exit(130)
+                }()
+                server.Shutdown() // closes the events channel: main loop drains and exits
         }()
 
         processed := 0
