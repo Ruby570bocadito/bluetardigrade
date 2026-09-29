@@ -52,7 +52,7 @@ A behavioral detection framework built by an offensive-security practitioner, in
   - [Alert suppressions (operator allowlist)](#alert-suppressions-operator-allowlist)
 - [Configuration reference](#configuration-reference)
 - [One-command install (Windows)](#one-command-install-windows)
-- [Real telemetry with Sysmon](#real-telemetry-with-sysmon)
+- [Real telemetry with Sysmon](#real-telemetry-with-sysmon-recommended)
 - [Web console (preview)](#web-console-preview)
 - [Building the real sensor (Windows)](#building-the-real-sensor-windows)
 - [Detection rules](#detection-rules)
@@ -114,7 +114,8 @@ flowchart LR
         RUL --> ALR["alert · dedup + render"]
         COR --> ALR
         ALR --> ACT["actions · webhooks"]
-        ALR --> ST[("SQLite store · opt-in")]
+        ING -- "events · write-through" --> ST[("SQLite store · opt-in")]
+        ALR -- "alerts" --> ST
     end
 
     ACT --> WH["SIEM / SOAR collector"]
@@ -129,7 +130,7 @@ flowchart LR
 
 The unified event schema (chapter 4 of the docs) is the master contract: sensors emit it, the engine validates and enriches it, rules index it, interfaces consume it.
 
-Full write-up: [docs/arquitectura-tecnica-v0.1.pdf](docs/arquitectura-tecnica-v0.1.pdf) (Spanish). It reflects the v0.1 design including the kill-chain correlator and rule actions; it predates the ingest shared-token auth, the export API and the OpenAPI spec, which are documented in the [Local HTTP API](#local-http-api) section and in [`docs/api/openapi.yaml`](docs/api/openapi.yaml). See also [`docs/README.md`](docs/README.md) for the full design-vs-implementation status of the document.
+Full write-up: [docs/arquitectura-tecnica-v0.1.pdf](docs/arquitectura-tecnica-v0.1.pdf) (Spanish). It reflects the v0.1 design including the kill-chain correlator and rule actions; it predates the ingest shared-token auth, the export API, the OpenAPI spec, the alert webhook and the opt-in SQLite store, which are documented in the [Local HTTP API](#local-http-api) section and in [`docs/api/openapi.yaml`](docs/api/openapi.yaml). See also [`docs/README.md`](docs/README.md) for the full design-vs-implementation status of the document.
 
 ## Quickstart (tracer bullet)
 
@@ -571,7 +572,7 @@ bin/bench -addr 127.0.0.1:7777 -api 127.0.0.1:7778 -api-token <token> -n 2000
 |-------|-----------------|-------------------------------------------------------|
 | 1     | weeks 1–6 2026  | tracer bullet, ETW sensor, rule index, p99 < 10 ms    |
 | 2     | weeks 7–14 2026 | YARA memory scan, eBPF collector; SQLite persistence already shipped (`-store`, Sept 2026) |
-| 3     | weeks 15–20     | REST+OpenAPI spec, Elastic/Splunk connectors          |
+| 3     | weeks 15–20     | REST+OpenAPI spec already shipped (drift-guarded in CI); Elastic/Splunk connectors |
 | 4     | weeks 21–26     | Python filaments (sandboxed), plugins, benchmarks     |
 
 ## Contributing
