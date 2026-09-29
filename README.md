@@ -60,7 +60,6 @@ A behavioral detection framework built by an offensive-security practitioner, in
   - [Kill-chain correlation](#kill-chain-correlation)
   - [Rule actions](#rule-actions)
 - [Engine CLI reference](#engine-cli-reference)
-- [Configuration](#configuration)
 - [Development & CI](#development--ci)
 - [Measured performance](#measured-performance)
 - [Repository layout](#repository-layout)
@@ -335,6 +334,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `-store` / `-store-retention` | off / `72h` | SQLite persistence / pruning window (`0` keeps everything) |
 | `-v` | off | print every event received |
 | `-pidfile` | — | write the engine PID to a file |
+| `-i`, `--interactive` | off | interactive TUI over the running engine (degrades to the classic flat run without a TTY) — see [Engine CLI reference](#engine-cli-reference) |
 
 **Environment variables:**
 
@@ -345,8 +345,13 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `SF_API_TOKEN` | engine + console-service | one entry protects both the API and the bridge |
 | `SF_WEBHOOK_TOKEN` | engine | Bearer on outbound alert deliveries |
 | `NEXT_PUBLIC_CONSOLE_URL` | web console | point the UI at a remote hub |
+| `NEXT_PUBLIC_ENGINE_API` | web console | direct engine API base for polling (default same-origin proxy `/api/engine`) |
 | `ANALYST_BASE_URL` / `ANALYST_API_KEY` / `ANALYST_MODEL` | console-service | OpenAI-compatible endpoint for the AI triage analyst |
 | `PORT` / `CONSOLE_SERVICE_PORT`, `CONSOLE_HOST`, `CONSOLE_CORS_ORIGIN` | console-service | hub networking and allowed origins |
+
+The AI analyst is optional: without the three `ANALYST_*` variables the
+analyst panel says so clearly and the rest of the console keeps working.
+Details in [`web/console/README.md`](web/console/README.md).
 
 ## One-command install (Windows)
 
@@ -604,31 +609,6 @@ the single-dash flags above apply directly, exactly as in `engine run`:
 bin/engine -addr :7777 -v    # same as: bin/engine run -addr :7777 -v
 bin/engine run -i            # interactive TUI
 ```
-
-## Configuration
-
-The engine is configured by flags (see
-[Engine CLI reference](#engine-cli-reference)); the rest of the stack
-reads these environment variables:
-
-| Variable | Component | Purpose |
-|----------|-----------|---------|
-| `SF_INGEST_TOKEN` | engine, devsensor, sf-sensor, sf-devsensor | shared ingest token; the token flag wins over the env var |
-| `SF_INGEST_TOKEN_PREVIOUS` | engine | previous ingest token during a rotation window |
-| `SF_API_TOKEN` | engine, console-service bridge | bearer token for the local API `/api/*` (health stays open) |
-| `SF_WEBHOOK_TOKEN` | engine | Bearer token for outbound webhook deliveries |
-| `ANALYST_BASE_URL` | console-service (AI analyst) | root of any OpenAI-compatible chat completions API, e.g. `https://api.openai.com/v1` or `http://127.0.0.1:11434/v1` (Ollama) |
-| `ANALYST_API_KEY` | console-service (AI analyst) | bearer token for that endpoint (local servers accept any value) |
-| `ANALYST_MODEL` | console-service (AI analyst) | model name the provider serves |
-| `NEXT_PUBLIC_CONSOLE_URL` | web console | hub URL for the UI (default `http://localhost:3003`) |
-| `NEXT_PUBLIC_ENGINE_API` | web console | direct engine API base for polling (default same-origin proxy `/api/engine`) |
-| `CONSOLE_HOST` | console-service | hub bind address (default `127.0.0.1`: the feed carries local security telemetry) |
-| `CONSOLE_CORS_ORIGIN` | console-service | comma-separated extra origins allowed to open a socket to the hub |
-| `PORT` | console-service | overrides the hub port (3003) |
-
-The AI analyst is optional: without the three `ANALYST_*` variables the
-analyst panel says so clearly and the rest of the console keeps
-working. Details in [`web/console/README.md`](web/console/README.md).
 
 ## Development & CI
 
