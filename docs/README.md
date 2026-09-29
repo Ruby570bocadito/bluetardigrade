@@ -21,11 +21,13 @@ implementación actual, para lectura honesta del documento:
 - **API del motor:** el PDF planifica Gin y OpenAPI generado desde el código; la
   implementada usa `net/http` de stdlib y el spec OpenAPI se mantiene a mano
   (`docs/api/openapi.yaml`, validado contra el motor vivo en cada ronda).
-- **Aún no implementado** (consta en el PDF como fases 2-4): store SQLite, YARA,
+- **Aún no implementado** (consta en el PDF como fases 2-4): YARA,
   gRPC/protobuf, filaments Python, eBPF en Linux.
 - **Añadido tras el PDF** (rondas de implementación): autenticación por token
   compartido en el ingest, export JSONL/CSV con neutralización de inyección de
-  fórmulas, webhook de alertas con cola acotada, spec OpenAPI.
+  fórmulas, webhook de alertas con cola acotada, spec OpenAPI, y store SQLite
+  opt-in (historial de eventos/alertas con poda de retención — fase 2 del
+  roadmap aterrizada en `2b46020`).
 - Los ADRs mencionados en el PDF todavía no existen como directorio; las decisiones
   de diseño vigentes viven en el PDF, en el README y en los informes de `agentes/`.
 

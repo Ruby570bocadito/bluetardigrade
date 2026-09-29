@@ -178,7 +178,8 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '200':
-          description: Up to `limit` events from the ring buffer
+          description: Up to `limit` events, newest first (from the in-memory
+            ring, or the full stored history when `-store` is on)
           content:
             application/json:
               schema:
@@ -208,7 +209,8 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '200':
-          description: Up to `limit` alerts from the ring buffer
+          description: Up to `limit` alerts, newest first (from the in-memory
+            ring, or the full stored history when `-store` is on)
           content:
             application/json:
               schema:
