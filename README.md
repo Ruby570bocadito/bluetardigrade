@@ -102,10 +102,11 @@ Optional switches (parameterized form):
 ```
 
 `-WithSensor` also builds the Rust ETW sensor (needs Rust + MSVC Build
-Tools), `-AutoStart` registers engine and console as logon tasks,
-`-Firewall` opens inbound TCP 7777 for remote sensors. Install location
-defaults to `%LOCALAPPDATA%\security-framework` and can be changed with
-`-InstallDir <path>`.
+Tools), `-AutoStart` registers engine and console as logon entries
+(HKCU Run, no admin required), `-Firewall` opens inbound TCP 7777 for
+remote sensors and asks for elevation via UAC when needed. Install
+location defaults to `%LOCALAPPDATA%\security-framework` and can be
+changed with `-InstallDir <path>`.
 
 To uninstall:
 
@@ -119,10 +120,10 @@ or, from a machine where it is not installed (or the PATH is gone):
 irm https://raw.githubusercontent.com/Ruby570bocadito/security-framework/main/uninstall.ps1 | iex
 ```
 
-The uninstaller stops the processes, removes the logon tasks, the
-firewall rule, the PATH entry and the whole install folder, including
-the portable toolchains it created. Toolchains you had before are left
-alone.
+The uninstaller stops the processes, removes the logon entries (HKCU
+Run and any legacy scheduled tasks), the firewall rule, the PATH entry
+and the whole install folder, including the portable toolchains it
+created. Toolchains you had before are left alone.
 
 ## Web console (preview)
 

@@ -22,8 +22,8 @@
 #   -Branch <name>       branch or tag to install (default main)
 #   -NoConsole           skip the web console (engine + rules only)
 #   -WithSensor          also build the Rust ETW sensor (needs Rust + MSVC)
-#   -Firewall            open TCP 7777 for remote sensors (elevated terminal)
-#   -AutoStart           start engine + console at logon (scheduled tasks)
+#   -Firewall            open TCP 7777 for remote sensors (asks via UAC)
+#   -AutoStart           start engine + console at logon (HKCU Run, no admin)
 #   -Update              refresh an existing install and rebuild
 #   -SkipBuild           fetch sources + tools but skip compiling (debug)
 # ======================================================================
@@ -140,18 +140,20 @@ function Ensure-Go {
 }
 
 function Ensure-Node {
+    # returns the full path to a usable node.exe (portable or system)
     param([string]$Tools)
-    if (Test-Path (Join-Path $Tools 'node\node.exe')) {
+    $portable = Join-Path $Tools 'node\node.exe'
+    if (Test-Path $portable) {
         $env:Path = "$Tools\node;" + $env:Path
         Write-Ok "Node.js $NODE_VERSION (portable)"
-        return
+        return $portable
     }
     $sys = Get-Command node.exe -ErrorAction SilentlyContinue
     if (-not $sys) { $sys = Get-Command node -ErrorAction SilentlyContinue }
     if ($sys) {
         $v = (& $sys.Source --version) 2>$null
         if ($v -match 'v(\d+)') {
-            if ([int]$Matches[1] -ge 20) { Write-Ok "Node.js $($v.Trim()) (system)"; return }
+            if ([int]$Matches[1] -ge 20) { Write-Ok "Node.js $($v.Trim()) (system)"; return $sys.Source }
             Write-Warn2 "system Node $($v.Trim()) is too old (need 20+); installing a portable one"
         }
     }
@@ -167,6 +169,7 @@ function Ensure-Node {
     Remove-Item $zip -Force -ErrorAction SilentlyContinue
     $env:Path = "$Tools\node;" + $env:Path
     Write-Ok "Node.js installed (portable)"
+    return (Join-Path $Tools 'node\node.exe')
 }
 
 function Ensure-Bun {
@@ -276,6 +279,13 @@ function Build-Console {
         Write-Warn2 "web console sources not found; skipping"
         return
     }
+    # resolve a working node.exe: explicit path, then whatever is on PATH
+    if (-not $NodeExe -or -not (Test-Path $NodeExe)) {
+        $cmd = Get-Command node.exe -ErrorAction SilentlyContinue
+        if (-not $cmd) { $cmd = Get-Command node -ErrorAction SilentlyContinue }
+        if (-not $cmd) { throw "node.exe not found for the console build" }
+        $NodeExe = $cmd.Source
+    }
     Write-Step "Installing console dependencies (bun)"
     Push-Location (Join-Path $web 'console-service')
     try {
@@ -384,24 +394,45 @@ function Add-ToUserPath {
 function Add-FirewallRule {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
     $admin = ([Security.Principal.WindowsPrincipal]$id).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    $netshArgs = "advfirewall firewall add rule name=`"security-framework engine`" dir=in action=allow protocol=TCP localport=$ENGINE_PORT"
     if (-not $admin) {
-        Write-Warn2 "-Firewall needs an elevated terminal; skipped (local sensors still work)"
-        return
+        Write-Info "not elevated: asking via UAC..."
+        try {
+            $p = Start-Process -FilePath 'netsh.exe' -ArgumentList $netshArgs -Verb RunAs -Wait -PassThru -ErrorAction Stop
+            if ($p.ExitCode -ne 0) { throw "netsh exited with $($p.ExitCode)" }
+        } catch {
+            Write-Warn2 "elevation declined or failed (local sensors still work). To do it manually, in an ADMIN terminal:"
+            Write-Info "netsh advfirewall firewall add rule name=`"security-framework engine`" dir=in action=allow protocol=TCP localport=$ENGINE_PORT"
+            return
+        }
+    } else {
+        netsh advfirewall firewall add rule "name=security-framework engine" dir=in action=allow protocol=TCP "localport=$ENGINE_PORT" | Out-Null
+        if ($LASTEXITCODE -ne 0) { Write-Warn2 "netsh failed (exit $LASTEXITCODE)"; return }
     }
-    netsh advfirewall firewall add rule "name=security-framework engine" dir=in action=allow protocol=TCP "localport=$ENGINE_PORT" | Out-Null
-    Write-Ok "firewall rule added (inbound TCP $ENGINE_PORT)"
+    $chk = netsh advfirewall firewall show rule "name=security-framework engine" 2>$null
+    if ("$chk" -match 'security-framework engine') {
+        Write-Ok "firewall rule added (inbound TCP $ENGINE_PORT)"
+    } else {
+        Write-Warn2 "could not verify the firewall rule"
+    }
 }
 
 function Register-Autostart {
+    # HKCU Run entries: always writable by the current user, no admin needed
     param([string]$Root)
+    $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+    $engineCmd  = "powershell.exe -NoProfile -WindowStyle Minimized -ExecutionPolicy Bypass -Command `"& '$Root\bin\engine.exe' -rules '$Root\rules'`""
+    $consoleCmd = "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Root\scripts\sf-console.ps1`" -NoBrowser"
     try {
-        $trg = New-ScheduledTaskTrigger -AtLogOn
-        $set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
-        $a1 = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -WindowStyle Minimized -ExecutionPolicy Bypass -Command `"& '$Root\bin\engine.exe' -rules '$Root\rules'`""
-        Register-ScheduledTask -TaskName 'security-framework-engine' -Action $a1 -Trigger $trg -Settings $set -Description 'security-framework detection engine' -Force | Out-Null
-        $a2 = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Root\scripts\sf-console.ps1`" -NoBrowser"
-        Register-ScheduledTask -TaskName 'security-framework-console' -Action $a2 -Trigger $trg -Settings $set -Description 'security-framework web console' -Force | Out-Null
-        Write-Ok "autostart at logon registered (engine minimized + console hidden)"
+        if (-not (Test-Path $runKey)) { New-Item -Path $runKey -Force | Out-Null }
+        New-ItemProperty -Path $runKey -Name 'security-framework-engine'  -Value $engineCmd  -PropertyType String -Force | Out-Null
+        New-ItemProperty -Path $runKey -Name 'security-framework-console' -Value $consoleCmd -PropertyType String -Force | Out-Null
+        $chk = Get-ItemProperty -Path $runKey
+        if ($chk.'security-framework-engine' -and $chk.'security-framework-console') {
+            Write-Ok "autostart at logon registered (engine minimized + console hidden)"
+        } else {
+            Write-Warn2 "autostart entries could not be verified in the registry"
+        }
     } catch { Write-Warn2 "autostart registration failed: $($_.Exception.Message)" }
 }
 
@@ -456,7 +487,7 @@ if ($MyInvocation.InvocationName -ne '.') {
 
     New-Item -ItemType Directory -Path $tools -Force | Out-Null
     Ensure-Go   -Tools $tools
-    Ensure-Node -Tools $tools
+    $nodeExe = Ensure-Node -Tools $tools
     Ensure-Bun  -Tools $tools
 
     if ($SkipBuild) {
@@ -464,7 +495,7 @@ if ($MyInvocation.InvocationName -ne '.') {
     } else {
         Build-Engine -Root $root
         if (-not $NoConsole) {
-            try { Build-Console -Root $root -NodeExe (Join-Path $tools 'node\node.exe') }
+            try { Build-Console -Root $root -NodeExe $nodeExe }
             catch {
                 Write-Warn2 "console build failed: $($_.Exception.Message)"
                 Write-Info "engine installed anyway; re-run with -Update to retry the console"

@@ -5,9 +5,10 @@
 #
 #   irm https://raw.githubusercontent.com/Ruby570bocadito/security-framework/main/uninstall.ps1 | iex
 #
-# Removes: running processes, logon tasks, the firewall rule, the user
-# PATH entry and the whole install directory (binaries, rules, web
-# console and the portable Go/Node/Bun tools inside it).
+# Removes: running processes, logon entries (HKCU Run + legacy scheduled
+# tasks), the firewall rule, the user PATH entry and the whole install
+# directory (binaries, rules, web console and the portable Go/Node/Bun
+# tools inside it).
 #
 # Keeps:   any system-wide toolchain you had before (Go, Node, Bun,
 #          Rust/MSVC) - the uninstaller never touches third-party tools.
@@ -21,6 +22,18 @@ $ErrorActionPreference = 'Continue'
 function Write-Ok($m)   { Write-Host "    [ok] $m" -ForegroundColor Green }
 function Write-Warn2($m){ Write-Host "    [!]  $m" -ForegroundColor Yellow }
 function Write-Info($m) { Write-Host "    $m" }
+
+function Remove-LogonEntries {
+    foreach ($v in @('security-framework-engine', 'security-framework-console')) {
+        try {
+            $rk = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+            if (Get-ItemProperty -Path $rk -Name $v -ErrorAction SilentlyContinue) {
+                Remove-ItemProperty -Path $rk -Name $v -Force
+                Write-Ok "removed logon entry $v (HKCU Run)"
+            }
+        } catch { }
+    }
+}
 
 function Stop-SfProcesses {
     param([string]$Root)
@@ -48,6 +61,7 @@ function Stop-SfProcesses {
             Write-Ok "removed scheduled task $t"
         } catch { }
     }
+    Remove-LogonEntries
 }
 
 function Remove-FirewallRule {
@@ -121,6 +135,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         foreach ($t in @('security-framework-engine', 'security-framework-console')) {
             try { Unregister-ScheduledTask -TaskName $t -Confirm:$false -ErrorAction SilentlyContinue } catch { }
         }
+        Remove-LogonEntries
     }
 
     Write-Host ''
