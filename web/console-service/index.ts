@@ -6,7 +6,7 @@
 
 import { createServer } from 'http'
 import { Server } from 'socket.io'
-import type { SfEvent, SfAlert, HubStats, RuleMeta } from './types'
+import type { SfEvent, SfAlert, HubStats, RuleMeta, SfSuppression } from './types'
 import { EngineBridge } from './bridge'
 import { runAnalysis } from './analyst'
 
@@ -44,6 +44,7 @@ const alerts: SfAlert[] = []
 
 let mode: HubStats['mode'] = 'sin-motor'
 let activeRules: RuleMeta[] = []
+let activeSuppressions: SfSuppression[] = []
 let lastStats: HubStats | null = null
 const startedAt = new Date()
 
@@ -59,6 +60,7 @@ function offlineStats(): HubStats {
     webhook_sent: 0,
     webhook_failed: 0,
     webhook_dropped: 0,
+    suppressions_active: 0,
   }
 }
 
@@ -79,6 +81,15 @@ function pushStats(st: HubStats) {
   io.emit('console:stats', st)
 }
 
+// Suppressions change rarely (file edit + hot reload), so the hub only
+// forwards them when the payload actually differs: no socket churn every
+// 2 s poll. onDown clears them - with the engine gone there is nothing
+// honest to display, same policy as events/alerts.
+function pushSuppressions(entries: SfSuppression[]) {
+  activeSuppressions = entries
+  io.emit('console:suppressions', entries)
+}
+
 const bridge = new EngineBridge({
   onEvent: pushEvent,
   onAlert: pushAlert,
@@ -86,6 +97,7 @@ const bridge = new EngineBridge({
   onRules: (rules) => {
     activeRules = rules
   },
+  onSuppressions: pushSuppressions,
   onUp: () => {
     if (mode === 'engine') return
     mode = 'engine'
@@ -95,6 +107,8 @@ const bridge = new EngineBridge({
     if (mode === 'sin-motor') return
     mode = 'sin-motor'
     lastStats = null
+    activeRules = []
+    if (activeSuppressions.length > 0) pushSuppressions([])
     pushStats(offlineStats())
     console.log('telemetry source: NONE (engine offline - console shows no data)')
   },
@@ -113,6 +127,7 @@ io.on('connection', (socket) => {
     events: events.slice(0, 120),
     alerts: alerts.slice(0, MAX_ALERTS),
     rules: activeRules,
+    suppressions: activeSuppressions,
     stats,
     started_at: new Date(Date.now() - stats.uptime_s * 1000).toISOString(),
   })

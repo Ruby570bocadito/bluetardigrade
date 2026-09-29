@@ -12,12 +12,32 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useConsole } from './socket-provider'
 import { EmptyState, SectionHeader, SeverityBadge } from './ui-bits'
-import { formatTime, type AnalystMessage, type SfAlert } from '@/lib/console-types'
+import { formatTime, type AnalystMessage, type SfAlert, type SfSuppression } from '@/lib/console-types'
 
 type AskPayload = { alert: SfAlert; question?: string }
 
+// Operator-suppression context for the alert being analyzed: an entry in
+// suppressions.yaml matching this rule means alerts from that host (or
+// every host) are being deliberately muted, which is exactly what an
+// analyst needs to know when the queue looks thinner than it should.
+function suppressionNote(alert: SfAlert, entries: SfSuppression[]): string | undefined {
+  const matches = entries.filter((s) => s.rule_id === alert.rule_id)
+  if (matches.length === 0) return undefined
+  const parts = matches.map((s) => {
+    const scope = !s.host
+      ? 'todos los hosts'
+      : s.host.toLowerCase() === alert.host.toLowerCase()
+        ? `este host (${s.host})`
+        : `el host ${s.host}`
+    const until = s.expires ? `, hasta ${s.expires}` : ''
+    const why = s.reason ? ` — ${s.reason}` : ''
+    return `${scope}${until}${why}`
+  })
+  return `Supresiones activas para esta regla: ${parts.join('; ')}.`
+}
+
 export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfAlert | null; clearPending: () => void }) {
-  const { alerts, getSocket } = useConsole()
+  const { alerts, suppressions, getSocket } = useConsole()
   const reduce = useReducedMotion()
   const [messages, setMessages] = useState<AnalystMessage[]>([])
   const [question, setQuestion] = useState('')
@@ -95,7 +115,13 @@ export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfA
     setPickerId(null)
     setMessages((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), role: 'user', alertName: alert.rule_name, question: q },
+      {
+        id: crypto.randomUUID(),
+        role: 'user',
+        alertName: alert.rule_name,
+        question: q,
+        suppressionNote: suppressionNote(alert, suppressions),
+      },
       { id: crypto.randomUUID(), role: 'analyst', steps: [], text: '' },
     ])
     const payload: AskPayload = { alert }
@@ -169,6 +195,11 @@ export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfA
                     <span className="text-zinc-500">Analizando </span>
                     <span className="text-zinc-200">{m.alertName}</span>
                     {m.question && <span className="block text-zinc-400">Pregunta: {m.question}</span>}
+                    {m.suppressionNote && (
+                      <p className="mt-1.5 max-w-[70ch] rounded border border-amber-300/30 bg-amber-300/10 px-2 py-1.5 text-[11px] leading-relaxed text-amber-200">
+                        {m.suppressionNote}
+                      </p>
+                    )}
                   </li>
                 ) : (
                   <li key={m.id} className="min-w-0">
