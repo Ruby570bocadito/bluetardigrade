@@ -11,6 +11,7 @@ import (
         "log"
         "os"
         "os/signal"
+        "path/filepath"
         "syscall"
         "time"
 
@@ -37,12 +38,23 @@ func main() {
                 os.Interrupt, syscall.SIGTERM)
         defer stop()
 
-        engine, err := rules.LoadDir(*rulesDir)
+        // rules dir: explicit flag > ./rules in CWD > rules next to the
+        // executable (so the installed sf-engine.exe needs no wrapper)
+        rulesPath := *rulesDir
+        if !dirExists(rulesPath) {
+                if exe, err := os.Executable(); err == nil {
+                        alt := filepath.Join(filepath.Dir(exe), "..", "rules")
+                        if dirExists(alt) {
+                                rulesPath = alt
+                        }
+                }
+        }
+        engine, err := rules.LoadDir(rulesPath)
         if err != nil {
-                log.Fatalf("[ENGINE] loading rules from %s: %v", *rulesDir, err)
+                log.Fatalf("[ENGINE] loading rules from %s: %v", rulesPath, err)
         }
         fmt.Printf("[ENGINE] %d rules loaded from %s (types: %v)\n",
-                engine.Count(), *rulesDir, engine.Types())
+                engine.Count(), rulesPath, engine.Types())
 
         events := make(chan *model.Event, 1024)
         server, err := ingest.New(*addr, events)
@@ -102,6 +114,11 @@ func main() {
         fmt.Printf("[ENGINE] processed %d events in %s (ingested=%d dropped=%d)\n",
                 processed, time.Since(start).Round(time.Millisecond),
                 server.Received(), server.Dropped())
+}
+
+func dirExists(p string) bool {
+        st, err := os.Stat(p)
+        return err == nil && st.IsDir()
 }
 
 func describe(ev *model.Event) string {

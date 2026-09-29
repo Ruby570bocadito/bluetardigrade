@@ -345,12 +345,23 @@ function Write-Shims {
     $nl = "`r`n"
     $enc = $null
     try { $enc = [Text.Encoding]::GetEncoding(0) } catch { $enc = [Text.Encoding]::ASCII }
-    $engineExe    = Join-Path $bin 'engine.exe'
-    $devsensorExe = Join-Path $bin 'devsensor.exe'
-    $rulesDir     = Join-Path $Root 'rules'
     $consolePs1   = Join-Path $scripts 'sf-console.ps1'
     $installPs1   = Join-Path $scripts 'install.ps1'
     $uninstallPs1 = Join-Path $scripts 'uninstall.ps1'
+    # sf-engine / sf-devsensor are exposed as hard-linked exes, not .cmd
+    # wrappers: Ctrl+C on a batch wrapper makes cmd ask 'Terminate batch
+    # job (Y/N)?'. The engine resolves rules next to its own exe.
+    foreach ($pair in @(@('sf-engine.exe', 'engine.exe'), @('sf-devsensor.exe', 'devsensor.exe'))) {
+        $link = Join-Path $bin $pair[0]
+        $target = Join-Path $bin $pair[1]
+        if (Test-Path $link) { Remove-Item $link -Force -ErrorAction SilentlyContinue }
+        try {
+            New-Item -ItemType HardLink -Path $link -Target $target -ErrorAction Stop | Out-Null
+        } catch {
+            Copy-Item $target $link -Force
+        }
+    }
+    Remove-Item (Join-Path $bin 'sf-engine.cmd'), (Join-Path $bin 'sf-devsensor.cmd') -Force -ErrorAction SilentlyContinue
     # sf-update/sf-uninstall self-copy to %TEMP% and run the copy: they
     # delete files under <Root>\bin (their own folder) while running, and
     # cmd prints "The system cannot find the path specified" if it has to
@@ -358,8 +369,6 @@ function Write-Shims {
     # CALL transfers control, so the original is never read again.
     # (built as line arrays: avoids "$nlif"-style variable-name pitfalls)
     $shims = [ordered]@{
-        'sf-engine.cmd' = "@echo off$nl`"$engineExe`" -rules `"$rulesDir`" %*$nl"
-        'sf-devsensor.cmd' = "@echo off$nl`"$devsensorExe`" %*$nl"
         'sf-console.cmd' = "@echo off$nl powershell -NoProfile -ExecutionPolicy Bypass -File `"$consolePs1`" %*$nl"
         'sf-update.cmd' = (@(
             '@echo off'
