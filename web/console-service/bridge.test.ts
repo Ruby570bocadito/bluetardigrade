@@ -53,6 +53,7 @@ function recorder(): Recorder {
     onStats: (st) => rec.stats.push(st),
     onSuppressions: (entries) => rec.sups.push(entries),
     onSequences: (seqs) => rec.seqs.push(seqs),
+    onLifecycle: () => {},
     onUp: () => rec.ups++,
     onDown: () => rec.downs++,
   }
