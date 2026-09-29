@@ -267,6 +267,7 @@ components:
         - uptime_s
         - events_total
         - dropped
+        - ingest_rejected
         - events_per_min
         - alerts_total
         - by_severity
@@ -288,7 +289,16 @@ components:
         dropped:
           type: integer
           format: int64
-          description: events discarded because the ingest channel was full
+          description: malformed events discarded by the ingest decoder (the
+            connection receives an ack error and stays open; the listener
+            applies backpressure instead of dropping on a full channel)
+        ingest_rejected:
+          type: integer
+          format: int64
+          description: connections closed for failing the ingest auth
+            handshake (wrong or missing token, AUTH sent to a tokenless
+            engine, auth timeout) — how visible probes against a remote
+            bind show up; zero with auth disabled on loopback
         events_per_min:
           type: integer
           description: events received in the last 60 seconds

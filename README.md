@@ -411,6 +411,8 @@ rules/            seeded detection pack (windows/)
 sequences/        kill-chain sequences for the correlator
 scripts/windows/  installed runtime scripts (sf-sensor, sf-console, ...)
                   + bundled sysmon-config.xml tuned to the detection pack
+scripts/dev-tests/ end-to-end verification scripts (OpenAPI drift check,
+                  webhook receiver, ingest auth smoke with real binaries)
 install.ps1       one-command Windows installer
 uninstall.ps1     standalone uninstaller
 Makefile          build automation (engine, sensor, console, docker)
