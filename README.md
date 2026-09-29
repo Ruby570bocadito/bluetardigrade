@@ -9,10 +9,13 @@ ATT&CK, and an early web console.
 > The project name is provisional. Expect a rename before v1.0.
 
 **Status:** `v0.1` — tracer bullet plus console preview. The full
-end-to-end pipeline (event → rules → alert) works today and the
-browser console (`web/`) is already usable against a simulated
-telemetry hub with AI triage; real ETW ingestion, YARA memory scanning
-and correlation land next (see the roadmap in `docs/`).
+end-to-end pipeline (event → rules → alert) works today against REAL
+telemetry: `sf-sensor` streams Sysmon events from the actual host and
+the browser console shows only what the engine really delivers, with
+AI triage. The scripted `sf-devsensor` scenario remains solely as a
+clearly labeled demo to smoke-test the pipeline. ETW-native ingestion
+(no Sysmon dependency) and YARA memory scanning land next (see the
+roadmap in `docs/`).
 
 ## Why
 
@@ -57,7 +60,7 @@ Requirements: Go 1.22+.
 # terminal 1 — start the engine
 make run-engine
 
-# terminal 2 — replay the simulated TTP scenario
+# terminal 2 — replay the demo scenario (simulated data, smoke test only)
 make run-devsensor
 ```
 
@@ -109,17 +112,26 @@ and puts six commands on your PATH:
 | Command         | What it does                                   |
 |-----------------|------------------------------------------------|
 | `sf-engine`     | detection engine, prints alerts live           |
-| `sf-devsensor`  | replays the simulated TTP scenario (PowerShell, works under WDAC/Smart App Control) |
-| `sf-sensor`     | streams REAL host telemetry through the engine via Sysmon (needs Sysmon installed; simulated demo: `sf-devsensor`) |
+| `sf-sensor`     | streams REAL host telemetry through the engine via Sysmon (`-SetupSysmon` installs it in one command) |
+| `sf-devsensor`  | demo only: replays a scripted scenario (simulated data, clearly labeled; works under WDAC/Smart App Control) |
 | `sf-console`    | starts the web console and opens the browser   |
 | `sf-update`     | updates the code and rebuilds                  |
 | `sf-uninstall`  | removes everything                             |
 
 ## Real telemetry with Sysmon (recommended)
 
-`sf-devsensor` replays a scripted demo scenario. To detect what
-actually happens on the machine, install Sysmon (free Microsoft
-telemetry driver) once, as admin:
+`sf-devsensor` replays a scripted demo scenario (simulated data - the
+only simulated piece in the project). To detect what actually happens
+on the machine, set up Sysmon (free Microsoft telemetry driver) with
+one command - accept the UAC prompt once:
+
+```powershell
+sf-sensor -SetupSysmon
+```
+
+That installs Sysmon via winget (or finds an existing copy) and applies
+the bundled `sysmon-config.xml`. Manual equivalent, in an admin
+terminal:
 
 ```powershell
 winget install Sysinternals.Sysmon
@@ -169,12 +181,12 @@ created. Toolchains you had before are left alone.
 The repo ships an early browser console: live telemetry feed, KPI
 dashboard, severity triage, the YAML rule pack and an AI analyst that
 explains each alert like a senior SOC analyst would. The hub
-(`web/console-service`) auto-detects a running engine: while the Go
-engine's API (:7778) answers, the console shows REAL telemetry and the
-status chip reads `engine real`; the moment the engine goes away it
-falls back to the built-in simulator (same NDJSON contract) and the
-chip reads `simulación`. No Windows host is required for the simulated
-mode.
+(`web/console-service`) contains NO simulator: it forwards only what
+the Go engine's API (:7778) really delivers, and the header chip names
+the actual source of the events you are looking at - `sf-sensor
+(Sysmon real)` for real host telemetry, or `sf-devsensor (demo)` while
+the scripted scenario is replaying. If the engine is unreachable the
+console says so and shows no data, instead of inventing any.
 
 Requirements: [bun](https://bun.sh).
 
@@ -202,8 +214,8 @@ make build-sensor-windows
 ./sensor/target/x86_64-pc-windows-msvc/release/security-sensor.exe --addr 127.0.0.1:7777
 ```
 
-On any platform you can exercise the Rust transport with
-`cargo run -- --simulate` (no kernel access needed).
+The sensor has no simulated mode: it runs only where real telemetry
+exists (Windows ETW) and refuses to start anywhere else.
 
 ## Writing rules
 
@@ -235,7 +247,8 @@ correlation engine in phase 2.
 
 ```
 cmd/engine/       detection engine binary (Go)
-cmd/devsensor/    simulated sensor for development (Go)
+cmd/devsensor/    demo sensor for development (Go): scripted scenario,
+                  simulated data - the only simulated piece in the repo
 internal/ingest/  NDJSON TCP listener + schema validation
 internal/enrich/  enrichment pipeline (context, not evidence mutation)
 internal/rules/   YAML parser, rule index and evaluator

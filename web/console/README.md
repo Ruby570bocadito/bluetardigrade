@@ -11,11 +11,12 @@ Two pieces:
 | `console/`          | Next.js 16, Tailwind 4, Motion     | 3000 |
 | `console-service/`  | Bun, socket.io                     | 3003 |
 
-The service currently feeds the console from a simulated telemetry hub
-(the devsensor scenarios plus the three seeded rules run in TypeScript)
-so no Windows host is required. Wiring it to the real Go engine is the
-next step: the engine already emits the structured JSON alerts the
-console consumes.
+The hub (`console-service/`) contains no simulator: it forwards only
+what the real Go engine delivers (API on :7778, SSE stream) and labels
+the header with the actual event source (`sf-sensor (Sysmon real)` for
+host telemetry, `sf-devsensor (demo)` while the scripted scenario is
+replaying). If the engine is unreachable the console says so and shows
+no data.
 
 ## Quickstart
 

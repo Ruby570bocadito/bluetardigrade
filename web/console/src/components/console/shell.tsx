@@ -26,8 +26,21 @@ const NAV: { id: ViewId; label: string; icon: React.ElementType }[] = [
 ]
 
 export function ConsoleShell() {
-  const { status, stats, alerts, startedAt } = useConsole()
+  const { status, stats, alerts, events, startedAt } = useConsole()
   const [view, setView] = useState<ViewId>('panel')
+
+  // Real telemetry source, derived from the events the engine actually
+  // delivered (Event.Source in pkg/model): 'sysmon' = sf-sensor reading
+  // Sysmon on this host, 'simulate' = sf-devsensor demo scenario.
+  const lastSource = events[0]?.source
+  const sourceLabel =
+    stats?.mode !== 'engine'
+      ? 'sin motor'
+      : lastSource === 'sysmon'
+        ? 'fuente: sf-sensor (Sysmon real)'
+        : lastSource === 'simulate'
+          ? 'fuente: sf-devsensor (demo)'
+          : 'fuente: motor NDJSON'
   const [pendingAlert, setPendingAlert] = useState<SfAlert | null>(null)
 
   const openInAnalyst = (al: SfAlert) => {
@@ -66,7 +79,7 @@ export function ConsoleShell() {
           <p className="px-4 py-4 text-[11px] leading-relaxed text-zinc-600">
             {stats?.mode === 'engine'
               ? 'Conectada al motor Go real: eventos y alertas del pipeline NDJSON en directo.'
-              : 'Consola del tracer bullet. Telemetría simulada con el mismo contrato NDJSON que el sensor Rust.'}
+              : 'Sin conexión con el motor Go: no se muestra ningún dato. Arranca sf-engine o sf-console.'}
           </p>
         </aside>
 
@@ -79,7 +92,7 @@ export function ConsoleShell() {
             <div className="hidden items-baseline gap-2 lg:flex">
               <h1 className="text-sm font-medium text-zinc-200">{titleFor(view)}</h1>
               {startedAt && stats && (
-                <span className="font-mono text-xs text-zinc-600">sensor activo {formatUptime(stats.uptime_s)}</span>
+                <span className="font-mono text-xs text-zinc-600">motor activo {formatUptime(stats.uptime_s)}</span>
               )}
             </div>
             <div className="flex items-center gap-2 rounded-md border border-white/[0.08] px-2.5 py-1.5">
@@ -97,7 +110,7 @@ export function ConsoleShell() {
                 {status === 'live' ? 'En vivo' : status === 'connecting' ? 'Conectando' : 'Reconectando'}
               </span>
               <span className="hidden font-mono text-[11px] text-zinc-600 sm:inline">
-                ETW · {stats?.mode === 'engine' ? 'engine real' : 'simulación'}
+                {sourceLabel}
               </span>
             </div>
           </header>

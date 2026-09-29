@@ -1,5 +1,10 @@
 # ======================================================================
-# security-framework - simulated sensor (PowerShell edition)
+# security-framework - SIMULATED demo sensor (clearly labeled, demo only)
+#
+# This is the ONE simulated piece in the project and it stays that way
+# on purpose: it replays a fixed TTP scenario to verify the pipeline
+# end to end. The data is NOT from your machine. For real telemetry
+# use sf-sensor (Sysmon) - see the project README.
 #
 # Streams the exact same TTP scenario as the Go devsensor
 # (cmd/devsensor/main.go) to the engine's NDJSON ingest port, but as a
@@ -166,6 +171,7 @@ $writer = New-Object IO.StreamWriter($stream, (New-Object Text.UTF8Encoding($fal
 $writer.NewLine = "`n"
 
 Write-Host "[DEVSENSOR] connected to $Addr - streaming $($scenario.Count) events"
+Write-Host '[DEVSENSOR] NOTE: this is the SIMULATED demo scenario - not your host.'
 $i = 0
 try {
     foreach ($ev in $scenario) {
@@ -183,6 +189,7 @@ try {
     $client.Close()
 }
 Write-Host '[DEVSENSOR] scenario complete - connection closed'
+Write-Host '[DEVSENSOR] (those were simulated demo events; for REAL telemetry: sf-sensor)'
 if ($engineWasStarted) {
     Write-Host '[DEVSENSOR] engine left running in the background:'
     Write-Host '[DEVSENSOR]   watch the alerts:  sf-console   (web UI)'

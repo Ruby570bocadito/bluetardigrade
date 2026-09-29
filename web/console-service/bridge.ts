@@ -1,15 +1,16 @@
 // Bridge from the real Go engine's local HTTP API (:7778) into the
 // console bus. While the engine is reachable, the hub forwards live
 // events and alerts from the SSE stream and polls /api/stats; the
-// moment it disappears, the caller restarts the simulator. SSE frames
-// are parsed by hand so the same code runs on bun and node.
+// moment it disappears the hub reports "sin-motor" (no fallback data,
+// no simulation). SSE frames are parsed by hand so the same code runs
+// on bun and node.
 
-import type { SfEvent, SfAlert, SimStats, RuleMeta } from './sim'
+import type { SfEvent, SfAlert, HubStats, RuleMeta } from './types'
 
 export type EngineBridgeCallbacks = {
   onEvent: (ev: SfEvent) => void
   onAlert: (al: SfAlert) => void
-  onStats: (st: SimStats) => void
+  onStats: (st: HubStats) => void
   onRules: (rules: RuleMeta[]) => void
   onUp: () => void
   onDown: () => void
@@ -85,10 +86,10 @@ export class EngineBridge {
       this.getJson<unknown[]>(`${this.base}/api/events?limit=160`),
       this.getJson<unknown[]>(`${this.base}/api/alerts?limit=48`),
     ])
-    this.cb.onRules(rules.map(mapRule))
+    this.cb.onRules(rules.map((r) => mapRule(r as Record<string, unknown>)))
     // API returns newest first; replay oldest first so the ring order holds
     for (let i = events.length - 1; i >= 0; i--) this.cb.onEvent(events[i] as SfEvent)
-    for (let i = alerts.length - 1; i >= 0; i--) this.cb.onAlert(mapAlert(alerts[i]))
+    for (let i = alerts.length - 1; i >= 0; i--) this.cb.onAlert(mapAlert(alerts[i] as Record<string, unknown>))
 
     this.ctrl = new AbortController()
     const res = await fetch(`${this.base}/api/stream`, { signal: this.ctrl.signal })
@@ -155,7 +156,7 @@ export class EngineBridge {
 
 // ---------------------------------------------------------------- mappers
 
-function mapStats(st: Record<string, unknown>): SimStats {
+function mapStats(st: Record<string, unknown>): HubStats {
   return {
     events_total: Number(st.events_total ?? 0),
     alerts_total: Number(st.alerts_total ?? 0),

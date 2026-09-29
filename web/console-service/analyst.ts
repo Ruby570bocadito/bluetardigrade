@@ -3,7 +3,7 @@
 // matters (MITRE ATT&CK), risk level and recommended first steps.
 
 import ZAI from 'z-ai-web-dev-sdk'
-import type { SfAlert, SfEvent, RuleMeta } from './sim'
+import type { SfAlert, SfEvent, RuleMeta } from './types'
 
 export type AnalystStep = { label: string; state: 'run' | 'done' }
 

@@ -1,7 +1,8 @@
 // Shared types for the security-framework web console. These mirror the
 // JSON contracts of the Go engine (pkg/model, internal/alert) and of
-// mini-services/console-service so the UI talks the same language in both
-// simulated and live modes.
+// web/console-service so the UI talks the same language as the hub. The
+// hub forwards engine data only; 'sin-motor' means the engine is
+// unreachable and the console shows no data at all.
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low'
 
@@ -70,7 +71,7 @@ export type SimStats = {
   events_per_min: number
   uptime_s: number
   interval_ms: number
-  mode: 'simulacion' | 'engine'
+  mode: 'engine' | 'sin-motor'
 }
 
 export type ConsoleSnapshot = {
