@@ -90,11 +90,37 @@ disables) used by the web console and handy for SIEM taps:
 | Endpoint | Returns |
 |----------|---------|
 | `GET /api/health` | liveness + mode |
-| `GET /api/stats` | uptime, counters, per-severity totals, rule count |
+| `GET /api/stats` | uptime, counters, per-severity totals, rule count, webhook delivery counters |
 | `GET /api/events?limit=200` | recent events, newest first |
 | `GET /api/alerts?limit=100` | recent alerts, newest first |
 | `GET /api/rules` | live rule set (hot-reload aware) |
 | `GET /api/stream` | Server-Sent Events with live events + alerts |
+| `GET /api/events/export?format=jsonl\|csv` | bulk download of the event ring (JSON Lines or CSV) |
+| `GET /api/alerts/export?format=jsonl\|csv` | bulk download of the alert ring (JSON Lines or CSV) |
+
+Exports are for SIEM import, offline analysis and the forensic
+store: JSONL round-trips the full records, CSV flattens them to
+stable columns and neutralizes spreadsheet formula injection on
+attacker-controlled fields. When `-webhook` is set, `/api/stats`
+additionally reports `webhook_sent` / `webhook_failed` /
+`webhook_dropped` so the delivery pipeline can be sized from the
+outside.
+
+### Alert webhook (SIEM/SOAR connector)
+
+The engine can push every raised alert as JSON to an external HTTP
+collector — a SIEM, a SOAR playbook, a chat-ops relay:
+
+```bash
+bin/engine -addr :7777 -webhook http://siem.internal:8080/ingest
+```
+
+Delivery is asynchronous and bounded: alerts queue up to 512 frames,
+a single worker POSTs them with up to three attempts (transport
+errors, 429 and 5xx retry; other 4xx fail fast) and a slow or down
+receiver never blocks detection — saturated deliveries are counted
+as dropped instead. The payload is the same structured alert the
+console and the JSON log line carry, so receivers speak one format.
 
 ## One-command install (Windows)
 
@@ -180,7 +206,10 @@ created. Toolchains you had before are left alone.
 
 The repo ships an early browser console: live telemetry feed, KPI
 dashboard, severity triage, the YAML rule pack and an AI analyst that
-explains each alert like a senior SOC analyst would. The hub
+explains each alert like a senior SOC analyst would. Both the alert
+queue and the live feed support free-text search (rule, host, user,
+command line, MITRE tag) on top of the dropdown filters, so triage
+can narrow down a noisy host or a single technique in seconds. The hub
 (`web/console-service`) contains NO simulator: it forwards only what
 the Go engine's API (:7778) really delivers, and the header chip names
 the actual source of the events you are looking at - `sf-sensor

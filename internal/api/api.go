@@ -40,7 +40,8 @@ type Hub struct {
 	alertsTotal int
 	bySeverity  map[string]int
 	rules       *rules.Engine
-	received    func() (uint64, uint64) // ingested, dropped
+	received    func() (uint64, uint64)         // ingested, dropped
+	webhook     func() (uint64, uint64, uint64) // sent, failed, dropped
 }
 
 // New binds the API listener. Use addr ":0" in tests to pick a free port.
@@ -62,6 +63,8 @@ func New(addr string) (*Hub, error) {
 	mux.HandleFunc("GET /api/rules", h.handleRules)
 	mux.HandleFunc("GET /api/stream", h.handleStream)
 	mux.HandleFunc("GET /api/health", h.handleHealth)
+	mux.HandleFunc("GET /api/alerts/export", h.handleAlertsExport)
+	mux.HandleFunc("GET /api/events/export", h.handleEventsExport)
 	h.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	return h, nil
 }
@@ -80,6 +83,13 @@ func (h *Hub) SetRules(re *rules.Engine) {
 func (h *Hub) SetCounters(received func() (uint64, uint64)) {
 	h.mu.Lock()
 	h.received = received
+	h.mu.Unlock()
+}
+
+// SetWebhookStats wires the webhook delivery counters into /api/stats.
+func (h *Hub) SetWebhookStats(stats func() (sent, failed, dropped uint64)) {
+	h.mu.Lock()
+	h.webhook = stats
 	h.mu.Unlock()
 }
 
@@ -160,6 +170,9 @@ type statsPayload struct {
 	RulesCount     int            `json:"rules_count"`
 	RulesTypes     []string       `json:"rules_types"`
 	EventsBuffered int            `json:"events_buffered"`
+	WebhookSent    uint64         `json:"webhook_sent"`
+	WebhookFailed  uint64         `json:"webhook_failed"`
+	WebhookDropped uint64         `json:"webhook_dropped"`
 	Mode           string         `json:"mode"`
 }
 
@@ -185,6 +198,10 @@ func (h *Hub) handleStats(w http.ResponseWriter, _ *http.Request) {
 	if h.received != nil {
 		received, dropped = h.received()
 	}
+	var whSent, whFailed, whDropped uint64
+	if h.webhook != nil {
+		whSent, whFailed, whDropped = h.webhook()
+	}
 	rulesCount, rulesTypes := 0, []string{}
 	if h.rules != nil {
 		rulesCount = h.rules.Count()
@@ -202,6 +219,9 @@ func (h *Hub) handleStats(w http.ResponseWriter, _ *http.Request) {
 		RulesCount:     rulesCount,
 		RulesTypes:     rulesTypes,
 		EventsBuffered: evCount,
+		WebhookSent:    whSent,
+		WebhookFailed:  whFailed,
+		WebhookDropped: whDropped,
 		Mode:           "engine",
 	})
 }

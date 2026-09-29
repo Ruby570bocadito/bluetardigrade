@@ -6,8 +6,9 @@
 
 import { useMemo, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { CaretDown, Sparkle } from '@phosphor-icons/react'
+import { CaretDown, MagnifyingGlass, Sparkle } from '@phosphor-icons/react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { useConsole } from './socket-provider'
 import { EmptyState, SectionHeader, SeverityBadge } from './ui-bits'
@@ -22,42 +23,82 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
   const { alerts, status } = useConsole()
   const reduce = useReducedMotion()
   const [sevFilter, setSevFilter] = useState<string>('all')
+  const [query, setQuery] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
 
   const visible = useMemo(() => {
-    const list = sevFilter === 'all' ? alerts : alerts.filter((a) => a.severity === sevFilter)
+    const q = query.trim().toLowerCase()
+    const list = alerts.filter((a) => {
+      if (sevFilter !== 'all' && a.severity !== sevFilter) return false
+      if (!q) return true
+      // triage search: anything an analyst remembers about the alert
+      const haystack = [
+        a.rule_name, a.rule_id, a.summary, a.host, a.user ?? '',
+        a.event_type, ...a.tags, ...a.matched_on,
+      ].join(' ').toLowerCase()
+      return haystack.includes(q)
+    })
     return compact ? list.slice(0, 6) : list
-  }, [alerts, sevFilter, compact])
+  }, [alerts, sevFilter, query, compact])
+
+  const filtering = sevFilter !== 'all' || query.trim() !== ''
 
   return (
     <section aria-label="Alertas de detección">
       <SectionHeader
         title="Alertas"
-        count={alerts.length}
+        count={visible.length}
         action={
           !compact && (
-            <Select value={sevFilter} onValueChange={setSevFilter}>
-              <SelectTrigger className="h-8 w-[170px] font-mono text-xs" aria-label="Filtrar por severidad">
-                <SelectValue placeholder="Severidad" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">todas</SelectItem>
-                <SelectItem value="critical">critical</SelectItem>
-                <SelectItem value="high">high</SelectItem>
-                <SelectItem value="medium">medium</SelectItem>
-                <SelectItem value="low">low</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-2">
+              {filtering && (
+                <span className="hidden font-mono text-[11px] text-zinc-600 sm:inline">de {alerts.length}</span>
+              )}
+              <div className="relative">
+                <MagnifyingGlass
+                  size={13}
+                  aria-hidden
+                  className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500"
+                />
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') setQuery('')
+                  }}
+                  placeholder="buscar regla, host, usuario..."
+                  aria-label="Buscar en alertas"
+                  className="h-8 w-[210px] border-white/10 bg-transparent pl-7 font-mono text-xs text-zinc-200 placeholder:text-zinc-600"
+                />
+              </div>
+              <Select value={sevFilter} onValueChange={setSevFilter}>
+                <SelectTrigger className="h-8 w-[170px] font-mono text-xs" aria-label="Filtrar por severidad">
+                  <SelectValue placeholder="Severidad" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">todas</SelectItem>
+                  <SelectItem value="critical">critical</SelectItem>
+                  <SelectItem value="high">high</SelectItem>
+                  <SelectItem value="medium">medium</SelectItem>
+                  <SelectItem value="low">low</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           )
         }
       />
 
-      {status !== 'live' && visible.length === 0 ? (
+      {status !== 'live' && alerts.length === 0 ? (
         <div className="h-24 animate-pulse rounded bg-white/5" />
-      ) : visible.length === 0 ? (
+      ) : alerts.length === 0 ? (
         <EmptyState
           title="Sin alertas todavía"
           hint="Las detecciones aparecen en cuanto una regla evalúa telemetría sospechosa"
+        />
+      ) : visible.length === 0 ? (
+        <EmptyState
+          title="Sin resultados"
+          hint="Ninguna alerta coincide con la búsqueda o el filtro actual"
         />
       ) : (
         <ul className="divide-y divide-white/[0.06] border-y border-white/[0.08]">
