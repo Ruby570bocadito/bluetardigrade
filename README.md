@@ -102,6 +102,7 @@ entirely with `-api 0`:
 | `GET /api/stats` | uptime, counters, per-severity totals, rule count, webhook delivery counters |
 | `GET /api/events?limit=200` | recent events, newest first |
 | `GET /api/alerts?limit=100` | recent alerts, newest first |
+| `GET /api/alerts/export?format=ndjson\|csv&limit=256` | downloadable alert feed for SIEM/SOAR handoff, chronological order |
 | `GET /api/rules` | live rule set (hot-reload aware) |
 | `GET /api/stream` | Server-Sent Events with live events + alerts |
 | `GET /api/events/export?format=jsonl\|csv` | bulk download of the event ring (JSON Lines or CSV) |
@@ -283,6 +284,35 @@ Operators (v0.1): `eq`, `neq`, `contains`, `contains_any`,
 Sequence operators (`sequence` + `maxspan`) arrive with the
 correlation engine in phase 2.
 
+### Rule actions
+
+Rules can declare an `actions` list; the engine executes it every time
+the rule fires (message rendering happens before the alert is written,
+so the console and the JSON log line carry the rendered text):
+
+```yaml
+  actions:
+    # human message attached to the alert payload (`message` field);
+    # placeholders: {host} {user} {rule} {severity} {event_type} {summary}
+    # notify marks the alert for external notification (`notify` field)
+    - type: alert
+      config:
+        message: "Robo de credenciales en {host} por {user}"
+        notify: "true"
+
+    # real HTTP POST of the full alert JSON (background delivery,
+    # bounded in-flight queue, never blocks detection)
+    - type: webhook
+      config:
+        url: "https://siem.example.com/hooks/edr"
+        secret: "bearer-token-optional"   # sent as Authorization: Bearer
+        timeout: 5s                        # per delivery, max 30s
+```
+
+Delivery failures are logged on stderr and never surface as detection
+errors; a dead webhook endpoint degrades to log noise, not data loss in
+the engine.
+
 ## Repository layout
 
 ```
@@ -293,6 +323,7 @@ internal/ingest/  NDJSON TCP listener + schema validation
 internal/enrich/  enrichment pipeline (context, not evidence mutation)
 internal/rules/   YAML parser, rule index and evaluator
 internal/alert/   alert rendering, dedup, structured JSON
+internal/actions/ rule action executor (message templates, webhooks)
 pkg/model/        unified event schema (the wire contract)
 sensor/           Rust ETW sensor (collector is Windows-gated)
 rules/            seeded detection pack (windows/)

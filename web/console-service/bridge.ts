@@ -183,6 +183,8 @@ function mapAlert(a: Record<string, unknown>): SfAlert {
     event_id: String(a.event_id ?? ''),
     event_type: String(a.event_type ?? ''),
     summary: String(a.summary ?? ''),
+    message: a.message ? String(a.message) : undefined,
+    notify: a.notify === true,
     matched_on: (a.matched_on as string[]) ?? [],
     tags: (a.tags as string[]) ?? [],
   }

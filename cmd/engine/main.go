@@ -18,6 +18,7 @@ import (
         "syscall"
         "time"
 
+        "github.com/Ruby570bocadito/security-framework/internal/actions"
         "github.com/Ruby570bocadito/security-framework/internal/alert"
         "github.com/Ruby570bocadito/security-framework/internal/api"
         "github.com/Ruby570bocadito/security-framework/internal/correlate"
@@ -159,6 +160,10 @@ func main() {
                         wh.Handle(a)
                 }
         })
+        // rule actions: rendered messages land inside the alert payload;
+        // webhook deliveries run in the background and never stall intake
+        dispatcher := actions.New(log.New(os.Stderr, "[ACTIONS] ", 0))
+        alerts.SetPreparer(dispatcher.Prepare)
         if corr != nil {
                 corr.SetEmit(alerts.Emit)
         }

@@ -43,6 +43,10 @@ export type SfAlert = {
   event_id: string
   event_type: string
   summary: string
+  // engine-side fields: the engine renders rule messages (internal/actions)
+  // and the notify flag; alerts without an alert action leave them unset
+  message?: string
+  notify?: boolean
   matched_on: string[]
   tags: string[]
 }

@@ -40,6 +40,7 @@ type Manager struct {
         out     io.Writer
         colored bool
         onAlert func(Alert) // optional observer (local API, SIEM taps)
+        prepare func(*Alert, []rules.Action) // optional rule-action executor
 }
 
 // Alert is the structured JSON payload emitted for downstream
@@ -54,6 +55,8 @@ type Alert struct {
         EventID   string            `json:"event_id"`
         EventType string            `json:"event_type"`
         Summary   string            `json:"summary"`
+        Message   string            `json:"message,omitempty"` // rendered from the rule's alert action, if any
+        Notify    bool              `json:"notify,omitempty"` // rule asks for external notification
         MatchedOn []string          `json:"matched_on"`
         Tags      []string          `json:"tags,omitempty"`
         Actions   []string          `json:"actions,omitempty"`
@@ -69,6 +72,18 @@ func New(out io.Writer, onAlert func(Alert)) *Manager {
                 colored: isTerminal(),
                 onAlert: onAlert,
         }
+}
+
+// SetPreparer wires an executor for the actions declared by the rule
+// that fired (message rendering, webhooks). It is invoked on every
+// raised alert after the alert is built and before it is written, so
+// the rendered message ships inside the JSON payload. Raise uses the
+// firing rule's actions; Emit passes none (sequences declare no
+// actions).
+func (m *Manager) SetPreparer(prepare func(*Alert, []rules.Action)) {
+        m.mu.Lock()
+        m.prepare = prepare
+        m.mu.Unlock()
 }
 
 // Raise processes one hit; duplicate hits for the same rule/host/event
@@ -98,6 +113,9 @@ func (m *Manager) Raise(ev *model.Event, hit rules.Hit) {
         m.mu.Unlock()
 
         a := buildAlert(ev, hit)
+        if m.prepare != nil {
+                m.prepare(&a, hit.Rule.Actions)
+        }
         m.writeConsole(a)
         m.writeJSON(a)
         if m.onAlert != nil {
@@ -110,6 +128,9 @@ func (m *Manager) Raise(ev *model.Event, hit rules.Hit) {
 // pipeline as Raise, without deduplication: completions are
 // inherently rate-limited by their own re-arm semantics.
 func (m *Manager) Emit(a Alert) {
+        if m.prepare != nil {
+                m.prepare(&a, nil)
+        }
         m.writeConsole(a)
         m.writeJSON(a)
         if m.onAlert != nil {

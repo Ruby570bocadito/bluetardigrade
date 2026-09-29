@@ -48,6 +48,11 @@ export type SfAlert = {
   event_id: string
   event_type: string
   summary: string
+  // rendered by the engine when the rule declares an alert action;
+  // absent in simulated mode (the simulator does not run actions)
+  message?: string
+  // rule asks for external notification (config.notify)
+  notify?: boolean
   matched_on: string[]
   tags: string[]
 }
