@@ -600,11 +600,15 @@ subscribers miss frames instead of stalling the engine), so a burst at
 unlimited speed (~128k ev/s) shows the alerts still produced 2000/2000
 while the bench client's frames arrive late — backpressure, not loss.
 
-Run it yourself against a live engine:
+Run it yourself against a live engine (re-runs are safe: the bench
+uses a per-run host, so the engine's 60 s alert dedup never swallows
+a second run; engines started with `-api-token` need the same
+credential passed to the bench):
 
 ```bash
 go build -o bin/bench ./cmd/bench
 bin/bench -addr 127.0.0.1:7777 -api 127.0.0.1:7778 -n 2000 -rate 1000
+bin/bench -addr 127.0.0.1:7777 -api 127.0.0.1:7778 -api-token <token> -n 2000
 ```
 
 ## Roadmap

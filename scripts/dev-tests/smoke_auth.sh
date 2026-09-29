@@ -226,8 +226,20 @@ RC_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$((API+50))
 [ "$RC_NOAUTH" = "401" ] || fail "scenario 7: /api/stats without token answered $RC_NOAUTH, expected 401"
 [ "$RC_AUTH" = "200" ] || fail "scenario 7: /api/stats with Bearer token answered $RC_AUTH, expected 200"
 [ "$RC_HEALTH" = "200" ] || fail "scenario 7: /api/health answered $RC_HEALTH, expected 200 (stays open for probes)"
+# RFC 7235: the 401 must carry a WWW-Authenticate Bearer challenge and an
+# actionable body naming the knob; /api/health must carry neither (auth()
+# passes it through untouched)
+CHALLENGE=$(curl -s -D - -o /dev/null "http://127.0.0.1:$((API+50))/api/stats" | tr -d '\r' | grep -i '^www-authenticate:')
+echo "$CHALLENGE" | grep -qi 'bearer' \
+  || fail "scenario 7: 401 without a WWW-Authenticate Bearer challenge (got: '$CHALLENGE')"
+BODY_NOAUTH=$(curl -s "http://127.0.0.1:$((API+50))/api/stats")
+echo "$BODY_NOAUTH" | grep -q 'api-token' \
+  || fail "scenario 7: 401 body not actionable (no -api-token hint): $BODY_NOAUTH"
+CHALLENGE_HEALTH=$(curl -s -D - -o /dev/null "http://127.0.0.1:$((API+50))/api/health" | tr -d '\r' | grep -ci '^www-authenticate:')
+[ "$CHALLENGE_HEALTH" = "0" ] \
+  || fail "scenario 7: /api/health carries a WWW-Authenticate challenge (must stay probe-clean)"
 kill "${PIDS[-1]}" 2>/dev/null; wait "${PIDS[-1]}" 2>/dev/null
-log "  api auth: no_token=$RC_NOAUTH bearer=$RC_AUTH health=$RC_HEALTH"
+log "  api auth: no_token=$RC_NOAUTH bearer=$RC_AUTH health=$RC_HEALTH challenge=ok body=ok"
 
 if [ $FAILED -eq 0 ]; then
   log "ALL 7 SCENARIOS OK"

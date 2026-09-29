@@ -51,6 +51,9 @@ jobs:
         run: |
           python3 -m pip install --quiet pyyaml
           python3 scripts/dev-tests/check_openapi.py
+          # exercise the guard itself (1 positive + 7 negative fixtures),
+          # so CI fails if the validator stops catching its class of drift
+          python3 scripts/dev-tests/check_openapi.py --self-test
 
   console:
     name: Console (hub tests, tsc, next build)

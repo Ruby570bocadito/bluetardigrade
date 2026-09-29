@@ -12,15 +12,18 @@
 //
 // Nothing is simulated: if the engine deduplicates, drops or rejects,
 // the report says so and the exit code is non-zero. Dedup is avoided by
-// construction (unique PID per event; the dedup key is rule|host|pid).
+// construction (unique PID per event, unique host per run; the dedup
+// key is rule|host|pid and the engine keeps it for a 60 s TTL — a fixed
+// host would make every re-run against a live engine a silent no-op).
 //
 // Usage (start an engine first, see README "Rendimiento"):
 //
 //	go run ./cmd/bench -addr 127.0.0.1:7777 -api 127.0.0.1:7778 -n 2000
 //
-// Flags allow the ingest token (-token), a rate cap in events/s (-rate,
-// default 1000; 0 = unlimited) and the wait budget after the last send
-// (-wait).
+// Flags allow the ingest token (-token), the API bearer token
+// (-api-token, for engines started with -api-token; falls back to
+// SF_API_TOKEN), a rate cap in events/s (-rate, default 1000;
+// 0 = unlimited) and the wait budget after the last send (-wait).
 //
 // Delivery semantics, reported honestly: the pipeline completeness is
 // judged against alerts the engine PRODUCED (alerts_total delta on
@@ -50,6 +53,7 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:7777", "engine ingest TCP address")
 	api := flag.String("api", "127.0.0.1:7778", "engine HTTP API (for /api/stream and /api/stats)")
 	token := flag.String("token", "", "ingest token (send 'AUTH <token>' first; falls back to SF_INGEST_TOKEN)")
+	apiToken := flag.String("api-token", "", "bearer token for the engine HTTP API, mirrors -api-token on the engine (falls back to SF_API_TOKEN)")
 	n := flag.Int("n", 2000, "number of events to send")
 	rate := flag.Float64("rate", 1000, "events per second cap (0 = as fast as possible)")
 	wait := flag.Duration("wait", 10*time.Second, "max wait after the last send for pending alerts")
@@ -63,6 +67,17 @@ func main() {
 	if shared == "" {
 		shared = os.Getenv("SF_INGEST_TOKEN")
 	}
+	apiBearer := *apiToken
+	if apiBearer == "" {
+		apiBearer = os.Getenv("SF_API_TOKEN")
+	}
+	// Per-run host: the engine deduplicates alerts on rule|host|pid for
+	// a 60 s TTL, so re-running the bench against a live engine with a
+	// fixed host would silently swallow alerts (first symptom: the
+	// warmup delivery proof times out). A unique host per run keeps
+	// every dedup key fresh; within a run, the unique PID per event
+	// does the same job.
+	host := fmt.Sprintf("bench-host-%d", time.Now().UnixNano()%1_000_000_000)
 
 	conn, err := net.Dial("tcp", *addr)
 	fatalIf(err, "dial ingest")
@@ -101,12 +116,18 @@ func main() {
 	collectDone := make(chan struct{})
 	go func() {
 		defer close(collectDone)
-		resp, err := http.Get("http://" + *api + "/api/stream")
+		resp, err := httpGet("http://"+*api+"/api/stream", apiBearer)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "bench: SSE connect failed:", err)
 			os.Exit(1)
 		}
 		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			fmt.Fprintf(os.Stderr,
+				"bench: /api/stream answered %d — is the engine running with -api-token? pass -api-token or SF_API_TOKEN\n",
+				resp.StatusCode)
+			os.Exit(1)
+		}
 		close(subscribed)
 		parseSSE(resp.Body, func(topic, data string) {
 			if topic != "alert" {
@@ -138,7 +159,7 @@ func main() {
 	// Warmup: one unmeasured event before the measured run. It proves
 	// the SSE delivery path end to end (its alert must delete its own
 	// outstanding entry) and pre-warms first-alert allocations.
-	warm := benchEvent(-1)
+	warm := benchEvent(-1, host)
 	wline, _ := json.Marshal(warm)
 	select {
 	case <-subscribed:
@@ -168,7 +189,7 @@ func main() {
 
 	// completeness baseline AFTER the warmup: the delta below measures
 	// exactly the alerts produced by the measured run
-	alertsBefore := alertsTotal(*api)
+	alertsBefore := alertsTotal(*api, apiBearer)
 
 	fmt.Printf("sending %d events to %s (rate cap: %s)...\n", *n, *addr, rateLabel(*rate))
 	interval := time.Duration(0)
@@ -178,7 +199,7 @@ func main() {
 	start := time.Now()
 	var lastWrite time.Time
 	for i := 0; i < *n; i++ {
-		ev := benchEvent(i)
+		ev := benchEvent(i, host)
 		t0 := time.Now()
 		line, _ := json.Marshal(ev)
 		// store BEFORE the write: the entry exists before its alert can
@@ -217,12 +238,14 @@ func main() {
 	mu.Unlock()
 
 	var statsMap map[string]any
-	if resp, err := http.Get("http://" + *api + "/api/stats"); err == nil {
-		_ = json.NewDecoder(resp.Body).Decode(&statsMap)
+	if resp, err := httpGet("http://"+*api+"/api/stats", apiBearer); err == nil {
+		if resp.StatusCode == http.StatusOK {
+			_ = json.NewDecoder(resp.Body).Decode(&statsMap)
+		}
 		resp.Body.Close()
 	}
 	produced := 0
-	if after := alertsTotal(*api); after > alertsBefore {
+	if after := alertsTotal(*api, apiBearer); after > alertsBefore {
 		produced = after - alertsBefore
 	}
 
@@ -283,14 +306,17 @@ func rateLabel(r float64) string {
 }
 
 // alertsTotal reads alerts_total from the engine stats (0 when the API
-// is unreachable: the completeness criterion then stays pessimistic,
-// produced==0 != sent, and the run reports FAIL).
-func alertsTotal(api string) int {
-	resp, err := http.Get("http://" + api + "/api/stats")
+// is unreachable or answers non-200: the completeness criterion then
+// stays pessimistic, produced==0 != sent, and the run reports FAIL).
+func alertsTotal(api, token string) int {
+	resp, err := httpGet("http://"+api+"/api/stats", token)
 	if err != nil {
 		return 0
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0
+	}
 	var s struct {
 		AlertsTotal int `json:"alerts_total"`
 	}
@@ -300,17 +326,30 @@ func alertsTotal(api string) int {
 	return s.AlertsTotal
 }
 
+// httpGet issues a GET with the optional API bearer credential.
+func httpGet(url, token string) (*http.Response, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	return http.DefaultClient.Do(req)
+}
+
 // benchEvent builds a process.create event that deterministically fires
 // the powershell_encoded rule (process.name eq powershell.exe AND
 // command_line contains -enc). Unique id + unique pid defeat the alert
-// dedup (key rule|host|pid).
-func benchEvent(i int) map[string]any {
+// dedup (key rule|host|pid); the per-run host keeps keys fresh across
+// runs (see the comment at the top of main).
+func benchEvent(i int, host string) map[string]any {
 	return map[string]any{
 		"id":        fmt.Sprintf("bench-%d-%d", time.Now().UnixNano(), i),
 		"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 		"type":      "process.create",
 		"source":    "bench",
-		"host":      "bench-host",
+		"host":      host,
 		"user":      "bench",
 		"process": map[string]any{
 			"pid":          100 + i,
