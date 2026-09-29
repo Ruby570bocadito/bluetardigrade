@@ -4,9 +4,10 @@
 #   engine : gofmt + build + vet + test (Go 1.22)
 #   console: hub (bun test, tsc) and web console (tsc, next build)
 #   spec   : OpenAPI drift guard against internal/api/api.go
-# The Windows ETW sensor gets a cheap `cargo check --locked` (compiles
-# every crate for the host target; a full Windows cross-build stays a
-# release concern, not a CI concern).
+# The Windows-first ETW sensor gets `cargo check --locked` on two
+# targets: the host and a Windows cross-check (x86_64-pc-windows-msvc,
+# type/borrow check, no linking). A full Windows cross-build (a linked
+# .exe) stays a release concern, not a CI concern.
 name: ci
 
 on:
@@ -93,9 +94,9 @@ jobs:
         run: cargo check --locked --manifest-path sensor/Cargo.toml
       # Windows cross-check (agent-04 delta, convergencia ronda 20h31): el
       # sensor es Windows-first (colector ETW) y este check es la única vía
-      # de compilar ese código sin host Windows; coste ~1-2 min por push.
+      # de verificar ese código sin host Windows; coste ~1-2 min por push.
       # Pulimiento lo certificó en frío dos veces con este comando exacto.
-      # Contra-arumento documentado: "release concern, not CI concern" —
+      # Contra-argumento documentado: "release concern, not CI concern" —
       # decisión final para el Director si el tiempo de CI pesa.
       - name: cargo check --locked (Windows cross-check)
         run: |

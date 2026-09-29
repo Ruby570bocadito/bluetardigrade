@@ -11,7 +11,8 @@
 #   make console-service  run the realtime telemetry hub (:3003)
 #   make console          run the web console (Next.js, :3000)
 #   make ci               the same suite CI runs on every push (gofmt,
-#                         build, vet, test, bun, cargo, OpenAPI guard)
+#                         build, vet, test, bun, cargo, OpenAPI guard +
+#                         self-test, Windows cross-check of the sensor)
 
 GO      ?= go
 CARGO   ?= cargo
@@ -69,16 +70,20 @@ console:
 	cd web/console && $(BUN) run dev
 
 # Same suite the GitHub Actions workflow (.github/workflows/ci.yml)
-# runs on every push. Needs: Go 1.22+, bun, cargo, python3 + PyYAML.
+# runs on every push. Needs: Go 1.22+, bun, cargo via rustup,
+# python3 + PyYAML.
 ci:
 	@out="$$(gofmt -l .)"; if [ -n "$$out" ]; then echo "gofmt needed on:"; echo "$$out"; exit 1; fi
 	$(GO) build ./...
 	$(GO) vet ./...
 	$(GO) test -count=1 ./...
 	python3 scripts/dev-tests/check_openapi.py
+	python3 scripts/dev-tests/check_openapi.py --self-test
 	cd web/console-service && $(BUN) install --frozen-lockfile && $(BUN) test && bunx tsc --noEmit
 	cd web/console && $(BUN) install --frozen-lockfile && bunx tsc --noEmit && $(BUN) run build
 	$(CARGO) check --locked --manifest-path sensor/Cargo.toml
+	rustup target add x86_64-pc-windows-msvc
+	$(CARGO) check --locked --target x86_64-pc-windows-msvc --manifest-path sensor/Cargo.toml
 
 clean:
 	rm -rf $(BIN_DIR)

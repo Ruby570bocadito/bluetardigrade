@@ -387,11 +387,11 @@ Delivery failures are logged on stderr and never surface as detection errors; a 
 
 Every push and pull request runs the same checks the maintainers run locally (`.github/workflows/ci.yml`, three jobs):
 
-- **Go engine** — `gofmt` (no diffs), `go build`, `go vet`, `go test -count=1 ./...`, plus the OpenAPI drift guard (`scripts/dev-tests/check_openapi.py`, spec vs. `internal/api/api.go`).
+- **Go engine** — `gofmt` (no diffs), `go build`, `go vet`, `go test -count=1 ./...`, plus the OpenAPI drift guard (`scripts/dev-tests/check_openapi.py`, spec vs. `internal/api/api.go`) and the guard's self-test (`--self-test`: one positive plus ten negative fixtures that must produce findings).
 - **Console** — hub: `bun install --frozen-lockfile`, `bun test`, `tsc --noEmit`; web console: same install, `tsc --noEmit`, `next build`.
-- **Sensor** — `cargo check --locked` (the crate compiles on any OS; ETW ingestion is cfg-gated to Windows and refuses to run off-Windows).
+- **Sensor** — `cargo check --locked` on two targets: the host and a Windows cross-check (`--target x86_64-pc-windows-msvc`, type/borrow check without linking — the ETW collector is Windows-first and this is the only way to verify it still compiles without a Windows host). The crate itself compiles on any OS; ETW ingestion is cfg-gated to Windows and refuses to run off-Windows.
 
-To run the equivalent suite locally (Go 1.22+, bun, cargo, python3 with PyYAML):
+To run the equivalent suite locally (Go 1.22+, bun, cargo via rustup, python3 with PyYAML):
 
 ```bash
 make ci
