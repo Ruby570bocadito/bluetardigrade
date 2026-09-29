@@ -46,9 +46,16 @@ Open http://localhost:3000.
 - `CONSOLE_CORS_ORIGIN` (console-service): comma-separated list of
   extra origins allowed to open a socket to the hub (the local console
   origins on port 3000 are always allowed).
-- The analyst triage calls the LLM SDK declared in
-  `console-service/package.json`; without credentials the rest of the
-  console keeps working and the analyst panel reports the error.
+- The analyst triage talks to any OpenAI-compatible LLM endpoint
+  configured through environment variables of `console-service` — no
+  vendor SDK, no private packages:
+  - `ANALYST_BASE_URL` (e.g. `https://api.openai.com/v1` or a local LLM
+    gateway) and `ANALYST_MODEL` (e.g. `gpt-4o-mini`, `llama3.1`) are
+    both required to enable the feature.
+  - `ANALYST_API_KEY` is sent as `Authorization: Bearer ...` (optional:
+    local gateways may not need it).
+  - Without those variables the rest of the console keeps working and
+    the analyst panel reports that the triage is not configured.
 
 The interface copy is in Spanish by design: the primary audience of the
 project documentation is Spanish speaking.

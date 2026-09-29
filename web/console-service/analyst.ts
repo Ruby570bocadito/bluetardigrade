@@ -1,9 +1,10 @@
-// Alert-triage analyst. Calls the LLM SDK declared in package.json
-// (backend only) to explain a raised alert the way a senior SOC analyst
-// would: what happened, why it matters (MITRE ATT&CK), risk level and
+// Alert-triage analyst. Calls the LLM provider configured through
+// environment variables (see llm.ts — OpenAI-compatible endpoint, backend
+// only) to explain a raised alert the way a senior SOC analyst would:
+// what happened, why it matters (MITRE ATT&CK), risk level and
 // recommended first steps.
 
-import ZAI from 'z-ai-web-dev-sdk'
+import { createChatCompletion } from './llm'
 import type { SfAlert, SfEvent, RuleMeta } from './types'
 
 export type AnalystStep = { label: string; state: 'run' | 'done' }
@@ -73,25 +74,23 @@ export async function runAnalysis(alert: SfAlert, rule: RuleMeta | undefined, ev
   await sleep(500)
   emit.step({ label: 'Correlacionando con MITRE ATT&CK', state: 'done' })
 
-  // Step 3: draft conclusions with the LLM
+  // Step 3: draft conclusions with the configured LLM provider
   emit.step({ label: 'Redactando conclusiones', state: 'run' })
-  const zai = await ZAI.create()
   const contextNote = note ? `Nota de contexto interno para tu analisis: ${note}` : ''
   const fieldsNote = keyFields.length ? `Campos clave observados: ${keyFields.join(' | ')}` : ''
 
-  const completion = await zai.chat.completions.create({
+  const completion = await createChatCompletion({
     messages: [
-      { role: 'assistant', content: analystSystemPrompt() },
+      { role: 'system', content: analystSystemPrompt() },
       {
         role: 'user',
         content: [analystUserPrompt(alert, rule, ev, question), contextNote, fieldsNote].filter(Boolean).join('\n'),
       },
     ],
-    thinking: { type: 'disabled' },
+    temperature: 0.2,
   })
 
-  const text = completion.choices[0]?.message?.content?.trim() ?? ''
-  if (!text) throw new Error('respuesta vacia del modelo')
+  const text = completion.content
 
   // Stream the finished text to the client in small deltas (smooth reveal)
   const tokens = text.match(/\S+\s*/g) ?? [text]

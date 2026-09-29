@@ -68,6 +68,7 @@ Expected output on the engine terminal:
 
 ```
 [ENGINE] 23 rules loaded from ./rules (types: [file.write image.load network.connect process.access process.create registry.set])
+[ENGINE] 4 sequences loaded from ./sequences (correlator on: [Campana de robo de credenciales Campana de intrusion completa Apagon defensivo Instalacion de persistencia])
 [ENGINE] listening on 127.0.0.1:7777 (NDJSON, 1 event per line)
 [ENGINE] api on 127.0.0.1:7778 (stats / events / alerts / rules / stream)
 [ALERT] HIGH     9f31c2a4... powershell.exe -nop -w hidden -enc SQBF... host=LAB-WKS-01
@@ -316,18 +317,25 @@ the engine.
 ## Repository layout
 
 ```
-cmd/engine/       detection engine binary (Go)
-cmd/devsensor/    demo sensor for development (Go): scripted scenario,
-                  simulated data - the only simulated piece in the repo
-internal/ingest/  NDJSON TCP listener + schema validation
-internal/enrich/  enrichment pipeline (context, not evidence mutation)
-internal/rules/   YAML parser, rule index and evaluator
-internal/alert/   alert rendering, dedup, structured JSON
-internal/actions/ rule action executor (message templates, webhooks)
-pkg/model/        unified event schema (the wire contract)
-sensor/           Rust ETW sensor (collector is Windows-gated)
-rules/            seeded detection pack (windows/)
-docs/             architecture document + ADRs
+cmd/engine/           detection engine binary (Go)
+cmd/devsensor/        demo sensor for development (Go): scripted scenario,
+                      simulated data - the only simulated piece in the repo
+internal/ingest/      NDJSON TCP listener + schema validation
+internal/enrich/      enrichment pipeline (context, not evidence mutation)
+internal/rules/       YAML parser, rule index and evaluator
+internal/correlate/   kill-chain correlator (sequences/*.yaml)
+internal/alert/       alert rendering, dedup, structured JSON
+internal/actions/     rule action executor (message templates, webhooks)
+internal/api/         local read-only HTTP API, SSE stream, JSONL/CSV export
+internal/webhook/     alert webhook delivery (bounded queue, retries)
+pkg/model/            unified event schema (the wire contract)
+sensor/               Rust ETW sensor (collector is Windows-gated)
+rules/                seeded detection pack (windows/)
+sequences/            kill-chain definitions for the correlator
+scripts/windows/      sensor helpers + bundled sysmon-config.xml
+install.ps1           one-command Windows installer (also sf-update)
+uninstall.ps1         standalone uninstaller
+docs/                 architecture document (PDF) + diagram sources and assets
 web/console/          Next.js console (live feed, triage, AI analyst)
 web/console-service/  realtime telemetry hub (bun + socket.io)
 ```
@@ -337,7 +345,7 @@ web/console-service/  realtime telemetry hub (bun + socket.io)
 | Phase | Window          | Delivers                                              |
 |-------|-----------------|-------------------------------------------------------|
 | 1     | weeks 1–6 2026  | tracer bullet, ETW sensor, rule index, p99 < 10 ms    |
-| 2     | weeks 7–14 2027 | YARA memory scan, eBPF collector, correlation, SQLite |
+| 2     | weeks 7–14 2026 | YARA memory scan, eBPF collector, correlation, SQLite |
 | 3     | weeks 15–20     | web console, REST+OpenAPI, Elastic/Splunk connectors  |
 | 4     | weeks 21–26     | Python filaments (sandboxed), plugins, benchmarks     |
 
