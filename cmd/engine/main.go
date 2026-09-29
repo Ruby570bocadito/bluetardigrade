@@ -194,6 +194,7 @@ func main() {
 				}
 				return corr.States(), corr.Count(), correlate.MaxTrackedStates
 			})
+			hub.SetSequences(corr)
 			// same standard as the ingest token: flag wins, env fallback
 			apiTok := *apiToken
 			if apiTok == "" {

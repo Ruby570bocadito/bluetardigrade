@@ -74,6 +74,19 @@ export type SfSuppression = {
   expires?: string
 }
 
+// One kill-chain sequence as the engine serves it
+// (GET /api/sequences -> correlate.SequenceInfo). Steps are listed in
+// declared order for display; matching itself is unordered.
+export type SfSequence = {
+  id: string
+  name: string
+  description: string
+  severity: SfAlert['severity']
+  window_seconds: number
+  tags: string[]
+  steps: string[]
+}
+
 // The hub has exactly two modes: forwarding the real engine, or having
 // nothing to show. There is no simulation mode anywhere in this service.
 export type HubStats = {

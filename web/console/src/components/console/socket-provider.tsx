@@ -6,7 +6,7 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react'
 import type { Socket } from 'socket.io-client'
 import { io } from 'socket.io-client'
-import type { SfAlert, SfEvent, RuleMeta, SimStats, ConsoleSnapshot, SfSuppression } from '@/lib/console-types'
+import type { SfAlert, SfEvent, RuleMeta, SimStats, ConsoleSnapshot, SfSuppression, SfSequence } from '@/lib/console-types'
 
 export type ConnStatus = 'connecting' | 'live' | 'down'
 
@@ -16,6 +16,7 @@ type ConsoleState = {
   alerts: SfAlert[]
   rules: RuleMeta[]
   suppressions: SfSuppression[]
+  sequences: SfSequence[]
   stats: SimStats | null
   startedAt: string | null
   getSocket: () => Socket | null
@@ -45,6 +46,7 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
   const [alerts, setAlerts] = useState<SfAlert[]>([])
   const [rules, setRules] = useState<RuleMeta[]>([])
   const [suppressions, setSuppressions] = useState<SfSuppression[]>([])
+  const [sequences, setSequences] = useState<SfSequence[]>([])
   const [stats, setStats] = useState<SimStats | null>(null)
   const [startedAt, setStartedAt] = useState<string | null>(null)
   const socketRef = useRef<Socket | null>(null)
@@ -71,6 +73,7 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
       setAlerts(snap.alerts ?? [])
       setRules(snap.rules ?? [])
       setSuppressions(snap.suppressions ?? [])
+      setSequences(snap.sequences ?? [])
       setStats(snap.stats ?? null)
       setStartedAt(snap.started_at ?? null)
       setStatus('live')
@@ -89,6 +92,7 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
     })
     socket.on('console:stats', (st: SimStats) => setStats(st))
     socket.on('console:suppressions', (entries: SfSuppression[]) => setSuppressions(entries ?? []))
+    socket.on('console:sequences', (seqs: SfSequence[]) => setSequences(seqs ?? []))
 
     return () => {
       socket.disconnect()
@@ -99,7 +103,7 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
   const getSocket = useCallback(() => socketRef.current, [])
 
   return (
-    <Ctx.Provider value={{ status, events, alerts, rules, suppressions, stats, startedAt, getSocket }}>
+    <Ctx.Provider value={{ status, events, alerts, rules, suppressions, sequences, stats, startedAt, getSocket }}>
       {children}
     </Ctx.Provider>
   )

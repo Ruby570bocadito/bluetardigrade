@@ -130,10 +130,11 @@ The engine serves a small read-only API used by the web console and handy for SI
 | Endpoint | Returns |
 |----------|---------|
 | `GET /api/health` | liveness + mode |
-| `GET /api/stats` | uptime, counters, per-severity totals, rule count, ingest auth rejections, webhook delivery counters, active suppressions, kill-chain correlator gauge (in-flight states / loaded sequences / cap) |
+| `GET /api/stats` | uptime, counters, per-severity totals, rule count, ingest auth rejections, webhook delivery counters, active suppressions, kill-chain correlator observability (`correlator_states` / `correlator_sequences` / `correlator_cap`) |
 | `GET /api/events?limit=200` | recent events, newest first |
 | `GET /api/alerts?limit=100` | recent alerts, newest first |
 | `GET /api/suppressions` | operator allowlist currently active (read-only view) |
+| `GET /api/sequences` | kill-chain sequences loaded by the correlator (read-only view; empty = correlator off) |
 | `GET /api/events/export?format=jsonl\|csv` | bulk download of the event ring (JSON Lines or CSV) |
 | `GET /api/alerts/export?format=ndjson\|csv&limit=256` | downloadable alert feed for SIEM/SOAR handoff, chronological order |
 | `GET /api/rules` | live rule set (hot-reload aware) |
@@ -354,6 +355,8 @@ Operators (v0.1): `eq`, `neq`, `contains`, `contains_any`, `startswith`, `endswi
 ### Kill-chain correlation
 
 Beyond per-event rules, the engine ships a sequence correlator: `sequences/*.yaml` lists named steps (exact rule names) that, when all observed on the same host inside a `window` (e.g. `5m`), raise a single high-signal alert describing the campaign. The shipped pack models credential-dump campaigns, full intrusion chains, defensive shutdown and registry-based persistence. Sequences hot-reload together with the rules. Note: suppressing a rule also removes it from every chain it feeds on that host (accepted-state semantics — see [docs/false-positive-control.md](docs/false-positive-control.md)).
+
+The correlator is observable from the outside: `/api/sequences` lists the armed chains (steps, window, tags) as loaded right now, and `/api/stats` carries `correlator_states` (in-flight (sequence, host) chains) against `correlator_cap` (8192) — a hostile feed inventing hostnames pushes states toward the cap, and past it NEW hosts would silently stop being tracked, so the number is meant to be watched. The console surfaces both: the `correlador N/cap` chip in the header turns red the moment the cap is reached, and the Cadenas view lists each chain with its steps and flags any step whose rule is not loaded (a chain that can never complete).
 
 ### Rule actions
 
