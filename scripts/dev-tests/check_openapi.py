@@ -200,6 +200,33 @@ def run_checks(spec: dict, go_src: str) -> tuple[list[str], dict]:
                         "api.go registers no auth middleware"
                     )
 
+    # ---- 401 body: the Unauthorized example must match the JSON the
+    # middleware actually writes, byte-for-byte, so the documented
+    # error contract cannot drift from the wire (the challenge headers
+    # and body live in one Fprintln in api.go's auth()).
+    m_body = re.search(r'Fprintln\(w, `(\{"error":"unauthorized[^"]*"\})`\)', go_src)
+    unauth = ((spec.get("components", {}) or {}).get("responses", {}) or {}).get("Unauthorized")
+    if has_mw and m_body and unauth:
+        go_error = m_body.group(1).split('"error":"', 1)[1]
+        if not go_error.endswith('"}'):
+            errors.append(f"could not parse the 401 body in api.go: {m_body.group(1)!r}")
+        else:
+            go_error = go_error[:-2]
+            try:
+                example = unauth["content"]["application/json"]["schema"]["properties"]["error"]["example"]
+            except (KeyError, TypeError):
+                example = None
+            if example is None:
+                errors.append(
+                    "components.responses.Unauthorized lacks the error example "
+                    "(content.application/json.schema.properties.error.example) "
+                    "while api.go writes a concrete 401 body"
+                )
+            elif example != go_error:
+                errors.append(
+                    f"Unauthorized example drift: spec {example!r} != api.go {go_error!r}"
+                )
+
     info.update(routes=len(go_routes), fields=len(go_fields), gated_ops=gated_ops)
     return errors, info
 
@@ -211,6 +238,7 @@ def run_checks(spec: dict, go_src: str) -> tuple[list[str], dict]:
 GO_FIXTURE = """package api
 
 import (
+        "fmt"
         "net/http"
         "time"
 )
@@ -227,7 +255,9 @@ func (h *Hub) auth(next http.Handler) http.Handler {
                         next.ServeHTTP(w, r)
                         return
                 }
-                next.ServeHTTP(w, r)
+                w.Header().Set("WWW-Authenticate", `Bearer realm="fixture"`)
+                w.WriteHeader(http.StatusUnauthorized)
+                fmt.Fprintln(w, `{"error":"unauthorized: send 'Authorization: Bearer <token>' (configure it with -api-token/SF_API_TOKEN)"}`)
         })
 }
 
@@ -264,6 +294,24 @@ def good_spec() -> dict:
         },
         "components": {
             "securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer"}},
+            "responses": {
+                "Unauthorized": {
+                    "description": "missing or wrong bearer credential",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "error": {
+                                        "type": "string",
+                                        "example": "unauthorized: send 'Authorization: Bearer <token>' (configure it with -api-token/SF_API_TOKEN)",
+                                    }
+                                },
+                            }
+                        }
+                    },
+                }
+            },
             "schemas": {
                 "Stats": {
                     "type": "object",
@@ -325,6 +373,15 @@ def self_test() -> int:
                 "401", {"$ref": "#/components/responses/Unauthorized"}
             ),
             "must not document a 401",
+        ),
+        (
+            "Unauthorized example drifted from the api.go body",
+            lambda s: s["components"]["responses"]["Unauthorized"]["content"][
+                "application/json"
+            ]["schema"]["properties"]["error"].__setitem__(
+                "example", "unauthorized: stale message the code no longer sends"
+            ),
+            "Unauthorized example drift",
         ),
     ]
     for name, mutate, expect in variants:

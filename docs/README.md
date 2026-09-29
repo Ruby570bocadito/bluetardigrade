@@ -4,6 +4,7 @@
 |------|-----------|
 | `arquitectura-tecnica-v0.1.pdf` | Documento de arquitectura v0.1 (diseño de septiembre 2026, 15 páginas) |
 | `assets/` | Diagramas del README (`diagram_*.png`), capturas de la consola (`console-*.png/gif`) y sus fuentes de trabajo en `assets/src/` |
+| `false-positive-control.md` | Guía de operación del canal de salida: dedup, supresiones, correlación, filtrado en el receptor y límites anti-abuso del pipeline |
 | `agentes/` | Informes de ronda del sistema de agentes (registro histórico de auditoría y coordinación) |
 
 ## Estado del documento de arquitectura

@@ -103,7 +103,7 @@ func (h *Hub) SetCounters(received func() (ingested, dropped, rejected uint64)) 
 
 // SetToken requires "Authorization: Bearer <token>" on every /api route
 // except /api/health (the liveness probe, which returns nothing but
-// {"status":"ok"}). Call before Run. This keeps the standard set by the
+// {"mode":"engine","status":"ok"}). Call before Run. This keeps the standard set by the
 // ingest auth: a listener reachable beyond loopback must demand an
 // explicit credential - the API hands out every event and alert, so an
 // open port on a shared network is a silent data leak.

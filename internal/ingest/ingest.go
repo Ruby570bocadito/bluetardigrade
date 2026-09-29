@@ -249,8 +249,42 @@ func decode(line []byte) (*model.Event, error) {
 	if err := json.Unmarshal(line, ev); err != nil {
 		return nil, fmt.Errorf("bad json: %v", err)
 	}
+	normalizeIdentity(ev)
 	if err := ev.Validate(); err != nil {
 		return nil, err
 	}
 	return ev, nil
+}
+
+// Identity-field caps for boundary normalization. Host and user end up
+// pinned in long-lived engine state: the alert dedup map (hard cap
+// 65536 keys, keyed by rule|host|pid) and the sequence correlator (up
+// to 8192 states, each keeping host and user). Ingest lines may carry
+// up to maxLineSize, so without a cap a hostile or misconfigured feed
+// could park ~1 MiB per unique host/user across those structures — the
+// line cap bounds the count of pinned entries, not their bytes. The
+// caps sit far above any legitimate value (RFC 1123 FQDN <= 253 bytes,
+// Windows usernames <= 104 chars, UUIDs <= 36 chars). Oversized values
+// are truncated, not dropped, so visibility wins — the same philosophy
+// as the alert summary truncation.
+const (
+	maxHostRunes = 255
+	maxUserRunes = 256
+	maxIDRunes   = 128
+)
+
+// normalizeIdentity truncates the feed-controlled identity fields that
+// long-lived engine state pins (see the caps above).
+func normalizeIdentity(ev *model.Event) {
+	ev.Host = truncateRunes(ev.Host, maxHostRunes)
+	ev.User = truncateRunes(ev.User, maxUserRunes)
+	ev.ID = truncateRunes(ev.ID, maxIDRunes)
+}
+
+func truncateRunes(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max])
 }

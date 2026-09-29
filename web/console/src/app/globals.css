@@ -122,3 +122,85 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   React Bits layer (adapted to the console theme)
+   ShinyText, SpotlightCard y el fondo ambiental de la shell. Todo CSS puro
+   salvo las custom properties que los componentes actualizan por puntero.
+   --------------------------------------------------------------------------- */
+
+/* ShinyText: barrido de brillo con background-clip: text (sin JS por frame) */
+.shiny-text {
+  color: var(--shiny-base, #6ee7b7);
+  background: linear-gradient(
+    110deg,
+    rgba(255, 255, 255, 0) 40%,
+    rgba(255, 255, 255, 0.85) 50%,
+    rgba(255, 255, 255, 0) 60%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: shiny-sweep var(--shiny-speed, 4s) linear infinite;
+}
+.shiny-text--paused {
+  animation: none;
+  background: none;
+}
+@keyframes shiny-sweep {
+  0% {
+    background-position: 130% 0;
+  }
+  100% {
+    background-position: -130% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shiny-text {
+    animation: none;
+    background: none;
+  }
+}
+
+/* SpotlightCard: halo radial que sigue al puntero (vars --spot-x/--spot-y) */
+.spotlight-card {
+  position: relative;
+  overflow: hidden;
+}
+.spotlight-card__halo {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  pointer-events: none;
+}
+.spotlight-card:hover .spotlight-card__halo,
+.spotlight-card:focus-within .spotlight-card__halo {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .spotlight-card__halo {
+    transition: none;
+  }
+}
+
+/* Fondo ambiental de la shell: rejilla de puntos + resplandor esmeralda
+   muy tenue en la cabecera. Decorativa pero estática: no anima nada.
+   isolation + z-index -1: el halo queda SIEMPRE detrás del contenido. */
+.ambient-dots {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.ambient-glow {
+  isolation: isolate;
+}
+.ambient-glow::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(600px 160px at 18% -10%, rgba(52, 211, 153, 0.07), transparent 70%),
+    radial-gradient(500px 140px at 85% -20%, rgba(52, 211, 153, 0.04), transparent 70%);
+}

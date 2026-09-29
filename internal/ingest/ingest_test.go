@@ -357,3 +357,49 @@ func TestSetPreviousTokenGuards(t *testing.T) {
 		t.Fatal("rotation did not open with a valid previous token")
 	}
 }
+
+// TestDecodeTruncatesOversizedIdentityFields: host, user and id are
+// pinned by long-lived engine state (alert dedup keys, correlator
+// states) — at the ingest boundary oversized values are truncated, not
+// dropped, so a hostile feed cannot park ~1 MiB per unique host there.
+func TestDecodeTruncatesOversizedIdentityFields(t *testing.T) {
+	line := `{"id":"` + strings.Repeat("i", 500) +
+		`","type":"process.create","host":"` + strings.Repeat("H", 600) +
+		`","user":"` + strings.Repeat("u", 600) +
+		`","timestamp":"2026-01-01T12:00:00Z","process":{"pid":1,"name":"x.exe"}}`
+	ev, err := decode([]byte(line))
+	if err != nil {
+		t.Fatalf("decode of an oversized (but well-formed) event must not fail: %v", err)
+	}
+	if n := len([]rune(ev.Host)); n != maxHostRunes {
+		t.Fatalf("host runes = %d, want %d", n, maxHostRunes)
+	}
+	if n := len([]rune(ev.User)); n != maxUserRunes {
+		t.Fatalf("user runes = %d, want %d", n, maxUserRunes)
+	}
+	if n := len([]rune(ev.ID)); n != maxIDRunes {
+		t.Fatalf("id runes = %d, want %d", n, maxIDRunes)
+	}
+}
+
+// TestDecodeKeepsNormalIdentityFields: the caps sit far above any
+// legitimate value — real hostnames, usernames and UUIDs must pass
+// through byte-identical.
+func TestDecodeKeepsNormalIdentityFields(t *testing.T) {
+	line := `{"id":"3f2b0c1a-9d8e-4f7a-b6c5-2e1d0a9b8c7d","type":"process.create",` +
+		`"host":"DESKTOP-CORP01.corp.local","user":"CORP\\\\jdoe",` +
+		`"timestamp":"2026-01-01T12:00:00Z","process":{"pid":42,"name":"powershell.exe"}}`
+	ev, err := decode([]byte(line))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if ev.Host != "DESKTOP-CORP01.corp.local" {
+		t.Fatalf("host = %q, want untouched", ev.Host)
+	}
+	if ev.User != `CORP\\jdoe` {
+		t.Fatalf("user = %q, want untouched", ev.User)
+	}
+	if ev.ID != "3f2b0c1a-9d8e-4f7a-b6c5-2e1d0a9b8c7d" {
+		t.Fatalf("id = %q, want untouched", ev.ID)
+	}
+}
