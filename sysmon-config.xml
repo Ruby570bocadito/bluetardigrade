@@ -1,0 +1,110 @@
+<!--
+security-framework - curated Sysmon configuration
+
+Purpose-built for sf-sensor: enables exactly the telemetry the engine
+consumes (process, network, DNS, process-access, file, registry,
+image-load) and filters the classic noise sources so a workstation
+stays in the low-MB/day range instead of flooding the log.
+
+Install once as admin, then run sf-sensor as a normal user (member of
+"Event Log Readers" for non-elevated reading):
+
+    sysmon.exe -accepteula -i sysmon-config.xml
+
+Update after changing this file:
+
+    sysmon.exe -c sysmon-config.xml
+
+Filtering model: sections with onmatch="exclude" drop the listed
+patterns; sections with onmatch="include" keep ONLY the listed ones
+(used for the noisiest channels: ImageLoad and ProcessAccess).
+-->
+<Sysmon schemaversion="4.81">
+  <HashAlgorithms>sha256</HashAlgorithms>
+  <EventFiltering>
+
+    <!-- EID 1 ProcessCreate: keep everything. Process creation is the
+         backbone of the detection pack and workstation volume is
+         manageable. -->
+    <ProcessCreate onmatch="exclude" />
+
+    <!-- EID 3 NetworkConnect: keep everything. -->
+    <NetworkConnect onmatch="exclude" />
+
+    <!-- EID 5 ProcessTerminate: keep (cheap, needed for lifecycle). -->
+    <ProcessTerminate onmatch="exclude" />
+
+    <!-- EID 7 ImageLoad: the noisiest channel (every DLL of every
+         process). Keep only loads from user-writable paths, which is
+         exactly where search-order hijacking and unsigned loaders
+         land (rule "DLL cargada desde ruta de usuario"). -->
+    <ImageLoad onmatch="include">
+      <ImageLoaded condition="contains">\AppData\</ImageLoaded>
+      <ImageLoaded condition="contains">\Windows\Temp\</ImageLoaded>
+      <ImageLoaded condition="contains">\Users\Public\</ImageLoaded>
+      <ImageLoaded condition="contains">\ProgramData\</ImageLoaded>
+    </ImageLoad>
+
+    <!-- EID 10 ProcessAccess: keep only sensitive targets. Access to
+         LSASS is the credential-dumping signal (rule "Acceso a
+         memoria de LSASS"); everything else is volume without
+         detections at this stage. -->
+    <ProcessAccess onmatch="include">
+      <TargetImage condition="is">C:\Windows\system32\lsass.exe</TargetImage>
+      <TargetImage condition="is">C:\Windows\syswow64\lsass.exe</TargetImage>
+    </ProcessAccess>
+
+    <!-- EID 11 FileCreate: drop pure system noise, keep user-writable
+         locations where droppers land. -->
+    <FileCreate onmatch="exclude">
+      <TargetFilename condition="begin with">C:\Windows\Prefetch\</TargetFilename>
+      <TargetFilename condition="end with">pagefile.sys</TargetFilename>
+      <TargetFilename condition="end with">swapfile.sys</TargetFilename>
+      <TargetFilename condition="end with">DumpStack.log.tmp</TargetFilename>
+      <TargetFilename condition="end with">$MFT</TargetFilename>
+      <TargetFilename condition="begin with">C:\Windows\SoftwareDistribution\</TargetFilename>
+      <TargetFilename condition="contains">\Windows\Installer\</TargetFilename>
+    </FileCreate>
+
+    <!-- EID 12/13/14 RegistryEvent: drop the classic chatty keys
+         (ShimCache rewrites, MUICache, UserAssist, background agents).
+         Everything else, including Run keys and Defender policy, is
+         kept - those feed the persistence and defense-evasion rules. -->
+    <RegistryEvent onmatch="exclude">
+      <TargetObject condition="begin with">HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\</TargetObject>
+      <TargetObject condition="contains">\Session Manager\AppCompatCache</TargetObject>
+      <TargetObject condition="contains">\AppCompatFlags\Compatibility Assistant\Store</TargetObject>
+      <TargetObject condition="contains">\MUICache</TargetObject>
+      <TargetObject condition="begin with">HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\UserAssist</TargetObject>
+      <TargetObject condition="begin with">HKLM\SYSTEM\CurrentControlSet\Services\bam\</TargetObject>
+      <TargetObject condition="begin with">HKLM\SYSTEM\CurrentControlSet\Services\dam\</TargetObject>
+      <TargetObject condition="begin with">HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings</TargetObject>
+      <TargetObject condition="contains">\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap</TargetObject>
+      <TargetObject condition="begin with">HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\</TargetObject>
+      <TargetObject condition="end with">\NodeValues</TargetObject>
+    </RegistryEvent>
+
+    <!-- EID 22 DnsQuery: drop high-volume benign domains (CDNs and
+         OS telemetry) to keep the log focused on what analysts and
+         rules care about. -->
+    <DnsQuery onmatch="exclude">
+      <QueryName condition="end with">.microsoft.com</QueryName>
+      <QueryName condition="end with">.windows.com</QueryName>
+      <QueryName condition="end with">.office.com</QueryName>
+      <QueryName condition="end with">.msn.com</QueryName>
+      <QueryName condition="end with">.bing.com</QueryName>
+      <QueryName condition="end with">.live.com</QueryName>
+      <QueryName condition="end with">.google.com</QueryName>
+      <QueryName condition="end with">.googleapis.com</QueryName>
+      <QueryName condition="end with">.gstatic.com</QueryName>
+      <QueryName condition="end with">.googleusercontent.com</QueryName>
+      <QueryName condition="end with">.cloudflare.com</QueryName>
+      <QueryName condition="end with">.akamai.com</QueryName>
+      <QueryName condition="end with">.amazonaws.com</QueryName>
+      <QueryName condition="end with">.azureedge.net</QueryName>
+      <QueryName condition="end with">.mozilla.org</QueryName>
+      <QueryName condition="end with">.apple.com</QueryName>
+    </DnsQuery>
+
+  </EventFiltering>
+</Sysmon>

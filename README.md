@@ -115,6 +115,25 @@ and puts six commands on your PATH:
 | `sf-update`     | updates the code and rebuilds                  |
 | `sf-uninstall`  | removes everything                             |
 
+## Real telemetry with Sysmon (recommended)
+
+`sf-devsensor` replays a scripted demo scenario. To detect what
+actually happens on the machine, install Sysmon (free Microsoft
+telemetry driver) once, as admin:
+
+```powershell
+winget install Sysinternals.Sysmon
+sysmon -accepteula -i "$env:LOCALAPPDATA\security-framework\scripts\sysmon-config.xml"
+```
+
+The shipped `sysmon-config.xml` is tuned to the detection pack and
+filters classic noise sources (ShimCache, UserAssist, MUICache, CDN
+DNS...). Then run `sf-sensor` (normal user; elevation or membership in
+the local `Event Log Readers` group is only needed to read the Sysmon
+log) and open `sf-console`: the alerts you see now correspond to real
+host activity - process creation, network and DNS, registry writes,
+file drops, and LSASS access (credential-dump detection).
+
 Optional switches (parameterized form):
 
 ```powershell

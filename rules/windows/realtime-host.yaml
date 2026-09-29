@@ -147,6 +147,69 @@
         notify: "true"
   tags: ["attack.t1036.007", "attack.defense-evasion", "sensor:file"]
   enabled: true
+# T1003.001 - LSASS memory access via process handle (Sysmon 10)
+# Source TTP: before dumping LSASS, the tool must open a handle with
+# read access to its memory (0x1010 = comsvcs MiniDump, 0x1033,
+# 0x1410/0x147a = ProcExp-style variants, 0x1FFFFF = all access). This
+# is the flagship real-EDR detection: it fires BEFORE credentials are
+# out of the machine, regardless of the tool used, and it cannot be
+# reproduced by synthetic command lines - it requires real telemetry.
+# Validated in lab: fires on process.access of lsass.exe with 0x1010.
+- name: "Acceso a memoria de LSASS"
+  id: "d37e8fa6-b0cf-42d3-f4e5-6a7b8c9dae10"
+  description: >
+    Detecta un proceso abriendo un handle de acceso a la memoria de
+    LSASS con derechos de lectura totales: el paso obligatorio de todo
+    volcado de credenciales (Mimikatz, comsvcs.dll MiniDump, procdump,
+    pypykatz...). Deteccion de EDR real: dispara antes de que las
+    credenciales salgan de la maquina y es independiente de la
+    herramienta concreta que se use.
+  severity: critical
+  event_type: process.access
+  conditions:
+    - field: target.name
+      operator: eq
+      value: "lsass.exe"
+    - field: access.granted_access
+      operator: regex
+      value: '(?i)^0x(1010|1033|1410|147a|1fffff)$'
+  actions:
+    - type: alert
+      config:
+        message: "Acceso a la memoria de LSASS en {host} por {user} - intento de robo de credenciales en curso"
+        notify: "true"
+  tags: ["attack.t1003.001", "attack.credential-access", "sensor:process-access"]
+  enabled: true
+# T1568.002 - Dynamic DNS generation heuristic (Sysmon 22)
+# Source TTP: DGA malware generates long random-looking domain labels
+# for C2. A pure length/charset heuristic on real DNS telemetry catches
+# the obvious cases with acceptable noise (medium severity for triage).
+# Validated in lab: fires on a 30+ char random label; benign domains
+# (www.google.com, cdn.jsdelivr.net) stay silent.
+- name: "Consulta DNS a dominio generado (posible DGA)"
+  id: "e48f9ab7-c1d0-43e4-a5f6-7b8c9daebf21"
+  description: >
+    Detecta consultas DNS a dominios cuyo primer nivel es
+    excepcionalmente largo y alfanumerico, patron tipico de algoritmos
+    de generacion de dominios (DGA) usados por malware para C2 y
+    exfiltracion. Heuristica de confianza media: revisar el resto de
+    alertas del host antes de responder.
+  severity: medium
+  event_type: network.connect
+  conditions:
+    - field: network.protocol
+      operator: eq
+      value: "dns"
+    - field: network.domain
+      operator: regex
+      value: '(?i)^[a-z0-9]{28,}\.'
+  actions:
+    - type: alert
+      config:
+        message: "Consulta DNS a dominio generado en {host} - posible C2 por DGA"
+        notify: "false"
+  tags: ["attack.t1568.002", "attack.command-and-control", "sensor:dns"]
+  enabled: true
 # T1574.001/2 - DLL loaded from a user-writable directory
 # Source TTP: DLL search-order hijacking plants a malicious library in
 # a path the app searches before system32. High FPR in the wild, hence

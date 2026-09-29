@@ -30,8 +30,9 @@
 #                                       telemetry; works on any OS)
 #
 # Mapped Sysmon IDs (v1): 1 process create, 3 network connect,
-# 5 process terminate, 7 image load, 11 file create, 12/13/14
-# registry create/set/rename. DNS queries (22) are a planned phase 2.
+# 5 process terminate, 7 image load, 10 process access (credential
+# dumping / injection handle grants), 11 file create, 12/13/14
+# registry create/set/rename, 22 DNS query. All real telemetry.
 #
 # If the engine is not listening, this script starts it in the
 # background first (same mechanism as sf-devsensor: hidden window,
@@ -47,7 +48,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $sysmonLog = 'Microsoft-Windows-Sysmon/Operational'
-$watchedIds = 1, 3, 5, 7, 11, 12, 13, 14
+$watchedIds = 1, 3, 5, 7, 10, 11, 12, 13, 14, 22
 
 # ======================================================================
 # Mapping layer: Sysmon EventData -> unified event schema (pure
@@ -128,6 +129,42 @@ function ConvertFrom-SysmonRecord([int]$EventId, [hashtable]$Data, [datetime]$Ti
             if ($Data['DestinationIp']) { $net['destination_ip'] = $Data['DestinationIp'] }
             if ($Data['DestinationPort']) { $net['destination_port'] = [int]($Data['DestinationPort'] -as [int]) }
             if ($Data['DestinationHostname'] -and $Data['DestinationHostname'] -ne '-') { $net['domain'] = $Data['DestinationHostname'] }
+            $ev['network'] = $net
+            return $ev
+        }
+        10 {
+            # ProcessAccess: source opened a handle on target with GrantedAccess.
+            # Flagship real-telemetry signal: LSASS access = credential dumping.
+            $ev = New-SfEvent 'process.access' @{
+                Image = $Data['SourceImage']; ProcessId = $Data['SourceProcessId']; User = $Data['User']
+            } $Time
+            if ($Data['TargetImage'] -or $Data['TargetProcessId']) {
+                $ev['target'] = [ordered]@{
+                    pid  = [int]($Data['TargetProcessId'] -as [int])
+                    name = Get-PathLeaf $Data['TargetImage']
+                }
+                if ($Data['TargetImage']) { $ev['target']['image'] = $Data['TargetImage'] }
+            }
+            $ev['access'] = [ordered]@{
+                granted_access = $Data['GrantedAccess']
+                call_trace     = $Data['CallTrace']
+            }
+            return $ev
+        }
+        22 {
+            # DNS query: mapped to network.connect with protocol=dns. The
+            # requested name is the domain; the first A record (when the
+            # resolver answered) fills destination_ip.
+            $ev = New-SfEvent 'network.connect' $Data $Time
+            $name = $Data['QueryName']
+            if ($name) { $name = $name.TrimEnd('.') }
+            $net = [ordered]@{ protocol = 'dns' }
+            if ($name -and $name -ne '-') { $net['domain'] = $name }
+            if ($Data['QueryResults'] -and $Data['QueryResults'] -ne '-') {
+                foreach ($entry in ($Data['QueryResults'] -split ';')) {
+                    if ($entry -match '^A:(\d+\.\d+\.\d+\.\d+)$') { $net['destination_ip'] = $Matches[1]; break }
+                }
+            }
             $ev['network'] = $net
             return $ev
         }
@@ -244,6 +281,22 @@ function Invoke-SelfTest {
     $ev = ConvertFrom-SysmonRecord 5 @{ ProcessId = '4212'; Image = 'C:\Windows\notepad.exe' } $t
     Check 'EID5 -> process.terminate' ($ev['type'] -eq 'process.terminate' -and $ev['process']['pid'] -eq 4212)
 
+    $ev = ConvertFrom-SysmonRecord 10 @{
+        SourceImage = 'C:\Users\Public\dump.exe'; SourceProcessId = '700'
+        TargetImage = 'C:\Windows\system32\lsass.exe'; TargetProcessId = '744'
+        GrantedAccess = '0x1010'; CallTrace = 'C:\Windows\SYSTEM32\ntdll.dll+9d1a4|UNKNOWN(00007FF...)'
+        User = 'LAB-WKS-01\jdoe'
+    } $t
+    Check 'EID10 -> process.access' ($ev['type'] -eq 'process.access' -and $ev['process']['name'] -eq 'dump.exe')
+    Check 'EID10 target + access' ($ev['target']['name'] -eq 'lsass.exe' -and $ev['access']['granted_access'] -eq '0x1010')
+
+    $ev = ConvertFrom-SysmonRecord 22 @{
+        QueryName = 'evil.example.com.'; QueryResults = 'A:93.184.216.34;AAAA:2606:2800::1'
+        ProcessId = '900'; Image = 'C:\Program Files\browser.exe'
+    } $t
+    Check 'EID22 -> network.connect dns' ($ev['type'] -eq 'network.connect' -and $ev['network']['protocol'] -eq 'dns')
+    Check 'EID22 domain + resolved ip' ($ev['network']['domain'] -eq 'evil.example.com' -and $ev['network']['destination_ip'] -eq '93.184.216.34')
+
     $ev = ConvertFrom-SysmonRecord 255 @{ Whatever = '1' } $t
     Check 'unknown EID skipped' ($null -eq $ev)
 
@@ -300,7 +353,8 @@ if ($session.GetLogNames() -notcontains $sysmonLog) {
     Write-Host '[SENSOR] Sysmon is not installed on this machine - no real telemetry available.' -ForegroundColor Red
     Write-Host '[SENSOR] install it once as admin, then re-run sf-sensor:'
     Write-Host '[SENSOR]   winget install Sysinternals.Sysmon'
-    Write-Host '[SENSOR]   sysmon -accepteula -i <config.xml>   (community config: SwiftOnSecurity sysmon-config)'
+    Write-Host "[SENSOR]   sysmon -accepteula -i `"$root\scripts\sysmon-config.xml`""
+    Write-Host '[SENSOR] (the config ships with security-framework: tuned to the detections, low noise)'
     Write-Host '[SENSOR] meanwhile, the simulated demo is:  sf-devsensor'
     exit 1
 }
