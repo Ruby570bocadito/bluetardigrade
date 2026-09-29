@@ -421,7 +421,7 @@ func (h *Hub) handleEvents(w http.ResponseWriter, r *http.Request) {
 			Since: f.since, Until: f.until, Limit: limit,
 		})
 		if err != nil {
-			http.Error(w, "store query failed: "+err.Error(), http.StatusInternalServerError)
+			h.storeQueryError(w, err)
 			return
 		}
 		if out == nil {
@@ -454,7 +454,7 @@ func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 			Since: f.since, Until: f.until, Limit: limit,
 		})
 		if err != nil {
-			http.Error(w, "store query failed: "+err.Error(), http.StatusInternalServerError)
+			h.storeQueryError(w, err)
 			return
 		}
 		if out == nil {
@@ -674,4 +674,13 @@ func writeJSON(w http.ResponseWriter, v any) {
 	if err := enc.Encode(v); err != nil {
 		log.Printf("api: encode: %v", err)
 	}
+}
+
+// storeQueryError answers a telemetry read backed by the SQLite store:
+// the operator gets the detail in the engine log (with paths and SQL
+// state that help debugging), the API client only gets the fact —
+// mirroring how the ingest side never echoes internals back.
+func (h *Hub) storeQueryError(w http.ResponseWriter, err error) {
+	log.Printf("[API] store query failed: %v", err)
+	http.Error(w, "store query failed (see engine log)", http.StatusInternalServerError)
 }
