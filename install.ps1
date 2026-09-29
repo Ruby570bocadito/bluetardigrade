@@ -628,7 +628,7 @@ if ($MyInvocation.InvocationName -ne '.') {
     Write-Host '------------------------------------------------------------'
     Write-Host ' quick test (open a NEW terminal first):'
     Write-Host '   terminal 1:  sf-engine'
-    Write-Host '   terminal 2:  sf-devsensor     -> 7 alerts on terminal 1'
+    Write-Host '   terminal 2:  sf-devsensor     -> 18 alerts on terminal 1'
     Write-Host '   or simply:   sf-console'
     Write-Host '============================================================'
 }

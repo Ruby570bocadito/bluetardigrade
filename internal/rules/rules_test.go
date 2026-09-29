@@ -32,7 +32,7 @@ func loadTestEngine(t *testing.T) *Engine {
         if err != nil {
                 t.Fatalf("LoadDir: %v", err)
         }
-        if e.Count() != 7 {
+        if e.Count() != 15 {
                 t.Fatalf("expected the seeded rule count, got %d", e.Count())
         }
         return e
@@ -63,12 +63,25 @@ func TestSeededPackDetectsLsassDump(t *testing.T) {
         }
 }
 
+func TestSeededPackDetectsSamDump(t *testing.T) {
+        e := loadTestEngine(t)
+        ev := testEvent("reg.exe", `reg.exe save HKLM\SAM C:\Users\Public\sam.hiv`)
+        hits := e.Evaluate(ev)
+        if len(hits) != 1 {
+                t.Fatalf("expected 1 hit, got %d", len(hits))
+        }
+        if hits[0].Rule.Name != "Volcado del registro SAM" {
+                t.Fatalf("unexpected rule %q", hits[0].Rule.Name)
+        }
+}
+
 func TestBenignEventsDoNotFire(t *testing.T) {
         e := loadTestEngine(t)
         for _, ev := range []*model.Event{
                 testEvent("notepad.exe", `"C:\Windows\system32\NOTEPAD.EXE" todo.txt`),
                 testEvent("powershell.exe", "powershell.exe Get-ChildItem C:\\Logs"),
                 testEvent("certutil.exe", "certutil.exe -hashfile data.bin SHA256"),
+                testEvent("reg.exe", `reg.exe query HKLM\SOFTWARE\Microsoft /v Version`),
         } {
                 if hits := e.Evaluate(ev); len(hits) != 0 {
                         t.Errorf("benign event %s fired %d rule(s): %v",

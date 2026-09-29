@@ -94,6 +94,18 @@ func (m *Manager) Raise(ev *model.Event, hit rules.Hit) {
         }
 }
 
+// Emit publishes an already-built alert (e.g. one produced by the
+// sequence correlator) through the same console/JSON/observer
+// pipeline as Raise, without deduplication: completions are
+// inherently rate-limited by their own re-arm semantics.
+func (m *Manager) Emit(a Alert) {
+        m.writeConsole(a)
+        m.writeJSON(a)
+        if m.onAlert != nil {
+                m.onAlert(a)
+        }
+}
+
 func buildAlert(ev *model.Event, hit rules.Hit) Alert {
         actions := make([]string, 0, len(hit.Rule.Actions))
         for _, ac := range hit.Rule.Actions {

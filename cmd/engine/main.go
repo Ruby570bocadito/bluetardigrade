@@ -20,6 +20,7 @@ import (
 
         "github.com/Ruby570bocadito/security-framework/internal/alert"
         "github.com/Ruby570bocadito/security-framework/internal/api"
+        "github.com/Ruby570bocadito/security-framework/internal/correlate"
         "github.com/Ruby570bocadito/security-framework/internal/enrich"
         "github.com/Ruby570bocadito/security-framework/internal/ingest"
         "github.com/Ruby570bocadito/security-framework/internal/rules"
@@ -30,6 +31,7 @@ var (
         addr      = flag.String("addr", ":7777", "TCP listen address for sensor streams")
         apiAddr   = flag.String("api", ":7778", "local HTTP API for the console (stats/events/alerts/stream); 0 disables")
         rulesDir  = flag.String("rules", "./rules", "directory with YAML rules")
+        seqDir    = flag.String("sequences", "./sequences", "directory with YAML kill-chain sequences (correlator)")
         verbose   = flag.Bool("v", false, "print every event received")
         reloadEvery = flag.Duration("reload-every", 15*time.Second,
                 "hot-reload interval for the rules directory (0 disables)")
@@ -60,6 +62,27 @@ func main() {
         }
         fmt.Printf("[ENGINE] %d rules loaded from %s (types: %v)\n",
                 engine.Count(), rulesPath, engine.Types())
+
+        // kill-chain sequences: same resolution order as the rules dir
+        seqPath := *seqDir
+        if !dirExists(seqPath) {
+                if exe, err := os.Executable(); err == nil {
+                        alt := filepath.Join(filepath.Dir(exe), "..", "sequences")
+                        if dirExists(alt) {
+                                seqPath = alt
+                        }
+                }
+        }
+        var corr *correlate.Manager
+        if dirExists(seqPath) {
+                if corr, err = correlate.LoadDir(seqPath, nil); err != nil {
+                        log.Fatalf("[ENGINE] loading sequences from %s: %v", seqPath, err)
+                }
+                if n := corr.Count(); n > 0 {
+                        fmt.Printf("[ENGINE] %d sequences loaded from %s (correlator on: %v)\n",
+                                n, seqPath, corr.Names())
+                }
+        }
 
         events := make(chan *model.Event, 1024)
         server, err := ingest.New(*addr, events)
@@ -110,6 +133,9 @@ func main() {
                         hub.RecordAlert(a)
                 }
         })
+        if corr != nil {
+                corr.SetEmit(alerts.Emit)
+        }
 
         if *reloadEvery > 0 {
                 go func() {
@@ -122,6 +148,11 @@ func main() {
                                 case <-t.C:
                                         if err := engine.Reload(*rulesDir); err == nil {
                                                 fmt.Printf("[ENGINE] rules reloaded (%d active)\n", engine.Count())
+                                        }
+                                        if corr != nil && dirExists(seqPath) {
+                                                if err := corr.Reload(seqPath); err == nil {
+                                                        fmt.Printf("[ENGINE] sequences reloaded (%d active)\n", corr.Count())
+                                                }
                                         }
                                 }
                         }
@@ -157,6 +188,9 @@ func main() {
                 }
                 for _, hit := range engine.Evaluate(ev) {
                         alerts.Raise(ev, hit)
+                        if corr != nil {
+                                corr.Observe(ev, hit.Rule.Name)
+                        }
                 }
                 processed++
         }

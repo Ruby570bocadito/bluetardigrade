@@ -1,0 +1,54 @@
+# Kill-chain sequences for the correlator (internal/correlate).
+#
+# Each sequence lists rule names (exact match, as loaded from rules/)
+# that, when all observed on the SAME host inside the window, raise a
+# single high-signal alert describing the campaign instead of leaving
+# the operator to stitch individual detections by hand.
+#
+# Schema: a YAML list of sequences with
+#   name, id, description, severity, window (e.g. 5m), tags, steps.
+# Steps are unordered: the correlator tracks which of them already
+# matched per host and fires when the set is complete within the
+# window measured from the first match.
+- name: "Campana de robo de credenciales"
+  id: "c0a5e7d1-1a2b-4c3d-8e4f-a5b6c7d8e9f0"
+  description: >
+    Tres tecnicas distintas de volcado de credenciales sobre el mismo
+    equipo: comsvcs.dll, procdump y colmena SAM. El atacante esta
+    recolectando hashes y tickets de toda la maquina, no solo de un
+    proceso: respuesta prioritaria y rotacion de credenciales.
+  severity: critical
+  window: 5m
+  tags: ["attack.t1003", "attack.credential-access", "correlacion"]
+  steps:
+    - rule: "Volcado de LSASS via comsvcs.dll"
+    - rule: "Volcado de LSASS con procdump"
+    - rule: "Volcado del registro SAM"
+- name: "Campana de intrusion completa"
+  id: "d1b6f8e2-2b3c-4d4e-9f50-b6c7d8e9f0a1"
+  description: >
+    Cadena clasica de intrusion: descarga de payload, persistencia con
+    tarea programada y destruccion de copias de sombra. Cubrir los tres
+    pasos en ventana corta indica operacion dirigida en curso, no
+    alertas aisladas de antivirus.
+  severity: critical
+  window: 5m
+  tags: ["attack.t1105", "attack.t1053.005", "attack.t1490", "correlacion"]
+  steps:
+    - rule: "Descarga con certutil o bitsadmin"
+    - rule: "Creacion de tarea programada"
+    - rule: "Borrado de instantaneas VSS"
+- name: "Apagon defensivo"
+  id: "e2c7a9f3-3c4d-4e5f-a061-c7d8e9f0a1b2"
+  description: >
+    Manipulacion de Defender, apagado del firewall y borrado de
+    registros de eventos sobre el mismo host: el atacante esta cegando
+    las defensas y la telemetria antes de una accion destructiva.
+    Tratar como precursor inmediato de ransomware o exfiltracion.
+  severity: critical
+  window: 5m
+  tags: ["attack.t1562", "attack.t1070.001", "attack.defense-evasion", "correlacion"]
+  steps:
+    - rule: "Manipulacion de Windows Defender"
+    - rule: "Desactivacion del firewall de Windows"
+    - rule: "Borrado de registros de eventos"
