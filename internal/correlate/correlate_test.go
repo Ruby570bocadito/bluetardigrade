@@ -1,6 +1,7 @@
 package correlate
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Ruby570bocadito/security-framework/internal/alert"
+	"github.com/Ruby570bocadito/security-framework/internal/rules"
 	"github.com/Ruby570bocadito/security-framework/pkg/model"
 )
 
@@ -385,5 +387,181 @@ func TestStatesCountsInFlight(t *testing.T) {
 	}
 	if MaxTrackedStates != maxTrackedStates || MaxTrackedStates <= 0 {
 		t.Fatalf("MaxTrackedStates must mirror the internal cap, got %d", MaxTrackedStates)
+	}
+}
+
+// ---- load-time hardening (ronda 2026-09-30) ----------------------------
+
+// TestLoadRejectsOversizedFile: os.ReadFile has no bound, so the size
+// check must fire BEFORE the read — a multi-gigabyte sequence file is
+// a config bug, not something to read whole into memory first.
+func TestLoadRejectsOversizedFile(t *testing.T) {
+	dir := t.TempDir()
+	big := bytes.Repeat([]byte("# padding\n"), (maxFileBytes/10)+1)
+	if err := os.WriteFile(filepath.Join(dir, "big.yaml"), big, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadDir(dir, nil)
+	if err == nil || !strings.Contains(err.Error(), "byte cap") {
+		t.Fatalf("oversized file must be rejected naming the cap, got: %v", err)
+	}
+}
+
+// TestLoadRejectsDeepNesting: yaml.v3 decodes recursively and flow
+// nesting costs 1 byte per level, so a tiny file can attempt stack
+// exhaustion (a process crash, not a config error). The byte-level
+// pre-scan must reject it loudly.
+func TestLoadRejectsDeepNesting(t *testing.T) {
+	dir := t.TempDir()
+	deep := strings.Repeat("[", maxNestingDepth+1)
+	if err := os.WriteFile(filepath.Join(dir, "deep.yaml"), []byte(deep), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadDir(dir, nil)
+	if err == nil || !strings.Contains(err.Error(), "nesting deeper") {
+		t.Fatalf("deep nesting must be rejected, got: %v", err)
+	}
+}
+
+// TestLoadRejectsTooManySequences: Observe walks EVERY sequence on
+// each rule hit, so the loaded set size bounds the per-hit cost by
+// construction. More than the cap is a config bug the load names.
+func TestLoadRejectsTooManySequences(t *testing.T) {
+	dir := t.TempDir()
+	var b strings.Builder
+	for i := 0; i <= maxSequences; i++ {
+		fmt.Fprintf(&b, "- name: \"s%d\"\n  id: \"id-%d\"\n  severity: low\n  steps:\n    - rule: \"a%d\"\n    - rule: \"b%d\"\n", i, i, i, i)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "many.yaml"), []byte(b.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadDir(dir, nil)
+	if err == nil || !strings.Contains(err.Error(), "load cap") {
+		t.Fatalf("sequence count must be capped, got: %v", err)
+	}
+}
+
+// TestLoadRejectsTooManySteps: the other half of the per-hit cost
+// bound — one chain with a huge step list scans every step per hit.
+func TestLoadRejectsTooManySteps(t *testing.T) {
+	dir := t.TempDir()
+	var b strings.Builder
+	b.WriteString("- name: \"wide\"\n  id: \"wide-1\"\n  severity: low\n  steps:\n")
+	for i := 0; i <= maxStepsPerSequence; i++ {
+		fmt.Fprintf(&b, "    - rule: \"r%d\"\n", i)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "wide.yaml"), []byte(b.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadDir(dir, nil)
+	if err == nil || !strings.Contains(err.Error(), "step cap") {
+		t.Fatalf("step count must be capped, got: %v", err)
+	}
+}
+
+// TestCompileRejectsAbsurdWindow: a window that never passes pins one
+// tracked state per host until maxTrackedStates is exhausted — the
+// silent detection loss the cap exists to prevent. The load must name
+// the abuse instead of absorbing it.
+func TestCompileRejectsAbsurdWindow(t *testing.T) {
+	body := `
+- name: "eterno"
+  id: "eterno-1"
+  severity: high
+  window: 87600h
+  steps:
+    - rule: "a"
+    - rule: "b"
+`
+	_, err := LoadDir(writeSeq(t, body), nil)
+	if err == nil || !strings.Contains(err.Error(), "cap") {
+		t.Fatalf("window over maxWindow must be rejected, got: %v", err)
+	}
+}
+
+// TestIdentitySanity: ids, names, tags and step rules reach logs, the
+// console and webhook consumers through every alert — bounded length
+// and zero control runes (a \x1b would be terminal injection into the
+// engine's own log output; a \n would forge log lines). Descriptions
+// never leave the process, so only their length is bounded.
+func TestIdentitySanity(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"id over rune cap", "- name: \"x\"\n  id: \"" + strings.Repeat("i", maxIDRunes+1) + "\"\n  severity: high\n  steps:\n    - rule: \"a\"\n    - rule: \"b\"\n", "rune cap"},
+		{"id with ANSI escape", "- name: \"x\"\n  id: \"\\u001b[31mevil\"\n  severity: high\n  steps:\n    - rule: \"a\"\n    - rule: \"b\"\n", "control rune"},
+		{"name with newline", "- name: \"x\\n[FAKE LOG LINE]\"\n  id: \"ok\"\n  severity: high\n  steps:\n    - rule: \"a\"\n    - rule: \"b\"\n", "control rune"},
+		{"tag with control rune", "- name: \"x\"\n  id: \"ok\"\n  severity: high\n  tags: [\"a\\x07b\"]\n  steps:\n    - rule: \"a\"\n    - rule: \"b\"\n", "control rune"},
+		{"step rule with control rune", "- name: \"x\"\n  id: \"ok\"\n  severity: high\n  steps:\n    - rule: \"a\\tb\"\n    - rule: \"b\"\n", "control rune"},
+		{"description over cap", "- name: \"x\"\n  id: \"ok\"\n  description: \"" + strings.Repeat("d", maxDescriptionRunes+1) + "\"\n  severity: high\n  steps:\n    - rule: \"a\"\n    - rule: \"b\"\n", "rune cap"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := LoadDir(writeSeq(t, tc.body), nil)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want error containing %q, got: %v", tc.want, err)
+			}
+		})
+	}
+}
+
+// TestTooManyTagsRejected: the tag list is copied into every emitted
+// alert, so both the count and each tag's length are capped.
+func TestTooManyTagsRejected(t *testing.T) {
+	tags := make([]string, maxTags+1)
+	for i := range tags {
+		tags[i] = fmt.Sprintf("\"t%d\"", i)
+	}
+	body := "- name: \"x\"\n  id: \"ok\"\n  severity: high\n  tags: [" + strings.Join(tags, ",") + "]\n  steps:\n    - rule: \"a\"\n    - rule: \"b\"\n"
+	_, err := LoadDir(writeSeq(t, body), nil)
+	if err == nil || !strings.Contains(err.Error(), "tag cap") {
+		t.Fatalf("tag count must be capped, got: %v", err)
+	}
+}
+
+// TestStepsWithoutRule: the config-drift report feeds the engine's
+// WARNING — sorted, deduplicated, and empty when everything resolves.
+func TestStepsWithoutRule(t *testing.T) {
+	var c collector
+	m, _ := LoadDir(writeSeq(t, seqYAML), c.emit) // steps: Regla A/B/C
+	missing := m.StepsWithoutRule(map[string]bool{"Regla A": true, "Regla B": true, "Extra": true})
+	if len(missing) != 1 || missing[0] != "Regla C" {
+		t.Fatalf("missing = %v, want [Regla C]", missing)
+	}
+	all := m.StepsWithoutRule(map[string]bool{"Regla A": true, "Regla B": true, "Regla C": true})
+	if len(all) != 0 {
+		t.Fatalf("fully-resolved steps must report nothing, got %v", all)
+	}
+}
+
+// TestShippedSequencesStillLoad pins the shipped config against the new
+// load-time caps AND cross-checks every step against the shipped rules:
+// a step naming a rule that does not exist is exactly the drift the
+// StepsWithoutRule WARNING exists to catch, and the shipped tree must
+// never ship with it.
+func TestShippedSequencesStillLoad(t *testing.T) {
+	seqDir := filepath.Join("..", "..", "sequences")
+	if _, err := os.Stat(seqDir); err != nil {
+		t.Skip("shipped sequences dir not present")
+	}
+	m, err := LoadDir(seqDir, nil)
+	if err != nil {
+		t.Fatalf("shipped sequences must load under the new caps: %v", err)
+	}
+	if m.Count() != 4 {
+		t.Fatalf("shipped sequences = %d, want 4", m.Count())
+	}
+	eng, err := rules.LoadDir(filepath.Join("..", "..", "rules"))
+	if err != nil {
+		t.Skipf("shipped rules dir not loadable here: %v", err)
+	}
+	known := map[string]bool{}
+	for _, r := range eng.Snapshot() {
+		known[r.Name] = true
+	}
+	if missing := m.StepsWithoutRule(known); len(missing) != 0 {
+		t.Fatalf("shipped sequences reference rules that do not exist: %v", missing)
 	}
 }
