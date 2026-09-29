@@ -17,7 +17,7 @@ BUN     ?= bun
 BIN_DIR ?= bin
 MODULE  := github.com/Ruby570bocadito/security-framework
 
-.PHONY: all run-engine run-devsensor build test tidy fmt vet build-sensor build-sensor-windows docker-build console-install console-service console clean
+.PHONY: all run-engine run-devsensor build test tidy fmt vet build-sensor build-sensor-windows docker-build console-install console-service console ci clean
 
 all: build
 
@@ -65,6 +65,18 @@ console-service:
 
 console:
 	cd web/console && $(BUN) run dev
+
+# Same suite the GitHub Actions workflow (.github/workflows/ci.yml)
+# runs on every push. Needs: Go 1.22+, bun, cargo, python3 + PyYAML.
+ci:
+	@out="$$(gofmt -l .)"; if [ -n "$$out" ]; then echo "gofmt needed on:"; echo "$$out"; exit 1; fi
+	$(GO) build ./...
+	$(GO) vet ./...
+	$(GO) test -count=1 ./...
+	python3 scripts/dev-tests/check_openapi.py
+	cd web/console-service && $(BUN) install --frozen-lockfile && $(BUN) test && bunx tsc --noEmit
+	cd web/console && $(BUN) install --frozen-lockfile && bunx tsc --noEmit && $(BUN) run build
+	$(CARGO) check --locked --manifest-path sensor/Cargo.toml
 
 clean:
 	rm -rf $(BIN_DIR)

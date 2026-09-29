@@ -1,0 +1,82 @@
+# Continuous integration: every push and pull request re-verifies the
+# three build surfaces of the project with the same commands the agents
+# run locally (see docs/agentes rounds and Makefile):
+#   engine : gofmt + build + vet + test (Go 1.22)
+#   console: hub (bun test, tsc) and web console (tsc, next build)
+#   spec   : OpenAPI drift guard against internal/api/api.go
+# The Windows ETW sensor gets a cheap `cargo check --locked` (compiles
+# every crate for the host target; a full Windows cross-build stays a
+# release concern, not a CI concern).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  engine:
+    name: Go engine (fmt, build, vet, test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt (no diffs allowed)
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "$out" ]; then
+            echo "gofmt needs normalization on:" >&2
+            echo "$out" >&2
+            gofmt -d . >&2
+            exit 1
+          fi
+      - name: build
+        run: go build ./...
+      - name: vet
+        run: go vet ./...
+      - name: test
+        # -count=1: no test cache, same standard as the local rounds
+        run: go test -count=1 ./...
+      - name: OpenAPI spec drift guard
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 scripts/dev-tests/check_openapi.py
+
+  console:
+    name: Console (hub tests, tsc, next build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: hub install + tests + typecheck
+        working-directory: web/console-service
+        run: |
+          bun install --frozen-lockfile
+          bun test
+          bunx tsc --noEmit
+      - name: web console install + typecheck + build
+        working-directory: web/console
+        run: |
+          bun install --frozen-lockfile
+          bunx tsc --noEmit
+          bun run build
+
+  sensor:
+    name: Sensor (cargo check, locked)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: cargo check --locked
+        run: cargo check --locked --manifest-path sensor/Cargo.toml

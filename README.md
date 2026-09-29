@@ -1,5 +1,7 @@
 # security-framework
 
+[![ci](https://github.com/Ruby570bocadito/security-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/Ruby570bocadito/security-framework/actions/workflows/ci.yml)
+
 A real-time threat detection framework built by an offensive-security
 practitioner, informed by how actual adversary tradecraft behaves on
 Windows endpoints. It combines a kernel-level ETW sensor (Rust) with a
@@ -446,6 +448,30 @@ make build-sensor-windows
 
 The sensor has no simulated mode: it runs only where real telemetry
 exists (Windows ETW) and refuses to start anywhere else.
+
+## Development & CI
+
+Every push and pull request runs the same checks the maintainers run
+locally (`.github/workflows/ci.yml`, three jobs):
+
+- **Go engine** — `gofmt` (no diffs), `go build`, `go vet`,
+  `go test -count=1 ./...`, plus the OpenAPI drift guard
+  (`scripts/dev-tests/check_openapi.py`, spec vs. `internal/api/api.go`).
+- **Console** — hub: `bun install --frozen-lockfile`, `bun test`,
+  `tsc --noEmit`; web console: same install, `tsc --noEmit`,
+  `next build`.
+- **Sensor** — `cargo check --locked` (the crate compiles on any OS;
+  ETW ingestion is cfg-gated to Windows and refuses to run off-Windows).
+
+To run the equivalent suite locally (Go 1.22+, bun, cargo, python3 with
+PyYAML):
+
+```bash
+make ci
+```
+
+There are no mocked tests in the product path: the same rule of honesty
+the runtime follows applies to CI — what it verifies is what runs.
 
 ## Writing rules
 
