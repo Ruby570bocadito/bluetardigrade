@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -250,6 +251,7 @@ func decode(line []byte) (*model.Event, error) {
 		return nil, fmt.Errorf("bad json: %v", err)
 	}
 	normalizeIdentity(ev)
+	stripFieldSep(ev)
 	if err := ev.Validate(); err != nil {
 		return nil, err
 	}
@@ -280,6 +282,66 @@ func normalizeIdentity(ev *model.Event) {
 	ev.User = truncateRunes(ev.User, maxUserRunes)
 	ev.ID = truncateRunes(ev.ID, maxIDRunes)
 }
+
+// fieldSep is the control rune the search haystacks join their fields
+// with (the API rings and the SQLite store use the same one): a value
+// carrying it inside a single field would forge a field boundary, so
+// it is stripped from every feed-controlled string at the boundary —
+// the chokepoint the ring and the store share. Every other byte is
+// kept: evidence fidelity wins, one control rune is not evidence.
+const fieldSep = "\x1f"
+
+// stripFieldSep removes fieldSep from every feed-controlled string of
+// the event. Without this, a hostile feed could plant the separator
+// inside one field and make its own row answer cross-field free-text
+// queries it was never about — and the ring and the store (joined
+// haystack) would disagree on the same ?q=.
+func stripFieldSep(ev *model.Event) {
+	ev.ID = noSep(ev.ID)
+	ev.Type = noSep(ev.Type)
+	ev.Source = noSep(ev.Source)
+	ev.Host = noSep(ev.Host)
+	ev.User = noSep(ev.User)
+	for _, p := range []*model.Process{ev.Process, ev.Target} {
+		if p == nil {
+			continue
+		}
+		p.Name = noSep(p.Name)
+		p.CommandLine = noSep(p.CommandLine)
+		p.Image = noSep(p.Image)
+		for alg, digest := range p.Hashes {
+			p.Hashes[alg] = noSep(digest)
+		}
+	}
+	if ev.Access != nil {
+		ev.Access.GrantedAccess = noSep(ev.Access.GrantedAccess)
+		ev.Access.CallTrace = noSep(ev.Access.CallTrace)
+	}
+	if ev.File != nil {
+		ev.File.Path = noSep(ev.File.Path)
+		ev.File.Extension = noSep(ev.File.Extension)
+		for alg, digest := range ev.File.Hashes {
+			ev.File.Hashes[alg] = noSep(digest)
+		}
+	}
+	if ev.Network != nil {
+		ev.Network.Protocol = noSep(ev.Network.Protocol)
+		ev.Network.SourceIP = noSep(ev.Network.SourceIP)
+		ev.Network.DestinationIP = noSep(ev.Network.DestinationIP)
+		ev.Network.Domain = noSep(ev.Network.Domain)
+	}
+	if ev.Registry != nil {
+		ev.Registry.Key = noSep(ev.Registry.Key)
+		ev.Registry.ValueName = noSep(ev.Registry.ValueName)
+		ev.Registry.Value = noSep(ev.Registry.Value)
+		ev.Registry.Operation = noSep(ev.Registry.Operation)
+	}
+	for i, t := range ev.Tags {
+		ev.Tags[i] = noSep(t)
+	}
+}
+
+func noSep(s string) string { return strings.ReplaceAll(s, fieldSep, "") }
 
 func truncateRunes(s string, max int) string {
 	r := []rune(s)

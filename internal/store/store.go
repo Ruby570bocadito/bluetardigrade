@@ -184,19 +184,30 @@ func (s *Store) InsertEvent(ev *model.Event) error {
 	defer s.wmu.Unlock()
 	// DELETE+INSERT (not INSERT OR REPLACE) so the live counter can
 	// account for replays: a replace must not look like a new row.
-	res, err := s.db.Exec(`DELETE FROM events WHERE id = ?`, ev.ID)
+	// One transaction: API readers share the single connection, so a
+	// two-step replace let them observe the row missing (a silent gap
+	// in a forensic timeline) and a failure between the steps would
+	// drop the previous evidence while inflating the counter.
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("store: begin event %s: %w", ev.ID, err)
+	}
+	defer tx.Rollback() // no-op after Commit
+	res, err := tx.Exec(`DELETE FROM events WHERE id = ?`, ev.ID)
 	if err != nil {
 		return fmt.Errorf("store: replace-lookup event %s: %w", ev.ID, err)
 	}
 	existed, _ := res.RowsAffected()
-	_, err = s.db.Exec(
+	if _, err := tx.Exec(
 		`INSERT INTO events (id, ts, type, host, search, json)
                  VALUES (?, ?, ?, ?, ?, ?)`,
-		ev.ID, ev.Timestamp.UnixNano(), ev.Type, ev.Host,
+		ev.ID, ev.Timestamp.UnixNano(), ev.Type, strings.ToLower(ev.Host),
 		eventHaystack(ev), string(payload),
-	)
-	if err != nil {
+	); err != nil {
 		return fmt.Errorf("store: insert event %s: %w", ev.ID, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store: commit event %s: %w", ev.ID, err)
 	}
 	atomic.AddInt64(&s.events, 1-existed)
 	return nil
@@ -218,7 +229,7 @@ func (s *Store) InsertAlert(a alert.Alert) error {
 	_, err = s.db.Exec(
 		`INSERT INTO alerts (ts, severity, rule_id, host, search, json)
                  VALUES (?, ?, ?, ?, ?, ?)`,
-		ts.UnixNano(), a.Severity, a.RuleID, a.Host,
+		ts.UnixNano(), strings.ToLower(a.Severity), a.RuleID, strings.ToLower(a.Host),
 		alertHaystack(a), string(payload),
 	)
 	if err != nil {
@@ -377,9 +388,14 @@ func alertWhere(q AlertQuery) (string, []any) {
 }
 
 // likeNeedle lowercases the needle and escapes the LIKE wildcards so
-// a query containing % or _ stays a literal.
+// a query containing % or _ stays a literal. The field separator is
+// stripped too: the API layer already removes it from ?q= (and ingest
+// strips it from feed strings), this copy protects rows written
+// before those chokes existed and direct store callers — a needle
+// carrying \x1f would cross field boundaries that the \x1f-joined
+// haystack exists to prevent.
 func likeNeedle(q string) string {
-	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`, fieldSep, "")
 	return "%" + r.Replace(strings.ToLower(q)) + "%"
 }
 

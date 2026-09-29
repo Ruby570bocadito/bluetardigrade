@@ -237,6 +237,7 @@ While the store is attached:
 - The telemetry lists (`/api/events`, `/api/alerts`) and both `/export` endpoints read the **full stored history** (same filters, same wire format, subject to the configured retention) instead of the rings, so `since=24h` reaches beyond the 1000-event window. The SSE stream and the console keep their live behavior unchanged.
 - `/api/stats` reports `store_enabled`, `store_events` and `store_alerts` — the counts survive a restart, because the history does: kill the engine, start it again on the same file, and the API serves everything it persisted.
 - Rows older than `-store-retention` (default 72h; `0` keeps everything) are pruned on a 5-minute ticker, loudly when something is removed.
+- The database (and its WAL side files) is created `0600` — full telemetry (users, command lines, file paths) must not be readable by other local users. A file that already exists keeps its mode (no surprise permission changes; tighten it yourself if it predates this change).
 - A store that cannot be opened is a FATAL startup error, by the same standard as a malformed suppressions file: persistence you believe is armed must not silently stay off. Write failures at runtime are logged with a throttle and never stop detection.
 
 ### Ingest authentication (shared token)
