@@ -10,7 +10,8 @@ FROM alpine:3.20
 RUN adduser -D -H sensor
 COPY --from=builder /out/engine /usr/local/bin/engine
 COPY rules/ /opt/security-framework/rules/
+COPY sequences/ /opt/security-framework/sequences/
 USER sensor
 EXPOSE 7777
 ENTRYPOINT ["/usr/local/bin/engine"]
-CMD ["-addr", ":7777", "-rules", "/opt/security-framework/rules"]
+CMD ["-addr", ":7777", "-rules", "/opt/security-framework/rules", "-sequences", "/opt/security-framework/sequences"]

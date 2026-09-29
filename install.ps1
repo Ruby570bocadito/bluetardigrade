@@ -13,8 +13,8 @@
 #      (reuses any compatible tool already on your PATH)
 #   3. Builds the Go detection engine (bin\engine.exe, bin\devsensor.exe)
 #   4. Builds the web console (Next.js) unless -NoConsole
-#   5. Puts sf-engine, sf-devsensor, sf-console, sf-update and
-#      sf-uninstall on your user PATH
+#   5. Puts sf-engine, sf-devsensor, sf-sensor, sf-console, sf-update
+#      and sf-uninstall on your user PATH
 #
 # Switches:
 #   -InstallDir <path>   install location (default %LOCALAPPDATA%\security-framework)

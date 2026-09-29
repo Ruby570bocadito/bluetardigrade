@@ -3,7 +3,7 @@
 // would: what happened, why it matters (MITRE ATT&CK), risk level and
 // recommended first steps.
 
-import ZAI from 'z-ai-web-dev-sdk'
+import LlmSdk from 'z-ai-web-dev-sdk'
 import type { SfAlert, SfEvent, RuleMeta } from './types'
 
 export type AnalystStep = { label: string; state: 'run' | 'done' }
@@ -75,11 +75,11 @@ export async function runAnalysis(alert: SfAlert, rule: RuleMeta | undefined, ev
 
   // Step 3: draft conclusions with the LLM
   emit.step({ label: 'Redactando conclusiones', state: 'run' })
-  const zai = await ZAI.create()
+  const llm = await LlmSdk.create()
   const contextNote = note ? `Nota de contexto interno para tu analisis: ${note}` : ''
   const fieldsNote = keyFields.length ? `Campos clave observados: ${keyFields.join(' | ')}` : ''
 
-  const completion = await zai.chat.completions.create({
+  const completion = await llm.chat.completions.create({
     messages: [
       { role: 'assistant', content: analystSystemPrompt() },
       {

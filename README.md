@@ -35,6 +35,8 @@ integrate. This project bets on three ideas:
 
 ## Architecture (v0.1)
 
+![Architecture: kernel, Rust sensor, Go detection engine and output layers](docs/assets/diagram_arquitectura.png)
+
 ```
 Windows kernel (ETW providers)          [phase 2: Linux eBPF]
         │
@@ -45,7 +47,7 @@ Sensor (Rust) ── NDJSON/TCP ──►  Detection engine (Go)
                           ┌─────────────┼─────────────┐
                           ▼             ▼             ▼
                      console/web   SIEM/SOAR     forensic store
-                      (phase 3)    connectors     (phase 2)
+                      (preview)    connectors     (phase 2)
 ```
 
 The unified event schema (chapter 4 of the docs) is the master
@@ -64,10 +66,12 @@ make run-engine
 make run-devsensor
 ```
 
-Expected output on the engine terminal:
+Representative output on the engine terminal (the rule pack grows over
+time, so the counts reflect the current state of `rules/`):
 
 ```
 [ENGINE] 23 rules loaded from ./rules (types: [file.write image.load network.connect process.access process.create registry.set])
+[ENGINE] 4 sequences loaded from ./sequences (correlator on: [Campana de robo de credenciales Campana de intrusion completa Apagon defensivo Instalacion de persistencia])
 [ENGINE] listening on 127.0.0.1:7777 (NDJSON, 1 event per line)
 [ENGINE] api on 127.0.0.1:7778 (stats / events / alerts / rules / stream)
 [ALERT] HIGH     9f31c2a4... powershell.exe -nop -w hidden -enc SQBF... host=LAB-WKS-01
@@ -81,6 +85,8 @@ Expected output on the engine terminal:
 
 Each alert is also emitted as a structured JSON line for downstream
 consumers (SIEM connectors, the web console).
+
+![Tracer bullet pipeline: devsensor, NDJSON/TCP, engine, rules, alert](docs/assets/diagram_tracer.png)
 
 ### Local HTTP API
 
@@ -281,8 +287,16 @@ every 15 seconds by default (disable with `-reload-every 0`).
 
 Operators (v0.1): `eq`, `neq`, `contains`, `contains_any`,
 `startswith`, `endswith`, `regex`, `in`, `not_in`, `gt`, `lt`.
-Sequence operators (`sequence` + `maxspan`) arrive with the
-correlation engine in phase 2.
+
+### Kill-chain correlation
+
+Beyond per-event rules, the engine ships a sequence correlator:
+`sequences/*.yaml` lists named steps (exact rule names) that, when all
+observed on the same host inside a `window` (e.g. `5m`), raise a single
+high-signal alert describing the campaign. The shipped pack models
+credential-dump campaigns, full intrusion chains, defensive shutdown
+and registry-based persistence. Sequences hot-reload together with the
+rules.
 
 ### Rule actions
 
@@ -322,12 +336,21 @@ cmd/devsensor/    demo sensor for development (Go): scripted scenario,
 internal/ingest/  NDJSON TCP listener + schema validation
 internal/enrich/  enrichment pipeline (context, not evidence mutation)
 internal/rules/   YAML parser, rule index and evaluator
+internal/correlate/  kill-chain sequence correlator
 internal/alert/   alert rendering, dedup, structured JSON
 internal/actions/ rule action executor (message templates, webhooks)
+internal/api/     local read-only HTTP API + SSE stream
 pkg/model/        unified event schema (the wire contract)
 sensor/           Rust ETW sensor (collector is Windows-gated)
 rules/            seeded detection pack (windows/)
-docs/             architecture document + ADRs
+sequences/        kill-chain sequences for the correlator
+sysmon-config.xml Sysmon config tuned to the detection pack
+scripts/windows/  installed runtime scripts (sf-sensor, sf-console, ...)
+install.ps1       one-command Windows installer
+uninstall.ps1     standalone uninstaller
+Makefile          build automation (engine, sensor, console, docker)
+Dockerfile        production container for the engine
+docs/             architecture document + diagram assets
 web/console/          Next.js console (live feed, triage, AI analyst)
 web/console-service/  realtime telemetry hub (bun + socket.io)
 ```
@@ -337,7 +360,7 @@ web/console-service/  realtime telemetry hub (bun + socket.io)
 | Phase | Window          | Delivers                                              |
 |-------|-----------------|-------------------------------------------------------|
 | 1     | weeks 1–6 2026  | tracer bullet, ETW sensor, rule index, p99 < 10 ms    |
-| 2     | weeks 7–14 2027 | YARA memory scan, eBPF collector, correlation, SQLite |
+| 2     | weeks 7–14 2026 | YARA memory scan, eBPF collector, SQLite  |
 | 3     | weeks 15–20     | web console, REST+OpenAPI, Elastic/Splunk connectors  |
 | 4     | weeks 21–26     | Python filaments (sandboxed), plugins, benchmarks     |
 

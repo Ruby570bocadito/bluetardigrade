@@ -7,7 +7,8 @@ vendor/
 
 # Rust
 sensor/target/
-sensor/Cargo.lock
+# NOTE: sensor/Cargo.lock is intentionally versioned (binary crate:
+# reproducible builds). Do not re-add it here.
 
 # Node (web console)
 web/**/node_modules/
@@ -15,6 +16,11 @@ web/console/.next/
 web/console/out/
 web/console/next-env.d.ts
 web/console/*.tsbuildinfo
+
+# Local environment files (never commit credentials)
+.env
+.env.*
+!.env.example
 
 # Editors / OS
 .idea/
