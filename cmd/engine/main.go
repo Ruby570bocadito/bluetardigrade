@@ -9,9 +9,12 @@ import (
         "flag"
         "fmt"
         "log"
+        "net"
+        "net/http"
         "os"
         "os/signal"
         "path/filepath"
+        "strings"
         "syscall"
         "time"
 
@@ -61,6 +64,22 @@ func main() {
         events := make(chan *model.Event, 1024)
         server, err := ingest.New(*addr, events)
         if err != nil {
+                // A bind failure almost always means another engine
+                // instance is already running (e.g. started by
+                // sf-devsensor or sf-console). Probe the port instead of
+                // comparing errno: bind error text is locale-dependent
+                // on Windows ("Solo se permite un uso de cada...").
+                if listening(*addr) {
+                        if *apiAddr != "0" && apiHealthy(*apiAddr) {
+                                fmt.Printf("[ENGINE] another engine instance is already running (ingest %s, api %s)\n",
+                                        *addr, *apiAddr)
+                        } else {
+                                fmt.Printf("[ENGINE] cannot bind %s: another process is already listening on it\n", *addr)
+                        }
+                        fmt.Println("[ENGINE]   view alerts:  sf-console   (web UI)")
+                        fmt.Println("[ENGINE]   stop it:      sf-console -Stop")
+                        return
+                }
                 log.Fatalf("[ENGINE] %v", err)
         }
         go server.Serve()
@@ -150,6 +169,33 @@ func main() {
 func dirExists(p string) bool {
         st, err := os.Stat(p)
         return err == nil && st.IsDir()
+}
+
+// listening reports whether something accepts TCP connections on addr
+// right now (":7777" dials localhost, same rule as net.Listen).
+func listening(addr string) bool {
+        c, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
+        if err != nil {
+                return false
+        }
+        c.Close()
+        return true
+}
+
+// apiHealthy does a one-shot GET /api/health with a short timeout, to
+// confirm that whatever occupies the ingest port is really this engine.
+func apiHealthy(addr string) bool {
+        host := addr
+        if strings.HasPrefix(host, ":") {
+                host = "127.0.0.1" + host
+        }
+        cl := &http.Client{Timeout: 700 * time.Millisecond}
+        resp, err := cl.Get("http://" + host + "/api/health")
+        if err != nil {
+                return false
+        }
+        resp.Body.Close()
+        return resp.StatusCode == http.StatusOK
 }
 
 func describe(ev *model.Event) string {
