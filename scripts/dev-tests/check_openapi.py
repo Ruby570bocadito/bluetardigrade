@@ -21,6 +21,11 @@ Catches spec drift without needing a running engine:
      with a WWW-Authenticate challenge when -api-token is set), and
      exempt paths must not (auth() passes them through untouched). If the code
      registers no middleware, the spec must not demand bearer anywhere.
+  5. Every $ref anywhere in the document resolves to a node inside the
+     spec itself: a dangling ref (like the one the self-test fixture
+     once carried unnoticed) is drift that downstream consumers — code
+     generators, validators, docs — choke on silently. External refs
+     are rejected: this spec is a single self-contained file on purpose.
 
 Exit code 0 = in sync; 1 = drift found (details on stderr).
 
@@ -51,6 +56,38 @@ SPEC = ROOT / "docs" / "api" / "openapi.yaml"
 API_GO = ROOT / "internal" / "api" / "api.go"
 
 HTTP_METHODS = {"get", "put", "post", "delete", "options", "head", "patch", "trace"}
+
+
+def walk_refs(node, where=""):
+    """Yield (ref, location) for every $ref string in the document."""
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k == "$ref" and isinstance(v, str):
+                yield v, where or "$"
+            else:
+                yield from walk_refs(v, f"{where}/{k}")
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            yield from walk_refs(v, f"{where}/{i}")
+
+
+def resolve_ref(spec: dict, ref: str):
+    """Resolve a local '#/a/b' ref (RFC 6901 escapes honored) or None."""
+    if not ref.startswith("#/"):
+        return None
+    node = spec
+    for part in ref[2:].split("/"):
+        part = part.replace("~1", "/").replace("~0", "~")
+        if isinstance(node, dict) and part in node:
+            node = node[part]
+        elif isinstance(node, list):
+            try:
+                node = node[int(part)]
+            except (ValueError, IndexError):
+                return None
+        else:
+            return None
+    return node
 
 
 def run_checks(spec: dict, go_src: str) -> tuple[list[str], dict]:
@@ -227,7 +264,20 @@ def run_checks(spec: dict, go_src: str) -> tuple[list[str], dict]:
                     f"Unauthorized example drift: spec {example!r} != api.go {go_error!r}"
                 )
 
-    info.update(routes=len(go_routes), fields=len(go_fields), gated_ops=gated_ops)
+    # ---- every $ref in the document must resolve inside the spec: a
+    # dangling ref is silent breakage for every downstream consumer
+    # (validators, generators, rendered docs) and cannot be caught by
+    # route/field checks because the ref target is never visited.
+    n_refs = 0
+    for ref, where in walk_refs(spec):
+        n_refs += 1
+        if not ref.startswith("#/"):
+            errors.append(f"$ref {ref!r} at {where} is external - inline it so the guard can verify it")
+            continue
+        if resolve_ref(spec, ref) is None:
+            errors.append(f"unresolvable $ref {ref!r} at {where}")
+
+    info.update(routes=len(go_routes), fields=len(go_fields), gated_ops=gated_ops, refs=n_refs)
     return errors, info
 
 
@@ -383,6 +433,20 @@ def self_test() -> int:
             ),
             "Unauthorized example drift",
         ),
+        (
+            "dangling $ref ignored",
+            lambda s: s["paths"]["/api/stats"]["get"]["responses"].__setitem__(
+                "500", {"$ref": "#/components/responses/DoesNotExist"}
+            ),
+            "unresolvable $ref",
+        ),
+        (
+            "external $ref not verifiable",
+            lambda s: s["components"]["schemas"]["Stats"].__setitem__(
+                "$ref", "https://schemas.example.org/stats.yaml"
+            ),
+            "is external",
+        ),
     ]
     for name, mutate, expect in variants:
         spec = good_spec()
@@ -419,8 +483,8 @@ def main() -> int:
 
     print(
         f"check_openapi: OK — {info['routes']} routes, {info['fields']} Stats fields, "
-        f"{info['gated_ops']} optionally-gated operations, "
-        "spec in sync with the code (routes, fields, security)"
+        f"{info['gated_ops']} optionally-gated operations, {info['refs']} $refs resolved, "
+        "spec in sync with the code (routes, fields, security, refs)"
     )
     return 0
 
