@@ -275,3 +275,85 @@ func TestOversizedAuthLineDoesNotCrash(t *testing.T) {
 	}
 	var _ = json.Marshal
 }
+
+// Rotation window: the PREVIOUS token still validates while sensors
+// are being redeployed with the new one — no dropped connection, no
+// rejected counter inflation during the migration.
+func TestTokenRotationPreviousAccepted(t *testing.T) {
+	srv, events, addr := startTestServer(t, "new-token")
+	srv.SetPreviousToken("old-token")
+	if !srv.Rotating() {
+		t.Fatal("Rotating() = false after SetPreviousToken")
+	}
+	conn, r := dialAndSend(t, addr, "AUTH old-token", sampleEvent(t))
+	if ack := readAck(t, r); ack != `{"ack":"ok"}` {
+		t.Fatalf("previous token rejected: ack = %s", ack)
+	}
+	got := <-events
+	if got.ID != "test-1" {
+		t.Fatalf("got event %+v, want id test-1", got)
+	}
+	_ = conn
+	if srv.Rejected() != 0 {
+		t.Fatalf("rejected = %d, want 0 during rotation window", srv.Rejected())
+	}
+}
+
+// Rotation window: the CURRENT token keeps working unchanged while the
+// previous one is still accepted.
+func TestTokenRotationCurrentStillAccepted(t *testing.T) {
+	srv, events, addr := startTestServer(t, "new-token")
+	srv.SetPreviousToken("old-token")
+	conn, r := dialAndSend(t, addr, "AUTH new-token", sampleEvent(t))
+	if ack := readAck(t, r); ack != `{"ack":"ok"}` {
+		t.Fatalf("current token rejected during rotation: ack = %s", ack)
+	}
+	got := <-events
+	if got.ID != "test-1" {
+		t.Fatalf("got event %+v, want id test-1", got)
+	}
+	_ = conn
+	_ = r
+}
+
+// Rotation window: an unrelated token is still rejected exactly as
+// before — the window widens acceptance, it never weakens it.
+func TestTokenRotationStillRejectsWrong(t *testing.T) {
+	srv, _, addr := startTestServer(t, "new-token")
+	srv.SetPreviousToken("old-token")
+	conn, r := dialAndSend(t, addr, "AUTH intruder-token")
+	if ack := readAck(t, r); !strings.Contains(ack, "auth failed") {
+		t.Fatalf("wrong token accepted during rotation: ack = %s", ack)
+	}
+	expectClosed(t, conn)
+	if srv.Rejected() != 1 {
+		t.Fatalf("rejected = %d, want 1", srv.Rejected())
+	}
+}
+
+// SetPreviousToken guards: no primary token, empty previous, or a
+// previous equal to the current token must NOT open a window.
+func TestSetPreviousTokenGuards(t *testing.T) {
+	events := make(chan *model.Event, 1)
+	srv, err := New("127.0.0.1:0", events)
+	if err != nil {
+		t.Fatalf("ingest.New: %v", err)
+	}
+	srv.SetPreviousToken("old") // no primary token yet: ignored
+	if srv.Rotating() {
+		t.Fatal("rotation opened without a primary token")
+	}
+	srv.SetToken("cur")
+	srv.SetPreviousToken("") // empty previous: ignored
+	if srv.Rotating() {
+		t.Fatal("rotation opened with an empty previous token")
+	}
+	srv.SetPreviousToken("cur") // same as current: nothing to rotate
+	if srv.Rotating() {
+		t.Fatal("rotation opened with previous == current")
+	}
+	srv.SetPreviousToken("old")
+	if !srv.Rotating() {
+		t.Fatal("rotation did not open with a valid previous token")
+	}
+}

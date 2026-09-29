@@ -47,8 +47,12 @@ var (
 		"hot-reload interval for the rules directory (0 disables)")
 	webhookURL = flag.String("webhook", "",
 		"POST every alert as JSON to this URL (SIEM/SOAR connector); empty disables")
+	webhookToken = flag.String("webhook-token", "",
+		"Bearer token sent on every webhook delivery as 'Authorization: Bearer' (falls back to SF_WEBHOOK_TOKEN); empty disables the header")
 	token = flag.String("token", "",
 		"shared token sensors must send as 'AUTH <token>' on connect (falls back to SF_INGEST_TOKEN); empty disables auth")
+	prevToken = flag.String("token-previous", "",
+		"previous ingest token, still accepted during a rotation window (falls back to SF_INGEST_TOKEN_PREVIOUS); requires -token")
 	suppressionsFile = flag.String("suppressions", "./suppressions.yaml",
 		"operator allowlist YAML silencing rule/host pairs (expires supported); empty disables")
 	pidFile = flag.String("pidfile", "",
@@ -144,7 +148,20 @@ func main() {
 	}
 	server.SetToken(ingestToken)
 	if server.AuthEnabled() {
-		fmt.Println("[ENGINE] ingest auth: ENABLED (sensors must send 'AUTH <token>' first, or -token/SF_INGEST_TOKEN)")
+		// rotation window: flag wins over the env var, mirroring
+		// the primary token resolution order
+		prev := *prevToken
+		if prev == "" {
+			prev = os.Getenv("SF_INGEST_TOKEN_PREVIOUS")
+		}
+		server.SetPreviousToken(prev)
+	}
+	if server.AuthEnabled() {
+		if server.Rotating() {
+			fmt.Println("[ENGINE] ingest auth: ENABLED, rotation window OPEN (current and previous token both accepted; redeploy sensors, then restart without -token-previous)")
+		} else {
+			fmt.Println("[ENGINE] ingest auth: ENABLED (sensors must send 'AUTH <token>' first, or -token/SF_INGEST_TOKEN)")
+		}
 	} else if strings.HasPrefix(server.Addr(), "127.0.0.1:") || strings.HasPrefix(server.Addr(), "[::1]:") {
 		fmt.Println("[ENGINE] ingest auth: disabled (loopback bind only - fine for local demos)")
 	} else {
@@ -180,11 +197,22 @@ func main() {
 	var wh *webhook.Client
 	if *webhookURL != "" {
 		wh = webhook.New(*webhookURL)
+		// outbound auth: flag wins over the env var, mirroring the
+		// ingest token resolution order
+		whToken := *webhookToken
+		if whToken == "" {
+			whToken = os.Getenv("SF_WEBHOOK_TOKEN")
+		}
+		wh.SetToken(whToken)
 		go wh.Run(whCtx)
 		if hub != nil {
 			hub.SetWebhookStats(wh.Stats)
 		}
-		fmt.Printf("[ENGINE] webhook on %s (alerts POSTed as JSON)\n", *webhookURL)
+		if wh.TokenConfigured() {
+			fmt.Printf("[ENGINE] webhook on %s (alerts POSTed as JSON, Authorization: Bearer enabled)\n", *webhookURL)
+		} else {
+			fmt.Printf("[ENGINE] webhook on %s (alerts POSTed as JSON, no auth header - set -webhook-token or SF_WEBHOOK_TOKEN)\n", *webhookURL)
+		}
 	}
 
 	enricher := enrich.New()

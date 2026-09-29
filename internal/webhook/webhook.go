@@ -4,6 +4,11 @@
 // on a slow receiver — alerts land on a fixed-size queue and a single
 // worker POSTs them with short retries, counting every sent, failed
 // and dropped frame so operators can size the pipeline from /api/stats.
+//
+// Optional outbound auth: when a token is configured (SetToken), every
+// POST carries "Authorization: Bearer <token>" so a receiver can
+// verify the caller — and so alerts cannot be injected into a shared
+// collector by anyone who learns the endpoint URL.
 package webhook
 
 import (
@@ -35,6 +40,7 @@ const (
 // Client queues alerts and delivers them to one HTTP endpoint.
 type Client struct {
 	url    string
+	token  string // empty = no Authorization header
 	hc     *http.Client
 	queue  chan alert.Alert
 	worker sync.WaitGroup
@@ -60,6 +66,14 @@ func newClient(url string, queue int) *Client {
 		backoff: 400 * time.Millisecond,
 	}
 }
+
+// SetToken configures the Bearer token sent on every delivery. Call
+// before Run. An empty token disables the Authorization header (the
+// receiver is then expected to trust the network path, e.g. loopback).
+func (c *Client) SetToken(token string) { c.token = token }
+
+// TokenConfigured reports whether deliveries carry a Bearer token.
+func (c *Client) TokenConfigured() bool { return c.token != "" }
 
 // Handle enqueues one alert without blocking. When the queue is full
 // the alert is counted as dropped: a detection pipeline must never
@@ -141,6 +155,9 @@ func (c *Client) post(payload []byte) (retryable bool, err error) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", userAgent)
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
 
 	resp, err := c.hc.Do(req)
 	if err != nil {

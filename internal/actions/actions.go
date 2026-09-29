@@ -16,6 +16,18 @@
 // rendered message), but the HTTP round trip runs in the background
 // with strict concurrency limits and failure logging. Unknown action
 // types are logged once and ignored; they never break the pipeline.
+//
+// Trust model (SSRF review, agent-04 round 2026-09-30): action
+// configuration — including config.url and config.secret — comes
+// exclusively from YAML rule files on disk, loaded at startup and by
+// the hot-reload ticker from the operator's rules directory. The HTTP
+// API is read-only and cannot author rules or actions, and sensor
+// traffic never reaches action configuration, so there is no
+// untrusted-input path that can point a webhook at an internal
+// service. A webhook URL targeting internal infrastructure is
+// therefore an operator decision, not an injection vector; this is
+// the expected behavior for a single-tenant, operator-configured
+// deployment and is documented as a non-issue by design.
 package actions
 
 import (

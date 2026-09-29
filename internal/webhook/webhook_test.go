@@ -200,3 +200,68 @@ func TestDrainCountsAbandonedAlertsAsDropped(t *testing.T) {
 		t.Fatalf("failed+dropped = %d+%d, want 5 in total", failed, dropped)
 	}
 }
+
+// Outbound auth: with a token configured, every delivery carries
+// "Authorization: Bearer <token>" so the receiver can verify the
+// caller — including on retries after a 5xx.
+func TestSendsBearerTokenWhenConfigured(t *testing.T) {
+	var auth atomic.Value
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth.Store(r.Header.Get("Authorization"))
+		if attempts.Add(1) < 2 {
+			w.WriteHeader(http.StatusInternalServerError) // force one retry
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+	c.SetToken("s3cret-outbound")
+	if !c.TokenConfigured() {
+		t.Fatal("TokenConfigured() = false after SetToken")
+	}
+	c.backoff = time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	go c.Run(ctx)
+	c.Handle(testAlert())
+	waitFor(t, func() bool { s, _, _ := c.Stats(); return s == 1 })
+	cancel()
+	c.Wait()
+
+	if got, _ := auth.Load().(string); got != "Bearer s3cret-outbound" {
+		t.Fatalf("Authorization = %q, want %q", got, "Bearer s3cret-outbound")
+	}
+	if n := attempts.Load(); n != 2 {
+		t.Fatalf("attempts = %d, want 2 (one 5xx retry then success)", n)
+	}
+}
+
+// No token configured: no Authorization header at all, so loopback or
+// trust-the-network deployments keep their previous wire format.
+func TestOmitsAuthHeaderWithoutToken(t *testing.T) {
+	var auth atomic.Value
+	seen := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth.Store(r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusNoContent)
+		seen <- struct{}{}
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+	if c.TokenConfigured() {
+		t.Fatal("TokenConfigured() = true without SetToken")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go c.Run(ctx)
+	c.Handle(testAlert())
+	<-seen
+	cancel()
+	c.Wait()
+
+	if got, _ := auth.Load().(string); got != "" {
+		t.Fatalf("Authorization = %q, want empty", got)
+	}
+}

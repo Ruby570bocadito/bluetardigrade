@@ -177,6 +177,28 @@ exactly as before (auth disabled); a non-loopback bind without a token
 prints a startup warning, because any host that reaches the port could
 then inject events.
 
+**Rotating the token without downtime.** The token is static per
+process, so rotation uses a two-token window: restart the engine once
+with BOTH tokens, redeploy the sensors with the new one, then restart
+the engine a final time with only the new token:
+
+```bash
+# 1) open the rotation window: current AND previous token both accepted
+sf-engine -token 'the-new-secret' -token-previous 'the-old-secret'
+# or:  SF_INGEST_TOKEN_PREVIOUS=the-old-secret  (flag wins)
+
+# 2) redeploy sensors with the new token (any order, zero downtime:
+#    sensors still on the old token keep streaming during the window)
+
+# 3) close the window: restart the engine without -token-previous
+sf-engine -token 'the-new-secret'
+```
+
+During the window the startup banner says `rotation window OPEN` so an
+operator can see at a glance when a migration is still in progress.
+Both comparisons are constant-time and combined without branching on
+the content, so the window does not leak which token matched.
+
 ### Alert webhook (SIEM/SOAR connector)
 
 The engine can push every raised alert as JSON to an external HTTP
@@ -228,6 +250,24 @@ sequences: editing it is enough, no restart. Semantics worth knowing:
   counted in `/api/stats` (`suppressions_active`). Entries are edited
   in the YAML file, never through the API: the local API stays
   read-only.
+
+**Outbound auth.** In shared networks the receiver should be able to
+verify who is POSTing — and a leaked URL alone must not be enough to
+inject alerts into your SIEM. Add a Bearer token, sent on every
+delivery (retries included):
+
+```bash
+bin/engine -webhook http://siem.internal:8080/ingest \
+           -webhook-token 'pick-another-long-secret'
+# or:  export SF_WEBHOOK_TOKEN=...  (flag wins)
+```
+
+The receiver then validates the `Authorization: Bearer` header. Per-
+rule `actions.webhook` entries keep their own independent `secret`
+config (see *Rule actions*); when both are set the per-action secret
+applies to that action only and the global token to the engine-level
+connector. A webhook running without any token prints a startup
+reminder listing the flag and the env var.
 
 ## One-command install (Windows)
 

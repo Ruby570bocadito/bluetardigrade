@@ -4,9 +4,12 @@
 //
 // Optional shared-token auth: when a token is configured (SetToken),
 // every connection must send "AUTH <token>" as its FIRST line within
-// authTimeout, before any event. The comparison is constant-time and
-// failures close the connection with a clear ack, so a misconfigured
-// sensor fails loudly instead of silently losing events.
+// authTimeout, before any event. During a token rotation
+// (SetPreviousToken) both the current and the previous token validate,
+// so sensors can be redeployed without dropping a single connection.
+// The comparison is constant-time and failures close the connection
+// with a clear ack, so a misconfigured sensor fails loudly instead of
+// silently losing events.
 package ingest
 
 import (
@@ -34,14 +37,15 @@ var authTimeout = 10 * time.Second
 
 // Server is a concurrent NDJSON-over-TCP listener.
 type Server struct {
-	addr     string
-	events   chan<- *model.Event
-	listener net.Listener
-	conns    sync.WaitGroup
-	mu       sync.Mutex
-	closing  bool
-	open     map[net.Conn]struct{}
-	token    string // empty = auth disabled (loopback deployments)
+	addr      string
+	events    chan<- *model.Event
+	listener  net.Listener
+	conns     sync.WaitGroup
+	mu        sync.Mutex
+	closing   bool
+	open      map[net.Conn]struct{}
+	token     string // empty = auth disabled (loopback deployments)
+	prevToken string // still accepted during a rotation window
 
 	received atomic.Uint64
 	dropped  atomic.Uint64
@@ -63,6 +67,21 @@ func New(addr string, events chan<- *model.Event) (*Server, error) {
 // "AUTH <token>" as their first line. Call before Serve. An empty
 // token disables auth (loopback-only deployments).
 func (s *Server) SetToken(token string) { s.token = token }
+
+// SetPreviousToken registers the previous ingest token, which stays
+// valid alongside the current one until the process restarts — the
+// window operators need to redeploy sensors with the new token
+// without downtime. Call after SetToken and before Serve. It is
+// ignored when no primary token is configured or when it equals the
+// current token (nothing to rotate).
+func (s *Server) SetPreviousToken(prev string) {
+	if s.token != "" && prev != "" && prev != s.token {
+		s.prevToken = prev
+	}
+}
+
+// Rotating reports whether a previous token is still being accepted.
+func (s *Server) Rotating() bool { return s.prevToken != "" }
 
 // AuthEnabled reports whether the ingest requires the AUTH handshake.
 func (s *Server) AuthEnabled() bool { return s.token != "" }
@@ -195,13 +214,26 @@ func (s *Server) checkAuth(conn net.Conn, line []byte) bool {
 		fmt.Fprintln(conn, `{"ack":"error","error":"engine has no ingest token configured; unset -token/SF_INGEST_TOKEN on the sensor or set one on the engine"}`)
 		return false
 	}
-	if !isAuthLine(line) || subtle.ConstantTimeCompare([]byte(line[5:]), []byte(s.token)) != 1 {
+	if !isAuthLine(line) || !s.tokenMatches(line[5:]) {
 		s.rejected.Add(1)
 		fmt.Fprintln(conn, `{"ack":"error","error":"auth failed: send 'AUTH <token>' as the first line"}`)
 		return false
 	}
 	_, _ = fmt.Fprint(conn, ackOK)
 	return true
+}
+
+// tokenMatches reports whether supplied equals the current token or,
+// during a rotation window, the previous one. Both comparisons run in
+// constant time and are combined without branching on the content, so
+// timing cannot be used to probe which token (if any) matched.
+func (s *Server) tokenMatches(supplied []byte) bool {
+	cur := subtle.ConstantTimeCompare(supplied, []byte(s.token))
+	prev := 0
+	if s.prevToken != "" {
+		prev = subtle.ConstantTimeCompare(supplied, []byte(s.prevToken))
+	}
+	return (cur | prev) == 1
 }
 
 func decode(line []byte) (*model.Event, error) {
