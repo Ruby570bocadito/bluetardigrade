@@ -25,12 +25,12 @@ export function AnimatedNumber({ value, className = '' }: { value: number; class
   const spring = useSpring(mv, { stiffness: 120, damping: 24 })
   const rounded = useTransform(spring, (v) => Math.round(v).toLocaleString('es-ES'))
   useEffect(() => {
-    if (reduce) {
-      mv.set(value)
-    } else {
-      mv.set(value)
-    }
-  }, [value, mv, reduce])
+    mv.set(value)
+  }, [value, mv])
+  // reduced motion: sin muelle, el número cambia de golpe
+  if (reduce) {
+    return <span className={className}>{Math.round(value).toLocaleString('es-ES')}</span>
+  }
   return <motion.span className={className}>{rounded}</motion.span>
 }
 
@@ -58,10 +58,12 @@ export function EmptyState({
   return (
     <div className="flex flex-col items-center justify-center gap-1 py-10 text-center">
       {Icon && (
-        <Icon size={22} aria-hidden className="mb-1 text-zinc-600" />
+        <span className="mb-1 flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.02]">
+          <Icon size={17} aria-hidden className="text-zinc-500" />
+        </span>
       )}
       <p className="text-sm text-zinc-400">{title}</p>
-      {hint && <p className="text-xs text-zinc-600">{hint}</p>}
+      {hint && <p className="max-w-[46ch] text-xs text-zinc-600">{hint}</p>}
     </div>
   )
 }

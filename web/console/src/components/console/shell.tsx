@@ -8,6 +8,8 @@ import { useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { ActivityIcon, Prohibit, ShieldCheck, SquaresFour, Warning, ChatsCircle } from '@phosphor-icons/react'
 import { useConsole } from './socket-provider'
+import { BlurText } from '@/components/reactbits/blur-text'
+import { ShinyText } from '@/components/reactbits/shiny-text'
 import { Dashboard } from './dashboard'
 import { LiveFeed } from './live-feed'
 import { AlertsView } from './alerts-view'
@@ -54,7 +56,7 @@ export function ConsoleShell() {
     <div className="min-h-[100dvh] bg-[#0b0d10] text-zinc-100">
       <div className="mx-auto flex min-h-[100dvh] w-full max-w-[1400px] flex-col lg:flex-row">
         {/* Sidebar (desktop) */}
-        <aside className="hidden w-56 shrink-0 flex-col border-r border-white/[0.08] lg:flex">
+        <aside className="ambient-dots hidden w-56 shrink-0 flex-col border-r border-white/[0.08] lg:flex">
           <BrandBlock />
           <nav aria-label="Secciones de la consola" className="mt-2 flex-1 px-2">
             <ul className="space-y-0.5">
@@ -90,12 +92,16 @@ export function ConsoleShell() {
 
         {/* Main column */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-14 items-center justify-between gap-3 border-b border-white/[0.08] px-4 lg:px-6">
+          <header className="ambient-glow relative flex h-14 items-center justify-between gap-3 border-b border-white/[0.08] px-4 lg:px-6">
             <div className="lg:hidden">
               <BrandRow />
             </div>
             <div className="hidden items-baseline gap-2 lg:flex">
-              <h1 className="text-sm font-medium text-zinc-200">{titleFor(view)}</h1>
+              {/* BlurText (React Bits): la entrada palabra a palabra marca el
+                  cambio de vista; key={view} reinicia la secuencia. */}
+              <h1 className="text-sm font-medium text-zinc-200">
+                <BlurText key={view} text={titleFor(view)} />
+              </h1>
               {startedAt && stats && (
                 <span className="font-mono text-xs text-zinc-600">motor activo {formatUptime(stats.uptime_s)}</span>
               )}
@@ -112,7 +118,15 @@ export function ConsoleShell() {
                 />
               </span>
               <span className="text-xs text-zinc-400">
-                {status === 'live' ? 'En vivo' : status === 'connecting' ? 'Conectando' : 'Reconectando'}
+                {/* ShinyText (React Bits): el barrido solo corre con el socket
+                    en vivo — comunica flujo activo, no decora. */}
+                {status === 'live' ? (
+                  <ShinyText>En vivo</ShinyText>
+                ) : status === 'connecting' ? (
+                  'Conectando'
+                ) : (
+                  'Reconectando'
+                )}
               </span>
               <span className="hidden font-mono text-[11px] text-zinc-600 sm:inline">
                 {sourceLabel}
@@ -217,14 +231,22 @@ function WebhookChip({ stats }: { stats: SimStats | null }) {
 
 function BrandBlock() {
   return (
-    <div className="flex items-center gap-2.5 px-4 pt-5">
-      <span className="flex h-7 w-7 items-center justify-center rounded-md border border-emerald-400/40 bg-emerald-400/10 font-mono text-xs font-semibold text-emerald-300">
-        sf
-      </span>
-      <span className="leading-tight">
-        <span className="block text-sm font-medium text-zinc-100">security-framework</span>
-        <span className="block text-[11px] text-zinc-500">consola de detección</span>
-      </span>
+    <div className="px-4 pt-5">
+      <div className="flex items-center gap-2.5">
+        <span className="flex h-7 w-7 items-center justify-center rounded-md border border-emerald-400/40 bg-emerald-400/10 font-mono text-xs font-semibold text-emerald-300 shadow-[0_0_14px_rgba(52,211,153,0.18)]">
+          sf
+        </span>
+        <span className="leading-tight">
+          <span className="block text-sm font-medium text-zinc-100">security-framework</span>
+          <span className="block text-[11px] text-zinc-500">consola de detección</span>
+        </span>
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <span className="rounded border border-white/10 px-1.5 py-0.5 font-mono text-[10px] leading-none text-zinc-500">
+          v0.1 · tracer bullet
+        </span>
+      </div>
+      <div aria-hidden className="mt-3 h-px bg-gradient-to-r from-emerald-400/30 via-white/10 to-transparent" />
     </div>
   )
 }

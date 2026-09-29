@@ -1,9 +1,12 @@
 'use client'
 
-// KPI strip. Cockpit density: no card boxes, hairline separators,
-// mono digits for every number.
+// KPI strip. Cockpit density: hairline separators, mono digits for every
+// number. SpotlightCard (React Bits) adds a pointer-following halo on hover:
+// depth without card boxes — the cell stays transparent until the mouse
+// enters, so the resting layout is unchanged.
 
 import { AnimatedNumber } from './ui-bits'
+import { SpotlightCard } from '@/components/reactbits/spotlight-card'
 import { formatUptime } from '@/lib/console-types'
 import type { SimStats } from '@/lib/console-types'
 
@@ -40,10 +43,10 @@ export function KpiRow({ stats }: { stats: SimStats | null }) {
   return (
     <div className="grid grid-cols-2 divide-x divide-white/[0.08] border-y border-white/[0.08] md:grid-cols-4">
       {items.map((it) => (
-        <div key={it.label} className="px-4 py-4 first:pl-0 md:px-5">
+        <SpotlightCard key={it.label} className="px-4 py-4 first:pl-0 md:px-5">
           <div>{it.node}</div>
           <p className="mt-1 text-xs text-zinc-500">{it.label}</p>
-        </div>
+        </SpotlightCard>
       ))}
     </div>
   )
