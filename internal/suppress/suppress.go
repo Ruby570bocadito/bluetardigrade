@@ -5,12 +5,16 @@
 // an admin legitimately does the work) and a host with a permanent,
 // accepted exception. Entries live in a single suppressions.yaml file
 // hot-reloaded on the same ticker as rules and sequences, so editing the
-// file is enough to re-arm the engine — no restart, no write API.
+// file is enough to re-arm the engine — no restart. When the engine runs
+// with -api-write, the API write surface (internal/api) edits the SAME
+// file through SaveFile and reloads it immediately, so hand edits and
+// API edits share one source of truth.
 package suppress
 
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -30,10 +34,41 @@ import (
 //     stays active until it is removed from the file.
 //   - reason is documentation for the next operator who reads the file.
 type Entry struct {
-	RuleID  string `yaml:"rule_id" json:"rule_id"`
-	Host    string `yaml:"host" json:"host,omitempty"`
-	Reason  string `yaml:"reason" json:"reason,omitempty"`
-	Expires string `yaml:"expires" json:"expires,omitempty"`
+	RuleID  string `yaml:"rule_id,omitempty" json:"rule_id"`
+	Host    string `yaml:"host,omitempty" json:"host,omitempty"`
+	Reason  string `yaml:"reason,omitempty" json:"reason,omitempty"`
+	Expires string `yaml:"expires,omitempty" json:"expires,omitempty"`
+}
+
+// NormalizeEntry applies the canonical form the YAML loader enforces:
+// surrounding whitespace trimmed everywhere, host lowercased (Windows
+// reports hostnames in arbitrary case). Every write path funnels
+// through it so the file never stores a variant spelling of an entry.
+func NormalizeEntry(e Entry) Entry {
+	return Entry{
+		RuleID:  strings.TrimSpace(e.RuleID),
+		Host:    strings.ToLower(strings.TrimSpace(e.Host)),
+		Reason:  strings.TrimSpace(e.Reason),
+		Expires: strings.TrimSpace(e.Expires),
+	}
+}
+
+// ValidateEntry applies the same acceptance rules the YAML loader
+// enforces, with path-free messages so API clients get actionable 400s:
+// rule_id and host must not both be empty (the entry would match
+// nothing) and expires, when set, must be RFC 3339. Callers that write
+// the file (SaveFile, the API) must validate FIRST: a set the engine
+// would reject on the next hot-reload must never reach the disk.
+func ValidateEntry(e Entry) error {
+	if e.RuleID == "" && e.Host == "" {
+		return fmt.Errorf("rule_id and host are both empty (nothing would match - fix or delete the entry)")
+	}
+	if e.Expires != "" {
+		if _, err := time.Parse(time.RFC3339, e.Expires); err != nil {
+			return fmt.Errorf("expires %q is not RFC 3339 (e.g. 2026-10-02T00:00:00Z): %w", e.Expires, err)
+		}
+	}
+	return nil
 }
 
 // Parsed is an entry with its expiration resolved and precomputed for
@@ -138,6 +173,78 @@ func (m *Manager) Path() string {
 	return m.path
 }
 
+// All returns every loaded entry, expired ones included, oldest first —
+// the full on-disk set, unlike Snapshot which filters expired entries.
+// Write paths need this to edit the file without silently dropping
+// entries that merely ran out of clock: an expired change-window entry
+// is history the operator may still want to read in the YAML.
+func (m *Manager) All() []Entry {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]Entry, 0, len(m.entries))
+	for _, e := range m.entries {
+		out = append(out, Entry{RuleID: e.RuleID, Host: e.Host, Reason: e.Reason, Expires: e.rawUntil})
+	}
+	return out
+}
+
+// SaveFile atomically replaces the contents of path with entries: the
+// YAML goes to a temp file in the same directory and is renamed over
+// the target, so a crash mid-write can never leave a truncated control
+// file behind and the hot-reload ticker only ever reads the old or the
+// new set, never a half-written one. Every entry is normalized and
+// validated first — a set the engine would reject on the next reload
+// must not reach the disk. A file that does not exist yet is created
+// 0600 (it silences detections, so it is operator-private); an existing
+// file keeps its mode.
+func SaveFile(path string, entries []Entry) error {
+	clean := make([]Entry, 0, len(entries))
+	for i, e := range entries {
+		e = NormalizeEntry(e)
+		if err := ValidateEntry(e); err != nil {
+			return fmt.Errorf("suppress: entry #%d: %w", i+1, err)
+		}
+		clean = append(clean, e)
+	}
+	data, err := yaml.Marshal(clean)
+	if err != nil {
+		return fmt.Errorf("suppress: marshal: %w", err)
+	}
+	dir := filepath.Dir(path)
+	mode := os.FileMode(0o600)
+	if st, err := os.Stat(path); err == nil {
+		mode = st.Mode().Perm()
+	}
+	tmp, err := os.CreateTemp(dir, ".suppressions-*")
+	if err != nil {
+		return fmt.Errorf("suppress: temp file in %s: %w", dir, err)
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("suppress: write %s: %w", tmpName, err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("suppress: sync %s: %w", tmpName, err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("suppress: close %s: %w", tmpName, err)
+	}
+	if err := os.Chmod(tmpName, mode); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("suppress: chmod %s: %w", tmpName, err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("suppress: rename %s -> %s: %w", tmpName, path, err)
+	}
+	return nil
+}
+
 func parseFile(path string) ([]Parsed, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -152,20 +259,21 @@ func parseFile(path string) ([]Parsed, error) {
 	}
 	out := make([]Parsed, 0, len(raw))
 	for i, e := range raw {
-		if strings.TrimSpace(e.RuleID) == "" && strings.TrimSpace(e.Host) == "" {
-			return nil, fmt.Errorf("suppress: %s entry #%d: rule_id and host are both empty (nothing would match - fix or delete the entry)", path, i+1)
+		e = NormalizeEntry(e)
+		if err := ValidateEntry(e); err != nil {
+			return nil, fmt.Errorf("suppress: %s entry #%d: %w", path, i+1, err)
 		}
 		p := Parsed{
-			RuleID:   strings.TrimSpace(e.RuleID),
-			Host:     strings.ToLower(strings.TrimSpace(e.Host)),
-			Reason:   strings.TrimSpace(e.Reason),
+			RuleID:   e.RuleID,
+			Host:     e.Host,
+			Reason:   e.Reason,
 			Line:     i + 1,
-			rawUntil: strings.TrimSpace(e.Expires),
+			rawUntil: e.Expires,
 		}
-		if p.rawUntil != "" {
-			t, err := time.Parse(time.RFC3339, p.rawUntil)
+		if e.Expires != "" {
+			t, err := time.Parse(time.RFC3339, e.Expires)
 			if err != nil {
-				return nil, fmt.Errorf("suppress: %s entry #%d: expires %q is not RFC 3339 (e.g. 2026-10-02T00:00:00Z): %w", path, i+1, p.rawUntil, err)
+				return nil, fmt.Errorf("suppress: %s entry #%d: %w", path, i+1, err)
 			}
 			p.Expires = t
 		}

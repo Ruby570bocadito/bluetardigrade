@@ -19,10 +19,15 @@ info:
 
     Design constraints worth knowing before integrating:
 
-    - The API is **read-only with ONE exception**: alert triage via
-      `POST /api/alerts/{id}/status` (acknowledge / close / reopen with
-      a note). Everything else — configuration, rules, suppressions —
-      stays flag/YAML-driven, never writable through this API.
+    - The API is **read-only by default** with two opt-in write
+      surfaces: alert triage via `POST /api/alerts/{id}/status`
+      (acknowledge / close / reopen with a note; gated by the bearer
+      token like every read endpoint), and — when the engine starts
+      with `-api-write` (or `SF_API_WRITE=1`) — `POST`/`DELETE` on
+      `/api/suppressions`, which edit the `suppressions.yaml` file
+      atomically and answer `403` naming the flag when it is off.
+      Everything else — configuration, rules, sequences — stays
+      flag/YAML-driven, never writable through this API.
     - `GET /api/events` and `GET /api/alerts` return the **in-memory
       ring** (last 1000 events / 256 alerts), newest first. For bulk
       download use the `/export` endpoints.
@@ -161,16 +166,21 @@ paths:
     get:
       tags: [status]
       operationId: listSuppressions
-      summary: Operator allowlist (read-only view)
+      summary: Operator allowlist
       security:
         - bearerAuth: []
         - {}
       description: |
         The suppression entries currently active (expired ones excluded).
-        Entries are NOT managed through this API: they live in the
-        `suppressions.yaml` file the engine hot-reloads (see
-        `suppressions.example.yaml`). Suppressed hits raise no alert,
-        skip the correlator and are logged as `[SUPPRESS]`.
+        The source of truth is the `suppressions.yaml` file the engine
+        hot-reloads (see `suppressions.example.yaml`). When the engine
+        runs with `-api-write` (or `SF_API_WRITE=1`), the same file can
+        also be edited through the `post`/`delete` operations below: the
+        write lands atomically (temp + rename) and is loaded back
+        immediately, so hand edits and API edits share one state.
+        Without the flag, both write operations answer `403` naming the
+        flag. Suppressed hits raise no alert, skip the correlator and
+        are logged as `[SUPPRESS]`.
       responses:
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -180,6 +190,100 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Suppressions'
+    post:
+      tags: [status]
+      operationId: createSuppression
+      summary: Add (or update) one suppression entry (-api-write)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Upserts one entry keyed by the (rule_id, host) pair: posting an
+        existing pair updates reason/expires instead of duplicating it.
+        The body is a single SuppressionEntry, validated exactly like
+        the YAML loader (rule_id and host must not both be empty,
+        expires must be RFC 3339); a rejected entry answers `400` with
+        the detail. The entry is written to `suppressions.yaml`
+        atomically and loaded back, so it is live immediately and
+        survives restarts. Every write logs an audit line
+        `WRITE suppressions add/update rule=... host=... by=api`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuppressionEntry'
+      responses:
+        '200':
+          description: The new allowlist state (same shape as the get)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Suppressions'
+        '400':
+          description: Malformed JSON, or an entry the validator rejects
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/WritesDisabled'
+        '500':
+          description: The suppressions file is not writable (detail in the engine log)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      tags: [status]
+      operationId: deleteSuppression
+      summary: Remove entries matching the exact (rule_id, host) pair (-api-write)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Removes every entry whose (rule_id, host) pair equals the query
+        exactly — an entry that silences one rule on ALL hosts is only
+        removed by a query without host, and vice versa: no silent
+        wildcard expansion either way. `404` when nothing matched, `400`
+        when both parameters are empty. Answers with the new state and
+        logs `WRITE suppressions remove rule=... host=... by=api`.
+      parameters:
+        - name: rule_id
+          in: query
+          schema:
+            type: string
+          description: exact rule id of the entries to remove
+        - name: host
+          in: query
+          schema:
+            type: string
+          description: exact (case-insensitive) host of the entries to remove
+      responses:
+        '200':
+          description: The new allowlist state (same shape as the get)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Suppressions'
+        '400':
+          description: Both query parameters are empty
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/WritesDisabled'
+        '404':
+          description: No entry matches the (rule_id, host) pair
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/sequences:
     get:
       tags: [status]
@@ -523,6 +627,23 @@ components:
               error:
                 type: string
                 example: "unauthorized: send 'Authorization: Bearer <token>' (configure it with -api-token/SF_API_TOKEN)"
+    WritesDisabled:
+      description: |
+        The write surface is not armed: the engine is running without
+        `-api-write` (or `SF_API_WRITE=1`), so `POST`/`DELETE` on
+        `/api/suppressions` are refused before any validation. The body
+        names the flag, like the 401 names the token. Arming also
+        requires the bearer gate beyond loopback: an engine with no
+        `-api-token` and a non-loopback bind refuses to arm writes at
+        startup.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: "api writes are disabled: restart the engine with -api-write (or SF_API_WRITE=1) to allow suppression writes"
   parameters:
     Host:
       name: host
@@ -1040,6 +1161,33 @@ components:
                     items:
                       type: string
                   - type: number
+    SuppressionEntry:
+      type: object
+      description: |
+        One suppression entry: the same fields and validation as a YAML
+        entry (rule_id and host must not both be empty; an entry with
+        only host silences every rule on that host, an entry with only
+        rule_id silences that rule everywhere).
+      properties:
+        rule_id:
+          type: string
+          description: rule id to silence (empty = every rule, as long as host is set)
+        host:
+          type: string
+          description: host to scope the entry to (empty = every host); compared case-insensitively
+        reason:
+          type: string
+          description: free-text justification stored in the file
+        expires:
+          type: string
+          description: RFC 3339 expiration (e.g. 2026-10-02T00:00:00Z); empty = until removed
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: actionable one-line reason (client-side problems name the fix; server-side problems point to the engine log)
     Suppressions:
       type: object
       required: [active, entries]

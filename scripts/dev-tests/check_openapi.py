@@ -3,8 +3,10 @@
 
 Catches spec drift without needing a running engine:
   1. The spec parses as OpenAPI 3.x.
-  2. Every route served by internal/api/api.go exists in the spec
-     (and the spec declares no route the code does not serve).
+  2. Every (method, path) the internal/api package serves exists in the
+     spec as a declared operation — and the spec declares no operation
+     the code does not serve. Method-aware since the -api-write surface
+     (POST/DELETE /api/suppressions) shares paths with GET routes.
   3. The Stats schema matches the JSON wire tags of statsPayload in
      internal/api/api.go, field by field (names and required list —
      the struct has no omitempty, so every field is always emitted).
@@ -53,7 +55,7 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = ROOT / "docs" / "api" / "openapi.yaml"
-API_GO = ROOT / "internal" / "api" / "api.go"
+API_DIR = ROOT / "internal" / "api"
 
 HTTP_METHODS = {"get", "put", "post", "delete", "options", "head", "patch", "trace"}
 
@@ -102,9 +104,41 @@ def run_checks(spec: dict, go_src: str) -> tuple[list[str], dict]:
         errors.append(f"spec is not OpenAPI 3.x (openapi={spec.get('openapi')!r})")
     spec_paths = set(spec.get("paths", {}) or {})
 
-    # ---- routes: api.go registers them as mux.HandleFunc("GET /api/...", ...)
-    go_routes = set(re.findall(r'HandleFunc\(\s*"(?:GET |POST )?(/[^"]*)"', go_src))
+    # ---- routes: the package registers them as mux.HandleFunc("GET
+    # /api/...", ...) across its files; every (method, path) served by
+    # the code must be declared in the spec, and vice versa. A pattern
+    # without a method prefix matches any method: modeled as "*", the
+    # path-level check covers it.
+    code_ops: set[tuple[str, str]] = set()
+    for m in re.finditer(r'HandleFunc\(\s*"((?:[A-Z]+ )?/[^"]*)"', go_src):
+        pat = m.group(1)
+        if " " in pat:
+            method, route = pat.split(" ", 1)
+            code_ops.add((method.upper(), route))
+        else:
+            code_ops.add(("*", pat))
+    go_routes = {route for _, route in code_ops}
 
+    spec_paths_map = spec.get("paths", {}) or {}
+    spec_ops: set[tuple[str, str]] = set()
+    for path, item in spec_paths_map.items():
+        if isinstance(item, dict):
+            for method in item:
+                if method.lower() in HTTP_METHODS:
+                    spec_ops.add((method.upper(), path))
+
+    for method, route in sorted(code_ops):
+        if method != "*" and (method, route) not in spec_ops:
+            errors.append(
+                f"{method} {route} served by the code but the spec declares no such operation"
+            )
+    for method, path in sorted(spec_ops):
+        if ("*", path) in code_ops:
+            continue  # method-agnostic handler: the path-level check covers it
+        if (method, path) not in code_ops:
+            errors.append(
+                f"{method} {path} declared in the spec but not served by the code"
+            )
     for route in sorted(go_routes):
         if route not in spec_paths:
             errors.append(f"route served by the code but missing in spec: {route}")
@@ -264,6 +298,73 @@ def run_checks(spec: dict, go_src: str) -> tuple[list[str], dict]:
                     f"Unauthorized example drift: spec {example!r} != api.go {go_error!r}"
                 )
 
+    # ---- write surface: the engine answers 403 on the routes registered
+    # by registerSuppressionsWrite when it runs without -api-write (the
+    # body lives next to those handlers in internal/api). Only THOSE
+    # (method, path) pairs are flag-gated — other write routes (the alert
+    # triage POST, for one) have their own gating contract — so the spec
+    # must document the 403 on exactly these operations, with an error
+    # example matching the code body byte-for-byte, like the 401 check.
+    m_403 = re.search(r'Fprintln\(w, `(\{"error":"api writes[^"]*"\})`\)', go_src)
+    gated_writes: set[tuple[str, str]] = set()
+    m_reg = re.search(r"func \(h \*Hub\) registerSuppressionsWrite\(.*?\n\}", go_src, re.S)
+    if m_reg:
+        for m in re.finditer(r'HandleFunc\(\s*"((?:[A-Z]+ )?/[^"]*)"', m_reg.group(0)):
+            pat = m.group(1)
+            if " " in pat:
+                method, route = pat.split(" ", 1)
+                gated_writes.add((method.upper(), route))
+    write_ops = 0
+    for wmethod, wpath in sorted(gated_writes):
+        item = spec_paths_map.get(wpath)
+        if not isinstance(item, dict):
+            errors.append(
+                f"{wmethod} {wpath}: registered as a gated write route "
+                "but missing in the spec"
+            )
+            continue
+        op = item.get(wmethod.lower())
+        if not isinstance(op, dict):
+            errors.append(
+                f"{wmethod} {wpath}: registered as a gated write route "
+                "but the spec declares no such operation"
+            )
+            continue
+        write_ops += 1
+        if not m_403:
+            continue  # no gated write surface in the code: nothing to match
+        responses = op.get("responses", {}) or {}
+        if "403" not in responses:
+            errors.append(
+                f"{wmethod} {wpath}: gated write operation does not document "
+                "a 403 response (the engine answers it when running "
+                "without -api-write)"
+            )
+            continue
+        node = responses["403"]
+        if isinstance(node, dict) and "$ref" in node:
+            node = resolve_ref(spec, node["$ref"]) or {}
+        example = None
+        try:
+            example = node["content"]["application/json"]["schema"]["properties"]["error"]["example"]
+        except (KeyError, TypeError):
+            example = None
+        go_403 = m_403.group(1).split('"error":"', 1)[1]
+        if not go_403.endswith('"}'):
+            errors.append(f"could not parse the 403 body in internal/api: {m_403.group(1)!r}")
+        else:
+            go_403 = go_403[:-2]
+            if example is None:
+                errors.append(
+                    "the 403 response lacks the error example "
+                    "(content.application/json.schema.properties.error.example) "
+                    "while the code writes a concrete body"
+                )
+            elif example != go_403:
+                errors.append(
+                    f"403 example drift: spec {example!r} != internal/api {go_403!r}"
+                )
+
     # ---- every $ref in the document must resolve inside the spec: a
     # dangling ref is silent breakage for every downstream consumer
     # (validators, generators, rendered docs) and cannot be caught by
@@ -277,7 +378,7 @@ def run_checks(spec: dict, go_src: str) -> tuple[list[str], dict]:
         if resolve_ref(spec, ref) is None:
             errors.append(f"unresolvable $ref {ref!r} at {where}")
 
-    info.update(routes=len(go_routes), fields=len(go_fields), gated_ops=gated_ops, refs=n_refs)
+    info.update(routes=len(go_routes), fields=len(go_fields), gated_ops=gated_ops, write_ops=write_ops, refs=n_refs)
     return errors, info
 
 
@@ -296,7 +397,21 @@ import (
 func setup(mux *http.ServeMux, h *Hub) {
         mux.HandleFunc("GET /api/stats", h.handleStats)
         mux.HandleFunc("GET /api/health", h.handleHealth)
+        h.registerSuppressionsWrite(mux)
         h.srv = &http.Server{Handler: h.auth(mux), ReadHeaderTimeout: 5 * time.Second}
+}
+
+// The flag-gated write surface: only routes registered here answer the
+// 403 body the write-surface check matches against.
+func (h *Hub) registerSuppressionsWrite(mux *http.ServeMux) {
+        mux.HandleFunc("POST /api/suppressions", h.handleSuppressionsCreate)
+        mux.HandleFunc("DELETE /api/suppressions", h.handleSuppressionsDelete)
+}
+
+func (h *Hub) suppressWriteTarget(w http.ResponseWriter) {
+        w.Header().Set("Content-Type", "application/json")
+        w.WriteHeader(http.StatusForbidden)
+        fmt.Fprintln(w, `{"error":"api writes are disabled: restart the engine with -api-write (or SF_API_WRITE=1) to allow suppression writes"}`)
 }
 
 func (h *Hub) auth(next http.Handler) http.Handler {
@@ -332,7 +447,7 @@ def good_spec() -> dict:
                         "200": {"description": "ok"},
                         "401": {"$ref": "#/components/responses/Unauthorized"},
                     },
-                }
+                },
             },
             "/api/health": {
                 "get": {
@@ -340,6 +455,26 @@ def good_spec() -> dict:
                     "security": [],
                     "responses": {"200": {"description": "ok"}},
                 }
+            },
+            "/api/suppressions": {
+                "post": {
+                    "operationId": "writeSuppression",
+                    "security": copy.deepcopy(OPTIONAL_AUTH),
+                    "responses": {
+                        "200": {"description": "ok"},
+                        "401": {"$ref": "#/components/responses/Unauthorized"},
+                        "403": {"$ref": "#/components/responses/WritesDisabled"},
+                    },
+                },
+                "delete": {
+                    "operationId": "removeSuppression",
+                    "security": copy.deepcopy(OPTIONAL_AUTH),
+                    "responses": {
+                        "200": {"description": "ok"},
+                        "401": {"$ref": "#/components/responses/Unauthorized"},
+                        "403": {"$ref": "#/components/responses/WritesDisabled"},
+                    },
+                },
             },
         },
         "components": {
@@ -360,7 +495,23 @@ def good_spec() -> dict:
                             }
                         }
                     },
-                }
+                },
+                "WritesDisabled": {
+                    "description": "write surface not armed",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "error": {
+                                        "type": "string",
+                                        "example": "api writes are disabled: restart the engine with -api-write (or SF_API_WRITE=1) to allow suppression writes",
+                                    }
+                                },
+                            }
+                        }
+                    },
+                },
             },
             "schemas": {
                 "Stats": {
@@ -434,6 +585,25 @@ def self_test() -> int:
             "Unauthorized example drift",
         ),
         (
+            "write op without documented 403",
+            lambda s: s["paths"]["/api/suppressions"]["post"]["responses"].pop("403"),
+            "does not document a 403",
+        ),
+        (
+            "403 example drifted from the internal/api body",
+            lambda s: s["components"]["responses"]["WritesDisabled"]["content"][
+                "application/json"
+            ]["schema"]["properties"]["error"].__setitem__(
+                "example", "api writes are disabled: stale message"
+            ),
+            "403 example drift",
+        ),
+        (
+            "POST served by the code but missing in the spec",
+            lambda s: s["paths"]["/api/suppressions"].pop("post"),
+            "served by the code but the spec declares no such operation",
+        ),
+        (
             "dangling $ref ignored",
             lambda s: s["paths"]["/api/stats"]["get"]["responses"].__setitem__(
                 "500", {"$ref": "#/components/responses/DoesNotExist"}
@@ -472,7 +642,9 @@ def main() -> int:
         return self_test()
 
     spec = yaml.safe_load(SPEC.read_text(encoding="utf-8"))
-    go_src = API_GO.read_text(encoding="utf-8")
+    go_src = "\n".join(
+        p.read_text(encoding="utf-8") for p in sorted(API_DIR.glob("*.go"))
+    )
     errors, info = run_checks(spec, go_src)
 
     if errors:
@@ -483,8 +655,10 @@ def main() -> int:
 
     print(
         f"check_openapi: OK — {info['routes']} routes, {info['fields']} Stats fields, "
-        f"{info['gated_ops']} optionally-gated operations, {info['refs']} $refs resolved, "
-        "spec in sync with the code (routes, fields, security, refs)"
+        f"{info['gated_ops']} optionally-gated operations, {info['write_ops']} write operations "
+        "(403-gated), "
+        f"{info['refs']} $refs resolved, "
+        "spec in sync with the code (routes, methods, fields, security, refs)"
     )
     return 0
 

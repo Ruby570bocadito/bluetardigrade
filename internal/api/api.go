@@ -60,6 +60,14 @@ type Hub struct {
 	lifecycle   *lifecycle.Store                // alert triage state (status overlay)
 
 	storeFails uint64 // throttles store write-error logging (atomic)
+
+	// suppression write surface (armed only with -api-write; see
+	// suppress_write.go): the file writes are serialized by their own
+	// mutex because they read the manager, rewrite the file and load
+	// it back as one logical operation.
+	supWriteMu   sync.Mutex
+	writeEnabled bool
+	suppressPath string
 }
 
 // New binds the API listener. Use addr ":0" in tests to pick a free port.
@@ -90,6 +98,7 @@ func New(addr string) (*Hub, error) {
 	mux.HandleFunc("POST /api/alerts/{id}/status", h.handleAlertStatus)
 	mux.HandleFunc("GET /api/rules", h.handleRules)
 	mux.HandleFunc("GET /api/suppressions", h.handleSuppressions)
+	h.registerSuppressionsWrite(mux)
 	mux.HandleFunc("GET /api/sequences", h.handleSequences)
 	mux.HandleFunc("GET /api/stream", h.handleStream)
 	mux.HandleFunc("GET /api/health", h.handleHealth)
@@ -110,7 +119,8 @@ func (h *Hub) SetRules(re *rules.Engine) {
 }
 
 // SetSuppressions exposes the operator allowlist (read-only) through
-// /api/suppressions and its live count in /api/stats.
+// /api/suppressions and its live count in /api/stats. Write access is
+// a separate, opt-in step: EnableSuppressionsWrite.
 func (h *Hub) SetSuppressions(m *suppress.Manager) {
 	h.mu.Lock()
 	h.suppress = m

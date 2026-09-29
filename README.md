@@ -212,7 +212,7 @@ The engine serves a small read-only API used by the web console and handy for SI
 | `GET /api/stats` | uptime, counters, per-severity totals, rule count, ingest auth rejections, webhook delivery counters, active suppressions, kill-chain correlator observability (`correlator_states` / `correlator_sequences` / `correlator_cap`), store counters (`store_enabled` / `store_events` / `store_alerts`) |
 | `GET /api/events?limit=200` | recent events, newest first |
 | `GET /api/alerts?limit=100` | recent alerts, newest first |
-| `GET /api/suppressions` | operator allowlist currently active (read-only view) |
+| `GET /api/suppressions` | operator allowlist currently active; `POST`/`DELETE` (only with `-api-write`) edit the same file atomically — see [Alert suppressions](#alert-suppressions-operator-allowlist) |
 | `GET /api/sequences` | kill-chain sequences loaded by the correlator (read-only view; empty = correlator off) |
 | `GET /api/events/export?format=jsonl\|csv` | bulk download of the event history — in-memory ring, or the full SQLite history with `-store` (JSON Lines or CSV) |
 | `GET /api/alerts/export?format=ndjson\|csv&limit=256` | downloadable alert feed for SIEM/SOAR handoff, chronological order |
@@ -332,7 +332,8 @@ Point the engine at it with `-suppressions <path>` (default `./suppressions.yaml
 - A suppressed hit raises NO alert, does NOT reach the webhook, and does NOT feed the kill-chain correlator — a host with a silenced rule is treated as being in an accepted state. Each suppressed hit is logged as `[SUPPRESS] rule=<id> host=<host>`, never silently.
 - An entry without `expires` stays active until you remove it; expired entries stop matching on their own.
 - A malformed file is FATAL at startup (a typo must not disable a control you believe is armed) and rejected — keeping the previous set — on hot reload, loudly.
-- The live set is observable read-only at `GET /api/suppressions` and counted in `/api/stats` (`suppressions_active`). Entries are edited in the YAML file, never through the API.
+- The live set is observable at `GET /api/suppressions` and counted in `/api/stats` (`suppressions_active`).
+- **API writes are opt-in**: an engine started with `-api-write` (or `SF_API_WRITE=1`) also answers `POST /api/suppressions` (add/update one entry, keyed by the rule_id+host pair) and `DELETE /api/suppressions?rule_id=…&host=…` (exact-pair removal, `404` when nothing matched). Writes go through the same validation as the YAML loader, land on the file atomically (temp + rename, preserving its mode) and are loaded back immediately — the file stays the single source of truth, so hand edits and API edits never diverge. Without the flag both routes answer `403` naming it; beyond loopback, arming is refused at startup unless `-api-token` is set. Every write logs an audit line (`WRITE suppressions add rule=… host=… by=api`). Contract details: [`docs/api/openapi.yaml`](docs/api/openapi.yaml).
 
 ### Alert triage (lifecycle)
 
@@ -368,6 +369,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `-reload-every` | `15s` | hot-reload cadence for rules/sequences/suppressions (`0` disables) |
 | `-token` / `-token-previous` | — | ingest shared token / previous token during a rotation window |
 | `-api-token` | — | Bearer required on every `/api/*` route and on `/metrics` (`/api/health` stays open) |
+| `-api-write` | off | arm `POST`/`DELETE /api/suppressions` (writes land on the `-suppressions` file; refused beyond loopback without `-api-token`) |
 | `-webhook` / `-webhook-token` | — | SIEM/SOAR connector URL / outbound Bearer token |
 | `-store` / `-store-retention` | off / `72h` | SQLite persistence / pruning window (`0` keeps everything) |
 | `-v` | off | print every event received |
@@ -381,6 +383,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `SF_INGEST_TOKEN` | engine + every bundled sensor | ingest shared token (the flag wins when both are set) |
 | `SF_INGEST_TOKEN_PREVIOUS` | engine | second accepted token during a rotation window |
 | `SF_API_TOKEN` | engine + console-service | one entry protects both the API and the bridge |
+| `SF_API_WRITE` | engine | set to `1` to arm the suppression write API (same as `-api-write`; the flag wins) |
 | `SF_WEBHOOK_TOKEN` | engine | Bearer on outbound alert deliveries |
 | `NEXT_PUBLIC_CONSOLE_URL` | web console | point the UI at a remote hub |
 | `NEXT_PUBLIC_ENGINE_API` | web console | direct engine API base for polling (default same-origin proxy `/api/engine`) |
@@ -632,6 +635,7 @@ path (no subcommand) and on `engine run`.
 | `-webhook url` | empty | POST every alert as JSON to this URL (SIEM/SOAR connector) |
 | `-webhook-token t` | empty | Bearer token on every webhook delivery (falls back to `SF_WEBHOOK_TOKEN`) |
 | `-api-token t` | empty | bearer token the local API requires on `/api/*` and `/metrics` (falls back to `SF_API_TOKEN`); `/api/health` stays open |
+| `-api-write` | off | arm `POST`/`DELETE /api/suppressions` (falls back to `SF_API_WRITE=1`); writes go to the `-suppressions` file, which stays the source of truth; refused at startup when the API has no token beyond loopback |
 | `-token t` | empty | shared ingest token (falls back to `SF_INGEST_TOKEN`); empty disables auth |
 | `-token-previous t` | empty | previous ingest token, still accepted during a rotation window (falls back to `SF_INGEST_TOKEN_PREVIOUS`) |
 | `-suppressions file` | `./suppressions.yaml` | operator allowlist YAML silencing rule/host pairs (expirations supported); empty disables |
