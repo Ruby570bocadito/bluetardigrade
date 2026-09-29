@@ -154,7 +154,7 @@ stats, events, alerts, rules, stream, exports — answers `401` without
 a valid `Authorization: Bearer <token>` header, with a loud log line
 per rejected request. `/api/health` stays open on purpose: it is the
 liveness probe the engine, the console bridge and uptime checks rely
-on, and it reveals nothing but `{"status":"ok"}`. The console-service
+on, and it reveals nothing but `{"mode":"engine","status":"ok"}`. The console-service
 bridge honors the same `SF_API_TOKEN` variable, so a token-protected
 console stack needs exactly one extra environment entry. This follows
 the same standard as the ingest auth: loopback stays friction-free by
@@ -415,6 +415,14 @@ The loaded rule pack, rendered with each rule's conditions and MITRE
 mapping:
 
 ![Console rules view: 23 loaded rules with conditions and ATT&CK mapping](docs/assets/console-reglas.png)
+
+Operator suppressions, rendered read-only with rule-name lookup, host
+scope, reason and a live expiry countdown — the exact set the engine
+loaded from `suppressions.yaml` (the nav badge shows the active count;
+suppressed hits raise no alert, as documented in the suppressions
+section above):
+
+![Console suppressions view: 2 active entries with rule names, host scope, reasons and an expiry countdown](docs/assets/console-supresiones.png)
 
 Requirements: [bun](https://bun.sh).
 

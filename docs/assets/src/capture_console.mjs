@@ -69,5 +69,16 @@ await page.waitForTimeout(1200)
 await page.screenshot({ path: path.join(ASSETS, 'console-reglas.png') })
 console.log('shot: console-reglas.png')
 
+// Operator suppressions view: renders the live allowlist the engine
+// loaded from suppressions.yaml (honest empty state when none armed).
+// To capture it populated, arm 1-2 entries in ./suppressions.yaml
+// before starting the engine - any entry matching replay traffic
+// works, e.g. a rule id from rules/windows/ scoped to host
+// LAB-WKS-01 (see suppressions.example.yaml for the format).
+await navBtn('Supresiones').click()
+await page.waitForTimeout(1200)
+await page.screenshot({ path: path.join(ASSETS, 'console-supresiones.png') })
+console.log('shot: console-supresiones.png')
+
 await browser.close()
 console.log('done')

@@ -340,7 +340,7 @@ components:
         `-api-token` (or `SF_API_TOKEN`). When enabled, every path
         below answers 401 without a valid `Authorization: Bearer`
         header, EXCEPT `/api/health`, which stays open for liveness
-        probes and reveals nothing but `{"status":"ok"}`.
+        probes and reveals nothing but `{"mode":"engine","status":"ok"}`.
   responses:
     Unauthorized:
       description: |
