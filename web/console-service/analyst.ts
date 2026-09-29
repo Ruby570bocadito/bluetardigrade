@@ -40,17 +40,32 @@ export class AnalystNotConfiguredError extends Error {
   }
 }
 
-/** Reads and validates the analyst configuration from an env-like record. */
-export function analystConfigFromEnv(env: Record<string, string | undefined> = process.env): AnalystConfig {
+/** Non-throwing view of the analyst configuration, for status pages and health. */
+export type AnalystStatus = {
+  configured: boolean
+  /** Env var names that are missing when not configured. */
+  missing: string[]
+  baseUrl: string
+  model: string
+}
+
+/** Inspects an env-like record without throwing; the hub shows this in the
+ * status page, the startup banner and GET /health. */
+export function analystStatusFromEnv(env: Record<string, string | undefined> = process.env): AnalystStatus {
   const baseUrl = env.ANALYST_BASE_URL?.trim() ?? ''
-  const apiKey = env.ANALYST_API_KEY?.trim() ?? ''
   const model = env.ANALYST_MODEL?.trim() ?? ''
   const missing: string[] = []
   if (!baseUrl) missing.push('ANALYST_BASE_URL')
-  if (!apiKey) missing.push('ANALYST_API_KEY')
+  if (!env.ANALYST_API_KEY?.trim()) missing.push('ANALYST_API_KEY')
   if (!model) missing.push('ANALYST_MODEL')
-  if (missing.length) throw new AnalystNotConfiguredError(missing)
-  return { baseUrl, apiKey, model }
+  return { configured: missing.length === 0, missing, baseUrl, model }
+}
+
+/** Reads and validates the analyst configuration from an env-like record. */
+export function analystConfigFromEnv(env: Record<string, string | undefined> = process.env): AnalystConfig {
+  const status = analystStatusFromEnv(env)
+  if (status.missing.length) throw new AnalystNotConfiguredError(status.missing)
+  return { baseUrl: status.baseUrl, apiKey: env.ANALYST_API_KEY!.trim(), model: status.model }
 }
 
 const MITRE_NOTES: Record<string, string> = {
@@ -145,6 +160,11 @@ export async function chatCompletion(cfg: AnalystConfig, messages: AnalystMessag
  * working; returns the full analysis text.
  */
 export async function runAnalysis(alert: SfAlert, rule: RuleMeta | undefined, ev: SfEvent | undefined, emit: Emit, question?: string): Promise<string> {
+  // Fail fast: without a complete configuration no step is shown and the
+  // panel gets the exact env vars it needs, instead of a fake progress
+  // sequence that ends in an error three steps later.
+  const cfg = analystConfigFromEnv()
+
   // Step 1: inspect the event (real work: pull the fields the rule matched on)
   emit.step({ label: 'Inspeccionando el evento', state: 'run' })
   const keyFields = alert.matched_on
@@ -166,7 +186,6 @@ export async function runAnalysis(alert: SfAlert, rule: RuleMeta | undefined, ev
 
   // Step 3: draft conclusions with the configured LLM provider
   emit.step({ label: 'Redactando conclusiones', state: 'run' })
-  const cfg = analystConfigFromEnv()
   const contextNote = note ? `Nota de contexto interno para tu analisis: ${note}` : ''
   const fieldsNote = keyFields.length ? `Campos clave observados: ${keyFields.join(' | ')}` : ''
 

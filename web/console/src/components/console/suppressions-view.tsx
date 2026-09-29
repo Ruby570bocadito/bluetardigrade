@@ -8,7 +8,7 @@
 
 import { useEffect, useState } from 'react'
 import { Prohibit, Timer } from '@phosphor-icons/react'
-import { useConsole } from './socket-provider'
+import { useEngine } from './engine-provider'
 import { EmptyState, SectionHeader } from './ui-bits'
 import type { SfSuppression } from '@/lib/console-types'
 
@@ -37,7 +37,7 @@ function countdown(iso: string | undefined, now: Date): string | null {
 }
 
 export function SuppressionsView() {
-  const { suppressions, rules, status } = useConsole()
+  const { suppressions, rules, status } = useEngine()
   useSlowTick()
   const now = new Date()
 

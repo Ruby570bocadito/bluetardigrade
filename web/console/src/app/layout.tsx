@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "security-framework · Consola de detección",
+  title: "security-framework · Consola SOC",
   description:
-    "Consola en tiempo real del framework de detección de amenazas: telemetría del sensor, reglas YAML y triage de alertas con analista IA.",
+    "Consola de operaciones de seguridad en tiempo real: telemetría del sensor, reglas YAML, triage de alertas MITRE ATT&CK y export JSONL/CSV.",
   keywords: ["EDR", "detección de amenazas", "SOC", "MITRE ATT&CK", "telemetría"],
 };
 

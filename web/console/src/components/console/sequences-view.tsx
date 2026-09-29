@@ -10,7 +10,7 @@
 // as suppressions.
 
 import { FlowArrow, Timer } from '@phosphor-icons/react'
-import { useConsole } from './socket-provider'
+import { useEngine } from './engine-provider'
 import { EmptyState, SectionHeader, SeverityBadge } from './ui-bits'
 import type { SfSequence } from '@/lib/console-types'
 
@@ -24,7 +24,7 @@ function formatWindow(seconds: number): string {
 }
 
 export function SequencesView() {
-  const { sequences, rules, status } = useConsole()
+  const { sequences, rules, status } = useEngine()
 
   const liveRules = new Set(rules.map((r) => r.name))
   const armed = sequences.filter((s) => s.steps.every((step) => liveRules.has(step))).length

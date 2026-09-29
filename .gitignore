@@ -38,3 +38,7 @@ tools/
 # Local evidence
 captures/
 *.dmp
+
+# Agent tooling residue (not part of the product)
+.agents/
+.claude/

@@ -115,3 +115,36 @@ export type HubStats = {
   store_events?: number
   store_alerts?: number
 }
+
+// Machine-readable status of the hub itself, served at GET /health (and
+// GET /healthz). Purely additive: the console keeps consuming the same
+// socket.io events as before and never needs to call this.
+export type HubHealth = {
+  service: 'console-service'
+  version: string
+  // 'ok' with the engine attached; 'degraded' when the hub process is
+  // healthy but the telemetry source is unreachable (no data, no
+  // simulation: the console shows empty states until it comes back).
+  status: 'ok' | 'degraded'
+  mode: 'engine' | 'sin-motor'
+  started_at: string
+  uptime_s: number
+  engine: {
+    endpoint: string
+    connected: boolean
+    uptime_s: number
+    events_total: number
+    alerts_total: number
+    events_per_min: number
+    by_severity: Record<string, number>
+    // seconds since the last /api/stats poll succeeded; null when the
+    // engine has never answered
+    last_stats_age_s: number | null
+  }
+  buffers: { events: number; alerts: number; max_events: number; max_alerts: number }
+  clients: { connected: number; total: number }
+  rules_loaded: number
+  // Analyst configuration state. Never includes the API key: the health
+  // payload can end up in logs, screenshots and monitoring systems.
+  analyst: { configured: boolean; missing: string[]; model: string; base_url: string }
+}

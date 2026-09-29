@@ -1,11 +1,12 @@
-// Shared types for the security-framework web console. These mirror the
-// JSON contracts of the Go engine (pkg/model, internal/alert) and of
-// web/console-service so the UI talks the same language as the hub. The
-// hub forwards engine data only; 'sin-motor' means the engine is
-// unreachable and the console shows no data at all.
+// Shared types for the security-framework web console. They mirror the
+// JSON contracts served by the Go engine's local API (internal/api,
+// :7778 by default): /api/stats, /api/events, /api/alerts, /api/rules
+// and the SSE frames of /api/stream. The console never invents data:
+// when the engine is unreachable every view shows a real empty state.
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low'
 
+// model.Event (pkg/model) as delivered by /api/events and /api/stream.
 export type SfEvent = {
   id: string
   timestamp: string
@@ -20,6 +21,17 @@ export type SfEvent = {
     command_line?: string
     image?: string
   }
+  // Target of process.access (Sysmon event ID 10).
+  target?: {
+    pid: number
+    name?: string
+    image?: string
+  }
+  // Handle rights of process.access (granted_access is a hex mask).
+  access?: {
+    granted_access?: string
+    call_trace?: string
+  }
   file?: {
     path: string
     extension?: string
@@ -33,18 +45,7 @@ export type SfEvent = {
     destination_port?: number
     domain?: string
   }
-  // Target of process.access (Sysmon event ID 10): mirrors pkg/model.
-  target?: {
-    pid: number
-    name?: string
-    image?: string
-  }
-  // Handle rights of process.access (granted_access is a hex mask).
-  access?: {
-    granted_access?: string
-    call_trace?: string
-  }
-  // Registry telemetry (Sysmon event IDs 12/13/14): mirrors pkg/model.
+  // Registry telemetry (Sysmon event IDs 12/13/14).
   registry?: {
     key?: string
     value_name?: string
@@ -55,8 +56,11 @@ export type SfEvent = {
   enrichment?: Record<string, string>
 }
 
+// alert.Alert (internal/alert) as served by /api/alerts and /api/stream.
+// The engine does not assign an id of its own: event_id + rule_id is the
+// natural key (the provider derives a stable React key from both plus a
+// monotonic counter).
 export type SfAlert = {
-  id: string
   timestamp: string
   rule_id: string
   rule_name: string
@@ -66,15 +70,20 @@ export type SfAlert = {
   event_id: string
   event_type: string
   summary: string
-  // rendered by the engine when the rule declares an alert action;
-  // absent in simulated mode (the simulator does not run actions)
+  // rendered by the engine when the rule declares an alert action
   message?: string
   // rule asks for external notification (config.notify)
   notify?: boolean
   matched_on: string[]
-  tags: string[]
+  tags?: string[]
+  // actions declared by the rule (alert, webhook, ...)
+  actions?: string[]
+  // threat intel / context attached by internal/enrich
+  enrichment?: Record<string, string>
 }
 
+// rulePayload served by /api/rules: the YAML contract as the engine
+// sees it, with mitre/tactic derived from the attack.* tags.
 export type RuleMeta = {
   id: string
   name: string
@@ -96,9 +105,9 @@ export type SfSuppression = {
   expires?: string
 }
 
-// One kill-chain sequence (engine GET /api/sequences via the hub).
-// Steps are listed in declared order for display; the correlator matches
-// them unordered inside the window.
+// One kill-chain sequence (engine GET /api/sequences, direct or via the
+// hub). Steps are listed in declared order for display; the correlator
+// matches them unordered inside the window.
 export type SfSequence = {
   id: string
   name: string
@@ -109,14 +118,21 @@ export type SfSequence = {
   steps: string[]
 }
 
-export type SimStats = {
+// statsPayload served by /api/stats (verified against internal/api/api.go
+// and a real smoke) — also the shape the hub re-emits over socket.io,
+// with mode flipping to 'sin-motor' and interval_ms set by the hub when
+// the engine is unreachable (the console never invents numbers).
+export type EngineStats = {
+  uptime_s: number
   events_total: number
+  dropped: number
+  ingest_rejected: number
+  events_per_min: number
   alerts_total: number
   by_severity: Record<string, number>
-  events_per_min: number
-  uptime_s: number
-  interval_ms: number
-  mode: 'engine' | 'sin-motor'
+  rules_count: number
+  rules_types: string[]
+  events_buffered: number
   // webhook delivery counters (engine -webhook flag); forwarded by the
   // hub since r3. All zero = connector disabled or nothing delivered yet.
   webhook_sent: number
@@ -135,7 +151,14 @@ export type SimStats = {
   store_enabled?: boolean
   store_events?: number
   store_alerts?: number
+  // hub-only fields: the engine itself sends neither mode nor
+  // interval_ms (mode optional so direct-engine responses type-check)
+  interval_ms?: number
+  mode?: 'engine' | 'sin-motor'
 }
+
+// hub-forwarded alias: same wire shape as EngineStats
+export type SimStats = EngineStats
 
 export type ConsoleSnapshot = {
   events: SfEvent[]
@@ -143,7 +166,7 @@ export type ConsoleSnapshot = {
   rules: RuleMeta[]
   suppressions?: SfSuppression[]
   sequences?: SfSequence[]
-  stats: SimStats
+  stats: EngineStats
   started_at: string
 }
 
@@ -162,35 +185,45 @@ export type AnalystMessage = {
   error?: string
 }
 
-export const SEVERITY_STYLE: Record<Severity, { label: string; text: string; bg: string; border: string; bar: string }> = {
+// Semantic severity colors (data semantics, not decoration):
+// critical=red-500/600, high=orange-500, medium=amber-400, low=sky-400.
+export const SEVERITY_STYLE: Record<Severity, { label: string; text: string; bg: string; border: string; bar: string; dot: string }> = {
   critical: {
     label: 'critical',
-    text: 'text-red-300',
-    bg: 'bg-red-400/10',
-    border: 'border-red-400/30',
-    bar: 'bg-red-400',
+    text: 'text-red-400',
+    bg: 'bg-red-500/10',
+    border: 'border-red-500/30',
+    bar: 'bg-red-500',
+    dot: 'bg-red-500',
   },
   high: {
     label: 'high',
-    text: 'text-orange-300',
-    bg: 'bg-orange-400/10',
-    border: 'border-orange-400/30',
-    bar: 'bg-orange-400',
+    text: 'text-orange-400',
+    bg: 'bg-orange-500/10',
+    border: 'border-orange-500/30',
+    bar: 'bg-orange-500',
+    dot: 'bg-orange-500',
   },
   medium: {
     label: 'medium',
-    text: 'text-amber-200',
-    bg: 'bg-amber-300/10',
-    border: 'border-amber-300/30',
-    bar: 'bg-amber-300',
+    text: 'text-amber-400',
+    bg: 'bg-amber-400/10',
+    border: 'border-amber-400/30',
+    bar: 'bg-amber-400',
+    dot: 'bg-amber-400',
   },
   low: {
     label: 'low',
-    text: 'text-zinc-300',
-    bg: 'bg-zinc-400/10',
-    border: 'border-zinc-400/30',
-    bar: 'bg-zinc-400',
+    text: 'text-sky-400',
+    bg: 'bg-sky-400/10',
+    border: 'border-sky-400/30',
+    bar: 'bg-sky-400',
+    dot: 'bg-sky-400',
   },
+}
+
+export function severityOf(value: string | undefined): Severity {
+  return value === 'critical' || value === 'high' || value === 'medium' || value === 'low' ? value : 'low'
 }
 
 export function formatTime(iso: string): string {
@@ -201,15 +234,25 @@ export function formatTime(iso: string): string {
   }
 }
 
+export function formatDateTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString('es-ES', { hour12: false })
+  } catch {
+    return iso
+  }
+}
+
 export function formatUptime(s: number): string {
   const h = Math.floor(s / 3600)
   const m = Math.floor((s % 3600) / 60)
-  const sec = s % 60
+  const sec = Math.floor(s % 60)
   if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`
   if (m > 0) return `${m}m ${String(sec).padStart(2, '0')}s`
   return `${sec}s`
 }
 
+// One-line human summary of an event, mirroring what the engine stores
+// per event type (process, network, file, registry, process.access).
 export function eventDetail(ev: SfEvent): string {
   if (ev.access) {
     const who = ev.process?.name ?? '?'

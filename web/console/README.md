@@ -1,36 +1,59 @@
-# security-framework console
+# security-framework console (SOC)
 
-Early browser console for the framework: live telemetry feed, KPI
-dashboard, severity triage, the YAML rule pack and an AI analyst that
-explains each alert the way a senior SOC analyst would.
+Browser console for the framework: live telemetry feed, KPI dashboard,
+severity triage with a detail panel, the YAML rule pack and an AI
+analyst that explains each alert the way a senior SOC analyst would.
+Dark-mode locked product UI (zinc structure, one emerald interaction
+accent, severity colors that encode data semantics).
 
-Two pieces:
+## Data flow (no fake data anywhere)
 
-| Piece               | Stack                              | Port |
-|---------------------|------------------------------------|------|
-| `console/`          | Next.js 16, Tailwind 4, Motion     | 3000 |
-| `console-service/`  | Bun, socket.io                     | 3003 |
+```
+Go engine (internal/api, 127.0.0.1:7778)
+  ├─ GET /api/stream   SSE  ->  use-engine-stream (events, alerts live)
+  ├─ GET /api/stats    poll 2s (uptime, counters, severity breakdown)
+  ├─ GET /api/events | /api/alerts | /api/rules   one-shot sync
+  └─ GET /api/{alerts,events}/export?format=jsonl|csv   downloads
+        ▲
+        └── same-origin proxy route: web/console/src/app/api/engine/[...path]
+              (the engine needs no CORS headers; only GET is forwarded)
 
-The hub (`console-service/`) contains no simulator: it forwards only
-what the real Go engine delivers (API on :7778, SSE stream) and labels
-the header with the actual event source (`sf-sensor (Sysmon real)` for
-host telemetry, `sf-devsensor (demo)` while the scripted scenario is
-replaying). If the engine is unreachable the console says so and shows
-no data.
+console-service (Bun, socket.io :3003)   ->  AI analyst only
+```
+
+Telemetry comes straight from the engine API; the hub
+(`console-service/`) is only used for the AI analyst. If the engine is
+unreachable the console says so (`Motor offline`) and shows no data;
+when the hub is down only the analyst view is affected.
+
+## Views
+
+| View | What it shows |
+|------|----------------|
+| Panel | KPI strip (uptime, events/min, alerts by severity, rules, buffer, webhooks), 4-minute rate chart, engine summary, latest alerts and telemetry |
+| Flujo en vivo | SSE-fed event table with sticky header, pause, search, type filter and JSONL/CSV export |
+| Alertas | Semantic table (search, severity filter, export) plus a detail panel: rule message, matched_on, ATT&CK tags, actions, enrichment |
+| Reglas | The rule pack as the engine sees it, with expandable conditions |
+| Analista IA | Streaming triage chat bound to a selected alert |
 
 ## Quickstart
 
 Requirements: [bun](https://bun.sh).
 
 ```bash
-# terminal 1 - realtime hub (socket.io on :3003)
+# terminal 1 - the real engine (rules + API on :7778)
+go run ./cmd/engine
+
+# terminal 2 (optional) - AI analyst hub (socket.io on :3003)
 cd console-service && bun install && bun run dev
 
-# terminal 2 - console (Next.js on :3000)
+# terminal 3 - console (Next.js on :3000)
 cd console && bun install && bun run dev
 ```
 
-Open http://localhost:3000.
+Open http://localhost:3000. Without the engine the console renders its
+honest empty/offline states; without console-service everything works
+except the analyst view.
 
 ## Lockfile policy
 
@@ -41,29 +64,34 @@ in parallel produced real drift (the two files resolved different
 time with `npm install --package-lock-only` if they need one locally,
 but it is not committed.
 
+## Design tokens
+
+- Structure: Tailwind zinc (`zinc-950` background, `zinc-900` surfaces,
+  `zinc-800` borders, `zinc-100`/`zinc-400` text).
+- One interaction accent: `emerald-500`.
+- Severity semantics (data, not decoration): `critical` red-500/600,
+  `high` orange-500, `medium` amber-400, `low` sky-400.
+- Type: Geist Sans for UI, Geist Mono for ids, timestamps, IPs and
+  every number (tabular).
+- Radius: single 8px scale (`--radius: 0.5rem`).
+- Motion: state transitions only, `prefers-reduced-motion` honoured.
+
 ## Configuration
 
-- `NEXT_PUBLIC_CONSOLE_URL` (console): point the UI at a remote hub,
-  e.g. `NEXT_PUBLIC_CONSOLE_URL=http://lab-host:3003 bun run dev`.
-  On localhost it defaults to `http://localhost:3003`; behind a reverse
+- `ENGINE_API_URL` (console, server side): engine API base the proxy
+  route forwards to, default `http://127.0.0.1:7778`.
+- `NEXT_PUBLIC_ENGINE_API` (console, client side): bypass the proxy and
+  talk to the engine directly (only useful when the engine serves CORS).
+- `NEXT_PUBLIC_CONSOLE_URL` (console): point the analyst socket at a
+  remote hub, e.g. `NEXT_PUBLIC_CONSOLE_URL=http://lab-host:3003`. On
+  localhost it defaults to `http://localhost:3003`; behind a reverse
   proxy it falls back to the same origin.
-- `PORT` (console-service): overrides the 3003 default.
-- `CONSOLE_HOST` (console-service): bind address of the hub. It listens
-  on `127.0.0.1` by default because the feed carries local security
-  telemetry; set it to `0.0.0.0` only to serve a console that runs on
-  another machine, together with `CONSOLE_CORS_ORIGIN`.
-- `CONSOLE_CORS_ORIGIN` (console-service): comma-separated list of
-  extra origins allowed to open a socket to the hub (the local console
-  origins on port 3000 are always allowed).
-- Analyst triage (console-service): calls any OpenAI-compatible chat
-  completions endpoint configured in the hub environment, with no SDK
-  dependency: `ANALYST_BASE_URL` (API root including the version path,
-  e.g. `https://api.openai.com/v1`, `http://127.0.0.1:11434/v1` for
-  Ollama or `http://127.0.0.1:1234/v1` for LM Studio), `ANALYST_API_KEY`
-  (bearer token; local servers accept any value) and `ANALYST_MODEL`
-  (the model name the provider serves). Without a full configuration
-  the analyst panel reports it clearly and the rest of the console
-  keeps working.
+- `PORT` / `CONSOLE_HOST` / `CONSOLE_CORS_ORIGIN` (console-service):
+  hub bind and CORS allowlist, unchanged; see `console-service/`.
+- Analyst triage (console-service): `ANALYST_BASE_URL`,
+  `ANALYST_API_KEY` and `ANALYST_MODEL` for any OpenAI-compatible
+  endpoint. Without configuration the analyst panel reports it clearly
+  and the rest of the console keeps working.
 
 The interface copy is in Spanish by design: the primary audience of the
 project documentation is Spanish speaking.
