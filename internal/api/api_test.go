@@ -60,7 +60,7 @@ func TestStatsAndRings(t *testing.T) {
 		t.Fatalf("LoadDir: %v", err)
 	}
 	h.SetRules(re)
-	h.SetCounters(func() (uint64, uint64) { return 3, 1 })
+	h.SetCounters(func() (uint64, uint64, uint64) { return 3, 1, 2 })
 
 	h.RecordEvent(sampleEvent("ev-1"))
 	h.RecordEvent(sampleEvent("ev-2"))

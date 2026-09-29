@@ -129,7 +129,9 @@ func main() {
 			hub = nil
 		} else {
 			hub.SetRules(engine)
-			hub.SetCounters(func() (uint64, uint64) { return server.Received(), server.Dropped() })
+			hub.SetCounters(func() (uint64, uint64, uint64) {
+				return server.Received(), server.Dropped(), server.Rejected()
+			})
 			go func() {
 				if err := hub.Run(); err != nil {
 					log.Printf("[ENGINE] api: %v", err)

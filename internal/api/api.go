@@ -40,7 +40,7 @@ type Hub struct {
 	alertsTotal int
 	bySeverity  map[string]int
 	rules       *rules.Engine
-	received    func() (uint64, uint64)         // ingested, dropped
+	received    func() (uint64, uint64, uint64) // ingested, dropped, rejected
 	webhook     func() (uint64, uint64, uint64) // sent, failed, dropped
 }
 
@@ -79,8 +79,10 @@ func (h *Hub) SetRules(re *rules.Engine) {
 	h.mu.Unlock()
 }
 
-// SetCounters wires the ingest counters into /api/stats.
-func (h *Hub) SetCounters(received func() (uint64, uint64)) {
+// SetCounters wires the ingest counters into /api/stats: ingested
+// events, dropped (malformed) lines and connections rejected by the
+// ingest auth handshake (visible probes against a remote bind).
+func (h *Hub) SetCounters(received func() (ingested, dropped, rejected uint64)) {
 	h.mu.Lock()
 	h.received = received
 	h.mu.Unlock()
@@ -164,6 +166,7 @@ type statsPayload struct {
 	UptimeS        int64          `json:"uptime_s"`
 	EventsTotal    uint64         `json:"events_total"`
 	Dropped        uint64         `json:"dropped"`
+	IngestRejected uint64         `json:"ingest_rejected"`
 	EventsPerMin   int            `json:"events_per_min"`
 	AlertsTotal    int            `json:"alerts_total"`
 	BySeverity     map[string]int `json:"by_severity"`
@@ -194,9 +197,9 @@ func (h *Hub) handleStats(w http.ResponseWriter, _ *http.Request) {
 			}
 		}
 	}
-	var received, dropped uint64
+	var ingested, dropped, rejected uint64
 	if h.received != nil {
-		received, dropped = h.received()
+		ingested, dropped, rejected = h.received()
 	}
 	var whSent, whFailed, whDropped uint64
 	if h.webhook != nil {
@@ -211,8 +214,9 @@ func (h *Hub) handleStats(w http.ResponseWriter, _ *http.Request) {
 
 	writeJSON(w, statsPayload{
 		UptimeS:        int64(time.Since(h.started) / time.Second),
-		EventsTotal:    received,
+		EventsTotal:    ingested,
 		Dropped:        dropped,
+		IngestRejected: rejected,
 		EventsPerMin:   last60,
 		AlertsTotal:    alTotal,
 		BySeverity:     bySev,

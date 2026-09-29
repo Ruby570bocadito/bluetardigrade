@@ -177,6 +177,38 @@ func TestTokenAuthMissing(t *testing.T) {
 	_ = srv
 }
 
+// Token configured + correct AUTH + the first event pipelined in the
+// SAME write: the handshake must not swallow bytes the event scanner
+// needs. This is the natural write pattern of an efficient sensor.
+func TestTokenAuthPipelinedWrite(t *testing.T) {
+	srv, events, addr := startTestServer(t, "s3cret")
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(3 * time.Second))
+	// one single write: auth line + event, no wait in between
+	if _, err := conn.Write([]byte("AUTH s3cret\n" + sampleEvent(t) + "\n")); err != nil {
+		t.Fatalf("write pipelined payload: %v", err)
+	}
+	r := bufio.NewReader(conn)
+	if ack := readAck(t, r); ack != `{"ack":"ok"}` {
+		t.Fatalf("ack = %q, want ok", ack)
+	}
+	select {
+	case ev := <-events:
+		if ev.ID != "test-1" {
+			t.Fatalf("got event id %q, want test-1", ev.ID)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("pipelined event after AUTH was not ingested")
+	}
+	if srv.Received() != 1 || srv.Rejected() != 0 {
+		t.Fatalf("counters: received=%d rejected=%d", srv.Received(), srv.Rejected())
+	}
+}
+
 // A silent client that never AUTHs is dropped after authTimeout, so
 // half-open connections cannot accumulate on the engine.
 func TestAuthTimeout(t *testing.T) {
