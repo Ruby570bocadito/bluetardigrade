@@ -1,0 +1,20 @@
+[package]
+name = "security-sensor"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "ETW sensor for the security-framework detection engine"
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# ETW consumption is Windows-only; the rest of the sensor builds
+# anywhere (the --simulate mode needs no kernel access).
+[target.'cfg(target_os = "windows")'.dependencies]
+ferrisetw = "1"
+
+[profile.release]
+lto = true
+strip = true

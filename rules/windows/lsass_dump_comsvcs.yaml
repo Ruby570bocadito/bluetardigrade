@@ -1,0 +1,28 @@
+# T1003.001 - LSASS memory dump via comsvcs.dll
+# Source TTP: credential access dumping LSASS with rundll32.
+# Validated in lab: fires on rundll32.exe comsvcs.dll, MiniDump <pid> <out> full.
+- name: "Volcado de LSASS via comsvcs.dll"
+  id: "5b7e1f38-2c94-4d0a-b6e7-19a8c3d54f02"
+  description: >
+    Detecta el volcado de memoria de LSASS cargando comsvcs.dll con
+    MiniDump desde rundll32.exe, tecnica de credential access que
+    evita binarios ofensivos dedicados en disco.
+  severity: critical
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: eq
+      value: "rundll32.exe"
+    - field: process.command_line
+      operator: contains
+      value: "comsvcs.dll"
+    - field: process.command_line
+      operator: contains
+      value: "MiniDump"
+  actions:
+    - type: alert
+      config:
+        message: "Intento de volcado de LSASS en {host} - aislamiento recomendado"
+        notify: "true"
+  tags: ["attack.t1003.001", "attack.credential-access"]
+  enabled: true

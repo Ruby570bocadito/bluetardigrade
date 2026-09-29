@@ -1,0 +1,27 @@
+# Go
+bin/
+*.exe
+*.test
+*.out
+vendor/
+
+# Rust
+sensor/target/
+sensor/Cargo.lock
+
+# Node (web console)
+web/**/node_modules/
+web/console/.next/
+web/console/out/
+web/console/next-env.d.ts
+web/console/*.tsbuildinfo
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local evidence
+captures/
+*.dmp

@@ -1,0 +1,26 @@
+# T1105 - Ingress tool transfer with LOLBins
+# Source TTP: staging payloads with living-off-the-land binaries.
+# Validated in lab: fires on certutil -urlcache -f <url> <out>.
+- name: "Descarga con certutil o bitsadmin"
+  id: "c1d24e9b-7a03-4c56-9f11-8e2b5a4d9c73"
+  description: >
+    Detecta transferencia de ficheros con binarios LOLBas: certutil
+    con -urlcache o bitsadmin con /transfer hacia destinos externos,
+    tecnica habitual para descargar payloads evadiendo politicas de
+    aplicacion.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: in
+      value: ["certutil.exe", "bitsadmin.exe"]
+    - field: process.command_line
+      operator: contains_any
+      value: ["-urlcache", "/transfer"]
+  actions:
+    - type: alert
+      config:
+        message: "Descarga de payload con binario LOLBas en {host}"
+        notify: "true"
+  tags: ["attack.t1105", "attack.command-and-control"]
+  enabled: true

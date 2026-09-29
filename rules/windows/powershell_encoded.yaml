@@ -1,0 +1,25 @@
+# T1059.001 - PowerShell with encoded command
+# Source TTP: phishing delivery with obfuscated PowerShell execution.
+# Validated in lab: fires on powershell.exe -nop -w hidden -enc <b64>.
+- name: "PowerShell con comando codificado"
+  id: "9f31c2a4-5d7b-4e18-8a02-3b9c6d1e7f40"
+  description: >
+    Detecta PowerShell con comandos Base64 (-enc / -EncodedCommand) o
+    ventana oculta (-w hidden), patron habitual en phishing y en la
+    ejecucion ofuscada de payloads.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: eq
+      value: "powershell.exe"
+    - field: process.command_line
+      operator: contains_any
+      value: ["-enc", "-EncodedCommand", "-w hidden"]
+  actions:
+    - type: alert
+      config:
+        message: "PowerShell con comando codificado detectado en {host} por {user}"
+        notify: "true"
+  tags: ["attack.t1059.001", "attack.execution"]
+  enabled: true
