@@ -22,50 +22,50 @@ MODULE  := github.com/Ruby570bocadito/security-framework
 all: build
 
 run-engine:
-        $(GO) run ./cmd/engine -addr :7777 -rules ./rules -v
+	$(GO) run ./cmd/engine -addr :7777 -rules ./rules -v
 
 run-devsensor:
-        $(GO) run ./cmd/devsensor -addr 127.0.0.1:7777
+	$(GO) run ./cmd/devsensor -addr 127.0.0.1:7777
 
 build:
-        $(GO) build -o $(BIN_DIR)/engine ./cmd/engine
-        $(GO) build -o $(BIN_DIR)/devsensor ./cmd/devsensor
+	$(GO) build -o $(BIN_DIR)/engine ./cmd/engine
+	$(GO) build -o $(BIN_DIR)/devsensor ./cmd/devsensor
 
 test:
-        $(GO) test ./...
+	$(GO) test ./...
 
 tidy:
-        $(GO) mod tidy
+	$(GO) mod tidy
 
 fmt:
-        $(GO) fmt ./...
+	$(GO) fmt ./...
 
 vet:
-        $(GO) vet ./...
+	$(GO) vet ./...
 
 build-sensor:
-        $(CARGO) build --release
-        @echo "sensor binary: sensor/target/release/security-sensor"
+	$(CARGO) build --release
+	@echo "sensor binary: sensor/target/release/security-sensor"
 
 # Native Windows build (run on a Windows host or use the gnu target
 # with mingw-w64 for cross compilation from Linux/macOS).
 build-sensor-windows:
-        $(CARGO) build --release --target x86_64-pc-windows-msvc
-        @echo "sensor binary: sensor/target/x86_64-pc-windows-msvc/release/security-sensor.exe"
+	$(CARGO) build --release --target x86_64-pc-windows-msvc
+	@echo "sensor binary: sensor/target/x86_64-pc-windows-msvc/release/security-sensor.exe"
 
 docker-build:
-        docker build -t security-framework-engine .
+	docker build -t security-framework-engine .
 
 console-install:
-        cd web/console && $(BUN) install
-        cd web/console-service && $(BUN) install
+	cd web/console && $(BUN) install
+	cd web/console-service && $(BUN) install
 
 console-service:
-        cd web/console-service && $(BUN) run dev
+	cd web/console-service && $(BUN) run dev
 
 console:
-        cd web/console && $(BUN) run dev
+	cd web/console && $(BUN) run dev
 
 clean:
-        rm -rf $(BIN_DIR)
-        cargo clean --manifest-path sensor/Cargo.toml 2>/dev/null || true
+	rm -rf $(BIN_DIR)
+	cargo clean --manifest-path sensor/Cargo.toml 2>/dev/null || true
