@@ -1,8 +1,11 @@
 // collector.rs: Windows-only ETW consumption with ferrisetw.
-// Opens a real-time session over the Microsoft-Windows-Kernel-Process
-// provider, maps each record to the unified schema and streams it to
-// the engine. Additional providers (Kernel-File, Kernel-Network,
-// Sysmon) plug into the same pattern in phase 1.
+// Opens a real-time user trace over the Microsoft-Windows-Kernel-Process
+// manifest provider and streams each ProcessStart (event id 1) to the
+// engine as NDJSON. The manifest provider is chosen over the kernel
+// logger's process events because its start event carries the command
+// line, which the kernel DSTART events do not. Additional providers
+// (Kernel-File, Kernel-Network, Sysmon) plug into the same pattern in
+// phase 1.
 
 #![cfg(target_os = "windows")]
 
@@ -11,10 +14,17 @@ use crate::transport::Sender;
 use anyhow::Result;
 use std::sync::Arc;
 
-use ferrisetw::event::process_start_event::ProcessStartEvent;
 use ferrisetw::parser::Parser;
 use ferrisetw::provider::Provider;
-use ferrisetw::query::{BuildEventStream, EventStream};
+use ferrisetw::schema_locator::SchemaLocator;
+use ferrisetw::trace::{TraceTrait, UserTrace};
+use ferrisetw::EventRecord;
+
+/// Microsoft-Windows-Kernel-Process manifest provider GUID.
+const KERNEL_PROCESS_PROVIDER_GUID: &str = "22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716";
+
+/// Event id 1 of the Kernel-Process provider: ProcessStart.
+const EVENT_ID_PROCESS_START: u16 = 1;
 
 /// Runs the blocking ETW event loop. It returns only on fatal errors.
 /// token (when set) is the shared ingest token sent on every
@@ -24,14 +34,33 @@ pub fn run(addr: &str, token: Option<&str>) -> Result<()> {
     let host = hostname();
     let user = current_user();
 
-    let kernel_process = Provider::kernel_process();
-    let stream = EventStream::build()
-        .set_name("security-framework-sensor")
-        .set_timeout(2)
-        .watch(&kernel_process)
-        .add_callback(move |record| {
-            let start = ProcessStartEvent::from_record(record);
-            let Ok(ev) = start else { return };
+    let provider = Provider::by_guid(KERNEL_PROCESS_PROVIDER_GUID)
+        .add_callback(move |record: &EventRecord, schema_locator: &SchemaLocator| {
+            if record.event_id() != EVENT_ID_PROCESS_START {
+                return;
+            }
+            let Ok(schema) = schema_locator.event_schema(record) else {
+                return;
+            };
+            let parser = Parser::create(record, &schema);
+            // ProcessID is the one field every useful event must carry;
+            // the rest degrade gracefully (ppid 0 is skipped on
+            // serialization, missing CommandLine serializes as absent).
+            let Ok(pid) = parser.try_parse::<u32>("ProcessID") else {
+                return;
+            };
+            let ppid = parser.try_parse::<u32>("ParentID").unwrap_or(0);
+            let image = parser
+                .try_parse::<String>("ImageName")
+                .unwrap_or_default();
+            let command_line = parser.try_parse::<String>("CommandLine").ok();
+
+            let name = image
+                .rsplit(['\\', '/'])
+                .next()
+                .unwrap_or(&image)
+                .to_string();
+
             let event = EventJson {
                 id: normalize::new_uuid(),
                 timestamp: normalize::now_rfc3339(),
@@ -40,11 +69,11 @@ pub fn run(addr: &str, token: Option<&str>) -> Result<()> {
                 host: host.clone(),
                 user: user.clone(),
                 process: Some(ProcessJson {
-                    pid: ev.process_id() as i32,
-                    ppid: ev.parent_id() as i32,
-                    name: ev.process_name().to_string_lossy().into_owned(),
-                    command_line: Some(ev.command_line().to_string_lossy().into_owned()),
-                    image: Some(ev.image_name().to_string_lossy().into_owned()),
+                    pid: pid as i32,
+                    ppid: ppid as i32,
+                    name,
+                    command_line,
+                    image: Some(image),
                     hashes: None, // phase 1: compute sha256 on image write
                 }),
                 network: None,
@@ -59,10 +88,26 @@ pub fn run(addr: &str, token: Option<&str>) -> Result<()> {
                 Err(err) => eprintln!("[SENSOR] serialize failed: {err}"),
             }
         })
-        .build()?;
+        .build();
 
-    eprintln!("[SENSOR] ETW session active - streaming kernel process events");
-    stream.process(); // blocks forever
+    // ferrisetw's TraceError implements neither Display nor
+    // std::error::Error, so anyhow's `?` cannot lift it: map errors
+    // explicitly through their Debug form.
+    let (trace, handle) = UserTrace::new()
+        .named(String::from("security-framework-sensor"))
+        .enable(provider)
+        .start()
+        .map_err(|e| anyhow::anyhow!("starting ETW trace: {e:?}"))?;
+
+    eprintln!(
+        "[SENSOR] ETW session active - streaming Microsoft-Windows-Kernel-Process events"
+    );
+    // The session must stay alive while events are processed; dropping
+    // `trace` stops it. process_from_handle blocks on the current
+    // thread until the trace is stopped or ProcessTrace fails.
+    let _session = trace;
+    UserTrace::process_from_handle(handle)
+        .map_err(|e| anyhow::anyhow!("ETW processing ended: {e:?}"))?;
     Ok(())
 }
 

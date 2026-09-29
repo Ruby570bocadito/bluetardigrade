@@ -13,7 +13,12 @@
 // variable (same var the engine and the other sensors honor); the
 // command line wins when both are set.
 
+// Normalization and transport are exercised only by the ETW collector,
+// which is Windows-only; gating the modules keeps non-Windows builds
+// warning-free without a single #[allow(dead_code)].
+#[cfg(target_os = "windows")]
 mod normalize;
+#[cfg(target_os = "windows")]
 mod transport;
 
 #[cfg(target_os = "windows")]

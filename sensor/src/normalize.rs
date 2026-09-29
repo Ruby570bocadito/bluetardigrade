@@ -5,6 +5,8 @@
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+// phase 1: consumed by the image-hash enrichment of the collector
+#[allow(dead_code)]
 #[derive(Serialize, Clone, Debug)]
 pub struct HashesJson(pub serde_json::Map<String, serde_json::Value>);
 
@@ -22,6 +24,8 @@ pub struct ProcessJson {
     pub hashes: Option<HashesJson>,
 }
 
+// phase 1: consumed by the Kernel-Network provider
+#[allow(dead_code)]
 #[derive(Serialize, Clone, Debug)]
 pub struct NetworkJson {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -55,7 +59,11 @@ pub struct EventJson {
 }
 
 pub const TYPE_PROCESS_CREATE: &str = "process.create";
+// phase 1: emitted by the ProcessStop callback of the collector
+#[allow(dead_code)]
 pub const TYPE_PROCESS_TERMINATE: &str = "process.terminate";
+// phase 1: emitted by the Kernel-Network provider
+#[allow(dead_code)]
 pub const TYPE_NETWORK_CONNECT: &str = "network.connect";
 
 pub fn now_rfc3339() -> String {
