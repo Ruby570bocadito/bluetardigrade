@@ -54,6 +54,15 @@ The unified event schema (chapter 4 of the docs) is the master
 contract: sensors emit it, the engine validates and enriches it, rules
 index it, interfaces consume it.
 
+Full write-up: [docs/arquitectura-tecnica-v0.1.pdf](docs/arquitectura-tecnica-v0.1.pdf)
+(Spanish). It reflects the v0.1 design including the kill-chain
+correlator and rule actions; it predates the ingest shared-token auth,
+the export API and the OpenAPI spec, which are documented in the
+[Local HTTP API](#local-http-api) section and in
+[`docs/api/openapi.yaml`](docs/api/openapi.yaml). See also
+[`docs/README.md`](docs/README.md) for the full design-vs-implementation
+status of the document.
+
 ## Quickstart (tracer bullet)
 
 Requirements: Go 1.22+.
@@ -406,7 +415,8 @@ install.ps1       one-command Windows installer
 uninstall.ps1     standalone uninstaller
 Makefile          build automation (engine, sensor, console, docker)
 Dockerfile        production container for the engine
-docs/             architecture document + diagram assets
+docs/             architecture document, OpenAPI spec (docs/api/),
+                  diagram assets and agent round reports (docs/agentes/)
 web/console/          Next.js console (live feed, triage, AI analyst)
 web/console-service/  realtime telemetry hub (bun + socket.io)
 ```

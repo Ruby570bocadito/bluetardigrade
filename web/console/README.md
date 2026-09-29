@@ -32,6 +32,15 @@ cd console && bun install && bun run dev
 
 Open http://localhost:3000.
 
+## Lockfile policy
+
+`bun.lock` is the only lockfile in this package: bun is the toolchain
+the docs and the installer rely on, and keeping a second `package-lock.json`
+in parallel produced real drift (the two files resolved different
+`@types/node` versions). npm users can reproduce a resolution at any
+time with `npm install --package-lock-only` if they need one locally,
+but it is not committed.
+
 ## Configuration
 
 - `NEXT_PUBLIC_CONSOLE_URL` (console): point the UI at a remote hub,
