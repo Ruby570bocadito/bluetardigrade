@@ -1,17 +1,31 @@
 // console-service: real-time telemetry hub for the security-framework web
-// console. Runs the built-in simulator by default and switches to the REAL
-// Go engine (local API on :7778, see internal/api) the moment it becomes
-// reachable; if the engine goes away it falls back to simulation. Served
-// over socket.io on port 3003, path '/' so the web console can connect
-// same-origin behind a reverse proxy or directly on localhost.
+// console. It forwards ONLY real data from the Go engine (local API on
+// :7778, see internal/api) over socket.io on port 3003, path '/'. There is
+// no simulator in this service: if the engine is unreachable the console
+// is told so and shows nothing, instead of inventing data.
 
 import { createServer } from 'http'
 import { Server } from 'socket.io'
-import { SimEngine, RULES, type SfEvent, type SfAlert, type SimStats, type RuleMeta } from './sim'
+import type { SfEvent, SfAlert, HubStats, RuleMeta } from './types'
 import { EngineBridge } from './bridge'
 import { runAnalysis } from './analyst'
 
 const PORT = Number(process.env.PORT || process.env.CONSOLE_SERVICE_PORT || 3003)
+// Bind to loopback by default: the hub carries every event and alert of
+// the local engine (users, hosts, command lines) and no bundled
+// deployment needs it reachable from other machines. Serving a console
+// that lives on another host is opt-in:
+//   CONSOLE_HOST=0.0.0.0  plus the origins allowed via CONSOLE_CORS_ORIGIN.
+const HOST = process.env.CONSOLE_HOST || '127.0.0.1'
+// CORS allowlist. With origin '*' any website the analyst browses could
+// open a cross-origin socket to the hub and silently read the whole
+// telemetry feed, so only the local console origins are accepted by
+// default; extra ones (a lab host serving the UI) via env, comma separated.
+const CORS_ORIGINS = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  ...(process.env.CONSOLE_CORS_ORIGIN || '').split(',').map((s) => s.trim()).filter(Boolean),
+]
 const MAX_EVENTS = 160
 const MAX_ALERTS = 48
 
@@ -19,19 +33,31 @@ const httpServer = createServer()
 const io = new Server(httpServer, {
   // Keep in sync with the console client (socket-provider.tsx)
   path: '/',
-  cors: { origin: '*', methods: ['GET', 'POST'] },
+  cors: { origin: CORS_ORIGINS, methods: ['GET', 'POST'] },
   pingTimeout: 60000,
   pingInterval: 25000,
 })
 
-// Ring buffers: newest first
+// Ring buffers: newest first. They only ever hold engine data.
 const events: SfEvent[] = []
 const alerts: SfAlert[] = []
 
-let mode: SimStats['mode'] = 'simulacion'
-let activeRules: RuleMeta[] = RULES
-let lastStats: SimStats | null = null
+let mode: HubStats['mode'] = 'sin-motor'
+let activeRules: RuleMeta[] = []
+let lastStats: HubStats | null = null
 const startedAt = new Date()
+
+function offlineStats(): HubStats {
+  return {
+    events_total: 0,
+    alerts_total: 0,
+    by_severity: {},
+    events_per_min: 0,
+    uptime_s: 0,
+    interval_ms: 0,
+    mode: 'sin-motor',
+  }
+}
 
 function pushEvent(ev: SfEvent) {
   events.unshift(ev)
@@ -45,13 +71,10 @@ function pushAlert(al: SfAlert) {
   io.emit('console:alert', al)
 }
 
-function pushStats(st: SimStats) {
+function pushStats(st: HubStats) {
   lastStats = st
   io.emit('console:stats', st)
 }
-
-const sim = new SimEngine(pushEvent, pushAlert, pushStats, 1600)
-sim.start()
 
 const bridge = new EngineBridge({
   onEvent: pushEvent,
@@ -63,21 +86,20 @@ const bridge = new EngineBridge({
   onUp: () => {
     if (mode === 'engine') return
     mode = 'engine'
-    sim.stop()
     console.log(`telemetry source: ENGINE (${bridge.endpoint})`)
   },
   onDown: () => {
-    if (mode === 'simulacion') return
-    mode = 'simulacion'
-    activeRules = RULES
-    sim.start()
-    console.log('telemetry source: SIMULATION (engine offline)')
+    if (mode === 'sin-motor') return
+    mode = 'sin-motor'
+    lastStats = null
+    pushStats(offlineStats())
+    console.log('telemetry source: NONE (engine offline - console shows no data)')
   },
 })
 bridge.start()
 
-function currentStats(): SimStats {
-  return lastStats ?? sim.stats()
+function currentStats(): HubStats {
+  return lastStats ?? offlineStats()
 }
 
 io.on('connection', (socket) => {
@@ -123,12 +145,11 @@ io.on('connection', (socket) => {
   })
 })
 
-httpServer.listen(PORT, () => {
-  console.log(`console-service (sim + engine bridge) on port ${PORT}`)
+httpServer.listen(PORT, HOST, () => {
+  console.log(`console-service (engine bridge only, no simulator) on ${HOST}:${PORT}`)
 })
 
 function shutdown() {
-  sim.stop()
   bridge.stop()
   httpServer.close(() => process.exit(0))
 }

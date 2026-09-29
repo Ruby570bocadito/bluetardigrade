@@ -11,11 +11,12 @@ Two pieces:
 | `console/`          | Next.js 16, Tailwind 4, Motion     | 3000 |
 | `console-service/`  | Bun, socket.io                     | 3003 |
 
-The service auto-detects the real Go engine: while the engine's local
-API (:7778) answers, the console shows REAL telemetry and the status
-chip reads `engine real`; the moment the engine goes away it falls back
-to the built-in simulator (same NDJSON contract) and the chip reads
-`simulación`. No Windows host is required for the simulated mode.
+The hub (`console-service/`) contains no simulator: it forwards only
+what the real Go engine delivers (API on :7778, SSE stream) and labels
+the header with the actual event source (`sf-sensor (Sysmon real)` for
+host telemetry, `sf-devsensor (demo)` while the scripted scenario is
+replaying). If the engine is unreachable the console says so and shows
+no data.
 
 ## Quickstart
 
@@ -38,8 +39,16 @@ Open http://localhost:3000.
   On localhost it defaults to `http://localhost:3003`; behind a reverse
   proxy it falls back to the same origin.
 - `PORT` (console-service): overrides the 3003 default.
-- The AI triage needs LLM provider credentials; without them the rest
-  of the console keeps working and the analyst panel reports the error.
+- `CONSOLE_HOST` (console-service): bind address of the hub. It listens
+  on `127.0.0.1` by default because the feed carries local security
+  telemetry; set it to `0.0.0.0` only to serve a console that runs on
+  another machine, together with `CONSOLE_CORS_ORIGIN`.
+- `CONSOLE_CORS_ORIGIN` (console-service): comma-separated list of
+  extra origins allowed to open a socket to the hub (the local console
+  origins on port 3000 are always allowed).
+- The analyst triage calls the LLM SDK declared in
+  `console-service/package.json`; without credentials the rest of the
+  console keeps working and the analyst panel reports the error.
 
 The interface copy is in Spanish by design: the primary audience of the
 project documentation is Spanish speaking.

@@ -10,12 +10,17 @@ import (
         "strings"
         "sync"
         "time"
+        "unicode/utf8"
 
         "github.com/Ruby570bocadito/security-framework/internal/rules"
         "github.com/Ruby570bocadito/security-framework/pkg/model"
 )
 
-const dedupTTL = 60 * time.Second
+const (
+        dedupTTL     = 60 * time.Second
+        dedupSoftMax = 4096  // above this, purge expired keys opportunistically
+        dedupHardMax = 65536 // hard cap: beyond this, alerts skip dedup
+)
 
 // ANSI colors (disabled automatically when stdout is not a terminal).
 const (
@@ -35,6 +40,7 @@ type Manager struct {
         out     io.Writer
         colored bool
         onAlert func(Alert) // optional observer (local API, SIEM taps)
+        prepare func(*Alert, []rules.Action) // optional rule-action executor
 }
 
 // Alert is the structured JSON payload emitted for downstream
@@ -49,6 +55,8 @@ type Alert struct {
         EventID   string            `json:"event_id"`
         EventType string            `json:"event_type"`
         Summary   string            `json:"summary"`
+        Message   string            `json:"message,omitempty"` // rendered from the rule's alert action, if any
+        Notify    bool              `json:"notify,omitempty"` // rule asks for external notification
         MatchedOn []string          `json:"matched_on"`
         Tags      []string          `json:"tags,omitempty"`
         Actions   []string          `json:"actions,omitempty"`
@@ -66,6 +74,18 @@ func New(out io.Writer, onAlert func(Alert)) *Manager {
         }
 }
 
+// SetPreparer wires an executor for the actions declared by the rule
+// that fired (message rendering, webhooks). It is invoked on every
+// raised alert after the alert is built and before it is written, so
+// the rendered message ships inside the JSON payload. Raise uses the
+// firing rule's actions; Emit passes none (sequences declare no
+// actions).
+func (m *Manager) SetPreparer(prepare func(*Alert, []rules.Action)) {
+        m.mu.Lock()
+        m.prepare = prepare
+        m.mu.Unlock()
+}
+
 // Raise processes one hit; duplicate hits for the same rule/host/event
 // triple inside the TTL window are silently dropped.
 func (m *Manager) Raise(ev *model.Event, hit rules.Hit) {
@@ -75,18 +95,27 @@ func (m *Manager) Raise(ev *model.Event, hit rules.Hit) {
                 m.mu.Unlock()
                 return
         }
-        m.seen[key] = time.Now()
         // opportunistic cleanup
-        if len(m.seen) > 4096 {
+        if len(m.seen) > dedupSoftMax {
                 for k, t := range m.seen {
                         if time.Since(t) > dedupTTL {
                                 delete(m.seen, k)
                         }
                 }
         }
+        // hard cap: a flood of unique keys (e.g. fake hosts injected by
+        // an untrusted feed) must not grow the map without bound. Past
+        // the cap, stop remembering new keys but keep raising alerts:
+        // visibility wins over deduplication.
+        if len(m.seen) < dedupHardMax {
+                m.seen[key] = time.Now()
+        }
         m.mu.Unlock()
 
         a := buildAlert(ev, hit)
+        if m.prepare != nil {
+                m.prepare(&a, hit.Rule.Actions)
+        }
         m.writeConsole(a)
         m.writeJSON(a)
         if m.onAlert != nil {
@@ -99,6 +128,9 @@ func (m *Manager) Raise(ev *model.Event, hit rules.Hit) {
 // pipeline as Raise, without deduplication: completions are
 // inherently rate-limited by their own re-arm semantics.
 func (m *Manager) Emit(a Alert) {
+        if m.prepare != nil {
+                m.prepare(&a, nil)
+        }
         m.writeConsole(a)
         m.writeJSON(a)
         if m.onAlert != nil {
@@ -154,8 +186,8 @@ func summarize(ev *model.Event) string {
         if ev.Process != nil {
                 s := ev.Process.Name
                 if ev.Process.CommandLine != "" {
-                        if len(ev.Process.CommandLine) > 80 {
-                                s += " " + ev.Process.CommandLine[:80] + "..."
+                        if utf8.RuneCountInString(ev.Process.CommandLine) > 80 {
+                                s += " " + truncateRunes(ev.Process.CommandLine, 80) + "..."
                         } else {
                                 s += " " + ev.Process.CommandLine
                         }
@@ -177,6 +209,17 @@ func pidOf(ev *model.Event) int {
                 return ev.Process.PID
         }
         return 0
+}
+
+// truncateRunes cuts s to at most max runes without splitting a
+// multi-byte UTF-8 sequence: byte slicing would corrupt command lines
+// containing accented or non-Latin characters.
+func truncateRunes(s string, max int) string {
+        r := []rune(s)
+        if len(r) <= max {
+                return s
+        }
+        return string(r[:max])
 }
 
 func severityColor(sev string) (string, string) {

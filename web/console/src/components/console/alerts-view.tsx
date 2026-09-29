@@ -2,12 +2,15 @@
 
 // Alert triage queue. Each row carries the severity band (semantic color),
 // the rule that fired, the MITRE technique and an expandable evidence panel.
-// "Analizar con IA" hands the alert to the analyst view.
+// Text search (rule, summary, host, user, tags, MITRE) plus the severity
+// filter narrow the queue during an investigation. "Analizar con IA" hands
+// the alert to the analyst view.
 
 import { useMemo, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { CaretDown, Sparkle } from '@phosphor-icons/react'
+import { BellRinging, CaretDown, MagnifyingGlass, Sparkle } from '@phosphor-icons/react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { useConsole } from './socket-provider'
 import { EmptyState, SectionHeader, SeverityBadge } from './ui-bits'
@@ -22,42 +25,84 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
   const { alerts, status } = useConsole()
   const reduce = useReducedMotion()
   const [sevFilter, setSevFilter] = useState<string>('all')
+  const [query, setQuery] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
 
+  // compact mode (dashboard widget) hides the controls: the search
+  // input is not rendered there, so query stays empty
   const visible = useMemo(() => {
-    const list = sevFilter === 'all' ? alerts : alerts.filter((a) => a.severity === sevFilter)
+    const q = query.trim().toLowerCase()
+    const list = alerts.filter((a) => {
+      if (sevFilter !== 'all' && a.severity !== sevFilter) return false
+      if (!q) return true
+      // triage search: anything an analyst remembers about the alert
+      const haystack = [
+        a.rule_name, a.rule_id, a.summary, a.host, a.user ?? '',
+        a.event_type, ...a.tags, ...a.matched_on,
+      ].join(' ').toLowerCase()
+      return haystack.includes(q)
+    })
     return compact ? list.slice(0, 6) : list
-  }, [alerts, sevFilter, compact])
+  }, [alerts, sevFilter, query, compact])
+
+  const filtering = sevFilter !== 'all' || query.trim() !== ''
 
   return (
     <section aria-label="Alertas de detección">
       <SectionHeader
         title="Alertas"
-        count={alerts.length}
+        count={visible.length}
         action={
           !compact && (
-            <Select value={sevFilter} onValueChange={setSevFilter}>
-              <SelectTrigger className="h-8 w-[170px] font-mono text-xs" aria-label="Filtrar por severidad">
-                <SelectValue placeholder="Severidad" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">todas</SelectItem>
-                <SelectItem value="critical">critical</SelectItem>
-                <SelectItem value="high">high</SelectItem>
-                <SelectItem value="medium">medium</SelectItem>
-                <SelectItem value="low">low</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-2">
+              {filtering && (
+                <span className="hidden font-mono text-[11px] text-zinc-600 sm:inline">de {alerts.length}</span>
+              )}
+              <div className="relative">
+                <MagnifyingGlass
+                  size={13}
+                  aria-hidden
+                  className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500"
+                />
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') setQuery('')
+                  }}
+                  placeholder="buscar regla, host, usuario..."
+                  aria-label="Buscar en alertas"
+                  className="h-8 w-[210px] border-white/10 bg-transparent pl-7 font-mono text-xs text-zinc-200 placeholder:text-zinc-600"
+                />
+              </div>
+              <Select value={sevFilter} onValueChange={setSevFilter}>
+                <SelectTrigger className="h-8 w-[170px] font-mono text-xs" aria-label="Filtrar por severidad">
+                  <SelectValue placeholder="Severidad" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">todas</SelectItem>
+                  <SelectItem value="critical">critical</SelectItem>
+                  <SelectItem value="high">high</SelectItem>
+                  <SelectItem value="medium">medium</SelectItem>
+                  <SelectItem value="low">low</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           )
         }
       />
 
-      {status !== 'live' && visible.length === 0 ? (
+      {status !== 'live' && alerts.length === 0 ? (
         <div className="h-24 animate-pulse rounded bg-white/5" />
-      ) : visible.length === 0 ? (
+      ) : alerts.length === 0 ? (
         <EmptyState
           title="Sin alertas todavía"
           hint="Las detecciones aparecen en cuanto una regla evalúa telemetría sospechosa"
+        />
+      ) : visible.length === 0 ? (
+        <EmptyState
+          title="Sin resultados"
+          hint="Ninguna alerta coincide con la búsqueda o el filtro actual"
         />
       ) : (
         <ul className="divide-y divide-white/[0.06] border-y border-white/[0.08]">
@@ -96,6 +141,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
                       <SeverityBadge severity={al.severity} />
                       <span className="text-sm font-medium text-zinc-100">{al.rule_name}</span>
                       {mitre && <span className="rounded border border-white/10 px-1.5 py-0.5 font-mono text-[10px] text-zinc-400">{mitre}</span>}
+                      {al.notify && <BellRinging size={13} weight="fill" aria-label="Notifica a canales externos" className="text-amber-300/90" />}
                     </span>
                     <span className="mt-1 block truncate font-mono text-xs text-zinc-400">{al.summary}</span>
                   </span>
@@ -109,6 +155,14 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
 
                 {open && (
                   <div className="border-t border-white/[0.06] bg-white/[0.02] px-5 py-4">
+                    {al.message && (
+                      <blockquote className="mb-3 border-l-2 border-white/15 pl-3 text-sm leading-relaxed text-zinc-300">
+                        <span className="mb-1 block text-[10px] uppercase tracking-wider text-zinc-500">
+                          Mensaje de la regla
+                        </span>
+                        {al.message}
+                      </blockquote>
+                    )}
                     <dl className="grid grid-cols-1 gap-x-8 gap-y-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
                       <Detail label="Usuario" value={al.user ?? 'n/d'} />
                       <Detail label="Equipo" value={al.host} />
@@ -118,6 +172,12 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
                       <Detail label="ID de regla" value={al.rule_id} mono />
                     </dl>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
+                      {al.notify && (
+                        <span className="flex items-center gap-1 rounded border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5 text-[10px] text-amber-200">
+                          <BellRinging size={11} weight="fill" aria-hidden />
+                          Notifica a canales externos
+                        </span>
+                      )}
                       {al.tags.map((t) => (
                         <span key={t} className="rounded border border-white/10 px-1.5 py-0.5 font-mono text-[10px] text-zinc-400">
                           {t}

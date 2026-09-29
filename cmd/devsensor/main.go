@@ -161,6 +161,7 @@ func main() {
         defer conn.Close()
 
         fmt.Printf("[DEVSENSOR] connected to %s - streaming %d events\n", *addr, len(scenario))
+        fmt.Println("[DEVSENSOR] NOTE: this is the SIMULATED demo scenario - not your host. Real telemetry: sf-sensor")
         for i, ev := range scenario {
                 line, err := ev.Encode()
                 if err != nil {

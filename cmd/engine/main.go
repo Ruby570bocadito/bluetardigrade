@@ -18,23 +18,34 @@ import (
         "syscall"
         "time"
 
+        "github.com/Ruby570bocadito/security-framework/internal/actions"
         "github.com/Ruby570bocadito/security-framework/internal/alert"
         "github.com/Ruby570bocadito/security-framework/internal/api"
         "github.com/Ruby570bocadito/security-framework/internal/correlate"
         "github.com/Ruby570bocadito/security-framework/internal/enrich"
         "github.com/Ruby570bocadito/security-framework/internal/ingest"
         "github.com/Ruby570bocadito/security-framework/internal/rules"
+        "github.com/Ruby570bocadito/security-framework/internal/webhook"
         "github.com/Ruby570bocadito/security-framework/pkg/model"
 )
 
 var (
-        addr      = flag.String("addr", ":7777", "TCP listen address for sensor streams")
-        apiAddr   = flag.String("api", ":7778", "local HTTP API for the console (stats/events/alerts/stream); 0 disables")
-        rulesDir  = flag.String("rules", "./rules", "directory with YAML rules")
-        seqDir    = flag.String("sequences", "./sequences", "directory with YAML kill-chain sequences (correlator)")
-        verbose   = flag.Bool("v", false, "print every event received")
+        // Loopback defaults: the bundled sensors (devsensor, sf-sensor, the
+        // Rust collector) all dial 127.0.0.1, so exposing the ingest and
+        // the read-only API on every interface would hand the whole LAN
+        // an unauthenticated event feed and a copy of the alert data.
+        // Remote-sensor deployments must opt in explicitly, e.g.
+        //   sf-engine -addr 0.0.0.0:7777 -api 0.0.0.0:7778
+        // combined with the installer's -Firewall switch.
+        addr        = flag.String("addr", "127.0.0.1:7777", "TCP listen address for sensor streams (use 0.0.0.0:7777 to accept remote sensors)")
+        apiAddr     = flag.String("api", "127.0.0.1:7778", "local HTTP API for the console (stats/events/alerts/stream); 0 disables")
+        rulesDir    = flag.String("rules", "./rules", "directory with YAML rules")
+        seqDir      = flag.String("sequences", "./sequences", "directory with YAML kill-chain sequences (correlator)")
+        verbose     = flag.Bool("v", false, "print every event received")
         reloadEvery = flag.Duration("reload-every", 15*time.Second,
                 "hot-reload interval for the rules directory (0 disables)")
+        webhookURL = flag.String("webhook", "",
+                "POST every alert as JSON to this URL (SIEM/SOAR connector); empty disables")
 )
 
 func main() {
@@ -127,12 +138,32 @@ func main() {
                 }
         }
 
+        // outbound connector: alerts POSTed as JSON to a SIEM/SOAR
+        // endpoint; delivery is async, bounded and never blocks the loop
+        whCtx, whCancel := context.WithCancel(context.Background())
+        var wh *webhook.Client
+        if *webhookURL != "" {
+                wh = webhook.New(*webhookURL)
+                go wh.Run(whCtx)
+                if hub != nil {
+                        hub.SetWebhookStats(wh.Stats)
+                }
+                fmt.Printf("[ENGINE] webhook on %s (alerts POSTed as JSON)\n", *webhookURL)
+        }
+
         enricher := enrich.New()
         alerts := alert.New(os.Stdout, func(a alert.Alert) {
                 if hub != nil {
                         hub.RecordAlert(a)
                 }
+                if wh != nil {
+                        wh.Handle(a)
+                }
         })
+        // rule actions: rendered messages land inside the alert payload;
+        // webhook deliveries run in the background and never stall intake
+        dispatcher := actions.New(log.New(os.Stderr, "[ACTIONS] ", 0))
+        alerts.SetPreparer(dispatcher.Prepare)
         if corr != nil {
                 corr.SetEmit(alerts.Emit)
         }
@@ -146,7 +177,12 @@ func main() {
                                 case <-ctx.Done():
                                         return
                                 case <-t.C:
-                                        if err := engine.Reload(*rulesDir); err == nil {
+                                        // Reload from the RESOLVED rules path: when the
+                                        // flag path does not exist in the current working
+                                        // directory, startup fell back to the directory
+                                        // next to the executable, and reloading from the
+                                        // raw flag would fail (silently) every cycle.
+                                        if err := engine.Reload(rulesPath); err == nil {
                                                 fmt.Printf("[ENGINE] rules reloaded (%d active)\n", engine.Count())
                                         }
                                         if corr != nil && dirExists(seqPath) {
@@ -193,6 +229,11 @@ func main() {
                         }
                 }
                 processed++
+        }
+
+        if wh != nil {
+                whCancel() // stop accepting; drain pending deliveries
+                wh.Wait()
         }
 
         fmt.Printf("[ENGINE] processed %d events in %s (ingested=%d dropped=%d)\n",

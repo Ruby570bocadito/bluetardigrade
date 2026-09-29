@@ -23,6 +23,8 @@
 #
 # Usage:
 #   sf-sensor                          (engine on 127.0.0.1:7777)
+#   sf-sensor -SetupSysmon             (one-time: install Sysmon + apply
+#                                       the bundled config; UAC prompt)
 #   sf-sensor -Addr 10.0.0.5:7777
 #   sf-sensor -NoEngine                (never auto-start the engine)
 #   sf-sensor -Quiet                   (suppress per-event console lines)
@@ -43,6 +45,8 @@ param(
     [switch]$NoEngine,
     [switch]$Quiet,
     [switch]$SelfTest,
+    [switch]$SetupSysmon,
+    [string]$TranscriptLog = '',
     [int]$ReconnectSeconds = 5
 )
 $ErrorActionPreference = 'Stop'
@@ -317,6 +321,89 @@ $ip = $parts[0]; $port = [int]$parts[1]
 $root = Split-Path -Parent $PSScriptRoot
 if (-not (Test-Path (Join-Path $root 'bin'))) { $root = Split-Path -Parent $root }
 
+# ---- one-command Sysmon setup (-SetupSysmon): winget install + config --
+function Test-IsAdmin {
+    $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+    return (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Find-SysmonExe {
+    $cmd = Get-Command sysmon64.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $cmd = Get-Command sysmon.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    foreach ($p in (Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Sysinternals.Sysmon*" -Directory -ErrorAction SilentlyContinue)) {
+        $hit = Get-ChildItem $p.FullName -Filter 'sysmon64.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($hit) { return $hit.FullName }
+    }
+    return ''
+}
+
+function Invoke-SysmonSetup {
+    $config = Join-Path $root 'scripts\sysmon-config.xml'
+    if (-not (Test-Path $config)) { $config = Join-Path $root 'sysmon-config.xml' }
+
+    $sysmonExe = Find-SysmonExe
+    if (-not $sysmonExe) {
+        Write-Host '[SETUP] installing Sysinternals Sysmon via winget...'
+        winget install --id Sysinternals.Sysmon --accept-source-agreements --accept-package-agreements --silent
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[SETUP] [!] winget failed (exit $LASTEXITCODE)" -ForegroundColor Red
+            Write-Host '[SETUP]     download Sysmon from https://learn.microsoft.com/sysinternals/downloads/sysmon'
+            Write-Host '[SETUP]     put sysmon64.exe on PATH, then re-run:  sf-sensor -SetupSysmon'
+            exit 1
+        }
+        $sysmonExe = Find-SysmonExe
+        if (-not $sysmonExe) {
+            Write-Host '[SETUP] [!] sysmon64.exe not found after install' -ForegroundColor Red
+            Write-Host '[SETUP]     open a NEW terminal and re-run:  sf-sensor -SetupSysmon'
+            exit 1
+        }
+    }
+
+    if (-not (Test-Path $config)) {
+        Write-Host "[SETUP] [!] bundled config not found: $config" -ForegroundColor Red
+        Write-Host '[SETUP]     re-run sf-update and try again'
+        exit 1
+    }
+
+    Write-Host "[SETUP] sysmon: $sysmonExe"
+    Write-Host "[SETUP] applying bundled config (tuned to the detections, low noise)"
+    & $sysmonExe -accepteula -i $config
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[SETUP] [!] sysmon -i failed (exit $LASTEXITCODE)" -ForegroundColor Red
+        exit 1
+    }
+
+    $svc = Get-Service -Name Sysmon64 -ErrorAction SilentlyContinue
+    if (-not $svc) { $svc = Get-Service -Name Sysmon -ErrorAction SilentlyContinue }
+    if ($svc) { Write-Host "[SETUP] Sysmon service: $($svc.Name) -> $($svc.Status)" }
+    Write-Host '[SETUP] Sysmon is live. Now start real telemetry (normal terminal):  sf-sensor'
+}
+
+if ($SetupSysmon) {
+    if (-not (Test-IsAdmin)) {
+        $log = Join-Path $root 'run\sysmon-setup.log'
+        New-Item -ItemType Directory -Path (Split-Path -Parent $log) -Force | Out-Null
+        Write-Host '[SETUP] installing Sysmon needs admin - accept the UAC prompt...'
+        try {
+            Start-Process powershell.exe -Verb RunAs -Wait -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -SetupSysmon -TranscriptLog `"$log`""
+        } catch {
+            Write-Host '[SETUP] [!] elevation cancelled or failed - run it again to retry.' -ForegroundColor Red
+            exit 1
+        }
+        if (Test-Path $log) { Get-Content $log | ForEach-Object { Write-Host "  $_" } }
+        exit 0
+    }
+    if ($TranscriptLog) {
+        New-Item -ItemType Directory -Path (Split-Path -Parent $TranscriptLog) -Force | Out-Null
+        Start-Transcript -Path $TranscriptLog -Force | Out-Null
+    }
+    Invoke-SysmonSetup
+    if ($TranscriptLog) { Stop-Transcript | Out-Null }
+    exit 0
+}
+
 # ---- auto-start the engine if it is down ------------------------------
 function Test-EngineUp {
     $c = New-Object Net.Sockets.TcpClient
@@ -351,11 +438,12 @@ if (-not $NoEngine -and -not (Test-EngineUp)) {
 $session = [System.Diagnostics.Eventing.Reader.EventLogSession]::GlobalSession
 if ($session.GetLogNames() -notcontains $sysmonLog) {
     Write-Host '[SENSOR] Sysmon is not installed on this machine - no real telemetry available.' -ForegroundColor Red
-    Write-Host '[SENSOR] install it once as admin, then re-run sf-sensor:'
+    Write-Host '[SENSOR] one-command setup (asks for admin once):   sf-sensor -SetupSysmon'
+    Write-Host '[SENSOR] or manual, in an ADMIN terminal:'
     Write-Host '[SENSOR]   winget install Sysinternals.Sysmon'
     Write-Host "[SENSOR]   sysmon -accepteula -i `"$root\scripts\sysmon-config.xml`""
     Write-Host '[SENSOR] (the config ships with security-framework: tuned to the detections, low noise)'
-    Write-Host '[SENSOR] meanwhile, the simulated demo is:  sf-devsensor'
+    Write-Host '[SENSOR] meanwhile, the demo scenario (NOT real data) is:  sf-devsensor'
     exit 1
 }
 
