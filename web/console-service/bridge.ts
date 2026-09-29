@@ -165,6 +165,9 @@ function mapStats(st: Record<string, unknown>): HubStats {
     uptime_s: Number(st.uptime_s ?? 0),
     interval_ms: 0,
     mode: 'engine',
+    webhook_sent: Number(st.webhook_sent ?? 0),
+    webhook_failed: Number(st.webhook_failed ?? 0),
+    webhook_dropped: Number(st.webhook_dropped ?? 0),
   }
 }
 

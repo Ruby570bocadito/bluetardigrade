@@ -25,6 +25,7 @@ import (
 	"github.com/Ruby570bocadito/security-framework/internal/enrich"
 	"github.com/Ruby570bocadito/security-framework/internal/ingest"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
+	"github.com/Ruby570bocadito/security-framework/internal/suppress"
 	"github.com/Ruby570bocadito/security-framework/internal/webhook"
 	"github.com/Ruby570bocadito/security-framework/pkg/model"
 )
@@ -48,6 +49,10 @@ var (
 		"POST every alert as JSON to this URL (SIEM/SOAR connector); empty disables")
 	token = flag.String("token", "",
 		"shared token sensors must send as 'AUTH <token>' on connect (falls back to SF_INGEST_TOKEN); empty disables auth")
+	suppressionsFile = flag.String("suppressions", "./suppressions.yaml",
+		"operator allowlist YAML silencing rule/host pairs (expires supported); empty disables")
+	pidFile = flag.String("pidfile", "",
+		"write the process PID here at startup and remove it on shutdown (lets sf-console -Stop stop an engine it did not start)")
 )
 
 func main() {
@@ -57,6 +62,16 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(),
 		os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// PID file: lets sf-console -Stop (and operators) stop this engine
+	// even when it was launched by the autostart entry, not by sf-console.
+	if *pidFile != "" {
+		if err := os.WriteFile(*pidFile, []byte(fmt.Sprint(os.Getpid())), 0o644); err != nil {
+			log.Printf("[ENGINE] pidfile %s: %v", *pidFile, err)
+		} else {
+			defer func() { _ = os.Remove(*pidFile) }() // best effort on graceful paths
+		}
+	}
 
 	// rules dir: explicit flag > rules next to the executable (so
 	// the installed sf-engine.exe needs no wrapper)
@@ -78,6 +93,23 @@ func main() {
 		if n := corr.Count(); n > 0 {
 			fmt.Printf("[ENGINE] %d sequences loaded from %s (correlator on: %v)\n",
 				n, seqPath, corr.Names())
+		}
+	}
+
+	// operator allowlist: alert suppressions (rule + host, optional
+	// expiration), hot-reloaded on the same ticker as rules. A malformed
+	// file is FATAL at startup: failing open would silently disable a
+	// control the operator believes is armed.
+	supMgr := suppress.New()
+	supPath := resolveDataFile(*suppressionsFile, "suppressions.yaml")
+	supCount := 0
+	if *suppressionsFile != "" {
+		if err := supMgr.LoadFile(supPath); err != nil {
+			log.Fatalf("[ENGINE] %v", err)
+		}
+		supCount = supMgr.Count(time.Now())
+		if supCount > 0 {
+			fmt.Printf("[ENGINE] %d suppressions active from %s\n", supCount, supPath)
 		}
 	}
 
@@ -129,6 +161,7 @@ func main() {
 			hub = nil
 		} else {
 			hub.SetRules(engine)
+			hub.SetSuppressions(supMgr)
 			hub.SetCounters(func() (uint64, uint64, uint64) {
 				return server.Received(), server.Dropped(), server.Rejected()
 			})
@@ -168,7 +201,15 @@ func main() {
 	dispatcher := actions.New(log.New(os.Stderr, "[ACTIONS] ", 0))
 	alerts.SetPreparer(dispatcher.Prepare)
 	if corr != nil {
-		corr.SetEmit(alerts.Emit)
+		// sequence completions honor the allowlist too: a host with a
+		// suppressed rule is in an accepted state, and a kill-chain
+		// built on top of its silenced steps would be a false positive.
+		corr.SetEmit(func(a alert.Alert) {
+			if suppressed(supMgr, a.RuleID, a.Host, time.Now()) {
+				return
+			}
+			alerts.Emit(a)
+		})
 	}
 
 	if *reloadEvery > 0 {
@@ -191,6 +232,17 @@ func main() {
 					if corr != nil && dirExists(seqPath) {
 						if err := corr.Reload(seqPath); err == nil {
 							fmt.Printf("[ENGINE] sequences reloaded (%d active)\n", corr.Count())
+						}
+					}
+					if *suppressionsFile != "" {
+						// reload errors are LOUD here: keeping the previous set is the
+						// right fallback, but the operator must know the edit was
+						// rejected (otherwise an expiring entry silently lingers).
+						if err := supMgr.LoadFile(supPath); err != nil {
+							log.Printf("[ENGINE] suppressions reload FAILED, keeping previous set: %v", err)
+						} else if n := supMgr.Count(time.Now()); n != supCount {
+							fmt.Printf("[ENGINE] suppressions reloaded (%d active)\n", n)
+							supCount = n
 						}
 					}
 				}
@@ -226,6 +278,12 @@ func main() {
 				ev.Type, describe(ev), pidOf(ev), ev.Host)
 		}
 		for _, hit := range engine.Evaluate(ev) {
+			// allowlist first: a suppressed hit raises no alert AND does
+			// not feed the correlator (see the Emit wrapper above).
+			if suppressed(supMgr, hit.Rule.ID, ev.Host, time.Now()) {
+				log.Printf("[SUPPRESS] rule=%s host=%s", hit.Rule.ID, ev.Host)
+				continue
+			}
 			alerts.Raise(ev, hit)
 			if corr != nil {
 				corr.Observe(ev, hit.Rule.Name)
@@ -242,6 +300,16 @@ func main() {
 	fmt.Printf("[ENGINE] processed %d events in %s (ingested=%d dropped=%d)\n",
 		processed, time.Since(start).Round(time.Millisecond),
 		server.Received(), server.Dropped())
+}
+
+// suppressed reports whether the allowlist currently silences this
+// rule/host pair. nil manager means the feature is off.
+func suppressed(m *suppress.Manager, ruleID, host string, now time.Time) bool {
+	if m == nil {
+		return false
+	}
+	ok, _ := m.SuppressedAt(ruleID, host, now)
+	return ok
 }
 
 func dirExists(p string) bool {
@@ -266,6 +334,29 @@ func resolveDataDir(flagPath, name string) string {
 		}
 	}
 	return flagPath
+}
+
+// resolveDataFile is resolveDataDir for a single file: the flag path
+// when it exists, otherwise <exe dir>/../<name> (the installed layout),
+// otherwise the flag path unchanged so LoadFile reports its error
+// against the original path. Missing files are NOT an error for the
+// allowlist (feature off) but malformed ones are.
+func resolveDataFile(flagPath, name string) string {
+	if fileExists(flagPath) {
+		return flagPath
+	}
+	if exe, err := os.Executable(); err == nil {
+		alt := filepath.Join(filepath.Dir(exe), "..", name)
+		if fileExists(alt) {
+			return alt
+		}
+	}
+	return flagPath
+}
+
+func fileExists(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && !st.IsDir()
 }
 
 // listening reports whether something accepts TCP connections on addr

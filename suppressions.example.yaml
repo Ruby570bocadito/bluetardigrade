@@ -1,0 +1,33 @@
+# security-framework operator allowlist (suppressions).
+#
+# Each entry silences alerts for a rule (rule_id), a host (host), or a
+# rule+host pair. Both fields are exact matches; host comparison is
+# case-insensitive. An entry with only rule_id applies to every host;
+# an entry with only host silences every rule on that host.
+#
+# expires (optional, RFC 3339 UTC): after that instant the entry stops
+# matching. Entries without expires stay active until removed from this
+# file. The engine hot-reloads this file every -reload-every interval
+# (15s by default), so editing it is enough - no restart needed.
+#
+# Suppressed hits raise NO alert and do NOT feed the kill-chain
+# correlator (a host with a suppressed rule is considered in an
+# accepted state). Every suppressed hit is logged as
+#   [SUPPRESS] rule=<id> host=<host>
+# and the live set is visible at GET /api/suppressions.
+#
+# Rename this file to suppressions.yaml (next to the engine binary's
+# install root, or pass -suppressions <path>) to arm it.
+#
+# Examples:
+#
+# - # Change window: VSS deletions are sanctioned on this host until Monday.
+#   rule_id: vss-delete
+#   host: LAB-WKS-01
+#   reason: "ventana de cambio aprobada - backup migrado (INC-1234)"
+#   expires: 2026-10-05T06:00:00Z
+#
+# - # Accepted permanent exception: the lab honeypot fires this constantly.
+#   rule_id: suspicious-script-parent
+#   host: LAB-HONEYPOT-05
+#   reason: "honeypot: ruido esperado, aceptado por el responsable"

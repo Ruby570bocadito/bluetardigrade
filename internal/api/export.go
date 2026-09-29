@@ -29,14 +29,22 @@ func (h *Hub) handleAlertsExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit := limitFrom(r, maxAlerts)
-	h.mu.Lock()
-	n := len(h.alerts)
-	if limit < n {
-		n = limit
+	f, ok := parseRecordFilter(w, r)
+	if !ok {
+		return // 400 already written
 	}
-	alerts := make([]alert.Alert, n)
-	copy(alerts, h.alerts[len(h.alerts)-n:]) // oldest first
+	h.mu.Lock()
+	selected := make([]alert.Alert, 0, len(h.alerts))
+	for _, a := range h.alerts {
+		if ts, err := time.Parse(time.RFC3339Nano, a.Timestamp); err == nil && f.matchAlert(a, ts) {
+			selected = append(selected, a)
+		}
+	}
 	h.mu.Unlock()
+	if limit < len(selected) {
+		selected = selected[len(selected)-limit:] // keep the most recent, oldest first
+	}
+	alerts := selected
 
 	stamp := time.Now().UTC().Format("20060102-150405")
 	switch format {
@@ -75,9 +83,17 @@ func (h *Hub) handleEventsExport(w http.ResponseWriter, r *http.Request) {
 	if format == "" {
 		return
 	}
+	f, ok := parseRecordFilter(w, r)
+	if !ok {
+		return // 400 already written
+	}
 	h.mu.Lock()
-	events := make([]*model.Event, len(h.events))
-	copy(events, h.events)
+	events := make([]*model.Event, 0, len(h.events))
+	for _, ev := range h.events {
+		if f.matchEvent(ev) {
+			events = append(events, ev)
+		}
+	}
 	h.mu.Unlock()
 
 	stamp := time.Now().UTC().Format("20060102-150405")

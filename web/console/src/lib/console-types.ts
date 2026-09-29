@@ -95,6 +95,11 @@ export type SimStats = {
   uptime_s: number
   interval_ms: number
   mode: 'engine' | 'sin-motor'
+  // webhook delivery counters (engine -webhook flag); forwarded by the
+  // hub since r3. All zero = connector disabled or nothing delivered yet.
+  webhook_sent: number
+  webhook_failed: number
+  webhook_dropped: number
 }
 
 export type ConsoleSnapshot = {

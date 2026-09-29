@@ -81,13 +81,40 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Stats'
+  /api/suppressions:
+    get:
+      tags: [status]
+      operationId: listSuppressions
+      summary: Operator allowlist (read-only view)
+      description: |
+        The suppression entries currently active (expired ones excluded).
+        Entries are NOT managed through this API: they live in the
+        `suppressions.yaml` file the engine hot-reloads (see
+        `suppressions.example.yaml`). Suppressed hits raise no alert,
+        skip the correlator and are logged as `[SUPPRESS]`.
+      responses:
+        '200':
+          description: Active suppression entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Suppressions'
   /api/events:
     get:
       tags: [telemetry]
       operationId: listEvents
       summary: Recent events (newest first)
+      description: |
+        All filters are AND-combined and applied BEFORE `limit`, so
+        `?limit=50` with a filter returns the 50 most recent MATCHING
+        events, not a filtered slice of the last 50.
       parameters:
         - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Host'
+        - $ref: '#/components/parameters/EventType'
+        - $ref: '#/components/parameters/Since'
+        - $ref: '#/components/parameters/Until'
+        - $ref: '#/components/parameters/Q'
       responses:
         '200':
           description: Up to `limit` events from the ring buffer
@@ -102,8 +129,15 @@ paths:
       tags: [telemetry]
       operationId: listAlerts
       summary: Recent alerts (newest first)
+      description: Same filter semantics as `/api/events`.
       parameters:
         - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Host'
+        - $ref: '#/components/parameters/Severity'
+        - $ref: '#/components/parameters/RuleId'
+        - $ref: '#/components/parameters/Since'
+        - $ref: '#/components/parameters/Until'
+        - $ref: '#/components/parameters/Q'
       responses:
         '200':
           description: Up to `limit` alerts from the ring buffer
@@ -179,9 +213,14 @@ paths:
         with a dated filename.
       parameters:
         - $ref: '#/components/parameters/ExportFormat'
+        - $ref: '#/components/parameters/Host'
+        - $ref: '#/components/parameters/EventType'
+        - $ref: '#/components/parameters/Since'
+        - $ref: '#/components/parameters/Until'
+        - $ref: '#/components/parameters/Q'
       responses:
         '200':
-          description: Full event ring in the requested format
+          description: Filtered event ring (oldest first) in the requested format
           content:
             application/x-ndjson:
               schema:
@@ -197,7 +236,7 @@ paths:
             text/plain:
               schema:
                 type: string
-                example: 'unsupported format: use jsonl or csv'
+                example: 'unsupported format: use jsonl, ndjson or csv'
   /api/alerts/export:
     get:
       tags: [export]
@@ -210,9 +249,17 @@ paths:
         `tags` (space-joined), `message`, `notify`.
       parameters:
         - $ref: '#/components/parameters/ExportFormat'
+        - $ref: '#/components/parameters/Host'
+        - $ref: '#/components/parameters/Severity'
+        - $ref: '#/components/parameters/RuleId'
+        - $ref: '#/components/parameters/Since'
+        - $ref: '#/components/parameters/Until'
+        - $ref: '#/components/parameters/Q'
       responses:
         '200':
-          description: Full alert ring in the requested format
+          description: |
+            Filtered alert ring (oldest first) in the requested format.
+            `limit` caps the FILTERED set, keeping the most recent.
           content:
             application/x-ndjson:
               schema:
@@ -228,9 +275,72 @@ paths:
             text/plain:
               schema:
                 type: string
-                example: 'unsupported format: use jsonl or csv'
+                example: 'unsupported format: use jsonl, ndjson or csv'
 components:
   parameters:
+    Host:
+      name: host
+      in: query
+      required: false
+      description: Exact host filter, case-insensitive.
+      schema:
+        type: string
+    Severity:
+      name: severity
+      in: query
+      required: false
+      description: |
+        Alert-only. Comma-separated severities to keep; anything else
+        answers 400.
+      schema:
+        type: string
+        example: critical,high
+    RuleId:
+      name: rule_id
+      in: query
+      required: false
+      description: Alert-only. Exact rule id filter.
+      schema:
+        type: string
+    EventType:
+      name: type
+      in: query
+      required: false
+      description: Event-only. Exact event type filter (e.g. `process.create`).
+      schema:
+        type: string
+    Since:
+      name: since
+      in: query
+      required: false
+      description: |
+        Lower time bound (inclusive window handled by the engine):
+        RFC 3339 timestamp, or a positive duration counted back from now
+        (`90m`, `24h`). Invalid values answer 400.
+      schema:
+        type: string
+        example: 24h
+    Until:
+      name: until
+      in: query
+      required: false
+      description: |
+        Upper time bound. Same accepted forms as `since`; must not be
+        earlier than `since`.
+      schema:
+        type: string
+    Q:
+      name: q
+      in: query
+      required: false
+      description: |
+        Free-text substring filter (case-insensitive) across identifiers
+        and context: for alerts rule id/name, host, user, summary,
+        message, event type, tags; for events id, type, source, host,
+        user, process name/command line, file path, network
+        destination/domain, registry key, access target.
+      schema:
+        type: string
     Limit:
       name: limit
       in: query
@@ -280,8 +390,12 @@ components:
         - webhook_sent
         - webhook_failed
         - webhook_dropped
+        - suppressions_active
         - mode
       properties:
+        suppressions_active:
+          type: integer
+          description: non-expired entries in the operator allowlist
         uptime_s:
           type: integer
           description: seconds since the API hub started
@@ -584,3 +698,28 @@ components:
                     items:
                       type: string
                   - type: number
+    Suppressions:
+      type: object
+      required: [active, entries]
+      properties:
+        active:
+          type: integer
+          description: same count as `stats.suppressions_active`
+        entries:
+          type: array
+          items:
+            type: object
+            required: [rule_id]
+            properties:
+              rule_id:
+                type: string
+                description: suppressed rule id (empty string = all rules)
+              host:
+                type: string
+                description: suppressed host, lowercased (empty = every host)
+              reason:
+                type: string
+                description: free-text justification from the YAML file
+              expires:
+                type: string
+                description: RFC 3339 expiration as written in the file (empty = until removed)

@@ -108,6 +108,32 @@ func TestResolveDataDir(t *testing.T) {
 	}
 }
 
+// resolveDataFile mirrors resolveDataDir for the single-file allowlist:
+// an existing flag path wins, a directory must NOT satisfy the lookup
+// (the file flag points at a file), and a missing path is returned
+// unchanged so LoadFile can treat it as "feature off".
+func TestResolveDataFile(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "suppressions.yaml")
+	if err := os.WriteFile(file, []byte("- rule_id: x\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if got := resolveDataFile(file, "suppressions.yaml"); got != file {
+		t.Fatalf("resolveDataFile(existing) = %q, want %q", got, file)
+	}
+
+	// a directory at the flag path must not count as the file
+	if got := resolveDataFile(dir, "suppressions.yaml"); got != dir {
+		t.Fatalf("resolveDataFile(dir) = %q, want unchanged %q (dirs are not files)", got, dir)
+	}
+
+	missing := filepath.Join(dir, "nope.yaml")
+	if got := resolveDataFile(missing, "suppressions.yaml"); got != missing {
+		t.Fatalf("resolveDataFile(missing) = %q, want %q unchanged", got, missing)
+	}
+}
+
 // The engine must reload from the RESOLVED rules path, not the raw
 // flag: when startup fell back to the directory next to the
 // executable, reloading from the raw flag failed silently every cycle.

@@ -56,6 +56,9 @@ function offlineStats(): HubStats {
     uptime_s: 0,
     interval_ms: 0,
     mode: 'sin-motor',
+    webhook_sent: 0,
+    webhook_failed: 0,
+    webhook_dropped: 0,
   }
 }
 
