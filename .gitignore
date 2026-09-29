@@ -35,6 +35,10 @@ web/console/*.tsbuildinfo
 run/
 tools/
 
+# Operator-local suppressions (the armed copy of suppressions.example.yaml;
+# may name real hosts and change windows - never commit it)
+suppressions.yaml
+
 # Local evidence
 captures/
 *.dmp

@@ -87,7 +87,7 @@ And one engineering rule that shapes everything else: **no simulated data in the
 | **Correlation** | Kill-chain sequencer: named steps across the same host within a time window raise one high-signal campaign alert |
 | **Response** | Operator suppressions (rule/host, expiry, hot-reload), alert webhook with Bearer auth and bounded retries |
 | **API** | Local REST API with OpenAPI 3.0 spec (drift-guarded in CI), SSE live stream, filters, JSONL/CSV export with formula-injection neutralization |
-| **Console** | Live feed, KPI dashboard, severity triage with free-text search, rule browser, suppressions view, AI analyst (bring-your-own OpenAI-compatible endpoint) |
+| **Console** | Live feed, KPI dashboard, severity triage with free-text search, rule browser, kill-chain chains view, suppressions view, AI analyst (bring-your-own OpenAI-compatible endpoint) |
 | **Storage** | Opt-in SQLite persistence (`-store`): events and alerts outlive restarts, retention pruner, lists and exports read the full history |
 | **Auth** | Shared-token ingest handshake (constant-time), zero-downtime token rotation window, optional Bearer on the API and on outbound webhooks |
 | **Ops** | One-command Windows installer (six commands on PATH), Docker image for the engine, GitHub Actions CI on every push |
@@ -413,7 +413,7 @@ The uninstaller stops the processes, removes the logon entries (HKCU Run and any
 
 ## Web console (preview)
 
-The repo ships an early browser console: live telemetry feed, KPI dashboard, severity triage, the YAML rule pack and an AI analyst that explains each alert like a senior SOC analyst would. Both the alert queue and the live feed support free-text search (rule, host, user, command line, MITRE tag) on top of the dropdown filters, so triage can narrow down a noisy host or a single technique in seconds. The hub (`web/console-service`) contains NO simulator: it forwards only what the Go engine's API (:7778) really delivers, and the header chip names the actual source of the events you are looking at - `sf-sensor (Sysmon real)` for real host telemetry, or `sf-devsensor (demo)` while the scripted scenario is replaying. If the engine is unreachable the console says so and shows no data, instead of inventing any.
+The repo ships an early browser console: live telemetry feed, KPI dashboard, severity triage, the YAML rule pack, the kill-chain chains the correlator has armed, operator suppressions, and an AI analyst that explains each alert like a senior SOC analyst would. Both the alert queue and the live feed support free-text search (rule, host, user, command line, MITRE tag) on top of the dropdown filters, so triage can narrow down a noisy host or a single technique in seconds. The hub (`web/console-service`) contains NO simulator: it forwards only what the Go engine's API (:7778) really delivers, and the header chip names the actual source of the events you are looking at - `sf-sensor (Sysmon real)` for real host telemetry, or `sf-devsensor (demo)` while the scripted scenario is replaying. If the engine is unreachable the console says so and shows no data, instead of inventing any.
 
 The interface carries a restrained motion layer adapted from [React Bits](https://reactbits.dev) — every effect communicates a state change and none is decoration: a pointer-reactive dot-grid canvas behind the shell, view titles that blur in on section change, KPI halos that follow the mouse, an animated 1px border on the AI analyst while it is working, a gradient pulse on the critical counter while critical alerts exist, and a brand tagline that decrypts once on load. Everything respects `prefers-reduced-motion` (static fallbacks) and the whole layer adds zero runtime dependencies beyond `motion`.
 
@@ -432,6 +432,10 @@ Free-text search on top of the dropdown filters - typing narrows the queue live 
 The loaded rule pack, rendered with each rule's conditions and MITRE mapping:
 
 ![Console rules view: 23 loaded rules with conditions and ATT&CK mapping](docs/assets/console-reglas.png)
+
+The kill-chain chains the correlator loaded, rendered as connected step chains: emerald connectors when every step's rule is live (the chain can complete and raise its campaign alert), amber nodes for a step waiting on a missing rule:
+
+![Console chains view: 4 armed kill-chain sequences with numbered steps and ATT&CK tags](docs/assets/console-cadenas.png)
 
 Operator suppressions, rendered read-only with rule-name lookup, host scope, reason and a live expiry countdown — the exact set the engine loaded from `suppressions.yaml` (the nav badge shows the active count; suppressed hits raise no alert, as documented in the suppressions section above):
 
@@ -535,9 +539,7 @@ The shipped pack (`sequences/kill-chains.yaml`) defines 4 sequences, all
 | `e2c7a9f3-3c4d-4e5f-a061-c7d8e9f0a1b2` | Apagon defensivo | critical | 5m | Manipulacion de Windows Defender + Desactivacion del firewall de Windows + Borrado de registros de eventos |
 | `f3d8ba64-4d5e-4f60-b172-d8e9f0a1b2c3` | Instalacion de persistencia | critical | 5m | Descarga con certutil o bitsadmin + Persistencia en clave Run via registro |
 
-The correlator is observable from the outside: `/api/sequences` lists the armed chains (steps, window, tags) as loaded right now, and `/api/stats` carries `correlator_states` (in-flight (sequence, host) chains) against `correlator_cap` (8192) — a hostile feed inventing hostnames pushes states toward the cap, and past it NEW hosts would silently stop being tracked, so the number is meant to be watched. The console surfaces both: the `correlador N/cap` chip in the header turns red the moment the cap is reached, and the Cadenas view lists each chain with its steps and flags any step whose rule is not loaded (a chain that can never complete).
-
-The correlator is observable from the outside: `/api/stats` carries `correlator_states` (chains in flight, one per sequence/host pair), `correlator_sequences` (loaded sequences) and `correlator_cap` (hard tracking cap, 8192). A hostile feed inventing hostnames drives `correlator_states` toward the cap — past it, NEW hosts silently stop being tracked, so a value climbing on a small fleet is a feed problem, not popularity. The console header shows the same numbers as a `correlador N/cap` chip that turns red the moment the cap is reached.
+The correlator is observable from the outside: `/api/sequences` lists the armed chains (steps, window, tags) as loaded right now, and `/api/stats` carries `correlator_states` (chains in flight, one per sequence/host pair), `correlator_sequences` (loaded sequences) and `correlator_cap` (hard tracking cap, 8192). A hostile feed inventing hostnames drives `correlator_states` toward the cap — past it, NEW hosts silently stop being tracked, so a value climbing on a small fleet is a feed problem, not popularity. The console surfaces both: the `correlador N/cap` chip in the header turns red the moment the cap is reached, and the Cadenas view renders each chain as its step sequence and flags any step whose rule is not loaded (a chain that can never complete).
 
 ### Rule actions
 
@@ -674,7 +676,8 @@ suppressions.example.yaml  annotated allowlist format (rename to
 scripts/windows/  installed runtime scripts (sf-sensor, sf-console, ...)
                   + bundled sysmon-config.xml tuned to the detection pack
 scripts/dev-tests/ end-to-end verification scripts (OpenAPI drift check,
-                  webhook receiver, ingest auth smoke with real binaries)
+                  webhook receiver, ingest auth and SQLite store smokes with
+                  real binaries)
 install.ps1       one-command Windows installer
 uninstall.ps1     standalone uninstaller
 Makefile          build automation (engine, sensor, console, docker)

@@ -12,6 +12,7 @@ remains regenerable.
 | `console-panel.png`         | output  | console operations dashboard (root README, Web console section) |
 | `console-alertas.png`       | output  | console alert triage queue (root README) |
 | `console-reglas.png`        | output  | console rules view (root README) |
+| `console-cadenas.png`       | output  | console kill-chain chains view (root README) |
 | `console-busqueda.gif`      | output  | search interaction: typing `lsass` filters the alert queue live (root README) |
 | `src/diagram_arquitectura.html` | source | self-contained HTML/CSS source of the architecture diagram (1060px canvas) |
 | `src/diagram_tracer.html`   | source  | self-contained HTML/CSS source of the pipeline above (900px canvas) |
@@ -35,7 +36,7 @@ remains regenerable.
    (a production build renders cleaner screenshots than dev mode: no
    dev-tools button).
 2. Run `node src/capture_console.mjs` (prerequisites in the script
-   header). It writes the three PNGs into this directory.
+   header). It writes the five PNGs into this directory.
 3. Assemble `console-busqueda.gif` from the per-frame PNGs the script
    leaves in the temp dir (resize to ~1100px wide, adaptive palette,
    ~450ms per frame with a long hold on the final frame).

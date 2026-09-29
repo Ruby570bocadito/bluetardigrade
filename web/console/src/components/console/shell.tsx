@@ -81,12 +81,16 @@ export function ConsoleShell() {
                     }`}
                   >
                     {/* píldora activa animada con layoutId: el resalte viaja
-                        entre secciones en lugar de aparecer/desaparecer; el
-                        contenido lleva `relative` para pintar por encima */}
+                        entre secciones en lugar de aparecer/desaparecer. El
+                        botón lleva `relative` (ancla el inset-0) y la píldora
+                        pointer-events-none: durante el vuelo del spring sobre
+                        los botones vecinos jamás debe interceptar clicks
+                        (defecto real detectado por el E2E de la ronda
+                        20h20 cuando el inset-0 se anclaba a la raíz). */}
                     {view === item.id && (
                       <motion.span
                         layoutId="nav-pill"
-                        className="absolute inset-0 rounded-md bg-zinc-800"
+                        className="pointer-events-none absolute inset-0 rounded-md bg-zinc-800"
                         transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 380, damping: 32 }}
                       />
                     )}
