@@ -227,6 +227,14 @@ func (s *Server) checkAuth(conn net.Conn, line []byte) bool {
 // during a rotation window, the previous one. Both comparisons run in
 // constant time and are combined without branching on the content, so
 // timing cannot be used to probe which token (if any) matched.
+//
+// The bitwise OR is a bit-parallel logical OR of two booleans: on all
+// supported Go versions ConstantTimeCompare returns exactly 0 or 1
+// (0 also for length mismatches), so (cur | prev) == 1 accepts exactly
+// when either comparison matched. Cross-reviewed 2026-09-30 with a
+// different-length previous token end-to-end; do not "fix" this to
+// == 1 on each result — the combined form is what avoids leaking
+// which token matched.
 func (s *Server) tokenMatches(supplied []byte) bool {
 	cur := subtle.ConstantTimeCompare(supplied, []byte(s.token))
 	prev := 0
