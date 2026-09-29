@@ -29,12 +29,20 @@ info:
       heartbeat comments every 15 s.
     - All timestamps are RFC 3339 (UTC, nanosecond precision).
     - **Authentication is optional**: loopback deployments run open by
-      default; starting the engine with `-api-token` requires a bearer
-      credential on every path except `/api/health` (see
-      `securitySchemes.bearerAuth`).
+      default; starting the engine with `-api-token`/`SF_API_TOKEN`
+      requires a bearer credential on every path except `/api/health`
+      (see `securitySchemes.bearerAuth`). Rejections answer `401` with
+      a `WWW-Authenticate: Bearer` challenge and a JSON error body
+      naming the flag to set; the scheme is matched case-insensitively
+      (RFC 7235) and the token comparison is constant-time.
 
     The alert webhook (engine `-webhook` flag) pushes the same `Alert`
     object defined here as JSON to an external collector.
+security:
+  # Applies to every operation unless overridden; /api/health opts out
+  # with an empty security array. When the engine runs WITHOUT a token
+  # configured, calls succeed regardless of credentials sent.
+  - bearerAuth: []
 servers:
   - url: http://127.0.0.1:7778
     description: local engine API (default -api address, loopback only)
@@ -55,6 +63,7 @@ paths:
       tags: [status]
       operationId: getHealth
       summary: Liveness probe
+      security: []  # stays open with a token configured (static body; monitors probe it unauthenticated)
       description: Cheap check that the engine API is up. Used by the console bridge and by `sf-engine` to detect an already-running instance.
       responses:
         '200':
@@ -79,6 +88,8 @@ paths:
         token handshake — the visible signal that the ingest port is
         being probed without credentials.
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Current stats snapshot
           content:
@@ -97,6 +108,8 @@ paths:
         `suppressions.example.yaml`). Suppressed hits raise no alert,
         skip the correlator and are logged as `[SUPPRESS]`.
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Active suppression entries
           content:
@@ -120,6 +133,8 @@ paths:
         - $ref: '#/components/parameters/Until'
         - $ref: '#/components/parameters/Q'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Up to `limit` events from the ring buffer
           content:
@@ -143,6 +158,8 @@ paths:
         - $ref: '#/components/parameters/Until'
         - $ref: '#/components/parameters/Q'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Up to `limit` alerts from the ring buffer
           content:
@@ -162,6 +179,8 @@ paths:
         `attack.txxxxxx` tag upper-cased, the first `attack.<tactic>`
         tag title-cased. Conditions mirror the YAML rule format.
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Current rules
           content:
@@ -187,6 +206,8 @@ paths:
         instead of blocking the engine; reconnect and re-sync with
         `/api/events` and `/api/alerts`.
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: SSE stream
           content:
@@ -223,6 +244,8 @@ paths:
         - $ref: '#/components/parameters/Until'
         - $ref: '#/components/parameters/Q'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: Filtered event ring (oldest first) in the requested format
           content:
@@ -260,6 +283,8 @@ paths:
         - $ref: '#/components/parameters/Until'
         - $ref: '#/components/parameters/Q'
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '200':
           description: |
             Filtered alert ring (oldest first) in the requested format.
@@ -291,6 +316,21 @@ components:
         below answers 401 without a valid `Authorization: Bearer`
         header, EXCEPT `/api/health`, which stays open for liveness
         probes and reveals nothing but `{"status":"ok"}`.
+  responses:
+    Unauthorized:
+      description: |
+        Missing or wrong Bearer credential while the API token is
+        configured. Carries a `WWW-Authenticate: Bearer` challenge and
+        a JSON body naming the flag/env to configure. `/api/health`
+        never answers 401.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: "unauthorized: send 'Authorization: Bearer <token>' (configure it with -api-token/SF_API_TOKEN)"
   parameters:
     Host:
       name: host

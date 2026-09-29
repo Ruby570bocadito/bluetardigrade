@@ -287,18 +287,14 @@ bin/engine -webhook http://siem.internal:8080/ingest \
 # or:  export SF_WEBHOOK_TOKEN=...  (flag wins)
 ```
 
-The receiver then validates the `Authorization: Bearer` header. Per-
-rule `actions.webhook` entries keep their own independent `secret`
-config (see *Rule actions*); when both are set the per-action secret
-applies to that action only and the global token to the engine-level
-connector. A webhook running without any token prints a startup
-reminder listing the flag and the env var.
-
-Deliveries can authenticate themselves with `-webhook-token` (or the
-`SF_WEBHOOK_TOKEN` env var, flag wins): every POST then carries
-`Authorization: Bearer <token>`, so a receiver that is reachable from
-more than the engine's host can reject unauthenticated or spoofed
-posts instead of ingesting fake alerts into the SIEM.
+The receiver then validates the `Authorization: Bearer` header, so a
+receiver reachable from more than the engine's host can reject
+unauthenticated or spoofed posts instead of ingesting fake alerts into
+the SIEM. Per-rule `actions.webhook` entries keep their own independent
+`secret` config (see *Rule actions*); when both are set the per-action
+secret applies to that action only and the global token to the
+engine-level connector. A webhook running without any token prints a
+startup reminder listing the flag and the env var.
 
 ## One-command install (Windows)
 
