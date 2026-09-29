@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react'
 import { Prohibit, Timer } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { EmptyState, SectionHeader } from './ui-bits'
+import { AnimatedItem } from '@/components/reactbits/animated-list'
 import type { SfSuppression } from '@/lib/console-types'
 
 /** Re-renders every 30 s so the expiry countdowns stay truthful. */
@@ -65,7 +66,13 @@ export function SuppressionsView() {
       ) : (
         <ul className="divide-y divide-white/[0.06] border-y border-white/[0.08]">
           {suppressions.map((s, i) => (
-            <SuppressionRow key={`${s.rule_id}:${s.host ?? '*'}:${i}`} entry={s} ruleName={ruleName(s.rule_id)} now={now} />
+            <SuppressionRow
+              key={`${s.rule_id}:${s.host ?? '*'}:${i}`}
+              index={i}
+              entry={s}
+              ruleName={ruleName(s.rule_id)}
+              now={now}
+            />
           ))}
         </ul>
       )}
@@ -74,17 +81,22 @@ export function SuppressionsView() {
 }
 
 function SuppressionRow({
+  index,
   entry,
   ruleName,
   now,
 }: {
+  index: number
   entry: SfSuppression
   ruleName?: string
   now: Date
 }) {
   const left = countdown(entry.expires, now)
   return (
-    <li className="px-4 py-3">
+    <li>
+      {/* AnimatedItem (React Bits): entrada escalonada en el montaje, misma
+          pauta que el resto de vistas; keys estables, sin re-animar. */}
+      <AnimatedItem index={index} className="px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
         <Prohibit size={14} weight="fill" aria-hidden className="shrink-0 text-zinc-500" />
         <span className="font-mono text-sm text-zinc-100">{entry.rule_id || 'todas las reglas'}</span>
@@ -113,6 +125,7 @@ function SuppressionRow({
       {entry.reason && (
         <p className="mt-1 pl-6 text-xs leading-relaxed text-zinc-400">{entry.reason}</p>
       )}
+      </AnimatedItem>
     </li>
   )
 }

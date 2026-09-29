@@ -15,12 +15,6 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
 }
 
-// bun-types tipa Response.json() como unknown; el contrato del hub es JSON
-// de punta a punta, así que los tests leen a través de un único acceso tipado.
-async function json(res: Response): Promise<any> {
-  return res.json()
-}
-
 async function pollUntil(fn: () => boolean | Promise<boolean>, timeoutMs: number, stepMs = 100): Promise<void> {
   const t0 = Date.now()
   while (Date.now() - t0 < timeoutMs) {
@@ -192,7 +186,7 @@ describe('hub HTTP surface (engine down)', () => {
     const res = await fetch(`${base}/health`)
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toContain('application/json')
-    const body = await json(res)
+    const body = (await res.json()) as Record<string, any>
     expect(body.service).toBe('console-service')
     expect(body.status).toBe('degraded')
     expect(body.mode).toBe('sin-motor')
@@ -208,7 +202,7 @@ describe('hub HTTP surface (engine down)', () => {
   test('GET /healthz is an alias of /health', async () => {
     const res = await fetch(`${base}/healthz`)
     expect(res.status).toBe(200)
-    expect((await json(res)).service).toBe('console-service')
+    expect(((await res.json()) as Record<string, any>).service).toBe('console-service')
   })
 
   test('GET / serves the status page reflecting the real engine state', async () => {
@@ -226,7 +220,7 @@ describe('hub HTTP surface (engine down)', () => {
   test('unknown paths answer 404 as JSON or HTML depending on Accept', async () => {
     const asJson = await fetch(`${base}/nope`, { headers: { accept: 'application/json' } })
     expect(asJson.status).toBe(404)
-    expect((await json(asJson)).error.code).toBe('not_found')
+    expect(((await asJson.json()) as Record<string, any>).error.code).toBe('not_found')
 
     const asHtml = await fetch(`${base}/nope`, { headers: { accept: 'text/html' } })
     expect(asHtml.status).toBe(404)
@@ -260,19 +254,13 @@ describe('hub HTTP surface (engine down)', () => {
     const s1 = connect(base)
     const s2 = connect(base)
     await Promise.all([waitEvent(s1, 'console:snapshot'), waitEvent(s2, 'console:snapshot')])
-    let body: Record<string, any> | null = null
-    await pollUntil(async () => {
-      const b = await json(await fetch(`${base}/health`))
-      body = b
-      return b.clients.connected === 2
-    }, 3000)
+    let body: Record<string, any> = {}
+    const clients = async () =>
+      ((await (await fetch(`${base}/health`)).json()) as Record<string, any>).clients.connected as number
+    await pollUntil(async () => (await clients()) === 2, 3000)
     s1.disconnect()
     s2.disconnect()
-    await pollUntil(async () => {
-      const b = await json(await fetch(`${base}/health`))
-      body = b
-      return b.clients.connected === 0
-    }, 3000)
+    await pollUntil(async () => (await clients()) === 0, 3000)
   })
 
   test('analyst:ask validates the payload before doing any work', async () => {
@@ -357,7 +345,7 @@ describe('engine bridge lifecycle', () => {
 
   test('attaches to the engine and syncs its real state', async () => {
     await pollUntil(() => hub.state.mode === 'engine', 10000)
-    const body = await json(await fetch(`${base}/health`))
+    const body = (await (await fetch(`${base}/health`)).json()) as Record<string, any>
     expect(body.status).toBe('ok')
     expect(body.engine.endpoint).toBe(fakeEngine.url.origin)
     expect(body.engine.events_total).toBe(3)
@@ -422,7 +410,7 @@ describe('engine bridge lifecycle', () => {
     const downStats = waitEvent<Record<string, any>>(socket, 'console:stats', 10000)
     fakeEngine.stop(true)
     await pollUntil(() => hub.state.mode === 'sin-motor', 9000)
-    const body = await json(await fetch(`${base}/health`))
+    const body = (await (await fetch(`${base}/health`)).json()) as Record<string, any>
     expect(body.status).toBe('degraded')
     expect(body.engine.events_total).toBe(0)
     const st = await downStats

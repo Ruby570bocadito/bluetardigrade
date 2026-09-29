@@ -113,3 +113,48 @@ func TestStoreBackedTelemetry(t *testing.T) {
 		t.Fatalf("round-trip event malformed: %s, err %v", raw, err)
 	}
 }
+
+// TestFreeTextSeparatorNeedleSameAnswerRingAndStore: the store joins
+// its search column with \x1f so a needle can never cross field
+// boundaries; the same rune arriving URL-encoded as %1F must not
+// forge that crossing — otherwise the same question gets different
+// answers depending on whether -store is on. The needle is stripped
+// at parseRecordFilter, the chokepoint both backends share.
+func TestFreeTextSeparatorNeedleSameAnswerRingAndStore(t *testing.T) {
+	mkEvent := func() *model.Event {
+		return &model.Event{
+			ID: "ev-sep", Timestamp: time.Now().UTC(), Type: model.TypeProcessCreate,
+			Source: "test", Host: "ALPHA", User: "bravo",
+			Process: &model.Process{PID: 1, Name: "lsass.exe"},
+		}
+	}
+	// ring mode
+	h, addr := newTestHub(t)
+	h.RecordEvent(mkEvent())
+	// store mode
+	st, err := store.Open(t.TempDir() + "/parity.db")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer st.Close()
+	h2, addr2 := newTestHub(t)
+	h2.SetStore(st)
+	h2.RecordEvent(mkEvent())
+
+	// sanity: the plain needle finds the event on BOTH backends
+	var ringHits, storeHits []*model.Event
+	getJSON(t, "http://"+addr+"/api/events?q=alpha", &ringHits)
+	getJSON(t, "http://"+addr2+"/api/events?q=alpha", &storeHits)
+	if len(ringHits) != 1 || len(storeHits) != 1 {
+		t.Fatalf("sanity q=alpha: ring=%d store=%d, want 1/1", len(ringHits), len(storeHits))
+	}
+	// the separator-carrying needle crosses fields on NEITHER
+	// backend: "alpha<sep>bravo" spans the adjacent host|user
+	// haystack parts, so a forgeable separator would answer 1 on
+	// the store while the per-field ring answers 0
+	getJSON(t, "http://"+addr+"/api/events?q=alpha%1Fbravo", &ringHits)
+	getJSON(t, "http://"+addr2+"/api/events?q=alpha%1Fbravo", &storeHits)
+	if len(ringHits) != 0 || len(storeHits) != 0 {
+		t.Fatalf("separator needle: ring=%d store=%d, want 0/0", len(ringHits), len(storeHits))
+	}
+}

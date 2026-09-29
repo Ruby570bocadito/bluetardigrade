@@ -92,6 +92,11 @@ export function DotGridLayer({ gap = 22, radius = 150, className = '' }: DotGrid
       pointer.x = e.clientX
       pointer.y = e.clientY
       pointerInside = true
+      // re-entry after pointerleave: the loop stopped itself (no energy,
+      // no pointer inside) and pointermove is the only signal that it
+      // may light dots again — without this wake the layer stays dead
+      // until a resize or tab switch. wake() is a no-op while running.
+      wake()
     }
     const onLeave = () => {
       pointer.x = -1e4

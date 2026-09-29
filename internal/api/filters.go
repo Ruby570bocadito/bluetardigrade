@@ -34,7 +34,15 @@ func parseRecordFilter(w http.ResponseWriter, r *http.Request) (*recordFilter, b
 		host:   strings.ToLower(strings.TrimSpace(q.Get("host"))),
 		ruleID: strings.TrimSpace(q.Get("rule_id")),
 		evType: strings.TrimSpace(q.Get("type")),
-		q:      strings.ToLower(q.Get("q")),
+		// The store joins its search column with \x1f so a needle
+		// can never match across two field boundaries; the same
+		// rune arriving URL-encoded in the query (%1F) would
+		// forge exactly that crossing, and the ring (per-field
+		// matching) and the store would drift apart on the same
+		// question. Strip it at this chokepoint both backends
+		// share; the store's likeNeedle strips it again for
+		// legacy rows and direct callers.
+		q: strings.ToLower(strings.ReplaceAll(q.Get("q"), "\x1f", "")),
 	}
 	for _, s := range splitCSV(q.Get("severity")) {
 		switch s {

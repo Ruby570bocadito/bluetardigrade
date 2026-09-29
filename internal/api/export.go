@@ -69,6 +69,14 @@ func (h *Hub) handleAlertsExport(w http.ResponseWriter, r *http.Request) {
 		}
 		alerts = selected
 	}
+	// lifecycle overlay resolved outside the data lock (withLifecycle
+	// only touches the triage store): the export must show the status
+	// as it stands right now, same as GET /api/alerts — store mode or
+	// ring mode, the triage state travels with the alert either way.
+	views := make([]alertView, 0, len(alerts))
+	for _, a := range alerts {
+		views = append(views, h.withLifecycle(a))
+	}
 
 	stamp := time.Now().UTC().Format("20060102-150405")
 	switch format {
@@ -77,15 +85,16 @@ func (h *Hub) handleAlertsExport(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Disposition",
 			fmt.Sprintf("attachment; filename=\"alerts-%s.csv\"", stamp))
 		cw := csv.NewWriter(w)
-		_ = cw.Write([]string{"timestamp", "severity", "rule_id", "rule_name",
+		_ = cw.Write([]string{"id", "status", "timestamp", "severity", "rule_id", "rule_name",
 			"event_type", "host", "user", "summary", "matched_on", "tags",
-			"message", "notify"})
-		for _, a := range alerts {
+			"message", "notify", "status_note", "status_by"})
+		for _, v := range views {
 			_ = cw.Write([]string{
-				a.Timestamp, a.Severity, a.RuleID, a.RuleName, a.EventType,
-				csvSafe(a.Host), csvSafe(a.User), csvSafe(a.Summary),
-				strings.Join(a.MatchedOn, " "), strings.Join(a.Tags, " "),
-				csvSafe(a.Message), strconv.FormatBool(a.Notify),
+				v.ID, v.Status, v.Timestamp, v.Severity, v.RuleID, v.RuleName, v.EventType,
+				csvSafe(v.Host), csvSafe(v.User), csvSafe(v.Summary),
+				strings.Join(v.MatchedOn, " "), strings.Join(v.Tags, " "),
+				csvSafe(v.Message), strconv.FormatBool(v.Notify),
+				csvSafe(v.StatusNote), csvSafe(v.StatusBy),
 			})
 		}
 		cw.Flush()
@@ -93,8 +102,8 @@ func (h *Hub) handleAlertsExport(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-ndjson")
 		w.Header().Set("Content-Disposition",
 			fmt.Sprintf("attachment; filename=\"alerts-%s.jsonl\"", stamp))
-		for _, a := range alerts {
-			if payload, err := json.Marshal(a); err == nil {
+		for _, v := range views {
+			if payload, err := json.Marshal(v); err == nil {
 				fmt.Fprintf(w, "%s\n", payload)
 			}
 		}

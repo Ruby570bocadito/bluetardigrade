@@ -10,7 +10,8 @@
 //     elsewhere, or pass executablePath explicitly)
 //
 // Usage:  node docs/assets/src/capture_console.mjs
-// Output: console-panel.png, console-alertas.png, console-reglas.png
+// Output: console-panel.png, console-alertas.png, console-cadenas.png,
+//         console-reglas.png, console-supresiones.png
 //         and per-frame PNGs in the system temp dir (assemble the GIF
 //         from those frames; frames are 2x viewport of `main`).
 import { chromium } from 'playwright-core'
@@ -20,7 +21,10 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const ASSETS = path.dirname(fileURLToPath(import.meta.url))
+// PNGs belong in docs/assets (the directory the README links from);
+// the script lives one level below, so anchor ASSETS to its parent
+// instead of the script's own directory.
+const ASSETS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const FRAMES = fs.mkdtempSync(path.join(os.tmpdir(), 'console-frames-'))
 
 const CHROME_GLOB = '/home/z/.cache/ms-playwright/chromium-*/chrome-linux*/chrome'
@@ -68,6 +72,13 @@ await navBtn('Reglas').click()
 await page.waitForTimeout(1200)
 await page.screenshot({ path: path.join(ASSETS, 'console-reglas.png') })
 console.log('shot: console-reglas.png')
+
+// Kill-chain chains view: the sequences the correlator actually loaded
+// (steps, window, tags), with the armed/broken state of each chain.
+await navBtn('Cadenas').click()
+await page.waitForTimeout(1200)
+await page.screenshot({ path: path.join(ASSETS, 'console-cadenas.png') })
+console.log('shot: console-cadenas.png')
 
 // Operator suppressions view: renders the live allowlist the engine
 // loaded from suppressions.yaml (honest empty state when none armed).

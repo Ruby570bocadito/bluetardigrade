@@ -15,7 +15,7 @@ import { HubState, MAX_EVENTS, MAX_ALERTS } from './hub-state'
 import { buildStatusData, renderNotFound, renderStatusPage, esc } from './http-ui'
 import { createSlotLimiter } from './limiter'
 import { logLine, logError } from './log'
-import type { HubHealth, SfAlert, SfEvent } from './types'
+import type { HubHealth, SfAlert, SfEvent, SfAlertLifecycle } from './types'
 
 export const HUB_VERSION: string = pkg.version
 const SOCKET_PATH = '/'
@@ -77,7 +77,7 @@ export function createHub(opts: HubOptions = {}): HubHandle {
   // non-socket.io requests on the same port is this engine middleware.
   // Real socket.io traffic always carries the EIO query parameter and
   // is delegated back with next(); everything else is served here.
-  io.engine.use((rawReq: http.IncomingMessage, rawRes: http.ServerResponse, next: (err?: unknown) => void) => {
+  io.engine.use((rawReq: unknown, rawRes: unknown, next: (err?: unknown) => void) => {
     const req = rawReq as EngineRequest
     if (req._query && typeof req._query.EIO === 'string') return next()
     // Raw websocket upgrades without the handshake query: let engine.io
@@ -205,6 +205,12 @@ export function createHub(opts: HubOptions = {}): HubHandle {
       onAlert: (al: SfAlert) => {
         state.recordAlert(al)
         io.emit('console:alert', al)
+      },
+      onLifecycle: (entry: SfAlertLifecycle) => {
+        // triage decisions ride the same ring patch + re-emit contract
+        // as alerts; the raw entry is the whole frame payload
+        state.applyLifecycle(entry)
+        io.emit('console:alert_lifecycle', entry)
       },
       onStats: (st) => {
         state.setStats(st)

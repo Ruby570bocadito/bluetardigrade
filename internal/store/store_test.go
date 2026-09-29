@@ -276,3 +276,83 @@ func TestSearchNeverMatchesAcrossFieldBoundaries(t *testing.T) {
 		}
 	}
 }
+
+// TestHostAxisIsUnicodeCaseInsensitive: 788e59b Unicode-folded the
+// search haystack (free-text axis); this pins the remaining axis — the
+// host column is Go-lowered at insert so host=máquina-01 matches the
+// same way the ring does, and the alert severity column follows the
+// same rule. The JSON payload keeps the raw evidence (columns are
+// index only).
+func TestHostAxisIsUnicodeCaseInsensitive(t *testing.T) {
+	s := openTestStore(t)
+	at := time.Now().UTC()
+	// 788e59b Unicode-folded the search haystack (free-text axis);
+	// this pins the remaining axis: the host column is Go-lowered
+	// at insert so host=máquina-01 matches the way the ring does.
+	// (SQLite's COLLATE NOCASE folds ASCII only, the rings fold
+	// with Go's strings.ToLower — so the store lowers at insert.)
+	if err := s.InsertEvent(ev("uni-1", "MÁQUINA-01", model.TypeProcessCreate, "CAÑÓN.exe /c dir", at)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.QueryEvents(EventQuery{Host: "máquina-01", Limit: 10})
+	if err != nil || len(got) != 1 || got[0].ID != "uni-1" {
+		t.Fatalf("unicode host filter: %d events, err %v", len(got), err)
+	}
+	got, err = s.QueryEvents(EventQuery{Q: "cañón", Limit: 10})
+	if err != nil || len(got) != 1 || got[0].ID != "uni-1" {
+		t.Fatalf("unicode q filter: %d events, err %v", len(got), err)
+	}
+	// the JSON payload keeps the raw evidence (columns are index only)
+	got, err = s.QueryEvents(EventQuery{Host: "máquina-01", Limit: 10})
+	if err != nil || len(got) != 1 || got[0].Host != "MÁQUINA-01" {
+		t.Fatalf("payload mutated: %+v, err %v", got, err)
+	}
+}
+
+func TestLegacySeparatorRowsCannotBeCrossed(t *testing.T) {
+	s := openTestStore(t)
+	// a row written before ingest stripped the separator: its user
+	// field carries a forged boundary between host and the next
+	// segment. The needle "host-a<sep>host-b" spans two fields and
+	// must not match — likeNeedle strips the separator again for
+	// exactly these legacy rows.
+	if err := s.InsertEvent(&model.Event{
+		ID: "legacy", Timestamp: time.Now().UTC(), Type: model.TypeProcessCreate,
+		Source: "test", Host: "HOST-A", User: "HOST-B\x1fpowershell",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.QueryEvents(EventQuery{Q: "host-a\x1fhost-b", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("needle crossed the field boundary on a legacy row: %d results", len(got))
+	}
+	// ...and the row is still findable by its real fields
+	got, err = s.QueryEvents(EventQuery{Q: "host-b", Limit: 10})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("legacy row lost: %d results, err %v", len(got), err)
+	}
+}
+
+func TestInsertEventReplaceServesNewPayload(t *testing.T) {
+	s := openTestStore(t)
+	at := time.Now().UTC()
+	if err := s.InsertEvent(ev("rep", "H1", model.TypeProcessCreate, "first", at)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.InsertEvent(ev("rep", "H1", model.TypeProcessCreate, "second", at)); err != nil {
+		t.Fatalf("replace insert: %v", err)
+	}
+	got, err := s.QueryEvents(EventQuery{Limit: 10})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("want 1 row after replace, got %d, err %v", len(got), err)
+	}
+	if got[0].Process.CommandLine != "second" {
+		t.Fatalf("replace served stale payload: %q", got[0].Process.CommandLine)
+	}
+	if e, a := s.Counts(); e != 1 || a != 0 {
+		t.Fatalf("counts after replace: %d/%d, want 1/0", e, a)
+	}
+}

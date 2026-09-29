@@ -403,3 +403,45 @@ func TestDecodeKeepsNormalIdentityFields(t *testing.T) {
 		t.Fatalf("id = %q, want untouched", ev.ID)
 	}
 }
+
+// TestDecodeStripsFieldSeparatorFromFeedStrings: the search haystacks
+// (API rings and the SQLite store) join their fields with \x1f, so a
+// feed-controlled value carrying that rune would forge a field
+// boundary and make a row answer cross-field queries it was never
+// about. The strip happens at the boundary both backends share.
+func TestDecodeStripsFieldSeparatorFromFeedStrings(t *testing.T) {
+	line := `{"id":"ev-sep","type":"process.create","source":"s","host":"h1",` +
+		`"user":"a\u001fb",` +
+		`"timestamp":"2026-01-01T12:00:00Z",` +
+		`"process":{"pid":1,"name":"p\u001fq","command_line":"cmd\u001farg"},` +
+		`"file":{"path":"C:\u001ftemp\u001fx.txt"},` +
+		`"network":{"domain":"evil\u001fcorp.com"},` +
+		`"registry":{"key":"HKCU\u001fRun"},` +
+		`"tags":["t\u001fg"]}`
+	ev, err := decode([]byte(line))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for name, got := range map[string]string{
+		"user":           ev.User,
+		"process.name":   ev.Process.Name,
+		"command_line":   ev.Process.CommandLine,
+		"file.path":      ev.File.Path,
+		"network.domain": ev.Network.Domain,
+		"registry.key":   ev.Registry.Key,
+		"tags[0]":        ev.Tags[0],
+	} {
+		if strings.ContainsRune(got, '\x1f') {
+			t.Errorf("%s = %q still carries the field separator", name, got)
+		}
+	}
+	if ev.User != "ab" || ev.Process.Name != "pq" || ev.Tags[0] != "tg" {
+		t.Fatalf("strip mutated content unexpectedly: user=%q name=%q tag=%q", ev.User, ev.Process.Name, ev.Tags[0])
+	}
+
+	// an id made only of the separator becomes empty and fails
+	// validation loudly, like any other id-less event
+	if _, err := decode([]byte(`{"id":"\u001f","type":"process.create"}`)); err == nil {
+		t.Fatal("separator-only id must fail validation, got nil")
+	}
+}

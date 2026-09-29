@@ -4,7 +4,7 @@
 // stats poll and connection counters. There is no simulator and no
 // synthetic fallback anywhere in this module.
 
-import type { HubHealth, HubStats, RuleMeta, SfAlert, SfEvent, SfSequence, SfSuppression } from './types'
+import type { HubHealth, HubStats, RuleMeta, SfAlert, SfEvent, SfSequence, SfSuppression, SfAlertLifecycle } from './types'
 import { analystStatusFromEnv, type AnalystStatus } from './analyst'
 
 export const MAX_EVENTS = 160
@@ -68,6 +68,18 @@ export class HubState {
     this.lastEngineDataAtMs = Date.now()
     this.alerts.unshift(al)
     if (this.alerts.length > MAX_ALERTS) this.alerts.length = MAX_ALERTS
+  }
+
+  // r6 triage: patch the stored alert in place (the lifecycle frame
+  // carries only the status fields) so snapshots stay honest.
+  applyLifecycle(entry: SfAlertLifecycle) {
+    const al = this.alerts.find((a) => a.id === entry.alert_id)
+    if (al) {
+      al.status = entry.status
+      al.status_note = entry.note
+      al.status_by = entry.by
+      al.status_at = entry.at
+    }
   }
 
   setRules(rules: RuleMeta[]) {

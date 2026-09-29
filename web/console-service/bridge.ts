@@ -5,7 +5,7 @@
 // no simulation). SSE frames are parsed by hand so the same code runs
 // on bun and node.
 
-import type { SfEvent, SfAlert, HubStats, RuleMeta, SfSuppression, SfSequence } from './types'
+import type { SfEvent, SfAlert, HubStats, RuleMeta, SfSuppression, SfSequence, SfAlertLifecycle } from './types'
 
 export type EngineBridgeCallbacks = {
   onEvent: (ev: SfEvent) => void
@@ -14,6 +14,7 @@ export type EngineBridgeCallbacks = {
   onRules: (rules: RuleMeta[]) => void
   onSuppressions: (entries: SfSuppression[]) => void
   onSequences: (seqs: SfSequence[]) => void
+  onLifecycle: (entry: SfAlertLifecycle) => void
   onUp: () => void
   onDown: () => void
 }
@@ -45,6 +46,8 @@ export type EngineBridgeOptions = {
   maxEvents?: number
   /** How many alerts to replay on connect; matches the hub ring buffer. */
   maxAlerts?: number
+  /** Retry delay between reconnect attempts (tests use a small value). */
+  retryMs?: number
 }
 
 function sleep(ms: number) {
@@ -62,11 +65,13 @@ export class EngineBridge {
   private base: string
   private maxEvents: number
   private maxAlerts: number
+  private retryMs: number
   private ctrl: AbortController | null = null
   private statsTimer: ReturnType<typeof setInterval> | null = null
   private stopped = false
   // last suppressions / sequences JSON seen, so the hub only re-emits
-  // on real changes (both change on 15 s hot-reloads, not every poll)
+  // on real changes (both change on 15 s hot-reloads, not every poll).
+  // The caches are reset on every (re)connect — see establish().
   private lastSuppressions = ''
   private lastSequences = ''
 
@@ -77,6 +82,7 @@ export class EngineBridge {
     this.base = options.engineApi ?? process.env.ENGINE_API ?? 'http://127.0.0.1:7778'
     this.maxEvents = options.maxEvents ?? 160
     this.maxAlerts = options.maxAlerts ?? 48
+    this.retryMs = options.retryMs ?? RETRY_MS
   }
 
   get endpoint(): string {
@@ -104,7 +110,7 @@ export class EngineBridge {
       }
       if (this.stopped) break
       this.cb.onDown()
-      await sleep(RETRY_MS)
+      await sleep(this.retryMs)
     }
   }
 
@@ -119,6 +125,16 @@ export class EngineBridge {
 
   private async establish() {
     if (!(await this.probe())) throw new Error('engine api not reachable')
+
+    // every (re)connect resets the change-only caches: consumers cleared
+    // their lists on engine-down (onDown pushes []), so a payload
+    // identical to the pre-flap one must STILL be re-emitted after the
+    // engine returns — otherwise Cadenas/Supresiones-style consumers
+    // would stay empty until the YAML files actually change. The
+    // one-shot sync below already re-pulls rules/events/alerts
+    // unconditionally; this keeps the polled lists on the same contract.
+    this.lastSuppressions = ''
+    this.lastSequences = ''
 
     // one-shot sync of the current state before going live
     const [rules, events, alerts] = await Promise.all([
@@ -231,6 +247,7 @@ export class EngineBridge {
       const payload = JSON.parse(data)
       if (topic === 'event') this.cb.onEvent(payload as SfEvent)
       else if (topic === 'alert') this.cb.onAlert(mapAlert(payload))
+      else if (topic === 'alert_lifecycle') this.cb.onLifecycle(payload as SfAlertLifecycle)
     } catch {
       /* malformed frame: ignore */
     }
@@ -255,6 +272,12 @@ function mapStats(st: Record<string, unknown>): HubStats {
     correlator_states: Number(st.correlator_states ?? 0),
     correlator_sequences: Number(st.correlator_sequences ?? 0),
     correlator_cap: Number(st.correlator_cap ?? 0),
+    // optional SQLite persistence (-store): both type contracts declare
+    // these as "forwarded by the hub when the engine reports it" —
+    // actually forward them
+    store_enabled: st.store_enabled === true,
+    store_events: Number(st.store_events ?? 0),
+    store_alerts: Number(st.store_alerts ?? 0),
   }
 }
 
@@ -262,8 +285,9 @@ function mapAlert(a: Record<string, unknown>): SfAlert {
   const severity = String(a.severity ?? 'low')
   const known: SfAlert['severity'][] = ['critical', 'high', 'medium', 'low']
   return {
-    // engine alerts have no id of their own: event + rule is unique
-    id: `${String(a.event_id)}:${String(a.rule_id)}`,
+    // engine-assigned alert id (r6, the lifecycle key); older engines
+    // without it fall back to the event+rule synthesized id
+    id: a.id ? String(a.id) : `${String(a.event_id)}:${String(a.rule_id)}`,
     timestamp: String(a.timestamp ?? new Date().toISOString()),
     rule_id: String(a.rule_id ?? ''),
     rule_name: String(a.rule_name ?? ''),
@@ -277,7 +301,16 @@ function mapAlert(a: Record<string, unknown>): SfAlert {
     notify: a.notify === true,
     matched_on: (a.matched_on as string[]) ?? [],
     tags: (a.tags as string[]) ?? [],
+    // lifecycle overlay (GET /api/alerts merges it read-side)
+    status: isStatus(a.status) ? (a.status as SfAlert['status']) : undefined,
+    status_note: a.status_note ? String(a.status_note) : undefined,
+    status_by: a.status_by ? String(a.status_by) : undefined,
+    status_at: a.status_at ? String(a.status_at) : undefined,
   }
+}
+
+function isStatus(v: unknown): boolean {
+  return v === 'new' || v === 'acknowledged' || v === 'closed'
 }
 
 function mapRule(r: Record<string, unknown>): RuleMeta {
