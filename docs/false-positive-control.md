@@ -3,29 +3,35 @@
 An operator guide to the output channel: every layer that stands between
 a rule hit and your SIEM, which knob to turn for each kind of noise, and
 what a hostile or misconfigured feed cannot do to the pipeline. Every
-behavior described here is verified by unit tests and by the E2E smoke
+behavior described here is pinned by unit tests; the auth channel is
+additionally exercised end-to-end by the smoke
 (`scripts/dev-tests/smoke_auth.sh`); the caps table at the end names the
 constants in the code.
 
 ## The layers between a rule hit and your SIEM
 
 ```
-sensor feed ──► rules ──► [1] dedup (60 s TTL, always on)
-                        ► [2] suppressions (operator allowlist)
+sensor feed ──► rules ──► [1] suppressions (operator allowlist — a
+                        │     suppressed hit stops here entirely)
+                        ► [2] dedup (60 s TTL, always on)
                         ► [3] kill-chain correlator (compresses N hits
-                              into one campaign alert)
+                              into one campaign alert; fed by every
+                              non-suppressed hit, dedup-independent)
                         ► [4] outputs: console + JSON log, webhook,
                               local API/SSE, console delivery chip
 ```
 
+- **Suppressions** are the operator's allowlist: when an alert is
+  *correct but unwanted* (sanctioned change window, accepted-risk host),
+  this is the tool. It is also the first filter the hit meets.
 - **Dedup** is built in and not configurable: it collapses bursts of
   identical hits so one process gone wild costs you one alert per
   minute, not one per event.
-- **Suppressions** are the operator's allowlist: when an alert is
-  *correct but unwanted* (sanctioned change window, accepted-risk host),
-  this is the tool.
 - **The correlator** reduces volume structurally: a 5-step campaign is
-  one alert, not five.
+  one alert, not five. It is fed by every non-suppressed hit regardless
+  of dedup (chain progress is not deduped), and its completions bypass
+  dedup too — they are rate-limited by their own re-arm semantics
+  instead.
 - **Routing** (severity, tags, `notify`) lets the receiver filter what
   it cares about instead of the engine dropping signal globally.
 
@@ -33,28 +39,7 @@ The order matters: a suppressed hit produces nothing downstream — no
 console line, no webhook POST, no correlator progress — so the allowlist
 is the strongest (and most dangerous to overuse) knob.
 
-## Layer 1 — deduplication (always on, not configurable)
-
-Each raised alert is remembered for 60 seconds under the key
-`rule_id|host|pid` (`internal/alert`, `dedupTTL`). Practical
-consequences:
-
-- The same rule firing repeatedly for the **same process on the same
-  host** yields one alert per TTL window. This is the storm-killer.
-- A **new PID** or a **different host** is a new alert, on purpose:
-  dedup is tuned to prefer visibility over silence — a real lateral
-  movement (same technique, different machine) must not be deduped away
-  by the first machine's alert.
-- The dedup map is bounded: past 4096 entries expired keys are purged
-  opportunistically; past the 65536 hard cap new keys stop being
-  *remembered* but alerts keep *flowing*. A flood degrades to more
-  alerts, never to silence.
-
-If you are seeing the same alert every minute for a legitimate,
-long-running process, do not look for a dedup knob — that is Layer 2
-(suppress) or Layer 3 (tighten the rule) territory.
-
-## Layer 2 — suppressions (operator allowlist)
+## Layer 1 — suppressions (operator allowlist)
 
 `suppressions.yaml` (annotated format in `suppressions.example.yaml`)
 silences a rule, a host, or a rule+host pair, optionally until an RFC
@@ -95,6 +80,27 @@ Semantics that matter for tuning:
 | Permanent accepted exception (jump host with unusual tooling) | `rule_id` + `host`, no `expires` | Revisit quarterly; the reason field is where you left the justification |
 | Rule under construction / ruleset migration | `rule_id` only | Silences the rule estate-wide — the broadest possible entry; prefer scoping by host |
 | One noisy process family, not the host | Layer 3 | A suppression is the wrong tool when the signal you want is hiding inside the noise you don't |
+
+## Layer 2 — deduplication (always on, not configurable)
+
+Each raised alert is remembered for 60 seconds under the key
+`rule_id|host|pid` (`internal/alert`, `dedupTTL`). Practical
+consequences:
+
+- The same rule firing repeatedly for the **same process on the same
+  host** yields one alert per TTL window. This is the storm-killer.
+- A **new PID** or a **different host** is a new alert, on purpose:
+  dedup is tuned to prefer visibility over silence — a real lateral
+  movement (same technique, different machine) must not be deduped away
+  by the first machine's alert.
+- The dedup map is bounded: past 4096 entries expired keys are purged
+  opportunistically; past the 65536 hard cap new keys stop being
+  *remembered* but alerts keep *flowing*. A flood degrades to more
+  alerts, never to silence.
+
+If you are seeing the same alert every minute for a legitimate,
+long-running process, do not look for a dedup knob — that is Layer 1
+(suppress) or Layer 3 (tighten the rule) territory.
 
 ## Layer 3 — write the rule tighter (avoid the suppression treadmill)
 
@@ -164,7 +170,7 @@ host inventing events). The caps that protect the pipeline:
 | Alert dedup map | soft 4096 / hard 65536, TTL 60 s | purge, then stop remembering; alerts keep flowing |
 | Correlator states | 8192 | NEW hosts stop being tracked until slots free |
 | Correlator stale states | — | pruned on every successful sequence reload (removed sequences cannot hold slots) |
-| Webhook queue | 512 frames, 8 in flight | saturated deliveries counted as `dropped`/failed, detection unaffected |
+| Webhook queue | 512 frames, single sequential delivery worker | saturated deliveries counted as `dropped`/failed, detection unaffected |
 
 Design rule of thumb, applied consistently: **visibility wins over
 deduplication, and bounded degradation beats silence**. A flood makes
