@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -585,4 +586,229 @@ func TestStatsCorrelatorClosureLockOrder(t *testing.T) {
 		t.Fatal("/api/stats deadlocked against the correlator completion path: the closure must not run while h.mu is held")
 	}
 	<-completed
+}
+
+// --- /metrics (Prometheus text exposition, package D1) ---
+
+// The endpoint is registered on the same mux wrapped by h.auth, so a
+// token-protected engine must demand the Bearer credential here too.
+// The challenge headers mirror /api/stats exactly.
+func TestMetricsGatedByToken(t *testing.T) {
+	h, err := New("127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	h.SetToken("s3cret-api")
+	go func() { _ = h.Run() }()
+	t.Cleanup(h.Shutdown)
+	base := "http://" + h.Addr()
+
+	cases := []struct {
+		name string
+		auth string
+		want int
+	}{
+		{"missing header", "", http.StatusUnauthorized},
+		{"wrong token", "Bearer nope", http.StatusUnauthorized},
+		{"wrong scheme", "Basic s3cret-api", http.StatusUnauthorized},
+		{"valid token", "Bearer s3cret-api", http.StatusOK},
+	}
+	for _, tc := range cases {
+		req, _ := http.NewRequest(http.MethodGet, base+"/metrics", nil)
+		if tc.auth != "" {
+			req.Header.Set("Authorization", tc.auth)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		body, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		if res.StatusCode != tc.want {
+			t.Fatalf("%s: status = %d, want %d", tc.name, res.StatusCode, tc.want)
+		}
+		if tc.want == http.StatusUnauthorized {
+			if ch := res.Header.Get("WWW-Authenticate"); !strings.Contains(ch, "Bearer") {
+				t.Fatalf("%s: WWW-Authenticate = %q, want a Bearer challenge", tc.name, ch)
+			}
+			if !strings.Contains(string(body), "unauthorized") {
+				t.Fatalf("%s: body %q should explain the unauthorized", tc.name, body)
+			}
+		}
+	}
+}
+
+// Core of the D1 acceptance criteria: /metrics exposes the SAME
+// counters as /api/stats, no more and no less. Every numeric stats
+// field must appear in the text output with the same value; if a
+// future field lands in statsPayload but not in the renderer (or the
+// other way round) this test fails until the views are reconciled.
+func TestMetricsParityWithStats(t *testing.T) {
+	h, addr := newTestHub(t)
+	h.SetCounters(func() (uint64, uint64, uint64) { return 7, 2, 1 })
+	h.SetWebhookStats(func() (uint64, uint64, uint64) { return 5, 1, 0 })
+	h.SetCorrelatorStats(func() (int, int, int) { return 3, 4, 8192 })
+	h.RecordEvent(sampleEvent("ev-1"))
+	h.RecordEvent(sampleEvent("ev-2"))
+	h.RecordAlert(alert.Alert{
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		RuleID:    "r1", RuleName: "test rule", Severity: "critical",
+		Host: "LAB-TEST", EventID: "ev-2", EventType: "process.create",
+		Summary: "s", MatchedOn: []string{"process.name"},
+	})
+	h.RecordAlert(alert.Alert{
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		RuleID:    "r2", RuleName: "test rule 2", Severity: "low",
+		Host: "LAB-TEST", EventID: "ev-1", EventType: "process.create",
+		Summary: "s", MatchedOn: []string{"process.name"},
+	})
+
+	var stats map[string]any
+	getJSON(t, fmt.Sprintf("http://%s/api/stats", addr), &stats)
+
+	req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s/metrics", addr), nil)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /metrics: %v", err)
+	}
+	defer res.Body.Close()
+	if ct := res.Header.Get("Content-Type"); !strings.Contains(ct, "text/plain") {
+		t.Fatalf("Content-Type = %q, want text/plain (Prometheus exposition)", ct)
+	}
+	body, _ := io.ReadAll(res.Body)
+	text := string(body)
+
+	// value of a metric line: "name{labels} value" -> last token
+	metricValue := func(name string) (float64, bool) {
+		for _, line := range strings.Split(text, "\n") {
+			if strings.HasPrefix(line, name+" ") || strings.HasPrefix(line, name+"{") {
+				fields := strings.Fields(line)
+				if len(fields) == 0 {
+					continue
+				}
+				v, err := strconv.ParseFloat(fields[len(fields)-1], 64)
+				if err != nil {
+					t.Fatalf("metric %s: unparsable value in line %q", name, line)
+				}
+				return v, true
+			}
+		}
+		return 0, false
+	}
+	wantMetric := func(name string, jsonField string) {
+		t.Helper()
+		v, ok := metricValue(name)
+		if !ok {
+			t.Fatalf("metric %s missing from /metrics output", name)
+		}
+		raw, present := stats[jsonField]
+		if !present {
+			t.Fatalf("json field %s missing from /api/stats output", jsonField)
+		}
+		want, ok := raw.(float64)
+		if !ok {
+			t.Fatalf("json field %s is %T, want number", jsonField, raw)
+		}
+		if v != want {
+			t.Fatalf("parity drift: %s = %v but /api/stats %s = %v", name, v, jsonField, want)
+		}
+	}
+
+	wantMetric("sf_events_total", "events_total")
+	wantMetric("sf_events_dropped_total", "dropped")
+	wantMetric("sf_ingest_rejected_total", "ingest_rejected")
+	wantMetric("sf_alerts_total", "alerts_total")
+	wantMetric("sf_webhook_sent_total", "webhook_sent")
+	wantMetric("sf_webhook_failed_total", "webhook_failed")
+	wantMetric("sf_webhook_dropped_total", "webhook_dropped")
+	wantMetric("sf_suppressions_active", "suppressions_active")
+	wantMetric("sf_correlator_states", "correlator_states")
+	wantMetric("sf_correlator_sequences", "correlator_sequences")
+	wantMetric("sf_correlator_cap", "correlator_cap")
+
+	// by_severity: every severity present in the JSON must appear as a
+	// labeled series with the same value.
+	bySev := stats["by_severity"].(map[string]any)
+	for sev, raw := range bySev {
+		line := fmt.Sprintf(`sf_alerts_by_severity{severity=%q} `, sev)
+		if !strings.Contains(text, line) {
+			t.Fatalf("severity %q missing from /metrics output (want line prefix %q)", sev, line)
+		}
+		want, _ := raw.(float64)
+		idx := strings.Index(text, line)
+		rest := text[idx+len(line):]
+		end := strings.IndexAny(rest, "\n")
+		got, err := strconv.ParseFloat(rest[:end], 64)
+		if err != nil {
+			t.Fatalf("severity %q: unparsable value %q", sev, rest[:end])
+		}
+		if got != want {
+			t.Fatalf("parity drift: by_severity[%q] = %v in /metrics, %v in /api/stats", sev, got, want)
+		}
+	}
+
+	// every metric family must carry HELP and TYPE lines (validity of
+	// the exposition format, not just its values)
+	for _, name := range []string{"sf_events_total", "sf_alerts_total", "sf_alerts_by_severity", "sf_correlator_cap"} {
+		if !strings.Contains(text, "# HELP "+name+" ") || !strings.Contains(text, "# TYPE "+name+" ") {
+			t.Fatalf("metric %s lacks its HELP/TYPE lines:\n%s", name, text)
+		}
+	}
+}
+
+// A tokenless engine (default loopback deployment) keeps /metrics open,
+// exactly like every /api route — the optional-auth model is uniform.
+func TestMetricsOpenWithoutToken(t *testing.T) {
+	_, addr := newTestHub(t)
+	res, err := http.Get(fmt.Sprintf("http://%s/metrics", addr))
+	if err != nil {
+		t.Fatalf("GET /metrics: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (no token configured)", res.StatusCode)
+	}
+	body, _ := io.ReadAll(res.Body)
+	if !strings.Contains(string(body), "sf_uptime_seconds") {
+		t.Fatalf("output lacks sf_uptime_seconds:\n%s", body)
+	}
+}
+
+// Severity strings come from operator rule files. The exposition
+// format only requires escaping backslash, double quote and newline
+// inside label values; a hostile severity must not be able to forge
+// extra label pairs or break the line structure.
+func TestMetricsEscapesLabelValues(t *testing.T) {
+	h, addr := newTestHub(t)
+	h.RecordAlert(alert.Alert{
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		RuleID:    "r1", RuleName: "hostile", Severity: "weird\"severity\n\\",
+		Host: "LAB-TEST", EventID: "ev-1", EventType: "process.create",
+		Summary: "s", MatchedOn: []string{"process.name"},
+	})
+
+	res, err := http.Get(fmt.Sprintf("http://%s/metrics", addr))
+	if err != nil {
+		t.Fatalf("GET /metrics: %v", err)
+	}
+	defer res.Body.Close()
+	body, _ := io.ReadAll(res.Body)
+	text := string(body)
+
+	// the raw control sequence must never survive: a literal newline
+	// inside a label would terminate the sample line
+	if strings.Contains(text, "weird\"severity\n") {
+		t.Fatal("label value contains an unescaped quote+newline: exposition format broken")
+	}
+	// escaped form present, exactly one sample line for the family.
+	// Raw string: the expected line after escapeLabelValue is
+	//   sf_alerts_by_severity{severity="weird\"severity\n\\"} 1
+	// (quote -> \", LF -> \n, trailing backslash -> \\).
+	want := `sf_alerts_by_severity{severity="weird\"severity\n\\"} 1`
+	if !strings.Contains(text, want) {
+		t.Fatalf("escaped severity sample missing; want line containing %q, got:\n%s", want, text)
+	}
+	if n := strings.Count(text, "sf_alerts_by_severity{"); n != 1 {
+		t.Fatalf("expected exactly 1 severity series, got %d:\n%s", n, text)
+	}
 }

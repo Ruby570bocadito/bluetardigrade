@@ -1,0 +1,100 @@
+package api
+
+import (
+	"fmt"
+	"net/http"
+	"sort"
+	"strings"
+)
+
+// /metrics renders the same counters as /api/stats in the Prometheus
+// text exposition format (version 0.0.4). Package D1 of the owner's
+// roadmap, assigned to Bugs/Seguridad with two hard constraints from
+// the Director's acta (docs/agentes/01-director/ronda_2026-09-29_22h01.md):
+//
+//  1. It must not reveal more than /api/stats already does — it does
+//     not: the handler renders h.statsSnapshot(), the exact struct the
+//     JSON endpoint serves, and TestMetricsParityWithStats pins the
+//     numeric fields of both views together so they cannot drift.
+//  2. It sits behind the same bearer auth as /api/* — it does: the
+//     route is registered on the same mux wrapped by h.auth, and only
+//     /api/health is exempt. Prometheus reads the credential from its
+//     scrape config (authorization Credentials/BearerTokenFile), so no
+//     anonymous exemption is needed; without -api-token the endpoint
+//     stays open exactly like the rest of the loopback API.
+//
+// Non-numeric statsPayload fields (rules_types, mode) are deliberately
+// omitted: Prometheus wants counters and gauges, and a label per rule
+// type would make the series cardinality operator-controlled (a
+// hostile rules/ dir could inflate the TSDB).
+func (h *Hub) handleMetrics(w http.ResponseWriter, _ *http.Request) {
+	s := h.statsSnapshot()
+	var b strings.Builder
+	writeMetric(&b, "sf_uptime_seconds", "Seconds since the engine API started.", "gauge", float64(s.UptimeS))
+	writeMetric(&b, "sf_events_total", "Events accepted by ingest since engine start.", "counter", float64(s.EventsTotal))
+	writeMetric(&b, "sf_events_dropped_total", "Events dropped by ingest as malformed.", "counter", float64(s.Dropped))
+	writeMetric(&b, "sf_ingest_rejected_total", "Connections rejected by the ingest auth handshake.", "counter", float64(s.IngestRejected))
+	writeMetric(&b, "sf_events_per_minute", "Events ingested in the last 60 seconds.", "gauge", float64(s.EventsPerMin))
+	writeMetric(&b, "sf_alerts_total", "Alerts raised since engine start.", "counter", float64(s.AlertsTotal))
+	writeMetric(&b, "sf_rules", "Detection rules currently loaded.", "gauge", float64(s.RulesCount))
+	writeMetric(&b, "sf_events_buffered", "Events currently held in the in-memory ring.", "gauge", float64(s.EventsBuffered))
+	writeMetric(&b, "sf_webhook_sent_total", "Webhook deliveries accepted by the receiver.", "counter", float64(s.WebhookSent))
+	writeMetric(&b, "sf_webhook_failed_total", "Webhook deliveries that failed permanently.", "counter", float64(s.WebhookFailed))
+	writeMetric(&b, "sf_webhook_dropped_total", "Webhook deliveries dropped (queue full or backpressure).", "counter", float64(s.WebhookDropped))
+	writeMetric(&b, "sf_suppressions_active", "Operator suppressions currently active.", "gauge", float64(s.Suppressions))
+	if s.StoreEnabled {
+		writeMetric(&b, "sf_store_enabled", "SQLite persistence attached (1 = yes).", "gauge", 1)
+		writeMetric(&b, "sf_store_events", "Events persisted in the SQLite store.", "gauge", float64(s.StoreEvents))
+		writeMetric(&b, "sf_store_alerts", "Alerts persisted in the SQLite store.", "gauge", float64(s.StoreAlerts))
+	} else {
+		writeMetric(&b, "sf_store_enabled", "SQLite persistence attached (1 = yes).", "gauge", 0)
+	}
+	writeMetric(&b, "sf_correlator_states", "In-flight kill-chain (sequence, host) states.", "gauge", float64(s.CorrelatorStates))
+	writeMetric(&b, "sf_correlator_sequences", "Kill-chain sequences loaded.", "gauge", float64(s.CorrelatorSeqs))
+	writeMetric(&b, "sf_correlator_cap", "Maximum kill-chain states the correlator will track.", "gauge", float64(s.CorrelatorCap))
+	// by_severity is the only labeled family. Severity strings come
+	// from rule files (operator-controlled): the label value is
+	// escaped, and the series are emitted in sorted order so the
+	// output is deterministic (scrapers and tests both benefit).
+	sevs := make([]string, 0, len(s.BySeverity))
+	for sev := range s.BySeverity {
+		sevs = append(sevs, sev)
+	}
+	sort.Strings(sevs)
+	b.WriteString("# HELP sf_alerts_by_severity Alerts raised since engine start, by severity.\n# TYPE sf_alerts_by_severity gauge\n")
+	for _, sev := range sevs {
+		fmt.Fprintf(&b, "sf_alerts_by_severity{severity=\"%s\"} %d\n", escapeLabelValue(sev), s.BySeverity[sev])
+	}
+
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(b.String()))
+}
+
+// writeMetric emits one HELP/TYPE/sample triplet. Metric names are
+// compile-time constants, so only the value needs formatting.
+func writeMetric(b *strings.Builder, name, help, typ string, value float64) {
+	fmt.Fprintf(b, "# HELP %s %s\n# TYPE %s %s\n%s %s\n", name, help, name, typ, name, formatValue(value))
+}
+
+// formatValue renders numbers the way Prometheus parsers expect:
+// integers without a decimal point, everything else via strconv.
+func formatValue(v float64) string {
+	if v == float64(int64(v)) {
+		return fmt.Sprintf("%d", int64(v))
+	}
+	return fmt.Sprintf("%g", v)
+}
+
+// escapeLabelValue escapes the three characters the exposition format
+// requires inside label values: backslash, double quote and newline.
+// fmt's %q is NOT used because it would also escape non-ASCII runes,
+// mangling operator-supplied severity strings.
+func escapeLabelValue(s string) string {
+	r := strings.NewReplacer(
+		`\`, `\\`,
+		`"`, `\"`,
+		"\n", `\n`,
+	)
+	return r.Replace(s)
+}

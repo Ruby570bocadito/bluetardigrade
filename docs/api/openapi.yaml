@@ -103,6 +103,60 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Stats'
+  /metrics:
+    get:
+      tags: [status]
+      operationId: getMetrics
+      summary: Prometheus scrape endpoint (text exposition 0.0.4)
+      # Same optional-auth model as every /api data path: the route is
+      # registered on the mux wrapped by h.auth (only /api/health is
+      # exempt), so with -api-token the scraper must send the Bearer
+      # credential (Prometheus: authorization Credentials /
+      # BearerTokenFile in the scrape config).
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The same counters as `GET /api/stats` rendered in the Prometheus
+        text exposition format (version 0.0.4,
+        `text/plain; version=0.0.4`). Every `sf_*` family maps 1:1 to a
+        numeric Stats field (`sf_events_total` ← `events_total`,
+        `sf_alerts_by_severity{severity=...}` ← `by_severity`, and so
+        on); the non-numeric Stats fields (`rules_types`, `mode`) are
+        deliberately omitted. It exposes nothing the JSON endpoint does
+        not already expose to the same credential — enforced by
+        `TestMetricsParityWithStats` in `internal/api`.
+
+        Scrape config hint (token-protected engine):
+
+            scrape_configs:
+              - job_name: security-framework
+                metrics_path: /metrics
+                authorization:
+                  credentials: <SF_API_TOKEN>
+                static_configs:
+                  - targets: ['127.0.0.1:7778']
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '200':
+          description: Prometheus text exposition of the engine counters
+            (metric families prefixed `sf_`)
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: |
+                  # HELP sf_events_total Events accepted by ingest since engine start.
+                  # TYPE sf_events_total counter
+                  sf_events_total 231
+                  # HELP sf_alerts_total Alerts raised since engine start.
+                  # TYPE sf_alerts_total counter
+                  sf_alerts_total 4
+                  # HELP sf_alerts_by_severity Alerts raised since engine start, by severity.
+                  # TYPE sf_alerts_by_severity gauge
+                  sf_alerts_by_severity{severity="critical"} 1
+                  sf_alerts_by_severity{severity="high"} 3
   /api/suppressions:
     get:
       tags: [status]

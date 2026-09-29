@@ -15,7 +15,8 @@
 #        Bearer header; without the header a demanding receiver 401s and the
 #        engine reports webhook_failed
 #   7. local API auth (-api-token)                    -> /api/* 401 without the
-#        Bearer token, 200 with it; /api/health stays open
+#        Bearer token, 200 with it; /api/health stays open; /metrics rides
+#        the same credential (401/200 + valid text exposition)
 #   8. alert lifecycle write is gated too             -> POST /api/alerts/{id}/status
 #        401 without the Bearer token, 200 with it (r6)
 #
@@ -240,8 +241,22 @@ echo "$BODY_NOAUTH" | grep -q 'api-token' \
 CHALLENGE_HEALTH=$(curl -s -D - -o /dev/null "http://127.0.0.1:$((API+50))/api/health" | tr -d '\r' | grep -ci '^www-authenticate:')
 [ "$CHALLENGE_HEALTH" = "0" ] \
   || fail "scenario 7: /api/health carries a WWW-Authenticate challenge (must stay probe-clean)"
+# /metrics rides the same middleware: 401 without the credential (with the
+# challenge), 200 + text exposition with it, counters actually present
+RC_M_NOAUTH=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$((API+50))/metrics")
+RC_M_AUTH=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $API_TOKEN" "http://127.0.0.1:$((API+50))/metrics")
+[ "$RC_M_NOAUTH" = "401" ] || fail "scenario 7: /metrics without token answered $RC_M_NOAUTH, expected 401"
+[ "$RC_M_AUTH" = "200" ] || fail "scenario 7: /metrics with Bearer token answered $RC_M_AUTH, expected 200"
+METRICS=$(curl -s -H "Authorization: Bearer $API_TOKEN" "http://127.0.0.1:$((API+50))/metrics")
+echo "$METRICS" | grep -q '^sf_events_total ' \
+  || fail "scenario 7: /metrics lacks the sf_events_total family (body: $(echo "$METRICS" | head -3))"
+echo "$METRICS" | grep -q '^# TYPE sf_events_total counter' \
+  || fail "scenario 7: /metrics output lacks HELP/TYPE lines (not a valid exposition)"
+M_CT=$(curl -s -o /dev/null -w "%{content_type}" -H "Authorization: Bearer $API_TOKEN" "http://127.0.0.1:$((API+50))/metrics")
+echo "$M_CT" | grep -q 'text/plain' \
+  || fail "scenario 7: /metrics Content-Type '$M_CT' is not text/plain exposition"
 kill "${PIDS[-1]}" 2>/dev/null; wait "${PIDS[-1]}" 2>/dev/null
-log "  api auth: no_token=$RC_NOAUTH bearer=$RC_AUTH health=$RC_HEALTH challenge=ok body=ok"
+log "  api auth: no_token=$RC_NOAUTH bearer=$RC_AUTH health=$RC_HEALTH metrics=$RC_M_NOAUTH/$RC_M_AUTH challenge=ok body=ok"
 
 # --- scenario 8: the WRITE surface is gated too -> POST /api/alerts/{id}/status
 # 401 without the Bearer token, 200 with it. A triage endpoint that could be

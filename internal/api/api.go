@@ -77,6 +77,14 @@ func New(addr string) (*Hub, error) {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/stats", h.handleStats)
+	// Prometheus scrape endpoint (package D1 of the owner's roadmap):
+	// same counters as /api/stats in text exposition format. It sits
+	// under the same h.auth wrapper as every /api route — only
+	// /api/health is exempt — so a token-protected engine demands the
+	// Bearer credential here too (Prometheus sends `authorization` from
+	// its scrape config). Registered OUTSIDE the /api/ prefix on
+	// purpose: scrapers look for /metrics by convention.
+	mux.HandleFunc("GET /metrics", h.handleMetrics)
 	mux.HandleFunc("GET /api/events", h.handleEvents)
 	mux.HandleFunc("GET /api/alerts", h.handleAlerts)
 	mux.HandleFunc("POST /api/alerts/{id}/status", h.handleAlertStatus)
@@ -356,7 +364,11 @@ type statsPayload struct {
 	Mode             string         `json:"mode"`
 }
 
-func (h *Hub) handleStats(w http.ResponseWriter, _ *http.Request) {
+// statsSnapshot collects every counter /api/stats and /metrics serve.
+// It is the ONE place where the hub lock meets the other managers'
+// closures — both handlers render from the same struct, so the two
+// views can never drift apart (enforced by TestMetricsParityWithStats).
+func (h *Hub) statsSnapshot() statsPayload {
 	h.mu.Lock()
 	evCount := len(h.events)
 	last60 := 0
@@ -405,8 +417,8 @@ func (h *Hub) handleStats(w http.ResponseWriter, _ *http.Request) {
 	// may be mid-flight (SQLite), and no path from the store ever needs
 	// h.mu back — calling under the hub lock would only risk stalls,
 	// never deadlock, but the idiom costs nothing and keeps
-	// handleStats' rule uniform: closures and other managers' locks are
-	// only ever taken after Unlock.
+	// statsSnapshot's rule uniform: closures and other managers' locks
+	// are only ever taken after Unlock.
 	var corrStates, corrSeqs, corrCap int
 	if corrFn != nil {
 		corrStates, corrSeqs, corrCap = corrFn()
@@ -421,7 +433,7 @@ func (h *Hub) handleStats(w http.ResponseWriter, _ *http.Request) {
 		supActive = sup.Count(time.Now())
 	}
 
-	writeJSON(w, statsPayload{
+	return statsPayload{
 		UptimeS:          int64(time.Since(h.started) / time.Second),
 		EventsTotal:      ingested,
 		Dropped:          dropped,
@@ -443,7 +455,11 @@ func (h *Hub) handleStats(w http.ResponseWriter, _ *http.Request) {
 		CorrelatorSeqs:   corrSeqs,
 		CorrelatorCap:    corrCap,
 		Mode:             "engine",
-	})
+	}
+}
+
+func (h *Hub) handleStats(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, h.statsSnapshot())
 }
 
 func (h *Hub) handleEvents(w http.ResponseWriter, r *http.Request) {
