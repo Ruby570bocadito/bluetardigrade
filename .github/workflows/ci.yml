@@ -88,3 +88,13 @@ jobs:
           rustup default stable
       - name: cargo check --locked
         run: cargo check --locked --manifest-path sensor/Cargo.toml
+      # Windows cross-check (agent-04 delta, convergencia ronda 20h31): el
+      # sensor es Windows-first (colector ETW) y este check es la única vía
+      # de compilar ese código sin host Windows; coste ~1-2 min por push.
+      # Pulimiento lo certificó en frío dos veces con este comando exacto.
+      # Contra-arumento documentado: "release concern, not CI concern" —
+      # decisión final para el Director si el tiempo de CI pesa.
+      - name: cargo check --locked (Windows cross-check)
+        run: |
+          rustup target add x86_64-pc-windows-msvc
+          cargo check --locked --target x86_64-pc-windows-msvc --manifest-path sensor/Cargo.toml

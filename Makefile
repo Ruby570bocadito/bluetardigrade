@@ -10,6 +10,8 @@
 #   make console-install  install web console deps (bun)
 #   make console-service  run the realtime telemetry hub (:3003)
 #   make console          run the web console (Next.js, :3000)
+#   make ci               the same suite CI runs on every push (gofmt,
+#                         build, vet, test, bun, cargo, OpenAPI guard)
 
 GO      ?= go
 CARGO   ?= cargo
