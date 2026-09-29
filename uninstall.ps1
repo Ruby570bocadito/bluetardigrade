@@ -56,9 +56,11 @@ function Stop-SfProcesses {
     }
     foreach ($t in @('security-framework-engine', 'security-framework-console')) {
         try {
-            Stop-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue
-            Unregister-ScheduledTask -TaskName $t -Confirm:$false -ErrorAction SilentlyContinue
-            Write-Ok "removed scheduled task $t"
+            if (Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue) {
+                Stop-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue
+                Unregister-ScheduledTask -TaskName $t -Confirm:$false -ErrorAction SilentlyContinue
+                Write-Ok "removed scheduled task $t"
+            }
         } catch { }
     }
     Remove-LogonEntries

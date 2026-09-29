@@ -351,12 +351,33 @@ function Write-Shims {
     $consolePs1   = Join-Path $scripts 'sf-console.ps1'
     $installPs1   = Join-Path $scripts 'install.ps1'
     $uninstallPs1 = Join-Path $scripts 'uninstall.ps1'
+    # sf-update/sf-uninstall self-copy to %TEMP% and run the copy: they
+    # delete files under <Root>\bin (their own folder) while running, and
+    # cmd prints "The system cannot find the path specified" if it has to
+    # keep reading the original .cmd after that. Invoking the copy without
+    # CALL transfers control, so the original is never read again.
+    # (built as line arrays: avoids "$nlif"-style variable-name pitfalls)
     $shims = [ordered]@{
         'sf-engine.cmd' = "@echo off$nl`"$engineExe`" -rules `"$rulesDir`" %*$nl"
         'sf-devsensor.cmd' = "@echo off$nl`"$devsensorExe`" %*$nl"
         'sf-console.cmd' = "@echo off$nl powershell -NoProfile -ExecutionPolicy Bypass -File `"$consolePs1`" %*$nl"
-        'sf-update.cmd' = "@echo off$nl powershell -NoProfile -ExecutionPolicy Bypass -File `"$installPs1`" -Update -InstallDir `"$Root`"$nl"
-        'sf-uninstall.cmd' = "@echo off$nl copy /y `"$uninstallPs1`" `"%TEMP%\sf-uninstall.ps1`" >nul$nl powershell -NoProfile -ExecutionPolicy Bypass -File `"%TEMP%\sf-uninstall.ps1`" -InstallDir `"$Root`"$nl"
+        'sf-update.cmd' = (@(
+            '@echo off'
+            'if "%~1"=="-run" goto :run'
+            'copy /y "%~f0" "%TEMP%\sf-update.cmd" >nul'
+            '"%TEMP%\sf-update.cmd" -run'
+            ':run'
+            "powershell -NoProfile -ExecutionPolicy Bypass -File `"$installPs1`" -Update -InstallDir `"$Root`""
+        ) -join $nl) + $nl
+        'sf-uninstall.cmd' = (@(
+            '@echo off'
+            'if "%~1"=="-run" goto :run'
+            'copy /y "%~f0" "%TEMP%\sf-uninstall.cmd" >nul'
+            "copy /y `"$uninstallPs1`" `"%TEMP%\sf-uninstall.ps1`" >nul"
+            '"%TEMP%\sf-uninstall.cmd" -run'
+            ':run'
+            "powershell -NoProfile -ExecutionPolicy Bypass -File `"%TEMP%\sf-uninstall.ps1`" -InstallDir `"$Root`""
+        ) -join $nl) + $nl
     }
     foreach ($k in $shims.Keys) {
         [IO.File]::WriteAllText((Join-Path $bin $k), $shims[$k], $enc)
