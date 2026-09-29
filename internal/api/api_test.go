@@ -433,3 +433,31 @@ func TestBearerAuthChallengeAndStream(t *testing.T) {
 		t.Fatal("stream primer frame: timeout (sin retry frame)")
 	}
 }
+
+// TestStatsCorrelatorCounters pins the kill-chain observability contract:
+// without wiring the correlator the stats report zeros (correlator off is
+// a valid state), and with wiring they carry live values straight from
+// correlate.Manager.
+func TestStatsCorrelatorCounters(t *testing.T) {
+	h, addr := newTestHub(t)
+
+	var stats map[string]any
+	getJSON(t, fmt.Sprintf("http://%s/api/stats", addr), &stats)
+	for _, k := range []string{"correlator_states", "correlator_sequences", "correlator_cap"} {
+		if v, ok := stats[k]; !ok || v.(float64) != 0 {
+			t.Fatalf("unwired correlator: %s = %v (ok=%v), want 0", k, v, ok)
+		}
+	}
+
+	h.SetCorrelatorStats(func() (int, int, int) { return 7, 4, 8192 })
+	getJSON(t, fmt.Sprintf("http://%s/api/stats", addr), &stats)
+	if stats["correlator_states"].(float64) != 7 {
+		t.Errorf("correlator_states = %v, want 7", stats["correlator_states"])
+	}
+	if stats["correlator_sequences"].(float64) != 4 {
+		t.Errorf("correlator_sequences = %v, want 4", stats["correlator_sequences"])
+	}
+	if stats["correlator_cap"].(float64) != 8192 {
+		t.Errorf("correlator_cap = %v, want 8192", stats["correlator_cap"])
+	}
+}

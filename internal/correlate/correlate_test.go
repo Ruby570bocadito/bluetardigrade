@@ -359,3 +359,31 @@ func TestStateCapStopsTrackingNewHosts(t *testing.T) {
 		t.Fatalf("cap must stop new hosts, not grow past %d", maxTrackedStates)
 	}
 }
+
+// TestStatesCountsInFlight pins the /api/stats contract source: States()
+// returns live (sequence, host) chains, completions and re-arms release
+// them, and MaxTrackedStates is the exported view of the cap.
+func TestStatesCountsInFlight(t *testing.T) {
+	var c collector
+	m, _ := LoadDir(writeSeq(t, seqYAML), c.emit)
+	if m.States() != 0 {
+		t.Fatalf("fresh manager must report 0 in-flight states, got %d", m.States())
+	}
+	m.Observe(ev("H1", 0), "Regla A")
+	m.Observe(ev("H2", 0), "Regla A")
+	if m.States() != 2 {
+		t.Fatalf("two partial chains must report 2 states, got %d", m.States())
+	}
+	// completion deletes the (sequence, host) state (re-arm)
+	m.Observe(ev("H1", time.Second), "Regla B")
+	m.Observe(ev("H1", 2*time.Second), "Regla C")
+	if m.States() != 1 {
+		t.Fatalf("completed chain must release its state, got %d", m.States())
+	}
+	if c.count() != 1 {
+		t.Fatalf("completion must fire exactly once, got %d", c.count())
+	}
+	if MaxTrackedStates != maxTrackedStates || MaxTrackedStates <= 0 {
+		t.Fatalf("MaxTrackedStates must mirror the internal cap, got %d", MaxTrackedStates)
+	}
+}

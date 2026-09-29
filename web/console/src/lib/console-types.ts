@@ -111,6 +111,12 @@ export type SimStats = {
   webhook_dropped: number
   // non-expired operator suppression entries, forwarded since r4
   suppressions_active: number
+  // kill-chain correlator observability, forwarded since r5: in-flight
+  // (sequence, host) chains, loaded sequences, tracking cap. All zero =
+  // correlator off (engine found no sequences/ directory).
+  correlator_states: number
+  correlator_sequences: number
+  correlator_cap: number
 }
 
 export type ConsoleSnapshot = {

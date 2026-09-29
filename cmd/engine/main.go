@@ -184,6 +184,16 @@ func main() {
 			hub.SetCounters(func() (uint64, uint64, uint64) {
 				return server.Received(), server.Dropped(), server.Rejected()
 			})
+			// kill-chain observability: in-flight states, loaded
+			// sequences and the tracking cap, so the correlator's
+			// silent failure mode (cap exhausted -> new hosts
+			// untracked) is watchable from /api/stats
+			hub.SetCorrelatorStats(func() (int, int, int) {
+				if corr == nil {
+					return 0, 0, 0
+				}
+				return corr.States(), corr.Count(), correlate.MaxTrackedStates
+			})
 			// same standard as the ingest token: flag wins, env fallback
 			apiTok := *apiToken
 			if apiTok == "" {

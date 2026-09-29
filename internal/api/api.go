@@ -46,6 +46,7 @@ type Hub struct {
 	suppress    *suppress.Manager               // operator allowlist (read-only view)
 	received    func() (uint64, uint64, uint64) // ingested, dropped, rejected
 	webhook     func() (uint64, uint64, uint64) // sent, failed, dropped
+	correlator  func() (int, int, int)          // in-flight states, loaded sequences, tracking cap
 }
 
 // New binds the API listener. Use addr ":0" in tests to pick a free port.
@@ -144,6 +145,17 @@ func (h *Hub) SetWebhookStats(stats func() (sent, failed, dropped uint64)) {
 	h.mu.Unlock()
 }
 
+// SetCorrelatorStats wires the kill-chain correlator observability into
+// /api/stats: in-flight (sequence, host) states, loaded sequences and
+// the tracking cap. A nil closure or no wiring at all means the
+// correlator is off (reported as zeros) - the stats contract stays
+// stable whether or not the engine found a sequences/ directory.
+func (h *Hub) SetCorrelatorStats(fn func() (states, seqs, cap int)) {
+	h.mu.Lock()
+	h.correlator = fn
+	h.mu.Unlock()
+}
+
 // Run serves until Shutdown is called.
 func (h *Hub) Run() error {
 	err := h.srv.Serve(h.listener)
@@ -212,21 +224,24 @@ func (h *Hub) broadcast(topic string, payload any) {
 // ------------------------------------------------------------- handlers
 
 type statsPayload struct {
-	UptimeS        int64          `json:"uptime_s"`
-	EventsTotal    uint64         `json:"events_total"`
-	Dropped        uint64         `json:"dropped"`
-	IngestRejected uint64         `json:"ingest_rejected"`
-	EventsPerMin   int            `json:"events_per_min"`
-	AlertsTotal    int            `json:"alerts_total"`
-	BySeverity     map[string]int `json:"by_severity"`
-	RulesCount     int            `json:"rules_count"`
-	RulesTypes     []string       `json:"rules_types"`
-	EventsBuffered int            `json:"events_buffered"`
-	WebhookSent    uint64         `json:"webhook_sent"`
-	WebhookFailed  uint64         `json:"webhook_failed"`
-	WebhookDropped uint64         `json:"webhook_dropped"`
-	Suppressions   int            `json:"suppressions_active"`
-	Mode           string         `json:"mode"`
+	UptimeS          int64          `json:"uptime_s"`
+	EventsTotal      uint64         `json:"events_total"`
+	Dropped          uint64         `json:"dropped"`
+	IngestRejected   uint64         `json:"ingest_rejected"`
+	EventsPerMin     int            `json:"events_per_min"`
+	AlertsTotal      int            `json:"alerts_total"`
+	BySeverity       map[string]int `json:"by_severity"`
+	RulesCount       int            `json:"rules_count"`
+	RulesTypes       []string       `json:"rules_types"`
+	EventsBuffered   int            `json:"events_buffered"`
+	WebhookSent      uint64         `json:"webhook_sent"`
+	WebhookFailed    uint64         `json:"webhook_failed"`
+	WebhookDropped   uint64         `json:"webhook_dropped"`
+	Suppressions     int            `json:"suppressions_active"`
+	CorrelatorStates int            `json:"correlator_states"`
+	CorrelatorSeqs   int            `json:"correlator_sequences"`
+	CorrelatorCap    int            `json:"correlator_cap"`
+	Mode             string         `json:"mode"`
 }
 
 func (h *Hub) handleStats(w http.ResponseWriter, _ *http.Request) {
@@ -255,6 +270,10 @@ func (h *Hub) handleStats(w http.ResponseWriter, _ *http.Request) {
 	if h.webhook != nil {
 		whSent, whFailed, whDropped = h.webhook()
 	}
+	var corrStates, corrSeqs, corrCap int
+	if h.correlator != nil {
+		corrStates, corrSeqs, corrCap = h.correlator()
+	}
 	rulesCount, rulesTypes := 0, []string{}
 	if h.rules != nil {
 		rulesCount = h.rules.Count()
@@ -268,21 +287,24 @@ func (h *Hub) handleStats(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	writeJSON(w, statsPayload{
-		UptimeS:        int64(time.Since(h.started) / time.Second),
-		EventsTotal:    ingested,
-		Dropped:        dropped,
-		IngestRejected: rejected,
-		EventsPerMin:   last60,
-		AlertsTotal:    alTotal,
-		BySeverity:     bySev,
-		RulesCount:     rulesCount,
-		RulesTypes:     rulesTypes,
-		EventsBuffered: evCount,
-		WebhookSent:    whSent,
-		WebhookFailed:  whFailed,
-		WebhookDropped: whDropped,
-		Suppressions:   supActive,
-		Mode:           "engine",
+		UptimeS:          int64(time.Since(h.started) / time.Second),
+		EventsTotal:      ingested,
+		Dropped:          dropped,
+		IngestRejected:   rejected,
+		EventsPerMin:     last60,
+		AlertsTotal:      alTotal,
+		BySeverity:       bySev,
+		RulesCount:       rulesCount,
+		RulesTypes:       rulesTypes,
+		EventsBuffered:   evCount,
+		WebhookSent:      whSent,
+		WebhookFailed:    whFailed,
+		WebhookDropped:   whDropped,
+		Suppressions:     supActive,
+		CorrelatorStates: corrStates,
+		CorrelatorSeqs:   corrSeqs,
+		CorrelatorCap:    corrCap,
+		Mode:             "engine",
 	})
 }
 

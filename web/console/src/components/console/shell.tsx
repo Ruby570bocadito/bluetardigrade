@@ -133,6 +133,7 @@ export function ConsoleShell() {
               </span>
             </div>
             <WebhookChip stats={stats} />
+            <CorrelatorChip stats={stats} />
           </header>
 
           {/* Mobile nav */}
@@ -224,6 +225,41 @@ function WebhookChip({ stats }: { stats: SimStats | null }) {
         webhook {sent}
         {failed > 0 && <span> / {failed} err</span>}
         {dropped > 0 && <span> / {dropped} desc</span>}
+      </span>
+    </div>
+  )
+}
+
+/**
+ * Kill-chain correlator chip, fed by /api/stats (correlator_states /
+ * correlator_sequences / correlator_cap). Honest by design, like the
+ * webhook chip:
+ * - hidden while the correlator is off (no sequences/ directory):
+ *   showing zeros would suggest a feature the engine is not running;
+ * - neutral while there is headroom (states below cap);
+ * - red the moment states reach the cap: NEW hosts silently stop being
+ *   tracked there, which is detection loss, and the operator must see it.
+ */
+function CorrelatorChip({ stats }: { stats: SimStats | null }) {
+  if (!stats || stats.mode !== 'engine') return null
+  const { correlator_states: states, correlator_sequences: seqs, correlator_cap: cap } = stats
+  if (seqs === 0) return null
+  const exhausted = cap > 0 && states >= cap
+  return (
+    <div
+      title={
+        exhausted
+          ? `Correlador al límite: ${states} cadenas en curso (cap ${cap}). Hosts NUEVOS dejan de ser correlacionados hasta que se liberen estados.`
+          : `Correlador: ${states} cadenas en curso, ${seqs} secuencias cargadas (cap ${cap})`
+      }
+      className={`hidden items-center gap-1.5 rounded-md border px-2.5 py-1.5 font-mono text-[11px] md:flex ${
+        exhausted ? 'border-red-400/40 bg-red-400/10 text-red-300' : 'border-white/[0.08] text-zinc-400'
+      }`}
+    >
+      <span aria-hidden>{exhausted ? '✕' : '⛓'}</span>
+      <span>
+        correlador {states}
+        <span className="text-zinc-600">/{cap}</span>
       </span>
     </div>
   )

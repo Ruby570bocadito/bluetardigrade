@@ -75,8 +75,15 @@ type stateKey struct {
 // being tracked instead of letting the map grow without bound.
 // Reload prunes states of sequences that no longer exist, so config
 // churn (renames, removals) cannot silently exhaust the cap with
-// entries that can never complete.
+// entries that can never complete. Exported as MaxTrackedStates so
+// /api/stats can report it: an operator watching correlator_states
+// approach the cap knows correlation is about to stop covering new
+// hosts (the silent-detection-loss failure mode).
 const maxTrackedStates = 8192
+
+// MaxTrackedStates is the hard cap of in-flight (sequence, host)
+// chains the correlator will track (see maxTrackedStates).
+const MaxTrackedStates = maxTrackedStates
 
 // LoadDir compiles every sequence file under dir. emit is called once
 // per completed sequence (wire it to alert.Manager.Emit).
@@ -122,6 +129,17 @@ func (m *Manager) Count() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.seqs)
+}
+
+// States returns how many (sequence, host) chains are in flight right
+// now. Exposed through /api/stats so the MaxTrackedStates cap is
+// observable from outside the process: at the cap, NEW hosts silently
+// stop being tracked and the only symptom is correlation that never
+// fires for them.
+func (m *Manager) States() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.state)
 }
 
 // SetEmit wires (or rewires) the completion callback, so main can

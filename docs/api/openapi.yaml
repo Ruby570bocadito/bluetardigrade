@@ -470,6 +470,9 @@ components:
         - webhook_failed
         - webhook_dropped
         - suppressions_active
+        - correlator_states
+        - correlator_sequences
+        - correlator_cap
         - mode
       properties:
         suppressions_active:
@@ -529,6 +532,21 @@ components:
           type: integer
           format: int64
           description: alerts discarded because the webhook queue (512) saturated
+        correlator_states:
+          type: integer
+          description: in-flight (sequence, host) chains currently tracked by the
+            kill-chain correlator; compare against correlator_cap to watch
+            headroom — reaching the cap means NEW hosts silently stop being
+            tracked until states are pruned (Reload) or completed
+        correlator_sequences:
+          type: integer
+          description: kill-chain sequences loaded from the sequences/ directory;
+            zero means the correlator is off (no directory found)
+        correlator_cap:
+          type: integer
+          description: hard cap of tracked chains (maxTrackedStates in
+            internal/correlate, 8192); a hostile feed inventing hostnames is
+            the usual reason to approach it
         mode:
           type: string
           enum: [engine]

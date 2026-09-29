@@ -91,4 +91,10 @@ export type HubStats = {
   webhook_dropped: number
   // non-expired operator suppression entries (suppressions.yaml)
   suppressions_active: number
+  // kill-chain correlator observability (engine sequences/): in-flight
+  // (sequence, host) chains, loaded sequences and the tracking cap.
+  // All zero = correlator off (no sequences/ directory found).
+  correlator_states: number
+  correlator_sequences: number
+  correlator_cap: number
 }

@@ -61,6 +61,9 @@ function offlineStats(): HubStats {
     webhook_failed: 0,
     webhook_dropped: 0,
     suppressions_active: 0,
+    correlator_states: 0,
+    correlator_sequences: 0,
+    correlator_cap: 0,
   }
 }
 
