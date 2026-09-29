@@ -1,9 +1,10 @@
-// AI alert-triage analyst. Uses z-ai-web-dev-sdk (backend only) to explain
-// a raised alert the way a senior SOC analyst would: what happened, why it
-// matters (MITRE ATT&CK), risk level and recommended first steps.
+// AI alert-triage analyst. Queries the configured LLM provider (see
+// llm.ts, backend only) to explain a raised alert the way a senior SOC
+// analyst would: what happened, why it matters (MITRE ATT&CK), risk
+// level and recommended first steps.
 
-import ZAI from 'z-ai-web-dev-sdk'
 import type { SfAlert, SfEvent, RuleMeta } from './sim'
+import { createChatCompletion } from './llm'
 
 export type AnalystStep = { label: string; state: 'run' | 'done' }
 
@@ -74,22 +75,17 @@ export async function runAnalysis(alert: SfAlert, rule: RuleMeta | undefined, ev
 
   // Step 3: draft conclusions with the LLM
   emit.step({ label: 'Redactando conclusiones', state: 'run' })
-  const zai = await ZAI.create()
   const contextNote = note ? `Nota de contexto interno para tu analisis: ${note}` : ''
   const fieldsNote = keyFields.length ? `Campos clave observados: ${keyFields.join(' | ')}` : ''
 
-  const completion = await zai.chat.completions.create({
-    messages: [
-      { role: 'assistant', content: analystSystemPrompt() },
-      {
-        role: 'user',
-        content: [analystUserPrompt(alert, rule, ev, question), contextNote, fieldsNote].filter(Boolean).join('\n'),
-      },
-    ],
-    thinking: { type: 'disabled' },
-  })
+  const text = await createChatCompletion([
+    { role: 'assistant', content: analystSystemPrompt() },
+    {
+      role: 'user',
+      content: [analystUserPrompt(alert, rule, ev, question), contextNote, fieldsNote].filter(Boolean).join('\n'),
+    },
+  ])
 
-  const text = completion.choices[0]?.message?.content?.trim() ?? ''
   if (!text) throw new Error('respuesta vacia del modelo')
 
   // Stream the finished text to the client in small deltas (smooth reveal)

@@ -11,11 +11,11 @@ Two pieces:
 | `console/`          | Next.js 16, Tailwind 4, Motion     | 3000 |
 | `console-service/`  | Bun, socket.io                     | 3003 |
 
-The service currently feeds the console from a simulated telemetry hub
-(the devsensor scenarios plus the three seeded rules run in TypeScript)
-so no Windows host is required. Wiring it to the real Go engine is the
-next step: the engine already emits the structured JSON alerts the
-console consumes.
+The service auto-detects the real Go engine: while the engine's local
+API (:7778) answers, the console shows REAL telemetry and the status
+chip reads `engine real`; the moment the engine goes away it falls back
+to the built-in simulator (same NDJSON contract) and the chip reads
+`simulación`. No Windows host is required for the simulated mode.
 
 ## Quickstart
 
@@ -38,9 +38,8 @@ Open http://localhost:3000.
   On localhost it defaults to `http://localhost:3003`; behind a reverse
   proxy it falls back to the same origin.
 - `PORT` (console-service): overrides the 3003 default.
-- The AI triage uses the `z-ai-web-dev-sdk`; without credentials the
-  rest of the console keeps working and the analyst panel reports the
-  error.
+- The AI triage needs LLM provider credentials; without them the rest
+  of the console keeps working and the analyst panel reports the error.
 
 The interface copy is in Spanish by design: the primary audience of the
 project documentation is Spanish speaking.

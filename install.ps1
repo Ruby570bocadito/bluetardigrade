@@ -367,8 +367,8 @@ function Copy-RuntimeScripts {
     Copy-Item (Join-Path $Root 'scripts\windows\sf-console.ps1') (Join-Path $scripts 'sf-console.ps1') -Force
     Copy-Item (Join-Path $Root 'scripts\windows\devsensor.ps1') (Join-Path $scripts 'devsensor.ps1') -Force
     Copy-Item (Join-Path $Root 'scripts\windows\sensor.ps1') (Join-Path $scripts 'sensor.ps1') -Force
-    if (Test-Path (Join-Path $Root 'sysmon-config.xml')) {
-        Copy-Item (Join-Path $Root 'sysmon-config.xml') (Join-Path $scripts 'sysmon-config.xml') -Force
+    if (Test-Path (Join-Path $Root 'scripts\windows\sysmon-config.xml')) {
+        Copy-Item (Join-Path $Root 'scripts\windows\sysmon-config.xml') (Join-Path $scripts 'sysmon-config.xml') -Force
     }
     Copy-Item (Join-Path $Root 'install.ps1')  (Join-Path $scripts 'install.ps1')  -Force
     Copy-Item (Join-Path $Root 'uninstall.ps1') (Join-Path $scripts 'uninstall.ps1') -Force

@@ -8,11 +8,13 @@ ATT&CK, and an early web console.
 
 > The project name is provisional. Expect a rename before v1.0.
 
-**Status:** `v0.1` — tracer bullet plus console preview. The full
-end-to-end pipeline (event → rules → alert) works today and the
-browser console (`web/`) is already usable against a simulated
-telemetry hub with AI triage; real ETW ingestion, YARA memory scanning
-and correlation land next (see the roadmap in `docs/`).
+**Status:** `v0.1` — the full pipeline runs on REAL telemetry: the
+Windows sensor streams Sysmon events (process, network/DNS, registry,
+files, LSASS access), the engine evaluates 23 YAML rules plus kill-chain
+sequences, and the browser console (`web/`) shows everything live with
+AI triage — against the real engine or its built-in simulator (same
+NDJSON contract). YARA memory scanning and the eBPF collector land next
+(see the roadmap in `docs/`).
 
 ## Why
 
@@ -42,7 +44,7 @@ Sensor (Rust) ── NDJSON/TCP ──►  Detection engine (Go)
                           ┌─────────────┼─────────────┐
                           ▼             ▼             ▼
                      console/web   SIEM/SOAR     forensic store
-                      (phase 3)    connectors     (phase 2)
+                       (live)      connectors     (phase 2)
 ```
 
 The unified event schema (chapter 4 of the docs) is the master
@@ -64,7 +66,8 @@ make run-devsensor
 Expected output on the engine terminal:
 
 ```
-[ENGINE] 7 rules loaded from ./rules (types: [process.create])
+[ENGINE] 23 rules loaded from ./rules (types: [file.write image.load network.connect process.access process.create registry.set])
+[ENGINE] 4 sequences loaded from ./sequences (correlator on: [Campana de robo de credenciales Campana de intrusion completa Apagon defensivo Instalacion de persistencia])
 [ENGINE] listening on :7777 (NDJSON, 1 event per line)
 [ENGINE] api on :7778 (stats / events / alerts / rules / stream)
 [ALERT] HIGH     9f31c2a4... powershell.exe -nop -w hidden -enc SQBF... host=LAB-WKS-01
@@ -176,6 +179,10 @@ falls back to the built-in simulator (same NDJSON contract) and the
 chip reads `simulación`. No Windows host is required for the simulated
 mode.
 
+| Panel de operaciones | Reglas de detección |
+|----------------------|---------------------|
+| ![Panel de operaciones de la consola](docs/assets/console-dashboard.png) | ![Vista de reglas de la consola](docs/assets/console-rules.png) |
+
 Requirements: [bun](https://bun.sh).
 
 ```bash
@@ -227,25 +234,36 @@ every 15 seconds by default (disable with `-reload-every 0`).
 ```
 
 Operators (v0.1): `eq`, `neq`, `contains`, `contains_any`,
-`startswith`, `endswith`, `regex`, `in`, `not_in`, `gt`, `lt`.
-Sequence operators (`sequence` + `maxspan`) arrive with the
-correlation engine in phase 2.
+`startswith`, `endswith`, `regex` (Go RE2 syntax, `(?i)` supported),
+`in`, `not_in`, `gt`, `lt`.
+
+Besides per-event rules, `sequences/kill-chains.yaml` defines
+multi-rule kill chains (name, id, severity, `window`, steps referencing
+rules by exact name): when every step fires on the same host inside the
+window, the correlator raises one high-signal campaign alert and
+re-arms itself.
 
 ## Repository layout
 
 ```
-cmd/engine/       detection engine binary (Go)
-cmd/devsensor/    simulated sensor for development (Go)
-internal/ingest/  NDJSON TCP listener + schema validation
-internal/enrich/  enrichment pipeline (context, not evidence mutation)
-internal/rules/   YAML parser, rule index and evaluator
-internal/alert/   alert rendering, dedup, structured JSON
-pkg/model/        unified event schema (the wire contract)
-sensor/           Rust ETW sensor (collector is Windows-gated)
-rules/            seeded detection pack (windows/)
-docs/             architecture document + ADRs
+cmd/engine/           detection engine binary (Go)
+cmd/devsensor/        simulated sensor for development (Go)
+internal/ingest/      NDJSON TCP listener + schema validation
+internal/enrich/      enrichment pipeline (context, not evidence mutation)
+internal/rules/       YAML parser, rule index and evaluator
+internal/correlate/   kill-chain correlator (sequences/*.yaml)
+internal/api/         local read-only HTTP API + SSE stream
+internal/alert/       alert rendering, dedup, structured JSON
+pkg/model/            unified event schema (the wire contract)
+sensor/               Rust ETW sensor (collector is Windows-gated)
+rules/                detection pack (windows/): command lines + artifacts
+sequences/            kill-chain definitions for the correlator
+scripts/windows/      sf-console / sf-devsensor / sf-sensor + sysmon config
+install.ps1           one-command Windows installer (also sf-update)
+uninstall.ps1         standalone uninstaller
+docs/                 architecture document + diagram sources and assets
 web/console/          Next.js console (live feed, triage, AI analyst)
-web/console-service/  realtime telemetry hub (bun + socket.io)
+web/console-service/  realtime hub (bun + socket.io + engine bridge)
 ```
 
 ## Roadmap
@@ -253,7 +271,7 @@ web/console-service/  realtime telemetry hub (bun + socket.io)
 | Phase | Window          | Delivers                                              |
 |-------|-----------------|-------------------------------------------------------|
 | 1     | weeks 1–6 2026  | tracer bullet, ETW sensor, rule index, p99 < 10 ms    |
-| 2     | weeks 7–14 2027 | YARA memory scan, eBPF collector, correlation, SQLite |
+| 2     | weeks 7–14 2026 | YARA memory scan, eBPF collector, SQLite for events, connectors |
 | 3     | weeks 15–20     | web console, REST+OpenAPI, Elastic/Splunk connectors  |
 | 4     | weeks 21–26     | Python filaments (sandboxed), plugins, benchmarks     |
 

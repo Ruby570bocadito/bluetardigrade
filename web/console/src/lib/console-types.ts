@@ -32,6 +32,24 @@ export type SfEvent = {
     destination_port?: number
     domain?: string
   }
+  // Target of process.access (Sysmon event ID 10): mirrors pkg/model.
+  target?: {
+    pid: number
+    name?: string
+    image?: string
+  }
+  // Handle rights of process.access (granted_access is a hex mask).
+  access?: {
+    granted_access?: string
+    call_trace?: string
+  }
+  // Registry telemetry (Sysmon event IDs 12/13/14): mirrors pkg/model.
+  registry?: {
+    key?: string
+    value_name?: string
+    value?: string
+    operation?: string
+  }
   tags?: string[]
   enrichment?: Record<string, string>
 }
@@ -142,6 +160,15 @@ export function formatUptime(s: number): string {
 }
 
 export function eventDetail(ev: SfEvent): string {
+  if (ev.access) {
+    const who = ev.process?.name ?? '?'
+    const target = ev.target?.name ?? '?'
+    return `${who} -> ${target} (${ev.access.granted_access ?? 'n/d'})`
+  }
+  if (ev.registry) {
+    const value = ev.registry.value_name ? ` \\${ev.registry.value_name}` : ''
+    return `${ev.registry.operation ?? 'registry'} ${ev.registry.key ?? ''}${value}`
+  }
   if (ev.process) {
     return ev.process.command_line ? `${ev.process.name} ${ev.process.command_line}` : ev.process.name
   }

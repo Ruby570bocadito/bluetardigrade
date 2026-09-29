@@ -16,6 +16,7 @@ import { eventDetail, formatTime } from '@/lib/console-types'
 const TYPE_LABELS: Record<string, string> = {
   'process.create': 'process.create',
   'process.terminate': 'process.terminate',
+  'process.access': 'process.access',
   'network.connect': 'network.connect',
   'file.write': 'file.write',
   'image.load': 'image.load',
