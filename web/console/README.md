@@ -39,9 +39,16 @@ Open http://localhost:3000.
   On localhost it defaults to `http://localhost:3003`; behind a reverse
   proxy it falls back to the same origin.
 - `PORT` (console-service): overrides the 3003 default.
-- The AI triage uses the `z-ai-web-dev-sdk`; without credentials the
-  rest of the console keeps working and the analyst panel reports the
-  error.
+- `CONSOLE_HOST` (console-service): bind address of the hub. It listens
+  on `127.0.0.1` by default because the feed carries local security
+  telemetry; set it to `0.0.0.0` only to serve a console that runs on
+  another machine, together with `CONSOLE_CORS_ORIGIN`.
+- `CONSOLE_CORS_ORIGIN` (console-service): comma-separated list of
+  extra origins allowed to open a socket to the hub (the local console
+  origins on port 3000 are always allowed).
+- The analyst triage calls the LLM SDK declared in
+  `console-service/package.json`; without credentials the rest of the
+  console keeps working and the analyst panel reports the error.
 
 The interface copy is in Spanish by design: the primary audience of the
 project documentation is Spanish speaking.

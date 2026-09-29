@@ -22,7 +22,9 @@
 #   -Branch <name>       branch or tag to install (default main)
 #   -NoConsole           skip the web console (engine + rules only)
 #   -WithSensor          also build the Rust ETW sensor (needs Rust + MSVC)
-#   -Firewall            open TCP 7777 for remote sensors (asks via UAC)
+#   -Firewall            open TCP 7777 for remote sensors, domain and
+#                        private profiles only (asks via UAC); pair it
+#                        with:  sf-engine -addr 0.0.0.0:7777
 #   -AutoStart           start engine + console at logon (HKCU Run, no admin)
 #   -Update              refresh an existing install and rebuild
 #   -SkipBuild           fetch sources + tools but skip compiling (debug)
@@ -474,9 +476,15 @@ function Add-ToUserPath {
 }
 
 function Add-FirewallRule {
+    # Scope note: this rule only makes sense when the engine is
+    # explicitly started with -addr 0.0.0.0:7777 (the default bind is
+    # loopback). Restricted to the domain/private profiles: an
+    # unauthenticated NDJSON ingest must never be reachable from
+    # public networks (cafes, airports, hotspots).
+    $profiles = 'domain,private'
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
     $admin = ([Security.Principal.WindowsPrincipal]$id).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-    $netshArgs = "advfirewall firewall add rule name=`"security-framework engine`" dir=in action=allow protocol=TCP localport=$ENGINE_PORT"
+    $netshArgs = "advfirewall firewall add rule name=`"security-framework engine`" dir=in action=allow protocol=TCP localport=$ENGINE_PORT profile=$profiles"
     if (-not $admin) {
         Write-Info "not elevated: asking via UAC..."
         try {
@@ -488,12 +496,12 @@ function Add-FirewallRule {
             return
         }
     } else {
-        netsh advfirewall firewall add rule "name=security-framework engine" dir=in action=allow protocol=TCP "localport=$ENGINE_PORT" | Out-Null
+        netsh advfirewall firewall add rule "name=security-framework engine" dir=in action=allow protocol=TCP "localport=$ENGINE_PORT" profile=$profiles | Out-Null
         if ($LASTEXITCODE -ne 0) { Write-Warn2 "netsh failed (exit $LASTEXITCODE)"; return }
     }
     $chk = netsh advfirewall firewall show rule "name=security-framework engine" 2>$null
     if ("$chk" -match 'security-framework engine') {
-        Write-Ok "firewall rule added (inbound TCP $ENGINE_PORT)"
+        Write-Ok "firewall rule added (inbound TCP $ENGINE_PORT, domain/private profiles only)"
     } else {
         Write-Warn2 "could not verify the firewall rule"
     }

@@ -11,6 +11,21 @@ import { EngineBridge } from './bridge'
 import { runAnalysis } from './analyst'
 
 const PORT = Number(process.env.PORT || process.env.CONSOLE_SERVICE_PORT || 3003)
+// Bind to loopback by default: the hub carries every event and alert of
+// the local engine (users, hosts, command lines) and no bundled
+// deployment needs it reachable from other machines. Serving a console
+// that lives on another host is opt-in:
+//   CONSOLE_HOST=0.0.0.0  plus the origins allowed via CONSOLE_CORS_ORIGIN.
+const HOST = process.env.CONSOLE_HOST || '127.0.0.1'
+// CORS allowlist. With origin '*' any website the analyst browses could
+// open a cross-origin socket to the hub and silently read the whole
+// telemetry feed, so only the local console origins are accepted by
+// default; extra ones (a lab host serving the UI) via env, comma separated.
+const CORS_ORIGINS = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  ...(process.env.CONSOLE_CORS_ORIGIN || '').split(',').map((s) => s.trim()).filter(Boolean),
+]
 const MAX_EVENTS = 160
 const MAX_ALERTS = 48
 
@@ -18,7 +33,7 @@ const httpServer = createServer()
 const io = new Server(httpServer, {
   // Keep in sync with the console client (socket-provider.tsx)
   path: '/',
-  cors: { origin: '*', methods: ['GET', 'POST'] },
+  cors: { origin: CORS_ORIGINS, methods: ['GET', 'POST'] },
   pingTimeout: 60000,
   pingInterval: 25000,
 })
@@ -130,8 +145,8 @@ io.on('connection', (socket) => {
   })
 })
 
-httpServer.listen(PORT, () => {
-  console.log(`console-service (engine bridge only, no simulator) on port ${PORT}`)
+httpServer.listen(PORT, HOST, () => {
+  console.log(`console-service (engine bridge only, no simulator) on ${HOST}:${PORT}`)
 })
 
 function shutdown() {

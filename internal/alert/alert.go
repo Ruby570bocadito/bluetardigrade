@@ -10,12 +10,17 @@ import (
         "strings"
         "sync"
         "time"
+        "unicode/utf8"
 
         "github.com/Ruby570bocadito/security-framework/internal/rules"
         "github.com/Ruby570bocadito/security-framework/pkg/model"
 )
 
-const dedupTTL = 60 * time.Second
+const (
+        dedupTTL     = 60 * time.Second
+        dedupSoftMax = 4096  // above this, purge expired keys opportunistically
+        dedupHardMax = 65536 // hard cap: beyond this, alerts skip dedup
+)
 
 // ANSI colors (disabled automatically when stdout is not a terminal).
 const (
@@ -75,14 +80,20 @@ func (m *Manager) Raise(ev *model.Event, hit rules.Hit) {
                 m.mu.Unlock()
                 return
         }
-        m.seen[key] = time.Now()
         // opportunistic cleanup
-        if len(m.seen) > 4096 {
+        if len(m.seen) > dedupSoftMax {
                 for k, t := range m.seen {
                         if time.Since(t) > dedupTTL {
                                 delete(m.seen, k)
                         }
                 }
+        }
+        // hard cap: a flood of unique keys (e.g. fake hosts injected by
+        // an untrusted feed) must not grow the map without bound. Past
+        // the cap, stop remembering new keys but keep raising alerts:
+        // visibility wins over deduplication.
+        if len(m.seen) < dedupHardMax {
+                m.seen[key] = time.Now()
         }
         m.mu.Unlock()
 
@@ -154,8 +165,8 @@ func summarize(ev *model.Event) string {
         if ev.Process != nil {
                 s := ev.Process.Name
                 if ev.Process.CommandLine != "" {
-                        if len(ev.Process.CommandLine) > 80 {
-                                s += " " + ev.Process.CommandLine[:80] + "..."
+                        if utf8.RuneCountInString(ev.Process.CommandLine) > 80 {
+                                s += " " + truncateRunes(ev.Process.CommandLine, 80) + "..."
                         } else {
                                 s += " " + ev.Process.CommandLine
                         }
@@ -177,6 +188,17 @@ func pidOf(ev *model.Event) int {
                 return ev.Process.PID
         }
         return 0
+}
+
+// truncateRunes cuts s to at most max runes without splitting a
+// multi-byte UTF-8 sequence: byte slicing would corrupt command lines
+// containing accented or non-Latin characters.
+func truncateRunes(s string, max int) string {
+        r := []rune(s)
+        if len(r) <= max {
+                return s
+        }
+        return string(r[:max])
 }
 
 func severityColor(sev string) (string, string) {

@@ -1,6 +1,7 @@
-// AI alert-triage analyst. Uses z-ai-web-dev-sdk (backend only) to explain
-// a raised alert the way a senior SOC analyst would: what happened, why it
-// matters (MITRE ATT&CK), risk level and recommended first steps.
+// Alert-triage analyst. Calls the LLM SDK declared in package.json
+// (backend only) to explain a raised alert the way a senior SOC analyst
+// would: what happened, why it matters (MITRE ATT&CK), risk level and
+// recommended first steps.
 
 import ZAI from 'z-ai-web-dev-sdk'
 import type { SfAlert, SfEvent, RuleMeta } from './types'

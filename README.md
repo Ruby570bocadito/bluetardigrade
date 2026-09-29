@@ -67,9 +67,9 @@ make run-devsensor
 Expected output on the engine terminal:
 
 ```
-[ENGINE] 7 rules loaded from ./rules (types: [process.create])
-[ENGINE] listening on :7777 (NDJSON, 1 event per line)
-[ENGINE] api on :7778 (stats / events / alerts / rules / stream)
+[ENGINE] 23 rules loaded from ./rules (types: [file.write image.load network.connect process.access process.create registry.set])
+[ENGINE] listening on 127.0.0.1:7777 (NDJSON, 1 event per line)
+[ENGINE] api on 127.0.0.1:7778 (stats / events / alerts / rules / stream)
 [ALERT] HIGH     9f31c2a4... powershell.exe -nop -w hidden -enc SQBF... host=LAB-WKS-01
 [ALERT] HIGH     c1d24e9b... certutil.exe -urlcache -split -f https://... host=LAB-WKS-01
 [ALERT] CRITICAL 5b7e1f38... rundll32.exe C:\Windows\...\comsvcs.dll, MiniDump... host=LAB-WKS-01
@@ -84,8 +84,17 @@ consumers (SIEM connectors, the web console).
 
 ### Local HTTP API
 
-The engine serves a small read-only API (default `:7778`, `-api 0`
-disables) used by the web console and handy for SIEM taps:
+The engine serves a small read-only API used by the web console and
+handy for SIEM taps. Both the ingest port and the API bind to
+`127.0.0.1` by default: the feed carries sensitive host data (users,
+command lines) and the NDJSON ingest is unauthenticated in v0.1, so
+nothing should be reachable from other machines unless you decide so.
+To accept sensors running on different hosts, start the engine with
+`-addr 0.0.0.0:7777` (and `-api 0.0.0.0:7778` if the console is remote
+too), open the port with the installer's `-Firewall` switch, and plan a
+network-level restriction to the sensor segment. Token authentication
+on the ingest port is on the phase-1 roadmap. The API can be disabled
+entirely with `-api 0`:
 
 | Endpoint | Returns |
 |----------|---------|
@@ -181,9 +190,11 @@ Optional switches (parameterized form):
 `-WithSensor` also builds the Rust ETW sensor (needs Rust + MSVC Build
 Tools), `-AutoStart` registers engine and console as logon entries
 (HKCU Run, no admin required), `-Firewall` opens inbound TCP 7777 for
-remote sensors and asks for elevation via UAC when needed. Install
-location defaults to `%LOCALAPPDATA%\security-framework` and can be
-changed with `-InstallDir <path>`.
+remote sensors (domain and private network profiles only) and asks for
+elevation via UAC when needed; it only matters when the engine is
+explicitly started with `-addr 0.0.0.0:7777`, since the default bind is
+loopback. Install location defaults to `%LOCALAPPDATA%\security-framework`
+and can be changed with `-InstallDir <path>`.
 
 To uninstall:
 

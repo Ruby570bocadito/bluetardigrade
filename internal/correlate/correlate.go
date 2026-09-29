@@ -56,6 +56,13 @@ type Manager struct {
         emit  func(alert.Alert)
 }
 
+// maxTrackedStates bounds the per-(sequence, host) progress map. A
+// hostile or misconfigured feed can invent hostnames at will, and each
+// new host would otherwise pin a state entry forever (kill chains that
+// never complete are never deleted): past the cap, NEW hosts stop
+// being tracked instead of letting the map grow without bound.
+const maxTrackedStates = 8192
+
 // LoadDir compiles every sequence file under dir. emit is called once
 // per completed sequence (wire it to alert.Manager.Emit).
 func LoadDir(dir string, emit func(alert.Alert)) (*Manager, error) {
@@ -118,6 +125,9 @@ func (m *Manager) Observe(ev *model.Event, ruleName string) {
                 stepIdx := -1
                 st := m.state[c.seq.ID+"|"+ev.Host]
                 if st == nil {
+                        if len(m.state) >= maxTrackedStates {
+                                continue
+                        }
                         st = &state{matched: map[int]bool{}, first: time.Time{}}
                 }
                 // window expiry: progress older than the window from the first
