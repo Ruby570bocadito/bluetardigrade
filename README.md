@@ -361,7 +361,7 @@ web/console-service/  realtime telemetry hub (bun + socket.io)
 |-------|-----------------|-------------------------------------------------------|
 | 1     | weeks 1–6 2026  | tracer bullet, ETW sensor, rule index, p99 < 10 ms    |
 | 2     | weeks 7–14 2026 | YARA memory scan, eBPF collector, SQLite  |
-| 3     | weeks 15–20     | web console, REST+OpenAPI, Elastic/Splunk connectors  |
+| 3     | weeks 15–20     | REST+OpenAPI spec, Elastic/Splunk connectors          |
 | 4     | weeks 21–26     | Python filaments (sandboxed), plugins, benchmarks     |
 
 ## Contributing
