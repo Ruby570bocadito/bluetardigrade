@@ -394,13 +394,14 @@ internal/rules/   YAML parser, rule index and evaluator
 internal/correlate/  kill-chain sequence correlator
 internal/alert/   alert rendering, dedup, structured JSON
 internal/actions/ rule action executor (message templates, webhooks)
-internal/api/     local read-only HTTP API + SSE stream
+internal/api/     local read-only HTTP API + SSE stream + JSONL/CSV export
+internal/webhook/ alert webhook delivery (bounded queue, retries)
 pkg/model/        unified event schema (the wire contract)
 sensor/           Rust ETW sensor (collector is Windows-gated)
 rules/            seeded detection pack (windows/)
 sequences/        kill-chain sequences for the correlator
-sysmon-config.xml Sysmon config tuned to the detection pack
 scripts/windows/  installed runtime scripts (sf-sensor, sf-console, ...)
+                  + bundled sysmon-config.xml tuned to the detection pack
 install.ps1       one-command Windows installer
 uninstall.ps1     standalone uninstaller
 Makefile          build automation (engine, sensor, console, docker)
