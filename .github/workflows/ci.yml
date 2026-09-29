@@ -78,5 +78,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: ensure a recent stable Rust (>= 1.85; lockfile resolves
+          time-core 0.1.9, which needs edition2024 — see README)
+        run: |
+          rustup toolchain install --profile minimal stable
+          rustup default stable
       - name: cargo check --locked
         run: cargo check --locked --manifest-path sensor/Cargo.toml
