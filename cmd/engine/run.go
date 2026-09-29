@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	"github.com/Ruby570bocadito/security-framework/internal/enrich"
 	"github.com/Ruby570bocadito/security-framework/internal/ingest"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
+	"github.com/Ruby570bocadito/security-framework/internal/store"
 	"github.com/Ruby570bocadito/security-framework/internal/suppress"
 	"github.com/Ruby570bocadito/security-framework/internal/webhook"
 	"github.com/Ruby570bocadito/security-framework/pkg/model"
@@ -44,6 +46,8 @@ type options struct {
 	token            string
 	prevToken        string
 	suppressionsFile string
+	storePath        string
+	storeRetention   time.Duration
 	pidFile          string
 }
 
@@ -82,6 +86,10 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 		"previous ingest token, still accepted during a rotation window (falls back to SF_INGEST_TOKEN_PREVIOUS); requires -token")
 	fs.StringVar(&o.suppressionsFile, "suppressions", "./suppressions.yaml",
 		"operator allowlist YAML silencing rule/host pairs (expires supported); empty disables")
+	fs.StringVar(&o.storePath, "store", "",
+		"SQLite file persisting events and alerts beyond the in-memory rings (e.g. ./sf-store.db); empty disables")
+	fs.DurationVar(&o.storeRetention, "store-retention", 72*time.Hour,
+		"delete stored events/alerts older than this on a 5-minute ticker (0 keeps everything)")
 	fs.StringVar(&o.pidFile, "pidfile", "",
 		"write the process PID here at startup and remove it on shutdown (lets sf-console -Stop stop an engine it did not start)")
 	// CLI additions: single panel over the running engine.
@@ -137,6 +145,32 @@ func runEngine(o *options, interactive bool) error {
 		if n := corr.Count(); n > 0 {
 			fmt.Printf("[ENGINE] %d sequences loaded from %s (correlator on: %v)\n",
 				n, seqPath, corr.Names())
+		}
+	}
+
+	// optional SQLite persistence (phase 2 storage stone): when the
+	// operator asks for a store, a failure to open it is a config
+	// error and FATAL, by the same standard as a malformed
+	// suppressions file — a control the operator believes is armed
+	// must not silently stay off.
+	var st *store.Store
+	if o.storePath != "" {
+		st, err = store.Open(o.storePath)
+		if err != nil {
+			log.Fatalf("[ENGINE] %v", err)
+		}
+		defer st.Close()
+		if o.storeRetention > 0 {
+			fmt.Printf("[ENGINE] store on %s (retention %s)\n", o.storePath, o.storeRetention)
+		} else {
+			fmt.Printf("[ENGINE] store on %s (retention: keep forever)\n", o.storePath)
+		}
+		// first prune right away, then on a ticker; only loud
+		// when something was actually removed
+		if o.storeRetention > 0 {
+			if dEv, dAl, perr := st.Prune(o.storeRetention); perr == nil && dEv+dAl > 0 {
+				fmt.Printf("[ENGINE] store pruned %d events / %d alerts older than %s\n", dEv, dAl, o.storeRetention)
+			}
 		}
 	}
 
@@ -220,9 +254,23 @@ func runEngine(o *options, interactive bool) error {
 		} else {
 			hub.SetRules(engine)
 			hub.SetSuppressions(supMgr)
+			if st != nil {
+				hub.SetStore(st)
+			}
 			hub.SetCounters(func() (uint64, uint64, uint64) {
 				return server.Received(), server.Dropped(), server.Rejected()
 			})
+			// kill-chain observability: in-flight states, loaded
+			// sequences and the tracking cap, so the correlator's
+			// silent failure mode (cap exhausted -> new hosts
+			// untracked) is watchable from /api/stats
+			hub.SetCorrelatorStats(func() (int, int, int) {
+				if corr == nil {
+					return 0, 0, 0
+				}
+				return corr.States(), corr.Count(), correlate.MaxTrackedStates
+			})
+			hub.SetSequences(corr)
 			// same standard as the ingest token: flag wins, env fallback
 			apiTok := o.apiToken
 			if apiTok == "" {
@@ -282,6 +330,12 @@ func runEngine(o *options, interactive bool) error {
 		stats.recordAlert(a)
 		if hub != nil {
 			hub.RecordAlert(a)
+		} else if st != nil {
+			// no API hub: persist directly so -store works
+			// even with the API disabled
+			if err := st.InsertAlert(a); err != nil {
+				storeWriteErr(err)
+			}
 		}
 		if wh != nil {
 			wh.Handle(a)
@@ -346,6 +400,23 @@ func runEngine(o *options, interactive bool) error {
 		}()
 	}
 
+	if st != nil && o.storeRetention > 0 {
+		go func() {
+			t := time.NewTicker(5 * time.Minute)
+			defer t.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					if dEv, dAl, perr := st.Prune(o.storeRetention); perr == nil && dEv+dAl > 0 {
+						fmt.Printf("[ENGINE] store pruned %d events / %d alerts older than %s\n", dEv, dAl, o.storeRetention)
+					}
+				}
+			}
+		}()
+	}
+
 	go func() {
 		<-ctx.Done()
 		fmt.Println("\n[ENGINE] shutting down... (Ctrl+C again to force quit)")
@@ -367,8 +438,15 @@ func runEngine(o *options, interactive bool) error {
 	loop := func() {
 		for ev := range events {
 			enricher.Apply(ev)
-			if hub != nil {
+			switch {
+			case hub != nil:
+				// the hub persists to the store too when attached
 				hub.RecordEvent(ev)
+			case st != nil:
+				// -api 0 with -store: keep persisting without a hub
+				if err := st.InsertEvent(ev); err != nil {
+					storeWriteErr(err)
+				}
 			}
 			stats.recordEvent()
 			if o.verbose && !tui {
@@ -441,6 +519,18 @@ func suppressed(m *suppress.Manager, ruleID, host string, now time.Time) bool {
 	}
 	ok, _ := m.SuppressedAt(ruleID, host, now)
 	return ok
+}
+
+var storeFails uint64
+
+// storeWriteErr logs store write failures with a throttle (first, then
+// every 500th): a full disk must be visible without flooding the log
+// or stopping detection.
+func storeWriteErr(err error) {
+	n := atomic.AddUint64(&storeFails, 1)
+	if n == 1 || n%500 == 0 {
+		log.Printf("[ENGINE] store write FAILED (%d total): %v", n, err)
+	}
 }
 
 func dirExists(p string) bool {

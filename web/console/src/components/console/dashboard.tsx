@@ -118,7 +118,7 @@ function EngineSummary({ status }: { status: EngineStatus }) {
         : 'Sin conexión con la API del motor: no se muestra ningún dato.'
 
   const rows: { label: string; value: React.ReactNode }[] = [
-    { label: 'Modo', value: <span className="font-mono text-xs text-zinc-300">{stats?.mode ?? 'sin datos'}</span> },
+    { label: 'Modo', value: <span className="font-mono text-xs text-zinc-300">{stats?.mode ?? (stats ? 'engine' : 'sin datos')}</span> },
     { label: 'API', value: <span className="font-mono text-xs text-zinc-300">{endpoint}</span> },
     {
       label: 'Eventos totales',

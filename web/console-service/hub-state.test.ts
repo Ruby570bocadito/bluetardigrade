@@ -51,7 +51,7 @@ describe('HubState snapshot', () => {
     st.recordAlert(al('a1'))
     st.setRules([{ id: 'r1', name: 'n', description: '', severity: 'low', event_type: 't', mitre: '', tactic: '', tags: [], conditions: [] }])
     const snap = st.snapshot()
-    expect(Object.keys(snap).sort()).toEqual(['alerts', 'events', 'rules', 'started_at', 'stats', 'suppressions'])
+    expect(Object.keys(snap).sort()).toEqual(['alerts', 'events', 'rules', 'sequences', 'started_at', 'stats', 'suppressions'])
     expect(snap.events.map((e) => e.id)).toEqual(['e1'])
     expect(snap.rules.length).toBe(1)
     expect(snap.stats.mode).toBe('sin-motor')

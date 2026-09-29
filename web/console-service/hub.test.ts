@@ -243,7 +243,7 @@ describe('hub HTTP surface (engine down)', () => {
   test('snapshot keeps the exact console contract while offline', async () => {
     const socket = connect(base)
     const snap = await waitEvent<Record<string, unknown>>(socket, 'console:snapshot')
-    expect(Object.keys(snap).sort()).toEqual(['alerts', 'events', 'rules', 'started_at', 'stats', 'suppressions'])
+    expect(Object.keys(snap).sort()).toEqual(['alerts', 'events', 'rules', 'sequences', 'started_at', 'stats', 'suppressions'])
     expect((snap.stats as Record<string, unknown>).mode).toBe('sin-motor')
     expect(snap.events).toEqual([])
     expect(snap.rules).toEqual([])

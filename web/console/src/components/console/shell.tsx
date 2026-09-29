@@ -260,7 +260,9 @@ function titleFor(view: ConsoleView): string {
  *   on display so the operator knows the SIEM is missing alerts.
  */
 function WebhookChip({ stats }: { stats: EngineStats | null }) {
-  if (!stats || stats.mode !== 'engine') return null
+  // mode is hub-only: with direct engine telemetry the chip shows whenever
+  // the engine reports webhook counters (they are real either way).
+  if (!stats || (stats.mode && stats.mode !== 'engine')) return null
   const { webhook_sent: sent, webhook_failed: failed, webhook_dropped: dropped } = stats
   const total = sent + failed + dropped
   if (total === 0) return null
@@ -296,8 +298,10 @@ function WebhookChip({ stats }: { stats: EngineStats | null }) {
  * - red the moment states reach the cap: NEW hosts silently stop being
  *   tracked there, which is detection loss, and the operator must see it.
  */
-function CorrelatorChip({ stats }: { stats: SimStats | null }) {
-  if (!stats || stats.mode !== 'engine') return null
+function CorrelatorChip({ stats }: { stats: EngineStats | null }) {
+  // mode is hub-only: direct-engine responses carry no mode, so the chip
+  // hides only when the hub explicitly reports the engine offline.
+  if (!stats || (stats.mode && stats.mode !== 'engine')) return null
   const { correlator_states: states, correlator_sequences: seqs, correlator_cap: cap } = stats
   if (seqs === 0) return null
   const exhausted = cap > 0 && states >= cap

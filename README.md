@@ -525,10 +525,10 @@ The shipped pack (`sequences/kill-chains.yaml`) defines 4 sequences, all
 
 | ID | Sequence | Severity | Window | Steps (rules, unordered) |
 |----|----------|----------|--------|--------------------------|
-| `c0a5e7d1` | Campana de robo de credenciales | critical | 5m | Volcado de LSASS via comsvcs.dll + Volcado de LSASS con procdump + Volcado del registro SAM |
-| `d1b6f8e2` | Campana de intrusion completa | critical | 5m | Descarga con certutil o bitsadmin + Creacion de tarea programada + Borrado de instantaneas VSS |
-| `e2c7a9f3` | Apagon defensivo | critical | 5m | Manipulacion de Windows Defender + Desactivacion del firewall de Windows + Borrado de registros de eventos |
-| `f3d8ba64` | Instalacion de persistencia | critical | 5m | Descarga con certutil o bitsadmin + Persistencia en clave Run via registro |
+| `c0a5e7d1-1a2b-4c3d-8e4f-a5b6c7d8e9f0` | Campana de robo de credenciales | critical | 5m | Volcado de LSASS via comsvcs.dll + Volcado de LSASS con procdump + Volcado del registro SAM |
+| `d1b6f8e2-2b3c-4d4e-9f50-b6c7d8e9f0a1` | Campana de intrusion completa | critical | 5m | Descarga con certutil o bitsadmin + Creacion de tarea programada + Borrado de instantaneas VSS |
+| `e2c7a9f3-3c4d-4e5f-a061-c7d8e9f0a1b2` | Apagon defensivo | critical | 5m | Manipulacion de Windows Defender + Desactivacion del firewall de Windows + Borrado de registros de eventos |
+| `f3d8ba64-4d5e-4f60-b172-d8e9f0a1b2c3` | Instalacion de persistencia | critical | 5m | Descarga con certutil o bitsadmin + Persistencia en clave Run via registro |
 
 The correlator is observable from the outside: `/api/sequences` lists the armed chains (steps, window, tags) as loaded right now, and `/api/stats` carries `correlator_states` (in-flight (sequence, host) chains) against `correlator_cap` (8192) — a hostile feed inventing hostnames pushes states toward the cap, and past it NEW hosts would silently stop being tracked, so the number is meant to be watched. The console surfaces both: the `correlador N/cap` chip in the header turns red the moment the cap is reached, and the Cadenas view lists each chain with its steps and flags any step whose rule is not loaded (a chain that can never complete).
 
