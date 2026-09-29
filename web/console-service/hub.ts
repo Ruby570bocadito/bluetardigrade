@@ -77,7 +77,7 @@ export function createHub(opts: HubOptions = {}): HubHandle {
   // non-socket.io requests on the same port is this engine middleware.
   // Real socket.io traffic always carries the EIO query parameter and
   // is delegated back with next(); everything else is served here.
-  io.engine.use((rawReq, rawRes, next) => {
+  io.engine.use((rawReq: http.IncomingMessage, rawRes: http.ServerResponse, next: (err?: unknown) => void) => {
     const req = rawReq as EngineRequest
     if (req._query && typeof req._query.EIO === 'string') return next()
     // Raw websocket upgrades without the handshake query: let engine.io

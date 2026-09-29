@@ -15,10 +15,16 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
 }
 
-async function pollUntil(fn: () => boolean, timeoutMs: number, stepMs = 100): Promise<void> {
+// bun-types tipa Response.json() como unknown; el contrato del hub es JSON
+// de punta a punta, así que los tests leen a través de un único acceso tipado.
+async function json(res: Response): Promise<any> {
+  return res.json()
+}
+
+async function pollUntil(fn: () => boolean | Promise<boolean>, timeoutMs: number, stepMs = 100): Promise<void> {
   const t0 = Date.now()
   while (Date.now() - t0 < timeoutMs) {
-    if (fn()) return
+    if (await fn()) return
     await sleep(stepMs)
   }
   throw new Error(`pollUntil: timeout tras ${timeoutMs}ms`)
@@ -186,7 +192,7 @@ describe('hub HTTP surface (engine down)', () => {
     const res = await fetch(`${base}/health`)
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toContain('application/json')
-    const body = await res.json()
+    const body = await json(res)
     expect(body.service).toBe('console-service')
     expect(body.status).toBe('degraded')
     expect(body.mode).toBe('sin-motor')
@@ -202,7 +208,7 @@ describe('hub HTTP surface (engine down)', () => {
   test('GET /healthz is an alias of /health', async () => {
     const res = await fetch(`${base}/healthz`)
     expect(res.status).toBe(200)
-    expect((await res.json()).service).toBe('console-service')
+    expect((await json(res)).service).toBe('console-service')
   })
 
   test('GET / serves the status page reflecting the real engine state', async () => {
@@ -220,7 +226,7 @@ describe('hub HTTP surface (engine down)', () => {
   test('unknown paths answer 404 as JSON or HTML depending on Accept', async () => {
     const asJson = await fetch(`${base}/nope`, { headers: { accept: 'application/json' } })
     expect(asJson.status).toBe(404)
-    expect((await asJson.json()).error.code).toBe('not_found')
+    expect((await json(asJson)).error.code).toBe('not_found')
 
     const asHtml = await fetch(`${base}/nope`, { headers: { accept: 'text/html' } })
     expect(asHtml.status).toBe(404)
@@ -256,14 +262,16 @@ describe('hub HTTP surface (engine down)', () => {
     await Promise.all([waitEvent(s1, 'console:snapshot'), waitEvent(s2, 'console:snapshot')])
     let body: Record<string, any> | null = null
     await pollUntil(async () => {
-      body = await (await fetch(`${base}/health`)).json()
-      return body.clients.connected === 2
+      const b = await json(await fetch(`${base}/health`))
+      body = b
+      return b.clients.connected === 2
     }, 3000)
     s1.disconnect()
     s2.disconnect()
     await pollUntil(async () => {
-      body = await (await fetch(`${base}/health`)).json()
-      return body.clients.connected === 0
+      const b = await json(await fetch(`${base}/health`))
+      body = b
+      return b.clients.connected === 0
     }, 3000)
   })
 
@@ -349,7 +357,7 @@ describe('engine bridge lifecycle', () => {
 
   test('attaches to the engine and syncs its real state', async () => {
     await pollUntil(() => hub.state.mode === 'engine', 10000)
-    const body = await (await fetch(`${base}/health`)).json()
+    const body = await json(await fetch(`${base}/health`))
     expect(body.status).toBe('ok')
     expect(body.engine.endpoint).toBe(fakeEngine.url.origin)
     expect(body.engine.events_total).toBe(3)
@@ -414,7 +422,7 @@ describe('engine bridge lifecycle', () => {
     const downStats = waitEvent<Record<string, any>>(socket, 'console:stats', 10000)
     fakeEngine.stop(true)
     await pollUntil(() => hub.state.mode === 'sin-motor', 9000)
-    const body = await (await fetch(`${base}/health`)).json()
+    const body = await json(await fetch(`${base}/health`))
     expect(body.status).toBe('degraded')
     expect(body.engine.events_total).toBe(0)
     const st = await downStats
