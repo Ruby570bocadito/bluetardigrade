@@ -22,6 +22,10 @@ web/console/*.tsbuildinfo
 *.swp
 .DS_Store
 
+# Local installer artifacts
+run/
+tools/
+
 # Local evidence
 captures/
 *.dmp

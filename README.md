@@ -74,6 +74,56 @@ Expected output on the engine terminal:
 Each alert is also emitted as a structured JSON line for downstream
 consumers (SIEM connectors, the web console).
 
+## One-command install (Windows)
+
+From any PowerShell window, no admin account and no prior download
+required:
+
+```powershell
+irm https://raw.githubusercontent.com/Ruby570bocadito/security-framework/main/install.ps1 | iex
+```
+
+The installer downloads the repository, provisions portable Go, Node
+and Bun under your user profile, builds the engine and the web console,
+and puts five commands on your PATH:
+
+| Command         | What it does                                   |
+|-----------------|------------------------------------------------|
+| `sf-engine`     | detection engine, prints alerts live           |
+| `sf-devsensor`  | replays the simulated TTP scenario             |
+| `sf-console`    | starts the web console and opens the browser   |
+| `sf-update`     | updates the code and rebuilds                  |
+| `sf-uninstall`  | removes everything                             |
+
+Optional switches (parameterized form):
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Ruby570bocadito/security-framework/main/install.ps1))) -WithSensor -AutoStart -Firewall
+```
+
+`-WithSensor` also builds the Rust ETW sensor (needs Rust + MSVC Build
+Tools), `-AutoStart` registers engine and console as logon tasks,
+`-Firewall` opens inbound TCP 7777 for remote sensors. Install location
+defaults to `%LOCALAPPDATA%\security-framework` and can be changed with
+`-InstallDir <path>`.
+
+To uninstall:
+
+```powershell
+sf-uninstall
+```
+
+or, from a machine where it is not installed (or the PATH is gone):
+
+```powershell
+irm https://raw.githubusercontent.com/Ruby570bocadito/security-framework/main/uninstall.ps1 | iex
+```
+
+The uninstaller stops the processes, removes the logon tasks, the
+firewall rule, the PATH entry and the whole install folder, including
+the portable toolchains it created. Toolchains you had before are left
+alone.
+
 ## Web console (preview)
 
 The repo ships an early browser console: live telemetry feed, KPI
