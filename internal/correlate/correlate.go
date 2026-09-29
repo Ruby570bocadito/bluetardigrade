@@ -52,8 +52,20 @@ type state struct {
 type Manager struct {
 	mu    sync.Mutex
 	seqs  []*compiled
-	state map[string]*state // key: sequence id | host
+	state map[stateKey]*state
 	emit  func(alert.Alert)
+}
+
+// stateKey identifies one in-flight chain. A struct, not the old
+// "seqID|host" string concatenation: a feed-controlled host containing
+// '|' could alias two (sequence, host) pairs onto the same entry and
+// merge progress across sequences. Hosts are lowercased for the same
+// reason suppress.Manager lowercases them — Windows reports hostnames
+// in arbitrary case, and one machine must own one chain regardless of
+// which case the sensor emitted today.
+type stateKey struct {
+	seqID string
+	host  string // lowercased
 }
 
 // maxTrackedStates bounds the per-(sequence, host) progress map. A
@@ -61,12 +73,15 @@ type Manager struct {
 // new host would otherwise pin a state entry forever (kill chains that
 // never complete are never deleted): past the cap, NEW hosts stop
 // being tracked instead of letting the map grow without bound.
+// Reload prunes states of sequences that no longer exist, so config
+// churn (renames, removals) cannot silently exhaust the cap with
+// entries that can never complete.
 const maxTrackedStates = 8192
 
 // LoadDir compiles every sequence file under dir. emit is called once
 // per completed sequence (wire it to alert.Manager.Emit).
 func LoadDir(dir string, emit func(alert.Alert)) (*Manager, error) {
-	m := &Manager{state: map[string]*state{}, emit: emit}
+	m := &Manager{state: map[stateKey]*state{}, emit: emit}
 	if err := m.load(dir); err != nil {
 		return nil, err
 	}
@@ -83,6 +98,21 @@ func (m *Manager) Reload(dir string) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// Prune progress of sequences that no longer exist on disk: their
+	// states can never complete, yet each counted against
+	// maxTrackedStates forever — enough removals/renames would exhaust
+	// the cap and silently stop correlation for NEW hosts (detection
+	// loss, not just memory). Only reached on a successful load: a
+	// failed reload keeps the previous sequence set AND its progress.
+	alive := make(map[string]bool, len(fresh.seqs))
+	for _, c := range fresh.seqs {
+		alive[c.seq.ID] = true
+	}
+	for k := range m.state {
+		if !alive[k.seqID] {
+			delete(m.state, k)
+		}
+	}
 	m.seqs = fresh.seqs
 	return nil
 }
@@ -123,7 +153,8 @@ func (m *Manager) Observe(ev *model.Event, ruleName string) {
 	defer m.mu.Unlock()
 	for _, c := range m.seqs {
 		stepIdx := -1
-		st := m.state[c.seq.ID+"|"+ev.Host]
+		key := stateKey{seqID: c.seq.ID, host: strings.ToLower(ev.Host)}
+		st := m.state[key]
 		if st == nil {
 			if len(m.state) >= maxTrackedStates {
 				continue
@@ -152,13 +183,28 @@ func (m *Manager) Observe(ev *model.Event, ruleName string) {
 			}
 		}
 		st.matched[stepIdx] = true
-		st.lastEv = ev
+		st.lastEv = slim(ev)
 		if len(st.matched) == len(c.seq.Steps) {
 			m.fire(c, st, ev)
-			delete(m.state, c.seq.ID+"|"+ev.Host) // re-arm
+			delete(m.state, key) // re-arm
 			continue
 		}
-		m.state[c.seq.ID+"|"+ev.Host] = st
+		m.state[key] = st
+	}
+}
+
+// slim copies the fields fire() needs instead of pinning the whole
+// event: a state lives until its chain completes (or is pruned), and
+// ingest lines can carry up to 1 MiB, so a hostile feed must not be
+// able to park one full event per tracked state.
+func slim(ev *model.Event) *model.Event {
+	return &model.Event{
+		ID:         ev.ID,
+		Type:       ev.Type,
+		Timestamp:  ev.Timestamp,
+		Host:       ev.Host,
+		User:       ev.User,
+		Enrichment: ev.Enrichment,
 	}
 }
 
@@ -195,6 +241,7 @@ func (m *Manager) fire(c *compiled, st *state, ev *model.Event) {
 // load parses every .yaml/.yml file under dir into compiled sequences.
 func (m *Manager) load(dir string) error {
 	seqs := []*compiled{}
+	seen := map[string]string{} // sequence id -> origin file
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -219,6 +266,13 @@ func (m *Manager) load(dir string) error {
 			if err != nil {
 				return fmt.Errorf("%s: sequence %q: %w", path, s.Name, err)
 			}
+			// Duplicate ids are always a config bug: both sequences
+			// would silently share one progress entry (steps of one
+			// advance the other) and every completion would fire twice.
+			if prev, dup := seen[s.ID]; dup {
+				return fmt.Errorf("%s: sequence %q: duplicate id %q (already loaded from %s)", path, s.Name, s.ID, prev)
+			}
+			seen[s.ID] = path
 			seqs = append(seqs, c)
 		}
 		return nil

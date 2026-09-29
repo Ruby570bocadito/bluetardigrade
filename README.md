@@ -248,7 +248,11 @@ exposes, so a silently down SIEM is visible at a glance.
 Maintenance windows and accepted exceptions happen: sometimes an alert
 is correct and still unwanted. `suppressions.yaml` (see
 `suppressions.example.yaml` for the annotated format) silences a rule,
-a host, or a rule+host pair, with optional RFC 3339 expiration:
+a host, or a rule+host pair, with optional RFC 3339 expiration. The
+full operator guide to alert noise — dedup semantics, suppression
+recipes, correlation volume, receiver-side filtering and the pipeline's
+abuse-resistance caps — lives in
+[`docs/false-positive-control.md`](docs/false-positive-control.md):
 
 ```yaml
 - rule_id: vss-delete
@@ -513,7 +517,9 @@ observed on the same host inside a `window` (e.g. `5m`), raise a single
 high-signal alert describing the campaign. The shipped pack models
 credential-dump campaigns, full intrusion chains, defensive shutdown
 and registry-based persistence. Sequences hot-reload together with the
-rules.
+rules. Note: suppressing a rule also removes it from every chain it
+feeds on that host (accepted-state semantics — see
+[docs/false-positive-control.md](docs/false-positive-control.md)).
 
 ### Rule actions
 
