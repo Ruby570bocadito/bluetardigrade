@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/Ruby570bocadito/security-framework/internal/alert"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
@@ -85,6 +86,73 @@ const maxTrackedStates = 8192
 // MaxTrackedStates is the hard cap of in-flight (sequence, host)
 // chains the correlator will track (see maxTrackedStates).
 const MaxTrackedStates = maxTrackedStates
+
+// Load-time hardening: sequences/ is configuration, but configuration
+// is an attack surface too — a hostile or hand-edited file must fail
+// LOUDLY at load instead of degrading a running engine. Each bound
+// names the failure mode it prevents; the exported mirrors let tests
+// and operator tooling pin them the way MaxTrackedStates does.
+const (
+	// maxFileBytes caps one sequence file. os.ReadFile has no bound of
+	// its own: a multi-gigabyte file would be read whole into memory
+	// before any other check could run.
+	maxFileBytes = 4 << 20 // 4 MiB
+
+	// maxNestingDepth caps flow-style ('[' / '{') nesting. yaml.v3
+	// decodes recursively, and flow nesting costs 1 byte per level, so
+	// 4 MiB of '[' is ~4M recursion levels: stack exhaustion, i.e. a
+	// process crash rather than a config error. The pre-scan is
+	// byte-level and deliberately naive (brackets inside quoted strings
+	// count too — a real config with 512 nested brackets does not
+	// exist). Block-style nesting (indentation) costs bytes
+	// quadratically, so maxFileBytes alone keeps it in the hundreds of
+	// levels.
+	maxNestingDepth = 512
+
+	// maxSequences caps the loaded set: Observe walks EVERY sequence on
+	// each rule hit, so the per-hit cost is bounded by construction at
+	// maxSequences × maxStepsPerSequence comparisons.
+	maxSequences = 512
+
+	// maxStepsPerSequence caps one chain's step list (same per-hit cost
+	// as maxSequences).
+	maxStepsPerSequence = 64
+
+	// maxWindow caps the completion window. A chain whose window never
+	// expires pins one tracked state per host until the window passes:
+	// enough hosts and maxTrackedStates is exhausted, silently stopping
+	// correlation for new hosts. Seven days is far beyond any campaign
+	// the v0.1 sequences are designed for and still small enough that
+	// stuck states recover on their own.
+	maxWindow = 7 * 24 * time.Hour
+
+	// maxIDRunes is the identity cap for sequence id/name and for step
+	// rule names — the same standard the ingest applies to feed
+	// identities (host 255, user 256, id 128 runes). These strings
+	// reach logs, the console and webhook consumers through every
+	// emitted alert.
+	maxIDRunes = 128
+
+	// maxDescriptionRunes keeps one description from pinning kilobytes
+	// per sequence for the life of the process. Descriptions never
+	// leave the process (alerts do not carry them), so only length is
+	// bounded here — control runes are allowed.
+	maxDescriptionRunes = 512
+
+	// maxTags / maxTagRunes bound the tag list copied into every
+	// emitted alert (tags DO leave the process, so each one is also
+	// control-rune checked in compile).
+	maxTags     = 16
+	maxTagRunes = 64
+)
+
+// Exported mirrors of the load-time caps (precedent: MaxTrackedStates).
+const (
+	MaxSequences        = maxSequences
+	MaxStepsPerSequence = maxStepsPerSequence
+	MaxWindow           = maxWindow
+	MaxFileBytes        = maxFileBytes
+)
 
 // LoadDir compiles every sequence file under dir. emit is called once
 // per completed sequence (wire it to alert.Manager.Emit).
@@ -201,6 +269,35 @@ func (m *Manager) Names() []string {
 	return out
 }
 
+// StepsWithoutRule returns the sorted unique rule names referenced by
+// the loaded sequences that are absent from known (built from the
+// rules engine's snapshot). A step naming a rule that never fires
+// makes its chain impossible to complete: on a host where the OTHER
+// steps matched, the half-built state sits pinned until the window
+// expires — and re-arms on the next hit — quietly contributing to
+// maxTrackedStates exhaustion (silent detection loss). The engine
+// logs the result as a WARNING on startup and on every reload so the
+// config bug is named instead of absorbed. Rules present but disabled
+// are NOT reported: disabling a rule is an operator decision, and a
+// chain waiting on it resumes the moment it is re-enabled.
+func (m *Manager) StepsWithoutRule(known map[string]bool) []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	seen := map[string]bool{}
+	missing := []string{}
+	for _, c := range m.seqs {
+		for _, st := range c.seq.Steps {
+			if st.Rule == "" || known[st.Rule] || seen[st.Rule] {
+				continue
+			}
+			seen[st.Rule] = true
+			missing = append(missing, st.Rule)
+		}
+	}
+	sort.Strings(missing)
+	return missing
+}
+
 // Observe feeds one rule hit into every sequence that references it.
 // Completing a sequence emits one alert and re-arms the chain.
 func (m *Manager) Observe(ev *model.Event, ruleName string) {
@@ -311,8 +408,17 @@ func (m *Manager) load(dir string) error {
 		if ext != ".yaml" && ext != ".yml" {
 			return nil
 		}
+		// Bound the file BEFORE reading it: os.ReadFile has no limit of
+		// its own, so an oversized sequence file would be read whole
+		// into memory before any other check could run.
+		if info.Size() > maxFileBytes {
+			return fmt.Errorf("%s: file is %d bytes, over the %d byte cap", path, info.Size(), maxFileBytes)
+		}
 		data, err := os.ReadFile(path)
 		if err != nil {
+			return err
+		}
+		if err := checkNestingDepth(path, data); err != nil {
 			return err
 		}
 		var list []Sequence
@@ -331,6 +437,9 @@ func (m *Manager) load(dir string) error {
 				return fmt.Errorf("%s: sequence %q: duplicate id %q (already loaded from %s)", path, s.Name, s.ID, prev)
 			}
 			seen[s.ID] = path
+			if len(seqs) >= maxSequences {
+				return fmt.Errorf("%s: sequence %q: %d sequences is over the load cap (%d)", path, s.Name, len(seqs)+1, maxSequences)
+			}
 			seqs = append(seqs, c)
 		}
 		return nil
@@ -346,6 +455,35 @@ func compile(s Sequence) (*compiled, error) {
 	if s.Name == "" || s.ID == "" {
 		return nil, fmt.Errorf("name and id are required")
 	}
+	// Identity sanity: id, name, tags and step rules reach logs, the
+	// console and webhook consumers on every alert, so they get the
+	// same treatment the ingest applies to feed identities — a bounded
+	// length and zero control runes. A \x1b in an id would be terminal
+	// injection into the engine's own log output; a \n would forge log
+	// lines. Descriptions never leave the process (the alert does not
+	// carry them), so only their length is bounded.
+	for _, f := range []struct{ label, val string }{{"id", s.ID}, {"name", s.Name}} {
+		if n := len([]rune(f.val)); n > maxIDRunes {
+			return nil, fmt.Errorf("%s is %d runes, over the %d rune cap", f.label, n, maxIDRunes)
+		}
+		if r, ok := firstControlRune(f.val); ok {
+			return nil, fmt.Errorf("%s contains control rune %q (U+%04X)", f.label, r, r)
+		}
+	}
+	if n := len([]rune(s.Description)); n > maxDescriptionRunes {
+		return nil, fmt.Errorf("description is %d runes, over the %d rune cap", n, maxDescriptionRunes)
+	}
+	if len(s.Tags) > maxTags {
+		return nil, fmt.Errorf("%d tags is over the %d tag cap", len(s.Tags), maxTags)
+	}
+	for _, tg := range s.Tags {
+		if n := len([]rune(tg)); n > maxTagRunes {
+			return nil, fmt.Errorf("tag %q is %d runes, over the %d rune cap", tg, n, maxTagRunes)
+		}
+		if r, ok := firstControlRune(tg); ok {
+			return nil, fmt.Errorf("tag contains control rune %q (U+%04X)", r, r)
+		}
+	}
 	switch s.Severity {
 	case rules.SevLow, rules.SevMedium, rules.SevHigh, rules.SevCritical:
 	default:
@@ -354,9 +492,18 @@ func compile(s Sequence) (*compiled, error) {
 	if len(s.Steps) < 2 {
 		return nil, fmt.Errorf("at least 2 steps are required, got %d", len(s.Steps))
 	}
+	if len(s.Steps) > maxStepsPerSequence {
+		return nil, fmt.Errorf("%d steps is over the %d step cap", len(s.Steps), maxStepsPerSequence)
+	}
 	for i, st := range s.Steps {
 		if st.Rule == "" {
 			return nil, fmt.Errorf("step %d: rule name is required", i)
+		}
+		if n := len([]rune(st.Rule)); n > maxIDRunes {
+			return nil, fmt.Errorf("step %d: rule name is %d runes, over the %d rune cap", i, n, maxIDRunes)
+		}
+		if r, ok := firstControlRune(st.Rule); ok {
+			return nil, fmt.Errorf("step %d: rule name contains control rune %q (U+%04X)", i, r, r)
 		}
 	}
 	w := 5 * time.Minute
@@ -365,7 +512,53 @@ func compile(s Sequence) (*compiled, error) {
 		if err != nil || d <= 0 {
 			return nil, fmt.Errorf("invalid window %q", s.Window)
 		}
+		// A chain whose window never expires pins one tracked state per
+		// host until the window passes: enough hosts and the
+		// maxTrackedStates cap is exhausted, silently stopping
+		// correlation for new hosts. Window abuse is config-side, so the
+		// load names it instead of absorbing it.
+		if d > maxWindow {
+			return nil, fmt.Errorf("window %q is over the %s cap (chains that never expire pin tracked states until maxTrackedStates is exhausted)", s.Window, maxWindow)
+		}
 		w = d
 	}
 	return &compiled{seq: s, window: w}, nil
+}
+
+// firstControlRune returns the first Unicode control rune (Cc: NUL,
+// newlines, TAB, ESC/ANSI, DEL...) found in s, if any. Config strings
+// that leave the process must not be able to forge log lines or
+// inject terminal escapes.
+func firstControlRune(s string) (rune, bool) {
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return r, true
+		}
+	}
+	return 0, false
+}
+
+// checkNestingDepth is the byte-level pre-scan against stack
+// exhaustion in yaml.v3's recursive decoder (see maxNestingDepth).
+// Deliberately naive: it counts structural brackets everywhere —
+// quoted strings included — and clamps at zero on unmatched closers.
+// Neither shortcut can hide real depth: true nesting needs at least
+// as many consecutive opens as its own level count, and the scan
+// counts exactly that.
+func checkNestingDepth(path string, data []byte) error {
+	depth := 0
+	for _, b := range data {
+		switch b {
+		case '[', '{':
+			depth++
+			if depth > maxNestingDepth {
+				return fmt.Errorf("%s: YAML nesting deeper than %d levels (possible resource bomb)", path, maxNestingDepth)
+			}
+		case ']', '}':
+			if depth > 0 {
+				depth--
+			}
+		}
+	}
+	return nil
 }

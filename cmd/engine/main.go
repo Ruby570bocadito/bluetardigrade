@@ -106,6 +106,7 @@ func main() {
 			fmt.Printf("[ENGINE] %d sequences loaded from %s (correlator on: %v)\n",
 				n, seqPath, corr.Names())
 		}
+		warnMissingSequenceRules(corr, engine)
 	}
 
 	// operator allowlist: alert suppressions (rule + host, optional
@@ -325,6 +326,7 @@ func main() {
 					if corr != nil && dirExists(seqPath) {
 						if err := corr.Reload(seqPath); err == nil {
 							fmt.Printf("[ENGINE] sequences reloaded (%d active)\n", corr.Count())
+							warnMissingSequenceRules(corr, engine)
 						}
 					}
 					if *suppressionsFile != "" {
@@ -439,6 +441,30 @@ func storeWriteErr(err error) {
 	if n == 1 || n%500 == 0 {
 		log.Printf("[ENGINE] store write FAILED (%d total): %v", n, err)
 	}
+}
+
+// warnMissingSequenceRules names sequence steps that reference rules
+// which do not exist in rules/ (see correlate.Manager.StepsWithoutRule):
+// a config bug that would otherwise surface only as chains that never
+// fire — half-built states pinning tracked entries per host. The
+// correlator returns the list sorted and deduplicated; the log caps
+// the enumeration so a typo storm cannot flood every reload cycle.
+func warnMissingSequenceRules(corr *correlate.Manager, engine *rules.Engine) {
+	known := make(map[string]bool, engine.Count())
+	for _, r := range engine.Snapshot() {
+		known[r.Name] = true
+	}
+	missing := corr.StepsWithoutRule(known)
+	if len(missing) == 0 {
+		return
+	}
+	head := missing
+	extra := ""
+	if len(head) > 5 {
+		head, extra = head[:5], fmt.Sprintf(" (+%d more)", len(missing)-5)
+	}
+	log.Printf("[ENGINE] WARNING: %d sequence step rules do not exist in rules/ (their chains can never complete): %s%s",
+		len(missing), strings.Join(head, ", "), extra)
 }
 
 func dirExists(p string) bool {
