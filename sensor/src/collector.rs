@@ -63,7 +63,15 @@ pub fn run(addr: &str, token: Option<&str>) -> Result<()> {
 
             let event = EventJson {
                 id: normalize::new_uuid(),
-                timestamp: normalize::now_rfc3339(),
+                // Forensics-grade ordering: use the ETW record's own
+                // timestamp, not the processing clock — kernel buffering
+                // can delay delivery by seconds under load. Falls back
+                // to the wall clock only if the record time is out of
+                // the RFC3339 representable range.
+                timestamp: record
+                    .timestamp()
+                    .format(&time::format_description::well_known::Rfc3339)
+                    .unwrap_or_else(|_| normalize::now_rfc3339()),
                 r#type: TYPE_PROCESS_CREATE.into(),
                 source: "etw".into(),
                 host: host.clone(),

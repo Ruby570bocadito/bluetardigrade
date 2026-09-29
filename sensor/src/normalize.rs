@@ -44,7 +44,12 @@ pub struct NetworkJson {
 #[derive(Serialize, Clone, Debug)]
 pub struct EventJson {
     pub id: String,
-    pub timestamp: String, // RFC3339 with nanoseconds
+    // RFC3339. Two emitters share this field: the collector formats the
+    // ETW record's own time via the time crate (variable subsecond
+    // digits, trailing zeros trimmed — the same style as Go's
+    // RFC3339Nano used across the engine) and the fallback wall clock
+    // here (fixed 9 digits). Go's time.Time JSON unmarshal accepts both.
+    pub timestamp: String,
     pub r#type: String,
     pub source: String,
     pub host: String,
@@ -92,9 +97,28 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 }
 
 pub fn new_uuid() -> String {
-    // RFC 4122 v4-shaped id from a xorshift64* seeded by the clock;
-    // keeps the sensor dependency-free in the tracer bullet. Phase 1
-    // switches to the getrandom crate.
+    // RFC 4122 v4: 122 bits of OS entropy via getrandom, with the
+    // version/variant bits set per spec. The clock-seeded PRNG below is
+    // only a fallback for the (practically impossible) case of the OS
+    // entropy source failing; it keeps the sensor able to emit
+    // well-formed ids instead of panicking in the ETW callback.
+    let mut b = [0u8; 16];
+    if getrandom::fill(&mut b).is_ok() {
+        b[6] = (b[6] & 0x0f) | 0x40; // version 4
+        b[8] = (b[8] & 0x3f) | 0x80; // RFC 4122 variant
+        return format!(
+            "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+            b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
+            b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]
+        );
+    }
+    clock_prng_uuid()
+}
+
+fn clock_prng_uuid() -> String {
+    // v4-shaped id from a xorshift64* seeded by the clock. Fallback
+    // only: predictable and collision-prone under concurrent callbacks,
+    // which is exactly why getrandom is the primary path.
     use std::time::{SystemTime, UNIX_EPOCH};
     let mut seed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
