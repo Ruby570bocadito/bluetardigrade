@@ -9,6 +9,8 @@
 [![go](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![rust](https://img.shields.io/badge/Rust-1.85%2B-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![platform](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows11&logoColor=white)](#one-command-install-windows)
+[![api](https://img.shields.io/badge/API-OpenAPI_3.0_drift--guarded-6BA539?logo=openapiinitiative&logoColor=white)](docs/api/openapi.yaml)
+[![latency](https://img.shields.io/badge/ingest%E2%86%92alert%20p99-%E2%89%880.4_ms_measured-34d399)](#measured-performance)
 [![prs](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
 
 </div>
@@ -17,7 +19,21 @@ A behavioral detection framework built by an offensive-security practitioner, in
 
 > The project name is provisional. Expect a rename before v1.0.
 
-**Status: `v0.1` — tracer bullet plus console preview.** The full end-to-end pipeline (event → rules → alert) works today against REAL telemetry: `sf-sensor` streams events from the actual host and the browser console shows only what the engine really delivers, with AI triage. The scripted `sf-devsensor` scenario remains solely as a clearly labeled demo to smoke-test the pipeline. ETW-native ingestion (no Sysmon dependency) and YARA memory scanning land next (see the [roadmap](#roadmap) and `docs/`).
+**Status: `v0.1` — tracer bullet plus console preview.** The full end-to-end pipeline (event → rules → alert) works today against REAL telemetry: `sf-sensor` streams events from the actual host and the browser console shows only what the engine really delivers, with AI triage. The scripted `sf-devsensor` scenario remains solely as a clearly labeled demo to smoke-test the pipeline. Opt-in SQLite persistence shipped in September 2026 (`-store`); ETW-native ingestion (no Sysmon dependency) and YARA memory scanning land next (see the [roadmap](#roadmap) and `docs/`).
+
+## At a glance
+
+| | |
+|---|---|
+| **Sensor** | Rust ETW sensor (Kernel-Process) + Sysmon ingestion path; Windows-gated — refuses to run where there is no real telemetry |
+| **Engine** | Go 1.22, single binary, CGO-free: ingest → enrich → rules → correlate → alert → respond |
+| **Rules** | YAML with 11 operators, per-rule MITRE ATT&CK tags, hot-reload every 15 s |
+| **Correlation** | Kill-chain sequencer (same host, time window) with a hard state cap and external observability |
+| **Response** | Rule actions (rendered messages, per-rule webhooks), operator suppressions, engine-level SIEM connector |
+| **Console** | Next.js + socket.io live triage with an AI analyst (bring-your-own OpenAI-compatible model) |
+| **Storage** | Opt-in SQLite persistence (`-store`, pure-Go driver, WAL) with a retention pruner |
+| **Performance** | Measured, not assumed: ingest→alert p99 ≈ 0.4 ms on loopback ([numbers](#measured-performance)) |
+| **Security posture** | Loopback-only binds by default, constant-time token compares, CSV formula-injection neutralization, SHA-pinned CI |
 
 ![Console operations dashboard: KPIs, sensor activity chart, kill-chain alerts and recent telemetry](docs/assets/console-panel.png)
 
@@ -34,6 +50,7 @@ A behavioral detection framework built by an offensive-security practitioner, in
   - [Ingest authentication (shared token)](#ingest-authentication-shared-token)
   - [Alert webhook (SIEM/SOAR connector)](#alert-webhook-siemsoar-connector)
   - [Alert suppressions (operator allowlist)](#alert-suppressions-operator-allowlist)
+- [Configuration reference](#configuration-reference)
 - [One-command install (Windows)](#one-command-install-windows)
 - [Real telemetry with Sysmon](#real-telemetry-with-sysmon)
 - [Web console (preview)](#web-console-preview)
@@ -44,6 +61,7 @@ A behavioral detection framework built by an offensive-security practitioner, in
 - [Development & CI](#development--ci)
 - [Measured performance](#measured-performance)
 - [Repository layout](#repository-layout)
+- [Documentation map](#documentation-map)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [License](#license)
@@ -76,17 +94,37 @@ And one engineering rule that shapes everything else: **no simulated data in the
 
 ![Architecture: kernel, Rust sensor, Go detection engine and output layers](docs/assets/diagram_arquitectura.png)
 
-```
-Windows kernel (ETW providers)          [phase 2: Linux eBPF]
-        │
-        ▼
-Sensor (Rust) ── NDJSON/TCP ──►  Detection engine (Go)
-                                 ingest → enrich → rules → alerts
-                                        │
-                          ┌─────────────┼─────────────┐
-                          ▼             ▼             ▼
-                     console/web   SIEM/SOAR     forensic store
-                      (preview)    connectors     (phase 2)
+```mermaid
+flowchart LR
+    subgraph EP["Windows endpoints"]
+        direction TB
+        ETW["ETW Kernel-Process providers"] --> RS["sf-sensor · Rust"]
+        SYS["Sysmon"] --> RS
+        DS["sf-devsensor · demo"]:::demo
+    end
+
+    RS -- "NDJSON/TCP · AUTH handshake" --> ING
+    DS -. "smoke test only" .-> ING
+
+    subgraph ENG["sf-engine · Go, single binary"]
+        direction TB
+        ING["ingest · schema validation"] --> ENR["enrich"]
+        ENR --> RUL["rules · hot-reload 15 s"]
+        RUL --> COR["kill-chain correlator"]
+        RUL --> ALR["alert · dedup + render"]
+        COR --> ALR
+        ALR --> ACT["actions · webhooks"]
+        ALR --> ST[("SQLite store · opt-in")]
+    end
+
+    ACT --> WH["SIEM / SOAR collector"]
+    ENG -- "REST + SSE on :7778" --> HUB
+
+    subgraph CON["Web console"]
+        HUB["console-service · socket.io hub"] --> UI["Next.js UI · live triage + AI analyst"]
+    end
+
+    classDef demo stroke-dasharray: 5 5;
 ```
 
 The unified event schema (chapter 4 of the docs) is the master contract: sensors emit it, the engine validates and enriches it, rules index it, interfaces consume it.
@@ -240,6 +278,39 @@ Point the engine at it with `-suppressions <path>` (default `./suppressions.yaml
 - A malformed file is FATAL at startup (a typo must not disable a control you believe is armed) and rejected — keeping the previous set — on hot reload, loudly.
 - The live set is observable read-only at `GET /api/suppressions` and counted in `/api/stats` (`suppressions_active`). Entries are edited in the YAML file, never through the API: the local API stays read-only.
 
+## Configuration reference
+
+Everything the engine does is a flag with a safe default; everything secret can also come from the environment. This is the full surface — there are no other knobs:
+
+**Engine flags (`sf-engine`):**
+
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `-addr` | `127.0.0.1:7777` | NDJSON ingest listener (loopback unless you decide otherwise) |
+| `-api` | `127.0.0.1:7778` | local read-only API (`0` disables it) |
+| `-rules` | `./rules` | YAML rules directory (hot-reload aware) |
+| `-sequences` | `./sequences` | kill-chain sequences directory (correlator) |
+| `-suppressions` | `./suppressions.yaml` | operator allowlist (hot-reload aware) |
+| `-reload-every` | `15s` | hot-reload cadence for rules/sequences/suppressions (`0` disables) |
+| `-token` / `-token-previous` | — | ingest shared token / previous token during a rotation window |
+| `-api-token` | — | Bearer required on every `/api/*` route (`/api/health` stays open) |
+| `-webhook` / `-webhook-token` | — | SIEM/SOAR connector URL / outbound Bearer token |
+| `-store` / `-store-retention` | off / `72h` | SQLite persistence / pruning window (`0` keeps everything) |
+| `-v` | off | print every event received |
+| `-pidfile` | — | write the engine PID to a file |
+
+**Environment variables:**
+
+| Variable | Component | Purpose |
+|----------|-----------|---------|
+| `SF_INGEST_TOKEN` | engine + every bundled sensor | ingest shared token (the flag wins when both are set) |
+| `SF_INGEST_TOKEN_PREVIOUS` | engine | second accepted token during a rotation window |
+| `SF_API_TOKEN` | engine + console-service | one entry protects both the API and the bridge |
+| `SF_WEBHOOK_TOKEN` | engine | Bearer on outbound alert deliveries |
+| `NEXT_PUBLIC_CONSOLE_URL` | web console | point the UI at a remote hub |
+| `ANALYST_BASE_URL` / `ANALYST_API_KEY` / `ANALYST_MODEL` | console-service | OpenAI-compatible endpoint for the AI triage analyst |
+| `PORT` / `CONSOLE_SERVICE_PORT`, `CONSOLE_HOST`, `CONSOLE_CORS_ORIGIN` | console-service | hub networking and allowed origins |
+
 ## One-command install (Windows)
 
 From any PowerShell window, no admin account and no prior download required:
@@ -301,6 +372,8 @@ The uninstaller stops the processes, removes the logon entries (HKCU Run and any
 ## Web console (preview)
 
 The repo ships an early browser console: live telemetry feed, KPI dashboard, severity triage, the YAML rule pack and an AI analyst that explains each alert like a senior SOC analyst would. Both the alert queue and the live feed support free-text search (rule, host, user, command line, MITRE tag) on top of the dropdown filters, so triage can narrow down a noisy host or a single technique in seconds. The hub (`web/console-service`) contains NO simulator: it forwards only what the Go engine's API (:7778) really delivers, and the header chip names the actual source of the events you are looking at - `sf-sensor (Sysmon real)` for real host telemetry, or `sf-devsensor (demo)` while the scripted scenario is replaying. If the engine is unreachable the console says so and shows no data, instead of inventing any.
+
+The interface carries a restrained motion layer adapted from [React Bits](https://reactbits.dev) — every effect communicates a state change and none is decoration: a pointer-reactive dot-grid canvas behind the shell, view titles that blur in on section change, KPI halos that follow the mouse, an animated 1px border on the AI analyst while it is working, a gradient pulse on the critical counter while critical alerts exist, and a brand tagline that decrypts once on load. Everything respects `prefers-reduced-motion` (static fallbacks) and the whole layer adds zero runtime dependencies beyond `motion`.
 
 Operations dashboard: KPIs, sensor activity, top kill-chain alerts and the live event sample in one view.
 
@@ -482,12 +555,22 @@ bin/bench -addr 127.0.0.1:7777 -api 127.0.0.1:7778 -n 2000 -rate 1000
 bin/bench -addr 127.0.0.1:7777 -api 127.0.0.1:7778 -api-token <token> -n 2000
 ```
 
+## Documentation map
+
+| Document | Contents |
+|----------|----------|
+| [`docs/arquitectura-tecnica-v0.1.pdf`](docs/arquitectura-tecnica-v0.1.pdf) | full technical design (Spanish; see the design-vs-implementation status in [`docs/README.md`](docs/README.md)) |
+| [`docs/api/openapi.yaml`](docs/api/openapi.yaml) | OpenAPI 3.0 contract of the API surface, drift-guarded in CI against `internal/api/api.go` |
+| [`docs/false-positive-control.md`](docs/false-positive-control.md) | the operator guide to alert noise: suppression recipes, dedup semantics, correlator volume, receiver-side filtering, abuse-resistance caps |
+| [`docs/agentes/`](docs/agentes) | round-by-round development reports (multi-agent workflow, verifications included) |
+| `rules/`, `sequences/`, `suppressions.example.yaml` | the shipped detection content, annotated and lab-validated |
+
 ## Roadmap
 
 | Phase | Window          | Delivers                                              |
 |-------|-----------------|-------------------------------------------------------|
 | 1     | weeks 1–6 2026  | tracer bullet, ETW sensor, rule index, p99 < 10 ms    |
-| 2     | weeks 7–14 2026 | YARA memory scan, eBPF collector, SQLite  |
+| 2     | weeks 7–14 2026 | YARA memory scan, eBPF collector; SQLite persistence already shipped (`-store`, Sept 2026) |
 | 3     | weeks 15–20     | REST+OpenAPI spec, Elastic/Splunk connectors          |
 | 4     | weeks 21–26     | Python filaments (sandboxed), plugins, benchmarks     |
 

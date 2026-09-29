@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useConsole } from './socket-provider'
 import { EmptyState, SectionHeader, SeverityBadge } from './ui-bits'
+import { StarBorder } from '@/components/reactbits/star-border'
 import { formatTime, type AnalystMessage, type SfAlert, type SfSuppression } from '@/lib/console-types'
 
 type AskPayload = { alert: SfAlert; question?: string }
@@ -180,7 +181,10 @@ export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfA
         </div>
       </div>
 
-      <div className="flex min-h-[52vh] min-w-0 flex-col rounded-md border border-white/[0.08]">
+      {/* StarBorder (React Bits): el borde de 1px entra en movimiento
+          mientras el analista trabaja — es el indicador de "procesando",
+          no decoración; al terminar vuelve al borde estático. */}
+      <StarBorder active={running} className="flex min-h-[52vh] min-w-0 flex-col">
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
           {messages.length === 0 ? (
             <EmptyState
@@ -290,7 +294,7 @@ export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfA
             </Button>
           )}
         </form>
-      </div>
+      </StarBorder>
     </section>
   )
 }
