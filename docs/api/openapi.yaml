@@ -55,6 +55,8 @@ paths:
       tags: [status]
       operationId: getHealth
       summary: Liveness probe
+      # never gated: auth() exempts the liveness probe (internal/api/api.go)
+      security: []
       description: Cheap check that the engine API is up. Used by the console bridge and by `sf-engine` to detect an already-running instance.
       responses:
         '200':
@@ -68,6 +70,12 @@ paths:
       tags: [status]
       operationId: getStats
       summary: Runtime counters
+      # Optional auth, mirrored on every data path: the bearer requirement is
+      # active only when the engine runs with -api-token; the anonymous entry
+      # keeps default (loopback) deployments valid.
+      security:
+        - bearerAuth: []
+        - {}
       description: |
         Uptime, ingest counters, per-severity alert totals and rule
         stats. When the engine runs with `-webhook`, the three
@@ -90,6 +98,9 @@ paths:
       tags: [status]
       operationId: listSuppressions
       summary: Operator allowlist (read-only view)
+      security:
+        - bearerAuth: []
+        - {}
       description: |
         The suppression entries currently active (expired ones excluded).
         Entries are NOT managed through this API: they live in the
@@ -108,6 +119,9 @@ paths:
       tags: [telemetry]
       operationId: listEvents
       summary: Recent events (newest first)
+      security:
+        - bearerAuth: []
+        - {}
       description: |
         All filters are AND-combined and applied BEFORE `limit`, so
         `?limit=50` with a filter returns the 50 most recent MATCHING
@@ -133,6 +147,9 @@ paths:
       tags: [telemetry]
       operationId: listAlerts
       summary: Recent alerts (newest first)
+      security:
+        - bearerAuth: []
+        - {}
       description: Same filter semantics as `/api/events`.
       parameters:
         - $ref: '#/components/parameters/Limit'
@@ -156,6 +173,9 @@ paths:
       tags: [rules]
       operationId: listRules
       summary: Live rule set
+      security:
+        - bearerAuth: []
+        - {}
       description: |
         The rules currently loaded (hot-reload aware, sorted by id).
         `mitre` and `tactic` are derived from the rule tags: the
@@ -175,6 +195,9 @@ paths:
       tags: [stream]
       operationId: streamFeed
       summary: Server-Sent Events feed of live events and alerts
+      security:
+        - bearerAuth: []
+        - {}
       description: |
         Long-lived `text/event-stream`. Frame types:
 
@@ -205,6 +228,9 @@ paths:
       tags: [export]
       operationId: exportEvents
       summary: Bulk download of the event ring
+      security:
+        - bearerAuth: []
+        - {}
       description: |
         JSONL round-trips the full `Event` records (same contract as the
         NDJSON wire). CSV flattens to stable columns (`id`, `timestamp`,
@@ -246,6 +272,9 @@ paths:
       tags: [export]
       operationId: exportAlerts
       summary: Bulk download of the alert ring
+      security:
+        - bearerAuth: []
+        - {}
       description: |
         Same semantics as `/api/events/export` for alerts. CSV columns:
         `timestamp`, `severity`, `rule_id`, `rule_name`, `event_type`,
