@@ -49,6 +49,8 @@ var (
 		"POST every alert as JSON to this URL (SIEM/SOAR connector); empty disables")
 	webhookToken = flag.String("webhook-token", "",
 		"Bearer token sent on every webhook delivery as 'Authorization: Bearer' (falls back to SF_WEBHOOK_TOKEN); empty disables the header")
+	apiToken = flag.String("api-token", "",
+		"bearer token the local API requires on /api/* (falls back to SF_API_TOKEN); /api/health stays open; empty disables")
 	token = flag.String("token", "",
 		"shared token sensors must send as 'AUTH <token>' on connect (falls back to SF_INGEST_TOKEN); empty disables auth")
 	prevToken = flag.String("token-previous", "",
@@ -182,6 +184,17 @@ func main() {
 			hub.SetCounters(func() (uint64, uint64, uint64) {
 				return server.Received(), server.Dropped(), server.Rejected()
 			})
+			// same standard as the ingest token: flag wins, env fallback
+			apiTok := *apiToken
+			if apiTok == "" {
+				apiTok = os.Getenv("SF_API_TOKEN")
+			}
+			hub.SetToken(apiTok)
+			if apiTok != "" {
+				fmt.Println("[ENGINE] api auth: ENABLED (Authorization: Bearer required; /api/health stays open for probes)")
+			} else if !strings.HasPrefix(hub.Addr(), "127.0.0.1:") && !strings.HasPrefix(hub.Addr(), "[::1]:") {
+				fmt.Println("[ENGINE] WARNING: API bound beyond loopback WITHOUT a token: anything that reaches this port can read every event and alert. Set -api-token or SF_API_TOKEN.")
+			}
 			go func() {
 				if err := hub.Run(); err != nil {
 					log.Printf("[ENGINE] api: %v", err)

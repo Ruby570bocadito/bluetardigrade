@@ -126,10 +126,21 @@ if (-not (Test-Path (Join-Path $web 'console-service\index.ts'))) {
 # engine first: the console bridge picks it up from :7778
 if (-not (Test-PortLocal 7777)) {
     if (Test-Path $engineExe) {
+        # honor the persisted ingest token so the auto-started engine
+        # accepts the same handshake the installer-configured autostart
+        # enforces (no token file = loopback demo mode, no auth)
+        $engineArgs = "-rules `"$root\rules`""
+        $tokFile = Join-Path $root 'tools\config\ingest.token'
+        if (Test-Path $tokFile) {
+            $tok = (Get-Content $tokFile -First 1 -ErrorAction SilentlyContinue)
+            if ($tok) { $tok = $tok.Trim() }
+            if ($tok) { $engineArgs += " -token $tok" }
+        }
         # -pidfile: same contract as the autostart entry, so -Stop works
         # no matter which launcher started the engine.
         New-Item -ItemType Directory -Path $run -Force | Out-Null
-        $eng = Start-Process -FilePath $engineExe -ArgumentList "-rules `"$root\rules`" -pidfile `"$run\engine.pid`"" `
+        $engineArgs = "$engineArgs -pidfile `"$run\engine.pid`""
+        $eng = Start-Process -FilePath $engineExe -ArgumentList $engineArgs `
             -WindowStyle Hidden -PassThru
         Write-PidFile -Name 'engine.pid' -Value $eng.Id
         if (Wait-Port -Port 7777 -Seconds 10) {

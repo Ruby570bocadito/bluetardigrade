@@ -146,6 +146,19 @@ connections rejected by the shared-token handshake. The
 machine-readable contract for the whole surface lives
 in OpenAPI 3.0 at [`docs/api/openapi.yaml`](docs/api/openapi.yaml).
 
+The API can demand a bearer token: start the engine with
+`-api-token '...'` (or `SF_API_TOKEN`) and every `/api/*` route —
+stats, events, alerts, rules, stream, exports — answers `401` without
+a valid `Authorization: Bearer <token>` header, with a loud log line
+per rejected request. `/api/health` stays open on purpose: it is the
+liveness probe the engine, the console bridge and uptime checks rely
+on, and it reveals nothing but `{"status":"ok"}`. The console-service
+bridge honors the same `SF_API_TOKEN` variable, so a token-protected
+console stack needs exactly one extra environment entry. This follows
+the same standard as the ingest auth: loopback stays friction-free by
+default, but a listener reachable beyond loopback must never serve
+telemetry without an explicit credential.
+
 ### Ingest authentication (shared token)
 
 The NDJSON ingest supports a shared-token handshake for deployments
@@ -198,6 +211,16 @@ During the window the startup banner says `rotation window OPEN` so an
 operator can see at a glance when a migration is still in progress.
 Both comparisons are constant-time and combined without branching on
 the content, so the window does not leak which token matched.
+
+On Windows the installer can persist the token for you
+(`install.ps1 -IngestToken '...'`, stored under
+`tools\config\ingest.token`, cleared with an empty value): the
+autostart entry, `sf-console` and `sf-devsensor` then all start the
+engine with that token enforced. The installer's `-Firewall` switch
+**requires** a configured token — it refuses to open TCP 7777
+otherwise (and removes a rule left behind by a pre-gate install),
+because a reachable ingest without a token is an open event-injection
+channel for the whole network segment.
 
 ### Alert webhook (SIEM/SOAR connector)
 
@@ -268,6 +291,12 @@ config (see *Rule actions*); when both are set the per-action secret
 applies to that action only and the global token to the engine-level
 connector. A webhook running without any token prints a startup
 reminder listing the flag and the env var.
+
+Deliveries can authenticate themselves with `-webhook-token` (or the
+`SF_WEBHOOK_TOKEN` env var, flag wins): every POST then carries
+`Authorization: Bearer <token>`, so a receiver that is reachable from
+more than the engine's host can reject unauthenticated or spoofed
+posts instead of ingesting fake alerts into the SIEM.
 
 ## One-command install (Windows)
 

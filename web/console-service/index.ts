@@ -150,6 +150,9 @@ io.on('connection', (socket) => {
 
 httpServer.listen(PORT, HOST, () => {
   console.log(`console-service (engine bridge only, no simulator) on ${HOST}:${PORT}`)
+  if (process.env.SF_API_TOKEN) {
+    console.log('engine bridge: SF_API_TOKEN set - /api/* calls carry the bearer token')
+  }
 })
 
 function shutdown() {

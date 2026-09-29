@@ -19,6 +19,16 @@ export type EngineBridgeCallbacks = {
 const RETRY_MS = 3000
 const PROBE_TIMEOUT_MS = 1200
 const STATS_POLL_MS = 2000
+// Bearer token for the engine API, same env var the engine honors
+// (SF_API_TOKEN): when the API is started with -api-token, every /api
+// call here must carry it or the bridge would be stuck in 401s. The
+// /api/health probe stays open on the engine side, so connectivity
+// checks work before this value is even read.
+const API_TOKEN = process.env.SF_API_TOKEN || ''
+
+function authHeaders(): Record<string, string> {
+  return API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}
+}
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
@@ -70,7 +80,7 @@ export class EngineBridge {
 
   private async probe(): Promise<boolean> {
     try {
-      const res = await fetch(`${this.base}/api/health`, { signal: shortTimeout(PROBE_TIMEOUT_MS) })
+      const res = await fetch(`${this.base}/api/health`, { signal: shortTimeout(PROBE_TIMEOUT_MS), headers: authHeaders() })
       return res.ok
     } catch {
       return false
@@ -92,7 +102,7 @@ export class EngineBridge {
     for (let i = alerts.length - 1; i >= 0; i--) this.cb.onAlert(mapAlert(alerts[i] as Record<string, unknown>))
 
     this.ctrl = new AbortController()
-    const res = await fetch(`${this.base}/api/stream`, { signal: this.ctrl.signal })
+    const res = await fetch(`${this.base}/api/stream`, { signal: this.ctrl.signal, headers: authHeaders() })
     if (!res.ok || !res.body) throw new Error(`stream failed (${res.status})`)
 
     this.cb.onUp()
@@ -104,7 +114,7 @@ export class EngineBridge {
   }
 
   private async getJson<T>(url: string): Promise<T> {
-    const res = await fetch(url, { signal: shortTimeout(PROBE_TIMEOUT_MS) })
+    const res = await fetch(url, { signal: shortTimeout(PROBE_TIMEOUT_MS), headers: authHeaders() })
     if (!res.ok) throw new Error(`${url} -> ${res.status}`)
     return (await res.json()) as T
   }
