@@ -123,6 +123,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Suppressions'
+  /api/sequences:
+    get:
+      tags: [status]
+      operationId: listSequences
+      summary: Loaded kill-chain sequences (read-only view)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The kill-chain sequences currently loaded by the correlator
+        (sorted by id, hot-reload aware). Sequences are NOT managed
+        through this API: they live in the `sequences/*.yaml` files the
+        engine hot-reloads every 15 s. An empty list means the
+        correlator is off (the engine found no sequences/ directory);
+        combined with `stats.correlator_states` this endpoint tells the
+        operator which chains are armed and how their steps are wired.
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '200':
+          description: Loaded sequences
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Sequence'
   /api/events:
     get:
       tags: [telemetry]
@@ -822,3 +849,39 @@ components:
               expires:
                 type: string
                 description: RFC 3339 expiration as written in the file (empty = until removed)
+    Sequence:
+      type: object
+      description: |
+        One kill-chain sequence as the correlator loaded it. Steps are
+        listed in declared order for display; matching itself is
+        unordered (the correlator tracks which steps already matched
+        per host, in any order, inside the window).
+      required: [id, name, description, severity, window_seconds, tags, steps]
+      properties:
+        id:
+          type: string
+          description: stable sequence id (the alert rule_id of the completion)
+        name:
+          type: string
+          description: human-readable campaign name shown in alerts
+        description:
+          type: string
+          description: what completing the chain means, from the YAML file
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+          description: severity of the completion alert
+        window_seconds:
+          type: integer
+          description: effective completion window in seconds (the configured
+            window, or the 5-minute default compile applies)
+        tags:
+          type: array
+          items:
+            type: string
+          description: tags copied onto the completion alert (MITRE, tactic)
+        steps:
+          type: array
+          items:
+            type: string
+          description: contributing rule names (exact match against the live rule set)

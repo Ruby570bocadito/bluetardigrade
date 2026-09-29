@@ -96,6 +96,19 @@ export type SfSuppression = {
   expires?: string
 }
 
+// One kill-chain sequence (engine GET /api/sequences via the hub).
+// Steps are listed in declared order for display; the correlator matches
+// them unordered inside the window.
+export type SfSequence = {
+  id: string
+  name: string
+  description: string
+  severity: Severity
+  window_seconds: number
+  tags: string[]
+  steps: string[]
+}
+
 export type SimStats = {
   events_total: number
   alerts_total: number
@@ -124,6 +137,7 @@ export type ConsoleSnapshot = {
   alerts: SfAlert[]
   rules: RuleMeta[]
   suppressions?: SfSuppression[]
+  sequences?: SfSequence[]
   stats: SimStats
   started_at: string
 }

@@ -5,7 +5,7 @@
 // no simulation). SSE frames are parsed by hand so the same code runs
 // on bun and node.
 
-import type { SfEvent, SfAlert, HubStats, RuleMeta, SfSuppression } from './types'
+import type { SfEvent, SfAlert, HubStats, RuleMeta, SfSuppression, SfSequence } from './types'
 
 export type EngineBridgeCallbacks = {
   onEvent: (ev: SfEvent) => void
@@ -13,6 +13,7 @@ export type EngineBridgeCallbacks = {
   onStats: (st: HubStats) => void
   onRules: (rules: RuleMeta[]) => void
   onSuppressions: (entries: SfSuppression[]) => void
+  onSequences: (seqs: SfSequence[]) => void
   onUp: () => void
   onDown: () => void
 }
@@ -47,8 +48,10 @@ export class EngineBridge {
   private ctrl: AbortController | null = null
   private statsTimer: ReturnType<typeof setInterval> | null = null
   private stopped = false
-  // last suppressions JSON seen, so the hub only re-emits on real changes
+  // last suppressions / sequences JSON seen, so the hub only re-emits
+  // on real changes (both change on 15 s hot-reloads, not every poll)
   private lastSuppressions = ''
+  private lastSequences = ''
 
   constructor(private cb: EngineBridgeCallbacks) {
     this.base = process.env.ENGINE_API || 'http://127.0.0.1:7778'
@@ -65,6 +68,7 @@ export class EngineBridge {
     this.ctrl?.abort()
     this.ctrl = null
     this.lastSuppressions = ''
+    this.lastSequences = ''
   }
 
   /** Connects, subscribes and keeps retrying until stop(). Never throws. */
@@ -133,6 +137,21 @@ export class EngineBridge {
     }
   }
 
+  private async pullSequences() {
+    // Same contract as suppressions: secondary telemetry, change-only
+    // re-emit, transient failures stay silent. Sequences only change on
+    // the engine's 15 s hot-reload of the sequences/ directory.
+    try {
+      const seqs = await this.getJson<SfSequence[]>(`${this.base}/api/sequences`)
+      const json = JSON.stringify(seqs)
+      if (json === this.lastSequences) return
+      this.lastSequences = json
+      this.cb.onSequences(seqs ?? [])
+    } catch {
+      /* transient */
+    }
+  }
+
   private async getJson<T>(url: string): Promise<T> {
     const res = await fetch(url, { signal: shortTimeout(PROBE_TIMEOUT_MS), headers: authHeaders() })
     if (!res.ok) throw new Error(`${url} -> ${res.status}`)
@@ -147,6 +166,7 @@ export class EngineBridge {
       /* transient; the SSE stream will signal a real disconnection */
     }
     await this.pullSuppressions()
+    await this.pullSequences()
   }
 
   private async pumpSSE(body: ReadableStream<Uint8Array>) {

@@ -6,7 +6,7 @@
 
 import { createServer } from 'http'
 import { Server } from 'socket.io'
-import type { SfEvent, SfAlert, HubStats, RuleMeta, SfSuppression } from './types'
+import type { SfEvent, SfAlert, HubStats, RuleMeta, SfSuppression, SfSequence } from './types'
 import { EngineBridge } from './bridge'
 import { runAnalysis } from './analyst'
 
@@ -45,6 +45,7 @@ const alerts: SfAlert[] = []
 let mode: HubStats['mode'] = 'sin-motor'
 let activeRules: RuleMeta[] = []
 let activeSuppressions: SfSuppression[] = []
+let activeSequences: SfSequence[] = []
 let lastStats: HubStats | null = null
 const startedAt = new Date()
 
@@ -93,6 +94,13 @@ function pushSuppressions(entries: SfSuppression[]) {
   io.emit('console:suppressions', entries)
 }
 
+// Kill-chain sequences: same change-only policy as suppressions. They
+// change when the engine hot-reloads sequences/ (every 15 s at most).
+function pushSequences(seqs: SfSequence[]) {
+  activeSequences = seqs
+  io.emit('console:sequences', seqs)
+}
+
 const bridge = new EngineBridge({
   onEvent: pushEvent,
   onAlert: pushAlert,
@@ -101,6 +109,7 @@ const bridge = new EngineBridge({
     activeRules = rules
   },
   onSuppressions: pushSuppressions,
+  onSequences: pushSequences,
   onUp: () => {
     if (mode === 'engine') return
     mode = 'engine'
@@ -112,6 +121,7 @@ const bridge = new EngineBridge({
     lastStats = null
     activeRules = []
     if (activeSuppressions.length > 0) pushSuppressions([])
+    if (activeSequences.length > 0) pushSequences([])
     pushStats(offlineStats())
     console.log('telemetry source: NONE (engine offline - console shows no data)')
   },
@@ -131,6 +141,7 @@ io.on('connection', (socket) => {
     alerts: alerts.slice(0, MAX_ALERTS),
     rules: activeRules,
     suppressions: activeSuppressions,
+    sequences: activeSequences,
     stats,
     started_at: new Date(Date.now() - stats.uptime_s * 1000).toISOString(),
   })

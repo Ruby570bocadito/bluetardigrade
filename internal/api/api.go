@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Ruby570bocadito/security-framework/internal/alert"
+	"github.com/Ruby570bocadito/security-framework/internal/correlate"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
 	"github.com/Ruby570bocadito/security-framework/internal/suppress"
 	"github.com/Ruby570bocadito/security-framework/pkg/model"
@@ -47,6 +48,7 @@ type Hub struct {
 	received    func() (uint64, uint64, uint64) // ingested, dropped, rejected
 	webhook     func() (uint64, uint64, uint64) // sent, failed, dropped
 	correlator  func() (int, int, int)          // in-flight states, loaded sequences, tracking cap
+	sequences   *correlate.Manager              // kill-chain sequences (read-only view)
 }
 
 // New binds the API listener. Use addr ":0" in tests to pick a free port.
@@ -67,6 +69,7 @@ func New(addr string) (*Hub, error) {
 	mux.HandleFunc("GET /api/alerts", h.handleAlerts)
 	mux.HandleFunc("GET /api/rules", h.handleRules)
 	mux.HandleFunc("GET /api/suppressions", h.handleSuppressions)
+	mux.HandleFunc("GET /api/sequences", h.handleSequences)
 	mux.HandleFunc("GET /api/stream", h.handleStream)
 	mux.HandleFunc("GET /api/health", h.handleHealth)
 	mux.HandleFunc("GET /api/alerts/export", h.handleAlertsExport)
@@ -153,6 +156,16 @@ func (h *Hub) SetWebhookStats(stats func() (sent, failed, dropped uint64)) {
 func (h *Hub) SetCorrelatorStats(fn func() (states, seqs, cap int)) {
 	h.mu.Lock()
 	h.correlator = fn
+	h.mu.Unlock()
+}
+
+// SetSequences exposes the loaded kill-chain sequences (read-only)
+// through /api/sequences. A nil manager means the correlator is off:
+// the endpoint serves an empty list, mirroring the suppressions
+// semantics.
+func (h *Hub) SetSequences(m *correlate.Manager) {
+	h.mu.Lock()
+	h.sequences = m
 	h.mu.Unlock()
 }
 
@@ -405,6 +418,38 @@ func (h *Hub) handleSuppressions(w http.ResponseWriter, _ *http.Request) {
 type suppressPayload struct {
 	Active  int              `json:"active"`
 	Entries []suppress.Entry `json:"entries"`
+}
+
+type sequencePayload struct {
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Description   string   `json:"description"`
+	Severity      string   `json:"severity"`
+	WindowSeconds int      `json:"window_seconds"`
+	Tags          []string `json:"tags"`
+	Steps         []string `json:"steps"`
+}
+
+// handleSequences lists the kill-chain sequences as loaded right now
+// (hot-reload aware, sorted by id). Read-only: sequences are edited in
+// the sequences/ YAML files the engine hot-reloads every 15 s. A nil
+// manager (no sequences/ directory) yields an empty list so consumers
+// see "correlator off" instead of a 404.
+func (h *Hub) handleSequences(w http.ResponseWriter, _ *http.Request) {
+	h.mu.Lock()
+	m := h.sequences
+	h.mu.Unlock()
+	out := []sequencePayload{}
+	if m != nil {
+		for _, s := range m.Snapshot() {
+			out = append(out, sequencePayload{
+				ID: s.ID, Name: s.Name, Description: s.Description,
+				Severity: s.Severity, WindowSeconds: s.WindowSeconds,
+				Tags: s.Tags, Steps: s.Steps,
+			})
+		}
+	}
+	writeJSON(w, out)
 }
 
 func (h *Hub) handleHealth(w http.ResponseWriter, _ *http.Request) {

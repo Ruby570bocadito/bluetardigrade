@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -140,6 +141,45 @@ func (m *Manager) States() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.state)
+}
+
+// SequenceInfo is the read-only view of one loaded sequence served by
+// GET /api/sequences. WindowSeconds is the effective window (the
+// configured one, or the 5-minute default compile applies).
+type SequenceInfo struct {
+	ID            string
+	Name          string
+	Description   string
+	Severity      string
+	WindowSeconds int
+	Tags          []string
+	Steps         []string // rule names, in declared order (order is display-only; matching is unordered)
+}
+
+// Snapshot returns the currently loaded sequences, sorted by ID,
+// hot-reload aware. The copies are shallow but detached from the
+// manager state: callers may hold them past a Reload safely.
+func (m *Manager) Snapshot() []SequenceInfo {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]SequenceInfo, 0, len(m.seqs))
+	for _, c := range m.seqs {
+		steps := make([]string, 0, len(c.seq.Steps))
+		for _, s := range c.seq.Steps {
+			steps = append(steps, s.Rule)
+		}
+		out = append(out, SequenceInfo{
+			ID:            c.seq.ID,
+			Name:          c.seq.Name,
+			Description:   c.seq.Description,
+			Severity:      c.seq.Severity,
+			WindowSeconds: int(c.window / time.Second),
+			Tags:          append([]string(nil), c.seq.Tags...),
+			Steps:         steps,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 
 // SetEmit wires (or rewires) the completion callback, so main can

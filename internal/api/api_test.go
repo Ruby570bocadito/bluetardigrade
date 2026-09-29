@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Ruby570bocadito/security-framework/internal/alert"
+	"github.com/Ruby570bocadito/security-framework/internal/correlate"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
 	"github.com/Ruby570bocadito/security-framework/pkg/model"
 )
@@ -459,5 +460,46 @@ func TestStatsCorrelatorCounters(t *testing.T) {
 	}
 	if stats["correlator_cap"].(float64) != 8192 {
 		t.Errorf("correlator_cap = %v, want 8192", stats["correlator_cap"])
+	}
+}
+
+// TestSequencesEndpoint pins the read-only kill-chain view: a nil
+// manager (correlator off) serves an empty list - not a 404 - and a
+// wired manager reflects its Snapshot() with the wire tags the spec
+// documents (id, name, severity, window_seconds, steps...).
+func TestSequencesEndpoint(t *testing.T) {
+	h, addr := newTestHub(t)
+
+	var out []map[string]any
+	getJSON(t, fmt.Sprintf("http://%s/api/sequences", addr), &out)
+	if len(out) != 0 {
+		t.Fatalf("correlator off must serve an empty list, got %d", len(out))
+	}
+
+	m, err := correlate.LoadDir("../../sequences", nil)
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	h.SetSequences(m)
+	getJSON(t, fmt.Sprintf("http://%s/api/sequences", addr), &out)
+	if len(out) != m.Count() {
+		t.Fatalf("sequences = %d, want %d", len(out), m.Count())
+	}
+	first := out[0]
+	for _, k := range []string{"id", "name", "description", "severity", "window_seconds", "tags", "steps"} {
+		if _, ok := first[k]; !ok {
+			t.Errorf("sequence payload missing %q (spec drift)", k)
+		}
+	}
+	if first["severity"] != "critical" {
+		t.Errorf("severity = %v, want critical", first["severity"])
+	}
+	ws, ok := first["window_seconds"].(float64)
+	if !ok || ws != 300 {
+		t.Errorf("window_seconds = %v, want 300", first["window_seconds"])
+	}
+	steps, ok := first["steps"].([]any)
+	if !ok || len(steps) != 3 {
+		t.Errorf("steps = %v, want 3 rule names", first["steps"])
 	}
 }
