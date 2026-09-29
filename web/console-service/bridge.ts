@@ -46,6 +46,8 @@ export type EngineBridgeOptions = {
   maxEvents?: number
   /** How many alerts to replay on connect; matches the hub ring buffer. */
   maxAlerts?: number
+  /** Retry delay between reconnect attempts (tests use a small value). */
+  retryMs?: number
 }
 
 function sleep(ms: number) {
@@ -63,11 +65,13 @@ export class EngineBridge {
   private base: string
   private maxEvents: number
   private maxAlerts: number
+  private retryMs: number
   private ctrl: AbortController | null = null
   private statsTimer: ReturnType<typeof setInterval> | null = null
   private stopped = false
   // last suppressions / sequences JSON seen, so the hub only re-emits
-  // on real changes (both change on 15 s hot-reloads, not every poll)
+  // on real changes (both change on 15 s hot-reloads, not every poll).
+  // The caches are reset on every (re)connect — see establish().
   private lastSuppressions = ''
   private lastSequences = ''
 
@@ -78,6 +82,7 @@ export class EngineBridge {
     this.base = options.engineApi ?? process.env.ENGINE_API ?? 'http://127.0.0.1:7778'
     this.maxEvents = options.maxEvents ?? 160
     this.maxAlerts = options.maxAlerts ?? 48
+    this.retryMs = options.retryMs ?? RETRY_MS
   }
 
   get endpoint(): string {
@@ -105,7 +110,7 @@ export class EngineBridge {
       }
       if (this.stopped) break
       this.cb.onDown()
-      await sleep(RETRY_MS)
+      await sleep(this.retryMs)
     }
   }
 
@@ -120,6 +125,16 @@ export class EngineBridge {
 
   private async establish() {
     if (!(await this.probe())) throw new Error('engine api not reachable')
+
+    // every (re)connect resets the change-only caches: consumers cleared
+    // their lists on engine-down (onDown pushes []), so a payload
+    // identical to the pre-flap one must STILL be re-emitted after the
+    // engine returns — otherwise Cadenas/Supresiones-style consumers
+    // would stay empty until the YAML files actually change. The
+    // one-shot sync below already re-pulls rules/events/alerts
+    // unconditionally; this keeps the polled lists on the same contract.
+    this.lastSuppressions = ''
+    this.lastSequences = ''
 
     // one-shot sync of the current state before going live
     const [rules, events, alerts] = await Promise.all([
@@ -257,6 +272,12 @@ function mapStats(st: Record<string, unknown>): HubStats {
     correlator_states: Number(st.correlator_states ?? 0),
     correlator_sequences: Number(st.correlator_sequences ?? 0),
     correlator_cap: Number(st.correlator_cap ?? 0),
+    // optional SQLite persistence (-store): both type contracts declare
+    // these as "forwarded by the hub when the engine reports it" —
+    // actually forward them
+    store_enabled: st.store_enabled === true,
+    store_events: Number(st.store_events ?? 0),
+    store_alerts: Number(st.store_alerts ?? 0),
   }
 }
 
