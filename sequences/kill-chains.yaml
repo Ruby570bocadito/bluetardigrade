@@ -52,3 +52,18 @@
     - rule: "Manipulacion de Windows Defender"
     - rule: "Desactivacion del firewall de Windows"
     - rule: "Borrado de registros de eventos"
+- name: "Instalacion de persistencia"
+  id: "f3d8ba64-4d5e-4f60-b172-d8e9f0a1b2c3"
+  description: >
+    Transferencia de herramientas seguida de autostart escrito
+    directamente en el registro: el payload llego y ya se ha registrado
+    para arrancar con el sistema. Deteccion pensada para telemetria
+    real (sf-sensor/Sysmon): el paso de registro se dispara por el
+    artefacto (registry.set), no por el comando, asi que cubre malware
+    que persiste via API sin lanzar reg.exe.
+  severity: critical
+  window: 5m
+  tags: ["attack.t1105", "attack.t1547.001", "attack.persistence", "correlacion"]
+  steps:
+    - rule: "Descarga con certutil o bitsadmin"
+    - rule: "Persistencia en clave Run via registro"

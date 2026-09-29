@@ -366,6 +366,7 @@ function Copy-RuntimeScripts {
     New-Item -ItemType Directory -Path $scripts -Force | Out-Null
     Copy-Item (Join-Path $Root 'scripts\windows\sf-console.ps1') (Join-Path $scripts 'sf-console.ps1') -Force
     Copy-Item (Join-Path $Root 'scripts\windows\devsensor.ps1') (Join-Path $scripts 'devsensor.ps1') -Force
+    Copy-Item (Join-Path $Root 'scripts\windows\sensor.ps1') (Join-Path $scripts 'sensor.ps1') -Force
     Copy-Item (Join-Path $Root 'install.ps1')  (Join-Path $scripts 'install.ps1')  -Force
     Copy-Item (Join-Path $Root 'uninstall.ps1') (Join-Path $scripts 'uninstall.ps1') -Force
 }
@@ -380,6 +381,7 @@ function Write-Shims {
     try { $enc = [Text.Encoding]::GetEncoding(0) } catch { $enc = [Text.Encoding]::ASCII }
     $consolePs1   = Join-Path $scripts 'sf-console.ps1'
     $devsensorPs1 = Join-Path $scripts 'devsensor.ps1'
+    $sensorPs1    = Join-Path $scripts 'sensor.ps1'
     $installPs1   = Join-Path $scripts 'install.ps1'
     $uninstallPs1 = Join-Path $scripts 'uninstall.ps1'
     # sf-engine is exposed as a hard-linked exe, not a .cmd wrapper:
@@ -416,6 +418,7 @@ function Write-Shims {
     $shims = [ordered]@{
         'sf-console.cmd' = "@echo off$nl powershell -NoProfile -ExecutionPolicy Bypass -File `"$consolePs1`" %*$nl"
         'sf-devsensor.cmd' = "@echo off$nl powershell -NoProfile -ExecutionPolicy Bypass -File `"$devsensorPs1`" %*$nl"
+        'sf-sensor.cmd' = "@echo off$nl powershell -NoProfile -ExecutionPolicy Bypass -File `"$sensorPs1`" %*$nl"
         'sf-update.cmd' = (@(
             '@echo off'
             'if "%~1"=="-run" goto :run'
@@ -437,7 +440,7 @@ function Write-Shims {
     foreach ($k in $shims.Keys) {
         [IO.File]::WriteAllText((Join-Path $bin $k), $shims[$k], $enc)
     }
-    Write-Ok "sf-engine / sf-devsensor / sf-console / sf-update / sf-uninstall"
+    Write-Ok "sf-engine / sf-devsensor / sf-sensor / sf-console / sf-update / sf-uninstall"
 }
 
 function Add-ToUserPath {
@@ -622,6 +625,7 @@ if ($MyInvocation.InvocationName -ne '.') {
     Write-Host ' commands  :'
     Write-Host '   sf-engine      detection engine, prints alerts live'
     Write-Host '   sf-devsensor   replays the simulated TTP scenario (PowerShell)'
+    Write-Host '   sf-sensor      REAL telemetry via Sysmon (needs Sysmon installed)'
     Write-Host '   sf-console     web console + browser (engine + hub + UI)'
     Write-Host '   sf-update      update to the latest code and rebuild'
     Write-Host '   sf-uninstall   remove everything'
@@ -629,6 +633,7 @@ if ($MyInvocation.InvocationName -ne '.') {
     Write-Host ' quick test (open a NEW terminal first):'
     Write-Host '   terminal 1:  sf-engine'
     Write-Host '   terminal 2:  sf-devsensor     -> 18 alerts on terminal 1'
+    Write-Host '   real mode :  sf-sensor        -> alerts from actual host activity (Sysmon)'
     Write-Host '   or simply:   sf-console'
     Write-Host '============================================================'
 }

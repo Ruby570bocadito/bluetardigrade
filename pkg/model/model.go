@@ -40,6 +40,16 @@ type Network struct {
         Domain          string `json:"domain,omitempty"`
 }
 
+// Registry carries registry telemetry: which key/value was touched,
+// how (create, set, rename, delete) and, when available, the data
+// written. Populated by real sensors (Sysmon event IDs 12/13/14).
+type Registry struct {
+        Key       string `json:"key,omitempty"`        // e.g. HKCU\Software\...\Run
+        ValueName string `json:"value_name,omitempty"` // value name inside the key
+        Value     string `json:"value,omitempty"`      // data written (Sysmon Details)
+        Operation string `json:"operation,omitempty"`  // SetValue | CreateKey | DeleteKey | RenameKey
+}
+
 // Event is the unified, transport-agnostic event record. One JSON line
 // on the wire (NDJSON), one row in forensic storage.
 type Event struct {
@@ -52,6 +62,7 @@ type Event struct {
         Process   *Process  `json:"process,omitempty"`
         File      *File     `json:"file,omitempty"`
         Network   *Network  `json:"network,omitempty"`
+        Registry  *Registry `json:"registry,omitempty"`
         Tags      []string  `json:"tags,omitempty"`
 
         // Enrichment is added by the engine, never by sensors, and never

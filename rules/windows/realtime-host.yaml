@@ -1,0 +1,178 @@
+# Real-telemetry detections (registry.set / file.write / image.load).
+#
+# Unlike the seeded pack (which detects offensive COMMAND LINES seen on
+# process.create), these rules fire on the ARTIFACTS themselves: registry
+# writes, dropped files and loaded modules captured by real sensors
+# (sf-sensor via Sysmon event IDs 12/13/14, 11, 7). That closes the gap
+# where malware persists or drops payloads through its own API calls
+# instead of shelling out to reg.exe / certutil, which the process rules
+# already cover. Path conditions use (?i) regex: Windows path casing
+# varies between writers on real telemetry.
+#
+# Pack: rules 15 -> 21.
+# T1547.001 - Run/RunOnce persistence key written via the registry
+# Source TTP: any process (not just reg.exe) registering itself for
+# autostart through HKCU/HKLM ...\CurrentVersion\Run. Validated in lab:
+# fires on a registry.set SetValue event whose key ends in Run|RunOnce.
+- name: "Persistencia en clave Run via registro"
+  id: "7d1e2f40-5a6b-4c7d-9e8f-0a1b2c3d4e5f"
+  description: >
+    Detecta la escritura de una clave de autostart Run o RunOnce en el
+    registro directamente, sea cual sea el proceso que la escriba.
+    Malware real persiste llamando a la API de registro, sin lanzar
+    reg.exe: esta regla cubre esa variante que la deteccion por linea
+    de comandos no ve.
+  severity: high
+  event_type: registry.set
+  conditions:
+    - field: registry.operation
+      operator: eq
+      value: "SetValue"
+    - field: registry.key
+      operator: regex
+      value: '(?i)\\Microsoft\\Windows\\CurrentVersion\\(Run|RunOnce)$'
+  actions:
+    - type: alert
+      config:
+        message: "Autostart registrado en el registro de {host}: {user} escribio una clave Run/RunOnce"
+        notify: "true"
+  tags: ["attack.t1547.001", "attack.persistence", "sensor:registry"]
+  enabled: true
+# T1562.001 - Disable security tooling via registry (API path)
+# Source TTP: ransomware and stealth loaders flip Defender's policy
+# switches straight through the registry; only some of them invoke
+# Set-MpPreference and get caught by the process rule. Validated in
+# lab: fires on registry.set of DisableAntiSpyware & friends.
+- name: "Defensa antivirus desactivada via registro"
+  id: "8e2f3a51-6b7c-4d8e-af90-1b2c3d4e5f60"
+  description: >
+    Detecta la desactivacion de la proteccion en tiempo real de Windows
+    Defender escribiendo los conmutadores de politica del registro
+    (DisableAntiSpyware, DisableRealtimeMonitoring y similares),
+    cualquiera que sea el proceso que los escriba.
+  severity: high
+  event_type: registry.set
+  conditions:
+    - field: registry.operation
+      operator: eq
+      value: "SetValue"
+    - field: registry.value_name
+      operator: regex
+      value: '(?i)^(disableantispyware|disableantivirus|disablerealtimemonitoring|disablebehaviormonitoring|disableioavprotection|disablescheduledscans)$'
+  actions:
+    - type: alert
+      config:
+        message: "Defender desactivado via registro en {host} - la proteccion en tiempo real se apago sin pasar por la consola"
+        notify: "true"
+  tags: ["attack.t1562.001", "attack.defense-evasion", "sensor:registry"]
+  enabled: true
+# T1562.001 - Defender exclusions added via registry
+# Source TTP: adding a folder/process to Defender's Exclusions tree is
+# quieter than disabling protection and survives reboots. Validated in
+# lab: fires on any write under ...\Windows Defender\Exclusions.
+- name: "Exclusiones de Defender anadidas via registro"
+  id: "9f3a4b62-7c8d-4e9f-b0a1-2c3d4e5f6a70"
+  description: >
+    Detecta la creacion de exclusiones en Windows Defender via registro
+    (carpetas, procesos o extensiones que el antivirus dejara de
+    escanear). Tecnica silenciosa que sobrevive reinicios y antecede
+    normalmente a la ejecucion del payload real.
+  severity: high
+  event_type: registry.set
+  conditions:
+    - field: registry.operation
+      operator: in
+      value: ["SetValue", "CreateKey"]
+    - field: registry.key
+      operator: regex
+      value: '(?i)\\Microsoft\\Windows Defender\\Exclusions'
+  actions:
+    - type: alert
+      config:
+        message: "Exclusion de Defender añadida en {host} - una ruta o proceso dejara de ser escaneado"
+        notify: "true"
+  tags: ["attack.t1562.001", "attack.defense-evasion", "sensor:registry"]
+  enabled: true
+# T1547.005 - Executable dropped into the Startup folder
+# Source TTP: file-based autostart alternative to Run keys; caught on
+# the artifact (file.write) rather than the dropping command line, so
+# it also covers droppers writing via their own code. Validated in
+# lab: fires on a file.write of an executable extension under
+# Start Menu\Programs\Startup.
+- name: "Ejecutable soltado en carpeta de inicio"
+  id: "a04b5c73-8d9e-4fa0-c1b2-3d4e5f6a7b80"
+  description: >
+    Detecta la creacion de un archivo ejecutable o script en la carpeta
+    de Inicio del menu, mecanismo de persistencia basado en ficheros
+    que se ejecuta con la sesion de cualquier usuario. Se detecta el
+    artefacto (escritura del fichero), no el comando que lo solto.
+  severity: high
+  event_type: file.write
+  conditions:
+    - field: file.path
+      operator: regex
+      value: '(?i)\\Start Menu\\Programs\\Startup\\'
+    - field: file.extension
+      operator: regex
+      value: '(?i)^(exe|dll|bat|cmd|ps1|vbs|vbe|js|jse|wsf|wsh|scr|hta|lnk)$'
+  actions:
+    - type: alert
+      config:
+        message: "Persistencia por carpeta de Inicio en {host}: se solto un ejecutable/script que correra al iniciar sesion"
+        notify: "true"
+  tags: ["attack.t1547.005", "attack.persistence", "sensor:file"]
+  enabled: true
+# T1036.007 - Masquerading: executable disguised as a document
+# Source TTP: double extensions (.pdf.exe) exploit the default Windows
+# setting of hiding known extensions. Caught on the dropped artifact.
+# Validated in lab: fires on file.write of *.pdf.exe-style names.
+- name: "Ejecutable disfrazado de documento"
+  id: "b15c6d84-9eaf-40b1-d2c3-4e5f6a7b8c90"
+  description: >
+    Detecta la creacion de ficheros con doble extension de tipo
+    documento mas .exe (payload.pdf.exe, factura.docx.exe...), tecnica
+    de suplantacion que explota que Windows oculta las extensiones
+    conocidas por defecto. Alta confianza: casi ningun software legimo
+    genera esos nombres.
+  severity: high
+  event_type: file.write
+  conditions:
+    - field: file.path
+      operator: regex
+      value: '(?i)\.(pdf|doc|docx|xls|xlsx|ppt|pptx|jpg|jpeg|png|txt|zip)\.(exe|scr|com|pif|bat)$'
+  actions:
+    - type: alert
+      config:
+        message: "Ejecutable disfrazado de documento detectado en {host}: doble extension para enganar al usuario"
+        notify: "true"
+  tags: ["attack.t1036.007", "attack.defense-evasion", "sensor:file"]
+  enabled: true
+# T1574.001/2 - DLL loaded from a user-writable directory
+# Source TTP: DLL search-order hijacking plants a malicious library in
+# a path the app searches before system32. High FPR in the wild, hence
+# medium severity: valid lead for triage, not a panic signal.
+# Validated in lab: fires on image.load of a .dll under AppData/Temp/Public.
+- name: "DLL cargada desde ruta de usuario"
+  id: "c26d7e95-afbe-41c2-e3d4-5f6a7b8c9da0"
+  description: >
+    Detecta la carga de una DLL desde AppData, Temp o Public, patron
+    tipico de secuestro del orden de busqueda de librerias y de loaders
+    descomprimidos en memoria. Severidad media por falsos positivos
+    posibles (instaladores, apps portables): priorizar si coincide con
+    otras alertas del mismo host.
+  severity: medium
+  event_type: image.load
+  conditions:
+    - field: file.path
+      operator: regex
+      value: '(?i)\.dll$'
+    - field: file.path
+      operator: contains_any
+      value: ["\\AppData\\", "\\Windows\\Temp\\", "\\Users\\Public\\"]
+  actions:
+    - type: alert
+      config:
+        message: "DLL cargada desde ruta escribible por el usuario en {host} - posible secuestro de busqueda de librerias"
+        notify: "false"
+  tags: ["attack.t1574.001", "attack.t1574.002", "attack.privilege-escalation", "sensor:image"]
+  enabled: true

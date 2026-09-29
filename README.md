@@ -104,12 +104,13 @@ irm https://raw.githubusercontent.com/Ruby570bocadito/security-framework/main/in
 
 The installer downloads the repository, provisions portable Go, Node
 and Bun under your user profile, builds the engine and the web console,
-and puts five commands on your PATH:
+and puts six commands on your PATH:
 
 | Command         | What it does                                   |
 |-----------------|------------------------------------------------|
 | `sf-engine`     | detection engine, prints alerts live           |
 | `sf-devsensor`  | replays the simulated TTP scenario (PowerShell, works under WDAC/Smart App Control) |
+| `sf-sensor`     | streams REAL host telemetry through the engine via Sysmon (needs Sysmon installed; simulated demo: `sf-devsensor`) |
 | `sf-console`    | starts the web console and opens the browser   |
 | `sf-update`     | updates the code and rebuilds                  |
 | `sf-uninstall`  | removes everything                             |
