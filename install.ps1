@@ -333,6 +333,7 @@ function Copy-RuntimeScripts {
     $scripts = Join-Path $Root 'scripts'
     New-Item -ItemType Directory -Path $scripts -Force | Out-Null
     Copy-Item (Join-Path $Root 'scripts\windows\sf-console.ps1') (Join-Path $scripts 'sf-console.ps1') -Force
+    Copy-Item (Join-Path $Root 'scripts\windows\devsensor.ps1') (Join-Path $scripts 'devsensor.ps1') -Force
     Copy-Item (Join-Path $Root 'install.ps1')  (Join-Path $scripts 'install.ps1')  -Force
     Copy-Item (Join-Path $Root 'uninstall.ps1') (Join-Path $scripts 'uninstall.ps1') -Force
 }
@@ -346,22 +347,34 @@ function Write-Shims {
     $enc = $null
     try { $enc = [Text.Encoding]::GetEncoding(0) } catch { $enc = [Text.Encoding]::ASCII }
     $consolePs1   = Join-Path $scripts 'sf-console.ps1'
+    $devsensorPs1 = Join-Path $scripts 'devsensor.ps1'
     $installPs1   = Join-Path $scripts 'install.ps1'
     $uninstallPs1 = Join-Path $scripts 'uninstall.ps1'
-    # sf-engine / sf-devsensor are exposed as hard-linked exes, not .cmd
-    # wrappers: Ctrl+C on a batch wrapper makes cmd ask 'Terminate batch
-    # job (Y/N)?'. The engine resolves rules next to its own exe.
-    foreach ($pair in @(@('sf-engine.exe', 'engine.exe'), @('sf-devsensor.exe', 'devsensor.exe'))) {
-        $link = Join-Path $bin $pair[0]
-        $target = Join-Path $bin $pair[1]
-        if (Test-Path $link) { Remove-Item $link -Force -ErrorAction SilentlyContinue }
-        try {
-            New-Item -ItemType HardLink -Path $link -Target $target -ErrorAction Stop | Out-Null
-        } catch {
-            Copy-Item $target $link -Force
-        }
+    # sf-engine is exposed as a hard-linked exe, not a .cmd wrapper:
+    # Ctrl+C on a batch wrapper makes cmd ask 'Terminate batch job
+    # (Y/N)?'. The engine resolves rules next to its own exe.
+    # sf-devsensor is intentionally NOT an exe: Windows Application
+    # Control / Smart App Control blocks unsigned binaries (users hit
+    # "una directiva de Control de aplicaciones bloqueo este archivo"
+    # on devsensor.exe), so it ships as a .cmd wrapper around the
+    # PowerShell simulator (devsensor.ps1) - powershell.exe is a
+    # signed system interpreter those policies never block.
+    # NOTE: single pair - do not use foreach over @(@('a','b')) here,
+    # PowerShell unrolls a one-element array-of-arrays into a flat array
+    # and $pair[0] becomes a char (real bug caught by the shim test).
+    $link = Join-Path $bin 'sf-engine.exe'
+    $target = Join-Path $bin 'engine.exe'
+    if (Test-Path $link) { Remove-Item $link -Force -ErrorAction SilentlyContinue }
+    try {
+        New-Item -ItemType HardLink -Path $link -Target $target -ErrorAction Stop | Out-Null
+    } catch {
+        if (Test-Path $target) { Copy-Item $target $link -Force }
+        else { Write-Warn2 "engine.exe not found; sf-engine shim skipped" }
     }
-    Remove-Item (Join-Path $bin 'sf-engine.cmd'), (Join-Path $bin 'sf-devsensor.cmd') -Force -ErrorAction SilentlyContinue
+    Remove-Item (Join-Path $bin 'sf-engine.cmd') -Force -ErrorAction SilentlyContinue
+    # upgrades: drop the stale sf-devsensor.exe hardlink from previous
+    # installs - .exe wins PATH resolution over .cmd (PATHEXT order)
+    Remove-Item (Join-Path $bin 'sf-devsensor.exe') -Force -ErrorAction SilentlyContinue
     # sf-update/sf-uninstall self-copy to %TEMP% and run the copy: they
     # delete files under <Root>\bin (their own folder) while running, and
     # cmd prints "The system cannot find the path specified" if it has to
@@ -370,6 +383,7 @@ function Write-Shims {
     # (built as line arrays: avoids "$nlif"-style variable-name pitfalls)
     $shims = [ordered]@{
         'sf-console.cmd' = "@echo off$nl powershell -NoProfile -ExecutionPolicy Bypass -File `"$consolePs1`" %*$nl"
+        'sf-devsensor.cmd' = "@echo off$nl powershell -NoProfile -ExecutionPolicy Bypass -File `"$devsensorPs1`" %*$nl"
         'sf-update.cmd' = (@(
             '@echo off'
             'if "%~1"=="-run" goto :run'
@@ -554,7 +568,7 @@ if ($MyInvocation.InvocationName -ne '.') {
     Write-Host '------------------------------------------------------------'
     Write-Host ' commands  :'
     Write-Host '   sf-engine      detection engine, prints alerts live'
-    Write-Host '   sf-devsensor   replays the simulated TTP scenario'
+    Write-Host '   sf-devsensor   replays the simulated TTP scenario (PowerShell)'
     Write-Host '   sf-console     web console + browser (engine + hub + UI)'
     Write-Host '   sf-update      update to the latest code and rebuild'
     Write-Host '   sf-uninstall   remove everything'

@@ -109,7 +109,7 @@ and puts five commands on your PATH:
 | Command         | What it does                                   |
 |-----------------|------------------------------------------------|
 | `sf-engine`     | detection engine, prints alerts live           |
-| `sf-devsensor`  | replays the simulated TTP scenario             |
+| `sf-devsensor`  | replays the simulated TTP scenario (PowerShell, works under WDAC/Smart App Control) |
 | `sf-console`    | starts the web console and opens the browser   |
 | `sf-update`     | updates the code and rebuilds                  |
 | `sf-uninstall`  | removes everything                             |
