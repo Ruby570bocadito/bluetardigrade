@@ -70,7 +70,10 @@ paths:
         `webhook_*` counters report delivery health from the outside:
         `webhook_sent` delivered (2xx), `webhook_failed` exhausted
         retries, `webhook_dropped` discarded because the bounded queue
-        saturated.
+        saturated. When ingest auth is active (`-token`),
+        `ingest_rejected` counts connections rejected by the shared
+        token handshake — the visible signal that the ingest port is
+        being probed without credentials.
       responses:
         '200':
           description: Current stats snapshot
@@ -267,6 +270,7 @@ components:
         - uptime_s
         - events_total
         - dropped
+        - ingest_rejected
         - events_per_min
         - alerts_total
         - by_severity
@@ -289,6 +293,13 @@ components:
           type: integer
           format: int64
           description: events discarded because the ingest channel was full
+        ingest_rejected:
+          type: integer
+          format: int64
+          description: >-
+            connections rejected by the ingest shared-token handshake
+            (no AUTH line, wrong token or auth timeout); zero while
+            auth is disabled
         events_per_min:
           type: integer
           description: events received in the last 60 seconds

@@ -114,7 +114,7 @@ disabled entirely with `-api 0`:
 | Endpoint | Returns |
 |----------|---------|
 | `GET /api/health` | liveness + mode |
-| `GET /api/stats` | uptime, counters, per-severity totals, rule count, webhook delivery counters |
+| `GET /api/stats` | uptime, counters, per-severity totals, rule count, ingest auth rejections, webhook delivery counters |
 | `GET /api/events?limit=200` | recent events, newest first |
 | `GET /api/alerts?limit=100` | recent alerts, newest first |
 | `GET /api/alerts/export?format=ndjson\|csv&limit=256` | downloadable alert feed for SIEM/SOAR handoff, chronological order |
@@ -129,7 +129,9 @@ stable columns and neutralizes spreadsheet formula injection on
 attacker-controlled fields. When `-webhook` is set, `/api/stats`
 additionally reports `webhook_sent` / `webhook_failed` /
 `webhook_dropped` so the delivery pipeline can be sized from the
-outside. The machine-readable contract for the whole surface lives
+outside; with ingest auth active (`-token`), `ingest_rejected` counts
+connections rejected by the shared-token handshake. The
+machine-readable contract for the whole surface lives
 in OpenAPI 3.0 at [`docs/api/openapi.yaml`](docs/api/openapi.yaml).
 
 ### Ingest authentication (shared token)
