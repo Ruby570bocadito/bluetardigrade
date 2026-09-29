@@ -7,10 +7,9 @@ vendor/
 
 # Rust
 sensor/target/
-# NOTE: sensor/Cargo.lock is deliberately NOT ignored. Binary crates
-# commit the lockfile for reproducible builds; it must be generated
-# with `cargo generate-lockfile` on a host with the Rust toolchain
-# and committed (pending until then).
+# sensor/Cargo.lock is deliberately NOT ignored: binary crates commit
+# the lockfile for reproducible builds (present in the repo since the
+# 2026-09-29 17h32 round; refresh with `cargo update` as needed).
 
 # Node (web console)
 web/**/node_modules/

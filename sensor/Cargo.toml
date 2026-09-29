@@ -10,8 +10,9 @@ anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# ETW consumption is Windows-only; the rest of the sensor builds
-# anywhere (the --simulate mode needs no kernel access).
+# ETW consumption is Windows-only. The crate still builds anywhere
+# (argument parsing, normalization and transport compile on any OS),
+# but the binary refuses to run off-Windows instead of making data up.
 [target.'cfg(target_os = "windows")'.dependencies]
 ferrisetw = "1"
 
