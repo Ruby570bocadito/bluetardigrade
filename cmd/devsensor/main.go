@@ -99,7 +99,7 @@ func main() {
         conn, err := net.Dial("tcp", *addr)
         if err != nil {
                 fmt.Fprintf(os.Stderr, "[DEVSENSOR] cannot reach engine at %s: %v\n", *addr, err)
-                fmt.Fprintln(os.Stderr, "[DEVSENSOR] hint: start the engine first:  make run-engine")
+                fmt.Fprintln(os.Stderr, "[DEVSENSOR] hint: start the engine first:  sf-engine   (or simply  sf-console)")
                 os.Exit(1)
         }
         defer conn.Close()

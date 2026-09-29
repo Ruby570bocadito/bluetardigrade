@@ -26,6 +26,9 @@
 #   -AutoStart           start engine + console at logon (HKCU Run, no admin)
 #   -Update              refresh an existing install and rebuild
 #   -SkipBuild           fetch sources + tools but skip compiling (debug)
+#   -SourceReady         internal: source already fetched (the updater
+#                        re-runs the freshly downloaded installer with
+#                        this flag instead of downloading twice)
 # ======================================================================
 param(
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'security-framework'),
@@ -36,7 +39,8 @@ param(
     [switch]$Firewall,
     [switch]$AutoStart,
     [switch]$Update,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$SourceReady
 )
 
 $ErrorActionPreference = 'Stop'
@@ -49,6 +53,18 @@ $BUN_VERSION  = 'v1.3.14'
 $ENGINE_PORT  = 7777
 $CONSOLE_PORT = 3000
 $SERVICE_PORT = 3003
+
+# Snapshot of the running installer, taken BEFORE Get-SourceTree can
+# delete scripts\ mid-run (non-git updates wipe everything but tools\).
+# sf-update.cmd always invokes <Root>\scripts\install.ps1, which is the
+# copy left by the PREVIOUS install - without the snapshot + re-exec
+# below, an update would rebuild everything with new code but regenerate
+# shims and print the summary with the OLD installer logic.
+$scriptInstallerPath = $PSCommandPath
+$scriptInstallerHash = $null
+if ($scriptInstallerPath -and (Test-Path $scriptInstallerPath)) {
+    try { $scriptInstallerHash = (Get-FileHash $scriptInstallerPath).Hash } catch { }
+}
 
 # ---------------------------------------------------------------- log
 function Write-Step($m)  { Write-Host "`n==> $m" -ForegroundColor Cyan }
@@ -106,6 +122,22 @@ function Test-PortLocal {
     param([int]$Port)
     $c = New-Object Net.Sockets.TcpClient
     try { $c.Connect('127.0.0.1', $Port); return $true } catch { return $false } finally { $c.Close() }
+}
+
+function Test-InstallerStale {
+    # true when the RUNNING installer differs from the freshly fetched
+    # <Root>\install.ps1 (so the update must re-exec the new one).
+    # False when: run via irm|iex (no script file), already running from
+    # <Root>\install.ps1, or contents are identical.
+    param([string]$Root, [string]$RunningPath, [string]$RunningHash)
+    if (-not $RunningPath -or -not $RunningHash) { return $false }
+    $fresh = Join-Path $Root 'install.ps1'
+    if (-not (Test-Path $fresh)) { return $false }
+    if ($RunningPath -ieq $fresh) { return $false }
+    try {
+        if ((Get-FileHash $fresh).Hash -ieq $RunningHash) { return $false }
+    } catch { return $false }
+    return $true
 }
 
 # ---------------------------------------------------------------- tools
@@ -527,7 +559,28 @@ if ($MyInvocation.InvocationName -ne '.') {
         Write-Step "Existing install found (tools are preserved)"
         Stop-SfProcesses -Root $root
     }
-    Get-SourceTree -Root $root -RepoId $Repo -Br $Branch -IsUpdate:([bool]$Update)
+    if ($SourceReady) {
+        Write-Ok "source already refreshed by the previous installer pass"
+    } else {
+        Get-SourceTree -Root $root -RepoId $Repo -Br $Branch -IsUpdate:([bool]$Update)
+    }
+
+    # self-replacement: if the update fetched a NEWER installer than the
+    # one now running (sf-update always runs the previous copy from
+    # scripts\), hand over to the fresh one so shims, messages and
+    # behavior come from the version just downloaded - not one install
+    # behind. The -SourceReady flag prevents a second download; the path
+    # + hash guards prevent any chance of an infinite loop.
+    if ($Update -and -not $SourceReady -and
+        (Test-InstallerStale -Root $root -RunningPath $scriptInstallerPath -RunningHash $scriptInstallerHash)) {
+        Write-Step "Installer updated - re-running with the fresh version"
+        $fwd = @{ Update = $true; InstallDir = $root; SourceReady = $true }
+        foreach ($k in @('Repo','Branch','NoConsole','WithSensor','Firewall','AutoStart','SkipBuild')) {
+            if ($PSBoundParameters.ContainsKey($k)) { $fwd[$k] = $PSBoundParameters[$k] }
+        }
+        & (Join-Path $root 'install.ps1') @fwd
+        return
+    }
 
     New-Item -ItemType Directory -Path $tools -Force | Out-Null
     Ensure-Go   -Tools $tools
