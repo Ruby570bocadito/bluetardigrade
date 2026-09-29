@@ -14,12 +14,14 @@
 #   6. webhook delivery with -webhook-token           -> receiver confirms the
 #        Bearer header; without the header a demanding receiver 401s and the
 #        engine reports webhook_failed
+#   7. local API auth (-api-token)                    -> /api/* 401 without the
+#        Bearer token, 200 with it; /api/health stays open
 #
 # Usage: scripts/dev-tests/smoke_auth.sh [engine-binary] [devsensor-binary]
 # Missing binaries are built automatically (requires go >= 1.22 in PATH).
-# Exit 0 only if all six scenarios behave as documented in README.md
+# Exit 0 only if all seven scenarios behave as documented in README.md
 # ("Ingest authentication (shared token)" + "Rotating the token without
-# downtime" + the webhook auth section).
+# downtime" + the webhook and local API auth sections).
 
 set -u
 
@@ -58,7 +60,7 @@ port_busy() { # $1 = port; returns 0 (busy) if something already listens
 }
 for p in "$PORT" "$API" "$((PORT+10))" "$((API+10))" "$((PORT+20))" "$((API+20))" \
          "$((PORT+30))" "$((API+30))" "$((PORT+40))" "$((PORT+41))" "$((API+41))" \
-         "$((PORT+42))" "$((PORT+43))" "$((API+44))"; do
+         "$((PORT+42))" "$((PORT+43))" "$((API+44))" "$((PORT+50))" "$((API+50))"; do
   if port_busy "$p"; then
     fail "port $p is already in use (leftover engine? set SMOKE_PORT/SMOKE_API_PORT)"; exit 1
   fi
@@ -210,8 +212,25 @@ FAILED_WH=$(stats_on "$((API+44))" | grep -o '"webhook_failed":[0-9]*' | cut -d:
 kill "${PIDS[-1]}" 2>/dev/null; wait "${PIDS[-1]}" 2>/dev/null
 log "  webhook negative: receiver_exit=$RC webhook_failed=$FAILED_WH"
 
+# --- scenario 7: local API auth (-api-token) -> /api/* gated, /api/health open
+log "scenario 7: local API bearer auth (-api-token)"
+API_TOKEN="api-$$_$$"
+start_engine "127.0.0.1:$((PORT+50))" "" "$((API+50))" "$WORK/s7.log" -api-token "$API_TOKEN"
+# wait on /api/health (stays open on purpose): /api/stats answers 401 now
+for _ in $(seq 1 50); do curl -sf "http://127.0.0.1:$((API+50))/api/health" >/dev/null && break; sleep 0.2; done
+curl -sf "http://127.0.0.1:$((API+50))/api/health" >/dev/null \
+  || bail_with_log "scenario 7: authed API engine did not come up" "$WORK/s7.log"
+RC_NOAUTH=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$((API+50))/api/stats")
+RC_AUTH=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $API_TOKEN" "http://127.0.0.1:$((API+50))/api/stats")
+RC_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$((API+50))/api/health")
+[ "$RC_NOAUTH" = "401" ] || fail "scenario 7: /api/stats without token answered $RC_NOAUTH, expected 401"
+[ "$RC_AUTH" = "200" ] || fail "scenario 7: /api/stats with Bearer token answered $RC_AUTH, expected 200"
+[ "$RC_HEALTH" = "200" ] || fail "scenario 7: /api/health answered $RC_HEALTH, expected 200 (stays open for probes)"
+kill "${PIDS[-1]}" 2>/dev/null; wait "${PIDS[-1]}" 2>/dev/null
+log "  api auth: no_token=$RC_NOAUTH bearer=$RC_AUTH health=$RC_HEALTH"
+
 if [ $FAILED -eq 0 ]; then
-  log "ALL 6 SCENARIOS OK"
+  log "ALL 7 SCENARIOS OK"
 else
   log "FAILURES DETECTED (see lines above)"
 fi
