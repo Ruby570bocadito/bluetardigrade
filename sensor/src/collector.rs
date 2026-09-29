@@ -17,8 +17,10 @@ use ferrisetw::provider::Provider;
 use ferrisetw::query::{BuildEventStream, EventStream};
 
 /// Runs the blocking ETW event loop. It returns only on fatal errors.
-pub fn run(addr: &str) -> Result<()> {
-    let sender = Arc::new(Sender::connect(addr)?);
+/// token (when set) is the shared ingest token sent on every
+/// (re)connection to the engine.
+pub fn run(addr: &str, token: Option<&str>) -> Result<()> {
+    let sender = Arc::new(Sender::connect(addr, token)?);
     let host = hostname();
     let user = current_user();
 

@@ -46,16 +46,15 @@ Open http://localhost:3000.
 - `CONSOLE_CORS_ORIGIN` (console-service): comma-separated list of
   extra origins allowed to open a socket to the hub (the local console
   origins on port 3000 are always allowed).
-- The analyst triage talks to any OpenAI-compatible LLM endpoint
-  configured through environment variables of `console-service` — no
-  vendor SDK, no private packages:
-  - `ANALYST_BASE_URL` (e.g. `https://api.openai.com/v1` or a local LLM
-    gateway) and `ANALYST_MODEL` (e.g. `gpt-4o-mini`, `llama3.1`) are
-    both required to enable the feature.
-  - `ANALYST_API_KEY` is sent as `Authorization: Bearer ...` (optional:
-    local gateways may not need it).
-  - Without those variables the rest of the console keeps working and
-    the analyst panel reports that the triage is not configured.
+- Analyst triage (console-service): calls any OpenAI-compatible chat
+  completions endpoint configured in the hub environment, with no SDK
+  dependency: `ANALYST_BASE_URL` (API root including the version path,
+  e.g. `https://api.openai.com/v1`, `http://127.0.0.1:11434/v1` for
+  Ollama or `http://127.0.0.1:1234/v1` for LM Studio), `ANALYST_API_KEY`
+  (bearer token; local servers accept any value) and `ANALYST_MODEL`
+  (the model name the provider serves). Without a full configuration
+  the analyst panel reports it clearly and the rest of the console
+  keeps working.
 
 The interface copy is in Spanish by design: the primary audience of the
 project documentation is Spanish speaking.

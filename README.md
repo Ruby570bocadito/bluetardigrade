@@ -35,6 +35,8 @@ integrate. This project bets on three ideas:
 
 ## Architecture (v0.1)
 
+![Architecture: kernel, Rust sensor, Go detection engine and output layers](docs/assets/diagram_arquitectura.png)
+
 ```
 Windows kernel (ETW providers)          [phase 2: Linux eBPF]
         │
@@ -45,7 +47,7 @@ Sensor (Rust) ── NDJSON/TCP ──►  Detection engine (Go)
                           ┌─────────────┼─────────────┐
                           ▼             ▼             ▼
                      console/web   SIEM/SOAR     forensic store
-                      (phase 3)    connectors     (phase 2)
+                      (preview)    connectors     (phase 2)
 ```
 
 The unified event schema (chapter 4 of the docs) is the master
@@ -64,7 +66,8 @@ make run-engine
 make run-devsensor
 ```
 
-Expected output on the engine terminal:
+Representative output on the engine terminal (the rule pack grows over
+time, so the counts reflect the current state of `rules/`):
 
 ```
 [ENGINE] 23 rules loaded from ./rules (types: [file.write image.load network.connect process.access process.create registry.set])
@@ -83,19 +86,21 @@ Expected output on the engine terminal:
 Each alert is also emitted as a structured JSON line for downstream
 consumers (SIEM connectors, the web console).
 
+![Tracer bullet pipeline: devsensor, NDJSON/TCP, engine, rules, alert](docs/assets/diagram_tracer.png)
+
 ### Local HTTP API
 
 The engine serves a small read-only API used by the web console and
 handy for SIEM taps. Both the ingest port and the API bind to
 `127.0.0.1` by default: the feed carries sensitive host data (users,
-command lines) and the NDJSON ingest is unauthenticated in v0.1, so
-nothing should be reachable from other machines unless you decide so.
-To accept sensors running on different hosts, start the engine with
-`-addr 0.0.0.0:7777` (and `-api 0.0.0.0:7778` if the console is remote
-too), open the port with the installer's `-Firewall` switch, and plan a
-network-level restriction to the sensor segment. Token authentication
-on the ingest port is on the phase-1 roadmap. The API can be disabled
-entirely with `-api 0`:
+command lines) and the NDJSON ingest must stay unauthenticated only on
+loopback, so nothing should be reachable from other machines unless you
+decide so. To accept sensors running on different hosts, start the
+engine with `-addr 0.0.0.0:7777` (and `-api 0.0.0.0:7778` if the
+console is remote too), enable the shared-token auth (next section),
+open the port with the installer's `-Firewall` switch, and plan a
+network-level restriction to the sensor segment. The API can be
+disabled entirely with `-api 0`:
 
 | Endpoint | Returns |
 |----------|---------|
@@ -115,7 +120,39 @@ stable columns and neutralizes spreadsheet formula injection on
 attacker-controlled fields. When `-webhook` is set, `/api/stats`
 additionally reports `webhook_sent` / `webhook_failed` /
 `webhook_dropped` so the delivery pipeline can be sized from the
-outside.
+outside. The machine-readable contract for the whole surface lives
+in OpenAPI 3.0 at [`docs/api/openapi.yaml`](docs/api/openapi.yaml).
+
+### Ingest authentication (shared token)
+
+The NDJSON ingest supports a shared-token handshake for deployments
+where sensors connect over the network. Start the engine with `-token`
+or the `SF_INGEST_TOKEN` environment variable (flag wins):
+
+```bash
+sf-engine -addr 0.0.0.0:7777 -token 'pick-a-long-random-secret'
+# or:  export SF_INGEST_TOKEN=...  and just run sf-engine
+```
+
+Every connection must then send `AUTH <token>` as its FIRST line
+(before any event) and receive `{"ack":"ok"}`. All bundled sensors
+honor it:
+
+| Sensor | How to pass the token |
+|--------|-----------------------|
+| `sf-engine` | `-token <t>` flag or `SF_INGEST_TOKEN` env |
+| `devsensor` (Go demo) | `-token <t>` flag or `SF_INGEST_TOKEN` env |
+| `sf-sensor` (Rust/Sysmon) | `--token <t>` flag or `SF_INGEST_TOKEN` env |
+| `sf-devsensor` (PowerShell demo) | `-Token <t>` param or `SF_INGEST_TOKEN` env |
+
+Mismatch behavior is loud on purpose: a sensor with a stale token is
+closed with a clear `{"ack":"error",...}` message, a sensor sending
+`AUTH` to a token-less engine is closed too, and a silent client that
+never authenticates is dropped after 10 seconds. The comparison is
+constant-time. Loopback-only deployments without a token keep working
+exactly as before (auth disabled); a non-loopback bind without a token
+prints a startup warning, because any host that reaches the port could
+then inject events.
 
 ### Alert webhook (SIEM/SOAR connector)
 
@@ -195,8 +232,11 @@ Tools), `-AutoStart` registers engine and console as logon entries
 remote sensors (domain and private network profiles only) and asks for
 elevation via UAC when needed; it only matters when the engine is
 explicitly started with `-addr 0.0.0.0:7777`, since the default bind is
-loopback. Install location defaults to `%LOCALAPPDATA%\security-framework`
-and can be changed with `-InstallDir <path>`.
+loopback. `-WebhookUrl http://siem.internal:8080/ingest` persists the
+alert webhook so the engine autostart POSTs every alert there as JSON
+(re-run with `-WebhookUrl ''` to clear it). Install
+location defaults to `%LOCALAPPDATA%\security-framework` and can be
+changed with `-InstallDir <path>`.
 
 To uninstall:
 
@@ -282,8 +322,16 @@ every 15 seconds by default (disable with `-reload-every 0`).
 
 Operators (v0.1): `eq`, `neq`, `contains`, `contains_any`,
 `startswith`, `endswith`, `regex`, `in`, `not_in`, `gt`, `lt`.
-Sequence operators (`sequence` + `maxspan`) arrive with the
-correlation engine in phase 2.
+
+### Kill-chain correlation
+
+Beyond per-event rules, the engine ships a sequence correlator:
+`sequences/*.yaml` lists named steps (exact rule names) that, when all
+observed on the same host inside a `window` (e.g. `5m`), raise a single
+high-signal alert describing the campaign. The shipped pack models
+credential-dump campaigns, full intrusion chains, defensive shutdown
+and registry-based persistence. Sequences hot-reload together with the
+rules.
 
 ### Rule actions
 
@@ -317,25 +365,27 @@ the engine.
 ## Repository layout
 
 ```
-cmd/engine/           detection engine binary (Go)
-cmd/devsensor/        demo sensor for development (Go): scripted scenario,
-                      simulated data - the only simulated piece in the repo
-internal/ingest/      NDJSON TCP listener + schema validation
-internal/enrich/      enrichment pipeline (context, not evidence mutation)
-internal/rules/       YAML parser, rule index and evaluator
-internal/correlate/   kill-chain correlator (sequences/*.yaml)
-internal/alert/       alert rendering, dedup, structured JSON
-internal/actions/     rule action executor (message templates, webhooks)
-internal/api/         local read-only HTTP API, SSE stream, JSONL/CSV export
-internal/webhook/     alert webhook delivery (bounded queue, retries)
-pkg/model/            unified event schema (the wire contract)
-sensor/               Rust ETW sensor (collector is Windows-gated)
-rules/                seeded detection pack (windows/)
-sequences/            kill-chain definitions for the correlator
-scripts/windows/      sensor helpers + bundled sysmon-config.xml
-install.ps1           one-command Windows installer (also sf-update)
-uninstall.ps1         standalone uninstaller
-docs/                 architecture document (PDF) + diagram sources and assets
+cmd/engine/       detection engine binary (Go)
+cmd/devsensor/    demo sensor for development (Go): scripted scenario,
+                  simulated data - the only simulated piece in the repo
+internal/ingest/  NDJSON TCP listener + schema validation
+internal/enrich/  enrichment pipeline (context, not evidence mutation)
+internal/rules/   YAML parser, rule index and evaluator
+internal/correlate/  kill-chain sequence correlator
+internal/alert/   alert rendering, dedup, structured JSON
+internal/actions/ rule action executor (message templates, webhooks)
+internal/api/     local read-only HTTP API + SSE stream
+pkg/model/        unified event schema (the wire contract)
+sensor/           Rust ETW sensor (collector is Windows-gated)
+rules/            seeded detection pack (windows/)
+sequences/        kill-chain sequences for the correlator
+sysmon-config.xml Sysmon config tuned to the detection pack
+scripts/windows/  installed runtime scripts (sf-sensor, sf-console, ...)
+install.ps1       one-command Windows installer
+uninstall.ps1     standalone uninstaller
+Makefile          build automation (engine, sensor, console, docker)
+Dockerfile        production container for the engine
+docs/             architecture document + diagram assets
 web/console/          Next.js console (live feed, triage, AI analyst)
 web/console-service/  realtime telemetry hub (bun + socket.io)
 ```
@@ -345,8 +395,8 @@ web/console-service/  realtime telemetry hub (bun + socket.io)
 | Phase | Window          | Delivers                                              |
 |-------|-----------------|-------------------------------------------------------|
 | 1     | weeks 1–6 2026  | tracer bullet, ETW sensor, rule index, p99 < 10 ms    |
-| 2     | weeks 7–14 2026 | YARA memory scan, eBPF collector, correlation, SQLite |
-| 3     | weeks 15–20     | web console, REST+OpenAPI, Elastic/Splunk connectors  |
+| 2     | weeks 7–14 2026 | YARA memory scan, eBPF collector, SQLite  |
+| 3     | weeks 15–20     | REST+OpenAPI spec, Elastic/Splunk connectors          |
 | 4     | weeks 21–26     | Python filaments (sandboxed), plugins, benchmarks     |
 
 ## Contributing

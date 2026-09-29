@@ -16,6 +16,7 @@
 #   sf-devsensor                              (engine on 127.0.0.1:7777)
 #   sf-devsensor -Addr 10.0.0.5:7777
 #   sf-devsensor -IntervalMs 200
+#   sf-devsensor -Token 's3cret'              (ingest auth, or SF_INGEST_TOKEN env)
 #   sf-devsensor -NoEngine                    (never auto-start the engine)
 #
 # If the engine is not listening, this script starts it in the
@@ -31,9 +32,12 @@
 param(
     [string]$Addr = '127.0.0.1:7777',
     [int]$IntervalMs = 400,
+    [string]$Token = '',
     [switch]$NoEngine
 )
 $ErrorActionPreference = 'Stop'
+# same env var the engine and the other sensors honor; -Token wins
+if (-not $Token -and $env:SF_INGEST_TOKEN) { $Token = $env:SF_INGEST_TOKEN }
 
 $simHost = 'LAB-WKS-01'
 $simUser = 'CORP\jdoe'
@@ -136,7 +140,12 @@ if (-not $NoEngine -and -not (Test-EngineUp)) {
         Write-Host '[DEVSENSOR] engine is not running - starting it in the background...'
         try {
             # -WindowStyle is Windows-only (pwsh on Unix rejects it)
-            $spArgs = @{ FilePath = $engineExe; ArgumentList = "-rules `"$root\rules`""; PassThru = $true }
+            $spArgs = @{ FilePath = $engineExe; PassThru = $true }
+            # the auto-started engine must accept the same token this
+            # sensor is about to present, or the AUTH handshake fails
+            $engineArgs = "-rules `"$root\rules`""
+            if ($Token) { $engineArgs += " -token $Token" }
+            $spArgs['ArgumentList'] = $engineArgs
             if ([Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { $spArgs['WindowStyle'] = 'Hidden' }
             $eng = Start-Process @spArgs
             New-Item -ItemType Directory -Path (Join-Path $root 'run') -Force | Out-Null
@@ -169,6 +178,28 @@ try {
 $stream = $client.GetStream()
 $writer = New-Object IO.StreamWriter($stream, (New-Object Text.UTF8Encoding($false)))
 $writer.NewLine = "`n"
+
+# ---- ingest auth (must be the first line when the engine has a token)
+if ($Token) {
+    try {
+        $stream.ReadTimeout = 10000
+        $stream.WriteTimeout = 10000
+        $writer.WriteLine("AUTH $Token")
+        $writer.Flush()
+        $reader = New-Object IO.StreamReader($stream, (New-Object Text.UTF8Encoding($false)))
+        $ack = $reader.ReadLine()
+        if (-not $ack -or $ack -notmatch '"ack":"ok"') {
+            Write-Host "[DEVSENSOR] auth rejected by engine: $ack" -ForegroundColor Red
+            exit 1
+        }
+        $stream.ReadTimeout = 0
+        $stream.WriteTimeout = 0
+        Write-Host '[DEVSENSOR] ingest auth accepted'
+    } catch {
+        Write-Host "[DEVSENSOR] auth handshake failed: $($_.Exception.Message)" -ForegroundColor Red
+        exit 1
+    }
+}
 
 Write-Host "[DEVSENSOR] connected to $Addr - streaming $($scenario.Count) events"
 Write-Host '[DEVSENSOR] NOTE: this is the SIMULATED demo scenario - not your host.'

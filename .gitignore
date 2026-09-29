@@ -7,6 +7,10 @@ vendor/
 
 # Rust
 sensor/target/
+# NOTE: sensor/Cargo.lock is deliberately NOT ignored. Binary crates
+# commit the lockfile for reproducible builds; it must be generated
+# with `cargo generate-lockfile` on a host with the Rust toolchain
+# and committed (pending until then).
 
 # Node (web console)
 web/**/node_modules/
@@ -14,6 +18,11 @@ web/console/.next/
 web/console/out/
 web/console/next-env.d.ts
 web/console/*.tsbuildinfo
+
+# Local environment files (never commit credentials)
+.env
+.env.*
+!.env.example
 
 # Editors / OS
 .idea/

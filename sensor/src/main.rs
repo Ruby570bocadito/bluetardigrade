@@ -7,7 +7,11 @@
 // data up.
 //
 // Usage:
-//   security-sensor --addr 127.0.0.1:7777
+//   security-sensor --addr 127.0.0.1:7777 [--token <shared-token>]
+//
+// The token can also come from the SF_INGEST_TOKEN environment
+// variable (same var the engine and the other sensors honor); the
+// command line wins when both are set.
 
 mod normalize;
 mod transport;
@@ -19,6 +23,7 @@ use anyhow::Result;
 
 fn main() -> Result<()> {
     let mut addr = String::from("127.0.0.1:7777");
+    let mut token: Option<String> = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -28,15 +33,25 @@ fn main() -> Result<()> {
                     std::process::exit(2);
                 });
             }
+            "--token" => {
+                token = Some(args.next().unwrap_or_else(|| {
+                    eprintln!("--token requires a value");
+                    std::process::exit(2);
+                }));
+            }
             other => {
                 eprintln!("unknown argument: {other}");
-                eprintln!("usage: security-sensor --addr <ip:port>");
+                eprintln!("usage: security-sensor --addr <ip:port> [--token <shared-token>]");
                 std::process::exit(2);
             }
         }
     }
+    if token.is_none() {
+        token = std::env::var("SF_INGEST_TOKEN").ok().filter(|t| !t.is_empty());
+    }
 
-    eprintln!("[SENSOR] addr={addr}");
+    eprintln!("[SENSOR] addr={addr} auth={}",
+        if token.is_some() { "token" } else { "none" });
 
     if !cfg!(target_os = "windows") {
         eprintln!(
@@ -47,7 +62,7 @@ fn main() -> Result<()> {
 
     #[cfg(target_os = "windows")]
     {
-        collector::run(&addr)
+        collector::run(&addr, token.as_deref())
     }
     #[cfg(not(target_os = "windows"))]
     {

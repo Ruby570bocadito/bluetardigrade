@@ -4,9 +4,13 @@
   "private": true,
   "scripts": {
     "start": "bun index.ts",
-    "dev": "bun --hot index.ts"
+    "dev": "bun --hot index.ts",
+    "test": "bun test"
   },
   "dependencies": {
     "socket.io": "^4.8.4"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.23"
   }
 }
