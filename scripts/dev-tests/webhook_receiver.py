@@ -8,12 +8,14 @@ delivery health the way a SIEM receptor would.
 Modes:
   - Interactive (default): run until interrupted, then print a JSON
     summary {received, with_auth, last_status}.
-  - --expect N --timeout S: exit 0 as soon as exactly N requests have
-    arrived (or fail after S seconds). Script-friendly for smoke tests.
+  - --expect N --timeout S: exit 0 as soon as N or more requests have
+    arrived (or fail after S seconds). Script-friendly for smoke tests;
+    deliveries may arrive in bursts, so the check is "at least N".
 
 Every request is answered 200 with an empty JSON body; a --secret can
 be set to require `Authorization: Bearer <secret>` (401 otherwise),
-ready for when the outbound webhook gains auth support.
+matching the engine's `-webhook-token` global auth (and ready for any
+receptor-side check of per-rule `actions.webhook` secrets).
 
 Examples:
   python3 scripts/dev-tests/webhook_receiver.py --port 9999
@@ -66,7 +68,7 @@ def main() -> int:
     ap.add_argument("--secret", default=None,
                     help="require 'Authorization: Bearer <secret>' on every POST")
     ap.add_argument("--expect", type=int, default=None,
-                    help="exit 0 after exactly N deliveries arrive")
+                    help="exit 0 after N or more deliveries arrive")
     ap.add_argument("--timeout", type=int, default=60,
                     help="seconds to wait for --expect (default 60)")
     args = ap.parse_args()
@@ -98,7 +100,7 @@ def main() -> int:
         server.shutdown()
         print(json.dumps({"received": n, "expected": args.expect,
                           "with_auth": stats["with_auth"]}))
-        return 0 if n == args.expect else 1
+        return 0 if n >= args.expect else 1
 
     stop.wait()
     server.shutdown()

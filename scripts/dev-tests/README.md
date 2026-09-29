@@ -12,8 +12,8 @@ herramientas de desarrollo (go, python3) y solo escuchan en loopback.
 | Script | Qué valida | Requiere |
 |--------|-----------|----------|
 | `check_openapi.py` | Que `docs/api/openapi.yaml` esté en sincronía estructural con `internal/api/api.go`: rutas servidas declaradas (y ninguna de más) y esquema `Stats` campo a campo contra los wire tags de `statsPayload` (struct sin `omitempty`: todo campo es siempre emitido y por tanto requerido). Detectó de verdad la deriva de `ingest_rejected` antes de corregirla. | python3 + PyYAML |
-| `webhook_receiver.py` | Receptor HTTP mínimo para probar la entrega de webhook del motor: cuenta POSTs, acepta `--expect N --timeout S` (exit 0 solo si llegan exactamente N) y `--secret` para exigir `Authorization: Bearer` (listo para cuando la salida webhook gane auth, riesgo del director #1 MEDIA). | python3 (stdlib) |
-| `smoke_auth.sh` | Smoke de autenticación del ingest con binarios reales (compila `cmd/engine` y `cmd/devsensor` si no se pasan como argumentos). Ejecuta los 4 escenarios de README: tokens coincidentes → eventos fluyen con `ingest_rejected=0`; token erróneo → sensor rechazado y `events_total` inmóvil; sensor con token contra motor sin token → fallo visible con guía; bind `0.0.0.0` sin token → advertencia de arranque. | bash, go, curl |
+| `webhook_receiver.py` | Receptor HTTP mínimo para probar la entrega de webhook del motor: cuenta POSTs, acepta `--expect N --timeout S` (exit 0 cuando llegan N o más; las entregas pueden llegar en ráfaga) y `--secret` para exigir `Authorization: Bearer` — el espejo receptor de `-webhook-token` del motor (verificado E2E: sin cabecera correcta responde 401 y el motor lo cuenta en `webhook_failed`). | python3 (stdlib) |
+| `smoke_auth.sh` | Smoke de seguridad con binarios reales (compila `cmd/engine` y `cmd/devsensor` si no se pasan como argumentos; los binarios deben ser recientes — un motor viejo no conoce `-token-previous` y el escenario 5 lo dirá con la cola del log). 6 escenarios de README: (1-4) auth del ingest — tokens coincidentes, token erróneo, sensor con token contra motor sin token, bind `0.0.0.0` sin token; (5) rotación sin downtime `-token-previous` — token viejo Y nuevo aceptados en ventana, intruso rechazado; (6) webhook autenticado — entrega con Bearer confirmada por el receptor del repo, y motor sin token contra receptor exigente → 401s → `webhook_failed`. | bash, go, curl, python3 |
 
 ## Uso
 
@@ -30,6 +30,17 @@ SMOKE_KEEP=1 bash scripts/dev-tests/smoke_auth.sh         # conserva artefactos 
 ```
 
 `smoke_auth.sh` elige puertos libres vía `SMOKE_PORT`/`SMOKE_API_PORT`
-(por defecto 17877/17878, más +10 y +20 para los escenarios 3 y 4) y hace
-pre-flight: si un puerto está ocupado por un proceso residual, falla al inicio
-con mensaje accionable en vez de producir fallos confusos a mitad de ronda.
+(por defecto 17877/17878; los escenarios usan +10/+20/+30/+40-sobre-esos
+con separación explícita entre ingest, API y receptores) y hace pre-flight:
+si un puerto está ocupado por un proceso residual, falla al inicio con
+mensaje accionable en vez de producir fallos confusos a mitad de ronda.
+Si un motor no llega a arrancar, el smoke vuelca la cola de su log
+(`bail_with_log`) para que el diagnóstico no dependa de abrir `/tmp` a mano.
+
+Registro de depuraciones que dejaron funcionalidad (mismo patrón que el
+director recomienda documentar): (1) `kill $!` sobre el subshell de arranque
+no alcanzaba al binario del motor — motores huérfanos retenían puertos;
+(2) offsets de puerto colisionaban entre ingest y API de un mismo motor con
+los defaults adyacentes; (3) `--expect` exigía igualdad exacta y fallaba con
+ráfagas de entregas; (4) binarios stale del entorno agente hacen fallar el
+escenario 5 — recompilar (el script lo dice ahora por sí solo).
