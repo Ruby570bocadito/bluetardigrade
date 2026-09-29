@@ -7,6 +7,7 @@
 
 import { AnimatedNumber } from './ui-bits'
 import { SpotlightCard } from '@/components/reactbits/spotlight-card'
+import { GradientText } from '@/components/reactbits/gradient-text'
 import { formatUptime } from '@/lib/console-types'
 import type { SimStats } from '@/lib/console-types'
 
@@ -25,7 +26,14 @@ export function KpiRow({ stats }: { stats: SimStats | null }) {
       node: (
         <span className="flex items-baseline gap-2">
           <AnimatedNumber value={alertCount} className="font-mono text-2xl tabular-nums text-zinc-100" />
-          {critical > 0 && <span className="font-mono text-xs text-red-300">{critical} critical</span>}
+          {/* GradientText (React Bits): el critical late en degradado
+              rojo/ámbar mientras exista — urgencia de severidad, no adorno;
+              high queda estático en su color. */}
+          {critical > 0 && (
+            <GradientText colors={['#fca5a5', '#fb923c', '#f87171', '#fca5a5']} speed={4}>
+              <span className="font-mono text-xs">{critical} critical</span>
+            </GradientText>
+          )}
           {high > 0 && <span className="font-mono text-xs text-orange-300">{high} high</span>}
         </span>
       ),

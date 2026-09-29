@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -502,4 +504,84 @@ func TestSequencesEndpoint(t *testing.T) {
 	if !ok || len(steps) != 3 {
 		t.Errorf("steps = %v, want 3 rule names", first["steps"])
 	}
+}
+
+// TestStatsCorrelatorClosureLockOrder is the regression for the AB-BA
+// deadlock found in cross-review of f503b9d: handleStats used to call
+// the correlator closure while holding h.mu, and the real closure
+// enters correlate.Manager's mutex — while the chain-completion path
+// (Observe -> fire -> alert emit -> RecordAlert) holds the correlator
+// mutex and takes h.mu. One stats request plus one completing chain
+// deadlocked both goroutines: the API hung AND every later Observe
+// blocked behind the stuck completion (detection loss, not just a hung
+// endpoint).
+//
+// The stand-in mutex reproduces both orders with the ordering pinned
+// by signals, because a free-running race lets either side win h.mu
+// and mask the bug: the completion goroutine first takes the stand-in
+// and WAITS; only after the closure announces it is running (pre-fix
+// that means h.mu is already captive) is RecordAlert allowed to
+// proceed. Pre-fix the deadlock is then fully established — handler
+// holds h.mu and waits for the stand-in, completion holds the stand-in
+// and waits for h.mu — and the outer timeout turns the hang into a
+// failing test instead of a stuck suite. Post-fix the closure runs
+// after h.mu is released, RecordAlert completes freely and both
+// orders compose.
+//
+// handleStats is invoked directly (httptest) instead of over TCP: the
+// deadlock under test would also wedge the live server's Shutdown
+// (which takes h.mu), and the regression must fail fast and leave the
+// binary able to exit. The hub is built without newTestHub for the
+// same reason — its t.Cleanup(Shutdown) would block on the captive
+// h.mu; the unused listener dies with the test process.
+func TestStatsCorrelatorClosureLockOrder(t *testing.T) {
+	h, err := New("127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	var corrMu sync.Mutex
+	closureEntered := make(chan struct{})
+	h.SetCorrelatorStats(func() (int, int, int) {
+		close(closureEntered)
+		corrMu.Lock()
+		defer corrMu.Unlock()
+		return 3, 2, 8192
+	})
+
+	// The completion path: the alert pipeline takes h.mu while the
+	// correlator mutex is held (RecordAlert — exactly what the engine's
+	// emit wrapper does from inside correlate.Observe). It waits for the
+	// closure to be running first, so h.mu is guaranteed captive when
+	// RecordAlert attempts it (no race that would mask the bug).
+	corrHeld := make(chan struct{})
+	proceed := make(chan struct{})
+	completed := make(chan struct{})
+	go func() {
+		defer close(completed)
+		corrMu.Lock()
+		defer corrMu.Unlock()
+		close(corrHeld)
+		<-proceed
+		h.RecordAlert(alert.Alert{RuleID: "seq-1", RuleName: "cadena", Severity: rules.SevHigh})
+	}()
+	<-corrHeld // corrMu is held now, and stays held until RecordAlert returns
+
+	done := make(chan int, 1)
+	go func() {
+		rec := httptest.NewRecorder()
+		h.handleStats(rec, httptest.NewRequest(http.MethodGet, "/api/stats", nil))
+		done <- rec.Code
+	}()
+	<-closureEntered // closure is running: pre-fix h.mu is captive right now
+	close(proceed)   // now the completion path attempts RecordAlert
+	select {
+	case code := <-done:
+		if code != 200 {
+			t.Fatalf("GET /api/stats: status %d, want 200", code)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("/api/stats deadlocked against the correlator completion path: the closure must not run while h.mu is held")
+	}
+	<-completed
 }

@@ -10,6 +10,8 @@ import { ActivityIcon, Prohibit, ShieldCheck, SquaresFour, Warning, ChatsCircle,
 import { useConsole } from './socket-provider'
 import { BlurText } from '@/components/reactbits/blur-text'
 import { ShinyText } from '@/components/reactbits/shiny-text'
+import { DotGridLayer } from '@/components/reactbits/dot-grid'
+import { DecryptedText } from '@/components/reactbits/decrypted-text'
 import { Dashboard } from './dashboard'
 import { LiveFeed } from './live-feed'
 import { AlertsView } from './alerts-view'
@@ -34,6 +36,7 @@ const NAV: { id: ViewId; label: string; icon: React.ElementType }[] = [
 export function ConsoleShell() {
   const { status, stats, alerts, events, suppressions, sequences, startedAt } = useConsole()
   const [view, setView] = useState<ViewId>('panel')
+  const reduce = useReducedMotion()
 
   // Real telemetry source, derived from the events the engine actually
   // delivered (Event.Source in pkg/model): 'sysmon' = sf-sensor reading
@@ -55,10 +58,15 @@ export function ConsoleShell() {
   }
 
   return (
-    <div className="min-h-[100dvh] bg-[#0b0d10] text-zinc-100">
-      <div className="mx-auto flex min-h-[100dvh] w-full max-w-[1400px] flex-col lg:flex-row">
+    <div className="relative min-h-[100dvh] bg-[#0b0d10] text-zinc-100">
+      {/* DotGrid (React Bits): fondo de toda la consola. La rejilla estaba
+          antes en CSS estático del sidebar; ahora reacciona al puntero con
+          la misma contención (alpha base 0.05) y se congela sin movimiento
+          bajo prefers-reduced-motion. */}
+      <DotGridLayer />
+      <div className="relative mx-auto flex min-h-[100dvh] w-full max-w-[1400px] flex-col lg:flex-row">
         {/* Sidebar (desktop) */}
-        <aside className="ambient-dots hidden w-56 shrink-0 flex-col border-r border-white/[0.08] lg:flex">
+        <aside className="hidden w-56 shrink-0 flex-col border-r border-white/[0.08] lg:flex">
           <BrandBlock />
           <nav aria-label="Secciones de la consola" className="mt-2 flex-1 px-2">
             <ul className="space-y-0.5">
@@ -69,19 +77,29 @@ export function ConsoleShell() {
                     onClick={() => setView(item.id)}
                     aria-current={view === item.id ? 'page' : undefined}
                     className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors active:scale-[0.99] ${
-                      view === item.id ? 'bg-white/[0.06] text-zinc-100' : 'text-zinc-400 hover:bg-white/[0.03] hover:text-zinc-200'
+                      view === item.id ? 'text-zinc-100' : 'text-zinc-400 hover:bg-white/[0.03] hover:text-zinc-200'
                     }`}
                   >
-                    <item.icon size={16} weight={view === item.id ? 'fill' : 'regular'} aria-hidden />
-                    {item.label}
+                    {/* píldora activa animada con layoutId: el resalte viaja
+                        entre secciones en lugar de aparecer/desaparecer; el
+                        contenido lleva `relative` para pintar por encima */}
+                    {view === item.id && (
+                      <motion.span
+                        layoutId="nav-pill"
+                        className="absolute inset-0 rounded-md bg-white/[0.06]"
+                        transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 380, damping: 32 }}
+                      />
+                    )}
+                    <item.icon size={16} weight={view === item.id ? 'fill' : 'regular'} aria-hidden className="relative" />
+                    <span className="relative">{item.label}</span>
                     {item.id === 'alertas' && alerts.length > 0 && (
-                      <span className="ml-auto font-mono text-[11px] text-zinc-500">{alerts.length}</span>
+                      <span className="relative ml-auto font-mono text-[11px] text-zinc-500">{alerts.length}</span>
                     )}
                     {item.id === 'supresiones' && suppressions.length > 0 && (
-                      <span className="ml-auto font-mono text-[11px] text-zinc-500">{suppressions.length}</span>
+                      <span className="relative ml-auto font-mono text-[11px] text-zinc-500">{suppressions.length}</span>
                     )}
                     {item.id === 'cadenas' && sequences.length > 0 && (
-                      <span className="ml-auto font-mono text-[11px] text-zinc-500">{sequences.length}</span>
+                      <span className="relative ml-auto font-mono text-[11px] text-zinc-500">{sequences.length}</span>
                     )}
                   </button>
                 </li>
@@ -282,7 +300,9 @@ function BrandBlock() {
         </span>
         <span className="leading-tight">
           <span className="block text-sm font-medium text-zinc-100">security-framework</span>
-          <span className="block text-[11px] text-zinc-500">consola de detección</span>
+          {/* DecryptedText (React Bits): la etiqueta se descodifica una vez
+              al montar; gesto temático y contenido, cero ruido después. */}
+          <DecryptedText text="consola de detección" className="block text-[11px] text-zinc-500" />
         </span>
       </div>
       <div className="mt-3 flex items-center gap-2">

@@ -168,7 +168,7 @@ host inventing events). The caps that protect the pipeline:
 | Ingest line size | 1 MiB (`maxLineSize`) | line rejected, `dropped` counter |
 | Identity fields (`host`, `user`, `id`) | 255 / 256 / 128 runes | **truncated, not dropped** — the event still flows |
 | Alert dedup map | soft 4096 / hard 65536, TTL 60 s | purge, then stop remembering; alerts keep flowing |
-| Correlator states | 8192 | NEW hosts stop being tracked until slots free |
+| Correlator states | 8192 (`correlator_cap`) | NEW hosts stop being tracked until slots free — watch `correlator_states` in `/api/stats` |
 | Correlator stale states | — | pruned on every successful sequence reload (removed sequences cannot hold slots) |
 | Webhook queue | 512 frames, single sequential delivery worker | saturated deliveries counted as `dropped`/failed, detection unaffected |
 
@@ -176,9 +176,12 @@ Design rule of thumb, applied consistently: **visibility wins over
 deduplication, and bounded degradation beats silence**. A flood makes
 the pipeline noisier or coarser (fewer dedup keys, no new correlator
 hosts), never quieter. If you monitor one thing, monitor
-`/api/stats`: `webhook_failed`, `dropped`, `ingest_rejected` and the
-correlator-visible counters distinguish "quiet network" from
-"broken output channel".
+`/api/stats`: `webhook_failed`, `dropped`, `ingest_rejected` and
+`correlator_states` distinguish "quiet network" from
+"broken output channel" — and a `correlator_states` climbing toward
+the cap on a small fleet is a hostile feed inventing hostnames, not
+popularity. The console header mirrors the correlator numbers in a
+`correlador N/cap` chip (red at the cap).
 
 ## Verifying your tuning
 

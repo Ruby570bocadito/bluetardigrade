@@ -340,16 +340,8 @@ func (h *Hub) handleStats(w http.ResponseWriter, _ *http.Request) {
 	if h.webhook != nil {
 		whSent, whFailed, whDropped = h.webhook()
 	}
-	var corrStates, corrSeqs, corrCap int
-	if h.correlator != nil {
-		corrStates, corrSeqs, corrCap = h.correlator()
-	}
+	corrFn := h.correlator
 	st := h.store
-	storeEnabled, storeEvents, storeAlerts := false, int64(0), int64(0)
-	if st != nil {
-		storeEnabled = true
-		storeEvents, storeAlerts = st.Counts()
-	}
 	rulesCount, rulesTypes := 0, []string{}
 	if h.rules != nil {
 		rulesCount = h.rules.Count()
@@ -357,6 +349,31 @@ func (h *Hub) handleStats(w http.ResponseWriter, _ *http.Request) {
 	}
 	sup := h.suppress
 	h.mu.Unlock()
+	// The correlator closure is called AFTER h.mu.Unlock, never under
+	// it: the real closure enters correlate.Manager's mutex (States,
+	// Count), and the chain-completion path runs the lock order the
+	// other way round — Observe holds the correlator mutex across
+	// fire() -> alert emit -> RecordAlert, which takes h.mu. Calling
+	// the closure under h.mu lets the two orders meet: one /api/stats
+	// request interleaved with one completing chain and both goroutines
+	// block forever — the API handler AND every subsequent Observe
+	// (detection loss, not just a hung stats endpoint). The suppress
+	// manager is snapshotted-then-called for the same reason, and so is
+	// the store pointer: Counts() takes the store mutex while a write
+	// may be mid-flight (SQLite), and no path from the store ever needs
+	// h.mu back — calling under the hub lock would only risk stalls,
+	// never deadlock, but the idiom costs nothing and keeps
+	// handleStats' rule uniform: closures and other managers' locks are
+	// only ever taken after Unlock.
+	var corrStates, corrSeqs, corrCap int
+	if corrFn != nil {
+		corrStates, corrSeqs, corrCap = corrFn()
+	}
+	storeEnabled, storeEvents, storeAlerts := false, int64(0), int64(0)
+	if st != nil {
+		storeEnabled = true
+		storeEvents, storeAlerts = st.Counts()
+	}
 	supActive := 0
 	if sup != nil {
 		supActive = sup.Count(time.Now())

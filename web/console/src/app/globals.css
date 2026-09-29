@@ -184,13 +184,10 @@
   }
 }
 
-/* Fondo ambiental de la shell: rejilla de puntos + resplandor esmeralda
-   muy tenue en la cabecera. Decorativa pero estática: no anima nada.
+/* Fondo ambiental de la shell: resplandor esmeralda muy tenue en la
+   cabecera. La rejilla de puntos ahora la pinta el canvas DotGrid
+   (React Bits) y reacciona al puntero; debajo del contenido siempre.
    isolation + z-index -1: el halo queda SIEMPRE detrás del contenido. */
-.ambient-dots {
-  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
-  background-size: 22px 22px;
-}
 .ambient-glow {
   isolation: isolate;
 }
@@ -203,4 +200,96 @@
   background:
     radial-gradient(600px 160px at 18% -10%, rgba(52, 211, 153, 0.07), transparent 70%),
     radial-gradient(500px 140px at 85% -20%, rgba(52, 211, 153, 0.04), transparent 70%);
+}
+
+/* GradientText: degradado animado sobre texto con background-clip: text.
+   Solo para el contador critical: urgencia de severidad, no decoración. */
+.gradient-text {
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  background-size: 220% 100%;
+  animation: gradient-pan var(--gt-speed, 5s) ease-in-out infinite;
+}
+@keyframes gradient-pan {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gradient-text {
+    animation: none;
+    /* congelado en la parada inicial: sigue siendo texto rojo legible */
+  }
+}
+
+/* StarBorder: borde de 1px con degradado en movimiento. En reposo es el
+   borde estático de siempre (fondo transparente, pelo blanco al 8%); en
+   activo, el truco clásico: el contenedor lleva el degradado animado en
+   border-box y un relleno opaco en padding-box que enmascara el centro,
+   dejando solo el anillo del borde vivo. */
+.star-border {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.star-border--active {
+  border-color: transparent;
+  background:
+    radial-gradient(120% 120% at 50% 50%, #10141a 0%, #10141a 100%) padding-box,
+    linear-gradient(
+        var(--sb-angle, 120deg),
+        rgba(16, 20, 26, 0) 20%,
+        var(--sb-color, rgba(52, 211, 153, 0.55)) 45%,
+        rgba(16, 20, 26, 0) 70%
+      )
+      border-box;
+  background-size: 250% 250%;
+  animation: star-border-pan var(--sb-speed, 6s) linear infinite;
+}
+@keyframes star-border-pan {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .star-border--active {
+    animation: none;
+    /* estático: el borde esmeralda fijo sigue marcando el estado activo */
+  }
+}
+
+/* Pulido de cabina: scrollbar fina y discreta (la consola vive con listas
+   largas) y selección esmeralda coherente con el acento. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(52, 211, 153, 0.35);
+}
+::selection {
+  background: rgba(52, 211, 153, 0.28);
+  color: #e7eaed;
 }
