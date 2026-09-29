@@ -63,6 +63,17 @@ export type RuleMeta = {
   conditions: { field: string; operator: string; value: string | string[] }[]
 }
 
+// One operator allowlist entry as the engine serves it
+// (GET /api/suppressions -> suppress.Entry). rule_id and host are exact
+// matches; an empty host means every host. expires is the raw RFC 3339
+// string from suppressions.yaml ('' = no expiration).
+export type SfSuppression = {
+  rule_id: string
+  host?: string
+  reason?: string
+  expires?: string
+}
+
 // The hub has exactly two modes: forwarding the real engine, or having
 // nothing to show. There is no simulation mode anywhere in this service.
 export type HubStats = {
@@ -78,4 +89,6 @@ export type HubStats = {
   webhook_sent: number
   webhook_failed: number
   webhook_dropped: number
+  // non-expired operator suppression entries (suppressions.yaml)
+  suppressions_active: number
 }

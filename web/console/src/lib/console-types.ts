@@ -87,6 +87,15 @@ export type RuleMeta = {
   conditions: { field: string; operator: string; value: string | string[] }[]
 }
 
+// One operator allowlist entry (engine GET /api/suppressions). Empty host
+// means every host; expires is the raw RFC 3339 string or '' (no expiry).
+export type SfSuppression = {
+  rule_id: string
+  host?: string
+  reason?: string
+  expires?: string
+}
+
 export type SimStats = {
   events_total: number
   alerts_total: number
@@ -100,12 +109,15 @@ export type SimStats = {
   webhook_sent: number
   webhook_failed: number
   webhook_dropped: number
+  // non-expired operator suppression entries, forwarded since r4
+  suppressions_active: number
 }
 
 export type ConsoleSnapshot = {
   events: SfEvent[]
   alerts: SfAlert[]
   rules: RuleMeta[]
+  suppressions?: SfSuppression[]
   stats: SimStats
   started_at: string
 }
@@ -117,6 +129,9 @@ export type AnalystMessage = {
   role: 'user' | 'analyst'
   alertName?: string
   question?: string
+  // operator-suppression context captured when the analysis started
+  // (active suppressions.yaml entries matching this rule)
+  suppressionNote?: string
   steps?: AnalystStep[]
   text?: string
   error?: string

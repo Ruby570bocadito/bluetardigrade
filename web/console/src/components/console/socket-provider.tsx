@@ -6,7 +6,7 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react'
 import type { Socket } from 'socket.io-client'
 import { io } from 'socket.io-client'
-import type { SfAlert, SfEvent, RuleMeta, SimStats, ConsoleSnapshot } from '@/lib/console-types'
+import type { SfAlert, SfEvent, RuleMeta, SimStats, ConsoleSnapshot, SfSuppression } from '@/lib/console-types'
 
 export type ConnStatus = 'connecting' | 'live' | 'down'
 
@@ -15,6 +15,7 @@ type ConsoleState = {
   events: SfEvent[]
   alerts: SfAlert[]
   rules: RuleMeta[]
+  suppressions: SfSuppression[]
   stats: SimStats | null
   startedAt: string | null
   getSocket: () => Socket | null
@@ -43,6 +44,7 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
   const [events, setEvents] = useState<SfEvent[]>([])
   const [alerts, setAlerts] = useState<SfAlert[]>([])
   const [rules, setRules] = useState<RuleMeta[]>([])
+  const [suppressions, setSuppressions] = useState<SfSuppression[]>([])
   const [stats, setStats] = useState<SimStats | null>(null)
   const [startedAt, setStartedAt] = useState<string | null>(null)
   const socketRef = useRef<Socket | null>(null)
@@ -68,6 +70,7 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
       setEvents(snap.events ?? [])
       setAlerts(snap.alerts ?? [])
       setRules(snap.rules ?? [])
+      setSuppressions(snap.suppressions ?? [])
       setStats(snap.stats ?? null)
       setStartedAt(snap.started_at ?? null)
       setStatus('live')
@@ -85,6 +88,7 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
       })
     })
     socket.on('console:stats', (st: SimStats) => setStats(st))
+    socket.on('console:suppressions', (entries: SfSuppression[]) => setSuppressions(entries ?? []))
 
     return () => {
       socket.disconnect()
@@ -95,7 +99,7 @@ export function ConsoleProvider({ children }: { children: React.ReactNode }) {
   const getSocket = useCallback(() => socketRef.current, [])
 
   return (
-    <Ctx.Provider value={{ status, events, alerts, rules, stats, startedAt, getSocket }}>
+    <Ctx.Provider value={{ status, events, alerts, rules, suppressions, stats, startedAt, getSocket }}>
       {children}
     </Ctx.Provider>
   )

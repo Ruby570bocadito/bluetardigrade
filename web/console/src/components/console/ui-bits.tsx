@@ -46,9 +46,20 @@ export function SectionHeader({ title, count, action }: { title: string; count?:
   )
 }
 
-export function EmptyState({ title, hint }: { title: string; hint?: string }) {
+export function EmptyState({
+  title,
+  hint,
+  icon: Icon,
+}: {
+  title: string
+  hint?: string
+  icon?: React.ElementType
+}) {
   return (
     <div className="flex flex-col items-center justify-center gap-1 py-10 text-center">
+      {Icon && (
+        <Icon size={22} aria-hidden className="mb-1 text-zinc-600" />
+      )}
       <p className="text-sm text-zinc-400">{title}</p>
       {hint && <p className="text-xs text-zinc-600">{hint}</p>}
     </div>

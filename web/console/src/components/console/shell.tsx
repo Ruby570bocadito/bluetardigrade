@@ -6,27 +6,29 @@
 
 import { useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { ActivityIcon, ShieldCheck, SquaresFour, Warning, ChatsCircle } from '@phosphor-icons/react'
+import { ActivityIcon, Prohibit, ShieldCheck, SquaresFour, Warning, ChatsCircle } from '@phosphor-icons/react'
 import { useConsole } from './socket-provider'
 import { Dashboard } from './dashboard'
 import { LiveFeed } from './live-feed'
 import { AlertsView } from './alerts-view'
 import { RulesView } from './rules-view'
+import { SuppressionsView } from './suppressions-view'
 import { AnalystPanel } from './analyst-panel'
 import { formatUptime, type SfAlert, type SimStats } from '@/lib/console-types'
 
-type ViewId = 'panel' | 'flujo' | 'alertas' | 'reglas' | 'analista'
+type ViewId = 'panel' | 'flujo' | 'alertas' | 'reglas' | 'supresiones' | 'analista'
 
 const NAV: { id: ViewId; label: string; icon: React.ElementType }[] = [
   { id: 'panel', label: 'Panel', icon: SquaresFour },
   { id: 'flujo', label: 'Flujo en vivo', icon: ActivityIcon },
   { id: 'alertas', label: 'Alertas', icon: Warning },
   { id: 'reglas', label: 'Reglas', icon: ShieldCheck },
+  { id: 'supresiones', label: 'Supresiones', icon: Prohibit },
   { id: 'analista', label: 'Analista IA', icon: ChatsCircle },
 ]
 
 export function ConsoleShell() {
-  const { status, stats, alerts, events, startedAt } = useConsole()
+  const { status, stats, alerts, events, suppressions, startedAt } = useConsole()
   const [view, setView] = useState<ViewId>('panel')
 
   // Real telemetry source, derived from the events the engine actually
@@ -70,6 +72,9 @@ export function ConsoleShell() {
                     {item.label}
                     {item.id === 'alertas' && alerts.length > 0 && (
                       <span className="ml-auto font-mono text-[11px] text-zinc-500">{alerts.length}</span>
+                    )}
+                    {item.id === 'supresiones' && suppressions.length > 0 && (
+                      <span className="ml-auto font-mono text-[11px] text-zinc-500">{suppressions.length}</span>
                     )}
                   </button>
                 </li>
@@ -140,6 +145,7 @@ export function ConsoleShell() {
               {view === 'flujo' && <LiveFeed />}
               {view === 'alertas' && <AlertsView onAnalyze={openInAnalyst} />}
               {view === 'reglas' && <RulesView />}
+              {view === 'supresiones' && <SuppressionsView />}
               {view === 'analista' && <AnalystPanel pendingAlert={pendingAlert} clearPending={() => setPendingAlert(null)} />}
             </AnimatedView>
           </main>
@@ -166,6 +172,8 @@ function titleFor(view: ViewId): string {
       return 'Cola de alertas'
     case 'reglas':
       return 'Reglas de detección'
+    case 'supresiones':
+      return 'Supresiones del operador'
     case 'analista':
       return 'Analista IA'
   }

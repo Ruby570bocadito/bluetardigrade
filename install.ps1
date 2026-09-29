@@ -28,6 +28,13 @@
 #   -AutoStart           start engine + console at logon (HKCU Run, no admin)
 #   -WebhookUrl <url>    POST every alert as JSON to this SIEM/SOAR endpoint;
 #                        persisted, engine autostart delivers it (empty clears)
+#   -WebhookToken <t>    bearer token the deliveries carry as
+#                        'Authorization: Bearer' (env SF_WEBHOOK_TOKEN also
+#                        works at runtime; empty disables)
+#   -IngestToken <t>     shared secret sensors must send ('AUTH <token>');
+#                        persisted, engine autostart enforces it. -Firewall
+#                        REQUIRES it: an open 7777 without a token lets any
+#                        LAN host inject events (empty clears)
 #   -Update              refresh an existing install and rebuild
 #   -SkipBuild           fetch sources + tools but skip compiling (debug)
 #   -SourceReady         internal: source already fetched (the updater
@@ -43,6 +50,8 @@ param(
     [switch]$Firewall,
     [switch]$AutoStart,
     [string]$WebhookUrl = '',
+    [string]$WebhookToken = '',
+    [string]$IngestToken = '',
     [switch]$Update,
     [switch]$SkipBuild,
     [switch]$SourceReady
@@ -484,6 +493,23 @@ function Add-FirewallRule {
     # loopback). Restricted to the domain/private profiles: an
     # unauthenticated NDJSON ingest must never be reachable from
     # public networks (cafes, airports, hotspots).
+    #
+    # Token gate: beyond those profiles, opening 7777 without a shared
+    # token hands the whole LAN an event-injection channel, so the rule
+    # is REFUSED until -IngestToken configures one. A rule left behind
+    # by a pre-gate install is removed to keep the firewall state
+    # consistent with the refusal (loopback sensors never needed it).
+    param([bool]$HasToken = $false)
+    if (-not $HasToken) {
+        Write-Warn2 "-Firewall refused: no ingest token configured. Opening TCP $ENGINE_PORT without one would let any host on the network inject events (NDJSON, no auth)."
+        Write-Info "configure a token and re-run:  .\install.ps1 -Firewall -IngestToken 'a-long-random-secret'"
+        $chk = netsh advfirewall firewall show rule "name=security-framework engine" 2>$null
+        if ("$chk" -match 'security-framework engine') {
+            netsh advfirewall firewall delete rule "name=security-framework engine" | Out-Null
+            Write-Warn2 "existing firewall rule REMOVED (it predates the token requirement; remote sensors need the token anyway)"
+        }
+        return
+    }
     $profiles = 'domain,private'
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
     $admin = ([Security.Principal.WindowsPrincipal]$id).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -535,9 +561,36 @@ function Set-WebhookConfig {
     return $u
 }
 
+function Set-IngestTokenConfig {
+    # Persists the shared ingest token under tools\config\ (tools\ is
+    # the one folder non-git source refreshes keep, so the setting
+    # survives updates that rebuild the tree). Empty token clears the
+    # setting. Returns the effective token ('' when disabled).
+    param([string]$File, [string]$Token)
+    $t = $Token.Trim()
+    if ($t -eq '') {
+        if (Test-Path $File) {
+            Remove-Item $File -Force
+            Write-Ok "ingest token removed ($File)"
+        } else {
+            Write-Ok "ingest token not configured"
+        }
+        return ''
+    }
+    # the token ends up on the autostart command line and inside the
+    # sensor handshake: no whitespace, no quotes, sane length
+    if ($t -notmatch '^[A-Za-z0-9._~+/=-]{8,128}$') {
+        throw "invalid -IngestToken: use 8-128 characters from letters/digits/._~+/=- (no spaces or quotes)"
+    }
+    New-Item -ItemType Directory -Path (Split-Path $File -Parent) -Force | Out-Null
+    Set-Content -Path $File -Value $t -Encoding ascii
+    Write-Ok "ingest token saved: sensors must send 'AUTH <token>' (-Token or SF_INGEST_TOKEN)"
+    return $t
+}
+
 function Register-Autostart {
     # HKCU Run entries: always writable by the current user, no admin needed
-    param([string]$Root, [string]$WebhookUrl = '')
+    param([string]$Root, [string]$WebhookUrl = '', [string]$WebhookToken = '', [string]$IngestToken = '')
     $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
     New-Item -ItemType Directory -Path (Join-Path $Root 'run') -Force | Out-Null
     # -pidfile: the engine records its PID so sf-console -Stop can stop
@@ -546,6 +599,8 @@ function Register-Autostart {
     # the console launcher happened to start the engine itself).
     $engineArgs = "-rules '$Root\rules' -pidfile '$Root\run\engine.pid'"
     if ($WebhookUrl) { $engineArgs = "$engineArgs -webhook '$WebhookUrl'" }
+    if ($WebhookToken) { $engineArgs = "$engineArgs -webhook-token '$WebhookToken'" }
+    if ($IngestToken) { $engineArgs = "$engineArgs -token '$IngestToken'" }
     $engineCmd  = "powershell.exe -NoProfile -WindowStyle Minimized -ExecutionPolicy Bypass -Command `"& '$Root\bin\engine.exe' $engineArgs`""
     $consoleCmd = "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Root\scripts\sf-console.ps1`" -NoBrowser"
     try {
@@ -556,6 +611,7 @@ function Register-Autostart {
         if ($chk.'security-framework-engine' -and $chk.'security-framework-console') {
             $note = 'engine minimized + console hidden'
             if ($WebhookUrl) { $note += ", alerts POST to $WebhookUrl" }
+            if ($IngestToken) { $note += ', ingest auth on' }
             Write-Ok "autostart at logon registered ($note)"
         } else {
             Write-Warn2 "autostart entries could not be verified in the registry"
@@ -626,7 +682,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         (Test-InstallerStale -Root $root -RunningPath $scriptInstallerPath -RunningHash $scriptInstallerHash)) {
         Write-Step "Installer updated - re-running with the fresh version"
         $fwd = @{ Update = $true; InstallDir = $root; SourceReady = $true }
-        foreach ($k in @('Repo','Branch','NoConsole','WithSensor','Firewall','AutoStart','WebhookUrl','SkipBuild')) {
+        foreach ($k in @('Repo','Branch','NoConsole','WithSensor','Firewall','AutoStart','WebhookUrl','WebhookToken','IngestToken','SkipBuild')) {
             if ($PSBoundParameters.ContainsKey($k)) { $fwd[$k] = $PSBoundParameters[$k] }
         }
         & (Join-Path $root 'install.ps1') @fwd
@@ -657,7 +713,19 @@ if ($MyInvocation.InvocationName -ne '.') {
     Add-ToUserPath -Dir $binDir
     $env:Path = "$binDir;" + $env:Path
 
-    if ($Firewall)   { Add-FirewallRule }
+    # ingest token: -IngestToken rewrites the persisted one (empty
+    # clears); without the flag an existing one is picked up so
+    # sf-update and re-installs keep the auth config untouched
+    $ingestToken = ''
+    $tokFile = Join-Path $tools 'config\ingest.token'
+    if ($PSBoundParameters.ContainsKey('IngestToken')) {
+        $ingestToken = Set-IngestTokenConfig -File $tokFile -Token $IngestToken
+    } elseif (Test-Path $tokFile) {
+        $raw = Get-Content $tokFile -First 1 -ErrorAction SilentlyContinue
+        if ($null -ne $raw) { $ingestToken = $raw.Trim() }
+    }
+
+    if ($Firewall)   { Add-FirewallRule -HasToken:([bool]$ingestToken) }
 
     # webhook: -WebhookUrl rewrites the persisted URL (empty clears it);
     # without the flag an existing one is picked up, so sf-update and
@@ -671,6 +739,25 @@ if ($MyInvocation.InvocationName -ne '.') {
         if ($null -ne $raw) { $webhook = $raw.Trim() }
     }
 
+    # webhook token: same rules as the URL (persisted, flag wins)
+    $webhookToken = ''
+    $wtFile = Join-Path $tools 'config\webhook.token'
+    if ($PSBoundParameters.ContainsKey('WebhookToken')) {
+        $wt = $WebhookToken.Trim()
+        if ($wt -eq '') {
+            if (Test-Path $wtFile) { Remove-Item $wtFile -Force; Write-Ok 'webhook token removed' }
+            $webhookToken = ''
+        } else {
+            New-Item -ItemType Directory -Path (Split-Path $wtFile -Parent) -Force | Out-Null
+            Set-Content -Path $wtFile -Value $wt -Encoding ascii
+            Write-Ok 'webhook token saved: deliveries carry Authorization: Bearer'
+            $webhookToken = $wt
+        }
+    } elseif (Test-Path $wtFile) {
+        $raw = Get-Content $wtFile -First 1 -ErrorAction SilentlyContinue
+        if ($null -ne $raw) { $webhookToken = $raw.Trim() }
+    }
+
     # autostart: register when asked; on plain updates refresh the engine
     # entry if it already exists, so a webhook change reaches the Run key
     # without requiring -AutoStart again
@@ -680,7 +767,7 @@ if ($MyInvocation.InvocationName -ne '.') {
             -Name 'security-framework-engine' -ErrorAction SilentlyContinue
         if ($cur -and $cur.'security-framework-engine') { $register = $true }
     }
-    if ($register) { Register-Autostart -Root $root -WebhookUrl $webhook }
+    if ($register) { Register-Autostart -Root $root -WebhookUrl $webhook -WebhookToken $webhookToken -IngestToken $ingestToken }
 
     if (Test-PortLocal $ENGINE_PORT) {
         Write-Warn2 "port $ENGINE_PORT is busy: an engine may already be running"
@@ -693,6 +780,9 @@ if ($MyInvocation.InvocationName -ne '.') {
     Write-Host " location : $root"
     if ($webhook) {
         Write-Host " webhook  : alerts POST to $webhook"
+    }
+    if ($ingestToken) {
+        Write-Host ' ingest   : token auth ENABLED (sensors send AUTH <token>)'
     }
     Write-Host '------------------------------------------------------------'
     Write-Host ' commands  :'

@@ -28,6 +28,10 @@ info:
       frames of `event: event` and `event: alert`, `retry: 2000`,
       heartbeat comments every 15 s.
     - All timestamps are RFC 3339 (UTC, nanosecond precision).
+    - **Authentication is optional**: loopback deployments run open by
+      default; starting the engine with `-api-token` requires a bearer
+      credential on every path except `/api/health` (see
+      `securitySchemes.bearerAuth`).
 
     The alert webhook (engine `-webhook` flag) pushes the same `Alert`
     object defined here as JSON to an external collector.
@@ -277,6 +281,16 @@ paths:
                 type: string
                 example: 'unsupported format: use jsonl, ndjson or csv'
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Optional: only enforced when the engine is started with
+        `-api-token` (or `SF_API_TOKEN`). When enabled, every path
+        below answers 401 without a valid `Authorization: Bearer`
+        header, EXCEPT `/api/health`, which stays open for liveness
+        probes and reveals nothing but `{"status":"ok"}`.
   parameters:
     Host:
       name: host

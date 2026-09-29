@@ -5,13 +5,14 @@
 // no simulation). SSE frames are parsed by hand so the same code runs
 // on bun and node.
 
-import type { SfEvent, SfAlert, HubStats, RuleMeta } from './types'
+import type { SfEvent, SfAlert, HubStats, RuleMeta, SfSuppression } from './types'
 
 export type EngineBridgeCallbacks = {
   onEvent: (ev: SfEvent) => void
   onAlert: (al: SfAlert) => void
   onStats: (st: HubStats) => void
   onRules: (rules: RuleMeta[]) => void
+  onSuppressions: (entries: SfSuppression[]) => void
   onUp: () => void
   onDown: () => void
 }
@@ -19,6 +20,16 @@ export type EngineBridgeCallbacks = {
 const RETRY_MS = 3000
 const PROBE_TIMEOUT_MS = 1200
 const STATS_POLL_MS = 2000
+// Bearer token for the engine API, same env var the engine honors
+// (SF_API_TOKEN): when the API is started with -api-token, every /api
+// call here must carry it or the bridge would be stuck in 401s. The
+// /api/health probe stays open on the engine side, so connectivity
+// checks work before this value is even read.
+const API_TOKEN = process.env.SF_API_TOKEN || ''
+
+function authHeaders(): Record<string, string> {
+  return API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}
+}
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
@@ -36,6 +47,8 @@ export class EngineBridge {
   private ctrl: AbortController | null = null
   private statsTimer: ReturnType<typeof setInterval> | null = null
   private stopped = false
+  // last suppressions JSON seen, so the hub only re-emits on real changes
+  private lastSuppressions = ''
 
   constructor(private cb: EngineBridgeCallbacks) {
     this.base = process.env.ENGINE_API || 'http://127.0.0.1:7778'
@@ -51,6 +64,7 @@ export class EngineBridge {
     this.statsTimer = null
     this.ctrl?.abort()
     this.ctrl = null
+    this.lastSuppressions = ''
   }
 
   /** Connects, subscribes and keeps retrying until stop(). Never throws. */
@@ -70,7 +84,7 @@ export class EngineBridge {
 
   private async probe(): Promise<boolean> {
     try {
-      const res = await fetch(`${this.base}/api/health`, { signal: shortTimeout(PROBE_TIMEOUT_MS) })
+      const res = await fetch(`${this.base}/api/health`, { signal: shortTimeout(PROBE_TIMEOUT_MS), headers: authHeaders() })
       return res.ok
     } catch {
       return false
@@ -92,7 +106,7 @@ export class EngineBridge {
     for (let i = alerts.length - 1; i >= 0; i--) this.cb.onAlert(mapAlert(alerts[i] as Record<string, unknown>))
 
     this.ctrl = new AbortController()
-    const res = await fetch(`${this.base}/api/stream`, { signal: this.ctrl.signal })
+    const res = await fetch(`${this.base}/api/stream`, { signal: this.ctrl.signal, headers: authHeaders() })
     if (!res.ok || !res.body) throw new Error(`stream failed (${res.status})`)
 
     this.cb.onUp()
@@ -103,8 +117,24 @@ export class EngineBridge {
     this.statsTimer = null
   }
 
+  private async pullSuppressions() {
+    // Best effort: the suppressions view is secondary telemetry. A
+    // transient failure here must not flap the engine-up/down state,
+    // which only the stats poll and the SSE stream are allowed to touch.
+    try {
+      const raw = await this.getJson<Record<string, unknown>>(`${this.base}/api/suppressions`)
+      const entries = (raw.entries as SfSuppression[]) ?? []
+      const json = JSON.stringify(entries)
+      if (json === this.lastSuppressions) return
+      this.lastSuppressions = json
+      this.cb.onSuppressions(entries)
+    } catch {
+      /* transient; reported like any other stats poll hiccup */
+    }
+  }
+
   private async getJson<T>(url: string): Promise<T> {
-    const res = await fetch(url, { signal: shortTimeout(PROBE_TIMEOUT_MS) })
+    const res = await fetch(url, { signal: shortTimeout(PROBE_TIMEOUT_MS), headers: authHeaders() })
     if (!res.ok) throw new Error(`${url} -> ${res.status}`)
     return (await res.json()) as T
   }
@@ -116,6 +146,7 @@ export class EngineBridge {
     } catch {
       /* transient; the SSE stream will signal a real disconnection */
     }
+    await this.pullSuppressions()
   }
 
   private async pumpSSE(body: ReadableStream<Uint8Array>) {
@@ -168,6 +199,7 @@ function mapStats(st: Record<string, unknown>): HubStats {
     webhook_sent: Number(st.webhook_sent ?? 0),
     webhook_failed: Number(st.webhook_failed ?? 0),
     webhook_dropped: Number(st.webhook_dropped ?? 0),
+    suppressions_active: Number(st.suppressions_active ?? 0),
   }
 }
 

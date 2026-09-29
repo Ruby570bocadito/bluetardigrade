@@ -5,6 +5,7 @@
 package api
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -32,6 +33,7 @@ const (
 type Hub struct {
 	listener net.Listener
 	srv      *http.Server
+	token    string // bearer token for /api/* (empty = no auth)
 
 	mu          sync.Mutex
 	events      []*model.Event // oldest first, trimmed to maxEvents
@@ -68,7 +70,7 @@ func New(addr string) (*Hub, error) {
 	mux.HandleFunc("GET /api/health", h.handleHealth)
 	mux.HandleFunc("GET /api/alerts/export", h.handleAlertsExport)
 	mux.HandleFunc("GET /api/events/export", h.handleEventsExport)
-	h.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	h.srv = &http.Server{Handler: h.auth(mux), ReadHeaderTimeout: 5 * time.Second}
 	return h, nil
 }
 
@@ -97,6 +99,35 @@ func (h *Hub) SetCounters(received func() (ingested, dropped, rejected uint64)) 
 	h.mu.Lock()
 	h.received = received
 	h.mu.Unlock()
+}
+
+// SetToken requires "Authorization: Bearer <token>" on every /api route
+// except /api/health (the liveness probe, which returns nothing but
+// {"status":"ok"}). Call before Run. This keeps the standard set by the
+// ingest auth: a listener reachable beyond loopback must demand an
+// explicit credential - the API hands out every event and alert, so an
+// open port on a shared network is a silent data leak.
+func (h *Hub) SetToken(token string) { h.token = token }
+
+// auth wraps the mux with the bearer check. The comparison is
+// constant-time and runs on every request (no early exits on the
+// header shape), mirroring the ingest token handling.
+func (h *Hub) auth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if h.token == "" || r.URL.Path == "/api/health" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if subtle.ConstantTimeCompare([]byte(got), []byte(h.token)) != 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			fmt.Fprintln(w, `{"error":"unauthorized: missing or invalid bearer token"}`)
+			log.Printf("[API] 401 unauthorized: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // SetWebhookStats wires the webhook delivery counters into /api/stats.

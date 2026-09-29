@@ -300,3 +300,74 @@ func TestAlertsExportDefaultAndBadFormat(t *testing.T) {
 		t.Errorf("format=xml status = %d, want 400", res2.StatusCode)
 	}
 }
+
+// TestBearerAuth covers the API token standard set alongside the ingest
+// auth: /api/health stays open for liveness probes (the engine itself
+// and the console bridge use it), every other /api route answers 401
+// with a JSON error without a valid bearer and serves data with it.
+func TestBearerAuth(t *testing.T) {
+	h, err := New("127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	h.SetToken("s3cret-api")
+	go func() { _ = h.Run() }()
+	t.Cleanup(h.Shutdown)
+	base := "http://" + h.Addr()
+
+	// liveness probe stays open
+	res, err := http.Get(base + "/api/health")
+	if err != nil {
+		t.Fatalf("health: %v", err)
+	}
+	io.Copy(io.Discard, res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("health without token: status %d, want 200 (probe must stay open)", res.StatusCode)
+	}
+
+	cases := []struct {
+		name string
+		auth string
+		want int
+	}{
+		{"missing header", "", http.StatusUnauthorized},
+		{"wrong token", "Bearer nope", http.StatusUnauthorized},
+		{"wrong scheme", "Basic s3cret-api", http.StatusUnauthorized},
+		{"valid token", "Bearer s3cret-api", http.StatusOK},
+	}
+	for _, tc := range cases {
+		req, _ := http.NewRequest(http.MethodGet, base+"/api/stats", nil)
+		if tc.auth != "" {
+			req.Header.Set("Authorization", tc.auth)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		body, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		if res.StatusCode != tc.want {
+			t.Fatalf("%s: status = %d, want %d", tc.name, res.StatusCode, tc.want)
+		}
+		if tc.want == http.StatusUnauthorized && !strings.Contains(string(body), "unauthorized") {
+			t.Fatalf("%s: body %q should explain the unauthorized", tc.name, body)
+		}
+	}
+
+	// with the token the endpoint really serves data, not just 200s
+	req, _ := http.NewRequest(http.MethodGet, base+"/api/events", nil)
+	req.Header.Set("Authorization", "Bearer s3cret-api")
+	res, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("events with token: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("events with token: status %d, want 200", res.StatusCode)
+	}
+	var out []map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		t.Fatalf("events with token: body is not JSON: %v", err)
+	}
+}
