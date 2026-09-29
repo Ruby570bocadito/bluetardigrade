@@ -17,6 +17,7 @@ import (
 
 	"github.com/Ruby570bocadito/security-framework/internal/alert"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
+	"github.com/Ruby570bocadito/security-framework/internal/suppress"
 	"github.com/Ruby570bocadito/security-framework/pkg/model"
 )
 
@@ -40,6 +41,7 @@ type Hub struct {
 	alertsTotal int
 	bySeverity  map[string]int
 	rules       *rules.Engine
+	suppress    *suppress.Manager               // operator allowlist (read-only view)
 	received    func() (uint64, uint64, uint64) // ingested, dropped, rejected
 	webhook     func() (uint64, uint64, uint64) // sent, failed, dropped
 }
@@ -61,6 +63,7 @@ func New(addr string) (*Hub, error) {
 	mux.HandleFunc("GET /api/events", h.handleEvents)
 	mux.HandleFunc("GET /api/alerts", h.handleAlerts)
 	mux.HandleFunc("GET /api/rules", h.handleRules)
+	mux.HandleFunc("GET /api/suppressions", h.handleSuppressions)
 	mux.HandleFunc("GET /api/stream", h.handleStream)
 	mux.HandleFunc("GET /api/health", h.handleHealth)
 	mux.HandleFunc("GET /api/alerts/export", h.handleAlertsExport)
@@ -76,6 +79,14 @@ func (h *Hub) Addr() string { return h.listener.Addr().String() }
 func (h *Hub) SetRules(re *rules.Engine) {
 	h.mu.Lock()
 	h.rules = re
+	h.mu.Unlock()
+}
+
+// SetSuppressions exposes the operator allowlist (read-only) through
+// /api/suppressions and its live count in /api/stats.
+func (h *Hub) SetSuppressions(m *suppress.Manager) {
+	h.mu.Lock()
+	h.suppress = m
 	h.mu.Unlock()
 }
 
@@ -176,6 +187,7 @@ type statsPayload struct {
 	WebhookSent    uint64         `json:"webhook_sent"`
 	WebhookFailed  uint64         `json:"webhook_failed"`
 	WebhookDropped uint64         `json:"webhook_dropped"`
+	Suppressions   int            `json:"suppressions_active"`
 	Mode           string         `json:"mode"`
 }
 
@@ -210,7 +222,12 @@ func (h *Hub) handleStats(w http.ResponseWriter, _ *http.Request) {
 		rulesCount = h.rules.Count()
 		rulesTypes = h.rules.Types()
 	}
+	sup := h.suppress
 	h.mu.Unlock()
+	supActive := 0
+	if sup != nil {
+		supActive = sup.Count(time.Now())
+	}
 
 	writeJSON(w, statsPayload{
 		UptimeS:        int64(time.Since(h.started) / time.Second),
@@ -226,16 +243,23 @@ func (h *Hub) handleStats(w http.ResponseWriter, _ *http.Request) {
 		WebhookSent:    whSent,
 		WebhookFailed:  whFailed,
 		WebhookDropped: whDropped,
+		Suppressions:   supActive,
 		Mode:           "engine",
 	})
 }
 
 func (h *Hub) handleEvents(w http.ResponseWriter, r *http.Request) {
 	limit := limitFrom(r, 200)
+	f, ok := parseRecordFilter(w, r)
+	if !ok {
+		return // 400 already written
+	}
 	h.mu.Lock()
 	out := make([]*model.Event, 0, limit)
 	for i := len(h.events) - 1; i >= 0 && len(out) < limit; i-- {
-		out = append(out, h.events[i])
+		if f.matchEvent(h.events[i]) {
+			out = append(out, h.events[i])
+		}
 	}
 	h.mu.Unlock()
 	writeJSON(w, out)
@@ -243,10 +267,17 @@ func (h *Hub) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 	limit := limitFrom(r, 100)
+	f, ok := parseRecordFilter(w, r)
+	if !ok {
+		return // 400 already written
+	}
 	h.mu.Lock()
 	out := make([]alert.Alert, 0, limit)
 	for i := len(h.alerts) - 1; i >= 0 && len(out) < limit; i-- {
-		out = append(out, h.alerts[i])
+		a := h.alerts[i]
+		if ts, err := time.Parse(time.RFC3339Nano, a.Timestamp); err == nil && f.matchAlert(a, ts) {
+			out = append(out, a)
+		}
 	}
 	h.mu.Unlock()
 	writeJSON(w, out)
@@ -291,6 +322,29 @@ func (h *Hub) handleRules(w http.ResponseWriter, _ *http.Request) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	writeJSON(w, out)
+}
+
+// handleSuppressions lists the operator allowlist as it stands right
+// now (expired entries excluded). Read-only: entries are edited in the
+// suppressions.yaml file and hot-reloaded by the engine.
+func (h *Hub) handleSuppressions(w http.ResponseWriter, _ *http.Request) {
+	h.mu.Lock()
+	sup := h.suppress
+	h.mu.Unlock()
+	if sup == nil {
+		writeJSON(w, suppressPayload{Entries: []suppress.Entry{}})
+		return
+	}
+	now := time.Now()
+	writeJSON(w, suppressPayload{
+		Active:  sup.Count(now),
+		Entries: sup.Snapshot(now),
+	})
+}
+
+type suppressPayload struct {
+	Active  int              `json:"active"`
+	Entries []suppress.Entry `json:"entries"`
 }
 
 func (h *Hub) handleHealth(w http.ResponseWriter, _ *http.Request) {

@@ -539,7 +539,12 @@ function Register-Autostart {
     # HKCU Run entries: always writable by the current user, no admin needed
     param([string]$Root, [string]$WebhookUrl = '')
     $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-    $engineArgs = "-rules '$Root\rules'"
+    New-Item -ItemType Directory -Path (Join-Path $Root 'run') -Force | Out-Null
+    # -pidfile: the engine records its PID so sf-console -Stop can stop
+    # an autostart-launched instance (the Run entry does not go through
+    # sf-console, which is how run\engine.pid used to exist only when
+    # the console launcher happened to start the engine itself).
+    $engineArgs = "-rules '$Root\rules' -pidfile '$Root\run\engine.pid'"
     if ($WebhookUrl) { $engineArgs = "$engineArgs -webhook '$WebhookUrl'" }
     $engineCmd  = "powershell.exe -NoProfile -WindowStyle Minimized -ExecutionPolicy Bypass -Command `"& '$Root\bin\engine.exe' $engineArgs`""
     $consoleCmd = "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Root\scripts\sf-console.ps1`" -NoBrowser"

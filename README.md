@@ -114,14 +114,26 @@ disabled entirely with `-api 0`:
 | Endpoint | Returns |
 |----------|---------|
 | `GET /api/health` | liveness + mode |
-| `GET /api/stats` | uptime, counters, per-severity totals, rule count, webhook delivery counters |
+| `GET /api/stats` | uptime, counters, per-severity totals, rule count, ingest auth rejections, webhook delivery counters, active suppressions |
 | `GET /api/events?limit=200` | recent events, newest first |
 | `GET /api/alerts?limit=100` | recent alerts, newest first |
+| `GET /api/suppressions` | operator allowlist currently active (read-only view) |
 | `GET /api/alerts/export?format=ndjson\|csv&limit=256` | downloadable alert feed for SIEM/SOAR handoff, chronological order |
 | `GET /api/rules` | live rule set (hot-reload aware) |
 | `GET /api/stream` | Server-Sent Events with live events + alerts |
 | `GET /api/events/export?format=jsonl\|csv` | bulk download of the event ring (JSON Lines or CSV) |
 | `GET /api/alerts/export?format=jsonl\|csv` | bulk download of the alert ring (JSON Lines or CSV) |
+
+All four telemetry endpoints (`/api/events`, `/api/alerts` and both
+`/export` variants) accept the same filter parameters, applied BEFORE
+`limit`: `host=<name>` (exact, case-insensitive), `since=`/`until=`
+(RFC 3339 timestamp or positive duration like `90m`/`24h`), `q=<free
+text>` (case-insensitive across ids, summaries, tags and context),
+plus `severity=a,b` and `rule_id=` on the alert endpoints and `type=`
+on the event ones. Invalid values answer 400 with an actionable
+message. Examples: `/api/alerts/export?host=lab-wks-01&since=24h` for
+"that box, today", `/api/events?type=network.connect&q=suspicious.tld`
+to chase one domain.
 
 Exports are for SIEM import, offline analysis and the forensic
 store: JSONL round-trips the full records, CSV flattens them to
@@ -129,7 +141,9 @@ stable columns and neutralizes spreadsheet formula injection on
 attacker-controlled fields. When `-webhook` is set, `/api/stats`
 additionally reports `webhook_sent` / `webhook_failed` /
 `webhook_dropped` so the delivery pipeline can be sized from the
-outside. The machine-readable contract for the whole surface lives
+outside; with ingest auth active (`-token`), `ingest_rejected` counts
+connections rejected by the shared-token handshake. The
+machine-readable contract for the whole surface lives
 in OpenAPI 3.0 at [`docs/api/openapi.yaml`](docs/api/openapi.yaml).
 
 ### Ingest authentication (shared token)
@@ -178,6 +192,42 @@ errors, 429 and 5xx retry; other 4xx fail fast) and a slow or down
 receiver never blocks detection — saturated deliveries are counted
 as dropped instead. The payload is the same structured alert the
 console and the JSON log line carry, so receivers speak one format.
+When the connector is active, the console header shows a delivery
+chip (`webhook N / err / desc`) fed by the same counters `/api/stats`
+exposes, so a silently down SIEM is visible at a glance.
+
+### Alert suppressions (operator allowlist)
+
+Maintenance windows and accepted exceptions happen: sometimes an alert
+is correct and still unwanted. `suppressions.yaml` (see
+`suppressions.example.yaml` for the annotated format) silences a rule,
+a host, or a rule+host pair, with optional RFC 3339 expiration:
+
+```yaml
+- rule_id: vss-delete
+  host: LAB-WKS-01
+  reason: "approved change window INC-1234 (backup migration)"
+  expires: 2026-10-05T06:00:00Z
+```
+
+Point the engine at it with `-suppressions <path>` (default
+`./suppressions.yaml`, falling back to the install root like the rules
+directory). The file hot-reloads on the same 15 s ticker as rules and
+sequences: editing it is enough, no restart. Semantics worth knowing:
+
+- A suppressed hit raises NO alert, does NOT reach the webhook, and
+  does NOT feed the kill-chain correlator — a host with a silenced
+  rule is treated as being in an accepted state. Each suppressed hit
+  is logged as `[SUPPRESS] rule=<id> host=<host>`, never silently.
+- An entry without `expires` stays active until you remove it; expired
+  entries stop matching on their own.
+- A malformed file is FATAL at startup (a typo must not disable a
+  control you believe is armed) and rejected — keeping the previous
+  set — on hot reload, loudly.
+- The live set is observable read-only at `GET /api/suppressions` and
+  counted in `/api/stats` (`suppressions_active`). Entries are edited
+  in the YAML file, never through the API: the local API stays
+  read-only.
 
 ## One-command install (Windows)
 
@@ -404,11 +454,14 @@ internal/correlate/  kill-chain sequence correlator
 internal/alert/   alert rendering, dedup, structured JSON
 internal/actions/ rule action executor (message templates, webhooks)
 internal/api/     local read-only HTTP API + SSE stream + JSONL/CSV export
+internal/suppress/  operator allowlist: rule/host suppressions with expiry
 internal/webhook/ alert webhook delivery (bounded queue, retries)
 pkg/model/        unified event schema (the wire contract)
 sensor/           Rust ETW sensor (collector is Windows-gated)
 rules/            seeded detection pack (windows/)
 sequences/        kill-chain sequences for the correlator
+suppressions.example.yaml  annotated allowlist format (rename to
+                  suppressions.yaml to arm it)
 scripts/windows/  installed runtime scripts (sf-sensor, sf-console, ...)
                   + bundled sysmon-config.xml tuned to the detection pack
 scripts/dev-tests/ end-to-end verification scripts (OpenAPI drift check,

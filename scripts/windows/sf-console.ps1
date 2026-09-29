@@ -77,11 +77,22 @@ function Stop-Tracked {
         $_.ExecutablePath -and $_.ExecutablePath.ToLower().StartsWith($rootLow) -and
         ($_.CommandLine -match 'console-service|next|server\.js')
     } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    # fallback 2: an engine started without a pidfile (older autostart
+    # entries, manual launches) still gets stopped by its exe path, so
+    # 'stop it: sf-console -Stop' keeps its promise in every layout.
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        $_.ExecutablePath -and $_.ExecutablePath.ToLower().StartsWith($rootLow) -and
+        $_.ExecutablePath -match 'engine(\.exe)?$' -and $_.CommandLine -match 'rules'
+    } | ForEach-Object {
+        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        Remove-Item (Join-Path $run 'engine.pid') -Force -ErrorAction SilentlyContinue
+    }
 }
 
 if ($Status) {
     $svcPid = Read-PidFile -Name 'console-service.pid'
     $appPid = Read-PidFile -Name 'console.pid'
+    $engPid = Read-PidFile -Name 'engine.pid'
     Write-Host '  security-framework console status'
     $svcState = 'stopped'
     if (Test-PortLocal $ServicePort) { $svcState = 'running' }
@@ -92,7 +103,8 @@ if ($Status) {
     Write-Host "  hub     :$ServicePort  $svcState"
     Write-Host "  console :$ConsolePort  $appState"
     if (Test-PortLocal 7777) {
-        Write-Host '  engine  :7777  listening'
+        if ($engPid) { Write-Host "  engine  :7777  listening (pid $engPid)" }
+        else         { Write-Host '  engine  :7777  listening (no pid file: started outside sf-console)' }
     } else {
         Write-Host '  engine  :7777  not running (start it with sf-engine)'
     }
@@ -114,7 +126,10 @@ if (-not (Test-Path (Join-Path $web 'console-service\index.ts'))) {
 # engine first: the console bridge picks it up from :7778
 if (-not (Test-PortLocal 7777)) {
     if (Test-Path $engineExe) {
-        $eng = Start-Process -FilePath $engineExe -ArgumentList "-rules `"$root\rules`"" `
+        # -pidfile: same contract as the autostart entry, so -Stop works
+        # no matter which launcher started the engine.
+        New-Item -ItemType Directory -Path $run -Force | Out-Null
+        $eng = Start-Process -FilePath $engineExe -ArgumentList "-rules `"$root\rules`" -pidfile `"$run\engine.pid`"" `
             -WindowStyle Hidden -PassThru
         Write-PidFile -Name 'engine.pid' -Value $eng.Id
         if (Wait-Port -Port 7777 -Seconds 10) {

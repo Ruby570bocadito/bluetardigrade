@@ -73,4 +73,9 @@ export type HubStats = {
   uptime_s: number
   interval_ms: number
   mode: 'engine' | 'sin-motor'
+  // webhook delivery counters from the engine (-webhook flag); all
+  // zero means the connector is disabled or has not delivered anything
+  webhook_sent: number
+  webhook_failed: number
+  webhook_dropped: number
 }

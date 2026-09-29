@@ -13,7 +13,7 @@ import { LiveFeed } from './live-feed'
 import { AlertsView } from './alerts-view'
 import { RulesView } from './rules-view'
 import { AnalystPanel } from './analyst-panel'
-import { formatUptime, type SfAlert } from '@/lib/console-types'
+import { formatUptime, type SfAlert, type SimStats } from '@/lib/console-types'
 
 type ViewId = 'panel' | 'flujo' | 'alertas' | 'reglas' | 'analista'
 
@@ -113,6 +113,7 @@ export function ConsoleShell() {
                 {sourceLabel}
               </span>
             </div>
+            <WebhookChip stats={stats} />
           </header>
 
           {/* Mobile nav */}
@@ -168,6 +169,42 @@ function titleFor(view: ViewId): string {
     case 'analista':
       return 'Analista IA'
   }
+}
+
+/**
+ * Webhook delivery chip, fed by the engine's own counters
+ * (/api/stats -> hub -> this chip). Honest by design:
+ * - hidden while there is zero traffic (connector disabled or idle):
+ *   an all-green chip for a disabled feature would be a lie;
+ * - green only when every delivery attempt succeeded;
+ * - red as soon as something failed or was dropped, with the counts
+ *   on display so the operator knows the SIEM is missing alerts.
+ */
+function WebhookChip({ stats }: { stats: SimStats | null }) {
+  if (!stats || stats.mode !== 'engine') return null
+  const { webhook_sent: sent, webhook_failed: failed, webhook_dropped: dropped } = stats
+  const total = sent + failed + dropped
+  if (total === 0) return null
+  const healthy = failed === 0 && dropped === 0
+  return (
+    <div
+      title={
+        healthy
+          ? `Webhook: ${sent} alertas entregadas al conector externo`
+          : `Webhook con problemas: ${failed} fallidas, ${dropped} descartadas, ${sent} entregadas`
+      }
+      className={`hidden items-center gap-1.5 rounded-md border px-2.5 py-1.5 font-mono text-[11px] md:flex ${
+        healthy ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300' : 'border-red-400/40 bg-red-400/10 text-red-300'
+      }`}
+    >
+      <span aria-hidden>{healthy ? '✓' : '✕'}</span>
+      <span>
+        webhook {sent}
+        {failed > 0 && <span> / {failed} err</span>}
+        {dropped > 0 && <span> / {dropped} desc</span>}
+      </span>
+    </div>
+  )
 }
 
 function BrandBlock() {
