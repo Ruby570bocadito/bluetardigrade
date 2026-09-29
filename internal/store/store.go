@@ -21,6 +21,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -76,6 +77,16 @@ type AlertQuery struct {
 // pairing (durable across app crashes, may lose the last commits on
 // power loss — the right trade for telemetry).
 func Open(path string) (*Store, error) {
+	// SQLite creates new database files with 0644: the full ingested
+	// history (command lines, users, hosts) must not be readable by
+	// every local account, so the file is pre-created 0600 when it
+	// does not exist yet. Existing files keep their mode — the
+	// operator may have set it deliberately. The -wal/-shm siblings
+	// SQLite manages itself inherit the process umask; deployments
+	// behind multi-user hosts should set a restrictive umask.
+	if err := ensurePrivateFile(path); err != nil {
+		return nil, fmt.Errorf("store: create %s: %w", path, err)
+	}
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, fmt.Errorf("store: open %s: %w", path, err)
@@ -132,6 +143,24 @@ CREATE INDEX IF NOT EXISTS alerts_rule_idx ON alerts(rule_id);
 		return nil, fmt.Errorf("store: count alerts: %w", err)
 	}
 	return s, nil
+}
+
+// ensurePrivateFile pre-creates the database file with owner-only
+// permissions when it does not exist yet (SQLite's own creation mode
+// is 0644 minus umask, too open for evidence). A file created in
+// between by someone else is accepted as-is.
+func ensurePrivateFile(path string) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if os.IsExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return f.Close()
 }
 
 // Close closes the database.
@@ -368,7 +397,12 @@ func clampLimit(n int) int {
 
 // eventHaystack mirrors api.eventHaystack (same field list) so the
 // free-text filter behaves identically whether it runs against the
-// in-memory ring or the store.
+// in-memory ring or the store. Fields are lowercased here so the
+// stored column is already folded: SQLite's LIKE (and its LOWER())
+// only folds ASCII, so relying on the engine would diverge from the
+// API's Unicode-aware filter the first time a host, user or domain
+// carries an accent — the needle arrives Unicode-lowercased from the
+// API layer, and only a Unicode-lowercased haystack matches it.
 func eventHaystack(ev *model.Event) string {
 	parts := []string{ev.ID, ev.Type, ev.Source, ev.Host, ev.User}
 	if ev.Process != nil {
@@ -386,15 +420,23 @@ func eventHaystack(ev *model.Event) string {
 	if ev.Target != nil {
 		parts = append(parts, ev.Target.Name)
 	}
+	for i, p := range parts {
+		parts[i] = strings.ToLower(p)
+	}
 	return strings.Join(parts, fieldSep)
 }
 
-// alertHaystack mirrors api.alertHaystack (same field list).
+// alertHaystack mirrors api.alertHaystack (same field list), already
+// Unicode-lowercased at write time — see eventHaystack for why the
+// fold cannot be left to SQLite's LIKE.
 func alertHaystack(a alert.Alert) string {
 	parts := []string{
 		a.RuleID, a.RuleName, a.Host, a.User, a.Summary, a.Message,
 		a.EventType, a.Severity,
 		strings.Join(a.Tags, " "), strings.Join(a.MatchedOn, " "),
+	}
+	for i, p := range parts {
+		parts[i] = strings.ToLower(p)
 	}
 	return strings.Join(parts, fieldSep)
 }

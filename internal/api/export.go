@@ -46,7 +46,7 @@ func (h *Hub) handleAlertsExport(w http.ResponseWriter, r *http.Request) {
 			Since: f.since, Until: f.until, Limit: limit,
 		})
 		if err != nil {
-			http.Error(w, "store query failed: "+err.Error(), http.StatusInternalServerError)
+			h.storeQueryError(w, err)
 			return
 		}
 		// the store returns newest first; exports stay oldest
@@ -124,7 +124,7 @@ func (h *Hub) handleEventsExport(w http.ResponseWriter, r *http.Request) {
 			Since: f.since, Until: f.until, Limit: limit,
 		})
 		if err != nil {
-			http.Error(w, "store query failed: "+err.Error(), http.StatusInternalServerError)
+			h.storeQueryError(w, err)
 			return
 		}
 		for i, j := 0, len(got)-1; i < j; i, j = i+1, j-1 {
