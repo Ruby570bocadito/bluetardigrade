@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/Ruby570bocadito/security-framework/internal/enrich"
 	"github.com/Ruby570bocadito/security-framework/internal/ingest"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
+	"github.com/Ruby570bocadito/security-framework/internal/store"
 	"github.com/Ruby570bocadito/security-framework/internal/suppress"
 	"github.com/Ruby570bocadito/security-framework/internal/webhook"
 	"github.com/Ruby570bocadito/security-framework/pkg/model"
@@ -57,6 +59,10 @@ var (
 		"previous ingest token, still accepted during a rotation window (falls back to SF_INGEST_TOKEN_PREVIOUS); requires -token")
 	suppressionsFile = flag.String("suppressions", "./suppressions.yaml",
 		"operator allowlist YAML silencing rule/host pairs (expires supported); empty disables")
+	storePath = flag.String("store", "",
+		"SQLite file persisting events and alerts beyond the in-memory rings (e.g. ./sf-store.db); empty disables")
+	storeRetention = flag.Duration("store-retention", 72*time.Hour,
+		"delete stored events/alerts older than this on a 5-minute ticker (0 keeps everything)")
 	pidFile = flag.String("pidfile", "",
 		"write the process PID here at startup and remove it on shutdown (lets sf-console -Stop stop an engine it did not start)")
 )
@@ -116,6 +122,32 @@ func main() {
 		supCount = supMgr.Count(time.Now())
 		if supCount > 0 {
 			fmt.Printf("[ENGINE] %d suppressions active from %s\n", supCount, supPath)
+		}
+	}
+
+	// optional SQLite persistence (phase 2 storage stone): when the
+	// operator asks for a store, a failure to open it is a config
+	// error and FATAL, by the same standard as a malformed
+	// suppressions file — a control the operator believes is armed
+	// must not silently stay off.
+	var st *store.Store
+	if *storePath != "" {
+		st, err = store.Open(*storePath)
+		if err != nil {
+			log.Fatalf("[ENGINE] %v", err)
+		}
+		defer st.Close()
+		if *storeRetention > 0 {
+			fmt.Printf("[ENGINE] store on %s (retention %s)\n", *storePath, *storeRetention)
+		} else {
+			fmt.Printf("[ENGINE] store on %s (retention: keep forever)\n", *storePath)
+		}
+		// first prune right away, then on a ticker; only loud
+		// when something was actually removed
+		if *storeRetention > 0 {
+			if dEv, dAl, perr := st.Prune(*storeRetention); perr == nil && dEv+dAl > 0 {
+				fmt.Printf("[ENGINE] store pruned %d events / %d alerts older than %s\n", dEv, dAl, *storeRetention)
+			}
 		}
 	}
 
@@ -181,6 +213,9 @@ func main() {
 		} else {
 			hub.SetRules(engine)
 			hub.SetSuppressions(supMgr)
+			if st != nil {
+				hub.SetStore(st)
+			}
 			hub.SetCounters(func() (uint64, uint64, uint64) {
 				return server.Received(), server.Dropped(), server.Rejected()
 			})
@@ -243,6 +278,12 @@ func main() {
 	alerts := alert.New(os.Stdout, func(a alert.Alert) {
 		if hub != nil {
 			hub.RecordAlert(a)
+		} else if st != nil {
+			// no API hub: persist directly so -store works
+			// even with the API disabled
+			if err := st.InsertAlert(a); err != nil {
+				storeWriteErr(err)
+			}
 		}
 		if wh != nil {
 			wh.Handle(a)
@@ -302,6 +343,23 @@ func main() {
 		}()
 	}
 
+	if st != nil && *storeRetention > 0 {
+		go func() {
+			t := time.NewTicker(5 * time.Minute)
+			defer t.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					if dEv, dAl, perr := st.Prune(*storeRetention); perr == nil && dEv+dAl > 0 {
+						fmt.Printf("[ENGINE] store pruned %d events / %d alerts older than %s\n", dEv, dAl, *storeRetention)
+					}
+				}
+			}
+		}()
+	}
+
 	go func() {
 		<-ctx.Done()
 		fmt.Println("\n[ENGINE] shutting down... (Ctrl+C again to force quit)")
@@ -322,8 +380,15 @@ func main() {
 	start := time.Now()
 	for ev := range events {
 		enricher.Apply(ev)
-		if hub != nil {
+		switch {
+		case hub != nil:
+			// the hub persists to the store too when attached
 			hub.RecordEvent(ev)
+		case st != nil:
+			// -api 0 with -store: keep persisting without a hub
+			if err := st.InsertEvent(ev); err != nil {
+				storeWriteErr(err)
+			}
 		}
 		if *verbose {
 			log.Printf("[EVENT] %-18s %s pid=%d host=%s",
@@ -362,6 +427,18 @@ func suppressed(m *suppress.Manager, ruleID, host string, now time.Time) bool {
 	}
 	ok, _ := m.SuppressedAt(ruleID, host, now)
 	return ok
+}
+
+var storeFails uint64
+
+// storeWriteErr logs store write failures with a throttle (first, then
+// every 500th): a full disk must be visible without flooding the log
+// or stopping detection.
+func storeWriteErr(err error) {
+	n := atomic.AddUint64(&storeFails, 1)
+	if n == 1 || n%500 == 0 {
+		log.Printf("[ENGINE] store write FAILED (%d total): %v", n, err)
+	}
 }
 
 func dirExists(p string) bool {

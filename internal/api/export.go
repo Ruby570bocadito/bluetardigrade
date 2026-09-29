@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Ruby570bocadito/security-framework/internal/alert"
+	"github.com/Ruby570bocadito/security-framework/internal/store"
 	"github.com/Ruby570bocadito/security-framework/pkg/model"
 )
 
@@ -23,6 +24,8 @@ import (
 // (ndjson is accepted as an alias of jsonl). limit caps how many of
 // the most recent alerts are exported; the chronological oldest-first
 // order is preserved so append-only sinks can import the feed directly.
+// With the SQLite store attached the export reads the FULL history
+// (subject to the operator's retention) instead of the alert ring.
 func (h *Hub) handleAlertsExport(w http.ResponseWriter, r *http.Request) {
 	format := exportFormat(w, r)
 	if format == "" {
@@ -34,17 +37,38 @@ func (h *Hub) handleAlertsExport(w http.ResponseWriter, r *http.Request) {
 		return // 400 already written
 	}
 	h.mu.Lock()
-	selected := make([]alert.Alert, 0, len(h.alerts))
-	for _, a := range h.alerts {
-		if ts, err := time.Parse(time.RFC3339Nano, a.Timestamp); err == nil && f.matchAlert(a, ts) {
-			selected = append(selected, a)
-		}
-	}
+	st := h.store
 	h.mu.Unlock()
-	if limit < len(selected) {
-		selected = selected[len(selected)-limit:] // keep the most recent, oldest first
+	var alerts []alert.Alert
+	if st != nil {
+		got, err := st.QueryAlerts(store.AlertQuery{
+			Host: f.host, Severities: f.sevs, RuleID: f.ruleID, Q: f.q,
+			Since: f.since, Until: f.until, Limit: limit,
+		})
+		if err != nil {
+			http.Error(w, "store query failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// the store returns newest first; exports stay oldest
+		// first (append-only sinks import in order)
+		for i, j := 0, len(got)-1; i < j; i, j = i+1, j-1 {
+			got[i], got[j] = got[j], got[i]
+		}
+		alerts = got
+	} else {
+		h.mu.Lock()
+		selected := make([]alert.Alert, 0, len(h.alerts))
+		for _, a := range h.alerts {
+			if ts, err := time.Parse(time.RFC3339Nano, a.Timestamp); err == nil && f.matchAlert(a, ts) {
+				selected = append(selected, a)
+			}
+		}
+		h.mu.Unlock()
+		if limit < len(selected) {
+			selected = selected[len(selected)-limit:] // keep the most recent, oldest first
+		}
+		alerts = selected
 	}
-	alerts := selected
 
 	stamp := time.Now().UTC().Format("20060102-150405")
 	switch format {
@@ -78,23 +102,48 @@ func (h *Hub) handleAlertsExport(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleEventsExport serves GET /api/events/export?format=jsonl|csv.
+// With the SQLite store attached the export reads the FULL history
+// (subject to the operator's retention) instead of the event ring.
 func (h *Hub) handleEventsExport(w http.ResponseWriter, r *http.Request) {
 	format := exportFormat(w, r)
 	if format == "" {
 		return
 	}
+	limit := limitFrom(r, maxEvents)
 	f, ok := parseRecordFilter(w, r)
 	if !ok {
 		return // 400 already written
 	}
 	h.mu.Lock()
-	events := make([]*model.Event, 0, len(h.events))
-	for _, ev := range h.events {
-		if f.matchEvent(ev) {
-			events = append(events, ev)
+	st := h.store
+	h.mu.Unlock()
+	var events []*model.Event
+	if st != nil {
+		got, err := st.QueryEvents(store.EventQuery{
+			Host: f.host, Type: f.evType, Q: f.q,
+			Since: f.since, Until: f.until, Limit: limit,
+		})
+		if err != nil {
+			http.Error(w, "store query failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		for i, j := 0, len(got)-1; i < j; i, j = i+1, j-1 {
+			got[i], got[j] = got[j], got[i] // chronological oldest first
+		}
+		events = got
+	} else {
+		h.mu.Lock()
+		events = make([]*model.Event, 0, len(h.events))
+		for _, ev := range h.events {
+			if f.matchEvent(ev) {
+				events = append(events, ev)
+			}
+		}
+		h.mu.Unlock()
+		if limit < len(events) {
+			events = events[len(events)-limit:] // keep the most recent, oldest first
 		}
 	}
-	h.mu.Unlock()
 
 	stamp := time.Now().UTC().Format("20060102-150405")
 	switch format {

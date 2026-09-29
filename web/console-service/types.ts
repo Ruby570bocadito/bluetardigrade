@@ -110,4 +110,8 @@ export type HubStats = {
   correlator_states: number
   correlator_sequences: number
   correlator_cap: number
+  // optional SQLite persistence (-store): present since the store landed
+  store_enabled?: boolean
+  store_events?: number
+  store_alerts?: number
 }

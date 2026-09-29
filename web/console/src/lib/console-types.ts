@@ -130,6 +130,11 @@ export type SimStats = {
   correlator_states: number
   correlator_sequences: number
   correlator_cap: number
+  // optional SQLite persistence (engine -store flag), forwarded by the
+  // hub when the engine reports it; undefined = no store attached
+  store_enabled?: boolean
+  store_events?: number
+  store_alerts?: number
 }
 
 export type ConsoleSnapshot = {

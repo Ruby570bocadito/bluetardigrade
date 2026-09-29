@@ -162,6 +162,11 @@ paths:
         All filters are AND-combined and applied BEFORE `limit`, so
         `?limit=50` with a filter returns the 50 most recent MATCHING
         events, not a filtered slice of the last 50.
+
+        When the engine runs with `-store`, this list reads the persistent
+        SQLite store (full history, subject to the configured retention)
+        instead of the in-memory ring, so `since=24h` can reach further
+        back than the ring's 1000-event window.
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Host'
@@ -188,7 +193,9 @@ paths:
       security:
         - bearerAuth: []
         - {}
-      description: Same filter semantics as `/api/events`.
+      description: Same filter semantics as `/api/events`. When the engine runs
+        with `-store`, this list reads the persistent SQLite store (full history,
+        subject to the configured retention) instead of the in-memory ring.
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Host'
@@ -276,6 +283,10 @@ paths:
         - bearerAuth: []
         - {}
       description: |
+        `limit` (default 1000, capped at 1000) keeps the most recent
+        matching events. When the engine runs with `-store`, the export
+        reads the persistent SQLite store (full history, subject to the
+        configured retention) instead of the in-memory ring.
         JSONL round-trips the full `Event` records (same contract as the
         NDJSON wire). CSV flattens to stable columns (`id`, `timestamp`,
         `type`, `source`, `host`, `user`, `process_name`,
@@ -286,6 +297,7 @@ paths:
         quoted). Response carries `Content-Disposition: attachment`
         with a dated filename.
       parameters:
+        - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/ExportFormat'
         - $ref: '#/components/parameters/Host'
         - $ref: '#/components/parameters/EventType'
@@ -325,7 +337,10 @@ paths:
         Same semantics as `/api/events/export` for alerts. CSV columns:
         `timestamp`, `severity`, `rule_id`, `rule_name`, `event_type`,
         `host`, `user`, `summary`, `matched_on` (space-joined),
-        `tags` (space-joined), `message`, `notify`.
+        `tags` (space-joined), `message`, `notify`. When the engine runs
+        with `-store`, the export reads the persistent SQLite store
+        (full history, subject to the configured retention) instead of
+        the alert ring.
       parameters:
         - $ref: '#/components/parameters/ExportFormat'
         - $ref: '#/components/parameters/Host'
@@ -500,11 +515,26 @@ components:
         - correlator_states
         - correlator_sequences
         - correlator_cap
+        - store_enabled
+        - store_events
+        - store_alerts
         - mode
       properties:
         suppressions_active:
           type: integer
           description: non-expired entries in the operator allowlist
+        store_enabled:
+          type: boolean
+          description: whether the engine runs with persistent SQLite storage (-store)
+        store_events:
+          type: integer
+          format: int64
+          description: events currently persisted in the store (0 while store_enabled is false;
+            includes rows that predate the current process start and survives restarts)
+        store_alerts:
+          type: integer
+          format: int64
+          description: alerts currently persisted in the store (0 while store_enabled is false)
         uptime_s:
           type: integer
           description: seconds since the API hub started

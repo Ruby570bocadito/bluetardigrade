@@ -1,0 +1,278 @@
+package store
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Ruby570bocadito/security-framework/internal/alert"
+	"github.com/Ruby570bocadito/security-framework/pkg/model"
+)
+
+func openTestStore(t *testing.T) *Store {
+	t.Helper()
+	s, err := Open(t.TempDir() + "/test.db")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
+}
+
+func ev(id, host, evType, cmdline string, at time.Time) *model.Event {
+	return &model.Event{
+		ID:        id,
+		Timestamp: at,
+		Type:      evType,
+		Source:    "test",
+		Host:      host,
+		User:      "alice",
+		Process:   &model.Process{PID: 1, Name: "powershell.exe", CommandLine: cmdline},
+	}
+}
+
+func TestInsertAndQueryEventsRoundTrip(t *testing.T) {
+	s := openTestStore(t)
+	base := time.Now().Add(-time.Hour).UTC()
+	// three events, two hosts, two types
+	for i, e := range []*model.Event{
+		ev("id-a", "LAB-ONE", model.TypeProcessCreate, "powershell -enc AAAA", base),
+		ev("id-b", "lab-two", model.TypeNetworkConnect, "", base.Add(time.Minute)),
+		ev("id-c", "LAB-ONE", model.TypeFileWrite, "", base.Add(2*time.Minute)),
+	} {
+		if err := s.InsertEvent(e); err != nil {
+			t.Fatalf("InsertEvent %d: %v", i, err)
+		}
+	}
+
+	got, err := s.QueryEvents(EventQuery{Limit: 10})
+	if err != nil {
+		t.Fatalf("QueryEvents: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("want 3 events, got %d", len(got))
+	}
+	// newest first
+	if got[0].ID != "id-c" || got[2].ID != "id-a" {
+		t.Fatalf("order wrong: %s, %s, %s", got[0].ID, got[1].ID, got[2].ID)
+	}
+	// round-trip fidelity: the JSON payload is the record
+	orig, _ := ev("id-a", "LAB-ONE", model.TypeProcessCreate, "powershell -enc AAAA", base).Encode()
+	round, _ := got[2].Encode()
+	if string(orig) != string(round) {
+		t.Fatalf("round-trip differs:\n orig  %s\n round %s", orig, round)
+	}
+
+	// host filter is exact, case-insensitive
+	got, err = s.QueryEvents(EventQuery{Host: "lab-one", Limit: 10})
+	if err != nil || len(got) != 2 {
+		t.Fatalf("host filter: %d events, err %v", len(got), err)
+	}
+	// type filter
+	got, err = s.QueryEvents(EventQuery{Type: model.TypeNetworkConnect, Limit: 10})
+	if err != nil || len(got) != 1 || got[0].ID != "id-b" {
+		t.Fatalf("type filter: %d events, err %v", len(got), err)
+	}
+	// since/until window (inclusive bounds)
+	got, err = s.QueryEvents(EventQuery{Since: base.Add(30 * time.Second), Until: base.Add(90 * time.Second), Limit: 10})
+	if err != nil || len(got) != 1 || got[0].ID != "id-b" {
+		t.Fatalf("window filter: %d events, err %v", len(got), err)
+	}
+	// free text: matches the command line only
+	got, err = s.QueryEvents(EventQuery{Q: "-enc aaaa", Limit: 10})
+	if err != nil || len(got) != 1 || got[0].ID != "id-a" {
+		t.Fatalf("q filter: %d events, err %v", len(got), err)
+	}
+	// limit keeps the most recent
+	got, err = s.QueryEvents(EventQuery{Limit: 2})
+	if err != nil || len(got) != 2 || got[0].ID != "id-c" {
+		t.Fatalf("limit: %d events, err %v", len(got), err)
+	}
+}
+
+func TestInsertEventIdempotentOnDuplicateID(t *testing.T) {
+	s := openTestStore(t)
+	at := time.Now().UTC()
+	if err := s.InsertEvent(ev("dup", "H1", model.TypeProcessCreate, "x", at)); err != nil {
+		t.Fatalf("first insert: %v", err)
+	}
+	if err := s.InsertEvent(ev("dup", "H1", model.TypeProcessCreate, "x", at)); err != nil {
+		t.Fatalf("replay insert: %v", err)
+	}
+	got, err := s.QueryEvents(EventQuery{Limit: 10})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("want 1 event after replay, got %d, err %v", len(got), err)
+	}
+	e, a := s.Counts()
+	if e != 1 || a != 0 {
+		t.Fatalf("counts: events=%d alerts=%d, want 1/0", e, a)
+	}
+}
+
+func TestLikeWildcardsAreLiteral(t *testing.T) {
+	s := openTestStore(t)
+	at := time.Now().UTC()
+	if err := s.InsertEvent(ev("pct", "H1", model.TypeFileWrite, "", at)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.InsertEvent(&model.Event{
+		ID: "underscore", Timestamp: at, Type: model.TypeFileWrite,
+		Source: "test", Host: "H1",
+		File: &model.File{Path: "C:\\temp\\my_file.txt"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// a literal '%' needle must not behave as a wildcard: it matches
+	// only fields containing an actual percent sign
+	got, err := s.QueryEvents(EventQuery{Q: "%", Limit: 10})
+	if err != nil || len(got) != 0 {
+		t.Fatalf("%% as literal: %d events, err %v", len(got), err)
+	}
+	// '_' must not match 'my-file.txt' (only the literal underscore one)
+	got, err = s.QueryEvents(EventQuery{Q: "my_file", Limit: 10})
+	if err != nil || len(got) != 1 || got[0].ID != "underscore" {
+		t.Fatalf("_ as literal: %d events, err %v", len(got), err)
+	}
+}
+
+func TestInsertAndQueryAlerts(t *testing.T) {
+	s := openTestStore(t)
+	mk := func(rule, sev, host, summary string) alert.Alert {
+		return alert.Alert{
+			Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+			RuleID:    rule,
+			RuleName:  "rule " + rule,
+			Severity:  sev,
+			Host:      host,
+			User:      "alice",
+			EventID:   "ev-1",
+			EventType: model.TypeProcessCreate,
+			Summary:   summary,
+			MatchedOn: []string{"process.name"},
+			Tags:      []string{"attack.t1059.001"},
+		}
+	}
+	alerts := []alert.Alert{
+		mk("11111111-1111", "high", "LAB-ONE", "encoded powershell"),
+		mk("22222222-2222", "critical", "lab-two", "credential dump"),
+		mk("33333333-3333", "high", "LAB-ONE", "runkey persistence"),
+	}
+	for i, a := range alerts {
+		if err := s.InsertAlert(a); err != nil {
+			t.Fatalf("InsertAlert %d: %v", i, err)
+		}
+	}
+
+	got, err := s.QueryAlerts(AlertQuery{Limit: 10})
+	if err != nil || len(got) != 3 {
+		t.Fatalf("query all: %d alerts, err %v", len(got), err)
+	}
+	if got[0].RuleID != "33333333-3333" {
+		t.Fatalf("newest first violated: %s", got[0].RuleID)
+	}
+	// severity list (case-insensitive values)
+	got, err = s.QueryAlerts(AlertQuery{Severities: []string{"CRITICAL"}, Limit: 10})
+	if err != nil || len(got) != 1 || got[0].RuleID != "22222222-2222" {
+		t.Fatalf("severity filter: %d alerts, err %v", len(got), err)
+	}
+	// host + rule
+	got, err = s.QueryAlerts(AlertQuery{Host: "lab-one", RuleID: "11111111-1111", Limit: 10})
+	if err != nil || len(got) != 1 || got[0].Summary != "encoded powershell" {
+		t.Fatalf("host+rule filter: %d alerts, err %v", len(got), err)
+	}
+	// free text over summary
+	got, err = s.QueryAlerts(AlertQuery{Q: "credential", Limit: 10})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("q filter: %d alerts, err %v", len(got), err)
+	}
+	// round-trip: tags and matched_on survive
+	if len(got[0].Tags) != 1 || got[0].Tags[0] != "attack.t1059.001" || len(got[0].MatchedOn) != 1 {
+		t.Fatalf("round-trip lost fields: %+v", got[0])
+	}
+	e, a := s.Counts()
+	if e != 0 || a != 3 {
+		t.Fatalf("counts: events=%d alerts=%d, want 0/3", e, a)
+	}
+}
+
+func TestPruneRespectsCutoffAndCounts(t *testing.T) {
+	s := openTestStore(t)
+	now := time.Now().UTC()
+	old := ev("old", "H1", model.TypeProcessCreate, "x", now.Add(-48*time.Hour))
+	recent := ev("new", "H1", model.TypeProcessCreate, "y", now.Add(-time.Minute))
+	if err := s.InsertEvent(old); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.InsertEvent(recent); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.InsertAlert(alert.Alert{
+		Timestamp: now.Add(-48 * time.Hour).Format(time.RFC3339Nano),
+		RuleID:    "r", Severity: "low", Host: "H1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	dEv, dAl, err := s.Prune(24 * time.Hour)
+	if err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+	if dEv != 1 || dAl != 1 {
+		t.Fatalf("pruned ev=%d al=%d, want 1/1", dEv, dAl)
+	}
+	got, err := s.QueryEvents(EventQuery{Limit: 10})
+	if err != nil || len(got) != 1 || got[0].ID != "new" {
+		t.Fatalf("post-prune events: %d, err %v", len(got), err)
+	}
+	e, a := s.Counts()
+	if e != 1 || a != 0 {
+		t.Fatalf("counts after prune: %d/%d, want 1/0", e, a)
+	}
+}
+
+func TestCountsSeededFromExistingDatabase(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/persist.db"
+	s1, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s1.InsertEvent(ev("kept", "H1", model.TypeProcessCreate, "x", time.Now().UTC())); err != nil {
+		t.Fatal(err)
+	}
+	if err := s1.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer s2.Close()
+	got, err := s2.QueryEvents(EventQuery{Limit: 10})
+	if err != nil || len(got) != 1 || got[0].ID != "kept" {
+		t.Fatalf("history lost across restart: %d events, err %v", len(got), err)
+	}
+	e, a := s2.Counts()
+	if e != 1 || a != 0 {
+		t.Fatalf("counts not seeded: %d/%d, want 1/0", e, a)
+	}
+}
+
+func TestSearchNeverMatchesAcrossFieldBoundaries(t *testing.T) {
+	s := openTestStore(t)
+	// host "LAB" + user "ONE" — the query "lab one" would match a
+	// space-joined haystack but must not match the \x1f-joined one
+	if err := s.InsertEvent(ev("split", "LAB", model.TypeProcessCreate, "cmd", time.Now().UTC())); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.QueryEvents(EventQuery{Q: "lab t", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// "lab t" can only match if some single field contains it
+	for _, e := range got {
+		if strings.Contains(strings.ToLower(e.Host), "lab t") {
+			t.Fatalf("unexpected cross-field match on %s", e.ID)
+		}
+	}
+}

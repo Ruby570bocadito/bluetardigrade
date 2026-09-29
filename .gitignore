@@ -1,5 +1,7 @@
 # Go
 bin/
+/engine
+/devsensor
 *.exe
 *.test
 *.out

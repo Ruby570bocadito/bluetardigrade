@@ -14,11 +14,13 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Ruby570bocadito/security-framework/internal/alert"
 	"github.com/Ruby570bocadito/security-framework/internal/correlate"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
+	"github.com/Ruby570bocadito/security-framework/internal/store"
 	"github.com/Ruby570bocadito/security-framework/internal/suppress"
 	"github.com/Ruby570bocadito/security-framework/pkg/model"
 )
@@ -49,6 +51,9 @@ type Hub struct {
 	webhook     func() (uint64, uint64, uint64) // sent, failed, dropped
 	correlator  func() (int, int, int)          // in-flight states, loaded sequences, tracking cap
 	sequences   *correlate.Manager              // kill-chain sequences (read-only view)
+	store       *store.Store                    // optional SQLite persistence (nil = rings only)
+
+	storeFails uint64 // throttles store write-error logging (atomic)
 }
 
 // New binds the API listener. Use addr ":0" in tests to pick a free port.
@@ -169,6 +174,50 @@ func (h *Hub) SetSequences(m *correlate.Manager) {
 	h.mu.Unlock()
 }
 
+// SetStore attaches the optional SQLite persistence. When set, every
+// recorded event and alert is written through to the store and the
+// telemetry lists and exports read the FULL history (subject to the
+// operator's retention) instead of the in-memory rings. Call before Run.
+func (h *Hub) SetStore(st *store.Store) {
+	h.mu.Lock()
+	h.store = st
+	h.mu.Unlock()
+}
+
+// persistEvent writes one event to the store if attached. Failures are
+// logged with a throttle (first, then every 500th) so a full disk does
+// not flood the log while detection keeps running.
+func (h *Hub) persistEvent(ev *model.Event) {
+	h.mu.Lock()
+	st := h.store
+	h.mu.Unlock()
+	if st == nil {
+		return
+	}
+	if err := st.InsertEvent(ev); err != nil {
+		n := atomic.AddUint64(&h.storeFails, 1)
+		if n == 1 || n%500 == 0 {
+			log.Printf("[API] store write FAILED (%d total): %v", n, err)
+		}
+	}
+}
+
+// persistAlert is persistEvent for alerts.
+func (h *Hub) persistAlert(a alert.Alert) {
+	h.mu.Lock()
+	st := h.store
+	h.mu.Unlock()
+	if st == nil {
+		return
+	}
+	if err := st.InsertAlert(a); err != nil {
+		n := atomic.AddUint64(&h.storeFails, 1)
+		if n == 1 || n%500 == 0 {
+			log.Printf("[API] store write FAILED (%d total): %v", n, err)
+		}
+	}
+}
+
 // Run serves until Shutdown is called.
 func (h *Hub) Run() error {
 	err := h.srv.Serve(h.listener)
@@ -189,7 +238,9 @@ func (h *Hub) Shutdown() {
 	_ = h.srv.Close()
 }
 
-// RecordEvent stores an event in the ring and streams it to subscribers.
+// RecordEvent stores an event in the ring, persists it (store attached)
+// and streams it to subscribers. The store write happens BEFORE the
+// fan-out: durable evidence first, live delivery second.
 func (h *Hub) RecordEvent(ev *model.Event) {
 	if ev == nil {
 		return
@@ -200,10 +251,12 @@ func (h *Hub) RecordEvent(ev *model.Event) {
 		h.events = h.events[len(h.events)-maxEvents:]
 	}
 	h.mu.Unlock()
+	h.persistEvent(ev)
 	h.broadcast("event", ev)
 }
 
-// RecordAlert stores an alert in the ring and streams it to subscribers.
+// RecordAlert stores an alert in the ring, persists it (store attached)
+// and streams it to subscribers.
 func (h *Hub) RecordAlert(a alert.Alert) {
 	h.mu.Lock()
 	h.alerts = append(h.alerts, a)
@@ -213,6 +266,7 @@ func (h *Hub) RecordAlert(a alert.Alert) {
 		h.alerts = h.alerts[len(h.alerts)-maxAlerts:]
 	}
 	h.mu.Unlock()
+	h.persistAlert(a)
 	h.broadcast("alert", a)
 }
 
@@ -251,6 +305,9 @@ type statsPayload struct {
 	WebhookFailed    uint64         `json:"webhook_failed"`
 	WebhookDropped   uint64         `json:"webhook_dropped"`
 	Suppressions     int            `json:"suppressions_active"`
+	StoreEnabled     bool           `json:"store_enabled"`
+	StoreEvents      int64          `json:"store_events"`
+	StoreAlerts      int64          `json:"store_alerts"`
 	CorrelatorStates int            `json:"correlator_states"`
 	CorrelatorSeqs   int            `json:"correlator_sequences"`
 	CorrelatorCap    int            `json:"correlator_cap"`
@@ -287,6 +344,12 @@ func (h *Hub) handleStats(w http.ResponseWriter, _ *http.Request) {
 	if h.correlator != nil {
 		corrStates, corrSeqs, corrCap = h.correlator()
 	}
+	st := h.store
+	storeEnabled, storeEvents, storeAlerts := false, int64(0), int64(0)
+	if st != nil {
+		storeEnabled = true
+		storeEvents, storeAlerts = st.Counts()
+	}
 	rulesCount, rulesTypes := 0, []string{}
 	if h.rules != nil {
 		rulesCount = h.rules.Count()
@@ -314,6 +377,9 @@ func (h *Hub) handleStats(w http.ResponseWriter, _ *http.Request) {
 		WebhookFailed:    whFailed,
 		WebhookDropped:   whDropped,
 		Suppressions:     supActive,
+		StoreEnabled:     storeEnabled,
+		StoreEvents:      storeEvents,
+		StoreAlerts:      storeAlerts,
 		CorrelatorStates: corrStates,
 		CorrelatorSeqs:   corrSeqs,
 		CorrelatorCap:    corrCap,
@@ -328,13 +394,31 @@ func (h *Hub) handleEvents(w http.ResponseWriter, r *http.Request) {
 		return // 400 already written
 	}
 	h.mu.Lock()
+	st := h.store
+	h.mu.Unlock()
+	if st != nil {
+		// store attached: serve the FULL history (retention
+		// applies), same filters, newest first
+		out, err := st.QueryEvents(store.EventQuery{
+			Host: f.host, Type: f.evType, Q: f.q,
+			Since: f.since, Until: f.until, Limit: limit,
+		})
+		if err != nil {
+			http.Error(w, "store query failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if out == nil {
+			out = []*model.Event{}
+		}
+		writeJSON(w, out)
+		return
+	}
 	out := make([]*model.Event, 0, limit)
 	for i := len(h.events) - 1; i >= 0 && len(out) < limit; i-- {
 		if f.matchEvent(h.events[i]) {
 			out = append(out, h.events[i])
 		}
 	}
-	h.mu.Unlock()
 	writeJSON(w, out)
 }
 
@@ -345,6 +429,23 @@ func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 		return // 400 already written
 	}
 	h.mu.Lock()
+	st := h.store
+	h.mu.Unlock()
+	if st != nil {
+		out, err := st.QueryAlerts(store.AlertQuery{
+			Host: f.host, Severities: f.sevs, RuleID: f.ruleID, Q: f.q,
+			Since: f.since, Until: f.until, Limit: limit,
+		})
+		if err != nil {
+			http.Error(w, "store query failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if out == nil {
+			out = []alert.Alert{}
+		}
+		writeJSON(w, out)
+		return
+	}
 	out := make([]alert.Alert, 0, limit)
 	for i := len(h.alerts) - 1; i >= 0 && len(out) < limit; i-- {
 		a := h.alerts[i]
@@ -352,7 +453,6 @@ func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 			out = append(out, a)
 		}
 	}
-	h.mu.Unlock()
 	writeJSON(w, out)
 }
 

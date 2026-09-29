@@ -30,6 +30,7 @@ A behavioral detection framework built by an offensive-security practitioner, in
 - [Architecture (v0.1)](#architecture-v01)
 - [Quickstart (tracer bullet)](#quickstart-tracer-bullet)
   - [Local HTTP API](#local-http-api)
+  - [Persistent storage (SQLite, opt-in)](#persistent-storage-sqlite-opt-in)
   - [Ingest authentication (shared token)](#ingest-authentication-shared-token)
   - [Alert webhook (SIEM/SOAR connector)](#alert-webhook-siemsoar-connector)
   - [Alert suppressions (operator allowlist)](#alert-suppressions-operator-allowlist)
@@ -67,6 +68,7 @@ And one engineering rule that shapes everything else: **no simulated data in the
 | **Response** | Operator suppressions (rule/host, expiry, hot-reload), alert webhook with Bearer auth and bounded retries |
 | **API** | Local REST API with OpenAPI 3.0 spec (drift-guarded in CI), SSE live stream, filters, JSONL/CSV export with formula-injection neutralization |
 | **Console** | Live feed, KPI dashboard, severity triage with free-text search, rule browser, suppressions view, AI analyst (bring-your-own OpenAI-compatible endpoint) |
+| **Storage** | Opt-in SQLite persistence (`-store`): events and alerts outlive restarts, retention pruner, lists and exports read the full history |
 | **Auth** | Shared-token ingest handshake (constant-time), zero-downtime token rotation window, optional Bearer on the API and on outbound webhooks |
 | **Ops** | One-command Windows installer (six commands on PATH), Docker image for the engine, GitHub Actions CI on every push |
 
@@ -145,6 +147,22 @@ All four telemetry endpoints (`/api/events`, `/api/alerts` and both `/export` va
 Exports are for SIEM import, offline analysis and the forensic store: JSONL round-trips the full records, CSV flattens them to stable columns and neutralizes spreadsheet formula injection on attacker-controlled fields. When `-webhook` is set, `/api/stats` additionally reports `webhook_sent` / `webhook_failed` / `webhook_dropped` so the delivery pipeline can be sized from the outside; with ingest auth active (`-token`), `ingest_rejected` counts connections rejected by the shared-token handshake; and when a `sequences/` directory is loaded, `correlator_states` / `correlator_sequences` / `correlator_cap` expose the kill-chain correlator's in-flight (sequence, host) chains against its hard cap (what the numbers mean and how the console surfaces them in [Kill-chain correlation](#kill-chain-correlation)). The machine-readable contract for the whole surface lives in OpenAPI 3.0 at [`docs/api/openapi.yaml`](docs/api/openapi.yaml).
 
 The API can demand a bearer token: start the engine with `-api-token '...'` (or `SF_API_TOKEN`) and every `/api/*` route — stats, events, alerts, rules, sequences, suppressions, stream, exports — answers `401` without a valid `Authorization: Bearer <token>` header, with a loud log line per rejected request. `/api/health` stays open on purpose: it is the liveness probe the engine, the console bridge and uptime checks rely on, and it reveals nothing but `{"mode":"engine","status":"ok"}`. The console-service bridge honors the same `SF_API_TOKEN` variable, so a token-protected console stack needs exactly one extra environment entry. This follows the same standard as the ingest auth: loopback stays friction-free by default, but a listener reachable beyond loopback must never serve telemetry without an explicit credential.
+
+### Persistent storage (SQLite, opt-in)
+
+By default the engine keeps recent telemetry in bounded in-memory rings (1000 events / 256 alerts) and that is all the API serves. Start it with `-store` to persist every event and alert to a SQLite database (pure-Go driver, WAL journalling — the Docker image and every CI job stay cgo-free):
+
+```bash
+sf-engine -store ./sf-store.db                     # retention defaults to 72h
+sf-engine -store ./sf-store.db -store-retention 0  # keep everything, prune nothing
+```
+
+While the store is attached:
+
+- The telemetry lists (`/api/events`, `/api/alerts`) and both `/export` endpoints read the **full stored history** (same filters, same wire format, subject to the configured retention) instead of the rings, so `since=24h` reaches beyond the 1000-event window. The SSE stream and the console keep their live behavior unchanged.
+- `/api/stats` reports `store_enabled`, `store_events` and `store_alerts` — the counts survive a restart, because the history does: kill the engine, start it again on the same file, and the API serves everything it persisted.
+- Rows older than `-store-retention` (default 72h; `0` keeps everything) are pruned on a 5-minute ticker, loudly when something is removed.
+- A store that cannot be opened is a FATAL startup error, by the same standard as a malformed suppressions file: persistence you believe is armed must not silently stay off. Write failures at runtime are logged with a throttle and never stop detection.
 
 ### Ingest authentication (shared token)
 
@@ -413,6 +431,8 @@ internal/correlate/  kill-chain sequence correlator
 internal/alert/   alert rendering, dedup, structured JSON
 internal/actions/ rule action executor (message templates, webhooks)
 internal/api/     local read-only HTTP API + SSE stream + JSONL/CSV export
+internal/store/   optional SQLite persistence (events/alerts history,
+                  retention pruner; pure-Go driver, WAL)
 internal/suppress/  operator allowlist: rule/host suppressions with expiry
 internal/webhook/ alert webhook delivery (bounded queue, retries)
 pkg/model/        unified event schema (the wire contract)
