@@ -4,6 +4,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -81,5 +83,54 @@ func TestAPIHealthy(t *testing.T) {
 	free.Close()
 	if apiHealthy(freeAddr) {
 		t.Fatalf("apiHealthy(%s) = true on a closed port, want false", freeAddr)
+	}
+}
+
+// resolveDataDir prefers an existing flag path; when the flag path is
+// missing it falls back to <exe dir>/../<name> (installed layout), and
+// when nothing exists it returns the flag path unchanged so the load
+// error names the path the operator actually passed.
+func TestResolveDataDir(t *testing.T) {
+	existing := t.TempDir()
+	sub := filepath.Join(existing, "rules")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	if got := resolveDataDir(sub, "rules"); got != sub {
+		t.Fatalf("resolveDataDir(existing) = %q, want %q", got, sub)
+	}
+
+	// flag path missing and no sibling: returned unchanged
+	missing := filepath.Join(existing, "does-not-exist")
+	if got := resolveDataDir(missing, "rules"); got != missing {
+		t.Fatalf("resolveDataDir(missing) = %q, want %q unchanged", got, missing)
+	}
+}
+
+// The engine must reload from the RESOLVED rules path, not the raw
+// flag: when startup fell back to the directory next to the
+// executable, reloading from the raw flag failed silently every cycle.
+// resolveDataDir is the shared helper for both paths, so pin its
+// exe-relative fallback: a dir named <name> next to the test binary's
+// parent must win over a missing flag path.
+func TestResolveDataDirFallsBackToExeRelative(t *testing.T) {
+	// the test binary lives in a temp go-build dir; place
+	// <parent>/rules so the fallback path resolves to it
+	exe, err := os.Executable()
+	if err != nil {
+		t.Skipf("no executable path: %v", err)
+	}
+	parent := filepath.Dir(filepath.Dir(exe))
+	alt := filepath.Join(parent, "rules")
+	if err := os.MkdirAll(alt, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(alt) })
+
+	missing := filepath.Join(t.TempDir(), "nope")
+	got := resolveDataDir(missing, "rules")
+	if got != alt {
+		t.Fatalf("resolveDataDir(missing, rules) = %q, want exe-relative %q", got, alt)
 	}
 }

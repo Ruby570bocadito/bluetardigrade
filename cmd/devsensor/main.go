@@ -1,11 +1,13 @@
 package main
 
 import (
+        "bufio"
         "crypto/rand"
         "flag"
         "fmt"
         "net"
         "os"
+        "strings"
         "time"
 
         "github.com/Ruby570bocadito/security-framework/pkg/model"
@@ -19,6 +21,8 @@ import (
 var (
         addr     = flag.String("addr", "127.0.0.1:7777", "engine address")
         interval = flag.Duration("interval", 400*time.Millisecond, "delay between events")
+        token    = flag.String("token", "",
+                "ingest token sent as 'AUTH <token>' (falls back to SF_INGEST_TOKEN); required when the engine starts with -token")
 )
 
 var scenario = []*model.Event{
@@ -159,6 +163,32 @@ func main() {
                 os.Exit(1)
         }
         defer conn.Close()
+
+        // AUTH handshake: must be the first line when the engine has a
+        // token configured. The ack is read so a wrong token fails here
+        // with a clear message instead of losing the whole scenario.
+        sharedToken := *token
+        if sharedToken == "" {
+                sharedToken = os.Getenv("SF_INGEST_TOKEN")
+        }
+        if sharedToken != "" {
+                conn.SetDeadline(time.Now().Add(10 * time.Second))
+                if _, err := fmt.Fprintf(conn, "AUTH %s\n", sharedToken); err != nil {
+                        fmt.Fprintf(os.Stderr, "[DEVSENSOR] auth send: %v\n", err)
+                        os.Exit(1)
+                }
+                ack, err := bufio.NewReader(conn).ReadString('\n')
+                if err != nil {
+                        fmt.Fprintf(os.Stderr, "[DEVSENSOR] auth rejected (no ack from engine)\n")
+                        os.Exit(1)
+                }
+                if !strings.Contains(ack, `"ack":"ok"`) {
+                        fmt.Fprintf(os.Stderr, "[DEVSENSOR] auth rejected by engine: %s", ack)
+                        os.Exit(1)
+                }
+                conn.SetDeadline(time.Time{})
+                fmt.Println("[DEVSENSOR] ingest auth accepted")
+        }
 
         fmt.Printf("[DEVSENSOR] connected to %s - streaming %d events\n", *addr, len(scenario))
         fmt.Println("[DEVSENSOR] NOTE: this is the SIMULATED demo scenario - not your host. Real telemetry: sf-sensor")

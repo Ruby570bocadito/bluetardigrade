@@ -93,14 +93,14 @@ consumers (SIEM connectors, the web console).
 The engine serves a small read-only API used by the web console and
 handy for SIEM taps. Both the ingest port and the API bind to
 `127.0.0.1` by default: the feed carries sensitive host data (users,
-command lines) and the NDJSON ingest is unauthenticated in v0.1, so
-nothing should be reachable from other machines unless you decide so.
-To accept sensors running on different hosts, start the engine with
-`-addr 0.0.0.0:7777` (and `-api 0.0.0.0:7778` if the console is remote
-too), open the port with the installer's `-Firewall` switch, and plan a
-network-level restriction to the sensor segment. Token authentication
-on the ingest port is on the phase-1 roadmap. The API can be disabled
-entirely with `-api 0`:
+command lines) and the NDJSON ingest must stay unauthenticated only on
+loopback, so nothing should be reachable from other machines unless you
+decide so. To accept sensors running on different hosts, start the
+engine with `-addr 0.0.0.0:7777` (and `-api 0.0.0.0:7778` if the
+console is remote too), enable the shared-token auth (next section),
+open the port with the installer's `-Firewall` switch, and plan a
+network-level restriction to the sensor segment. The API can be
+disabled entirely with `-api 0`:
 
 | Endpoint | Returns |
 |----------|---------|
@@ -121,6 +121,37 @@ attacker-controlled fields. When `-webhook` is set, `/api/stats`
 additionally reports `webhook_sent` / `webhook_failed` /
 `webhook_dropped` so the delivery pipeline can be sized from the
 outside.
+
+### Ingest authentication (shared token)
+
+The NDJSON ingest supports a shared-token handshake for deployments
+where sensors connect over the network. Start the engine with `-token`
+or the `SF_INGEST_TOKEN` environment variable (flag wins):
+
+```bash
+sf-engine -addr 0.0.0.0:7777 -token 'pick-a-long-random-secret'
+# or:  export SF_INGEST_TOKEN=...  and just run sf-engine
+```
+
+Every connection must then send `AUTH <token>` as its FIRST line
+(before any event) and receive `{"ack":"ok"}`. All bundled sensors
+honor it:
+
+| Sensor | How to pass the token |
+|--------|-----------------------|
+| `sf-engine` | `-token <t>` flag or `SF_INGEST_TOKEN` env |
+| `devsensor` (Go demo) | `-token <t>` flag or `SF_INGEST_TOKEN` env |
+| `sf-sensor` (Rust/Sysmon) | `--token <t>` flag or `SF_INGEST_TOKEN` env |
+| `sf-devsensor` (PowerShell demo) | `-Token <t>` param or `SF_INGEST_TOKEN` env |
+
+Mismatch behavior is loud on purpose: a sensor with a stale token is
+closed with a clear `{"ack":"error",...}` message, a sensor sending
+`AUTH` to a token-less engine is closed too, and a silent client that
+never authenticates is dropped after 10 seconds. The comparison is
+constant-time. Loopback-only deployments without a token keep working
+exactly as before (auth disabled); a non-loopback bind without a token
+prints a startup warning, because any host that reaches the port could
+then inject events.
 
 ### Alert webhook (SIEM/SOAR connector)
 

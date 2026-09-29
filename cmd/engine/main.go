@@ -46,6 +46,8 @@ var (
                 "hot-reload interval for the rules directory (0 disables)")
         webhookURL = flag.String("webhook", "",
                 "POST every alert as JSON to this URL (SIEM/SOAR connector); empty disables")
+        token = flag.String("token", "",
+                "shared token sensors must send as 'AUTH <token>' on connect (falls back to SF_INGEST_TOKEN); empty disables auth")
 )
 
 func main() {
@@ -56,17 +58,9 @@ func main() {
                 os.Interrupt, syscall.SIGTERM)
         defer stop()
 
-        // rules dir: explicit flag > ./rules in CWD > rules next to the
-        // executable (so the installed sf-engine.exe needs no wrapper)
-        rulesPath := *rulesDir
-        if !dirExists(rulesPath) {
-                if exe, err := os.Executable(); err == nil {
-                        alt := filepath.Join(filepath.Dir(exe), "..", "rules")
-                        if dirExists(alt) {
-                                rulesPath = alt
-                        }
-                }
-        }
+        // rules dir: explicit flag > rules next to the executable (so
+        // the installed sf-engine.exe needs no wrapper)
+        rulesPath := resolveDataDir(*rulesDir, "rules")
         engine, err := rules.LoadDir(rulesPath)
         if err != nil {
                 log.Fatalf("[ENGINE] loading rules from %s: %v", rulesPath, err)
@@ -75,15 +69,7 @@ func main() {
                 engine.Count(), rulesPath, engine.Types())
 
         // kill-chain sequences: same resolution order as the rules dir
-        seqPath := *seqDir
-        if !dirExists(seqPath) {
-                if exe, err := os.Executable(); err == nil {
-                        alt := filepath.Join(filepath.Dir(exe), "..", "sequences")
-                        if dirExists(alt) {
-                                seqPath = alt
-                        }
-                }
-        }
+        seqPath := resolveDataDir(*seqDir, "sequences")
         var corr *correlate.Manager
         if dirExists(seqPath) {
                 if corr, err = correlate.LoadDir(seqPath, nil); err != nil {
@@ -117,6 +103,21 @@ func main() {
                 log.Fatalf("[ENGINE] %v", err)
         }
         go server.Serve()
+        // shared-token auth: flag wins over the env var, so operators
+        // can override SF_INGEST_TOKEN per process without touching the
+        // autostart entry. The bundled sensors honor the same env var.
+        ingestToken := *token
+        if ingestToken == "" {
+                ingestToken = os.Getenv("SF_INGEST_TOKEN")
+        }
+        server.SetToken(ingestToken)
+        if server.AuthEnabled() {
+                fmt.Println("[ENGINE] ingest auth: ENABLED (sensors must send 'AUTH <token>' first, or -token/SF_INGEST_TOKEN)")
+        } else if strings.HasPrefix(server.Addr(), "127.0.0.1:") || strings.HasPrefix(server.Addr(), "[::1]:") {
+                fmt.Println("[ENGINE] ingest auth: disabled (loopback bind only - fine for local demos)")
+        } else {
+                fmt.Println("[ENGINE] WARNING: non-loopback ingest WITHOUT a token: any host that reaches this port can inject events. Set -token or SF_INGEST_TOKEN.")
+        }
         fmt.Printf("[ENGINE] listening on %s (NDJSON, 1 event per line)\n", server.Addr())
 
         // local read-only API: stats, recent events/alerts, rules, SSE
@@ -244,6 +245,25 @@ func main() {
 func dirExists(p string) bool {
         st, err := os.Stat(p)
         return err == nil && st.IsDir()
+}
+
+// resolveDataDir picks the directory holding rules or sequences: the
+// flag path when it exists, otherwise <exe dir>/../<name> (so the
+// installed sf-engine.exe needs no wrapper), otherwise the flag path
+// unchanged so LoadDir reports the error against the original path.
+// Both consumers must reload from THIS resolved path (the hot-reload
+// ticker does) or the reload silently fails every cycle.
+func resolveDataDir(flagPath, name string) string {
+        if dirExists(flagPath) {
+                return flagPath
+        }
+        if exe, err := os.Executable(); err == nil {
+                alt := filepath.Join(filepath.Dir(exe), "..", name)
+                if dirExists(alt) {
+                        return alt
+                }
+        }
+        return flagPath
 }
 
 // listening reports whether something accepts TCP connections on addr
