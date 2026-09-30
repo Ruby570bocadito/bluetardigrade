@@ -33,7 +33,20 @@ RATE=1000
 CONTRACT_US=10000
 
 TMP="$(mktemp -d)"
-trap 'kill "${ENGINE_PID:-0}" 2>/dev/null || true; rm -rf "$TMP"' EXIT
+# kill 0 signals the WHOLE process group (this script's siblings and,
+# without job control, its ancestors' group too). ENGINE_PID is only
+# ever set after the engine starts, so guard on presence instead of
+# defaulting to 0: a build failure must exit cleanly, not signal.
+trap '[ -n "${ENGINE_PID:-}" ] && { kill "$ENGINE_PID" 2>/dev/null || true; }; rm -rf "$TMP"' EXIT
+
+# Pre-flight: the health wait below would happily answer if a PREVIOUS
+# engine (a dev stack left running, yesterday's binary) already owns
+# 7778 — the bench would then measure the WRONG engine and attribute
+# its numbers to this build. The port must be silent before we start.
+if curl -sf http://127.0.0.1:7778/api/health >/dev/null 2>&1; then
+    echo "[bench-nightly] FAIL: port 7778 already serving /api/health — another engine is listening. Stop the running stack first: measuring the wrong binary would fake the numbers." >&2
+    exit 1
+fi
 
 echo "[bench-nightly] building engine and bench harness..."
 go build -o "$TMP/engine" ./cmd/engine
@@ -139,7 +152,13 @@ if [ "$BENCH_RC" -ne 0 ]; then
     exit 1
 fi
 if [ -z "$p99_us" ]; then
-    echo "::warning::bench completed but produced no latency samples (SSE fan-out misses?) — inspect the report above."
+    # A bench that exits 0 but yields no parseable latency is an
+    # instrumentation/completeness defect of the measurement itself
+    # (report format drift, broken SSE fan-out): numbers silently
+    # disappearing must turn the run red, like lost alerts do —
+    # never a green run with a "recorded" verdict it did not measure.
+    echo "[bench-nightly] FAIL: bench exited 0 but no latency samples were parsed from the report (format drift? SSE fan-out?) — report above." >&2
+    exit 1
 fi
 
 echo "[bench-nightly] OK (advisory bench recorded)"
