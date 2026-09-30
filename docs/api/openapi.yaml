@@ -19,15 +19,20 @@ info:
 
     Design constraints worth knowing before integrating:
 
-    - The API is **read-only by default** with two opt-in write
+    - The API is **read-only by default** with three opt-in write
       surfaces: alert triage via `POST /api/alerts/{id}/status`
       (acknowledge / close / reopen with a note; gated by the bearer
-      token like every read endpoint), and — when the engine starts
-      with `-api-write` (or `SF_API_WRITE=1`) — `POST`/`DELETE` on
-      `/api/suppressions`, which edit the `suppressions.yaml` file
-      atomically and answer `403` naming the flag when it is off.
-      Everything else — configuration, rules, sequences — stays
-      flag/YAML-driven, never writable through this API.
+      token like every read endpoint), `POST`/`DELETE` on
+      `/api/suppressions` when the engine starts with `-api-write`
+      (or `SF_API_WRITE=1`; edits the `suppressions.yaml` file
+      atomically, answers `403` naming the flag when it is off), and
+      `POST /api/respond/kill` when the engine starts with
+      `-allow-kill` plus a token plus an open audit file (C3 active
+      response: one verified local process, operator-invoked, every
+      attempt audited before the signal; a disarmed engine answers a
+      real `404`). Everything else — configuration, rules,
+      sequences — stays flag/YAML-driven, never writable through
+      this API.
     - `GET /api/events` and `GET /api/alerts` return the **in-memory
       ring** (last 1000 events / 256 alerts), newest first. For bulk
       download use the `/export` endpoints.
@@ -60,6 +65,11 @@ tags:
     description: real-time Server-Sent Events feed
   - name: export
     description: bulk download (JSONL / CSV) for SIEM import and forensics
+  - name: respond
+    description: >
+      active response (C3, opt-in): operator-invoked kill_process over a
+      verified local process; armed only with -allow-kill + bearer token
+      + an open audit file
 paths:
   /api/health:
     get:
@@ -604,6 +614,113 @@ paths:
               schema:
                 type: string
                 example: 'unsupported format: use jsonl, ndjson or csv'
+  /api/respond/kill:
+    post:
+      tags: [respond]
+      operationId: respondKill
+      summary: Kill one verified local process (-allow-kill, operator-invoked)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Active response, iteration 1 (C3): terminates ONE process on the
+        engine's own host with a fixed SIGKILL, on behalf of a named
+        human operator. The surface exists only when the engine started
+        with `-allow-kill` (or `SF_ALLOW_KILL=1`) AND an API token is
+        configured AND the `-respond-audit` file opened; a disarmed
+        engine answers a real `404`, identical to any unknown path. The
+        bearer token is mandatory even on loopback (kill is stricter
+        than the suppression writes).
+
+        Five permission layers run before any signal, and every
+        well-formed attempt (denied included) lands in the
+        `-respond-audit` JSONL BEFORE the signal — the action that
+        cannot be proven to have happened, does not happen:
+
+        - the `operator` must be on the `-respond-operators` allowlist
+          (`operator_not_allowed`; a missing file means an empty
+          allowlist: everything denied);
+        - `host` must equal the engine's own hostname (`host_mismatch`)
+          — a console replaying a REMOTE sensor's alert can never turn
+          it into a local kill;
+        - budgets: per-(host,pid) 60 s cooldown, 20 actions/min global
+          and 6 actions/min per operator, all counted on COMMITTED
+          actions only (`cooldown_active`, `rate_limited`,
+          `operator_rate_limited`);
+        - the process guard verifies the target is the object the
+          operator named: the kill uses ONE pinned object (pidfd on
+          Linux, a single handle on Windows — `mechanism` in the
+          response says which), the real name is checked per platform
+          (`pid_mismatch`), the engine and its ancestors are
+          untouchable (`self_protected`), protected names (platform
+          defaults plus `-respond-protected`) are refused
+          (`process_protected`), and pid 0/1/negative are invalid
+          (`pid_invalid`);
+        - audit write failure or the 64 MiB file ceiling degrades every
+          action to `audit_unavailable` — never to an unrecorded kill.
+
+        The name check protects against the MECHANICAL error (wrong
+        PID through recycling), not against malware disguising its
+        identity: the kill decision belongs to the operator, backed by
+        the alert. Repeating an `idempotency_key` answers `409`
+        (`idempotency_repeated`); the bounded map forgets the oldest
+        key when 1024 are held (a forgotten key simply executes again;
+        the cooldown still covers immediate retries). There is NO
+        automation path: rules, sequences, the correlator and the
+        actions dispatcher cannot reach this surface (binding landing
+        requirement R8).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RespondKillRequest'
+      responses:
+        '200':
+          description: |
+            The signal was sent to the verified object (synchronous
+            contract: the response carries the outcome, not a promise —
+            `202` is reserved for a future queued design).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RespondKillExecuted'
+        '400':
+          description: Malformed JSON or a structurally invalid body (missing required fields, over-cap strings)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: |
+            Permission or guard denial: the body names one of
+            `operator_not_allowed`, `host_mismatch`, `pid_invalid`,
+            `pid_mismatch`, `pid_not_found`, `pid_access_denied`,
+            `self_protected`, `process_protected`, `audit_unavailable`.
+            Every 403 here is audited in the engine's respond-audit
+            JSONL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RespondKillDenied'
+        '409':
+          description: The `idempotency_key` was already committed (client retry) — nothing is executed again
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RespondKillDenied'
+        '429':
+          description: >-
+            Budget denial: `cooldown_active` (same host+pid within
+            60 s), `rate_limited` (global 20/min) or
+            `operator_rate_limited` (6/min per operator)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RespondKillDenied'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1349,6 +1466,73 @@ components:
         error:
           type: string
           description: actionable one-line reason (client-side problems name the fix; server-side problems point to the engine log)
+    RespondKillRequest:
+      type: object
+      required: [host, pid, process_name, operator, reason]
+      properties:
+        host:
+          type: string
+          maxLength: 253
+          description: must equal the engine host's hostname (R3) — the engine refuses to guess which host the PID belongs to
+        pid:
+          type: integer
+          minimum: 2
+          description: target PID; 0/1/negative are denied as pid_invalid (mass-signal semantics on Unix)
+        process_name:
+          type: string
+          maxLength: 256
+          description: expected real name of the target (platform-resolved basename); a mismatch denies with pid_mismatch
+        operator:
+          type: string
+          maxLength: 64
+          description: human operator assuming the action; must be on the -respond-operators allowlist
+        reason:
+          type: string
+          maxLength: 512
+          description: non-empty free text recorded in the audit line
+        rule_id:
+          type: string
+          maxLength: 128
+          description: optional rule or sequence that motivated the action
+        alert_id:
+          type: string
+          maxLength: 64
+          description: optional originating alert id
+        idempotency_key:
+          type: string
+          maxLength: 128
+          description: optional client key; a repeat answers 409, the bounded map forgets the oldest key at 1024 entries
+    RespondKillExecuted:
+      type: object
+      required: [action_id, status, signal, mechanism]
+      properties:
+        action_id:
+          type: string
+          description: 32-hex id shared by the audit line and this response
+        status:
+          type: string
+          enum: [executed]
+        signal:
+          type: string
+          enum: [SIGKILL]
+          description: fixed for iteration 1 (dictamen Q1)
+        mechanism:
+          type: string
+          enum: [pidfd, fallback, handle]
+          description: >-
+            how the verified object was killed (R1: pinned object
+            on Linux/Windows, fallback re-verifies the name
+            immediately before the signal)
+    RespondKillDenied:
+      type: object
+      required: [error, action_id]
+      properties:
+        error:
+          type: string
+          description: one of the denial codes of the operation description (403 family), idempotency_repeated (409) or the 429 family
+        action_id:
+          type: string
+          description: 32-hex id of the denied attempt, matching its audit line
     Suppressions:
       type: object
       required: [active, entries]

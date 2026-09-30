@@ -57,6 +57,7 @@ A behavioral detection framework built by an offensive-security practitioner, in
   - [Alert triage (lifecycle)](#alert-triage-lifecycle)
   - [Host risk scoring (hot hosts)](#host-risk-scoring-hot-hosts)
   - [Beaconing detection (C2 call-home)](#beaconing-detection-c2-call-home)
+  - [Active response (kill_process, opt-in)](#active-response-kill_process-opt-in)
 - [Configuration reference](#configuration-reference)
 - [One-command install (Windows)](#one-command-install-windows)
 - [Real telemetry with Sysmon](#real-telemetry-with-sysmon-recommended)
@@ -228,6 +229,7 @@ The engine serves a small read-only API used by the web console and handy for SI
 | `GET /api/events?limit=200` | recent events, newest first |
 | `GET /api/alerts?limit=100` | recent alerts, newest first |
 | `GET /api/suppressions` | operator allowlist currently active; `POST`/`DELETE` (only with `-api-write`) edit the same file atomically — see [Alert suppressions](#alert-suppressions-operator-allowlist) |
+| `POST /api/respond/kill` | active response (C3, opt-in): kill one verified local process, operator-invoked; exists only with `-allow-kill` + API token + open audit (otherwise a real `404`) — see [Active response](#active-response-kill_process-opt-in) |
 | `GET /api/sequences` | kill-chain sequences loaded by the correlator (read-only view; empty = correlator off) |
 | `GET /api/events/export?format=jsonl\|csv` | bulk download of the event history — in-memory ring, or the full SQLite history with `-store` (JSON Lines or CSV) |
 | `GET /api/alerts/export?format=ndjson\|csv&limit=256` | downloadable alert feed for SIEM/SOAR handoff, chronological order |
@@ -429,6 +431,40 @@ The engine also ships a behavioral detector that no single-event rule can expres
 
 Profiles live in `beacons.yaml` (committed and loaded by default; `-beacons ""` turns the detector off; a file that exists but does not parse is FATAL at startup — the same fail-loud standard as suppressions). The shipped pack is deliberately conservative: the web profile needs 12 regular connections inside a 15-minute window with a mean interval of at least 2 s — CDNs, load balancers and NTP pools are regular too, but at sub-second cadences the `min_interval` floor keeps that chatter out by construction. Detections honor the rest of the pipeline for free: profile+host suppressions, triage lifecycle, store, webhook and console, because a beacon alert is just another alert (its `rule_id` is the profile's id). The tracker's state is bounded (8192 keys, weakest-evicted-first — a flood of one-connection fake destinations can only evict other flood entries, never wash out evidence that is building), and re-fires are throttled per key by the profile's `cooldown`. `/api/stats` exposes the live signal (`beacons_tracked` / `beacons_cap` / `beacons_fired`) and `/metrics` the same families as `sf_beacon_keys_tracked` / `sf_beacon_cap` / `sf_beacons_fired_total`. The console header carries the same signal as a `beacons N/cap` chip — red the moment the cap is reached (new destinations silently stop being tracked, which is detection loss on a flooded feed) — next to the `umbrales N · M` chip that keeps the volumetric thresholds detector (A2) visible the same way, fed by `threshold_rules` / `threshold_keys` / `threshold_fired`.
 
+### Active response (kill_process, opt-in)
+
+The engine can act, not just detect — and the action is the most
+heavily gated surface in the project (roadmap C3, iteration 1: local
+`kill_process` only). An engine started with `-allow-kill` **plus** an
+API token **plus** an open audit file arms `POST /api/respond/kill`:
+one verified process on the engine's own host, terminated with a fixed
+SIGKILL on behalf of a named human operator. Without any of the three,
+the route answers a real `404` — there is no surface to probe.
+
+Five permission layers run before every signal, and every well-formed
+attempt (denied included) is written to the `-respond-audit` JSONL
+**before** the signal, with fsync and a 64 MiB ceiling: the action that
+cannot be proven to have happened, does not happen. The operator must
+be on the `-respond-operators` allowlist; the `host` field must equal
+the engine's own hostname (a console replaying a REMOTE sensor's alert
+gets `host_mismatch`, never a local kill); budgets cap committed
+actions (60 s cooldown per host+pid, 20/min global, 6/min per
+operator); and the process guard kills the VERIFIED object, not the
+number — pidfd pinning on Linux and a single verified handle on
+Windows (`mechanism` in the response), with the real process name
+checked per platform before anything is sent. PID 0/1/negative,
+self/ancestor, and protected names (Windows defaults: csrss, smss,
+wininit, services, lsass; extend with `-respond-protected`) are
+refused with their own audit codes.
+
+Two honest limits, in the flag text and the audit: the name check
+protects against the mechanical error (wrong PID through recycling),
+not against malware disguising its identity — the kill decision
+belongs to the operator backed by the alert. And there is NO
+automation path: rules, sequences and the correlator cannot reach
+this surface; it exists because an operator called it. Contract
+details: [`docs/api/openapi.yaml`](docs/api/openapi.yaml).
+
 ## Configuration reference
 
 Everything the engine does is a flag with a safe default; everything secret can also come from the environment. This is the full surface — there are no other knobs:
@@ -448,6 +484,10 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `-token` / `-token-previous` | — | ingest shared token / previous token during a rotation window |
 | `-api-token` | — | Bearer required on every `/api/*` route and on `/metrics` (`/api/health` stays open) |
 | `-api-write` | off | arm `POST`/`DELETE /api/suppressions` (writes land on the `-suppressions` file; refused beyond loopback without `-api-token`) |
+| `-allow-kill` | off | arm `POST /api/respond/kill` (active response, SIGKILL fixed; REQUIRES `-api-token` even on loopback + open `-respond-audit`; falls back to `SF_ALLOW_KILL=1`) |
+| `-respond-operators` | `./respond-operators.yaml` | allowlist of operators who may run active response (`{version: 1, names: [...]}`; missing = empty = everything denied; malformed = fatal; hot-reloaded) |
+| `-respond-protected` | — | optional extra protected process names merged with the platform defaults (hot-reloaded) |
+| `-respond-audit` | `./respond-audit.jsonl` | append-only JSONL audit, one line per attempt, fsync per line, 64 MiB ceiling |
 | `-webhook` / `-webhook-token` | — | SIEM/SOAR connector URL / outbound Bearer token |
 | `-elastic` / `-elastic-index` / `-elastic-api-key` | — / `sf-alerts` / — | Elasticsearch bulk indexing (daily `-YYYY.MM.DD` index, deterministic `_id`) / index prefix / API key (falls back to `SF_ELASTIC_API_KEY`) |
 | `-splunk` / `-splunk-token` | — | Splunk HEC collector base URL (events POSTed to `/services/collector/event`) / HEC token (falls back to `SF_SPLUNK_TOKEN`) |
@@ -464,6 +504,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `SF_INGEST_TOKEN_PREVIOUS` | engine | second accepted token during a rotation window |
 | `SF_API_TOKEN` | engine + console-service + web console | one entry protects the API, the bridge and the console proxy (same-origin writes, loopback-only hosts by default) |
 | `SF_API_WRITE` | engine | set to `1` to arm the suppression write API (same as `-api-write`; the flag wins) |
+| `SF_ALLOW_KILL` | engine | set to `1` to arm active response (same as `-allow-kill`; the flag wins; the token + audit layers still apply) |
 | `SF_WEBHOOK_TOKEN` | engine | Bearer on outbound alert deliveries |
 | `NEXT_PUBLIC_CONSOLE_URL` | web console | point the UI at a remote hub |
 | `NEXT_PUBLIC_ENGINE_API` | web console | direct engine API base for polling (default same-origin proxy `/api/engine`) |
@@ -752,6 +793,10 @@ path (no subcommand) and on `engine run`.
 | `-splunk-token t` | empty | Splunk HEC token sent as `Authorization: Splunk` (falls back to `SF_SPLUNK_TOKEN`); empty disables the header |
 | `-api-token t` | empty | bearer token the local API requires on `/api/*` and `/metrics` (falls back to `SF_API_TOKEN`); `/api/health` stays open |
 | `-api-write` | off | arm `POST`/`DELETE /api/suppressions` (falls back to `SF_API_WRITE=1`); writes go to the `-suppressions` file, which stays the source of truth; refused at startup when the API has no token beyond loopback |
+| `-allow-kill` | off | arm `POST /api/respond/kill` (falls back to `SF_ALLOW_KILL=1`): active response, kill_process, SIGKILL fixed; REQUIRES `-api-token`/`SF_API_TOKEN` even on loopback and an openable `-respond-audit` (otherwise the surface stays disabled, loud); the name check protects against killing the wrong PID, not against malware disguising its identity |
+| `-respond-operators file` | `./respond-operators.yaml` | YAML allowlist (`{version: 1, names: [ana, beto]}`) of operators allowed to run active response; missing file = empty allowlist = every action denied; malformed file is fatal; hot-reloaded on the `-reload-every` ticker |
+| `-respond-protected file` | empty | optional YAML (`{version: 1, names: [...]}`) with extra protected process names, merged with the platform defaults (Windows: csrss/smss/wininit/services/lsass); malformed file is fatal; hot-reloaded |
+| `-respond-audit file` | `./respond-audit.jsonl` | append-only JSONL audit file, one line per attempt (denials included), fsync per line, 64 MiB ceiling: beyond it every action denies with `audit_unavailable` until the file is rotated |
 | `-token t` | empty | shared ingest token (falls back to `SF_INGEST_TOKEN`); empty disables auth |
 | `-token-previous t` | empty | previous ingest token, still accepted during a rotation window (falls back to `SF_INGEST_TOKEN_PREVIOUS`) |
 | `-suppressions file` | `./suppressions.yaml` | operator allowlist YAML silencing rule/host pairs (expirations supported); empty disables |

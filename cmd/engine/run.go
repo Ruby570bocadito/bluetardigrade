@@ -26,6 +26,7 @@ import (
 	"github.com/Ruby570bocadito/security-framework/internal/ingest"
 	"github.com/Ruby570bocadito/security-framework/internal/lifecycle"
 	"github.com/Ruby570bocadito/security-framework/internal/notify"
+	"github.com/Ruby570bocadito/security-framework/internal/respond"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
 	"github.com/Ruby570bocadito/security-framework/internal/siem"
 	"github.com/Ruby570bocadito/security-framework/internal/store"
@@ -64,6 +65,10 @@ type options struct {
 	storeRetention   time.Duration
 	pidFile          string
 	apiWrite         bool
+	allowKill        bool
+	respondOperators string
+	respondProtected string
+	respondAudit     string
 }
 
 // newRunFlagSet builds the flag set for the engine runtime. Every
@@ -111,6 +116,14 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 		"bearer token the local API requires on /api/* (falls back to SF_API_TOKEN); /api/health stays open; empty disables")
 	fs.BoolVar(&o.apiWrite, "api-write", false,
 		"arm POST/DELETE /api/suppressions (writes land on the -suppressions file; refused at startup when the API has no token beyond loopback; falls back to SF_API_WRITE=1)")
+	fs.BoolVar(&o.allowKill, "allow-kill", false,
+		"arm POST /api/respond/kill (active response, kill_process, SIGKILL fixed); REQUIRES -api-token/SF_API_TOKEN even on loopback; requires -respond-audit to open, or the surface stays disabled; the process-name check protects against killing the wrong PID, not against malware disguising its identity - the kill decision belongs to a human operator (falls back to SF_ALLOW_KILL=1)")
+	fs.StringVar(&o.respondOperators, "respond-operators", "./respond-operators.yaml",
+		"YAML allowlist ({version: 1, names: [ana, beto]}) of operators allowed to run active response actions; missing file = empty allowlist = every action denied; malformed file = fatal; hot-reloaded on the -reload-every ticker")
+	fs.StringVar(&o.respondProtected, "respond-protected", "",
+		"optional YAML ({version: 1, names: [...]}) with extra protected process names, merged with the platform defaults (Windows: csrss/smss/wininit/services/lsass); missing file = defaults only; malformed file = fatal; hot-reloaded")
+	fs.StringVar(&o.respondAudit, "respond-audit", "./respond-audit.jsonl",
+		"append-only JSONL audit file, one line per attempt (denials included), fsync per line, 64 MiB ceiling (beyond it every action denies with audit_unavailable until the file is rotated)")
 	fs.StringVar(&o.token, "token", "",
 		"shared token sensors must send as 'AUTH <token>' on connect (falls back to SF_INGEST_TOKEN); empty disables auth")
 	fs.StringVar(&o.prevToken, "token-previous", "",
@@ -337,6 +350,9 @@ func runEngine(o *options, interactive bool) error {
 	// local read-only API: stats, recent events/alerts, rules, SSE
 	var hub *api.Hub
 	apiAddr := ""
+	// resolved once here so the active-response arming below can
+	// apply its token layer without duplicating the flag>env order
+	apiTok := ""
 	if o.apiAddr != "0" {
 		hub, err = api.New(o.apiAddr)
 		if err != nil {
@@ -385,7 +401,7 @@ func runEngine(o *options, interactive bool) error {
 			hub.SetSequences(corr)
 			hub.SetLifecycle(lifeStore)
 			// same standard as the ingest token: flag wins, env fallback
-			apiTok := o.apiToken
+			apiTok = o.apiToken
 			if apiTok == "" {
 				apiTok = os.Getenv("SF_API_TOKEN")
 			}
@@ -418,6 +434,64 @@ func runEngine(o *options, interactive bool) error {
 			apiAddr = hub.Addr()
 			fmt.Printf("[ENGINE] api on %s (stats / events / alerts / rules / stream)\n", hub.Addr())
 		}
+	}
+
+	// active response (C3, roadmap): the destructive surface is
+	// opt-in by layers — flag AND bearer token AND an open audit
+	// file — and its state is announced at startup, never guessed.
+	// The token layer is stricter than the suppression writes it
+	// replicates: kill requires a token EVEN on loopback (dictamen
+	// 04-B: kill ≠ suppress). An audit open failure disables the
+	// surface loudly and keeps detection alive (R5b: NOT fatal —
+	// taking down the whole engine over a respond misconfig would
+	// be the expensive failure direction).
+	var respMgr *respond.Manager
+	respOpsPath := ""
+	respProtPath := ""
+	if o.allowKill || os.Getenv("SF_ALLOW_KILL") == "1" {
+		switch {
+		case hub == nil:
+			fmt.Println("[ENGINE] active response: kill_process disabled (-allow-kill set but the API is disabled)")
+		case apiTok == "":
+			fmt.Println("[ENGINE] active response: kill_process disabled (-allow-kill requires -api-token/SF_API_TOKEN: the token is mandatory even on loopback)")
+		default:
+			auditPath := resolveDataFile(o.respondAudit, "respond-audit.jsonl")
+			audit, aerr := respond.OpenAudit(auditPath)
+			if aerr != nil {
+				fmt.Printf("[ENGINE] active response: kill_process disabled (the audit file could not be opened: %v)\n", aerr)
+			} else {
+				defer audit.Close()
+				hostName := ""
+				if hn, herr := os.Hostname(); herr == nil {
+					hostName = hn
+				}
+				respMgr = respond.NewManager(hostName, audit)
+				respOpsPath = resolveDataFile(o.respondOperators, "respond-operators.yaml")
+				if fileExists(respOpsPath) {
+					if err := respMgr.LoadOperators(respOpsPath); err != nil {
+						log.Fatalf("[ENGINE] %v", err)
+					}
+				} else {
+					fmt.Printf("[ENGINE] active response: WARNING -respond-operators %s not found: the allowlist is EMPTY and every action will be denied until the file lists operators\n", respOpsPath)
+				}
+				if o.respondProtected != "" {
+					respProtPath = resolveDataFile(o.respondProtected, "respond-protected.yaml")
+					if fileExists(respProtPath) {
+						if err := respMgr.LoadProtected(respProtPath); err != nil {
+							log.Fatalf("[ENGINE] %v", err)
+						}
+					}
+				}
+				hub.EnableRespondKill(respMgr)
+				if audit.Size() >= respond.MaxAuditBytes {
+					fmt.Println("[ENGINE] active response: WARNING the audit file is already at its 64 MiB ceiling: every action will deny with audit_unavailable until the file is rotated")
+				}
+				fmt.Printf("[ENGINE] active response: kill_process ENABLED (operators: %d, protected: %d, audit: %s, signal: SIGKILL fixed)\n",
+					respMgr.OperatorsCount(), respMgr.ProtectedCount(), auditPath)
+			}
+		}
+	} else {
+		fmt.Println("[ENGINE] active response: kill_process disabled (-allow-kill not set)")
 	}
 
 	// outbound connector: alerts POSTed as JSON to a SIEM/SOAR
@@ -628,6 +702,22 @@ func runEngine(o *options, interactive bool) error {
 					if thr != nil && fileExists(thrPath) {
 						if err := thr.Reload(thrPath); err == nil && !tui {
 							fmt.Printf("[ENGINE] thresholds reloaded (%d active)\n", thr.Count())
+						}
+					}
+					// active response lists (C3): a missing file on
+					// reload keeps the previous set (an edit in
+					// progress must not empty the allowlist);
+					// malformed entries stay loud and are ignored.
+					if respMgr != nil {
+						if fileExists(respOpsPath) {
+							if err := respMgr.LoadOperators(respOpsPath); err != nil {
+								log.Printf("[ENGINE] respond operators reload FAILED, keeping previous set: %v", err)
+							}
+						}
+						if respProtPath != "" && fileExists(respProtPath) {
+							if err := respMgr.LoadProtected(respProtPath); err != nil {
+								log.Printf("[ENGINE] respond protected reload FAILED, keeping previous set: %v", err)
+							}
 						}
 					}
 				}

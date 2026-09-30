@@ -27,6 +27,7 @@ import (
 	"github.com/Ruby570bocadito/security-framework/internal/correlate"
 	"github.com/Ruby570bocadito/security-framework/internal/lifecycle"
 	"github.com/Ruby570bocadito/security-framework/internal/notify"
+	"github.com/Ruby570bocadito/security-framework/internal/respond"
 	"github.com/Ruby570bocadito/security-framework/internal/risk"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
 	"github.com/Ruby570bocadito/security-framework/internal/store"
@@ -78,6 +79,11 @@ type Hub struct {
 	supWriteMu   sync.Mutex
 	writeEnabled bool
 	suppressPath string
+
+	// active response (C3, armed only with -allow-kill + token + an
+	// open audit file; see respond_write.go). nil = the route answers
+	// a real 404: the surface does not exist for probing clients.
+	respond *respond.Manager
 }
 
 // New binds the API listener. Use addr ":0" in tests to pick a free port.
@@ -110,6 +116,11 @@ func New(addr string) (*Hub, error) {
 	mux.HandleFunc("GET /api/rules", h.handleRules)
 	mux.HandleFunc("GET /api/suppressions", h.handleSuppressions)
 	h.registerSuppressionsWrite(mux)
+	// active response (C3): registered unconditionally, answers a
+	// real 404 while the engine runs without -allow-kill + token +
+	// open audit (respond_write.go documents why a probe must not
+	// distinguish "disarmed" from "does not exist")
+	mux.HandleFunc("POST /api/respond/kill", h.handleRespondKill)
 	mux.HandleFunc("GET /api/sequences", h.handleSequences)
 	mux.HandleFunc("GET /api/stream", h.handleStream)
 	mux.HandleFunc("GET /api/health", h.handleHealth)

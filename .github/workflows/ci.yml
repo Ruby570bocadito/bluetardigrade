@@ -51,6 +51,15 @@ jobs:
       - name: test
         # -count=1: no test cache, same standard as the local rounds
         run: go test -count=1 ./...
+      # Windows cross-check del motor (C3, requisito vinculante R1 del
+      # dictamen 04-B 16h11): internal/respond tiene un carril windows
+      # (process_windows.go, OpenProcess/QueryFullProcessImageNameW/
+      # TerminateProcess) que sin este paso no compilaría certificado
+      # en ningún sitio — el sensor Rust ya tiene el suyo abajo.
+      - name: Go engine Windows cross-check (respond kill_process, C3 R1)
+        run: |
+          GOOS=windows go build ./...
+          GOOS=windows go vet ./internal/respond/ ./internal/api/ ./cmd/engine/
       - name: OpenAPI spec drift guard
         run: |
           python3 -m pip install --quiet pyyaml
