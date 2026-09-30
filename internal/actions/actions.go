@@ -34,6 +34,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -216,7 +218,10 @@ func (d *Dispatcher) deliver(rawURL, secret string, timeout time.Duration, paylo
 	defer cancel()
 	resp, err := d.client.Do(req.WithContext(ctx))
 	if err != nil {
-		d.log.Printf("webhook %s: entrega fallida: %v", name, err)
+		// Redact the transport wrapper: *url.Error echoes the full
+		// request URL, and a rule-action URL can embed a credential in
+		// its path or query. Only the cause reaches the log.
+		d.log.Printf("webhook %s: entrega fallida: %v", name, redactedURLErr(err))
 		return
 	}
 	defer resp.Body.Close()
@@ -236,4 +241,17 @@ func (d *Dispatcher) warnUnsupported(actionType string) {
 		d.once[key] = true
 		d.log.Printf("accion de tipo %q no soportada por el motor: ignorada", actionType)
 	}
+}
+
+// redactedURLErr strips the transport wrapper from HTTP errors so the
+// request URL never reaches the log: *url.Error echoes the URL
+// verbatim and a rule-action URL can embed a credential in its path
+// or query. The underlying cause (deadline, refused, no such host)
+// is kept — it names the failure without naming the endpoint.
+func redactedURLErr(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) && ue.Err != nil {
+		return fmt.Errorf("destino: %w", ue.Err)
+	}
+	return err
 }

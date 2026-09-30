@@ -1,10 +1,13 @@
 package webhook
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -264,4 +267,54 @@ func TestOmitsAuthHeaderWithoutToken(t *testing.T) {
 	if got, _ := auth.Load().(string); got != "" {
 		t.Fatalf("Authorization = %q, want empty", got)
 	}
+}
+
+// Regression (04-B): the failure log used to print the raw endpoint
+// URL AND the raw transport error — and *url.Error echoes the full
+// request URL ("Post \"...?token=SECRET\": ..."). A collector URL
+// embedding a credential (SIEM ingest key, shared-secret path) used
+// to land verbatim in the engine log on every final delivery failure.
+func TestWebhookLogRedactsCredentialURL(t *testing.T) {
+	var logBuf syncBuffer
+	old := log.Writer()
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(old)
+
+	// closed port: transport error, retryable, exhausts the budget
+	c := New("http://127.0.0.1:1/ingest?key=SUPERSECRETKEY")
+	c.backoff = time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	go c.Run(ctx)
+	c.Handle(testAlert())
+	waitFor(t, func() bool { _, f, _ := c.Stats(); return f == 1 })
+	cancel()
+	c.Wait()
+
+	out := logBuf.String()
+	if strings.Contains(out, "SUPERSECRETKEY") {
+		t.Fatalf("failure log leaks the credential-bearing URL: %q", out)
+	}
+	if !strings.Contains(out, "http://127.0.0.1:1") {
+		t.Fatalf("failure log lost the endpoint label: %q", out)
+	}
+	if !strings.Contains(out, "connection refused") {
+		t.Fatalf("failure log lost the underlying cause: %q", out)
+	}
+}
+
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }

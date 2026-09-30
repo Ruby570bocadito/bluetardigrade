@@ -438,9 +438,9 @@ func runEngine(o *options, interactive bool) error {
 			hub.SetWebhookStats(wh.Stats)
 		}
 		if wh.TokenConfigured() {
-			fmt.Printf("[ENGINE] webhook on %s (alerts POSTed as JSON, Authorization: Bearer enabled)\n", o.webhookURL)
+			fmt.Printf("[ENGINE] webhook on %s (alerts POSTed as JSON, Authorization: Bearer enabled)\n", webhook.EndpointLabel(o.webhookURL))
 		} else {
-			fmt.Printf("[ENGINE] webhook on %s (alerts POSTed as JSON, no auth header - set -webhook-token or SF_WEBHOOK_TOKEN)\n", o.webhookURL)
+			fmt.Printf("[ENGINE] webhook on %s (alerts POSTed as JSON, no auth header - set -webhook-token or SF_WEBHOOK_TOKEN)\n", webhook.EndpointLabel(o.webhookURL))
 		}
 	}
 

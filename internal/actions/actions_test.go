@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"log"
@@ -252,5 +253,28 @@ func TestRaisePipelineEndToEnd(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("el webhook no recibio la alerta del pipeline Raise")
+	}
+}
+
+// Regression (04-B): the delivery-failure log used to print the raw
+// *url.Error, which echoes the full request URL — a rule-action URL
+// can embed a credential in its path or query. Only the cause may
+// reach the dispatcher log.
+func TestDeliverLogRedactsCredentialURL(t *testing.T) {
+	var logBuf bytes.Buffer
+	d := New(log.New(&logBuf, "", 0))
+
+	// closed port: transport error carrying the credentialed URL
+	d.deliver("http://127.0.0.1:1/hook?token=ACTIONSECRET", "", time.Second, []byte(`{}`), "soc-relay")
+
+	out := logBuf.String()
+	if !strings.Contains(out, "entrega fallida") {
+		t.Fatalf("expected the failure log line, got: %q", out)
+	}
+	if strings.Contains(out, "ACTIONSECRET") {
+		t.Fatalf("dispatcher log leaks the credential-bearing URL: %q", out)
+	}
+	if !strings.Contains(out, "connection refused") {
+		t.Fatalf("dispatcher log lost the underlying cause: %q", out)
 	}
 }

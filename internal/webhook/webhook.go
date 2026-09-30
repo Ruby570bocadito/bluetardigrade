@@ -15,9 +15,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -115,6 +117,31 @@ func (c *Client) Stats() (sent, failed, dropped uint64) {
 // Endpoint returns the target URL (diagnostics and logs).
 func (c *Client) Endpoint() string { return c.url }
 
+// EndpointLabel reduces an outbound endpoint URL to scheme://host for
+// logs and banners. The path, query and userinfo of a collector URL
+// can embed credentials (SIEM ingest keys, shared-secret paths); the
+// operator knows their own endpoint, the log shipper downstream does
+// not need its details. Unparseable input degrades to a placeholder
+// instead of echoing the raw string.
+func EndpointLabel(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "<endpoint>"
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+// redactedErr strips the transport wrapper from HTTP errors so the
+// request URL (which may embed the credential) never reaches the log;
+// only the underlying cause is kept (deadline, refused, no such host).
+func redactedErr(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) && ue.Err != nil {
+		return fmt.Errorf("receiver endpoint: %w", ue.Err)
+	}
+	return err
+}
+
 // deliver POSTs one alert with up to maxAttempts tries. Retries apply
 // to transport errors, 429 and 5xx; other 4xx answers are permanent:
 // retrying a misconfigured endpoint only delays the queue.
@@ -143,7 +170,7 @@ func (c *Client) deliver(ctx context.Context, a alert.Alert) {
 		}
 	}
 	c.failed.Add(1)
-	log.Printf("[WEBHOOK] delivery to %s failed after %d attempts: %v", c.url, maxAttempts, lastErr)
+	log.Printf("[WEBHOOK] delivery to %s failed after %d attempts: %v", EndpointLabel(c.url), maxAttempts, redactedErr(lastErr))
 }
 
 // post performs one attempt. retryable reports whether a retry could

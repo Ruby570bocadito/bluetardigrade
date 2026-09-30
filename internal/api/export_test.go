@@ -170,3 +170,42 @@ func TestWebhookStatsInStatsPayload(t *testing.T) {
 		t.Fatalf("webhook stats wrong: %+v", stats)
 	}
 }
+
+// Regression (04-B, simétrico del test de alertas): el CSV de eventos
+// declaraba neutralización de formula-injection pero escribía
+// process_name y file_path sin csvSafe — un feed con proceso o fichero
+// controlado por un atacante (=cmd / @SUM(...)) abría hoja de cálculo
+// ejecutando la celda, rompiendo el invariante que el CSV de alertas
+// sí cumple y testea.
+func TestEventsExportCSVNeutralizesFormulaPrefixes(t *testing.T) {
+	h, addr := newTestHub(t)
+	ev := sampleEvent("ev-formula")
+	ev.Process = &model.Process{Name: "=cmd|'/c calc'!A0", PID: 42, CommandLine: "calc.exe"}
+	ev.File = &model.File{Path: "@SUM(1+1)*cmd|' /C calc'!A0"}
+	h.RecordEvent(ev)
+
+	_, body := fetchBody(t, fmt.Sprintf("http://%s/api/events/export?format=csv", addr))
+	cr := csv.NewReader(strings.NewReader(body))
+	rows, err := cr.ReadAll()
+	if err != nil {
+		t.Fatalf("csv parse: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected header + 1 row, got %d", len(rows))
+	}
+	get := func(col string) string {
+		for i, name := range rows[0] {
+			if name == col {
+				return rows[1][i]
+			}
+		}
+		t.Fatalf("column %q missing", col)
+		return ""
+	}
+	for _, col := range []string{"process_name", "file_path"} {
+		cell := get(col)
+		if !strings.HasPrefix(cell, "'") || !strings.ContainsAny(cell[1:2], "=+-@\t\r") {
+			t.Fatalf("events CSV %q not neutralized against formula injection: %q", col, cell)
+		}
+	}
+}
