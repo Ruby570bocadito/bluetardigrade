@@ -23,7 +23,7 @@ const instrumentSerif = Instrument_Serif({
 export const metadata: Metadata = {
   title: "security-framework — Real-time threat detection for Windows endpoints",
   description:
-    "A behavioral detection framework: Rust ETW sensor, Go behavioral engine, YAML rules mapped to MITRE ATT&CK, and a live operator console with AI triage. Measured p99 ingest→alert ≈ 0.4 ms.",
+    "A behavioral detection framework: Rust ETW sensor, Go behavioral engine, YAML rules mapped to MITRE ATT&CK, native Elasticsearch / Splunk SIEM sinks, opt-in audited active response, and a live operator console with AI triage. Measured p99 ingest→alert ≈ 0.4 ms.",
   keywords: [
     "threat detection",
     "EDR",
@@ -31,6 +31,9 @@ export const metadata: Metadata = {
     "Sysmon",
     "MITRE ATT&CK",
     "Sigma",
+    "SIEM",
+    "Elasticsearch",
+    "Splunk",
     "Windows security",
     "Go",
     "Rust",

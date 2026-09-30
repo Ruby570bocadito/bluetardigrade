@@ -84,23 +84,23 @@ export const PIPELINE = [
     stack: "Go · single binary",
     icon: "engine",
     desc: "Ingest → enrich → rules → correlate → alert → respond. Four behavioral detection packages, YAML rules hot-reloaded every 15 s, per-host risk scoring with time decay.",
-    tags: ["Rules", "Kill-chain", "Beaconing", "Risk"],
+    tags: ["Rules", "Kill-chain", "Beaconing", "Thresholds", "Risk"],
   },
   {
     num: "03",
     name: "Console",
     stack: "Next.js + socket.io",
     icon: "monitor",
-    desc: "Live triage with KPIs, severity filters, rule browser, kill-chain chains view, a read-only active-response view with its forensic audit trail and a bring-your-own AI analyst — any OpenAI-compatible endpoint.",
-    tags: ["Live feed", "AI triage"],
+    desc: "Live triage with KPIs, severity filters, rule browser, kill-chain chains view, operator suppressions, a read-only active-response view with its forensic audit trail and a bring-your-own AI analyst — any OpenAI-compatible endpoint.",
+    tags: ["Live feed", "Response audit", "AI triage"],
   },
   {
     num: "04",
     name: "Outputs",
-    stack: "REST · SSE · Webhooks",
+    stack: "REST · SSE · SIEM · Webhooks",
     icon: "output",
-    desc: "REST + SSE on :7778, opt-in SQLite persistence with retention pruner, alert webhooks with Bearer auth, Slack / Telegram / email and Prometheus metrics.",
-    tags: ["OpenAPI 3.0", "SQLite", "Prometheus"],
+    desc: "REST + SSE on :7778, opt-in SQLite persistence with retention pruner, alert webhooks with Bearer auth, native Elasticsearch / Splunk SIEM sinks, Slack / Telegram / email notifications and Prometheus metrics.",
+    tags: ["OpenAPI 3.0", "Elastic / Splunk", "Prometheus"],
   },
 ];
 
@@ -136,9 +136,19 @@ export const FEATURES = [
     desc: "C2 call-home detector over connection timing (coefficient of variation), conservative profiles, cooldown and bounded state.",
   },
   {
+    icon: "layers",
+    title: "Volumetric thresholds",
+    desc: "The fourth detection layer (A2): alert when N matching events pile up in one window, optionally grouped by a field — hot-reloaded, bounded state.",
+  },
+  {
     icon: "shield",
     title: "Response built in",
     desc: "Opt-in active response (kill_process) with five permission layers and an append-only audit written before every signal, triage lifecycle (ack / close / reopen with notes), operator suppressions with expiry, alert webhook with bounded retries.",
+  },
+  {
+    icon: "server",
+    title: "SIEM delivery",
+    desc: "Native Elasticsearch (Bulk API, idempotent retries) and Splunk HEC sinks with bounded queues and per-platform counters — plus Slack / Telegram / email notifications.",
   },
   {
     icon: "database",
@@ -216,8 +226,8 @@ export const ROADMAP = [
     phase: "Phase 3",
     window: "weeks 15–20",
     title: "Ecosystem hooks",
-    desc: "REST + OpenAPI spec already shipped (drift-guarded in CI). Elastic / Splunk connectors next.",
-    done: false,
+    desc: "Shipped ahead of window: OpenAPI-first REST, alert webhook, Slack / Telegram / email notifications and native Elasticsearch / Splunk SIEM sinks.",
+    done: true,
   },
   {
     phase: "Phase 4",
@@ -246,6 +256,10 @@ export const FAQS = [
     a: "Only what the engine really delivers: live event feed, KPI dashboard, severity triage with free-text search, rule browser, kill-chain chains view, suppressions, a read-only active-response view with its forensic audit trail — plus an AI analyst you plug into your own OpenAI-compatible endpoint.",
   },
   {
+    q: "Can the engine kill processes on its own?",
+    a: "No. There is no automation path — rules, sequences and the correlator cannot reach the response surface. A named human operator calls one verified local kill through the API, behind an operator allowlist, protected-process names, per-host budgets and an append-only audit written before the signal. The console shows the audit read-only; it has no kill trigger.",
+  },
+  {
     q: "How fast is the pipeline?",
     a: "Measured, not assumed: ingest→alert p99 ≈ 0.4 ms on loopback with rules, correlation, beaconing and risk tracking active. The numbers and methodology are published in the README.",
   },
@@ -263,5 +277,7 @@ export const TECH_STRIP = [
   "Sigma",
   "Next.js",
   "SQLite",
+  "Elasticsearch",
+  "Splunk",
   "Prometheus",
 ];

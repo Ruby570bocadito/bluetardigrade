@@ -11,6 +11,9 @@ import {
   Link2,
   Gauge,
   Radar,
+  Layers,
+  Zap,
+  Server,
   ShieldCheck,
   Database,
   Check,
@@ -46,7 +49,7 @@ function Hero() {
         <Reveal>
           <span className="mb-8 inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-4 py-1.5 text-xs text-muted-foreground">
             <span className="h-2 w-2 animate-pulse rounded-full bg-sentira" />
-            v0.1 — tracer bullet + console preview
+            four behavioral detectors · opt-in active response · native SIEM sinks
           </span>
         </Reveal>
         <Reveal delay={120}>
@@ -254,7 +257,10 @@ const FEATURE_ICONS = {
   link: Link2,
   gauge: Gauge,
   radar: Radar,
+  layers: Layers,
+  zap: Zap,
   shield: ShieldCheck,
+  server: Server,
   database: Database,
 } as const;
 
@@ -307,11 +313,12 @@ function ConsoleSection() {
               Live event feed, KPI dashboard, severity triage with free-text
               search, rule browser, kill-chain chains view and operator
               suppressions — every pixel fed by the real pipeline, never
-              invented. Bring your own OpenAI-compatible endpoint and an AI
-              analyst joins the triage.
+              invented. The active-response audit is readable in the console,
+              read-only by design. Bring your own OpenAI-compatible endpoint
+              and an AI analyst joins the triage.
             </p>
             <div className="mt-7 flex flex-wrap gap-2">
-              {["Live feed", "KPIs", "Triage", "Rule browser", "Kill-chain", "AI analyst"].map(
+              {["Live feed", "KPIs", "Triage", "Rule browser", "Kill-chain", "Response audit", "AI analyst"].map(
                 (t) => (
                   <span
                     key={t}

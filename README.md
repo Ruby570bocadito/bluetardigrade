@@ -988,7 +988,7 @@ bin/bench -addr 127.0.0.1:7777 -api 127.0.0.1:7778 -api-token <token> -n 2000
 |-------|-----------------|-------------------------------------------------------|
 | 1     | weeks 1–6 2026  | tracer bullet, ETW sensor, rule index, p99 < 10 ms    |
 | 2     | weeks 7–14 2026 | YARA memory scan, eBPF collector; SQLite persistence already shipped (`-store`, Sept 2026) |
-| 3     | weeks 15–20     | REST+OpenAPI spec already shipped (drift-guarded in CI); Elastic/Splunk connectors |
+| 3     | weeks 15–20     | ecosystem hooks shipped ahead of window: REST+OpenAPI spec (drift-guarded in CI), alert webhook, Slack/Telegram/email notifications, native Elastic/Splunk SIEM sinks |
 | 4     | weeks 21–26     | Python filaments (sandboxed), plugins, benchmarks     |
 
 ## Contributing
