@@ -102,6 +102,16 @@ run_pass() {
     # fabricate a negative overhead delta. Same anti re-bind pattern
     # e2e_beacon/e2e_risk_a1 run via their log check; here liveness
     # of the known PID is the stronger, log-free equivalent.
+    #
+    # Live-fire mapped semantics (agent-04 round over 1491f88): a
+    # foreign stack on BOTH ports makes OUR engine exit 0 cleanly
+    # during the health wait ("another engine instance is already
+    # running", the ingest.New branch of run.go) — the foreign answers
+    # health and THIS check fires. A foreign stack on the API port
+    # ONLY leaves our engine alive but API-less ("api disabled",
+    # hub=nil): liveness passes and the warmup SSE delivery failure
+    # turns the run red instead. Defense in depth: no path measures a
+    # foreign engine.
     if ! kill -0 "$ENGINE_PID" 2>/dev/null; then
         echo "[bench-nightly] FAIL [$label]: /api/health answered but THIS pass's engine process is gone (bind conflict with a leftover engine?) — refusing to measure a foreign engine. Last log lines:" >&2
         tail -20 "$TMP/engine-$label.log" >&2
@@ -148,6 +158,39 @@ to_us() {
     esac
 }
 
+# Runner-class probe (agent-04 round over 1491f88, serving acta 13h05):
+# the SAME two-pass bench measured sqlite p99 ~0.9 ms on fsync-fast
+# containers and 15.8 ms on a stalls-class one — the persistence tail
+# is dominated by the medium, not the build, so the nightly records
+# WHICH class of medium produced its numbers (dato, no veredicto,
+# extended to the environment row). Probed on the same $TMP filesystem
+# the sqlite pass wrote to, AFTER both passes: it can neither perturb
+# the measurement nor be confounded with it. Failure degrades to n/a —
+# an advisory row must never be able to redden the run. The 5 ms
+# boundary sits an order of magnitude above the fast-fsync tail
+# (~0.9 ms) and far below the observed stalls class (15.8 ms).
+fsync_class() {
+    FSYNC_ROW="n/a (probe failed)"
+    local samples med class
+    samples="$(
+        for _ in 1 2 3 4 5; do
+            t0="$(date +%s%N)"
+            dd if=/dev/zero of="$TMP/fsync-probe.bin" bs=4096 count=1 \
+                conv=fsync oflag=dsync status=none || break
+            t1="$(date +%s%N)"
+            echo $((t1 - t0))
+        done | sort -n | sed -n '3p'
+    )" || true
+    [ -n "$samples" ] || return 0
+    med="$(awk "BEGIN{printf \"%.2f\", $samples/1000000}")"
+    if [ "$(awk "BEGIN{print ($samples < 5000000) ? 1 : 0}")" = "1" ]; then
+        class="fast-fsync"
+    else
+        class="sync-stalls"
+    fi
+    FSYNC_ROW="$med ms (median of 5, $class)"
+}
+
 run_pass rings
 RINGS_P99_RAW="$R_P99_RAW"; RINGS_SAMPLES="$R_SAMPLES"; RINGS_RESULT="$R_RESULT"
 RINGS_P99_US="$R_P99_US";   RINGS_RC="$R_RC"
@@ -155,6 +198,10 @@ RINGS_P99_US="$R_P99_US";   RINGS_RC="$R_RC"
 run_pass sqlite -store "$TMP/bench-store.db"
 SQL_P99_RAW="$R_P99_RAW"; SQL_SAMPLES="$R_SAMPLES"; SQL_RESULT="$R_RESULT"
 SQL_P99_US="$R_P99_US";   SQL_RC="$R_RC"
+
+echo "[bench-nightly] probing runner class (fsync 4k dsync on the sqlite pass medium)..."
+FSYNC_ROW="n/a"
+fsync_class
 
 # Delta sqlite - rings, in µs and %, informational only. With either
 # p99 unparseable there is no delta to report (the no-samples gate
@@ -195,6 +242,8 @@ SUMMARY="$TMP/summary.md"
     echo "|---|---|"
     echo "| local baseline | p99 319-434 µs (rings, same parameters, loopback) |"
     echo "| README contract | p99 < 10 ms (each pass, independently) |"
+    echo "| runner | ${RUNNER_NAME:-$(uname -n)} ($(uname -sr)) |"
+    echo "| fsync 4k dsync (sqlite pass medium) | $FSYNC_ROW |"
 } > "$SUMMARY"
 
 echo
