@@ -41,7 +41,7 @@ const ctx = await browser.newContext({
 })
 const page = await ctx.newPage()
 
-await page.goto('http://localhost:3000', { waitUntil: 'networkidle' })
+await page.goto('http://localhost:3000', { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(5000) // let the socket fill KPIs and charts
 
 const navOn = (pg) => (name) =>
@@ -84,7 +84,7 @@ console.log('shot: console-alertas.png')
 // with no scroll choreography.
 const tallPage = await ctx.newPage()
 await tallPage.setViewportSize({ width: 1280, height: 1240 })
-await tallPage.goto('http://localhost:3000', { waitUntil: 'networkidle' })
+await tallPage.goto('http://localhost:3000', { waitUntil: 'domcontentloaded' })
 await tallPage.waitForTimeout(4000)
 await navOn(tallPage)('Alertas').click()
 await tallPage.waitForTimeout(1200)

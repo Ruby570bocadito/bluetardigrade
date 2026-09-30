@@ -397,7 +397,10 @@ story += h2_block("1.3 Del diseño a la implementación", para(
     "el operador y exportación JSONL de la cola visible —, aterrizada por la ola de consola 4967cad. "
     "El roadmap interno registra 13 de 17 líneas cerradas según las actas del Director (17h45) y del rol de "
     "seguridad (17h58) — la catorceava, la consola de respuesta activa, figura como propuesta del acta "
-    "18h20 a la espera de certificación del Director —, y los cuatro paquetes de detección (A1 a A4) tienen "
+    "18h20 a la espera de certificación del Director —; la consolidación canónica más reciente (acta del "
+    "Director 22h46) marca 20 de 20 defectos cerrados sin ninguno vivo y 7 de 17 líneas de roadmap "
+    "certificadas, con A3 aterrizado y verificado (acta 22h39), y los conteos más amplios de los carriles "
+    "quedan como propuestas pendientes de esa consolidación —, y los cuatro paquetes de detección (A1 a A4) tienen "
     "el ciclo de vida completo."))
 story.append(para(
     "Esta revisión mantiene la estructura de capítulos de la v0.1 para que la lectura comparativa sea directa, "
@@ -563,16 +566,18 @@ story.append(para(
     "hallazgo). El proyecto añadió además website/, la landing oficial en Next.js 16, separada de la consola "
     "y sin acceso a telemetría; la batería TypeScript de la casa cubre hoy los tres paquetes TS del árbol en "
     "el alcance que cada uno define. La Figura 2 muestra el dashboard con telemetría real del sensor de "
-    "desarrollo y el panel de hosts calientes completo, regenerada desde el stack real (sensor, hub y "
-    "consola de producción); su navegación procede del árbol 091986c y por tanto precede a la ola de "
-    "consola de C3 — la limitación viaja declarada en el propio pie de figura."))
+    "desarrollo y el panel de hosts calientes completo, regenerada desde el stack real (motor armado con la "
+    "superficie de respuesta, hub y consola de producción) sobre el árbol vigente de esta revisión; la "
+    "navegación capturada incluye ya la vista de respuesta activa con su capa de operabilidad forense, por "
+    "lo que la limitación de navegación que esta misma revisión heredó de la v0.6 queda resuelta — la "
+    "recaptura se ejecutó dentro de la propia ronda (acta 20h05_B) con el stack real de laboratorio."))
 
 story += figure("docs/assets/console-panel.png",
                 "Figura 2. Dashboard de operaciones de la consola: KPIs, actividad del sensor, cola de "
                 "triaje en vivo y panel de hosts calientes completo. Captura regenerada sobre el árbol "
-                "091986c: la navegación capturada precede a la ola de consola de C3 (cb33da6), de modo que "
-                "la vista de respuesta activa no figura aún en el menú — declarado como O2 en el acta "
-                "18h50_B; la recaptura sobre el árbol vigente queda pendiente.", 300)
+                "vigente (bc53788) con el stack real: la navegación incluye la vista de respuesta activa "
+                "de la ola C3 de consola y la operabilidad forense posterior — la limitación declarada "
+                "hasta la v0.6 queda resuelta en esta revisión (recaptura del acta 20h05_B).", 300)
 
 story += h2_block("3.4 Extensiones (filaments, fase futura)", para(
     "Los filaments heredan la idea de Fibratus de extensiones en Python, con dos mejoras de diseño: ejecución "
@@ -972,8 +977,13 @@ story += h1_block(7, "Roadmap de Desarrollo",
     "7 añade a la planificación original la columna que la v0.1 no podía escribir: el estado real verificado "
     "de cada fase a fecha de esta revisión. Los contadores citan su procedencia — el marcador de defectos y "
     "las líneas de roadmap cerradas se consolidan en las actas del Director y del rol de seguridad, no en "
-    "este documento — y hoy marcan 13 de 17 líneas cerradas y 33 defectos cerrados sin ninguno vivo en el "
-    "marcador canónico. La condición de cierre de la respuesta activa es ya permanente en CI sobre motor "
+    "este documento —. El marcador canónico más reciente (acta del Director 22h46) consolida 20 de 20 "
+    "defectos cerrados sin ninguno vivo — los tres últimos entraron y salieron en la misma jornada, cada "
+    "uno con su regresión — y el roadmap certifica 7 de 17 líneas, con A3 aterrizado y verificado en el "
+    "acta 22h39; los carriles de implementaciones citan a su vez conteos más amplios en numeración propia "
+    "(33 defectos cerrados, 14 de 17 líneas propuestas), pendientes de esa consolidación — este documento "
+    "conserva la distinción de las actas entre certificado y propuesto y no recalcula ningún marcador. La "
+    "condición de cierre de la respuesta activa es ya permanente en CI sobre motor "
     "Windows nativo; la catorceava línea del roadmap, la consola de respuesta activa, sigue figurando como "
     "propuesta del acta de implementaciones 18h20 a la espera de la certificación del Director; y los "
     "hallazgos posteriores avanzan con su estado declarado — F1 cerrada: su parche de keys compuestas "

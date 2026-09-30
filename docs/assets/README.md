@@ -11,8 +11,10 @@ remains regenerable.
 | `diagram_tracer.png`        | output  | tracer-bullet pipeline: devsensor -> engine -> alert |
 | `console-panel.png`         | output  | console operations dashboard (root README, Web console section) |
 | `console-alertas.png`       | output  | console alert triage queue (root README) |
+| `console-alertas-triaje.png`| output  | console alert detail with a real triage decision recorded (root README) |
 | `console-reglas.png`        | output  | console rules view (root README) |
 | `console-cadenas.png`       | output  | console kill-chain chains view (root README) |
+| `console-supresiones.png`   | output  | console operator suppressions view (root README) |
 | `console-busqueda.gif`      | output  | search interaction: typing `lsass` filters the alert queue live (root README) |
 | `console-respuesta-activa.png` | output | active response view over a live armed engine: real audit queue with the executed/denied/followup classes (F1 pair on top, one `action_id` shared), arm and audit-health cards (added by 02-B, see `src/capture_respond.mjs`) |
 | `console-respuesta-filtro.png` | output | active response view with the followups class filter active: 1 real followup record, honest `de 12 en la ventana` count (added by 02-B) |
@@ -46,7 +48,10 @@ remains regenerable.
    (a production build renders cleaner screenshots than dev mode: no
    dev-tools button).
 2. Run `node src/capture_console.mjs` (prerequisites in the script
-   header). It writes the five PNGs into this directory.
+   header). It writes the six classic PNGs into this directory. The
+   active-response shots come from their own harness:
+   `node src/capture_respond.mjs` (added by 02-B; see its header for
+   prerequisites and the lab recipe it expects).
 3. Assemble `console-busqueda.gif` from the per-frame PNGs the script
    leaves in the temp dir: `python3 src/assemble_gif.py <frames-dir>`
    (resizes to ~1100px wide, adaptive palette, ~450ms per frame with a
