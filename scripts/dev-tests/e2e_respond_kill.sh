@@ -24,6 +24,7 @@
 #   bash scripts/dev-tests/e2e_respond_kill.sh
 #   SF_E2E_INGEST_PORT=18117 SF_E2E_API_PORT=18118 bash scripts/dev-tests/e2e_respond_kill.sh
 #   SF_E2E_ENGINE=./bin/engine bash ...
+#   SF_E2E_REBUILD=1 bash ...   # fuerza recompilación de bin/engine aunque exista
 #
 # Requiere: go (para compilar si no hay SF_E2E_ENGINE), curl, python3.
 # Puertos por defecto 18117/18118: fuera del rango de los demás e2e.
@@ -60,8 +61,28 @@ cleanup() {
 trap cleanup EXIT
 
 # ---- build ----------------------------------------------------------
+# binario: reusar bin/engine si existe (comodidad de desarrollo), con dos
+# vías de escape: SF_E2E_ENGINE (binario externo, se usa verbatim y gana
+# a todo lo demás) y SF_E2E_REBUILD=1 (forzar recompilación).
+#
+# El reuse sin rebuild es exactamente la clase O-E1 (acta 19h15_A §8):
+# un binario stale —p. ej. compilado antes de que aterricen rutas o
+# campos nuevos en el engine— produce falsos rojos con síntomas
+# engañosos a mitad de ronda (incidente real: un engine pre-rutas
+# cb33da6 generó 6 fallos ficticios en la fase j: state/audit 404 con
+# token; el árbol prístino fallaba lo idéntico y el binario fresco
+# respondía 200/401 correctos). REBUILD=1 elimina el binario del repo y
+# recompila; sin él, se reusa tal cual — decide el operador, el script
+# ya no puede distinguir stale de fresco por sí solo.
 ENGINE="${SF_E2E_ENGINE:-$REPO/bin/engine}"
+if [ "${SF_E2E_REBUILD:-0}" = "1" ] && [ -z "${SF_E2E_ENGINE:-}" ]; then
+  rm -f "$REPO/bin/engine"
+fi
 if [ ! -x "$ENGINE" ]; then
+  command -v go >/dev/null || {
+    echo "FALLO preflight: go no está en PATH y no hay SF_E2E_ENGINE"
+    echo "(exporta el toolchain, pasa SF_E2E_ENGINE=/ruta/engine o compila bin/engine antes)"; exit 1
+  }
   echo "* compilando engine (no hay SF_E2E_ENGINE)..."
   (cd "$REPO" && go build -o bin/engine ./cmd/engine) || { echo "FALLO: go build"; exit 1; }
   ENGINE="$REPO/bin/engine"
