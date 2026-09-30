@@ -1,8 +1,8 @@
 # Continuous integration: every push and pull request re-verifies the
 # three build surfaces of the project with the same commands the agents
 # run locally (see docs/agentes rounds and Makefile):
-#   engine : gofmt + build + vet + test (Go 1.22)
-#   console: hub (bun test, tsc) and web console (tsc, next build)
+#   engine : gofmt + build + vet + test -race (Go 1.22)
+#   console: hub (bun test, tsc) and web console (bun test, tsc, next build)
 #   spec   : OpenAPI drift guard against internal/api/api.go
 # The Windows-first ETW sensor gets `cargo check --locked` on two
 # targets: the host and a Windows cross-check (x86_64-pc-windows-msvc,
@@ -49,8 +49,13 @@ jobs:
       - name: vet
         run: go vet ./...
       - name: test
-        # -count=1: no test cache, same standard as the local rounds
-        run: go test -count=1 ./...
+        # -count=1: no test cache, same standard as the local rounds.
+        # -race: the engine is concurrent by design (SSE, fsync-per-line
+        # audit, kill dispatcher, network sinks) and the house standard
+        # (GUIA-VERIFICACION) already demands the race detector locally on
+        # the concurrent packages — CI enforces it on every push now
+        # (defect-class G3 of docs/analisis-brechas-y-mejoras-04B.md).
+        run: go test -race -count=1 ./...
       # Windows cross-check del motor (C3, requisito vinculante R1 del
       # dictamen 04-B 16h11): internal/respond tiene un carril windows
       # (process_windows.go, OpenProcess/QueryFullProcessImageNameW/
@@ -111,10 +116,16 @@ jobs:
           bun install --frozen-lockfile
           bun test
           bunx tsc --noEmit
-      - name: web console install + typecheck + build
+      - name: web console install + tests + typecheck + build
         working-directory: web/console
         run: |
           bun install --frozen-lockfile
+          # The 19-test/58-expect client floor (proxy route + triage
+          # lifecycle validation) runs on every push now: a regression in
+          # the r6 client-side gate used to pass CI green because only the
+          # hub battery ran here (defect-class G1 of
+          # docs/analisis-brechas-y-mejoras-04B.md).
+          bun test
           bunx tsc --noEmit
           bun run build
 
