@@ -22,7 +22,7 @@ Sigma (A4), store SQLite opt-in, webhook, export JSONL/CSV, guard OpenAPI (12 ru
 en su revisión), bench nocturno a dos pasadas (anillos frente a store, sobrecarga registrada como
 dato) y la consola Next.js 16 con su hub Bun/socket.io. La correspondencia
 diseño-implementación se declara capítulo a capítulo y el roadmap lleva columna de estado
-real (9/17 líneas cerradas a su generación; C2 aterrizó después — el pase a 10/17 es de la próxima certificación del Director).
+real (11/17 líneas cerradas a su generación; la certificación del Director 17h45 suma C2 notificaciones y C3 respuesta activa iteración 1 — el pase a 12/17 de los sinks SIEM queda a la puerta del cierre de F2/O1 de su cross-review).
 
 **Nota de cobertura (honestidad por diseño, añadida tras detectar la sobreafirmación):** dos
 capacidades importantes aterrizaron DESPUÉS de la generación de la v0.3 y el documento no las
