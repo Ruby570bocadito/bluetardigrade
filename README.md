@@ -538,6 +538,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `SF_API_WRITE` | engine | set to `1` to arm the suppression write API (same as `-api-write`; the flag wins) |
 | `SF_ALLOW_KILL` | engine | set to `1` to arm active response (same as `-allow-kill`; the flag wins; the token + audit layers still apply) |
 | `SF_WEBHOOK_TOKEN` | engine | Bearer on outbound alert deliveries |
+| `NO_COLOR` | engine CLI + alert rendering | any non-empty value strips ANSI color from the CLI tables/banner and from rendered alert output; the standard `no-color.org` switch (a non-TTY stdout already strips it) |
 | `NEXT_PUBLIC_CONSOLE_URL` | web console | point the UI at a remote hub |
 | `NEXT_PUBLIC_ENGINE_API` | web console | direct engine API base for polling (default same-origin proxy `/api/engine`) |
 | `CONSOLE_ALLOWED_HOSTS` | web console | comma-separated hostnames the console proxy serves besides loopback (`localhost`/`127.0.0.1`/`::1` are always served); any other `Host` gets a `403` naming this var — the console posture mirrors the engine's: loopback friction-free, beyond loopback loud and explicit |
@@ -929,6 +930,10 @@ scripts/windows/  installed runtime scripts (sf-sensor, sf-console, ...)
 scripts/dev-tests/ end-to-end verification scripts (per-detector and lifecycle E2E,
                   OpenAPI drift check, two-pass nightly bench, webhook and SIEM
                   receivers, ingest-auth and SQLite store smokes, all with real binaries)
+scripts/arq_v04/  versioned pipeline that renders the architecture PDF (generator,
+                  cover/diagram renderers, merge+metadata, build.sh - every
+                  revision of docs/arquitectura-tecnica-v*.pdf is a reproducible
+                  command, not a hand edit)
 install.ps1       one-command Windows installer
 uninstall.ps1     standalone uninstaller
 Makefile          build automation (engine, sensor, console, docker)
