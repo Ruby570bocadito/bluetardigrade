@@ -67,7 +67,7 @@ export function RulesView() {
       />
 
       {rules.length === 0 ? (
-        <div className="rounded-lg border border-zinc-800">
+        <div className="panel">
           <EmptyState
             icon={ShieldCheck}
             title="Aún no hay reglas en el búfer"
@@ -75,7 +75,7 @@ export function RulesView() {
           />
         </div>
       ) : visible.length === 0 ? (
-        <div className="rounded-lg border border-zinc-800">
+        <div className="panel">
           <EmptyState
             icon={MagnifyingGlass}
             title="Sin resultados"
@@ -83,7 +83,7 @@ export function RulesView() {
           />
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-zinc-800">
+        <div className="panel overflow-hidden">
           <ul className="divide-y divide-zinc-800/80">
             {visible.map((r) => {
               const open = openId === r.id

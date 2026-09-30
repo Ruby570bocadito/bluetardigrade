@@ -23,15 +23,15 @@ import { AnalystPanel } from './analyst-panel'
 import { formatUptime, type EngineStats, type SfAlert } from '@/lib/console-types'
 import { useAnalystChannel } from './socket-provider'
 
-const NAV: { id: ConsoleView; label: string; icon: React.ElementType }[] = [
-  { id: 'panel', label: 'Panel', icon: SquaresFour },
-  { id: 'flujo', label: 'Flujo en vivo', icon: ActivityIcon },
-  { id: 'alertas', label: 'Alertas', icon: Warning },
-  { id: 'reglas', label: 'Reglas', icon: ShieldCheck },
-  { id: 'cadenas', label: 'Cadenas', icon: FlowArrow },
-  { id: 'supresiones', label: 'Supresiones', icon: Prohibit },
-  { id: 'respuesta', label: 'Respuesta activa', icon: Lightning },
-  { id: 'analista', label: 'Analista IA', icon: ChatsCircle },
+const NAV: { id: ConsoleView; label: string; group: string; icon: React.ElementType }[] = [
+  { id: 'panel', label: 'Panel', group: 'Operación', icon: SquaresFour },
+  { id: 'flujo', label: 'Flujo en vivo', group: 'Operación', icon: ActivityIcon },
+  { id: 'alertas', label: 'Alertas', group: 'Operación', icon: Warning },
+  { id: 'reglas', label: 'Reglas', group: 'Detección', icon: ShieldCheck },
+  { id: 'cadenas', label: 'Cadenas', group: 'Detección', icon: FlowArrow },
+  { id: 'supresiones', label: 'Supresiones', group: 'Detección', icon: Prohibit },
+  { id: 'respuesta', label: 'Respuesta activa', group: 'Respuesta', icon: Lightning },
+  { id: 'analista', label: 'Analista IA', group: 'Asistencia', icon: ChatsCircle },
 ]
 
 export function ConsoleShell() {
@@ -67,19 +67,24 @@ export function ConsoleShell() {
           con la misma contención y congelado bajo prefers-reduced-motion. */}
       <DotGridLayer />
       <div className="relative mx-auto flex min-h-[100dvh] w-full max-w-[1600px] flex-col lg:flex-row">
-        {/* Sidebar (desktop) */}
-        <aside className="sticky top-0 hidden h-[100dvh] w-60 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950 lg:flex">
+        {/* Sidebar (desktop): glass hairline sobre el fondo ambiental */}
+        <aside className="glass sticky top-0 hidden h-[100dvh] w-60 shrink-0 flex-col border-r border-white/[0.06] lg:flex">
           <BrandBlock />
-          <nav aria-label="Secciones de la consola" className="mt-4 flex-1 px-2">
+          <nav aria-label="Secciones de la consola" className="mt-4 flex-1 px-2.5">
             <ul className="space-y-0.5">
-              {NAV.map((item) => (
+              {NAV.map((item, idx) => (
                 <li key={item.id}>
+                  {(idx === 0 || NAV[idx - 1].group !== item.group) && (
+                    <p className="px-3 pb-1.5 pt-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
+                      {item.group}
+                    </p>
+                  )}
                   <button
                     type="button"
                     onClick={() => setView(item.id)}
                     aria-current={view === item.id ? 'page' : undefined}
-                    className={`relative flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                      view === item.id ? 'text-zinc-100' : 'text-zinc-400 hover:bg-white/[0.03] hover:text-zinc-200'
+                    className={`relative flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                      view === item.id ? 'text-zinc-50' : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
                     }`}
                   >
                     {/* píldora activa animada con layoutId: el resalte viaja
@@ -92,9 +97,12 @@ export function ConsoleShell() {
                     {view === item.id && (
                       <motion.span
                         layoutId="nav-pill"
-                        className="pointer-events-none absolute inset-0 rounded-md bg-zinc-800"
+                        className="pointer-events-none absolute inset-0 rounded-lg border border-emerald-400/20 bg-gradient-to-r from-emerald-500/[0.14] via-emerald-500/[0.06] to-transparent shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]"
                         transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 380, damping: 32 }}
                       />
+                    )}
+                    {view === item.id && (
+                      <span aria-hidden className="pointer-events-none absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-gradient-to-b from-emerald-300 to-emerald-500" />
                     )}
                     <item.icon
                       size={16}
@@ -104,7 +112,7 @@ export function ConsoleShell() {
                     />
                     <span className="relative">{item.label}</span>
                     {item.id === 'alertas' && alerts.length > 0 && (
-                      <span className="relative ml-auto rounded-md border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-zinc-400">
+                      <span className="chip relative ml-auto px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-zinc-300">
                         {alerts.length}
                       </span>
                     )}
@@ -123,9 +131,14 @@ export function ConsoleShell() {
             </ul>
           </nav>
           <div className="px-4 pb-4">
-            <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2.5">
-              <p className="flex items-center gap-2 text-xs text-zinc-300">
-                <span aria-hidden className={`h-2 w-2 rounded-full ${statusColor}`} />
+            <div className="panel px-3 py-2.5">
+              <p className="flex items-center gap-2 text-xs text-zinc-200">
+                <span className="relative flex h-2 w-2" aria-hidden>
+                  {status === 'live' ? (
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60 motion-reduce:hidden" />
+                  ) : null}
+                  <span aria-hidden className={`relative inline-flex h-2 w-2 rounded-full ${statusColor}`} />
+                </span>
                 {statusText}
               </p>
               <p className="mt-1 font-mono text-[11px] leading-relaxed text-zinc-500">
@@ -145,7 +158,7 @@ export function ConsoleShell() {
 
         {/* Main column */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950/95 px-4 lg:px-6">
+          <header className="glass sticky top-0 z-20 flex h-14 items-center justify-between gap-3 border-b border-white/[0.06] px-4 lg:px-6">
             <div className="flex min-w-0 items-baseline gap-3">
               <div className="lg:hidden">
                 <BrandRow />
@@ -161,7 +174,7 @@ export function ConsoleShell() {
                 </span>
               )}
             </div>
-            <div className="flex shrink-0 items-center gap-2 rounded-md border border-zinc-800 bg-zinc-900 px-2.5 py-1.5">
+            <div className="chip shrink-0 px-2.5 py-1.5">
               <span className="relative flex h-2 w-2" aria-hidden>
                 {status === 'live' ? (
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60 motion-reduce:hidden" />
@@ -195,7 +208,7 @@ export function ConsoleShell() {
           {/* Mobile nav: explicit collapse of the sidebar */}
           <nav
             aria-label="Secciones de la consola"
-            className="flex gap-1 overflow-x-auto border-b border-zinc-800 px-3 py-2 lg:hidden"
+            className="flex gap-1 overflow-x-auto border-b border-white/[0.06] px-3 py-2 lg:hidden"
           >
             {NAV.map((item) => (
               <button
@@ -203,11 +216,13 @@ export function ConsoleShell() {
                 type="button"
                 onClick={() => setView(item.id)}
                 aria-current={view === item.id ? 'page' : undefined}
-                className={`flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  view === item.id ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400'
+                className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  view === item.id
+                    ? 'border-emerald-400/20 bg-emerald-500/[0.12] text-zinc-100'
+                    : 'border-transparent text-zinc-400'
                 }`}
               >
-                <item.icon size={14} aria-hidden className={view === item.id ? 'text-emerald-500' : ''} />
+                <item.icon size={14} aria-hidden className={view === item.id ? 'text-emerald-400' : ''} />
                 {item.label}
               </button>
             ))}
@@ -228,7 +243,7 @@ export function ConsoleShell() {
             </AnimatedView>
           </main>
 
-          <footer className="border-t border-zinc-800 px-4 py-3 lg:px-6">
+          <footer className="border-t border-white/[0.06] px-4 py-3 lg:px-6">
             <p className="text-[11px] text-zinc-500">
               security-framework · consola SOC v0.1 · reglas YAML evaluadas en caliente · consulte docs/arquitectura para el
               diseño completo
@@ -285,7 +300,7 @@ function WebhookChip({ stats }: { stats: EngineStats | null }) {
           ? `Webhook: ${sent} alertas entregadas al conector externo`
           : `Webhook con problemas: ${failed} fallidas, ${dropped} descartadas, ${sent} entregadas`
       }
-      className={`hidden items-center gap-1.5 rounded-md border px-2.5 py-1.5 font-mono text-[11px] md:flex ${
+      className={`chip hidden px-2.5 py-1.5 font-mono text-[11px] md:flex ${
         healthy ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300' : 'border-red-400/40 bg-red-400/10 text-red-300'
       }`}
     >
@@ -323,8 +338,8 @@ function CorrelatorChip({ stats }: { stats: EngineStats | null }) {
           ? `Correlador al límite: ${states} cadenas en curso (cap ${cap}). Hosts NUEVOS dejan de ser correlacionados hasta que se liberen estados.`
           : `Correlador: ${states} cadenas en curso, ${seqs} secuencias cargadas (cap ${cap})`
       }
-      className={`hidden items-center gap-1.5 rounded-md border px-2.5 py-1.5 font-mono text-[11px] md:flex ${
-        exhausted ? 'border-red-400/40 bg-red-400/10 text-red-300' : 'border-white/[0.08] text-zinc-400'
+      className={`chip hidden px-2.5 py-1.5 font-mono text-[11px] md:flex ${
+        exhausted ? 'border-red-400/40 bg-red-400/10 text-red-300' : 'text-zinc-400'
       }`}
     >
       <span aria-hidden>{exhausted ? '✕' : '⛓'}</span>
@@ -359,8 +374,8 @@ function BeaconChip({ stats }: { stats: EngineStats | null }) {
           ? `Detector de beaconing al límite: ${tracked} destinos seguidos (cap ${cap}). Destinos NUEVOS dejan de rastrearse hasta que se liberen claves.`
           : `Beaconing: ${tracked} destinos seguidos de ${cap}, ${fired} disparos desde el arranque (regularidad CV por perfil, host y destino)`
       }
-      className={`hidden items-center gap-1.5 rounded-md border px-2.5 py-1.5 font-mono text-[11px] md:flex ${
-        exhausted ? 'border-red-400/40 bg-red-400/10 text-red-300' : 'border-white/[0.08] text-zinc-400'
+      className={`chip hidden px-2.5 py-1.5 font-mono text-[11px] md:flex ${
+        exhausted ? 'border-red-400/40 bg-red-400/10 text-red-300' : 'text-zinc-400'
       }`}
     >
       <Broadcast size={12} aria-hidden />
@@ -391,7 +406,7 @@ function ThresholdChip({ stats }: { stats: EngineStats | null }) {
   return (
     <div
       title={`Umbrales volumétricos: ${defs} definiciones cargadas, ${keys} claves de agregación vivas, ${fired} disparos desde el arranque`}
-      className="hidden items-center gap-1.5 rounded-md border border-white/[0.08] px-2.5 py-1.5 font-mono text-[11px] text-zinc-400 md:flex"
+      className="chip hidden px-2.5 py-1.5 font-mono text-[11px] text-zinc-400 md:flex"
     >
       <Gauge size={12} aria-hidden />
       <span>
@@ -406,18 +421,18 @@ function BrandBlock() {
   return (
     <div className="px-4 pt-5">
       <div className="flex items-center gap-2.5">
-        <span className="flex h-7 w-7 items-center justify-center rounded-md border border-emerald-400/40 bg-emerald-400/10 font-mono text-xs font-semibold text-emerald-300 shadow-[0_0_14px_rgba(52,211,153,0.18)]">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-400/30 bg-gradient-to-b from-emerald-400/20 to-emerald-500/[0.06] font-mono text-xs font-semibold text-emerald-300 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.10),0_0_18px_rgba(52,211,153,0.22)]">
           sf
         </span>
         <span className="leading-tight">
-          <span className="block text-sm font-medium text-zinc-100">security-framework</span>
+          <span className="block text-sm font-medium tracking-tight text-zinc-50">security-framework</span>
           {/* DecryptedText (React Bits): la etiqueta se descodifica una vez
               al montar; gesto temático y contenido, cero ruido después. */}
           <DecryptedText text="consola de detección" className="block text-[11px] text-zinc-500" />
         </span>
       </div>
       <div className="mt-3 flex items-center gap-2">
-        <span className="rounded border border-white/10 px-1.5 py-0.5 font-mono text-[10px] leading-none text-zinc-500">
+        <span className="chip px-1.5 py-0.5 font-mono text-[10px] leading-none text-zinc-500">
           v0.1 · tracer bullet
         </span>
       </div>

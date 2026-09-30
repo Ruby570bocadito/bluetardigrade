@@ -154,8 +154,8 @@ export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfA
     <section aria-label="Analista IA" className="grid gap-4 lg:grid-cols-[290px_minmax(0,1fr)]">
       <div className="min-w-0">
         <SectionHeader title="Cola de alertas" count={alerts.length} />
-        <div className="max-h-[56vh] overflow-y-auto rounded-lg border border-zinc-800">
-          <ul className="divide-y divide-zinc-800/80">
+        <div className="panel max-h-[56vh] overflow-y-auto">
+          <ul className="divide-y divide-white/[0.06]">
             {alerts.slice(0, 20).map((al) => (
               <li key={`${al.event_id}:${al.rule_id}`}>
                 <button

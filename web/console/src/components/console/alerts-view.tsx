@@ -208,11 +208,11 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
       {header}
 
       {status !== 'live' && alerts.length === 0 ? (
-        <div className="rounded-lg border border-zinc-800 px-4 py-6">
+        <div className="panel px-4 py-6">
           <SkeletonRows rows={6} />
         </div>
       ) : alerts.length === 0 ? (
-        <div className="rounded-lg border border-zinc-800">
+        <div className="panel">
           <EmptyState
             icon={Tray}
             title="Sin alertas todavía"
@@ -220,7 +220,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
           />
         </div>
       ) : visible.length === 0 ? (
-        <div className="rounded-lg border border-zinc-800">
+        <div className="panel">
           <EmptyState
             icon={MagnifyingGlass}
             title="Sin resultados"
@@ -242,7 +242,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
         </div>
       ) : (
         <div className={selected ? 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]' : ''}>
-          <div className="min-w-0 overflow-hidden rounded-lg border border-zinc-800">
+          <div className="panel min-w-0 overflow-hidden">
             <div className="max-h-[68vh] overflow-y-auto">
               <table className="w-full border-collapse text-left text-sm">
                 <caption className="sr-only">
@@ -334,7 +334,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
               aria-label="Detalle de la alerta seleccionada"
-              className="min-w-0 rounded-lg border border-zinc-800 bg-zinc-900"
+              className="panel min-w-0"
             >
               <AlertDetail alert={selected} onClose={() => setSelectedKey(null)} onAnalyze={onAnalyze} />
             </motion.aside>

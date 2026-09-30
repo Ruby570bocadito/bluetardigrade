@@ -95,7 +95,7 @@ export function LiveFeed() {
                 className="h-8 w-[200px] rounded-md border-zinc-800 bg-zinc-900 pl-7 font-mono text-xs text-zinc-200 placeholder:text-zinc-500"
               />
             </div>
-            <label className="flex items-center gap-2 rounded-md border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-xs text-zinc-400">
+            <label className="chip px-2.5 py-1.5 text-xs text-zinc-400">
               {paused ? <Play size={13} aria-hidden className="text-emerald-400" /> : <Pause size={13} aria-hidden />}
               <span className="hidden sm:inline">{paused ? 'Reanudar' : 'Pausar'}</span>
               <Switch checked={paused} onCheckedChange={togglePause} aria-label="Pausar flujo en vivo" />
@@ -118,7 +118,7 @@ export function LiveFeed() {
         }
       />
 
-      <div className="overflow-hidden rounded-lg border border-zinc-800">
+      <div className="panel overflow-hidden">
         <div className="max-h-[64vh] overflow-y-auto">
           {status !== 'live' && source.length === 0 ? (
             <div className="px-4 py-8">

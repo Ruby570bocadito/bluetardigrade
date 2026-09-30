@@ -68,7 +68,7 @@ function SurfaceCard({ state }: { state: SfRespondState }) {
   const nearCeiling = pct >= 80
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-4">
+      <div className="panel px-4 py-4">
         <div className="flex items-center gap-2">
           <span
             aria-hidden
@@ -109,7 +109,7 @@ function SurfaceCard({ state }: { state: SfRespondState }) {
         </p>
       </div>
 
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-4">
+      <div className="panel px-4 py-4">
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium text-zinc-100">Archivo de audit</p>
           <span

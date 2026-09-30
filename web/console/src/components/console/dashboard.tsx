@@ -43,7 +43,7 @@ export function Dashboard({
           <SectionHeader title="Actividad del sensor" hint="ventana de 4 minutos" />
           {/* SpotlightCard (React Bits): profundidad del panel bajo el puntero;
               en reposo es la misma tarjeta con borde hairline de siempre */}
-          <SpotlightCard className="rounded-lg border border-zinc-800 px-4 pb-3 pt-4">
+          <SpotlightCard className="panel px-4 pb-3 pt-4">
             <ActivityChart events={events} />
           </SpotlightCard>
         </section>
@@ -75,9 +75,9 @@ export function Dashboard({
             }
           />
           {status !== 'live' && events.length === 0 ? (
-            <SkeletonRows rows={6} className="border-y border-zinc-800 py-6" />
+            <SkeletonRows rows={6} className="border-y border-white/[0.06] py-6" />
           ) : events.length === 0 ? (
-            <div className="border-y border-zinc-800">
+            <div className="border-y border-white/[0.06]">
               <EmptyState
                 icon={Waveform}
                 title="Sin eventos todavía"
@@ -85,7 +85,7 @@ export function Dashboard({
               />
             </div>
           ) : (
-            <ul className="divide-y divide-zinc-800/80 border-y border-zinc-800">
+            <ul className="divide-y divide-white/[0.06] border-y border-white/[0.06]">
               {events.slice(0, 8).map((ev, i) => (
                 <li key={ev.id}>
                   {/* AnimatedItem (React Bits): entrada escalonada en la carga
@@ -131,8 +131,8 @@ function HotHostsPanel() {
   return (
     // SpotlightCard (React Bits): halo esmeralda al pasar el raton o al
     // enfocar un control interno; en reposo, la tarjeta hairline original.
-    <SpotlightCard className="min-w-0 flex-1 rounded-lg border border-zinc-800 bg-zinc-900/40">
-      <div className="flex items-center gap-2.5 border-b border-zinc-800 px-4 py-3">
+    <SpotlightCard className="panel panel-hover min-w-0 flex-1">
+      <div className="flex items-center gap-2.5 border-b border-white/[0.06] px-4 py-3">
         <Flame size={16} aria-hidden className="text-amber-500" />
         <span className="text-sm text-zinc-200">Hosts calientes</span>
         <span className="ml-auto font-mono text-[11px] tabular-nums text-zinc-500">
@@ -156,7 +156,7 @@ function HotHostsPanel() {
           />
         </div>
       ) : (
-        <ul className="divide-y divide-zinc-800/80">
+        <ul className="divide-y divide-white/[0.06]">
           {hot.map((h, i) => (
             <li key={h.host}>
               {/* AnimatedItem (React Bits): entrada escalonada; keys
@@ -182,7 +182,7 @@ function HotHostsPanel() {
           ))}
         </ul>
       )}
-      <p className="border-t border-zinc-800 px-4 py-2.5 text-[11px] leading-relaxed text-zinc-500">
+      <p className="border-t border-white/[0.06] px-4 py-2.5 text-[11px] leading-relaxed text-zinc-500">
         Puntuación de riesgo por host con decaimiento temporal (vida media 30 min): critical 10 · high 5 · medium 2 ·
         low 1 por alerta. Señal de priorización de triaje, no un veredicto de compromiso.
       </p>
@@ -245,8 +245,8 @@ function EngineSummary({ status }: { status: EngineStatus }) {
 
   return (
     // SpotlightCard (React Bits): mismo criterio que HotHostsPanel.
-    <SpotlightCard className="rounded-lg border border-zinc-800 bg-zinc-900/40">
-      <div className="flex items-center gap-2.5 border-b border-zinc-800 px-4 py-3">
+    <SpotlightCard className="panel panel-hover">
+      <div className="flex items-center gap-2.5 border-b border-white/[0.06] px-4 py-3">
         <Cpu size={16} aria-hidden className="text-emerald-500" />
         <span className="text-sm text-zinc-200">sf-engine</span>
         <span className="ml-auto flex items-center gap-1.5 font-mono text-[11px] text-zinc-500">
@@ -257,7 +257,7 @@ function EngineSummary({ status }: { status: EngineStatus }) {
           {status === 'live' ? 'en vivo' : status === 'connecting' ? 'conectando' : 'sin conexión'}
         </span>
       </div>
-      <dl className="divide-y divide-zinc-800/70 px-4">
+      <dl className="divide-y divide-white/[0.06] px-4">
         {rows.map((row) => (
           <div key={row.label} className="flex items-center justify-between gap-4 py-2">
             <dt className="text-xs text-zinc-500">{row.label}</dt>
@@ -265,7 +265,7 @@ function EngineSummary({ status }: { status: EngineStatus }) {
           </div>
         ))}
       </dl>
-      <div className="border-t border-zinc-800 px-4 py-3">
+      <div className="border-t border-white/[0.06] px-4 py-3">
         <p className="text-[10px] uppercase tracking-wider text-zinc-500">Tipos de evento con reglas</p>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {(stats?.rules_types ?? []).map((t) => (
@@ -279,7 +279,7 @@ function EngineSummary({ status }: { status: EngineStatus }) {
           )}
         </div>
       </div>
-      <p className="border-t border-zinc-800 px-4 py-2.5 text-[11px] leading-relaxed text-zinc-500">{statusLine}</p>
+      <p className="border-t border-white/[0.06] px-4 py-2.5 text-[11px] leading-relaxed text-zinc-500">{statusLine}</p>
     </SpotlightCard>
   )
 }

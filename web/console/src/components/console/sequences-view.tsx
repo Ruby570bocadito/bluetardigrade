@@ -87,7 +87,7 @@ function SequenceCard({ seq, index, rules }: { seq: SfSequence; index: number; r
           pauta que la telemetría del Panel; keys estables, sin re-animar. */}
       <AnimatedItem
         index={index}
-        className="rounded-md border border-white/[0.08] bg-white/[0.02] px-4 py-3"
+        className="panel panel-hover px-4 py-3"
       >
       <div className="flex flex-wrap items-center gap-2">
         {/* el icono comunica si la cadena puede completar: esmeralda armada,

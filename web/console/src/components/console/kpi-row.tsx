@@ -23,16 +23,18 @@ function Kpi({
   children: React.ReactNode
 }) {
   // SpotlightCard (React Bits): el halo esmeralda solo existe bajo el
-  // puntero (transparente en reposo), asi que la densidad de cabina y las
+  // puntero (transparente en reposo), asi que la superficie .panel y las
   // hairlines del grid no cambian; el foco de teclado tambien lo enciende
-  // via focus-within.
+  // via focus-within. .panel-hover añade el lift del template premium.
   return (
-    <SpotlightCard className="min-w-0 px-4 py-3.5 first:pl-0 md:px-5">
-      <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">
-        <Icon size={12} aria-hidden className="text-zinc-500" />
+    <SpotlightCard className="panel panel-hover min-w-0 px-4 py-4">
+      <p className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">
+        <span className="icon-tile">
+          <Icon size={12} aria-hidden />
+        </span>
         {label}
       </p>
-      <div className="mt-1.5">{children}</div>
+      <div className="mt-2.5">{children}</div>
     </SpotlightCard>
   )
 }
@@ -47,10 +49,10 @@ export function KpiRow({ stats }: { stats: EngineStats | null }) {
   return (
     <div
       aria-label="Indicadores del motor"
-      className="grid grid-cols-2 divide-x divide-y divide-zinc-800 border-y border-zinc-800 md:grid-cols-3 xl:grid-cols-7 xl:divide-y-0"
+      className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-7"
     >
       <Kpi label="Tiempo activo" icon={Timer}>
-        <span className="block truncate font-mono text-xl tabular-nums text-zinc-100">
+        <span className="block truncate font-mono text-xl tabular-nums tracking-tight text-zinc-50">
           {stats ? formatUptime(stats.uptime_s) : '0s'}
         </span>
       </Kpi>
@@ -58,7 +60,7 @@ export function KpiRow({ stats }: { stats: EngineStats | null }) {
       <Kpi label="Eventos/min" icon={ActivityIcon}>
         <AnimatedNumber
           value={stats?.events_per_min ?? 0}
-          className="block font-mono text-xl tabular-nums text-zinc-100"
+          className="block font-mono text-xl tabular-nums tracking-tight text-zinc-50"
         />
         <span className="mt-0.5 block font-mono text-[11px] tabular-nums text-zinc-500">
           total {stats?.events_total ?? 0}
@@ -68,7 +70,7 @@ export function KpiRow({ stats }: { stats: EngineStats | null }) {
       <Kpi label="Alertas" icon={WebhooksLogo}>
         <AnimatedNumber
           value={stats?.alerts_total ?? 0}
-          className="block font-mono text-xl tabular-nums text-zinc-100"
+          className="block font-mono text-xl tabular-nums tracking-tight text-zinc-50"
         />
         <span className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1">
           {SEV_ORDER.filter((sev) => (severity[sev] ?? 0) > 0).map((sev) => (
@@ -96,7 +98,7 @@ export function KpiRow({ stats }: { stats: EngineStats | null }) {
       <Kpi label="Reglas activas" icon={ShieldCheck}>
         <AnimatedNumber
           value={stats?.rules_count ?? 0}
-          className="block font-mono text-xl tabular-nums text-zinc-100"
+          className="block font-mono text-xl tabular-nums tracking-tight text-zinc-50"
         />
         <span className="mt-0.5 block truncate font-mono text-[11px] text-zinc-500">
           {(stats?.rules_types ?? []).length} tipos de evento
@@ -106,7 +108,7 @@ export function KpiRow({ stats }: { stats: EngineStats | null }) {
       <Kpi label="Búfer de eventos" icon={UploadSimple}>
         <AnimatedNumber
           value={stats?.events_buffered ?? 0}
-          className="block font-mono text-xl tabular-nums text-zinc-100"
+          className="block font-mono text-xl tabular-nums tracking-tight text-zinc-50"
         />
         <span className="mt-0.5 block font-mono text-[11px] tabular-nums text-zinc-500">
           ingest: {ingestIssues > 0 ? <span className="text-orange-400">{ingestIssues} rechazados</span> : 'sin rechazos'}
@@ -116,7 +118,7 @@ export function KpiRow({ stats }: { stats: EngineStats | null }) {
       <Kpi label="Webhooks" icon={MinusCircle}>
         <AnimatedNumber
           value={stats?.webhook_sent ?? 0}
-          className="block font-mono text-xl tabular-nums text-zinc-100"
+          className="block font-mono text-xl tabular-nums tracking-tight text-zinc-50"
         />
         <span className="mt-0.5 block font-mono text-[11px] tabular-nums text-zinc-500">
           {webhookIssues > 0 ? <span className="text-orange-400">{webhookIssues} con fallo</span> : 'sin fallos'}
@@ -126,7 +128,7 @@ export function KpiRow({ stats }: { stats: EngineStats | null }) {
       <Kpi label="Riesgo por host" icon={Flame}>
         <AnimatedNumber
           value={stats?.risk_hosts_tracked ?? 0}
-          className="block font-mono text-xl tabular-nums text-zinc-100"
+          className="block font-mono text-xl tabular-nums tracking-tight text-zinc-50"
         />
         <span className="mt-0.5 block truncate font-mono text-[11px] tabular-nums text-zinc-500">
           {hot && top ? `máx ${top.host} · ${top.score}` : stats ? 'sin riesgo activo' : 'sin datos'}
