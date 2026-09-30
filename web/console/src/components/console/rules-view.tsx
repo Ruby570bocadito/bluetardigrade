@@ -7,11 +7,17 @@
 // rule name, id, MITRE technique, tactic, event type, condition fields
 // or the values the conditions match on.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CaretDown, MagnifyingGlass, ShieldCheck } from '@phosphor-icons/react'
 import { Input } from '@/components/ui/input'
 import { useEngine } from './engine-provider'
 import { EmptyState, SectionHeader, SeverityBadge } from './ui-bits'
+import {
+  currentSearch,
+  readLensState,
+  replaceOperatorState,
+  writeRulesToSearch,
+} from '@/lib/url-state'
 import type { RuleMeta } from '@/lib/console-types'
 
 function ruleHaystack(r: RuleMeta): string {
@@ -26,8 +32,51 @@ function ruleHaystack(r: RuleMeta): string {
 
 export function RulesView() {
   const { rules } = useEngine()
-  const [query, setQuery] = useState('')
-  const [openId, setOpenId] = useState<string | null>(null)
+  const [query, setQueryState] = useState('')
+  const [openId, setOpenIdState] = useState<string | null>(null)
+
+  // The rules lenses live in the URL (url-state.ts, ?rq=&regla=): the
+  // search survives a refresh and an expanded row is a shareable link —
+  // rule ids are stable catalog ids (hot-reload every 15 s), so unlike
+  // the rotating alert ring a deep link does not rot. Read AFTER mount
+  // (hydration-safe); the search debounces (250 ms); expanding/collapsing
+  // a row writes immediately (replaceState, no history spam); popstate
+  // re-syncs. An id that is not in the loaded pack simply does not
+  // expand (honest degradation) and WILL expand when the hot-reload
+  // delivers it, because `open` derives from state on every render.
+  const lensRef = useRef<{ rq: string; regla: string | null }>({ rq: '', regla: null })
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    const apply = () => {
+      const lens = readLensState(currentSearch())
+      lensRef.current = { rq: lens.rq, regla: lens.regla === '' ? null : lens.regla }
+      setQueryState(lens.rq)
+      setOpenIdState(lens.regla === '' ? null : lens.regla)
+    }
+    apply()
+    window.addEventListener('popstate', apply)
+    return () => {
+      window.removeEventListener('popstate', apply)
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [])
+
+  const setQuery = (next: string) => {
+    lensRef.current = { ...lensRef.current, rq: next }
+    setQueryState(next)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(
+      () =>
+        replaceOperatorState((search) => writeRulesToSearch(search, lensRef.current.rq, lensRef.current.regla)),
+      250,
+    )
+  }
+  const toggleOpen = (id: string) => {
+    const regla = openId === id ? null : id
+    lensRef.current = { ...lensRef.current, regla }
+    setOpenIdState(regla)
+    replaceOperatorState((search) => writeRulesToSearch(search, lensRef.current.rq, regla))
+  }
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -91,7 +140,7 @@ export function RulesView() {
                 <li key={r.id}>
                   <button
                     type="button"
-                    onClick={() => setOpenId(open ? null : r.id)}
+                    onClick={() => toggleOpen(r.id)}
                     aria-expanded={open}
                     className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-zinc-800/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:grid-cols-[auto_minmax(0,3fr)_minmax(0,2fr)_auto_auto]"
                   >

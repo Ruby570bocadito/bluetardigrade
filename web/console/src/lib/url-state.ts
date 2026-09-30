@@ -9,18 +9,42 @@
 // (the console pre-renders — window is undefined during SSR).
 //
 // Contract (single source of truth for the param names):
+//   ?view=respuesta&clase=denied        (audit queue lens)
+//   ?view=flujo&tipo=FileCreate&fq=mimikatz
+//   ?view=reglas&rq=lateral&regla=R-042 (expanded row, stable rule id)
 //   ?view=alertas&sev=critical&q=lsass
-//   view: one of the shell's nav ids, else 'panel'
-//   sev:  one of the queue filter values, else 'all'
-//   q:    free text, trimmed, capped (MAX_QUERY_CHARS), else absent
+//   view:  one of the shell's nav ids, else 'panel'
+//   sev:   one of the queue filter values, else 'all'
+//   clase: one of the audit class values, else 'all'
+//   tipo:  event type, sanitized (capped) but NOT whitelisted — the
+//          inventory is derived from what the engine delivered, so an
+//          unknown type stays an honest equality filter (empty feed)
+//   q/fq/rq: free text per lens (alerts / feed / rules), trimmed,
+//          capped (MAX_QUERY_CHARS), else absent — separate keys so
+//          lenses never contaminate each other across navigation
+//   regla: expanded rule id (stable catalog ids, unlike the rotating
+//          alert ring), else absent
 // Unknown params are always preserved verbatim (read-modify-write):
-// this lib owns its three keys and touches nothing else.
+// this lib owns its keys and touches nothing else.
 
 import type { ConsoleView } from '../components/console/dashboard'
 import type { Severity } from './console-types'
 
 /** Severity filter values of the alerts queue, including 'all'. */
 export type SeverityFilter = 'all' | Severity
+
+/**
+ * Class filter of the active-response audit queue, including 'all'.
+ * Lives here (not in the view) so the URL lib is the single source of
+ * truth and the view cannot drift from what the URL accepts.
+ */
+export type AuditKindFilter = 'all' | 'executed' | 'denied' | 'followup'
+
+const AUDIT_KINDS: readonly AuditKindFilter[] = ['all', 'executed', 'denied', 'followup']
+
+function isAuditKind(raw: string): raw is AuditKindFilter {
+  return (AUDIT_KINDS as readonly string[]).includes(raw)
+}
 
 const CONSOLE_VIEWS = [
   'panel',
@@ -45,12 +69,29 @@ void viewsAreExhaustive
 
 const SEVERITY_FILTERS: readonly SeverityFilter[] = ['all', 'critical', 'high', 'medium', 'low']
 
+/**
+ * Event types are derived from the delivered buffer (no hardcoded
+ * inventory anywhere), so the URL value is sanitized, not whitelisted:
+ * a typo stays an equality filter and degrades to the honest empty
+ * feed, never to a silently different lens.
+ */
+export const MAX_FEED_TYPE_CHARS = 60
+
 export const MAX_QUERY_CHARS = 120
 
 export type OperatorState = {
   view: ConsoleView
   sev: SeverityFilter
   q: string
+}
+
+/** The lens keys a view reads on mount (one query string, many lenses). */
+export type LensState = {
+  clase: AuditKindFilter
+  tipo: string
+  fq: string
+  rq: string
+  regla: string
 }
 
 function isView(raw: string): raw is ConsoleView {
@@ -71,6 +112,19 @@ export function sevFromParam(raw: string | null): SeverityFilter {
   return raw !== null && isSeverityFilter(raw) ? raw : 'all'
 }
 
+/** Whitelist fallback: anything unknown degrades to the unfiltered audit. */
+export function auditKindFromParam(raw: string | null): AuditKindFilter {
+  return raw !== null && isAuditKind(raw) ? raw : 'all'
+}
+
+/** Sanitized event type: trimmed, capped, '' collapses to 'all'. */
+export function feedTypeFromParam(raw: string | null): string {
+  if (raw === null) return 'all'
+  const trimmed = raw.trim()
+  if (trimmed === '') return 'all'
+  return trimmed.length > MAX_FEED_TYPE_CHARS ? trimmed.slice(0, MAX_FEED_TYPE_CHARS) : trimmed
+}
+
 /** Trimmed and capped free text: a URL is not a paste bin. */
 export function queryFromParam(raw: string | null): string {
   if (raw === null) return ''
@@ -85,6 +139,22 @@ export function readOperatorState(search: string): OperatorState {
     view: viewFromParam(params.get('view')),
     sev: sevFromParam(params.get('sev')),
     q: queryFromParam(params.get('q')),
+  }
+}
+
+/**
+ * Parse the per-view lens keys (audit class, feed type+query, rules
+ * query+expanded id). Views read what they own; the shared query string
+ * keeps the other lenses intact for when the operator navigates back.
+ */
+export function readLensState(search: string): LensState {
+  const params = new URLSearchParams(search)
+  return {
+    clase: auditKindFromParam(params.get('clase')),
+    tipo: feedTypeFromParam(params.get('tipo')),
+    fq: queryFromParam(params.get('fq')),
+    rq: queryFromParam(params.get('rq')),
+    regla: queryFromParam(params.get('regla')),
   }
 }
 
@@ -116,6 +186,31 @@ export function writeFilterToSearch(search: string, sev: SeverityFilter, q: stri
   return writeKeys(search, {
     sev: sev === 'all' ? null : sev,
     q: query === '' ? null : query,
+  })
+}
+
+/** Query string with the audit class lens applied ('all' omitted). */
+export function writeAuditKindToSearch(search: string, clase: AuditKindFilter): string {
+  return writeKeys(search, { clase: clase === 'all' ? null : clase })
+}
+
+/** Query string with the feed lenses applied (defaults omitted). */
+export function writeFeedToSearch(search: string, tipo: string, fq: string): string {
+  const type = feedTypeFromParam(tipo)
+  const query = queryFromParam(fq)
+  return writeKeys(search, {
+    tipo: type === 'all' ? null : type,
+    fq: query === '' ? null : query,
+  })
+}
+
+/** Query string with the rules lenses applied (defaults omitted). */
+export function writeRulesToSearch(search: string, rq: string, regla: string | null): string {
+  const query = queryFromParam(rq)
+  const id = regla === null ? null : queryFromParam(regla)
+  return writeKeys(search, {
+    rq: query === '' ? null : query,
+    regla: id === '' || id === null ? null : id,
   })
 }
 

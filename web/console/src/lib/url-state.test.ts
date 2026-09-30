@@ -10,12 +10,18 @@
 import { describe, expect, test } from 'bun:test'
 import type { ConsoleView } from '../components/console/dashboard'
 import {
+  MAX_FEED_TYPE_CHARS,
   MAX_QUERY_CHARS,
+  readLensState,
   readOperatorState,
   sevFromParam,
   viewFromParam,
+  writeAuditKindToSearch,
+  writeFeedToSearch,
   writeFilterToSearch,
+  writeRulesToSearch,
   writeViewToSearch,
+  type LensState,
   type SeverityFilter,
 } from './url-state'
 
@@ -156,6 +162,123 @@ describe('round-trip write → read', () => {
         sev: c.sev,
         q: c.q,
       })
+    }
+  })
+})
+
+describe('auditKindFromParam', () => {
+  test('accepts the audit class vocabulary', () => {
+    const kinds = ['all', 'executed', 'denied', 'followup'] as const
+    for (const kind of kinds) {
+      expect(readLensState(`?clase=${kind}`).clase).toBe(kind)
+    }
+  })
+
+  test('degrades anything unknown to all (no crash on hand-typed URLs)', () => {
+    expect(readLensState('?clase=DENIED').clase).toBe('all') // case is not canonical
+    expect(readLensState('?clase=kill').clase).toBe('all') // near-miss vocabulary
+    expect(readLensState('?clase=').clase).toBe('all')
+    expect(readLensState('').clase).toBe('all')
+  })
+})
+
+describe('feedTypeFromParam', () => {
+  test('sanitizes but does NOT whitelist: unknown types stay honest equality filters', () => {
+    // The type inventory is derived from the delivered buffer, so there
+    // is no static vocabulary to enforce — a typo degrades to an empty
+    // (honest) feed, never to a silently different lens.
+    expect(readLensState('?tipo=FileCreate').tipo).toBe('FileCreate')
+    expect(readLensState('?tipo=NoSuchType').tipo).toBe('NoSuchType')
+  })
+
+  test('trims, caps and collapses empties to all', () => {
+    expect(readLensState('?tipo=%20ProcessCreate%20').tipo).toBe('ProcessCreate')
+    expect(readLensState('?tipo=').tipo).toBe('all')
+    expect(readLensState('?tipo=%20%20').tipo).toBe('all')
+    expect(readLensState('').tipo).toBe('all')
+    const long = 'x'.repeat(MAX_FEED_TYPE_CHARS + 1)
+    expect(readLensState(`?tipo=${long}`).tipo).toHaveLength(MAX_FEED_TYPE_CHARS)
+  })
+})
+
+describe('readLensState — per-lens keys never contaminate each other', () => {
+  test('the three query lenses (q/fq/rq) are distinct keys', () => {
+    const lens = readLensState('?q=alerts-search&fq=feed-search&rq=rules-search')
+    expect(lens.fq).toBe('feed-search')
+    expect(lens.rq).toBe('rules-search')
+    // q belongs to the alerts queue (readOperatorState); readLensState
+    // simply does not claim it.
+    expect('q' in lens).toBe(false)
+    expect(readOperatorState('?q=alerts-search').q).toBe('alerts-search')
+  })
+
+  test('parses the full lens surface in one call', () => {
+    expect(readLensState('?clase=denied&tipo=FileCreate&fq=mimikatz&rq=lateral&regla=R-042')).toEqual({
+      clase: 'denied',
+      tipo: 'FileCreate',
+      fq: 'mimikatz',
+      rq: 'lateral',
+      regla: 'R-042',
+    })
+  })
+})
+
+describe('writeAuditKindToSearch', () => {
+  test('writes the class lens and omits the all default', () => {
+    expect(writeAuditKindToSearch('', 'denied')).toBe('?clase=denied')
+    expect(writeAuditKindToSearch('', 'all')).toBe('')
+    expect(writeAuditKindToSearch('?clase=executed', 'all')).toBe('')
+  })
+
+  test('preserves unknown params and other lenses', () => {
+    expect(writeAuditKindToSearch('?view=respuesta&fq=x', 'followup')).toBe(
+      '?view=respuesta&fq=x&clase=followup',
+    )
+  })
+})
+
+describe('writeFeedToSearch', () => {
+  test('writes both lenses and omits defaults (no ?tipo=all noise)', () => {
+    expect(writeFeedToSearch('', 'FileCreate', 'mimikatz')).toBe('?tipo=FileCreate&fq=mimikatz')
+    expect(writeFeedToSearch('', 'all', '')).toBe('')
+    expect(writeFeedToSearch('', 'all', 'hunt')).toBe('?fq=hunt')
+    expect(writeFeedToSearch('', 'DnsQuery', '')).toBe('?tipo=DnsQuery')
+  })
+
+  test('normalizes the query before writing (trim + cap) and never duplicates', () => {
+    expect(writeFeedToSearch('', 'all', '  base64  ')).toBe('?fq=base64')
+    expect(writeFeedToSearch('?tipo=FileCreate&fq=old', 'DnsQuery', 'new')).toBe(
+      '?tipo=DnsQuery&fq=new',
+    )
+  })
+})
+
+describe('writeRulesToSearch', () => {
+  test('writes the search and the expanded rule, omitting defaults', () => {
+    expect(writeRulesToSearch('', 'lateral', 'R-042')).toBe('?rq=lateral&regla=R-042')
+    expect(writeRulesToSearch('', '', null)).toBe('')
+    expect(writeRulesToSearch('', 'hunt', null)).toBe('?rq=hunt')
+    expect(writeRulesToSearch('', '', 'R-001')).toBe('?regla=R-001')
+  })
+
+  test('collapsing the row removes the regla key (no ghosts)', () => {
+    expect(writeRulesToSearch('?view=reglas&regla=R-042', '', null)).toBe('?view=reglas')
+  })
+
+  test('preserves unknown params', () => {
+    expect(writeRulesToSearch('?tab=x', 'mitre', 'R-007')).toBe('?tab=x&rq=mitre&regla=R-007')
+  })
+})
+
+describe('round-trip write → read (lenses)', () => {
+  test('every written lens state reads back identical', () => {
+    const cases: { search: string; expect: LensState }[] = [
+      { search: writeAuditKindToSearch('', 'denied'), expect: { clase: 'denied', tipo: 'all', fq: '', rq: '', regla: '' } },
+      { search: writeFeedToSearch('', 'FileCreate', 'mimikatz'), expect: { clase: 'all', tipo: 'FileCreate', fq: 'mimikatz', rq: '', regla: '' } },
+      { search: writeRulesToSearch('', 'lateral', 'R-042'), expect: { clase: 'all', tipo: 'all', fq: '', rq: 'lateral', regla: 'R-042' } },
+    ]
+    for (const c of cases) {
+      expect(readLensState(c.search)).toEqual(c.expect)
     }
   })
 })

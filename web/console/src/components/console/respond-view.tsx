@@ -10,7 +10,7 @@
 // Read-only by design: the kill is invoked through POST
 // /api/respond/kill by an operator (R8), never from the console UI.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Crosshair, Lightning, LockKey } from '@phosphor-icons/react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
@@ -19,6 +19,14 @@ import { EmptyState, SectionHeader, MonoTag } from './ui-bits'
 import { AuditExportButton } from './export-menu'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
 import { formatDateTime, type SfRespondRecord, type SfRespondState } from '@/lib/console-types'
+import {
+  auditKindFromParam,
+  currentSearch,
+  readLensState,
+  replaceOperatorState,
+  writeAuditKindToSearch,
+  type AuditKindFilter,
+} from '@/lib/url-state'
 
 function formatBytes(n: number): string {
   if (n >= 1 << 20) return `${(n / (1 << 20)).toFixed(1)} MiB`
@@ -164,13 +172,13 @@ function SurfaceCard({ state }: { state: SfRespondState }) {
 
 // Class of attempt for the queue filter: the two decisions the audit
 // records plus the followup line (denied by construction — the signal
-// failed after the commit).
-type KindFilter = 'all' | 'executed' | 'denied' | 'followup'
+// failed after the commit). The vocabulary lives in url-state.ts (the
+// URL contract is its single source of truth; the view imports it).
 
 // Human labels of the filter classes, handed to the export tooltip so
 // it can state that the JSONL export is the WHOLE window regardless of
 // the active lens (O4, cross-ref 04-B 19h45 §2.C).
-const KIND_LABEL: Record<Exclude<KindFilter, 'all'>, string> = {
+const KIND_LABEL: Record<Exclude<AuditKindFilter, 'all'>, string> = {
   executed: 'ejecutados',
   denied: 'denegados',
   followup: 'followups',
@@ -178,8 +186,26 @@ const KIND_LABEL: Record<Exclude<KindFilter, 'all'>, string> = {
 
 function AuditFeed() {
   const { respondAudit, auditLimit, setAuditLimit } = useEngine()
-  const [kindFilter, setKindFilter] = useState<KindFilter>('all')
+  const [kindFilter, setKindFilterState] = useState<AuditKindFilter>('all')
   const records = respondAudit?.records ?? []
+
+  // The audit lens lives in the URL (url-state.ts, ?clase=): a forensic
+  // review of denials survives a refresh and a filtered queue is a
+  // shareable link. Read AFTER mount (hydration-safe, like the shell
+  // view); the select writes immediately (replaceState, no history
+  // spam); popstate re-syncs.
+  useEffect(() => {
+    const apply = () => setKindFilterState(readLensState(currentSearch()).clase)
+    apply()
+    window.addEventListener('popstate', apply)
+    return () => window.removeEventListener('popstate', apply)
+  }, [])
+
+  const setKindFilter = (next: string) => {
+    const clase = auditKindFromParam(next)
+    setKindFilterState(clase)
+    replaceOperatorState((search) => writeAuditKindToSearch(search, clase))
+  }
 
   const visible = useMemo(() => {
     if (kindFilter === 'all') return records
@@ -196,7 +222,7 @@ function AuditFeed() {
         hint={filtering ? `de ${records.length} en la ventana` : 'más recientes primero'}
         action={
           <div className="flex flex-wrap items-center gap-2">
-            <Select value={kindFilter} onValueChange={(v) => setKindFilter(v as KindFilter)}>
+            <Select value={kindFilter} onValueChange={setKindFilter}>
               <SelectTrigger
                 className="h-8 w-[130px] rounded-md border-zinc-800 bg-zinc-900 font-mono text-xs"
                 aria-label="Filtrar la cola del audit por clase de intento"

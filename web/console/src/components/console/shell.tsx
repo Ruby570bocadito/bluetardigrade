@@ -4,7 +4,7 @@
 // on mobile (explicit collapse). The topbar carries the only status dot
 // of the chrome: it reflects the real engine connection state.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { ActivityIcon, Broadcast, Gauge, Lightning, Prohibit, ShieldCheck, SquaresFour, Warning, ChatsCircle, FlowArrow } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
@@ -22,6 +22,12 @@ import { SequencesView } from './sequences-view'
 import { AnalystPanel } from './analyst-panel'
 import { formatUptime, type EngineStats, type SfAlert } from '@/lib/console-types'
 import { currentSearch, pushOperatorState, viewFromParam, writeViewToSearch } from '@/lib/url-state'
+import {
+  SHORTCUT_ARM_MS,
+  isTypingTarget,
+  resolveShortcut,
+  shortcutHintFor,
+} from '@/lib/keyboard-nav'
 import { useAnalystChannel } from './socket-provider'
 
 const NAV: { id: ConsoleView; label: string; group: string; icon: React.ElementType }[] = [
@@ -56,6 +62,46 @@ export function ConsoleShell() {
     setViewState(next)
     pushOperatorState((search) => writeViewToSearch(search, next))
   }
+  const hintTitle = (id: ConsoleView): string | undefined => {
+    const hint = shortcutHintFor(id)
+    return hint ? `Atajo: ${hint}` : undefined
+  }
+
+  // g-prefixed navigation (keyboard-nav.ts): 'g' arms a one-key buffer
+  // that expires after SHORTCUT_ARM_MS, the next key jumps through the
+  // SAME setView path as a click (URL and history stay consistent).
+  // Typing targets (queues' search boxes, analyst note, selects) and
+  // modifier chords are never hijacked. The ref mirrors setView so the
+  // listener stays stable across renders.
+  const navRef = useRef(setView)
+  navRef.current = setView
+  const armedRef = useRef(false)
+  const armTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return
+      if (isTypingTarget(e.target)) return
+      const wasArmed = armedRef.current
+      armedRef.current = false
+      if (armTimerRef.current) {
+        clearTimeout(armTimerRef.current)
+        armTimerRef.current = null
+      }
+      const result = resolveShortcut({ key: e.key, prefixed: wasArmed })
+      if (result.action === 'navigate') navRef.current(result.view)
+      else if (result.action === 'arm') {
+        armedRef.current = true
+        armTimerRef.current = setTimeout(() => {
+          armedRef.current = false
+        }, SHORTCUT_ARM_MS)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      if (armTimerRef.current) clearTimeout(armTimerRef.current)
+    }
+  }, [])
   const reduce = useReducedMotion()
 
   // Real telemetry source, derived from the events the engine actually
@@ -101,6 +147,7 @@ export function ConsoleShell() {
                     type="button"
                     onClick={() => setView(item.id)}
                     aria-current={view === item.id ? 'page' : undefined}
+                    title={hintTitle(item.id)}
                     className={`relative flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                       view === item.id ? 'text-zinc-50' : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
                     }`}
@@ -234,6 +281,7 @@ export function ConsoleShell() {
                 type="button"
                 onClick={() => setView(item.id)}
                 aria-current={view === item.id ? 'page' : undefined}
+                title={hintTitle(item.id)}
                 className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                   view === item.id
                     ? 'border-emerald-400/20 bg-emerald-500/[0.12] text-zinc-100'

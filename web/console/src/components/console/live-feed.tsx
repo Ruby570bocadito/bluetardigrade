@@ -15,17 +15,63 @@ import { Switch } from '@/components/ui/switch'
 import { useEngine } from './engine-provider'
 import { EmptyState, LiveAnnouncer, SectionHeader, SkeletonRows } from './ui-bits'
 import { ExportButtons } from './export-menu'
+import {
+  currentSearch,
+  feedTypeFromParam,
+  readLensState,
+  replaceOperatorState,
+  writeFeedToSearch,
+} from '@/lib/url-state'
 import { eventDetail, formatTime, type SfEvent } from '@/lib/console-types'
 
 export function LiveFeed() {
   const { events, status } = useEngine()
   const reduce = useReducedMotion()
-  const [typeFilter, setTypeFilter] = useState<string>('all')
-  const [query, setQuery] = useState('')
+  const [typeFilter, setTypeFilterState] = useState<string>('all')
+  const [query, setQueryState] = useState('')
   const [paused, setPaused] = useState(false)
   const [frozen, setFrozen] = useState<SfEvent[]>([])
   const [announcement, setAnnouncement] = useState('')
   const knownTop = useRef<string | null>(null)
+
+  // The feed lenses live in the URL (url-state.ts, ?tipo=&fq=): a hunt
+  // survives a refresh and a filtered stream is a shareable link. Keys
+  // are SEPARATE from the alerts queue's (?q) on purpose — lenses don't
+  // contaminate each other across navigation. Read AFTER mount
+  // (hydration-safe); the type select writes immediately, the query
+  // debounces (250 ms, no replaceState thrash); popstate re-syncs both.
+  const lensRef = useRef<{ tipo: string; fq: string }>({ tipo: 'all', fq: '' })
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    const apply = () => {
+      const lens = readLensState(currentSearch())
+      lensRef.current = { tipo: lens.tipo, fq: lens.fq }
+      setTypeFilterState(lens.tipo)
+      setQueryState(lens.fq)
+    }
+    apply()
+    window.addEventListener('popstate', apply)
+    return () => {
+      window.removeEventListener('popstate', apply)
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [])
+
+  const setTypeFilter = (next: string) => {
+    const tipo = feedTypeFromParam(next)
+    lensRef.current = { ...lensRef.current, tipo }
+    setTypeFilterState(tipo)
+    replaceOperatorState((search) => writeFeedToSearch(search, tipo, lensRef.current.fq))
+  }
+  const setQuery = (next: string) => {
+    lensRef.current = { ...lensRef.current, fq: next }
+    setQueryState(next)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(
+      () => replaceOperatorState((search) => writeFeedToSearch(search, lensRef.current.tipo, lensRef.current.fq)),
+      250,
+    )
+  }
 
   const source = paused ? frozen : events
 
@@ -131,6 +177,12 @@ export function LiveFeed() {
                     {t}
                   </SelectItem>
                 ))}
+                {/* Honesty: a deep-linked type the buffer has not delivered
+                    yet stays a visible, selectable lens instead of an
+                    invisible value — the feed shows the real empty state. */}
+                {typeFilter !== 'all' && !types.includes(typeFilter) && (
+                  <SelectItem value={typeFilter}>{typeFilter}</SelectItem>
+                )}
               </SelectContent>
             </Select>
             <ExportButtons kind="events" filterLabel={activeFilterLabel} hiddenCount={hiddenByFilter} />
