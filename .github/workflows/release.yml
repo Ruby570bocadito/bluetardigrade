@@ -1,0 +1,88 @@
+# Release pipeline: on a v* tag push, build the Go binaries for the two
+# supported platforms, checksum them and publish a GitHub Release. The
+# tag name is injected into the engine version block at link time
+# (-X main.engineVersion), so `engine version` on a release binary
+# always reports the exact tag it was built from.
+#
+# Design notes (ronda 22h00, carril 02-A):
+#   - No third-party actions: the same two SHA-pinned actions CI uses
+#     (checkout, setup-go) plus the preinstalled `gh` CLI create the
+#     release. A mutable third-party release action would be the exact
+#     mutable-reference class this repo rejects for CI supply-chain.
+#   - permissions are job-scoped: this job alone gets contents:write
+#     (it must create a release); everything else in the repo runs
+#     with contents:read.
+#   - Cross-builds are pure Go (CGO disabled): the CI engine job
+#     already certifies GOOS=windows compiles on Linux runners.
+#   - The tag is the source of truth for the version; CHANGELOG.md
+#     must carry an entry for it before the tag is cut.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and checksum only, do not create the release"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Build + checksum + publish (linux, windows)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # create the GitHub Release and upload binaries
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Resolve version from the tag
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VER="v0.0.0-dispatch"
+          else
+            VER="${GITHUB_REF_NAME}"
+          fi
+          echo "$VER" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-+].*)?$' \
+            || { echo "tag '$VER' no es SemVer (vMAJOR.MINOR.PATCH): falla loud" >&2; exit 1; }
+          grep -q "\[$VER\]" CHANGELOG.md \
+            || { echo "CHANGELOG.md no tiene entrada para $VER: corta el tag despues de documentar la version" >&2; exit 1; }
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+      - name: Build binaries (linux/amd64 + windows/amd64)
+        env:
+          VER: ${{ steps.ver.outputs.version }}
+        run: |
+          mkdir -p dist
+          VER_LDFLAGS="-s -w -X main.engineVersion=${VER}"
+          GOOS=linux   CGO_ENABLED=0 go build -trimpath -ldflags "$VER_LDFLAGS" -o dist/engine-${VER}-linux-amd64        ./cmd/engine
+          GOOS=linux   CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o dist/devsensor-${VER}-linux-amd64           ./cmd/devsensor
+          GOOS=windows CGO_ENABLED=0 go build -trimpath -ldflags "$VER_LDFLAGS" -o dist/engine-${VER}-windows-amd64.exe  ./cmd/engine
+          GOOS=windows CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o dist/devsensor-${VER}-windows-amd64.exe      ./cmd/devsensor
+          # the version the linux binary reports must be the tag itself,
+          # not the source default: fail loud on drift
+          ./dist/engine-${VER}-linux-amd64 version | grep -qF "$VER" \
+            || { echo "el binario no reporta $VER: la inyeccion -X fallo" >&2; exit 1; }
+          sha256sum dist/* > dist/checksums.txt
+          ls -l dist
+
+      - name: Publish GitHub Release
+        if: ${{ github.event_name == 'push' && inputs.dry_run != true }}
+        env:
+          VER: ${{ steps.ver.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$VER" dist/* \
+            --verify-tag \
+            --title "$VER" \
+            --generate-notes

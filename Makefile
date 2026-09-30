@@ -20,7 +20,7 @@ BUN     ?= bun
 BIN_DIR ?= bin
 MODULE  := github.com/Ruby570bocadito/security-framework
 
-.PHONY: all run-engine run-devsensor build test tidy fmt vet build-sensor build-sensor-windows docker-build console-install console-service console ci clean
+.PHONY: all run-engine run-devsensor build test tidy fmt vet build-sensor build-sensor-windows docker-build console-install console-service console ci dist clean
 
 all: build
 
@@ -84,6 +84,23 @@ ci:
 	$(CARGO) check --locked --manifest-path sensor/Cargo.toml
 	rustup target add x86_64-pc-windows-msvc
 	$(CARGO) check --locked --target x86_64-pc-windows-msvc --manifest-path sensor/Cargo.toml
+
+# Release build parity (see .github/workflows/release.yml): the exact
+# recipe the release workflow runs, available locally. VERSION defaults
+# to the newest tag (or "v0.0.0-dev" with no tags). Example:
+#   make dist VERSION=v0.1.0
+VERSION ?= $(shell git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0-dev)
+DIST_DIR ?= dist
+
+.PHONY: dist
+dist:
+	@mkdir -p $(DIST_DIR)
+	GOOS=linux   CGO_ENABLED=0 $(GO) build -trimpath -ldflags "-s -w -X main.engineVersion=$(VERSION)" -o $(DIST_DIR)/engine-$(VERSION)-linux-amd64 ./cmd/engine
+	GOOS=linux   CGO_ENABLED=0 $(GO) build -trimpath -ldflags "-s -w" -o $(DIST_DIR)/devsensor-$(VERSION)-linux-amd64 ./cmd/devsensor
+	GOOS=windows CGO_ENABLED=0 $(GO) build -trimpath -ldflags "-s -w -X main.engineVersion=$(VERSION)" -o $(DIST_DIR)/engine-$(VERSION)-windows-amd64.exe ./cmd/engine
+	GOOS=windows CGO_ENABLED=0 $(GO) build -trimpath -ldflags "-s -w" -o $(DIST_DIR)/devsensor-$(VERSION)-windows-amd64.exe ./cmd/devsensor
+	./$(DIST_DIR)/engine-$(VERSION)-linux-amd64 version | grep -qF "$(VERSION)" || { echo "version injection failed for $(VERSION)"; exit 1; }
+	@echo "dist ready in $(DIST_DIR)/ (version $(VERSION))"
 
 clean:
 	rm -rf $(BIN_DIR)

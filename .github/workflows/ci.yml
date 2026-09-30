@@ -101,7 +101,41 @@ jobs:
         run: go build -o engine-smoke.exe ./cmd/engine
       - name: smoke conductual del camino handle (kills reales, audit JSONL)
         shell: pwsh
-        run: ./scripts/windows/smoke_respond.ps1 -Engine ./engine-smoke.exe
+        # Reintento flaky-tolerant ACOTADO (directiva 23h55 §3.4, decision
+        # documentada del carril 02-A): exactamente UNA re-ejecucion. El
+        # smoke ejecuta kills reales sobre procesos propios en un runner
+        # compartido (orden de planificacion, antivirus, carga) — la clase
+        # de flakiness de entorno que produjo los 3 failures historicos
+        # (f7428ff/d1737c0/02c5c55, todos durante el aterrizaje C3, verde
+        # desde entonces). Un solo reintento acota el coste (el job entero
+        # sigue dentro de su timeout de 10 min) y no enmascara defectos
+        # reales: dos fallos consecutivos sobre el mismo arbol siguen
+        # fallando el job. Entre intentos se espera (polling activo, misma
+        # receta anti re-bind del bench_nightly) a que los puertos del
+        # smoke queden libres para que el reintento no herede sockets a
+        # medio cerrar del intento anterior.
+        run: |
+          $ok = $false
+          foreach ($attempt in 1..2) {
+            Write-Host "::group::smoke_respond intento $attempt/2"
+            & ./scripts/windows/smoke_respond.ps1 -Engine ./engine-smoke.exe
+            $code = $LASTEXITCODE
+            Write-Host "::endgroup::"
+            if ($code -eq 0) { $ok = $true; break }
+            if ($attempt -eq 1) {
+              Write-Host "::warning::smoke intento 1 fallo (exit $code); re-ejecucion unica tras esperar puertos libres"
+              foreach ($port in 18227, 18228, 18237, 18238) {
+                $free = $false
+                foreach ($i in 1..50) {
+                  $busy = Test-NetConnection -ComputerName 127.0.0.1 -Port $port -InformationLevel Quiet -WarningAction SilentlyContinue
+                  if (-not $busy) { $free = $true; break }
+                  Start-Sleep -Milliseconds 200
+                }
+                if (-not $free) { Write-Host "puerto $port sigue ocupado; el reintento lo denunciara si es la causa" }
+              }
+            }
+          }
+          if (-not $ok) { exit 1 }
 
   console:
     name: Console (hub tests, tsc, next build)

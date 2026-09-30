@@ -158,6 +158,32 @@ function Test-Alive($proc) {
     try { return -not (Get-Process -Id $proc.Id -ErrorAction Stop).HasExited } catch { return $false }
 }
 
+# Sondeo activo (directiva 23h55 §3.4: "esperas activas por sondeo en
+# lugar de sleeps fijos"). Los sleeps fijos de 300/500/800 ms eran la
+# clase de fragilidad de entorno que produce falsos fallos en un runner
+# compartido bajo carga: 300 ms suelen sobrar en local y a veces NO
+# sobran en un runner con el planificador saturado. Cada espera ahora
+# sondea cada 50 ms con techo generoso; el techo sigue fallando ruido
+# (un check que no puede fallar, miente), pero ya no depende de un
+# número mágico de milisegundos.
+function Wait-Alive($proc, [int]$TimeoutMs = 5000) {
+    $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMs)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        if (Test-Alive $proc) { return $true }
+        Start-Sleep -Milliseconds 50
+    }
+    return (Test-Alive $proc)
+}
+
+function Wait-Dead($proc, [int]$TimeoutMs = 5000) {
+    $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMs)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        if (-not (Test-Alive $proc)) { return $true }
+        Start-Sleep -Milliseconds 50
+    }
+    return (-not (Test-Alive $proc))
+}
+
 try {
     "version: 1`nnames:`n  - smoke-op" | Set-Content -Path $OPS -Encoding utf8NoBOM
 
@@ -170,7 +196,12 @@ try {
     # ---- a. kill feliz ----------------------------------------------
     Write-Host "== a. kill feliz: 200, mechanism=handle, proceso muerto =="
     $v1 = New-Victim
-    Start-Sleep -Milliseconds 300
+    # Toda victima se registra al nacer: si el smoke aborta antes de su
+    # kill, Cleanup la recoge (Stop-Process sobre un pid muerto es no-op
+    # con SilentlyContinue) — limpieza de huerfanos entre fases, directiva
+    # 23h55 §3.4.
+    $script:decoys += $v1
+    if (-not (Wait-Alive $v1)) { throw "la victima v1 no arranco" }
     $res = Post-Kill $API_BASE @{
         host = $HOSTNAME_SMOKE; pid = $v1.Id; process_name = "ping.exe"
         operator = "smoke-op"; reason = "smoke happy path"
@@ -180,8 +211,7 @@ try {
     Check "status=executed en el cuerpo" ($res.body -like '*"status":"executed"*')
     Check "mechanism=handle en el cuerpo (R1 camino Windows)" ($res.body -like '*"mechanism":"handle"*')
     Check "fallback_reason AUSENTE (el handle no degrada)" (-not ($res.body -like '*fallback_reason*'))
-    Start-Sleep -Milliseconds 800
-    Check "el proceso murio de verdad (HasExited)" (-not (Test-Alive $v1))
+    Check "el proceso murio de verdad (sondeo 5s)" (Wait-Dead $v1)
 
     # ---- b. sin token -----------------------------------------------
     Write-Host "== b. sin token -> 401 =="
@@ -220,7 +250,8 @@ try {
     # ---- f. nombre equivocado (pid_mismatch) --------------------------
     Write-Host "== f. nombre equivocado -> 403 pid_mismatch, victima sobrevive =="
     $v2 = New-Victim
-    Start-Sleep -Milliseconds 300
+    $script:decoys += $v2
+    if (-not (Wait-Alive $v2)) { throw "la victima v2 no arranco" }
     $res = Post-Kill $API_BASE @{
         host = $HOSTNAME_SMOKE; pid = $v2.Id; process_name = "definitivamente-no-ping.exe"
         operator = "smoke-op"; reason = "smoke mismatch"
@@ -235,7 +266,7 @@ try {
     Copy-Item "$env:SystemRoot\System32\cmd.exe" $decoyPath -Force
     $decoy = Start-Process -FilePath $decoyPath -PassThru -WindowStyle Hidden
     $script:decoys += $decoy
-    Start-Sleep -Milliseconds 500
+    if (-not (Wait-Alive $decoy)) { throw "el sebo csrss.exe no arranco" }
     $res = Post-Kill $API_BASE @{
         host = $HOSTNAME_SMOKE; pid = $decoy.Id; process_name = "csrss.exe"
         operator = "smoke-op"; reason = "smoke protegido (sebo, no el real)"
@@ -246,7 +277,8 @@ try {
     # ---- h. cooldown --------------------------------------------------
     Write-Host "== h. cooldown -> 429 en el 2o kill del mismo pid =="
     $v3 = New-Victim
-    Start-Sleep -Milliseconds 300
+    $script:decoys += $v3
+    if (-not (Wait-Alive $v3)) { throw "la victima v3 no arranco" }
     $res = Post-Kill $API_BASE @{
         host = $HOSTNAME_SMOKE; pid = $v3.Id; process_name = "ping.exe"
         operator = "smoke-op"; reason = "smoke cooldown 1"
@@ -261,19 +293,20 @@ try {
     # ---- i. idempotencia ----------------------------------------------
     Write-Host "== i. idempotencia -> 409 con clave repetida =="
     $v4 = New-Victim
-    Start-Sleep -Milliseconds 300
+    $script:decoys += $v4
+    if (-not (Wait-Alive $v4)) { throw "la victima v4 no arranco" }
     $res = Post-Kill $API_BASE @{
         host = $HOSTNAME_SMOKE; pid = $v4.Id; process_name = "ping.exe"
         operator = "smoke-op"; reason = "smoke idem 1"; idempotency_key = "smoke-key-42"
     } $true
     Check "primer kill con la clave: 200" ($res.code -eq 200)
     $v5 = New-Victim
+    $script:decoys += $v5
     $res2 = Post-Kill $API_BASE @{
         host = $HOSTNAME_SMOKE; pid = $v5.Id; process_name = "ping.exe"
         operator = "smoke-op"; reason = "smoke idem 2"; idempotency_key = "smoke-key-42"
     } $true
     Check "HTTP 409 idempotency_repeated" (($res2.code -eq 409) -and ($res2.body -like '*idempotency_repeated*'))
-    $script:decoys += $v5
 
     # ---- j. audit JSONL -----------------------------------------------
     Write-Host "== j. audit JSONL: parseo, resolved_name, codigos, sin fallback_reason =="

@@ -7,6 +7,10 @@ bin/
 *.out
 vendor/
 
+# Release build output (make dist; the release workflow rebuilds it
+# fresh on the runner — never committed)
+dist/
+
 # Rust
 sensor/target/
 # sensor/Cargo.lock is deliberately NOT ignored: binary crates commit
