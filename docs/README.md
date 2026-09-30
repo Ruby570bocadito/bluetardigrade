@@ -2,7 +2,8 @@
 
 | Ruta | Contenido |
 |------|-----------|
-| `arquitectura-tecnica-v0.8.pdf` | Documento de arquitectura v0.8 (25 páginas; **revisión vigente**): producida por el pipeline versionado `scripts/arq_v04/`; amplía la v0.7 con la evidencia visual real de la vista de respuesta activa — las capturas de laboratorio de la ola de implementaciones 20h05 (`a3b8bd8`/`624d8ba`) incrustadas como Figuras 3 y 4 (cola con 12 líneas de audit genuinas, par F1 completo compartiendo `action_id`, filtro followups con conteo honesto 1 de 12), el matiz de esquema documentado (`mechanism` solo viaja en followups, `respond.go:345-348`) y la Figura 2 recapturada sobre el árbol vigente (la limitación de navegación que la serie arrastraba desde la v0.6 queda resuelta por la ronda hermana 20h05_B, ola `ca51b95`), el tracer renumerado a Figura 5 y la resolución de la O4 absorbida — con procedencia citada |
+| `arquitectura-tecnica-v0.9.pdf` | Documento de arquitectura v0.9 (26 páginas; **revisión vigente**): producida por el pipeline versionado `scripts/arq_v04/`; barrido de suelo de la ola de cobertura `9bd3c71` — la batería de la consola pasa a las **dos suites** que dos carriles certificaron (proxy `10/10 · 29` vigente desde la ronda 16h03 + escritura de triaje `9/9 · 29` de la ronda 20h50 con cross-review certificada, `cf6ec25`/`055d024`): 19 tests y 58 aserciones en total; sexta revisión del pipeline |
+| `arquitectura-tecnica-v0.8.pdf` | Documento de arquitectura v0.8 (25 páginas; conservada como referencia histórica — la v0.9 la supersede; amplió la v0.7 con la evidencia visual real de la vista de respuesta activa — las capturas de laboratorio de la ola de implementaciones 20h05 (`a3b8bd8`/`624d8ba`) incrustadas como Figuras 3 y 4 (cola con 12 líneas de audit genuinas, par F1 completo compartiendo `action_id`, filtro followups con conteo honesto 1 de 12), el matiz de esquema documentado (`mechanism` solo viaja en followups, `respond.go:345-348`) y la Figura 2 recapturada sobre el árbol vigente (la limitación de navegación que la serie arrastraba desde la v0.6 queda resuelta por la ronda hermana 20h05_B, ola `ca51b95`), el tracer renumerado a Figura 5 y la resolución de la O4 absorbida — con procedencia citada |
 | `arquitectura-tecnica-v0.7.pdf` | Documento de arquitectura v0.7 (23 páginas; conservado como referencia histórica — la v0.8 lo supersede; amplió la v0.6 con la operabilidad forense de la vista de consola de C3 — filtro por clase de intento, ventana de cola controlable 100/500 y exportación JSONL client-side (ola `4967cad`) — y el estado certificado de los hallazgos: F1 cerrada y O2 certificada por el cross-review de seguridad, acta 19h30) |
 | `arquitectura-tecnica-v0.6.pdf` | Documento de arquitectura v0.6 (22 páginas; conservado como referencia histórica — la v0.7 lo supersede; amplió la v0.5 con el mecanismo dual de ejecución de C3 y la certificación conductual permanente del cierre en CI, y regeneró la Figura 2 con el panel de hosts calientes completo) |
 | `arquitectura-tecnica-v0.5.pdf` | Documento de arquitectura v0.5 (21 páginas; conservado como referencia histórica — la v0.6 lo supersede; amplió la v0.4 con la superficie de lectura de C3 y el guard a 15 rutas/36 campos/74 referencias) |
@@ -17,11 +18,11 @@
 
 ## Estado del documento de arquitectura
 
-`arquitectura-tecnica-v0.8.pdf` es la revisión vigente, producida por el pipeline
+`arquitectura-tecnica-v0.9.pdf` es la revisión vigente, producida por el pipeline
 versionado del árbol (`scripts/arq_v04/`: cuerpo ReportLab + portada Playwright +
 fusión pypdf; ver su README — el nombre del directorio registra dónde nació el
 pipeline, no la revisión que produce). Describe el sistema tal como está
-implementado y verificado a su generación: hereda de la v0.7 la **operabilidad
+implementado y verificado a su generación: actualiza los **suelos de la batería TypeScript de la consola** al estado de dos suites certificado por 02-B y 04-B (19/58), hereda de la v0.8 la **evidencia visual real de la vista de respuesta activa** (Figuras 3 y 4) y de la v0.7 la **operabilidad
 forense de la vista de consola de C3** (filtro por clase de intento
 todas/ejecutadas/denegadas/followups, ventana de cola controlable 100/500 y
 exportación JSONL client-side con honestidad de superficie; ola `4967cad`) y de
@@ -80,10 +81,10 @@ presentada como pendiente de certificación) queda cubierta por la v0.7. La
 forense y de la certificación F1/O2; su limitación conocida (la vista de respuesta
 activa descrita sin evidencia visual, las capturas reales aún no aterrizadas)
 queda cubierta por la v0.8. Lo que la
-v0.8 sigue declarando como futuro, sin
+v0.9 sigue declarando como futuro, sin
 presentarlo como capacidad: YARA,
 gRPC/protobuf, filaments Python y eBPF en Linux (fases 2-4 del roadmap). Las decisiones
-de diseño vigentes viven en la v0.8 del PDF, en el README y en los informes de
+de diseño vigentes viven en la v0.9 del PDF, en el README y en los informes de
 `agentes/`; el directorio de ADRs sigue sin existir como tal. Para regenerar o
 evolucionar el documento: `bash scripts/arq_v04/build.sh` (requisitos y decisiones en
 [`scripts/arq_v04/README.md`](../scripts/arq_v04/README.md)).
