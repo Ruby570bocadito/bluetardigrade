@@ -8,6 +8,11 @@
 # targets: the host and a Windows cross-check (x86_64-pc-windows-msvc,
 # type/borrow check, no linking). A full Windows cross-build (a linked
 # .exe) stays a release concern, not a CI concern.
+#
+# Reading runs (Director directive 23h55 s3.3): a "cancelled" run is
+# concurrency supersession (cancel-in-progress on the next push), NOT a
+# code failure - the UI and the badge may still paint it with a grey
+# cross. Only "failure" signals a real defect.
 name: ci
 
 on:
