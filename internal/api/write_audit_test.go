@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -86,6 +87,12 @@ func TestAuditLogLinesResistForgery(t *testing.T) {
 }
 
 func TestAlertStatusPersistErrorHidesPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// os.Chmod on a directory is a no-op on Windows: the write into
+		// ro/ succeeds and the API returns 200, so the 500-path exercised
+		// below only exists on POSIX filesystems.
+		t.Skip("POSIX file permission semantics not enforceable on Windows")
+	}
 	h, addr := newTestHub(t)
 	ro := filepath.Join(t.TempDir(), "readonly")
 	if err := os.MkdirAll(ro, 0o755); err != nil {

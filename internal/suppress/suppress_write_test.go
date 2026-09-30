@@ -3,6 +3,7 @@ package suppress
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -98,6 +99,12 @@ func TestSaveFileRoundTrip(t *testing.T) {
 }
 
 func TestSaveFilePreservesExistingMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// NTFS does not enforce POSIX permission bits: the preserved
+		// 0644 mode reads back as 0666 on Windows, so the expectation
+		// below cannot hold there.
+		t.Skip("POSIX file permission semantics not enforceable on Windows")
+	}
 	dir := t.TempDir()
 	p := filepath.Join(dir, "suppressions.yaml")
 	if err := os.WriteFile(p, []byte("- rule_id: old\n"), 0o644); err != nil {

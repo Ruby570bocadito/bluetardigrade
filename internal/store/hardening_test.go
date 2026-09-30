@@ -5,6 +5,7 @@ package store
 
 import (
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -82,6 +83,12 @@ func TestFreeTextQueryIsUnicodeCaseInsensitive(t *testing.T) {
 // users, hosts). Files the operator created (or chmod'ed) beforehands
 // keep their mode — no surprise ownership changes.
 func TestOpenPreCreatesDatabaseOwnerOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// NTFS does not enforce POSIX permission bits: modes read back
+		// as 0666 regardless of the os.WriteFile/Open mode argument, so
+		// the 0600 expectation below cannot hold on Windows.
+		t.Skip("POSIX file permission semantics not enforceable on Windows")
+	}
 	dir := t.TempDir()
 	fresh := dir + "/fresh.db"
 
