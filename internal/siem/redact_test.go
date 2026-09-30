@@ -48,20 +48,9 @@ func captureLog(t *testing.T) func() string {
 	return func() string { return buf.String() }
 }
 
-func TestEndpointLabelRedacts(t *testing.T) {
-	cases := []struct {
-		name, raw, want string
-	}{
-		{"userinfo+query+path", "https://svc:hunter2@collector.example.com:8088/services/collector/event?x=1", "https://collector.example.com:8088"},
-		{"plain host", "http://elastic.local:9200/_bulk", "http://elastic.local:9200"},
-		{"no host", "not a url", "<endpoint>"},
-	}
-	for _, tc := range cases {
-		if got := EndpointLabel(tc.raw); got != tc.want {
-			t.Errorf("%s: EndpointLabel(%q) = %q, want %q", tc.name, tc.raw, got, tc.want)
-		}
-	}
-}
+// TestEndpointLabelRedacts moved to internal/redact with the helper
+// itself (#35): the table pins the shared contract where the code
+// lives now.
 
 // Regression for cross-review finding F2 (#32 adenda): a non-429 4xx
 // from the cluster is a permanent rejection ("4xx failed-for-good",

@@ -26,6 +26,7 @@ import (
 	"github.com/Ruby570bocadito/security-framework/internal/ingest"
 	"github.com/Ruby570bocadito/security-framework/internal/lifecycle"
 	"github.com/Ruby570bocadito/security-framework/internal/notify"
+	"github.com/Ruby570bocadito/security-framework/internal/redact"
 	"github.com/Ruby570bocadito/security-framework/internal/respond"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
 	"github.com/Ruby570bocadito/security-framework/internal/siem"
@@ -513,9 +514,9 @@ func runEngine(o *options, interactive bool) error {
 			hub.SetWebhookStats(wh.Stats)
 		}
 		if wh.TokenConfigured() {
-			fmt.Printf("[ENGINE] webhook on %s (alerts POSTed as JSON, Authorization: Bearer enabled)\n", webhook.EndpointLabel(o.webhookURL))
+			fmt.Printf("[ENGINE] webhook on %s (alerts POSTed as JSON, Authorization: Bearer enabled)\n", redact.EndpointLabel(o.webhookURL))
 		} else {
-			fmt.Printf("[ENGINE] webhook on %s (alerts POSTed as JSON, no auth header - set -webhook-token or SF_WEBHOOK_TOKEN)\n", webhook.EndpointLabel(o.webhookURL))
+			fmt.Printf("[ENGINE] webhook on %s (alerts POSTed as JSON, no auth header - set -webhook-token or SF_WEBHOOK_TOKEN)\n", redact.EndpointLabel(o.webhookURL))
 		}
 	}
 
@@ -560,9 +561,9 @@ func runEngine(o *options, interactive bool) error {
 			hub.SetElasticStats(elasticSink.Stats)
 		}
 		if elasticSink.APIKeyConfigured() {
-			fmt.Printf("[ENGINE] elasticsearch on %s (alerts bulk-indexed as %s-YYYY.MM.DD, ApiKey auth enabled)\n", siem.EndpointLabel(o.elasticURL), o.elasticIndex)
+			fmt.Printf("[ENGINE] elasticsearch on %s (alerts bulk-indexed as %s-YYYY.MM.DD, ApiKey auth enabled)\n", redact.EndpointLabel(o.elasticURL), o.elasticIndex)
 		} else {
-			fmt.Printf("[ENGINE] elasticsearch on %s (alerts bulk-indexed as %s-YYYY.MM.DD, no auth header - set -elastic-api-key or SF_ELASTIC_API_KEY)\n", siem.EndpointLabel(o.elasticURL), o.elasticIndex)
+			fmt.Printf("[ENGINE] elasticsearch on %s (alerts bulk-indexed as %s-YYYY.MM.DD, no auth header - set -elastic-api-key or SF_ELASTIC_API_KEY)\n", redact.EndpointLabel(o.elasticURL), o.elasticIndex)
 		}
 	}
 	var splunkSink *siem.Splunk
@@ -578,9 +579,9 @@ func runEngine(o *options, interactive bool) error {
 			hub.SetSplunkStats(splunkSink.Stats)
 		}
 		if splunkSink.TokenConfigured() {
-			fmt.Printf("[ENGINE] splunk hec on %s (alerts POSTed as events, Splunk token enabled)\n", siem.EndpointLabel(o.splunkURL))
+			fmt.Printf("[ENGINE] splunk hec on %s (alerts POSTed as events, Splunk token enabled)\n", redact.EndpointLabel(o.splunkURL))
 		} else {
-			fmt.Printf("[ENGINE] splunk hec on %s (alerts POSTed as events, no token - set -splunk-token or SF_SPLUNK_TOKEN)\n", siem.EndpointLabel(o.splunkURL))
+			fmt.Printf("[ENGINE] splunk hec on %s (alerts POSTed as events, no token - set -splunk-token or SF_SPLUNK_TOKEN)\n", redact.EndpointLabel(o.splunkURL))
 		}
 
 	}

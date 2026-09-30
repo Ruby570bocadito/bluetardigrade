@@ -164,7 +164,11 @@ func stripExe(name string) string {
 // The second return stays empty here: the handle path has no
 // pidfd_open to fail, so there is no degradation to explain (the
 // fallback_reason audit field is a Unix-only concept).
-func killVerified(pid int, want string) (string, string, error) {
+//
+// Package var for the same reason the Unix build keeps one: the unit
+// tests force the post-commit failure branch of Kill deterministically
+// (F2). Same function, same signature, same call site.
+var killVerified = func(pid int, want string) (string, string, error) {
 	const mech = "handle"
 	t, err := openTarget(pid)
 	if err != nil {

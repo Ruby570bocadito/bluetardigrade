@@ -119,7 +119,13 @@ func nameInSet(resolved string, set map[string]struct{}) bool {
 // AND diagnosable: enosys is a kernel without pidfd (permanent),
 // emfile/enfile is fd exhaustion of a mechanism that was alive
 // (transient, worth watching) — 04-B ronda 18h00.
-func killVerified(pid int, want string) (string, string, error) {
+//
+// Package var for the same reason pidfdOpen is one: the unit tests
+// force the post-commit failure branch of Kill deterministically
+// (F2: the followup path has no natural induction without a
+// permission boundary or a mid-kill race). Production behavior is
+// identical — same function, same signature, same call site.
+var killVerified = func(pid int, want string) (string, string, error) {
 	fd, perr := pidfdOpen(pid)
 	if perr == nil {
 		defer unix.Close(fd)

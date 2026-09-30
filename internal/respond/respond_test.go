@@ -423,6 +423,105 @@ func TestExecutedKillRecordsAuditAndSignal(t *testing.T) {
 	}
 }
 
+// TestKillPostCommitFailureWritesFollowupPair closes F2 (design
+// 18h38_B, debt re-proposed by 19h15_A/§6): the post-commit failure
+// branch of Kill had no coverage at any level in-repo — the e2e
+// induces a real followup with an EPERM against a root-owned process
+// (lab recipe outside the repo), and every natural in-repo induction
+// either denies before the commit (the guard re-reads the same name
+// killVerified will check) or needs a mid-kill race. The seam is the
+// same pattern pidfdOpen already carries ("package var so the unit
+// tests can force the path deterministically"): the killVerified var
+// is swapped for a stub, production behavior untouched.
+//
+// Contract pinned here, per the schema finding of 20h05_B:
+//   - the pre-signal line is written BEFORE the signal (audit-before-
+//     signal) and carries decision=executed WITHOUT a mechanism — it
+//     is only known once the send path commits, omitempty drops it;
+//   - the followup copies the rec by construction (same action_id)
+//     and records the failed outcome: decision=denied, followup=true,
+//     the named process code, the mechanism and its fallback_reason
+//     (empty on the pidfd path — no degradation to explain);
+//   - the response names the code in the 403 permission family and
+//     carries mechanism/fallback_reason;
+//   - the retry with the SAME idempotency key meets 409 — the commit
+//     persisted even though the send failed, which is exactly why the
+//     followup line exists (the JSONL never claims an execution that
+//     did not land).
+func TestKillPostCommitFailureWritesFollowupPair(t *testing.T) {
+	cases := []struct {
+		name         string
+		mech, reason string
+		kerr         error
+		wantCode     string
+	}{
+		{"fallback access denied", "fallback", "enosys", errProcessAccess, CodePIDAccessDenied},
+		{"pidfd not found", "pidfd", "", errProcessNotFound, CodePIDNotFound},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m, _, path := newTestManager(t, "ana")
+			cmd := spawnSleeper(t)
+
+			orig := killVerified
+			killVerified = func(pid int, want string) (string, string, error) {
+				return tc.mech, tc.reason, tc.kerr
+			}
+			t.Cleanup(func() { killVerified = orig })
+
+			req := killReq(cmd.Process.Pid, "sleep")
+			req.IdempotencyKey = "f2-followup"
+			res := m.Kill(req)
+
+			if res.Executed {
+				t.Fatalf("a failed send must not claim execution: %+v", res)
+			}
+			if res.Code != tc.wantCode {
+				t.Fatalf("code = %q, want %q", res.Code, tc.wantCode)
+			}
+			if res.HTTPStatus != 403 {
+				t.Fatalf("post-commit process failures are the 403 permission family (httpStatusFor), got %d", res.HTTPStatus)
+			}
+			if res.Mechanism != tc.mech {
+				t.Fatalf("mechanism must travel in the response, got %q want %q", res.Mechanism, tc.mech)
+			}
+			if res.FallbackReason != tc.reason {
+				t.Fatalf("fallback_reason = %q, want %q", res.FallbackReason, tc.reason)
+			}
+
+			recs := readAuditLines(t, path)
+			if len(recs) != 2 {
+				t.Fatalf("exactly the committed pair (pre-signal + followup), got %d lines", len(recs))
+			}
+			pre, follow := recs[0], recs[1]
+			if pre.Decision != "executed" || pre.ActionID != res.ActionID || pre.Signal != Signal {
+				t.Fatalf("pre-signal line mismatch: %+v", pre)
+			}
+			if pre.Mechanism != "" || pre.Followup {
+				t.Fatalf("pre-signal line must carry no mechanism and no followup flag: %+v", pre)
+			}
+			if follow.Decision != "denied" || follow.Code != tc.wantCode {
+				t.Fatalf("followup line must deny with the named code: %+v", follow)
+			}
+			if follow.ActionID != res.ActionID || !follow.Followup {
+				t.Fatalf("followup must share the action_id and raise the flag: %+v", follow)
+			}
+			if follow.Mechanism != tc.mech || follow.FallbackReason != tc.reason {
+				t.Fatalf("followup mechanism/reason mismatch: %+v", follow)
+			}
+
+			if !alive(cmd.Process) {
+				t.Fatal("the injected failure never signals: the target must survive")
+			}
+
+			retry := m.Kill(req)
+			if retry.Code != CodeIdempotencyRepeated || retry.HTTPStatus != 409 {
+				t.Fatalf("retry with the committed key must meet 409, got %s/%d", retry.Code, retry.HTTPStatus)
+			}
+		})
+	}
+}
+
 // ---- loaders --------------------------------------------------------
 
 func TestLoadOperatorsMissingFileIsEmptyAllowlist(t *testing.T) {

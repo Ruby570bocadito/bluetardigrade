@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/Ruby570bocadito/security-framework/internal/alert"
+	"github.com/Ruby570bocadito/security-framework/internal/redact"
 )
 
 const (
@@ -146,7 +147,7 @@ func (e *Elastic) deliverBatch(ctx context.Context, batch []alert.Alert) {
 		}
 		if perr != nil {
 			log.Printf("[ELASTIC] bulk to %s failed (attempt %d/%d): %v",
-				EndpointLabel(e.url), attempt, maxAttempts, redactedErr(perr))
+				redact.EndpointLabel(e.url), attempt, maxAttempts, redact.URLErr(perr, "sink endpoint"))
 		}
 		pending = retryable
 		if len(pending) == 0 {

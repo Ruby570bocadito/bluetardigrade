@@ -34,8 +34,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -47,6 +45,7 @@ import (
 	"time"
 
 	"github.com/Ruby570bocadito/security-framework/internal/alert"
+	"github.com/Ruby570bocadito/security-framework/internal/redact"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
 )
 
@@ -165,7 +164,12 @@ func (d *Dispatcher) fire(a *alert.Alert, cfg map[string]string) {
 	rawURL := strings.TrimSpace(cfg["url"])
 	u, err := url.Parse(rawURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		d.log.Printf("webhook: url invalida %q: accion ignorada", rawURL)
+		// The raw URL itself is the credential (the hook IS the
+		// credential): the invalid-input log carries the scheme://host
+		// label only (#35 sub-item, same redaction rule as every
+		// transport log in this package). Parse failures degrade to
+		// the <endpoint> placeholder.
+		d.log.Printf("webhook: url invalida (%s): accion ignorada", redact.EndpointLabel(rawURL))
 		return
 	}
 	timeout := defaultTimeout
@@ -206,10 +210,11 @@ func (d *Dispatcher) fire(a *alert.Alert, cfg map[string]string) {
 func (d *Dispatcher) deliver(rawURL, secret string, timeout time.Duration, payload []byte, name string) {
 	req, err := http.NewRequest(http.MethodPost, rawURL, bytes.NewReader(payload))
 	if err != nil {
-		// redactedURLErr, same as the transport branch below (#34): a
-		// raw *url.Error echoes the full URL verbatim and a rule-action
-		// URL can embed a credential in its path or query.
-		d.log.Printf("webhook %s: %v", name, redactedURLErr(err))
+		// Redaction via internal/redact (since #35 promoted the helper;
+		// #34 fixed this build branch the same day): a raw *url.Error
+		// echoes the full URL verbatim and a rule-action URL can embed a
+		// credential in its path or query.
+		d.log.Printf("webhook %s: %v", name, redact.URLErr(err, "destino"))
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -224,7 +229,7 @@ func (d *Dispatcher) deliver(rawURL, secret string, timeout time.Duration, paylo
 		// Redact the transport wrapper: *url.Error echoes the full
 		// request URL, and a rule-action URL can embed a credential in
 		// its path or query. Only the cause reaches the log.
-		d.log.Printf("webhook %s: entrega fallida: %v", name, redactedURLErr(err))
+		d.log.Printf("webhook %s: entrega fallida: %v", name, redact.URLErr(err, "destino"))
 		return
 	}
 	defer resp.Body.Close()
@@ -246,15 +251,7 @@ func (d *Dispatcher) warnUnsupported(actionType string) {
 	}
 }
 
-// redactedURLErr strips the transport wrapper from HTTP errors so the
-// request URL never reaches the log: *url.Error echoes the URL
-// verbatim and a rule-action URL can embed a credential in its path
-// or query. The underlying cause (deadline, refused, no such host)
-// is kept — it names the failure without naming the endpoint.
-func redactedURLErr(err error) error {
-	var ue *url.Error
-	if errors.As(err, &ue) && ue.Err != nil {
-		return fmt.Errorf("destino: %w", ue.Err)
-	}
-	return err
-}
+// redactedURLErr moved to internal/redact.URLErr (#35): the fourth
+// copy of the helper (notify's) triggered the promotion its own rule
+// declared. The "destino" label travels as the caller's argument, so
+// the log output is byte-identical.

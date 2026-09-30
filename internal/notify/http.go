@@ -7,7 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
+
+	"github.com/Ruby570bocadito/security-framework/internal/redact"
 )
 
 // deliveryError carries the retry classification of one failed
@@ -29,22 +30,6 @@ func isRetryable(err error) bool {
 	return errors.As(err, &de) && de.retryable
 }
 
-// redacted rewrites transport-layer errors so credential-bearing URLs
-// never reach the engine log. Slack hook URLs and Telegram bot tokens
-// live in the request URL itself, and *url.Error echoes that URL
-// verbatim ("Post \"https://api.telegram.org/bot<secret>/sendMessage\": ..."),
-// so a routine timeout or DNS failure would otherwise pin a live
-// credential to stderr and every log shipper downstream. Only the
-// underlying cause is kept: it names the failure (deadline, refused,
-// no such host) without naming the endpoint.
-func redacted(err error) error {
-	var ue *url.Error
-	if errors.As(err, &ue) && ue.Err != nil {
-		return fmt.Errorf("notification endpoint: %w", ue.Err)
-	}
-	return err
-}
-
 // postJSON performs one HTTP delivery attempt with the same
 // classification contract as internal/webhook: 2xx succeeds, 429 and
 // 5xx are retryable (the receiver is asking us to come back), other
@@ -56,15 +41,17 @@ func postJSON(ctx context.Context, hc *http.Client, url string, payload []byte) 
 	if err != nil {
 		// A URL the client cannot build will not heal. The parse error
 		// echoes the raw URL (which may embed the credential), so it is
-		// redacted with the same rule as transport errors.
-		return &deliveryError{err: redacted(err), retryable: false}
+		// redacted with the same rule as transport errors. The helper
+		// lives in internal/redact since #35 promoted it there (this
+		// package's copy was the fourth that triggered the rule).
+		return &deliveryError{err: redact.URLErr(err, "notification endpoint"), retryable: false}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "security-framework-notify/0.1")
 
 	resp, err := hc.Do(req)
 	if err != nil {
-		return &deliveryError{err: redacted(err), retryable: true} // transport error: the receiver may recover
+		return &deliveryError{err: redact.URLErr(err, "notification endpoint"), retryable: true} // transport error: the receiver may recover
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body) // drain so the connection is reusable
