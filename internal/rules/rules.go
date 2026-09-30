@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/Ruby570bocadito/security-framework/pkg/model"
 
@@ -56,6 +57,30 @@ type Rule struct {
 
 // IsEnabled returns true unless the rule is explicitly disabled.
 func (r *Rule) IsEnabled() bool { return r.Enabled == nil || *r.Enabled }
+
+// Load caps (F2, round 12h40): the rule directory is operator
+// config, but every other loader in the house bounds its input
+// (correlator since 21h29, threshold, beacon, sigma converter) —
+// this was the last config surface read without a cap, and load
+// runs at startup AND at every hot-reload tick.
+const (
+	// maxFileBytes caps one rule file. os.ReadFile has no bound of
+	// its own: a multi-GB YAML would be read whole into memory
+	// before any other check could run (OOM).
+	maxFileBytes = 4 << 20 // 4 MiB
+
+	// maxNestingDepth caps flow-style ('[' / '{') nesting, same
+	// rationale as the correlator loader: yaml.v3 recurses per
+	// nesting level, so a crafted deep list value can exhaust the
+	// stack before Unmarshal ever returns.
+	maxNestingDepth = 512
+
+	// maxRules caps the loaded ENABLED set: Evaluate walks every
+	// rule of the event's type on every event, so an unbounded
+	// directory silently degrades the 10 ms p99 contract. 4x the
+	// Sigma converter output cap leaves ample room for hand rules.
+	maxRules = 2048
+)
 
 // Hit records which conditions fired for an event.
 type Hit struct {
@@ -212,19 +237,19 @@ func matchCondition(c Condition, val any, re *regexp.Regexp) bool {
 	case "ieq":
 		return strings.EqualFold(asString(val), asString(c.Value))
 	case "icontains":
-		return strings.Contains(strings.ToLower(asString(val)), strings.ToLower(asString(c.Value)))
+		return foldContains(asString(val), asString(c.Value))
 	case "icontains_any":
-		needle := strings.ToLower(asString(val))
+		needle := asString(val)
 		for _, v := range toList(c.Value) {
-			if strings.Contains(needle, strings.ToLower(asString(v))) {
+			if foldContains(needle, asString(v)) {
 				return true
 			}
 		}
 		return false
 	case "istartswith":
-		return strings.HasPrefix(strings.ToLower(asString(val)), strings.ToLower(asString(c.Value)))
+		return foldPrefix(asString(val), asString(c.Value))
 	case "iendswith":
-		return strings.HasSuffix(strings.ToLower(asString(val)), strings.ToLower(asString(c.Value)))
+		return foldSuffix(asString(val), asString(c.Value))
 	case "iin":
 		for _, v := range toList(c.Value) {
 			if strings.EqualFold(asString(val), asString(v)) {
@@ -235,6 +260,110 @@ func matchCondition(c Condition, val any, re *regexp.Regexp) bool {
 	default:
 		return false
 	}
+}
+
+// --- simple case folding: one semantics for the whole i* family ---
+//
+// strings.EqualFold and RE2's (?i) both apply simple Unicode case
+// folding, while a plain strings.ToLower comparison does not (U+017F
+// LONG S folds to "s" but lowercases to itself; house finding F1,
+// round 12h40 over the A4 i* family). A matcher where ieq accepted
+// "ſervice" == "SERVICE" while icontains rejected the same pair was a
+// homoglyph bypass waiting for a payload, so every i* operator now
+// folds. The ASCII fast path keeps the hot path byte-for-byte as
+// cheap as the previous ToLower implementation.
+
+// isASCII reports whether s is pure ASCII (where ToLower is exact
+// simple folding).
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
+}
+
+// runeOffset returns the byte offset of the n-th rune of s.
+func runeOffset(s string, n int) int {
+	i := 0
+	for j := range s {
+		if i == n {
+			return j
+		}
+		i++
+	}
+	return len(s)
+}
+
+// runeWindow returns the substring of s starting at byte offset start
+// (a rune boundary) spanning at most max runes.
+func runeWindow(s string, start, max int) string {
+	end := runeOffset(s[start:], max)
+	return s[start : start+end]
+}
+
+// foldContains reports whether needle occurs in haystack under simple
+// case folding — the exact semantics of strings.EqualFold and RE2 (?i).
+func foldContains(haystack, needle string) bool {
+	if needle == "" {
+		return true
+	}
+	if isASCII(haystack) && isASCII(needle) {
+		return strings.Contains(strings.ToLower(haystack), strings.ToLower(needle))
+	}
+	return foldSearch(haystack, needle)
+}
+
+// foldPrefix reports whether haystack starts with needle under simple
+// case folding (strings.HasPrefix semantics, folded).
+func foldPrefix(haystack, needle string) bool {
+	m := utf8.RuneCountInString(needle)
+	if m == 0 {
+		return true
+	}
+	if utf8.RuneCountInString(haystack) < m {
+		return false
+	}
+	return strings.EqualFold(haystack[:runeOffset(haystack, m)], needle)
+}
+
+// foldSuffix reports whether haystack ends with needle under simple
+// case folding (strings.HasSuffix semantics, folded).
+func foldSuffix(haystack, needle string) bool {
+	m := utf8.RuneCountInString(needle)
+	if m == 0 {
+		return true
+	}
+	n := utf8.RuneCountInString(haystack)
+	if n < m {
+		return false
+	}
+	return strings.EqualFold(haystack[runeOffset(haystack, n-m):], needle)
+}
+
+// foldSearch scans every rune-aligned window of haystack holding the
+// same number of runes as needle and reports whether any folds equal
+// to it. O(len(haystack)*len(needle)) worst case — event field values
+// are short and the ASCII fast path keeps this off the common path.
+func foldSearch(haystack, needle string) bool {
+	m := utf8.RuneCountInString(needle)
+	if m == 0 {
+		return true
+	}
+	if utf8.RuneCountInString(haystack) < m {
+		return false
+	}
+	for start := range haystack {
+		win := runeWindow(haystack, start, m)
+		if utf8.RuneCountInString(win) < m {
+			return false
+		}
+		if strings.EqualFold(win, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 // lookup resolves a dotted path over the flattened event map.
@@ -337,8 +466,17 @@ func (e *Engine) load(dir string) error {
 		if ext != ".yaml" && ext != ".yml" {
 			return nil
 		}
+		// Bound the file BEFORE reading it: os.ReadFile has no limit
+		// of its own, so an oversized rule file would be read whole
+		// into memory — at startup AND at every hot-reload tick.
+		if info.Size() > maxFileBytes {
+			return fmt.Errorf("%s: file is %d bytes, over the %d byte cap", path, info.Size(), maxFileBytes)
+		}
 		data, err := os.ReadFile(path)
 		if err != nil {
+			return err
+		}
+		if err := checkNestingDepth(path, data); err != nil {
 			return err
 		}
 		var rules []Rule
@@ -353,6 +491,9 @@ func (e *Engine) load(dir string) error {
 			if !cr.rule.IsEnabled() {
 				continue
 			}
+			if count >= maxRules {
+				return fmt.Errorf("%s: rule %q: %d enabled rules, over the %d rule cap", path, rules[i].Name, count+1, maxRules)
+			}
 			e.byType[cr.rule.EventType] = append(e.byType[cr.rule.EventType], cr)
 			count++
 		}
@@ -362,6 +503,33 @@ func (e *Engine) load(dir string) error {
 		return err
 	}
 	e.count = count
+	return nil
+}
+
+// checkNestingDepth scans the raw bytes for flow-style ('[' / '{')
+// nesting deeper than maxNestingDepth, the same cheap pre-scan the
+// correlator loader runs: yaml.v3 recurses per nesting level, so a
+// crafted deep list value could exhaust the stack inside Unmarshal.
+// Deliberately naive: it counts structural brackets everywhere —
+// quoted strings included — and clamps at zero on unmatched closers.
+// Neither shortcut can hide real depth: true nesting needs at least
+// as many consecutive opens as its own level count, and the scan
+// counts exactly that.
+func checkNestingDepth(path string, data []byte) error {
+	depth := 0
+	for _, b := range data {
+		switch b {
+		case '[', '{':
+			depth++
+			if depth > maxNestingDepth {
+				return fmt.Errorf("%s: YAML nesting deeper than %d levels (possible resource bomb)", path, maxNestingDepth)
+			}
+		case ']', '}':
+			if depth > 0 {
+				depth--
+			}
+		}
+	}
 	return nil
 }
 

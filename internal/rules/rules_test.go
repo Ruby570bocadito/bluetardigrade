@@ -1,8 +1,12 @@
 package rules
 
 import (
+	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -297,6 +301,108 @@ func TestOperators(t *testing.T) {
 			t.Errorf("case %d: operator %s(%v, %v) = %v, want %v",
 				i, tc.op, tc.given, tc.val, got, tc.want)
 		}
+	}
+}
+
+// F1 (ronda 12h40): la familia i* entera comparte UNA semantica de
+// folding — strings.EqualFold y RE2 (?i) aplican simple case folding,
+// mientras que un ToLower plano no pliega caracteres fold-exoticos
+// (U+017F LONG S pliega a "s" pero minusculiza a si mismo). La tabla
+// fija que icontains/istartswith/iendswith no rechacen lo que ieq y
+// el camino regex aceptan, y que el folding simple no cruce alfabetos.
+func TestFoldFamilyUnicodeConsistency(t *testing.T) {
+	cases := []struct {
+		op    string
+		val   any
+		given any
+		want  bool
+	}{
+		{"ieq", "service", "ſervice", true},
+		{"icontains", "serv", "ſervice", true},
+		{"icontains_any", []any{"serv", "other"}, "ſervice", true},
+		{"istartswith", "serv", "ſervice", true},
+		{"iendswith", "vice", "ſerVICE", true},
+		{"iin", []any{"service", "other"}, "ſervice", true},
+		{"ieq", "i", "ı", false},
+		{"icontains", "mil", "sımılw", false},
+		{"icontains", "MIMIKATZ", "invoke-mimikatz", true},
+		{"istartswith", "RUNDLL32", "rundll32.exe", true},
+		{"iendswith", ".EXE", "rundll32.exe", true},
+		{"icontains", "", "anything", true},
+	}
+	for i, tc := range cases {
+		c := Condition{Field: "f", Operator: tc.op, Value: tc.val}
+		m, err := NewMatcher([]Condition{c})
+		if err != nil {
+			t.Fatalf("case %d: %v", i, err)
+		}
+		if got := m.MatchFields(map[string]any{"f": tc.given}); got != tc.want {
+			t.Errorf("case %d: operator %s(%v, %v) = %v, want %v",
+				i, tc.op, tc.given, tc.val, got, tc.want)
+		}
+	}
+	// Paridad con el camino regex del convertidor Sigma: la misma
+	// seleccion traducida como wildcard mixto (regex (?i)) y como valor
+	// plano (ieq) acepta lo mismo que icontains sobre input fold-exotico.
+	if !regexp.MustCompile(`(?i)serv`).MatchString("ſervice") {
+		t.Fatal("RE2 (?i) should fold U+017F to s (precondition)")
+	}
+	m, err := NewMatcher([]Condition{{Field: "f", Operator: "icontains", Value: "serv"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.MatchFields(map[string]any{"f": "ſervice"}) {
+		t.Fatal("icontains must fold like RE2 (?i): U+017F LONG S")
+	}
+}
+
+// F2 (ronda 12h40): el directorio de reglas era la ultima superficie
+// de config sin los caps de la casa (correlator 21h29, threshold,
+// beacon, sigma). Los tres limites fallan LOUD en carga; el hot-reload
+// los hereda gratis (error -> se conserva el set anterior y el fallo
+// sale en el log del engine).
+func TestLoadCapsFailLoud(t *testing.T) {
+	// Fichero sobre el cap de 4 MiB: rechazado ANTES de leerlo entero.
+	dir := t.TempDir()
+	big := filepath.Join(dir, "big.yaml")
+	if err := os.WriteFile(big, bytes.Repeat([]byte("# pad\n"), (4<<20)/6+1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadDir(dir); err == nil {
+		t.Fatal("oversized rule file must fail the load")
+	} else if !strings.Contains(err.Error(), "byte cap") {
+		t.Fatalf("wrong error: %v", err)
+	}
+
+	// Bomba de anidacion flow-style: el pre-scan la rechaza antes de
+	// que yaml.Unmarshal pueda quemar la pila.
+	dir = t.TempDir()
+	deep := strings.Repeat("[", 600) + strings.Repeat("]", 600)
+	raw := "- name: deep\n  id: deep\n  severity: high\n  event_type: process.create\n  conditions:\n    - field: f\n      operator: eq\n      value: " + deep + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "deep.yaml"), []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadDir(dir); err == nil {
+		t.Fatal("deeply nested rule file must fail the load")
+	} else if !strings.Contains(err.Error(), "nesting") {
+		t.Fatalf("wrong error: %v", err)
+	}
+
+	// Cap de reglas habilitadas: 2049 reglas no cargan.
+	cond := Condition{Field: "f", Operator: "eq", Value: "x"}
+	rs := make([]Rule, 2049)
+	for i := range rs {
+		rs[i] = Rule{Name: fmt.Sprintf("r%d", i), ID: fmt.Sprintf("r%d", i), Severity: SevHigh, EventType: "process.create", Conditions: []Condition{cond}}
+	}
+	if _, err := LoadDir(writeRuleDir(t, rs)); err == nil {
+		t.Fatal("over-cap rule count must fail the load")
+	} else if !strings.Contains(err.Error(), "rule cap") {
+		t.Fatalf("wrong error: %v", err)
+	}
+
+	// Exactamente en el cap carga: sin off-by-one fragil.
+	if _, err := LoadDir(writeRuleDir(t, rs[:2048])); err != nil {
+		t.Fatalf("exactly at the cap must load: %v", err)
 	}
 }
 
