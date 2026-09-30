@@ -17,7 +17,7 @@ Landing page (Next.js 16 + Tailwind CSS 4 + shadcn/ui) con:
 
 ```bash
 cd website
-bun install        # o npm install
+bun install        # el lockfile del paquete es bun.lock (único, sin deriva)
 bun run dev        # http://localhost:3000
 ```
 

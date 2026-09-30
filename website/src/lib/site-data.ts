@@ -91,7 +91,7 @@ export const PIPELINE = [
     name: "Console",
     stack: "Next.js + socket.io",
     icon: "monitor",
-    desc: "Live triage with KPIs, severity filters, rule browser, kill-chain chains view and a bring-your-own AI analyst — any OpenAI-compatible endpoint.",
+    desc: "Live triage with KPIs, severity filters, rule browser, kill-chain chains view, a read-only active-response view with its forensic audit trail and a bring-your-own AI analyst — any OpenAI-compatible endpoint.",
     tags: ["Live feed", "AI triage"],
   },
   {
@@ -138,7 +138,7 @@ export const FEATURES = [
   {
     icon: "shield",
     title: "Response built in",
-    desc: "Triage lifecycle (ack / close / reopen with notes), operator suppressions with expiry, alert webhook with bounded retries.",
+    desc: "Opt-in active response (kill_process) with five permission layers and an append-only audit written before every signal, triage lifecycle (ack / close / reopen with notes), operator suppressions with expiry, alert webhook with bounded retries.",
   },
   {
     icon: "database",
@@ -158,8 +158,9 @@ export const QUICKSTART = {
         { text: "[ENGINE] 23 rules loaded from ./rules", ok: true },
         { text: "[ENGINE] 4 sequences loaded (correlator on)", ok: true },
         { text: "[ENGINE] 2 beacon profiles loaded", ok: true },
-        { text: "[ENGINE] listening on 127.0.0.1:7777 (NDJSON)", ok: true },
-        { text: "[ENGINE] api on 127.0.0.1:7778 (stats/events/alerts)", ok: true },
+        { text: "[ENGINE] 2 threshold definitions loaded", ok: true },
+        { text: "[ENGINE] listening on 127.0.0.1:7777 (NDJSON, 1 event per line)", ok: true },
+        { text: "[ENGINE] api on 127.0.0.1:7778 (stats / events / alerts / rules / stream)", ok: true },
       ],
     },
     {
@@ -242,7 +243,7 @@ export const FAQS = [
   },
   {
     q: "What does the console show?",
-    a: "Only what the engine really delivers: live event feed, KPI dashboard, severity triage with free-text search, rule browser, kill-chain chains view and suppressions — plus an AI analyst you plug into your own OpenAI-compatible endpoint.",
+    a: "Only what the engine really delivers: live event feed, KPI dashboard, severity triage with free-text search, rule browser, kill-chain chains view, suppressions, a read-only active-response view with its forensic audit trail — plus an AI analyst you plug into your own OpenAI-compatible endpoint.",
   },
   {
     q: "How fast is the pipeline?",
