@@ -31,6 +31,7 @@ const STATS: Record<string, unknown> = {
     { host: 'PC-A', score: 15, alerts: 2, last_seen: '2026-09-30T12:00:00Z' },
     { host: 42, score: 'nine' }, // malformed row: the bridge must drop it
     { host: 'PC-B', score: 1, alerts: 1, last_seen: '2026-09-30T12:00:00Z' },
+    { host: 'PC-C', score: 3, alerts: 'many' }, // non-finite alerts: dropped too (agent-04 cross-review)
   ],
 }
 
@@ -134,7 +135,7 @@ describe('EngineBridge (agent-04 hardening)', () => {
     expect(rec.stats[0].hot_hosts).toEqual([
       { host: 'PC-A', score: 15, alerts: 2, last_seen: '2026-09-30T12:00:00Z' },
       { host: 'PC-B', score: 1, alerts: 1, last_seen: '2026-09-30T12:00:00Z' },
-    ])
+    ]) // PC-C (alerts: 'many' -> NaN) dropped: a count must be finite like the score
 
     // engine flap: the SSE stream closes, the bridge reports down and
     // reconnects to an engine whose payloads did NOT change

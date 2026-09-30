@@ -294,10 +294,15 @@ function mapHotHosts(raw: unknown): HotHost[] {
     if (typeof h.host !== 'string' || h.host === '') continue
     const score = Number(h.score)
     if (!Number.isFinite(score)) continue
+    // alerts is a count like score: a non-finite value (engine bug or a
+    // tampered payload) would render as "NaN alertas" downstream — the
+    // row is malformed all the same, drop it with the same criterion.
+    const alerts = Number(h.alerts ?? 0)
+    if (!Number.isFinite(alerts)) continue
     out.push({
       host: h.host,
       score,
-      alerts: Number(h.alerts ?? 0),
+      alerts,
       last_seen: String(h.last_seen ?? ''),
     })
   }
