@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 arq_v04/generator.py — versioned generator of the body of
-docs/arquitectura-tecnica-v0.5.pdf (cover is rendered separately from
-docs/assets/src/cover-v0.5.html and merged by merge_and_meta.py).
+docs/arquitectura-tecnica-v0.6.pdf (cover is rendered separately from
+docs/assets/src/cover-v0.6.html and merged by merge_and_meta.py).
 The directory name arq_v04 records where the pipeline was born (v0.4); it
 builds the current revision of the series.
 
@@ -49,7 +49,7 @@ from reportlab.platypus.tableofcontents import TableOfContents
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
-OUT_BODY = os.path.join(REPO, "docs", "arquitectura-tecnica-v0.5.body.pdf")
+OUT_BODY = os.path.join(REPO, "docs", "arquitectura-tecnica-v0.6.body.pdf")
 
 # ---------------------------------------------------------------- fonts ----
 FONT_DIR = "/usr/share/fonts"
@@ -91,7 +91,7 @@ AVAIL_H = PAGE_H - 2 * MARGIN
 H1_ORPHAN = AVAIL_H * 0.25
 
 DOC_TITLE = "Arquitectura Técnica - Framework de Detección de Amenazas en Tiempo Real"
-FOOTER_LEFT = "Ruby570bocadito · security-framework v0.5"
+FOOTER_LEFT = "Ruby570bocadito · security-framework v0.6"
 
 # ---------------------------------------------------------------- styles ---
 body = ParagraphStyle("Body", fontName="FreeSerif", fontSize=10.5, leading=16.5,
@@ -322,9 +322,9 @@ story += h1_block(1, "Visión y Filosofía de Diseño",
     "sistema anclado en ETW con un motor de detección de comportamiento, correlación de secuencias y una consola "
     "web interactiva de triaje. El nombre del proyecto es provisional (security-framework) y se mantendrá hasta "
     "que la comunidad elija la marca definitiva. A diferencia de la v0.1, que describía una promesa de diseño, "
-    "esta revisión v0.5 describe el sistema tal como está implementado y verificado hoy: cada afirmación de este "
+    "esta revisión v0.6 describe el sistema tal como está implementado y verificado hoy: cada afirmación de este "
     "texto corresponde a código en el repositorio, con pruebas de unidad, E2E sobre binarios reales y mediciones "
-    "de rendimiento publicadas. Es la segunda revisión producida por el pipeline de generación versionado en el "
+    "de rendimiento publicadas. Es la tercera revisión producida por el pipeline de generación versionado en el "
     "propio árbol (scripts/arq_v04/, estrenado por la v0.4), de modo que ninguna revisión de la serie dependa "
     "de herramientas desaparecidas para reproducirse.")
 
@@ -561,11 +561,16 @@ story.append(para(
     "hallazgo). El proyecto añadió además website/, la landing oficial en Next.js 16, separada de la consola "
     "y sin acceso a telemetría; la batería TypeScript de la casa cubre hoy los tres paquetes TS del árbol en "
     "el alcance que cada uno define. La Figura 2 muestra el dashboard con telemetría real del sensor de "
-    "desarrollo."))
+    "desarrollo y el panel de hosts calientes completo, regenerada desde el stack real (sensor, hub y "
+    "consola de producción); su navegación procede del árbol 091986c y por tanto precede a la ola de "
+    "consola de C3 — la limitación viaja declarada en el propio pie de figura."))
 
 story += figure("docs/assets/console-panel.png",
-                "Figura 2. Dashboard de operaciones de la consola: KPIs, actividad del sensor y cola de "
-                "triaje en vivo.", 300)
+                "Figura 2. Dashboard de operaciones de la consola: KPIs, actividad del sensor, cola de "
+                "triaje en vivo y panel de hosts calientes completo. Captura regenerada sobre el árbol "
+                "091986c: la navegación capturada precede a la ola de consola de C3 (cb33da6), de modo que "
+                "la vista de respuesta activa no figura aún en el menú — declarado como O2 en el acta "
+                "18h50_B; la recaptura sobre el árbol vigente queda pendiente.", 300)
 
 story += h2_block("3.4 Extensiones (filaments, fase futura)", para(
     "Los filaments heredan la idea de Fibratus de extensiones en Python, con dos mejoras de diseño: ejecución "
@@ -646,10 +651,27 @@ story.append(para(
     "señal, los recuentos vivos con sus rutas y la barra de salud del audit con aviso al 80 % del techo — "
     "el mismo mensaje de rotación que canta el banner del motor —; la cola de intentos distingue ejecutado "
     "de denegado con su código de denegación, muestra el nombre real resuelto cuando la plataforma lo "
-    "corrigió, el mecanismo empleado, el seguimiento marcado y el identificador de acción que une la "
+    "corrigió, el mecanismo empleado, con su fallback_reason visible como etiqueta junto al mechanism "
+    "cuando hubo degradación, el seguimiento marcado y el identificador de acción que une la "
     "respuesta API con su línea JSONL y su entrada de log. Los estados vacíos son honestos: sin superficie "
     "armada la vista declara no disponible con las tres condiciones de armado al pie, y un audit sin "
     "intentos muestra su estado vacío real, nunca una tarjeta fabricada."))
+story.append(para(
+    "El mecanismo de ejecución es dual por plataforma y su degradación viaja en el propio registro "
+    "probatorio. En Linux la vía preferente es pidfd: el descriptor queda anclado al objeto del proceso, "
+    "inmune a la reutilización de PID, y solo cae a la vía de respaldo cuando el kernel no lo soporta "
+    "(enosys) o la tabla de descriptores se agota (emfile/enfile — un mecanismo vivo muriéndose de hambre, "
+    "digno de alarma). La degradación nunca es silenciosa: la línea de seguimiento del audit y la API "
+    "llevan mechanism=fallback junto a fallback_reason con el errno exacto — incluso en los intentos "
+    "denegados —, contrato ratificado por dos cross-reviews independientes. En Windows la vía es handle: "
+    "un único OpenProcess sirve la verificación del nombre real y la terminación, el objeto queda anclado "
+    "mientras el handle vive y la ventana de reciclaje de PID no puede redirigir el kill a otro proceso. "
+    "Su certificación es conductual y permanente: el job engine-windows de CI ejecuta el smoke sobre un "
+    "motor nativo real — 29 aserciones OK y 0 fallos — con el proceso objetivo muerto vía "
+    "mechanism=handle, el cebo csrss.exe sobreviviendo como protegido, cuatro denegaciones 403 con su "
+    "código, 401/429/409, la guarda R6 negando antes de senilar, el JSONL íntegro y el 404 real del "
+    "desarmado; la condición de cierre de C3 fijada por seguridad dejó así de depender de la memoria de "
+    "una ronda y vive en cada corrida de CI — una regresión que la rompa aterriza en rojo."))
 
 # ---- 4. Modelo de Datos y Esquema de Eventos ----
 story += h1_block(4, "Modelo de Datos y Esquema de Eventos",
@@ -686,7 +708,7 @@ story += make_table(
          "evidencia cruda."],
     ],
     [0.16, 0.10, 0.74],
-    "Tabla 4. Campos del esquema de eventos unificado (v0.5).")
+    "Tabla 4. Campos del esquema de eventos unificado (v0.6).")
 
 story += code_block([
     '{',
@@ -880,7 +902,7 @@ story += make_table(
          "74 referencias, self-test incluido); bench nocturno con dos pasadas y sonda fsync; baterías Go y TS por paquete."],
     ],
     [0.15, 0.33, 0.52],
-    "Tabla 6. Stack tecnológico por capa con su justificación (v0.5).")
+    "Tabla 6. Stack tecnológico por capa con su justificación (v0.6).")
 
 story.append(para(
     "La estructura del monorepo delimita las fronteras con el sistema de ficheros: cada paquete interno es "
@@ -910,7 +932,7 @@ story += code_block([
     '├── scripts/windows/        # instalador PS1, servicio, config Sysmon',
     '├── scripts/arq_v04/        # este generador (pipeline versionado del documento)',
     '└── docs/                   # este documento, OpenAPI, assets, actas',
-], "Ejemplo 3. Estructura del monorepo (v0.5, árbol real del repositorio).")
+], "Ejemplo 3. Estructura del monorepo (v0.6, árbol real del repositorio).")
 
 story.append(para(
     "Las convenciones de código se aplican desde el primer commit: formato obligatorio (gofmt y rustfmt), "
@@ -931,12 +953,16 @@ story += h1_block(7, "Roadmap de Desarrollo",
     "7 añade a la planificación original la columna que la v0.1 no podía escribir: el estado real verificado "
     "de cada fase a fecha de esta revisión. Los contadores citan su procedencia — el marcador de defectos y "
     "las líneas de roadmap cerradas se consolidan en las actas del Director y del rol de seguridad, no en "
-    "este documento — y hoy marcan 13 de 17 líneas cerradas y 33 defectos cerrados sin ninguno vivo; la "
-    "catorceava línea del roadmap, la consola de respuesta activa, figura como propuesta del acta de "
-    "implementaciones 18h20 a la espera de la certificación del Director.")
+    "este documento — y hoy marcan 13 de 17 líneas cerradas y 33 defectos cerrados sin ninguno vivo en el "
+    "marcador canónico. La condición de cierre de la respuesta activa es ya permanente en CI sobre motor "
+    "Windows nativo; la catorceava línea del roadmap, la consola de respuesta activa, sigue figurando como "
+    "propuesta del acta de implementaciones 18h20 a la espera de la certificación del Director; y los "
+    "hallazgos posteriores avanzan con su estado declarado — F1 aterrizada por 02-B (keys compuestas) "
+    "pendiente de certificación del cross-review, F2 con parche listo en el carril 02-A, #34 y #35 "
+    "propuestos por seguridad — ninguno con baja certificada aún.")
 
 story += make_table(
-    ["Fase", "Objetivos", "Estado hoy (v0.5)"],
+    ["Fase", "Objetivos", "Estado hoy (v0.6)"],
     [
         ["1. Core y MVP (Q4 2026)",
          "Tracer bullet end-to-end; sensor básico; reglas YAML puntuales; CLI de prueba.",
@@ -951,13 +977,14 @@ story += make_table(
          "Casi cerrada: consola Next.js de operaciones, OpenAPI validado por guard en CI, webhook "
          "SIEM/SOAR, notificaciones externas (C2), sumideros SIEM nativos Elastic/Splunk aterrizados y "
          "respuesta activa C3 certificada y observable de punta a punta (detectar, actuar y leer el audit "
-         "desde la API y la consola). Queda el pulido de empaquetado de conectores."],
+         "desde la API y la consola), con su cierre conductual permanente en CI sobre motor Windows nativo. "
+         "Queda el pulido de empaquetado de conectores."],
         ["4. Extensibilidad (Q2 2027)",
          "Filaments en sandbox Python; profiling; guía de contribución.",
          "Pendiente. Sin código simulado en el árbol; el diseño se mantiene en la sección 3.4."],
     ],
     [0.17, 0.33, 0.50],
-    "Tabla 7. Fases del roadmap con su estado real a septiembre de 2026 (v0.5).")
+    "Tabla 7. Fases del roadmap con su estado real a septiembre de 2026 (v0.6).")
 
 story.append(para(
     "Las métricas de éxito miden la salud del proyecto, no solo el código. La fase 1 prometía un pipeline "
@@ -1020,7 +1047,10 @@ story += h2_block("8.2 Verificación continua", para(
     "e2e_siem (19/19 x2, incluida la Fase 0 que demuestra el echo de URLs saneadas y el contrato 4xx "
     "permanente/transitorio sobre un sink real), e2e_respond_kill (23/23, incluida la fase que ejercita las "
     "lecturas state/audit sobre binarios reales y el 404 real en desarmado), smoke_auth, smoke_lifecycle y "
-    "e2e_store_sequences. El guard del OpenAPI compara el spec con el motor vivo (15 rutas y 36 campos "
+    "e2e_store_sequences; el smoke_respond suma 29 aserciones sobre motor Windows nativo en CI — el cierre "
+    "conductual permanente de C3: mechanism=handle con proceso real muerto, el cebo csrss.exe sobrevive "
+    "como protegido y el desarmado mantiene su 404 real byte-idéntico. El guard del OpenAPI compara el "
+    "spec con el motor vivo (15 rutas y 36 campos "
     "de stats, con paridad exacta "
     "contra /metrics) y falla la ronda si hay deriva; su self-test verifica al propio guard con un fixture "
     "positivo y trece negativos que deben producir hallazgo. Los paquetes con estado se testean con -race "
@@ -1038,7 +1068,7 @@ story.append(para(
     "y demo grabada. La arquitectura descrita en este documento es, sobre todo, una promesa de estabilidad "
     "para quien construya encima: el comportamiento del pipeline no cambiará, solo mejorará su "
     "implementación, y cada revisión futura vendrá acompañada de la misma columna de estado honesto que "
-    "distingue a esta v0.5 de su original — generada, además, por el pipeline versionado que este propio "
+    "distingue a esta v0.6 de su original — generada, además, por el pipeline versionado que este propio "
     "capítulo describe."))
 
 # ------------------------------------------------------------------ build --
@@ -1047,10 +1077,10 @@ doc = TocDocTemplate(
     pagesize=A4,
     leftMargin=MARGIN, rightMargin=MARGIN,
     topMargin=MARGIN, bottomMargin=MARGIN,
-    title="Arquitectura Técnica - Framework de Detección de Amenazas en Tiempo Real (v0.5)",
+    title="Arquitectura Técnica - Framework de Detección de Amenazas en Tiempo Real (v0.6)",
     author="Ruby570bocadito",
     creator="Ruby570bocadito",
-    subject="Documento de arquitectura tecnica v0.5: estado implementado y verificado del framework",
+    subject="Documento de arquitectura tecnica v0.6: estado implementado y verificado del framework",
 )
 doc.multiBuild(story, onFirstPage=on_page, onLaterPages=on_page)
 print(f"body written: {OUT_BODY}")
