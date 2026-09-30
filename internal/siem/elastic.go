@@ -144,7 +144,7 @@ func (e *Elastic) deliverBatch(ctx context.Context, batch []alert.Alert) {
 		}
 		if perr != nil {
 			log.Printf("[ELASTIC] bulk to %s failed (attempt %d/%d): %v",
-				e.url, attempt, maxAttempts, perr)
+				endpointLabel(e.url), attempt, maxAttempts, redactedErr(perr))
 		}
 		pending = retryable
 		if attempt == maxAttempts {

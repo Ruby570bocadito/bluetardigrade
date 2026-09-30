@@ -126,7 +126,7 @@ func (s *Splunk) deliver(ctx context.Context, a alert.Alert) {
 		}
 	}
 	s.failed.Add(1)
-	log.Printf("[SPLUNK] delivery to %s failed after %d attempts: %v", s.url, maxAttempts, lastErr)
+	log.Printf("[SPLUNK] delivery to %s failed after %d attempts: %v", endpointLabel(s.url), maxAttempts, redactedErr(lastErr))
 }
 
 // hecEvent is the wire shape of one HEC event. The alert travels as
