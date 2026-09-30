@@ -62,7 +62,13 @@ jobs:
           GOOS=windows go vet ./internal/respond/ ./internal/api/ ./cmd/engine/
       - name: OpenAPI spec drift guard
         run: |
-          python3 -m pip install --quiet pyyaml
+          # PyYAML pinned: a PyPI version release is immutable once
+          # published, so an exact pin is a stable reference — the same
+          # rationale as the SHA-pinned actions above (ronda 20h40):
+          # an unpinned install floats to whatever the registry serves
+          # at run time, the mutable-reference class this repo rejects
+          # for CI supply-chain.
+          python3 -m pip install --quiet pyyaml==6.0.3
           python3 scripts/dev-tests/check_openapi.py
           # El guard también verifica el guard: fixtures embebidas
           # que deben producir hallazgos (el recuento crece con cada check nuevo).
