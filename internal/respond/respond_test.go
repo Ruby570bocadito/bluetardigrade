@@ -211,7 +211,7 @@ func TestPIDNotFound(t *testing.T) {
 }
 
 func TestNameMismatchDenied(t *testing.T) {
-	m, _, _ := newTestManager(t, "ana")
+	m, _, path := newTestManager(t, "ana")
 	cmd := spawnSleeper(t)
 	if res := m.Kill(killReq(cmd.Process.Pid, "notsleep")); res.Code != CodePIDMismatch {
 		t.Fatalf("want pid_mismatch, got %+v", res)
@@ -219,6 +219,12 @@ func TestNameMismatchDenied(t *testing.T) {
 	// the mismatched target must still be alive (nothing was sent)
 	if !alive(cmd.Process) {
 		t.Fatal("target died on a denied request")
+	}
+	// R5a/O1: the denial line carries the RESOLVED name — the incident
+	// reviewer can tell "wrong name requested" from "object flipped"
+	recs := readAuditLines(t, path)
+	if len(recs) != 1 || recs[0].Resolved != "sleep" {
+		t.Fatalf("mismatch audit line must record resolved_name=sleep, got %+v", recs)
 	}
 }
 
@@ -411,6 +417,9 @@ func TestExecutedKillRecordsAuditAndSignal(t *testing.T) {
 	}
 	if r.Source != "127.0.0.1:9999" || r.Host != "ENGINE-LAB" || r.Reason != "unit test" {
 		t.Fatalf("audit attribution/context missing: %+v", r)
+	}
+	if r.Resolved != "sleep" {
+		t.Fatalf("executed audit line must record resolved_name=sleep (O1), got %+v", r)
 	}
 }
 

@@ -38,6 +38,7 @@ package respond
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"sync"
@@ -249,7 +250,7 @@ func (m *Manager) Kill(req Request) Result {
 	// cheapest denial first: a repeated idempotency key is a client
 	// retry, never a fresh action (409, design §3).
 	if !m.idempotencyFresh(req.IdempotencyKey) {
-		return m.deny(res, req, now, CodeIdempotencyRepeated, "")
+		return m.deny(res, req, now, CodeIdempotencyRepeated, "", "")
 	}
 
 	// ---- layer 3: operator allowlist (empty allowlist denies all)
@@ -257,14 +258,14 @@ func (m *Manager) Kill(req Request) Result {
 	_, opOK := m.operators[req.Operator]
 	m.mu.RUnlock()
 	if !opOK {
-		return m.deny(res, req, now, CodeOperatorNotAllowed, "")
+		return m.deny(res, req, now, CodeOperatorNotAllowed, "", "")
 	}
 
 	// ---- R3: the host field cannot be decorative. A console
 	// replaying a REMOTE sensor's alert must not get a local kill on
 	// a PID that means something else there.
 	if m.hostname == "" || !strings.EqualFold(strings.TrimSpace(req.Host), m.hostname) {
-		return m.deny(res, req, now, CodeHostMismatch, "")
+		return m.deny(res, req, now, CodeHostMismatch, "", "")
 	}
 
 	// ---- single-flight span: budgets, guards, commit, audit,
@@ -275,12 +276,15 @@ func (m *Manager) Kill(req Request) Result {
 
 	// ---- budgets: cooldown, global and per-operator ceilings
 	if code := m.checkBudgets(req, now); code != "" {
-		return m.deny(res, req, now, code, "")
+		return m.deny(res, req, now, code, "", "")
 	}
 
-	// ---- layer 4: the process guard
-	if code := m.guardProcess(req); code != "" {
-		return m.deny(res, req, now, code, "")
+	// ---- layer 4: the process guard (also yields the platform-
+	// resolved real name, which every audit line of this attempt
+	// carries — R5a's "nombre RESUELTO", dictamen re-revisión O1)
+	code, resolved := m.guardProcess(req)
+	if code != "" {
+		return m.deny(res, req, now, code, "", resolved)
 	}
 
 	// ---- commit: budgets are recorded here (denials above never
@@ -293,6 +297,7 @@ func (m *Manager) Kill(req Request) Result {
 	// why the key is recorded before the audit gate, not after.
 	rec := m.auditRecord(req, now, res.ActionID)
 	rec.Decision = "executed"
+	rec.Resolved = resolved
 	if err := m.audit.Write(rec); err != nil {
 		res.Code = CodeAuditUnavailable
 		res.HTTPStatus = httpStatusFor(res.Code)
@@ -383,29 +388,31 @@ func (m *Manager) checkBudgets(req Request, now time.Time) string {
 
 // guardProcess runs the platform guard: self/ancestor, PID validity,
 // existence, real-name match (R2) and protected list (R6). It returns
-// "" when the target survived every check.
-func (m *Manager) guardProcess(req Request) string {
+// the blocking code ("" = the target survived every check) plus the
+// platform-resolved real name when the target got that far — the
+// audit lines of the attempt carry it (R5a, re-revisión O1).
+func (m *Manager) guardProcess(req Request) (string, string) {
 	// the engine never kills itself or its parent (design §2.4c) —
 	// os.Getpid/os.Getppid are the cheap ancestors the design names.
 	if req.PID == os.Getpid() || req.PID == os.Getppid() {
-		return CodeSelfProtected
+		return CodeSelfProtected, ""
 	}
 	// PID validity (dictamen §4.2): 0/1/negative carry mass-signal
 	// semantics on Unix and are denied with their own named code
 	// before any syscall touches the target.
 	if req.PID <= 1 {
-		return CodePIDInvalid
+		return CodePIDInvalid, ""
 	}
 	resolved, rerr := resolveProcessName(req.PID)
 	if rerr != nil {
-		return processCodeFor(rerr)
+		return processCodeFor(rerr), ""
 	}
 	if !nameMatches(resolved, req.ProcessName) {
 		// R2/dictamen Q3: this check protects against the MECHANICAL
 		// error (wrong PID through recycling), not against malware
 		// disguising its identity — the -allow-kill flag text says
 		// so and the decision stays with the operator.
-		return CodePIDMismatch
+		return CodePIDMismatch, resolved
 	}
 	// protected list: platform defaults merged with the operator's
 	// optional file. Linux adds no names by default (PID 1 is
@@ -416,9 +423,9 @@ func (m *Manager) guardProcess(req Request) string {
 	names := m.protected
 	m.mu.RUnlock()
 	if isProtectedDefault(req.PID, resolved) || nameInSet(resolved, names) {
-		return CodeProcessProtected
+		return CodeProcessProtected, resolved
 	}
-	return ""
+	return "", resolved
 }
 
 // recordCommit persists the idempotency key (R4 bounded, oldest-first
@@ -468,13 +475,14 @@ func (m *Manager) auditRecord(req Request, now time.Time, actionID string) Recor
 
 // deny finalizes a denial: audit line (loud engine-log line when the
 // writer is down) + code/status on the returned result.
-func (m *Manager) deny(res Result, req Request, now time.Time, code, mechanism string) Result {
+func (m *Manager) deny(res Result, req Request, now time.Time, code, mechanism, resolved string) Result {
 	res.Code = code
 	res.HTTPStatus = httpStatusFor(code)
 	rec := m.auditRecord(req, now, res.ActionID)
 	rec.Decision = "denied"
 	rec.Code = code
 	rec.Mechanism = mechanism
+	rec.Resolved = resolved
 	if err := m.audit.Write(rec); err != nil {
 		logAuditDown(res, req, err)
 	}
@@ -487,7 +495,7 @@ func (m *Manager) deny(res Result, req Request, now time.Time, code, mechanism s
 // client as audit_unavailable. Either way the log line is the trace
 // of record when the JSONL is down.
 func logAuditDown(res Result, req Request, err error) {
-	fmt.Printf("[RESPOND] AUDIT WRITE FAILED action=%s code=%s pid=%d operator=%s from=%s: %v\n",
+	log.Printf("[RESPOND] AUDIT WRITE FAILED action=%s code=%s pid=%d operator=%s from=%s: %v",
 		oneLineLog(res.ActionID), res.Code, req.PID, oneLineLog(req.Operator),
 		oneLineLog(req.Source), err)
 }
@@ -496,7 +504,7 @@ func logAuditDown(res Result, req Request, err error) {
 // resolved name and mechanism let the operator correlate the JSONL
 // audit, the API response and the log without guesswork.
 func logExecuted(res Result, req Request) {
-	fmt.Printf("[RESPOND] kill executed action=%s pid=%d operator=%s mechanism=%s from=%s\n",
+	log.Printf("[RESPOND] kill executed action=%s pid=%d operator=%s mechanism=%s from=%s",
 		oneLineLog(res.ActionID), req.PID, oneLineLog(req.Operator),
 		res.Mechanism, oneLineLog(req.Source))
 }
