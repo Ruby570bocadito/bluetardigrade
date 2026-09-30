@@ -191,6 +191,22 @@ export type EngineStats = {
   // engine reports them; in sin-motor mode they are absent.
   risk_hosts_tracked?: number
   hot_hosts?: HotHost[]
+  // beaconing detector observability (engine A3), documented in the
+  // OpenAPI Stats schema: live (profile, host, destination) keys,
+  // tracking cap and beacons fired since startup. All zero = detector
+  // off (engine without -beacons); undefined on engines predating A3.
+  // The header chip reads the trio: hidden while off, red at the cap.
+  beacons_tracked?: number
+  beacons_cap?: number
+  beacons_fired?: number
+  // volumetric threshold detector observability (engine A2): loaded
+  // definitions, live aggregation keys and threshold alerts fired.
+  // All zero = detector off (missing -thresholds file); undefined on
+  // engines predating A2. No cap is exposed by the engine, so the
+  // header chip stays neutral and never invents one.
+  threshold_rules?: number
+  threshold_keys?: number
+  threshold_fired?: number
   // hub-only fields: the engine itself sends neither mode nor
   // interval_ms (mode optional so direct-engine responses type-check)
   interval_ms?: number

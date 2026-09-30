@@ -283,6 +283,16 @@ function mapStats(st: Record<string, unknown>): HubStats {
     // number) is dropped here, never forwarded to the console
     risk_hosts_tracked: Number(st.risk_hosts_tracked ?? 0),
     hot_hosts: mapHotHosts(st.hot_hosts),
+    // behavioral detector observability (A3 beacons, A2 thresholds): the
+    // engine always serves both trios (documented in the OpenAPI Stats
+    // schema) and the console header chips read them; older engines that
+    // predate the fields degrade to zeros, which keep the chips hidden
+    beacons_tracked: Number(st.beacons_tracked ?? 0),
+    beacons_cap: Number(st.beacons_cap ?? 0),
+    beacons_fired: Number(st.beacons_fired ?? 0),
+    threshold_rules: Number(st.threshold_rules ?? 0),
+    threshold_keys: Number(st.threshold_keys ?? 0),
+    threshold_fired: Number(st.threshold_fired ?? 0),
   }
 }
 

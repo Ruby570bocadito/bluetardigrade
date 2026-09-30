@@ -30,11 +30,29 @@ when the hub is down only the analyst view is affected.
 
 | View | What it shows |
 |------|----------------|
-| Panel | KPI strip (uptime, events/min, alerts by severity, rules, buffer, webhooks), 4-minute rate chart, engine summary, latest alerts and telemetry |
+| Panel | KPI strip (uptime, events/min, alerts by severity, rules, buffer, webhooks), 4-minute rate chart, engine summary (persistence mode included), latest alerts and telemetry |
 | Flujo en vivo | SSE-fed event table with sticky header, pause, search, type filter and JSONL/CSV export |
 | Alertas | Semantic table (search, severity filter, export) plus a detail panel: rule message, matched_on, ATT&CK tags, actions, enrichment |
 | Reglas | The rule pack as the engine sees it, with expandable conditions |
 | Analista IA | Streaming triage chat bound to a selected alert |
+
+## Header chips
+
+The topbar carries one status chip per delivery/detector surface, all fed by
+`/api/stats` and all honest by design — a chip is **hidden** while its feature
+is off (an all-zero chip for a disabled feature would be a lie), neutral while
+there is headroom and red the moment something needs operator attention:
+
+| Chip | Source fields | Turns red when |
+|------|---------------|----------------|
+| `webhook N / err / desc` | `webhook_sent` / `webhook_failed` / `webhook_dropped` | any delivery fails or is dropped (the SIEM is missing alerts) |
+| `correlador N/cap` | `correlator_states` / `correlator_sequences` / `correlator_cap` | chains in flight reach the tracking cap (new hosts stop being correlated) |
+| `beacons N/cap` | `beacons_tracked` / `beacons_cap` / `beacons_fired` (A3) | tracked destinations reach the cap (new destinations stop being tracked) |
+| `umbrales N · M` | `threshold_rules` / `threshold_keys` / `threshold_fired` (A2) | never: the engine exposes no key cap, so the chip refuses to paint a saturation signal it cannot know about |
+
+The persistence mode is not a chip but an engine-summary row (`Persistencia`):
+`SQLite · X eventos · Y alertas` when `-store` is attached, `sin store` when it
+is not — the console shows the real mode, never an assumption.
 
 ## Quickstart
 

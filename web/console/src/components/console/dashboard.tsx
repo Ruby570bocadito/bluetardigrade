@@ -224,6 +224,22 @@ function EngineSummary({ status }: { status: EngineStatus }) {
         </span>
       ),
     },
+    {
+      // opt-in SQLite persistence (engine -store flag): the store trio is
+      // part of the documented /api/stats contract but was never surfaced.
+      // undefined = engine predating the store or hub offline snapshot;
+      // the row says so instead of guessing.
+      label: 'Persistencia',
+      value: stats?.store_enabled ? (
+        <span className="font-mono text-xs tabular-nums text-zinc-300">
+          SQLite · {stats.store_events} eventos · {stats.store_alerts} alertas
+        </span>
+      ) : stats ? (
+        <span className="font-mono text-xs text-zinc-500">sin store (-store off)</span>
+      ) : (
+        <span className="font-mono text-xs text-zinc-500">sin datos</span>
+      ),
+    },
     { label: 'Reglas cargadas', value: <span className="font-mono text-xs tabular-nums text-zinc-300">{rules.length}</span> },
   ]
 

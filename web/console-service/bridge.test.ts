@@ -5,7 +5,9 @@
 //    an unchanged payload the hub must still re-emit it — otherwise the
 //    Cadenas/Supresiones views stay empty until the YAML changes.
 // 2. mapStats must forward the store fields both type contracts declare
-//    ("forwarded by the hub when the engine reports it").
+//    ("forwarded by the hub when the engine reports it"), the A1 hot-host
+//    surface and the A2/A3 detector trios (beacons_*, threshold_*) the
+//    OpenAPI Stats schema documents — the console header chips read them.
 //
 // The engine's HTTP API is stubbed at fetch level: health/rules/events/
 // alerts/stats/suppressions/sequences answer JSON, /api/stream returns
@@ -33,6 +35,12 @@ const STATS: Record<string, unknown> = {
     { host: 'PC-B', score: 1, alerts: 1, last_seen: '2026-09-30T12:00:00Z' },
     { host: 'PC-C', score: 3, alerts: 'many' }, // non-finite alerts: dropped too (agent-04 cross-review)
   ],
+  beacons_tracked: 12,
+  beacons_cap: 8192,
+  beacons_fired: 3,
+  threshold_rules: 2,
+  threshold_keys: 5,
+  threshold_fired: 1,
 }
 
 type Recorder = {
@@ -136,6 +144,14 @@ describe('EngineBridge (agent-04 hardening)', () => {
       { host: 'PC-A', score: 15, alerts: 2, last_seen: '2026-09-30T12:00:00Z' },
       { host: 'PC-B', score: 1, alerts: 1, last_seen: '2026-09-30T12:00:00Z' },
     ]) // PC-C (alerts: 'many' -> NaN) dropped: a count must be finite like the score
+    // A3/A2: both detector trios documented in the OpenAPI Stats schema
+    // are forwarded for the header chips (beacons, volumetric thresholds)
+    expect(rec.stats[0].beacons_tracked).toBe(12)
+    expect(rec.stats[0].beacons_cap).toBe(8192)
+    expect(rec.stats[0].beacons_fired).toBe(3)
+    expect(rec.stats[0].threshold_rules).toBe(2)
+    expect(rec.stats[0].threshold_keys).toBe(5)
+    expect(rec.stats[0].threshold_fired).toBe(1)
 
     // engine flap: the SSE stream closes, the bridge reports down and
     // reconnects to an engine whose payloads did NOT change
@@ -149,6 +165,33 @@ describe('EngineBridge (agent-04 hardening)', () => {
     expect(rec.seqs[nSeq]).toEqual(SEQS) // same payload, still re-emitted
 
     // tidy shutdown: close the live stream so start() can return
+    streams[streams.length - 1].close()
+    bridge.stop()
+    await Promise.race([running, new Promise((r) => setTimeout(r, 500))])
+  }, 15000)
+
+  test('degrades the A2/A3 detector trios to zeros for engines predating them', async () => {
+    const rec = recorder()
+    const streams: ReadableStreamDefaultController<Uint8Array>[] = []
+    // legacy stats payload: no beacons_*/threshold_* fields at all
+    const legacy = { ...STATS }
+    for (const k of ['beacons_tracked', 'beacons_cap', 'beacons_fired', 'threshold_rules', 'threshold_keys', 'threshold_fired']) {
+      delete legacy[k]
+    }
+    globalThis.fetch = stubEngine({ sequences: [], suppressions: { entries: [] }, stats: legacy, streams })
+
+    const bridge = new EngineBridge(rec.cb, { retryMs: 25 })
+    const running = bridge.start()
+
+    await until(() => rec.stats.length >= 1, 2000, 'first stats')
+    // zeros, never NaN: the header chips hide on all-zero trios
+    expect(rec.stats[0].beacons_tracked).toBe(0)
+    expect(rec.stats[0].beacons_cap).toBe(0)
+    expect(rec.stats[0].beacons_fired).toBe(0)
+    expect(rec.stats[0].threshold_rules).toBe(0)
+    expect(rec.stats[0].threshold_keys).toBe(0)
+    expect(rec.stats[0].threshold_fired).toBe(0)
+
     streams[streams.length - 1].close()
     bridge.stop()
     await Promise.race([running, new Promise((r) => setTimeout(r, 500))])
