@@ -655,6 +655,12 @@ func (h *Hub) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	h.mu.Lock()
 	st := h.store
+	// Snapshot the ring under the same lock RecordEvent appends and
+	// trims with: reading the slice header unlocked races the
+	// append/trim (torn header -> out-of-range or garbage reads).
+	// Elements are immutable once inserted, so the header snapshot
+	// is sufficient (export.go already used this same pattern).
+	ring := h.events
 	h.mu.Unlock()
 	if st != nil {
 		// store attached: serve the FULL history (retention
@@ -674,9 +680,9 @@ func (h *Hub) handleEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := make([]*model.Event, 0, limit)
-	for i := len(h.events) - 1; i >= 0 && len(out) < limit; i-- {
-		if f.matchEvent(h.events[i]) {
-			out = append(out, h.events[i])
+	for i := len(ring) - 1; i >= 0 && len(out) < limit; i-- {
+		if f.matchEvent(ring[i]) {
+			out = append(out, ring[i])
 		}
 	}
 	writeJSON(w, out)
@@ -715,6 +721,10 @@ func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 	}
 	h.mu.Lock()
 	st := h.store
+	// Snapshot under the lock: same ring-race argument as
+	// handleEvents (RecordAlert appends+trims under h.mu; elements
+	// are immutable value copies once inserted).
+	ring := h.alerts
 	h.mu.Unlock()
 	if st != nil {
 		out, err := st.QueryAlerts(store.AlertQuery{
@@ -738,8 +748,8 @@ func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := make([]alertView, 0, limit)
-	for i := len(h.alerts) - 1; i >= 0 && len(out) < limit; i-- {
-		a := h.alerts[i]
+	for i := len(ring) - 1; i >= 0 && len(out) < limit; i-- {
+		a := ring[i]
 		// alertTime decides whether the record can be evaluated against
 		// the requested time bounds (see its doc): the parse is only a
 		// prerequisite when the query actually filters by time.
