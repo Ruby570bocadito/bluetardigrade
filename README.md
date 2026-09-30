@@ -669,9 +669,11 @@ bin/engine run -i            # interactive TUI
 
 Every push and pull request runs the same checks the maintainers run locally (`.github/workflows/ci.yml`, three jobs):
 
-- **Go engine** — `gofmt` (no diffs), `go build`, `go vet`, `go test -count=1 ./...`, plus the OpenAPI drift guard (`scripts/dev-tests/check_openapi.py`, spec vs. `internal/api/api.go`) and the guard's self-test (`--self-test`: one positive plus ten negative fixtures that must produce findings).
+- **Go engine** — `gofmt` (no diffs), `go build`, `go vet`, `go test -count=1 ./...`, plus the OpenAPI drift guard (`scripts/dev-tests/check_openapi.py`, spec vs. `internal/api/api.go`) and the guard's self-test (`--self-test`: one positive plus thirteen negative fixtures that must produce findings).
 - **Console** — hub: `bun install --frozen-lockfile`, `bun test`, `tsc --noEmit`; web console: same install, `tsc --noEmit`, `next build`.
 - **Sensor** — `cargo check --locked` on two targets: the host and a Windows cross-check (`--target x86_64-pc-windows-msvc`, type/borrow check without linking — the ETW collector is Windows-first and this is the only way to verify it still compiles without a Windows host). The crate itself compiles on any OS; ETW ingestion is cfg-gated to Windows and refuses to run off-Windows.
+
+Nightly (`.github/workflows/bench-nightly.yml`, also triggerable by hand), the pipeline bench runs the **real** engine over loopback with the documented baseline parameters (`cmd/bench -n 2000 -rate 1000`) and records p50/p99 in the run summary. It is **advisory by design** (Director decision 6.2): a p99 at or above the phase-1 contract (< 10 ms) raises a warning annotation for the next review, but never fails the job — only a pipeline completeness failure (lost alerts) turns the run red, because that is a functional defect, not a performance one. The same script runs locally: `bash scripts/dev-tests/bench_nightly.sh` (ports 7777/7778 free).
 
 To run the equivalent suite locally (Go 1.22+, bun, cargo via rustup, python3 with PyYAML):
 

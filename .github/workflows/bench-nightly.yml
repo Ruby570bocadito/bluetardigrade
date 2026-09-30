@@ -1,0 +1,51 @@
+# Nightly performance bench (Director decision 6.2 — ADVISORY, never a
+# merge gate): runs the real ingest->rule->alert->SSE pipeline over
+# loopback with the documented baseline parameters (-n 2000 -rate 1000)
+# and records the latency percentiles in the run summary.
+#
+# Why this job can stay green on a perf regression: the decision text
+# fixes the contract — "el bench nocturno informa, no bloquea merges".
+# A p99 above the README phase-1 promise (< 10 ms) raises a ::warning::
+# annotation for the next acta; only a pipeline COMPLETENESS failure
+# (lost alerts, functional defect) turns the run red. The job does not
+# run on push or pull_request, so it can never gate a landing.
+#
+# Advisory baselines for reading the numbers (NOT CI thresholds):
+#   - local rounds measured p99 319-434 µs with these exact parameters
+#     (README "Measured performance"; shared CI runners are noisier);
+#   - the enforced reference bound is the README contract, p99 < 10 ms.
+#
+# The actual logic lives in scripts/dev-tests/bench_nightly.sh so the
+# same commands run locally and in CI (the ci.yml philosophy).
+name: bench-nightly
+
+on:
+  schedule:
+    # 02:30 UTC = 04:30/03:30 Madrid (nocturnal). GitHub schedules are
+    # best-effort: the run may drift during high-load periods, which is
+    # acceptable for an advisory job.
+    - cron: "30 2 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: bench-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    name: Pipeline bench (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Actions fijadas por SHA (ronda 20h40, agente 04): mismos pines
+      # verificados que ci.yml; un tag mutable no es una referencia de
+      # confianza para un repo de seguridad.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: nightly bench (real engine over loopback, advisory)
+        run: bash scripts/dev-tests/bench_nightly.sh
