@@ -14,6 +14,8 @@ remains regenerable.
 | `console-reglas.png`        | output  | console rules view (root README) |
 | `console-cadenas.png`       | output  | console kill-chain chains view (root README) |
 | `console-busqueda.gif`      | output  | search interaction: typing `lsass` filters the alert queue live (root README) |
+| `console-respuesta-activa.png` | output | active response view over a live armed engine: real audit queue with the executed/denied/followup classes (F1 pair on top, one `action_id` shared), arm and audit-health cards (added by 02-B, see `src/capture_respond.mjs`) |
+| `console-respuesta-filtro.png` | output | active response view with the followups class filter active: 1 real followup record, honest `de 12 en la ventana` count (added by 02-B) |
 | `src/diagram_arquitectura.html` | source | self-contained HTML/CSS source of the architecture diagram (1060px canvas) |
 | `src/diagram_tracer.html`   | source  | self-contained HTML/CSS source of the pipeline above (900px canvas) |
 | `src/cover.html`            | source  | cover page used to produce `docs/arquitectura-tecnica-v0.1.pdf` |
@@ -23,6 +25,7 @@ remains regenerable.
 | `src/cover-v0.5.html`       | source  | cover page used to produce `docs/arquitectura-tecnica-v0.5.pdf` (rendered by `scripts/arq_v04/render_cover.mjs`) |
 | `src/cover-v0.6.html`       | source  | cover page used to produce `docs/arquitectura-tecnica-v0.6.pdf` (rendered by `scripts/arq_v04/render_cover.mjs`) |
 | `src/capture_console.mjs`   | source  | Playwright script that produces the `console-*` captures (see header for prerequisites) |
+| `src/capture_respond.mjs`   | source  | Playwright script that produces the `console-respuesta-*` captures over a live armed engine (see header for prerequisites; added by 02-B) |
 | `src/assemble_gif.py`       | source  | assembles `console-busqueda.gif` from the per-frame PNGs the capture script leaves in the temp dir |
 
 ## Regenerating a diagram
