@@ -5,7 +5,7 @@
 // Cockpit density: no card boxes, hairline separators, Geist Mono for
 // every number (tabular so live updates do not jitter).
 
-import { ActivityIcon, MinusCircle, ShieldCheck, Timer, UploadSimple, WebhooksLogo } from '@phosphor-icons/react'
+import { ActivityIcon, Flame, MinusCircle, ShieldCheck, Timer, UploadSimple, WebhooksLogo } from '@phosphor-icons/react'
 import { AnimatedNumber } from './ui-bits'
 import { GradientText } from '@/components/reactbits/gradient-text'
 import { formatUptime, SEVERITY_STYLE, type EngineStats, type Severity } from '@/lib/console-types'
@@ -36,11 +36,13 @@ export function KpiRow({ stats }: { stats: EngineStats | null }) {
   const severity = stats?.by_severity ?? {}
   const webhookIssues = (stats?.webhook_failed ?? 0) + (stats?.webhook_dropped ?? 0)
   const ingestIssues = (stats?.dropped ?? 0) + (stats?.ingest_rejected ?? 0)
+  const hot = stats?.hot_hosts
+  const top = hot?.[0]
 
   return (
     <div
       aria-label="Indicadores del motor"
-      className="grid grid-cols-2 divide-x divide-y divide-zinc-800 border-y border-zinc-800 md:grid-cols-3 xl:grid-cols-6 xl:divide-y-0"
+      className="grid grid-cols-2 divide-x divide-y divide-zinc-800 border-y border-zinc-800 md:grid-cols-3 xl:grid-cols-7 xl:divide-y-0"
     >
       <Kpi label="Tiempo activo" icon={Timer}>
         <span className="block truncate font-mono text-xl tabular-nums text-zinc-100">
@@ -113,6 +115,16 @@ export function KpiRow({ stats }: { stats: EngineStats | null }) {
         />
         <span className="mt-0.5 block font-mono text-[11px] tabular-nums text-zinc-500">
           {webhookIssues > 0 ? <span className="text-orange-400">{webhookIssues} con fallo</span> : 'sin fallos'}
+        </span>
+      </Kpi>
+
+      <Kpi label="Riesgo por host" icon={Flame}>
+        <AnimatedNumber
+          value={stats?.risk_hosts_tracked ?? 0}
+          className="block font-mono text-xl tabular-nums text-zinc-100"
+        />
+        <span className="mt-0.5 block truncate font-mono text-[11px] tabular-nums text-zinc-500">
+          {hot && top ? `máx ${top.host} · ${top.score}` : stats ? 'sin riesgo activo' : 'sin datos'}
         </span>
       </Kpi>
     </div>

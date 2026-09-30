@@ -5,7 +5,7 @@
 // telemetry). Everything reads from the real engine stream; when the
 // engine is down every panel shows its own honest state.
 
-import { Cpu, MagnifyingGlass, Waveform } from '@phosphor-icons/react'
+import { Cpu, Flame, MagnifyingGlass, Waveform } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import type { EngineStatus } from '@/hooks/use-engine-stream'
 import { KpiRow } from './kpi-row'
@@ -45,9 +45,12 @@ export function Dashboard({
           </div>
         </section>
 
-        <section aria-label="Resumen del motor" className="min-w-0">
-          <SectionHeader title="Motor de detección" />
-          <EngineSummary status={status} />
+        <section aria-label="Resumen del motor" className="flex min-w-0 flex-col gap-6">
+          <div className="min-w-0">
+            <SectionHeader title="Motor de detección" />
+            <EngineSummary status={status} />
+          </div>
+          <HotHostsPanel />
         </section>
       </div>
 
@@ -102,6 +105,82 @@ export function Dashboard({
           <p className="pt-2 text-xs text-zinc-500">Muestra de los últimos 8 eventos del búfer</p>
         </section>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Hot hosts (package A1): hosts currently carrying a non-cold decayed
+ * risk score, highest first. The score models detection activity —
+ * what the engine SAW — never the operator's triage judgment, so the
+ * panel cools down on its own (30-minute half-life) and closing an
+ * alert does not repaint it. Bar color is a display heuristic against
+ * the weights the engine publishes (critical alert = 10 points).
+ */
+function HotHostsPanel() {
+  const { stats } = useEngine()
+  const hot = stats?.hot_hosts ?? []
+  const max = hot.reduce((m, h) => Math.max(m, h.score), 0)
+
+  const barColor = (score: number) =>
+    score >= 20 ? 'bg-red-500/70' : score >= 5 ? 'bg-amber-500/70' : 'bg-emerald-500/70'
+
+  return (
+    <div className="min-w-0 flex-1 rounded-lg border border-zinc-800 bg-zinc-900/40">
+      <div className="flex items-center gap-2.5 border-b border-zinc-800 px-4 py-3">
+        <Flame size={16} aria-hidden className="text-amber-500" />
+        <span className="text-sm text-zinc-200">Hosts calientes</span>
+        <span className="ml-auto font-mono text-[11px] tabular-nums text-zinc-500">
+          {stats?.risk_hosts_tracked ?? 0} en riesgo
+        </span>
+      </div>
+      {stats && hot.length === 0 ? (
+        <div className="px-4 py-6">
+          <EmptyState
+            icon={Flame}
+            title="Sin riesgo activo"
+            hint="Ningún host acumula riesgo ahora mismo: las puntuaciones decaen solas (vida media de 30 minutos) y solo las alertas recientes las alimentan."
+          />
+        </div>
+      ) : !stats ? (
+        <div className="px-4 py-6">
+          <EmptyState
+            icon={Flame}
+            title="Sin datos"
+            hint="La puntuación de riesgo llega con la telemetría del motor; sin conexión no se muestra nada."
+          />
+        </div>
+      ) : (
+        <ul className="divide-y divide-zinc-800/80">
+          {hot.map((h, i) => (
+            <li key={h.host}>
+              {/* AnimatedItem (React Bits): entrada escalonada; keys
+                  estables por hostname, sin re-animar en cada frame */}
+              <AnimatedItem index={i} className="px-4 py-2.5">
+                <div className="flex items-baseline gap-3">
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-200" title={h.host}>
+                    {h.host}
+                  </span>
+                  <span className="font-mono text-xs tabular-nums text-zinc-400">{h.alerts} alertas</span>
+                  <span className="w-12 text-right font-mono text-xs tabular-nums text-zinc-100">
+                    {h.score.toFixed(2)}
+                  </span>
+                </div>
+                <div className="mt-1.5 h-1 w-full rounded-full bg-zinc-800" aria-hidden>
+                  <div
+                    className={`h-1 rounded-full ${barColor(h.score)}`}
+                    style={{ width: max > 0 ? `${Math.max(4, (h.score / max) * 100)}%` : '0%' }}
+                  />
+                </div>
+              </AnimatedItem>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="border-t border-zinc-800 px-4 py-2.5 text-[11px] leading-relaxed text-zinc-500">
+        Puntuación de riesgo por host con decaimiento temporal (vida media 30 min): critical 10 · high 5 · medium 2 ·
+        low 1 por alerta. Señal de priorización de triaje, no un veredicto de compromiso.
+      </p>
     </div>
   )
 }

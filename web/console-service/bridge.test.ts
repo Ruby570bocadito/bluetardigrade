@@ -26,6 +26,12 @@ const STATS: Record<string, unknown> = {
   store_enabled: true,
   store_events: 7,
   store_alerts: 2,
+  risk_hosts_tracked: 2,
+  hot_hosts: [
+    { host: 'PC-A', score: 15, alerts: 2, last_seen: '2026-09-30T12:00:00Z' },
+    { host: 42, score: 'nine' }, // malformed row: the bridge must drop it
+    { host: 'PC-B', score: 1, alerts: 1, last_seen: '2026-09-30T12:00:00Z' },
+  ],
 }
 
 type Recorder = {
@@ -123,6 +129,12 @@ describe('EngineBridge (agent-04 hardening)', () => {
     expect(rec.stats[0].store_enabled).toBe(true)
     expect(rec.stats[0].store_events).toBe(7)
     expect(rec.stats[0].store_alerts).toBe(2)
+    // A1: hot hosts forwarded, malformed rows dropped, count forwarded
+    expect(rec.stats[0].risk_hosts_tracked).toBe(2)
+    expect(rec.stats[0].hot_hosts).toEqual([
+      { host: 'PC-A', score: 15, alerts: 2, last_seen: '2026-09-30T12:00:00Z' },
+      { host: 'PC-B', score: 1, alerts: 1, last_seen: '2026-09-30T12:00:00Z' },
+    ])
 
     // engine flap: the SSE stream closes, the bridge reports down and
     // reconnects to an engine whose payloads did NOT change

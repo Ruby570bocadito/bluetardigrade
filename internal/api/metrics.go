@@ -52,6 +52,20 @@ func (h *Hub) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 	writeMetric(&b, "sf_correlator_states", "In-flight kill-chain (sequence, host) states.", "gauge", float64(s.CorrelatorStates))
 	writeMetric(&b, "sf_correlator_sequences", "Kill-chain sequences loaded.", "gauge", float64(s.CorrelatorSeqs))
 	writeMetric(&b, "sf_correlator_cap", "Maximum kill-chain states the correlator will track.", "gauge", float64(s.CorrelatorCap))
+	// Host risk (A1): the tracked gauge is a plain number; the top-5
+	// scores are the second labeled family. Hosts come from telemetry
+	// (operator-visible data /api/stats already serves), so the same
+	// contract as by_severity applies: escaped labels, sorted output.
+	// Sorting s.HotHosts in place is safe: the slice backing array is
+	// freshly allocated by the tracker and owned by this handler.
+	writeMetric(&b, "sf_risk_hosts_tracked", "Hosts currently carrying a non-cold risk score.", "gauge", float64(s.RiskHostsTracked))
+	sort.Slice(s.HotHosts, func(i, j int) bool { return s.HotHosts[i].Host < s.HotHosts[j].Host })
+	if len(s.HotHosts) > 0 {
+		b.WriteString("# HELP sf_host_risk_score Current decayed risk score per host (top 5).\n# TYPE sf_host_risk_score gauge\n")
+		for _, hh := range s.HotHosts {
+			fmt.Fprintf(&b, "sf_host_risk_score{host=\"%s\"} %s\n", escapeLabelValue(hh.Host), formatValue(hh.Score))
+		}
+	}
 	// by_severity is the only labeled family. Severity strings come
 	// from rule files (operator-controlled): the label value is
 	// escaped, and the series are emitted in sorted order so the

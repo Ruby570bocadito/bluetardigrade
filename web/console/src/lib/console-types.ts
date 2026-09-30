@@ -129,6 +129,16 @@ export type SfSuppression = {
   expires?: string
 }
 
+// One entry of the engine's hot_hosts list (package A1): a host's
+// decayed risk score. Triage-prioritization signal, not a verdict —
+// the score models what the engine SAW, not what the operator decided.
+export type HotHost = {
+  host: string
+  score: number
+  alerts: number
+  last_seen: string
+}
+
 // One kill-chain sequence (engine GET /api/sequences, direct or via the
 // hub). Steps are listed in declared order for display; the correlator
 // matches them unordered inside the window.
@@ -175,6 +185,12 @@ export type EngineStats = {
   store_enabled?: boolean
   store_events?: number
   store_alerts?: number
+  // per-host risk scoring (engine A1): width of the signal (how many
+  // hosts carry non-cold risk) + top-5 decayed scores. Optional for the
+  // same reason as the store trio: the hub forwards them when the
+  // engine reports them; in sin-motor mode they are absent.
+  risk_hosts_tracked?: number
+  hot_hosts?: HotHost[]
   // hub-only fields: the engine itself sends neither mode nor
   // interval_ms (mode optional so direct-engine responses type-check)
   interval_ms?: number

@@ -24,6 +24,7 @@ import (
 	"github.com/Ruby570bocadito/security-framework/internal/alert"
 	"github.com/Ruby570bocadito/security-framework/internal/correlate"
 	"github.com/Ruby570bocadito/security-framework/internal/lifecycle"
+	"github.com/Ruby570bocadito/security-framework/internal/risk"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
 	"github.com/Ruby570bocadito/security-framework/internal/store"
 	"github.com/Ruby570bocadito/security-framework/internal/suppress"
@@ -58,6 +59,7 @@ type Hub struct {
 	sequences   *correlate.Manager              // kill-chain sequences (read-only view)
 	store       *store.Store                    // optional SQLite persistence (nil = rings only)
 	lifecycle   *lifecycle.Store                // alert triage state (status overlay)
+	risk        *risk.Tracker                   // per-host decayed risk score (A1)
 
 	storeFails uint64 // throttles store write-error logging (atomic)
 
@@ -82,6 +84,7 @@ func New(addr string) (*Hub, error) {
 		started:    time.Now(),
 		bySeverity: map[string]int{},
 		lifecycle:  mustMemoryLifecycle(),
+		risk:       risk.New(),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/stats", h.handleStats)
@@ -326,6 +329,9 @@ func (h *Hub) RecordAlert(a alert.Alert) {
 		h.alerts = h.alerts[len(h.alerts)-maxAlerts:]
 	}
 	h.mu.Unlock()
+	// The tracker owns its mutex — like every other manager's lock,
+	// it is only ever taken after h.mu.Unlock (uniform lock rule).
+	h.risk.Observe(a.Host, a.Severity, time.Now())
 	h.persistAlert(a)
 	h.broadcast("alert", a)
 }
@@ -372,6 +378,11 @@ type statsPayload struct {
 	CorrelatorSeqs   int            `json:"correlator_sequences"`
 	CorrelatorCap    int            `json:"correlator_cap"`
 	Mode             string         `json:"mode"`
+
+	// Host risk scoring (A1): how many hosts currently carry non-cold
+	// risk, and the top-5 list the console dashboard renders.
+	RiskHostsTracked int             `json:"risk_hosts_tracked"`
+	HotHosts         []risk.HostRisk `json:"hot_hosts"`
 }
 
 // statsSnapshot collects every counter /api/stats and /metrics serve.
@@ -443,6 +454,17 @@ func (h *Hub) statsSnapshot() statsPayload {
 		supActive = sup.Count(time.Now())
 	}
 
+	// Risk tracker has its own mutex: read after h.mu.Unlock, the same
+	// uniform rule as the correlator/store/suppress managers above.
+	// Top-5 is what the console renders; tracked is the width of the
+	// signal (how many hosts carry non-cold risk right now).
+	now := time.Now()
+	riskHosts, hotHosts := 0, []risk.HostRisk{}
+	if h.risk != nil {
+		riskHosts = h.risk.Tracked(now)
+		hotHosts = h.risk.Snapshot(now, 5)
+	}
+
 	return statsPayload{
 		UptimeS:          int64(time.Since(h.started) / time.Second),
 		EventsTotal:      ingested,
@@ -465,6 +487,8 @@ func (h *Hub) statsSnapshot() statsPayload {
 		CorrelatorSeqs:   corrSeqs,
 		CorrelatorCap:    corrCap,
 		Mode:             "engine",
+		RiskHostsTracked: riskHosts,
+		HotHosts:         hotHosts,
 	}
 }
 

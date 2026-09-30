@@ -5,7 +5,7 @@
 // no simulation). SSE frames are parsed by hand so the same code runs
 // on bun and node.
 
-import type { SfEvent, SfAlert, HubStats, RuleMeta, SfSuppression, SfSequence, SfAlertLifecycle } from './types'
+import type { SfEvent, SfAlert, HubStats, RuleMeta, SfSuppression, SfSequence, SfAlertLifecycle, HotHost } from './types'
 
 export type EngineBridgeCallbacks = {
   onEvent: (ev: SfEvent) => void
@@ -278,7 +278,30 @@ function mapStats(st: Record<string, unknown>): HubStats {
     store_enabled: st.store_enabled === true,
     store_events: Number(st.store_events ?? 0),
     store_alerts: Number(st.store_alerts ?? 0),
+    // per-host risk scoring (engine A1): every entry is sanitized —
+    // a malformed row (host not a non-empty string, score not a finite
+    // number) is dropped here, never forwarded to the console
+    risk_hosts_tracked: Number(st.risk_hosts_tracked ?? 0),
+    hot_hosts: mapHotHosts(st.hot_hosts),
   }
+}
+
+function mapHotHosts(raw: unknown): HotHost[] {
+  if (!Array.isArray(raw)) return []
+  const out: HotHost[] = []
+  for (const e of raw) {
+    const h = e as Record<string, unknown>
+    if (typeof h.host !== 'string' || h.host === '') continue
+    const score = Number(h.score)
+    if (!Number.isFinite(score)) continue
+    out.push({
+      host: h.host,
+      score,
+      alerts: Number(h.alerts ?? 0),
+      last_seen: String(h.last_seen ?? ''),
+    })
+  }
+  return out
 }
 
 function mapAlert(a: Record<string, unknown>): SfAlert {

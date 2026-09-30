@@ -731,6 +731,28 @@ components:
         enum: [jsonl, csv]
         default: jsonl
   schemas:
+    HotHost:
+      type: object
+      description: one host's decayed risk score (package A1 of the owner's roadmap).
+        A triage-prioritization signal — which hosts are making noise that looks dangerous
+        right now — not a compromise verdict.
+      required: [host, score, alerts, last_seen]
+      properties:
+        host:
+          type: string
+          description: hostname the risk accumulated on
+        score:
+          type: number
+          format: double
+          description: current decayed score, rounded to 2 decimals (one critical alert
+            starts at 10 and halves every 30 minutes without new alerts)
+        alerts:
+          type: integer
+          description: alerts counted for this host since it started being tracked
+        last_seen:
+          type: string
+          format: date-time
+          description: timestamp (RFC 3339, UTC) of the most recent alert on this host
     Health:
       type: object
       required: [status, mode]
@@ -765,6 +787,8 @@ components:
         - store_events
         - store_alerts
         - mode
+        - risk_hosts_tracked
+        - hot_hosts
       properties:
         suppressions_active:
           type: integer
@@ -853,6 +877,20 @@ components:
         mode:
           type: string
           enum: [engine]
+        risk_hosts_tracked:
+          type: integer
+          description: hosts currently carrying a non-cold per-host risk score (package A1
+            of the roadmap). Scores accumulate fixed weights per alert severity (critical 10,
+            high 5, medium 2, low 1, info 0) and decay with a 30-minute half-life; hosts
+            whose score decays to zero stop counting here. Triage status deliberately does
+            not affect the score — it models detection activity, not operator judgment.
+        hot_hosts:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/HotHost'
+          description: top 5 hosts by current decayed risk score, highest first (ties
+            broken by hostname for deterministic output)
     Event:
       type: object
       description: |

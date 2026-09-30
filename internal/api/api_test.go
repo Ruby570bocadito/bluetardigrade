@@ -643,6 +643,43 @@ func TestMetricsGatedByToken(t *testing.T) {
 // field must appear in the text output with the same value; if a
 // future field lands in statsPayload but not in the renderer (or the
 // other way round) this test fails until the views are reconciled.
+func TestStatsHotHostsRanking(t *testing.T) {
+	h, addr := newTestHub(t)
+	mk := func(sev, host, rule string) alert.Alert {
+		return alert.Alert{
+			Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+			RuleID:    rule, RuleName: "rule " + rule, Severity: sev,
+			Host: host, EventID: "ev-" + rule, EventType: "process.create",
+			Summary: "s", MatchedOn: []string{"process.name"},
+		}
+	}
+	h.RecordAlert(mk("critical", "PC-A", "r1")) // 10
+	h.RecordAlert(mk("high", "PC-A", "r2"))     // 15
+	h.RecordAlert(mk("low", "PC-B", "r3"))      // 1
+
+	var stats map[string]any
+	getJSON(t, fmt.Sprintf("http://%s/api/stats", addr), &stats)
+
+	if got := stats["risk_hosts_tracked"].(float64); got != 2 {
+		t.Fatalf("risk_hosts_tracked = %v, want 2", got)
+	}
+	hot, ok := stats["hot_hosts"].([]any)
+	if !ok || len(hot) != 2 {
+		t.Fatalf("hot_hosts = %#v, want 2 entries", stats["hot_hosts"])
+	}
+	first, _ := hot[0].(map[string]any)
+	if first["host"] != "PC-A" || first["score"] != 15.0 || first["alerts"] != 2.0 {
+		t.Fatalf("top host = %#v, want PC-A score 15 alerts 2", first)
+	}
+	if first["last_seen"] == "" {
+		t.Fatal("top host last_seen empty")
+	}
+	second, _ := hot[1].(map[string]any)
+	if second["host"] != "PC-B" {
+		t.Fatalf("second host = %#v, want PC-B", second)
+	}
+}
+
 func TestMetricsParityWithStats(t *testing.T) {
 	h, addr := newTestHub(t)
 	h.SetCounters(func() (uint64, uint64, uint64) { return 7, 2, 1 })
@@ -725,6 +762,7 @@ func TestMetricsParityWithStats(t *testing.T) {
 	wantMetric("sf_correlator_states", "correlator_states")
 	wantMetric("sf_correlator_sequences", "correlator_sequences")
 	wantMetric("sf_correlator_cap", "correlator_cap")
+	wantMetric("sf_risk_hosts_tracked", "risk_hosts_tracked")
 
 	// by_severity: every severity present in the JSON must appear as a
 	// labeled series with the same value.
@@ -747,9 +785,18 @@ func TestMetricsParityWithStats(t *testing.T) {
 		}
 	}
 
+	// host risk: one host scored, value matches the JSON top-1 entry
+	hotLine := `sf_host_risk_score{host="LAB-TEST"} 11`
+	if !strings.Contains(text, hotLine) {
+		t.Fatalf("host risk series missing or wrong in /metrics (want %q):\n%s", hotLine, text)
+	}
+	if hot, ok := stats["hot_hosts"].([]any); !ok || len(hot) != 1 {
+		t.Fatalf("stats hot_hosts = %#v, want exactly 1 entry", stats["hot_hosts"])
+	}
+
 	// every metric family must carry HELP and TYPE lines (validity of
 	// the exposition format, not just its values)
-	for _, name := range []string{"sf_events_total", "sf_alerts_total", "sf_alerts_by_severity", "sf_correlator_cap"} {
+	for _, name := range []string{"sf_events_total", "sf_alerts_total", "sf_alerts_by_severity", "sf_correlator_cap", "sf_host_risk_score"} {
 		if !strings.Contains(text, "# HELP "+name+" ") || !strings.Contains(text, "# TYPE "+name+" ") {
 			t.Fatalf("metric %s lacks its HELP/TYPE lines:\n%s", name, text)
 		}

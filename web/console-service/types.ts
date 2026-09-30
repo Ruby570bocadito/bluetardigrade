@@ -131,6 +131,20 @@ export type HubStats = {
   store_enabled?: boolean
   store_events?: number
   store_alerts?: number
+  // per-host risk scoring (engine A1): width of the signal (how many
+  // hosts carry non-cold risk) + top-5 decayed scores, forwarded since
+  // the risk round. Sanitized by the bridge: malformed rows are dropped.
+  risk_hosts_tracked?: number
+  hot_hosts?: HotHost[]
+}
+
+// One entry of the engine's hot_hosts list (package A1 of the owner's
+// roadmap): a triage-prioritization signal, not a compromise verdict.
+export type HotHost = {
+  host: string
+  score: number
+  alerts: number
+  last_seen: string
 }
 
 // Machine-readable status of the hub itself, served at GET /health (and
