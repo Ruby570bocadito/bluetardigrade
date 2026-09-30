@@ -56,6 +56,7 @@ start_engine() {
 say "== smoke_lifecycle: alert triage against the real engine =="
 
 if [ ! -x "$ENGINE" ]; then
+  command -v go >/dev/null || { say "FALLO preflight: go no está en PATH (exporta el toolchain para compilar el engine)"; exit 1; }
   (cd "$ROOT" && go build -o "$ENGINE" ./cmd/engine) || { say "build failed"; exit 1; }
 fi
 mkdir -p "$WORK/no-sequences"

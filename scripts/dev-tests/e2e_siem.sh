@@ -76,6 +76,10 @@ trap cleanup EXIT
 if [ -n "${SF_E2E_ENGINE:-}" ] && [ -n "${SF_E2E_DEVSENSOR:-}" ]; then
   ENGINE="$SF_E2E_ENGINE"; DEVSENSOR="$SF_E2E_DEVSENSOR"
 else
+  command -v go >/dev/null || {
+    echo "FALLO preflight: go no está en PATH y no hay SF_E2E_ENGINE/SF_E2E_DEVSENSOR"
+    echo "(exporta el toolchain o pasa binarios ya compilados)"; exit 1
+  }
   echo "[e2e-siem] compilando binarios frescos..."
   (cd "$REPO" && go build -o "$TMPDIR_E2E/engine" ./cmd/engine &&
    go build -o "$TMPDIR_E2E/devsensor" ./cmd/devsensor) || { echo "FALLO: go build"; exit 1; }

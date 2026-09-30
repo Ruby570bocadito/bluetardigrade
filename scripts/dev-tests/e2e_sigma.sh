@@ -69,6 +69,7 @@ start_engine() {
 say "== e2e_sigma: Sigma corpus -> native rules -> real detections =="
 
 if [ ! -x "$ENGINE" ]; then
+  command -v go >/dev/null || { say "FALLO preflight: go no está en PATH (exporta el toolchain para compilar el engine)"; exit 1; }
   (cd "$ROOT" && go build -o "$ENGINE" ./cmd/engine) || { say "build failed"; exit 1; }
 fi
 mkdir -p "$WORK/no-sequences"

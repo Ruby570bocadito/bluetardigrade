@@ -57,6 +57,7 @@ if curl -sf http://127.0.0.1:7778/api/health >/dev/null 2>&1; then
     exit 1
 fi
 
+command -v go >/dev/null || { echo "[bench-nightly] FALLO preflight: go no está en PATH (exporta el toolchain)" >&2; exit 1; }
 echo "[bench-nightly] building engine and bench harness..."
 go build -o "$TMP/engine" ./cmd/engine
 go build -o "$TMP/bench" ./cmd/bench
