@@ -12,6 +12,7 @@
 use crate::normalize::{self, EventJson, ProcessJson, TYPE_PROCESS_CREATE};
 use crate::transport::Sender;
 use anyhow::Result;
+use std::path::Path;
 use std::sync::Arc;
 
 use ferrisetw::parser::Parser;
@@ -28,9 +29,11 @@ const EVENT_ID_PROCESS_START: u16 = 1;
 
 /// Runs the blocking ETW event loop. It returns only on fatal errors.
 /// token (when set) is the shared ingest token sent on every
-/// (re)connection to the engine.
-pub fn run(addr: &str, token: Option<&str>) -> Result<()> {
-    let sender = Arc::new(Sender::connect(addr, token)?);
+/// (re)connection to the engine. tls_ca (when set) upgrades every
+/// (re)connection to TLS with the engine's certificate verified
+/// against that CA bundle (no skip-verification mode).
+pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>) -> Result<()> {
+    let sender = Arc::new(Sender::connect(addr, token, tls_ca)?);
     let host = hostname();
     let user = current_user();
 

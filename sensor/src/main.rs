@@ -8,10 +8,15 @@
 //
 // Usage:
 //   security-sensor --addr 127.0.0.1:7777 [--token <shared-token>]
+//                   [--tls-ca <ca.pem>]
 //
 // The token can also come from the SF_INGEST_TOKEN environment
 // variable (same var the engine and the other sensors honor); the
-// command line wins when both are set.
+// command line wins when both are set. With --tls-ca (or the
+// SF_INGEST_CA environment variable) the connection to the engine is
+// TLS and the engine's certificate must chain to the given CA bundle;
+// there is no skip-verification mode: an unverifiable engine is a
+// refused connection, not a trusted one.
 
 // Normalization and transport are exercised only by the ETW collector,
 // which is Windows-only; gating the modules keeps non-Windows builds
@@ -25,10 +30,12 @@ mod transport;
 mod collector;
 
 use anyhow::Result;
+use std::path::PathBuf;
 
 fn main() -> Result<()> {
     let mut addr = String::from("127.0.0.1:7777");
     let mut token: Option<String> = None;
+    let mut tls_ca: Option<PathBuf> = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -44,9 +51,17 @@ fn main() -> Result<()> {
                     std::process::exit(2);
                 }));
             }
+            "--tls-ca" => {
+                tls_ca = Some(PathBuf::from(args.next().unwrap_or_else(|| {
+                    eprintln!("--tls-ca requires a value");
+                    std::process::exit(2);
+                })));
+            }
             other => {
                 eprintln!("unknown argument: {other}");
-                eprintln!("usage: security-sensor --addr <ip:port> [--token <shared-token>]");
+                eprintln!(
+                    "usage: security-sensor --addr <ip:port> [--token <shared-token>] [--tls-ca <ca.pem>]"
+                );
                 std::process::exit(2);
             }
         }
@@ -54,9 +69,16 @@ fn main() -> Result<()> {
     if token.is_none() {
         token = std::env::var("SF_INGEST_TOKEN").ok().filter(|t| !t.is_empty());
     }
+    if tls_ca.is_none() {
+        tls_ca = std::env::var("SF_INGEST_CA")
+            .ok()
+            .filter(|p| !p.is_empty())
+            .map(PathBuf::from);
+    }
 
-    eprintln!("[SENSOR] addr={addr} auth={}",
-        if token.is_some() { "token" } else { "none" });
+    eprintln!("[SENSOR] addr={addr} auth={} tls={}",
+        if token.is_some() { "token" } else { "none" },
+        if tls_ca.is_some() { "verified-ca" } else { "off" });
 
     if !cfg!(target_os = "windows") {
         eprintln!(
@@ -67,7 +89,7 @@ fn main() -> Result<()> {
 
     #[cfg(target_os = "windows")]
     {
-        collector::run(&addr, token.as_deref())
+        collector::run(&addr, token.as_deref(), tls_ca.as_deref())
     }
     #[cfg(not(target_os = "windows"))]
     {

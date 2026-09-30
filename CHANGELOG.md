@@ -15,6 +15,18 @@ and the `make dist` target.
 In-flight work is tracked in the agents' round reports (`docs/agentes/`) and
 lands here as it ships.
 
+### Added
+
+**Sensors and telemetry**
+
+- The Rust ETW sensor can encrypt the engine connection: `--tls-ca <ca.pem>`
+  (or `SF_INGEST_CA`) upgrades every (re)connection to TLS with the engine's
+  certificate verified against the given CA bundle — pinned CA only, no
+  skip-verification mode. TLS sits below the AUTH handshake, so the wire
+  protocol is unchanged; the handshake phase is bounded by the same 10 s
+  deadline as AUTH. Completes transit encryption end to end with the engine's
+  `-ingest-cert`/`-ingest-key` listener.
+
 ## [v0.1.0] - 2026-09-30
 
 First tagged release of the framework as it exists in the tree today. Every

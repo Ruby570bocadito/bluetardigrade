@@ -17,6 +17,12 @@ time = { version = "0.3", features = ["formatting"] }
 # but the binary refuses to run off-Windows instead of making data up.
 [target.'cfg(target_os = "windows")'.dependencies]
 ferrisetw = { version = "1", features = ["time_rs"] }
+# TLS sits below the AUTH handshake of the engine connection and is
+# Windows-gated like its only consumer (transport.rs). native-tls keeps
+# this target's dependency tree C-free (schannel: pure-Rust bindings to
+# the OS TLS stack), so the CI cross-check of the Windows target stays
+# a pure cargo check with no C toolchain on the runner.
+native-tls = "0.2"
 
 [profile.release]
 lto = true

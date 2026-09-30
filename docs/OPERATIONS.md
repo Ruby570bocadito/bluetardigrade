@@ -146,6 +146,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | Variable | Component | Purpose |
 |----------|-----------|---------|
 | `SF_INGEST_TOKEN` | engine + every bundled sensor | ingest shared token (the flag wins when both are set) |
+| `SF_INGEST_CA` | Rust sensor | CA bundle (PEM) the engine's TLS certificate is verified against (same as `--tls-ca`; the flag wins when both are set) |
 | `SF_INGEST_TOKEN_PREVIOUS` | engine | second accepted token during a rotation window |
 | `SF_API_TOKEN` | engine + console-service + web console | one entry protects the API, the bridge and the console proxy (same-origin writes, loopback-only hosts by default) |
 | `SF_API_WRITE` | engine | set to `1` to arm the suppression write API (same as `-api-write`; the flag wins) |
@@ -274,6 +275,7 @@ sf-engine -addr 0.0.0.0:7777 -ingest-cert /etc/sf/ingest.pem -ingest-key /etc/sf
 
 # sensor: verify the engine against your CA and stream over the encrypted channel
 devsensor -addr engine.example:7777 -tls -ca /etc/sf/ingest-ca.pem -token 'pick-a-long-random-secret'
+sf-sensor --addr engine.example:7777 --tls-ca /etc/sf/ingest-ca.pem --token 'pick-a-long-random-secret'
 ```
 
 Behavior and failure modes:
@@ -297,7 +299,7 @@ openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
 
 **Rotating certificates without downtime.** The engine re-reads the `-ingest-cert`/`-ingest-key` pair whenever the modification time of either file changes — no restart, no signal (the product is Windows-first and SIGHUP does not exist there). Replace the PEM files in place and the NEXT connection is wrapped with the new certificate; connections already established keep the handshake they were born with. Failure semantics are asymmetric on purpose: the first load at startup is fail-loud, but a failed REload (truncated file caught mid-copy, mismatched pair) keeps the current certificate serving and reports through the log line `ingest TLS: reload failed: keeping current certificate (reloads=N, reload_errors=N)` — a broken rotation can never degrade an encrypted channel, it just leaves it on the previous cert until the files are fixed. mtime is the change signal: a replacement that preserves the original timestamps is not detected (touch the files to force it). Sensors that pin the OLD CA in `-ca` are rejected after the rotation — redeploy them with the new CA, the same way the shared token uses its two-token rotation window.
 
-The scripted path covering all of the above lives in `scripts/dev-tests/smoke_ingest_tls.sh` (seven scenarios: round trip, plain-vs-TLS rejection, wrong-CA rejection, TLS+token, half-set flags, missing cert, hot rotation). The Rust sensor (`sf-sensor`) still speaks plain NDJSON — native TLS there is tracked on the roadmap; until then, TLS engine deployments can front it with a local stunnel/socat relay.
+The scripted path covering all of the above lives in `scripts/dev-tests/smoke_ingest_tls.sh` (seven scenarios: round trip, plain-vs-TLS rejection, wrong-CA rejection, TLS+token, half-set flags, missing cert, hot rotation). The Rust sensor (`sf-sensor`) speaks the same scheme with `--tls-ca <ca.pem>` (or the `SF_INGEST_CA` environment variable): every (re)connection is upgraded to TLS and the engine's certificate must chain to the given bundle — pinned CA only, no skip-verification mode, and no relay needed anymore. The host part of `--addr` is the server name the certificate is validated against (IP-SAN certificates work; the handshake phase is bounded by the same 10 s deadline as AUTH). After an engine certificate rotation a sensor pinned to the old CA is rejected exactly like its Go siblings — redeploy it with the new CA bundle.
 
 ## Alert webhook (SIEM/SOAR connector)
 
