@@ -6,17 +6,17 @@ vive versionado en el árbol, de modo que la revisión es reproducible y la
 siguiente versión no dependa de herramientas desaparecidas.
 
 El nombre del directorio (`arq_v04`) registra dónde nació el pipeline (v0.4);
-construye la revisión vigente de la serie — hoy la **v0.7**. Renombrarlo por
+construye la revisión vigente de la serie — hoy la **v0.8**. Renombrarlo por
 revisión rompería las referencias cruzadas de actas y READMEs sin añadir nada.
 
 ## Qué produce
 
-`docs/arquitectura-tecnica-v0.7.pdf` (portada + índice + 8 capítulos), a partir de:
+`docs/arquitectura-tecnica-v0.8.pdf` (portada + índice + 8 capítulos), a partir de:
 
 | Pieza | Fuente versionada | Herramienta |
 |---|---|---|
 | Cuerpo (TOC + capítulos) | `scripts/arq_v04/generator.py` | python3 + reportlab (`TocDocTemplate` + `multiBuild`, TOC automático con enlaces) |
-| Portada | `docs/assets/src/cover-v0.7.html` | node + playwright (`page.pdf`, vector, 794x1123 px A4 @96dpi) |
+| Portada | `docs/assets/src/cover-v0.8.html` | node + playwright (`page.pdf`, vector, 794x1123 px A4 @96dpi) |
 | Fusión + metadata | `scripts/arq_v04/merge_and_meta.py` | python3 + pypdf (portada como página 0, normalizada a A4) |
 | Diagrama de arquitectura | `docs/assets/src/diagram_arquitectura.html` | `render_diagram.mjs` (captura de `.canvas` a 2x, procedimiento de `docs/assets/README.md`) |
 
@@ -42,10 +42,15 @@ Requisitos: `python3` con `reportlab`, `pypdf` y `pillow`; `node` con
 - **Paginación**: el índice muestra folio romano (`i`); el cuerpo reinicia en
   arábigo (1, 2, ...), igual que la v0.3.
 - **Honestidad de cobertura**: los contadores (guard 15 rutas/36 campos/74
-  referencias, roadmap 13/17 con la catorceava propuesta, marcador 33/33,
+  referencias, marcador canónico del Director 22h46 — 20/20, 7/17 con A3
+  aterrizado — con los conteos de carriles citados como numeración propia,
   conteos E2E) citan su procedencia (guard, actas del Director y de seguridad)
   en el propio texto.
 - **Figuras**: se reutilizan los assets versionados de `docs/assets/`; el
   diagrama de arquitectura se regeneró desde su fuente HTML con la CAPA 4
   sincronizada a las salidas reales (webhook, notificaciones C2, SIEM nativo,
-  respuesta activa C3, consola, API+forense).
+  respuesta activa C3, consola, API+forense); la v0.8 añadió las capturas reales
+  de la vista de respuesta activa (olas `a3b8bd8`/`624d8ba`, Figuras 3 y 4 — el
+  tracer pasó a Figura 5) y absorbió la Figura 2 recapturada sobre el árbol
+  vigente por la ronda hermana 20h05_B (`ca51b95`), así como la precisión O4 del
+  export (acta 02-B 20h20) y la ratificación en fuente del esquema (acta 20h15_B).

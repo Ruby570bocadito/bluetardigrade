@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 arq_v04/generator.py — versioned generator of the body of
-docs/arquitectura-tecnica-v0.7.pdf (cover is rendered separately from
-docs/assets/src/cover-v0.7.html and merged by merge_and_meta.py).
+docs/arquitectura-tecnica-v0.8.pdf (cover is rendered separately from
+docs/assets/src/cover-v0.8.html and merged by merge_and_meta.py).
 The directory name arq_v04 records where the pipeline was born (v0.4); it
 builds the current revision of the series.
 
@@ -49,7 +49,7 @@ from reportlab.platypus.tableofcontents import TableOfContents
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
-OUT_BODY = os.path.join(REPO, "docs", "arquitectura-tecnica-v0.7.body.pdf")
+OUT_BODY = os.path.join(REPO, "docs", "arquitectura-tecnica-v0.8.body.pdf")
 
 # ---------------------------------------------------------------- fonts ----
 FONT_DIR = "/usr/share/fonts"
@@ -91,7 +91,7 @@ AVAIL_H = PAGE_H - 2 * MARGIN
 H1_ORPHAN = AVAIL_H * 0.25
 
 DOC_TITLE = "Arquitectura Técnica - Framework de Detección de Amenazas en Tiempo Real"
-FOOTER_LEFT = "Ruby570bocadito · security-framework v0.7"
+FOOTER_LEFT = "Ruby570bocadito · security-framework v0.8"
 
 # ---------------------------------------------------------------- styles ---
 body = ParagraphStyle("Body", fontName="FreeSerif", fontSize=10.5, leading=16.5,
@@ -322,9 +322,9 @@ story += h1_block(1, "Visión y Filosofía de Diseño",
     "sistema anclado en ETW con un motor de detección de comportamiento, correlación de secuencias y una consola "
     "web interactiva de triaje. El nombre del proyecto es provisional (security-framework) y se mantendrá hasta "
     "que la comunidad elija la marca definitiva. A diferencia de la v0.1, que describía una promesa de diseño, "
-    "esta revisión v0.7 describe el sistema tal como está implementado y verificado hoy: cada afirmación de este "
+    "esta revisión v0.8 describe el sistema tal como está implementado y verificado hoy: cada afirmación de este "
     "texto corresponde a código en el repositorio, con pruebas de unidad, E2E sobre binarios reales y mediciones "
-    "de rendimiento publicadas. Es la cuarta revisión producida por el pipeline de generación versionado en el "
+    "de rendimiento publicadas. Es la quinta revisión producida por el pipeline de generación versionado en el "
     "propio árbol (scripts/arq_v04/, estrenado por la v0.4), de modo que ninguna revisión de la serie dependa "
     "de herramientas desaparecidas para reproducirse.")
 
@@ -674,12 +674,16 @@ story.append(para(
     "techo fijo para convertirse en control del operador: cien registros por defecto contra el techo de "
     "quinientos del motor, aplicada por el hook en ambos puntos de lectura — sincronización inicial y "
     "sondeo periódico de dos segundos — de modo que el cambio surte efecto en el siguiente sondeo sin "
-    "resuscribir el stream. Y la cola visible se exporta desde el propio cliente en JSONL — una línea por "
+    "resuscribir el stream. Y la cola de la ventana se exporta desde el propio cliente en JSONL — una línea por "
     "registro verbatim, el mismo esquema Record que el motor escribe append-only, con tipo "
     "application/x-ndjson — con la honestidad de superficie por bandera: el motor no tiene ruta bulk de "
     "exportación para el audit por diseño (la lectura es una cola acotada), de modo que el botón empaqueta "
-    "la ventana visible, el tooltip lo declara y el fichero completo sigue viviendo en el host del motor, "
-    "donde nadie lo reescribe; con la cola vacía el botón queda deshabilitado de verdad."))
+    "la ventana completa y el fichero íntegro sigue viviendo en el host del motor, donde nadie lo reescribe. "
+    "El filtro de clase es una lente de vista, no un selector de datos: aunque la cola se muestre filtrada, "
+    "el export lleva todos los registros de la ventana — y el tooltip lo declara en sus tres estados, sin "
+    "filtro, con filtro activo y su alcance, y cola vacía con el botón deshabilitado de verdad; la "
+    "observación O4 de seguridad (etiqueta ambigua con filtro activo) quedó resuelta así por el carril de "
+    "consola sin cambiar un byte de comportamiento (acta 02-B 20h20)."))
 story.append(para(
     "El mecanismo de ejecución es dual por plataforma y su degradación viaja en el propio registro "
     "probatorio. En Linux la vía preferente es pidfd: el descriptor queda anclado al objeto del proceso, "
@@ -687,7 +691,9 @@ story.append(para(
     "(enosys) o la tabla de descriptores se agota (emfile/enfile — un mecanismo vivo muriéndose de hambre, "
     "digno de alarma). La degradación nunca es silenciosa: la línea de seguimiento del audit y la API "
     "llevan mechanism=fallback junto a fallback_reason con el errno exacto — incluso en los intentos "
-    "denegados —, contrato ratificado por dos cross-reviews independientes. En Windows la vía es handle: "
+    "denegados —, contrato ratificado por dos cross-reviews independientes y re-verificado después en "
+    "fuente por una tercera (acta 20h15_B: sin casos de borde — denied sin mechanism, followup pidfd sin "
+    "razón y fallback degradado renderizan conforme al contrato). En Windows la vía es handle: "
     "un único OpenProcess sirve la verificación del nombre real y la terminación, el objeto queda anclado "
     "mientras el handle vive y la ventana de reciclaje de PID no puede redirigir el kill a otro proceso. "
     "Su certificación es conductual y permanente: el job engine-windows de CI ejecuta el smoke sobre un "
@@ -696,6 +702,35 @@ story.append(para(
     "código, 401/429/409, la guarda R6 negando antes de senilar, el JSONL íntegro y el 404 real del "
     "desarmado; la condición de cierre de C3 fijada por seguridad dejó así de depender de la memoria de "
     "una ronda y vive en cada corrida de CI — una regresión que la rompa aterriza en rojo."))
+story.append(para(
+    "La evidencia visual de la vista llegó con datos reales (ola de implementaciones 20h05, capturas "
+    "aterrizadas en docs/assets por el carril de consola con Go 1.22.10 sobre un motor armado de "
+    "laboratorio): una cola poblada por doce líneas de audit genuinas — cinco ejecutados pidfd y siete "
+    "denegaciones que cubren las cinco clases reproducibles del e2e más el par F1 completo, inducido de "
+    "forma natural y segura: la línea executed pre-señal y su seguimiento denied con followup comparten el "
+    "mismo action_id porque el guard no comprueba propiedad y el EPERM de un proceso root no protegido "
+    "disparó el seguimiento sin entregar señal alguna — exactamente el caso que motivó F1, fotografiado "
+    "cien por cien real, sin mocks ni JSON editado a mano. La captura sirve también de contrato visual del "
+    "esquema probatorio: mechanism solo viaja en el JSONL de los followups — la línea pre-señal se escribe "
+    "sin él por diseño (respond.go:345-348) y los denegados lo llevan vacío, de modo que omitempty lo "
+    "suelta —, y la etiqueta pidfd que se ve en la fila es la del followup real; la de degradación con "
+    "fallback_reason no aparece porque no hay fallback real que fotografiar en un kernel con pidfd sano — "
+    "honestidad de superficie: su vocabulario queda cubierto por los tests unitarios de la ola dff85fd, a "
+    "la espera de un host que reproduzca el errno. La Figura 3 muestra la cola completa con las tarjetas "
+    "de salud — el audit de 3,9 KiB contra su techo de 64 MiB que la propia tarjeta canta — y los tres "
+    "controles forenses de la ola 4967cad; la Figura 4 muestra el filtro en followups con el conteo "
+    "honesto — 1 de 12 en la ventana — y la única fila real: la toma exacta que el guion de la ronda "
+    "19h25 pidió."))
+story += figure("docs/assets/console-respuesta-activa.png",
+                "Figura 3. Vista de respuesta activa con la cola «todas» sobre audit real de laboratorio "
+                "(12 líneas genuinas): el par F1 arriba — executed y su followup denied compartiendo "
+                "action_id —, badges de seguimiento, etiquetas de mechanism, los 6 códigos de denegación, "
+                "las tarjetas de superficie armada y de salud del audit, y los tres controles: filtro de "
+                "clase, ventana de cola 100/500 y export JSONL.", 300)
+story += figure("docs/assets/console-respuesta-filtro.png",
+                "Figura 4. Filtro de clase en «followups»: conteo honesto «1 · de 12 en la ventana» y la "
+                "única fila followup real (pid_access_denied del par F1) — la toma exacta que el guion de "
+                "la ronda 19h25 pidió.", 300)
 
 # ---- 4. Modelo de Datos y Esquema de Eventos ----
 story += h1_block(4, "Modelo de Datos y Esquema de Eventos",
@@ -732,7 +767,7 @@ story += make_table(
          "evidencia cruda."],
     ],
     [0.16, 0.10, 0.74],
-    "Tabla 4. Campos del esquema de eventos unificado (v0.7).")
+    "Tabla 4. Campos del esquema de eventos unificado (v0.8).")
 
 story += code_block([
     '{',
@@ -926,7 +961,7 @@ story += make_table(
          "74 referencias, self-test incluido); bench nocturno con dos pasadas y sonda fsync; baterías Go y TS por paquete."],
     ],
     [0.15, 0.33, 0.52],
-    "Tabla 6. Stack tecnológico por capa con su justificación (v0.7).")
+    "Tabla 6. Stack tecnológico por capa con su justificación (v0.8).")
 
 story.append(para(
     "La estructura del monorepo delimita las fronteras con el sistema de ficheros: cada paquete interno es "
@@ -956,7 +991,7 @@ story += code_block([
     '├── scripts/windows/        # instalador PS1, servicio, config Sysmon',
     '├── scripts/arq_v04/        # este generador (pipeline versionado del documento)',
     '└── docs/                   # este documento, OpenAPI, assets, actas',
-], "Ejemplo 3. Estructura del monorepo (v0.7, árbol real del repositorio).")
+], "Ejemplo 3. Estructura del monorepo (v0.8, árbol real del repositorio).")
 
 story.append(para(
     "Las convenciones de código se aplican desde el primer commit: formato obligatorio (gofmt y rustfmt), "
@@ -992,7 +1027,7 @@ story += h1_block(7, "Roadmap de Desarrollo",
     "propuestos por seguridad, estos tres sin baja certificada aún.")
 
 story += make_table(
-    ["Fase", "Objetivos", "Estado hoy (v0.7)"],
+    ["Fase", "Objetivos", "Estado hoy (v0.8)"],
     [
         ["1. Core y MVP (Q4 2026)",
          "Tracer bullet end-to-end; sensor básico; reglas YAML puntuales; CLI de prueba.",
@@ -1014,7 +1049,7 @@ story += make_table(
          "Pendiente. Sin código simulado en el árbol; el diseño se mantiene en la sección 3.4."],
     ],
     [0.17, 0.33, 0.50],
-    "Tabla 7. Fases del roadmap con su estado real a septiembre de 2026 (v0.7).")
+    "Tabla 7. Fases del roadmap con su estado real a septiembre de 2026 (v0.8).")
 
 story.append(para(
     "Las métricas de éxito miden la salud del proyecto, no solo el código. La fase 1 prometía un pipeline "
@@ -1037,10 +1072,10 @@ story += h1_block(8, "Plan de Acción y Verificación",
     "vertical completo que valida la arquitectura antes de construir sobre ella. Su valor no es funcional "
     "sino de riesgo: demuestra que el esquema de eventos, el protocolo de transporte, el motor de reglas y "
     "las alertas encajan, y lo hace hoy, en cualquier máquina con Go instalado, sin depender de Windows. La "
-    "Figura 3 muestra el flujo de los cinco pasos que ejecuta el andamiaje.")
+    "Figura 5 muestra el flujo de los cinco pasos que ejecuta el andamiaje.")
 
 story += figure("docs/assets/diagram_tracer.png",
-                "Figura 3. Tracer bullet: pipeline de evento a alerta ejecutable en cualquier plataforma.",
+                "Figura 5. Tracer bullet: pipeline de evento a alerta ejecutable en cualquier plataforma.",
                 200)
 
 story += h2_block("8.1 Ejecutar el tracer bullet", para(
@@ -1098,7 +1133,7 @@ story.append(para(
     "y demo grabada. La arquitectura descrita en este documento es, sobre todo, una promesa de estabilidad "
     "para quien construya encima: el comportamiento del pipeline no cambiará, solo mejorará su "
     "implementación, y cada revisión futura vendrá acompañada de la misma columna de estado honesto que "
-    "distingue a esta v0.7 de su original — generada, además, por el pipeline versionado que este propio "
+    "distingue a esta v0.8 de su original — generada, además, por el pipeline versionado que este propio "
     "capítulo describe."))
 
 # ------------------------------------------------------------------ build --
@@ -1107,10 +1142,10 @@ doc = TocDocTemplate(
     pagesize=A4,
     leftMargin=MARGIN, rightMargin=MARGIN,
     topMargin=MARGIN, bottomMargin=MARGIN,
-    title="Arquitectura Técnica - Framework de Detección de Amenazas en Tiempo Real (v0.7)",
+    title="Arquitectura Técnica - Framework de Detección de Amenazas en Tiempo Real (v0.8)",
     author="Ruby570bocadito",
     creator="Ruby570bocadito",
-    subject="Documento de arquitectura tecnica v0.7: estado implementado y verificado del framework",
+    subject="Documento de arquitectura tecnica v0.8: estado implementado y verificado del framework",
 )
 doc.multiBuild(story, onFirstPage=on_page, onLaterPages=on_page)
 print(f"body written: {OUT_BODY}")

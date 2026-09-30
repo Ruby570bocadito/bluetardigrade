@@ -2,7 +2,8 @@
 
 | Ruta | Contenido |
 |------|-----------|
-| `arquitectura-tecnica-v0.7.pdf` | Documento de arquitectura v0.7 (23 páginas; **revisión vigente**): producida por el pipeline versionado `scripts/arq_v04/`; amplía la v0.6 con la operabilidad forense de la vista de consola de C3 — filtro por clase de intento (todas/ejecutadas/denegadas/followups), ventana de cola controlable por el operador (100/500) y exportación JSONL client-side de la cola visible con honestidad de superficie (ola `4967cad`) — y el estado certificado de los hallazgos: F1 cerrada y O2 certificada por el cross-review de seguridad (acta 19h30), con procedencia citada |
+| `arquitectura-tecnica-v0.8.pdf` | Documento de arquitectura v0.8 (25 páginas; **revisión vigente**): producida por el pipeline versionado `scripts/arq_v04/`; amplía la v0.7 con la evidencia visual real de la vista de respuesta activa — las capturas de laboratorio de la ola de implementaciones 20h05 (`a3b8bd8`/`624d8ba`) incrustadas como Figuras 3 y 4 (cola con 12 líneas de audit genuinas, par F1 completo compartiendo `action_id`, filtro followups con conteo honesto 1 de 12), el matiz de esquema documentado (`mechanism` solo viaja en followups, `respond.go:345-348`) y la Figura 2 recapturada sobre el árbol vigente (la limitación de navegación que la serie arrastraba desde la v0.6 queda resuelta por la ronda hermana 20h05_B, ola `ca51b95`), el tracer renumerado a Figura 5 y la resolución de la O4 absorbida — con procedencia citada |
+| `arquitectura-tecnica-v0.7.pdf` | Documento de arquitectura v0.7 (23 páginas; conservado como referencia histórica — la v0.8 lo supersede; amplió la v0.6 con la operabilidad forense de la vista de consola de C3 — filtro por clase de intento, ventana de cola controlable 100/500 y exportación JSONL client-side (ola `4967cad`) — y el estado certificado de los hallazgos: F1 cerrada y O2 certificada por el cross-review de seguridad, acta 19h30) |
 | `arquitectura-tecnica-v0.6.pdf` | Documento de arquitectura v0.6 (22 páginas; conservado como referencia histórica — la v0.7 lo supersede; amplió la v0.5 con el mecanismo dual de ejecución de C3 y la certificación conductual permanente del cierre en CI, y regeneró la Figura 2 con el panel de hosts calientes completo) |
 | `arquitectura-tecnica-v0.5.pdf` | Documento de arquitectura v0.5 (21 páginas; conservado como referencia histórica — la v0.6 lo supersede; amplió la v0.4 con la superficie de lectura de C3 y el guard a 15 rutas/36 campos/74 referencias) |
 | `arquitectura-tecnica-v0.4.pdf` | Documento de arquitectura v0.4 (20 páginas; conservado como referencia histórica — la v0.5 lo supersede; fue la primera revisión producida por el pipeline versionado) |
@@ -16,32 +17,44 @@
 
 ## Estado del documento de arquitectura
 
-`arquitectura-tecnica-v0.7.pdf` es la revisión vigente, producida por el pipeline
+`arquitectura-tecnica-v0.8.pdf` es la revisión vigente, producida por el pipeline
 versionado del árbol (`scripts/arq_v04/`: cuerpo ReportLab + portada Playwright +
 fusión pypdf; ver su README — el nombre del directorio registra dónde nació el
 pipeline, no la revisión que produce). Describe el sistema tal como está
-implementado y verificado a su generación: hereda de la v0.6 el **mecanismo dual
-de ejecución de C3** (pidfd con fallback declarado en Linux — `mechanism` +
-`fallback_reason` con el errno, incluso en denegaciones — y handle en Windows) con
-su **certificación conductual permanente en CI** (job engine-windows: smoke 29/29
-sobre motor nativo; `d065f4c`, ratificado por doble cross-review en `02c5c55`), la
-**Figura 2 regenerada** desde el stack real con el panel de hosts calientes
-completo (`949ef9d`; su navegación procede del árbol `091986c` y lo declara en el
-pie de figura) y todo lo anterior (notificaciones C2, sumideros SIEM nativos,
-respuesta activa con su superficie de lectura), y añade la **operabilidad forense
-de la vista de consola de C3** (ola `4967cad`): filtro por clase de intento
-todas/ejecutadas/denegadas/followups — el followup como clase propia del
-comprometido-pero-no-aterrizado —, ventana de cola controlable por el operador
-(100 por defecto, techo 500, aplicada en ambos puntos de lectura sin resuscribir
-el stream) y exportación JSONL client-side de la cola visible — verbatim, el
-mismo esquema Record del motor, con la honestidad de superficie declarada: no hay
-ruta bulk de exportación por diseño. El estado de los hallazgos queda
-actualizado: F1 **cerrada** y O2 **certificada** por el cross-review de seguridad
-(acta 19h30, doble veredicto coincidente); F2 con parche listo en el carril 02-A
-y #34/#35 propuestos siguen sin baja certificada. El guard OpenAPI certifica 15
-rutas / 36 campos / 74 referencias con self-test; el marcador va 33/33 cerrados,
-0 vivos, y el roadmap 13/17 certificado con la catorceava (consola C3) propuesta
-a la espera de certificación del Director. Los contadores del documento citan su
+implementado y verificado a su generación: hereda de la v0.7 la **operabilidad
+forense de la vista de consola de C3** (filtro por clase de intento
+todas/ejecutadas/denegadas/followups, ventana de cola controlable 100/500 y
+exportación JSONL client-side con honestidad de superficie; ola `4967cad`) y de
+la v0.6 el **mecanismo dual de ejecución de C3** (pidfd con fallback declarado
+en Linux — `mechanism` + `fallback_reason` con el errno, incluso en
+denegaciones — y handle en Windows) con su **certificación conductual permanente
+en CI** (job engine-windows: smoke 29/29 sobre motor nativo; `d065f4c`,
+ratificado por doble cross-review en `02c5c55`), y añade la **evidencia visual
+real de la vista de respuesta activa**: las capturas de laboratorio de la ola de
+implementaciones 20h05 (aterrizadas en `a3b8bd8`, con Go 1.22.10 sobre motor
+armado y audit poblado por 12 líneas genuinas — 5 ejecutados + 7 denegaciones
+de las 5 clases del e2e más el par F1 completo) incrustadas como **Figuras 3 y
+4** (el tracer pasó a Figura 5), con el matiz de esquema documentado de primera
+mano: `mechanism` solo viaja en el JSONL de los followups (la línea pre-señal se
+escribe sin él, `respond.go:345-348`; los denegados lo llevan vacío y `omitempty`
+lo suelta), la etiqueta `pidfd` fotografiada es la del followup real y no hay
+captura de la etiqueta de fallback porque no hay fallback real que fotografiar
+(kernel con pidfd sano) — honestidad de superficie declarada en el propio texto.
+La ronda absorbe además dos resoluciones en vuelo: la Figura 2 recapturada sobre
+el árbol vigente por la ronda hermana 20h05_B (la limitación de navegación
+heredada de la v0.6 queda resuelta) y la resolución de la observación O4 (acta
+02-B 20h20): el export entrega la ventana completa por diseño — el filtro es
+lente de vista, no selector de datos — y el tooltip lo declara en sus tres
+estados, precisión ya incorporada al texto del documento.
+El estado de los hallazgos queda sin cambio: F1 **cerrada** y O2 **certificada**
+por el cross-review de seguridad (acta 19h30, doble veredicto coincidente); F2
+con parche listo en el carril 02-A y #34/#35 propuestos siguen sin baja
+certificada. El guard OpenAPI certifica 15
+rutas / 36 campos / 74 referencias con self-test; el marcador canónico más reciente (acta del Director
+22h46) consolida 20/20 defectos cerrados sin ninguno vivo y 7/17 líneas de roadmap certificadas — con A3
+aterrizado y verificado (acta 22h39) —, y los conteos más amplios de los carriles (33/33, 14/17) viajan
+como numeración propia pendiente de esa consolidación; la catorceava (consola C3) sigue propuesta a la
+espera de certificación del Director. Los contadores del documento citan su
 fuente (guard, actas, bench) para que envejezcan con procedencia y no en
 silencio.
 
@@ -62,11 +75,15 @@ Windows de CI aún no descritos, Figura 2 con la captura previa al panel complet
 queda cubierta por la v0.6. La `arquitectura-tecnica-v0.6.pdf` se conserva como la
 revisión del mecanismo dual y de la certificación permanente de CI; su limitación
 conocida (operabilidad forense de la vista de respuesta aún no descrita, F1
-presentada como pendiente de certificación) queda cubierta por la v0.7. Lo que la
-v0.7 sigue declarando como futuro, sin
+presentada como pendiente de certificación) queda cubierta por la v0.7. La
+`arquitectura-tecnica-v0.7.pdf` se conserva como la revisión de la operabilidad
+forense y de la certificación F1/O2; su limitación conocida (la vista de respuesta
+activa descrita sin evidencia visual, las capturas reales aún no aterrizadas)
+queda cubierta por la v0.8. Lo que la
+v0.8 sigue declarando como futuro, sin
 presentarlo como capacidad: YARA,
 gRPC/protobuf, filaments Python y eBPF en Linux (fases 2-4 del roadmap). Las decisiones
-de diseño vigentes viven en la v0.7 del PDF, en el README y en los informes de
+de diseño vigentes viven en la v0.8 del PDF, en el README y en los informes de
 `agentes/`; el directorio de ADRs sigue sin existir como tal. Para regenerar o
 evolucionar el documento: `bash scripts/arq_v04/build.sh` (requisitos y decisiones en
 [`scripts/arq_v04/README.md`](../scripts/arq_v04/README.md)).
