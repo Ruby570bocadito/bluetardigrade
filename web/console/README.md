@@ -98,6 +98,25 @@ but it is not committed.
 
 - `ENGINE_API_URL` (console, server side): engine API base the proxy
   route forwards to, default `http://127.0.0.1:7778`.
+- `SF_API_TOKEN` (console, server side): bearer the proxy rides on
+  every forwarded request, the same env var the engine (`-api-token`
+  falls back to it) and the console-service bridge honor — a
+  token-protected engine needs exactly this one entry on the console
+  side; without it the console would sit in 401s.
+- `CONSOLE_ALLOWED_HOSTS` (console, server side): comma-separated
+  hostnames the proxy serves besides loopback (`localhost`,
+  `127.0.0.1`, `::1` are always served). The dev server binds beyond
+  loopback, and the proxy is the one listener that bridges a browser
+  to engine telemetry, so any other Host gets a 403 that names this
+  var — the console posture mirrors the engine's: loopback
+  friction-free, beyond loopback loud and explicit.
+- Same-origin writes: the triage POST is forwarded only when the
+  request shows no cross-site browser context (mismatched `Origin` or
+  `Sec-Fetch-Site: cross-site`), so a hostile page cannot drive-by
+  close alerts through the proxy; headerless clients (curl, the
+  dev-tests smokes) keep working. Covered by `bun test`
+  (`route.test.ts`, 10 tests) alongside the live-fire matrix of the
+  role report.
 - `NEXT_PUBLIC_ENGINE_API` (console, client side): bypass the proxy and
   talk to the engine directly (only useful when the engine serves CORS).
 - `NEXT_PUBLIC_CONSOLE_URL` (console): point the analyst socket at a

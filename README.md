@@ -403,7 +403,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 |----------|-----------|---------|
 | `SF_INGEST_TOKEN` | engine + every bundled sensor | ingest shared token (the flag wins when both are set) |
 | `SF_INGEST_TOKEN_PREVIOUS` | engine | second accepted token during a rotation window |
-| `SF_API_TOKEN` | engine + console-service | one entry protects both the API and the bridge |
+| `SF_API_TOKEN` | engine + console-service + web console | one entry protects the API, the bridge and the console proxy (same-origin writes, loopback-only hosts by default) |
 | `SF_API_WRITE` | engine | set to `1` to arm the suppression write API (same as `-api-write`; the flag wins) |
 | `SF_WEBHOOK_TOKEN` | engine | Bearer on outbound alert deliveries |
 | `NEXT_PUBLIC_CONSOLE_URL` | web console | point the UI at a remote hub |
