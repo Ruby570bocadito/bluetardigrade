@@ -209,6 +209,29 @@ func matchCondition(c Condition, val any, re *regexp.Regexp) bool {
 		return compareNumeric(val, c.Value) > 0
 	case "lt":
 		return compareNumeric(val, c.Value) < 0
+	case "ieq":
+		return strings.EqualFold(asString(val), asString(c.Value))
+	case "icontains":
+		return strings.Contains(strings.ToLower(asString(val)), strings.ToLower(asString(c.Value)))
+	case "icontains_any":
+		needle := strings.ToLower(asString(val))
+		for _, v := range toList(c.Value) {
+			if strings.Contains(needle, strings.ToLower(asString(v))) {
+				return true
+			}
+		}
+		return false
+	case "istartswith":
+		return strings.HasPrefix(strings.ToLower(asString(val)), strings.ToLower(asString(c.Value)))
+	case "iendswith":
+		return strings.HasSuffix(strings.ToLower(asString(val)), strings.ToLower(asString(c.Value)))
+	case "iin":
+		for _, v := range toList(c.Value) {
+			if strings.EqualFold(asString(val), asString(v)) {
+				return true
+			}
+		}
+		return false
 	default:
 		return false
 	}
@@ -342,6 +365,19 @@ func (e *Engine) load(dir string) error {
 	return nil
 }
 
+// validOperators is the closed set of condition operators the engine
+// evaluates. Loading a rule with an unknown operator fails LOUD here:
+// evalCondition's default branch answers false, so an unvalidated
+// operator would load a rule that silently never fires — a mute
+// detection is worse than a load error.
+var validOperators = map[string]bool{
+	"eq": true, "neq": true, "contains": true, "contains_any": true,
+	"startswith": true, "endswith": true, "regex": true,
+	"in": true, "not_in": true, "gt": true, "lt": true,
+	"ieq": true, "icontains": true, "icontains_any": true,
+	"istartswith": true, "iendswith": true, "iin": true,
+}
+
 func compile(r *Rule) (compiledRule, error) {
 	cr := compiledRule{rule: r}
 	if r.EventType == "" {
@@ -392,6 +428,9 @@ func NewMatcher(conds []Condition) (*Matcher, error) {
 		m.conds[i] = Condition{Field: c.Field, Operator: c.Operator, Value: copyValue(c.Value)}
 		if c.Field == "" || c.Operator == "" {
 			return nil, fmt.Errorf("condition %d: field and operator are required", i)
+		}
+		if !validOperators[c.Operator] {
+			return nil, fmt.Errorf("condition %d: operator %q no soportado", i, c.Operator)
 		}
 		if c.Operator == "regex" {
 			re, err := regexp.Compile(asString(c.Value))

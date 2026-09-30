@@ -107,6 +107,15 @@ var supportedModifiers = map[string]bool{
 	"lt":         true,
 }
 
+// hasLetters reports whether s contains any letter (ASCII or
+// Unicode): letters are exactly the characters whose case can vary
+// between the Sigma corpus (conventionally lowercase) and the real
+// telemetry, so string comparisons over them must be case-insensitive
+// (house finding F1, round over da6382c).
+func hasLetters(s string) bool {
+	return strings.ToLower(s) != strings.ToUpper(s)
+}
+
 // translateSelection converts one selection (list of field values) into
 // engine conditions. Every field must map, every modifier must be
 // supported and every value must translate; otherwise the reason
@@ -180,18 +189,36 @@ func translateString(v any, modifier string) (string, any, error) {
 		if strings.ContainsAny(s, "*?") {
 			return wildcardRegex(s, modifier)
 		}
+		if hasLetters(s) {
+			// The Sigma corpus matches strings case-insensitively (it writes
+			// 'mimikatz' and expects Invoke-Mimikatz to hit); the i* operators
+			// keep that contract without regex overhead.
+			return "i" + modifier, s, nil
+		}
 		return modifier, s, nil
 	}
 	// Plain value: wildcard -> operator translation.
 	switch {
 	case !strings.ContainsAny(s, "*?"):
+		if hasLetters(s) {
+			return "ieq", s, nil
+		}
 		return "eq", s, nil
 	case strings.HasPrefix(s, "*") && strings.HasSuffix(s, "*") && len(s) >= 2 &&
 		!strings.ContainsAny(s[1:len(s)-1], "*?"):
+		if hasLetters(s[1 : len(s)-1]) {
+			return "icontains", s[1 : len(s)-1], nil
+		}
 		return "contains", s[1 : len(s)-1], nil
 	case strings.HasSuffix(s, "*") && !strings.ContainsAny(s[:len(s)-1], "*?"):
+		if hasLetters(s[:len(s)-1]) {
+			return "istartswith", s[:len(s)-1], nil
+		}
 		return "startswith", s[:len(s)-1], nil
 	case strings.HasPrefix(s, "*") && !strings.ContainsAny(s[1:], "*?"):
+		if hasLetters(s[1:]) {
+			return "iendswith", s[1:], nil
+		}
 		return "endswith", s[1:], nil
 	default:
 		return wildcardRegex(s, "")
@@ -204,14 +231,17 @@ func translateString(v any, modifier string) (string, any, error) {
 // values anchor both sides).
 func wildcardRegex(pattern, modifier string) (string, any, error) {
 	var b strings.Builder
+	// Wildcard matching in Sigma is case-insensitive by corpus
+	// convention (house finding F1, round over da6382c).
+	b.WriteString("(?i)")
 	switch modifier {
 	case "contains", "endswith":
 		// unanchored head
 	default:
 		b.WriteString("^")
 	}
-	for i := 0; i < len(pattern); i++ {
-		switch c := pattern[i]; c {
+	for _, c := range pattern {
+		switch c {
 		case '*':
 			b.WriteString(".*")
 		case '?':
@@ -280,8 +310,14 @@ func translateList(list []any, modifier string) (string, any, error) {
 	if wildcardFree {
 		switch modifier {
 		case "":
+			if hasLetters(strings.Join(vals, "\x00")) {
+				return "iin", anySlice(vals), nil
+			}
 			return "in", anySlice(vals), nil
 		case "contains":
+			if hasLetters(strings.Join(vals, "\x00")) {
+				return "icontains_any", anySlice(vals), nil
+			}
 			return "contains_any", anySlice(vals), nil
 		}
 		// startswith/endswith wildcard-free lists fall through to the
@@ -313,7 +349,10 @@ func translateList(list []any, modifier string) (string, any, error) {
 			parts[i] = "^" + regexp.QuoteMeta(s) + "$"
 		}
 	}
-	return "regex", "(?:" + strings.Join(parts, "|") + ")", nil
+	// Alternations carry a global (?i): wildcard/list matching in the
+	// Sigma corpus is case-insensitive (unlike |re, which stays
+	// case-sensitive above).
+	return "regex", "(?i)(?:" + strings.Join(parts, "|") + ")", nil
 }
 
 func anySlice(ss []string) []any {

@@ -23,6 +23,10 @@
 //     result with the SAME operator set internal/rules exports. No
 //     approximation is made silently: if the mapped rule would not
 //     mean the same thing, the rule is skipped instead.
+//   - Case: the Sigma corpus matches string values case-insensitively
+//     (it writes 'mimikatz' and expects Invoke-Mimikatz to hit), so
+//     values with letters are emitted with the engine's i* operator
+//     family; digit/punctuation-only values keep the exact fast path.
 //
 // Scope (v1, documented in README): logsources mapped by CATEGORY
 // against the v0.1 event schema (process.create, file.write,

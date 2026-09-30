@@ -189,7 +189,7 @@ func mergeOR(outs []selOut) ([]Condition, bool) {
 			return nil, false
 		}
 		switch c.Operator {
-		case "eq", "contains", "in", "contains_any":
+		case "eq", "contains", "in", "contains_any", "ieq", "icontains", "iin", "icontains_any":
 			vals = append(vals, listValues(c.Value)...)
 		default:
 			// startswith/endswith/regex across selections: each element
@@ -210,6 +210,14 @@ func mergeOR(outs []selOut) ([]Condition, bool) {
 		return []Condition{{Field: field, Operator: "contains_any", Value: vals}}, true
 	case "contains_any":
 		return []Condition{{Field: field, Operator: "contains_any", Value: vals}}, true
+	case "ieq":
+		return []Condition{{Field: field, Operator: "iin", Value: vals}}, true
+	case "iin":
+		return []Condition{{Field: field, Operator: "iin", Value: vals}}, true
+	case "icontains":
+		return []Condition{{Field: field, Operator: "icontains_any", Value: vals}}, true
+	case "icontains_any":
+		return []Condition{{Field: field, Operator: "icontains_any", Value: vals}}, true
 	}
 	return nil, false
 }

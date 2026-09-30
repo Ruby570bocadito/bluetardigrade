@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -77,10 +78,10 @@ func TestConvertBasicRule(t *testing.T) {
 	if len(r.Conditions) != 2 {
 		t.Fatalf("Conditions = %d, want 2", len(r.Conditions))
 	}
-	if r.Conditions[0].Field != "process.command_line" || r.Conditions[0].Operator != "contains" || r.Conditions[0].Value != "-enc" {
+	if r.Conditions[0].Field != "process.command_line" || r.Conditions[0].Operator != "icontains" || r.Conditions[0].Value != "-enc" {
 		t.Errorf("cond 0 mal: %+v", r.Conditions[0])
 	}
-	if r.Conditions[1].Field != "process.image" || r.Conditions[1].Operator != "endswith" || r.Conditions[1].Value != `\powershell.exe` {
+	if r.Conditions[1].Field != "process.image" || r.Conditions[1].Operator != "iendswith" || r.Conditions[1].Value != `\powershell.exe` {
 		t.Errorf("cond 1 mal: %+v", r.Conditions[1])
 	}
 	if len(r.Tags) != 3 || r.Tags[0] != "sigma" || r.Tags[2] != "attack.t1059.001" {
@@ -101,12 +102,13 @@ func TestConvertWildcardTable(t *testing.T) {
 		wantOp  string
 		wantVal any
 	}{
-		{"cmd.exe", "eq", "cmd.exe"},
-		{"*-enc*", "contains", "-enc"},
-		{"cmd*", "startswith", "cmd"},
-		{"*cmd.exe", "endswith", "cmd.exe"},
-		{`C:\Windows\*\cmd.exe`, "regex", `^C:\\Windows\\.*\\cmd\.exe$`},
-		{"cmd?.exe", "regex", `^cmd.\.exe$`}, // ? -> . (comodín), el . literal va escapado
+		{"cmd.exe", "ieq", "cmd.exe"},
+		{"*-enc*", "icontains", "-enc"},
+		{"cmd*", "istartswith", "cmd"},
+		{"*cmd.exe", "iendswith", "cmd.exe"},
+		{"8443", "eq", "8443"}, // sin letras: conserva el fast path exacto
+		{`C:\Windows\*\cmd.exe`, "regex", `(?i)^C:\\Windows\\.*\\cmd\.exe$`},
+		{"cmd?.exe", "regex", `(?i)^cmd.\.exe$`}, // ? -> . (comodín), el . literal va escapado
 	}
 	for _, c := range cases {
 		op, val, err := translateString(c.in, "")
@@ -122,12 +124,12 @@ func TestConvertWildcardTable(t *testing.T) {
 func TestConvertListTranslation(t *testing.T) {
 	// eq list -> in
 	op, val, err := translateString([]any{"a.exe", "b.exe"}, "")
-	if err != nil || op != "in" {
+	if err != nil || op != "iin" {
 		t.Fatalf("eq list: %s %v %v", op, val, err)
 	}
 	// contains list -> contains_any
 	op, val, err = translateString([]any{"-enc", "-w hidden"}, "contains")
-	if err != nil || op != "contains_any" {
+	if err != nil || op != "icontains_any" {
 		t.Fatalf("contains list: %s %v %v", op, val, err)
 	}
 	// mixed wildcard contains -> alternation, each element unanchored
@@ -135,16 +137,16 @@ func TestConvertListTranslation(t *testing.T) {
 	if err != nil || op != "regex" {
 		t.Fatalf("contains mixta: %s %v %v", op, val, err)
 	}
-	if val != "(?:\\-enc|.*\\-w hidden.*\\$?)" && val != "(?:\\-enc|.*\\-w hidden.*)" {
-		// el primer elemento se traduce literal (unanchored), el segundo conserva sus .* laterales
-		t.Logf("alternativa producida: %v", val)
+	if val != "(?i)(?:-enc|(?i).*-w hidden.*)" {
+		// elemento literal + elemento con comodines, ambos bajo la alternación (?i)
+		t.Errorf("alternation contains mixta = %v", val)
 	}
 	// startswith list -> alternation with per-element anchors
 	op, val, err = translateString([]any{"rundll", "regsvr"}, "startswith")
 	if err != nil || op != "regex" {
 		t.Fatalf("startswith list: %s %v %v", op, val, err)
 	}
-	if val != "(?:^rundll.*|^regsvr.*)" {
+	if val != "(?i)(?:^rundll.*|^regsvr.*)" {
 		t.Errorf("alternation startswith = %v", val)
 	}
 	// empty list rejected
@@ -301,7 +303,7 @@ level: high
 		t.Fatalf("converted=%d skipped=%d", len(res.Converted), len(res.Skipped))
 	}
 	conds := res.Converted[0].Conditions
-	if len(conds) != 1 || conds[0].Operator != "contains_any" {
+	if len(conds) != 1 || conds[0].Operator != "icontains_any" {
 		t.Fatalf("merge OR fallo: %+v", conds)
 	}
 	vals, ok := conds[0].Value.([]any)
@@ -562,4 +564,38 @@ func mergeMaps(a, b map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+// F1 (ronda 04 sobre da6382c): el corpus Sigma asume matching
+// case-insensitive (escribe mimikatz y espera que Invoke-Mimikatz
+// dispare). Los valores con letras se emiten con la familia i*; los
+// puramente numéricos conservan el fast path exacto; los patrones
+// wildcard bajan como regex (?i) que compila y plega case.
+func TestConvertCaseInsensitiveSemantics(t *testing.T) {
+	op, val, err := translateString("mimikatz", "")
+	if err != nil || op != "ieq" || val != "mimikatz" {
+		t.Fatalf("eq con letras: %s %v %v", op, val, err)
+	}
+	op, val, err = translateString("*mimikatz*", "")
+	if err != nil || op != "icontains" || val != "mimikatz" {
+		t.Fatalf("wildcard con letras: %s %v %v", op, val, err)
+	}
+	op, val, err = translateString("8443", "")
+	if err != nil || op != "eq" {
+		t.Fatalf("sin letras debe conservar el fast path: %s %v %v", op, val, err)
+	}
+	op, val, err = translateString("Mimi*Katz", "")
+	if err != nil || op != "regex" {
+		t.Fatalf("patrón mixto: %s %v %v", op, val, err)
+	}
+	re, err := regexp.Compile(val.(string))
+	if err != nil {
+		t.Fatalf("patrón emitido no compila: %v", err)
+	}
+	if !re.MatchString("mImIzKatz") {
+		t.Errorf("el patrón case-insensitive no plega case: %q", val)
+	}
+	if re.MatchString("mimikatzX") {
+		t.Errorf("el patrón ancla mal: %q", val)
+	}
 }

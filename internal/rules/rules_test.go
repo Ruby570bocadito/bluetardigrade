@@ -276,6 +276,14 @@ func TestOperators(t *testing.T) {
 		{"gt", 443, float64(8080), true},
 		{"lt", 443, float64(80), true},
 		{"regex", `(?i)minid?ump`, "run MiniDump 744", true},
+		{"ieq", "mimikatz", "MIMIKATZ", true},
+		{"ieq", "Invoke-Mimikatz", "invoke-mimikatz", true}, // igualdad fold, no subcadena
+		{"ieq", "mimikatz", "Invoke-Mimikatz", false},       // ieq es igualdad, no subcadena
+		{"icontains", "mimikatz", "Invoke-Mimikatz -DumpCreds", true},
+		{"icontains_any", []any{"-enc", "mimikatz"}, "powershell Invoke-MIMIKATZ", true},
+		{"istartswith", "rundll32", "RUNDLL32.exe", true},
+		{"iendswith", ".exe", "RUNDLL32.EXE", true},
+		{"iin", []any{"certutil.exe", "bitsadmin.exe"}, "BITSADMIN.EXE", true},
 	}
 	// F2 (adenda 11h02): la tabla pasa por el Matcher — el unico
 	// camino de evaluacion que existe desde el refactor.
@@ -347,8 +355,8 @@ func TestMatcherRejectsBadRegexAndMissingFields(t *testing.T) {
 	if _, err := NewMatcher([]Condition{{Field: "", Operator: "eq"}}); err == nil {
 		t.Error("campo vacio aceptado")
 	}
-	if _, err := NewMatcher([]Condition{{Field: "a", Operator: "no_existe", Value: 1}}); err != nil {
-		t.Errorf("operador desconocido debe compilar (evalua a false), no rechazar: %v", err)
+	if _, err := NewMatcher([]Condition{{Field: "a", Operator: "no_existe", Value: 1}}); err == nil {
+		t.Error("operador desconocido aceptado: el matcher y el engine deben rechazarlo en construccion (F2, misma regla que compile)")
 	}
 }
 
@@ -389,5 +397,25 @@ func TestMatcherDefensiveCopyOfSliceValues(t *testing.T) {
 	// "-INOCUO" jamas existio dentro del matcher
 	if m.MatchFields(nested("powershell -INOCUO AAA")) {
 		t.Error("la mutacion externa del slice cambio la semantica del matcher")
+	}
+}
+
+// Un operador que el engine no evalúa debe RECHAZARSE en carga:
+// evalCondition responde false por defecto, así que aceptarlo sería
+// cargar una regla muda (ronda 04 sobre da6382c).
+func TestCompileRejectsUnknownOperator(t *testing.T) {
+	r := &Rule{
+		Name:       "regla con operador desconocido",
+		EventType:  "process.create",
+		Severity:   SevHigh,
+		Conditions: []Condition{{Field: "f", Operator: "regexi", Value: "x"}},
+	}
+	if _, err := compile(r); err == nil {
+		t.Fatal("compile aceptó un operador desconocido: la regla cargaría muda")
+	}
+	// los operadores i* son parte del set cerrado
+	r.Conditions[0].Operator = "icontains"
+	if _, err := compile(r); err != nil {
+		t.Fatalf("compile rechazó icontains: %v", err)
 	}
 }
