@@ -23,7 +23,7 @@
 #
 # Requiere: go (para compilar si no hay SF_E2E_ENGINE), curl, python3, rg.
 # Puertos por defecto 18107/18108: fuera del rango de e2e_beacon
-# (18097/98), e2e_store_sequences (18077/78), store_smoke (17887/88) y
+# (18097/98), e2e_store_sequences (18077/78), smoke_store (17887/88) y
 # smoke_lifecycle (17879).
 set -u
 

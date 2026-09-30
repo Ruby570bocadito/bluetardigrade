@@ -38,9 +38,17 @@ import (
 type Status string
 
 const (
-	StatusNew          Status = "new"
+	// StatusNew is the implicit state of an alert without a triage
+	// entry: seen, not yet worked by an operator.
+	StatusNew Status = "new"
+	// StatusAcknowledged marks an alert an operator has picked up:
+	// work in progress, still open.
 	StatusAcknowledged Status = "acknowledged"
-	StatusClosed       Status = "closed"
+	// StatusClosed marks an alert an operator has resolved; closed
+	// alerts stay in the store for the audit trail but leave the
+	// risk score (the KPI models what the engine saw, not what the
+	// operator decided).
+	StatusClosed Status = "closed"
 )
 
 // MaxEntries bounds the store (and the persisted file). Past the cap,

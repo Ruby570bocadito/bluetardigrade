@@ -41,7 +41,7 @@
 # Requiere: go (para compilar si no hay SF_E2E_ENGINE), curl, python3, rg.
 # Puertos por defecto 18127/18128: fuera del rango de e2e_threshold
 # (18107/08), e2e_beacon (18097/98), e2e_store_sequences (18077/78),
-# store_smoke (17887/88) y smoke_lifecycle (17879).
+# smoke_store (17887/88) y smoke_lifecycle (17879).
 set -u
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)

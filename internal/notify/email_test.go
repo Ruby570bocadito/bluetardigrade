@@ -64,11 +64,6 @@ func newFakeSMTP(t *testing.T, starttls bool) *fakeSMTP {
 
 func (s *fakeSMTP) addr() string { return s.ln.Addr().String() }
 
-func (s *fakeSMTP) host() string {
-	h, _, _ := net.SplitHostPort(s.addr())
-	return h
-}
-
 // mintCert builds a self-signed certificate valid for 127.0.0.1 so
 // the STARTTLS handshake can complete with full verification against
 // the injected root pool.

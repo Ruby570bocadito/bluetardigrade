@@ -25,7 +25,7 @@
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-MOCK="${SMOKE_MOCK_PORT:-18301}"
+MOCK="${SMOKE_RECEIVER_PORT:-18301}"
 API="${SMOKE_API_PORT:-18302}"
 INGEST="${SMOKE_INGEST_PORT:-18303}"
 WORK="$(mktemp -d)"
@@ -93,7 +93,7 @@ channels:
 YAML
 
 start_mock() {
-  python3 "$ROOT/scripts/dev-tests/notify_mock.py" --port "$MOCK" --out "$WORK/captures.jsonl" \
+  python3 "$ROOT/scripts/dev-tests/notify_receiver.py" --port "$MOCK" --out "$WORK/captures.jsonl" \
     > "$WORK/mock.log" 2>&1 &
   MOCK_PID=$!
   for _ in $(seq 1 50); do

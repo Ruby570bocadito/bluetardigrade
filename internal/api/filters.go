@@ -3,6 +3,7 @@
 // parameters so an analyst narrows a dataset identically whether they
 // are browsing it or handing it to a SIEM. Invalid values answer 400
 // with an actionable message instead of silently returning everything.
+
 package api
 
 import (

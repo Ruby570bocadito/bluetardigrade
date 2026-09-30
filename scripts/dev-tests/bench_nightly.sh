@@ -13,7 +13,7 @@
 #     (the debt of acta 08h40, "bench comparativo con/sin -store").
 #     Every event and alert pays a write-through INSERT on the hot path,
 #     so the delta quantifies what the opt-in persistence costs; the
-#     store itself keeps its functional coverage in store_smoke.sh and
+#     store itself keeps its functional coverage in smoke_store.sh and
 #     e2e_store_sequences.sh.
 #
 # Exit semantics (the advisory contract of decision 6.2):

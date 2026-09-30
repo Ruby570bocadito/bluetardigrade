@@ -110,13 +110,6 @@ func (s *spool) dropRemaining() {
 	}
 }
 
-// sinkStats reports the lifetime counters of one sink. It is the shape
-// the engine API already consumes for the webhook (sent/failed/dropped),
-// so /api/stats and /metrics can pin parity the same way.
-type sinkStats interface {
-	Stats() (sent, failed, dropped uint64)
-}
-
 // retryAfter returns how long the caller should wait before the next
 // attempt, using the same linear backoff as the webhook connector.
 func retryAfter(base time.Duration, attempt int) time.Duration {

@@ -4,6 +4,7 @@
 // against spreadsheet formula injection, the same way serious SOC
 // tooling does: attacker-controlled fields (command lines, summaries)
 // never open with a character a spreadsheet would interpret.
+
 package api
 
 import (

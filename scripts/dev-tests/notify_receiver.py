@@ -14,8 +14,8 @@ Modes:
     "at least N".
 
 Examples:
-  python3 scripts/dev-tests/notify_mock.py --port 18301 --out /tmp/cap.jsonl
-  python3 scripts/dev-tests/notify_mock.py --port 18301 --out /tmp/cap.jsonl --expect 4 --timeout 60
+  python3 scripts/dev-tests/notify_receiver.py --port 18301 --out /tmp/cap.jsonl
+  python3 scripts/dev-tests/notify_receiver.py --port 18301 --out /tmp/cap.jsonl --expect 4 --timeout 60
 
 Requires: python3 standard library only.
 """
@@ -68,7 +68,7 @@ args = parser.parse_args()
 
 srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
-print(f"notify_mock listening on 127.0.0.1:{args.port}", flush=True)
+print(f"notify_receiver listening on 127.0.0.1:{args.port}", flush=True)
 
 if not args.expect:
     try:

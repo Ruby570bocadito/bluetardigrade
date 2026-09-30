@@ -3,6 +3,7 @@
 // access-denied is distinct from not-found, so a privilege problem is
 // never investigated as a phantom-PID hunt), plus the name mismatch
 // the design treats as its own guard outcome.
+
 package respond
 
 import (

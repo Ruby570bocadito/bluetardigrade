@@ -6,6 +6,7 @@
 // operator task, exactly like the lifecycle file; when the ceiling is
 // reached every attempt degrades to the denial the design already
 // defines, never to an unrecorded action.
+
 package respond
 
 import (
@@ -61,10 +62,10 @@ type Audit struct {
 	size int64
 }
 
-// AuditDown is returned by methods that need an audit writer and got
-// none (the surface must not arm without audit, but a nil-guard here
-// keeps the failure loud instead of panicking).
-var AuditDown = errors.New("respond audit writer is not open")
+// ErrAuditDown is returned by methods that need an audit writer and
+// got none (the surface must not arm without audit, but a nil-guard
+// here keeps the failure loud instead of panicking).
+var ErrAuditDown = errors.New("respond audit writer is not open")
 
 // OpenAudit opens (or creates) the audit file in append mode. The
 // caller decides what an open failure means (R5b: run.go disables the
@@ -96,7 +97,7 @@ func (a *Audit) Size() int64 {
 // be recorded never executes and never half-writes.
 func (a *Audit) Write(rec Record) error {
 	if a == nil || a.f == nil {
-		return AuditDown
+		return ErrAuditDown
 	}
 	line, err := json.Marshal(rec)
 	if err != nil {

@@ -13,6 +13,9 @@ sensor/target/
 # the lockfile for reproducible builds (present in the repo since the
 # 2026-09-29 17h32 round; refresh with `cargo update` as needed).
 
+# Python bytecode (dev-tests receivers run under python3 stdlib)
+__pycache__/
+
 # Node (web console)
 web/**/node_modules/
 web/console/.next/

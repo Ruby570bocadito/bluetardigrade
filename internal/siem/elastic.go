@@ -10,6 +10,7 @@
 // permanent item failures (4xx) count as failed immediately, and
 // retryable ones (429, 5xx) are retried alone — a whole batch is never
 // re-sent when the cluster already indexed part of it.
+
 package siem
 
 import (

@@ -1,3 +1,7 @@
+// Command devsensor generates simulated process events (some benign,
+// some emulating well-known offensive TTPs) and streams them as NDJSON
+// to the engine. It exists so the full pipeline can be exercised on
+// any platform without ETW, exactly like the tracer bullet in the docs.
 package main
 
 import (
@@ -13,11 +17,9 @@ import (
 	"github.com/Ruby570bocadito/security-framework/pkg/model"
 )
 
-// devsensor generates simulated process events (some benign, some
-// emulating well-known offensive TTPs) and streams them as NDJSON to
-// the engine. It exists so the full pipeline can be exercised on any
-// platform without ETW, exactly like the tracer bullet in the docs.
-
+// Ingest and detector exercise knobs; the scenario itself is fixed
+// and deterministic so any consumer (smoke, E2E, bench) can assert on
+// exact alert counts.
 var (
 	addr     = flag.String("addr", "127.0.0.1:7777", "engine address")
 	interval = flag.Duration("interval", 400*time.Millisecond, "delay between events")

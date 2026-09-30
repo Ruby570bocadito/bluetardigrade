@@ -25,7 +25,7 @@
 # the scenario ADDS rows by design; idempotence applies to re-inserting
 # the same ids, not to the demo sensor producing new ones.
 #
-# Usage: scripts/dev-tests/store_smoke.sh [engine-binary] [devsensor-binary]
+# Usage: scripts/dev-tests/smoke_store.sh [engine-binary] [devsensor-binary]
 # Missing binaries are built automatically (requires go >= 1.22 in PATH).
 # Exit 0 only if all four scenarios behave as documented in README.md
 # ("Persistent storage (SQLite, opt-in)").
@@ -33,27 +33,27 @@
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-PORT="${STORE_SMOKE_PORT:-17887}"
-API="${STORE_SMOKE_API_PORT:-17888}"
+PORT="${SMOKE_INGEST_PORT:-17887}"
+API="${SMOKE_API_PORT:-17888}"
 WORK="$(mktemp -d)"
 ENGINE="${1:-$WORK/engine}"
 DEVSENSOR="${2:-$WORK/devsensor}"
 FAILED=0
 PIDS=()
 
-log()  { printf '[store_smoke] %s\n' "$*"; }
-fail() { printf '[store_smoke] FAIL: %s\n' "$*" >&2; FAILED=1; }
+log()  { printf '[smoke_store] %s\n' "$*"; }
+fail() { printf '[smoke_store] FAIL: %s\n' "$*" >&2; FAILED=1; }
 
 bail_with_log() { # $1 = message, $2 = log file whose tail explains the failure
   fail "$1"
-  echo "[store_smoke] ---- tail of $2 ----" >&2
+  echo "[smoke_store] ---- tail of $2 ----" >&2
   tail -5 "$2" 2>/dev/null >&2
   exit 1
 }
 
 cleanup() {
   for pid in "${PIDS[@]:-}"; do kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; done
-  [ "${SMOKE_KEEP:-0}" = "1" ] && echo "[store_smoke] artifacts kept in $WORK"
+  [ "${SMOKE_KEEP:-0}" = "1" ] && echo "[smoke_store] artifacts kept in $WORK"
   [ "${SMOKE_KEEP:-0}" != "1" ] && rm -rf "$WORK"
   return 0
 }
@@ -65,7 +65,7 @@ port_busy() { # $1 = port; returns 0 (busy) if something already listens
 }
 for p in "$PORT" "$API"; do
   if port_busy "$p"; then
-    fail "port $p is already in use (leftover engine? set STORE_SMOKE_PORT/STORE_SMOKE_API_PORT)"; exit 1
+    fail "port $p is already in use (leftover engine? set SMOKE_INGEST_PORT/SMOKE_API_PORT)"; exit 1
   fi
 done
 

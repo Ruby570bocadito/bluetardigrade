@@ -7,6 +7,7 @@
 // FATAL at startup and keep-previous-loud on hot-reload, and every
 // entry is capped and non-empty — a hostile file cannot smuggle
 // control characters into audit lines or logs.
+
 package respond
 
 import (

@@ -10,6 +10,7 @@
 // 200 responses. Only transport errors, 429 and 5xx are retried; a
 // 200-with-error-code is a permanent rejection (retrying a rejected
 // event only delays the queue).
+
 package siem
 
 import (

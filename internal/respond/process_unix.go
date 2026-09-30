@@ -22,6 +22,7 @@
 // process whose full name is longer compares as a mismatch and the
 // action is denied — the fail-safe direction. Nobody "fixes" that by
 // comparing prefixes.
+
 package respond
 
 import (

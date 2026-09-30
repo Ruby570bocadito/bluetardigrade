@@ -10,6 +10,7 @@
 // goes through suppress.SaveFile (temp + rename) and is loaded back
 // immediately, so hand edits and API edits never diverge into a second
 // hidden state.
+
 package api
 
 import (

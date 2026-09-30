@@ -10,6 +10,7 @@
 // suppression writes it replicates, dictamen 04-B), and an audit file
 // that opened; the permission layers themselves live in
 // internal/respond and every denial is audited there.
+
 package api
 
 import (
