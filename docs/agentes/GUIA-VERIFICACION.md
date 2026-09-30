@@ -87,7 +87,7 @@ La batería de referencia Go (gofmt/build/vet/test, `-race`, guard OpenAPI, E2E)
 ### La batería, en orden (por cada paquete TS tocado)
 
 1. **`bun install --frozen-lockfile`** — primera barrera: falla si `package.json` y `bun.lock` no cuadran. Nunca regenerar el lock en silencio para «arreglar» este paso; la deriva se explica o se revierte.
-2. **`bun test`** — comportamiento en runtime de handlers y hub. Referencias de suelo vigentes: `web/console` incluye la suite del proxy (`route.test.ts`, 10/10 · 29 aserciones desde la ronda 16h03 de 04) y `web/console-service` 50/50 · 206 expect (certificada por 04-A en 16h09). El número exacto puede crecer; lo que no puede es bajar sin explicación en el informe.
+2. **`bun test`** — comportamiento en runtime de handlers y hub. Referencias de suelo vigentes: `web/console` incluye la suite del proxy (`route.test.ts`, 10/10 · 29 aserciones desde la ronda 16h03 de 04) y la suite de ciclo de vida del triaje (`lifecycle.test.ts`, +9 tests / +29 expect desde la micro-ronda 20h50 de 02-B, certificada por la cross-review 23h05 de 04-B) — suelo de paquete vigente **19 tests / 58 expect**; `web/console-service` 50/50 · 206 expect (certificada por 04-A en 16h09). El número exacto puede crecer; lo que no puede es bajar sin explicación en el informe.
 3. **`bunx tsc --noEmit`** (en `web/console`) — puerta de tipos, sin emitir artefactos.
 4. **`bun run build`** — build de producción de Next.js (Turbopack) con prerender completo. Es la única capa que certifica que la app compila como paquete desplegable, no solo que los tests pasan.
 
@@ -116,7 +116,7 @@ Uso en rondas: al tocar la vista, su proxy o sus lecturas, estas capturas son el
 
 | Quiero comprobar… | Comando | Notas |
 |---|---|---|
-| Suite de la consola | `cd web/console && bun test` | incluye `route.test.ts` (proxy) |
+| Suite de la consola | `cd web/console && bun test` | suelo vigente 19 tests / 58 expect — incluye `route.test.ts` (proxy) y `lifecycle.test.ts` (triaje) |
 | Suite del hub | `cd web/console-service && bun test` | referencia vigente 50/50 |
 | Lockfile sin deriva | `bun install --frozen-lockfile` | falla si `package.json` y `bun.lock` divergen |
 | Tipos de la consola | `cd web/console && bunx tsc --noEmit` | sin emisión de artefactos |
@@ -158,3 +158,4 @@ Regla transversal: **cualquier comando cuya salida sea texto para humanos sirve 
 - **20h14 (Bugs/Seguridad):** esta guía; artefacto A reproducido en vivo (display sanea `[0m]`/`[31m]` de una línea de prueba y de `alert.go`; `grep -c` y `od -c` prueban los bytes íntegros). Gofmt del árbol en vacío en el arranque de la ronda.
 - **16h30 (03-B, Pulimiento):** nueva sección «Verificación de la consola web (TypeScript)» — equipara la documentación de verificación TS con la Go (propuesta recogida de la ronda 16h12 de esta misma pareja); ámbito alineado con el naming v2 del protocolo de 8 instancias. La batería documentada es la que las rondas 15h54 (02-B), 16h03 (04) y 16h09 (04-A) ya ejecutaron de facto.
 - **20h30 (03-B, Pulimiento):** tarjeta de referencia visual de la vista de respuesta activa — cierra la captura deferida dos veces con motivo (18h47_B, 19h05_B) con las capturas reales del acta 20h05 (`a3b8bd8`), verificadas por contadores DOM y con el matiz de esquema `mechanism`-en-followups documentado para el lector de las filas.
+- **19h04 (03-B, Pulimiento):** suelo de la batería de consola actualizado — la ola de cobertura r6 de 02-B (`lifecycle.test.ts`, micro-ronda 20h50) certificada por la cross-review de 04-B (23h05) movió el suelo de paquete de 10/10 · 29 a **19 tests / 58 expect**. Verificado de primera mano por esta ronda EN ORDEN de la batería (frozen-lockfile → bun test): 19 pass / 0 fail / 58 expect; el suelo del hub re-verificado sin cambio (50/50 · 206).
