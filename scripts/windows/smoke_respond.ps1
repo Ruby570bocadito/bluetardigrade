@@ -95,6 +95,15 @@ function Start-Engine([string]$Tag, [bool]$Armed) {
     # e2e de la casa lo evita igual: LOG vs LOG_DISARM).
     $iport = $IngestPort
     $aport = $ApiPort
+    if (-not $Armed) {
+        # +10: el desarmado en sus PROPIOS puertos (el guard de
+        # arranque del engine detecta otro listener en el mismo puerto
+        # y se niega con exit 0 limpio — el run 36745820153 lo grito:
+        # "another engine instance is already running" con los puertos
+        # del ARMADO, porque este smoke le paso esos literalmente).
+        $iport = $IngestPort + 10
+        $aport = $ApiPort + 10
+    }
     $eargs = @("run", "-addr", "127.0.0.1:$iport", "-api", "127.0.0.1:$aport",
         "-rules", (Join-Path $REPO "rules"), "-api-token", $TOKEN)
     if ($Armed) {
