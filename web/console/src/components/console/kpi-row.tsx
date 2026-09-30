@@ -8,6 +8,7 @@
 import { ActivityIcon, Flame, MinusCircle, ShieldCheck, Timer, UploadSimple, WebhooksLogo } from '@phosphor-icons/react'
 import { AnimatedNumber } from './ui-bits'
 import { GradientText } from '@/components/reactbits/gradient-text'
+import { SpotlightCard } from '@/components/reactbits/spotlight-card'
 import { formatUptime, SEVERITY_STYLE, type EngineStats, type Severity } from '@/lib/console-types'
 
 const SEV_ORDER: Severity[] = ['critical', 'high', 'medium', 'low']
@@ -21,14 +22,18 @@ function Kpi({
   icon: React.ElementType
   children: React.ReactNode
 }) {
+  // SpotlightCard (React Bits): el halo esmeralda solo existe bajo el
+  // puntero (transparente en reposo), asi que la densidad de cabina y las
+  // hairlines del grid no cambian; el foco de teclado tambien lo enciende
+  // via focus-within.
   return (
-    <div className="min-w-0 px-4 py-3.5 first:pl-0 md:px-5">
+    <SpotlightCard className="min-w-0 px-4 py-3.5 first:pl-0 md:px-5">
       <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">
         <Icon size={12} aria-hidden className="text-zinc-500" />
         {label}
       </p>
       <div className="mt-1.5">{children}</div>
-    </div>
+    </SpotlightCard>
   )
 }
 

@@ -13,6 +13,7 @@ import { ActivityChart } from './activity-chart'
 import { AlertsView } from './alerts-view'
 import { EmptyState, OfflineNotice, SectionHeader, SkeletonRows, MonoTag } from './ui-bits'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
+import { SpotlightCard } from '@/components/reactbits/spotlight-card'
 import { eventDetail, formatTime, type SfAlert } from '@/lib/console-types'
 
 export type ConsoleView = 'panel' | 'flujo' | 'alertas' | 'reglas' | 'cadenas' | 'supresiones' | 'analista'
@@ -40,9 +41,11 @@ export function Dashboard({
       <div className="grid gap-6 xl:grid-cols-3">
         <section aria-label="Actividad del sensor" className="min-w-0 xl:col-span-2">
           <SectionHeader title="Actividad del sensor" hint="ventana de 4 minutos" />
-          <div className="rounded-lg border border-zinc-800 px-4 pb-3 pt-4">
+          {/* SpotlightCard (React Bits): profundidad del panel bajo el puntero;
+              en reposo es la misma tarjeta con borde hairline de siempre */}
+          <SpotlightCard className="rounded-lg border border-zinc-800 px-4 pb-3 pt-4">
             <ActivityChart events={events} />
-          </div>
+          </SpotlightCard>
         </section>
 
         <section aria-label="Resumen del motor" className="flex min-w-0 flex-col gap-6">
@@ -126,7 +129,9 @@ function HotHostsPanel() {
     score >= 20 ? 'bg-red-500/70' : score >= 5 ? 'bg-amber-500/70' : 'bg-emerald-500/70'
 
   return (
-    <div className="min-w-0 flex-1 rounded-lg border border-zinc-800 bg-zinc-900/40">
+    // SpotlightCard (React Bits): halo esmeralda al pasar el raton o al
+    // enfocar un control interno; en reposo, la tarjeta hairline original.
+    <SpotlightCard className="min-w-0 flex-1 rounded-lg border border-zinc-800 bg-zinc-900/40">
       <div className="flex items-center gap-2.5 border-b border-zinc-800 px-4 py-3">
         <Flame size={16} aria-hidden className="text-amber-500" />
         <span className="text-sm text-zinc-200">Hosts calientes</span>
@@ -181,7 +186,7 @@ function HotHostsPanel() {
         Puntuación de riesgo por host con decaimiento temporal (vida media 30 min): critical 10 · high 5 · medium 2 ·
         low 1 por alerta. Señal de priorización de triaje, no un veredicto de compromiso.
       </p>
-    </div>
+    </SpotlightCard>
   )
 }
 
@@ -223,7 +228,8 @@ function EngineSummary({ status }: { status: EngineStatus }) {
   ]
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/40">
+    // SpotlightCard (React Bits): mismo criterio que HotHostsPanel.
+    <SpotlightCard className="rounded-lg border border-zinc-800 bg-zinc-900/40">
       <div className="flex items-center gap-2.5 border-b border-zinc-800 px-4 py-3">
         <Cpu size={16} aria-hidden className="text-emerald-500" />
         <span className="text-sm text-zinc-200">sf-engine</span>
@@ -258,6 +264,6 @@ function EngineSummary({ status }: { status: EngineStatus }) {
         </div>
       </div>
       <p className="border-t border-zinc-800 px-4 py-2.5 text-[11px] leading-relaxed text-zinc-500">{statusLine}</p>
-    </div>
+    </SpotlightCard>
   )
 }
