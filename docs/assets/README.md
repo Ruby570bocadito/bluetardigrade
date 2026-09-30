@@ -30,6 +30,7 @@ remains regenerable.
 | `src/cover-v0.7.html`       | source  | cover page used to produce `docs/arquitectura-tecnica-v0.7.pdf` (rendered by `scripts/arq_v04/render_cover.mjs`) |
 | `src/cover-v0.8.html`       | source  | cover page used to produce `docs/arquitectura-tecnica-v0.8.pdf` (rendered by `scripts/arq_v04/render_cover.mjs`) |
 | `src/cover-v0.9.html`       | source  | cover page used to produce `docs/arquitectura-tecnica-v0.9.pdf` (rendered by `scripts/arq_v04/render_cover.mjs`) |
+| `src/cover-v0.10.html`      | source  | cover page used to produce `docs/arquitectura-tecnica-v0.10.pdf` (rendered by `scripts/arq_v04/render_cover.mjs`) |
 | `src/capture_console.mjs`   | source  | Playwright script that produces the `console-*` captures (see header for prerequisites) |
 | `src/capture_respond.mjs`   | source  | Playwright script that produces the `console-respuesta-*` captures over a live armed engine (see header for prerequisites; added by 02-B) |
 | `src/assemble_gif.py`       | source  | assembles `console-busqueda.gif` from the per-frame PNGs the capture script leaves in the temp dir |

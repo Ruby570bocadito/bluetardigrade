@@ -5,7 +5,8 @@
 | `OPERATIONS.md` | Guía de operación (inglés, migrada del README por la directiva del Director 23h55 §4): instalación (Windows un comando, Docker, fuente), referencia de configuración (flags + env vars), API HTTP, Prometheus, almacenamiento, auth de ingest con rotación, webhook/sinks SIEM/notificaciones, supresiones, triaje, riesgo, beaconing, respuesta activa, contenido de detección (reglas/secuencias/Sigma), CLI y CI/bench |
 | `ARCHITECTURE.md` | Arquitectura del sistema (inglés, migrada del README por la directiva 23h55 §4): diagrama y mermaid, contrato del schema, inventario detallado de features y árbol de repositorio anotado |
 | `../SECURITY.md` | Divulgación coordinada de vulnerabilidades (G9, aterrizada en la ola `6eb6b02`): cómo reportar de forma privada, ventanas de respuesta 72h/7d |
-| `arquitectura-tecnica-v0.9.pdf` | Documento de arquitectura v0.9 (26 páginas; **revisión vigente**): producida por el pipeline versionado `scripts/arq_v04/`; barrido de suelo de la ola de cobertura `9bd3c71` — la batería de la consola pasa a las **dos suites** que dos carriles certificaron (proxy `10/10 · 29` vigente desde la ronda 16h03 + escritura de triaje `9/9 · 29` de la ronda 20h50 con cross-review certificada, `cf6ec25`/`055d024`): 19 tests y 58 aserciones en total; sexta revisión del pipeline |
+| `arquitectura-tecnica-v0.10.pdf` | Documento de arquitectura v0.10 (25 páginas; **revisión vigente**): producida por el pipeline versionado `scripts/arq_v04/`; barrido de suelo: la batería de la consola pasa a las **tres suites exigidas por CI** (proxy `10/10 · 29` vigente desde la ronda 16h03, escritura de triaje `9/9 · 29` de la ronda 20h50 con cross-review certificada, y url-state `17/17 · 52` del deep-linking de la ola `49b3535`): 36 tests y 110 aserciones en total, ahora vinculantes en el job console (G1) con `-race` vinculante en el job engine (G3); registra la **cadena de release** (G12: v0.1.0 etiquetado con CHANGELOG y binarios, ola `2bc6fc7`), dependabot (G6) y SECURITY.md (G9, ola `6eb6b02`), y da por aterrizadas y re-certificadas F2/#34/#35 (acta 04-A 22h00) |
+| `arquitectura-tecnica-v0.9.pdf` | Documento de arquitectura v0.9 (26 páginas; conservada como referencia histórica — la v0.10 la supersede; fue el barrido de suelo a dos suites 19/58 de la ola `9bd3c71`, con certificación `cf6ec25`/`055d024`; su limitación conocida — suelo de batería y cadena de release aún no descritos en su estado actual — queda cubierta por la v0.10) |
 | `arquitectura-tecnica-v0.8.pdf` | Documento de arquitectura v0.8 (25 páginas; conservada como referencia histórica — la v0.9 la supersede; amplió la v0.7 con la evidencia visual real de la vista de respuesta activa — las capturas de laboratorio de la ola de implementaciones 20h05 (`a3b8bd8`/`624d8ba`) incrustadas como Figuras 3 y 4 (cola con 12 líneas de audit genuinas, par F1 completo compartiendo `action_id`, filtro followups con conteo honesto 1 de 12), el matiz de esquema documentado (`mechanism` solo viaja en followups, `respond.go:345-348`) y la Figura 2 recapturada sobre el árbol vigente (la limitación de navegación que la serie arrastraba desde la v0.6 queda resuelta por la ronda hermana 20h05_B, ola `ca51b95`), el tracer renumerado a Figura 5 y la resolución de la O4 absorbida — con procedencia citada |
 | `arquitectura-tecnica-v0.7.pdf` | Documento de arquitectura v0.7 (23 páginas; conservado como referencia histórica — la v0.8 lo supersede; amplió la v0.6 con la operabilidad forense de la vista de consola de C3 — filtro por clase de intento, ventana de cola controlable 100/500 y exportación JSONL client-side (ola `4967cad`) — y el estado certificado de los hallazgos: F1 cerrada y O2 certificada por el cross-review de seguridad, acta 19h30) |
 | `arquitectura-tecnica-v0.6.pdf` | Documento de arquitectura v0.6 (22 páginas; conservado como referencia histórica — la v0.7 lo supersede; amplió la v0.5 con el mecanismo dual de ejecución de C3 y la certificación conductual permanente del cierre en CI, y regeneró la Figura 2 con el panel de hosts calientes completo) |
@@ -23,11 +24,11 @@
 
 ## Estado del documento de arquitectura
 
-`arquitectura-tecnica-v0.9.pdf` es la revisión vigente, producida por el pipeline
+`arquitectura-tecnica-v0.10.pdf` es la revisión vigente, producida por el pipeline
 versionado del árbol (`scripts/arq_v04/`: cuerpo ReportLab + portada Playwright +
 fusión pypdf; ver su README — el nombre del directorio registra dónde nació el
 pipeline, no la revisión que produce). Describe el sistema tal como está
-implementado y verificado a su generación: actualiza los **suelos de la batería TypeScript de la consola** al estado de dos suites certificado por 02-B y 04-B (19/58), hereda de la v0.8 la **evidencia visual real de la vista de respuesta activa** (Figuras 3 y 4) y de la v0.7 la **operabilidad
+implementado y verificado a su generación: actualiza los **suelos de la batería TypeScript de la consola** al estado de tres suites exigido por CI (36/110 — proxy 10/10 · 29, escritura de triaje 9/9 · 29 y url-state 17/17 · 52 de la ola deep-linking `49b3535`; G1/G3 vinculantes en CI), registra la **cadena de release** (G12: v0.1.0 etiquetado con CHANGELOG y binarios por plataforma vía `make dist` + `release.yml`, ola `2bc6fc7`), **dependabot** (G6) y **SECURITY.md** (G9, ola `6eb6b02`), y da por aterrizadas y re-certificadas las F2/#34/#35 (acta 04-A 22h00, CI success posterior); hereda de la v0.9 el barrido de suelo a dos suites (19/58, olas `9bd3c71`/`cf6ec25`/`055d024`), de la v0.8 la **evidencia visual real de la vista de respuesta activa** (Figuras 3 y 4) y de la v0.7 la **operabilidad
 forense de la vista de consola de C3** (filtro por clase de intento
 todas/ejecutadas/denegadas/followups, ventana de cola controlable 100/500 y
 exportación JSONL client-side con honestidad de superficie; ola `4967cad`) y de
@@ -52,10 +53,11 @@ heredada de la v0.6 queda resuelta) y la resolución de la observación O4 (acta
 02-B 20h20): el export entrega la ventana completa por diseño — el filtro es
 lente de vista, no selector de datos — y el tooltip lo declara en sus tres
 estados, precisión ya incorporada al texto del documento.
-El estado de los hallazgos queda sin cambio: F1 **cerrada** y O2 **certificada**
+El estado de los hallazgos a la v0.10: F1 **cerrada** y O2 **certificada**
 por el cross-review de seguridad (acta 19h30, doble veredicto coincidente); F2
-con parche listo en el carril 02-A y #34/#35 propuestos siguen sin baja
-certificada. El guard OpenAPI certifica 15
+y #34/#35 pasaron de propuestos a **aterrizados y re-certificados** (olas
+`6da494c`/`3da45bc`, residuo de #35 re-anclado en `6eb6b02`, re-certificación
+independiente en el acta 04-A 22h00 con CI success posterior). El guard OpenAPI certifica 15
 rutas / 36 campos / 74 referencias con self-test; el marcador canónico más reciente (acta del Director
 22h46) consolida 20/20 defectos cerrados sin ninguno vivo y 7/17 líneas de roadmap certificadas — con A3
 aterrizado y verificado (acta 22h39) —, y los conteos más amplios de los carriles (33/33, 14/17) viajan
@@ -86,10 +88,10 @@ presentada como pendiente de certificación) queda cubierta por la v0.7. La
 forense y de la certificación F1/O2; su limitación conocida (la vista de respuesta
 activa descrita sin evidencia visual, las capturas reales aún no aterrizadas)
 queda cubierta por la v0.8. Lo que la
-v0.9 sigue declarando como futuro, sin
+v0.10 sigue declarando como futuro, sin
 presentarlo como capacidad: YARA,
 gRPC/protobuf, filaments Python y eBPF en Linux (fases 2-4 del roadmap). Las decisiones
-de diseño vigentes viven en la v0.9 del PDF, en el README y en los informes de
+de diseño vigentes viven en la v0.10 del PDF, en el README y en los informes de
 `agentes/`; el directorio de ADRs sigue sin existir como tal. Para regenerar o
 evolucionar el documento: `bash scripts/arq_v04/build.sh` (requisitos y decisiones en
 [`scripts/arq_v04/README.md`](../scripts/arq_v04/README.md)).

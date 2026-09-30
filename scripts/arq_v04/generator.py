@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 arq_v04/generator.py — versioned generator of the body of
-docs/arquitectura-tecnica-v0.9.pdf (cover is rendered separately from
-docs/assets/src/cover-v0.9.html and merged by merge_and_meta.py).
+docs/arquitectura-tecnica-v0.10.pdf (cover is rendered separately from
+docs/assets/src/cover-v0.10.html and merged by merge_and_meta.py).
 The directory name arq_v04 records where the pipeline was born (v0.4); it
 builds the current revision of the series.
 
@@ -49,7 +49,7 @@ from reportlab.platypus.tableofcontents import TableOfContents
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
-OUT_BODY = os.path.join(REPO, "docs", "arquitectura-tecnica-v0.9.body.pdf")
+OUT_BODY = os.path.join(REPO, "docs", "arquitectura-tecnica-v0.10.body.pdf")
 
 # ---------------------------------------------------------------- fonts ----
 FONT_DIR = "/usr/share/fonts"
@@ -91,7 +91,7 @@ AVAIL_H = PAGE_H - 2 * MARGIN
 H1_ORPHAN = AVAIL_H * 0.25
 
 DOC_TITLE = "Arquitectura Técnica - Framework de Detección de Amenazas en Tiempo Real"
-FOOTER_LEFT = "Ruby570bocadito · security-framework v0.9"
+FOOTER_LEFT = "Ruby570bocadito · security-framework v0.10"
 
 # ---------------------------------------------------------------- styles ---
 body = ParagraphStyle("Body", fontName="FreeSerif", fontSize=10.5, leading=16.5,
@@ -322,9 +322,9 @@ story += h1_block(1, "Visión y Filosofía de Diseño",
     "sistema anclado en ETW con un motor de detección de comportamiento, correlación de secuencias y una consola "
     "web interactiva de triaje. El nombre del proyecto es provisional (security-framework) y se mantendrá hasta "
     "que la comunidad elija la marca definitiva. A diferencia de la v0.1, que describía una promesa de diseño, "
-    "esta revisión v0.9 describe el sistema tal como está implementado y verificado hoy: cada afirmación de este "
+    "esta revisión v0.10 describe el sistema tal como está implementado y verificado hoy: cada afirmación de este "
     "texto corresponde a código en el repositorio, con pruebas de unidad, E2E sobre binarios reales y mediciones "
-    "de rendimiento publicadas. Es la sexta revisión producida por el pipeline de generación versionado en el "
+    "de rendimiento publicadas. Es la séptima revisión producida por el pipeline de generación versionado en el "
     "propio árbol (scripts/arq_v04/, estrenado por la v0.4), de modo que ninguna revisión de la serie dependa "
     "de herramientas desaparecidas para reproducirse.")
 
@@ -767,7 +767,7 @@ story += make_table(
          "evidencia cruda."],
     ],
     [0.16, 0.10, 0.74],
-    "Tabla 4. Campos del esquema de eventos unificado (v0.9).")
+    "Tabla 4. Campos del esquema de eventos unificado (v0.10).")
 
 story += code_block([
     '{',
@@ -944,9 +944,10 @@ story += make_table(
         ["Motor (Go 1.22)", "stdlib net/http, cobra, bubbletea/lipgloss, yaml.v3, modernc.org/sqlite",
          "Binario único CGO-free; CLI con subcomandos y ayuda generada; TUI para el panel interactivo; "
          "SQLite puro para el forense opcional sin cgo en CI."],
-        ["Transporte", "NDJSON sobre TCP + AUTH de token compartido",
-         "Depurable con netcat desde el día uno; rotación de token sin reinicio coordinado; gRPC queda "
-         "como fase futura si la flota lo exige."],
+        ["Transporte", "NDJSON sobre TCP + AUTH de token compartido + TLS nativo opcional",
+         "Depurable con netcat desde el día uno; rotación de token sin reinicio coordinado; TLS nativo en el "
+         "ingest para despliegues remotos (stdlib, TLS 1.2 mínimo, brecha B4 aterrizada en la ola 9dac572); "
+         "gRPC queda como fase futura si la flota lo exige."],
         ["Consola web", "Next.js 16, React 19, Tailwind 4, socket.io (hub Bun)",
          "Cabina de operaciones con tipado estricto; el hub media la sesión en tiempo real y evita exponer "
          "el motor más allá de su API local."],
@@ -961,7 +962,7 @@ story += make_table(
          "74 referencias, self-test incluido); bench nocturno con dos pasadas y sonda fsync; baterías Go y TS por paquete."],
     ],
     [0.15, 0.33, 0.52],
-    "Tabla 6. Stack tecnológico por capa con su justificación (v0.9).")
+    "Tabla 6. Stack tecnológico por capa con su justificación (v0.10).")
 
 story.append(para(
     "La estructura del monorepo delimita las fronteras con el sistema de ficheros: cada paquete interno es "
@@ -991,7 +992,7 @@ story += code_block([
     '├── scripts/windows/        # instalador PS1, servicio, config Sysmon',
     '├── scripts/arq_v04/        # este generador (pipeline versionado del documento)',
     '└── docs/                   # este documento, OpenAPI, assets, actas',
-], "Ejemplo 3. Estructura del monorepo (v0.9, árbol real del repositorio).")
+], "Ejemplo 3. Estructura del monorepo (v0.10, árbol real del repositorio).")
 
 story.append(para(
     "Las convenciones de código se aplican desde el primer commit: formato obligatorio (gofmt y rustfmt), "
@@ -1023,11 +1024,14 @@ story += h1_block(7, "Roadmap de Desarrollo",
     "propuesta del acta de implementaciones 18h20 a la espera de la certificación del Director; y los "
     "hallazgos posteriores avanzan con su estado declarado — F1 cerrada: su parche de keys compuestas "
     "quedó certificado por el cross-review de seguridad (acta 19h30) junto con la etiqueta "
-    "fallback_reason de O2 conforme al contrato R7b —, F2 con parche listo en el carril 02-A, y #34 y #35 "
-    "propuestos por seguridad, estos tres sin baja certificada aún.")
+    "fallback_reason de O2 conforme al contrato R7b —, y F2, #34 y #35 pasaron de propuestos a "
+    "aterrizados y re-certificados: el código vive en la ola 6da494c/3da45bc (con la promoción de "
+    "internal/redact), el residuo de #35 quedó re-anclado con redact.EndpointLabel (6eb6b02) y la "
+    "re-certificación independiente es del carril de seguridad (acta 04-A 22h00, con CI success posterior "
+    "sobre el árbol que los contiene, 246ce49).")
 
 story += make_table(
-    ["Fase", "Objetivos", "Estado hoy (v0.9)"],
+    ["Fase", "Objetivos", "Estado hoy (v0.10)"],
     [
         ["1. Core y MVP (Q4 2026)",
          "Tracer bullet end-to-end; sensor básico; reglas YAML puntuales; CLI de prueba.",
@@ -1043,13 +1047,14 @@ story += make_table(
          "SIEM/SOAR, notificaciones externas (C2), sumideros SIEM nativos Elastic/Splunk aterrizados y "
          "respuesta activa C3 certificada y observable de punta a punta (detectar, actuar y leer el audit "
          "desde la API y la consola), con su cierre conductual permanente en CI sobre motor Windows nativo. "
-         "Queda el pulido de empaquetado de conectores."],
+         "El empaquetado oficial aterrizó tras esta tabla: release v0.1.0 con CHANGELOG y binarios "
+         "(make dist + release.yml), dependabot y SECURITY.md (olas 2bc6fc7 y 6eb6b02)."],
         ["4. Extensibilidad (Q2 2027)",
          "Filaments en sandbox Python; profiling; guía de contribución.",
          "Pendiente. Sin código simulado en el árbol; el diseño se mantiene en la sección 3.4."],
     ],
     [0.17, 0.33, 0.50],
-    "Tabla 7. Fases del roadmap con su estado real a septiembre de 2026 (v0.9).")
+    "Tabla 7. Fases del roadmap con su estado real a septiembre de 2026 (v0.10).")
 
 story.append(para(
     "Las métricas de éxito miden la salud del proyecto, no solo el código. La fase 1 prometía un pipeline "
@@ -1119,21 +1124,27 @@ story += h2_block("8.2 Verificación continua", para(
     "de stats, con paridad exacta "
     "contra /metrics) y falla la ronda si hay deriva; su self-test verifica al propio guard con un fixture "
     "positivo y trece negativos que deben producir hallazgo. Los paquetes con estado se testean con -race "
-    "— seis paquetes, respond incluido desde su aterrizaje —, y el bench nocturno (cron 02:30 UTC, "
+    "— seis paquetes, respond incluido desde su aterrizaje —; el job engine de CI ejecuta además -race "
+    "vinculante (G3) y staticcheck en su versión fijada 2024.1.1 con la doble pasada del carril de "
+    "pulimiento (G2, ola 7850ac1), y el job console corre la suite de la consola web en cada push "
+    "(G1), de modo que el suelo de batería ya no depende del certificado manual de los "
+    "carriles; el bench nocturno (cron 02:30 UTC, "
     "disparable a mano) cierra el círculo de rendimiento con dos pasadas comparativas por corrida y "
     "presupuesto de latencia asesor, no bloqueante: solo la pérdida de alertas pone la corrida en rojo."))
 story.append(para(
     "La batería TypeScript sigue el mismo estándar de evidencia por conteos en las tres superficies del "
-    "árbol: la batería de la consola (19 tests y 58 aserciones en dos suites: la del proxy, 10/10 y 29 aserciones, vigente desde la ronda 16h03, y la de la ruta de escritura de triaje, 9/9 y 29, de la ronda 20h50 con cross-review certificada), el hub console-service (50/50, 206 "
+    "árbol: la batería de la consola (36 tests y 110 aserciones en tres suites: la del proxy, 10/10 y 29 aserciones, vigente desde la ronda 16h03; la de la ruta de escritura de triaje, 9/9 y 29, de la ronda 20h50 con cross-review certificada; y la del estado del operador en URL — deep-linking de vistas y filtros de triaje —, 17/17 y 52, aterrizada por la ola 49b3535 con su suite url-state), el hub console-service (50/50, 206 "
     "aserciones) y los cambios en el límite navegador→motor exigen además la matriz conductual en vivo con "
     "un escenario por guarda; la landing website/ aporta lockfile sin deriva, eslint y build de producción "
-    "(4/4 páginas estáticas). A partir de aquí, el roadmap del capítulo 7 gobierna las próximas rondas: "
-    "iniciar el spike de YARA para escaneo de memoria bajo demanda, explorar el collector eBPF para Linux, "
-    "empaquetar los conectores como entrega oficial y publicar el release etiquetado con notas de versión "
-    "y demo grabada. La arquitectura descrita en este documento es, sobre todo, una promesa de estabilidad "
+    "(4/4 páginas estáticas). El empaquetado oficial que la v0.9 reclamaba como pendiente aterrizó en la ola "
+    "2bc6fc7: release v0.1.0 etiquetado con CHANGELOG.md y binarios por plataforma (make dist + release.yml "
+    "sin acciones de terceros, cinco assets verificados por API), dependabot en seis ecosistemas (G6) y "
+    "SECURITY.md con divulgación coordinada (G9, ola 6eb6b02). A partir de aquí, el roadmap del capítulo 7 "
+    "gobierna las próximas rondas: iniciar el spike de YARA para escaneo de memoria bajo demanda y "
+    "explorar el collector eBPF para Linux. La arquitectura descrita en este documento es, sobre todo, una promesa de estabilidad "
     "para quien construya encima: el comportamiento del pipeline no cambiará, solo mejorará su "
     "implementación, y cada revisión futura vendrá acompañada de la misma columna de estado honesto que "
-    "distingue a esta v0.9 de su original — generada, además, por el pipeline versionado que este propio "
+    "distingue a esta v0.10 de su original — generada, además, por el pipeline versionado que este propio "
     "capítulo describe."))
 
 # ------------------------------------------------------------------ build --
@@ -1142,10 +1153,10 @@ doc = TocDocTemplate(
     pagesize=A4,
     leftMargin=MARGIN, rightMargin=MARGIN,
     topMargin=MARGIN, bottomMargin=MARGIN,
-    title="Arquitectura Técnica - Framework de Detección de Amenazas en Tiempo Real (v0.9)",
+    title="Arquitectura Técnica - Framework de Detección de Amenazas en Tiempo Real (v0.10)",
     author="Ruby570bocadito",
     creator="Ruby570bocadito",
-    subject="Documento de arquitectura tecnica v0.9: estado implementado y verificado del framework",
+    subject="Documento de arquitectura tecnica v0.10: estado implementado y verificado del framework",
 )
 doc.multiBuild(story, onFirstPage=on_page, onLaterPages=on_page)
 print(f"body written: {OUT_BODY}")

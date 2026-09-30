@@ -99,6 +99,24 @@ but it is not committed.
 - Radius: single 8px scale (`--radius: 0.5rem`).
 - Motion: state transitions only, `prefers-reduced-motion` honoured.
 
+## Motion components
+
+The eight motion primitives live in `src/components/reactbits/`, adapted from
+[React Bits](https://reactbits.dev) to the console theme (each header documents
+its origin). Every one communicates a state change — none is decoration — and
+the layer adds zero runtime dependencies beyond `motion`:
+
+| Component | What it does | Where it lives |
+|-----------|--------------|----------------|
+| `animated-list` | rows enter staggered (fade + short rise, delay per index) | alert queue, suppressions, chains, respond audit, dashboard lists |
+| `blur-text` | view titles reveal word by word (rise + blur) on section change | shell view headers |
+| `decrypted-text` | text enters as a decode cycle (unrevealed chars cycle glyphs once on load) | shell brand tagline |
+| `dot-grid` | pointer-reactive dot grid canvas behind the shell | shell ambient background |
+| `gradient-text` | animated gradient on text (`background-clip: text`, pure CSS) | KPI row (critical counter) |
+| `shiny-text` | shine sweep over text (`background-clip: text`, pure CSS) | shell hint/loading states |
+| `spotlight-card` | radial halo following the pointer via CSS custom properties | dashboard cards, KPI stat cards |
+| `star-border` | 1px border with a moving gradient (padding trick + animated background) | AI analyst panel while it is working |
+
 ## Configuration
 
 - `ENGINE_API_URL` (console, server side): engine API base the proxy
