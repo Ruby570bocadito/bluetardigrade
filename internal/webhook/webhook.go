@@ -142,6 +142,10 @@ func (c *Client) deliver(ctx context.Context, a alert.Alert) {
 		select {
 		case <-ctx.Done():
 			c.failed.Add(1)
+			// Shutdown during the retry backoff: the counter moved, so
+			// the log trail must say why — same trail as the terminal
+			// failure log below, with honest wording.
+			log.Printf("[WEBHOOK] delivery to %s cancelled by shutdown after %d attempt(s): %v", redact.EndpointLabel(c.url), attempts, redact.URLErr(lastErr, "receiver endpoint"))
 			return
 		case <-time.After(c.backoff * time.Duration(attempt)):
 		}
