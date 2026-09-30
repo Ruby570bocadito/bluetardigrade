@@ -535,7 +535,7 @@ The sensor has no simulated mode: it runs only where real telemetry exists (Wind
 
 ## Detection rules
 
-Rules live in `rules/` as YAML, are validated at load, and hot-reload every 15 seconds by default (disable with `-reload-every 0`).
+Rules live in `rules/` as YAML, are validated at load, and hot-reload every 15 seconds by default (disable with `-reload-every 0`). The loader carries the same house caps as every other config surface: 4 MiB per file (checked before reading), a nesting-depth pre-scan and a 2048 enabled-rules ceiling — enforced fail-loud on startup and on every hot-reload tick, so an oversized or hostile file aborts startup, or keeps the previous set on reload, instead of degrading a running engine. The shipped pack uses 23 of those 2048 slots.
 
 ```yaml
 - name: "PowerShell con comando codificado"
@@ -553,7 +553,7 @@ Rules live in `rules/` as YAML, are validated at load, and hot-reload every 15 s
   enabled: true
 ```
 
-Operators (v0.1): `eq`, `neq`, `contains`, `contains_any`, `startswith`, `endswith`, `regex`, `in`, `not_in`, `gt`, `lt`.
+Operators (17): case-sensitive `eq`, `neq`, `contains`, `contains_any`, `startswith`, `endswith`, `regex`, `in`, `not_in`, `gt`, `lt`, plus the case-insensitive `i*` family — `ieq`, `icontains`, `icontains_any`, `istartswith`, `iendswith`, `iin` — which shares one Unicode folding semantics across all six operators and the `(?i)` regex fallback (the same property the Sigma mapping table below relies on).
 
 The full shipped pack lives in `rules/` (YAML, several files): 23 rules
 over 6 event types, severities 6 critical / 15 high / 2 medium. Every
