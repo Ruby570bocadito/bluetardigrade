@@ -1,6 +1,6 @@
 # Guía de verificación para rondas de auditoría
 
-- **Ámbito:** todas las rondas de todos los roles (Director, Implementaciones, Pulimiento, Bugs/Seguridad).
+- **Ámbito:** todas las rondas de todas las instancias (1 Director; 2 Implementaciones A/B; 3 Pulimiento A/B; 4 Seguridad A/B — naming v2 del protocolo de 8). Las actas anteriores a la transición citan el nombre histórico «Bugs/Seguridad»: se conservan como registro inmutable.
 - **Estado:** práctica **obligatoria**, ratificada por el Director en su ronda 19h28 ("todo hallazgo de contenido se verifica con conteos/hexdump, nunca con display").
 - **Origen:** ítem 3 de la cola de la ronda 18h52 ("normalizar toolchain de auditoría"), cerrado aquí. Esta guía existe para que los falsos positivos ya sufridos no se repitan en rondas futuras con otros agentes.
 
@@ -73,6 +73,48 @@ Las herramientas de edición de este entorno re-indentan ficheros Go convirtiend
 
 ---
 
+## Verificación de la consola web (TypeScript) — batería y convenciones
+
+La batería de referencia Go (gofmt/build/vet/test, `-race`, guard OpenAPI, E2E) tiene un equivalente propio para los dos paquetes TS del árbol — `web/console` (Next.js) y `web/console-service` (hub Bun/socket.io) —, que PROMPTS.md v2 (regla 6) resume como «bun test + tsc --noEmit + next build». Esta sección fija el detalle operativo: qué capa certifica cada comando, en qué orden y qué convenciones aplican, con el mismo estándar de evidencia por conteos que el resto de la guía.
+
+### Cuándo aplica
+
+- Toda ronda que toque ficheros de `web/console/` o `web/console-service/` (UI, proxy `src/app/api/engine/[...path]/route.ts`, hub, estilos).
+- Toda ronda que cambie dependencias de cualquiera de los dos paquetes (`package.json` o `bun.lock`).
+- No aplica cuando la ronda no toca TS (docs, Go, scripts): declararlo explícitamente es suficiente.
+
+### La batería, en orden (por cada paquete TS tocado)
+
+1. **`bun install --frozen-lockfile`** — primera barrera: falla si `package.json` y `bun.lock` no cuadran. Nunca regenerar el lock en silencio para «arreglar» este paso; la deriva se explica o se revierte.
+2. **`bun test`** — comportamiento en runtime de handlers y hub. Referencias de suelo vigentes: `web/console` incluye la suite del proxy (`route.test.ts`, 10/10 · 29 aserciones desde la ronda 16h03 de 04) y `web/console-service` 50/50 · 206 expect (certificada por 04-A en 16h09). El número exacto puede crecer; lo que no puede es bajar sin explicación en el informe.
+3. **`bunx tsc --noEmit`** (en `web/console`) — puerta de tipos, sin emitir artefactos.
+4. **`bun run build`** — build de producción de Next.js (Turbopack) con prerender completo. Es la única capa que certifica que la app compila como paquete desplegable, no solo que los tests pasan.
+
+Cada capa certifica algo distinto: `bun test` comportamiento, `tsc` tipos, `next build` compilación de producción. Las tres verdes NO certifican nada del engine Go — la batería Go es independiente y sigue su propio estándar.
+
+### Live-fire del proxy (obligatorio si se toca el límite navegador→motor)
+
+Cambios en el proxy de la consola o en sus guardas exigen la matriz conductual de la casa: `next dev` real + un engine simulado que ecoa lo recibido, y un escenario por guarda donde cada una DISPARA (token que pasa y token ausente, Host de loopback permitido, Host de red rechazado con 403, allowlist explícita, escritura cross-site por `Origin` y por `Sec-Fetch-Site`, cliente headerless tipo curl permitido, 405 `read_only` intacto). El patrón es el mismo que el del bench (04, ronda 13h30): una verificación que no puede fallar, miente — si la guarda nueva no tiene un escenario que la dispare, no está verificada.
+
+### Convenciones
+
+- **Lockfile único:** solo `bun.lock` en ambos paquetes. La aparición de `package-lock.json` u otro lock es residuo a eliminar en la ronda (política vigente desde la ronda 19h31 de Pulimiento).
+- **Sin toolchain declarado, sin push «verificado»:** si el entorno no tiene bun/node, no se pushea TS verificando «a ojo»; se entrega diseño/documentación o se declara explícitamente que la verificación compilada la aporta el CI externo sobre el push (mismo criterio que la regla 6 para Go — nunca de forma silenciosa).
+- **Evidencia por conteos:** los informes citan `N/N` tests y aserciones (`bun test` lo imprime), no transcripciones de display; los comandos y su salida numérica son la prueba.
+
+### Chuleta TS
+
+| Quiero comprobar… | Comando | Notas |
+|---|---|---|
+| Suite de la consola | `cd web/console && bun test` | incluye `route.test.ts` (proxy) |
+| Suite del hub | `cd web/console-service && bun test` | referencia vigente 50/50 |
+| Lockfile sin deriva | `bun install --frozen-lockfile` | falla si `package.json` y `bun.lock` divergen |
+| Tipos de la consola | `cd web/console && bunx tsc --noEmit` | sin emisión de artefactos |
+| Build de producción | `cd web/console && bun run build` | Next.js + Turbopack, prerender incluido |
+| Proxy en vivo | `next dev` + engine simulado en eco | matriz por guarda: cada una debe disparar |
+
+---
+
 ## Recetas de verificación (chuleta)
 
 | Quiero comprobar… | Comando | Notas |
@@ -104,3 +146,4 @@ Regla transversal: **cualquier comando cuya salida sea texto para humanos sirve 
 - **19h28 (Director):** lección elevada a práctica obligatoria para todos los roles.
 - **19h32 (Bugs/Seguridad):** convergencia de la auth del ingest decidida por análisis línea a línea y conteos, no por displays de los diffs.
 - **20h14 (Bugs/Seguridad):** esta guía; artefacto A reproducido en vivo (display sanea `[0m]`/`[31m]` de una línea de prueba y de `alert.go`; `grep -c` y `od -c` prueban los bytes íntegros). Gofmt del árbol en vacío en el arranque de la ronda.
+- **16h30 (03-B, Pulimiento):** nueva sección «Verificación de la consola web (TypeScript)» — equipara la documentación de verificación TS con la Go (propuesta recogida de la ronda 16h12 de esta misma pareja); ámbito alineado con el naming v2 del protocolo de 8 instancias. La batería documentada es la que las rondas 15h54 (02-B), 16h03 (04) y 16h09 (04-A) ya ejecutaron de facto.

@@ -442,6 +442,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `SF_WEBHOOK_TOKEN` | engine | Bearer on outbound alert deliveries |
 | `NEXT_PUBLIC_CONSOLE_URL` | web console | point the UI at a remote hub |
 | `NEXT_PUBLIC_ENGINE_API` | web console | direct engine API base for polling (default same-origin proxy `/api/engine`) |
+| `CONSOLE_ALLOWED_HOSTS` | web console | comma-separated hostnames the console proxy serves besides loopback (`localhost`/`127.0.0.1`/`::1` are always served); any other `Host` gets a `403` naming this var — the console posture mirrors the engine's: loopback friction-free, beyond loopback loud and explicit |
 | `ANALYST_BASE_URL` / `ANALYST_API_KEY` / `ANALYST_MODEL` | console-service | OpenAI-compatible endpoint for the AI triage analyst |
 | `PORT` / `CONSOLE_SERVICE_PORT`, `CONSOLE_HOST`, `CONSOLE_CORS_ORIGIN` | console-service | hub networking and allowed origins |
 
