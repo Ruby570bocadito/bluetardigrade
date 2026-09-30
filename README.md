@@ -27,7 +27,7 @@ A behavioral detection framework built by an offensive-security practitioner, in
 |---|---|
 | **Sensor** | Rust ETW sensor (Kernel-Process) + Sysmon ingestion path; Windows-gated — refuses to run where there is no real telemetry |
 | **Engine** | Go 1.22, single binary, CGO-free: ingest → enrich → rules → correlate → alert → respond |
-| **Rules** | YAML with 11 operators, per-rule MITRE ATT&CK tags, hot-reload every 15 s |
+| **Rules** | YAML with 17 operators (11 case-sensitive + 6 case-insensitive), per-rule MITRE ATT&CK tags, hot-reload every 15 s |
 | **Sigma import** | `engine sigma` converts community Sigma rules to the native format (deterministic, fail-loud per rule, provenance preserved) |
 | **Correlation** | Kill-chain sequencer (same host, time window) with a hard state cap and external observability |
 | **Risk scoring** | Per-host decayed risk score (severity-weighted, 30-min half-life): hot-hosts KPI in stats, Prometheus and console |
@@ -89,7 +89,7 @@ And one engineering rule that shapes everything else: **no simulated data in the
 | Area | What you get today |
 |------|--------------------|
 | **Telemetry** | Rust ETW sensor (Kernel-Process) + Sysmon ingestion path; NDJSON/TCP feed with schema validation and enrichment (user, command line, network context) |
-| **Detection** | YAML rules with 11 operators (`eq`, `regex`, `contains_any`, …), hot-reload every 15 s, per-rule MITRE ATT&CK tags and actions; `engine sigma` imports community Sigma rules (deterministic, fail-loud, provenance preserved) |
+| **Detection** | YAML rules with 17 operators (`eq`, `regex`, `contains_any`, …), hot-reload every 15 s, per-rule MITRE ATT&CK tags and actions; `engine sigma` imports community Sigma rules (deterministic, fail-loud, provenance preserved) |
 | **Correlation** | Kill-chain sequencer: named steps across the same host within a time window raise one high-signal campaign alert |
 | **Risk scoring** | Severity-weighted per-host score with time decay (half-life 30 min, bounded host map): `hot_hosts` top-5 and `risk_hosts_tracked` in `/api/stats`, `sf_host_risk_score{host=...}` in `/metrics`, hot-hosts panel in the console dashboard |
 | **Beaconing** | Behavioral C2 call-home detector over `network.connect` (package A3): coefficient-of-variation regularity per (profile, host, destination), `min_interval` false-positive floor, per-key cooldown, bounded state — conservative profiles ship in `beacons.yaml` and detections flow through the standard alert pipeline (suppressions, triage, store, webhook, console) |
@@ -142,7 +142,7 @@ flowchart LR
 
 The unified event schema (chapter 4 of the docs) is the master contract: sensors emit it, the engine validates and enriches it, rules index it, interfaces consume it.
 
-Full write-up: [docs/arquitectura-tecnica-v0.1.pdf](docs/arquitectura-tecnica-v0.1.pdf) (Spanish). It reflects the v0.1 design including the kill-chain correlator and rule actions; it predates the ingest shared-token auth, the export API, the OpenAPI spec, the alert webhook and the opt-in SQLite store, which are documented in the [Local HTTP API](#local-http-api) section and in [`docs/api/openapi.yaml`](docs/api/openapi.yaml). See also [`docs/README.md`](docs/README.md) for the full design-vs-implementation status of the document.
+Full write-up: [docs/arquitectura-tecnica-v0.2.pdf](docs/arquitectura-tecnica-v0.2.pdf) (Spanish). The v0.2 revision reflects the implemented and verified state — authenticated ingest, all four detection packages (risk, thresholds, beaconing, Sigma import), the export API, the OpenAPI spec, the alert webhook, the opt-in SQLite store and the Next.js console — and keeps an honest roadmap-status column; [`docs/README.md`](docs/README.md) tracks what remains design-only (YARA, gRPC, filaments, eBPF). The original v0.1 design document is kept for provenance.
 
 ## Quickstart (tracer bullet)
 
@@ -813,7 +813,7 @@ bin/bench -addr 127.0.0.1:7777 -api 127.0.0.1:7778 -api-token <token> -n 2000
 
 | Document | Contents |
 |----------|----------|
-| [`docs/arquitectura-tecnica-v0.1.pdf`](docs/arquitectura-tecnica-v0.1.pdf) | full technical design (Spanish; see the design-vs-implementation status in [`docs/README.md`](docs/README.md)) |
+| [`docs/arquitectura-tecnica-v0.2.pdf`](docs/arquitectura-tecnica-v0.2.pdf) | full technical architecture (Spanish; v0.2 reflects the implemented state, roadmap status included) |
 | [`docs/api/openapi.yaml`](docs/api/openapi.yaml) | OpenAPI 3.0 contract of the API surface, drift-guarded in CI against `internal/api/api.go` |
 | [`docs/false-positive-control.md`](docs/false-positive-control.md) | the operator guide to alert noise: suppression recipes, dedup semantics, correlator volume, receiver-side filtering, abuse-resistance caps |
 | [`docs/agentes/`](docs/agentes) | round-by-round development reports (multi-agent workflow, verifications included) |

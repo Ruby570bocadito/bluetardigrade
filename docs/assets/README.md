@@ -17,6 +17,7 @@ remains regenerable.
 | `src/diagram_arquitectura.html` | source | self-contained HTML/CSS source of the architecture diagram (1060px canvas) |
 | `src/diagram_tracer.html`   | source  | self-contained HTML/CSS source of the pipeline above (900px canvas) |
 | `src/cover.html`            | source  | cover page used to produce `docs/arquitectura-tecnica-v0.1.pdf` |
+| `src/cover-v0.2.html`       | source  | cover page used to produce `docs/arquitectura-tecnica-v0.2.pdf` |
 | `src/capture_console.mjs`   | source  | Playwright script that produces the `console-*` captures (see header for prerequisites) |
 
 ## Regenerating a diagram
