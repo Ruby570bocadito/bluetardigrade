@@ -10,9 +10,13 @@
 // Read-only by design: the kill is invoked through POST
 // /api/respond/kill by an operator (R8), never from the console UI.
 
+import { useMemo, useState } from 'react'
 import { Crosshair, Lightning, LockKey } from '@phosphor-icons/react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Button } from '@/components/ui/button'
 import { useEngine } from './engine-provider'
 import { EmptyState, SectionHeader, MonoTag } from './ui-bits'
+import { AuditExportButton } from './export-menu'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
 import { formatDateTime, type SfRespondRecord, type SfRespondState } from '@/lib/console-types'
 
@@ -152,17 +156,67 @@ function SurfaceCard({ state }: { state: SfRespondState }) {
   )
 }
 
-/** Audit tail: executed AND denied attempts, newest first. */
+/**
+ * Audit tail: executed AND denied attempts, newest first, with a class
+ * filter, an operator-controlled window (100/500) and a client-side
+ * JSONL export of the visible tail.
+ */
+
+// Class of attempt for the queue filter: the two decisions the audit
+// records plus the followup line (denied by construction — the signal
+// failed after the commit).
+type KindFilter = 'all' | 'executed' | 'denied' | 'followup'
+
 function AuditFeed() {
-  const { respondAudit } = useEngine()
+  const { respondAudit, auditLimit, setAuditLimit } = useEngine()
+  const [kindFilter, setKindFilter] = useState<KindFilter>('all')
   const records = respondAudit?.records ?? []
+
+  const visible = useMemo(() => {
+    if (kindFilter === 'all') return records
+    if (kindFilter === 'followup') return records.filter((r) => r.followup === true)
+    return records.filter((r) => r.decision === kindFilter)
+  }, [records, kindFilter])
+  const filtering = kindFilter !== 'all'
 
   return (
     <div>
       <SectionHeader
         title="Intentos recientes"
-        count={records.length}
-        hint="más recientes primero · 100 máximo"
+        count={visible.length}
+        hint={filtering ? `de ${records.length} en la ventana` : 'más recientes primero'}
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={kindFilter} onValueChange={(v) => setKindFilter(v as KindFilter)}>
+              <SelectTrigger
+                className="h-8 w-[130px] rounded-md border-zinc-800 bg-zinc-900 font-mono text-xs"
+                aria-label="Filtrar la cola del audit por clase de intento"
+              >
+                <SelectValue placeholder="Clase" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">todas</SelectItem>
+                <SelectItem value="executed">ejecutados</SelectItem>
+                <SelectItem value="denied">denegados</SelectItem>
+                <SelectItem value="followup">followups</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={String(auditLimit)} onValueChange={(v) => setAuditLimit(v === '500' ? 500 : 100)}>
+              <SelectTrigger
+                className="h-8 w-[110px] rounded-md border-zinc-800 bg-zinc-900 font-mono text-xs"
+                aria-label="Tamaño de la ventana de la cola del audit"
+                title="El motor satura en 500; el tamaño aplica en el siguiente sondeo (2 s)"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="100">cola 100</SelectItem>
+                <SelectItem value="500">cola 500</SelectItem>
+              </SelectContent>
+            </Select>
+            <AuditExportButton audit={respondAudit} />
+          </div>
+        }
       />
       {respondAudit && (respondAudit.skipped > 0 || respondAudit.truncated) && (
         <p className="pb-2 font-mono text-[11px] text-zinc-500">
@@ -176,9 +230,25 @@ function AuditFeed() {
           title="Ningún intento registrado"
           hint="La superficie está armada pero nadie ha invocado kill_process todavía: ni ejecuciones ni denegaciones en la cola del audit."
         />
+      ) : visible.length === 0 ? (
+        <EmptyState
+          icon={Crosshair}
+          title="Ningún intento de esa clase"
+          hint={`El filtro actual no coincide con ninguno de los ${records.length} intentos de la ventana.`}
+          action={
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-md border-zinc-800 bg-transparent text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+              onClick={() => setKindFilter('all')}
+            >
+              Quitar filtro
+            </Button>
+          }
+        />
       ) : (
         <ul className="divide-y divide-white/[0.06] border-y border-white/[0.08]">
-          {records.map((r, i) => (
+          {visible.map((r, i) => (
             // Composite key: the kill flow writes TWO JSONL lines with the
             // SAME action_id when the signal fails after the commit (the
             // pre-signal line and the followup line share it by design), so

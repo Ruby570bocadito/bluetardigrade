@@ -39,6 +39,12 @@ export type EngineState = {
   // the same honest "no disponible", never a fabricated card
   respondState: SfRespondState | null
   respondAudit: SfRespondAudit | null
+  // tail window the console keeps for the audit queue. The engine
+  // saturates at 500 (limitFrom parity with /api/events); the default
+  // is the API default of 100. Applied through a ref so the 2 s poll
+  // picks the new window up without re-subscribing the stream.
+  auditLimit: 100 | 500
+  setAuditLimit: (n: 100 | 500) => void
   stats: EngineStats | null
   endpoint: string
 }
@@ -125,9 +131,16 @@ export function useEngineStream(): EngineState {
   const [sequences, setSequences] = useState<SfSequence[]>([])
   const [respondState, setRespondState] = useState<SfRespondState | null>(null)
   const [respondAudit, setRespondAudit] = useState<SfRespondAudit | null>(null)
+  const [auditLimit, setAuditLimitState] = useState<100 | 500>(100)
   const [stats, setStats] = useState<EngineStats | null>(null)
   const [endpoint] = useState(engineDisplayEndpoint)
   const failures = useRef(0)
+  const auditLimitRef = useRef<100 | 500>(100)
+
+  function setAuditLimit(n: 100 | 500): void {
+    auditLimitRef.current = n
+    setAuditLimitState(n)
+  }
 
   useEffect(() => {
     let disposed = false
@@ -157,9 +170,10 @@ export function useEngineStream(): EngineState {
           getJson<SfSequence[]>('/api/sequences').catch(() => null),
           // active response read surface (C3): null on a disarmed engine
           // (real 404) or one predating the routes — the respond view
-          // shows a real "no disponible" either way
+          // shows a real "no disponible" either way; the tail window is
+          // the operator-controlled auditLimit (engine caps at 500)
           getJson<SfRespondState>('/api/respond/state').catch(() => null),
-          getJson<SfRespondAudit>('/api/respond/audit?limit=100').catch(() => null),
+          getJson<SfRespondAudit>(`/api/respond/audit?limit=${auditLimitRef.current}`).catch(() => null),
         ])
         if (disposed) return true
         setRules(ruleList.map(mapRule))
@@ -189,7 +203,7 @@ export function useEngineStream(): EngineState {
             getJson<{ active?: number; entries?: SfSuppression[] }>('/api/suppressions').catch(() => null),
             getJson<SfSequence[]>('/api/sequences').catch(() => null),
             getJson<SfRespondState>('/api/respond/state').catch(() => null),
-            getJson<SfRespondAudit>('/api/respond/audit?limit=100').catch(() => null),
+            getJson<SfRespondAudit>(`/api/respond/audit?limit=${auditLimitRef.current}`).catch(() => null),
           ])
           if (disposed) return
           setStats(st)
@@ -302,5 +316,18 @@ export function useEngineStream(): EngineState {
     }
   }, [])
 
-  return { status, events, alerts, rules, suppressions, sequences, respondState, respondAudit, stats, endpoint }
+  return {
+    status,
+    events,
+    alerts,
+    rules,
+    suppressions,
+    sequences,
+    respondState,
+    respondAudit,
+    auditLimit,
+    setAuditLimit,
+    stats,
+    endpoint,
+  }
 }
