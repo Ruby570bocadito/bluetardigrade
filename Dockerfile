@@ -6,7 +6,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/engine ./cmd/engine
 
-FROM alpine:3.20
+FROM alpine:3.24
 RUN adduser -D -H sensor
 COPY --from=builder /out/engine /usr/local/bin/engine
 COPY rules/ /opt/security-framework/rules/
