@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700;900&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  @page { size: 794px 1123px; margin: 0; }
+  :root {
+    --c-bg: #ffffff;
+    --c-accent: #298bbc;
+    --c-text: #1e2021;
+    --c-muted: #7e8588;
+    --c-mid: #344a55;
+  }
+  html, body {
+    margin: 0; padding: 0;
+    width: 794px; height: 1123px;
+    background: var(--c-bg);
+    font-family: 'Inter', 'Noto Sans SC', sans-serif;
+    color: var(--c-text);
+  }
+  @media screen {
+    html { height: auto; display: flex; justify-content: center; min-height: 100vh; background: var(--c-bg); }
+    body { transform-origin: top center; scale: min(1, calc(100vw / 794), calc(100vh / 1123)); margin: 0 auto; box-shadow: 0 0 60px rgba(0,0,0,0.12); }
+  }
+  .cover {
+    position: relative; width: 794px; height: 1123px;
+    border: none; outline: none; box-shadow: none;
+  }
+  /* Layer 1: grid pattern, ~2% opacity, clipped */
+  .layer1 {
+    position: absolute; inset: 0; overflow: hidden; z-index: 1;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(52,74,85,0.05) 0 0.5px, transparent 0.5px 50px),
+      repeating-linear-gradient(90deg, rgba(52,74,85,0.05) 0 0.5px, transparent 0.5px 50px);
+  }
+  /* Layer 2: ultra-thick vertical anchor line at 0.12*W */
+  .layer2 { position: absolute; inset: 0; z-index: 2; }
+  .anchor-line {
+    position: absolute;
+    left: 95px; top: 112px; bottom: 112px;
+    width: 8px;
+    background: var(--c-accent);
+  }
+  /* Layer 3: content, x = anchor + 2U (175px) */
+  .layer3 { position: absolute; inset: 0; z-index: 3; }
+  .kicker {
+    position: absolute; left: 175px; top: 168px;
+    font-size: 16pt; font-weight: 400;
+    letter-spacing: 3pt; text-transform: uppercase;
+    color: var(--c-mid); opacity: 0.6;
+    max-width: 560px;
+  }
+  .hero1 {
+    position: absolute; left: 175px; top: 300px;
+    font-size: 54pt; font-weight: 900; line-height: 1.15;
+    color: var(--c-text);
+    max-width: 580px;
+    letter-spacing: -0.5pt;
+  }
+  .hero2 {
+    position: absolute; left: 175px; top: 384px;
+    font-size: 54pt; font-weight: 900; line-height: 1.15;
+    color: var(--c-accent);
+    max-width: 580px;
+    letter-spacing: -0.5pt;
+  }
+  .summary {
+    position: absolute; left: 175px; top: 585px;
+    font-size: 17px; font-weight: 400; line-height: 1.6;
+    color: var(--c-text); opacity: 0.85;
+    max-width: 476px;
+  }
+  .meta {
+    position: absolute; left: 175px; top: 842px;
+    font-size: 17px; font-weight: 500; line-height: 1.7;
+    color: var(--c-text);
+  }
+  .meta .sub { color: var(--c-muted); font-weight: 400; }
+</style>
+</head>
+<body>
+  <div class="cover">
+    <div class="layer1"></div>
+    <div class="layer2">
+      <div class="anchor-line"></div>
+    </div>
+    <div class="layer3">
+      <div class="kicker">Documento de arquitectura t&eacute;cnica &middot; v0.5</div>
+      <div class="hero1">SECURITY</div>
+      <div class="hero2">FRAMEWORK</div>
+      <div class="summary">
+        Plano t&eacute;cnico actualizado de un framework de detecci&oacute;n de
+        amenazas en tiempo real: sensor ETW en Rust, motor en Go con
+        correlaci&oacute;n de kill-chains, notificaciones externas, sumideros
+        SIEM nativos, respuesta activa auditada, importaci&oacute;n Sigma y
+        consola web Next.js. Primera revisi&oacute;n generada por un pipeline
+        versionado en el propio repositorio.
+      </div>
+      <div class="meta">
+        Ruby570bocadito &middot; Dise&ntilde;o y arquitectura<br>
+        <span class="sub">Septiembre 2026 &middot; nombre provisional del proyecto</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

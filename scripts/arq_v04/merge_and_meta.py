@@ -14,9 +14,9 @@ from pypdf import PdfReader, PdfWriter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
-COVER = os.path.join(REPO, "docs", "arquitectura-tecnica-v0.4.cover.pdf")
-BODY = os.path.join(REPO, "docs", "arquitectura-tecnica-v0.4.body.pdf")
-FINAL = os.path.join(REPO, "docs", "arquitectura-tecnica-v0.4.pdf")
+COVER = os.path.join(REPO, "docs", "arquitectura-tecnica-v0.5.cover.pdf")
+BODY = os.path.join(REPO, "docs", "arquitectura-tecnica-v0.5.body.pdf")
+FINAL = os.path.join(REPO, "docs", "arquitectura-tecnica-v0.5.pdf")
 
 A4_W, A4_H = 595.28, 841.89
 
@@ -36,10 +36,10 @@ writer.add_page(normalize_page_to_a4(PdfReader(COVER).pages[0]))
 for page in PdfReader(BODY).pages:
     writer.add_page(normalize_page_to_a4(page))
 writer.add_metadata({
-    "/Title": "Arquitectura Técnica - Framework de Detección de Amenazas en Tiempo Real (v0.4)",
+    "/Title": "Arquitectura Técnica - Framework de Detección de Amenazas en Tiempo Real (v0.5)",
     "/Author": "Ruby570bocadito",
     "/Creator": "Ruby570bocadito",
-    "/Subject": "Documento de arquitectura tecnica v0.4: estado implementado y verificado del framework",
+    "/Subject": "Documento de arquitectura tecnica v0.5: estado implementado y verificado del framework",
 })
 with open(FINAL, "wb") as fh:
     writer.write(fh)

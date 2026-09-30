@@ -20,6 +20,7 @@ remains regenerable.
 | `src/cover-v0.2.html`       | source  | cover page used to produce `docs/arquitectura-tecnica-v0.2.pdf` |
 | `src/cover-v0.3.html`       | source  | cover page used to produce `docs/arquitectura-tecnica-v0.3.pdf` |
 | `src/cover-v0.4.html`       | source  | cover page used to produce `docs/arquitectura-tecnica-v0.4.pdf` (rendered by `scripts/arq_v04/render_cover.mjs`) |
+| `src/cover-v0.5.html`       | source  | cover page used to produce `docs/arquitectura-tecnica-v0.5.pdf` (rendered by `scripts/arq_v04/render_cover.mjs`) |
 | `src/capture_console.mjs`   | source  | Playwright script that produces the `console-*` captures (see header for prerequisites) |
 
 ## Regenerating a diagram
