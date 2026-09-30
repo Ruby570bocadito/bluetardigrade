@@ -879,6 +879,7 @@ internal/lifecycle/ alert triage state (acknowledged/closed + notes, JSON-persis
 internal/webhook/ alert webhook delivery (bounded queue, retries)
 internal/notify/  external notifications (Slack/Telegram/email channels, bounded queues)
 internal/siem/    native SIEM sinks (Elasticsearch Bulk API + Splunk HEC, bounded spools)
+internal/respond/  active response (C3): operator-gated kill_process, append-only JSONL audit
 pkg/model/        unified event schema (the wire contract)
 sensor/           Rust ETW sensor (collector is Windows-gated)
 rules/            seeded detection pack (windows/)

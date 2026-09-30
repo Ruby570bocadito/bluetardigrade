@@ -75,12 +75,13 @@ Las herramientas de edición de este entorno re-indentan ficheros Go convirtiend
 
 ## Verificación de la consola web (TypeScript) — batería y convenciones
 
-La batería de referencia Go (gofmt/build/vet/test, `-race`, guard OpenAPI, E2E) tiene un equivalente propio para los dos paquetes TS del árbol — `web/console` (Next.js) y `web/console-service` (hub Bun/socket.io) —, que PROMPTS.md v2 (regla 6) resume como «bun test + tsc --noEmit + next build». Esta sección fija el detalle operativo: qué capa certifica cada comando, en qué orden y qué convenciones aplican, con el mismo estándar de evidencia por conteos que el resto de la guía.
+La batería de referencia Go (gofmt/build/vet/test, `-race`, guard OpenAPI, E2E) tiene un equivalente propio para los paquetes TS de producto del árbol — `web/console` (Next.js) y `web/console-service` (hub Bun/socket.io), los dos que PROMPTS.md v2 asigna al carril frontend —, que la regla 6 resume como «bun test + tsc --noEmit + next build». El árbol tiene además un tercer paquete TS, `website/` (landing, ola 0985e7f), que hoy aporta `eslint` + `next build` + lockfile propio; el alcance de su batería completa está en decisión del Director (observación §9.4 de la ronda 16h55). Hasta que esa decisión caiga: esta sección certifica los dos de producto, y toda ronda que toque `website/` exige al menos lo que su propio `package.json` define. Esta sección fija el detalle operativo: qué capa certifica cada comando, en qué orden y qué convenciones aplican, con el mismo estándar de evidencia por conteos que el resto de la guía.
 
 ### Cuándo aplica
 
 - Toda ronda que toque ficheros de `web/console/` o `web/console-service/` (UI, proxy `src/app/api/engine/[...path]/route.ts`, hub, estilos).
-- Toda ronda que cambie dependencias de cualquiera de los dos paquetes (`package.json` o `bun.lock`).
+- Toda ronda que toque `website/` aplica, como mínimo, las capas que su `package.json` define hoy: `bun install --frozen-lockfile`, `lint` y `build` (alcance de la batería completa en decisión del Director, ronda 16h55 §9.4).
+- Toda ronda que cambie dependencias de cualquiera de los tres paquetes TS del árbol (`package.json` o `bun.lock`).
 - No aplica cuando la ronda no toca TS (docs, Go, scripts): declararlo explícitamente es suficiente.
 
 ### La batería, en orden (por cada paquete TS tocado)
