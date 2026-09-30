@@ -9,6 +9,7 @@ import { Cpu, Flame, MagnifyingGlass, Waveform } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import type { EngineStatus } from '@/hooks/use-engine-stream'
 import { KpiRow } from './kpi-row'
+import { OperationsOverview } from './operations-overview'
 import { ActivityChart } from './activity-chart'
 import { AlertsView } from './alerts-view'
 import { EmptyState, OfflineNotice, SectionHeader, SkeletonRows, MonoTag } from './ui-bits'
@@ -36,11 +37,12 @@ export function Dashboard({
         />
       )}
 
+      <OperationsOverview onNavigate={onNavigate} />
       <KpiRow stats={stats} />
 
       <div className="grid gap-6 xl:grid-cols-3">
         <section aria-label="Actividad del sensor" className="min-w-0 xl:col-span-2">
-          <SectionHeader title="Actividad del sensor" hint="ventana de 4 minutos" />
+          <SectionHeader title="Actividad del sensor" hint="muestra de los últimos 4 minutos" />
           {/* SpotlightCard (React Bits): profundidad del panel bajo el puntero;
               en reposo es la misma tarjeta con borde hairline de siempre */}
           <SpotlightCard className="panel px-4 pb-3 pt-4">
@@ -74,8 +76,10 @@ export function Dashboard({
               </button>
             }
           />
-          {status !== 'live' && events.length === 0 ? (
+          {status === 'connecting' ? (
             <SkeletonRows rows={6} className="border-y border-white/[0.06] py-6" />
+          ) : status === 'down' ? (
+            <EmptyState icon={Waveform} title="Telemetría no disponible" hint="Esperando la reconexión con el motor." />
           ) : events.length === 0 ? (
             <div className="border-y border-white/[0.06]">
               <EmptyState
@@ -136,7 +140,7 @@ function HotHostsPanel() {
         <Flame size={16} aria-hidden className="text-amber-500" />
         <span className="text-sm text-zinc-200">Hosts calientes</span>
         <span className="ml-auto font-mono text-[11px] tabular-nums text-zinc-500">
-          {stats?.risk_hosts_tracked ?? 0} en riesgo
+          {stats?.risk_hosts_tracked ?? '—'} en riesgo
         </span>
       </div>
       {stats && hot.length === 0 ? (
@@ -206,13 +210,13 @@ function EngineSummary({ status }: { status: EngineStatus }) {
     { label: 'API', value: <span className="font-mono text-xs text-zinc-300">{endpoint}</span> },
     {
       label: 'Eventos totales',
-      value: <span className="font-mono text-xs tabular-nums text-zinc-300">{stats?.events_total ?? 0}</span>,
+      value: <span className="font-mono text-xs tabular-nums text-zinc-300">{stats?.events_total ?? '—'}</span>,
     },
     {
       label: 'Descartados / rechazados',
       value: (
         <span className="font-mono text-xs tabular-nums text-zinc-300">
-          {stats?.dropped ?? 0} / {stats?.ingest_rejected ?? 0}
+          {stats?.dropped ?? '—'} / {stats?.ingest_rejected ?? '—'}
         </span>
       ),
     },
@@ -220,7 +224,7 @@ function EngineSummary({ status }: { status: EngineStatus }) {
       label: 'Webhooks',
       value: (
         <span className="font-mono text-xs tabular-nums text-zinc-300">
-          {stats?.webhook_sent ?? 0} enviados · {stats?.webhook_failed ?? 0} fallidos
+          {stats?.webhook_sent ?? '—'} enviados · {stats?.webhook_failed ?? '—'} fallidos
         </span>
       ),
     },
@@ -240,7 +244,7 @@ function EngineSummary({ status }: { status: EngineStatus }) {
         <span className="font-mono text-xs text-zinc-500">sin datos</span>
       ),
     },
-    { label: 'Reglas cargadas', value: <span className="font-mono text-xs tabular-nums text-zinc-300">{rules.length}</span> },
+    { label: 'Reglas cargadas', value: <span className="font-mono text-xs tabular-nums text-zinc-300">{stats ? rules.length : '—'}</span> },
   ]
 
   return (

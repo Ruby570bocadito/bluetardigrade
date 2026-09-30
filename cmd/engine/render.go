@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Ruby570bocadito/security-framework/internal/redact"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
@@ -67,6 +68,7 @@ func sevStyle(sev string) lipgloss.Style {
 func renderTags(tags []string) string {
 	parts := make([]string, 0, len(tags))
 	for _, tg := range tags {
+		tg = redact.TerminalText(tg)
 		if strings.HasPrefix(tg, "attack.") {
 			parts = append(parts, tagAttackSty.Render(tg))
 		} else {
@@ -99,15 +101,15 @@ func renderRulesTable(rs []rules.Rule) string {
 			return lipgloss.NewStyle()
 		})
 	for _, r := range rs {
-		id := r.ID
+		id := redact.TerminalText(r.ID)
 		if len(id) > 8 {
 			id = id[:8]
 		}
 		t.Row(
 			dimStyle.Render(id),
-			r.Name,
+			redact.TerminalText(r.Name),
 			sevStyle(r.Severity).Render(strings.ToUpper(r.Severity)),
-			r.EventType,
+			redact.TerminalText(r.EventType),
 			renderTags(r.Tags),
 		)
 	}
@@ -165,23 +167,20 @@ func renderBanner(meta tuiMeta, rulesCount int) string {
 	wh := meta.webhookURL
 	if wh == "" {
 		wh = "off"
+	} else {
+		wh = redact.EndpointLabel(wh)
 	}
 	api := meta.apiAddr
 	if api == "" {
 		api = "off"
 	}
 	head := titleStyle.Render("SECURITY-FRAMEWORK ENGINE") + dimStyle.Render("  "+engineVersion)
-	l1 := "reglas " + fmt.Sprintf("%d", rulesCount) + dimStyle.Render("  "+meta.rulesPath)
-	l2 := "ingest " + meta.ingestAddr + "   api " + api + "   webhook " + dimStyle.Render(wh)
+	l1 := "reglas " + fmt.Sprintf("%d", rulesCount) + dimStyle.Render("  "+redact.TerminalText(meta.rulesPath))
+	l2 := "ingest " + redact.TerminalText(meta.ingestAddr) + "   api " + redact.TerminalText(api) + "   webhook " + dimStyle.Render(redact.TerminalText(wh))
 	if meta.seqCount > 0 {
 		l2 += "   secuencias " + fmt.Sprintf("%d", meta.seqCount)
 	}
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorDim).
-		Padding(0, 1).
-		Render(lipgloss.JoinVertical(lipgloss.Left, head, l1, l2))
-	return box
+	return lipgloss.JoinVertical(lipgloss.Left, head, l1, dimStyle.Render(l2))
 }
 
 // pad right-pads s with spaces to width display columns (labels are

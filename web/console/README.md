@@ -14,11 +14,12 @@ data semantics).
 Go engine (internal/api, 127.0.0.1:7778)
   ├─ GET /api/stream   SSE  ->  use-engine-stream (events, alerts live)
   ├─ GET /api/stats    poll 2s (uptime, counters, severity breakdown)
-  ├─ GET /api/events | /api/alerts | /api/rules   one-shot sync
+  ├─ GET /api/events | /api/alerts   initial/reconnect/manual snapshot
+  ├─ GET /api/rules   initial sync + polling (hot reload)
   └─ GET /api/{alerts,events}/export?format=jsonl|csv   downloads
         ▲
         └── same-origin proxy route: web/console/src/app/api/engine/[...path]
-              (the engine needs no CORS headers; only GET is forwarded)
+              (the engine needs no CORS headers; GET plus the guarded alert-triage POST)
 
 console-service (Bun, socket.io :3003)   ->  AI analyst only
 ```
@@ -27,6 +28,14 @@ Telemetry comes straight from the engine API; the hub
 (`console-service/`) is only used for the AI analyst. If the engine is
 unreachable the console says so (`Motor offline`) and shows no data;
 when the hub is down only the analyst view is affected.
+
+The provider uses bounded requests and serial polling. Snapshots merge with
+incoming frames, SSE replay preserves triage decisions, and optional response
+state clears on a real 404. The operation summary shows pending critical triage,
+pipeline issues, detector saturation, last API reading and manual refresh.
+API reachability and live-channel connectivity are tracked separately.
+Unavailable metrics show —. The rolling chart ages out during sensor inactivity
+and describes a buffer sample, not complete historical retention.
 
 ## Views
 
@@ -61,17 +70,17 @@ is not — the console shows the real mode, never an assumption.
 
 ## Quickstart
 
-Requirements: [bun](https://bun.sh).
+Requirements: [bun](https://bun.sh). Run each terminal from the repository root.
 
 ```bash
 # terminal 1 - the real engine (rules + API on :7778)
 go run ./cmd/engine
 
 # terminal 2 (optional) - AI analyst hub (socket.io on :3003)
-cd console-service && bun install && bun run dev
+cd web/console-service && bun install --frozen-lockfile && bun run dev
 
 # terminal 3 - console (Next.js on :3000)
-cd console && bun install && bun run dev
+cd web/console && bun install --frozen-lockfile && bun run dev
 ```
 
 Open http://localhost:3000. Without the engine the console renders its

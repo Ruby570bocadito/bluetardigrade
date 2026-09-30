@@ -1,48 +1,34 @@
 'use client'
 
-// Live channel to the Go engine's local API (internal/api, :7778).
-//
-//   - /api/stream   SSE: pushes every new event and alert as it happens
-//   - /api/stats    polled every 2s (uptime, counters, severity breakdown)
-//   - /api/events, /api/alerts, /api/rules   one-shot sync and gap fill
-//
-// All requests go through the same-origin proxy route (src/app/api/engine)
-// so the engine needs no CORS configuration. Liveness is decided by the
-// stats poll: if the engine stops answering, the console drops to a real
-// "offline" state and never invents data.
-
-import { useEffect, useRef, useState } from 'react'
+// One shared, bounded SSE + REST connection. The engine owns all
+// counters; snapshots merge with frames received during resync.
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
-  EngineStats,
-  RuleMeta,
-  SfAlert,
-  SfAlertLifecycle,
-  SfEvent,
-  SfRespondAudit,
-  SfRespondState,
-  SfSequence,
-  SfSuppression,
+  EngineStats, RuleMeta, SfAlert, SfAlertLifecycle, SfEvent,
+  SfRespondAudit, SfRespondState, SfSequence, SfSuppression,
 } from '@/lib/console-types'
 import { severityOf } from '@/lib/console-types'
+import {
+  alertKey, engineDisplayEndpoint, mergeNewest, prependLive,
+  readEngineJson, readOptionalEngineJson, settledBatch,
+} from '@/lib/engine-client'
 
 export type EngineStatus = 'connecting' | 'live' | 'down'
+export type StreamStatus = 'connecting' | 'live' | 'retrying' | 'down'
 
 export type EngineState = {
   status: EngineStatus
+  streamStatus: StreamStatus
+  lastSyncAt: number | null
+  refreshing: boolean
+  refresh: () => void
   events: SfEvent[]
   alerts: SfAlert[]
   rules: RuleMeta[]
   suppressions: SfSuppression[]
   sequences: SfSequence[]
-  // active response (C3 console visibility): null means the engine
-  // answered 404 (disarmed surface) or predates the routes — both are
-  // the same honest "no disponible", never a fabricated card
   respondState: SfRespondState | null
   respondAudit: SfRespondAudit | null
-  // tail window the console keeps for the audit queue. The engine
-  // saturates at 500 (limitFrom parity with /api/events); the default
-  // is the API default of 100. Applied through a ref so the 2 s poll
-  // picks the new window up without re-subscribing the stream.
   auditLimit: 100 | 500
   setAuditLimit: (n: 100 | 500) => void
   stats: EngineStats | null
@@ -54,27 +40,11 @@ const REBOOT_DELAY_MS = 3000
 const MAX_EVENTS = 300
 const MAX_ALERTS = 128
 
-// Same-origin proxy by default; NEXT_PUBLIC_ENGINE_API allows a direct
-// URL (only useful when the engine itself serves CORS).
 function engineApiBase(): string {
   return process.env.NEXT_PUBLIC_ENGINE_API || '/api/engine'
 }
 
-function engineDisplayEndpoint(): string {
-  return (process.env.ENGINE_API_URL || '127.0.0.1:7778').replace(/^https?:\/\//, '')
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-// The engine assigns a unique 16-hex id to every alert since r6 (the
-// lifecycle key); older engines without it fall back to the
-// event_id + rule_id key. A monotonic counter keeps React keys unique
-// even if the engine ever replays the same pair.
-let alertSeq = 0
 function mapAlert(raw: Record<string, unknown>): SfAlert {
-  alertSeq += 1
   const tags = Array.isArray(raw.tags) ? (raw.tags as string[]) : []
   const matched = Array.isArray(raw.matched_on) ? (raw.matched_on as string[]) : []
   const status = raw.status
@@ -124,6 +94,9 @@ function mapRule(raw: Record<string, unknown>): RuleMeta {
 
 export function useEngineStream(): EngineState {
   const [status, setStatus] = useState<EngineStatus>('connecting')
+  const [streamStatus, setStreamStatus] = useState<StreamStatus>('connecting')
+  const [lastSyncAt, setLastSyncAt] = useState<number | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
   const [events, setEvents] = useState<SfEvent[]>([])
   const [alerts, setAlerts] = useState<SfAlert[]>([])
   const [rules, setRules] = useState<RuleMeta[]>([])
@@ -133,9 +106,10 @@ export function useEngineStream(): EngineState {
   const [respondAudit, setRespondAudit] = useState<SfRespondAudit | null>(null)
   const [auditLimit, setAuditLimitState] = useState<100 | 500>(100)
   const [stats, setStats] = useState<EngineStats | null>(null)
-  const [endpoint] = useState(engineDisplayEndpoint)
-  const failures = useRef(0)
+  const [endpoint] = useState(() => engineDisplayEndpoint(engineApiBase()))
   const auditLimitRef = useRef<100 | 500>(100)
+  const refreshRef = useRef<(() => void) | null>(null)
+  const refresh = useCallback(() => refreshRef.current?.(), [])
 
   function setAuditLimit(n: 100 | 500): void {
     auditLimitRef.current = n
@@ -144,190 +118,211 @@ export function useEngineStream(): EngineState {
 
   useEffect(() => {
     let disposed = false
-    let pollTimer: ReturnType<typeof setInterval> | null = null
+    let offline = true
+    let failures = 0
+    let lastUptime: number | null = null
+    let pollTimer: ReturnType<typeof setTimeout> | null = null
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
     let es: EventSource | null = null
+    let syncPending: Promise<boolean> | null = null
+    let syncEvents: SfEvent[] = []
+    let syncAlerts: SfAlert[] = []
+    let syncLifecycle: SfAlertLifecycle[] = []
     const ctrl = new AbortController()
     const base = engineApiBase()
+    const getJson = <T,>(path: string) => readEngineJson<T>(base, path, ctrl.signal)
+    const optional = <T,>(path: string) => readOptionalEngineJson<T>(base, path, ctrl.signal)
 
-    async function getJson<T>(path: string): Promise<T> {
-      const res = await fetch(`${base}${path}`, { signal: ctrl.signal, cache: 'no-store' })
-      if (!res.ok) throw new Error(`${path} -> ${res.status}`)
-      return (await res.json()) as T
+    function clearTelemetry() {
+      setStats(null)
+      setEvents([])
+      setAlerts([])
+      setRules([])
+      setSuppressions([])
+      setSequences([])
+      setRespondState(null)
+      setRespondAudit(null)
     }
 
-    // Full sync of the engine rings; false means the engine is unreachable.
-    async function syncAll(): Promise<boolean> {
+    function markDown() {
+      if (disposed) return
+      offline = true
+      setStatus('down')
+      setStreamStatus('down')
+      clearTelemetry()
+    }
+
+    function applyLifecycle(list: SfAlert[], entry: SfAlertLifecycle): SfAlert[] {
+      return list.map((a) => a.id === entry.alert_id
+        ? { ...a, status: entry.status, status_note: entry.note, status_by: entry.by, status_at: entry.at }
+        : a)
+    }
+
+    async function performSync(): Promise<boolean> {
+      setRefreshing(true)
+      syncEvents = []
+      syncAlerts = []
+      syncLifecycle = []
       try {
-        const [ruleList, eventList, alertList, statsPayload, suppressionPayload, sequencePayload, rState, rAudit] = await Promise.all([
+        const [rs, evs, als, st, sup, seq, response, audit] = await settledBatch([
           getJson<Record<string, unknown>[]>('/api/rules'),
-          getJson<Record<string, unknown>[]>('/api/events?limit=160'),
-          getJson<Record<string, unknown>[]>('/api/alerts?limit=100'),
+          getJson<SfEvent[]>('/api/events?limit=' + MAX_EVENTS),
+          getJson<Record<string, unknown>[]>('/api/alerts?limit=' + MAX_ALERTS),
           getJson<EngineStats>('/api/stats'),
-          // {active, entries} per internal/api suppressPayload; [] if the
-          // engine predates the endpoint (suppressions view simply empties)
-          getJson<{ active?: number; entries?: SfSuppression[] }>('/api/suppressions').catch(() => null),
-          // kill-chain sequences; [] on engines without the endpoint
-          getJson<SfSequence[]>('/api/sequences').catch(() => null),
-          // active response read surface (C3): null on a disarmed engine
-          // (real 404) or one predating the routes — the respond view
-          // shows a real "no disponible" either way; the tail window is
-          // the operator-controlled auditLimit (engine caps at 500)
-          getJson<SfRespondState>('/api/respond/state').catch(() => null),
-          getJson<SfRespondAudit>(`/api/respond/audit?limit=${auditLimitRef.current}`).catch(() => null),
+          optional<{ entries?: SfSuppression[] }>('/api/suppressions'),
+          optional<SfSequence[]>('/api/sequences'),
+          optional<SfRespondState>('/api/respond/state'),
+          optional<SfRespondAudit>('/api/respond/audit?limit=' + auditLimitRef.current),
         ])
-        if (disposed) return true
-        setRules(ruleList.map(mapRule))
-        // REST answers newest first; the UI expects newest first too
-        setEvents(eventList.slice(0, MAX_EVENTS) as SfEvent[])
-        setAlerts(alertList.map(mapAlert).slice(0, MAX_ALERTS))
-        setStats(statsPayload)
-        setSuppressions(Array.isArray(suppressionPayload?.entries) ? suppressionPayload.entries : [])
-        setSequences(Array.isArray(sequencePayload) ? sequencePayload : [])
-        setRespondState(rState)
-        setRespondAudit(rAudit)
-        failures.current = 0
+        if (disposed) return false
+        const receivedEvents = [...syncEvents]
+        const receivedAlerts = [...syncAlerts]
+        const decisions = [...syncLifecycle]
+        setEvents(mergeNewest(receivedEvents, evs, (e) => e.id, MAX_EVENTS))
+        // REST includes the lifecycle overlay; raw alert frames do not.
+        // A duplicate received during sync must not erase that decision.
+        let merged = mergeNewest(als.map(mapAlert), receivedAlerts, alertKey, MAX_ALERTS)
+        for (const decision of decisions) merged = applyLifecycle(merged, decision)
+        setAlerts(merged)
+        setRules(rs.map(mapRule))
+        setStats(st)
+        if (sup !== undefined) setSuppressions(sup?.entries ?? [])
+        if (seq !== undefined) setSequences(seq ?? [])
+        if (response !== undefined) setRespondState(response)
+        if (audit !== undefined) setRespondAudit(audit)
+        lastUptime = st.uptime_s
+        failures = 0
+        offline = false
         setStatus('live')
+        setLastSyncAt(Date.now())
+        if (es) setStreamStatus(es.readyState === EventSource.OPEN ? 'live' : 'retrying')
         return true
       } catch {
         return false
+      } finally {
+        if (!disposed) setRefreshing(false)
       }
     }
 
-    // Liveness watchdog: while this poll gets answers the console is live.
-    function startPolling() {
-      if (pollTimer) return
-      pollTimer = setInterval(async () => {
-        try {
-          const [st, sup, seq, rState, rAudit] = await Promise.all([
-            getJson<EngineStats>('/api/stats'),
-            getJson<{ active?: number; entries?: SfSuppression[] }>('/api/suppressions').catch(() => null),
-            getJson<SfSequence[]>('/api/sequences').catch(() => null),
-            getJson<SfRespondState>('/api/respond/state').catch(() => null),
-            getJson<SfRespondAudit>(`/api/respond/audit?limit=${auditLimitRef.current}`).catch(() => null),
-          ])
-          if (disposed) return
-          setStats(st)
-          if (sup && Array.isArray(sup.entries)) setSuppressions(sup.entries)
-          if (Array.isArray(seq)) setSequences(seq)
-          // a poll hiccup (null) keeps the last known state instead of
-          // flapping the view; a real disarm (404 every poll) only ever
-          // means null-first, never a fake clear of an armed engine
-          if (rState !== null) setRespondState(rState)
-          if (rAudit !== null) setRespondAudit(rAudit)
-          failures.current = 0
-          setStatus('live')
-        } catch {
-          failures.current += 1
-          if (failures.current >= 2 && !disposed) {
-            setStatus('down')
-            setStats(null)
-            setSuppressions([]) // honest empty state: no engine, no data
-            setSequences([])
-            setRespondState(null)
-            setRespondAudit(null)
-          }
+    // Initial handshake, SSE reconnect and manual refresh share one
+    // in-flight snapshot, preventing out-of-order full-sync overwrites.
+    function syncAll(): Promise<boolean> {
+      if (syncPending) return syncPending
+      syncPending = performSync().finally(() => { syncPending = null })
+      return syncPending
+    }
+    refreshRef.current = () => { void syncAll().then((ok) => { if (!ok) markDown() }) }
+
+    async function poll() {
+      try {
+        if (syncPending) {
+          await syncPending
+          return
         }
-      }, STATS_POLL_MS)
+        const [st, rs, sup, seq, response, audit] = await settledBatch([
+          getJson<EngineStats>('/api/stats'),
+          getJson<Record<string, unknown>[]>('/api/rules'),
+          optional<{ entries?: SfSuppression[] }>('/api/suppressions'),
+          optional<SfSequence[]>('/api/sequences'),
+          optional<SfRespondState>('/api/respond/state'),
+          optional<SfRespondAudit>('/api/respond/audit?limit=' + auditLimitRef.current),
+        ])
+        if (disposed) return
+        if (syncPending) {
+          await syncPending
+          return
+        }
+        const restarted = lastUptime !== null && st.uptime_s < lastUptime
+        if (offline || restarted) {
+          if (restarted) clearTelemetry()
+          if (!(await syncAll())) throw new Error('resync failed')
+          return
+        }
+        setStats(st)
+        setRules(rs.map(mapRule)) // hot reload also refreshes the catalogue
+        if (sup !== undefined) setSuppressions(sup?.entries ?? [])
+        if (seq !== undefined) setSequences(seq ?? [])
+        if (response !== undefined) setRespondState(response)
+        if (audit !== undefined) setRespondAudit(audit)
+        lastUptime = st.uptime_s
+        failures = 0
+        setStatus('live')
+        setLastSyncAt(Date.now())
+      } catch {
+        if (++failures >= 2) markDown()
+      } finally {
+        // Schedule AFTER completion: slow requests never overlap polls.
+        if (!disposed) pollTimer = setTimeout(() => { void poll() }, STATS_POLL_MS)
+      }
     }
 
     function startStream() {
-      es = new EventSource(`${base}/api/stream`)
-      const onFrame = (topic: 'event' | 'alert') => (e: MessageEvent<string>) => {
+      es = new EventSource(base + '/api/stream')
+      es.addEventListener('event', (frame: MessageEvent<string>) => {
+        if (disposed || (offline && !syncPending)) return
         try {
-          const payload = JSON.parse(e.data) as Record<string, unknown>
-          if (topic === 'event') {
-            const ev = payload as unknown as SfEvent
-            setEvents((prev) => {
-              if (prev.some((x) => x.id === ev.id)) return prev
-              const next = [ev, ...prev]
-              return next.length > MAX_EVENTS ? next.slice(0, MAX_EVENTS) : next
-            })
-          } else {
-            const al = mapAlert(payload)
-            setAlerts((prev) => {
-              const next = [al, ...prev]
-              return next.length > MAX_ALERTS ? next.slice(0, MAX_ALERTS) : next
-            })
-            // keep the counters moving between stats polls
-            setStats((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    alerts_total: prev.alerts_total + 1,
-                    by_severity: { ...prev.by_severity, [al.severity]: (prev.by_severity[al.severity] ?? 0) + 1 },
-                  }
-                : prev,
-            )
-          }
-        } catch {
-          /* malformed frame: ignore */
-        }
-      }
-      es.addEventListener('event', onFrame('event'))
-      es.addEventListener('alert', onFrame('alert'))
-      // triage decisions (r6): the engine broadcasts one frame per POST;
-      // patch the matching alert in place so every view (queue, detail
-      // panel, dashboard widget) reflects the operator's decision live.
-      es.addEventListener('alert_lifecycle', (e: MessageEvent<string>) => {
+          const ev = JSON.parse(frame.data) as SfEvent
+          if (!ev || typeof ev.id !== 'string' || typeof ev.timestamp !== 'string') return
+          if (syncPending) syncEvents = [ev, ...syncEvents].slice(0, MAX_EVENTS)
+          if (!offline) setEvents((prev) => prependLive(ev, prev, (e) => e.id, MAX_EVENTS))
+        } catch { /* malformed frame */ }
+      })
+      es.addEventListener('alert', (frame: MessageEvent<string>) => {
+        if (disposed || (offline && !syncPending)) return
         try {
-          const entry = JSON.parse(e.data) as SfAlertLifecycle
-          setAlerts((prev) =>
-            prev.map((a) =>
-              a.id === entry.alert_id
-                ? { ...a, status: entry.status, status_note: entry.note, status_by: entry.by, status_at: entry.at }
-                : a,
-            ),
-          )
-        } catch {
-          /* malformed frame: ignore */
-        }
+          const raw = JSON.parse(frame.data) as Record<string, unknown>
+          if (!raw || typeof raw.rule_id !== 'string' || typeof raw.timestamp !== 'string') return
+          const al = mapAlert(raw)
+          if (syncPending) syncAlerts = [al, ...syncAlerts].slice(0, MAX_ALERTS)
+          if (!offline) setAlerts((prev) => prependLive(al, prev, alertKey, MAX_ALERTS))
+          // Stats stay authoritative: SSE replay must not inflate totals.
+        } catch { /* malformed frame */ }
+      })
+      es.addEventListener('alert_lifecycle', (frame: MessageEvent<string>) => {
+        if (disposed || (offline && !syncPending)) return
+        try {
+          const entry = JSON.parse(frame.data) as SfAlertLifecycle
+          if (!entry || !['new', 'acknowledged', 'closed'].includes(entry.status)) return
+          if (syncPending) syncLifecycle = [...syncLifecycle, entry].slice(-MAX_ALERTS)
+          if (!offline) setAlerts((prev) => applyLifecycle(prev, entry))
+        } catch { /* malformed frame */ }
       })
       es.onopen = () => {
-        // first open or browser-side reconnect: fill any gap in the rings
-        void syncAll()
+        if (disposed) return
+        setStreamStatus('live')
+        void syncAll() // repair gaps on every browser-side reconnect
       }
       es.onerror = () => {
-        /* EventSource retries on its own; the poller owns the status */
+        if (!disposed) setStreamStatus(offline ? 'down' : 'retrying')
       }
     }
 
     async function boot() {
-      // Keep retrying the handshake until the engine answers for real.
-      for (;;) {
-        if (disposed) return
-        const ok = await syncAll()
-        if (disposed) return
-        if (ok) break
-        setStatus('down')
-        setStats(null)
-        await sleep(REBOOT_DELAY_MS)
+      if (disposed) return
+      if (!(await syncAll())) {
+        markDown()
+        if (!disposed) retryTimer = setTimeout(() => { void boot() }, REBOOT_DELAY_MS)
+        return
       }
+      if (disposed) return
       startStream()
-      startPolling()
+      pollTimer = setTimeout(() => { void poll() }, STATS_POLL_MS)
     }
-
     void boot()
 
     return () => {
       disposed = true
+      refreshRef.current = null
       ctrl.abort()
       es?.close()
-      if (pollTimer) clearInterval(pollTimer)
+      if (pollTimer) clearTimeout(pollTimer)
+      if (retryTimer) clearTimeout(retryTimer)
     }
   }, [])
 
   return {
-    status,
-    events,
-    alerts,
-    rules,
-    suppressions,
-    sequences,
-    respondState,
-    respondAudit,
-    auditLimit,
-    setAuditLimit,
-    stats,
-    endpoint,
+    status, streamStatus, lastSyncAt, refreshing, refresh,
+    events, alerts, rules, suppressions, sequences, respondState,
+    respondAudit, auditLimit, setAuditLimit, stats, endpoint,
   }
 }

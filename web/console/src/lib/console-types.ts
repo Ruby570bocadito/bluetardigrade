@@ -59,8 +59,7 @@ export type SfEvent = {
 // alert.Alert (internal/alert) as served by /api/alerts and /api/stream.
 // Since r6 the engine assigns a unique 16-hex id to every alert (the
 // lifecycle key); older engines without it fall back to the
-// event_id + rule_id natural key (the provider derives a stable React
-// key from what is available plus a monotonic counter).
+// timestamp + event_id + rule_id natural key (stable across reconnects).
 export type SfAlert = {
   id?: string
   timestamp: string

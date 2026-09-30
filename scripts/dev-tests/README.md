@@ -106,3 +106,23 @@ escenario 5 — recompilar (el script lo dice ahora por sí solo); (5) capturar
 `$(grep -c ... || echo 0)` duplica la salida — `grep -c` ya imprime 0 sin
 match, así que el eco extra producía "0\n0" y reventaba el `-ge` siguiente
 (lección de la primera ejecución del e2e de store).
+
+## Functional console DOM checks
+
+These optional checks mount the real engine provider and dashboard with
+isolated REST/SSE fixtures. They verify replay/triage preservation, rule
+reload, idle activity expiry, queue navigation, optional 404 handling,
+concurrent snapshot frames, live-channel warnings, outage/recovery and cleanup.
+They do not certify browser layout or replace the native Bun integration suite.
+
+From the repository root, with the console dependencies already installed:
+
+```bash
+npm install --prefix tools/console-tests --no-audit --no-fund esbuild@0.25.11 jsdom@26.1.0
+node scripts/dev-tests/check_console_dom.mjs
+```
+
+Optional tooling stays in the ignored `tools/` directory. Set
+`CONSOLE_TEST_TOOLS` to an absolute tooling directory if using another location.
+The script builds a temporary fixture, removes it on completion and returns
+nonzero on failure. Requires Node.js 20+.

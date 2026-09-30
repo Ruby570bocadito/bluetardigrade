@@ -48,13 +48,13 @@ vet:
 	$(GO) vet ./...
 
 build-sensor:
-	$(CARGO) build --release
+	$(CARGO) build --release --manifest-path sensor/Cargo.toml
 	@echo "sensor binary: sensor/target/release/security-sensor"
 
 # Native Windows build (run on a Windows host or use the gnu target
 # with mingw-w64 for cross compilation from Linux/macOS).
 build-sensor-windows:
-	$(CARGO) build --release --target x86_64-pc-windows-msvc
+	$(CARGO) build --release --manifest-path sensor/Cargo.toml --target x86_64-pc-windows-msvc
 	@echo "sensor binary: sensor/target/x86_64-pc-windows-msvc/release/security-sensor.exe"
 
 docker-build:

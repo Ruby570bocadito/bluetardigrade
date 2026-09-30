@@ -66,7 +66,16 @@ function allowedHosts(): Set<string> {
 // `[::1]:3000` all match the loopback set.
 function hostAllowed(request: Request): boolean {
   const raw = request.headers.get('host') ?? new URL(request.url).host
-  const hostname = raw.toLowerCase().split(':')[0].replace(/^\[|\]$/g, '').replace(/\.$/, '')
+  // Parse the entire authority: splitting on ':' breaks [::1]:3000.
+  // Reject userinfo and delimiters instead of letting URL normalization
+  // turn an invalid Host into a trusted loopback hostname.
+  if (/[\s/@\\?#]/.test(raw)) return false
+  let hostname: string
+  try {
+    hostname = new URL('http://' + raw).hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+  } catch {
+    return false
+  }
   return allowedHosts().has(hostname)
 }
 
@@ -95,7 +104,7 @@ function engineTarget(request: Request): string {
   return `${ENGINE_URL}${path}${search}`
 }
 
-async function forward(request: Request): Promise<Response> {
+async function forward(request: Request, body?: string): Promise<Response> {
   // Bearer pass-through (SF_API_TOKEN, the same env var the engine and
   // the console-service bridge honor): without it a token-protected
   // engine (-api-token) would leave this console stuck in 401s, and the
@@ -114,8 +123,9 @@ async function forward(request: Request): Promise<Response> {
     upstream = await fetch(engineTarget(request), {
       method: request.method,
       headers,
-      body: request.method === 'POST' ? await request.text() : undefined,
+      body,
       cache: 'no-store',
+      signal: request.signal,
     })
   } catch {
     return Response.json(
@@ -131,6 +141,33 @@ async function forward(request: Request): Promise<Response> {
   // the SSE stream must never be buffered or cached by the proxy layer
   outHeaders.set('cache-control', 'no-store, no-transform')
   return new Response(upstream.body, { status: upstream.status, headers: outHeaders })
+}
+
+// Match the engine's 8 KiB triage cap before buffering or forwarding.
+// Count bytes, not characters, and cancel oversized streamed bodies.
+async function triageBody(request: Request): Promise<string | Response> {
+  const limit = 8 * 1024
+  const tooLarge = () => Response.json({ error: 'body_too_large' }, { status: 413 })
+  if (Number(request.headers.get('content-length')) > limit) return tooLarge()
+  if (!request.body) return ''
+  const reader = request.body.getReader()
+  const decoder = new TextDecoder()
+  let bytes = 0
+  let body = ''
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) return body + decoder.decode()
+      bytes += value.byteLength
+      if (bytes > limit) {
+        await reader.cancel()
+        return tooLarge()
+      }
+      body += decoder.decode(value, { stream: true })
+    }
+  } finally {
+    reader.releaseLock()
+  }
 }
 
 function reject(request: Request, error: string, hint: string): Response {
@@ -178,5 +215,7 @@ export async function POST(request: Request): Promise<Response> {
       { status: 405 },
     )
   }
-  return forward(request)
+  const body = await triageBody(request)
+  if (body instanceof Response) return body
+  return forward(request, body)
 }

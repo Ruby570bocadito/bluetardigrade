@@ -66,6 +66,8 @@ describe('engine proxy boundary', () => {
     expect(captured).toHaveLength(1)
     expect(captured[0].url).toBe('http://127.0.0.1:7778/api/stats')
     expect((captured[0].init.headers as Record<string, string>).authorization).toBeUndefined()
+    expect(captured[0].init.body).toBeUndefined()
+    expect(captured[0].init.signal).toBeDefined()
   })
 
   test('SF_API_TOKEN rides every forwarded request (the README promise)', async () => {
@@ -101,6 +103,33 @@ describe('engine proxy boundary', () => {
     const res = await GET(new Request('http://lab.example:3000/api/engine/api/stats'))
     expect(res.status).toBe(200)
     expect(captured).toHaveLength(1)
+  })
+
+  test('IPv6 loopback and normalized DNS loopback are accepted', async () => {
+    const { GET } = await loadRoute()
+    for (const host of ['[::1]:3000', 'LOCALHOST.:3000', '127.0.0.1:3000']) {
+      const res = await GET(new Request('http://localhost:3000/api/engine/api/stats', { headers: { host } }))
+      expect(res.status).toBe(200)
+    }
+    expect(captured).toHaveLength(3)
+  })
+
+  test('malformed authorities and lookalike loopback hosts fail closed', async () => {
+    const { GET } = await loadRoute()
+    for (const host of ['localhost@evil.example', 'localhost.evil.example', 'localhost/path', 'localhost?x=1', '[::1', 'localhost:bad']) {
+      const res = await GET(new Request('http://localhost:3000/api/engine/api/stats', { headers: { host } }))
+      expect(res.status).toBe(403)
+    }
+    expect(captured).toHaveLength(0)
+  })
+
+  test('oversized triage is refused before forwarding, including multibyte text', async () => {
+    const { POST } = await loadRoute()
+    for (const body of ['x'.repeat(8193), '€'.repeat(3000)]) {
+      const res = await POST(new Request(triageUrl, { method: 'POST', body }))
+      expect(res.status).toBe(413)
+    }
+    expect(captured).toHaveLength(0)
   })
 
   test('cross-site triage POST is refused before anything is forwarded', async () => {
