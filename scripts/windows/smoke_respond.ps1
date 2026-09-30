@@ -68,8 +68,6 @@ $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("sf-smoke-respond-" + [guid]
 New-Item -ItemType Directory -Path $tmp | Out-Null
 $OPS = Join-Path $tmp "respond-operators.yaml"
 $AUDIT = Join-Path $tmp "respond-audit.jsonl"
-$LOG_OUT = Join-Path $tmp "engine-armed.out"
-$LOG_ERR = Join-Path $tmp "engine-armed.err"
 $PIDFILE = Join-Path $tmp "engine.pid"
 
 $engines = @()      # procesos engine a parar al salir
@@ -83,37 +81,50 @@ function Cleanup {
 # hostname real del host (el guard R3 compara contra el del engine)
 $HOSTNAME_SMOKE = $env:COMPUTERNAME
 
-function Start-Engine([bool]$Armed) {
+function Start-Engine([string]$Tag, [bool]$Armed) {
     # el engine desarmado va en puertos +10 (paridad con el e2e de la
     # casa) y SIN -pidfile/-respond-audit: no debe tocar el estado del
     # armado (el pidfile es la superficie del self_protected del
     # escenario e; si el desarmado lo reescribiera, el guard del
     # engine ARMADO no veria su propio pid y el smoke mataria al
     # engine equivocado).
+    # REDIRECCION POR-ENGINE (lección del primer run conductual, CI
+    # dff85fd): los dos engines NO comparten ficheros de log — la
+    # segunda apertura del mismo fichero trunca/compite con el stream
+    # del primero y la salida del desarmado se pierde sin rastro (el
+    # e2e de la casa lo evita igual: LOG vs LOG_DISARM).
     $iport = $IngestPort
     $aport = $ApiPort
-    $args = @("run", "-addr", "127.0.0.1:$iport", "-api", "127.0.0.1:$aport",
+    $eargs = @("run", "-addr", "127.0.0.1:$iport", "-api", "127.0.0.1:$aport",
         "-rules", (Join-Path $REPO "rules"), "-api-token", $TOKEN)
     if ($Armed) {
-        $args += @("-allow-kill", "-respond-operators", $OPS,
+        $eargs += @("-allow-kill", "-respond-operators", $OPS,
             "-respond-audit", $AUDIT, "-pidfile", $PIDFILE)
     }
-    $p = Start-Process -FilePath $Engine -ArgumentList $args -PassThru -WindowStyle Hidden `
-        -RedirectStandardOutput $LOG_OUT -RedirectStandardError $LOG_ERR
+    $outLog = Join-Path $tmp "engine-$Tag.out"
+    $errLog = Join-Path $tmp "engine-$Tag.err"
+    $p = Start-Process -FilePath $Engine -ArgumentList $eargs -PassThru -WindowStyle Hidden `
+        -RedirectStandardOutput $outLog -RedirectStandardError $errLog
     $script:engines += $p
     return $p
 }
 
-function Wait-Health([string]$Base) {
+function Wait-Health([string]$Base, [string]$Tag, $proc) {
     for ($i = 0; $i -lt 75; $i++) {
+        if ($proc.HasExited) {
+            Write-Host "FALLO: el engine $Tag murio durante el arranque (exit $($proc.ExitCode))"
+            Get-Content (Join-Path $tmp "engine-$Tag.err") -Tail 15 -ErrorAction SilentlyContinue | Write-Host
+            Get-Content (Join-Path $tmp "engine-$Tag.out") -Tail 15 -ErrorAction SilentlyContinue | Write-Host
+            return $false
+        }
         try {
             $null = Invoke-WebRequest -Uri "$Base/api/health" -Method Get -TimeoutSec 2
             return $true
         } catch { Start-Sleep -Milliseconds 200 }
     }
-    Write-Host "FALLO: el engine no levanto; ultima salida del engine armado:"
-    Get-Content $LOG_ERR -Tail 10 -ErrorAction SilentlyContinue | Write-Host
-    Get-Content $LOG_OUT -Tail 10 -ErrorAction SilentlyContinue | Write-Host
+    Write-Host "FALLO: el engine $Tag no levanto en 15s; su salida:"
+    Get-Content (Join-Path $tmp "engine-$Tag.err") -Tail 15 -ErrorAction SilentlyContinue | Write-Host
+    Get-Content (Join-Path $tmp "engine-$Tag.out") -Tail 15 -ErrorAction SilentlyContinue | Write-Host
     return $false
 }
 
@@ -142,10 +153,10 @@ try {
     "version: 1`nnames:`n  - smoke-op" | Set-Content -Path $OPS -Encoding utf8NoBOM
 
     Write-Host "== arranque: engine armado + engine desarmado =="
-    $eng = Start-Engine -Armed $true
-    if (-not (Wait-Health $API_BASE)) { throw "engine armado no levanto" }
-    $engDisarm = Start-Engine -Armed $false
-    if (-not (Wait-Health $API_DISARM_BASE)) { throw "engine desarmado no levanto" }
+    $eng = Start-Engine -Tag "armed" -Armed $true
+    if (-not (Wait-Health $API_BASE "armed" $eng)) { throw "engine armado no levanto" }
+    $engDisarm = Start-Engine -Tag "disarm" -Armed $false
+    if (-not (Wait-Health $API_DISARM_BASE "disarm" $engDisarm)) { throw "engine desarmado no levanto" }
 
     # ---- a. kill feliz ----------------------------------------------
     Write-Host "== a. kill feliz: 200, mechanism=handle, proceso muerto =="
