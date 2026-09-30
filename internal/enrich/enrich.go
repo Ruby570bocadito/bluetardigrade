@@ -40,7 +40,7 @@ func (en *Enricher) Apply(ev *model.Event) {
 	}
 
 	if ev.Process != nil && ev.Process.Image != "" {
-		dir := filepath.Dir(ev.Process.Image)
+		dir := imageDir(ev.Process.Image)
 		ev.Enrichment["image_dir"] = dir
 		if isSystemPath(dir) {
 			ev.Enrichment["image_origin"] = "system"
@@ -48,6 +48,25 @@ func (en *Enricher) Apply(ev *model.Event) {
 			ev.Enrichment["image_origin"] = "userland"
 		}
 	}
+}
+
+// imageDir splits the executable's directory from an image path on ANY
+// host OS: sensors report Windows paths (drive letter, backslashes)
+// while the engine itself also runs on Linux (Dockerfile), where
+// filepath.Dir alone sees no path separator at all and answers "."
+// for every C:\... image — reclassifying system binaries as userland.
+// The backslash branch reproduces filepath.Dir's Windows semantics
+// byte-identically, so behavior on a Windows host is unchanged; the
+// forward-slash branch stays with the standard library for Unix-ish
+// paths (including the /system32/ form isSystemPath knows).
+func imageDir(image string) string {
+	if strings.ContainsRune(image, '\\') {
+		if i := strings.LastIndexByte(image, '\\'); i >= 0 {
+			return image[:i]
+		}
+		return image // a lone backslash leaves no directory part
+	}
+	return filepath.Dir(image)
 }
 
 func isSystemPath(dir string) bool {

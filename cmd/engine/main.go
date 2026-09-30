@@ -49,6 +49,12 @@ func legacyMain() {
 	fs := newRunFlagSet(os.Args[0], opts, &interactive, flag.ExitOnError)
 	_ = fs.Parse(os.Args[1:]) // ExitOnError: never returns on error
 	if err := runEngine(opts, interactive); err != nil {
+		// runEngine returns only the errors that must reach the
+		// operator verbatim (half-set TLS flags, ...); its own fatal
+		// paths already printed. The CLI "run" subcommand prints the
+		// same error through Cobra — the legacy path stays fail-loud
+		// too instead of exiting with an unexplained status.
+		log.Printf("[ENGINE] %v", err)
 		os.Exit(1)
 	}
 }

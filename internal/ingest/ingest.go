@@ -45,7 +45,9 @@ func authTimeout() time.Duration { return time.Duration(authTimeoutNanos.Load())
 
 func init() { authTimeoutNanos.Store(int64(defaultAuthTimeout)) }
 
-// Server is a concurrent NDJSON-over-TCP listener.
+// Server is a concurrent NDJSON-over-TCP listener. Connections arrive
+// either in clear text (New) or wrapped in TLS (NewTLS); the handlers
+// below are agnostic to the difference.
 type Server struct {
 	addr      string
 	events    chan<- *model.Event
@@ -56,6 +58,7 @@ type Server struct {
 	open      map[net.Conn]struct{}
 	token     string // empty = auth disabled (loopback deployments)
 	prevToken string // still accepted during a rotation window
+	tls       bool   // true when the listener wraps connections in TLS
 
 	received atomic.Uint64
 	dropped  atomic.Uint64
@@ -63,7 +66,7 @@ type Server struct {
 }
 
 // New creates a server bound to addr, pushing parsed events into the
-// provided channel.
+// provided channel. For encrypted transport use NewTLS.
 func New(addr string, events chan<- *model.Event) (*Server, error) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {

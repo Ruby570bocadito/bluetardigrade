@@ -126,6 +126,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `-lifecycle` | `./alert-lifecycle.json` | alert triage state file (acknowledged/closed + notes; empty keeps statuses in memory only) |
 | `-reload-every` | `15s` | hot-reload cadence for rules/sequences/suppressions (`0` disables) |
 | `-token` / `-token-previous` | — | ingest shared token / previous token during a rotation window |
+| `-ingest-cert` / `-ingest-key` | — | TLS certificate (PEM) / private key for the ingest listener (both or neither; min TLS 1.2; sensors connect with `-tls -ca`) |
 | `-api-token` | — | Bearer required on every `/api/*` route and on `/metrics` (`/api/health` stays open) |
 | `-api-write` | off | arm `POST`/`DELETE /api/suppressions` (writes land on the `-suppressions` file; refused beyond loopback without `-api-token`) |
 | `-allow-kill` | off | arm `POST /api/respond/kill` (active response, SIGKILL fixed; REQUIRES `-api-token` even on loopback + open `-respond-audit`; falls back to `SF_ALLOW_KILL=1`) |
@@ -262,6 +263,39 @@ sf-engine -token 'the-new-secret'
 During the window the startup banner says `rotation window OPEN` so an operator can see at a glance when a migration is still in progress. Both comparisons are constant-time and combined without branching on the content, so the window does not leak which token matched.
 
 On Windows the installer can persist the token for you (`install.ps1 -IngestToken '...'`, stored under `tools\config\ingest.token`, cleared with an empty value): the autostart entry, `sf-console` and `sf-devsensor` then all start the engine with that token enforced. The installer's `-Firewall` switch **requires** a configured token — it refuses to open TCP 7777 otherwise (and removes a rule left behind by a pre-gate install), because a reachable ingest without a token is an open event-injection channel for the whole network segment.
+
+## Ingest TLS (encryption in transit)
+
+The shared token authenticates the sender but does not encrypt the channel: with `-addr 0.0.0.0:7777` the feed travels in clear text and carries sensitive host data (users, command lines). For remote-sensor deployments the ingest speaks native TLS — standard library only, no extra dependencies:
+
+```bash
+# engine: wrap the NDJSON listener in TLS (both flags together or neither)
+sf-engine -addr 0.0.0.0:7777 -ingest-cert /etc/sf/ingest.pem -ingest-key /etc/sf/ingest-key.pem -token 'pick-a-long-random-secret'
+
+# sensor: verify the engine against your CA and stream over the encrypted channel
+devsensor -addr engine.example:7777 -tls -ca /etc/sf/ingest-ca.pem -token 'pick-a-long-random-secret'
+```
+
+Behavior and failure modes:
+
+- The certificate/key pair is loaded **at startup, before the bind**: a wrong path, a missing file or a mismatched pair aborts the engine with an error naming the file — a half-encrypted feed never serves traffic. Passing only one of the two flags is a startup error too (`pass both or neither`).
+- TLS 1.2 is the minimum negotiated version.
+- `devsensor -tls` verifies the engine's certificate chain against the `-ca` PEM file (self-signed lab deployments pass their own CA; production deployments can use a system-trusted CA by omitting `-ca`). There is deliberately **no skip-verification mode**: an encrypted channel to an unauthenticated endpoint would protect the feed from nobody. The certificate must match the hostname/IP the sensor dials (e.g. a self-signed cert needs `subjectAltName=IP:127.0.0.1` for loopback tests).
+- A plain-TCP sensor dialing a TLS port fails loudly and ingests nothing, and a TLS sensor dialing a plain port fails the handshake the same way — mismatched deployments are visible, not silent.
+- TLS composes with the shared-token AUTH handshake (the token travels encrypted). For untrusted networks use both layers: TLS encrypts the channel, the token authenticates the sender. The startup banner reports `ingest TLS: ENABLED (cert ...)` so the state is visible at a glance.
+
+A lab-grade certificate (self-signed, valid for the loopback IP, usable directly as its own trust anchor):
+
+```bash
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+  -keyout ingest-key.pem -out ingest.pem -days 30 -nodes -subj "/CN=ingest-lab" \
+  -addext "subjectAltName=IP:127.0.0.1" \
+  -addext "basicConstraints=critical,CA:TRUE" \
+  -addext "keyUsage=critical,digitalSignature,keyCertSign" \
+  -addext "extendedKeyUsage=serverAuth"
+```
+
+The scripted path covering all of the above lives in `scripts/dev-tests/smoke_ingest_tls.sh` (six scenarios: round trip, plain-vs-TLS rejection, wrong-CA rejection, TLS+token, half-set flags, missing cert). The Rust sensor (`sf-sensor`) still speaks plain NDJSON — native TLS there is tracked on the roadmap; until then, TLS engine deployments can front it with a local stunnel/socat relay.
 
 ## Alert webhook (SIEM/SOAR connector)
 

@@ -60,6 +60,8 @@ type options struct {
 	apiToken         string
 	token            string
 	prevToken        string
+	ingestCert       string
+	ingestKey        string
 	suppressionsFile string
 	lifecycleFile    string
 	storePath        string
@@ -129,6 +131,10 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 		"shared token sensors must send as 'AUTH <token>' on connect (falls back to SF_INGEST_TOKEN); empty disables auth")
 	fs.StringVar(&o.prevToken, "token-previous", "",
 		"previous ingest token, still accepted during a rotation window (falls back to SF_INGEST_TOKEN_PREVIOUS); requires -token")
+	fs.StringVar(&o.ingestCert, "ingest-cert", "",
+		"TLS certificate (PEM) for the ingest listener; requires -ingest-key; empty keeps plain TCP")
+	fs.StringVar(&o.ingestKey, "ingest-key", "",
+		"TLS private key (PEM) for the ingest listener; requires -ingest-cert; empty keeps plain TCP")
 	fs.StringVar(&o.suppressionsFile, "suppressions", "./suppressions.yaml",
 		"operator allowlist YAML silencing rule/host pairs (expires supported); empty disables")
 	fs.StringVar(&o.lifecycleFile, "lifecycle", "./alert-lifecycle.json",
@@ -276,6 +282,17 @@ func runEngine(o *options, interactive bool) error {
 
 	events := make(chan *model.Event, 1024)
 
+	// ingest TLS: both flag halves are required so a half-set deployment
+	// fails at startup instead of silently serving the feed in clear
+	// text. Validation happens BEFORE the bind: a wrong pair must not
+	// race with an already-usable listener.
+	if (o.ingestCert == "") != (o.ingestKey == "") {
+		if o.ingestCert == "" {
+			return fmt.Errorf("ingest TLS requires -ingest-cert too (-ingest-key was set; pass both or neither)")
+		}
+		return fmt.Errorf("ingest TLS requires -ingest-key too (-ingest-cert was set; pass both or neither)")
+	}
+
 	// alert lifecycle (r6): operator triage state (acknowledged/closed +
 	// notes) served by POST /api/alerts/{id}/status. A malformed file
 	// is FATAL, same standard as suppressions: silently starting with
@@ -297,7 +314,12 @@ func runEngine(o *options, interactive bool) error {
 		fmt.Println("[ENGINE] alert lifecycle: in-memory only (-lifecycle unset: statuses reset on restart)")
 	}
 
-	server, err := ingest.New(o.addr, events)
+	var server *ingest.Server
+	if o.ingestCert != "" {
+		server, err = ingest.NewTLS(o.addr, o.ingestCert, o.ingestKey, events)
+	} else {
+		server, err = ingest.New(o.addr, events)
+	}
 	if err != nil {
 		// A bind failure almost always means another engine
 		// instance is already running (e.g. started by
@@ -347,6 +369,9 @@ func runEngine(o *options, interactive bool) error {
 		fmt.Println("[ENGINE] WARNING: non-loopback ingest WITHOUT a token: any host that reaches this port can inject events. Set -token or SF_INGEST_TOKEN.")
 	}
 	fmt.Printf("[ENGINE] listening on %s (NDJSON, 1 event per line)\n", server.Addr())
+	if server.TLS() {
+		fmt.Printf("[ENGINE] ingest TLS: ENABLED (cert %s; sensors connect with -tls -ca <ca.pem>)\n", o.ingestCert)
+	}
 
 	// local read-only API: stats, recent events/alerts, rules, SSE
 	var hub *api.Hub

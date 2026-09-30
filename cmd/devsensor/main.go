@@ -7,6 +7,8 @@ package main
 import (
 	"bufio"
 	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
 	"flag"
 	"fmt"
 	"net"
@@ -25,6 +27,9 @@ var (
 	interval = flag.Duration("interval", 400*time.Millisecond, "delay between events")
 	token    = flag.String("token", "",
 		"ingest token sent as 'AUTH <token>' (falls back to SF_INGEST_TOKEN); required when the engine starts with -token")
+	tlsConn = flag.Bool("tls", false, "dial the engine over TLS (requires the engine started with -ingest-cert/-ingest-key)")
+	caFile  = flag.String("ca", "",
+		"CA certificate (PEM) used to verify the engine's TLS certificate; empty uses the system roots; requires -tls")
 	beaconN     = flag.Int("beacon", 0, "after the scenario, emit N regular network.connect events (simulated C2 call-home for the beaconing detector)")
 	beaconEvery = flag.Duration("beacon-interval", time.Second, "delay between beacon connections")
 	burstN      = flag.Int("burst", 0, "after the scenario, emit N file.write events into C:\\Users\\Public (simulated mass staging for the threshold detector)")
@@ -162,10 +167,13 @@ var scenario = []*model.Event{
 func main() {
 	flag.Parse()
 
-	conn, err := net.Dial("tcp", *addr)
+	conn, err := dialEngine()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[DEVSENSOR] cannot reach engine at %s: %v\n", *addr, err)
 		fmt.Fprintln(os.Stderr, "[DEVSENSOR] hint: start the engine first:  sf-engine   (or simply  sf-console)")
+		if *tlsConn {
+			fmt.Fprintln(os.Stderr, "[DEVSENSOR] hint: for a TLS engine, check -tls is set and -ca points at the CA that signed the engine's -ingest-cert (certificate names must match the host you dial)")
+		}
 		os.Exit(1)
 	}
 	defer conn.Close()
@@ -274,6 +282,32 @@ func main() {
 	}
 
 	fmt.Println("[DEVSENSOR] scenario complete - connection closed")
+}
+
+// dialEngine opens the connection to the engine: plain TCP by
+// default, TLS when -tls is set. The -ca file pins the CA used to
+// verify the engine's certificate (self-signed lab deployments pass
+// their own CA; production deployments can use a system-trusted one
+// by leaving -ca empty). There is deliberately no skip-verification
+// mode: an encrypted channel to an unauthenticated endpoint would
+// protect the feed from nobody.
+func dialEngine() (net.Conn, error) {
+	if !*tlsConn {
+		return net.Dial("tcp", *addr)
+	}
+	cfg := &tls.Config{MinVersion: tls.VersionTLS12}
+	if *caFile != "" {
+		pem, err := os.ReadFile(*caFile)
+		if err != nil {
+			return nil, fmt.Errorf("read -ca: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			return nil, fmt.Errorf("-ca %s contains no usable certificate", *caFile)
+		}
+		cfg.RootCAs = pool
+	}
+	return tls.Dial("tcp", *addr, cfg)
 }
 
 func describe(ev *model.Event) string {
