@@ -278,3 +278,35 @@ func TestDeliverLogRedactsCredentialURL(t *testing.T) {
 		t.Fatalf("dispatcher log lost the underlying cause: %q", out)
 	}
 }
+
+// TestWebhookBuildErrorRedactsURL closes #34: the build branch of
+// deliver used to log the raw *url.Error of http.NewRequest, whose
+// Error() echoes the full URL verbatim — and a rule-action URL can
+// embed a credential in its path or query (house rule: the hook IS
+// the credential). White-box on purpose: fire() validates the URL
+// first (its own echo at :168 is #35's sub-item, separate landing),
+// so the only way to reach the build branch is calling deliver
+// directly with a URL whose PATH carries an invalid escape (%zz) —
+// a real parse error in NewRequest — while the credential rides the
+// query, exactly the leak shape the defect describes. Note: url.Parse
+// tolerates bad escapes in the query alone, so the escape must live
+// in the path for the build branch to fail.
+// Post-fix the log names the cause ("destino: ...") without the
+// endpoint; behavior is invariant (early return, no retry).
+func TestWebhookBuildErrorRedactsURL(t *testing.T) {
+	var logBuf bytes.Buffer
+	d := New(log.New(&logBuf, "", 0))
+	secret := "https://collector.example/hooks/a%zz?token=SECRETTOKEN"
+	d.deliver(secret, "", defaultTimeout, []byte(`{"h":1}`), "acc-1")
+
+	logged := logBuf.String()
+	if !strings.Contains(logged, "webhook acc-1") {
+		t.Fatalf("la entrega no logueo el fallo de build:\n%s", logged)
+	}
+	if strings.Contains(logged, "SECRETTOKEN") {
+		t.Fatalf("la URL con credencial llego al log sin redactar (#34):\n%s", logged)
+	}
+	if !strings.Contains(logged, "invalid URL escape") {
+		t.Fatalf("la causa debe nombrar el fallo sin el endpoint:\n%s", logged)
+	}
+}

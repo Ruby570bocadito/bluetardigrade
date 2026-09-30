@@ -495,3 +495,101 @@ func TestValidate(t *testing.T) {
 		}
 	}
 }
+
+// ---- torn-tail recovery (OpenAudit) --------------------------------
+
+// TestAuditTornTailRecovery is the demo-red case from the finding: a
+// crash that lands between the write and the fsync leaves the audit's
+// final line without its \n; the NEXT OpenAudit+Write used to
+// concatenate the new record onto the partial line, corrupting both.
+// The recovery newline re-aligns the boundary without touching an
+// existing byte: the torn fragment stays for forensics and the new
+// record lands on its own line.
+func TestAuditTornTailRecovery(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+
+	// First life: one committed record, then a "crash" — a partial
+	// line written directly (no trailing \n), exactly what a killed
+	// process leaves behind.
+	a, err := OpenAudit(path)
+	if err != nil {
+		t.Fatalf("OpenAudit: %v", err)
+	}
+	if err := a.Write(Record{ActionID: "a-4", Decision: "executed", PID: 1, Process: "x", Reason: "r", Operator: "o", Host: "h", Source: "s"}); err != nil {
+		t.Fatalf("write committed: %v", err)
+	}
+	torn := `{"ts":"torn","action_id":"a-5","decision":"executed"` // no \n, no close of the JSON object
+	if err := os.WriteFile(path, []byte(readAll(t, path)+torn), 0o600); err != nil {
+		t.Fatalf("simulate crash: %v", err)
+	}
+	_ = a.Close()
+
+	// Second life: the engine restarts and audits a new attempt.
+	b, err := OpenAudit(path)
+	if err != nil {
+		t.Fatalf("reopen after crash: %v", err)
+	}
+	defer func() { _ = b.Close() }()
+	if err := b.Write(Record{ActionID: "a-6", Decision: "denied", PID: 2, Process: "y", Reason: "r", Operator: "o", Host: "h", Source: "s"}); err != nil {
+		t.Fatalf("write after recovery: %v", err)
+	}
+
+	// The torn fragment must be byte-identical (append-only intact).
+	data := readAll(t, path)
+	if !strings.Contains(data, torn) {
+		t.Fatalf("torn fragment altered:\n%q", data)
+	}
+	// The new record must be on its OWN line and parse.
+	lines := strings.Split(strings.TrimSuffix(data, "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("want 3 lines (committed, torn fragment, recovered), got %d:\n%q", len(lines), data)
+	}
+	var rec Record
+	if err := json.Unmarshal([]byte(lines[2]), &rec); err != nil {
+		t.Fatalf("recovered record corrupt (next Write used to die with the torn line): %v\n%q", err, data)
+	}
+	if rec.ActionID != "a-6" {
+		t.Fatalf("recovered record = %s, want a-6", rec.ActionID)
+	}
+	// The recovery must be idempotent: a third open adds nothing.
+	size2 := b.Size()
+	c, err := OpenAudit(path)
+	if err != nil {
+		t.Fatalf("third open: %v", err)
+	}
+	if c.Size() != size2 {
+		t.Fatalf("recovery not idempotent: size %d -> %d", size2, c.Size())
+	}
+	_ = c.Close()
+}
+
+// TestAuditOpenCleanFilesNoWrite: a file that ends with \n (or does
+// not exist yet) must open without writing a single byte.
+func TestAuditOpenCleanFilesNoWrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.jsonl")
+	if err := os.WriteFile(path, []byte("{\"ts\":\"t\"}\n"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	before := readAll(t, path)
+
+	a, err := OpenAudit(path)
+	if err != nil {
+		t.Fatalf("OpenAudit: %v", err)
+	}
+	defer func() { _ = a.Close() }()
+	if got := readAll(t, path); got != before {
+		t.Fatalf("clean file modified on open:\nbefore %q\nafter  %q", before, got)
+	}
+	if a.Size() != int64(len(before)) {
+		t.Fatalf("Size = %d, want %d", a.Size(), len(before))
+	}
+}
+
+func readAll(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(data)
+}

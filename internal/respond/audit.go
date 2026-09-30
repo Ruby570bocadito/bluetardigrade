@@ -78,8 +78,22 @@ var ErrAuditDown = errors.New("respond audit writer is not open")
 // OpenAudit opens (or creates) the audit file in append mode. The
 // caller decides what an open failure means (R5b: run.go disables the
 // surface loudly and keeps detection alive — it is NOT fatal).
+//
+// Torn-tail recovery: a process crash can leave a final line without
+// its \n (fsync per line bounds the window, but the crash can land
+// between the write and the sync). Appending after a torn line would
+// concatenate the next record onto the partial line and corrupt BOTH —
+// the fragment is already unreadable, the next record must not die
+// with it. One recovery newline re-aligns the boundary without
+// touching a single existing byte: append-only and never rewritten
+// stay true, the torn fragment remains in the file for forensics, and
+// the read side (audit_read.go) already degrades a malformed line to
+// absence instead of a fake record.
 func OpenAudit(path string) (*Audit, error) {
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	// O_RDWR (not O_WRONLY): the recovery probes the last byte with
+	// ReadAt, which needs a readable fd; O_APPEND keeps every write
+	// landing at the end exactly as before.
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("respond audit: open %s: %w", path, err)
 	}
@@ -88,7 +102,18 @@ func OpenAudit(path string) (*Audit, error) {
 		f.Close()
 		return nil, fmt.Errorf("respond audit: stat %s: %w", path, err)
 	}
-	return &Audit{f: f, size: st.Size()}, nil
+	size := st.Size()
+	if size > 0 {
+		last := make([]byte, 1)
+		if _, rerr := f.ReadAt(last, size-1); rerr == nil && last[0] != '\n' {
+			if _, werr := f.Write([]byte{'\n'}); werr != nil {
+				f.Close()
+				return nil, fmt.Errorf("respond audit: torn-tail recovery: %w", werr)
+			}
+			size++
+		}
+	}
+	return &Audit{f: f, size: size}, nil
 }
 
 // Size reports the current audit file size (startup banner checks the

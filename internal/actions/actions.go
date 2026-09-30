@@ -206,7 +206,10 @@ func (d *Dispatcher) fire(a *alert.Alert, cfg map[string]string) {
 func (d *Dispatcher) deliver(rawURL, secret string, timeout time.Duration, payload []byte, name string) {
 	req, err := http.NewRequest(http.MethodPost, rawURL, bytes.NewReader(payload))
 	if err != nil {
-		d.log.Printf("webhook %s: %v", name, err)
+		// redactedURLErr, same as the transport branch below (#34): a
+		// raw *url.Error echoes the full URL verbatim and a rule-action
+		// URL can embed a credential in its path or query.
+		d.log.Printf("webhook %s: %v", name, redactedURLErr(err))
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
