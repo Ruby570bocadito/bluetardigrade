@@ -18,11 +18,12 @@ sistema **tal como está implementado y verificado** — pipeline con ingest aut
 techos de la casa en el loader (4 MiB por fichero, pre-scan de anidación, 2.048 reglas habilitadas),
 semántica de folding Unicode única en toda la familia i* y en el fallback regex (?i), correlador de
 kill-chains, riesgo por host (A1), umbrales volumétricos (A2), beaconing (A3), importación
-Sigma (A4), store SQLite opt-in, webhook, export JSONL/CSV, guard OpenAPI (12 rutas / 29
+Sigma (A4), notificaciones externas (C2: Slack, Telegram y email vía `-notify`, con contadores
+por canal en stats/metrics), store SQLite opt-in, webhook, export JSONL/CSV, guard OpenAPI (12 rutas / 30
 campos), bench nocturno a dos pasadas (anillos frente a store, sobrecarga registrada como
 dato) y la consola Next.js 16 con su hub Bun/socket.io. La correspondencia
 diseño-implementación se declara capítulo a capítulo y el roadmap lleva columna de estado
-real (9/17 líneas cerradas, scoreboard del Director 13h05).
+real (9/17 líneas cerradas, scoreboard del Director 13h05; C2 aterrizó en la ronda 15h55 de 02 — el pase a 10/17 es de la próxima certificación del Director).
 
 `arquitectura-tecnica-v0.1.pdf` se conserva como **documento de visión** del diseño
 original: útil para trazabilidad de decisiones, pero desactualizado en stack de consola

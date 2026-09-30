@@ -25,6 +25,7 @@ import (
 	"github.com/Ruby570bocadito/security-framework/internal/enrich"
 	"github.com/Ruby570bocadito/security-framework/internal/ingest"
 	"github.com/Ruby570bocadito/security-framework/internal/lifecycle"
+	"github.com/Ruby570bocadito/security-framework/internal/notify"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
 	"github.com/Ruby570bocadito/security-framework/internal/store"
 	"github.com/Ruby570bocadito/security-framework/internal/suppress"
@@ -47,6 +48,7 @@ type options struct {
 	reloadEvery      time.Duration
 	webhookURL       string
 	webhookToken     string
+	notifyPath       string
 	apiToken         string
 	token            string
 	prevToken        string
@@ -87,6 +89,8 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 		"POST every alert as JSON to this URL (SIEM/SOAR connector); empty disables")
 	fs.StringVar(&o.webhookToken, "webhook-token", "",
 		"Bearer token sent on every webhook delivery as 'Authorization: Bearer' (falls back to SF_WEBHOOK_TOKEN); empty disables the header")
+	fs.StringVar(&o.notifyPath, "notify", "",
+		"YAML config with external notification channels (slack, telegram, email); loaded fail-loud at startup; empty disables")
 	fs.StringVar(&o.apiToken, "api-token", "",
 		"bearer token the local API requires on /api/* (falls back to SF_API_TOKEN); /api/health stays open; empty disables")
 	fs.BoolVar(&o.apiWrite, "api-write", false,
@@ -424,6 +428,28 @@ func runEngine(o *options, interactive bool) error {
 		}
 	}
 
+	// external notifications (C2, roadmap): chat + mail channels fed
+	// with the same alert stream the webhook sees. Fail loud: a
+	// config that cannot be honored exactly stops the engine here,
+	// because a channel that silently never fires is a silent control.
+	var nt *notify.Service
+	if o.notifyPath != "" {
+		svc, err := notify.Load(o.notifyPath)
+		if err != nil {
+			// Same contract as every config surface: name the problem in
+			// the log (legacyMain exits 1 silently), then stop the engine.
+			log.Printf("[ENGINE] notify config rejected: %v", err)
+			whCancel() // nothing started yet, but the webhook worker may be live
+			return err
+		}
+		nt = svc
+		go nt.Run(whCtx)
+		if hub != nil {
+			hub.SetNotifyStats(nt.Stats)
+		}
+		fmt.Printf("[ENGINE] notify: %d channel(s): %s\n", len(nt.Summary()), strings.Join(nt.Summary(), ", "))
+	}
+
 	enricher := enrich.New()
 	// In TUI mode the panel owns the screen: raw alert lines would
 	// corrupt the alt-buffer, so the console/JSON writer is muted and
@@ -447,6 +473,9 @@ func runEngine(o *options, interactive bool) error {
 		}
 		if wh != nil {
 			wh.Handle(a)
+		}
+		if nt != nil {
+			nt.Handle(a)
 		}
 	})
 	// rule actions: rendered messages land inside the alert payload;
@@ -649,9 +678,12 @@ func runEngine(o *options, interactive bool) error {
 		loop()
 	}
 
-	whCancel() // stop accepting; drain pending deliveries
+	whCancel() // stop accepting; drain pending deliveries (webhook + notify share the context)
 	if wh != nil {
 		wh.Wait()
+	}
+	if nt != nil {
+		nt.Wait()
 	}
 
 	fmt.Printf("[ENGINE] processed %d events in %s (ingested=%d dropped=%d)\n",

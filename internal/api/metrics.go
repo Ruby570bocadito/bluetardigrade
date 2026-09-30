@@ -41,6 +41,24 @@ func (h *Hub) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 	writeMetric(&b, "sf_webhook_sent_total", "Webhook deliveries accepted by the receiver.", "counter", float64(s.WebhookSent))
 	writeMetric(&b, "sf_webhook_failed_total", "Webhook deliveries that failed permanently.", "counter", float64(s.WebhookFailed))
 	writeMetric(&b, "sf_webhook_dropped_total", "Webhook deliveries dropped (queue full or backpressure).", "counter", float64(s.WebhookDropped))
+	// External notifications (C2): labeled families, one series per
+	// configured channel. Channel names come from the operator's own
+	// -notify config (data /api/stats already serves), so the same
+	// contract as by_severity applies: escaped labels, sorted order —
+	// Stats() already returns rows sorted by name.
+	if len(s.NotifyChannels) > 0 {
+		b.WriteString("# HELP sf_notify_sent_total Alert deliveries accepted by each external notification channel.\n# TYPE sf_notify_sent_total counter\n")
+		b.WriteString("# HELP sf_notify_failed_total Alert deliveries that failed permanently per external notification channel.\n# TYPE sf_notify_failed_total counter\n")
+		b.WriteString("# HELP sf_notify_dropped_total Alert deliveries dropped (queue full) per external notification channel.\n# TYPE sf_notify_dropped_total counter\n")
+		b.WriteString("# HELP sf_notify_filtered_total Alerts skipped by the channel min_severity floor.\n# TYPE sf_notify_filtered_total counter\n")
+		for _, ch := range s.NotifyChannels {
+			label := escapeLabelValue(ch.Name)
+			fmt.Fprintf(&b, "sf_notify_sent_total{channel=\"%s\"} %s\n", label, formatValue(float64(ch.Sent)))
+			fmt.Fprintf(&b, "sf_notify_failed_total{channel=\"%s\"} %s\n", label, formatValue(float64(ch.Failed)))
+			fmt.Fprintf(&b, "sf_notify_dropped_total{channel=\"%s\"} %s\n", label, formatValue(float64(ch.Dropped)))
+			fmt.Fprintf(&b, "sf_notify_filtered_total{channel=\"%s\"} %s\n", label, formatValue(float64(ch.Filtered)))
+		}
+	}
 	writeMetric(&b, "sf_suppressions_active", "Operator suppressions currently active.", "gauge", float64(s.Suppressions))
 	if s.StoreEnabled {
 		writeMetric(&b, "sf_store_enabled", "SQLite persistence attached (1 = yes).", "gauge", 1)

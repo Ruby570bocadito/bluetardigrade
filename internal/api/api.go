@@ -26,6 +26,7 @@ import (
 	"github.com/Ruby570bocadito/security-framework/internal/alert"
 	"github.com/Ruby570bocadito/security-framework/internal/correlate"
 	"github.com/Ruby570bocadito/security-framework/internal/lifecycle"
+	"github.com/Ruby570bocadito/security-framework/internal/notify"
 	"github.com/Ruby570bocadito/security-framework/internal/risk"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
 	"github.com/Ruby570bocadito/security-framework/internal/store"
@@ -57,6 +58,7 @@ type Hub struct {
 	suppress    *suppress.Manager               // operator allowlist (read-only view)
 	received    func() (uint64, uint64, uint64) // ingested, dropped, rejected
 	webhook     func() (uint64, uint64, uint64) // sent, failed, dropped
+	notify      func() []notify.ChannelStats    // per-channel delivery counters (C2)
 	correlator  func() (int, int, int)          // in-flight states, loaded sequences, tracking cap
 	sequences   *correlate.Manager              // kill-chain sequences (read-only view)
 	store       *store.Store                    // optional SQLite persistence (nil = rings only)
@@ -183,6 +185,17 @@ func (h *Hub) auth(next http.Handler) http.Handler {
 func (h *Hub) SetWebhookStats(stats func() (sent, failed, dropped uint64)) {
 	h.mu.Lock()
 	h.webhook = stats
+	h.mu.Unlock()
+}
+
+// SetNotifyStats wires the external notification channels (C2) into
+// /api/stats: one sent/failed/dropped/filtered row per configured
+// channel. No wiring at all means the engine runs without -notify
+// (reported as an empty list) — the stats contract stays stable
+// whether or not external notifications are configured.
+func (h *Hub) SetNotifyStats(fn func() []notify.ChannelStats) {
+	h.mu.Lock()
+	h.notify = fn
 	h.mu.Unlock()
 }
 
@@ -420,6 +433,10 @@ type statsPayload struct {
 	ThresholdRules int    `json:"threshold_rules"`
 	ThresholdKeys  int    `json:"threshold_keys"`
 	ThresholdFired uint64 `json:"threshold_fired"`
+	// External notifications (C2): one delivery row per configured
+	// channel (Slack, Telegram, email). Empty when the engine runs
+	// without -notify.
+	NotifyChannels []notify.ChannelStats `json:"notify_channels"`
 }
 
 // statsSnapshot collects every counter /api/stats and /metrics serve.
@@ -453,6 +470,7 @@ func (h *Hub) statsSnapshot() statsPayload {
 		whSent, whFailed, whDropped = h.webhook()
 	}
 	corrFn := h.correlator
+	notifyFn := h.notify
 	bFn := h.beacon
 	st := h.store
 	rulesCount, rulesTypes := 0, []string{}
@@ -523,6 +541,16 @@ func (h *Hub) statsSnapshot() statsPayload {
 		tDefs, tKeys, tFired = tFn()
 	}
 
+	// Notify channels closure (C2): same uniform rule — called after
+	// h.mu.Unlock. Stats() only reads atomics and copies a small slice,
+	// but the idiom stays uniform: no other manager's state under h.mu.
+	notifyRows := []notify.ChannelStats{}
+	if notifyFn != nil {
+		if rows := notifyFn(); rows != nil {
+			notifyRows = rows
+		}
+	}
+
 	return statsPayload{
 		UptimeS:          int64(time.Since(h.started) / time.Second),
 		EventsTotal:      ingested,
@@ -553,6 +581,7 @@ func (h *Hub) statsSnapshot() statsPayload {
 		ThresholdRules:   tDefs,
 		ThresholdKeys:    tKeys,
 		ThresholdFired:   tFired,
+		NotifyChannels:   notifyRows,
 	}
 }
 

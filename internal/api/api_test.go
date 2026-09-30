@@ -17,6 +17,7 @@ import (
 	"github.com/Ruby570bocadito/security-framework/internal/alert"
 	"github.com/Ruby570bocadito/security-framework/internal/beacon"
 	"github.com/Ruby570bocadito/security-framework/internal/correlate"
+	"github.com/Ruby570bocadito/security-framework/internal/notify"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
 	"github.com/Ruby570bocadito/security-framework/pkg/model"
 )
@@ -712,6 +713,12 @@ func TestMetricsParityWithStats(t *testing.T) {
 	h, addr := newTestHub(t)
 	h.SetCounters(func() (uint64, uint64, uint64) { return 7, 2, 1 })
 	h.SetWebhookStats(func() (uint64, uint64, uint64) { return 5, 1, 0 })
+	h.SetNotifyStats(func() []notify.ChannelStats {
+		return []notify.ChannelStats{
+			{Name: "slack-lab", Type: "slack", Sent: 3, Failed: 1, Dropped: 2, Filtered: 4},
+			{Name: "tg-lab", Type: "telegram", Sent: 5, Failed: 0, Dropped: 0, Filtered: 1},
+		}
+	})
 	h.SetCorrelatorStats(func() (int, int, int) { return 3, 4, 8192 })
 	h.RecordEvent(sampleEvent("ev-1"))
 	h.RecordEvent(sampleEvent("ev-2"))
@@ -795,6 +802,44 @@ func TestMetricsParityWithStats(t *testing.T) {
 	wantMetric("sf_beacon_cap", "beacons_cap")
 	wantMetric("sf_beacons_fired_total", "beacons_fired")
 
+	// notify channels (C2): every JSON row must appear as four labeled
+	// series with identical values, in sorted (deterministic) order.
+	notifyRows, ok := stats["notify_channels"].([]any)
+	if !ok || len(notifyRows) != 2 {
+		t.Fatalf("stats notify_channels = %#v, want 2 rows", stats["notify_channels"])
+	}
+	first := notifyRows[0].(map[string]any)
+	if first["name"] != "slack-lab" {
+		t.Fatalf("first notify row = %v, want sorted-by-name slack-lab", first["name"])
+	}
+	notifyWant := map[string]map[string]float64{
+		"slack-lab": {"sent": 3, "failed": 1, "dropped": 2, "filtered": 4},
+		"tg-lab":    {"sent": 5, "failed": 0, "dropped": 0, "filtered": 1},
+	}
+	for _, row := range notifyRows {
+		m := row.(map[string]any)
+		name := m["name"].(string)
+		for field, want := range notifyWant[name] {
+			if got := m[field].(float64); got != want {
+				t.Fatalf("notify %s %s = %v, want %v", name, field, got, want)
+			}
+			line := fmt.Sprintf("sf_notify_%s_total{channel=%q} ", field, name)
+			idx := strings.Index(text, line)
+			if idx < 0 {
+				t.Fatalf("series %q missing from /metrics", line)
+			}
+			rest := text[idx+len(line):]
+			end := strings.IndexAny(rest, "\n")
+			got, err := strconv.ParseFloat(rest[:end], 64)
+			if err != nil {
+				t.Fatalf("series %q: unparsable value %q", line, rest[:end])
+			}
+			if got != want {
+				t.Fatalf("parity drift: sf_notify_%s{channel=%q} = %v in /metrics, %v in /api/stats", field, name, got, want)
+			}
+		}
+	}
+
 	// by_severity: every severity present in the JSON must appear as a
 	// labeled series with the same value.
 	bySev := stats["by_severity"].(map[string]any)
@@ -827,7 +872,7 @@ func TestMetricsParityWithStats(t *testing.T) {
 
 	// every metric family must carry HELP and TYPE lines (validity of
 	// the exposition format, not just its values)
-	for _, name := range []string{"sf_events_total", "sf_alerts_total", "sf_alerts_by_severity", "sf_correlator_cap", "sf_host_risk_score"} {
+	for _, name := range []string{"sf_events_total", "sf_alerts_total", "sf_alerts_by_severity", "sf_correlator_cap", "sf_host_risk_score", "sf_notify_sent_total", "sf_notify_filtered_total"} {
 		if !strings.Contains(text, "# HELP "+name+" ") || !strings.Contains(text, "# TYPE "+name+" ") {
 			t.Fatalf("metric %s lacks its HELP/TYPE lines:\n%s", name, text)
 		}

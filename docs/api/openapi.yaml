@@ -795,6 +795,7 @@ components:
         - threshold_rules
         - threshold_keys
         - threshold_fired
+        - notify_channels
       properties:
         suppressions_active:
           type: integer
@@ -929,6 +930,46 @@ components:
           format: int64
           description: threshold alerts emitted since engine start (each alert
             carries the definition id as rule_id)
+        notify_channels:
+          type: array
+          description: one delivery row per external notification channel
+            configured via -notify (Slack, Telegram, email); empty when the
+            engine runs without the flag. sent/failed/dropped mirror the
+            webhook counters semantics per channel; filtered counts alerts
+            skipped by the channel's min_severity floor (operator-configured
+            silence, reported as data).
+          items:
+            $ref: '#/components/schemas/NotifyChannelStats'
+    NotifyChannelStats:
+      type: object
+      description: |
+        Delivery counters of one external notification channel (C2).
+        name is the operator label from the -notify config (defaults to
+        the channel type when unnamed); type is slack, telegram or email.
+      required: [name, type, sent, failed, dropped, filtered]
+      properties:
+        name:
+          type: string
+          description: channel label used in /metrics as the channel label value
+        type:
+          type: string
+          enum: [slack, telegram, email]
+        sent:
+          type: integer
+          format: int64
+          description: deliveries accepted by the receiver (2xx)
+        failed:
+          type: integer
+          format: int64
+          description: deliveries that exhausted their 3 attempts
+        dropped:
+          type: integer
+          format: int64
+          description: alerts discarded because the channel queue (256) saturated
+        filtered:
+          type: integer
+          format: int64
+          description: alerts skipped by the channel min_severity floor
     Event:
       type: object
       description: |
