@@ -118,9 +118,11 @@ flowchart LR
         direction TB
         ING["ingest · schema validation"] --> ENR["enrich"]
         ENR --> RUL["rules · hot-reload 15 s"]
+        ENR --> BCN["beaconing tracker · C2 timing"]
         RUL --> COR["kill-chain correlator"]
         RUL --> ALR["alert · dedup + render"]
         COR --> ALR
+        BCN --> ALR
         ALR --> ACT["actions · webhooks"]
         ING -- "events · write-through" --> ST[("SQLite store · opt-in")]
         ALR -- "alerts" --> ST
@@ -651,6 +653,7 @@ path (no subcommand) and on `engine run`.
 | `-api host:port` | `127.0.0.1:7778` | read-only HTTP API; `0` disables it |
 | `-rules dir` | `./rules` | rules directory (falls back to the directory next to the executable) |
 | `-sequences dir` | `./sequences` | kill-chain sequences directory for the correlator |
+| `-beacons file` | `./beacons.yaml` | beacon detector profiles (C2 call-home over `network.connect`; empty disables) |
 | `-v` | off | print every event received |
 | `-reload-every dur` | `15s` | hot-reload interval for rules, sequences and suppressions; `0` disables |
 | `-webhook url` | empty | POST every alert as JSON to this URL (SIEM/SOAR connector) |
