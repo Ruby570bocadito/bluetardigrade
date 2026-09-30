@@ -199,7 +199,9 @@ func (e *Elastic) postBatch(batch []alert.Alert) (accepted int, retryable []aler
 
 	req, rerr := http.NewRequest(http.MethodPost, e.url+"/_bulk", bytes.NewReader(buf.Bytes()))
 	if rerr != nil {
-		return 0, nil, len(batch), rerr // build error: permanent (notify parity), never retried
+		// permanent count = wire items (batch was reassigned) + the
+		// non-encodables the wire excluded: both failed for good.
+		return 0, nil, rejected + len(batch), rerr // build error: permanent (notify parity), never retried
 	}
 	req.Header.Set("Content-Type", "application/x-ndjson")
 	req.Header.Set("User-Agent", userAgent)
@@ -222,7 +224,8 @@ func (e *Elastic) postBatch(batch []alert.Alert) (accepted int, retryable []aler
 		// and the Splunk sink treats them the same way. The whole batch
 		// counts as failed in ONE pass - no retry budget burned on a
 		// misconfiguration.
-		return 0, nil, len(batch), fmt.Errorf("cluster answered %d", resp.StatusCode)
+		// same honest count as the build error: wire + non-encodables.
+		return 0, nil, rejected + len(batch), fmt.Errorf("cluster answered %d", resp.StatusCode)
 	}
 }
 
