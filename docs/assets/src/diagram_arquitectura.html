@@ -32,10 +32,10 @@
   .band-label .t1 { font-size: 19px; font-weight: 800; color: #344a55; letter-spacing: 0.5px; }
   .band-label .t2 { font-size: 15px; color: #7e8588; margin-top: 4px; line-height: 1.25; }
 
-  .nodes { flex: 1; display: flex; gap: 12px; align-items: center; }
+  .nodes { flex: 1; display: flex; flex-wrap: wrap; gap: 12px; row-gap: 12px; align-items: center; }
   .node {
-    flex: 1 1 auto;
-    min-width: 110px;
+    flex: 1 1 calc(33.3% - 12px);
+    min-width: 150px;
     max-width: 100%;
     background: #ffffff;
     border: 1.4px solid #a2bac5;
@@ -184,20 +184,28 @@
     </div>
     <div class="nodes">
       <div class="node">
+        <div class="nt">Webhook</div>
+        <div class="nd">cola acotada, Bearer, reintentos</div>
+      </div>
+      <div class="node">
+        <div class="nt">Notificaciones (C2)</div>
+        <div class="nd">Slack, Telegram, email</div>
+      </div>
+      <div class="node">
+        <div class="nt">SIEM nativo</div>
+        <div class="nd">Elastic Bulk + Splunk HEC</div>
+      </div>
+      <div class="node">
+        <div class="nt">Respuesta activa (C3)</div>
+        <div class="nd">kill_process auditado (opt-in)</div>
+      </div>
+      <div class="node">
         <div class="nt">Consola Web</div>
         <div class="nd">Next.js, dashboard en vivo</div>
       </div>
       <div class="node">
-        <div class="nt">API REST</div>
-        <div class="nd">stats, alertas, reglas, SSE, export</div>
-      </div>
-      <div class="node">
-        <div class="nt">SIEM / SOAR</div>
-        <div class="nd">Elastic, Splunk, TheHive</div>
-      </div>
-      <div class="node">
-        <div class="nt">Forense local</div>
-        <div class="nd">SQLite opt-in, export JSONL/CSV</div>
+        <div class="nt">API REST + forense</div>
+        <div class="nd">SSE, export JSONL/CSV, SQLite</div>
       </div>
     </div>
   </div>
