@@ -1205,19 +1205,26 @@ components:
         One suppression entry: the same fields and validation as a YAML
         entry (rule_id and host must not both be empty; an entry with
         only host silences every rule on that host, an entry with only
-        rule_id silences that rule everywhere).
+        rule_id silences that rule everywhere). Field caps guard the
+        control file: rule_id 128, host 253, reason 2000, expires 40
+        characters; the request body is capped at 8 KiB and the file at
+        1000 entries via the write API.
       properties:
         rule_id:
           type: string
+          maxLength: 128
           description: rule id to silence (empty = every rule, as long as host is set)
         host:
           type: string
+          maxLength: 253
           description: host to scope the entry to (empty = every host); compared case-insensitively
         reason:
           type: string
+          maxLength: 2000
           description: free-text justification stored in the file
         expires:
           type: string
+          maxLength: 40
           description: RFC 3339 expiration (e.g. 2026-10-02T00:00:00Z); empty = until removed
     Error:
       type: object

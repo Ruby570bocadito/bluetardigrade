@@ -53,15 +53,50 @@ func NormalizeEntry(e Entry) Entry {
 	}
 }
 
+// Field length caps shared by every write path (API and YAML loader).
+// They bound one hostile or careless request: a rule id is an engine
+// identifier (8 hex display, 36-char UUID at the most), 253 is the
+// DNS hostname limit, and a reason is documentation for the next
+// operator, not a paste target. Without them an authenticated writer
+// could fatten the control file (and every reload that parses it)
+// with a single request. Generous enough that no legitimate operator
+// file is rejected; the loader fails loudly if one ever is.
+const (
+	MaxRuleIDLen  = 128
+	MaxHostLen    = 253
+	MaxReasonLen  = 2000
+	MaxExpiresLen = 40 // RFC 3339 with nanoseconds and offset fits in ~35
+)
+
+// MaxEntries bounds the set the WRITE API may persist (SaveFile
+// callers). Silencing is a human-paced operation on a ruleset of
+// dozens; a cap keeps a hostile or buggy client from growing the file
+// one entry per request until the disk fills. Operator hand-edits of
+// the file are NOT capped (the operator already holds the pen).
+const MaxEntries = 1000
+
 // ValidateEntry applies the same acceptance rules the YAML loader
 // enforces, with path-free messages so API clients get actionable 400s:
 // rule_id and host must not both be empty (the entry would match
-// nothing) and expires, when set, must be RFC 3339. Callers that write
-// the file (SaveFile, the API) must validate FIRST: a set the engine
-// would reject on the next hot-reload must never reach the disk.
+// nothing), every field stays within its cap and expires, when set,
+// must be RFC 3339. Callers that write the file (SaveFile, the API)
+// must validate FIRST: a set the engine would reject on the next
+// hot-reload must never reach the disk.
 func ValidateEntry(e Entry) error {
 	if e.RuleID == "" && e.Host == "" {
 		return fmt.Errorf("rule_id and host are both empty (nothing would match - fix or delete the entry)")
+	}
+	if len(e.RuleID) > MaxRuleIDLen {
+		return fmt.Errorf("rule_id longer than %d characters", MaxRuleIDLen)
+	}
+	if len(e.Host) > MaxHostLen {
+		return fmt.Errorf("host longer than %d characters", MaxHostLen)
+	}
+	if len(e.Reason) > MaxReasonLen {
+		return fmt.Errorf("reason longer than %d characters", MaxReasonLen)
+	}
+	if len(e.Expires) > MaxExpiresLen {
+		return fmt.Errorf("expires longer than %d characters", MaxExpiresLen)
 	}
 	if e.Expires != "" {
 		if _, err := time.Parse(time.RFC3339, e.Expires); err != nil {

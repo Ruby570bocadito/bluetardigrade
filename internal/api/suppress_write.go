@@ -24,6 +24,11 @@ import (
 	"github.com/Ruby570bocadito/security-framework/internal/suppress"
 )
 
+// suppressMaxBodyBytes caps the POST /api/suppressions request body,
+// same limit and rationale as the triage endpoint (an entry is a
+// handful of short fields, not a data channel).
+const suppressMaxBodyBytes = 8192
+
 // EnableSuppressionsWrite arms POST/DELETE /api/suppressions against
 // the suppressions file at path (the same file the hot-reload watches).
 // Call after SetSuppressions. The caller owns the deployment policy:
@@ -100,10 +105,11 @@ func (h *Hub) handleSuppressionsCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// One entry is a few hundred bytes: 8 KiB is generous and caps the
-	// memory a single authenticated request can pin (the triage write
-	// surface runs the same limit - both write paths speak one standard).
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 8192))
+	// Same cap as the triage endpoint: a write body is a small
+	// structured request, not a data channel. Without it a single
+	// request could stream an arbitrarily large string into memory
+	// (the decoder buffers whole JSON values) before validation ran.
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, suppressMaxBodyBytes))
 	if err != nil {
 		http.Error(w, "unreadable or oversized request body (8 KiB limit)", http.StatusBadRequest)
 		return
@@ -128,6 +134,7 @@ func (h *Hub) handleSuppressionsCreate(w http.ResponseWriter, r *http.Request) {
 	if !h.reloadDriftedFile(w, sup, path) {
 		return
 	}
+
 	entries := sup.All()
 	action := "add"
 	for i := range entries {
@@ -138,6 +145,14 @@ func (h *Hub) handleSuppressionsCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if action == "add" {
+		// Disk-fill guard: the file is rewritten whole on every
+		// write, so an unbounded entry count would grow it one
+		// request at a time. Operator hand-edits stay uncapped
+		// (the operator already holds the pen).
+		if len(entries) >= suppress.MaxEntries {
+			http.Error(w, "suppressions set is at the entry cap: remove entries before adding new ones", http.StatusBadRequest)
+			return
+		}
 		entries = append(entries, in)
 	}
 	if err := suppress.SaveFile(path, entries); err != nil {
@@ -184,6 +199,7 @@ func (h *Hub) handleSuppressionsDelete(w http.ResponseWriter, r *http.Request) {
 	if !h.reloadDriftedFile(w, sup, path) {
 		return
 	}
+
 	entries := sup.All()
 	kept := make([]suppress.Entry, 0, len(entries))
 	removed := 0
@@ -195,16 +211,7 @@ func (h *Hub) handleSuppressionsDelete(w http.ResponseWriter, r *http.Request) {
 		kept = append(kept, e)
 	}
 	if removed == 0 {
-		// The values come from the query string: marshal the error
-		// through encoding/json so a control character in rule_id
-		// cannot produce an invalid JSON body (Go's %q emits \xNN,
-		// which JSON does not define).
-		body, _ := json.Marshal(struct {
-			Error string `json:"error"`
-		}{fmt.Sprintf("no suppression entry matches rule_id=%q host=%q", rule, host)})
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write(append(body, '\n'))
+		writeErr(w, http.StatusNotFound, fmt.Sprintf("no suppression entry matches rule_id=%q host=%q", rule, host))
 		return
 	}
 	if err := suppress.SaveFile(path, kept); err != nil {

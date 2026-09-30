@@ -652,7 +652,7 @@ func (h *Hub) handleAlertStatus(w http.ResponseWriter, r *http.Request) {
 		// message matching: error wording must not decide status codes.
 		if errors.Is(err, lifecycle.ErrPersistFailed) {
 			log.Printf("[API] alert lifecycle persist FAILED for %s: %v", id, err)
-			writeErr(w, http.StatusInternalServerError, "status recorded in memory but persistence failed (details in engine log)")
+			writeErr(w, http.StatusInternalServerError, "status recorded in memory but persistence failed (see engine log)")
 			return
 		}
 		writeErr(w, http.StatusBadRequest, err.Error())
@@ -671,19 +671,28 @@ func writeErr(w http.ResponseWriter, code int, msg string) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
-// oneLine makes a client-controlled value safe for the single-line
-// audit log: CR/LF echoed raw would forge log lines (log injection),
-// and other control characters have no business in a log entry.
-// \r and \n become spaces; C0/C1 controls and DEL are dropped.
-// Printable text in any language passes through untouched.
+// oneLine renders a client-supplied string safe for ONE log line:
+// every control character becomes %XX, so a hostile note/author/rule
+// id cannot forge extra log lines, fake severities or smuggle escape
+// sequences into the file the operator reads after an incident. C0,
+// DEL and the C1 range (U+0080..U+009F, incl. the 8-bit CSI) encode
+// their UTF-8 bytes; printable runes - including non-ASCII ones - pass
+// through verbatim, so the log stays forensically useful. Same threat
+// model as the feed-hostile field caps on the ingest path; the triage
+// audit line and the suppression write audit lines funnel through it.
 func oneLine(s string) string {
-	s = strings.NewReplacer("\r", " ", "\n", " ").Replace(s)
-	return strings.Map(func(r rune) rune {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
 		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
-			return -1
+			for _, c := range []byte(string(r)) {
+				fmt.Fprintf(&b, "%%%02X", c)
+			}
+			continue
 		}
-		return r
-	}, s)
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 type conditionPayload struct {
