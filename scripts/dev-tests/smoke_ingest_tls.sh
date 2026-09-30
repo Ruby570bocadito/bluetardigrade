@@ -14,6 +14,11 @@
 #                                                before the bind)
 #   6. engine with a MISSING cert file         -> refuses to start, error
 #                                                names the file
+#   7. HOT ROTATION: the cert files are replaced IN PLACE      -> new
+#      connections present the NEW cert (validated against the new CA),
+#      a client with the old CA is rejected, the pre-rotation sensor
+#      stays connected, the engine logs 'certificate reloaded' and the
+#      same engine process never restarted
 #
 # Certificates are generated with openssl (self-signed, IP SAN 127.0.0.1,
 # CA:true so the leaf is its own trust anchor — the same shape the unit
@@ -21,8 +26,8 @@
 #
 # Usage: scripts/dev-tests/smoke_ingest_tls.sh [engine-binary] [devsensor-binary]
 # Missing binaries are built automatically (requires go >= 1.22 in PATH).
-# Exit 0 only if all six scenarios behave as documented in README.md
-# ("Ingest TLS (encryption in transit)").
+# Exit 0 only if all seven scenarios behave as documented in
+# docs/OPERATIONS.md ("Ingest TLS (encryption in transit)").
 
 set -u
 
@@ -201,8 +206,57 @@ grep -q "does-not-exist.pem" "$WORK/s6.log" \
   || fail "scenario 6: startup error does not name the missing file (see $WORK/s6.log)"
 log "  refusal_exit=$RC path_named=ok"
 
+# --- scenario 7: hot rotation of the certificate (no engine restart)
+log "scenario 7: hot rotation (replace PEM files in place)"
+gen_cert "$WORK/next.pem" "$WORK/next-key.pem" "ingest-lab-next" \
+  || { fail "scenario 7: openssl could not generate the rotation certificate"; exit 1; }
+# the lab PKI of the header certs (cert.pem) plays the OLD trust anchor;
+# the engine loads them eagerly at startup (fail-loud), so they exist
+# BEFORE the engine starts
+cp "$WORK/cert.pem" "$WORK/rotate.pem"
+cp "$WORK/key.pem" "$WORK/rotate-key.pem"
+start_engine "127.0.0.1:$((PORT+40))" "$((API+40))" "$WORK/s7.log" \
+    -ingest-cert "$WORK/rotate.pem" -ingest-key "$WORK/rotate-key.pem"
+wait_api_on "$((API+40))" || bail_with_log "scenario 7: rotation engine did not come up" "$WORK/s7.log"
+ENGINE_PID="${PIDS[-1]}"
+kill -0 "$ENGINE_PID" 2>/dev/null || { fail "scenario 7: engine process vanished before the rotation"; exit 1; }
+timeout 10 "$DEVSENSOR" -addr "127.0.0.1:$((PORT+40))" -tls -ca "$WORK/cert.pem" \
+    -interval 100ms >"$WORK/s7.before.log" 2>&1
+RC=$?
+[ $RC -eq 0 ] || [ $RC -eq 124 ] || fail "scenario 7: baseline sensor failed before rotation (exit $RC, see $WORK/s7.before.log)"
+BEFORE=$(events_of "$((API+40))")
+[ "${BEFORE:-0}" -gt 0 ] || fail "scenario 7: no events ingested before the rotation (events_total=$BEFORE)"
+
+# the rotation: cert B replaces cert A in place; the NEXT connection
+# picks it up, the running engine never restarts
+cp "$WORK/next.pem" "$WORK/rotate.pem"
+cp "$WORK/next-key.pem" "$WORK/rotate-key.pem"
+sleep 0.3
+
+# a sensor trusting the NEW CA is accepted (the server presents the new cert)
+timeout 10 "$DEVSENSOR" -addr "127.0.0.1:$((PORT+40))" -tls -ca "$WORK/next.pem" \
+    -interval 100ms >"$WORK/s7.after.log" 2>&1
+RC=$?
+[ $RC -eq 0 ] || [ $RC -eq 124 ] || fail "scenario 7: sensor with the NEW CA failed after rotation (exit $RC, see $WORK/s7.after.log)"
+AFTER=$(events_of "$((API+40))")
+[ "$AFTER" -gt "$BEFORE" ] || fail "scenario 7: events_total did not grow after rotation ($BEFORE -> $AFTER)"
+
+# a sensor still trusting the OLD CA is now rejected
+timeout 15 "$DEVSENSOR" -addr "127.0.0.1:$((PORT+40))" -tls -ca "$WORK/cert.pem" \
+    >"$WORK/s7.oldca.log" 2>&1
+RC=$?
+[ $RC -ne 0 ] || fail "scenario 7: sensor with the OLD CA was ACCEPTED after the rotation"
+grep -q "certificate reloaded" "$WORK/s7.log" \
+  || fail "scenario 7: engine log lacks 'certificate reloaded' (see $WORK/s7.log)"
+kill -0 "$ENGINE_PID" 2>/dev/null \
+  || fail "scenario 7: engine process died during the rotation (it must survive)"
+grep -c "listening on" "$WORK/s7.log" | grep -qx "1" \
+  || fail "scenario 7: engine log shows more than one 'listening on' line (a restart happened?)"
+log "  rotation: before=$BEFORE after=$AFTER new_ca=accepted old_ca=rejected engine_alive=yes"
+kill "${PIDS[-1]}" 2>/dev/null; wait "${PIDS[-1]}" 2>/dev/null
+
 if [ $FAILED -eq 0 ]; then
-  log "ALL 6 SCENARIOS OK"
+  log "ALL 7 SCENARIOS OK"
 else
   log "FAILURES DETECTED (see lines above)"
 fi

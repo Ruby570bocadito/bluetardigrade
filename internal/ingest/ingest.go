@@ -56,9 +56,10 @@ type Server struct {
 	mu        sync.Mutex
 	closing   bool
 	open      map[net.Conn]struct{}
-	token     string // empty = auth disabled (loopback deployments)
-	prevToken string // still accepted during a rotation window
-	tls       bool   // true when the listener wraps connections in TLS
+	token     string        // empty = auth disabled (loopback deployments)
+	prevToken string        // still accepted during a rotation window
+	tls       bool          // true when the listener wraps connections in TLS
+	reloader  *certReloader // hot-rotation state; nil on plain listeners
 
 	received atomic.Uint64
 	dropped  atomic.Uint64

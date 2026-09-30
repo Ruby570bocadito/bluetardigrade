@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -287,4 +288,284 @@ func mustCertPool(t *testing.T, certFile string) *x509.CertPool {
 		t.Fatalf("cert %s contains no usable certificate", certFile)
 	}
 	return pool
+}
+
+// replaceServerCert overwrites the server's cert/key files with the
+// contents of the given paths and pins EXPLICIT mtimes (os.Chtimes):
+// without this the swap could race the filesystem's timestamp
+// granularity and the reloader would legitimately see "nothing
+// changed".
+func replaceServerCert(t *testing.T, srvCert, srvKey, newCert, newKey string, mtime time.Time) {
+	t.Helper()
+	certPEM, err := os.ReadFile(newCert)
+	if err != nil {
+		t.Fatalf("read new cert: %v", err)
+	}
+	keyPEM, err := os.ReadFile(newKey)
+	if err != nil {
+		t.Fatalf("read new key: %v", err)
+	}
+	if err := os.WriteFile(srvCert, certPEM, 0o600); err != nil {
+		t.Fatalf("write server cert: %v", err)
+	}
+	if err := os.WriteFile(srvKey, keyPEM, 0o600); err != nil {
+		t.Fatalf("write server key: %v", err)
+	}
+	if err := os.Chtimes(srvCert, mtime, mtime); err != nil {
+		t.Fatalf("chtimes cert: %v", err)
+	}
+	if err := os.Chtimes(srvKey, mtime, mtime); err != nil {
+		t.Fatalf("chtimes key: %v", err)
+	}
+}
+
+// Certificate rotation without downtime: replacing the PEM files in
+// place makes NEW connections present the new certificate (validated
+// against the new CA), connections opened before the swap keep
+// working, a client still trusting the OLD CA is rejected from now on,
+// and the reload counter records the event. No restart, no signal.
+func TestTLSCertHotSwap(t *testing.T) {
+	dir := t.TempDir()
+	certA, keyA := writeSelfSignedCert(t, dir, net.ParseIP("127.0.0.1"))
+
+	events := make(chan *model.Event, 8)
+	srv, err := NewTLS("127.0.0.1:0", certA, keyA, events)
+	if err != nil {
+		t.Fatalf("ingest.NewTLS: %v", err)
+	}
+	go srv.Serve()
+	t.Cleanup(srv.Shutdown)
+
+	if srv.CertReloads() != 0 || srv.CertReloadErrors() != 0 {
+		t.Fatalf("precondition: reloads=%d errors=%d, want 0/0",
+			srv.CertReloads(), srv.CertReloadErrors())
+	}
+
+	// the OLD trust anchor is captured BEFORE the swap: after the
+	// rotation the certA PATH holds cert B, so a pool built later
+	// would be the new CA, not the old one
+	oldPEM, err := os.ReadFile(certA)
+	if err != nil {
+		t.Fatalf("read pre-rotation cert: %v", err)
+	}
+	poolA := x509.NewCertPool()
+	if !poolA.AppendCertsFromPEM(oldPEM) {
+		t.Fatal("pre-rotation cert contains no usable certificate")
+	}
+
+	// a connection born BEFORE the rotation
+	oldConn, _ := dialTLS(t, srv.Addr(), certA)
+	line := sampleEvent(t)
+	if _, err := oldConn.Write([]byte(line + "\n")); err != nil {
+		t.Fatalf("pre-swap write: %v", err)
+	}
+	select {
+	case <-events:
+	case <-time.After(3 * time.Second):
+		t.Fatal("pre-swap event never arrived")
+	}
+
+	// the rotation: cert B replaces A in place, mtime moves forward
+	otherDir := t.TempDir()
+	certB, keyB := writeSelfSignedCert(t, otherDir, net.ParseIP("127.0.0.1"))
+	replaceServerCert(t, certA, keyA, certB, keyB, time.Now().Add(2*time.Hour))
+
+	// NEW connections are served cert B: verify with the B pool
+	connB, _ := dialTLS(t, srv.Addr(), certB)
+	if _, err := connB.Write([]byte(line + "\n")); err != nil {
+		t.Fatalf("post-swap write: %v", err)
+	}
+	select {
+	case <-events:
+	case <-time.After(3 * time.Second):
+		t.Fatal("post-swap event never arrived with the NEW CA")
+	}
+
+	// a client still trusting the OLD CA is now rejected: the server
+	// presents B, which the captured poolA does not know
+	if c, err := tls.Dial("tcp", srv.Addr(), &tls.Config{
+		RootCAs:    poolA,
+		MinVersion: tls.VersionTLS12,
+	}); err == nil {
+		c.Close()
+		t.Fatal("tls.Dial with the pre-rotation CA succeeded after the swap; expected verification failure")
+	}
+
+	// the pre-rotation connection is untouched by the swap
+	if _, err := oldConn.Write([]byte(line + "\n")); err != nil {
+		t.Fatalf("established connection broken by rotation: %v", err)
+	}
+
+	if srv.CertReloads() < 1 {
+		t.Fatalf("CertReloads = %d, want >= 1", srv.CertReloads())
+	}
+	if srv.CertReloadErrors() != 0 {
+		t.Fatalf("CertReloadErrors = %d, want 0", srv.CertReloadErrors())
+	}
+}
+
+// A broken rotation attempt must not degrade the channel: corrupted
+// material on disk means the CURRENT certificate keeps serving new
+// connections and the error counter tells the operator.
+func TestTLSCertReloadKeepsCurrentOnCorrupt(t *testing.T) {
+	dir := t.TempDir()
+	certA, keyA := writeSelfSignedCert(t, dir, net.ParseIP("127.0.0.1"))
+
+	events := make(chan *model.Event, 8)
+	srv, err := NewTLS("127.0.0.1:0", certA, keyA, events)
+	if err != nil {
+		t.Fatalf("ingest.NewTLS: %v", err)
+	}
+	go srv.Serve()
+	t.Cleanup(srv.Shutdown)
+
+	// the OLD trust anchor is captured BEFORE the file is corrupted
+	oldPEM, err := os.ReadFile(certA)
+	if err != nil {
+		t.Fatalf("read pre-rotation cert: %v", err)
+	}
+	poolA := x509.NewCertPool()
+	if !poolA.AppendCertsFromPEM(oldPEM) {
+		t.Fatal("pre-rotation cert contains no usable certificate")
+	}
+
+	// a truncated "certificate" with a fresh mtime: the classic
+	// mid-copy window a reload must survive
+	if err := os.WriteFile(certA, []byte("-----BEGIN CERTIFICATE-----\ntrunc"), 0o600); err != nil {
+		t.Fatalf("write corrupt cert: %v", err)
+	}
+	broken := time.Now().Add(3 * time.Hour)
+	if err := os.Chtimes(certA, broken, broken); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+
+	// new connections still work with the OLD certificate (poolA was
+	// captured before the corruption: the file itself is garbage now)
+	conn, err2 := tls.Dial("tcp", srv.Addr(), &tls.Config{
+		RootCAs:    poolA,
+		MinVersion: tls.VersionTLS12,
+	})
+	if err2 != nil {
+		t.Fatalf("post-corruption handshake failed: %v (the channel must keep the previous cert)", err2)
+	}
+	t.Cleanup(func() { conn.Close() })
+	conn.SetDeadline(time.Now().Add(3 * time.Second))
+	if _, err := conn.Write([]byte(sampleEvent(t) + "\n")); err != nil {
+		t.Fatalf("write after broken rotation: %v", err)
+	}
+	select {
+	case <-events:
+	case <-time.After(3 * time.Second):
+		t.Fatal("event never arrived: the broken rotation degraded the channel")
+	}
+
+	if srv.CertReloadErrors() < 1 {
+		t.Fatalf("CertReloadErrors = %d, want >= 1", srv.CertReloadErrors())
+	}
+	if srv.CertReloads() != 0 {
+		t.Fatalf("CertReloads = %d, want 0 (nothing valid was loaded)", srv.CertReloads())
+	}
+}
+
+// mtime is the only change signal: rewriting a file while restoring
+// its original mtime is (by design) NOT detected — the cache must not
+// re-read on every handshake.
+func TestTLSCertNoReloadWithoutMtimeChange(t *testing.T) {
+	dir := t.TempDir()
+	certA, keyA := writeSelfSignedCert(t, dir, net.ParseIP("127.0.0.1"))
+
+	events := make(chan *model.Event, 8)
+	srv, err := NewTLS("127.0.0.1:0", certA, keyA, events)
+	if err != nil {
+		t.Fatalf("ingest.NewTLS: %v", err)
+	}
+	go srv.Serve()
+	t.Cleanup(srv.Shutdown)
+
+	// dial once to settle the initial mtimes in the reloader
+	conn, _ := dialTLS(t, srv.Addr(), certA)
+	conn.Write([]byte(sampleEvent(t) + "\n"))
+	select {
+	case <-events:
+	case <-time.After(3 * time.Second):
+		t.Fatal("baseline event never arrived")
+	}
+
+	fi, err := os.Stat(certA)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	// rewrite the same content, then restore the original mtime
+	certPEM, err := os.ReadFile(certA)
+	if err != nil {
+		t.Fatalf("read cert: %v", err)
+	}
+	if err := os.WriteFile(certA, certPEM, 0o600); err != nil {
+		t.Fatalf("rewrite cert: %v", err)
+	}
+	if err := os.Chtimes(certA, fi.ModTime(), fi.ModTime()); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+
+	// another connection: served from cache, no reload recorded
+	conn2, _ := dialTLS(t, srv.Addr(), certA)
+	conn2.Write([]byte(sampleEvent(t) + "\n"))
+	select {
+	case <-events:
+	case <-time.After(3 * time.Second):
+		t.Fatal("second event never arrived")
+	}
+
+	if srv.CertReloads() != 0 {
+		t.Fatalf("CertReloads = %d, want 0: the cache re-read without an mtime change", srv.CertReloads())
+	}
+}
+
+// The notify hook receives the reload outcome in the host's own voice:
+// one call per event, ordered, with the counters already updated.
+func TestTLSCertReloadNotify(t *testing.T) {
+	dir := t.TempDir()
+	certA, keyA := writeSelfSignedCert(t, dir, net.ParseIP("127.0.0.1"))
+
+	events := make(chan *model.Event, 8)
+	srv, err := NewTLS("127.0.0.1:0", certA, keyA, events)
+	if err != nil {
+		t.Fatalf("ingest.NewTLS: %v", err)
+	}
+	type reloadEvent struct {
+		event   string
+		reloads uint64
+		errs    uint64
+	}
+	var mu sync.Mutex
+	var got []reloadEvent
+	srv.SetReloadNotify(func(event string, reloads, reloadErrs uint64) {
+		mu.Lock()
+		defer mu.Unlock()
+		got = append(got, reloadEvent{event, reloads, reloadErrs})
+	})
+	go srv.Serve()
+	t.Cleanup(srv.Shutdown)
+
+	// baseline handshake: no notify (nothing reloaded yet)
+	conn, _ := dialTLS(t, srv.Addr(), certA)
+	conn.Write([]byte(sampleEvent(t) + "\n"))
+	<-events
+
+	// rotate: one "reloaded" notification
+	otherDir := t.TempDir()
+	certB, keyB := writeSelfSignedCert(t, otherDir, net.ParseIP("127.0.0.1"))
+	replaceServerCert(t, certA, keyA, certB, keyB, time.Now().Add(4*time.Hour))
+	connB, _ := dialTLS(t, srv.Addr(), certB)
+	connB.Write([]byte(sampleEvent(t) + "\n"))
+	<-events
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 1 {
+		t.Fatalf("notify calls = %d (%v), want exactly 1", len(got), got)
+	}
+	if got[0].event != "certificate reloaded" || got[0].reloads < 1 || got[0].errs != 0 {
+		t.Fatalf("notify payload wrong: %+v", got[0])
+	}
 }

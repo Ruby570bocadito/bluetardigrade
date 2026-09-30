@@ -370,7 +370,13 @@ func runEngine(o *options, interactive bool) error {
 	}
 	fmt.Printf("[ENGINE] listening on %s (NDJSON, 1 event per line)\n", server.Addr())
 	if server.TLS() {
-		fmt.Printf("[ENGINE] ingest TLS: ENABLED (cert %s; sensors connect with -tls -ca <ca.pem>)\n", o.ingestCert)
+		fmt.Printf("[ENGINE] ingest TLS: ENABLED (cert %s; sensors connect with -tls -ca <ca.pem>; certificate hot-reload on file change)\n", o.ingestCert)
+		// rotation events go out in the engine's own voice: the
+		// ingest package stays silent, the operator sees a line
+		// per reload outcome with the running counters
+		server.SetReloadNotify(func(event string, reloads, reloadErrs uint64) {
+			fmt.Printf("[ENGINE] ingest TLS: %s (reloads=%d, reload_errors=%d)\n", event, reloads, reloadErrs)
+		})
 	}
 
 	// local read-only API: stats, recent events/alerts, rules, SSE

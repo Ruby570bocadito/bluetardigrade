@@ -295,7 +295,9 @@ openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
   -addext "extendedKeyUsage=serverAuth"
 ```
 
-The scripted path covering all of the above lives in `scripts/dev-tests/smoke_ingest_tls.sh` (six scenarios: round trip, plain-vs-TLS rejection, wrong-CA rejection, TLS+token, half-set flags, missing cert). The Rust sensor (`sf-sensor`) still speaks plain NDJSON — native TLS there is tracked on the roadmap; until then, TLS engine deployments can front it with a local stunnel/socat relay.
+**Rotating certificates without downtime.** The engine re-reads the `-ingest-cert`/`-ingest-key` pair whenever the modification time of either file changes — no restart, no signal (the product is Windows-first and SIGHUP does not exist there). Replace the PEM files in place and the NEXT connection is wrapped with the new certificate; connections already established keep the handshake they were born with. Failure semantics are asymmetric on purpose: the first load at startup is fail-loud, but a failed REload (truncated file caught mid-copy, mismatched pair) keeps the current certificate serving and reports through the log line `ingest TLS: reload failed: keeping current certificate (reloads=N, reload_errors=N)` — a broken rotation can never degrade an encrypted channel, it just leaves it on the previous cert until the files are fixed. mtime is the change signal: a replacement that preserves the original timestamps is not detected (touch the files to force it). Sensors that pin the OLD CA in `-ca` are rejected after the rotation — redeploy them with the new CA, the same way the shared token uses its two-token rotation window.
+
+The scripted path covering all of the above lives in `scripts/dev-tests/smoke_ingest_tls.sh` (seven scenarios: round trip, plain-vs-TLS rejection, wrong-CA rejection, TLS+token, half-set flags, missing cert, hot rotation). The Rust sensor (`sf-sensor`) still speaks plain NDJSON — native TLS there is tracked on the roadmap; until then, TLS engine deployments can front it with a local stunnel/socat relay.
 
 ## Alert webhook (SIEM/SOAR connector)
 
