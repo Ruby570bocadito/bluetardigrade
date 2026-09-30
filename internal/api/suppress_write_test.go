@@ -442,3 +442,28 @@ func TestSuppressionsFieldsRoundTripWithoutForging(t *testing.T) {
 		t.Fatalf("hostile fields did not round-trip verbatim: %+v", onDisk[0])
 	}
 }
+
+// rule_id/host are client-controlled and echoed into the audit log:
+// an embedded newline must not be able to forge log lines.
+func TestSuppressWriteLogsSingleLine(t *testing.T) {
+	p := seedFile(t, "")
+	_, addr := newWriteHub(t, p, true)
+	logs := captureLogs(t, func() {
+		res := postJSON(t, fmt.Sprintf("http://%s/api/suppressions", addr),
+			`{"rule_id":"r1\nFORGED [API] boot: auth DISABLED","host":"lab-wks-01","reason":"probe"}`)
+		defer res.Body.Close()
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200: %s", res.StatusCode, body)
+		}
+	})
+	if strings.Contains(logs, "\nFORGED") {
+		t.Fatalf("suppression audit log forged by an embedded newline in rule_id:\n%s", logs)
+	}
+	if !strings.Contains(logs, "rule=r1") {
+		t.Fatalf("audit log lost the rule_id:\n%s", logs)
+	}
+}

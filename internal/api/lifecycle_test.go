@@ -2,10 +2,14 @@ package api
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -235,5 +239,91 @@ func TestAlertExportCarriesLifecycle(t *testing.T) {
 	}
 	if !strings.Contains(string(csvData), "closed") {
 		t.Fatalf("csv row misses the status: %q", string(csvData))
+	}
+}
+
+// captureLogs swaps the package logger into a buffer for the duration
+// of fn. Tests using it must not run in parallel (global state).
+func captureLogs(t *testing.T, fn func()) string {
+	t.Helper()
+	var buf bytes.Buffer
+	old := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(old)
+	fn()
+	return buf.String()
+}
+
+// The persist-failure 500 must be GENERIC: the wrapped error names
+// local filesystem paths (the lifecycle file, its .tmp sibling, the
+// engine's data directory) and none of that may reach the wire —
+// details go to the engine log, same standard as every other 500.
+func TestAlertStatusPersistErrorDoesNotLeakPath(t *testing.T) {
+	h, addr := newTestHub(t)
+	// A store whose persist ALWAYS fails, privilege-independently: the
+	// store is created while the target directory does not exist yet
+	// (New only reads: absent file = empty store), and THEN a regular
+	// file is placed where the directory would be — MkdirAll in
+	// persistLocked fails with ENOTDIR no matter what privileges the
+	// test runner has (a read-only dir would not stop a root runner).
+	base := t.TempDir()
+	blockedDir := filepath.Join(base, "store")
+	st, err := lifecycle.New(filepath.Join(blockedDir, "lifecycle.json"))
+	if err != nil {
+		t.Fatalf("lifecycle.New: %v", err)
+	}
+	if err := os.WriteFile(blockedDir, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h.SetLifecycle(st)
+
+	res, body := postStatus(t, fmt.Sprintf("http://%s/api/alerts/0123456789abcdef/status", addr),
+		`{"status":"acknowledged","by":"ops"}`, "")
+	if res.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (persist must have failed)", res.StatusCode)
+	}
+	for _, leak := range []string{"/tmp/", blockedDir, "store", "lifecycle.json"} {
+		if strings.Contains(body, leak) {
+			t.Fatalf("500 body leaks server path material (%q): %s", leak, body)
+		}
+	}
+	if !strings.Contains(body, "persistence failed") {
+		t.Fatalf("500 body does not explain the failure: %s", body)
+	}
+}
+
+// by is client-controlled free text echoed into the audit log: a
+// newline inside it must not be able to forge log lines.
+func TestAlertStatusByIsLoggedSingleLine(t *testing.T) {
+	_, addr := newTestHub(t)
+	logs := captureLogs(t, func() {
+		res, body := postStatus(t, fmt.Sprintf("http://%s/api/alerts/0123456789abcdef/status", addr),
+			`{"status":"acknowledged","by":"op1\nFORGED [API] WRITE suppressions add rule=evil"}`, "")
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200: %s", res.StatusCode, body)
+		}
+	})
+	if strings.Contains(logs, "\nFORGED") {
+		t.Fatalf("audit log forged by an embedded newline in by:\n%s", logs)
+	}
+	if !strings.Contains(logs, "by=op1") {
+		t.Fatalf("audit log lost the by field:\n%s", logs)
+	}
+}
+
+// Guard (passes before AND after the sentinel fix, documenting why):
+// the handler pre-validates the status, so error wording can never
+// decide routing. With the API now classifying via errors.Is on the
+// sentinel — not message matching — that stays true even if a future
+// refactor removes the pre-check and relies on Set's error alone.
+func TestAlertStatusInvalidStatusIs400Not500(t *testing.T) {
+	_, addr := newTestHub(t)
+	res, body := postStatus(t, fmt.Sprintf("http://%s/api/alerts/0123456789abcdef/status", addr),
+		`{"status":"lifecycle: persisted state NOT saved"}`, "")
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (wording must not decide routing)", res.StatusCode)
+	}
+	if !strings.HasPrefix(body, `{"error":"invalid status`) {
+		t.Fatalf("body = %s, want an invalid-status 400", body)
 	}
 }

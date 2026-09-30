@@ -153,8 +153,9 @@ func (h *Hub) handleSuppressionsCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// audit line: the operator must be able to reconstruct who silenced
-	// what and when, exactly as the file comment promises
-	log.Printf("[API] WRITE suppressions %s rule=%s host=%s by=api (file %s)", action, in.RuleID, in.Host, path)
+	// what and when, exactly as the file comment promises. rule_id and
+	// host are client-controlled: oneLine keeps the log single-line.
+	log.Printf("[API] WRITE suppressions %s rule=%s host=%s by=api (file %s)", action, oneLine(in.RuleID), oneLine(in.Host), path)
 	h.writeSuppressionsSnapshot(w, sup)
 }
 
@@ -216,7 +217,7 @@ func (h *Hub) handleSuppressionsDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "suppressions reload failed (see engine log)", http.StatusInternalServerError)
 		return
 	}
-	log.Printf("[API] WRITE suppressions remove rule=%s host=%s by=api (%d removed, file %s)", rule, host, removed, path)
+	log.Printf("[API] WRITE suppressions remove rule=%s host=%s by=api (%d removed, file %s)", oneLine(rule), oneLine(host), removed, path)
 	h.writeSuppressionsSnapshot(w, sup)
 }
 

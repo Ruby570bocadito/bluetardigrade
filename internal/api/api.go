@@ -1,14 +1,16 @@
 // Package api exposes the local HTTP API on the engine: recent events
 // and alerts as JSON, the live rule set, an SSE stream for real-time
-// consumers (the web console bridge) and the ONE write surface — the
+// consumers (the web console bridge) and the write surfaces — the
 // operator triage endpoint POST /api/alerts/{id}/status backed by
-// internal/lifecycle. Deliberately dependency-free so the tracer
+// internal/lifecycle, and the opt-in suppressions write of
+// suppress_write.go. Deliberately dependency-free so the tracer
 // bullet stays easy to audit.
 package api
 
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -642,17 +644,23 @@ func (h *Hub) handleAlertStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	e, err := h.lifecycle.Set(id, st, req.Note, req.By)
 	if err != nil {
-		// Validation failures carry a lifecycle: prefix and are the
-		// client's fault; persistence failures are the server's.
-		if strings.Contains(err.Error(), "lifecycle: persisted state NOT saved") {
+		// Persistence failures are the server's fault: 500 with a
+		// GENERIC body — the wrapped error names local paths that must
+		// not reach the wire (details go to the engine log). Validation
+		// failures are the client's: 400 with the actionable message.
+		// Classification is structural (sentinel + errors.Is), never
+		// message matching: error wording must not decide status codes.
+		if errors.Is(err, lifecycle.ErrPersistFailed) {
 			log.Printf("[API] alert lifecycle persist FAILED for %s: %v", id, err)
-			writeErr(w, http.StatusInternalServerError, "status recorded in memory but persistence failed: "+err.Error())
+			writeErr(w, http.StatusInternalServerError, "status recorded in memory but persistence failed (details in engine log)")
 			return
 		}
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	log.Printf("[API] alert %s -> %s (by=%s)", id, e.Status, e.By)
+	// by is client-controlled free text: keep it single-line so the
+	// audit log cannot be forged with embedded newlines.
+	log.Printf("[API] alert %s -> %s (by=%s)", id, e.Status, oneLine(e.By))
 	h.broadcast("alert_lifecycle", e)
 	writeJSON(w, e)
 }
@@ -661,6 +669,21 @@ func writeErr(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+// oneLine makes a client-controlled value safe for the single-line
+// audit log: CR/LF echoed raw would forge log lines (log injection),
+// and other control characters have no business in a log entry.
+// \r and \n become spaces; C0/C1 controls and DEL are dropped.
+// Printable text in any language passes through untouched.
+func oneLine(s string) string {
+	s = strings.NewReplacer("\r", " ", "\n", " ").Replace(s)
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 type conditionPayload struct {

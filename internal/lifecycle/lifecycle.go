@@ -56,6 +56,14 @@ const (
 	MaxByLen   = 200
 )
 
+// ErrPersistFailed marks the Set errors that mean "in-memory state
+// updated but the file write failed": the API turns them into 500s
+// while every other Set error is a client-side 400. Classification
+// goes through errors.Is, never through message text — a message-
+// matching router would let error wording (present or future) decide
+// status codes.
+var ErrPersistFailed = errors.New("lifecycle: persisted state NOT saved")
+
 // Valid reports whether s is a status the API accepts. "new" is
 // accepted as an explicit REOPEN: it removes any special-casing on
 // the client side (reopen == set status new) and keeps the wire
@@ -119,7 +127,7 @@ func New(path string) (*Store, error) {
 			return nil, fmt.Errorf("lifecycle: %s: invalid entry (alert_id=%q status=%q)", path, e.AlertID, e.Status)
 		}
 		if _, dup := s.entries[e.AlertID]; dup {
-			continue // last write wins, insertion order keeps the first slot
+			continue // first entry wins; a later duplicate never re-slots the order
 		}
 		s.entries[e.AlertID] = e
 		s.order = append(s.order, e.AlertID)
@@ -162,7 +170,7 @@ func (s *Store) Set(id string, st Status, note, by string) (Entry, error) {
 		// The in-memory state is already updated: serving the new
 		// status is still correct while the process lives, but the
 		// operator must know it will NOT survive a restart.
-		return e, fmt.Errorf("lifecycle: persisted state NOT saved: %w", err)
+		return e, fmt.Errorf("%w: %w", ErrPersistFailed, err)
 	}
 	return e, nil
 }
