@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Ruby570bocadito/security-framework/internal/alert"
+	"github.com/Ruby570bocadito/security-framework/internal/beacon"
 	"github.com/Ruby570bocadito/security-framework/internal/correlate"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
 	"github.com/Ruby570bocadito/security-framework/pkg/model"
@@ -467,6 +468,33 @@ func TestStatsCorrelatorCounters(t *testing.T) {
 	}
 }
 
+// TestStatsBeaconCounters pins the beaconing observability contract
+// (A3): without wiring, zeros (detector off is a valid state); with
+// wiring, live values straight from beacon.Manager.
+func TestStatsBeaconCounters(t *testing.T) {
+	h, addr := newTestHub(t)
+
+	var stats map[string]any
+	getJSON(t, fmt.Sprintf("http://%s/api/stats", addr), &stats)
+	for _, k := range []string{"beacons_tracked", "beacons_cap", "beacons_fired"} {
+		if v, ok := stats[k]; !ok || v.(float64) != 0 {
+			t.Fatalf("unwired beacon detector: %s = %v (ok=%v), want 0", k, v, ok)
+		}
+	}
+
+	h.SetBeaconStats(func() (int, int, uint64) { return 3, beacon.MaxKeys, 2 })
+	getJSON(t, fmt.Sprintf("http://%s/api/stats", addr), &stats)
+	if stats["beacons_tracked"].(float64) != 3 {
+		t.Errorf("beacons_tracked = %v, want 3", stats["beacons_tracked"])
+	}
+	if stats["beacons_cap"].(float64) != float64(beacon.MaxKeys) {
+		t.Errorf("beacons_cap = %v, want %d", stats["beacons_cap"], beacon.MaxKeys)
+	}
+	if stats["beacons_fired"].(float64) != 2 {
+		t.Errorf("beacons_fired = %v, want 2", stats["beacons_fired"])
+	}
+}
+
 // TestSequencesEndpoint pins the read-only kill-chain view: a nil
 // manager (correlator off) serves an empty list - not a 404 - and a
 // wired manager reflects its Snapshot() with the wire tags the spec
@@ -763,6 +791,9 @@ func TestMetricsParityWithStats(t *testing.T) {
 	wantMetric("sf_correlator_sequences", "correlator_sequences")
 	wantMetric("sf_correlator_cap", "correlator_cap")
 	wantMetric("sf_risk_hosts_tracked", "risk_hosts_tracked")
+	wantMetric("sf_beacon_keys_tracked", "beacons_tracked")
+	wantMetric("sf_beacon_cap", "beacons_cap")
+	wantMetric("sf_beacons_fired_total", "beacons_fired")
 
 	// by_severity: every severity present in the JSON must appear as a
 	// labeled series with the same value.

@@ -789,6 +789,9 @@ components:
         - mode
         - risk_hosts_tracked
         - hot_hosts
+        - beacons_tracked
+        - beacons_cap
+        - beacons_fired
       properties:
         suppressions_active:
           type: integer
@@ -891,6 +894,22 @@ components:
             $ref: '#/components/schemas/HotHost'
           description: top 5 hosts by current decayed risk score, highest first (ties
             broken by hostname for deterministic output)
+        beacons_tracked:
+          type: integer
+          description: beacon keys currently holding in-window connection evidence (package
+            A3 of the roadmap). One key is one (profile, host, destination) triple;
+            compare against beacons_cap to watch headroom — past the cap the weakest
+            keys (fewest accumulated samples) are evicted first, so a flood of unique
+            fake destinations can never wash out evidence that is building
+        beacons_cap:
+          type: integer
+          description: hard cap of tracked beacon keys (MaxKeys in internal/beacon, 8192);
+            a hostile feed inventing destinations is the usual reason to approach it
+        beacons_fired:
+          type: integer
+          format: int64
+          description: beacon alerts emitted since engine start (across profile
+            hot-reloads; each alert carries the profile id as rule_id)
     Event:
       type: object
       description: |

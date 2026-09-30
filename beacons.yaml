@@ -1,0 +1,55 @@
+# Perfiles del detector de beaconing (paquete A3 del roadmap del
+# propietario). El motor carga este fichero por defecto (-beacons
+# ./beacons.yaml); un fichero ausente desactiva el detector, un
+# fichero que existe pero no parsea es FATAL en el arranque (mismo
+# estándar que suppressions: un control que el operador cree armado
+# no puede quedarse silenciosamente apagado).
+#
+# Qué es un beacon aquí: un host que conecta a UN MISMO destino
+# (dominio preferido sobre IP, con puerto) a un ritmo conspicuamente
+# regular dentro de la ventana. El detector mide el coeficiente de
+# variación (CV = desviación típica / media) de los intervalos entre
+# conexiones; CV bajo = cadencia de implant, CV alto = navegación
+# humana. No hay ML ni números mágicos: cada parámetro es visible y
+# ajustable por el operador.
+#
+# Knob anti-falsos-positivos principal: min_interval. CDNs, balanceadores
+# y pools NTP también conectan de forma regular, pero a cadencias
+# sub-segundo o contra conjuntos de destinos rotatorios; un suelo de
+# 2s en el perfil estricto deja ese ruido fuera por construcción.
+#
+# Cada alerta lleva el id del perfil como rule_id, así que suppressions
+# (perfil + host), triage, store, webhook y consola funcionan igual que
+# para cualquier otra alerta.
+
+# ---------- corazón del detector: HTTPS/HTTP call-home lento ----------
+- name: C2 beacon web lento
+  id: bcn-periodic-web
+  description: >
+    Cadencia regular (CV <= 0.12) hacia un mismo destino web con
+    intervalo medio >= 2s: el patrón clásico de implant dormido que
+    consulta a su C2 cada pocos minutos/segundos alineados.
+  severity: high
+  window: 15m
+  min_count: 12
+  max_jitter: 0.12
+  min_interval: 2s
+  cooldown: 1h
+  tags: [ttp:T1071.001, beacon]
+
+  # ---------- malla rápida: malware ruidoso y DNS-based ----------
+- name: C2 beacon rapido
+  id: bcn-periodic-fast
+  description: >
+    Cadencia regular a intervalos cortos (>= 500ms) sobre puertos de
+    servicio acotados: catches implants agresivos y tunnels DNS/HTTP
+    que no se atreven a dormir tanto. El suelo de 500ms filtra el
+    chatter legitimo de service meshes en localhost.
+  severity: medium
+  window: 5m
+  min_count: 20
+  max_jitter: 0.10
+  min_interval: 500ms
+  cooldown: 30m
+  ports: [53, 80, 443, 8080]
+  tags: [ttp:T1071.001, beacon]

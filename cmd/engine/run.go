@@ -20,6 +20,7 @@ import (
 	"github.com/Ruby570bocadito/security-framework/internal/actions"
 	"github.com/Ruby570bocadito/security-framework/internal/alert"
 	"github.com/Ruby570bocadito/security-framework/internal/api"
+	"github.com/Ruby570bocadito/security-framework/internal/beacon"
 	"github.com/Ruby570bocadito/security-framework/internal/correlate"
 	"github.com/Ruby570bocadito/security-framework/internal/enrich"
 	"github.com/Ruby570bocadito/security-framework/internal/ingest"
@@ -39,6 +40,7 @@ type options struct {
 	apiAddr          string
 	rulesDir         string
 	seqDir           string
+	beaconsFile      string
 	verbose          bool
 	reloadEvery      time.Duration
 	webhookURL       string
@@ -74,6 +76,7 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 	fs.StringVar(&o.apiAddr, "api", "127.0.0.1:7778", "local HTTP API for the console (stats/events/alerts/stream); 0 disables")
 	fs.StringVar(&o.rulesDir, "rules", "./rules", "directory with YAML rules")
 	fs.StringVar(&o.seqDir, "sequences", "./sequences", "directory with YAML kill-chain sequences (correlator)")
+	fs.StringVar(&o.beaconsFile, "beacons", "./beacons.yaml", "YAML file with beacon detector profiles (C2 call-home detection over network.connect); empty disables")
 	fs.BoolVar(&o.verbose, "v", false, "print every event received")
 	fs.DurationVar(&o.reloadEvery, "reload-every", 15*time.Second,
 		"hot-reload interval for the rules directory (0 disables)")
@@ -152,6 +155,25 @@ func runEngine(o *options, interactive bool) error {
 		if n := corr.Count(); n > 0 {
 			fmt.Printf("[ENGINE] %d sequences loaded from %s (correlator on: %v)\n",
 				n, seqPath, corr.Names())
+		}
+	}
+	// beaconing detector (A3): one YAML file of profiles. Missing
+	// file = detector off (the sequences-dir convention); a file that
+	// exists but does not parse is FATAL (the suppressions standard:
+	// a control the operator believes is armed must not silently stay
+	// off).
+	var bcn *beacon.Manager
+	bcnPath := ""
+	if o.beaconsFile != "" {
+		bcnPath = resolveDataFile(o.beaconsFile, "beacons.yaml")
+		if fileExists(bcnPath) {
+			if bcn, err = beacon.LoadFile(bcnPath, nil); err != nil {
+				log.Fatalf("[ENGINE] loading beacons from %s: %v", bcnPath, err)
+			}
+			if n := bcn.Count(); n > 0 {
+				fmt.Printf("[ENGINE] %d beacon profiles loaded from %s (beaconing detection on: %v)\n",
+					n, bcnPath, bcn.Names())
+			}
 		}
 	}
 
@@ -299,6 +321,17 @@ func runEngine(o *options, interactive bool) error {
 				}
 				return corr.States(), corr.Count(), correlate.MaxTrackedStates
 			})
+			// beaconing observability (A3): same contract as the
+			// correlator above — live keys holding in-window evidence,
+			// the hard cap and fires since startup, so the
+			// silent-detection-loss failure mode (cap exhausted) is
+			// watchable from /api/stats too.
+			hub.SetBeaconStats(func() (int, int, uint64) {
+				if bcn == nil {
+					return 0, 0, 0
+				}
+				return bcn.Tracked(time.Now()), beacon.MaxKeys, bcn.Fired()
+			})
 			hub.SetSequences(corr)
 			hub.SetLifecycle(lifeStore)
 			// same standard as the ingest token: flag wins, env fallback
@@ -401,6 +434,18 @@ func runEngine(o *options, interactive bool) error {
 			alerts.Emit(a)
 		})
 	}
+	if bcn != nil {
+		// beacon alerts honor the allowlist too, same rationale: a
+		// host with a suppressed rule is in an accepted state, and
+		// a beacon built on top of its silenced traffic would be a
+		// false positive.
+		bcn.SetEmit(func(a alert.Alert) {
+			if suppressed(supMgr, a.RuleID, a.Host, time.Now()) {
+				return
+			}
+			alerts.Emit(a)
+		})
+	}
 
 	if o.reloadEvery > 0 {
 		go func() {
@@ -438,6 +483,11 @@ func runEngine(o *options, interactive bool) error {
 								fmt.Printf("[ENGINE] suppressions reloaded (%d active)\n", n)
 							}
 							supCount = n
+						}
+					}
+					if bcn != nil && fileExists(bcnPath) {
+						if err := bcn.Reload(bcnPath); err == nil && !tui {
+							fmt.Printf("[ENGINE] beacons reloaded (%d active)\n", bcn.Count())
 						}
 					}
 				}
@@ -511,6 +561,12 @@ func runEngine(o *options, interactive bool) error {
 				if corr != nil {
 					corr.Observe(ev, hit.Rule.Name)
 				}
+			}
+			// behavioral detector (A3): consumes raw network.connect
+			// events regardless of rule hits — beaconing is a
+			// property of event timing, not of any single event.
+			if bcn != nil {
+				bcn.Observe(ev, time.Now())
 			}
 			processed++
 		}

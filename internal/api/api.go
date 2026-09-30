@@ -62,6 +62,7 @@ type Hub struct {
 	store       *store.Store                    // optional SQLite persistence (nil = rings only)
 	lifecycle   *lifecycle.Store                // alert triage state (status overlay)
 	risk        *risk.Tracker                   // per-host decayed risk score (A1)
+	beacon      func() (int, int, uint64)       // live beacon keys, cap, fired (A3)
 
 	storeFails uint64 // throttles store write-error logging (atomic)
 
@@ -192,6 +193,18 @@ func (h *Hub) SetWebhookStats(stats func() (sent, failed, dropped uint64)) {
 func (h *Hub) SetCorrelatorStats(fn func() (states, seqs, cap int)) {
 	h.mu.Lock()
 	h.correlator = fn
+	h.mu.Unlock()
+}
+
+// SetBeaconStats wires the beaconing detector observability into
+// /api/stats: keys currently holding in-window evidence, the hard
+// state cap and beacons fired since startup. A nil closure or no
+// wiring at all means the detector is off (reported as zeros) - the
+// stats contract stays stable whether or not the engine loaded a
+// beacons file.
+func (h *Hub) SetBeaconStats(fn func() (tracked, cap int, fired uint64)) {
+	h.mu.Lock()
+	h.beacon = fn
 	h.mu.Unlock()
 }
 
@@ -385,6 +398,11 @@ type statsPayload struct {
 	// risk, and the top-5 list the console dashboard renders.
 	RiskHostsTracked int             `json:"risk_hosts_tracked"`
 	HotHosts         []risk.HostRisk `json:"hot_hosts"`
+	// Beaconing detector (A3): the width of the live signal, the
+	// hard cap and the total fires since startup.
+	BeaconsTracked int    `json:"beacons_tracked"`
+	BeaconsCap     int    `json:"beacons_cap"`
+	BeaconsFired   uint64 `json:"beacons_fired"`
 }
 
 // statsSnapshot collects every counter /api/stats and /metrics serve.
@@ -418,6 +436,7 @@ func (h *Hub) statsSnapshot() statsPayload {
 		whSent, whFailed, whDropped = h.webhook()
 	}
 	corrFn := h.correlator
+	bFn := h.beacon
 	st := h.store
 	rulesCount, rulesTypes := 0, []string{}
 	if h.rules != nil {
@@ -467,6 +486,16 @@ func (h *Hub) statsSnapshot() statsPayload {
 		hotHosts = h.risk.Snapshot(now, 5)
 	}
 
+	// Beacon detector closure: same uniform rule — called after
+	// h.mu.Unlock. Tracked/Fired take the beacon manager's mutex, and
+	// the fire path runs the lock order the other way round: Observe
+	// holds it across fire -> RecordAlert, which takes h.mu.
+	var bTracked, bCap int
+	var bFired uint64
+	if bFn != nil {
+		bTracked, bCap, bFired = bFn()
+	}
+
 	return statsPayload{
 		UptimeS:          int64(time.Since(h.started) / time.Second),
 		EventsTotal:      ingested,
@@ -491,6 +520,9 @@ func (h *Hub) statsSnapshot() statsPayload {
 		Mode:             "engine",
 		RiskHostsTracked: riskHosts,
 		HotHosts:         hotHosts,
+		BeaconsTracked:   bTracked,
+		BeaconsCap:       bCap,
+		BeaconsFired:     bFired,
 	}
 }
 

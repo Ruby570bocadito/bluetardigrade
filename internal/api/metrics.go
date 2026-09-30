@@ -52,6 +52,12 @@ func (h *Hub) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 	writeMetric(&b, "sf_correlator_states", "In-flight kill-chain (sequence, host) states.", "gauge", float64(s.CorrelatorStates))
 	writeMetric(&b, "sf_correlator_sequences", "Kill-chain sequences loaded.", "gauge", float64(s.CorrelatorSeqs))
 	writeMetric(&b, "sf_correlator_cap", "Maximum kill-chain states the correlator will track.", "gauge", float64(s.CorrelatorCap))
+	// Beaconing detector (A3): totals only — per-profile detail
+	// lives in the alert payload (rule_id), keeping series
+	// cardinality bounded by construction instead of operator config.
+	writeMetric(&b, "sf_beacon_keys_tracked", "Beacon keys currently holding in-window connection evidence.", "gauge", float64(s.BeaconsTracked))
+	writeMetric(&b, "sf_beacon_cap", "Maximum beacon keys the detector will track.", "gauge", float64(s.BeaconsCap))
+	writeMetric(&b, "sf_beacons_fired_total", "Beacon alerts emitted since engine start.", "counter", float64(s.BeaconsFired))
 	// Host risk (A1): the tracked gauge is a plain number; the top-5
 	// scores are the second labeled family. Hosts come from telemetry
 	// (operator-visible data /api/stats already serves), so the same

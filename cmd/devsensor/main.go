@@ -23,6 +23,8 @@ var (
 	interval = flag.Duration("interval", 400*time.Millisecond, "delay between events")
 	token    = flag.String("token", "",
 		"ingest token sent as 'AUTH <token>' (falls back to SF_INGEST_TOKEN); required when the engine starts with -token")
+	beaconN     = flag.Int("beacon", 0, "after the scenario, emit N regular network.connect events (simulated C2 call-home for the beaconing detector)")
+	beaconEvery = flag.Duration("beacon-interval", time.Second, "delay between beacon connections")
 )
 
 var scenario = []*model.Event{
@@ -212,6 +214,35 @@ func main() {
 			i+1, len(scenario), marker, ev.Type, describe(ev))
 		time.Sleep(*interval)
 	}
+	// Simulated C2 call-home (A3): the implant from the scenario
+	// (powershell.exe PID 6612) phones home to the offensive C2 IP at
+	// a regular cadence. Feeds the engine's beaconing detector in E2E
+	// runs; 0 by default so every existing scenario stays byte-identical.
+	if *beaconN > 0 {
+		fmt.Printf("[DEVSENSOR] beacon mode: %d connections to 185.220.101.47:443 every %s\n", *beaconN, *beaconEvery)
+		for i := 0; i < *beaconN; i++ {
+			ev := offensive(&model.Event{
+				Type:    model.TypeNetworkConnect,
+				Process: &model.Process{PID: 6612, Name: "powershell.exe"},
+				Network: &model.Network{Protocol: "tcp", SourceIP: "10.0.4.42",
+					SourcePort: 51000 + i%1000, DestinationIP: "185.220.101.47", DestinationPort: 443},
+			})
+			bline, err := ev.Encode()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[DEVSENSOR] encode beacon: %v\n", err)
+				os.Exit(1)
+			}
+			if _, err := conn.Write(append(bline, '\n')); err != nil {
+				fmt.Fprintf(os.Stderr, "[DEVSENSOR] send beacon: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("[DEVSENSOR] beacon %2d/%d (OFFENSIVE, simulated)\n", i+1, *beaconN)
+			if i < *beaconN-1 {
+				time.Sleep(*beaconEvery)
+			}
+		}
+	}
+
 	fmt.Println("[DEVSENSOR] scenario complete - connection closed")
 }
 
