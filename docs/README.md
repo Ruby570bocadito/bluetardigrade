@@ -14,6 +14,7 @@
 | `assets/` | Diagramas del README (`diagram_*.png`), capturas de la consola (`console-*.png/gif`) y sus fuentes de trabajo en `assets/src/` |
 | `false-positive-control.md` | Guía de operación del canal de salida: dedup, supresiones, correlación, filtrado en el receptor y límites anti-abuso del pipeline |
 | `analisis-brechas-y-mejoras.md` | Análisis de brechas y mejoras futuras: fotografía verificada del estado, 18 brechas priorizadas (P0-P2) con criterios de aceptación, deuda viva y decisiones deliberadas que no son brechas (instantánea del árbol `3820d95`, propiedad del carril 03) |
+| `analisis-brechas-y-mejoras-04B.md` | Profundización del carril 04-Seguridad del análisis de brechas (árbol `3820d95`, complementa el general `analisis-brechas-y-mejoras.md`): 20 brechas con evidencia `fichero:línea` (G1-G20) y 7 mejoras de producto (M1-M7); neto nuevo: la batería de la consola 19/58 no corre en CI (G1), lint/`-race`/dependabot/fuzzing ausentes (G2/G3/G6/G7), sensor Rust sin tests (G4), gobernanza de credenciales (G8) y cadena de release (G12); convergencias declaradas en la nota de cabecera |
 | `agentes/` | Informes de ronda del sistema de agentes (registro histórico de auditoría y coordinación) |
 | `agentes/GUIA-VERIFICACION.md` | Estándar obligatorio de verificación por conteos/bytes en las rondas (artefactos del canal de display y del editor, recetas y árbol de decisión) |
 
