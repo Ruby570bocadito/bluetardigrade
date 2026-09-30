@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Ruby570bocadito/security-framework/internal/alert"
+	"github.com/Ruby570bocadito/security-framework/internal/redact"
 	"gopkg.in/yaml.v3"
 )
 
@@ -209,10 +210,19 @@ func validHTTPURL(raw string) error {
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
-		return fmt.Errorf("url %q does not parse: %w", raw, err)
+		// Double echo guarded (#35 remainder, family #30): the %q echo AND
+		// the wrapped *url.Error both print the raw input verbatim (url.Error
+		// embeds the URL in its own message), and this rejected-config error
+		// lands in the engine log (run.go "notify config rejected"), which is
+		// stderr every downstream log shipper can read. The endpoint can
+		// embed a credential (Slack hook path, proxy userinfo, collector
+		// key); scheme://host - or the <endpoint> placeholder on parse
+		// failure - is enough to locate the line in YAML next to the channel
+		// name the caller already wraps in the error.
+		return fmt.Errorf("url does not parse (%s)", redact.EndpointLabel(raw))
 	}
 	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return fmt.Errorf("url %q must be an absolute http(s) endpoint", raw)
+		return fmt.Errorf("url must be an absolute http(s) endpoint (%s)", redact.EndpointLabel(raw))
 	}
 	return nil
 }

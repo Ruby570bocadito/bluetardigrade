@@ -1,0 +1,75 @@
+# G6 (análisis de brechas 04-B, docs/analisis-brechas-y-mejoras-04B.md): dependencias
+# sin vulnerabilidades conocidas sin documentar. Version-updates semanales por
+# ecosistema; los parches de seguridad de GitHub (alerts) llegan aparte por el
+# mismo canal. Agrupados minor+patch para no inundar la cola de revisión:
+# cada PR de dependencias pasa por el mismo carril de cross-review que cualquier ola.
+version: 2
+
+updates:
+  # Motor Go (módulo raíz: internal/*, cmd/*, pkg/*)
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      go-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Consola web (Next.js/React, lockfile bun)
+  - package-ecosystem: "npm"
+    directory: "/web/console"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-console-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Servicio hub (consola-service, lockfile bun)
+  - package-ecosystem: "npm"
+    directory: "/web/console-service"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-hub-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Landing website (Next.js, lockfile bun)
+  - package-ecosystem: "npm"
+    directory: "/website"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-website-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Propia cadena de CI (actions del workflow)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+
+  # Imagen de contenedor del engine
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
