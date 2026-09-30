@@ -268,7 +268,7 @@ function AuditFeed() {
             // commit — the pre-signal line and the followup line — so the
             // class disambiguates the pair. Uniqueness holds by source
             // invariants: every attempt mints its own 128-bit crypto/rand
-            // action_id (respond.go:263, audit.go:147), and the only
+            // action_id (respond.go:263, audit.go:174-175), and the only
             // same-action_id pair is pre-signal (followup absent) +
             // followup (respond.go:313-337), separated by the 'p'/'f'
             // suffix. Index-free means the key is stable across polls:
