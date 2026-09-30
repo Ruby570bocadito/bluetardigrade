@@ -56,25 +56,31 @@ export function SuppressionsView() {
       </p>
 
       {status !== 'live' && suppressions.length === 0 ? (
-        <div className="h-24 animate-pulse rounded bg-white/5" />
+        <div className="panel px-4 py-6">
+          <div className="h-24 animate-pulse rounded bg-white/5" />
+        </div>
       ) : suppressions.length === 0 ? (
-        <EmptyState
-          icon={Prohibit}
-          title="Ninguna supresión activa"
-          hint="Todas las detecciones llegan a la cola. Para silenciar una regla (p. ej. durante un cambio autorizado), añada una entrada a suppressions.yaml"
-        />
+        <div className="panel">
+          <EmptyState
+            icon={Prohibit}
+            title="Ninguna supresión activa"
+            hint="Todas las detecciones llegan a la cola. Para silenciar una regla (p. ej. durante un cambio autorizado), añada una entrada a suppressions.yaml"
+          />
+        </div>
       ) : (
-        <ul className="divide-y divide-white/[0.06] border-y border-white/[0.08]">
-          {suppressions.map((s, i) => (
-            <SuppressionRow
-              key={`${s.rule_id}:${s.host ?? '*'}:${i}`}
-              index={i}
-              entry={s}
-              ruleName={ruleName(s.rule_id)}
-              now={now}
-            />
-          ))}
-        </ul>
+        <div className="panel overflow-hidden">
+          <ul className="divide-y divide-white/[0.06]">
+            {suppressions.map((s, i) => (
+              <SuppressionRow
+                key={`${s.rule_id}:${s.host ?? '*'}:${i}`}
+                index={i}
+                entry={s}
+                ruleName={ruleName(s.rule_id)}
+                now={now}
+              />
+            ))}
+          </ul>
+        </div>
       )}
     </section>
   )

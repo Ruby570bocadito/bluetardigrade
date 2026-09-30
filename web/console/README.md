@@ -1,10 +1,12 @@
 # security-framework console (SOC)
 
 Browser console for the framework: live telemetry feed, KPI dashboard,
-severity triage with a detail panel, the YAML rule pack and an AI
-analyst that explains each alert the way a senior SOC analyst would.
-Dark-mode locked product UI (zinc structure, one emerald interaction
-accent, severity colors that encode data semantics).
+severity triage with a detail panel, the YAML rule pack, kill-chain
+chains, operator suppressions, a read-only active-response view with
+its forensic audit trail, and an AI analyst that explains each alert
+the way a senior SOC analyst would. Dark-mode locked product UI (zinc
+structure, one emerald interaction accent, severity colors that encode
+data semantics).
 
 ## Data flow (no fake data anywhere)
 
@@ -34,6 +36,9 @@ when the hub is down only the analyst view is affected.
 | Flujo en vivo | SSE-fed event table with sticky header, pause, search, type filter and JSONL/CSV export |
 | Alertas | Semantic table (search, severity filter, export) plus a detail panel: rule message, matched_on, ATT&CK tags, actions, enrichment |
 | Reglas | The rule pack as the engine sees it, with expandable conditions |
+| Cadenas | The armed kill-chain sequences with their numbered steps and ATT&CK tags, as the correlator tracks them in flight |
+| Supresiones | Operator allowlist, read-only by design: rule/host pairs with reason and live expiry countdown; editing happens in `suppressions.yaml`, hot-reloaded by the engine every 15 s |
+| Respuesta activa | Read-only active-response surface: arm and audit-health cards plus the forensic audit tail with attempt-class filter (executed / denied / followups), operator-controlled tail window and JSONL export |
 | Analista IA | Streaming triage chat bound to a selected alert |
 
 ## Header chips
@@ -84,8 +89,8 @@ but it is not committed.
 
 ## Design tokens
 
-- Structure: Tailwind zinc (`zinc-950` background, `zinc-900` surfaces,
-  `zinc-800` borders, `zinc-100`/`zinc-400` text).
+- Structure: Tailwind zinc (`zinc-950` background, `zinc-100`/`zinc-400` text) with `white/[0.06]` hairlines on surfaces and `zinc-800` for inner detail.
+- Surfaces are defined once in `src/app/globals.css` and reused by every view: `.panel` (hairline border, vertical gradient fill, inner top highlight, ambient shadow), `.panel-hover` (lift on hover, frozen under `prefers-reduced-motion`), `.chip`, `.icon-tile`, `.glass` (sidebar and topbar backdrop blur) and the three-radial `ambient-glow` background. Views compose these classes instead of re-declaring card styles inline.
 - One interaction accent: `emerald-500`.
 - Severity semantics (data, not decoration): `critical` red-500/600,
   `high` orange-500, `medium` amber-400, `low` sky-400.
