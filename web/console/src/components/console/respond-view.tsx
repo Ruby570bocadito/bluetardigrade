@@ -179,7 +179,14 @@ function AuditFeed() {
       ) : (
         <ul className="divide-y divide-white/[0.06] border-y border-white/[0.08]">
           {records.map((r, i) => (
-            <AttemptRow key={r.action_id} index={i} rec={r} />
+            // Composite key: the kill flow writes TWO JSONL lines with the
+            // SAME action_id when the signal fails after the commit (the
+            // pre-signal line and the followup line share it by design), so
+            // action_id alone collides whenever both land in the same tail
+            // window. The tail is re-fetched as a whole snapshot each poll
+            // (no incremental reordering), so the row index is stable per
+            // render and the pair index+action_id is unique.
+            <AttemptRow key={`${i}:${r.action_id}`} index={i} rec={r} />
           ))}
         </ul>
       )}
@@ -224,6 +231,11 @@ function AttemptRow({ index, rec }: { index: number; rec: SfRespondRecord }) {
           {rec.mechanism && (
             <span title="mecanismo de señalización (R1)">
               <MonoTag>{rec.mechanism}</MonoTag>
+            </span>
+          )}
+          {rec.mechanism === 'fallback' && rec.fallback_reason && (
+            <span title="causa de la apertura fallida de pidfd (R7b): enosys = kernel sin pidfd (permanente y esperado); emfile/enfile = exhaustion transitoria de descriptores (alarmable); resto, errnos de la misma familia">
+              <MonoTag>pidfd: {rec.fallback_reason}</MonoTag>
             </span>
           )}
           <span className="ml-auto font-mono text-[11px] tabular-nums text-zinc-500">{formatDateTime(rec.ts)}</span>

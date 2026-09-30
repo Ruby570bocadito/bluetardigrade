@@ -186,6 +186,11 @@ export type SfRespondRecord = {
   host: string
   signal?: string
   mechanism?: string
+  // Travels ONLY with mechanism=fallback (omitempty in the Record):
+  // the errno vocabulary of the failed pidfd_open that degraded the
+  // attempt to the classic kill — enosys is the permanent kernel gap,
+  // emfile/enfile are the transient, alarmable ones (R7b).
+  fallback_reason?: string
   source: string
   followup?: boolean
 }
