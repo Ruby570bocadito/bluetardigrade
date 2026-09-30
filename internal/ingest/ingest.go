@@ -33,8 +33,17 @@ const (
 )
 
 // authTimeout bounds how long the server waits for the AUTH line.
-// Var (not const) so tests can shorten it.
-var authTimeout = 10 * time.Second
+// Held atomically (not a plain var) so tests can shorten it: handle()
+// goroutines from a neighboring test's connections can still be
+// running when the next test swaps the value, and a plain variable
+// is a data race under -race.
+var authTimeoutNanos atomic.Int64
+
+const defaultAuthTimeout = 10 * time.Second
+
+func authTimeout() time.Duration { return time.Duration(authTimeoutNanos.Load()) }
+
+func init() { authTimeoutNanos.Store(int64(defaultAuthTimeout)) }
 
 // Server is a concurrent NDJSON-over-TCP listener.
 type Server struct {
@@ -167,7 +176,7 @@ func (s *Server) handle(conn net.Conn) {
 	//     a regular event and gets the regular idle timeout, so
 	//     legacy sensors keep their original behavior.
 	if s.token != "" {
-		conn.SetReadDeadline(time.Now().Add(authTimeout))
+		conn.SetReadDeadline(time.Now().Add(authTimeout()))
 	} else {
 		conn.SetReadDeadline(time.Now().Add(idleTimeout))
 	}
@@ -273,14 +282,27 @@ const (
 	maxHostRunes = 255
 	maxUserRunes = 256
 	maxIDRunes   = 128
+
+	// maxDestRunes caps the feed-controlled network destination that
+	// the beaconing detector (A3) pins as a live map key (the same
+	// long-lived-state hazard host/user/ID cover): RFC 1123 caps an
+	// FQDN at 253 bytes and every textual IPv4/IPv6 fits far below,
+	// so legitimate destinations pass byte-identical while a hostile
+	// ~1 MiB "domain" cannot park its bytes in detector state.
+	maxDestRunes = 253
 )
 
 // normalizeIdentity truncates the feed-controlled identity fields that
-// long-lived engine state pins (see the caps above).
+// long-lived engine state pins (see the caps above): host/user/id, and
+// the network destination the beaconing detector keys its state on.
 func normalizeIdentity(ev *model.Event) {
 	ev.Host = truncateRunes(ev.Host, maxHostRunes)
 	ev.User = truncateRunes(ev.User, maxUserRunes)
 	ev.ID = truncateRunes(ev.ID, maxIDRunes)
+	if ev.Network != nil {
+		ev.Network.DestinationIP = truncateRunes(ev.Network.DestinationIP, maxDestRunes)
+		ev.Network.Domain = truncateRunes(ev.Network.Domain, maxDestRunes)
+	}
 }
 
 // fieldSep is the control rune the search haystacks join their fields

@@ -212,9 +212,9 @@ func TestTokenAuthPipelinedWrite(t *testing.T) {
 // A silent client that never AUTHs is dropped after authTimeout, so
 // half-open connections cannot accumulate on the engine.
 func TestAuthTimeout(t *testing.T) {
-	old := authTimeout
-	authTimeout = 150 * time.Millisecond
-	defer func() { authTimeout = old }()
+	old := authTimeout()
+	authTimeoutNanos.Store(int64(150 * time.Millisecond))
+	defer authTimeoutNanos.Store(int64(old))
 
 	_, events, addr := startTestServer(t, "s3cret")
 	conn, err := net.Dial("tcp", addr)
@@ -379,6 +379,27 @@ func TestDecodeTruncatesOversizedIdentityFields(t *testing.T) {
 	}
 	if n := len([]rune(ev.ID)); n != maxIDRunes {
 		t.Fatalf("id runes = %d, want %d", n, maxIDRunes)
+	}
+}
+
+// TestDecodeTruncatesOversizedNetworkDestination: the beaconing
+// detector (A3) pins Domain/DestinationIP as live map keys, so the
+// same long-lived-state reasoning as host/user/ID applies at the
+// ingest boundary — truncation, never a drop.
+func TestDecodeTruncatesOversizedNetworkDestination(t *testing.T) {
+	line := `{"id":"3f2b0c1a-9d8e-4f7a-b6c5-2e1d0a9b8c7d","type":"network.connect",` +
+		`"host":"wk01","timestamp":"2026-01-01T12:00:00Z",` +
+		`"network":{"domain":"` + strings.Repeat("d", 600) + `",` +
+		`"destination_ip":"` + strings.Repeat("9", 600) + `","destination_port":443}}`
+	ev, err := decode([]byte(line))
+	if err != nil {
+		t.Fatalf("decode of an oversized (but well-formed) destination must not fail: %v", err)
+	}
+	if n := len([]rune(ev.Network.Domain)); n != maxDestRunes {
+		t.Fatalf("domain runes = %d, want %d", n, maxDestRunes)
+	}
+	if n := len([]rune(ev.Network.DestinationIP)); n != maxDestRunes {
+		t.Fatalf("destination_ip runes = %d, want %d", n, maxDestRunes)
 	}
 }
 

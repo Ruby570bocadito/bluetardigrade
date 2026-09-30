@@ -36,6 +36,7 @@ check() { # check <desc> <"0|1">
 
 command -v curl >/dev/null    || { echo "FALLO preflight: curl no está en PATH"; exit 1; }
 command -v python3 >/dev/null || { echo "FALLO preflight: python3 no está en PATH"; exit 1; }
+command -v rg >/dev/null      || { echo "FALLO preflight: rg no está en PATH (require_engine lo usa para detectar el re-bind race); sin rg esa verificación se desactivaría en silencio"; exit 1; }
 
 TMPDIR_E2E=$(mktemp -d /tmp/sf-e2e-beacon.XXXXXX)
 LOG="$TMPDIR_E2E/engine.log"
