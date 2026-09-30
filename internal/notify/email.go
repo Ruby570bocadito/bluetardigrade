@@ -61,6 +61,7 @@ func NewEmail(name, server, from string, to []string, username, password string,
 	}
 }
 
+// Name implements the Channel interface: stable channel identifier.
 func (e *Email) Name() string { return e.name }
 
 // Deliver sends one message. The body carries the shared human line

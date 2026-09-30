@@ -105,6 +105,8 @@ func parseTimeParam(s string) (time.Time, error) {
 
 type badTimeError string
 
+// Error implements the error interface: the message names the offending
+// value and both accepted formats (RFC 3339 or Go duration).
 func (e badTimeError) Error() string {
 	return string(e) + " is not an RFC 3339 timestamp nor a positive duration (e.g. 2026-09-30T12:00:00Z or 90m)"
 }

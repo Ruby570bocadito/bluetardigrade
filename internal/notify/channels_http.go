@@ -40,6 +40,7 @@ func NewSlack(name, url string) *Slack {
 	return &Slack{name: name, url: url, hc: newTimeoutClient(httpTimeout)}
 }
 
+// Name implements the Channel interface: stable channel identifier.
 func (s *Slack) Name() string { return s.name }
 
 // Deliver posts the alert as a single Slack text block. The payload
@@ -80,6 +81,7 @@ func NewTelegram(name, token, chatID, apiURL string) *Telegram {
 	return &Telegram{name: name, token: token, chatID: chatID, apiURL: apiURL, hc: newTimeoutClient(httpTimeout)}
 }
 
+// Name implements the Channel interface: stable channel identifier.
 func (t *Telegram) Name() string { return t.name }
 
 // Deliver posts one sendMessage request. disable_web_page_preview

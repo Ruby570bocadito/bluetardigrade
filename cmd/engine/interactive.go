@@ -136,10 +136,13 @@ func tickCmd() tea.Cmd {
 	return tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
+// Init implements tea.Model: it starts the 250 ms snapshot ticker.
 func (m *tuiModel) Init() tea.Cmd {
 	return tickCmd()
 }
 
+// Update implements tea.Model: snapshot refresh on each tick, window
+// resize tracking, and key handling (quit, scroll, filter switches).
 func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tickMsg:
@@ -185,6 +188,7 @@ func (m *tuiModel) clampOffset() {
 	}
 }
 
+// View implements tea.Model: banner, stats line and the dim rules footer.
 func (m *tuiModel) View() string {
 	banner := renderBanner(m.meta, m.snap.rules)
 	stats := statsLine(m.snap)

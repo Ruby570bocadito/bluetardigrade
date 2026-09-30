@@ -72,9 +72,6 @@ func (s *Splunk) SetToken(token string) { s.token = token }
 // TokenConfigured reports whether deliveries carry the HEC token.
 func (s *Splunk) TokenConfigured() bool { return s.token != "" }
 
-// Endpoint returns the collector URL (diagnostics and logs).
-func (s *Splunk) Endpoint() string { return s.url }
-
 // Stats returns the lifetime counters: events accepted, events that
 // exhausted retries or were rejected, and events dropped for a full
 // queue.

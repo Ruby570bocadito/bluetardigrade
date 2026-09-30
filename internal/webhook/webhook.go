@@ -114,9 +114,6 @@ func (c *Client) Stats() (sent, failed, dropped uint64) {
 	return c.sent.Load(), c.failed.Load(), c.dropped.Load()
 }
 
-// Endpoint returns the target URL (diagnostics and logs).
-func (c *Client) Endpoint() string { return c.url }
-
 // deliver POSTs one alert with up to maxAttempts tries. Retries apply
 // to transport errors, 429 and 5xx; other 4xx answers are permanent:
 // retrying a misconfigured endpoint only delays the queue.

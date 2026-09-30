@@ -209,7 +209,11 @@ type exitErr struct {
 	code int
 }
 
+// Error implements the error interface: the message carries the exit status.
 func (e exitErr) Error() string { return fmt.Sprintf("exit %d", e.code) }
+
+// ExitCode implements cobra's ExitCoder so a command can request a
+// specific process status after printing its own report.
 func (e exitErr) ExitCode() int { return e.code }
 
 // ---- validate ----

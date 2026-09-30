@@ -19,7 +19,11 @@ type deliveryError struct {
 	retryable bool
 }
 
+// Error implements the error interface: the message is the wrapped
+// cause's own.
 func (e *deliveryError) Error() string { return e.err.Error() }
+
+// Unwrap exposes the wrapped cause to errors.Is/errors.As.
 func (e *deliveryError) Unwrap() error { return e.err }
 
 // isRetryable reports whether a delivery error could plausibly

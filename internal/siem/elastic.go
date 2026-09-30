@@ -83,9 +83,6 @@ func (e *Elastic) SetAPIKey(key string) { e.apiKey = key }
 // APIKeyConfigured reports whether bulk requests carry credentials.
 func (e *Elastic) APIKeyConfigured() bool { return e.apiKey != "" }
 
-// Endpoint returns the target cluster URL (diagnostics and logs).
-func (e *Elastic) Endpoint() string { return e.url }
-
 // Stats returns the lifetime counters: alerts indexed, alerts that
 // exhausted retries or were rejected, and alerts dropped for a full
 // queue.
