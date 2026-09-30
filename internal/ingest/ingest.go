@@ -122,7 +122,25 @@ func (s *Server) Serve() {
 			}
 			continue // transient accept error; keep accepting
 		}
+		// Register the connection AND arm its handler counter under mu,
+		// the same critical section Shutdown uses to set closing and
+		// close everything in open: either Serve sees closing (the conn
+		// is closed here, never counted) or Shutdown sees the conn in
+		// open (closes it), and every Add(1) is ordered by the mutex
+		// strictly before conns.Wait(). The old free-standing Add could
+		// land after Wait had already returned — a data race against the
+		// WaitGroup and an unsynchronized late connection on every
+		// shutdown whose accept window had a connection in flight
+		// (race report 03-A round 21h59, reproduced under -race).
+		s.mu.Lock()
+		if s.closing {
+			s.mu.Unlock()
+			conn.Close()
+			continue
+		}
 		s.conns.Add(1)
+		s.open[conn] = struct{}{}
+		s.mu.Unlock()
 		go s.handle(conn)
 	}
 }
@@ -147,17 +165,13 @@ func (s *Server) Shutdown() {
 	close(s.events)
 }
 
+// handle serves one connection. Serve registers the conn in open and
+// arms its WaitGroup counter BEFORE starting this goroutine (see the
+// shutdown-synchronization comment there) — this function only cleans
+// both up: leaving the counter fires, leaving open forgets the conn so
+// a concurrent Shutdown stops force-closing it.
 func (s *Server) handle(conn net.Conn) {
 	defer s.conns.Done()
-
-	s.mu.Lock()
-	if s.closing {
-		s.mu.Unlock()
-		conn.Close()
-		return
-	}
-	s.open[conn] = struct{}{}
-	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
 		delete(s.open, conn)

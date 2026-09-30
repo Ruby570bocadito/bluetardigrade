@@ -466,3 +466,48 @@ func TestDecodeStripsFieldSeparatorFromFeedStrings(t *testing.T) {
 		t.Fatal("separator-only id must fail validation, got nil")
 	}
 }
+
+// TestServeShutdownAcceptWindowHammer drives Serve and Shutdown while
+// clients keep dialing, so connections land inside the shutdown window
+// over and over. The race this guards (Serve's conns.Add landing after
+// Shutdown's conns.Wait — 03-A round 21h59) is timing-dependent: this
+// test is a flake-detector under -race (run with -count in CI), not a
+// deterministic proof. Post-fix, every Add is ordered by mu before
+// Wait, so the detector stays silent however the interleaving falls.
+func TestServeShutdownAcceptWindowHammer(t *testing.T) {
+	line := sampleEvent(t)
+	for i := 0; i < 40; i++ {
+		events := make(chan *model.Event, 64)
+		srv, err := New("127.0.0.1:0", events)
+		if err != nil {
+			t.Fatalf("ingest.New: %v", err)
+		}
+		served := make(chan struct{})
+		go func() { srv.Serve(); close(served) }()
+
+		// drain until close(s.events) — a send on the closed
+		// channel would panic the test, which is exactly one of
+		// the outcomes the synchronization must make impossible
+		drained := make(chan struct{})
+		go func() {
+			for range events {
+			}
+			close(drained)
+		}()
+
+		go func() {
+			for j := 0; j < 4; j++ {
+				c, err := net.Dial("tcp", srv.Addr())
+				if err != nil {
+					return // listener already down: fine
+				}
+				_, _ = c.Write([]byte(line + "\n"))
+				_ = c.Close()
+			}
+		}()
+
+		srv.Shutdown()
+		<-served
+		<-drained
+	}
+}
