@@ -621,7 +621,12 @@ function Register-Autostart {
 
 function Stop-SfProcesses {
     param([string]$Root)
-    $rootLow = $Root.ToLower().TrimEnd('\')
+    # trailing separator required: a plain StartsWith(prefix) would also
+    # match unrelated installs whose directory NAME extends this one
+    # (e.g. 'security-framework-backup') and stop their processes too.
+    # ExecutablePath always points to a file inside the install root,
+    # so 'root\' is the correct, strictly narrower prefix.
+    $rootLow = $Root.ToLower().TrimEnd('\') + '\'
     try {
         Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
             $_.ExecutablePath -and $_.ExecutablePath.ToLower().StartsWith($rootLow)
