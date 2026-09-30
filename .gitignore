@@ -62,5 +62,18 @@ agent/
 alert-lifecycle.json
 alert-lifecycle.json.tmp
 
+# Active-response runtime state: the audit JSONL records real hosts,
+# processes and operator identities per attempt, and the operators
+# allowlist names the team — same operator-owned class as the triage
+# file above (defaults of -respond-audit / -respond-operators).
+respond-audit.jsonl
+respond-operators.yaml
+
+# Optional SQLite persistence (-store): events/alerts beyond the
+# in-memory rings, operator-local data.
+sf-store.db
+sf-store.db-wal
+sf-store.db-shm
+
 # Document build artifacts (regenerable via scripts/arq_v04/build.sh)
 docs/arquitectura-tecnica-v*.cover.pdf

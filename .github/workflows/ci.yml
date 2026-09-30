@@ -48,6 +48,21 @@ jobs:
         run: go build ./...
       - name: vet
         run: go vet ./...
+      # staticcheck (defect-class G2 of docs/analisis-brechas-y-mejoras-04B.md):
+      # vet no ve la clase de hallazgo que el carril de pulimiento ya certifica
+      # localmente (ST1000 doc-comment anclado a una cláusula package de un
+      # fichero nuevo, U1000 código muerto, ST1012 vocabulario de errores) — un
+      # hallazgo real de esa clase aterrizó CON el CI verde (ronda 19h15_A).
+      # Dos pasadas, exactamente el estándar local de 03-A: el juego completo
+      # menos el grupo de estilo, más el grupo de estilo/documentación.
+      # Versión fijada: 2024.1.1 es la que corre en las rondas locales; un
+      # @latest flotaría a la versión que el registry sirva en el push, la
+      # misma clase de referencia mutable que este workflow rechaza arriba.
+      - name: staticcheck (dos pasadas, estándar del carril de pulimiento)
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@2024.1.1
+          staticcheck -checks "all,-ST1000" ./...
+          staticcheck -checks "ST1000,ST1020,ST1021,ST1022" ./...
       - name: test
         # -count=1: no test cache, same standard as the local rounds.
         # -race: the engine is concurrent by design (SSE, fsync-per-line
