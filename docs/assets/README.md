@@ -18,6 +18,7 @@ remains regenerable.
 | `console-busqueda.gif`      | output  | search interaction: typing `lsass` filters the alert queue live (root README) |
 | `console-respuesta-activa.png` | output | active response view over a live armed engine: real audit queue with the executed/denied/followup classes (F1 pair on top, one `action_id` shared), arm and audit-health cards (added by 02-B, see `src/capture_respond.mjs`) |
 | `console-respuesta-filtro.png` | output | active response view with the followups class filter active: 1 real followup record, honest `de 12 en la ventana` count (added by 02-B) |
+| `console-respuesta-activa-fallback.png` | output | same view after a DEGRADED kill: tail of a real fd-exhaustion live-fire (pidfd_open EMFILE -> classic-kill fallback, target verified dead) plus the R2 fail-safe denial under the same exhaustion (added by 02-B; root README, Web console section) |
 | `src/diagram_arquitectura.html` | source | self-contained HTML/CSS source of the architecture diagram (1060px canvas) |
 | `src/diagram_tracer.html`   | source  | self-contained HTML/CSS source of the pipeline above (900px canvas) |
 | `src/cover.html`            | source  | cover page used to produce `docs/arquitectura-tecnica-v0.1.pdf` |
@@ -57,6 +58,22 @@ remains regenerable.
    leaves in the temp dir: `python3 src/assemble_gif.py <frames-dir>`
    (resizes to ~1100px wide, adaptive palette, ~450ms per frame with a
    long hold on the final frame).
+
+`console-respuesta-activa-fallback.png` (companion capture from the
+02-B fd-exhaustion round; produced by that round's session driver, see
+its acta) documents the DEGRADED kill mechanism with a real kernel
+errno instead of a stub: the lab exhausts the armed engine's fd table
+with idle TCP connections, delivers the kill over a connection accepted
+before the exhaustion (so `pidfd_open` fails with `EMFILE`), and the
+engine executes through the classic-kill fallback —
+`fallback_reason=emfile` in the API response and the engine log, target
+verified dead. Note what the JSONL does NOT show: by contract a
+successful kill writes ONE pre-signal line without the mechanism, so
+the tail rows read as plain executed attempts; the mechanism evidence
+lives in the response and the log, and the `mechanism` / `pidfd:
+<errno>` tags render only on the followup line of a committed send that
+FAILED (the layer4->signal TOCTOU window — bounded at <200us on an
+fsync-fast host, measured, not stubbed).
 
 The captures show the console fed by the real engine replaying the
 `sf-devsensor` demo scenario; the header chip labels the source
