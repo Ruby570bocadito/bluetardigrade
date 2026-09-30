@@ -305,7 +305,8 @@ func (m *Manager) Observe(ev *model.Event, ruleName string) {
 		return
 	}
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	emit := m.emit
+	var completed []alert.Alert
 	for _, c := range m.seqs {
 		stepIdx := -1
 		key := stateKey{seqID: c.seq.ID, host: strings.ToLower(ev.Host)}
@@ -340,11 +341,26 @@ func (m *Manager) Observe(ev *model.Event, ruleName string) {
 		st.matched[stepIdx] = true
 		st.lastEv = slim(ev)
 		if len(st.matched) == len(c.seq.Steps) {
-			m.fire(c, st, ev)
+			completed = append(completed, m.fire(c, st, ev))
 			delete(m.state, key) // re-arm
 			continue
 		}
 		m.state[key] = st
+	}
+	m.mu.Unlock()
+	// Deliver OUTSIDE mu (the accumulated O1, acta 22h46 §1.4 — the
+	// same pattern beacon had): the pipeline takes the hub lock and
+	// can block on SQLite, webhook and risk, and no stats read should
+	// queue behind delivery under this manager's lock. Chain state
+	// transitions stay atomic under mu; only delivery moves out. One
+	// Observe emits its completions in detection order and the engine
+	// observes from one goroutine, so delivery order on every real
+	// path is unchanged. emit was captured under mu, so SetEmit stays
+	// race-free.
+	for _, a := range completed {
+		if emit != nil {
+			emit(a)
+		}
 	}
 }
 
@@ -363,8 +379,11 @@ func slim(ev *model.Event) *model.Event {
 	}
 }
 
-// fire emits the sequence alert for a completed chain. Caller holds mu.
-func (m *Manager) fire(c *compiled, st *state, ev *model.Event) {
+// fire builds the sequence alert for a completed chain. Caller holds
+// mu; the returned alert is delivered by Observe AFTER mu is released —
+// the pipeline takes the hub lock and can block, and no stats read
+// should queue behind that (see Observe).
+func (m *Manager) fire(c *compiled, st *state, ev *model.Event) alert.Alert {
 	steps := make([]string, 0, len(c.seq.Steps))
 	for _, s := range c.seq.Steps {
 		steps = append(steps, s.Rule)
@@ -388,9 +407,7 @@ func (m *Manager) fire(c *compiled, st *state, ev *model.Event) {
 		Tags:      c.seq.Tags,
 		Enrich:    ev.Enrichment,
 	}
-	if m.emit != nil {
-		m.emit(a)
-	}
+	return a
 }
 
 // load parses every .yaml/.yml file under dir into compiled sequences.

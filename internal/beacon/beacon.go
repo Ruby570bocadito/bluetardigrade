@@ -266,7 +266,8 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 	host := strings.ToLower(ev.Host)
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	emit := m.emit
+	var fired []alert.Alert
 	for _, c := range m.profs {
 		if len(c.ports) > 0 && !c.ports[port] {
 			continue
@@ -310,7 +311,22 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 		}
 		st.lastFired = now
 		m.fired++
-		m.fire(c, ev, dest, port, len(st.times), mean, cv)
+		fired = append(fired, m.fire(c, ev, dest, port, len(st.times), mean, cv))
+	}
+	m.mu.Unlock()
+	// Deliver OUTSIDE mu (the accumulated O1, acta 22h46 §1.4): the
+	// pipeline takes the hub lock and can block on SQLite, webhook and
+	// risk — holding beacon.mu through it made every /api/stats read
+	// (Tracked/Fired) queue behind delivery. Detection decisions and
+	// their state mutations stay atomic under mu; only delivery moves
+	// out. A single Observe emits its own firings in detection order and
+	// the engine observes from one goroutine, so delivery order on every
+	// real path is unchanged. emit was captured under mu, so SetEmit
+	// stays race-free.
+	for _, a := range fired {
+		if emit != nil {
+			emit(a)
+		}
 	}
 }
 
@@ -410,11 +426,14 @@ func regularity(times []time.Time) (mean time.Duration, cv float64, ok bool) {
 	return mean, sd / m, true
 }
 
-// fire emits the beacon alert. Caller holds mu, mirroring the
-// correlator's fire(): the alert pipeline (RecordAlert) takes the hub
-// lock, and the API's stats closures call back into this manager only
-// after that lock is released — the documented lock order.
-func (m *Manager) fire(c *compiled, ev *model.Event, dest string, port, count int, mean time.Duration, cv float64) {
+// fire builds the beacon alert for one detection. Caller holds mu; the
+// returned alert is delivered by Observe AFTER mu is released — the
+// pipeline (RecordAlert) takes the hub lock and can block on SQLite,
+// webhook and risk, and no stats read should queue behind that. With
+// delivery outside mu there is no nested locking at all: the old
+// "documented lock order" (detector.mu before hub.mu) is gone because
+// the two locks are never held together.
+func (m *Manager) fire(c *compiled, ev *model.Event, dest string, port, count int, mean time.Duration, cv float64) alert.Alert {
 	a := alert.Alert{
 		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
 		RuleID:    c.p.ID,
@@ -430,9 +449,7 @@ func (m *Manager) fire(c *compiled, ev *model.Event, dest string, port, count in
 		Tags:      c.p.Tags,
 		Enrich:    ev.Enrichment,
 	}
-	if m.emit != nil {
-		m.emit(a)
-	}
+	return a
 }
 
 // load parses and compiles every profile in the file. Malformed

@@ -313,7 +313,8 @@ func (d *Detector) Observe(ev *model.Event, now time.Time) {
 	fields := ev.FieldMap()
 	host := strings.ToLower(ev.Host)
 	d.mu.Lock()
-	defer d.mu.Unlock()
+	emit := d.emit
+	var fired []alert.Alert
 	for i := range d.defs {
 		c := &d.defs[i]
 		if c.def.EventType != ev.Type {
@@ -346,7 +347,22 @@ func (d *Detector) Observe(ev *model.Event, now time.Time) {
 		// resets the window, so a sustained flow raises one alert
 		// per burst, not one per period.
 		if st.count >= c.def.Threshold.Count && now.Sub(st.lastFired) >= c.cooldown {
-			d.fireLocked(c, ev, group, st, now)
+			fired = append(fired, d.fireLocked(c, ev, group, st, now))
+		}
+	}
+	d.mu.Unlock()
+	// Deliver OUTSIDE mu (the accumulated O1, acta 22h46 §1.4 — the
+	// same pattern beacon and the correlator had): the pipeline takes
+	// the hub lock and can block on SQLite, webhook and risk, and no
+	// stats read should queue behind delivery under this detector's
+	// lock. Window/cooldown state mutations stay atomic under mu; only
+	// delivery moves out. One Observe emits its firings in detection
+	// order and the engine observes from one goroutine, so delivery
+	// order on every real path is unchanged. emit was captured under
+	// mu, so SetEmit stays race-free.
+	for _, a := range fired {
+		if emit != nil {
+			emit(a)
 		}
 	}
 }
@@ -443,11 +459,12 @@ func lessKey(a, b key) bool {
 	return a.group < b.group
 }
 
-// fireLocked emits the threshold alert. Caller holds mu, mirroring the
-// beacon/correlator contract: the alert pipeline (RecordAlert) takes
-// the hub lock, and the API stats closures call back into this
-// detector only after that lock is released — the documented lock order.
-func (d *Detector) fireLocked(c *compiled, ev *model.Event, group string, st *keyState, now time.Time) {
+// fireLocked applies the fire state transitions (cooldown, window
+// reset, counter) and builds the alert. Caller holds mu; the returned
+// alert is delivered by Observe AFTER mu is released — the pipeline
+// takes the hub lock and can block, and no stats read should queue
+// behind that (see Observe).
+func (d *Detector) fireLocked(c *compiled, ev *model.Event, group string, st *keyState, now time.Time) alert.Alert {
 	st.lastFired = now
 	st.count = 0
 	st.windowStart = now
@@ -476,9 +493,7 @@ func (d *Detector) fireLocked(c *compiled, ev *model.Event, group string, st *ke
 		Tags:      c.def.Tags,
 		Enrich:    ev.Enrichment,
 	}
-	if d.emit != nil {
-		d.emit(a)
-	}
+	return a
 }
 
 // group keys use rules.AsString: the canonical normalization the
