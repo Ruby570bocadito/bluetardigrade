@@ -142,7 +142,7 @@ flowchart LR
 
 The unified event schema (chapter 4 of the docs) is the master contract: sensors emit it, the engine validates and enriches it, rules index it, interfaces consume it.
 
-Full write-up: [docs/arquitectura-tecnica-v0.2.pdf](docs/arquitectura-tecnica-v0.2.pdf) (Spanish). The v0.2 revision reflects the implemented and verified state — authenticated ingest, all four detection packages (risk, thresholds, beaconing, Sigma import), the export API, the OpenAPI spec, the alert webhook, the opt-in SQLite store and the Next.js console — and keeps an honest roadmap-status column; [`docs/README.md`](docs/README.md) tracks what remains design-only (YARA, gRPC, filaments, eBPF). The original v0.1 design document is kept for provenance.
+Full write-up: [docs/arquitectura-tecnica-v0.3.pdf](docs/arquitectura-tecnica-v0.3.pdf) (Spanish). The v0.3 revision reflects the implemented and verified state — authenticated ingest, all four detection packages (risk, thresholds, beaconing, Sigma import) with the rules-loader house caps and the unified `i*` folding semantics, the export API, the OpenAPI spec, the alert webhook, the two-pass nightly bench (rings vs. SQLite store), the opt-in SQLite store and the Next.js console — and keeps an honest roadmap-status column; [`docs/README.md`](docs/README.md) tracks what remains design-only (YARA, gRPC, filaments, eBPF). The original v0.1 design document and the v0.2 revision are kept for provenance.
 
 ## Quickstart (tracer bullet)
 
@@ -815,7 +815,7 @@ bin/bench -addr 127.0.0.1:7777 -api 127.0.0.1:7778 -api-token <token> -n 2000
 
 | Document | Contents |
 |----------|----------|
-| [`docs/arquitectura-tecnica-v0.2.pdf`](docs/arquitectura-tecnica-v0.2.pdf) | full technical architecture (Spanish; v0.2 reflects the implemented state, roadmap status included) |
+| [`docs/arquitectura-tecnica-v0.3.pdf`](docs/arquitectura-tecnica-v0.3.pdf) | full technical architecture (Spanish; v0.3 reflects the implemented state, roadmap status included; v0.1/v0.2 kept for provenance) |
 | [`docs/api/openapi.yaml`](docs/api/openapi.yaml) | OpenAPI 3.0 contract of the API surface, drift-guarded in CI against `internal/api/api.go` |
 | [`docs/false-positive-control.md`](docs/false-positive-control.md) | the operator guide to alert noise: suppression recipes, dedup semantics, correlator volume, receiver-side filtering, abuse-resistance caps |
 | [`docs/agentes/`](docs/agentes) | round-by-round development reports (multi-agent workflow, verifications included) |
