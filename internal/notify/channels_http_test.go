@@ -182,3 +182,53 @@ func TestHTTPChannelsCarryHardTimeout(t *testing.T) {
 		t.Fatalf("timeout took %v, the hard cap did not apply", elapsed)
 	}
 }
+
+// Regression (04-B): transport errors used to carry the *url.Error
+// verbatim, and *url.Error echoes the full request URL — for Telegram
+// that URL embeds the bot token in its path (Bot API contract) and for
+// Slack the hook URL IS the credential. A routine timeout, refused
+// connection or DNS failure used to pin that secret to the engine log
+// via deliver()'s log.Printf. The redaction must keep the retry
+// classification (transport errors stay retryable) and the cause.
+
+func TestPostJSONRedactsCredentialURLFromTransportErrors(t *testing.T) {
+	const secret = "123456:ABC-SECRET-TOKEN"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(500 * time.Millisecond) // outlast the shrunken client timeout
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	payload := []byte(`{"chat_id":"1","text":"x"}`)
+	credentialed := srv.URL + "/bot" + secret + "/sendMessage"
+	hc := &http.Client{Timeout: 50 * time.Millisecond}
+	err := postJSON(context.Background(), hc, credentialed, payload)
+	if err == nil {
+		t.Fatal("expected transport error")
+	}
+	if !isRetryable(err) {
+		t.Fatalf("transport error must stay retryable, got: %v", err)
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("transport error leaks the credential-bearing URL: %v", err)
+	}
+	if !strings.Contains(err.Error(), "Client.Timeout") && !strings.Contains(err.Error(), "deadline") {
+		t.Fatalf("redacted error lost the underlying cause: %v", err)
+	}
+}
+
+func TestPostJSONRedactsCredentialURLFromBuildErrors(t *testing.T) {
+	const secret = "123456:ABC-SECRET-TOKEN"
+	// Invalid port byte: url.Parse fails while echoing the raw input.
+	bad := "http://127.0.0.1:%/bot" + secret + "/sendMessage"
+	err := postJSON(context.Background(), &http.Client{}, bad, []byte(`{}`))
+	if err == nil {
+		t.Fatal("expected build error")
+	}
+	if isRetryable(err) {
+		t.Fatalf("a URL the client cannot build will not heal, must be permanent: %v", err)
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("build error leaks the credential-bearing URL: %v", err)
+	}
+}
