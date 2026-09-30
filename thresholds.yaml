@@ -1,0 +1,55 @@
+# Volumetric threshold definitions (A2) — alerts when MANY occurrences
+# of the same predicate happen within one window, optionally grouped by
+# a field. The engine loads this file when present; a malformed file is
+# FATAL at startup, and edits hot-reload on the same ticker as rules.
+#
+# The shipped pack is deliberately CONSERVATIVE (medium severity, high
+# counts): a miscalibrated threshold is noise in burst, and medium
+# reflects that (dictamen 04, Q5). Ship your own file for aggressive
+# detection windows.
+#
+# Field vocabulary: dotted paths over the event schema (see README,
+# "Detection rules"). Operators: the 11 of internal/rules.
+
+# Credential spraying / brute force: many connections to a single
+# sensitive port from the same source. Grouped per source IP so one
+# noisy host does not mask another's burst.
+- name: "Fuerza bruta a servicios remotos"
+  id: "thr-ssh-burst"
+  description: >
+    Muchas conexiones al 22/3389 desde la misma IP origen en la
+    ventana: patron de fuerza bruta o spraying de credenciales
+    (T1110). Conservador: 40 intentos en 5 minutos.
+  severity: medium
+  event_type: network.connect
+  conditions:
+    - field: network.destination_port
+      operator: in
+      value: [22, 3389]
+  threshold:
+    count: 40
+    window: 5m
+    group_by: network.source_ip
+  cooldown: 15m
+  tags: ["attack.t1110", "credential-access", "threshold"]
+
+# Mass staging / deletion in user-writable directories: a burst of
+# file writes into a public folder is how droppers stage payloads and
+# how wipers churn (T1485). Every write counts (no group_by): the
+# volume itself is the signal.
+- name: "Rafaga de escrituras en carpeta publica"
+  id: "thr-public-burst"
+  description: >
+    Rafaga de escrituras en C:\Users\Public: staging de payloads o
+    borrado masivo (T1485). Conservador: 50 ficheros en 5 minutos.
+  severity: medium
+  event_type: file.write
+  conditions:
+    - field: file.path
+      operator: startswith
+      value: "C:\\Users\\Public\\"
+  threshold:
+    count: 50
+    window: 5m
+  cooldown: 15m
+  tags: ["attack.t1485", "impact", "threshold"]

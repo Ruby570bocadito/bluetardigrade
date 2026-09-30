@@ -680,6 +680,7 @@ path (no subcommand) and on `engine run`.
 | `-rules dir` | `./rules` | rules directory (falls back to the directory next to the executable) |
 | `-sequences dir` | `./sequences` | kill-chain sequences directory for the correlator |
 | `-beacons file` | `./beacons.yaml` | beacon detector profiles (C2 call-home over `network.connect`; empty disables) |
+| `-thresholds file` | `./thresholds.yaml` | volumetric threshold definitions (A2: alert when N predicate-matching events accumulate in one window, optionally grouped by a field); missing file disables, malformed file is fatal, hot-reloaded |
 | `-v` | off | print every event received |
 | `-reload-every dur` | `15s` | hot-reload interval for rules, sequences and suppressions; `0` disables |
 | `-webhook url` | empty | POST every alert as JSON to this URL (SIEM/SOAR connector) |

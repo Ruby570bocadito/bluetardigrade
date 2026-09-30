@@ -25,6 +25,8 @@ var (
 		"ingest token sent as 'AUTH <token>' (falls back to SF_INGEST_TOKEN); required when the engine starts with -token")
 	beaconN     = flag.Int("beacon", 0, "after the scenario, emit N regular network.connect events (simulated C2 call-home for the beaconing detector)")
 	beaconEvery = flag.Duration("beacon-interval", time.Second, "delay between beacon connections")
+	burstN      = flag.Int("burst", 0, "after the scenario, emit N file.write events into C:\\Users\\Public (simulated mass staging for the threshold detector)")
+	burstEvery  = flag.Duration("burst-interval", 20*time.Millisecond, "delay between burst writes")
 )
 
 var scenario = []*model.Event{
@@ -239,6 +241,32 @@ func main() {
 			fmt.Printf("[DEVSENSOR] beacon %2d/%d (OFFENSIVE, simulated)\n", i+1, *beaconN)
 			if i < *beaconN-1 {
 				time.Sleep(*beaconEvery)
+			}
+		}
+	}
+
+	// Simulated mass staging (A2): a burst of file writes into the
+	// public folder. Feeds the engine's threshold detector in E2E
+	// runs; 0 by default so every existing scenario stays byte-identical.
+	if *burstN > 0 {
+		fmt.Printf("[DEVSENSOR] burst mode: %d file.write events into C:\\Users\\Public every %s\n", *burstN, *burstEvery)
+		for i := 0; i < *burstN; i++ {
+			ev := offensive(&model.Event{
+				Type:    model.TypeFileWrite,
+				Process: &model.Process{PID: 6612, Name: "powershell.exe"},
+				File:    &model.File{Path: fmt.Sprintf("C:\\Users\\Public\\stage_%03d.dll", i)},
+			})
+			bline, err := ev.Encode()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[DEVSENSOR] encode burst: %v\n", err)
+				os.Exit(1)
+			}
+			if _, err := conn.Write(append(bline, '\n')); err != nil {
+				fmt.Fprintf(os.Stderr, "[DEVSENSOR] send burst: %v\n", err)
+				os.Exit(1)
+			}
+			if (i+1)%10 == 0 || i == *burstN-1 {
+				fmt.Printf("[DEVSENSOR] burst %d/%d (OFFENSIVE, simulated)\n", i+1, *burstN)
 			}
 		}
 	}

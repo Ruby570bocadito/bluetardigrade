@@ -1,11 +1,14 @@
 package rules
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"testing"
 	"time"
 
 	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"gopkg.in/yaml.v3"
 )
 
 func testEvent(name, cmdline string) *model.Event {
@@ -290,4 +293,78 @@ func TestOperators(t *testing.T) {
 				i, tc.op, tc.given, tc.val, got, tc.want)
 		}
 	}
+}
+
+// --- Matcher export (A2 condition Q4: immutable, thread-safe, same
+// operator semantics as the engine) ---
+
+func TestMatcherMatchesLikeEngine(t *testing.T) {
+	conds := []Condition{
+		{Field: "process.name", Operator: "eq", Value: "powershell.exe"},
+		{Field: "process.command_line", Operator: "contains_any", Value: []any{"-enc", "-w hidden"}},
+	}
+	m, err := NewMatcher(conds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := Rule{Name: "x", ID: "x", Severity: SevHigh, EventType: "process.create", Conditions: conds}
+	engine, err := LoadDir(writeRuleDir(t, []Rule{rule}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs := []*model.Event{
+		{ID: "1", Type: "process.create", Process: &model.Process{Name: "powershell.exe", CommandLine: "powershell -enc AAA"}},
+		{ID: "2", Type: "process.create", Process: &model.Process{Name: "powershell.exe", CommandLine: "powershell -w hidden"}},
+		{ID: "3", Type: "process.create", Process: &model.Process{Name: "powershell.exe", CommandLine: "Get-Date"}},
+		{ID: "4", Type: "process.create", Process: &model.Process{Name: "cmd.exe", CommandLine: "cmd -enc"}},
+	}
+	for _, ev := range evs {
+		want := len(engine.Evaluate(ev)) > 0
+		if got := m.Match(ev); got != want {
+			t.Errorf("evento %s: matcher=%v engine=%v", ev.ID, got, want)
+		}
+	}
+}
+
+func TestMatcherEmptyMatchesAllAndNilSafe(t *testing.T) {
+	m, err := NewMatcher(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.Match(&model.Event{ID: "1", Type: "registry.set"}) {
+		t.Error("matcher vacio debe igualar todo")
+	}
+	var nilM *Matcher
+	if nilM.Match(&model.Event{ID: "1"}) {
+		t.Error("matcher nil debe ser false")
+	}
+	if m.Match(nil) {
+		t.Error("evento nil debe ser false")
+	}
+}
+
+func TestMatcherRejectsBadRegexAndMissingFields(t *testing.T) {
+	if _, err := NewMatcher([]Condition{{Field: "a.b", Operator: "regex", Value: "(["}}); err == nil {
+		t.Error("regex invalida aceptada")
+	}
+	if _, err := NewMatcher([]Condition{{Field: "", Operator: "eq"}}); err == nil {
+		t.Error("campo vacio aceptado")
+	}
+	if _, err := NewMatcher([]Condition{{Field: "a", Operator: "no_existe", Value: 1}}); err != nil {
+		t.Errorf("operador desconocido debe compilar (evalua a false), no rechazar: %v", err)
+	}
+}
+
+// writeRuleDir serializes rules into a temp dir for engine parity checks.
+func writeRuleDir(t *testing.T, rs []Rule) string {
+	t.Helper()
+	dir := t.TempDir()
+	data, err := yaml.Marshal(rs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "r.yaml"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }

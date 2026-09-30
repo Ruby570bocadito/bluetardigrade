@@ -28,6 +28,7 @@ import (
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
 	"github.com/Ruby570bocadito/security-framework/internal/store"
 	"github.com/Ruby570bocadito/security-framework/internal/suppress"
+	"github.com/Ruby570bocadito/security-framework/internal/threshold"
 	"github.com/Ruby570bocadito/security-framework/internal/webhook"
 	"github.com/Ruby570bocadito/security-framework/pkg/model"
 )
@@ -41,6 +42,7 @@ type options struct {
 	rulesDir         string
 	seqDir           string
 	beaconsFile      string
+	thresholdsFile   string
 	verbose          bool
 	reloadEvery      time.Duration
 	webhookURL       string
@@ -77,6 +79,7 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 	fs.StringVar(&o.rulesDir, "rules", "./rules", "directory with YAML rules")
 	fs.StringVar(&o.seqDir, "sequences", "./sequences", "directory with YAML kill-chain sequences (correlator)")
 	fs.StringVar(&o.beaconsFile, "beacons", "./beacons.yaml", "YAML file with beacon detector profiles (C2 call-home detection over network.connect); empty disables")
+	fs.StringVar(&o.thresholdsFile, "thresholds", "./thresholds.yaml", "YAML file with volumetric threshold definitions (A2: brute force, mass deletion, sprays); empty disables")
 	fs.BoolVar(&o.verbose, "v", false, "print every event received")
 	fs.DurationVar(&o.reloadEvery, "reload-every", 15*time.Second,
 		"hot-reload interval for the rules directory (0 disables)")
@@ -173,6 +176,23 @@ func runEngine(o *options, interactive bool) error {
 			if n := bcn.Count(); n > 0 {
 				fmt.Printf("[ENGINE] %d beacon profiles loaded from %s (beaconing detection on: %v)\n",
 					n, bcnPath, bcn.Names())
+			}
+		}
+	}
+
+	// volumetric threshold detector (A2): same file convention as the
+	// beacons — missing file = detector off, malformed file = FATAL.
+	var thr *threshold.Detector
+	thrPath := ""
+	if o.thresholdsFile != "" {
+		thrPath = resolveDataFile(o.thresholdsFile, "thresholds.yaml")
+		if fileExists(thrPath) {
+			if thr, err = threshold.LoadFile(thrPath); err != nil {
+				log.Fatalf("[ENGINE] loading thresholds from %s: %v", thrPath, err)
+			}
+			if n := thr.Count(); n > 0 {
+				fmt.Printf("[ENGINE] %d threshold definitions loaded from %s (volumetric detection on: %v)\n",
+					n, thrPath, thr.Names())
 			}
 		}
 	}
@@ -332,6 +352,16 @@ func runEngine(o *options, interactive bool) error {
 				}
 				return bcn.Tracked(time.Now()), beacon.MaxKeys, bcn.Fired()
 			})
+			// threshold observability (A2): same contract — loaded
+			// definitions, live keys and fires, so the detector's
+			// failure mode (quota saturated) is watchable from
+			// /api/stats.
+			hub.SetThresholdStats(func() (int, int, uint64) {
+				if thr == nil {
+					return 0, 0, 0
+				}
+				return thr.Count(), thr.KeysTracked(), thr.Fired()
+			})
 			hub.SetSequences(corr)
 			hub.SetLifecycle(lifeStore)
 			// same standard as the ingest token: flag wins, env fallback
@@ -446,6 +476,20 @@ func runEngine(o *options, interactive bool) error {
 			alerts.Emit(a)
 		})
 	}
+	if thr != nil {
+		// threshold alerts honor the allowlist for the same reason:
+		// a host with a suppressed rule is in an accepted state.
+		// Threshold alerts NEVER feed the correlator (dictamen 04,
+		// Q3): one threshold alert already aggregates N events, and
+		// chaining it would break the "steps = atomic rules"
+		// semantics of the sequencer.
+		thr.SetEmit(func(a alert.Alert) {
+			if suppressed(supMgr, a.RuleID, a.Host, time.Now()) {
+				return
+			}
+			alerts.Emit(a)
+		})
+	}
 
 	if o.reloadEvery > 0 {
 		go func() {
@@ -488,6 +532,11 @@ func runEngine(o *options, interactive bool) error {
 					if bcn != nil && fileExists(bcnPath) {
 						if err := bcn.Reload(bcnPath); err == nil && !tui {
 							fmt.Printf("[ENGINE] beacons reloaded (%d active)\n", bcn.Count())
+						}
+					}
+					if thr != nil && fileExists(thrPath) {
+						if err := thr.Reload(thrPath); err == nil && !tui {
+							fmt.Printf("[ENGINE] thresholds reloaded (%d active)\n", thr.Count())
 						}
 					}
 				}
@@ -567,6 +616,12 @@ func runEngine(o *options, interactive bool) error {
 			// property of event timing, not of any single event.
 			if bcn != nil {
 				bcn.Observe(ev, time.Now())
+			}
+			// volumetric detector (A2): consumes raw events that pass
+			// each definition's predicate — the signal is the COUNT
+			// within a window, orthogonal to rules and beaconing.
+			if thr != nil {
+				thr.Observe(ev, time.Now())
 			}
 			processed++
 		}

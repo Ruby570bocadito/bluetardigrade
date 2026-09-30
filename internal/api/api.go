@@ -63,6 +63,7 @@ type Hub struct {
 	lifecycle   *lifecycle.Store                // alert triage state (status overlay)
 	risk        *risk.Tracker                   // per-host decayed risk score (A1)
 	beacon      func() (int, int, uint64)       // live beacon keys, cap, fired (A3)
+	threshold   func() (int, int, uint64)       // defs, live keys, fired (A2)
 
 	storeFails uint64 // throttles store write-error logging (atomic)
 
@@ -205,6 +206,17 @@ func (h *Hub) SetCorrelatorStats(fn func() (states, seqs, cap int)) {
 func (h *Hub) SetBeaconStats(fn func() (tracked, cap int, fired uint64)) {
 	h.mu.Lock()
 	h.beacon = fn
+	h.mu.Unlock()
+}
+
+// SetThresholdStats wires the volumetric detector (A2) into /api/stats:
+// loaded definitions, keys currently holding in-window evidence and
+// fires since startup. A nil closure or no wiring at all means the
+// detector is off (reported as zeros) — the stats contract stays
+// stable whether or not the engine loaded a thresholds file.
+func (h *Hub) SetThresholdStats(fn func() (defs, keys int, fired uint64)) {
+	h.mu.Lock()
+	h.threshold = fn
 	h.mu.Unlock()
 }
 
@@ -403,6 +415,11 @@ type statsPayload struct {
 	BeaconsTracked int    `json:"beacons_tracked"`
 	BeaconsCap     int    `json:"beacons_cap"`
 	BeaconsFired   uint64 `json:"beacons_fired"`
+	// Volumetric detector (A2): loaded definitions, live aggregation
+	// keys and total fires since startup.
+	ThresholdRules int    `json:"threshold_rules"`
+	ThresholdKeys  int    `json:"threshold_keys"`
+	ThresholdFired uint64 `json:"threshold_fired"`
 }
 
 // statsSnapshot collects every counter /api/stats and /metrics serve.
@@ -496,6 +513,16 @@ func (h *Hub) statsSnapshot() statsPayload {
 		bTracked, bCap, bFired = bFn()
 	}
 
+	// Threshold detector closure (A2): same uniform rule — called
+	// after h.mu.Unlock (fire path runs the lock order the other way
+	// round: Observe holds its mutex across fire -> RecordAlert, which
+	// takes h.mu).
+	var tDefs, tKeys int
+	var tFired uint64
+	if tFn := h.threshold; tFn != nil {
+		tDefs, tKeys, tFired = tFn()
+	}
+
 	return statsPayload{
 		UptimeS:          int64(time.Since(h.started) / time.Second),
 		EventsTotal:      ingested,
@@ -523,6 +550,9 @@ func (h *Hub) statsSnapshot() statsPayload {
 		BeaconsTracked:   bTracked,
 		BeaconsCap:       bCap,
 		BeaconsFired:     bFired,
+		ThresholdRules:   tDefs,
+		ThresholdKeys:    tKeys,
+		ThresholdFired:   tFired,
 	}
 }
 

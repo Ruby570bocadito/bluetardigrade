@@ -58,6 +58,12 @@ func (h *Hub) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 	writeMetric(&b, "sf_beacon_keys_tracked", "Beacon keys currently holding in-window connection evidence.", "gauge", float64(s.BeaconsTracked))
 	writeMetric(&b, "sf_beacon_cap", "Maximum beacon keys the detector will track.", "gauge", float64(s.BeaconsCap))
 	writeMetric(&b, "sf_beacons_fired_total", "Beacon alerts emitted since engine start.", "counter", float64(s.BeaconsFired))
+	// Volumetric detector (A2): totals only — per-definition detail
+	// lives in the alert payload (rule_id), keeping series
+	// cardinality bounded by construction.
+	writeMetric(&b, "sf_threshold_rules", "Threshold definitions currently loaded.", "gauge", float64(s.ThresholdRules))
+	writeMetric(&b, "sf_threshold_keys_tracked", "Threshold keys currently holding in-window evidence.", "gauge", float64(s.ThresholdKeys))
+	writeMetric(&b, "sf_thresholds_fired_total", "Threshold alerts emitted since engine start.", "counter", float64(s.ThresholdFired))
 	// Host risk (A1): the tracked gauge is a plain number; the top-5
 	// scores are the second labeled family. Hosts come from telemetry
 	// (operator-visible data /api/stats already serves), so the same

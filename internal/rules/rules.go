@@ -164,6 +164,14 @@ func (e *Engine) Evaluate(ev *model.Event) []Hit {
 }
 
 func evalCondition(cr compiledRule, idx int, c Condition, val any) bool {
+	return matchCondition(c, val, cr.regex[idx])
+}
+
+// matchCondition evaluates one condition against a field value. The
+// precompiled regex (nil when the operator is not "regex") is passed
+// in so rules and the exported Matcher share the exact same operator
+// semantics — single source of truth for what an operator means.
+func matchCondition(c Condition, val any, re *regexp.Regexp) bool {
 	switch c.Operator {
 	case "eq":
 		return compareEqual(val, c.Value)
@@ -184,7 +192,7 @@ func evalCondition(cr compiledRule, idx int, c Condition, val any) bool {
 	case "endswith":
 		return strings.HasSuffix(asString(val), asString(c.Value))
 	case "regex":
-		if re := cr.regex[idx]; re != nil {
+		if re != nil {
 			return re.MatchString(asString(val))
 		}
 		return false
@@ -364,4 +372,69 @@ func compile(r *Rule) (compiledRule, error) {
 		}
 	}
 	return cr, nil
+}
+
+// Matcher is a precompiled, immutable set of conditions evaluated
+// AND-wise against an event — the same operators, regex compilation
+// and dotted-path lookup the rule engine uses, exported for callers
+// that need per-event predicates with their own state (threshold
+// aggregation). Safe for concurrent use: every field is fixed at
+// construction and Match only reads.
+type Matcher struct {
+	conds   []Condition
+	regexes []*regexp.Regexp // per condition index (nil when not "regex")
+}
+
+// NewMatcher compiles conditions into a Matcher. The same validation
+// rules as rule compilation apply: field and operator are required,
+// "regex" values must compile with Go's regexp. An empty condition
+// list is valid and matches every event (a pure counter).
+func NewMatcher(conds []Condition) (*Matcher, error) {
+	m := &Matcher{
+		conds:   make([]Condition, len(conds)),
+		regexes: make([]*regexp.Regexp, len(conds)),
+	}
+	copy(m.conds, conds)
+	for i, c := range m.conds {
+		if c.Field == "" || c.Operator == "" {
+			return nil, fmt.Errorf("condition %d: field and operator are required", i)
+		}
+		if c.Operator == "regex" {
+			re, err := regexp.Compile(asString(c.Value))
+			if err != nil {
+				return nil, fmt.Errorf("condition %d: bad regex: %w", i, err)
+			}
+			m.regexes[i] = re
+		}
+	}
+	return m, nil
+}
+
+// Match reports whether every condition holds for the event. Events
+// with missing fields never match a condition on that field (the
+// empty Matcher matches everything).
+func (m *Matcher) Match(ev *model.Event) bool {
+	if m == nil || ev == nil {
+		return false
+	}
+	return m.MatchFields(ev.FieldMap())
+}
+
+// MatchFields is Match over a pre-flattened field map (avoids the
+// marshal round-trip when the caller already has one).
+func (m *Matcher) MatchFields(fields map[string]any) bool {
+	for i, c := range m.conds {
+		if !matchCondition(c, lookup(fields, c.Field), m.regexes[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// Lookup resolves a dotted path (e.g. "process.command_line") over a
+// flattened event field map — the same resolution rule conditions use,
+// exported for callers that need to read aggregation keys
+// (threshold group_by) with identical semantics.
+func Lookup(fields map[string]any, path string) any {
+	return lookup(fields, path)
 }

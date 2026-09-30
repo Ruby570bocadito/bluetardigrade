@@ -792,6 +792,9 @@ components:
         - beacons_tracked
         - beacons_cap
         - beacons_fired
+        - threshold_rules
+        - threshold_keys
+        - threshold_fired
       properties:
         suppressions_active:
           type: integer
@@ -910,6 +913,22 @@ components:
           format: int64
           description: beacon alerts emitted since engine start (across profile
             hot-reloads; each alert carries the profile id as rule_id)
+        threshold_rules:
+          type: integer
+          description: volumetric threshold definitions currently loaded (package
+            A2 of the roadmap). Zero when the thresholds file is absent
+        threshold_keys:
+          type: integer
+          description: threshold aggregation keys currently holding in-window
+            evidence; one key is one (definition, host, group_by value) triple.
+            Compare against the per-rule quota (2048) documented in README to
+            watch saturation — a flood of unique group values consumes only
+            the offending rule's own quota
+        threshold_fired:
+          type: integer
+          format: int64
+          description: threshold alerts emitted since engine start (each alert
+            carries the definition id as rule_id)
     Event:
       type: object
       description: |
