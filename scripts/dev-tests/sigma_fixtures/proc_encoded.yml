@@ -1,0 +1,25 @@
+# Fixture E2E del conversor Sigma (autoría propia del repo, formato
+# Sigma estandar). Debe convertir a UNA regla nativa process.create
+# con dos condiciones (endswith sobre process.image + contains sobre
+# process.command_line).
+title: PowerShell con comando codificado (fixture)
+id: 11111111-aaaa-4e18-8a02-3b9c6d1e7f40
+status: stable
+description: Fixture E2E - detecta powershell con -enc o ventana oculta.
+author: e2e-sigma
+date: 2026/09/30
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    SEL_IMG:
+        Image|endswith: '\powershell.exe'
+    SEL_CMD:
+        CommandLine|contains: '-enc'
+    condition: SEL_IMG and SEL_CMD
+falsepositives:
+    - Administracion legitima con scripts codificados
+level: high
+tags:
+    - attack.execution
+    - attack.t1059.001

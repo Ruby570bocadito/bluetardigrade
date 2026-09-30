@@ -1,0 +1,18 @@
+# Fixture E2E: "1 of them" sobre el mismo campo debe FUSIONARSE en una
+# sola regla nativa con contains_any (mismo campo, misma familia).
+title: Descarga ofuscada desde archivo (fixture)
+id: 22222222-bbbb-4444-8a02-3b9c6d1e7f40
+status: test
+description: Fixture E2E - fusion OR mismo campo.
+author: e2e-sigma
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    S_CERTUTIL: {CommandLine|contains: 'certutil -urlcache'}
+    S_BITSADMIN: {CommandLine|contains: 'bitsadmin /transfer'}
+    condition: 1 of them
+level: medium
+tags:
+    - attack.command_and_control
+    - attack.t1105

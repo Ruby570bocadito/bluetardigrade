@@ -1,0 +1,11 @@
+# Fixture E2E: producto fuera de alcance -> debe OMITIRSE con motivo
+# (el esquema v0.1 es telemetria de endpoint Windows).
+title: SSH en Linux (fixture fuera de alcance)
+id: 55555555-eeee-4444-8a02-3b9c6d1e7f40
+logsource:
+    product: linux
+    category: process_creation
+detection:
+    SEL: {CommandLine|contains: 'sshpass'}
+    condition: SEL
+level: low

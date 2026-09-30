@@ -1,0 +1,18 @@
+# Fixture E2E: categoria network_connection -> network.connect; valores
+# exactos -> eq. Debe convertir a UNA regla nativa con dos condiciones.
+title: Conexion C2 laboratorio (fixture)
+id: 44444444-dddd-4444-8a02-3b9c6d1e7f40
+status: stable
+description: Fixture E2E - beacon a IP de laboratorio.
+author: e2e-sigma
+logsource:
+    product: windows
+    category: network_connection
+detection:
+    SEL_IP: {DestinationIp: '203.0.113.66'}
+    SEL_PORT: {DestinationPort: 8443}
+    condition: SEL_IP and SEL_PORT
+level: high
+tags:
+    - attack.command_and_control
+    - attack.t1071.001

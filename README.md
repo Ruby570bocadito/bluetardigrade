@@ -28,6 +28,7 @@ A behavioral detection framework built by an offensive-security practitioner, in
 | **Sensor** | Rust ETW sensor (Kernel-Process) + Sysmon ingestion path; Windows-gated — refuses to run where there is no real telemetry |
 | **Engine** | Go 1.22, single binary, CGO-free: ingest → enrich → rules → correlate → alert → respond |
 | **Rules** | YAML with 11 operators, per-rule MITRE ATT&CK tags, hot-reload every 15 s |
+| **Sigma import** | `engine sigma` converts community Sigma rules to the native format (deterministic, fail-loud per rule, provenance preserved) |
 | **Correlation** | Kill-chain sequencer (same host, time window) with a hard state cap and external observability |
 | **Risk scoring** | Per-host decayed risk score (severity-weighted, 30-min half-life): hot-hosts KPI in stats, Prometheus and console |
 | **Beaconing** | C2 call-home detector (CV regularity over connection timing): ships conservative profiles, cooldown, bounded state, same alert pipeline |
@@ -63,6 +64,7 @@ A behavioral detection framework built by an offensive-security practitioner, in
 - [Detection rules](#detection-rules)
   - [Kill-chain correlation](#kill-chain-correlation)
   - [Rule actions](#rule-actions)
+  - [Converting Sigma rules](#converting-sigma-rules)
 - [Engine CLI reference](#engine-cli-reference)
 - [Development & CI](#development--ci)
 - [Measured performance](#measured-performance)
@@ -87,7 +89,7 @@ And one engineering rule that shapes everything else: **no simulated data in the
 | Area | What you get today |
 |------|--------------------|
 | **Telemetry** | Rust ETW sensor (Kernel-Process) + Sysmon ingestion path; NDJSON/TCP feed with schema validation and enrichment (user, command line, network context) |
-| **Detection** | YAML rules with 11 operators (`eq`, `regex`, `contains_any`, …), hot-reload every 15 s, per-rule MITRE ATT&CK tags and actions |
+| **Detection** | YAML rules with 11 operators (`eq`, `regex`, `contains_any`, …), hot-reload every 15 s, per-rule MITRE ATT&CK tags and actions; `engine sigma` imports community Sigma rules (deterministic, fail-loud, provenance preserved) |
 | **Correlation** | Kill-chain sequencer: named steps across the same host within a time window raise one high-signal campaign alert |
 | **Risk scoring** | Severity-weighted per-host score with time decay (half-life 30 min, bounded host map): `hot_hosts` top-5 and `risk_hosts_tracked` in `/api/stats`, `sf_host_risk_score{host=...}` in `/metrics`, hot-hosts panel in the console dashboard |
 | **Beaconing** | Behavioral C2 call-home detector over `network.connect` (package A3): coefficient-of-variation regularity per (profile, host, destination), `min_interval` false-positive floor, per-key cooldown, bounded state — conservative profiles ship in `beacons.yaml` and detections flow through the standard alert pipeline (suppressions, triage, store, webhook, console) |
@@ -630,6 +632,29 @@ Rules can declare an `actions` list; the engine executes it every time the rule 
 
 Delivery failures are logged on stderr and never surface as detection errors; a dead webhook endpoint degrades to log noise, not data loss in the engine.
 
+### Converting Sigma rules
+
+`engine sigma` converts [Sigma](https://sigma.is) YAML rules into the native format above, so the community corpus can feed `rules/` without hand-transcription. The converter is **deterministic** (same corpus → byte-identical output) and **fail-loud**: a rule using a construct the engine cannot express faithfully is skipped with an explicit reason in the report, never translated approximately — a broken YAML file aborts the run instead of silently converting the rest.
+
+```bash
+engine sigma -dir ./corpus-sigma -out rules/converted.yaml
+engine sigma -dir ./corpus-sigma -strict   # exit 1 if anything is skipped
+```
+
+What converts (v1 scope):
+
+| Sigma | Native |
+|-------|--------|
+| `level` | `severity` (`informational` → `info`; missing level → skipped) |
+| logsource category | `event_type`: `process_creation`→`process.create`, `file_event`→`file.write`, `network_connection`→`network.connect`, `registry_*`→`registry.set`, `image_loaded`/`driver_load`→`image.load`, `process_access`→`process.access` (Windows product only) |
+| field names | the normalized schema (`Image`→`process.image`, `CommandLine`→`process.command_line`, `TargetObject`→`registry.key`, `DestinationIp`→`network.destination_ip`, …) — a field with no real equivalent skips the rule, naming it |
+| wildcards | `*x*`→`contains`, `x*`→`startswith`, `*x`→`endswith`, exact→`eq`, anything else→anchored `regex` (literals escaped, `?`→`.`) |
+| value lists | `in` / `contains_any`, or a single alternation regex that keeps per-element anchoring |
+| `condition` | `A`, `A and B…`, `A or B…`, `1 of them`, `all of them`, `1 of prefix*` — same-field ORs merge into one rule (`contains_any`/`in`), different-field ORs split into one rule per branch; `not`, parentheses and mixed `and/or` are skipped |
+| modifiers | `contains`, `startswith`, `endswith`, `re`, `gt`, `lt` — encoding modifiers (`base64*`, `utf16*`, `wide`), `all` and `exists` are skipped |
+
+Provenance travels in the converted rule: author, status, date, references and declared false positives are folded into the description (`[Sigma] …` line), the Sigma UUID stays as the rule `id`, and a `sigma` tag is prepended so imported rules are identifiable in `engine rules`, the console and the API. Bounds apply to the whole run (4 MiB per file, 512 emitted rules, per-rule caps on selections/fields/condition length). The E2E (`scripts/dev-tests/e2e_sigma.sh`) converts a committed fixture corpus and proves the converted rules fire on real telemetry through the engine's TCP feed.
+
 ## Engine CLI reference
 
 The engine binary is `engine` (`make build` puts it in `bin/`; the
@@ -640,6 +665,7 @@ Windows installer installs it as `sf-engine`). Subcommands:
 | `engine run [flags]` | start the full pipeline: ingest, enrichment, rules, correlator, suppressions, API, webhook |
 | `engine rules [-rules dir]` | print the loaded rule pack as a table and exit |
 | `engine validate [-rules dir] [-sequences dir]` | validate rules and sequences, print a report; exit code 0 when everything loads, non-zero on error (CI-friendly) |
+| `engine sigma -dir dir-or-file [-out file] [-strict]` | convert a Sigma corpus to the native rule format; report lists every skipped rule with its reason; exit 0 only with at least one conversion (and, under `-strict`, zero skips) |
 | `engine version` | print the engine version and exit |
 
 ### `engine run` flags

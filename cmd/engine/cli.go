@@ -30,6 +30,7 @@ const engineExamples = `  engine run                     arranca el motor con lo
   engine -addr 0.0.0.0:7777      modo clasico: sin subcomando, banderas de un guion
   engine rules                   tabla de las reglas cargadas
   engine validate                valida reglas y secuencias y reporta avisos
+  engine sigma -dir corpus -out rules/convertidas.yaml   convierte reglas Sigma
   engine version                 version, runtime de Go y plataforma`
 
 const runLong = `Arranca el motor completo: ingesta TCP de eventos NDJSON, enriquecido,
@@ -85,7 +86,7 @@ func newRootCmd() *cobra.Command {
 	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		fmt.Print(buildHelp(cmd))
 	})
-	root.AddCommand(newRunCmd(), newRulesCmd(), newValidateCmd(), newVersionCmd())
+	root.AddCommand(newRunCmd(), newRulesCmd(), newValidateCmd(), newSigmaCmd(), newVersionCmd())
 	return root
 }
 

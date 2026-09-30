@@ -1,0 +1,11 @@
+# Fixture E2E: modificador de codificacion no soportado -> debe
+# OMITIRSE con motivo (traducirlo aproximado cambiaria el significado).
+title: Whoami base64 (fixture no soportado)
+id: 66666666-ffff-4444-8a02-3b9c6d1e7f40
+logsource:
+    product: windows
+    category: process_creation
+detection:
+    SEL: {CommandLine|base64offset|contains: whoami}
+    condition: SEL
+level: low
