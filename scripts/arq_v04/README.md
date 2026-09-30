@@ -6,17 +6,17 @@ vive versionado en el árbol, de modo que la revisión es reproducible y la
 siguiente versión no dependa de herramientas desaparecidas.
 
 El nombre del directorio (`arq_v04`) registra dónde nació el pipeline (v0.4);
-construye la revisión vigente de la serie — hoy la **v0.6**. Renombrarlo por
+construye la revisión vigente de la serie — hoy la **v0.7**. Renombrarlo por
 revisión rompería las referencias cruzadas de actas y READMEs sin añadir nada.
 
 ## Qué produce
 
-`docs/arquitectura-tecnica-v0.6.pdf` (portada + índice + 8 capítulos), a partir de:
+`docs/arquitectura-tecnica-v0.7.pdf` (portada + índice + 8 capítulos), a partir de:
 
 | Pieza | Fuente versionada | Herramienta |
 |---|---|---|
 | Cuerpo (TOC + capítulos) | `scripts/arq_v04/generator.py` | python3 + reportlab (`TocDocTemplate` + `multiBuild`, TOC automático con enlaces) |
-| Portada | `docs/assets/src/cover-v0.6.html` | node + playwright (`page.pdf`, vector, 794x1123 px A4 @96dpi) |
+| Portada | `docs/assets/src/cover-v0.7.html` | node + playwright (`page.pdf`, vector, 794x1123 px A4 @96dpi) |
 | Fusión + metadata | `scripts/arq_v04/merge_and_meta.py` | python3 + pypdf (portada como página 0, normalizada a A4) |
 | Diagrama de arquitectura | `docs/assets/src/diagram_arquitectura.html` | `render_diagram.mjs` (captura de `.canvas` a 2x, procedimiento de `docs/assets/README.md`) |
 
