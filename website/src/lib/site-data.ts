@@ -1,0 +1,266 @@
+export type View = "home";
+
+export const REPO_URL = "https://github.com/Ruby570bocadito/security-framework";
+
+export const NAV_LINKS: { label: string; anchor: string }[] = [
+  { label: "Why", anchor: "why" },
+  { label: "Architecture", anchor: "architecture" },
+  { label: "Features", anchor: "features" },
+  { label: "Quickstart", anchor: "quickstart" },
+  { label: "Roadmap", anchor: "roadmap" },
+];
+
+export interface Stat {
+  value: number;
+  decimals?: string; // rendered as-is instead of the number
+  prefix?: string;
+  suffix: string;
+  label: string;
+  desc: string;
+}
+
+export const STATS: Stat[] = [
+  {
+    value: 0.4,
+    decimals: "0.4",
+    prefix: "≈",
+    suffix: " ms",
+    label: "p99 ingest → alert",
+    desc: "Measured on loopback with the full pipeline active — not assumed.",
+  },
+  {
+    value: 17,
+    label: "YAML rule operators",
+    suffix: "",
+    desc: "11 case-sensitive + 6 case-insensitive, hot-reloaded every 15 s.",
+  },
+  {
+    value: 4,
+    label: "Detection layers",
+    suffix: "",
+    desc: "Rules, kill-chain correlation, beaconing and volumetric thresholds.",
+  },
+  {
+    value: 0,
+    label: "Simulated events",
+    suffix: "",
+    desc: "In the product path. The console shows only what the engine delivers.",
+  },
+];
+
+export const WHY_CARDS = [
+  {
+    num: "01",
+    title: "Behavior over signatures",
+    desc: "IOCs expire; TTPs persist. Rules model process trees, command lines and handle access — the noise an attacker actually makes on a Windows host.",
+  },
+  {
+    num: "02",
+    title: "Offensive provenance",
+    desc: "Every seeded rule corresponds to a technique validated in a lab against its real TTP, and documents the noise it produces on a clean host.",
+  },
+  {
+    num: "03",
+    title: "Usability is a security feature",
+    desc: "A detection engine nobody wants to operate detects nothing. NDJSON debugging with netcat, hot-reloaded YAML rules and an OpenAPI-first API come first.",
+  },
+];
+
+export const GOLDEN_RULE =
+  "No simulated data in the product path. The console never invents events, the engine degrades loudly instead of silently, and the only scripted piece is the demo scenario — clearly labeled as such.";
+
+export const PIPELINE = [
+  {
+    num: "01",
+    name: "sf-sensor",
+    stack: "Rust",
+    icon: "cpu",
+    desc: "ETW kernel-process providers plus a Sysmon ingestion path. Streams a narrow NDJSON/TCP feed with an authenticated handshake — and refuses to run where there is no real telemetry.",
+    tags: ["ETW", "Sysmon", "NDJSON/TCP"],
+  },
+  {
+    num: "02",
+    name: "sf-engine",
+    stack: "Go · single binary",
+    icon: "engine",
+    desc: "Ingest → enrich → rules → correlate → alert → respond. Four behavioral detection packages, YAML rules hot-reloaded every 15 s, per-host risk scoring with time decay.",
+    tags: ["Rules", "Kill-chain", "Beaconing", "Risk"],
+  },
+  {
+    num: "03",
+    name: "Console",
+    stack: "Next.js + socket.io",
+    icon: "monitor",
+    desc: "Live triage with KPIs, severity filters, rule browser, kill-chain chains view and a bring-your-own AI analyst — any OpenAI-compatible endpoint.",
+    tags: ["Live feed", "AI triage"],
+  },
+  {
+    num: "04",
+    name: "Outputs",
+    stack: "REST · SSE · Webhooks",
+    icon: "output",
+    desc: "REST + SSE on :7778, opt-in SQLite persistence with retention pruner, alert webhooks with Bearer auth, Slack / Telegram / email and Prometheus metrics.",
+    tags: ["OpenAPI 3.0", "SQLite", "Prometheus"],
+  },
+];
+
+export const FEATURES = [
+  {
+    icon: "radio",
+    title: "Real telemetry",
+    desc: "Rust ETW sensor (kernel-process) + Sysmon path. Schema validation and enrichment: user, command line, network context.",
+  },
+  {
+    icon: "scan",
+    title: "Behavioral rules",
+    desc: "Plain YAML with 17 operators, per-rule MITRE ATT&CK tags and actions, hot-reload every 15 seconds. Readable in an afternoon.",
+  },
+  {
+    icon: "import",
+    title: "Sigma import",
+    desc: "`engine sigma` converts community Sigma rules to the native format — deterministic, fail-loud per rule, provenance preserved.",
+  },
+  {
+    icon: "link",
+    title: "Kill-chain correlator",
+    desc: "Named steps across the same host within a time window raise one high-signal campaign alert, with a hard state cap.",
+  },
+  {
+    icon: "gauge",
+    title: "Risk scoring",
+    desc: "Severity-weighted per-host score with 30-min half-life. Hot-hosts KPI in stats, Prometheus metric and a console panel.",
+  },
+  {
+    icon: "radar",
+    title: "Beaconing detection",
+    desc: "C2 call-home detector over connection timing (coefficient of variation), conservative profiles, cooldown and bounded state.",
+  },
+  {
+    icon: "shield",
+    title: "Response built in",
+    desc: "Triage lifecycle (ack / close / reopen with notes), operator suppressions with expiry, alert webhook with bounded retries.",
+  },
+  {
+    icon: "database",
+    title: "Storage & API",
+    desc: "Opt-in SQLite (pure-Go driver, WAL) with a retention pruner. OpenAPI 3.0 spec drift-guarded in CI; JSONL/CSV export.",
+  },
+];
+
+export const QUICKSTART = {
+  terminals: [
+    {
+      title: "terminal 1 — engine",
+      lines: [
+        { text: "# start the detection engine", dim: true },
+        { text: "make run-engine", cmd: true },
+        { text: "", dim: false },
+        { text: "[ENGINE] 23 rules loaded from ./rules", ok: true },
+        { text: "[ENGINE] 4 sequences loaded (correlator on)", ok: true },
+        { text: "[ENGINE] 2 beacon profiles loaded", ok: true },
+        { text: "[ENGINE] listening on 127.0.0.1:7777 (NDJSON)", ok: true },
+        { text: "[ENGINE] api on 127.0.0.1:7778 (stats/events/alerts)", ok: true },
+      ],
+    },
+    {
+      title: "terminal 2 — demo scenario",
+      lines: [
+        { text: "# replay the labeled demo scenario", dim: true },
+        { text: "make run-devsensor", cmd: true },
+        { text: "", dim: false },
+        { text: "[ALERT] HIGH      powershell.exe -nop -w hidden -enc ...", warn: true },
+        { text: "[ALERT] HIGH      certutil.exe -urlcache -split -f https://...", warn: true },
+        { text: "[ALERT] CRITICAL  rundll32.exe ... comsvcs.dll, MiniDump...", crit: true },
+        { text: "[ALERT] HIGH      schtasks.exe /create /tn EdgeUpdaterCore...", warn: true },
+        { text: "[ALERT] CRITICAL  powershell -c Set-MpPreference -Disable...", crit: true },
+      ],
+    },
+  ],
+  note: "Requirements: Go 1.22+. The demo scenario is simulated data for smoke-testing the pipeline — real hosts stream through sf-sensor.",
+};
+
+export const COMPARISON = {
+  is: [
+    "One Go binary you can read end to end",
+    "YAML rules mapped to MITRE ATT&CK",
+    "Always-on behavioral detection",
+    "Measured p99 latency, published openly",
+    "OpenAPI-first REST, drift-guarded in CI",
+  ],
+  isNot: [
+    "A production SIEM or managed EDR",
+    "A fleet agent with compliance packs",
+    "A replacement for your SOC stack",
+    "A black-box rule format",
+    "Simulated demos in the product path",
+  ],
+};
+
+export const ROADMAP = [
+  {
+    phase: "Phase 1",
+    window: "weeks 1–6 · 2026",
+    title: "Tracer bullet",
+    desc: "ETW sensor, rule index and the end-to-end pipeline — p99 under 10 ms. Shipped.",
+    done: true,
+  },
+  {
+    phase: "Phase 2",
+    window: "weeks 7–14 · 2026",
+    title: "Deep telemetry",
+    desc: "YARA memory scanning and an eBPF collector. SQLite persistence already shipped with -store (Sept 2026).",
+    done: false,
+  },
+  {
+    phase: "Phase 3",
+    window: "weeks 15–20",
+    title: "Ecosystem hooks",
+    desc: "REST + OpenAPI spec already shipped (drift-guarded in CI). Elastic / Splunk connectors next.",
+    done: false,
+  },
+  {
+    phase: "Phase 4",
+    window: "weeks 21–26",
+    title: "Extensibility",
+    desc: "Python filaments (sandboxed), plugin system and public benchmarks.",
+    done: false,
+  },
+];
+
+export const FAQS = [
+  {
+    q: "Is this a production EDR?",
+    a: "No — and it says so up front. It is a small, readable detection stack for lab and educational use: one Go binary, YAML rules you can read in an afternoon, and a kill-chain correlator you can audit line by line.",
+  },
+  {
+    q: "Does it depend on Sysmon?",
+    a: "No. The Rust sensor streams ETW kernel-process providers natively, and a Sysmon ingestion path exists as an alternative feed. The engine refuses to run where there is no real telemetry.",
+  },
+  {
+    q: "How do rules work?",
+    a: "Plain YAML with 17 operators, per-rule MITRE ATT&CK tags and actions, hot-reloaded every 15 seconds. Community Sigma rules can be imported deterministically with `engine sigma`, provenance preserved.",
+  },
+  {
+    q: "What does the console show?",
+    a: "Only what the engine really delivers: live event feed, KPI dashboard, severity triage with free-text search, rule browser, kill-chain chains view and suppressions — plus an AI analyst you plug into your own OpenAI-compatible endpoint.",
+  },
+  {
+    q: "How fast is the pipeline?",
+    a: "Measured, not assumed: ingest→alert p99 ≈ 0.4 ms on loopback with rules, correlation, beaconing and risk tracking active. The numbers and methodology are published in the README.",
+  },
+  {
+    q: "Can I contribute?",
+    a: "Yes — PRs are welcome. The roadmap is public, CI is SHA-pinned, and the OpenAPI spec is drift-guarded so integrations stay honest. Start with the docs map and the rule format reference.",
+  },
+];
+
+export const TECH_STRIP = [
+  "Rust",
+  "Go 1.22",
+  "ETW",
+  "MITRE ATT&CK",
+  "Sigma",
+  "Next.js",
+  "SQLite",
+  "Prometheus",
+];
