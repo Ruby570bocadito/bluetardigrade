@@ -167,6 +167,15 @@ function SurfaceCard({ state }: { state: SfRespondState }) {
 // failed after the commit).
 type KindFilter = 'all' | 'executed' | 'denied' | 'followup'
 
+// Human labels of the filter classes, handed to the export tooltip so
+// it can state that the JSONL export is the WHOLE window regardless of
+// the active lens (O4, cross-ref 04-B 19h45 §2.C).
+const KIND_LABEL: Record<Exclude<KindFilter, 'all'>, string> = {
+  executed: 'ejecutados',
+  denied: 'denegados',
+  followup: 'followups',
+}
+
 function AuditFeed() {
   const { respondAudit, auditLimit, setAuditLimit } = useEngine()
   const [kindFilter, setKindFilter] = useState<KindFilter>('all')
@@ -214,7 +223,11 @@ function AuditFeed() {
                 <SelectItem value="500">cola 500</SelectItem>
               </SelectContent>
             </Select>
-            <AuditExportButton audit={respondAudit} />
+            <AuditExportButton
+              audit={respondAudit}
+              filterLabel={kindFilter === 'all' ? undefined : KIND_LABEL[kindFilter]}
+              hiddenCount={kindFilter === 'all' ? undefined : records.length - visible.length}
+            />
           </div>
         }
       />

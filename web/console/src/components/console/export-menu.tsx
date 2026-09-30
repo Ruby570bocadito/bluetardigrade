@@ -35,9 +35,24 @@ export function ExportButtons({ kind }: { kind: 'alerts' | 'events' }) {
 // one JSON Lines line per record, verbatim (same Record schema the
 // engine writes append-only). The engine has no bulk export route for
 // the audit by design (the read surface is the capped tail), so the
-// console packages only the visible window and says so — the full
+// console packages only the fetched window and says so — the full
 // file lives on the engine host and is never rewritten by anyone.
-export function AuditExportButton({ audit }: { audit: SfRespondAudit | null }) {
+// The export is the WHOLE window BY DESIGN, independent of the view
+// filter: the class filter is a lens over the queue, not a data
+// selector, and a filtered file would masquerade as the audit tail.
+// When the parent passes an active filterLabel the tooltip states
+// this explicitly (O4, cross-ref 04-B 19h45 §2.C — info, no defect).
+export function AuditExportButton({
+  audit,
+  filterLabel,
+  hiddenCount,
+}: {
+  audit: SfRespondAudit | null
+  /** Human label of the active class filter, when one is active. */
+  filterLabel?: string
+  /** Records the active filter hides from the view but the export keeps. */
+  hiddenCount?: number
+}) {
   const records = audit?.records ?? []
   const disabled = records.length === 0
 
@@ -66,7 +81,9 @@ export function AuditExportButton({ audit }: { audit: SfRespondAudit | null }) {
       title={
         disabled
           ? 'Sin intentos en la cola: nada que exportar todavía'
-          : `Descarga la cola visible (${records.length} registros, más recientes primero) línea a línea como la escribe el motor; el archivo completo vive en el host del motor (append-only, nunca se trunca)`
+          : filterLabel
+            ? `Exporta la ventana completa, independiente del filtro «${filterLabel}»: los ${records.length} registros de la cola, incluidos los ${hiddenCount ?? 0} que el filtro oculta en la vista, más recientes primero, línea a línea como la escribe el motor; el archivo completo vive en el host del motor (append-only, nunca se trunca)`
+            : `Descarga la cola de la ventana (${records.length} registros, más recientes primero) línea a línea como la escribe el motor; el archivo completo vive en el host del motor (append-only, nunca se trunca)`
       }
       className={`${linkCls} disabled:cursor-not-allowed disabled:opacity-50`}
     >
