@@ -6,7 +6,7 @@
 
 import { useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { ActivityIcon, Broadcast, Gauge, Prohibit, ShieldCheck, SquaresFour, Warning, ChatsCircle, FlowArrow } from '@phosphor-icons/react'
+import { ActivityIcon, Broadcast, Gauge, Lightning, Prohibit, ShieldCheck, SquaresFour, Warning, ChatsCircle, FlowArrow } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { BlurText } from '@/components/reactbits/blur-text'
 import { ShinyText } from '@/components/reactbits/shiny-text'
@@ -17,6 +17,7 @@ import { LiveFeed } from './live-feed'
 import { AlertsView } from './alerts-view'
 import { RulesView } from './rules-view'
 import { SuppressionsView } from './suppressions-view'
+import { RespondView } from './respond-view'
 import { SequencesView } from './sequences-view'
 import { AnalystPanel } from './analyst-panel'
 import { formatUptime, type EngineStats, type SfAlert } from '@/lib/console-types'
@@ -29,6 +30,7 @@ const NAV: { id: ConsoleView; label: string; icon: React.ElementType }[] = [
   { id: 'reglas', label: 'Reglas', icon: ShieldCheck },
   { id: 'cadenas', label: 'Cadenas', icon: FlowArrow },
   { id: 'supresiones', label: 'Supresiones', icon: Prohibit },
+  { id: 'respuesta', label: 'Respuesta activa', icon: Lightning },
   { id: 'analista', label: 'Analista IA', icon: ChatsCircle },
 ]
 
@@ -219,6 +221,7 @@ export function ConsoleShell() {
               {view === 'reglas' && <RulesView />}
               {view === 'cadenas' && <SequencesView />}
               {view === 'supresiones' && <SuppressionsView />}
+              {view === 'respuesta' && <RespondView />}
               {view === 'analista' && (
                 <AnalystPanel pendingAlert={pendingAlert} clearPending={() => setPendingAlert(null)} />
               )}
@@ -251,6 +254,8 @@ function titleFor(view: ConsoleView): string {
       return 'Cadenas de kill chain'
     case 'supresiones':
       return 'Supresiones del operador'
+    case 'respuesta':
+      return 'Respuesta activa (C3)'
     case 'analista':
       return 'Analista IA'
   }

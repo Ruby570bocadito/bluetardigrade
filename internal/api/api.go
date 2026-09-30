@@ -84,6 +84,9 @@ type Hub struct {
 	// open audit file; see respond_write.go). nil = the route answers
 	// a real 404: the surface does not exist for probing clients.
 	respond *respond.Manager
+	// file paths the engine armed at startup (respond_read.go): the
+	// read surface reports them verbatim instead of guessing.
+	respondOpsPath, respondProtPath, respondAuditPath string
 }
 
 // New binds the API listener. Use addr ":0" in tests to pick a free port.
@@ -119,8 +122,12 @@ func New(addr string) (*Hub, error) {
 	// active response (C3): registered unconditionally, answers a
 	// real 404 while the engine runs without -allow-kill + token +
 	// open audit (respond_write.go documents why a probe must not
-	// distinguish "disarmed" from "does not exist")
+	// distinguish "disarmed" from "does not exist"). The read surface
+	// (respond_read.go) follows the same contract: an unarmed engine
+	// exposes no state and no audit tail either.
 	mux.HandleFunc("POST /api/respond/kill", h.handleRespondKill)
+	mux.HandleFunc("GET /api/respond/state", h.handleRespondState)
+	mux.HandleFunc("GET /api/respond/audit", h.handleRespondAudit)
 	mux.HandleFunc("GET /api/sequences", h.handleSequences)
 	mux.HandleFunc("GET /api/stream", h.handleStream)
 	mux.HandleFunc("GET /api/health", h.handleHealth)

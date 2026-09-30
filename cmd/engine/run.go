@@ -483,6 +483,7 @@ func runEngine(o *options, interactive bool) error {
 					}
 				}
 				hub.EnableRespondKill(respMgr)
+				hub.SetRespondPaths(respOpsPath, respProtPath, auditPath)
 				if audit.Size() >= respond.MaxAuditBytes {
 					fmt.Println("[ENGINE] active response: WARNING the audit file is already at its 64 MiB ceiling: every action will deny with audit_unavailable until the file is rotated")
 				}

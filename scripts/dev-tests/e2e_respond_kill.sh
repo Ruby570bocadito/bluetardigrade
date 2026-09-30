@@ -15,6 +15,10 @@
 #   h. idempotencia      → 409 en la 2ª petición con la misma clave
 #   i. audit JSONL       → cada línea parsea; las denegaciones están
 #                          (el NEGATIVO queda registrado)
+#   j. lectura consola   → GET /api/respond/state (flags + salud del
+#                          audit) y GET /api/respond/audit (cola
+#                          newest-first, limit, 401, 404 real en
+#                          el engine desarmado)
 #
 # Uso:
 #   bash scripts/dev-tests/e2e_respond_kill.sh
@@ -197,6 +201,59 @@ PYEOF
 check "audit JSONL parsea y registra TODAS las denegaciones" "$AUDIT_OK"
 check "el 404 del engine desarmado NO escribe audit (no existe la superficie)" \
   "$([ "$(rg -c 'disarmed' "$AUDIT" 2>/dev/null || echo 0)" = "0" ] && echo 1 || echo 0)"
+
+echo "== j. lectura de consola: estado + cola del audit (02-B) =="
+get_read() { # get_read <url-base> <path> <con-token 0|1>
+  local code body
+  if [ "$3" = "1" ]; then
+    code=$(curl -s -o /tmp/sf-read-body.$$ -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$1$2")
+  else
+    code=$(curl -s -o /tmp/sf-read-body.$$ -w '%{http_code}' "$1$2")
+  fi
+  body=$(cat /tmp/sf-read-body.$$); rm -f /tmp/sf-read-body.$$
+  echo "$code|$body"
+}
+
+RES=$(get_read "$BASE" "/api/respond/state" 1)
+CODE="${RES%%|*}"; BODY="${RES#*|}"
+check "state: HTTP 200 con el engine armado" "$([ "$CODE" = "200" ] && echo 1 || echo 0)"
+check "state: armed=true y signal SIGKILL fijo (Q1)" "$(echo "$BODY" | rg -q '"armed":true' && echo "$BODY" | rg -q '"signal":"SIGKILL"' && echo 1 || echo 0)"
+check "state: ruta del audit y techo 64 MiB en el cuerpo" "$(echo "$BODY" | rg -q "audit_path" && echo "$BODY" | rg -q '"audit_ceiling":67108864' && echo 1 || echo 0)"
+check "state: recuento live de operadores (1 en el laboratorio)" "$(echo "$BODY" | rg -q '"operators_count":1' && echo 1 || echo 0)"
+
+RES=$(get_read "$BASE" "/api/respond/state" 0)
+CODE="${RES%%|*}"
+check "state: HTTP 401 sin token (misma credencial que la escritura)" "$([ "$CODE" = "401" ] && echo 1 || echo 0)"
+
+RES=$(get_read "$BASE" "/api/respond/audit?limit=2" 1)
+CODE="${RES%%|*}"; BODY="${RES#*|}"
+check "audit: HTTP 200 con limit=2" "$([ "$CODE" = "200" ] && echo 1 || echo 0)"
+READ_OK=1
+printf '%s' "$BODY" > /tmp/sf-read-payload.$$
+python3 - "$AUDIT" /tmp/sf-read-payload.$$ <<'PYEOF' || READ_OK=0
+import json, sys
+payload = json.loads(open(sys.argv[2], encoding="utf-8").read())
+recs = payload["records"]
+assert len(recs) == 2, f"limit=2 devolvio {len(recs)} registros"
+assert payload["skipped"] == 0, payload["skipped"]
+assert payload["truncated"] is False
+# newest-first: el primer registro es la ULTIMA linea del fichero
+lines = [l for l in open(sys.argv[1], encoding="utf-8").read().splitlines() if l.strip()]
+assert json.loads(lines[-1])["action_id"] == recs[0]["action_id"], "orden newest-first roto"
+for r in recs:
+    assert r["decision"] in ("executed", "denied"), r
+    assert "source" in r and "ts" in r and "action_id" in r, r
+print("cola OK:", len(recs), "registros newest-first")
+PYEOF
+rm -f /tmp/sf-read-payload.$$
+check "audit: cola newest-first con bookkeeping honesto" "$READ_OK"
+
+RES=$(get_read "$BASE_DISARM" "/api/respond/state" 1)
+CODE="${RES%%|*}"
+check "state: HTTP 404 real en el engine desarmado" "$([ "$CODE" = "404" ] && echo 1 || echo 0)"
+RES=$(get_read "$BASE_DISARM" "/api/respond/audit" 1)
+CODE="${RES%%|*}"
+check "audit: HTTP 404 real en el engine desarmado" "$([ "$CODE" = "404" ] && echo 1 || echo 0)"
 
 echo
 echo "=== e2e_respond_kill: $PASS OK / $FAIL FAIL ==="

@@ -152,6 +152,54 @@ export type SfSequence = {
   steps: string[]
 }
 
+// Active response surface state (engine GET /api/respond/state). Only
+// an ARMED engine serves it (-allow-kill AND token AND an open audit
+// file); a disarmed engine answers a real 404, which the console maps
+// to a real "no disponible" state — never to a fake card.
+export type SfRespondState = {
+  armed: boolean
+  signal: string
+  operators_count: number
+  protected_count: number
+  operators_path?: string
+  protected_path?: string
+  audit_path: string
+  audit_size: number
+  audit_ceiling: number
+}
+
+// One attempt line of the engine's -respond-audit JSONL (Record, R5a
+// schema) as returned by GET /api/respond/audit: executed AND denied
+// attempts, one line per attempt, audit written before the signal.
+export type SfRespondRecord = {
+  ts: string
+  action_id: string
+  decision: 'executed' | 'denied'
+  code?: string
+  pid: number
+  process_name: string
+  resolved_name?: string
+  operator: string
+  rule_id?: string
+  alert_id?: string
+  reason: string
+  host: string
+  signal?: string
+  mechanism?: string
+  source: string
+  followup?: boolean
+}
+
+// The audit tail payload: records newest first plus the honest
+// bookkeeping of the scan (skipped lines are torn tails or malformed
+// lines, counted and never served as data; truncated marks older
+// records beyond the read window).
+export type SfRespondAudit = {
+  records: SfRespondRecord[]
+  skipped: number
+  truncated: boolean
+}
+
 // statsPayload served by /api/stats (verified against internal/api/api.go
 // and a real smoke) — also the shape the hub re-emits over socket.io,
 // with mode flipping to 'sin-motor' and interval_ms set by the hub when

@@ -16,7 +16,7 @@ import { AnimatedItem } from '@/components/reactbits/animated-list'
 import { SpotlightCard } from '@/components/reactbits/spotlight-card'
 import { eventDetail, formatTime, type SfAlert } from '@/lib/console-types'
 
-export type ConsoleView = 'panel' | 'flujo' | 'alertas' | 'reglas' | 'cadenas' | 'supresiones' | 'analista'
+export type ConsoleView = 'panel' | 'flujo' | 'alertas' | 'reglas' | 'cadenas' | 'supresiones' | 'respuesta' | 'analista'
 
 export function Dashboard({
   onAnalyze,

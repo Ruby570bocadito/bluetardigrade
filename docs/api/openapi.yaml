@@ -721,6 +721,90 @@ paths:
               schema:
                 $ref: '#/components/schemas/RespondKillDenied'
 
+  /api/respond/state:
+    get:
+      tags: [respond]
+      operationId: respondState
+      summary: Armed state of the active-response surface (flags, live counters, audit file health)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Console visibility of the C3 surface: what the engine armed at
+        startup, the LIVE allowlist/protected counts (the 15 s
+        hot-reload changes them under a running engine) and the audit
+        file size against its 64 MiB ceiling. The same contract as
+        `POST /api/respond/kill` applies: a disarmed engine answers a
+        real `404`, identical to any unknown path, so probing learns
+        nothing about a surface that does not exist for it.
+      responses:
+        '200':
+          description: The surface is armed (`armed` is always true in a 200).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RespondState'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: The surface is not armed (or the engine predates the route) - a real 404, byte-identical to any unknown path.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: 404 page not found
+
+  /api/respond/audit:
+    get:
+      tags: [respond]
+      operationId: respondAudit
+      summary: Most recent active-response attempts from the audit JSONL (newest first)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Tails the `-respond-audit` JSONL: the most recent attempts
+        (executed AND denied, the audit Record schema verbatim, newest
+        first) plus the honest bookkeeping of the scan. `skipped`
+        counts lines that are not records yet (the torn tail of a
+        concurrent append, or a line that failed to parse) - counted,
+        never served as data; `truncated` marks files where older
+        records exist beyond the read window. The reader never locks,
+        truncates or rewrites the file: the append-only proof surface
+        keeps its writer contract untouched.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Maximum records returned (default 100, hard cap 500; invalid values fall back to the default, same clamp style as /api/events).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        '200':
+          description: The tail of the audit file (an empty array on a fresh audit file).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RespondAuditResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: The surface is not armed - a real 404, byte-identical to any unknown path.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: 404 page not found
+        '500':
+          description: The audit file could not be read (permissions, disk) - the failure is reported, never smoothed into an empty feed.
+          content:
+            text/plain:
+              schema:
+                type: string
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1533,6 +1617,103 @@ components:
         action_id:
           type: string
           description: 32-hex id of the denied attempt, matching its audit line
+    RespondState:
+      type: object
+      required: [armed, signal, operators_count, protected_count, audit_path, audit_size, audit_ceiling]
+      properties:
+        armed:
+          type: boolean
+          description: always true in a 200 (a disarmed engine answers the real 404)
+        signal:
+          type: string
+          enum: [SIGKILL]
+          description: fixed for iteration 1 (dictamen Q1)
+        operators_count:
+          type: integer
+          description: LIVE allowlist size (the 15 s hot-reload changes it under a running engine)
+        protected_count:
+          type: integer
+          description: LIVE count of the operator-supplied protected names (platform defaults apply at check time)
+        operators_path:
+          type: string
+          description: -respond-operators path as armed at startup (omitted when empty)
+        protected_path:
+          type: string
+          description: -respond-protected path as armed (omitted when not configured)
+        audit_path:
+          type: string
+          description: -respond-audit JSONL path as armed
+        audit_size:
+          type: integer
+          description: current audit file size in bytes (live)
+        audit_ceiling:
+          type: integer
+          description: the 64 MiB ceiling (67108864); at or above it every action denies with audit_unavailable until the operator rotates the file
+    RespondAuditRecord:
+      type: object
+      description: One attempt line of the -respond-audit JSONL, verbatim (R5a schema).
+      required: [ts, action_id, decision, pid, process_name, operator, reason, host, source]
+      properties:
+        ts:
+          type: string
+          description: RFC 3339 Nano, UTC
+        action_id:
+          type: string
+          description: one id per attempt, shared with the kill API response so an incident reviewer can join both
+        decision:
+          type: string
+          enum: [executed, denied]
+        code:
+          type: string
+          description: denial code (present when the decision is denied; a followup line carries the failed outcome of a committed send)
+        pid:
+          type: integer
+          description: requested PID
+        process_name:
+          type: string
+          description: name the operator requested
+        resolved_name:
+          type: string
+          description: platform-resolved real basename when known (re-revision O1 - denials included)
+        operator:
+          type: string
+        rule_id:
+          type: string
+        alert_id:
+          type: string
+        reason:
+          type: string
+        host:
+          type: string
+        signal:
+          type: string
+          enum: [SIGKILL]
+          description: stamped by the writer on every attempt (Q1 fixed)
+        mechanism:
+          type: string
+          enum: [pidfd, fallback, handle]
+          description: how the verified object was killed (present once known)
+        source:
+          type: string
+          description: client RemoteAddr of the attempt (R5a attribution)
+        followup:
+          type: boolean
+          description: second line of a committed send whose signal failed - the JSONL never claims an execution that did not land
+    RespondAuditResponse:
+      type: object
+      required: [records, skipped, truncated]
+      properties:
+        records:
+          type: array
+          description: most recent attempts, newest first
+          items:
+            $ref: '#/components/schemas/RespondAuditRecord'
+        skipped:
+          type: integer
+          description: lines seen that are not records (torn tail of a concurrent append, malformed) - counted, never served as data
+        truncated:
+          type: boolean
+          description: older records exist beyond the read window (rotation stays an operator task)
     Suppressions:
       type: object
       required: [active, entries]

@@ -230,6 +230,8 @@ The engine serves a small read-only API used by the web console and handy for SI
 | `GET /api/alerts?limit=100` | recent alerts, newest first |
 | `GET /api/suppressions` | operator allowlist currently active; `POST`/`DELETE` (only with `-api-write`) edit the same file atomically — see [Alert suppressions](#alert-suppressions-operator-allowlist) |
 | `POST /api/respond/kill` | active response (C3, opt-in): kill one verified local process, operator-invoked; exists only with `-allow-kill` + API token + open audit (otherwise a real `404`) — see [Active response](#active-response-kill_process-opt-in) |
+| `GET /api/respond/state` | armed state of the active-response surface: live allowlist/protected counts, the paths armed at startup and the audit file size against its 64 MiB ceiling; same real-`404` contract as the kill route |
+| `GET /api/respond/audit?limit=100` | tail of the `-respond-audit` JSONL (executed AND denied attempts, newest first) with honest scan bookkeeping (`skipped`/`truncated`); hard cap 500; same real-`404` contract |
 | `GET /api/sequences` | kill-chain sequences loaded by the correlator (read-only view; empty = correlator off) |
 | `GET /api/events/export?format=jsonl\|csv` | bulk download of the event history — in-memory ring, or the full SQLite history with `-store` (JSON Lines or CSV) |
 | `GET /api/alerts/export?format=ndjson\|csv&limit=256` | downloadable alert feed for SIEM/SOAR handoff, chronological order |
@@ -464,6 +466,17 @@ belongs to the operator backed by the alert. And there is NO
 automation path: rules, sequences and the correlator cannot reach
 this surface; it exists because an operator called it. Contract
 details: [`docs/api/openapi.yaml`](docs/api/openapi.yaml).
+
+The surface is also READABLE (console visibility): `GET
+/api/respond/state` reports what was armed at startup with LIVE
+allowlist counts and the audit file health, and `GET
+/api/respond/audit` tails the JSONL — every attempt, executed and
+denied, newest first, with the lines that are not records yet counted
+instead of hidden. Both extend the §2.1 contract to reads: a disarmed
+engine answers a real `404`, so probing learns nothing, and both sit
+behind the same bearer credential as every other `/api` read. The web
+console renders both in its "Respuesta activa" view — read-only by
+design (R8: the kill has no UI trigger).
 
 ## Configuration reference
 

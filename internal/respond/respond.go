@@ -238,6 +238,16 @@ func (m *Manager) ProtectedCount() int {
 	return len(m.protected)
 }
 
+// AuditSize reports the live audit file size (the read surface exposes
+// it against MaxAuditBytes so the console can show how close the proof
+// surface is to its rotation ceiling).
+func (m *Manager) AuditSize() int64 {
+	if m == nil || m.audit == nil {
+		return 0
+	}
+	return m.audit.Size()
+}
+
 // Kill runs the five layers in deny-cheap-first order. Every semantic
 // denial writes its audit line; structural mistakes (bad JSON,
 // missing fields, over-cap strings) never reach the manager — the

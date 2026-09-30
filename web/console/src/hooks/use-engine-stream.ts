@@ -12,7 +12,17 @@
 // "offline" state and never invents data.
 
 import { useEffect, useRef, useState } from 'react'
-import type { EngineStats, RuleMeta, SfAlert, SfAlertLifecycle, SfEvent, SfSequence, SfSuppression } from '@/lib/console-types'
+import type {
+  EngineStats,
+  RuleMeta,
+  SfAlert,
+  SfAlertLifecycle,
+  SfEvent,
+  SfRespondAudit,
+  SfRespondState,
+  SfSequence,
+  SfSuppression,
+} from '@/lib/console-types'
 import { severityOf } from '@/lib/console-types'
 
 export type EngineStatus = 'connecting' | 'live' | 'down'
@@ -24,6 +34,11 @@ export type EngineState = {
   rules: RuleMeta[]
   suppressions: SfSuppression[]
   sequences: SfSequence[]
+  // active response (C3 console visibility): null means the engine
+  // answered 404 (disarmed surface) or predates the routes — both are
+  // the same honest "no disponible", never a fabricated card
+  respondState: SfRespondState | null
+  respondAudit: SfRespondAudit | null
   stats: EngineStats | null
   endpoint: string
 }
@@ -108,6 +123,8 @@ export function useEngineStream(): EngineState {
   const [rules, setRules] = useState<RuleMeta[]>([])
   const [suppressions, setSuppressions] = useState<SfSuppression[]>([])
   const [sequences, setSequences] = useState<SfSequence[]>([])
+  const [respondState, setRespondState] = useState<SfRespondState | null>(null)
+  const [respondAudit, setRespondAudit] = useState<SfRespondAudit | null>(null)
   const [stats, setStats] = useState<EngineStats | null>(null)
   const [endpoint] = useState(engineDisplayEndpoint)
   const failures = useRef(0)
@@ -128,7 +145,7 @@ export function useEngineStream(): EngineState {
     // Full sync of the engine rings; false means the engine is unreachable.
     async function syncAll(): Promise<boolean> {
       try {
-        const [ruleList, eventList, alertList, statsPayload, suppressionPayload, sequencePayload] = await Promise.all([
+        const [ruleList, eventList, alertList, statsPayload, suppressionPayload, sequencePayload, rState, rAudit] = await Promise.all([
           getJson<Record<string, unknown>[]>('/api/rules'),
           getJson<Record<string, unknown>[]>('/api/events?limit=160'),
           getJson<Record<string, unknown>[]>('/api/alerts?limit=100'),
@@ -138,6 +155,11 @@ export function useEngineStream(): EngineState {
           getJson<{ active?: number; entries?: SfSuppression[] }>('/api/suppressions').catch(() => null),
           // kill-chain sequences; [] on engines without the endpoint
           getJson<SfSequence[]>('/api/sequences').catch(() => null),
+          // active response read surface (C3): null on a disarmed engine
+          // (real 404) or one predating the routes — the respond view
+          // shows a real "no disponible" either way
+          getJson<SfRespondState>('/api/respond/state').catch(() => null),
+          getJson<SfRespondAudit>('/api/respond/audit?limit=100').catch(() => null),
         ])
         if (disposed) return true
         setRules(ruleList.map(mapRule))
@@ -147,6 +169,8 @@ export function useEngineStream(): EngineState {
         setStats(statsPayload)
         setSuppressions(Array.isArray(suppressionPayload?.entries) ? suppressionPayload.entries : [])
         setSequences(Array.isArray(sequencePayload) ? sequencePayload : [])
+        setRespondState(rState)
+        setRespondAudit(rAudit)
         failures.current = 0
         setStatus('live')
         return true
@@ -160,15 +184,22 @@ export function useEngineStream(): EngineState {
       if (pollTimer) return
       pollTimer = setInterval(async () => {
         try {
-          const [st, sup, seq] = await Promise.all([
+          const [st, sup, seq, rState, rAudit] = await Promise.all([
             getJson<EngineStats>('/api/stats'),
             getJson<{ active?: number; entries?: SfSuppression[] }>('/api/suppressions').catch(() => null),
             getJson<SfSequence[]>('/api/sequences').catch(() => null),
+            getJson<SfRespondState>('/api/respond/state').catch(() => null),
+            getJson<SfRespondAudit>('/api/respond/audit?limit=100').catch(() => null),
           ])
           if (disposed) return
           setStats(st)
           if (sup && Array.isArray(sup.entries)) setSuppressions(sup.entries)
           if (Array.isArray(seq)) setSequences(seq)
+          // a poll hiccup (null) keeps the last known state instead of
+          // flapping the view; a real disarm (404 every poll) only ever
+          // means null-first, never a fake clear of an armed engine
+          if (rState !== null) setRespondState(rState)
+          if (rAudit !== null) setRespondAudit(rAudit)
           failures.current = 0
           setStatus('live')
         } catch {
@@ -178,6 +209,8 @@ export function useEngineStream(): EngineState {
             setStats(null)
             setSuppressions([]) // honest empty state: no engine, no data
             setSequences([])
+            setRespondState(null)
+            setRespondAudit(null)
           }
         }
       }, STATS_POLL_MS)
@@ -269,5 +302,5 @@ export function useEngineStream(): EngineState {
     }
   }, [])
 
-  return { status, events, alerts, rules, suppressions, sequences, stats, endpoint }
+  return { status, events, alerts, rules, suppressions, sequences, respondState, respondAudit, stats, endpoint }
 }
