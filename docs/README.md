@@ -30,7 +30,8 @@ original: útil para trazabilidad de decisiones, pero desactualizado en stack de
 y operadores (anunciaba `between`, no implementado). `arquitectura-tecnica-v0.2.pdf` se
 conserva como la revisión que primero describió el estado implementado; la v0.3 añade los
 techos del loader de reglas y la auditoría horizontal de la familia i* (d2d557a), el bench
-nocturno a dos pasadas y su delta de store (f205a01) y sube el roadmap a 8/17. Lo único que
+nocturno a dos pasadas y su delta de store (f205a01) y sube el roadmap a 9/17 (scoreboard
+oficial del Director 13h05, corregido en la revisión misma). Lo único que
 la v0.3 sigue declarando como futuro, sin presentarlo como capacidad: YARA, gRPC/protobuf,
 filaments Python y eBPF en Linux (fases 2-4 del roadmap). Las decisiones de diseño vigentes viven
 en la v0.3 del PDF, en el README y en los informes de `agentes/`; el directorio de ADRs

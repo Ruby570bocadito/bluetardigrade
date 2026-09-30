@@ -45,7 +45,7 @@ A behavioral detection framework built by an offensive-security practitioner, in
 
 - [Why security-framework](#why-security-framework)
 - [Features](#features)
-- [Architecture (v0.1)](#architecture-v01)
+- [Architecture](#architecture)
 - [Quickstart (tracer bullet)](#quickstart-tracer-bullet)
   - [Local HTTP API](#local-http-api)
   - [Persistent storage (SQLite, opt-in)](#persistent-storage-sqlite-opt-in)
@@ -100,9 +100,9 @@ And one engineering rule that shapes everything else: **no simulated data in the
 | **Auth** | Shared-token ingest handshake (constant-time), zero-downtime token rotation window, optional Bearer on the API and on outbound webhooks |
 | **Ops** | One-command Windows installer (six commands on PATH), Docker image for the engine, GitHub Actions CI on every push |
 
-## Architecture (v0.1)
+## Architecture
 
-![Architecture: kernel, Rust sensor, Go detection engine and output layers](docs/assets/diagram_arquitectura.png)
+![Architecture: kernel, Rust sensor, Go detection engine with its behavioral detectors and output layers](docs/assets/diagram_arquitectura.png)
 
 ```mermaid
 flowchart LR
@@ -121,10 +121,13 @@ flowchart LR
         ING["ingest · schema validation"] --> ENR["enrich"]
         ENR --> RUL["rules · hot-reload 15 s"]
         ENR --> BCN["beaconing tracker · C2 timing"]
+        ENR --> THR["volumetric thresholds · windowed counts"]
         RUL --> COR["kill-chain correlator"]
         RUL --> ALR["alert · dedup + render"]
         COR --> ALR
         BCN --> ALR
+        THR --> ALR
+        ALR --> RSK["risk tracker · per-host score"]
         ALR --> ACT["actions · webhooks"]
         ING -- "events · write-through" --> ST[("SQLite store · opt-in")]
         ALR -- "alerts" --> ST
@@ -754,10 +757,14 @@ cmd/bench/        load and latency harness (measures ingest→alert p50/p99)
 internal/ingest/  NDJSON TCP listener + schema validation
 internal/enrich/  enrichment pipeline (context, not evidence mutation)
 internal/rules/   YAML parser, rule index and evaluator
+internal/beacon/  C2 beaconing detector (timing analysis over network.connect)
+internal/threshold/ volumetric detector (windowed per-rule/per-host counts)
 internal/correlate/  kill-chain sequence correlator
+internal/sigma/   Sigma rule converter (YAML -> native rule pack via engine CLI)
 internal/alert/   alert rendering, dedup, structured JSON
 internal/actions/ rule action executor (message templates, webhooks)
 internal/api/     local HTTP API (read + alert triage write) + SSE stream + JSONL/CSV export
+internal/risk/    per-host decayed risk score from recent alerts (served via /api/stats)
 internal/store/   optional SQLite persistence (events/alerts history,
                   retention pruner; pure-Go driver, WAL)
 internal/suppress/  operator allowlist: rule/host suppressions with expiry
@@ -769,11 +776,13 @@ rules/            seeded detection pack (windows/)
 sequences/        kill-chain sequences for the correlator
 suppressions.example.yaml  annotated allowlist format (rename to
                   suppressions.yaml to arm it)
+beacons.yaml      C2 beaconing detector config (hot-reloaded with the rules)
+thresholds.yaml   volumetric detector config (hot-reloaded with the rules)
 scripts/windows/  installed runtime scripts (sf-sensor, sf-console, ...)
                   + bundled sysmon-config.xml tuned to the detection pack
-scripts/dev-tests/ end-to-end verification scripts (OpenAPI drift check,
-                  webhook receiver, ingest auth and SQLite store smokes with
-                  real binaries)
+scripts/dev-tests/ end-to-end verification scripts (per-detector and lifecycle E2E,
+                  OpenAPI drift check, two-pass nightly bench, webhook receiver,
+                  ingest-auth and SQLite store smokes, all with real binaries)
 install.ps1       one-command Windows installer
 uninstall.ps1     standalone uninstaller
 Makefile          build automation (engine, sensor, console, docker)
