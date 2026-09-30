@@ -171,6 +171,12 @@ func TestParseConditionGrammar(t *testing.T) {
 		{"all of them", condAnd, 5},
 		{"1 of sel_*", condOr, 2},
 		{"all of sel_1,sel_2", condAnd, 2},
+		// repeated names are redundant but legal: one plan entry per
+		// UNIQUE selection, or the OR-split fires the alert twice
+		{"A and A", condAnd, 1},
+		{"A or A or B", condOr, 2},
+		{"1 of A,A", condOr, 1},
+		{"all of A,B,A", condAnd, 2},
 	}
 	for _, c := range ok {
 		plan, err := parseCondition(c.expr, sels)

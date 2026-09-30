@@ -302,6 +302,39 @@ func TestWebhookLogRedactsCredentialURL(t *testing.T) {
 	}
 }
 
+// Regression (04-A): the final failure log used to hardcode the full
+// retry budget ("failed after 3 attempts") even when the delivery
+// stopped after ONE post — a permanent 4xx is never retried, and the
+// operator debugging the receiver must read the real attempt count.
+func TestWebhookFailureLogStatesRealAttemptCount(t *testing.T) {
+	var logBuf syncBuffer
+	old := log.Writer()
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(old)
+
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		http.Error(w, "gone", http.StatusNotFound) // permanent 4xx: no retry
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+	ctx, cancel := context.WithCancel(context.Background())
+	go c.Run(ctx)
+	c.Handle(testAlert())
+	waitFor(t, func() bool { _, f, _ := c.Stats(); return f == 1 })
+	cancel()
+	c.Wait()
+
+	if n := hits.Load(); n != 1 {
+		t.Fatalf("posts = %d, want 1 (4xx is permanent)", n)
+	}
+	if !strings.Contains(logBuf.String(), "failed after 1 attempt(s)") {
+		t.Fatalf("failure log must state the real attempt count, got: %q", logBuf.String())
+	}
+}
+
 type syncBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer

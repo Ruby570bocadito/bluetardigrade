@@ -113,6 +113,26 @@ func (e badTimeError) Error() string {
 
 func errBadTime(s string) error { return badTimeError(s) }
 
+// alertTime resolves the record side of the time axis for ALERTS,
+// whose timestamp is a preformatted string rather than a time.Time.
+// The parse only serves the since/until bounds, so a query that set
+// none of them must never lose a record over a timestamp it did not
+// ask about: a malformed timestamp used to exclude the alert from
+// ring-mode listings and exports even with no time filter at all —
+// silent data loss on the forensic path. With a bound set, an
+// unreadable timestamp cannot prove membership and the record stays
+// excluded: the window contract remains honest in both directions.
+func (f *recordFilter) alertTime(a alert.Alert) (time.Time, bool) {
+	if f.since.IsZero() && f.until.IsZero() {
+		return time.Time{}, true
+	}
+	ts, err := time.Parse(time.RFC3339Nano, a.Timestamp)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return ts, true
+}
+
 // inWindow reports whether ts passes the since/until bounds.
 func (f *recordFilter) inWindow(ts time.Time) bool {
 	if !f.since.IsZero() && ts.Before(f.since) {

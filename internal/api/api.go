@@ -740,7 +740,10 @@ func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 	out := make([]alertView, 0, limit)
 	for i := len(h.alerts) - 1; i >= 0 && len(out) < limit; i-- {
 		a := h.alerts[i]
-		if ts, err := time.Parse(time.RFC3339Nano, a.Timestamp); err == nil && f.matchAlert(a, ts) {
+		// alertTime decides whether the record can be evaluated against
+		// the requested time bounds (see its doc): the parse is only a
+		// prerequisite when the query actually filters by time.
+		if ts, ok := f.alertTime(a); ok && f.matchAlert(a, ts) {
 			out = append(out, h.withLifecycle(a))
 		}
 	}

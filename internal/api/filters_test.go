@@ -137,6 +137,40 @@ func TestExportFilters(t *testing.T) {
 	}
 }
 
+// Regression (04-A): an alert whose Timestamp string cannot be parsed
+// used to be dropped from ring-mode listings AND exports even when the
+// query set no since/until at all — the parse error silently hid a
+// record from a query that never asked about time. Without time bounds
+// every record must be visible; with a bound set, an unreadable
+// timestamp still cannot prove membership.
+func TestAlertUnparseableTimestampVisibility(t *testing.T) {
+	h, addr := newTestHub(t)
+	now := time.Now().UTC()
+
+	h.RecordAlert(alertAt("r-parse-ok", "high", "LAB-A", now))
+	bad := alertAt("r-parse-bad", "high", "LAB-A", now)
+	bad.Timestamp = "not-a-timestamp"
+	h.RecordAlert(bad)
+
+	var got []map[string]any
+	getJSON(t, fmt.Sprintf("http://%s/api/alerts", addr), &got)
+	if len(got) != 2 {
+		t.Fatalf("list without time bounds = %d records, want 2 (an unparseable timestamp must not hide the alert)", len(got))
+	}
+	getJSON(t, fmt.Sprintf("http://%s/api/alerts?since=60m", addr), &got)
+	if len(got) != 1 || got[0]["rule_id"].(string) != "r-parse-ok" {
+		t.Fatalf("list with since=60m = %v, want only r-parse-ok", got)
+	}
+	_, body := fetchBody(t, fmt.Sprintf("http://%s/api/alerts/export", addr))
+	if !strings.Contains(body, "r-parse-ok") || !strings.Contains(body, "r-parse-bad") {
+		t.Fatalf("export without time bounds lost records: %q", body)
+	}
+	_, body = fetchBody(t, fmt.Sprintf("http://%s/api/alerts/export?since=60m", addr))
+	if strings.Contains(body, "r-parse-bad") || !strings.Contains(body, "r-parse-ok") {
+		t.Fatalf("export with since=60m included the unparseable record: %q", body)
+	}
+}
+
 func TestFilterValidation(t *testing.T) {
 	_, addr := newTestHub(t)
 	cases := []string{

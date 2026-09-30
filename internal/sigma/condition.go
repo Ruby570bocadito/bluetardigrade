@@ -58,6 +58,7 @@ func parseCondition(expr string, sels map[string][]fieldValue) (condPlan, error)
 		if err != nil {
 			return condPlan{}, err
 		}
+		names = dedupNames(names)
 		if tokens[0] == "1" {
 			return condPlan{kind: condOr, selections: names}, nil
 		}
@@ -115,6 +116,7 @@ func parseCondition(expr string, sels map[string][]fieldValue) (condPlan, error)
 			return condPlan{}, fmt.Errorf("la condition referencia la selection %q que no existe", n)
 		}
 	}
+	names = dedupNames(names)
 	kind := condSingle
 	if op == "and" {
 		kind = condAnd
@@ -123,6 +125,25 @@ func parseCondition(expr string, sels map[string][]fieldValue) (condPlan, error)
 		kind = condOr
 	}
 	return condPlan{kind: kind, selections: names}, nil
+}
+
+// dedupNames removes repeated selection names keeping the first
+// occurrence and the caller's order. Repetition is redundant but legal
+// Sigma ("A and A", "1 of A,A", "all of A,B,A"): without the dedup the
+// OR-split path would emit one identical rule per copy, and the same
+// event would fire the same alert once per duplicate — a double
+// detection the source rule never declared.
+func dedupNames(names []string) []string {
+	seen := make(map[string]bool, len(names))
+	out := names[:0]
+	for _, n := range names {
+		if seen[n] {
+			continue
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	return out
 }
 
 // expandOf resolves the right-hand side of "1 of X" / "all of X":

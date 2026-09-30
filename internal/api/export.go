@@ -60,7 +60,11 @@ func (h *Hub) handleAlertsExport(w http.ResponseWriter, r *http.Request) {
 		h.mu.Lock()
 		selected := make([]alert.Alert, 0, len(h.alerts))
 		for _, a := range h.alerts {
-			if ts, err := time.Parse(time.RFC3339Nano, a.Timestamp); err == nil && f.matchAlert(a, ts) {
+			// alertTime keeps the export honest in both directions:
+			// no time bounds → nothing is hidden over a parse
+			// failure; a bound set → an unreadable timestamp cannot
+			// cross the wire claiming membership it cannot prove.
+			if ts, ok := f.alertTime(a); ok && f.matchAlert(a, ts) {
 				selected = append(selected, a)
 			}
 		}

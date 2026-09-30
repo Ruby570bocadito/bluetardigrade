@@ -124,7 +124,12 @@ func (c *Client) deliver(ctx context.Context, a alert.Alert) {
 		return
 	}
 	var lastErr error
+	// attempts counts what ACTUALLY ran: a permanent 4xx (or a build
+	// failure) stops after one post, and a log claiming the full retry
+	// budget is a lie an operator debugging the receiver pays for.
+	attempts := 0
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		attempts = attempt
 		retryable, perr := c.post(payload)
 		if perr == nil {
 			c.sent.Add(1)
@@ -145,7 +150,7 @@ func (c *Client) deliver(ctx context.Context, a alert.Alert) {
 	// redaction helpers live in internal/redact since #35 promoted
 	// them there (fourth-copy rule); the log line is byte-identical
 	// to the days of the local copies.
-	log.Printf("[WEBHOOK] delivery to %s failed after %d attempts: %v", redact.EndpointLabel(c.url), maxAttempts, redact.URLErr(lastErr, "receiver endpoint"))
+	log.Printf("[WEBHOOK] delivery to %s failed after %d attempt(s): %v", redact.EndpointLabel(c.url), attempts, redact.URLErr(lastErr, "receiver endpoint"))
 }
 
 // post performs one attempt. retryable reports whether a retry could
