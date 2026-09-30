@@ -49,8 +49,16 @@ type Record struct {
 	Host      string `json:"host"`
 	Signal    string `json:"signal,omitempty"`    // SIGKILL (Q1: fixed)
 	Mechanism string `json:"mechanism,omitempty"` // pidfd | fallback | handle (R1)
-	Source    string `json:"source"`              // client RemoteAddr (R5a)
-	Followup  bool   `json:"followup,omitempty"`  // second line of a committed send that failed
+	// FallbackReason travels ONLY with mechanism=fallback: the errno
+	// name that made pidfd_open fail and forced the classic-kill path.
+	// enosys means the kernel predates pidfd (permanent, expected);
+	// emfile/enfile mean fd-table exhaustion of a LIVE mechanism —
+	// operationally different, sometimes an alarm. Without this field
+	// a fallback line cannot tell those apart (04-B, ronda 18h00:
+	// requisito forward de la degradación pidfd->fallback).
+	FallbackReason string `json:"fallback_reason,omitempty"`
+	Source         string `json:"source"`             // client RemoteAddr (R5a)
+	Followup       bool   `json:"followup,omitempty"` // second line of a committed send that failed
 }
 
 // Audit is the append-only JSONL writer. Write serializes on its own

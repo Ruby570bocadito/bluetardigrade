@@ -139,11 +139,16 @@ type Request struct {
 // Result is the outcome of one attempt. Code is empty exactly when
 // Executed is true.
 type Result struct {
-	Executed   bool
-	Code       string
-	ActionID   string
-	Mechanism  string
-	HTTPStatus int
+	Executed  bool
+	Code      string
+	ActionID  string
+	Mechanism string
+	// FallbackReason is non-empty exactly when Mechanism is
+	// "fallback": the errno name that defeated pidfd_open (04-B
+	// ronda 18h00). Travels in the API response and the engine log
+	// next to the mechanism, and in the audit followup line.
+	FallbackReason string
+	HTTPStatus     int
 }
 
 // Manager owns the C3 permission state: operator allowlist, protected
@@ -317,7 +322,7 @@ func (m *Manager) Kill(req Request) Result {
 		return res
 	}
 
-	mech, kerr := killVerified(req.PID, req.ProcessName)
+	mech, reason, kerr := killVerified(req.PID, req.ProcessName)
 	if kerr != nil {
 		// the commit line above already proves the action was
 		// authorized; this followup line records the failed outcome
@@ -326,6 +331,7 @@ func (m *Manager) Kill(req Request) Result {
 		follow.Decision = "denied"
 		follow.Code = processCodeFor(kerr)
 		follow.Mechanism = mech
+		follow.FallbackReason = reason
 		follow.Followup = true
 		if werr := m.audit.Write(follow); werr != nil {
 			logAuditDown(Result{ActionID: res.ActionID, Code: follow.Code}, req, werr)
@@ -333,6 +339,7 @@ func (m *Manager) Kill(req Request) Result {
 		res.Code = follow.Code
 		res.HTTPStatus = httpStatusFor(res.Code)
 		res.Mechanism = mech
+		res.FallbackReason = reason
 		return res
 	}
 	// the pre-signal line was written without the mechanism (it is
@@ -341,6 +348,7 @@ func (m *Manager) Kill(req Request) Result {
 	// attempt stays the contract.
 	res.Executed = true
 	res.Mechanism = mech
+	res.FallbackReason = reason
 	logExecuted(res, req)
 	return res
 }
@@ -512,8 +520,16 @@ func logAuditDown(res Result, req Request, err error) {
 
 // logExecuted is the engine-log trace of a landed kill: action id,
 // resolved name and mechanism let the operator correlate the JSONL
-// audit, the API response and the log without guesswork.
+// audit, the API response and the log without guesswork. A fallback
+// kill also logs WHY pidfd_open failed — a enosys is an old kernel,
+// a emfile/enfile on a kernel that used to pin is an alarm.
 func logExecuted(res Result, req Request) {
+	if res.FallbackReason != "" {
+		log.Printf("[RESPOND] kill executed action=%s pid=%d operator=%s mechanism=%s fallback_reason=%s from=%s",
+			oneLineLog(res.ActionID), req.PID, oneLineLog(req.Operator),
+			res.Mechanism, oneLineLog(res.FallbackReason), oneLineLog(req.Source))
+		return
+	}
 	log.Printf("[RESPOND] kill executed action=%s pid=%d operator=%s mechanism=%s from=%s",
 		oneLineLog(res.ActionID), req.PID, oneLineLog(req.Operator),
 		res.Mechanism, oneLineLog(req.Source))

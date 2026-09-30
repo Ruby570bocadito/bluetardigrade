@@ -454,7 +454,14 @@ actions (60 s cooldown per host+pid, 20/min global, 6/min per
 operator); and the process guard kills the VERIFIED object, not the
 number — pidfd pinning on Linux and a single verified handle on
 Windows (`mechanism` in the response), with the real process name
-checked per platform before anything is sent. PID 0/1/negative,
+checked per platform before anything is sent. When the Linux kernel
+predates pidfd (or the syscall is blocked), the engine degrades to the
+classic fallback — re-verifying the name immediately before the signal
+— and the degradation is loud AND diagnosable: `fallback_reason`
+carries the errno name that defeated `pidfd_open` in the response and
+in the audit followup (`enosys` = old kernel, permanent and expected;
+`emfile`/`enfile` = fd exhaustion of a mechanism that was alive,
+transient and worth watching). PID 0/1/negative,
 self/ancestor, and protected names (Windows defaults: csrss, smss,
 wininit, services, lsass; extend with `-respond-protected`) are
 refused with their own audit codes.
@@ -477,6 +484,17 @@ engine answers a real `404`, so probing learns nothing, and both sit
 behind the same bearer credential as every other `/api` read. The web
 console renders both in its "Respuesta activa" view — read-only by
 design (R8: the kill has no UI trigger).
+
+Verification is three-layered: unit tests exercise both kill paths
+against real child processes (native pidfd and forced fallback),
+`scripts/dev-tests/e2e_respond_kill.sh` runs the full permission
+matrix over real Linux binaries, and CI runs
+`scripts/windows/smoke_respond.ps1` on a native Windows runner (job
+`engine-windows`): real kills of throwaway processes the smoke itself
+spawns, the protected set denied via a decoy `csrss.exe` in temp
+(the real one is never touched — the guard refuses before signaling),
+and the audit JSONL asserted end to end. The Windows handle path is
+verified in conduct, not just in compilation.
 
 ## Configuration reference
 

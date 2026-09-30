@@ -161,27 +161,30 @@ func stripExe(name string) string {
 // killVerified pins and kills the verified object (R1): the handle
 // that verified the name is the handle that terminates, so the kill
 // cannot land on an object other than the one the operator named.
-func killVerified(pid int, want string) (string, error) {
+// The second return stays empty here: the handle path has no
+// pidfd_open to fail, so there is no degradation to explain (the
+// fallback_reason audit field is a Unix-only concept).
+func killVerified(pid int, want string) (string, string, error) {
 	const mech = "handle"
 	t, err := openTarget(pid)
 	if err != nil {
-		return mech, err
+		return mech, "", err
 	}
 	defer closeTarget(t)
 	resolved, err := imageBasename(t.handle)
 	if err != nil {
-		return mech, err
+		return mech, "", err
 	}
 	if !nameMatches(resolved, want) {
 		// Q3 precision: the name check protects against the
 		// MECHANICAL error (wrong PID), not against process
 		// hollowing — the flag text says so and the kill decision
 		// stays with the operator.
-		return mech, errNameMismatch
+		return mech, "", errNameMismatch
 	}
 	r1, _, _ := procTerminateProcess.Call(uintptr(t.handle), 1)
 	if r1 == 0 {
-		return mech, errProcessAccess
+		return mech, "", errProcessAccess
 	}
-	return mech, nil
+	return mech, "", nil
 }

@@ -74,6 +74,30 @@ jobs:
           # que deben producir hallazgos (el recuento crece con cada check nuevo).
           python3 scripts/dev-tests/check_openapi.py --self-test
 
+  # Smoke CONDUCTUAL de la respuesta activa en Windows real (C3, R1):
+  # hasta hoy el camino handle solo tenía certificación de COMPILACIÓN
+  # (el cross-check GOOS=windows del job engine); la condición de
+  # cierre del paquete respond (actas 04-B 17h35 §4 y 17h58) exigía
+  # conducta en host Windows. Este job la ejecuta en cada push con
+  # kills reales sobre procesos que el propio smoke arranca (ping
+  # desechable, sebo csrss.exe en temp) — nada del runner real es
+  # tocado: el guard R6 niega el protegido antes de señalizar y el
+  # resto de los kills recae en hijos del propio smoke.
+  engine-windows:
+    name: Engine conductual Windows (respond handle path, C3)
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: build engine (nativo Windows)
+        run: go build -o engine-smoke.exe ./cmd/engine
+      - name: smoke conductual del camino handle (kills reales, audit JSONL)
+        shell: pwsh
+        run: ./scripts/windows/smoke_respond.ps1 -Engine ./engine-smoke.exe
+
   console:
     name: Console (hub tests, tsc, next build)
     runs-on: ubuntu-latest

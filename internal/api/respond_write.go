@@ -94,12 +94,19 @@ func (h *Hub) handleRespondKill(w http.ResponseWriter, r *http.Request) {
 	if res.Executed {
 		log.Printf("[API] respond kill executed action=%s pid=%d operator=%s mechanism=%s from=%s",
 			oneLine(res.ActionID), req.PID, oneLine(req.Operator), res.Mechanism, oneLine(req.Source))
-		writeJSON(w, map[string]string{
+		body := map[string]string{
 			"action_id": res.ActionID,
 			"status":    "executed",
 			"signal":    respond.Signal,
 			"mechanism": res.Mechanism,
-		})
+		}
+		// omitempty semantics by construction: fallback_reason only
+		// exists when the mechanism IS the fallback (the errno name
+		// that defeated pidfd_open — 04-B ronda 18h00).
+		if res.FallbackReason != "" {
+			body["fallback_reason"] = res.FallbackReason
+		}
+		writeJSON(w, body)
 		return
 	}
 	log.Printf("[API] respond kill DENIED action=%s code=%s pid=%d operator=%s from=%s",

@@ -1607,6 +1607,15 @@ components:
             how the verified object was killed (R1: pinned object
             on Linux/Windows, fallback re-verifies the name
             immediately before the signal)
+        fallback_reason:
+          type: string
+          description: >-
+            present ONLY when mechanism=fallback: the errno name that
+            made pidfd_open fail and forced the classic-kill path
+            (enosys = kernel without pidfd, permanent and expected;
+            emfile/enfile = fd-table exhaustion of a live mechanism,
+            transient and worth watching; enomem/eperm/einval; unknown
+            errnos render as errno_<number>). Absent for pidfd/handle.
     RespondKillDenied:
       type: object
       required: [error, action_id]

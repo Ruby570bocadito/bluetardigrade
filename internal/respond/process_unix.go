@@ -114,7 +114,12 @@ func nameInSet(resolved string, set map[string]struct{}) bool {
 // killVerified pins and kills the verified object (R1). The returned
 // mechanism string travels in the audit followup and the API
 // response: pidfd (pinned object) or fallback (re-verified name).
-func killVerified(pid int, want string) (string, error) {
+// On the fallback path the second return carries the errno NAME that
+// made pidfd_open fail (pidfdErrName) — the degradation must be loud
+// AND diagnosable: enosys is a kernel without pidfd (permanent),
+// emfile/enfile is fd exhaustion of a mechanism that was alive
+// (transient, worth watching) — 04-B ronda 18h00.
+func killVerified(pid int, want string) (string, string, error) {
 	fd, perr := pidfdOpen(pid)
 	if perr == nil {
 		defer unix.Close(fd)
@@ -126,56 +131,88 @@ func killVerified(pid int, want string) (string, error) {
 		// denial, the safe direction).
 		resolved, rerr := resolveProcessName(pid)
 		if rerr != nil {
-			return mech, rerr
+			return mech, "", rerr
 		}
 		if !nameMatches(resolved, want) {
-			return mech, errNameMismatch
+			return mech, "", errNameMismatch
 		}
 		if serr := unix.PidfdSendSignal(fd, unix.SIGKILL, nil, 0); serr != nil {
 			switch {
 			case errors.Is(serr, syscall.ESRCH):
-				return mech, errProcessNotFound
+				return mech, "", errProcessNotFound
 			case errors.Is(serr, syscall.EPERM):
-				return mech, errProcessAccess
+				return mech, "", errProcessAccess
 			default:
-				return mech, errProcessAccess
+				return mech, "", errProcessAccess
 			}
 		}
-		return mech, nil
+		return mech, "", nil
 	}
 
 	// fallback: classic kill with the documented residual window and
 	// the immediate re-verify (dictamen R1) — verify, re-verify,
 	// signal, all inside the single-flight span.
 	const mech = "fallback"
+	reason := pidfdErrName(perr)
 	resolved, rerr := resolveProcessName(pid)
 	if rerr != nil {
-		return mech, rerr
+		return mech, reason, rerr
 	}
 	if !nameMatches(resolved, want) {
-		return mech, errNameMismatch
+		return mech, reason, errNameMismatch
 	}
 	resolved2, rerr2 := resolveProcessName(pid)
 	if rerr2 != nil {
 		// the object died between the two reads: deny instead of
 		// signaling a number whose object we can no longer see
-		return mech, rerr2
+		return mech, reason, rerr2
 	}
 	if resolved2 != resolved {
 		// the name flipped under us: either a recycle or an exec —
 		// both mean "the thing we verified is not the thing that
 		// would receive the signal"
-		return mech, errNameMismatch
+		return mech, reason, errNameMismatch
 	}
 	if serr := unix.Kill(pid, unix.SIGKILL); serr != nil {
 		switch {
 		case errors.Is(serr, syscall.ESRCH):
-			return mech, errProcessNotFound
+			return mech, reason, errProcessNotFound
 		case errors.Is(serr, syscall.EPERM):
-			return mech, errProcessAccess
+			return mech, reason, errProcessAccess
 		default:
-			return mech, errProcessAccess
+			return mech, reason, errProcessAccess
 		}
 	}
-	return mech, nil
+	return mech, reason, nil
+}
+
+// pidfdErrName renders the errno that defeated pidfd_open as the
+// short lowercase name the audit line and the API response carry.
+// The plausible set is small and each name means something different
+// to an operator: enosys (kernel < 5.3, permanent), emfile/enfile
+// (fd-table exhaustion — a live mechanism starving, worth an alarm),
+// enomem, eperm (seccomp/LSM blocking the syscall in hardened
+// containers), einval. Anything else renders as errno_<number> so no
+// unknown cause ever masquerades as a known one.
+func pidfdErrName(err error) string {
+	var errno syscall.Errno
+	if !errors.As(err, &errno) {
+		return "error"
+	}
+	switch errno {
+	case unix.ENOSYS:
+		return "enosys"
+	case unix.EMFILE:
+		return "emfile"
+	case unix.ENFILE:
+		return "enfile"
+	case unix.ENOMEM:
+		return "enomem"
+	case unix.EPERM:
+		return "eperm"
+	case unix.EINVAL:
+		return "einval"
+	default:
+		return "errno_" + strconv.Itoa(int(errno))
+	}
 }
