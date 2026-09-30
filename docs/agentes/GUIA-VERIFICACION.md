@@ -90,7 +90,7 @@ La batería de referencia Go (gofmt/build/vet/test, `-race`, guard OpenAPI, E2E)
 3. **`bunx tsc --noEmit`** (en `web/console`) — puerta de tipos, sin emitir artefactos.
 4. **`bun run build`** — build de producción de Next.js (Turbopack) con prerender completo. Es la única capa que certifica que la app compila como paquete desplegable, no solo que los tests pasan.
 
-Cada capa certifica algo distinto: `bun test` comportamiento, `tsc` tipos, `next build` compilación de producción. Las tres verdes NO certifican nada del engine Go — la batería Go es independiente y sigue su propio estándar.
+Cada capa certifica algo distinto: `bun test` comportamiento, `tsc` tipos, `next build` compilación de producción. Las tres verdes NO certifican nada del engine Go — la batería Go es independiente y sigue su propio estándar. La frontera formal entre las dos baterías es el guard OpenAPI (`scripts/dev-tests/check_openapi.py`, spec vs. `internal/api/api.go`): cuando una ronda TS toca campos que el contrato declara, la especificación es la referencia compartida y el guard — no la batería TS — certifica que engine y spec no derivan (y al revés: un verde TS no exime el guard).
 
 ### Live-fire del proxy (obligatorio si se toca el límite navegador→motor)
 
@@ -98,7 +98,7 @@ Cambios en el proxy de la consola o en sus guardas exigen la matriz conductual d
 
 ### Convenciones
 
-- **Lockfile único:** solo `bun.lock` en ambos paquetes. La aparición de `package-lock.json` u otro lock es residuo a eliminar en la ronda (política vigente desde la ronda 19h31 de Pulimiento).
+- **Lockfile único:** solo `bun.lock` en cada paquete TS del árbol (`web/console`, `web/console-service` y `website/`, este último desde la ola del sitio). La aparición de `package-lock.json` u otro lock es residuo a eliminar en la ronda (política vigente desde la ronda 19h31 de Pulimiento).
 - **Sin toolchain declarado, sin push «verificado»:** si el entorno no tiene bun/node, no se pushea TS verificando «a ojo»; se entrega diseño/documentación o se declara explícitamente que la verificación compilada la aporta el CI externo sobre el push (mismo criterio que la regla 6 para Go — nunca de forma silenciosa).
 - **Evidencia por conteos:** los informes citan `N/N` tests y aserciones (`bun test` lo imprime), no transcripciones de display; los comandos y su salida numérica son la prueba.
 

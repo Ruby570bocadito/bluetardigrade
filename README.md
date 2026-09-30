@@ -345,7 +345,7 @@ bin/engine -splunk https://splunk.internal:8088 \
            -splunk-token 'your-hec-ingestion-token'       # or SF_SPLUNK_TOKEN
 ```
 
-Both sinks run in parallel with the webhook and share its delivery discipline: a bounded 512-alert queue, a single worker, three attempts with linear backoff, transport errors / 429 / 5xx retried and everything else failed fast — a slow platform never stalls detection, and every sent / failed / dropped alert is counted per platform in `/api/stats` (`elastic_sent` / `elastic_failed` / `elastic_dropped`, `splunk_*`) and as `sf_elastic_*_total` / `sf_splunk_*_total` in `/metrics`.
+Both sinks run in parallel with the webhook and share its delivery discipline: a bounded 512-alert queue, a single worker, three attempts with linear backoff, transport errors / 429 / 5xx retried and everything else failed fast — a slow platform never stalls detection, and every sent / failed / dropped alert is counted per platform in `/api/stats` (`elastic_sent` / `elastic_failed` / `elastic_dropped`, `splunk_*`) and as `sf_elastic_*_total` / `sf_splunk_*_total` in `/metrics`. The example endpoints spell their scheme on purpose: both credentials travel in headers (`Authorization: ApiKey`, `Authorization: Splunk`), so an `http://` endpoint leaks no secret — but the alert bodies themselves cross the wire in the clear, which is fine for a trusted lab LAN and is exactly why anything routed over a network you do not control should be `https://`.
 
 The Elasticsearch sink speaks the real Bulk API: NDJSON meta/doc pairs, `application/x-ndjson`, `Authorization: ApiKey`, one request per batch (up to 64 alerts or one flush window). Documents land in `<index>-YYYY.MM.DD` (UTC, `-elastic-index` to change the prefix, default `sf-alerts`) so retention follows the operator's index lifecycle instead of a single ever-growing index — and each document carries the alert ID as its `_id`, which makes retries idempotent: an ambiguous transport failure re-indexes the same document instead of duplicating it. The bulk answer is always parsed, because a 200 can still carry per-item rejections (mapping errors count as failed immediately, 429/5xx items are retried alone).
 
@@ -381,7 +381,7 @@ channels:
 
 Delivery follows the same discipline as the SIEM webhook: one bounded queue (256) and worker per channel, three attempts with linear backoff (transport errors, 429 and 5xx retry; definitive 4xx fail fast), and a dead channel never touches detection — its frames are counted instead. Every channel reports `sent` / `failed` / `dropped` / `filtered` on `/api/stats` (`notify_channels`) and as the labeled families `sf_notify_*_total{channel=...}` on `/metrics`; `filtered` is the operator-configured silence of a `min_severity` floor, reported as data rather than hidden.
 
-Email transport is deliberate about plaintext: STARTTLS defaults to **on** and a relay that does not offer it is a loud startup-and-delivery refusal, not a silent downgrade; AUTH PLAIN never sends credentials over an unencrypted connection (the net/smtp loopback exception is what makes local relays testable). Chat message bodies carry the rendered human line `[SEVERITY] rule @ host — summary`; email additionally carries the full structured alert in the body so the mailbox doubles as a forensic record. The config loader is fail-loud at startup (unknown channel type, missing endpoint, unresolved secret env var, duplicate names, more than 8 channels, file above 4 MiB all stop the engine), because a notification channel that silently never fires is a silent control.
+Email transport is deliberate about plaintext: STARTTLS defaults to **on** and a relay that does not offer it is a loud startup-and-delivery refusal, not a silent downgrade; AUTH PLAIN never sends credentials over an unencrypted connection (the net/smtp loopback exception is what makes local relays testable). Chat message bodies carry the rendered human line `[SEVERITY] rule @ host — summary`; email additionally carries the full structured alert in the body so the mailbox doubles as a forensic record. The config loader is fail-loud at startup (unknown channel type, missing endpoint, unresolved secret env var, duplicate names, more than 8 channels, file above 4 MiB all stop the engine), because a notification channel that silently never fires is a silent control. The same deliberateness has a boundary the operator should know: the loader accepts `http://` for Slack and Telegram endpoints (self-hosted relays and lab LANs are legitimate), but a Slack hook URL *is* the credential and the Telegram token travels inside the request path — on any network you do not control, keep both on `https://` (their public defaults already are) so the secret never crosses the wire in cleartext.
 
 ### Alert suppressions (operator allowlist)
 
@@ -832,6 +832,8 @@ internal/store/   optional SQLite persistence (events/alerts history,
 internal/suppress/  operator allowlist: rule/host suppressions with expiry
 internal/lifecycle/ alert triage state (acknowledged/closed + notes, JSON-persisted)
 internal/webhook/ alert webhook delivery (bounded queue, retries)
+internal/notify/  external notifications (Slack/Telegram/email channels, bounded queues)
+internal/siem/    native SIEM sinks (Elasticsearch Bulk API + Splunk HEC, bounded spools)
 pkg/model/        unified event schema (the wire contract)
 sensor/           Rust ETW sensor (collector is Windows-gated)
 rules/            seeded detection pack (windows/)
@@ -843,8 +845,8 @@ thresholds.yaml   volumetric detector config (hot-reloaded with the rules)
 scripts/windows/  installed runtime scripts (sf-sensor, sf-console, ...)
                   + bundled sysmon-config.xml tuned to the detection pack
 scripts/dev-tests/ end-to-end verification scripts (per-detector and lifecycle E2E,
-                  OpenAPI drift check, two-pass nightly bench, webhook receiver,
-                  ingest-auth and SQLite store smokes, all with real binaries)
+                  OpenAPI drift check, two-pass nightly bench, webhook and SIEM
+                  receivers, ingest-auth and SQLite store smokes, all with real binaries)
 install.ps1       one-command Windows installer
 uninstall.ps1     standalone uninstaller
 Makefile          build automation (engine, sensor, console, docker)
@@ -853,6 +855,7 @@ docs/             architecture document, OpenAPI spec (docs/api/),
                   diagram assets and agent round reports (docs/agentes/)
 web/console/          Next.js console (live feed, triage, AI analyst)
 web/console-service/  realtime telemetry hub (bun + socket.io)
+website/          official landing page (Next.js 16 + Tailwind 4 + shadcn/ui)
 ```
 
 ## Measured performance
