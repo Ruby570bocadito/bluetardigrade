@@ -67,6 +67,16 @@ go build -o "$TMP/bench" ./cmd/bench
 run_pass() {
     local label="$1"; shift
 
+    # Same attribution guard the script-head pre-flight runs before
+    # pass 1, repeated before EVERY pass: the pass-to-pass gap (stop
+    # of the previous engine, start of this one) is a second window
+    # where a leftover engine could own the port and fake this
+    # pass's numbers (agent-04 round over 1a13f15).
+    if curl -sf http://127.0.0.1:7778/api/health >/dev/null 2>&1; then
+        echo "[bench-nightly] FAIL [$label]: port 7778 already serving /api/health before this pass started — a previous engine is still listening; measuring it would fake this pass." >&2
+        exit 1
+    fi
+
     echo "[bench-nightly] starting engine [$label] (loopback defaults, pidfile)..."
     "$TMP/engine" run -pidfile "$TMP/engine.pid" "$@" >"$TMP/engine-$label.log" 2>&1 &
     ENGINE_PID=$!
@@ -81,6 +91,19 @@ run_pass() {
     done
     if [ -z "$ready" ]; then
         echo "[bench-nightly] engine [$label] never became healthy; last log lines:" >&2
+        tail -20 "$TMP/engine-$label.log" >&2
+        exit 1
+    fi
+    # Ownership proof: a health answer is only THIS pass's number
+    # when THIS pass's engine is the process alive to serve it. If
+    # ours died (bind conflict with a leftover engine that survived
+    # the previous pass), whatever answered is not ours — on the
+    # sqlite pass it would measure an engine WITHOUT -store and
+    # fabricate a negative overhead delta. Same anti re-bind pattern
+    # e2e_beacon/e2e_risk_a1 run via their log check; here liveness
+    # of the known PID is the stronger, log-free equivalent.
+    if ! kill -0 "$ENGINE_PID" 2>/dev/null; then
+        echo "[bench-nightly] FAIL [$label]: /api/health answered but THIS pass's engine process is gone (bind conflict with a leftover engine?) — refusing to measure a foreign engine. Last log lines:" >&2
         tail -20 "$TMP/engine-$label.log" >&2
         exit 1
     fi
