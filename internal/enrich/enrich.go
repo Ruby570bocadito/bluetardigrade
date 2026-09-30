@@ -50,15 +50,14 @@ func (en *Enricher) Apply(ev *model.Event) {
 	}
 }
 
-// imageDir splits the executable's directory from an image path on ANY
-// host OS: sensors report Windows paths (drive letter, backslashes)
-// while the engine itself also runs on Linux (Dockerfile), where
-// filepath.Dir alone sees no path separator at all and answers "."
-// for every C:\... image — reclassifying system binaries as userland.
-// The backslash branch reproduces filepath.Dir's Windows semantics
-// byte-identically, so behavior on a Windows host is unchanged; the
-// forward-slash branch stays with the standard library for Unix-ish
-// paths (including the /system32/ form isSystemPath knows).
+// imageDir splits the executable's directory from an image path on any
+// host OS: sensors report Windows paths and the engine also runs on
+// Linux, where filepath.Dir alone answers "." for every C:\... image
+// and reclassifies system binaries as userland. The backslash branch
+// reproduces filepath.Dir's Windows semantics byte-identically (no
+// behavior change on a Windows host); the forward-slash branch stays
+// with the standard library (including the /system32/ form
+// isSystemPath knows).
 func imageDir(image string) string {
 	if strings.ContainsRune(image, '\\') {
 		if i := strings.LastIndexByte(image, '\\'); i >= 0 {
@@ -69,6 +68,9 @@ func imageDir(image string) string {
 	return filepath.Dir(image)
 }
 
+// isSystemPath reports whether an image directory is OS-owned: the
+// Windows system root (c:\windows, case-insensitive) or the Unix-form
+// /system32/ prefix.
 func isSystemPath(dir string) bool {
 	d := strings.ToLower(dir)
 	return strings.HasPrefix(d, `c:\windows`) || strings.HasPrefix(d, `/system32/`)

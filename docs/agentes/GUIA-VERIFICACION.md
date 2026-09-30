@@ -73,6 +73,20 @@ Las herramientas de edición de este entorno re-indentan ficheros Go convirtiend
 
 ---
 
+## Protocolo de coordinación multi-instancia — LOCK DE ENCARGO
+
+### Qué exige
+
+Cuando una directiva (ALTA o reiterada) se asigna a un carril con dos instancias vivas, la instancia que empieza a ejecutarla lo declara **«EN VUELO»** en su acta de plan **publicada en el repo ANTES de escribir la primera línea del encargo**, citando el árbol base (hash) y el alcance exacto (ficheros que va a tocar). La instancia hermana respeta el lock o negocia el traspaso **en acta**, nunca por canal lateral. Un encargo sin lock declarado y sin hermana en vuelo no exige acta de plan separada, pero sí que el acta de ronda declare el territorio antes del push.
+
+### Origen y ratificación
+
+- **Séptima convergencia del día (acta del Director 01h00):** la directiva README 23h55 §4 fue ejecutada EN PARALELO por dos instancias de 03-B con relojes desalineados — dos migraciones completas, una retirada sin huella en origin (regla 7, canónico publicado manda). Coste nulo por el protocolo de conciliación, desperdicio evitable con una línea de plan.
+- **Ratificado como regla transversal** por el Director (acta 01h20 §6) tras la novena convergencia (`4fa44af`, planes de TLS solapados resueltos por cesión declarada), con la integración en esta GUIA asignada al carril 03-A (dueño de la GUIA) — directiva reiterada en 01h45 §65.
+- **El instrumento es el acta de plan en el repo**, no un mensaje de chat: la lección registrada por 03-B (22h45_B) es que el lock vive donde el historial canónico lo conserva.
+
+---
+
 ## Verificación de la consola web (TypeScript) — batería y convenciones
 
 La batería de referencia Go (gofmt/build/vet/test, `-race`, guard OpenAPI, E2E) tiene un equivalente propio para los paquetes TS de producto del árbol — `web/console` (Next.js) y `web/console-service` (hub Bun/socket.io), los dos que PROMPTS.md v2 asigna al carril frontend —, que la regla 6 resume como «bun test + tsc --noEmit + next build». El árbol tiene además un tercer paquete TS, `website/` (landing, ola 0985e7f), que hoy aporta `eslint` + `next build` + lockfile propio; el alcance de su batería completa está en decisión del Director (observación §9.4 de la ronda 16h55). Hasta que esa decisión caiga: esta sección certifica los dos de producto, y toda ronda que toque `website/` exige al menos lo que su propio `package.json` define. Esta sección fija el detalle operativo: qué capa certifica cada comando, en qué orden y qué convenciones aplican, con el mismo estándar de evidencia por conteos que el resto de la guía.
@@ -161,3 +175,4 @@ Regla transversal: **cualquier comando cuya salida sea texto para humanos sirve 
 - **20h30 (03-B, Pulimiento):** tarjeta de referencia visual de la vista de respuesta activa — cierra la captura deferida dos veces con motivo (18h47_B, 19h05_B) con las capturas reales del acta 20h05 (`a3b8bd8`), verificadas por contadores DOM y con el matiz de esquema `mechanism`-en-followups documentado para el lector de las filas.
 - **19h04 (03-B, Pulimiento):** suelo de la batería de consola actualizado — la ola de cobertura r6 de 02-B (`lifecycle.test.ts`, micro-ronda 20h50) certificada por la cross-review de 04-B (23h05) movió el suelo de paquete de 10/10 · 29 a **19 tests / 58 expect**. Verificado de primera mano por esta ronda EN ORDEN de la batería (frozen-lockfile → bun test): 19 pass / 0 fail / 58 expect; el suelo del hub re-verificado sin cambio (50/50 · 206).
 - **2026-10-01 (03-A, Pulimiento):** staticcheck (G2) aterriza en el job engine de ci.yml — versión 2024.1.1 fijada, doble pasada = el estándar del carril (cierra el pendiente reiterado en 18h05_A §7.1 y 19h15_A §7.1: un ST1000 real aterrizó CON el CI verde porque vet no ve la clase). `make ci` re-sincronizado con el ci.yml real (test -race -count=1, bun test de web/console (G1), cross-check GOOS=windows del motor, staticcheck) y `make test` con -count=1. Recidiva del artefacto de edición documentada en vivo: el editor re-indentó el Makefile tabs→espacios (40/0→0/40) al primer Edit — cazado por `make` con «missing separator», normalizado con sed, verificación byte a byte (od -c) y conteos (34 tabs / 0 espacios); el od -c destapó además un `\t` literal introducido por un sed mal escapado que el grep de la misma pasada daba por limpio. .gitignore: los artefactos de runtime de respuesta activa (`respond-audit.jsonl`, `respond-operators.yaml`, `sf-store.db*`) entran en la clase operator-owned ya establecida para `alert-lifecycle.json`.
+- **2026-09-30 22h50 (03-A, Pulimiento):** sección «LOCK DE ENCARGO» integrada (directiva del Director 01h20 §6, reiterada 01h45 §65) y aplicada en vivo en la misma ronda: el plan `plan_ronda_2026-09-30_22h50_A.md` declara EN VUELO los encargos de esta GUIA y de la división de `cmd/engine/run.go` ANTES de ejecutarlos. Misma ronda: recidiva adicional del artefacto B en `internal/enrich/enrich.go` (0 tabs/36 espacios tras el Edit → 36/0 tras `gofmt -w`, conteos citados) — el artefacto aplica igual a comentarios que a código.
