@@ -41,6 +41,12 @@ func (h *Hub) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 	writeMetric(&b, "sf_webhook_sent_total", "Webhook deliveries accepted by the receiver.", "counter", float64(s.WebhookSent))
 	writeMetric(&b, "sf_webhook_failed_total", "Webhook deliveries that failed permanently.", "counter", float64(s.WebhookFailed))
 	writeMetric(&b, "sf_webhook_dropped_total", "Webhook deliveries dropped (queue full or backpressure).", "counter", float64(s.WebhookDropped))
+	writeMetric(&b, "sf_elastic_sent_total", "Elasticsearch sink: alerts indexed (bulk accepted).", "counter", float64(s.ElasticSent))
+	writeMetric(&b, "sf_elastic_failed_total", "Elasticsearch sink: alerts failed permanently or rejected.", "counter", float64(s.ElasticFailed))
+	writeMetric(&b, "sf_elastic_dropped_total", "Elasticsearch sink: alerts dropped (queue full or backpressure).", "counter", float64(s.ElasticDropped))
+	writeMetric(&b, "sf_splunk_sent_total", "Splunk HEC sink: events accepted by the collector.", "counter", float64(s.SplunkSent))
+	writeMetric(&b, "sf_splunk_failed_total", "Splunk HEC sink: events failed permanently or rejected.", "counter", float64(s.SplunkFailed))
+	writeMetric(&b, "sf_splunk_dropped_total", "Splunk HEC sink: events dropped (queue full or backpressure).", "counter", float64(s.SplunkDropped))
 	// External notifications (C2): labeled families, one series per
 	// configured channel. Channel names come from the operator's own
 	// -notify config (data /api/stats already serves), so the same

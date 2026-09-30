@@ -59,6 +59,8 @@ type Hub struct {
 	received    func() (uint64, uint64, uint64) // ingested, dropped, rejected
 	webhook     func() (uint64, uint64, uint64) // sent, failed, dropped
 	notify      func() []notify.ChannelStats    // per-channel delivery counters (C2)
+	elastic     func() (uint64, uint64, uint64) // Elasticsearch sink: sent, failed, dropped
+	splunk      func() (uint64, uint64, uint64) // Splunk HEC sink: sent, failed, dropped
 	correlator  func() (int, int, int)          // in-flight states, loaded sequences, tracking cap
 	sequences   *correlate.Manager              // kill-chain sequences (read-only view)
 	store       *store.Store                    // optional SQLite persistence (nil = rings only)
@@ -196,6 +198,22 @@ func (h *Hub) SetWebhookStats(stats func() (sent, failed, dropped uint64)) {
 func (h *Hub) SetNotifyStats(fn func() []notify.ChannelStats) {
 	h.mu.Lock()
 	h.notify = fn
+	h.mu.Unlock()
+}
+
+// SetElasticStats wires the Elasticsearch sink counters into
+// /api/stats (same triple as the webhook: alerts indexed, alerts
+// failed/dropped by the bounded spool).
+func (h *Hub) SetElasticStats(stats func() (sent, failed, dropped uint64)) {
+	h.mu.Lock()
+	h.elastic = stats
+	h.mu.Unlock()
+}
+
+// SetSplunkStats wires the Splunk HEC sink counters into /api/stats.
+func (h *Hub) SetSplunkStats(stats func() (sent, failed, dropped uint64)) {
+	h.mu.Lock()
+	h.splunk = stats
 	h.mu.Unlock()
 }
 
@@ -397,27 +415,35 @@ func (h *Hub) broadcast(topic string, payload any) {
 // ------------------------------------------------------------- handlers
 
 type statsPayload struct {
-	UptimeS          int64          `json:"uptime_s"`
-	EventsTotal      uint64         `json:"events_total"`
-	Dropped          uint64         `json:"dropped"`
-	IngestRejected   uint64         `json:"ingest_rejected"`
-	EventsPerMin     int            `json:"events_per_min"`
-	AlertsTotal      int            `json:"alerts_total"`
-	BySeverity       map[string]int `json:"by_severity"`
-	RulesCount       int            `json:"rules_count"`
-	RulesTypes       []string       `json:"rules_types"`
-	EventsBuffered   int            `json:"events_buffered"`
-	WebhookSent      uint64         `json:"webhook_sent"`
-	WebhookFailed    uint64         `json:"webhook_failed"`
-	WebhookDropped   uint64         `json:"webhook_dropped"`
-	Suppressions     int            `json:"suppressions_active"`
-	StoreEnabled     bool           `json:"store_enabled"`
-	StoreEvents      int64          `json:"store_events"`
-	StoreAlerts      int64          `json:"store_alerts"`
-	CorrelatorStates int            `json:"correlator_states"`
-	CorrelatorSeqs   int            `json:"correlator_sequences"`
-	CorrelatorCap    int            `json:"correlator_cap"`
-	Mode             string         `json:"mode"`
+	UptimeS        int64          `json:"uptime_s"`
+	EventsTotal    uint64         `json:"events_total"`
+	Dropped        uint64         `json:"dropped"`
+	IngestRejected uint64         `json:"ingest_rejected"`
+	EventsPerMin   int            `json:"events_per_min"`
+	AlertsTotal    int            `json:"alerts_total"`
+	BySeverity     map[string]int `json:"by_severity"`
+	RulesCount     int            `json:"rules_count"`
+	RulesTypes     []string       `json:"rules_types"`
+	EventsBuffered int            `json:"events_buffered"`
+	WebhookSent    uint64         `json:"webhook_sent"`
+	WebhookFailed  uint64         `json:"webhook_failed"`
+	WebhookDropped uint64         `json:"webhook_dropped"`
+	// SIEM sinks (Elasticsearch bulk / Splunk HEC): same delivery
+	// triple as the webhook, per platform.
+	ElasticSent      uint64 `json:"elastic_sent"`
+	ElasticFailed    uint64 `json:"elastic_failed"`
+	ElasticDropped   uint64 `json:"elastic_dropped"`
+	SplunkSent       uint64 `json:"splunk_sent"`
+	SplunkFailed     uint64 `json:"splunk_failed"`
+	SplunkDropped    uint64 `json:"splunk_dropped"`
+	Suppressions     int    `json:"suppressions_active"`
+	StoreEnabled     bool   `json:"store_enabled"`
+	StoreEvents      int64  `json:"store_events"`
+	StoreAlerts      int64  `json:"store_alerts"`
+	CorrelatorStates int    `json:"correlator_states"`
+	CorrelatorSeqs   int    `json:"correlator_sequences"`
+	CorrelatorCap    int    `json:"correlator_cap"`
+	Mode             string `json:"mode"`
 
 	// Host risk scoring (A1): how many hosts currently carry non-cold
 	// risk, and the top-5 list the console dashboard renders.
@@ -468,6 +494,14 @@ func (h *Hub) statsSnapshot() statsPayload {
 	var whSent, whFailed, whDropped uint64
 	if h.webhook != nil {
 		whSent, whFailed, whDropped = h.webhook()
+	}
+	var esSent, esFailed, esDropped uint64
+	if h.elastic != nil {
+		esSent, esFailed, esDropped = h.elastic()
+	}
+	var spSent, spFailed, spDropped uint64
+	if h.splunk != nil {
+		spSent, spFailed, spDropped = h.splunk()
 	}
 	corrFn := h.correlator
 	notifyFn := h.notify
@@ -565,6 +599,12 @@ func (h *Hub) statsSnapshot() statsPayload {
 		WebhookSent:      whSent,
 		WebhookFailed:    whFailed,
 		WebhookDropped:   whDropped,
+		ElasticSent:      esSent,
+		ElasticFailed:    esFailed,
+		ElasticDropped:   esDropped,
+		SplunkSent:       spSent,
+		SplunkFailed:     spFailed,
+		SplunkDropped:    spDropped,
 		Suppressions:     supActive,
 		StoreEnabled:     storeEnabled,
 		StoreEvents:      storeEvents,

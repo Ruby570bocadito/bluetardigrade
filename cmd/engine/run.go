@@ -27,6 +27,7 @@ import (
 	"github.com/Ruby570bocadito/security-framework/internal/lifecycle"
 	"github.com/Ruby570bocadito/security-framework/internal/notify"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
+	"github.com/Ruby570bocadito/security-framework/internal/siem"
 	"github.com/Ruby570bocadito/security-framework/internal/store"
 	"github.com/Ruby570bocadito/security-framework/internal/suppress"
 	"github.com/Ruby570bocadito/security-framework/internal/threshold"
@@ -49,6 +50,11 @@ type options struct {
 	webhookURL       string
 	webhookToken     string
 	notifyPath       string
+	elasticURL       string
+	elasticIndex     string
+	elasticAPIKey    string
+	splunkURL        string
+	splunkToken      string
 	apiToken         string
 	token            string
 	prevToken        string
@@ -91,6 +97,16 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 		"Bearer token sent on every webhook delivery as 'Authorization: Bearer' (falls back to SF_WEBHOOK_TOKEN); empty disables the header")
 	fs.StringVar(&o.notifyPath, "notify", "",
 		"YAML config with external notification channels (slack, telegram, email); loaded fail-loud at startup; empty disables")
+	fs.StringVar(&o.elasticURL, "elastic", "",
+		"Elasticsearch base URL for SIEM indexing (e.g. http://127.0.0.1:9200); alerts are bulk-indexed into <index>-YYYY.MM.DD with a deterministic _id per alert, so retries never duplicate; empty disables")
+	fs.StringVar(&o.elasticIndex, "elastic-index", "sf-alerts",
+		"index name prefix used with -elastic (daily suffix YYYY.MM.DD in UTC is appended)")
+	fs.StringVar(&o.elasticAPIKey, "elastic-api-key", "",
+		"Elasticsearch API key sent as 'Authorization: ApiKey' on every bulk request (falls back to SF_ELASTIC_API_KEY); empty disables the header")
+	fs.StringVar(&o.splunkURL, "splunk", "",
+		"Splunk HEC collector base URL (e.g. https://splunk.example:8088); alerts are POSTed to /services/collector/event; empty disables")
+	fs.StringVar(&o.splunkToken, "splunk-token", "",
+		"Splunk HEC ingestion token sent as 'Authorization: Splunk' on every event (falls back to SF_SPLUNK_TOKEN); empty disables the header")
 	fs.StringVar(&o.apiToken, "api-token", "",
 		"bearer token the local API requires on /api/* (falls back to SF_API_TOKEN); /api/health stays open; empty disables")
 	fs.BoolVar(&o.apiWrite, "api-write", false,
@@ -450,6 +466,50 @@ func runEngine(o *options, interactive bool) error {
 		fmt.Printf("[ENGINE] notify: %d channel(s): %s\n", len(nt.Summary()), strings.Join(nt.Summary(), ", "))
 	}
 
+	// siem sinks: alerts indexed to Elasticsearch (_bulk, daily index,
+	// deterministic _id) and/or POSTed to Splunk HEC. Same delivery
+	// discipline as the webhook: async, bounded, never stalls the loop.
+	sinkCtx, sinkCancel := context.WithCancel(context.Background())
+	var elasticSink *siem.Elastic
+	if o.elasticURL != "" {
+		elasticSink = siem.NewElastic(o.elasticURL, o.elasticIndex)
+		// credential resolution: flag wins over the environment,
+		// mirroring the ingest and webhook token order
+		elasticKey := o.elasticAPIKey
+		if elasticKey == "" {
+			elasticKey = os.Getenv("SF_ELASTIC_API_KEY")
+		}
+		elasticSink.SetAPIKey(elasticKey)
+		go elasticSink.Run(sinkCtx)
+		if hub != nil {
+			hub.SetElasticStats(elasticSink.Stats)
+		}
+		if elasticSink.APIKeyConfigured() {
+			fmt.Printf("[ENGINE] elasticsearch on %s (alerts bulk-indexed as %s-YYYY.MM.DD, ApiKey auth enabled)\n", o.elasticURL, o.elasticIndex)
+		} else {
+			fmt.Printf("[ENGINE] elasticsearch on %s (alerts bulk-indexed as %s-YYYY.MM.DD, no auth header - set -elastic-api-key or SF_ELASTIC_API_KEY)\n", o.elasticURL, o.elasticIndex)
+		}
+	}
+	var splunkSink *siem.Splunk
+	if o.splunkURL != "" {
+		splunkSink = siem.NewSplunk(o.splunkURL)
+		splunkTok := o.splunkToken
+		if splunkTok == "" {
+			splunkTok = os.Getenv("SF_SPLUNK_TOKEN")
+		}
+		splunkSink.SetToken(splunkTok)
+		go splunkSink.Run(sinkCtx)
+		if hub != nil {
+			hub.SetSplunkStats(splunkSink.Stats)
+		}
+		if splunkSink.TokenConfigured() {
+			fmt.Printf("[ENGINE] splunk hec on %s (alerts POSTed as events, Splunk token enabled)\n", o.splunkURL)
+		} else {
+			fmt.Printf("[ENGINE] splunk hec on %s (alerts POSTed as events, no token - set -splunk-token or SF_SPLUNK_TOKEN)\n", o.splunkURL)
+		}
+
+	}
+
 	enricher := enrich.New()
 	// In TUI mode the panel owns the screen: raw alert lines would
 	// corrupt the alt-buffer, so the console/JSON writer is muted and
@@ -476,6 +536,15 @@ func runEngine(o *options, interactive bool) error {
 		}
 		if nt != nil {
 			nt.Handle(a)
+		}
+		// siem sinks get every alert too; Handle never blocks (drops
+		// are counted in the sink, surfaced via /api/stats)
+		if elasticSink != nil {
+			elasticSink.Handle(a)
+		}
+		if splunkSink != nil {
+			splunkSink.Handle(a)
+
 		}
 	})
 	// rule actions: rendered messages land inside the alert payload;
@@ -684,6 +753,14 @@ func runEngine(o *options, interactive bool) error {
 	}
 	if nt != nil {
 		nt.Wait()
+	}
+	sinkCancel() // siem sinks: stop accepting; drain pending frames
+	if elasticSink != nil {
+		elasticSink.Wait()
+	}
+	if splunkSink != nil {
+		splunkSink.Wait()
+
 	}
 
 	fmt.Printf("[ENGINE] processed %d events in %s (ingested=%d dropped=%d)\n",

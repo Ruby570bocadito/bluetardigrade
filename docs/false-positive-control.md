@@ -158,6 +158,20 @@ connector) or per-action `config.secret` (`actions.webhook`). A
 reachable receiver without a token accepts forged alerts — see
 *Alert webhook* in the README.
 
+The native SIEM sinks (`-elastic`, `-splunk`) deliver to the platforms
+with the same discipline and the same filterable payload: the full
+alert travels on both paths, so the receiver-side rules above apply
+unchanged (Elastic indexes it as the document; Splunk exposes
+`rule_id`/`severity`/`host`/`user` as indexed HEC fields, making the
+`severity` and `rule_id` filters native searches). Both require their
+platform credential (`-elastic-api-key`/`SF_ELASTIC_API_KEY`,
+`-splunk-token`/`SF_SPLUNK_TOKEN`) — an unauthenticated collector is
+as injectable as an unauthenticated webhook. A wrong or missing
+credential never fails silently: exhausted deliveries surface in
+`elastic_failed`/`splunk_failed` (`/api/stats` and
+`sf_elastic_failed_total`/`sf_splunk_failed_total`), and the E2E pins
+that behavior (`scripts/dev-tests/e2e_siem.sh`, phase C).
+
 ## What a hostile feed cannot do to the output channel
 
 The engine assumes the feed may lie (misconfigured sensor, compromised
@@ -171,6 +185,7 @@ host inventing events). The caps that protect the pipeline:
 | Correlator states | 8192 (`correlator_cap`) | NEW hosts stop being tracked until slots free — watch `correlator_states` in `/api/stats` |
 | Correlator stale states | — | pruned on every successful sequence reload (removed sequences cannot hold slots) |
 | Webhook queue | 512 frames, single sequential delivery worker | saturated deliveries counted as `dropped`/failed, detection unaffected |
+| SIEM sink queues (`-elastic`, `-splunk`) | 512 frames each, single delivery worker per sink | saturated deliveries counted as `elastic_dropped`/`splunk_dropped`, detection unaffected |
 
 Design rule of thumb, applied consistently: **visibility wins over
 deduplication, and bounded degradation beats silence**. A flood makes

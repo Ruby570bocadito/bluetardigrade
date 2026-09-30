@@ -95,7 +95,10 @@ paths:
         `webhook_*` counters report delivery health from the outside:
         `webhook_sent` delivered (2xx), `webhook_failed` exhausted
         retries, `webhook_dropped` discarded because the bounded queue
-        saturated. When ingest auth is active (`-token`),
+        saturated. The SIEM sinks report the same delivery triple per
+        platform when configured: `elastic_*` (bulk indexing via
+        `-elastic`) and `splunk_*` (HEC events via `-splunk`). When
+        ingest auth is active (`-token`),
         `ingest_rejected` counts connections rejected by the shared
         token handshake — the visible signal that the ingest port is
         being probed without credentials.
@@ -779,6 +782,12 @@ components:
         - webhook_sent
         - webhook_failed
         - webhook_dropped
+        - elastic_sent
+        - elastic_failed
+        - elastic_dropped
+        - splunk_sent
+        - splunk_failed
+        - splunk_dropped
         - suppressions_active
         - correlator_states
         - correlator_sequences
@@ -866,6 +875,34 @@ components:
           type: integer
           format: int64
           description: alerts discarded because the webhook queue (512) saturated
+        elastic_sent:
+          type: integer
+          format: int64
+          description: alerts bulk-indexed into Elasticsearch (items accepted by
+            _bulk); retries are idempotent thanks to the deterministic per-alert _id
+        elastic_failed:
+          type: integer
+          format: int64
+          description: alerts the Elasticsearch sink gave up on (3 attempts, or
+            permanently rejected items such as mapping errors)
+        elastic_dropped:
+          type: integer
+          format: int64
+          description: alerts discarded because the Elasticsearch queue (512) saturated
+        splunk_sent:
+          type: integer
+          format: int64
+          description: HEC events accepted by the Splunk collector (HTTP 2xx with
+            a zero ack code)
+        splunk_failed:
+          type: integer
+          format: int64
+          description: HEC events the Splunk sink gave up on (3 attempts, or
+            permanent rejections such as a non-zero ack code with HTTP 200)
+        splunk_dropped:
+          type: integer
+          format: int64
+          description: alerts discarded because the Splunk queue (512) saturated
         correlator_states:
           type: integer
           description: in-flight (sequence, host) chains currently tracked by the

@@ -51,6 +51,7 @@ A behavioral detection framework built by an offensive-security practitioner, in
   - [Persistent storage (SQLite, opt-in)](#persistent-storage-sqlite-opt-in)
   - [Ingest authentication (shared token)](#ingest-authentication-shared-token)
   - [Alert webhook (SIEM/SOAR connector)](#alert-webhook-siemsoar-connector)
+  - [SIEM sinks (Elasticsearch / Splunk)](#siem-sinks-elasticsearch--splunk)
   - [External notifications (Slack, Telegram, email)](#external-notifications-slack-telegram-email)
   - [Alert suppressions (operator allowlist)](#alert-suppressions-operator-allowlist)
   - [Alert triage (lifecycle)](#alert-triage-lifecycle)
@@ -223,7 +224,7 @@ The engine serves a small read-only API used by the web console and handy for SI
 |----------|---------|
 | `GET /api/health` | liveness + mode |
 | `GET /metrics` | the same counters as `/api/stats` in the Prometheus text exposition format (`sf_*` families, `text/plain; version=0.0.4`) — scrapers read the credential from their `authorization` config; see [Prometheus](#prometheus-metrics) |
-| `GET /api/stats` | uptime, counters, per-severity totals, rule count, ingest auth rejections, webhook delivery counters, per-channel external notification counters (`notify_channels`), active suppressions, kill-chain correlator observability (`correlator_states` / `correlator_sequences` / `correlator_cap`), store counters (`store_enabled` / `store_events` / `store_alerts`) |
+| `GET /api/stats` | uptime, counters, per-severity totals, rule count, ingest auth rejections, webhook delivery counters, per-platform SIEM sink counters (`elastic_*` / `splunk_*`), per-channel external notification counters (`notify_channels`), active suppressions, kill-chain correlator observability (`correlator_states` / `correlator_sequences` / `correlator_cap`), store counters (`store_enabled` / `store_events` / `store_alerts`) |
 | `GET /api/events?limit=200` | recent events, newest first |
 | `GET /api/alerts?limit=100` | recent alerts, newest first |
 | `GET /api/suppressions` | operator allowlist currently active; `POST`/`DELETE` (only with `-api-write`) edit the same file atomically — see [Alert suppressions](#alert-suppressions-operator-allowlist) |
@@ -235,13 +236,13 @@ The engine serves a small read-only API used by the web console and handy for SI
 
 All four telemetry endpoints (`/api/events`, `/api/alerts` and both `/export` variants) accept the same filter parameters, applied BEFORE `limit`: `host=<name>` (exact, case-insensitive), `since=`/`until=` (RFC 3339 timestamp or positive duration like `90m`/`24h`), `q=<free text>` (case-insensitive across ids, summaries, tags and context), plus `severity=a,b` and `rule_id=` on the alert endpoints and `type=` on the event ones. Invalid values answer 400 with an actionable message. When `-store` is attached, all four read the full stored history — not just the in-memory rings — subject to the configured retention (what that mode changes in [Persistent storage](#persistent-storage-sqlite-opt-in)). Examples: `/api/alerts/export?host=lab-wks-01&since=24h` for "that box, today", `/api/events?type=network.connect&q=suspicious.tld` to chase one domain.
 
-Exports are for SIEM import, offline analysis and the forensic store: JSONL round-trips the full records, CSV flattens them to stable columns and neutralizes spreadsheet formula injection on attacker-controlled fields. When `-webhook` is set, `/api/stats` additionally reports `webhook_sent` / `webhook_failed` / `webhook_dropped` so the delivery pipeline can be sized from the outside; when `-notify` is set, one `notify_channels` row per configured channel reports the same four-state accounting (sent / failed / dropped / filtered) with the channel name and type; with ingest auth active (`-token`), `ingest_rejected` counts connections rejected by the shared-token handshake; when a `sequences/` directory is loaded, `correlator_states` / `correlator_sequences` / `correlator_cap` expose the kill-chain correlator's in-flight (sequence, host) chains against its hard cap (what the numbers mean and how the console surfaces them in [Kill-chain correlation](#kill-chain-correlation)); and with `-store` attached, `store_enabled` / `store_events` / `store_alerts` report the persisted history size (semantics in [Persistent storage](#persistent-storage-sqlite-opt-in)); `risk_hosts_tracked` / `hot_hosts` always report the per-host risk surface (semantics in [Host risk scoring](#host-risk-scoring-hot-hosts)), and `beacons_tracked` / `beacons_cap` / `beacons_fired` the beaconing detector's live signal (semantics in [Beaconing detection](#beaconing-detection-c2-call-home)). The machine-readable contract for the whole surface lives in OpenAPI 3.0 at [`docs/api/openapi.yaml`](docs/api/openapi.yaml).
+Exports are for SIEM import, offline analysis and the forensic store: JSONL round-trips the full records, CSV flattens them to stable columns and neutralizes spreadsheet formula injection on attacker-controlled fields. When `-webhook` is set, `/api/stats` additionally reports `webhook_sent` / `webhook_failed` / `webhook_dropped` so the delivery pipeline can be sized from the outside; the same delivery triple is reported per SIEM platform when its sink is configured (`elastic_*` via `-elastic`, `splunk_*` via `-splunk`, semantics in [SIEM sinks](#siem-sinks-elasticsearch--splunk)); when `-notify` is set, one `notify_channels` row per configured channel reports the same four-state accounting (sent / failed / dropped / filtered) with the channel name and type; with ingest auth active (`-token`), `ingest_rejected` counts connections rejected by the shared-token handshake; when a `sequences/` directory is loaded, `correlator_states` / `correlator_sequences` / `correlator_cap` expose the kill-chain correlator's in-flight (sequence, host) chains against its hard cap (what the numbers mean and how the console surfaces them in [Kill-chain correlation](#kill-chain-correlation)); and with `-store` attached, `store_enabled` / `store_events` / `store_alerts` report the persisted history size (semantics in [Persistent storage](#persistent-storage-sqlite-opt-in)); `risk_hosts_tracked` / `hot_hosts` always report the per-host risk surface (semantics in [Host risk scoring](#host-risk-scoring-hot-hosts)), and `beacons_tracked` / `beacons_cap` / `beacons_fired` the beaconing detector's live signal (semantics in [Beaconing detection](#beaconing-detection-c2-call-home)). The machine-readable contract for the whole surface lives in OpenAPI 3.0 at [`docs/api/openapi.yaml`](docs/api/openapi.yaml).
 
 The API can demand a bearer token: start the engine with `-api-token '...'` (or `SF_API_TOKEN`) and every `/api/*` route — stats, events, alerts, rules, sequences, suppressions, stream, exports — answers `401` without a valid `Authorization: Bearer <token>` header, with a loud log line per rejected request. `/metrics` is gated by the same credential, and `/api/health` stays open on purpose: it is the liveness probe the engine, the console bridge and uptime checks rely on, and it reveals nothing but `{"mode":"engine","status":"ok"}`. The console-service bridge honors the same `SF_API_TOKEN` variable, so a token-protected console stack needs exactly one extra environment entry. This follows the same standard as the ingest auth: loopback stays friction-free by default, but a listener reachable beyond loopback must never serve telemetry without an explicit credential.
 
 ### Prometheus metrics
 
-`GET /metrics` serves the same counters as `/api/stats` in the Prometheus text exposition format (`text/plain; version=0.0.4`), one `sf_*` family per numeric stats field — `sf_events_total`, `sf_alerts_total`, `sf_events_dropped_total`, `sf_ingest_rejected_total`, `sf_webhook_*_total`, `sf_notify_{sent,failed,dropped,filtered}_total{channel=...}`, `sf_suppressions_active`, `sf_store_*`, `sf_correlator_*`, `sf_risk_hosts_tracked`, plus the labeled families `sf_alerts_by_severity{severity=...}` and `sf_host_risk_score{host=...}` (top-5 host risk, labels sorted and escaped like the severity series). It is rendered from the same snapshot struct the JSON endpoint serves (a parity test pins both views together), so it reveals nothing `/api/stats` does not, and the non-numeric fields (`rules_types`, `mode`) are deliberately omitted to keep series cardinality out of operator-file control. Scraping a token-protected engine works with the standard `authorization` scrape option:
+`GET /metrics` serves the same counters as `/api/stats` in the Prometheus text exposition format (`text/plain; version=0.0.4`), one `sf_*` family per numeric stats field — `sf_events_total`, `sf_alerts_total`, `sf_events_dropped_total`, `sf_ingest_rejected_total`, `sf_webhook_*_total`, `sf_elastic_*_total`, `sf_splunk_*_total`, `sf_notify_{sent,failed,dropped,filtered}_total{channel=...}`, `sf_suppressions_active`, `sf_store_*`, `sf_correlator_*`, `sf_risk_hosts_tracked`, plus the labeled families `sf_alerts_by_severity{severity=...}` and `sf_host_risk_score{host=...}` (top-5 host risk, labels sorted and escaped like the severity series). It is rendered from the same snapshot struct the JSON endpoint serves (a parity test pins both views together), so it reveals nothing `/api/stats` does not, and the non-numeric fields (`rules_types`, `mode`) are deliberately omitted to keep series cardinality out of operator-file control. Scraping a token-protected engine works with the standard `authorization` scrape option:
 
 ```yaml
 scrape_configs:
@@ -253,7 +254,7 @@ scrape_configs:
       - targets: ['127.0.0.1:7778']
 ```
 
-Worth alerting on: `sf_ingest_rejected_total` climbing (a probe against the ingest port), `sf_webhook_failed_total` climbing (a down SIEM connector), `sf_notify_failed_total` climbing (a dead chat or mail channel — the alert still fires, the operator just stops seeing it), and `sf_correlator_states` reaching `sf_correlator_cap` (a feed problem flooding the kill-chain tracker — see [Kill-chain correlation](#kill-chain-correlation)).
+Worth alerting on: `sf_ingest_rejected_total` climbing (a probe against the ingest port), `sf_webhook_failed_total` climbing (a down SIEM connector), `sf_elastic_failed_total` / `sf_splunk_failed_total` climbing (a misconfigured or saturated SIEM sink), `sf_notify_failed_total` climbing (a dead chat or mail channel — the alert still fires, the operator just stops seeing it), and `sf_correlator_states` reaching `sf_correlator_cap` (a feed problem flooding the kill-chain tracker — see [Kill-chain correlation](#kill-chain-correlation)).
 
 ### Persistent storage (SQLite, opt-in)
 
@@ -329,6 +330,28 @@ bin/engine -webhook http://siem.internal:8080/ingest \
 ```
 
 The receiver then validates the `Authorization: Bearer` header, so a receiver reachable from more than the engine's host can reject unauthenticated or spoofed posts instead of ingesting fake alerts into the SIEM. Per-rule `actions.webhook` entries keep their own independent `secret` config (see [Rule actions](#rule-actions)); when both are set the per-action secret applies to that action only and the global token to the engine-level connector. A webhook running without any token prints a startup reminder listing the flag and the env var.
+
+### SIEM sinks (Elasticsearch / Splunk)
+
+For teams that run their detections straight into a SIEM platform — no relay endpoint of their own to build — the engine ships native sinks for Elasticsearch and Splunk:
+
+```bash
+# Elasticsearch: alerts bulk-indexed into a daily index
+bin/engine -elastic http://elastic.internal:9200 \
+           -elastic-api-key 'base64-of-your-api-key'      # or SF_ELASTIC_API_KEY
+
+# Splunk: alerts POSTed as HEC events to the collector
+bin/engine -splunk https://splunk.internal:8088 \
+           -splunk-token 'your-hec-ingestion-token'       # or SF_SPLUNK_TOKEN
+```
+
+Both sinks run in parallel with the webhook and share its delivery discipline: a bounded 512-alert queue, a single worker, three attempts with linear backoff, transport errors / 429 / 5xx retried and everything else failed fast — a slow platform never stalls detection, and every sent / failed / dropped alert is counted per platform in `/api/stats` (`elastic_sent` / `elastic_failed` / `elastic_dropped`, `splunk_*`) and as `sf_elastic_*_total` / `sf_splunk_*_total` in `/metrics`.
+
+The Elasticsearch sink speaks the real Bulk API: NDJSON meta/doc pairs, `application/x-ndjson`, `Authorization: ApiKey`, one request per batch (up to 64 alerts or one flush window). Documents land in `<index>-YYYY.MM.DD` (UTC, `-elastic-index` to change the prefix, default `sf-alerts`) so retention follows the operator's index lifecycle instead of a single ever-growing index — and each document carries the alert ID as its `_id`, which makes retries idempotent: an ambiguous transport failure re-indexes the same document instead of duplicating it. The bulk answer is always parsed, because a 200 can still carry per-item rejections (mapping errors count as failed immediately, 429/5xx items are retried alone).
+
+The Splunk sink speaks the HTTP Event Collector: one event per POST to `/services/collector/event` with `Authorization: Splunk <token>`, the full alert as the event body, and the alert's `time` (epoch seconds), `host`, `source` and `sourcetype` (`sf:alert`) at HEC level; `rule_id`, `severity`, `host` and `user` also travel as indexed `fields` so Splunk admins can search and alert on them without parsing the payload. Success requires both an HTTP 2xx AND a zero ack code — HEC reports rejected events as 200-with-code, and those are permanent failures, not retries.
+
+Delivery semantics are at-least-once on both paths (the Elasticsearch `_id` makes them effectively deduplicated; HEC has no client-side event key, so downstream dedup can key on the alert `id` every event carries). The end-to-end delivery contract — wire shapes, auth enforcement, negative control and wrong-credential visibility — is pinned by `scripts/dev-tests/e2e_siem.sh` with its labeled lab receivers.
 
 ### External notifications (Slack, Telegram, email)
 
@@ -426,6 +449,8 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `-api-token` | — | Bearer required on every `/api/*` route and on `/metrics` (`/api/health` stays open) |
 | `-api-write` | off | arm `POST`/`DELETE /api/suppressions` (writes land on the `-suppressions` file; refused beyond loopback without `-api-token`) |
 | `-webhook` / `-webhook-token` | — | SIEM/SOAR connector URL / outbound Bearer token |
+| `-elastic` / `-elastic-index` / `-elastic-api-key` | — / `sf-alerts` / — | Elasticsearch bulk indexing (daily `-YYYY.MM.DD` index, deterministic `_id`) / index prefix / API key (falls back to `SF_ELASTIC_API_KEY`) |
+| `-splunk` / `-splunk-token` | — | Splunk HEC collector base URL (events POSTed to `/services/collector/event`) / HEC token (falls back to `SF_SPLUNK_TOKEN`) |
 | `-store` / `-store-retention` | off / `72h` | SQLite persistence / pruning window (`0` keeps everything) |
 | `-v` | off | print every event received |
 | `-pidfile` | — | write the engine PID to a file |
@@ -720,6 +745,11 @@ path (no subcommand) and on `engine run`.
 | `-reload-every dur` | `15s` | hot-reload interval for rules, sequences and suppressions; `0` disables |
 | `-webhook url` | empty | POST every alert as JSON to this URL (SIEM/SOAR connector) |
 | `-webhook-token t` | empty | Bearer token on every webhook delivery (falls back to `SF_WEBHOOK_TOKEN`) |
+| `-elastic url` | empty | Elasticsearch base URL; alerts bulk-indexed into `<index>-YYYY.MM.DD` with the alert ID as deterministic `_id` — see [SIEM sinks](#siem-sinks-elasticsearch--splink) |
+| `-elastic-index prefix` | `sf-alerts` | index name prefix used with `-elastic` |
+| `-elastic-api-key k` | empty | Elasticsearch API key sent as `Authorization: ApiKey` (falls back to `SF_ELASTIC_API_KEY`); empty disables the header |
+| `-splunk url` | empty | Splunk HEC collector base URL; alerts POSTed to `/services/collector/event` — see [SIEM sinks](#siem-sinks-elasticsearch--splink) |
+| `-splunk-token t` | empty | Splunk HEC token sent as `Authorization: Splunk` (falls back to `SF_SPLUNK_TOKEN`); empty disables the header |
 | `-api-token t` | empty | bearer token the local API requires on `/api/*` and `/metrics` (falls back to `SF_API_TOKEN`); `/api/health` stays open |
 | `-api-write` | off | arm `POST`/`DELETE /api/suppressions` (falls back to `SF_API_WRITE=1`); writes go to the `-suppressions` file, which stays the source of truth; refused at startup when the API has no token beyond loopback |
 | `-token t` | empty | shared ingest token (falls back to `SF_INGEST_TOKEN`); empty disables auth |

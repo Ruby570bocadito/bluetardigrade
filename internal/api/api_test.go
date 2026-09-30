@@ -719,6 +719,8 @@ func TestMetricsParityWithStats(t *testing.T) {
 			{Name: "tg-lab", Type: "telegram", Sent: 5, Failed: 0, Dropped: 0, Filtered: 1},
 		}
 	})
+	h.SetElasticStats(func() (uint64, uint64, uint64) { return 6, 3, 2 })
+	h.SetSplunkStats(func() (uint64, uint64, uint64) { return 4, 2, 1 })
 	h.SetCorrelatorStats(func() (int, int, int) { return 3, 4, 8192 })
 	h.RecordEvent(sampleEvent("ev-1"))
 	h.RecordEvent(sampleEvent("ev-2"))
@@ -793,6 +795,12 @@ func TestMetricsParityWithStats(t *testing.T) {
 	wantMetric("sf_webhook_sent_total", "webhook_sent")
 	wantMetric("sf_webhook_failed_total", "webhook_failed")
 	wantMetric("sf_webhook_dropped_total", "webhook_dropped")
+	wantMetric("sf_elastic_sent_total", "elastic_sent")
+	wantMetric("sf_elastic_failed_total", "elastic_failed")
+	wantMetric("sf_elastic_dropped_total", "elastic_dropped")
+	wantMetric("sf_splunk_sent_total", "splunk_sent")
+	wantMetric("sf_splunk_failed_total", "splunk_failed")
+	wantMetric("sf_splunk_dropped_total", "splunk_dropped")
 	wantMetric("sf_suppressions_active", "suppressions_active")
 	wantMetric("sf_correlator_states", "correlator_states")
 	wantMetric("sf_correlator_sequences", "correlator_sequences")
