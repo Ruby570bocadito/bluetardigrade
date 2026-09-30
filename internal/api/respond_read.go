@@ -8,6 +8,7 @@
 // either. The bearer middleware (api.go) covers both routes like every
 // other /api read: the audit names operators and client addresses, so
 // it never travels without the engine's credential.
+
 package api
 
 import (
