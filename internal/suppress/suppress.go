@@ -91,9 +91,10 @@ func (p Parsed) Expired(now time.Time) bool {
 // set atomically (hot reload), SuppressedAt is the only lookup the
 // engine needs on the alert path.
 type Manager struct {
-	mu      sync.RWMutex
-	entries []Parsed
-	path    string
+	mu        sync.RWMutex
+	entries   []Parsed
+	path      string
+	loadedMod time.Time // mtime of the file at the last successful load (zero = loaded with no file on disk)
 }
 
 // New returns an empty manager. The engine uses one manager for the
@@ -159,11 +160,50 @@ func (m *Manager) LoadFile(path string) error {
 	if err != nil {
 		return err
 	}
+	var mod time.Time
+	if st, err := os.Stat(path); err == nil {
+		mod = st.ModTime()
+	}
 	m.mu.Lock()
 	m.entries = entries
 	m.path = path
+	m.loadedMod = mod
 	m.mu.Unlock()
 	return nil
+}
+
+// ReloadIfChanged re-reads path when the file on disk changed since the
+// last load (mtime moved, appeared, or vanished). Write surfaces call it
+// right before their read-modify-write so an API write always operates
+// on the freshest disk state: without it, a hand edit made between two
+// hot-reload ticks (up to the full reload interval) would be silently
+// clobbered by SaveFile's next full rewrite - the file is the source of
+// truth, and the API is just one of its editors.
+//
+// It returns true when the set was reloaded. A parse error surfaces to
+// the caller UNCHANGED: overwriting a file that does not parse would
+// destroy an operator's in-progress edit, so the caller must refuse the
+// write instead (the engine's own hot-reload keeps the previous set on
+// the same condition - the write surface cannot be more permissive).
+func (m *Manager) ReloadIfChanged(path string) (bool, error) {
+	st, err := os.Stat(path)
+	if err != nil && !os.IsNotExist(err) {
+		return false, fmt.Errorf("suppress: stat %s: %w", path, err)
+	}
+	var mod time.Time
+	if st != nil {
+		mod = st.ModTime()
+	}
+	m.mu.RLock()
+	sameState := path == m.path && mod.Equal(m.loadedMod)
+	m.mu.RUnlock()
+	if sameState {
+		return false, nil
+	}
+	if err := m.LoadFile(path); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // Path returns the file the current set was loaded from.

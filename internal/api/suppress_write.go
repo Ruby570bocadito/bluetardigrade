@@ -15,6 +15,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -67,6 +68,26 @@ func (h *Hub) suppressWriteTarget(w http.ResponseWriter) (*suppress.Manager, str
 	return sup, path, true
 }
 
+// reloadDriftedFile picks up manual edits before the read-modify-write.
+// The file is the source of truth and the API is just one of its
+// editors: without this, a hand edit made between two hot-reload ticks
+// (up to the full reload interval) would be silently clobbered by the
+// next SaveFile full rewrite. A drifted file that does not parse refuses
+// the write with 409: overwriting it would destroy the operator's
+// in-progress edit. The parse detail goes to the log, never the
+// response (no path echo to clients - same standard as the 500).
+// Caller must hold h.supWriteMu.
+func (h *Hub) reloadDriftedFile(w http.ResponseWriter, sup *suppress.Manager, path string) bool {
+	if _, err := sup.ReloadIfChanged(path); err != nil {
+		log.Printf("[API] WRITE suppressions REFUSED (drifted file does not parse): %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprintln(w, `{"error":"suppressions file changed on disk but does not parse - not overwriting it; fix the YAML first (details in engine log)"}`)
+		return false
+	}
+	return true
+}
+
 // handleSuppressionsCreate adds (or updates) one entry: the body is a
 // single JSON object with the same fields as the YAML entries. The pair
 // (rule_id, host) is the entry identity, so posting an existing pair
@@ -79,8 +100,16 @@ func (h *Hub) handleSuppressionsCreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// One entry is a few hundred bytes: 8 KiB is generous and caps the
+	// memory a single authenticated request can pin (the triage write
+	// surface runs the same limit - both write paths speak one standard).
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 8192))
+	if err != nil {
+		http.Error(w, "unreadable or oversized request body (8 KiB limit)", http.StatusBadRequest)
+		return
+	}
 	var in suppress.Entry
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+	if err := json.Unmarshal(body, &in); err != nil {
 		http.Error(w, fmt.Sprintf("invalid JSON body: %v", err), http.StatusBadRequest)
 		return
 	}
@@ -96,6 +125,9 @@ func (h *Hub) handleSuppressionsCreate(w http.ResponseWriter, r *http.Request) {
 	h.supWriteMu.Lock()
 	defer h.supWriteMu.Unlock()
 
+	if !h.reloadDriftedFile(w, sup, path) {
+		return
+	}
 	entries := sup.All()
 	action := "add"
 	for i := range entries {
@@ -148,6 +180,9 @@ func (h *Hub) handleSuppressionsDelete(w http.ResponseWriter, r *http.Request) {
 	h.supWriteMu.Lock()
 	defer h.supWriteMu.Unlock()
 
+	if !h.reloadDriftedFile(w, sup, path) {
+		return
+	}
 	entries := sup.All()
 	kept := make([]suppress.Entry, 0, len(entries))
 	removed := 0
@@ -159,9 +194,16 @@ func (h *Hub) handleSuppressionsDelete(w http.ResponseWriter, r *http.Request) {
 		kept = append(kept, e)
 	}
 	if removed == 0 {
+		// The values come from the query string: marshal the error
+		// through encoding/json so a control character in rule_id
+		// cannot produce an invalid JSON body (Go's %q emits \xNN,
+		// which JSON does not define).
+		body, _ := json.Marshal(struct {
+			Error string `json:"error"`
+		}{fmt.Sprintf("no suppression entry matches rule_id=%q host=%q", rule, host)})
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprintf(w, "{\"error\":\"no suppression entry matches rule_id=%q host=%q\"}\n", rule, host)
+		_, _ = w.Write(append(body, '\n'))
 		return
 	}
 	if err := suppress.SaveFile(path, kept); err != nil {

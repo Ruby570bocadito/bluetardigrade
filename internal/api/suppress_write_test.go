@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Ruby570bocadito/security-framework/internal/suppress"
+	"gopkg.in/yaml.v3"
 )
 
 func newWriteHub(t *testing.T, path string, arm bool) (*Hub, string) {
@@ -270,5 +271,174 @@ func TestSuppressionWriteServerErrorOnUnwritablePath(t *testing.T) {
 	// loud on the log, no internals in the body
 	if b := bodyString(res); strings.Contains(b, "no such dir") {
 		t.Errorf("500 body leaks the path: %s", b)
+	}
+}
+
+// --- auditoría del agente-04 sobre el aterrizaje 6.1 (Director, informe
+// 2026-09-30 04h53, asignación (i)): fichero como fuente única ante edits
+// manuales concurrentes, cuerpo acotado como el otro write surface, y
+// cuerpos de error JSON válidos ante query hostil. ---
+
+// futureMtime forces a deterministic mtime delta so the drift check
+// does not depend on the filesystem timestamp granularity (a manual
+// edit landing within the same clock tick as the last load would
+// otherwise flake the test, not the engine).
+func futureMtime(t *testing.T, p string) {
+	t.Helper()
+	fut := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(p, fut, fut); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The file is the source of truth and a hand edit made between two
+// hot-reload ticks (up to the full 15s interval) must never be
+// silently clobbered by an API write: the write picks it up before the
+// read-modify-write. Pre-fix this test loses the manual entry.
+func TestSuppressionWritePicksUpManualEdit(t *testing.T) {
+	p := seedFile(t, "- rule_id: aaa\n  reason: manual base\n")
+	_, addr := newWriteHub(t, p, true)
+
+	// the operator edits the file by hand after the engine loaded it
+	manual := "- rule_id: aaa\n  reason: manual base\n- rule_id: bbb\n  host: lab-wks-01\n  reason: hand added\n"
+	if err := os.WriteFile(p, []byte(manual), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	futureMtime(t, p)
+
+	res := postJSON(t, fmt.Sprintf("http://%s/api/suppressions", addr),
+		`{"rule_id":"ccc","reason":"via api"}`)
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("POST: status %d, body %s", res.StatusCode, bodyString(res))
+	}
+
+	data, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var onDisk []suppress.Entry
+	if err := yaml.Unmarshal(data, &onDisk); err != nil {
+		t.Fatalf("saved file does not parse: %v", err)
+	}
+	var ids []string
+	for _, e := range onDisk {
+		ids = append(ids, e.RuleID)
+	}
+	if len(ids) != 3 || ids[0] != "aaa" || ids[1] != "bbb" || ids[2] != "ccc" {
+		t.Fatalf("manual edit lost by the API write: file has rule ids %v, want [aaa bbb ccc]", ids)
+	}
+}
+
+// A drifted file that does not parse is most likely an operator edit in
+// progress: overwriting it would destroy their work mid-flight. The
+// write refuses with 409 and the file stays byte-identical; the manager
+// keeps serving the last good set (same fail-loudly semantics as the
+// hot-reload tick).
+func TestSuppressionWriteRefusesBrokenDriftedFile(t *testing.T) {
+	p := seedFile(t, "- rule_id: aaa\n")
+	_, addr := newWriteHub(t, p, true)
+
+	broken := "rule_id: [broken\n  reason: operator mid-edit"
+	if err := os.WriteFile(p, []byte(broken), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	futureMtime(t, p)
+
+	res := postJSON(t, fmt.Sprintf("http://%s/api/suppressions", addr),
+		`{"rule_id":"ccc","reason":"via api"}`)
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("POST on broken drifted file: status %d, want 409 (body %s)", res.StatusCode, bodyString(res))
+	}
+
+	data, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != broken {
+		t.Fatalf("the broken manual edit was clobbered by the API write:\n%s", data)
+	}
+	// the manager keeps the last good set (GET still serves it)
+	get, err := http.Get(fmt.Sprintf("http://%s/api/suppressions", addr))
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := decodeSuppressions(t, get)
+	if payload.Active != 1 || len(payload.Entries) != 1 || payload.Entries[0].RuleID != "aaa" {
+		t.Fatalf("manager lost the last good set after refusing the write: %+v", payload)
+	}
+}
+
+// Both write surfaces cap the request body at 8 KiB: one suppression
+// entry is a few hundred bytes, and an unbounded body would let a
+// single authenticated request pin arbitrary memory.
+func TestSuppressionCreateLimitsBodySize(t *testing.T) {
+	p := seedFile(t, "")
+	_, addr := newWriteHub(t, p, true)
+
+	big := fmt.Sprintf(`{"rule_id":"r1","reason":"%s"}`, strings.Repeat("a", 9000))
+	res := postJSON(t, fmt.Sprintf("http://%s/api/suppressions", addr), big)
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("oversized body: status %d, want 400", res.StatusCode)
+	}
+	if b := bodyString(res); !strings.Contains(b, "8 KiB") {
+		t.Fatalf("oversized body message not actionable: %s", b)
+	}
+}
+
+// The DELETE 404 echoes query values: those come from the request line,
+// so a control character in rule_id must not break the JSON body (Go's
+// %q emits \xNN, which JSON does not define - encoding/json emits \u0001).
+func TestSuppressionDelete404BodyIsValidJSON(t *testing.T) {
+	p := seedFile(t, "- rule_id: aaa\n")
+	_, addr := newWriteHub(t, p, true)
+
+	res := delReq(t, fmt.Sprintf("http://%s/api/suppressions?rule_id=x%%01y&host=h", addr))
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("DELETE unknown pair: status %d, want 404", res.StatusCode)
+	}
+	raw := bodyString(res)
+	if !json.Valid([]byte(raw)) {
+		t.Fatalf("404 body is not valid JSON: %q", raw)
+	}
+}
+
+// Hostile strings in the API fields must round-trip as FIELD VALUES,
+// never forge extra YAML entries (the same invariant the \\x1f hardening
+// enforces for the store channel, now pinned for the suppression file):
+// yaml.v3 quotes/block-scales the values, so the saved file holds
+// exactly one entry and parses back to the very same strings.
+func TestSuppressionsFieldsRoundTripWithoutForging(t *testing.T) {
+	p := seedFile(t, "")
+	_, addr := newWriteHub(t, p, true)
+
+	hostile := map[string]string{
+		"rule_id": "r1",
+		"host":    "lab\nwks\"x---\ny",
+		"reason":  "a\"b\\c\n---\n- rule_id: forged\n  host: evil",
+	}
+	raw, _ := json.Marshal(hostile)
+	res := postJSON(t, fmt.Sprintf("http://%s/api/suppressions", addr), string(raw))
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("POST hostile fields: status %d, body %s", res.StatusCode, bodyString(res))
+	}
+
+	data, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var onDisk []suppress.Entry
+	if err := yaml.Unmarshal(data, &onDisk); err != nil {
+		t.Fatalf("saved file does not parse: %v", err)
+	}
+	if len(onDisk) != 1 {
+		t.Fatalf("hostile field values forged %d entries on disk, want exactly 1:\n%s", len(onDisk), data)
+	}
+	if onDisk[0].RuleID != hostile["rule_id"] || onDisk[0].Host != hostile["host"] || onDisk[0].Reason != hostile["reason"] {
+		t.Fatalf("hostile fields did not round-trip verbatim: %+v", onDisk[0])
 	}
 }
