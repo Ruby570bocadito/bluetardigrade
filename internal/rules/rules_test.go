@@ -3,7 +3,6 @@ package rules
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"testing"
 	"time"
 
@@ -278,17 +277,15 @@ func TestOperators(t *testing.T) {
 		{"lt", 443, float64(80), true},
 		{"regex", `(?i)minid?ump`, "run MiniDump 744", true},
 	}
-	cr := compiledRule{regex: map[int]*regexp.Regexp{}}
+	// F2 (adenda 11h02): la tabla pasa por el Matcher — el unico
+	// camino de evaluacion que existe desde el refactor.
 	for i, tc := range cases {
 		c := Condition{Field: "f", Operator: tc.op, Value: tc.val}
-		if tc.op == "regex" {
-			re, err := regexp.Compile(asString(tc.val))
-			if err != nil {
-				t.Fatalf("case %d: %v", i, err)
-			}
-			cr.regex = map[int]*regexp.Regexp{0: re}
+		m, err := NewMatcher([]Condition{c})
+		if err != nil {
+			t.Fatalf("case %d: %v", i, err)
 		}
-		if got := evalCondition(cr, 0, c, tc.given); got != tc.want {
+		if got := m.MatchFields(map[string]any{"f": tc.given}); got != tc.want {
 			t.Errorf("case %d: operator %s(%v, %v) = %v, want %v",
 				i, tc.op, tc.given, tc.val, got, tc.want)
 		}
@@ -367,4 +364,30 @@ func writeRuleDir(t *testing.T, rs []Rule) string {
 		t.Fatal(err)
 	}
 	return dir
+}
+
+// F2 (adenda 11h02): copia defensiva de values slice — mutar el slice
+// del caller tras construir el Matcher no cambia lo que evalua.
+func TestMatcherDefensiveCopyOfSliceValues(t *testing.T) {
+	vals := []any{"-enc", "-w hidden"}
+	m, err := NewMatcher([]Condition{{Field: "process.command_line", Operator: "contains_any", Value: vals}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	vals[0] = "-INOCUO" // mutacion hostil post-construccion
+	// MatchFields consume el mapa ANIDADO que produce FieldMap()
+	nested := func(cmdline string) map[string]any {
+		return map[string]any{"process": map[string]any{"command_line": cmdline}}
+	}
+	// el matcher conserva el valor ORIGINAL "-enc" (la copia es del
+	// momento de construccion), por lo que sigue disparando con el
+	// comando que lo contiene
+	if !m.MatchFields(nested("powershell -enc AAA")) {
+		t.Error("el matcher perdio el valor original -enc")
+	}
+	// la mutacion del slice del caller NO altera al matcher: el valor
+	// "-INOCUO" jamas existio dentro del matcher
+	if m.MatchFields(nested("powershell -INOCUO AAA")) {
+		t.Error("la mutacion externa del slice cambio la semantica del matcher")
+	}
 }

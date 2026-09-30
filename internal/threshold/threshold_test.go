@@ -294,11 +294,13 @@ func TestExpiredKeysPurgedOnAdmission(t *testing.T) {
 	}
 }
 
-func TestQuotaEvictsOwnKeysOnly(t *testing.T) {
-	// dictamen Q2: una regla en su cuota (2048) lava SOLO sus claves;
-	// la evidencia de otra regla no se toca.
+func TestQuotaIsAdmissionCeiling(t *testing.T) {
+	// F1.1 (adenda 11h02): la cuota es SOLO techo de admision. La
+	// clave 2049 no se crea (evento descartado para esa regla) y NO
+	// hay expulsion: la evidencia de otras reglas queda intacta y las
+	// claves existentes de la propia regla siguen contando y disparando.
 	defs := `
-- name: Victoriana
+- name: Flood
   id: thr-a
   severity: low
   event_type: file.write
@@ -312,32 +314,98 @@ func TestQuotaEvictsOwnKeysOnly(t *testing.T) {
 	d := loadForTest(t, defs)
 	var fired int
 	d.SetEmit(func(alert.Alert) { fired++ })
-	// la victima acumula evidencia: 1 clave con 10 conteos
+	// la victima acumula evidencia: 1 clave con 10 conteos (count 4096:
+	// nunca dispara con 10 eventos, solo acumula)
 	for i := 0; i < 10; i++ {
-		d.Observe(&model.Event{ID: fmt.Sprintf("v%d", i), Type: "process.create", Host: "VICTIM", Timestamp: t0}, t0)
+		d.Observe(&model.Event{ID: fmt.Sprintf("v%d", i), Type: "process.create", Host: "victim", Timestamp: t0}, t0)
 	}
-	// la atacante inunda hasta su cuota con claves de 1 conteo
-	for i := 0; i <= MaxKeysPerRule; i++ {
+	// la atacante inunda hasta la cuota con claves de 1 conteo
+	for i := 0; i < MaxKeysPerRule; i++ {
 		d.Observe(&model.Event{ID: fmt.Sprintf("f%d", i), Type: "file.write", Host: fmt.Sprintf("FLOOD%d", i), Timestamp: t0}, t0)
-	}
-	// la evidencia de la victima sigue intacta
-	d.mu.Lock()
-	victimKey := key{ruleID: "thr-b", host: "victim"} // host foldado
-	st, ok := d.keys[victimKey]
-	victimCount := 0
-	if ok {
-		victimCount = st.count
-	}
-	perA := d.perRule["thr-a"]
-	d.mu.Unlock()
-	if !ok || victimCount != 10 {
-		t.Fatalf("evidencia de la victima lavada: ok=%v count=%d", ok, victimCount)
-	}
-	if perA > MaxKeysPerRule {
-		t.Fatalf("cuota excedida: %d > %d", perA, MaxKeysPerRule)
 	}
 	if d.KeysTracked() != MaxKeysPerRule+1 {
 		t.Fatalf("keys=%d, want %d", d.KeysTracked(), MaxKeysPerRule+1)
+	}
+	// intentos de clave 2049: DESCARTADOS (no admitidos, no expulsan)
+	for i := 0; i < 50; i++ {
+		d.Observe(&model.Event{ID: fmt.Sprintf("x%d", i), Type: "file.write", Host: fmt.Sprintf("EXTRA%d", i), Timestamp: t0}, t0)
+	}
+	if d.KeysTracked() != MaxKeysPerRule+1 {
+		t.Fatalf("la cuota admitio o expulso: keys=%d", d.KeysTracked())
+	}
+	d.mu.Lock()
+	perA := d.perRule["thr-a"]
+	victim, vOK := d.keys[key{ruleID: "thr-b", host: "victim"}]
+	d.mu.Unlock()
+	if perA != MaxKeysPerRule {
+		t.Fatalf("cuota=%d, want %d", perA, MaxKeysPerRule)
+	}
+	if !vOK || victim.count != 10 {
+		t.Fatalf("evidencia de la victima tocada: ok=%v count=%d", vOK, victim.count)
+	}
+	// las claves EXISTENTES de la regla saturada siguen contando y
+	// disparando con normalidad (la cuota no la silencia)
+	for i := 0; i < 4095; i++ {
+		d.Observe(&model.Event{ID: fmt.Sprintf("w%d", i), Type: "file.write", Host: "FLOOD0", Timestamp: t0}, t0)
+	}
+	if fired != 1 {
+		t.Fatalf("una regla en cuota debe seguir disparando con sus claves existentes: fired=%d", fired)
+	}
+}
+
+func TestGlobalCapWeakestFirstGlobal(t *testing.T) {
+	// F1.2 (adenda 11h02): cap global lleno sin expiradas -> la
+	// expulsion es weakest-first GLOBAL (menor conteo, empate por
+	// clave menor), sin restricciones por regla y sin tocar nunca a
+	// la recien llegada. El flood (claves count=1) se lava a si
+	// mismo; la evidencia real (count alto) sobrevive.
+	var b strings.Builder
+	for r := 0; r < 4; r++ {
+		fmt.Fprintf(&b, "- name: Flood %d\n  id: thr-f%d\n  severity: low\n  event_type: file.write\n  conditions:\n    - { field: file.path, operator: startswith, value: 'C:\\dir%d\\' }\n  threshold: { count: 4096, window: 24h }\n", r, r, r)
+	}
+	b.WriteString("- name: Evidencia\n  id: thr-real\n  severity: low\n  event_type: image.load\n  threshold: { count: 4096, window: 24h }\n")
+	d := loadForTest(t, b.String())
+	d.SetEmit(func(alert.Alert) {})
+	// 4 reglas x cuota con claves count=1 (flood puro)
+	for r := 0; r < 4; r++ {
+		for i := 0; i < MaxKeysPerRule; i++ {
+			ev := &model.Event{ID: "e", Type: "file.write", Host: fmt.Sprintf("F%d-%d", r, i), Timestamp: t0,
+				File: &model.File{Path: fmt.Sprintf("C:\\dir%d\\f.dll", r)}}
+			d.Observe(ev, t0)
+		}
+	}
+	// evidencia real: 3 claves con 50 conteos (regla aparte, bajo cuota)
+	for h := 0; h < 3; h++ {
+		for i := 0; i < 50; i++ {
+			d.Observe(&model.Event{ID: fmt.Sprintf("r%d", i), Type: "image.load", Host: fmt.Sprintf("REAL%d", h), Timestamp: t0}, t0)
+		}
+	}
+	// el mapa YA esta lleno: cada clave de evidencia entra DESPLAZANDO
+	// la clave mas debil del flood (weakest-first global en accion) —
+	// el total queda clavado en MaxKeys
+	if d.KeysTracked() != MaxKeys {
+		t.Fatalf("keys=%d, want %d", d.KeysTracked(), MaxKeys)
+	}
+	// una admision nueva mas: sigue weakest-first global; la evidencia
+	// de 50 conteos es intocable y la recien llegada queda admitida
+	d.Observe(&model.Event{ID: "n", Type: "image.load", Host: "NEWCOMER", Timestamp: t0}, t0)
+	d.mu.Lock()
+	_, newcomerAlive := d.keys[key{ruleID: "thr-real", host: "newcomer"}]
+	realAlive := 0
+	for _, h := range []string{"real0", "real1", "real2"} {
+		if _, ok := d.keys[key{ruleID: "thr-real", host: h}]; ok {
+			realAlive++
+		}
+	}
+	d.mu.Unlock()
+	if !newcomerAlive {
+		t.Fatal("la recien llegada no fue admitida")
+	}
+	if realAlive != 3 {
+		t.Fatalf("evidencia real lavada: %d/3 claves vivas", realAlive)
+	}
+	if d.KeysTracked() != MaxKeys {
+		t.Fatalf("keys=%d, want %d (el cap global no cede)", d.KeysTracked(), MaxKeys)
 	}
 }
 

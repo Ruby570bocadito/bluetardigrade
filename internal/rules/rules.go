@@ -71,8 +71,8 @@ type Engine struct {
 }
 
 type compiledRule struct {
-	rule  *Rule
-	regex map[int]*regexp.Regexp // precompiled regex per condition index
+	rule    *Rule
+	matcher *Matcher // owns ALL condition evaluation (F2: single path)
 }
 
 // LoadDir walks dir and loads every .yaml/.yml rule file.
@@ -146,25 +146,18 @@ func (e *Engine) Evaluate(ev *model.Event) []Hit {
 		if !cr.rule.IsEnabled() {
 			continue
 		}
-		matched := make([]string, 0, len(cr.rule.Conditions))
-		ok := true
-		for i, cond := range cr.rule.Conditions {
-			val := lookup(fields, cond.Field)
-			if !evalCondition(cr, i, cond, val) {
-				ok = false
-				break
+		// F2 (adenda 11h02): ONE evaluation path — the compiled
+		// Matcher. A Hit only exists on full match, so MatchedOn is
+		// every condition field by construction.
+		if cr.matcher.MatchFields(fields) {
+			matched := make([]string, 0, len(cr.rule.Conditions))
+			for _, cond := range cr.rule.Conditions {
+				matched = append(matched, cond.Field)
 			}
-			matched = append(matched, cond.Field)
-		}
-		if ok {
 			hits = append(hits, Hit{Rule: cr.rule, MatchedOn: matched})
 		}
 	}
 	return hits
-}
-
-func evalCondition(cr compiledRule, idx int, c Condition, val any) bool {
-	return matchCondition(c, val, cr.regex[idx])
 }
 
 // matchCondition evaluates one condition against a field value. The
@@ -350,7 +343,7 @@ func (e *Engine) load(dir string) error {
 }
 
 func compile(r *Rule) (compiledRule, error) {
-	cr := compiledRule{rule: r, regex: map[int]*regexp.Regexp{}}
+	cr := compiledRule{rule: r}
 	if r.EventType == "" {
 		return cr, fmt.Errorf("missing event_type")
 	}
@@ -359,18 +352,14 @@ func compile(r *Rule) (compiledRule, error) {
 	default:
 		return cr, fmt.Errorf("invalid severity %q", r.Severity)
 	}
-	for i, c := range r.Conditions {
-		if c.Field == "" || c.Operator == "" {
-			return cr, fmt.Errorf("condition %d: field and operator are required", i)
-		}
-		if c.Operator == "regex" {
-			re, err := regexp.Compile(asString(c.Value))
-			if err != nil {
-				return cr, fmt.Errorf("condition %d: bad regex: %w", i, err)
-			}
-			cr.regex[i] = re
-		}
+	// F2 (adenda 11h02): the Matcher is built HERE and owns every
+	// condition evaluation — the engine and external callers share
+	// exactly one evaluation path.
+	m, err := NewMatcher(r.Conditions)
+	if err != nil {
+		return cr, err
 	}
+	cr.matcher = m
 	return cr, nil
 }
 
@@ -389,13 +378,18 @@ type Matcher struct {
 // rules as rule compilation apply: field and operator are required,
 // "regex" values must compile with Go's regexp. An empty condition
 // list is valid and matches every event (a pure counter).
+//
+// Inmutabilidad real (F2, adenda 11h02): los values de tipo slice se
+// COPIAN defensivamente en la construcción — un caller que mute su
+// slice después de construir el Matcher no puede cambiar lo que el
+// matcher evalúa (el coste es una copia por carga/hot-reload).
 func NewMatcher(conds []Condition) (*Matcher, error) {
 	m := &Matcher{
 		conds:   make([]Condition, len(conds)),
 		regexes: make([]*regexp.Regexp, len(conds)),
 	}
-	copy(m.conds, conds)
-	for i, c := range m.conds {
+	for i, c := range conds {
+		m.conds[i] = Condition{Field: c.Field, Operator: c.Operator, Value: copyValue(c.Value)}
 		if c.Field == "" || c.Operator == "" {
 			return nil, fmt.Errorf("condition %d: field and operator are required", i)
 		}
@@ -408,6 +402,24 @@ func NewMatcher(conds []Condition) (*Matcher, error) {
 		}
 	}
 	return m, nil
+}
+
+// copyValue clones the slice-shaped condition values so a Matcher
+// never shares mutable state with its caller. Scalars are immutable
+// values and pass through.
+func copyValue(v any) any {
+	switch t := v.(type) {
+	case []any:
+		out := make([]any, len(t))
+		copy(out, t)
+		return out
+	case []string:
+		out := make([]string, len(t))
+		copy(out, t)
+		return out
+	default:
+		return v
+	}
 }
 
 // Match reports whether every condition holds for the event. Events

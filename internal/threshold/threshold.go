@@ -3,18 +3,20 @@
 // optionally grouped by a field (brute force, mass deletion, port
 // scans, credential spraying). Package A2 of the roadmap.
 //
-// Window model (dictamen 04, Q1 — ACCEPTED WITH CONDITION):
+// Window model (dictamen 04, Q1 — ACCEPTED WITH CONDITION; cifras
+// corregidas por la adenda vinculante 11h02, O2):
 //
 // Fixed-window counters per key, NOT sliding timestamp rings. The
 // boundary trade-off is DOCUMENTED AND ACCEPTED behavior: a burst
 // straddling a window edge can count up to 2×(count-1) events across
 // 2×T before the rollover — for volumetric DETECTION the cost is one
 // extra alert, never a missed one (fail2ban makes the same trade).
-// The fixed window keeps per-key state at a flat ~48-byte struct with
-// no pointers: 8192 keys × 48 B ≈ 393 KB worst case, versus the
-// hundreds of MB a sliding ring would need at high counts. Beaconing
-// (A3), where the boundary IS the signal, keeps its sliding ring —
-// that is why they are two packages and not one.
+// The fixed window keeps per-key state at a flat struct: keyState is
+// ~56 B (int + two time.Time) and Go maps add ~24-32 B per entry, so
+// the 8192-key worst case is ~0.65-0.72 MB — the <1 MB bound HOLDS
+// (the "48 B / 393 KB" figures of the dictamen underestimated the map
+// overhead). Beaconing (A3), where the boundary IS the signal, keeps
+// its sliding ring — that is why they are two packages, not one.
 //
 // Bounds (design §3 + dictamen Q2, all load- or admission-enforced):
 //
@@ -29,13 +31,27 @@
 //	MaxWindow 24h        windows with no operational meaning
 //	maxFileBytes 4 MiB   same input standard as beacon/correlate
 //
-// Eviction policy (dictamen Q2): expired keys (windowStart older than
-// 2×window) are dead evidence and are purged first. Past that, a rule
-// at its own quota evicts ITS weakest key — a flood consumes only
-// itself; a key accumulating count survives. At the global cap the
-// weakest key of a quota-violating rule goes first, else the weakest
-// key of the biggest consumer rule; ties break on the smallest key for
-// determinism.
+// Eviction policy (F1, adenda vinculante 11h02 — sustituye la
+// semántica del dictamen 10h45):
+//
+//  1. The per-rule quota is an ADMISSION CEILING only: a rule at
+//     MaxKeysPerRule admits NO new keys — events that would create
+//     key 2049 are dropped for that rule while its existing keys keep
+//     counting and firing normally. Monopoly is bounded to 25% of the
+//     table BY CONSTRUCTION; no eviction path can bypass it.
+//  2. When the GLOBAL cap is saturated and a new key must be admitted:
+//     fully expired keys of ANY rule are purged first (dead evidence);
+//     if none, weakest-first GLOBAL (lowest count, tie-break smallest
+//     key), never the newly-arrived key (risk-tracker rule). A flood
+//     always contributes the weakest keys of the map, so it washes
+//     out only itself; the quota prevents PREEMPTIVE monopoly.
+//  3. Defensive: even if no rule ever reached the quota, a saturated
+//     global cap follows the same weakest-first-global path — there is
+//     no no-op eviction branch and no "offending rule" selection.
+//
+// Cost note (O1, accepted precedent like risk's evictColdest): the
+// weakest-first scan is O(keys) but ONLY runs on admission with a
+// saturated map — never on the happy per-event path.
 package threshold
 
 import (
@@ -313,6 +329,12 @@ func (d *Detector) Observe(ev *model.Event, now time.Time) {
 		}
 		k := key{ruleID: c.def.ID, host: host, group: group}
 		st := d.admitLocked(k, c, now)
+		if st == nil {
+			// F1: the rule is at its admission quota — the event is
+			// dropped for THIS rule (other rules still see it) and its
+			// existing keys keep counting and firing normally.
+			continue
+		}
 		// fixed-window rollover: a window older than the period is
 		// closed and the counter restarts from zero
 		if now.Sub(st.windowStart) >= c.window {
@@ -331,25 +353,30 @@ func (d *Detector) Observe(ev *model.Event, now time.Time) {
 }
 
 // admitLocked returns the state for k, creating it under the bound
-// policy documented in the package doc. Caller holds mu.
-func (d *Detector) admitLocked(k key, c *compiled, now time.Time) *keyState {
+// policy documented in the package doc. A nil return means the event
+// is DROPPED for this rule (F1: quota = admission ceiling). Caller
+// holds mu.
+func (d *Detector) admitLocked(k key, _ *compiled, now time.Time) *keyState {
 	if st, ok := d.keys[k]; ok {
 		return st
 	}
-	ruleFull := d.perRule[k.ruleID] >= MaxKeysPerRule
-	globalFull := len(d.keys) >= MaxKeys
-	if ruleFull || globalFull {
-		// expired keys are dead evidence: time alone frees slots
-		d.purgeExpiredLocked(now)
-		ruleFull = d.perRule[k.ruleID] >= MaxKeysPerRule
-		globalFull = len(d.keys) >= MaxKeys
+	// F1.1: quota is an ADMISSION CEILING, never an eviction trigger.
+	// No key #2049 for a saturated rule — and no eviction path may
+	// bypass this by making room.
+	if d.perRule[k.ruleID] >= MaxKeysPerRule {
+		return nil
 	}
-	if ruleFull {
-		// the rule's own flood consumes only itself
-		d.evictWeakestOfRuleLocked(k.ruleID)
-	}
+	// F1.2: global saturation — dead evidence (expired keys of ANY
+	// rule) frees slots first.
 	if len(d.keys) >= MaxKeys {
-		d.evictWeakestLocked()
+		d.purgeExpiredLocked(now)
+	}
+	// F1.2/F1.3: still saturated → weakest-first GLOBAL (lowest count,
+	// deterministic tie-break), never the newly-arrived key. A flood
+	// always contributes the weakest keys of the map, so it washes out
+	// only itself.
+	if len(d.keys) >= MaxKeys {
+		d.evictWeakestGlobalLocked(k)
 	}
 	st := &keyState{windowStart: now}
 	d.keys[k] = st
@@ -371,14 +398,18 @@ func (d *Detector) purgeExpiredLocked(now time.Time) {
 	}
 }
 
-// evictWeakestOfRuleLocked frees one slot in ruleID's quota by
-// deleting its lowest-count key (ties: smallest key). Caller holds mu.
-func (d *Detector) evictWeakestOfRuleLocked(ruleID string) {
+// evictWeakestGlobalLocked frees one global slot by deleting the
+// lowest-count key of the WHOLE table (F1.2: weakest-first global,
+// without per-rule restrictions — a flood always contributes the
+// weakest keys, so it washes out only itself). Ties: smallest key.
+// The newcomer is not in the map yet, so it can never be its own
+// victim (risk-tracker rule). Caller holds mu.
+func (d *Detector) evictWeakestGlobalLocked(exclude key) {
 	var weakest key
 	found := false
 	for k, st := range d.keys {
-		if k.ruleID != ruleID {
-			continue
+		if k == exclude {
+			continue // defensive: the newcomer is never a victim
 		}
 		if !found || st.count < d.keys[weakest].count || (st.count == d.keys[weakest].count && lessKey(k, weakest)) {
 			weakest, found = k, true
@@ -386,47 +417,6 @@ func (d *Detector) evictWeakestOfRuleLocked(ruleID string) {
 	}
 	if found {
 		d.deleteKeyLocked(weakest)
-	}
-}
-
-// evictWeakestLocked frees one global slot: the weakest key of a rule
-// violating its quota first (the biggest violator), else the weakest
-// key of the biggest consumer rule. Ties: smallest key. Caller holds mu.
-func (d *Detector) evictWeakestLocked() {
-	// count keys per rule
-	tally := map[string]int{}
-	for k := range d.keys {
-		tally[k.ruleID]++
-	}
-	violators := []string{}
-	for id, n := range tally {
-		if n > MaxKeysPerRule {
-			violators = append(violators, id)
-		}
-	}
-	target := ""
-	if len(violators) > 0 {
-		// the biggest violator releases the most pressure per eviction
-		sort.Strings(violators)
-		best := violators[0]
-		for _, id := range violators[1:] {
-			if tally[id] > tally[best] {
-				best = id
-			}
-		}
-		target = best
-	} else {
-		// biggest consumer; lexicographic tie-break for determinism
-		best := ""
-		for id := range tally {
-			if best == "" || tally[id] > tally[best] || (tally[id] == tally[best] && id < best) {
-				best = id
-			}
-		}
-		target = best
-	}
-	if target != "" {
-		d.evictWeakestOfRuleLocked(target)
 	}
 }
 
