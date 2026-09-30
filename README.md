@@ -37,7 +37,7 @@ A behavioral detection framework built by an offensive-security practitioner, in
 | **Performance** | Measured, not assumed: ingest→alert p99 ≈ 0.4 ms on loopback ([numbers](#measured-performance)) |
 | **Security posture** | Loopback-only binds by default, constant-time token compares, CSV formula-injection neutralization, SHA-pinned CI |
 
-![Console operations dashboard: KPIs, sensor activity chart, kill-chain alerts and recent telemetry](docs/assets/console-panel.png)
+![Console operations dashboard: KPIs with the per-host risk tile, sensor activity chart, hot-hosts panel and recent telemetry](docs/assets/console-panel.png)
 
 ---
 
@@ -611,9 +611,9 @@ The repo ships an early browser console: live telemetry feed, KPI dashboard, sev
 
 The interface carries a restrained motion layer adapted from [React Bits](https://reactbits.dev) — every effect communicates a state change and none is decoration: a pointer-reactive dot-grid canvas behind the shell, view titles that blur in on section change, KPI halos that follow the mouse, an animated 1px border on the AI analyst while it is working, a gradient pulse on the critical counter while critical alerts exist, a status chip that scales in when a triage decision lands, and a brand tagline that decrypts once on load. Everything respects `prefers-reduced-motion` (static fallbacks) and the whole layer adds zero runtime dependencies beyond `motion`.
 
-Operations dashboard: KPIs, sensor activity, hot hosts, top kill-chain alerts and the live event sample in one view. The KPI strip carries a per-host risk tile (tracked hosts + current leader) and the engine column stacks the hot-hosts panel: the top hosts by decayed score, their bar, and an honest empty state when nothing is hot (the score cools on its own; the capture below predates the panel — see the round reports for the current layout). The header adds one status chip per detector/delivery surface (webhook delivery, kill-chain correlator, A3 beaconing, A2 volumetric thresholds — hidden while the feature is off, red at saturation), and the engine summary names the real persistence mode (`SQLite · N eventos · N alertas` with `-store`, `sin store` without): if a behavioral detector is armed or the store is attached, the console says so on screen, fed only by `/api/stats`.
+Operations dashboard: KPIs, sensor activity, hot hosts, top kill-chain alerts and the live event sample in one view. The KPI strip carries a per-host risk tile (tracked hosts + current leader) and the engine column stacks the hot-hosts panel: the top hosts by decayed score, their bar, and an honest empty state when nothing is hot (the score cools on its own; the capture below shows the panel populated with the risk tile and the hot-hosts bar fed by a real devsensor replay with the beaconing detector fired). The header adds one status chip per detector/delivery surface (webhook delivery, kill-chain correlator, A3 beaconing, A2 volumetric thresholds — hidden while the feature is off, red at saturation), and the engine summary names the real persistence mode (`SQLite · N eventos · N alertas` with `-store`, `sin store` without): if a behavioral detector is armed or the store is attached, the console says so on screen, fed only by `/api/stats`.
 
-![Console operations dashboard: KPIs, sensor activity chart, kill-chain alerts and recent telemetry](docs/assets/console-panel.png)
+![Console operations dashboard: KPIs with the per-host risk tile, sensor activity chart, hot-hosts panel and recent telemetry](docs/assets/console-panel.png)
 
 Alert triage queue with severity badges, MITRE tags and expandable details. Selecting a row opens the detail panel: the rendered rule message, matched fields, declared actions and enrichment, plus the triage actions (r6) at the end of the panel:
 

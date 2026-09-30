@@ -57,3 +57,6 @@ agent/
 # Engine runtime state (alert triage, r6): operator-owned, never committed
 alert-lifecycle.json
 alert-lifecycle.json.tmp
+
+# Document build artifacts (regenerable via scripts/arq_v04/build.sh)
+docs/arquitectura-tecnica-v0.4.cover.pdf

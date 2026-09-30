@@ -22,6 +22,7 @@ remains regenerable.
 | `src/cover-v0.4.html`       | source  | cover page used to produce `docs/arquitectura-tecnica-v0.4.pdf` (rendered by `scripts/arq_v04/render_cover.mjs`) |
 | `src/cover-v0.5.html`       | source  | cover page used to produce `docs/arquitectura-tecnica-v0.5.pdf` (rendered by `scripts/arq_v04/render_cover.mjs`) |
 | `src/capture_console.mjs`   | source  | Playwright script that produces the `console-*` captures (see header for prerequisites) |
+| `src/assemble_gif.py`       | source  | assembles `console-busqueda.gif` from the per-frame PNGs the capture script leaves in the temp dir |
 
 ## Regenerating a diagram
 
@@ -42,8 +43,9 @@ remains regenerable.
 2. Run `node src/capture_console.mjs` (prerequisites in the script
    header). It writes the five PNGs into this directory.
 3. Assemble `console-busqueda.gif` from the per-frame PNGs the script
-   leaves in the temp dir (resize to ~1100px wide, adaptive palette,
-   ~450ms per frame with a long hold on the final frame).
+   leaves in the temp dir: `python3 src/assemble_gif.py <frames-dir>`
+   (resizes to ~1100px wide, adaptive palette, ~450ms per frame with a
+   long hold on the final frame).
 
 The captures show the console fed by the real engine replaying the
 `sf-devsensor` demo scenario; the header chip labels the source

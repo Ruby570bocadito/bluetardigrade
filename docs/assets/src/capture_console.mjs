@@ -50,8 +50,17 @@ const navOn = (pg) => (name) =>
     .getByRole('button', { name })
 const navBtn = (name) => navOn(page)(name)
 
+// Dashboard: tall viewport so the engine column shows the FULL stack -
+// KPIs (risk tile included), sensor activity, engine summary and the
+// hot-hosts panel at the bottom (the v0.3-era capture cut it off).
+await page.setViewportSize({ width: 1280, height: 1780 })
+await page.waitForTimeout(800)
 await page.screenshot({ path: path.join(ASSETS, 'console-panel.png') })
 console.log('shot: console-panel.png')
+
+// back to the standard viewport for the rest of the tour
+await page.setViewportSize({ width: 1280, height: 800 })
+await page.waitForTimeout(400)
 
 await navBtn('Alertas').click()
 await page.waitForTimeout(1200)
