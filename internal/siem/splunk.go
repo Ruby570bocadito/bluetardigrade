@@ -52,6 +52,7 @@ func NewSplunk(url string) *Splunk {
 }
 
 func newSplunk(url string, queue int) *Splunk {
+	requireHTTPScheme("splunk hec", url)
 	return &Splunk{
 		spool:       newSpool(queue),
 		url:         trimTrailingSlash(url),
@@ -126,7 +127,7 @@ func (s *Splunk) deliver(ctx context.Context, a alert.Alert) {
 		}
 	}
 	s.failed.Add(1)
-	log.Printf("[SPLUNK] delivery to %s failed after %d attempts: %v", endpointLabel(s.url), maxAttempts, redactedErr(lastErr))
+	log.Printf("[SPLUNK] delivery to %s failed after %d attempts: %v", EndpointLabel(s.url), maxAttempts, redactedErr(lastErr))
 }
 
 // hecEvent is the wire shape of one HEC event. The alert travels as

@@ -125,6 +125,20 @@ json_field() { # json_field <fichero> <clave>
   python3 -c "import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])" "$1" "$2" 2>/dev/null || echo -1
 }
 
+# ------------------------------------------------- FASE 0: guard de esquema
+# O1 del dictamen #32: un sink con esquema distinto de http/https debe
+# matar el arranque con mensaje accionable (fail-loud), no quemar
+# reintentos en silencio por cada entrega.
+echo "== Fase 0: guard de esquema del sink (fail-loud) =="
+GD_LOG="$TMPDIR_E2E/guard.log"
+"$ENGINE" -api "$APIADDR" -elastic "ftp://127.0.0.1:1" -elastic-index sf-alerts >"$GD_LOG" 2>&1
+GD_RC=$?
+if [ "$GD_RC" = "1" ] && rg -q 'esquema "ftp" invalido' "$GD_LOG"; then
+  ok "engine rechaza -elastic ftp:// en el arranque (exit 1, mensaje accionable)"
+else
+  bad "guard de esquema: exit=$GD_RC (esperaba 1) o mensaje ausente"
+fi
+
 # ------------------------------------------------------------- FASE A
 echo "== Fase A: entrega real a ambos sinks =="
 python3 "$REPO/scripts/dev-tests/siem_receiver.py" --protocol elastic \

@@ -57,6 +57,7 @@ func NewElastic(url, index string) *Elastic {
 }
 
 func newElastic(url, index string, queue int) *Elastic {
+	requireHTTPScheme("elasticsearch", url)
 	if index == "" {
 		index = elasticDefaultIndex
 	}
@@ -144,9 +145,12 @@ func (e *Elastic) deliverBatch(ctx context.Context, batch []alert.Alert) {
 		}
 		if perr != nil {
 			log.Printf("[ELASTIC] bulk to %s failed (attempt %d/%d): %v",
-				endpointLabel(e.url), attempt, maxAttempts, redactedErr(perr))
+				EndpointLabel(e.url), attempt, maxAttempts, redactedErr(perr))
 		}
 		pending = retryable
+		if len(pending) == 0 {
+			return // nothing retryable: skip the backoff sleep the loop would waste
+		}
 		if attempt == maxAttempts {
 			break
 		}
@@ -194,7 +198,7 @@ func (e *Elastic) postBatch(batch []alert.Alert) (accepted int, retryable []aler
 
 	req, rerr := http.NewRequest(http.MethodPost, e.url+"/_bulk", bytes.NewReader(buf.Bytes()))
 	if rerr != nil {
-		return 0, batch, rejected, rerr
+		return 0, nil, len(batch), rerr // build error: permanent (notify parity), never retried
 	}
 	req.Header.Set("Content-Type", "application/x-ndjson")
 	req.Header.Set("User-Agent", userAgent)
@@ -212,7 +216,12 @@ func (e *Elastic) postBatch(batch []alert.Alert) (accepted int, retryable []aler
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
 		return e.parseBulkResponse(resp, batch)
 	default:
-		return 0, batch, rejected, fmt.Errorf("cluster answered %d", resp.StatusCode)
+		// non-429 4xx is a permanent rejection (bad API key, mapping,
+		// index template): the declared contract is 4xx failed-for-good
+		// and the Splunk sink treats them the same way. The whole batch
+		// counts as failed in ONE pass - no retry budget burned on a
+		// misconfiguration.
+		return 0, nil, len(batch), fmt.Errorf("cluster answered %d", resp.StatusCode)
 	}
 }
 

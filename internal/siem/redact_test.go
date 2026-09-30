@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"log"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -54,9 +57,38 @@ func TestEndpointLabelRedacts(t *testing.T) {
 		{"no host", "not a url", "<endpoint>"},
 	}
 	for _, tc := range cases {
-		if got := endpointLabel(tc.raw); got != tc.want {
-			t.Errorf("%s: endpointLabel(%q) = %q, want %q", tc.name, tc.raw, got, tc.want)
+		if got := EndpointLabel(tc.raw); got != tc.want {
+			t.Errorf("%s: EndpointLabel(%q) = %q, want %q", tc.name, tc.raw, got, tc.want)
 		}
+	}
+}
+
+// Regression for cross-review finding F2 (#32 adenda): a non-429 4xx
+// from the cluster is a permanent rejection ("4xx failed-for-good",
+// the declared contract, same behavior as the Splunk sink), not a
+// retry candidate. Pre-fix this test saw 3 POSTs and a 3-attempt
+// budget burned on a bad API key; post-fix exactly 1 POST and the
+// batch counted as failed in one pass.
+func TestElastic4xxIsPermanent(t *testing.T) {
+	var posts int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&posts, 1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"root_cause":[{"type":"security_exception"}]},"status":401}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	e := NewElastic(srv.URL, "sf-alerts")
+	e.backoff = time.Millisecond
+	e.deliverBatch(context.Background(), []alert.Alert{sampleAlert(), sampleAlert()})
+
+	if got := atomic.LoadInt32(&posts); got != 1 {
+		t.Fatalf("bulk POSTs = %d, want 1 (4xx is permanent, no retries)", got)
+	}
+	sent, failed, dropped := e.Stats()
+	if sent != 0 || failed != 2 || dropped != 0 {
+		t.Fatalf("stats = sent %d failed %d dropped %d, want 0/2/0 (batch rejected in one pass)", sent, failed, dropped)
 	}
 }
 
