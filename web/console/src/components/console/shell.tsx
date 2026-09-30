@@ -4,7 +4,7 @@
 // on mobile (explicit collapse). The topbar carries the only status dot
 // of the chrome: it reflects the real engine connection state.
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { ActivityIcon, Broadcast, Gauge, Lightning, Prohibit, ShieldCheck, SquaresFour, Warning, ChatsCircle, FlowArrow } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
@@ -21,6 +21,7 @@ import { RespondView } from './respond-view'
 import { SequencesView } from './sequences-view'
 import { AnalystPanel } from './analyst-panel'
 import { formatUptime, type EngineStats, type SfAlert } from '@/lib/console-types'
+import { currentSearch, pushOperatorState, viewFromParam, writeViewToSearch } from '@/lib/url-state'
 import { useAnalystChannel } from './socket-provider'
 
 const NAV: { id: ConsoleView; label: string; group: string; icon: React.ElementType }[] = [
@@ -37,7 +38,24 @@ const NAV: { id: ConsoleView; label: string; group: string; icon: React.ElementT
 export function ConsoleShell() {
   const { status, stats, alerts, events, suppressions, sequences, endpoint } = useEngine()
   const { status: analystStatus } = useAnalystChannel()
-  const [view, setView] = useState<ConsoleView>('panel')
+  const [view, setViewState] = useState<ConsoleView>('panel')
+
+  // Operator state in the URL (url-state.ts): the active view survives a
+  // refresh, back/forward navigate between views and deep links open the
+  // right section. The URL is read AFTER mount (never during render) so
+  // the pre-rendered HTML always matches the default and hydration stays
+  // quiet. Every view change pushes a history entry; popstate re-syncs.
+  useEffect(() => {
+    setViewState(viewFromParam(currentSearch()))
+    const onPop = () => setViewState(viewFromParam(currentSearch()))
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
+  const setView = (next: ConsoleView) => {
+    setViewState(next)
+    pushOperatorState((search) => writeViewToSearch(search, next))
+  }
   const reduce = useReducedMotion()
 
   // Real telemetry source, derived from the events the engine actually

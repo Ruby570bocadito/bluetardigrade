@@ -50,7 +50,7 @@ export function LiveFeed() {
     return [...set].sort()
   }, [events])
 
-  const visible = useMemo(() => {
+  const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     const list = source.filter((e) => {
       if (typeFilter !== 'all' && e.type !== typeFilter) return false
@@ -62,8 +62,28 @@ export function LiveFeed() {
       ].join(' ').toLowerCase()
       return haystack.includes(q)
     })
-    return list.slice(0, 80)
+    return list
   }, [source, typeFilter, query])
+
+  // Display window (unchanged): the header/footer numbers keep showing
+  // the capped view; `filtered` stays uncapped so the export tooltip can
+  // state exactly how much the active filter hides.
+  const visible = filtered.slice(0, 80)
+
+  // O4 honesty (export-menu): with a filter active, the export tooltips
+  // declare that the bulk file ignores the lens — and how much it keeps.
+  const filtering = typeFilter !== 'all' || query.trim() !== ''
+  const activeFilterLabel =
+    filtering
+      ?
+        [
+          typeFilter !== 'all' ? `tipo ${typeFilter}` : null,
+          query.trim() !== '' ? `búsqueda «${query.trim()}»` : null,
+        ]
+          .filter(Boolean)
+          .join(' + ') || undefined
+      : undefined
+  const hiddenByFilter = filtering ? source.length - filtered.length : undefined
 
   const togglePause = (on: boolean) => {
     if (on) setFrozen(events)
@@ -113,7 +133,7 @@ export function LiveFeed() {
                 ))}
               </SelectContent>
             </Select>
-            <ExportButtons kind="events" />
+            <ExportButtons kind="events" filterLabel={activeFilterLabel} hiddenCount={hiddenByFilter} />
           </div>
         }
       />

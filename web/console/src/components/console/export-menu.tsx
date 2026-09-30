@@ -13,18 +13,37 @@ import type { SfRespondAudit } from '@/lib/console-types'
 const linkCls =
   'inline-flex h-8 items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900 px-2.5 font-mono text-[11px] text-zinc-300 transition-colors hover:border-zinc-700 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
-export function ExportButtons({ kind }: { kind: 'alerts' | 'events' }) {
+export function ExportButtons({
+  kind,
+  filterLabel,
+  hiddenCount,
+}: {
+  kind: 'alerts' | 'events'
+  /** Human label of the active view filter, when one is active. */
+  filterLabel?: string
+  /** Rows the active filter hides from the view but the export keeps. */
+  hiddenCount?: number
+}) {
   const noun = kind === 'alerts' ? 'alertas' : 'eventos'
+  // Same honesty rule as the audit export below (O4 precedent): the
+  // bulk endpoint serves the engine's COMPLETE ring by design — the
+  // view filter is a lens over the queue, not a data selector, and a
+  // silently filtered file would masquerade as the full ring. With a
+  // filter active, the tooltips say so explicitly instead of leaving
+  // it implied by the buttons sitting next to the filter controls.
+  const filterNote = filterLabel
+    ? ` Exporta el anillo COMPLETO del motor, independiente del filtro activo (${filterLabel}): el fichero incluye también los ${hiddenCount ?? 0} que el filtro oculta en la vista.`
+    : ''
   return (
     <div role="group" aria-label={`Exportar ${noun}`} className="flex items-center gap-1.5">
       <span className="hidden items-center gap-1 text-[11px] uppercase tracking-wider text-zinc-500 sm:flex">
         <DownloadSimple size={12} aria-hidden />
         Export
       </span>
-      <a href={`/api/engine/api/${kind}/export?format=jsonl`} download className={linkCls} title={`Descargar ${noun} en JSON Lines`}>
+      <a href={`/api/engine/api/${kind}/export?format=jsonl`} download className={linkCls} title={`Descargar ${noun} en JSON Lines.${filterNote}`}>
         jsonl
       </a>
-      <a href={`/api/engine/api/${kind}/export?format=csv`} download className={linkCls} title={`Descargar ${noun} en CSV`}>
+      <a href={`/api/engine/api/${kind}/export?format=csv`} download className={linkCls} title={`Descargar ${noun} en CSV.${filterNote}`}>
         csv
       </a>
     </div>

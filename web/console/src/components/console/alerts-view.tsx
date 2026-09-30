@@ -31,6 +31,14 @@ import { EmptyState, LiveAnnouncer, SectionHeader, SeverityBadge, SkeletonRows }
 import { ExportButtons } from './export-menu'
 import { postAlertStatus } from '@/lib/lifecycle'
 import {
+  currentSearch,
+  readOperatorState,
+  replaceOperatorState,
+  sevFromParam,
+  writeFilterToSearch,
+  type SeverityFilter,
+} from '@/lib/url-state'
+import {
   formatDateTime,
   formatTime,
   SEVERITY_STYLE,
@@ -52,8 +60,50 @@ export function alertKey(a: SfAlert): string {
 export function AlertsView({ compact = false, onAnalyze }: Props) {
   const { alerts, status } = useEngine()
   const reduce = useReducedMotion()
-  const [sevFilter, setSevFilter] = useState<string>('all')
-  const [query, setQuery] = useState('')
+  const [sevFilter, setSevFilterState] = useState<SeverityFilter>('all')
+  const [query, setQueryState] = useState('')
+
+  // Triage filters in the URL (url-state.ts, full mode only — the
+  // dashboard widget keeps its own ephemeral lens): the investigation
+  // context survives a refresh and a filtered queue is a shareable
+  // link. Read AFTER mount (hydration-safe, like the shell view); sev
+  // writes immediately, the query debounces so typing does not thrash
+  // replaceState; popstate re-syncs both. The ref mirrors the latest
+  // pair so every write re-renders both keys from one source.
+  const filterRef = useRef<{ sev: SeverityFilter; q: string }>({ sev: 'all', q: '' })
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (compact) return
+    const apply = () => {
+      const st = readOperatorState(currentSearch())
+      filterRef.current = { sev: st.sev, q: st.q }
+      setSevFilterState(st.sev)
+      setQueryState(st.q)
+    }
+    apply()
+    window.addEventListener('popstate', apply)
+    return () => {
+      window.removeEventListener('popstate', apply)
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [compact])
+
+  const writeFilters = () => {
+    replaceOperatorState((search) => writeFilterToSearch(search, filterRef.current.sev, filterRef.current.q))
+  }
+  const setSevFilter = (next: string) => {
+    const sev = sevFromParam(next)
+    filterRef.current = { ...filterRef.current, sev }
+    setSevFilterState(sev)
+    if (!compact) writeFilters()
+  }
+  const setQuery = (next: string) => {
+    filterRef.current = { ...filterRef.current, q: next }
+    setQueryState(next)
+    if (compact) return
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(writeFilters, 250)
+  }
   const [openId, setOpenId] = useState<string | null>(null)
   // The detail panel follows the LIVE alert, not a click-time snapshot:
   // the lifecycle frame patches the ring immutably, so the selection is
@@ -103,6 +153,20 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
 
   const filtering = sevFilter !== 'all' || query.trim() !== ''
 
+  // O4 honesty (export-menu): with a filter active, the export tooltips
+  // declare that the bulk file ignores the lens — and how much it keeps.
+  const activeFilterLabel =
+    filtering && !compact
+      ?
+        [
+          sevFilter !== 'all' ? `severidad ${sevFilter}` : null,
+          query.trim() !== '' ? `búsqueda «${query.trim()}»` : null,
+        ]
+          .filter(Boolean)
+          .join(' + ') || undefined
+      : undefined
+  const hiddenByFilter = filtering && !compact ? alerts.length - visible.length : undefined
+
   const header = (
     <SectionHeader
       title={compact ? 'Alertas recientes' : 'Cola de alertas'}
@@ -140,7 +204,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
                 <SelectItem value="low">low</SelectItem>
               </SelectContent>
             </Select>
-            <ExportButtons kind="alerts" />
+            <ExportButtons kind="alerts" filterLabel={activeFilterLabel} hiddenCount={hiddenByFilter} />
           </div>
         )
       }
