@@ -58,7 +58,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -325,7 +324,7 @@ func (d *Detector) Observe(ev *model.Event, now time.Time) {
 		}
 		group := ""
 		if c.def.Threshold.GroupBy != "" {
-			group = asString(rules.Lookup(fields, c.def.Threshold.GroupBy))
+			group = rules.AsString(rules.Lookup(fields, c.def.Threshold.GroupBy))
 		}
 		k := key{ruleID: c.def.ID, host: host, group: group}
 		st := d.admitLocked(k, c, now)
@@ -482,19 +481,6 @@ func (d *Detector) fireLocked(c *compiled, ev *model.Event, group string, st *ke
 	}
 }
 
-// asString folds any scalar field value into the string used in keys
-// (same normalization the engine's operators apply).
-func asString(v any) string {
-	switch s := v.(type) {
-	case nil:
-		return ""
-	case string:
-		return s
-	case float64:
-		return strconv.FormatFloat(s, 'f', -1, 64)
-	case bool:
-		return strconv.FormatBool(s)
-	default:
-		return fmt.Sprint(s)
-	}
-}
+// group keys use rules.AsString: the canonical normalization the
+// operators apply when matching field values, so a group_by key can
+// never disagree with what an operator folded for the same field.

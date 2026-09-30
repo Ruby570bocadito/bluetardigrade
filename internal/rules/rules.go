@@ -420,6 +420,19 @@ func toFloat(v any) (float64, bool) {
 	}
 }
 
+// AsString normalizes any scalar event field value to the string form
+// used in keys and comparisons across the framework. It is THE
+// canonical normalization — the same one every operator applies when
+// matching field values — so consumers that key or compare event
+// values (the threshold detector's group_by keys, future detectors)
+// must call this instead of keeping their own copy: a value folded by
+// an operator and a value keyed by a detector can then never
+// disagree. Exported alongside Lookup for exactly the same reason.
+func AsString(v any) string { return asString(v) }
+
+// asString normalizes a scalar value for comparison: strings pass
+// through, numbers use the shortest round-trip form and bools their
+// literal form; composite values fall back to fmt.Sprint.
 func asString(v any) string {
 	switch s := v.(type) {
 	case nil:

@@ -453,42 +453,35 @@ func runEngine(o *options, interactive bool) error {
 	// webhook deliveries run in the background and never stall intake
 	dispatcher := actions.New(log.New(os.Stderr, "[ACTIONS] ", 0))
 	alerts.SetPreparer(dispatcher.Prepare)
+
+	// emitAllowlisted is the ONE suppression gate every secondary
+	// emitter shares: a host with a suppressed rule is in an accepted
+	// state, so an alert derived from its silenced evidence never
+	// fires — a kill-chain built on suppressed steps, a beacon built
+	// on silenced traffic or a volumetric alert fed by silenced
+	// events would all be false positives. One closure instead of
+	// three identical copies keeps the gate from diverging (any
+	// future change to how suppression gates secondary alerts is
+	// edited here, once).
+	emitAllowlisted := func(a alert.Alert) {
+		if suppressed(supMgr, a.RuleID, a.Host, time.Now()) {
+			return
+		}
+		alerts.Emit(a)
+	}
 	if corr != nil {
-		// sequence completions honor the allowlist too: a host with a
-		// suppressed rule is in an accepted state, and a kill-chain
-		// built on top of its silenced steps would be a false positive.
-		corr.SetEmit(func(a alert.Alert) {
-			if suppressed(supMgr, a.RuleID, a.Host, time.Now()) {
-				return
-			}
-			alerts.Emit(a)
-		})
+		corr.SetEmit(emitAllowlisted)
 	}
 	if bcn != nil {
-		// beacon alerts honor the allowlist too, same rationale: a
-		// host with a suppressed rule is in an accepted state, and
-		// a beacon built on top of its silenced traffic would be a
-		// false positive.
-		bcn.SetEmit(func(a alert.Alert) {
-			if suppressed(supMgr, a.RuleID, a.Host, time.Now()) {
-				return
-			}
-			alerts.Emit(a)
-		})
+		bcn.SetEmit(emitAllowlisted)
 	}
 	if thr != nil {
-		// threshold alerts honor the allowlist for the same reason:
-		// a host with a suppressed rule is in an accepted state.
 		// Threshold alerts NEVER feed the correlator (dictamen 04,
 		// Q3): one threshold alert already aggregates N events, and
 		// chaining it would break the "steps = atomic rules"
-		// semantics of the sequencer.
-		thr.SetEmit(func(a alert.Alert) {
-			if suppressed(supMgr, a.RuleID, a.Host, time.Now()) {
-				return
-			}
-			alerts.Emit(a)
-		})
+		// semantics of the sequencer. The suppression gate itself is
+		// the shared one above.
+		thr.SetEmit(emitAllowlisted)
 	}
 
 	if o.reloadEvery > 0 {

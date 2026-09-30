@@ -49,12 +49,6 @@ func evFile(id string, ts time.Time) *model.Event {
 	}
 }
 
-func fireCount(d *Detector) int {
-	n := 0
-	d.SetEmit(func(a alert.Alert) { n++ })
-	return n
-}
-
 func TestFiresAtExactCountAndNotBelow(t *testing.T) {
 	d := loadForTest(t, defSimple)
 	var fired int
