@@ -1,5 +1,12 @@
 # Segunda ronda: investigación y triaje histórico
 
+**Actualización del 1 de octubre de 2026:** la entrega ya está publicada en
+el [PR #4](https://github.com/Ruby570bocadito/security-framework/pull/4), con
+los cuatro jobs de CI correctos sobre `4b153af`. El
+[registro completo](RESUMEN-MEJORAS-2026-10-01.md) reúne ambas rondas y la
+evidencia remota que resuelve las verificaciones pendientes del entorno local.
+El resto del informe conserva los resultados de esta segunda ronda.
+
 Parte de `68b8bc2`, la primera entrega, en la rama local
 `codex/alert-history-triage`. El proyecto completo v2 incluye ambas rondas.
 La rama de integración para GitHub es `codex/cli-dashboard-history`,

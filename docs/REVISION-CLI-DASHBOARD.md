@@ -1,5 +1,12 @@
 # Revisión de CLI, dashboard y documentación
 
+**Actualización del 1 de octubre de 2026:** los cuatro jobs de CI del
+[PR #4](https://github.com/Ruby570bocadito/security-framework/pull/4) pasan
+sobre `4b153af`, incluidos Bun, build Next.js, Go completo, comprobaciones
+Rust y smoke nativo del motor en Windows. Véanse la evidencia y los límites
+todavía vigentes en el [registro completo](RESUMEN-MEJORAS-2026-10-01.md).
+El resto del informe conserva los resultados locales de esta primera ronda.
+
 Primera ronda sobre `8c3b1d7`, preparada en
 `codex/interactive-cli-dashboard-review`. Incluye cambios de código y
 regresiones, además de la revisión; la publicación remota requiere acceso

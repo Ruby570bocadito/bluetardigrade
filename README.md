@@ -191,6 +191,7 @@ docs/                operations, architecture and development reports
 | [Architecture](docs/ARCHITECTURE.md) | System design and event contract |
 | [OpenAPI](docs/api/openapi.yaml) | API integration |
 | [False-positive control](docs/false-positive-control.md) | Suppression and deduplication tuning |
+| [Complete improvement report](docs/RESUMEN-MEJORAS-2026-10-01.md) | Both improvement rounds, fixed bugs, documentation and confirmed remote CI |
 | [CLI/dashboard review](docs/REVISION-CLI-DASHBOARD.md) | First-round findings and verification |
 | [Historical investigations](docs/REVISION-HISTORICO.md) | Pagination, lifecycle filters and second-round verification |
 | [Technical architecture PDF](docs/arquitectura-tecnica-v0.10.pdf) | Spanish technical reference |
