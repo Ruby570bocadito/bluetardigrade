@@ -99,7 +99,7 @@ bun run dev
 |------|-------------------|
 | Panel | Pending critical triage, pipeline issues, manual refresh, KPIs, rolling activity sample and hot hosts |
 | Flujo en vivo | Pause, search, event-type filters and JSONL/CSV export |
-| Alertas | Search and severity filters, evidence details, acknowledge / close / reopen |
+| Alertas | Live buffer or paged engine history; severity and lifecycle filters; evidence details; acknowledge / close / reopen |
 | Reglas / Cadenas | Loaded conditions, ATT&CK mappings and kill-chain steps |
 | Supresiones | Loaded operator allowlist, reasons and expirations |
 | Respuesta activa | Read-only response state and forensic audit; class filter and export |
@@ -107,7 +107,9 @@ bun run dev
 
 Unavailable metrics show **`—`**, rather than zero. The panel distinguishes a reachable API from a reconnecting live channel. Reconnects merge snapshots with incoming frames without duplicating alerts or inflating counters, and a missing optional response surface clears its old state.
 
-Deep links such as `/?view=alertas&sev=critical&q=lsass` survive refresh and browser history. Navigation also supports `g` followed by `p/f/a/r/c/s/k/n`; a keyboard skip link goes straight to the main content.
+Deep links such as `/?view=alertas&historial=1&estado=open&sev=critical&q=lsass` survive refresh and browser history. Navigation also supports `g` followed by `p/f/a/r/c/s/k/n`; a keyboard skip link goes straight to the main content.
+
+In **Alertas**, switch to **Histórico** to search the engine rather than the browser's retained buffer. SQLite provides persisted history when `-store` is enabled; otherwise the view clearly identifies the 256-alert memory window. Pages contain 25 alerts ordered by reception. Cursor navigation pins the upper sequence, so new arrivals do not shift visited pages. Retention and triage decisions can still change membership. **Actualizar histórico** starts a fresh search. Detection evidence and lifecycle state are server filters; lifecycle notes remain searchable in the live view. A bounded scan can return an empty page with **Seguir buscando**, and an older engine reports the missing capability explicitly.
 
 The activity chart is a **sample of the retained event buffer**, not a complete four-minute history at high event rates. Lifetime totals come from the engine.
 
@@ -189,7 +191,8 @@ docs/                operations, architecture and development reports
 | [Architecture](docs/ARCHITECTURE.md) | System design and event contract |
 | [OpenAPI](docs/api/openapi.yaml) | API integration |
 | [False-positive control](docs/false-positive-control.md) | Suppression and deduplication tuning |
-| [CLI/dashboard review](docs/REVISION-CLI-DASHBOARD.md) | Findings, changes, verification limits and next improvements |
+| [CLI/dashboard review](docs/REVISION-CLI-DASHBOARD.md) | First-round findings and verification |
+| [Historical investigations](docs/REVISION-HISTORICO.md) | Pagination, lifecycle filters and second-round verification |
 | [Technical architecture PDF](docs/arquitectura-tecnica-v0.10.pdf) | Spanish technical reference |
 | [Changelog](CHANGELOG.md) | Release history |
 | [Security policy](SECURITY.md) | Private vulnerability reporting |
@@ -197,7 +200,7 @@ docs/                operations, architecture and development reports
 ## Roadmap
 
 - **Implemented:** rule and behavioral detection, triage, storage, integrations, terminal workspace and live console.
-- **Next interface work:** server-side pagination and historical hunts, richer lifecycle filters, a command palette and recorded browser regression tests.
+- **Next interface work:** a command palette, full browser regression tests, saved hunts and moving lifecycle persistence into SQLite.
 - **Sensor work:** extend native ETW providers beyond process creation; broaden Windows runtime coverage.
 - **Research:** YARA memory scanning and sandboxed extensions.
 

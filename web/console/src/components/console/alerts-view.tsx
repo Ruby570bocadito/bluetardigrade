@@ -30,12 +30,17 @@ import { useEngine } from './engine-provider'
 import { EmptyState, LiveAnnouncer, SectionHeader, SeverityBadge, SkeletonRows } from './ui-bits'
 import { ExportButtons } from './export-menu'
 import { postAlertStatus } from '@/lib/lifecycle'
+import { alertKey } from '@/lib/engine-client'
+import { matchesAlertState, alertStateFromParam, type AlertScope, type AlertStateFilter } from '@/lib/alert-search'
+import { useAlertHistory } from '@/hooks/use-alert-history'
 import {
   currentSearch,
   readOperatorState,
   replaceOperatorState,
   sevFromParam,
-  writeFilterToSearch,
+  readAlertLens,
+  writeAlertLens,
+  MAX_QUERY_CHARS,
   type SeverityFilter,
 } from '@/lib/url-state'
 import {
@@ -51,17 +56,17 @@ type Props = {
   onAnalyze?: (alert: SfAlert) => void
 }
 
-export function alertKey(a: SfAlert): string {
-  // r6: the engine assigns a unique id; older engines fall back to
-  // event+rule (the pre-lifecycle natural key)
-  return a.id ?? `${a.event_id}:${a.rule_id}`
-}
-
 export function AlertsView({ compact = false, onAnalyze }: Props) {
-  const { alerts, status } = useEngine()
+  const { alerts, status, lifecycleUpdates } = useEngine()
   const reduce = useReducedMotion()
   const [sevFilter, setSevFilterState] = useState<SeverityFilter>('all')
   const [query, setQueryState] = useState('')
+  const [stateFilter, setStateFilter] = useState<AlertStateFilter>('all')
+  const [scope, setScope] = useState<AlertScope>('live')
+  const [lensReady, setLensReady] = useState(false)
+  const history = useAlertHistory(!compact && scope === 'history' && lensReady, { severity: sevFilter, state: stateFilter, q: query }, status, lifecycleUpdates)
+  const historyMode = !compact && scope === 'history'
+  const displayedAlerts = historyMode ? history.items : alerts
 
   // Triage filters in the URL (url-state.ts, full mode only — the
   // dashboard widget keeps its own ephemeral lens): the investigation
@@ -69,14 +74,18 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
   // link. Read AFTER mount (hydration-safe, like the shell view); sev
   // writes immediately, the query debounces so typing does not thrash
   // replaceState; popstate re-syncs both. The ref mirrors the latest
-  // pair so every write re-renders both keys from one source.
-  const filterRef = useRef<{ sev: SeverityFilter; q: string }>({ sev: 'all', q: '' })
+  // lens so every write uses the current keys from one source.
+  const filterRef = useRef({ sev: 'all' as SeverityFilter, q: '', state: 'all' as AlertStateFilter, scope: 'live' as AlertScope })
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (compact) return
     const apply = () => {
       const st = readOperatorState(currentSearch())
-      filterRef.current = { sev: st.sev, q: st.q }
+      const lens = readAlertLens(currentSearch())
+      filterRef.current = { sev: st.sev, q: st.q, ...lens }
+      setStateFilter(lens.state)
+      setScope(lens.scope)
+      setLensReady(true)
       setSevFilterState(st.sev)
       setQueryState(st.q)
     }
@@ -89,7 +98,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
   }, [compact])
 
   const writeFilters = () => {
-    replaceOperatorState((search) => writeFilterToSearch(search, filterRef.current.sev, filterRef.current.q))
+    replaceOperatorState((search) => writeAlertLens(search, filterRef.current.sev, filterRef.current.q, filterRef.current.state, filterRef.current.scope))
   }
   const setSevFilter = (next: string) => {
     const sev = sevFromParam(next)
@@ -97,12 +106,24 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
     setSevFilterState(sev)
     if (!compact) writeFilters()
   }
-  const setQuery = (next: string) => {
+  const setQuery = (raw: string) => {
+    const next = raw.slice(0, MAX_QUERY_CHARS)
     filterRef.current = { ...filterRef.current, q: next }
     setQueryState(next)
     if (compact) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(writeFilters, 250)
+  }
+  const changeState = (next: string) => {
+    const state = alertStateFromParam(next)
+    filterRef.current = { ...filterRef.current, state }
+    setStateFilter(state)
+    if (!compact) writeFilters()
+  }
+  const changeScope = (scope: AlertScope) => {
+    filterRef.current = { ...filterRef.current, scope }
+    setScope(scope)
+    writeFilters()
   }
   const [openId, setOpenId] = useState<string | null>(null)
   // The detail panel follows the LIVE alert, not a click-time snapshot:
@@ -114,9 +135,10 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
   // instead of showing a ghost.
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const selected = useMemo(
-    () => (selectedKey === null ? null : (alerts.find((a) => alertKey(a) === selectedKey) ?? null)),
-    [alerts, selectedKey],
+    () => (selectedKey === null ? null : (displayedAlerts.find((a) => alertKey(a) === selectedKey) ?? null)),
+    [displayedAlerts, selectedKey],
   )
+  useEffect(() => { setSelectedKey(null) }, [scope, sevFilter, stateFilter, query, history.pageNumber])
   const [announcement, setAnnouncement] = useState('')
   const knownTop = useRef<string | null>(null)
 
@@ -138,7 +160,9 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
+    if (historyMode) return displayedAlerts
     const list = alerts.filter((a) => {
+      if (!matchesAlertState(a, stateFilter)) return false
       if (sevFilter !== 'all' && a.severity !== sevFilter) return false
       if (!q) return true
       // triage search: anything an analyst remembers about the alert
@@ -149,9 +173,9 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
       return haystack.includes(q)
     })
     return compact ? list.slice(0, 6) : list
-  }, [alerts, sevFilter, query, compact])
+  }, [alerts, displayedAlerts, sevFilter, stateFilter, query, compact, historyMode])
 
-  const filtering = sevFilter !== 'all' || query.trim() !== ''
+  const filtering = sevFilter !== 'all' || stateFilter !== 'all' || query.trim() !== ''
 
   // O4 honesty (export-menu): with a filter active, the export tooltips
   // declare that the bulk file ignores the lens — and how much it keeps.
@@ -160,18 +184,19 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
       ?
         [
           sevFilter !== 'all' ? `severidad ${sevFilter}` : null,
+          stateFilter !== 'all' ? `estado ${stateFilter}` : null,
           query.trim() !== '' ? `búsqueda «${query.trim()}»` : null,
         ]
           .filter(Boolean)
           .join(' + ') || undefined
       : undefined
-  const hiddenByFilter = filtering && !compact ? alerts.length - visible.length : undefined
+  const hiddenByFilter = filtering && !compact && !historyMode ? alerts.length - visible.length : undefined
 
   const header = (
     <SectionHeader
       title={compact ? 'Alertas recientes' : 'Cola de alertas'}
       count={visible.length}
-      hint={filtering && !compact ? `de ${alerts.length} recibidas` : undefined}
+      hint={historyMode ? 'búsqueda en el motor' : !compact ? `de ${alerts.length} recibidas en vivo` : undefined}
       action={
         !compact && (
           <div className="flex flex-wrap items-center gap-2">
@@ -189,6 +214,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
                 }}
                 placeholder="buscar regla, host, usuario..."
                 aria-label="Buscar en alertas"
+                maxLength={MAX_QUERY_CHARS}
                 className="h-8 w-[220px] rounded-md border-zinc-800 bg-zinc-900 pl-7 font-mono text-xs text-zinc-200 placeholder:text-zinc-500"
               />
             </div>
@@ -202,8 +228,17 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
                 <SelectItem value="high">high</SelectItem>
                 <SelectItem value="medium">medium</SelectItem>
                 <SelectItem value="low">low</SelectItem>
+                <SelectItem value="info">info</SelectItem>
               </SelectContent>
             </Select>
+            <select value={stateFilter} onChange={(e) => changeState(e.target.value)} aria-label="Filtrar por estado"
+              className="h-8 rounded-md border border-zinc-800 bg-zinc-900 px-2 font-mono text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <option value="all">Todos los estados</option>
+              <option value="open">Sin cerrar</option>
+              <option value="new">Nuevas</option>
+              <option value="acknowledged">Reconocidas</option>
+              <option value="closed">Cerradas</option>
+            </select>
             <ExportButtons kind="alerts" filterLabel={activeFilterLabel} hiddenCount={hiddenByFilter} />
           </div>
         )
@@ -215,8 +250,10 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
     return (
       <section aria-label="Alertas de detección">
         {header}
-        {status !== 'live' && alerts.length === 0 ? (
+        {status === 'connecting' && alerts.length === 0 ? (
           <SkeletonRows rows={5} className="border-y border-zinc-800 py-6" />
+        ) : status === 'down' ? (
+          <EmptyState icon={Tray} title="Alertas no disponibles" hint="Recupera la conexión con el motor para ver las detecciones." />
         ) : alerts.length === 0 ? (
           <div className="border-y border-zinc-800">
             <EmptyState
@@ -270,12 +307,40 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
   return (
     <section aria-label="Alertas de detección">
       {header}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2.5">
+        <div role="group" aria-label="Origen de alertas" className="flex gap-1">
+          {([['live', 'En vivo'], ['history', 'Histórico']] as const).map(([id, label]) => (
+            <button key={id} type="button" aria-pressed={scope === id} onClick={() => changeScope(id)}
+              className={'rounded-md px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ' + (scope === id ? 'bg-emerald-400/10 text-emerald-300' : 'text-zinc-400 hover:text-zinc-100')}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {historyMode ? (
+          <nav aria-label="Páginas del histórico" className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-[11px] text-zinc-400">Página {history.pageNumber}</span>
+            <Button variant="outline" size="sm" onClick={history.previous} disabled={!history.canPrevious || history.loading || status !== 'live'}>Anterior</Button>
+            <Button variant="outline" size="sm" onClick={history.next} disabled={!history.page?.has_more || history.loading || status !== 'live'}>{history.page?.scan_limited ? 'Seguir buscando' : 'Siguiente'}</Button>
+            <Button variant="outline" size="sm" onClick={history.refresh} disabled={history.loading || status !== 'live'} aria-busy={history.loading}>Actualizar histórico</Button>
+          </nav>
+        ) : <span className="text-[11px] text-zinc-500">Últimas {alerts.length} recibidas por la consola; usa el histórico para buscar más atrás.</span>}
+      </div>
+      {historyMode && history.page && (
+        <p role="status" className="mb-3 text-xs text-zinc-500">
+          {history.page.source === 'sqlite' ? 'Histórico SQLite, sujeto a la retención configurada.' : 'Solo memoria: últimas 256 alertas del motor. Activa -store para conservar el histórico.'}
+          {' '}25 por página, más recientes por orden de recepción. Actualiza para incluir nuevas llegadas.
+          {history.page.scan_limited && ' Se alcanzó el límite de lectura de esta consulta; continúa con «Seguir buscando».'}
+        </p>
+      )}
+      {historyMode && history.error && <p role="alert" className="mb-3 rounded-md border border-red-400/20 bg-red-400/5 px-3 py-3 text-sm text-red-300">{history.error}</p>}
 
-      {status !== 'live' && alerts.length === 0 ? (
+      {status === 'connecting' || (historyMode && history.loading) ? (
         <div className="panel px-4 py-6">
           <SkeletonRows rows={6} />
         </div>
-      ) : alerts.length === 0 ? (
+      ) : status === 'down' ? (
+        <div className="panel"><EmptyState icon={Tray} title="Alertas no disponibles" hint="Recupera la conexión con el motor para consultar alertas." /></div>
+      ) : historyMode && history.error ? null : displayedAlerts.length === 0 && !filtering && !history.page?.scan_limited ? (
         <div className="panel">
           <EmptyState
             icon={Tray}
@@ -288,7 +353,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
           <EmptyState
             icon={MagnifyingGlass}
             title="Sin resultados"
-            hint="Ninguna alerta coincide con la búsqueda o el filtro actual"
+            hint={history.page?.scan_limited ? 'Continúa la búsqueda: todavía quedan registros por examinar.' : 'Ninguna alerta coincide con la búsqueda o el filtro actual'}
             action={
               <Button
                 variant="outline"
@@ -297,6 +362,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
                 onClick={() => {
                   setQuery('')
                   setSevFilter('all')
+                  changeState('all')
                 }}
               >
                 Limpiar filtros
@@ -387,7 +453,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
               </table>
             </div>
             <p className="border-t border-zinc-800 px-4 py-2 text-[11px] text-zinc-500">
-              Mostrando {visible.length} de {alerts.length} alertas en el búfer del motor (las más recientes primero).
+              {historyMode ? `Mostrando ${visible.length} alertas de esta página; no es el total del histórico.` : `Mostrando ${visible.length} de ${alerts.length} alertas recibidas en vivo.`}
             </p>
           </div>
 
@@ -576,6 +642,7 @@ function StatusChip({ status }: { status?: SfAlertStatus }) {
 // SSE frame is the single source of truth), so only the in-flight and
 // error states are tracked locally.
 function TriagePanel({ alert }: { alert: SfAlert }) {
+  const { applyTriage } = useEngine()
   const status: SfAlertStatus = alert.status ?? 'new'
   const [noteDraft, setNoteDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -591,6 +658,7 @@ function TriagePanel({ alert }: { alert: SfAlert }) {
       setError(ack.error)
       return
     }
+    if (ack.entry) applyTriage(ack.entry)
     setNoteDraft('')
   }
 

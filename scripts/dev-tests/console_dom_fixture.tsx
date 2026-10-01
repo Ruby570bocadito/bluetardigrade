@@ -5,12 +5,14 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import assert from 'node:assert/strict'
 import { EngineProvider, useEngine } from '../../web/console/src/components/console/engine-provider'
+import { AlertsView } from '../../web/console/src/components/console/alerts-view'
 import { Dashboard } from '../../web/console/src/components/console/dashboard'
 
 const dom = new JSDOM('<div id="root"></div>', {url:'http://localhost:3000', pretendToBeVisual:true})
-for (const key of ['window','document','HTMLElement','Element','SVGElement','Node','Event','MouseEvent']) {
+for (const key of ['window','document','HTMLElement','HTMLFormElement','HTMLInputElement','HTMLSelectElement','HTMLButtonElement','Element','SVGElement','Node','DocumentFragment','Event','MouseEvent','CustomEvent','FocusEvent','MutationObserver']) {
   ;(globalThis as any)[key] = (dom.window as any)[key]
 }
+;(globalThis as any).getComputedStyle = dom.window.getComputedStyle.bind(dom.window)
 dom.window.matchMedia = (() => ({matches:true, addListener(){}, removeListener(){}, addEventListener(){}, removeEventListener(){}})) as any
 ;(globalThis as any).requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.window)
 ;(globalThis as any).cancelAnimationFrame = dom.window.cancelAnimationFrame.bind(dom.window)
@@ -44,15 +46,40 @@ let releaseStats: (() => void) | null = null
 let ruleName = 'Original rule'
 let snapshotEvents = [{id:'old-event', timestamp:new Date(Date.now()-239000).toISOString(),type:'process.create',source:'simulate',host:'LAB',process:{pid:1,name:'demo.exe'}}]
 const alert = {id:'0123456789abcdef', timestamp:new Date().toISOString(),rule_id:'rule',rule_name:'Detection',severity:'critical',host:'LAB',event_id:'old-event',event_type:'process.create',summary:'demo evidence',matched_on:[],status:'acknowledged'}
+const historicalAlert = {...alert,id:'fedcba9876543210',rule_name:'Historical evidence',status:'new',status_at:'',status_note:''}
+const secondHistoricalAlert = {...historicalAlert,id:'bbbbbbbbbbbbbbbb',rule_name:'Second page evidence'}
+let historySource='sqlite'
+let historyMissing=false
+let releaseSearch: (()=>void) | null = null
+const historyRequests: string[]=[]
 const stats = {
   uptime_s:100, events_total:1, alerts_total:1, events_per_min:1, dropped:0, ingest_rejected:0,
   by_severity:{critical:1}, rules_count:1, rules_types:['process.create'], events_buffered:1,
   webhook_sent:0,webhook_failed:0,webhook_dropped:0,suppressions_active:0,
   correlator_states:0,correlator_sequences:0,correlator_cap:0,risk_hosts_tracked:0,hot_hosts:[],
 }
-globalThis.fetch = (async (input: any) => {
+globalThis.fetch = (async (input: any, init?: RequestInit) => {
   if (!engineUp) throw new Error('offline')
-  const pathname = new URL(String(input),'http://localhost').pathname.replace('/api/engine','')
+  const url = new URL(String(input),'http://localhost')
+  const pathname = url.pathname.replace('/api/engine','')
+  if (pathname === '/api/alerts/search') {
+    historyRequests.push(url.search)
+    if (historyMissing) return new Response('',{status:404})
+    const cursor = url.searchParams.get('cursor') || ''
+    const q = url.searchParams.get('q') || ''
+    if (q === 'slow') await new Promise<void>(resolve=>{releaseSearch=resolve})
+    const item = cursor === 'second-cursor' ? secondHistoricalAlert : historicalAlert
+    const value = q === 'fast' ? {...item,rule_name:'Fast response'} : q === 'slow' ? {...item,rule_name:'Obsolete response'} : item
+    const filter=url.searchParams.get('status')
+    const items=filter && filter !== 'all' && (filter === 'open' ? item.status === 'closed' : item.status !== filter) ? [] : [value]
+    return Response.json({items,source:historySource,has_more:!filter && cursor !== 'second-cursor',next_cursor:cursor==='second-cursor'?'':'second-cursor',page_cursor:cursor==='second-cursor'?'second-cursor':'first-anchor',scanned:1,scan_limited:false})
+  }
+  if (pathname === '/api/alerts/fedcba9876543210/status' && init?.method === 'POST') {
+    const action=JSON.parse(String(init.body))
+    const at=new Date().toISOString()
+    Object.assign(historicalAlert,{status:action.status,status_note:action.note,status_at:at})
+    return Response.json({alert_id:historicalAlert.id,status:action.status,note:action.note,by:action.by,at})
+  }
   if (pathname === '/api/stats' && holdStats) {
     holdStats = false
     await new Promise<void>(resolve => {releaseStats=resolve})
@@ -155,6 +182,72 @@ async function main() {
   await until(()=>state!.status==='live' && !state!.refreshing)
   assert.equal(state!.events.length,0)
   console.log('PASS: manual recovery loads the restarted engine snapshot')
+
+  root.render(<React.StrictMode><EngineProvider><Probe/><AlertsView/></EngineProvider></React.StrictMode>)
+  const button=(label:string)=>[...document.querySelectorAll('button')].find(b=>b.textContent?.trim()===label)!
+  await until(()=>Boolean(button('Histórico')))
+  button('Histórico').click()
+  await until(()=>Boolean(button('Historical evidence')))
+  assert.ok(document.body.textContent!.includes('Histórico SQLite'))
+  assert.ok(window.location.search.includes('historial=1'))
+  button('Siguiente').click()
+  await until(()=>Boolean(button('Second page evidence')))
+  button('Anterior').click()
+  await until(()=>Boolean(button('Historical evidence')))
+  assert.equal(new URLSearchParams(historyRequests.at(-1)).get('cursor'),'first-anchor')
+  console.log('PASS: historical pages navigate back using the pinned first-page cursor')
+
+  button('Historical evidence').click()
+  await until(()=>Boolean(button('Reconocer')))
+  button('Reconocer').click()
+  await until(()=>!button('Reconocer') && Boolean(button('Cerrar')))
+  assert.equal(state!.lifecycleUpdates.at(-1)?.alert_id,historicalAlert.id)
+  assert.ok(document.body.textContent!.includes('reconocida'))
+  console.log('PASS: historical triage uses the POST acknowledgement without requiring a working SSE channel')
+
+  const setLens=(search:string)=>{window.history.replaceState({},'',search);window.dispatchEvent(new window.PopStateEvent('popstate'))}
+  button('Siguiente').click()
+  await until(()=>Boolean(button('Second page evidence')))
+  setLens('?view=alertas&historial=1&estado=closed')
+  await until(()=>!state!.refreshing && document.body.textContent!.includes('Sin resultados'))
+  assert.equal((document.querySelector('[aria-label="Filtrar por estado"]') as HTMLSelectElement).value,'closed')
+  setLens('?view=alertas&historial=1')
+  await until(()=>Boolean(button('Historical evidence')))
+  console.log('PASS: lifecycle deep links and history changes restore the filter without losing source selection')
+
+  setLens('?view=alertas&historial=1&q=slow')
+  await until(()=>releaseSearch!==null)
+  setLens('?view=alertas&historial=1&q=fast')
+  await until(()=>Boolean(button('Fast response')))
+  releaseSearch!()
+  await delay(80)
+  assert.ok(!document.body.textContent!.includes('Obsolete response'))
+  console.log('PASS: an obsolete delayed search cannot overwrite a newer filter result')
+
+  setLens('?view=alertas&historial=1')
+  await until(()=>Boolean(button('Historical evidence')))
+  const at=new Date(Date.now()+1000).toISOString()
+  Object.assign(historicalAlert,{status:'closed',status_at:at})
+  Object.assign(secondHistoricalAlert,{status:'closed',status_at:at})
+  source.emit('alert_lifecycle',{alert_id:historicalAlert.id,status:'closed',at})
+  source.emit('alert_lifecycle',{alert_id:secondHistoricalAlert.id,status:'closed',at})
+  await until(()=>state!.lifecycleUpdates.some(e=>e.alert_id===secondHistoricalAlert.id))
+  await until(()=>document.body.textContent!.includes('cerrada'))
+  button('Siguiente').click()
+  await until(()=>Boolean(button('Second page evidence')))
+  assert.ok(document.body.textContent!.includes('cerrada'))
+  console.log('PASS: batched lifecycle frames update historical rows outside the live buffer')
+
+  historySource='memory'
+  button('Actualizar histórico').click()
+  await until(()=>document.body.textContent!.includes('Solo memoria: últimas 256 alertas'))
+  console.log('PASS: memory-only history states its retention limit explicitly')
+
+  historyMissing=true
+  button('Actualizar histórico').click()
+  await until(()=>document.body.textContent!.includes('Este motor no ofrece búsqueda paginada'))
+  assert.ok(!button('Historical evidence'))
+  console.log('PASS: older engines show an actionable search capability error without stale rows')
 
   root.unmount()
   assert.ok(FakeSource.instances.every(s=>s.closed))

@@ -112,7 +112,9 @@ match, así que el eco extra producía "0\n0" y reventaba el `-ge` siguiente
 These optional checks mount the real engine provider and dashboard with
 isolated REST/SSE fixtures. They verify replay/triage preservation, rule
 reload, idle activity expiry, queue navigation, optional 404 handling,
-concurrent snapshot frames, live-channel warnings, outage/recovery and cleanup.
+concurrent snapshot frames, live-channel warnings, outage/recovery, pinned
+historical navigation, POST-only triage, lifecycle deep links, superseded
+queries, batched decisions, memory-only limits, older engines and cleanup.
 They do not certify browser layout or replace the native Bun integration suite.
 
 From the repository root, with the console dependencies already installed:

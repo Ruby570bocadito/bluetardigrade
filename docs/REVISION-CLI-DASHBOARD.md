@@ -95,7 +95,7 @@ El adaptador Node es una comprobación adicional, no reemplaza a Bun en CI.
 | Prioridad | Trabajo | Criterio de cierre |
 |-----------|---------|--------------------|
 | 1 | Confirmar CI de esta rama, build Next.js y smoke Windows; actualizar capturas | Batería nativa completa y pantallas reales revisadas en escritorio/móvil |
-| 2 | Filtros por ciclo de vida y paginación histórica en el dashboard | Buscar nuevas/reconocidas/cerradas sobre el histórico del motor, con límites visibles |
+| 2 | Entregado en la [segunda ronda](REVISION-HISTORICO.md): filtros de ciclo de vida y paginación | Histórico del motor con cursores, límites y fuente visibles |
 | 3 | Paleta de comandos y ayuda de teclado en la web | Acciones localizables, foco gestionado y accesibilidad verificable |
 | 4 | Estado completo de detectores y avisos en la TUI | Metadatos también actualizados tras reload; logs de fondo integrados sin perturbar la pantalla |
 | 5 | Pruebas reales de navegador en CI | Deep links, historial, triaje, recuperación, móvil y reduced motion |

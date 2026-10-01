@@ -8,8 +8,9 @@ import type {
   SfRespondAudit, SfRespondState, SfSequence, SfSuppression,
 } from '@/lib/console-types'
 import { severityOf } from '@/lib/console-types'
+import { applyAlertLifecycle } from '@/lib/alert-search'
 import {
-  alertKey, engineDisplayEndpoint, mergeNewest, prependLive,
+  alertKey, engineApiBase, engineDisplayEndpoint, mapAlert, mergeNewest, prependLive,
   readEngineJson, readOptionalEngineJson, settledBatch,
 } from '@/lib/engine-client'
 
@@ -22,6 +23,8 @@ export type EngineState = {
   lastSyncAt: number | null
   refreshing: boolean
   refresh: () => void
+  lifecycleUpdates: SfAlertLifecycle[]
+  applyTriage: (entry: SfAlertLifecycle) => void
   events: SfEvent[]
   alerts: SfAlert[]
   rules: RuleMeta[]
@@ -39,38 +42,6 @@ const STATS_POLL_MS = 2000
 const REBOOT_DELAY_MS = 3000
 const MAX_EVENTS = 300
 const MAX_ALERTS = 128
-
-function engineApiBase(): string {
-  return process.env.NEXT_PUBLIC_ENGINE_API || '/api/engine'
-}
-
-function mapAlert(raw: Record<string, unknown>): SfAlert {
-  const tags = Array.isArray(raw.tags) ? (raw.tags as string[]) : []
-  const matched = Array.isArray(raw.matched_on) ? (raw.matched_on as string[]) : []
-  const status = raw.status
-  return {
-    id: raw.id ? String(raw.id) : undefined,
-    timestamp: String(raw.timestamp ?? ''),
-    rule_id: String(raw.rule_id ?? ''),
-    rule_name: String(raw.rule_name ?? ''),
-    severity: severityOf(typeof raw.severity === 'string' ? raw.severity : undefined),
-    host: String(raw.host ?? ''),
-    user: raw.user ? String(raw.user) : undefined,
-    event_id: String(raw.event_id ?? ''),
-    event_type: String(raw.event_type ?? ''),
-    summary: String(raw.summary ?? ''),
-    message: raw.message ? String(raw.message) : undefined,
-    notify: raw.notify === true,
-    matched_on: matched,
-    tags,
-    actions: Array.isArray(raw.actions) ? (raw.actions as string[]) : undefined,
-    enrichment: (raw.enrichment as Record<string, string>) ?? undefined,
-    status: status === 'new' || status === 'acknowledged' || status === 'closed' ? status : undefined,
-    status_note: raw.status_note ? String(raw.status_note) : undefined,
-    status_by: raw.status_by ? String(raw.status_by) : undefined,
-    status_at: raw.status_at ? String(raw.status_at) : undefined,
-  }
-}
 
 function mapRule(raw: Record<string, unknown>): RuleMeta {
   const tags = Array.isArray(raw.tags) ? (raw.tags as string[]) : []
@@ -97,6 +68,17 @@ export function useEngineStream(): EngineState {
   const [streamStatus, setStreamStatus] = useState<StreamStatus>('connecting')
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [lifecycleUpdates, setLifecycleUpdates] = useState<SfAlertLifecycle[]>([])
+  const triageDuringSync = useRef<((entry: SfAlertLifecycle) => void) | null>(null)
+  const applyTriage = useCallback((entry: SfAlertLifecycle) => {
+    triageDuringSync.current?.(entry)
+    setLifecycleUpdates((previous) => {
+      const current = previous.find((item) => item.alert_id === entry.alert_id)
+      if (current && Date.parse(current.at) > Date.parse(entry.at)) return previous
+      return [...previous.filter((item) => item.alert_id !== entry.alert_id), entry].slice(-MAX_ALERTS)
+    })
+    setAlerts((list) => list.map((a) => applyAlertLifecycle(a, entry)))
+  }, [])
   const [events, setEvents] = useState<SfEvent[]>([])
   const [alerts, setAlerts] = useState<SfAlert[]>([])
   const [rules, setRules] = useState<RuleMeta[]>([])
@@ -128,6 +110,9 @@ export function useEngineStream(): EngineState {
     let syncEvents: SfEvent[] = []
     let syncAlerts: SfAlert[] = []
     let syncLifecycle: SfAlertLifecycle[] = []
+    triageDuringSync.current = (entry) => {
+      if (syncPending) syncLifecycle = [...syncLifecycle, entry].slice(-MAX_ALERTS)
+    }
     const ctrl = new AbortController()
     const base = engineApiBase()
     const getJson = <T,>(path: string) => readEngineJson<T>(base, path, ctrl.signal)
@@ -135,6 +120,7 @@ export function useEngineStream(): EngineState {
 
     function clearTelemetry() {
       setStats(null)
+      setLifecycleUpdates([])
       setEvents([])
       setAlerts([])
       setRules([])
@@ -153,9 +139,7 @@ export function useEngineStream(): EngineState {
     }
 
     function applyLifecycle(list: SfAlert[], entry: SfAlertLifecycle): SfAlert[] {
-      return list.map((a) => a.id === entry.alert_id
-        ? { ...a, status: entry.status, status_note: entry.note, status_by: entry.by, status_at: entry.at }
-        : a)
+      return list.map((a) => applyAlertLifecycle(a, entry))
     }
 
     async function performSync(): Promise<boolean> {
@@ -283,8 +267,8 @@ export function useEngineStream(): EngineState {
         try {
           const entry = JSON.parse(frame.data) as SfAlertLifecycle
           if (!entry || !['new', 'acknowledged', 'closed'].includes(entry.status)) return
-          if (syncPending) syncLifecycle = [...syncLifecycle, entry].slice(-MAX_ALERTS)
-          if (!offline) setAlerts((prev) => applyLifecycle(prev, entry))
+          if (!offline) applyTriage(entry)
+          else triageDuringSync.current?.(entry)
         } catch { /* malformed frame */ }
       })
       es.onopen = () => {
@@ -313,15 +297,16 @@ export function useEngineStream(): EngineState {
     return () => {
       disposed = true
       refreshRef.current = null
+      triageDuringSync.current = null
       ctrl.abort()
       es?.close()
       if (pollTimer) clearTimeout(pollTimer)
       if (retryTimer) clearTimeout(retryTimer)
     }
-  }, [])
+  }, [applyTriage])
 
   return {
-    status, streamStatus, lastSyncAt, refreshing, refresh,
+    status, streamStatus, lastSyncAt, refreshing, refresh, lifecycleUpdates, applyTriage,
     events, alerts, rules, suppressions, sequences, respondState,
     respondAudit, auditLimit, setAuditLimit, stats, endpoint,
   }

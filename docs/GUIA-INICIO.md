@@ -64,6 +64,18 @@ Puedes actualizar manualmente y saltar a alertas o telemetría.
 Los recuentos de triaje y el gráfico son muestras del búfer; los totales
 del motor se muestran por separado. `—` indica que falta una lectura.
 
+En **Alertas**, alterna **En vivo** e **Histórico**. En vivo filtra lo que
+ha recibido la consola; el histórico busca en el motor y ofrece páginas de
+25 entradas con Anterior/Siguiente. Filtra por severidad y estado: nuevas,
+reconocidas, cerradas o todas sin cerrar. La URL conserva los filtros y
+el modo; al recargar comienza por la primera página.
+
+Con `-store ./sf-store.db` se consulta SQLite. Sin ese flag solo están las
+últimas 256 alertas en memoria, y la interfaz lo indica. **Actualizar
+histórico** incorpora nuevas llegadas. Una búsqueda poco frecuente puede
+necesitar **Seguir buscando** aunque la página actual esté vacía.
+[Contrato y límites](REVISION-HISTORICO.md).
+
 El analista IA es opcional. En otra terminal, desde la raíz:
 
 ```bash

@@ -12,6 +12,24 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Added — historical alert investigations
+
+- Live/history switch in the alert queue, lifecycle filters and shareable
+  source/state lenses; 25-row pages with previous, next and refresh.
+- Read-only `GET /api/alerts/search` with SQLite/memory source metadata,
+  pinned insertion-sequence cursors, bounded lifecycle scans and cancellation.
+- Historical triage updates through both SSE and successful POST responses;
+  superseded queries are canceled and older engines show a capability error.
+
+### Fixed — alert investigation state
+
+- Informational severity no longer renders as low or disappears from filters/KPIs.
+- The alert list shows offline state instead of an endless loading skeleton.
+- Legacy alert selection uses timestamp, event and rule identity consistently.
+- Delayed lifecycle frames cannot undo newer close/reopen decisions.
+- Export tooltips state the default limits and their independence from view filters.
+
+
 ### Added
 
 - Interactive alert and rule workspaces with search, severity filters,

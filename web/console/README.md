@@ -164,3 +164,25 @@ the layer adds zero runtime dependencies beyond `motion`:
 
 The interface copy is in Spanish by design: the primary audience of the
 project documentation is Spanish speaking.
+
+## Alert history and lifecycle lenses
+
+The full alert queue has **En vivo** and **Histórico** modes. The latter
+uses `GET /api/alerts/search` through the existing read-only proxy. It
+searches SQLite when enabled and labels the 256-alert memory window otherwise.
+It has 25-row pages, lifecycle/severity/text filters and pinned cursors;
+manual refresh starts a new search and includes later arrivals. Source and
+lifecycle filters use `historial=1` and `estado=open|new|acknowledged|closed`
+in the URL. Page positions are local to the view; a refresh starts at page one.
+
+Queries are debounced, bounded and canceled when obsolete or unmounted.
+Lifecycle updates and successful POST acknowledgements patch historical rows
+outside the live buffer, so triage does not require a working SSE channel.
+An old lifecycle timestamp cannot revert a newer close or reopen.
+Exports retain their separate default limit and do not apply the view filters;
+their tooltips state this explicitly.
+
+The engine must include the search endpoint. Older engines produce an
+explicit capability error, with the live view still available. See
+[the second-round report](../../docs/REVISION-HISTORICO.md) for the scan,
+retention, cursor and validation limits.

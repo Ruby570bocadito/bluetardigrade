@@ -53,7 +53,7 @@ describe('viewFromParam', () => {
 
 describe('sevFromParam', () => {
   test('accepts the queue filter vocabulary', () => {
-    const sevs: readonly SeverityFilter[] = ['all', 'critical', 'high', 'medium', 'low']
+    const sevs: readonly SeverityFilter[] = ['all', 'critical', 'high', 'medium', 'low', 'info']
     for (const sev of sevs) {
       expect(sevFromParam(sev)).toBe(sev)
     }
@@ -61,7 +61,7 @@ describe('sevFromParam', () => {
 
   test('degrades anything unknown to all', () => {
     expect(sevFromParam('CRITICAL')).toBe('all')
-    expect(sevFromParam('info')).toBe('all')
+    expect(sevFromParam('unknown')).toBe('all')
     expect(sevFromParam('')).toBe('all')
     expect(sevFromParam(null)).toBe('all')
   })

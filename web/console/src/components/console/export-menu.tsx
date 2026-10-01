@@ -32,7 +32,7 @@ export function ExportButtons({
   // filter active, the tooltips say so explicitly instead of leaving
   // it implied by the buttons sitting next to the filter controls.
   const filterNote = filterLabel
-    ? ` Exporta el anillo COMPLETO del motor, independiente del filtro activo (${filterLabel}): el fichero incluye también los ${hiddenCount ?? 0} que el filtro oculta en la vista.`
+    ? ` No aplica el filtro activo (${filterLabel}); puede incluir registros fuera de esta vista${hiddenCount === undefined ? '' : `, incluidos ${hiddenCount} ocultos en el búfer recibido`}.`
     : ''
   return (
     <div role="group" aria-label={`Exportar ${noun}`} className="flex items-center gap-1.5">
@@ -40,10 +40,10 @@ export function ExportButtons({
         <DownloadSimple size={12} aria-hidden />
         Export
       </span>
-      <a href={`/api/engine/api/${kind}/export?format=jsonl`} download className={linkCls} title={`Descargar ${noun} en JSON Lines.${filterNote}`}>
+      <a href={`/api/engine/api/${kind}/export?format=jsonl`} download className={linkCls} title={`Descargar ${noun} en JSON Lines. Hasta ${kind === 'alerts' ? '256' : '1000'} registros recientes del motor o SQLite.${filterNote}`}>
         jsonl
       </a>
-      <a href={`/api/engine/api/${kind}/export?format=csv`} download className={linkCls} title={`Descargar ${noun} en CSV.${filterNote}`}>
+      <a href={`/api/engine/api/${kind}/export?format=csv`} download className={linkCls} title={`Descargar ${noun} en CSV. Hasta ${kind === 'alerts' ? '256' : '1000'} registros recientes del motor o SQLite.${filterNote}`}>
         csv
       </a>
     </div>

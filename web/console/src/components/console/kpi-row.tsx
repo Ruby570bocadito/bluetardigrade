@@ -11,7 +11,7 @@ import { GradientText } from '@/components/reactbits/gradient-text'
 import { SpotlightCard } from '@/components/reactbits/spotlight-card'
 import { formatUptime, SEVERITY_STYLE, type EngineStats, type Severity } from '@/lib/console-types'
 
-const SEV_ORDER: Severity[] = ['critical', 'high', 'medium', 'low']
+const SEV_ORDER: Severity[] = ['critical', 'high', 'medium', 'low', 'info']
 
 function Kpi({
   label,

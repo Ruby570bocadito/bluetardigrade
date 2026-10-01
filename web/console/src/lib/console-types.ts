@@ -4,7 +4,7 @@
 // and the SSE frames of /api/stream. The console never invents data:
 // when the engine is unreachable every view shows a real empty state.
 
-export type Severity = 'critical' | 'high' | 'medium' | 'low'
+export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info'
 
 // model.Event (pkg/model) as delivered by /api/events and /api/stream.
 export type SfEvent = {
@@ -328,10 +328,14 @@ export const SEVERITY_STYLE: Record<Severity, { label: string; text: string; bg:
     bar: 'bg-sky-400',
     dot: 'bg-sky-400',
   },
+  info: {
+    label: 'info', text: 'text-zinc-400', bg: 'bg-zinc-500/10',
+    border: 'border-zinc-500/30', bar: 'bg-zinc-500', dot: 'bg-zinc-500',
+  },
 }
 
 export function severityOf(value: string | undefined): Severity {
-  return value === 'critical' || value === 'high' || value === 'medium' || value === 'low' ? value : 'low'
+  return value === 'critical' || value === 'high' || value === 'medium' || value === 'low' || value === 'info' ? value : 'low'
 }
 
 export function formatTime(iso: string): string {

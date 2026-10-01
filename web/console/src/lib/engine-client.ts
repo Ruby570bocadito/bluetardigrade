@@ -1,3 +1,5 @@
+import { severityOf, type SfAlert } from './console-types'
+
 // Fetches are bounded and linked to the provider lifetime. A stalled
 // connection must not leave the console live forever or pile up polls.
 export const ENGINE_REQUEST_TIMEOUT_MS = 5000
@@ -82,5 +84,37 @@ export function engineDisplayEndpoint(base: string): string {
     return new URL(base).origin
   } catch {
     return 'API del motor'
+  }
+}
+
+export function engineApiBase(): string {
+  return process.env.NEXT_PUBLIC_ENGINE_API || '/api/engine'
+}
+
+export function mapAlert(raw: Record<string, unknown>): SfAlert {
+  const tags = Array.isArray(raw.tags) ? (raw.tags as string[]) : []
+  const matched = Array.isArray(raw.matched_on) ? (raw.matched_on as string[]) : []
+  const status = raw.status
+  return {
+    id: raw.id ? String(raw.id) : undefined,
+    timestamp: String(raw.timestamp ?? ''),
+    rule_id: String(raw.rule_id ?? ''),
+    rule_name: String(raw.rule_name ?? ''),
+    severity: severityOf(typeof raw.severity === 'string' ? raw.severity : undefined),
+    host: String(raw.host ?? ''),
+    user: raw.user ? String(raw.user) : undefined,
+    event_id: String(raw.event_id ?? ''),
+    event_type: String(raw.event_type ?? ''),
+    summary: String(raw.summary ?? ''),
+    message: raw.message ? String(raw.message) : undefined,
+    notify: raw.notify === true,
+    matched_on: matched,
+    tags,
+    actions: Array.isArray(raw.actions) ? (raw.actions as string[]) : undefined,
+    enrichment: (raw.enrichment as Record<string, string>) ?? undefined,
+    status: status === 'new' || status === 'acknowledged' || status === 'closed' ? status : undefined,
+    status_note: raw.status_note ? String(raw.status_note) : undefined,
+    status_by: raw.status_by ? String(raw.status_by) : undefined,
+    status_at: raw.status_at ? String(raw.status_at) : undefined,
   }
 }

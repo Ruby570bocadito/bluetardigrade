@@ -12,7 +12,9 @@
 //   ?view=respuesta&clase=denied        (audit queue lens)
 //   ?view=flujo&tipo=FileCreate&fq=mimikatz
 //   ?view=reglas&rq=lateral&regla=R-042 (expanded row, stable rule id)
-//   ?view=alertas&sev=critical&q=lsass
+//   ?view=alertas&historial=1&estado=open&sev=critical&q=lsass
+//   historial: 1 uses engine history, else live buffer
+//   estado: all/open/new/acknowledged/closed, else all
 //   view:  one of the shell's nav ids, else 'panel'
 //   sev:   one of the queue filter values, else 'all'
 //   clase: one of the audit class values, else 'all'
@@ -29,6 +31,7 @@
 
 import type { ConsoleView } from '../components/console/dashboard'
 import type { Severity } from './console-types'
+import { alertStateFromParam, type AlertScope, type AlertStateFilter } from './alert-search'
 
 /** Severity filter values of the alerts queue, including 'all'. */
 export type SeverityFilter = 'all' | Severity
@@ -67,7 +70,7 @@ type ViewsMatch = ConsoleView extends (typeof CONSOLE_VIEWS)[number]
 const viewsAreExhaustive: ViewsMatch = true
 void viewsAreExhaustive
 
-const SEVERITY_FILTERS: readonly SeverityFilter[] = ['all', 'critical', 'high', 'medium', 'low']
+const SEVERITY_FILTERS: readonly SeverityFilter[] = ['all', 'critical', 'high', 'medium', 'low', 'info']
 
 /**
  * Event types are derived from the delivered buffer (no hardcoded
@@ -142,6 +145,11 @@ export function readOperatorState(search: string): OperatorState {
   }
 }
 
+export function readAlertLens(search: string): { state: AlertStateFilter; scope: AlertScope } {
+  const params = new URLSearchParams(search)
+  return { state: alertStateFromParam(params.get('estado')), scope: params.get('historial') === '1' ? 'history' : 'live' }
+}
+
 /**
  * Parse the per-view lens keys (audit class, feed type+query, rules
  * query+expanded id). Views read what they own; the shared query string
@@ -186,6 +194,13 @@ export function writeFilterToSearch(search: string, sev: SeverityFilter, q: stri
   return writeKeys(search, {
     sev: sev === 'all' ? null : sev,
     q: query === '' ? null : query,
+  })
+}
+
+export function writeAlertLens(search: string, sev: SeverityFilter, q: string, state: AlertStateFilter, scope: AlertScope): string {
+  return writeKeys(writeFilterToSearch(search, sev, q), {
+    estado: state === 'all' ? null : state,
+    historial: scope === 'history' ? '1' : null,
   })
 }
 
