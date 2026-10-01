@@ -132,3 +132,40 @@ nonzero on failure. Requires Node.js 20+.
 The same two commands are wired into `make console-dom`, the `ci` recipe and
 the console job of `.github/workflows/ci.yml`, so the fixture no longer relies
 on manual runs to catch regressions.
+
+## Chromium console regression
+
+`check_console_browser.mjs` runs the built application in Chromium. The
+browser uses isolated REST responses and an SSE fixture; it never sends
+triaje or commands to a live engine. Ten checks exercise command search,
+keyboard navigation, focus containment/restoration, URL lenses and history,
+busy refresh, help handoff, composition/consumed events, historical paging,
+POST-only triage, mobile access and reduced motion. Fixture screenshots are
+stored in the ignored `captures/browser-regression/` directory.
+
+From the repository root, after installing and building `web/console`:
+
+```bash
+make console-browser
+```
+
+The target pins Playwright 1.63.0 outside the application dependency graph.
+It installs Chromium and starts the production console on loopback port
+3100; the runner closes both browser and server even on failure. Linux hosts
+without browser libraries can install them with:
+
+```bash
+node tools/console-tests/node_modules/playwright/cli.js install --with-deps chromium
+```
+
+`CONSOLE_TEST_TOOLS` selects another absolute tooling directory.
+`CONSOLE_BROWSER_URL=http://127.0.0.1:3000` uses an already running console,
+and `CONSOLE_CHROMIUM_PATH` selects an existing Chromium executable. External
+HTTP hosts are rejected. Browser checks require Node.js 20+.
+
+The same runner is part of `make ci` and the console job after the production
+build. CI retains labelled fixture captures, including a failure screenshot,
+as the `console-browser-regression` artifact for seven days. The checks
+verify browser behavior; they do not certify a live ETW capture, the engine
+transport or every UI flow. Cross-browser and additional mobile interaction
+coverage remain follow-up work.

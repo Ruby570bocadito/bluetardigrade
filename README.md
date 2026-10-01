@@ -109,6 +109,12 @@ Unavailable metrics show **`—`**, rather than zero. The panel distinguishes a 
 
 Deep links such as `/?view=alertas&historial=1&estado=open&sev=critical&q=lsass` survive refresh and browser history. Navigation also supports `g` followed by `p/f/a/r/c/s/k/n`; a keyboard skip link goes straight to the main content.
 
+Open **Comandos** in the header or press **Ctrl+K / ⌘K** to search all eight
+views, refresh engine data or open keyboard help. Search accepts accents,
+multiple words and common operator terms. Use ↑/↓ to choose, Enter to run
+and Escape to close. Navigation respects text fields, composite controls,
+composition and other modals; closing a dialog restores focus.
+
 In **Alertas**, switch to **Histórico** to search the engine rather than the browser's retained buffer. SQLite provides persisted history when `-store` is enabled; otherwise the view clearly identifies the 256-alert memory window. Pages contain 25 alerts ordered by reception. Cursor navigation pins the upper sequence, so new arrivals do not shift visited pages. Retention and triage decisions can still change membership. **Actualizar histórico** starts a fresh search. Detection evidence and lifecycle state are server filters; lifecycle notes remain searchable in the live view. A bounded scan can return an empty page with **Seguir buscando**, and an older engine reports the missing capability explicitly.
 
 The activity chart is a **sample of the retained event buffer**, not a complete four-minute history at high event rates. Lifetime totals come from the engine.
@@ -161,6 +167,11 @@ bun run build
 
 CI covers Go formatting, build, vet, staticcheck and race tests; console and hub tests/types; a production console build; the OpenAPI drift guard; Rust checks on Linux and Windows; and a native Windows response smoke.
 
+The console job also runs DOM regressions and Chromium checks of the built
+application on desktop and mobile viewports. REST/SSE data in those browser
+checks are isolated fixtures. `make console-browser` runs them locally after
+building the console; screenshots are retained as CI artifacts.
+
 ### Measured performance
 
 Historical loopback runs recorded ingest→alert p99 around **0.4 ms** with the 23-rule pack. This is a lab measurement, not a deployment guarantee. Run `cmd/bench` or the nightly harness to measure your own environment, including SQLite overhead. [Method and results](docs/OPERATIONS.md#measured-performance).
@@ -194,6 +205,7 @@ docs/                operations, architecture and development reports
 | [Complete improvement report](docs/RESUMEN-MEJORAS-2026-10-01.md) | Both improvement rounds, fixed bugs, documentation and confirmed remote CI |
 | [CLI/dashboard review](docs/REVISION-CLI-DASHBOARD.md) | First-round findings and verification |
 | [Historical investigations](docs/REVISION-HISTORICO.md) | Pagination, lifecycle filters and second-round verification |
+| [Command palette and browser checks](docs/PALETA-Y-PRUEBAS-NAVEGADOR.md) | Commands, keyboard scope, native dialogs and reproducible Chromium regressions |
 | [Technical architecture PDF](docs/arquitectura-tecnica-v0.11.pdf) | Spanish technical reference |
 | [Changelog](CHANGELOG.md) | Release history |
 | [Security policy](SECURITY.md) | Private vulnerability reporting |
@@ -201,7 +213,7 @@ docs/                operations, architecture and development reports
 ## Roadmap
 
 - **Implemented:** rule and behavioral detection, triage, storage, integrations, terminal workspace and live console.
-- **Next interface work:** a command palette, full browser regression tests, saved hunts and moving lifecycle persistence into SQLite.
+- **Next interface work:** broaden browser coverage, saved hunts and moving lifecycle persistence into SQLite.
 - **Sensor work:** extend native ETW providers beyond process creation; broaden Windows runtime coverage.
 - **Research:** YARA memory scanning and sandboxed extensions.
 

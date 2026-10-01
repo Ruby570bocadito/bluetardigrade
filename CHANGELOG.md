@@ -12,6 +12,21 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Added — command palette and browser regressions
+
+- Searchable console commands on desktop and mobile; Ctrl+K / Meta+K,
+  arrow selection, keyboard help and shared engine refresh.
+- Chromium regression checks of the production console with isolated
+  REST/SSE fixtures, keyboard/focus coverage and desktop/mobile captures.
+
+### Fixed — keyboard and modal focus
+
+- Native modal dialogs keep background controls inert, restore focus,
+  support Escape/backdrop close and release page scroll on cleanup.
+- Navigation ignores consumed events, repeats, composition, editable
+  ancestors and composite controls; changing focus clears the g prefix.
+- Choosing the current view no longer creates duplicate history entries.
+
 ### Added — historical alert investigations
 
 - Live/history switch in the alert queue, lifecycle filters and shareable

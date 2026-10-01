@@ -186,6 +186,19 @@ jobs:
         run: |
           npm install --prefix tools/console-tests --no-audit --no-fund esbuild@0.25.11 jsdom@26.1.0
           node scripts/dev-tests/check_console_dom.mjs
+      - name: console browser regression (Chromium, desktop and mobile)
+        run: |
+          npm install --prefix tools/console-tests --no-audit --no-fund playwright@1.63.0
+          node tools/console-tests/node_modules/playwright/cli.js install --with-deps chromium
+          node scripts/dev-tests/check_console_browser.mjs
+      - name: browser regression captures (isolated fixtures)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: console-browser-regression
+          path: captures/browser-regression/
+          retention-days: 7
+          if-no-files-found: ignore
 
   sensor:
     name: Sensor (cargo check, locked)

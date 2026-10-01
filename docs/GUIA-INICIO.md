@@ -76,6 +76,12 @@ histórico** incorpora nuevas llegadas. Una búsqueda poco frecuente puede
 necesitar **Seguir buscando** aunque la página actual esté vacía.
 [Contrato y límites](REVISION-HISTORICO.md).
 
+La cabecera incluye **Comandos**, disponible también en móvil. Con teclado,
+**Ctrl+K / ⌘K** abre la paleta: busca una vista, actualiza datos del motor o
+consulta la ayuda. Usa ↑/↓, Enter y Esc. Las búsquedas no distinguen mayúsculas
+ni tildes. Los atajos de navegación respetan campos de texto y ventanas
+abiertas; al cerrar una ventana se recupera el foco anterior.
+
 El analista IA es opcional. En otra terminal, desde la raíz:
 
 ```bash
