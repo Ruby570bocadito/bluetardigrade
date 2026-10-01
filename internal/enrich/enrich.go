@@ -13,10 +13,9 @@ import (
 )
 
 // Parent-tracking limits: a flight recorder of (host, pid) -> process
-// identity used to resolve parent names. Caps bound the worst case on
-// an endpoint farm: 256 hosts x 2048 processes x ~64 bytes of map
-// entry stays under ~35 MB even with pathological churn, and the
-// sweep drops idle entries so a long-lived engine does not leak.
+// identity used to resolve parent names. Caps bound identity counts
+// across the endpoint farm; memory also depends on retained names,
+// image paths and map overhead. The sweep retires idle entries.
 const (
 	maxHosts        = 256
 	maxProcsPerHost = 2048

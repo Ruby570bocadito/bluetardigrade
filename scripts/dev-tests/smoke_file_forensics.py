@@ -75,6 +75,7 @@ def main():
                 event("file.write", 900)  # must not erase the remembered Office parent
                 child = event("process.create", 901, process={"pid": 901, "ppid": 900, "name": "cmd.exe"})
                 expected = {"b2c3d4e5-0005-4b05-9e05-050505050505": child}
+                event("file.write", 1200, "winword.exe", file={"path": r"C:\Users\ana\AppData\Local\Temp\report.docx"})
                 samples = [
                     ("winword.exe", r"C:\Users\ana\AppData\Local\Temp\loader.exe"),
                     ("powershell.exe", r"C:\Users\Public\plugin.dll"),
@@ -89,7 +90,6 @@ def main():
                 startup = event("file.write", 1100, "explorer.exe",
                                 file={"path": r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup\fixture.lnk"})
                 expected["a04b5c73-8d9e-4fa0-c1b2-3d4e5f6a7b80"] = startup
-                event("file.write", 1200, "winword.exe", file={"path": r"C:\Users\ana\AppData\Local\Temp\report.docx"})
                 with socket.create_connection(("127.0.0.1", ingest_port), timeout=3) as sock:
                     sock.sendall(b"AUTH fixture-ingest-token\n")
                     with sock.makefile("rb") as reply:
@@ -100,13 +100,17 @@ def main():
                 deadline = time.monotonic() + 10
                 while True:
                     stats = get("/api/stats")
-                    if stats["events_total"] == len(events):
+                    alerts = get("/api/alerts?limit=256")
+                    actual = {value["rule_id"]: value for value in alerts}
+                    # events_total counts accepted intake, which can precede
+                    # rule evaluation and evidence writes. Startup is last:
+                    # its published alert confirms the preceding benign record
+                    # and all earlier fixtures have finished evaluation.
+                    if stats["events_total"] == len(events) and set(expected).issubset(actual):
                         break
                     if time.monotonic() >= deadline:
-                        raise AssertionError("fixture telemetry was not fully consumed")
+                        raise AssertionError(("fixture alarms did not finish", set(expected) - set(actual)))
                     time.sleep(0.05)
-                alerts = get("/api/alerts?limit=256")
-                actual = {value["rule_id"]: value for value in alerts}
                 assert set(actual) == set(expected), ("unexpected/missing alarms", set(actual) ^ set(expected))
                 assert len(alerts) == len(expected) and stats["rules_count"] == 55 and stats["dropped"] == 0
                 print("PASS: six file alarms + Startup + Office-parent alarm, no benign-document alarm")
