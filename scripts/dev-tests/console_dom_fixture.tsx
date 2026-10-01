@@ -2,12 +2,13 @@
 // Run through check_console_dom.mjs; see the dev-tests README.
 import { JSDOM } from 'jsdom'
 import React from 'react'
-import { createRoot } from 'react-dom/client'
 import assert from 'node:assert/strict'
 import { EngineProvider, useEngine } from '../../web/console/src/components/console/engine-provider'
 import { AlertsView } from '../../web/console/src/components/console/alerts-view'
 import { Dashboard } from '../../web/console/src/components/console/dashboard'
 import { ForensicPanel } from '../../web/console/src/components/console/forensic-panel'
+import { SavedSearches } from '../../web/console/src/components/console/saved-searches'
+import { alertSearchLens, SAVED_SEARCH_KEY } from '../../web/console/src/lib/saved-searches'
 import type { TriageTarget } from '../../web/console/src/lib/operations'
 
 const dom = new JSDOM('<div id="root"></div>', {url:'http://localhost:3000', pretendToBeVisual:true})
@@ -101,6 +102,8 @@ let state: ReturnType<typeof useEngine>
 let navigated = ''
 let triageTarget: TriageTarget | null = null
 function Probe() {state=useEngine(); return null}
+// Initialize React's browser event support after jsdom globals exist.
+const { createRoot } = require('react-dom/client') as typeof import('react-dom/client')
 const root = createRoot(document.getElementById('root')!)
 root.render(<React.StrictMode><EngineProvider><Probe/><Dashboard onAnalyze={()=>{}} onNavigate={(view)=>{navigated=view}} onTriage={(target)=>{triageTarget=target}}/></EngineProvider></React.StrictMode>)
 const delay = (ms:number) => new Promise(resolve=>setTimeout(resolve,ms))
@@ -348,6 +351,77 @@ async function main() {
   await delay(40)
   assert.ok(!document.body.textContent!.includes(`${alert.id} evidence`))
   console.log('PASS: a delayed forensic response cannot replace the newly selected alert\'s evidence')
+
+  window.localStorage.clear()
+  let huntQuery = 'fresh typing before URL debounce'
+  let applied = ''
+  const renderSearches = () => root.render(<SavedSearches kind="alerts" getLens={() => alertSearchLens('critical','open','history',huntQuery)} onApply={(lens)=>{applied=JSON.stringify(lens)}} />)
+  renderSearches()
+  const savedToggle=()=>[...document.querySelectorAll('button')].find(b=>b.textContent?.includes('Búsquedas guardadas'))!
+  await until(()=>Boolean(savedToggle()))
+  savedToggle().click()
+  const nameInput=()=>document.querySelector<HTMLInputElement>('input[id$="-name"]')!
+  await until(()=>Boolean(nameInput()))
+  const typeName=(value:string)=>{
+    Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(nameInput(),value)
+    nameInput().dispatchEvent(new dom.window.Event('input',{bubbles:true}))
+  }
+  typeName('Critical hunt')
+  await until(()=>!button('Guardar filtros actuales').disabled)
+  button('Guardar filtros actuales').click()
+  await until(()=>document.body.textContent!.includes('Búsqueda guardada.'))
+  let saved=JSON.parse(window.localStorage.getItem(SAVED_SEARCH_KEY)!).items
+  const huntId=saved[0].id
+  assert.equal(saved[0].lens.q,huntQuery)
+  huntQuery='updated filter'
+  typeName('CRITICAL HUNT')
+  await until(()=>!button('Guardar filtros actuales').disabled)
+  button('Guardar filtros actuales').click()
+  await until(()=>document.body.textContent!.includes('Búsqueda actualizada.'))
+  saved=JSON.parse(window.localStorage.getItem(SAVED_SEARCH_KEY)!).items
+  assert.equal(saved.length,1)
+  assert.equal(saved[0].id,huntId)
+  assert.equal(saved[0].lens.q,huntQuery)
+  console.log('PASS: saved hunts capture fresh filters and update names without duplicating identity')
+
+  ;(document.querySelector('[aria-label="Aplicar búsqueda CRITICAL HUNT"]') as HTMLButtonElement).click()
+  await until(()=>Boolean(applied))
+  assert.equal(JSON.parse(applied).q,huntQuery)
+  await until(()=>savedToggle().getAttribute('aria-expanded')==='false')
+  savedToggle().click()
+  await until(()=>Boolean(nameInput()))
+  const outside={id:'c'.repeat(32),name:'<img src=x>',lens:alertSearchLens('high','all','live','another tab')}
+  window.localStorage.setItem(SAVED_SEARCH_KEY,JSON.stringify({version:1,items:[outside]}))
+  window.dispatchEvent(new dom.window.StorageEvent('storage',{key:SAVED_SEARCH_KEY}))
+  await until(()=>document.body.textContent!.includes(outside.name))
+  assert.equal(document.querySelector('img'),null)
+  ;(document.querySelector('[aria-label="Eliminar búsqueda <img src=x>"]') as HTMLButtonElement).click()
+  await until(()=>document.body.textContent!.includes('Búsqueda eliminada.'))
+  assert.deepEqual(JSON.parse(window.localStorage.getItem(SAVED_SEARCH_KEY)!).items,[])
+  console.log('PASS: saved hunts apply filters, follow other tabs, render names as text and delete their own records')
+
+  const realSet=dom.window.Storage.prototype.setItem
+  dom.window.Storage.prototype.setItem=function(){throw new Error('fixture storage quota')}
+  try {
+    typeName('Storage failure')
+    await until(()=>!button('Guardar filtros actuales').disabled)
+    button('Guardar filtros actuales').click()
+    await until(()=>document.body.textContent!.includes('No se pudo guardar'))
+    assert.deepEqual(JSON.parse(window.localStorage.getItem(SAVED_SEARCH_KEY)!).items,[])
+    assert.ok(!document.body.textContent!.includes('Búsqueda guardada.'))
+  } finally {dom.window.Storage.prototype.setItem=realSet}
+  console.log('PASS: a storage failure is recoverable and never reports a successful save')
+
+  const corrupted='{invalid fixture'
+  window.localStorage.setItem(SAVED_SEARCH_KEY,corrupted)
+  window.dispatchEvent(new dom.window.StorageEvent('storage',{key:SAVED_SEARCH_KEY}))
+  await until(()=>document.body.textContent!.includes('No se pudieron leer'))
+  typeName('Do not overwrite')
+  await until(()=>!button('Guardar filtros actuales').disabled)
+  button('Guardar filtros actuales').click()
+  await delay(30)
+  assert.equal(window.localStorage.getItem(SAVED_SEARCH_KEY),corrupted)
+  console.log('PASS: incompatible saved state is not silently overwritten')
 
   root.unmount()
   assert.ok(FakeSource.instances.every(s=>s.closed))

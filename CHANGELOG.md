@@ -14,6 +14,12 @@ and the `make dist` target.
 
 ### Added
 
+- Browser-local saved searches in Alertas and Flujo: 20 bounded, validated
+  filter presets with apply/update/delete, cross-tab updates, reload and
+  browser Back support. Only filters are saved, including the query text.
+- A whole-window source summary and persistent demo indicator when
+  simulated events are mixed with Sysmon/ETW records; sources are declared
+  by the sender, not attested. Added regressions and desktop/mobile captures.
 - Six `file.write` alarms in `rules/windows/file-staging.yaml`: Office
   payloads, script-written DLLs, downloaded/extracted DLL candidates,
   PowerShell profiles, Office startup content and LSASS dump artifacts.
@@ -29,6 +35,19 @@ and the `make dist` target.
 
 ### Fixed
 
+- CSV escaping now covers every event/alert text column, including IDs,
+  sources, rules, tags, destinations and registry keys. LF, fullwidth formula
+  prefixes and leading whitespace are handled; JSONL and stored data remain
+  exact. Numeric PID/port columns are preserved.
+- Analyst progress no longer adds cosmetic delays or simulates token
+  streaming after receiving a completed response. Steps describe local
+  preparation/context lookup and the actual configured-provider request.
+- All analyst alert/rule metadata is bounded inside JSON evidence blocks;
+  an unbounded duplicate of process fields outside the prompt fences was
+  removed. Provider failures produce no invented analysis.
+- Feed typing now uses the same 120-character limit as the URL, avoiding
+  changed results after reload. README/web copy distinguishes the real
+  engine session from its demo records and collector verification limits.
 - YAML graph validation detects cyclic aliases, bounds expansion before
   arithmetic can overflow, and checks composed flow depth even when quoted
   closers offset the raw pre-scan. The graph walk no longer recurses.

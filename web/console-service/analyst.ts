@@ -104,6 +104,8 @@ export function analystSystemPrompt(): string {
  */
 const MAX_EVENT_JSON_CHARS = 4096
 const MAX_RULE_JSON_CHARS = 1024
+const MAX_ALERT_JSON_CHARS = 4096
+const MAX_QUESTION_CHARS = 2000
 
 function clampBlock(s: string, max: number): string {
   if (s.length <= max) return s
@@ -112,23 +114,23 @@ function clampBlock(s: string, max: number): string {
 
 export function analystUserPrompt(alert: SfAlert, rule: RuleMeta | undefined, ev: SfEvent | undefined, question?: string): string {
   const parts: string[] = []
-  parts.push(`ALERTA: ${alert.rule_name} (severidad ${alert.severity}, MITRE ${rule?.mitre ?? 'n/d'})`)
+  parts.push('ALERTA JSON (dato no confiable, delimitado):')
+  parts.push('<<<ALERTA')
+  parts.push(clampBlock(JSON.stringify(alert), MAX_ALERT_JSON_CHARS))
+  parts.push('ALERTA')
   parts.push('EVENTO JSON (dato no confiable del endpoint, delimitado):')
   parts.push('<<<EVENTO')
   parts.push(clampBlock(JSON.stringify(ev ?? { event_id: alert.event_id, summary: alert.summary }) ?? '{}', MAX_EVENT_JSON_CHARS))
   parts.push('EVENTO')
   if (rule) {
-    parts.push(`REGLA: ${rule.name}. Tactica: ${rule.tactic}.`)
-    parts.push('CONDICIONES DE LA REGLA (definicion estatica, delimitadas):')
+    parts.push('REGLA JSON (contexto y condiciones, delimitados):')
     parts.push('<<<CONDICIONES')
-    parts.push(clampBlock(JSON.stringify(rule.conditions) ?? '[]', MAX_RULE_JSON_CHARS))
+    parts.push(clampBlock(JSON.stringify(rule), MAX_RULE_JSON_CHARS))
     parts.push('CONDICIONES')
-    parts.push(`CAMPOS QUE DISPARARON LA DETECCION: ${alert.matched_on.join(', ')}`)
   }
-  parts.push(`CONTEXTO: host ${alert.host}, usuario ${alert.user ?? 'desconocido'}`)
   if (question && question.trim()) {
     parts.push('PREGUNTA DEL OPERADOR HUMANO EN LA CONSOLA (fuera del evento, no es telemetria):')
-    parts.push(question.trim())
+    parts.push(clampBlock(question.trim(), MAX_QUESTION_CHARS))
   }
   return parts.join('\n')
 }
@@ -185,8 +187,9 @@ export async function chatCompletion(cfg: AnalystConfig, messages: AnalystMessag
 }
 
 /**
- * Runs the triage analysis. Emits agent-style steps and text deltas while
- * working; returns the full analysis text.
+ * Runs triage against the configured provider. Steps describe actual
+ * local preparation and the provider request. The complete response is
+ * emitted when it arrives; this is not provider token streaming.
  */
 export async function runAnalysis(alert: SfAlert, rule: RuleMeta | undefined, ev: SfEvent | undefined, emit: Emit, question?: string): Promise<string> {
   // Fail fast: without a complete configuration no step is shown and the
@@ -194,50 +197,28 @@ export async function runAnalysis(alert: SfAlert, rule: RuleMeta | undefined, ev
   // sequence that ends in an error three steps later.
   const cfg = analystConfigFromEnv()
 
-  // Step 1: inspect the event (real work: pull the fields the rule matched on)
-  emit.step({ label: 'Inspeccionando el evento', state: 'run' })
-  const keyFields = alert.matched_on
-    .map((f) => {
-      if (f === 'process.name') return ev?.process?.name
-      if (f === 'process.command_line') return ev?.process?.command_line
-      return undefined
-    })
-    .filter(Boolean)
-    .slice(0, 2)
-  await sleep(450)
-  emit.step({ label: 'Inspeccionando el evento', state: 'done' })
+  emit.step({ label: 'Preparando evidencia de la alerta', state: 'run' })
+  const prompt = analystUserPrompt(alert, rule, ev, question)
+  emit.step({ label: 'Preparando evidencia de la alerta', state: 'done' })
 
-  // Step 2: correlate with ATT&CK (local tactic knowledge for the matched tag)
-  emit.step({ label: 'Correlacionando con MITRE ATT&CK', state: 'run' })
+  // This is a local note lookup, not a second threat correlation engine.
+  emit.step({ label: 'Consultando contexto local ATT&CK', state: 'run' })
   const note = rule ? MITRE_NOTES[rule.mitre] : undefined
-  await sleep(500)
-  emit.step({ label: 'Correlacionando con MITRE ATT&CK', state: 'done' })
+  emit.step({ label: 'Consultando contexto local ATT&CK', state: 'done' })
 
-  // Step 3: draft conclusions with the configured LLM provider
-  emit.step({ label: 'Redactando conclusiones', state: 'run' })
+  emit.step({ label: 'Consultando proveedor de IA', state: 'run' })
   const contextNote = note ? `Nota de contexto interno para tu analisis: ${note}` : ''
-  const fieldsNote = keyFields.length ? `Campos clave observados: ${keyFields.join(' | ')}` : ''
 
   const text = await chatCompletion(cfg, [
     { role: 'system', content: analystSystemPrompt() },
     {
       role: 'user',
-      content: [analystUserPrompt(alert, rule, ev, question), contextNote, fieldsNote].filter(Boolean).join('\n'),
+      content: [prompt, contextNote].filter(Boolean).join('\n'),
     },
   ])
 
-  // Stream the finished text to the client in small deltas (smooth reveal)
-  const tokens = text.match(/\S+\s*/g) ?? [text]
-  let buf = ''
-  for (let i = 0; i < tokens.length; i++) {
-    buf += tokens[i]
-    if (i % 3 === 2 || i === tokens.length - 1) {
-      emit.delta(buf)
-      buf = ''
-      await sleep(24)
-    }
-  }
-  emit.step({ label: 'Redactando conclusiones', state: 'done' })
+  emit.delta(text)
+  emit.step({ label: 'Consultando proveedor de IA', state: 'done' })
   return text
 }
 
@@ -266,8 +247,4 @@ function abortSignal(ms: number): AbortSignal {
   const ctrl = new AbortController()
   setTimeout(() => ctrl.abort(), ms)
   return ctrl.signal
-}
-
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms))
 }

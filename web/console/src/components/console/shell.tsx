@@ -1,5 +1,7 @@
 'use client'
 
+import { describeTelemetrySources } from '@/lib/telemetry-source'
+
 // Console shell: fixed sidebar on desktop, top bar plus horizontal nav
 // on mobile (explicit collapse). The topbar carries the only status dot
 // of the chrome: it reflects the real engine connection state.
@@ -164,18 +166,7 @@ export function ConsoleShell() {
     }
   }
 
-  // Real telemetry source, derived from the events the engine actually
-  // delivered (Event.Source in pkg/model): 'sysmon' = sf-sensor reading
-  // Sysmon on this host, 'simulate' = sf-devsensor demo scenario.
-  const lastSource = events[0]?.source
-  const sourceLabel =
-    lastSource === 'sysmon'
-      ? 'fuente: sf-sensor (Sysmon real)'
-      : lastSource === 'etw'
-        ? 'fuente: sf-sensor (ETW real)'
-      : lastSource === 'simulate'
-        ? 'fuente: sf-devsensor (demo)'
-        : 'fuente: motor NDJSON'
+  const telemetry = describeTelemetrySources(events)
 
   const [pendingAlert, setPendingAlert] = useState<SfAlert | null>(null)
 
@@ -281,7 +272,7 @@ export function ConsoleShell() {
               )}
             </div>
             <p className="mt-3 text-[11px] leading-relaxed text-zinc-500">
-              Datos reales del pipeline NDJSON. Sin motor no hay datos: arranca cmd/engine o sf-console.
+              Datos recibidos del pipeline NDJSON. La demo aparece etiquetada; sin eventos no se inventa telemetría.
             </p>
             <button
               type="button"
@@ -349,7 +340,8 @@ export function ConsoleShell() {
                     'Motor offline'
                   )}
                 </span>
-                <span className="hidden font-mono text-[11px] text-zinc-500 sm:inline">{sourceLabel}</span>
+                {telemetry.hasDemo && <span className="text-[11px] text-amber-300" aria-label="La ventana recibida contiene datos de demostración">demo</span>}
+                <span className="hidden max-w-[240px] truncate font-mono text-[11px] text-zinc-500 sm:inline" title={telemetry.label}>{telemetry.label}</span>
               </div>
               <WebhookChip stats={stats} />
               <CorrelatorChip stats={stats} />

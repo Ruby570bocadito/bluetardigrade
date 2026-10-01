@@ -31,7 +31,10 @@ optional SQLite history with SIEM/webhook fan-out.
 **Pre-1.0, intended for labs and research.** The engine, demo and console run
 independently of Windows. Real Windows collection uses the Rust ETW sensor or
 the Sysmon path; the separate `sf-devsensor` replays a clearly-labeled demo
-scenario. Zero simulated data in the product path.
+scenario. The console displays received data and labels demo records; it
+does not fabricate telemetry during outages. Automated tests also use
+isolated fixtures. Implemented collectors and rules still require validation
+with real Windows activity in your environment.
 
 ## Quickstart
 
@@ -136,18 +139,19 @@ engine proxy — the API token never reaches the client. The AI hub
 
 ![SOC console: detections arriving live](docs/assets/console-live.gif)
 
-*Real captured session — the engine ingesting 411 events with detections
-arriving over SSE. No mockups, no staged data.*
+*Captured engine/console session with 411 events from the labeled demo
+scenario and detections arriving over SSE. These are simulated endpoint
+events, not a Windows lab capture.*
 
 | View | Operator workflow |
 |------|-------------------|
 | Panel | Pending critical triage, KPIs, rolling activity, hot hosts |
-| Flujo en vivo | Pause, search, event-type filters, JSONL/CSV export |
-| Alertas | Live buffer or paged engine history; severity and lifecycle filters; evidence; ack / close / reopen |
+| Flujo en vivo | Pause, search, event-type filters, saved searches, JSONL/CSV export |
+| Alertas | Live buffer or paged engine history; saved searches; severity and lifecycle filters; evidence; ack / close / reopen |
 | Reglas / Cadenas | Loaded conditions, ATT&CK mappings and kill-chain steps |
 | Supresiones | Operator allowlist with reasons and expirations |
 | Respuesta activa | Read-only response state and forensic audit |
-| Analista IA | Optional triage assistance through your configured model |
+| Analista IA | Optional triage assistance through your configured model; actual work steps, complete response after the request |
 
 <details>
 <summary><b>Console captures</b> (live session)</summary>
@@ -177,6 +181,12 @@ composition and other modals; closing a dialog restores focus.
 
 In **Alertas**, switch to **Histórico** to search the engine rather than the browser's retained buffer. SQLite provides persisted history when `-store` is enabled; otherwise the view clearly identifies the 256-alert memory window. Pages contain 25 alerts ordered by reception. Cursor navigation pins the upper sequence, so new arrivals do not shift visited pages. Retention and triage decisions can still change membership. **Actualizar histórico** starts a fresh search. Detection evidence and lifecycle state are server filters; lifecycle notes remain searchable in the live view. A bounded scan can return an empty page with **Seguir buscando**, and an older engine reports the missing capability explicitly.
 </details>
+
+Save reusable alert/feed filters with **Búsquedas guardadas**: up to 20
+searches in this browser, with apply/update/delete and browser Back support.
+Search text is stored locally; avoid putting credentials in it. A visible
+**demo** chip identifies mixed windows containing simulated records.
+[Saved investigations, CSV protection and real/demo boundaries](docs/INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md).
 
 Deep links (`?view=alertas&historial=1&estado=open&sev=critical&q=lsass`)
 survive refresh; keyboard-first navigation with `g` + view key; a keyboard

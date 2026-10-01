@@ -116,6 +116,8 @@ concurrent snapshot frames, live-channel warnings, outage/recovery, pinned
 historical navigation, POST-only triage, lifecycle deep links, superseded
 queries, batched decisions, memory-only limits, older engines, forensic
 retries, complete JSON/JSONL exports, stale evidence responses and cleanup.
+The 27 checks include saved-search capture/application, cross-tab updates,
+text rendering and blocked/corrupt storage handling.
 They do not certify browser layout or replace the native Bun integration suite.
 
 From the repository root, with the console dependencies already installed:
@@ -160,12 +162,14 @@ It waits for the expected published alerts before comparing results:
 
 `check_console_browser.mjs` runs the built application in Chromium. The
 browser uses isolated REST responses and an SSE fixture; it never sends
-triaje or commands to a live engine. Thirteen checks exercise command search,
+triage or commands to a live engine. Seventeen checks exercise command search,
 keyboard navigation, focus containment/restoration, URL lenses and history,
 busy refresh, help handoff, composition/consumed events, historical paging,
 POST-only triage, dashboard triage shortcuts/history restoration, mobile
 access, reduced motion, forensic retries and real JSON/JSONL downloads
-that retain the complete alert and telemetry fields. Fixture screenshots are
+that retain the complete alert and telemetry fields, plus saved searches,
+cross-tab storage events, browser Back/reload, query bounds and mobile fit.
+The demo indicator is checked after hydration and on mobile. Fixture screenshots are
 stored in the ignored `captures/browser-regression/` directory.
 The initial load and the final page must also be free of browser runtime
 errors, including server/client hydration mismatches under reduced motion.

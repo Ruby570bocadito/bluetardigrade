@@ -30,6 +30,8 @@ import { useEngine } from './engine-provider'
 import { EmptyState, LiveAnnouncer, SectionHeader, SeverityBadge, SkeletonRows } from './ui-bits'
 import { ExportButtons } from './export-menu'
 import { ForensicPanel } from './forensic-panel'
+import { SavedSearches } from './saved-searches'
+import { alertSearchLens, searchForSavedLens, type SavedLens } from '@/lib/saved-searches'
 import { postAlertStatus } from '@/lib/lifecycle'
 import { alertKey } from '@/lib/engine-client'
 import { matchesAlertState, alertStateFromParam, type AlertScope, type AlertStateFilter } from '@/lib/alert-search'
@@ -38,6 +40,7 @@ import {
   currentSearch,
   readOperatorState,
   replaceOperatorState,
+  pushOperatorState,
   sevFromParam,
   readAlertLens,
   writeAlertLens,
@@ -155,6 +158,17 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
     setScope(scope)
     clearLinkedSelection()
     writeFilters()
+  }
+  const applySaved = (lens: SavedLens) => {
+    if (lens.kind !== 'alerts') return
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    filterRef.current = { sev: lens.severity, q: lens.q, state: lens.state, scope: lens.scope, alert: null }
+    setSevFilterState(lens.severity)
+    setQueryState(lens.q)
+    setStateFilter(lens.state)
+    setScope(lens.scope)
+    clearLinkedSelection()
+    pushOperatorState((search) => searchForSavedLens(search, lens))
   }
   // Row selection and the URL are the same thing: picking a row makes
   // it a shareable link, deselecting clears the key (no ghosts), and a
@@ -350,6 +364,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
   return (
     <section aria-label="Alertas de detección">
       {header}
+      <SavedSearches kind="alerts" getLens={() => alertSearchLens(filterRef.current.sev, filterRef.current.state, filterRef.current.scope, filterRef.current.q)} onApply={applySaved} />
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2.5">
         <div role="group" aria-label="Origen de alertas" className="flex gap-1">
           {([['live', 'En vivo'], ['history', 'Histórico']] as const).map(([id, label]) => (

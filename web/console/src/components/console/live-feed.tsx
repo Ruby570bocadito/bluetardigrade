@@ -15,12 +15,16 @@ import { Switch } from '@/components/ui/switch'
 import { useEngine } from './engine-provider'
 import { EmptyState, LiveAnnouncer, SectionHeader, SkeletonRows } from './ui-bits'
 import { ExportButtons } from './export-menu'
+import { SavedSearches } from './saved-searches'
+import { eventSearchLens, searchForSavedLens, type SavedLens } from '@/lib/saved-searches'
 import {
   currentSearch,
   feedTypeFromParam,
   readLensState,
+  pushOperatorState,
   replaceOperatorState,
   writeFeedToSearch,
+  MAX_QUERY_CHARS,
 } from '@/lib/url-state'
 import { eventDetail, formatTime, type SfEvent } from '@/lib/console-types'
 
@@ -63,7 +67,8 @@ export function LiveFeed() {
     setTypeFilterState(tipo)
     replaceOperatorState((search) => writeFeedToSearch(search, tipo, lensRef.current.fq))
   }
-  const setQuery = (next: string) => {
+  const setQuery = (raw: string) => {
+    const next = raw.slice(0, MAX_QUERY_CHARS)
     lensRef.current = { ...lensRef.current, fq: next }
     setQueryState(next)
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -71,6 +76,15 @@ export function LiveFeed() {
       () => replaceOperatorState((search) => writeFeedToSearch(search, lensRef.current.tipo, lensRef.current.fq)),
       250,
     )
+  }
+
+  const applySaved = (lens: SavedLens) => {
+    if (lens.kind !== 'events') return
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    lensRef.current = { tipo: lens.eventType, fq: lens.q }
+    setTypeFilterState(lens.eventType)
+    setQueryState(lens.q)
+    pushOperatorState((search) => searchForSavedLens(search, lens))
   }
 
   const source = paused ? frozen : events
@@ -158,6 +172,7 @@ export function LiveFeed() {
                 }}
                 placeholder="buscar en el flujo..."
                 aria-label="Buscar en el flujo de telemetría"
+                maxLength={MAX_QUERY_CHARS}
                 className="h-8 w-[200px] rounded-md border-zinc-800 bg-zinc-900 pl-7 font-mono text-xs text-zinc-200 placeholder:text-zinc-500"
               />
             </div>
@@ -189,6 +204,8 @@ export function LiveFeed() {
           </div>
         }
       />
+
+      <SavedSearches kind="events" getLens={() => eventSearchLens(lensRef.current.tipo, lensRef.current.fq)} onApply={applySaved} />
 
       <div className="panel overflow-hidden">
         <div className="max-h-[64vh] overflow-y-auto">

@@ -307,7 +307,7 @@ describe('hub HTTP surface (engine down)', () => {
     socket.emit('analyst:ask', { alert: validAlert, question: 'como la contengo?' })
     const done = await waitEvent<{ text: string }>(socket, 'analyst:done', 8000)
     expect(done.text).toBe('analisis de prueba')
-    expect(steps).toContain('Redactando conclusiones')
+    expect(steps).toContain('Consultando proveedor de IA')
     socket.disconnect()
   }, 10000)
 

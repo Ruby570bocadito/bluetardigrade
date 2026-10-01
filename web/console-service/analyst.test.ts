@@ -128,9 +128,9 @@ describe('chatCompletion', () => {
 describe('prompts', () => {
   test('user prompt carries alert, rule context and the analyst question', () => {
     const prompt = analystUserPrompt(testAlert, { id: 'r-lsass', name: 'lsass-access', description: '', severity: 'critical', event_type: 'process.access', mitre: 'T1003.001', tactic: 'credential-access', tags: [], conditions: [] }, undefined, 'como contengo esto?')
-    expect(prompt).toContain('ALERTA: lsass-access')
-    expect(prompt).toContain('MITRE T1003.001')
-    expect(prompt).toContain('host LAB-WKS-01')
+    expect(prompt).toContain('"rule_name":"lsass-access"')
+    expect(prompt).toContain('"mitre":"T1003.001"')
+    expect(prompt).toContain('"host":"LAB-WKS-01"')
     expect(prompt).toContain('como contengo esto?')
   })
 
