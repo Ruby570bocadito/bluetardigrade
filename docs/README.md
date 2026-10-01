@@ -2,6 +2,10 @@
 
 | Ruta | Contenido |
 |------|-----------|
+| [RESUMEN-MEJORAS-2026-10-01.md](RESUMEN-MEJORAS-2026-10-01.md) | Registro completo de las dos rondas: CLI, dashboard, histórico, bugs corregidos, documentación, pruebas locales y CI remota del PR #4 |
+| [GUIA-INICIO.md](GUIA-INICIO.md) | Arranque y operación en español: CLI, consola, histórico y resolución de problemas |
+| [REVISION-CLI-DASHBOARD.md](REVISION-CLI-DASHBOARD.md) | Informe de la primera ronda, con hallazgos y límites del entorno local |
+| [REVISION-HISTORICO.md](REVISION-HISTORICO.md) | Informe de la segunda ronda, contrato de búsqueda, paginación y triaje histórico |
 | `OPERATIONS.md` | Guía de operación (inglés, migrada del README por la directiva del Director 23h55 §4): instalación (Windows un comando, Docker, fuente), referencia de configuración (flags + env vars), API HTTP, Prometheus, almacenamiento, auth de ingest con rotación, webhook/sinks SIEM/notificaciones, supresiones, triaje, riesgo, beaconing, respuesta activa, contenido de detección (reglas/secuencias/Sigma), CLI y CI/bench |
 | `ARCHITECTURE.md` | Arquitectura del sistema (inglés, migrada del README por la directiva 23h55 §4): diagrama y mermaid, contrato del schema, inventario detallado de features y árbol de repositorio anotado |
 | `../SECURITY.md` | Divulgación coordinada de vulnerabilidades (G9, aterrizada en la ola `6eb6b02`): cómo reportar de forma privada, ventanas de respuesta 72h/7d |

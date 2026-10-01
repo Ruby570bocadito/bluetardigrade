@@ -1,10 +1,5 @@
-// Interactive panel (-i/--interactive): a single bubbletea panel over
-// the running engine. It is strictly a presentation layer: the ingest,
-// rules, correlate, alert, api and webhook components run exactly as
-// in the classic path; the panel only renders a live snapshot of them
-// (uptime, events, alerts with severity breakdown, recent alerts and
-// the loaded rule set). If stdout is not a TTY the panel is skipped
-// and the run degrades to the classic flat output.
+// The interactive terminal is a read-only view of the running pipeline.
+// Pausing, searching and selecting never interrupt detection or delivery.
 package main
 
 import (
@@ -13,35 +8,35 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/Ruby570bocadito/security-framework/internal/alert"
+	"github.com/Ruby570bocadito/security-framework/internal/redact"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
-	"github.com/charmbracelet/bubbletea"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
-// recentAlertsCap bounds the ring of latest alerts shown in the panel.
 const recentAlertsCap = 100
 
-// liveStats is the shared presentation state written by the engine
-// loop and read by the panel once per tick.
 type liveStats struct {
-	mu     sync.Mutex
-	start  time.Time
-	events uint64
-	alerts uint64
-	bySev  map[string]int
-	recent []alert.Alert
-	rules  int
+	mu      sync.Mutex
+	start   time.Time
+	events  uint64
+	alerts  uint64
+	bySev   map[string]int
+	recent  []alert.Alert
+	catalog []rules.Rule
 }
 
 func newLiveStats() *liveStats {
 	return &liveStats{start: time.Now(), bySev: map[string]int{}}
 }
 
-func (s *liveStats) setRules(n int) {
+func (s *liveStats) setRuleCatalog(rs []rules.Rule) {
 	s.mu.Lock()
-	s.rules = n
+	s.catalog = append([]rules.Rule(nil), rs...)
 	s.mu.Unlock()
 }
 
@@ -51,8 +46,6 @@ func (s *liveStats) recordEvent() {
 	s.mu.Unlock()
 }
 
-// recordAlert stores one raised alert. Deduplicated hits never reach
-// this point (alert.Manager drops them before the observer fires).
 func (s *liveStats) recordAlert(a alert.Alert) {
 	s.mu.Lock()
 	s.alerts++
@@ -66,14 +59,14 @@ func (s *liveStats) recordAlert(a alert.Alert) {
 	s.mu.Unlock()
 }
 
-// statsSnapshot is the immutable view the panel renders per tick.
 type statsSnapshot struct {
-	events uint64
-	alerts uint64
-	bySev  map[string]int
-	recent []alert.Alert
-	uptime time.Duration
-	rules  int
+	events  uint64
+	alerts  uint64
+	bySev   map[string]int
+	recent  []alert.Alert
+	catalog []rules.Rule
+	uptime  time.Duration
+	rules   int
 }
 
 func (s *liveStats) snapshot() statsSnapshot {
@@ -83,22 +76,16 @@ func (s *liveStats) snapshot() statsSnapshot {
 	for k, v := range s.bySev {
 		bySev[k] = v
 	}
-	recent := make([]alert.Alert, len(s.recent))
-	copy(recent, s.recent)
 	return statsSnapshot{
-		events: s.events,
-		alerts: s.alerts,
-		bySev:  bySev,
-		recent: recent,
-		uptime: time.Since(s.start),
-		rules:  s.rules,
+		events: s.events, alerts: s.alerts, bySev: bySev,
+		recent:  append([]alert.Alert(nil), s.recent...),
+		catalog: append([]rules.Rule(nil), s.catalog...),
+		uptime:  time.Since(s.start), rules: len(s.catalog),
 	}
 }
 
-// tuiMeta is the static configuration the panel shows in its banner.
 type tuiMeta struct {
 	rulesPath  string
-	ruleTypes  []string
 	ingestAddr string
 	apiAddr    string
 	webhookURL string
@@ -107,23 +94,29 @@ type tuiMeta struct {
 
 type tickMsg struct{}
 
+var tuiSeverities = []string{"", rules.SevCritical, rules.SevHigh, rules.SevMedium, rules.SevLow, rules.SevInfo}
+
 type tuiModel struct {
-	meta   tuiMeta
-	stats  *liveStats
-	snap   statsSnapshot
-	width  int
-	height int
-	offset int // how many alerts scrolled back from the newest (0 = follow)
+	meta         tuiMeta
+	stats        *liveStats
+	snap         statsSnapshot
+	width        int
+	height       int
+	tab          int // 0 alerts, 1 rules
+	cursor       int // newest alert is index 0
+	offset       int // first visible row
+	severity     int
+	query        string
+	searching    bool
+	paused       bool
+	detail       bool
+	detailOffset int
+	help         bool
 }
 
-// runInteractive blocks until the user quits the panel (q/Ctrl+C) or
-// the engine context is canceled (SIGTERM from outside).
 func runInteractive(ctx context.Context, meta tuiMeta, stats *liveStats) error {
-	m := &tuiModel{meta: meta, stats: stats}
-	m.snap = stats.snapshot()
+	m := &tuiModel{meta: meta, stats: stats, snap: stats.snapshot()}
 	p := tea.NewProgram(m, tea.WithAltScreen())
-	// SIGTERM while the panel is up: tear the panel down cleanly; the
-	// engine loop then drains and the classic shutdown summary prints.
 	go func() {
 		<-ctx.Done()
 		p.Quit()
@@ -136,166 +129,439 @@ func tickCmd() tea.Cmd {
 	return tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
-// Init implements tea.Model: it starts the 250 ms snapshot ticker.
-func (m *tuiModel) Init() tea.Cmd {
-	return tickCmd()
-}
+// Init implements tea.Model.
+func (m *tuiModel) Init() tea.Cmd { return tickCmd() }
 
-// Update implements tea.Model: snapshot refresh on each tick, window
-// resize tracking, and key handling (quit, scroll, filter switches).
+// Update implements tea.Model with contextual keys: text entry never
+// fires shortcuts, Escape returns to the queue, q/Ctrl+C shut down.
 func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tickMsg:
-		m.snap = m.stats.snapshot()
+		if !m.paused {
+			m.refresh()
+		}
 		return m, tickCmd()
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.clampOffset()
-		return m, nil
+		m.clampSelection()
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "q", "Q", "ctrl+c", "esc":
+		key := msg.String()
+		if key == "ctrl+c" {
 			return m, tea.Quit
-		case "up", "k":
-			m.offset++
-			m.clampOffset()
-			return m, nil
-		case "down", "j":
-			m.offset--
-			m.clampOffset()
-			return m, nil
-		case "pgup":
-			m.offset += 10
-			m.clampOffset()
-			return m, nil
-		case "pgdown":
-			m.offset -= 10
-			m.clampOffset()
+		}
+		if m.searching {
+			switch key {
+			case "esc":
+				m.searching, m.query = false, ""
+			case "enter":
+				m.searching = false
+			case "backspace", "ctrl+h":
+				rs := []rune(m.query)
+				if len(rs) > 0 {
+					m.query = string(rs[:len(rs)-1])
+				}
+			case "ctrl+u":
+				m.query = ""
+			default:
+				if msg.Type == tea.KeyRunes {
+					for _, r := range msg.Runes {
+						if !unicode.IsControl(r) && !unicode.Is(unicode.Cf, r) && len([]rune(m.query)) < 120 {
+							m.query += string(r)
+						}
+					}
+				} else if msg.Type == tea.KeySpace && len([]rune(m.query)) < 120 {
+					m.query += " "
+				}
+			}
+			m.cursor, m.offset, m.detailOffset = 0, 0, 0
+			m.clampSelection()
 			return m, nil
 		}
+		switch key {
+		case "q", "Q":
+			return m, tea.Quit
+		case "esc":
+			if m.help {
+				m.help = false
+			} else if m.detail {
+				m.detail = false
+			} else {
+				m.query, m.severity = "", 0
+				m.cursor, m.offset = 0, 0
+			}
+			m.detailOffset = 0
+		case "?", "h":
+			m.help = !m.help
+			m.detailOffset = 0
+		case "tab", "shift+tab", "1", "2":
+			if key == "1" {
+				m.tab = 0
+			} else if key == "2" {
+				m.tab = 1
+			} else {
+				m.tab = 1 - m.tab
+			}
+			m.cursor, m.offset, m.detailOffset = 0, 0, 0
+			m.detail, m.help = false, false
+		case "/":
+			m.searching, m.detail, m.help = true, false, false
+		case "s":
+			m.severity = (m.severity + 1) % len(tuiSeverities)
+			m.cursor, m.offset, m.detailOffset = 0, 0, 0
+			m.detail, m.help = false, false
+		case "p", " ":
+			m.paused = !m.paused
+			if !m.paused {
+				m.refresh()
+			}
+		case "enter":
+			if m.rowCount() > 0 && !m.help {
+				m.detail = !m.detail
+				m.detailOffset = 0
+			}
+		case "up", "k", "down", "j", "pgup", "pgdown", "home", "end":
+			delta := 1
+			if key == "up" || key == "k" {
+				delta = -1
+			} else if key == "pgup" {
+				delta = -m.pageSize()
+			} else if key == "pgdown" {
+				delta = m.pageSize()
+			}
+			if m.detail || m.help {
+				m.detailOffset += delta
+				if key == "home" {
+					m.detailOffset = 0
+				} else if key == "end" {
+					m.detailOffset = len(m.detailLines())
+				}
+				m.clampDetailOffset()
+			} else {
+				m.cursor += delta
+				if key == "home" {
+					m.cursor = 0
+				} else if key == "end" {
+					m.cursor = m.rowCount() - 1
+				}
+			}
+		}
+		m.clampSelection()
 	}
 	return m, nil
 }
 
-// clampOffset keeps the scroll offset inside [0, len(recent)].
-func (m *tuiModel) clampOffset() {
-	max := len(m.snap.recent)
-	if m.offset > max {
-		m.offset = max
-	}
-	if m.offset < 0 {
-		m.offset = 0
-	}
-}
-
-// View implements tea.Model: banner, stats line and the dim rules footer.
-func (m *tuiModel) View() string {
-	banner := renderBanner(m.meta, m.snap.rules)
-	stats := statsLine(m.snap)
-	rulesLine := dimStyle.Render(fmt.Sprintf("reglas %d  %s  tipos: %s",
-		m.snap.rules, m.meta.rulesPath, strings.Join(m.meta.ruleTypes, ", ")))
-	footer := dimStyle.Render("q/ctrl+c salir   up/down scroll   pgup/pgdn salto")
-
-	used := lipgloss.Height(banner) + lipgloss.Height(stats) +
-		lipgloss.Height(rulesLine) + lipgloss.Height(footer) + 3
-	boxH := m.height - used
-	if boxH < 5 {
-		boxH = 5
-	}
-	title := "ULTIMAS ALERTAS"
-	if n := len(m.snap.recent); n > 0 {
-		title += fmt.Sprintf(" (%d)", n)
-	}
-	if m.offset > 0 {
-		title += fmt.Sprintf("  +%d en el historico", m.offset)
-	}
-	box := alertsBox(m.snap, m.width, boxH, m.offset)
-
-	return lipgloss.JoinVertical(lipgloss.Left,
-		banner, stats,
-		dimStyle.Render(title), box, rulesLine, footer)
-}
-
-// statsLine is the live KPI row: uptime, events, alerts and the
-// severity breakdown, each with its palette color.
-func statsLine(s statsSnapshot) string {
-	cell := func(label, value string) string {
-		return dimStyle.Render(label+" ") + lipgloss.NewStyle().Bold(true).Render(value)
-	}
-	parts := []string{
-		cell("uptime", s.uptime.Round(time.Second).String()),
-		cell("eventos", fmt.Sprintf("%d", s.events)),
-		cell("alertas", fmt.Sprintf("%d", s.alerts)),
-		severityBreakdown(s.bySev),
-	}
-	return strings.Join(parts, "   ")
-}
-
-// severityBreakdown renders CRITICAL/HIGH/MEDIUM/LOW/INFO counts in
-// their severity colors (dim when zero).
-func severityBreakdown(bySev map[string]int) string {
-	order := []string{rules.SevCritical, rules.SevHigh, rules.SevMedium, rules.SevLow, rules.SevInfo}
-	parts := make([]string, 0, len(order))
-	for _, sev := range order {
-		label := strings.ToUpper(sev)
-		n := bySev[sev]
-		if n == 0 {
-			parts = append(parts, dimStyle.Render(label+" 0"))
-			continue
+// refresh keeps the selected historical row steady as new alerts arrive.
+// At the head of the queue, selection continues following the live feed.
+func (m *tuiModel) refresh() {
+	selected := ""
+	selectedRule := ""
+	if m.tab == 1 && (m.cursor > 0 || m.detail) {
+		list := m.filteredRules()
+		if m.cursor < len(list) {
+			selectedRule = list[m.cursor].ID
 		}
-		parts = append(parts, sevStyle(sev).Render(fmt.Sprintf("%s %d", label, n)))
 	}
-	return strings.Join(parts, "  ")
+	if m.tab == 0 && (m.cursor > 0 || m.detail) {
+		list := m.filteredAlerts()
+		if m.cursor < len(list) {
+			selected = alertIdentity(list[m.cursor])
+		}
+	}
+	m.snap = m.stats.snapshot()
+	if selected != "" {
+		found := false
+		for i, a := range m.filteredAlerts() {
+			if alertIdentity(a) == selected {
+				m.cursor = i
+				found = true
+				break
+			}
+		}
+		if !found {
+			m.detail = false
+			m.cursor, m.offset = 0, 0
+		}
+	}
+	if selectedRule != "" {
+		found := false
+		for i, r := range m.filteredRules() {
+			if r.ID == selectedRule {
+				m.cursor = i
+				found = true
+				break
+			}
+		}
+		if !found {
+			m.detail = false
+			m.cursor, m.offset = 0, 0
+		}
+	}
+	m.clampSelection()
 }
 
-// alertsBox renders the scrolling recent-alerts panel: height is the
-// outer height (border included), offset scrolls back in history.
-func alertsBox(s statsSnapshot, width, height, offset int) string {
-	innerW := width - 4
-	if innerW < 20 {
-		innerW = 20
+func alertIdentity(a alert.Alert) string {
+	if a.ID != "" {
+		return a.ID
 	}
-	innerH := height - 2
-	if innerH < 1 {
-		innerH = 1
+	return a.Timestamp + "\x00" + a.RuleID + "\x00" + a.EventID
+}
+
+func matchesTui(query, severity, sev string, fields ...string) bool {
+	if severity != "" && severity != sev {
+		return false
 	}
-	total := len(s.recent)
-	end := total - offset
-	if end < 0 {
-		end = 0
+	return query == "" || strings.Contains(strings.ToLower(strings.Join(fields, " ")), strings.ToLower(query))
+}
+
+func (m *tuiModel) filteredAlerts() []alert.Alert {
+	out := make([]alert.Alert, 0, len(m.snap.recent))
+	for i := len(m.snap.recent) - 1; i >= 0; i-- {
+		a := m.snap.recent[i]
+		if matchesTui(m.query, tuiSeverities[m.severity], a.Severity,
+			a.RuleID, a.RuleName, a.Host, a.User, a.Summary, a.Message, strings.Join(a.Tags, " ")) {
+			out = append(out, a)
+		}
 	}
-	start := end - innerH
-	if start < 0 {
-		start = 0
+	return out
+}
+
+func (m *tuiModel) filteredRules() []rules.Rule {
+	out := make([]rules.Rule, 0, len(m.snap.catalog))
+	for _, r := range m.snap.catalog {
+		if matchesTui(m.query, tuiSeverities[m.severity], r.Severity,
+			r.ID, r.Name, r.Description, r.EventType, strings.Join(r.Tags, " ")) {
+			out = append(out, r)
+		}
 	}
-	lines := make([]string, 0, innerH)
-	for i := start; i < end; i++ {
-		lines = append(lines, alertLine(s.recent[i], innerW))
+	return out
+}
+
+func (m *tuiModel) rowCount() int {
+	if m.tab == 1 {
+		return len(m.filteredRules())
+	}
+	return len(m.filteredAlerts())
+}
+
+func (m *tuiModel) dimensions() (int, int) {
+	w, h := m.width, m.height
+	if w <= 0 {
+		w = 80
+	}
+	if h <= 0 {
+		h = 24
+	}
+	return w, h
+}
+
+func (m *tuiModel) pageSize() int {
+	_, h := m.dimensions()
+	return max(1, h-12)
+}
+
+func (m *tuiModel) clampSelection() {
+	m.cursor = max(0, min(m.cursor, m.rowCount()-1))
+	m.offset = max(0, min(m.offset, max(0, m.rowCount()-m.pageSize())))
+	if m.cursor < m.offset {
+		m.offset = m.cursor
+	}
+	if m.cursor >= m.offset+m.pageSize() {
+		m.offset = m.cursor - m.pageSize() + 1
+	}
+	m.clampDetailOffset()
+}
+
+func (m *tuiModel) clampDetailOffset() {
+	if m.detail || m.help {
+		m.detailOffset = max(0, min(m.detailOffset, max(0, len(m.detailLines())-m.pageSize())))
+	} else {
+		m.detailOffset = 0
+	}
+}
+
+// View implements tea.Model. Every line and the final frame are bounded
+// by terminal dimensions, including Unicode and narrow split panes.
+func (m *tuiModel) View() string {
+	w, h := m.dimensions()
+	if w < 32 || h < 12 {
+		return fitTerminal(titleStyle.Render("SECURITY-FRAMEWORK")+"\n"+
+			fmt.Sprintf("%d eventos · %d alertas\n", m.snap.events, m.snap.alerts)+
+			"Amplía el terminal (mín. 32×12)\nq salir · ctrl+c salir", w, h)
+	}
+	state := okStyle.Render("EN VIVO")
+	if m.paused {
+		state = warnStyle.Render("VISTA PAUSADA · motor activo")
+	}
+	banner := renderBanner(m.meta, m.snap.rules)
+	tabs := []string{"1 Alertas", "2 Reglas"}
+	tabs[m.tab] = titleStyle.Render("[ " + tabs[m.tab] + " ]")
+	filter := "todas las severidades"
+	if m.severity > 0 {
+		filter = strings.ToUpper(tuiSeverities[m.severity])
+	}
+	query := " / buscar"
+	if m.query != "" || m.searching {
+		query = " / " + redact.TerminalText(m.query)
+		if m.searching {
+			query += "▏"
+		}
+	}
+	label := "ALERTAS RECIENTES"
+	total := len(m.snap.recent)
+	if m.tab == 1 {
+		label, total = "CATÁLOGO DE REGLAS", len(m.snap.catalog)
+	}
+	label += fmt.Sprintf(" · %d/%d", m.rowCount(), total)
+	if m.help {
+		label = "AYUDA · la detección sigue activa"
+	} else if m.detail {
+		label = "DETALLE · esc volver"
+	}
+	innerW := w - 4
+	var lines []string
+	if m.detail || m.help {
+		all := m.detailLines()
+		end := min(len(all), m.detailOffset+m.pageSize())
+		start := min(m.detailOffset, end)
+		lines = all[start:end]
+	} else {
+		lines = m.queueLines(innerW)
+	}
+	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorDim).Width(w - 2).Height(m.pageSize()).
+		Render(strings.Join(lines, "\n"))
+	footer := "↑↓ seleccionar · enter detalle · / buscar · s severidad · p pausa · ? ayuda · q salir"
+	if m.searching {
+		footer = "Escribe para filtrar · enter aplicar · esc limpiar · ctrl+u borrar · ctrl+c salir"
+	}
+	return fitTerminal(lipgloss.JoinVertical(lipgloss.Left,
+		banner, statsLine(m.snap), state, strings.Join(tabs, "    "),
+		dimStyle.Render("s "+filter+query), dimStyle.Render(label), box, dimStyle.Render(footer)), w, h)
+}
+
+func (m *tuiModel) queueLines(width int) []string {
+	lines := []string{}
+	if m.tab == 1 {
+		list := m.filteredRules()
+		for i := m.offset; i < min(len(list), m.offset+m.pageSize()); i++ {
+			r := list[i]
+			row := sevStyle(r.Severity).Render(pad(strings.ToUpper(r.Severity), 8)) +
+				" " + redact.TerminalText(r.Name) + " · " + dimStyle.Render(redact.TerminalText(r.EventType))
+			lines = append(lines, selectedLine(row, i == m.cursor, width))
+		}
+	} else {
+		list := m.filteredAlerts()
+		for i := m.offset; i < min(len(list), m.offset+m.pageSize()); i++ {
+			lines = append(lines, selectedLine(alertLine(list[i], width-2), i == m.cursor, width))
+		}
 	}
 	if len(lines) == 0 {
-		lines = append(lines, dimStyle.Render("sin alertas todavia; los hits de reglas y las secuencias completadas aparecen aqui"))
+		msg := "Sin coincidencias. Esc limpia los filtros."
+		if m.query == "" && m.severity == 0 {
+			msg = "Esperando alertas del motor. La telemetría sigue activa."
+			if m.tab == 1 {
+				msg = "No hay reglas cargadas."
+			}
+		}
+		lines = []string{dimStyle.Render(ansi.Truncate(msg, width, "…"))}
 	}
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(colorDim).
-		Width(innerW).
-		Height(innerH).
-		Render(strings.Join(lines, "\n"))
+	return lines
 }
 
-// alertLine formats one alert: time, severity badge, rule id, summary
-// and host, hard-truncated to the panel width (ANSI aware via lipgloss).
+func selectedLine(line string, selected bool, width int) string {
+	prefix := "  "
+	if selected {
+		prefix = titleStyle.Render("› ")
+	}
+	return ansi.Truncate(prefix+line, width, "…")
+}
+
+func (m *tuiModel) detailLines() []string {
+	w, _ := m.dimensions()
+	width := max(1, w-4)
+	var rows []string
+	if m.help {
+		rows = []string{
+			"1 / 2 / tab     Cambiar entre alertas y reglas",
+			"↑↓ / j k        Seleccionar una fila; desplazar detalle",
+			"pgup / pgdown   Saltar una página",
+			"home / end      Inicio / final de la lista",
+			"enter           Abrir / cerrar detalle",
+			"/               Buscar regla, host, usuario, resumen o tag",
+			"s               Rotar filtro de severidad",
+			"p / espacio     Pausar / reanudar SOLO la vista",
+			"esc             Volver; limpiar filtros en la lista",
+			"? / h           Mostrar / cerrar esta ayuda",
+			"q / ctrl+c      Salir y apagar el motor limpiamente",
+			"Las últimas 100 alertas se retienen en este panel.",
+			"API, correlación y entregas siguen activas al pausar.",
+		}
+	} else {
+		add := func(label, value string) {
+			if value != "" {
+				rows = append(rows, label+": "+redact.TerminalText(value))
+			}
+		}
+		if m.tab == 1 {
+			list := m.filteredRules()
+			if m.cursor < len(list) {
+				r := list[m.cursor]
+				add("Regla", r.Name)
+				add("ID", r.ID)
+				add("Severidad", r.Severity)
+				add("Tipo", r.EventType)
+				add("Descripción", r.Description)
+				add("Tags", strings.Join(r.Tags, " "))
+				for _, c := range r.Conditions {
+					add("Condición", fmt.Sprintf("%s %s %v", c.Field, c.Operator, c.Value))
+				}
+			}
+		} else {
+			list := m.filteredAlerts()
+			if m.cursor < len(list) {
+				a := list[m.cursor]
+				add("Regla", a.RuleName)
+				add("ID alerta", a.ID)
+				add("ID regla", a.RuleID)
+				add("Momento", a.Timestamp)
+				add("Severidad", a.Severity)
+				add("Host", a.Host)
+				add("Usuario", a.User)
+				add("Evento", a.EventType+" · "+a.EventID)
+				add("Resumen", a.Summary)
+				add("Mensaje", a.Message)
+				add("Coincidencias", strings.Join(a.MatchedOn, ", "))
+				add("Tags", strings.Join(a.Tags, " "))
+			}
+		}
+	}
+	wrapped := lipgloss.NewStyle().Width(width).Render(strings.Join(rows, "\n"))
+	return strings.Split(wrapped, "\n")
+}
+
+func fitTerminal(frame string, width, height int) string {
+	lines := strings.Split(frame, "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for i, line := range lines {
+		lines[i] = ansi.Truncate(line, width, "…")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func statsLine(s statsSnapshot) string {
+	return fmt.Sprintf("uptime %s   eventos %d   alertas %d   reglas %d",
+		s.uptime.Round(time.Second), s.events, s.alerts, s.rules)
+}
+
 func alertLine(a alert.Alert, width int) string {
 	when := "??:??:??"
 	if t, err := time.Parse(time.RFC3339Nano, a.Timestamp); err == nil {
-		when = t.Format("15:04:05")
+		when = t.Local().Format("15:04:05")
 	}
-	id := a.RuleID
-	if len(id) > 8 {
-		id = id[:8]
-	}
-	line := when + " " +
-		sevStyle(a.Severity).Render(pad(strings.ToUpper(a.Severity), 8)) + " " +
-		dimStyle.Render(id) + " " + a.Summary + " " + dimStyle.Render("host="+a.Host)
-	return lipgloss.NewStyle().MaxWidth(width).Render(line)
+	line := dimStyle.Render(when) + " " +
+		sevStyle(a.Severity).Render(pad(strings.ToUpper(redact.TerminalText(a.Severity)), 8)) +
+		" " + redact.TerminalText(a.Host) + " · " + redact.TerminalText(a.Summary)
+	return ansi.Truncate(line, width, "…")
 }

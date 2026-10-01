@@ -12,8 +12,46 @@ and the `make dist` target.
 
 ## [Unreleased]
 
-In-flight work is tracked in the agents' round reports (`docs/agentes/`) and
-lands here as it ships.
+### Added — historical alert investigations
+
+- Live/history switch in the alert queue, lifecycle filters and shareable
+  source/state lenses; 25-row pages with previous, next and refresh.
+- Read-only `GET /api/alerts/search` with SQLite/memory source metadata,
+  pinned insertion-sequence cursors, bounded lifecycle scans and cancellation.
+- Historical triage updates through both SSE and successful POST responses;
+  superseded queries are canceled and older engines show a capability error.
+
+### Fixed — alert investigation state
+
+- Informational severity no longer renders as low or disappears from filters/KPIs.
+- The alert list shows offline state instead of an endless loading skeleton.
+- Legacy alert selection uses timestamp, event and rule identity consistently.
+- Delayed lifecycle frames cannot undo newer close/reopen decisions.
+- Export tooltips state the default limits and their independence from view filters.
+
+
+### Added
+
+- Interactive alert and rule workspaces with search, severity filters,
+  stable historical selection, details, pause and contextual help.
+- Dashboard operation summary with pending critical triage, delivery
+  issues, detector saturation, refresh and live-channel status.
+- Regression coverage for terminal display, request boundaries, rolling
+  activity, alert replay and operation summaries; Spanish start guide.
+
+### Fixed
+
+- Console deep links and browser back/forward restore the requested view.
+- Activity ages out during sensor inactivity; an empty sample peaks at zero.
+- Offline KPIs no longer display fabricated zeroes; reconnect snapshots
+  merge concurrent frames and SSE replay preserves triage decisions.
+- Rules refresh with the poller; real 404s clear optional response state.
+- Terminal control characters are neutralized only in human output;
+  webhook banners redact credentials and structured evidence is preserved.
+- IPv6 loopback proxy hosts work; invalid authorities fail closed and
+  triage bodies are bounded before forwarding.
+- Routed CLI commands reject ignored arguments and respect output writers.
+- Sensor Makefile targets resolve their Cargo manifest from the repo root.
 
 ### Added
 

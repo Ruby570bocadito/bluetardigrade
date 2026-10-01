@@ -67,7 +67,7 @@ func runEngine(o *options, interactive bool) error {
 	}
 	fmt.Printf("[ENGINE] %d rules loaded from %s (types: %v)\n",
 		engine.Count(), rulesPath, engine.Types())
-	stats.setRules(engine.Count())
+	stats.setRuleCatalog(engine.Snapshot())
 
 	// kill-chain sequences: same resolution order as the rules dir
 	seqPath := resolveDataDir(o.seqDir, "sequences")
@@ -583,7 +583,7 @@ func runEngine(o *options, interactive bool) error {
 					// next to the executable, and reloading from the
 					// raw flag would fail (silently) every cycle.
 					if err := engine.Reload(rulesPath); err == nil {
-						stats.setRules(engine.Count())
+						stats.setRuleCatalog(engine.Snapshot())
 						if !tui {
 							fmt.Printf("[ENGINE] rules reloaded (%d active)\n", engine.Count())
 						}
@@ -688,14 +688,14 @@ func runEngine(o *options, interactive bool) error {
 			stats.recordEvent()
 			if o.verbose && !tui {
 				log.Printf("[EVENT] %-18s %s pid=%d host=%s",
-					ev.Type, describe(ev), pidOf(ev), ev.Host)
+					redact.TerminalText(ev.Type), redact.TerminalText(describe(ev)), pidOf(ev), redact.TerminalText(ev.Host))
 			}
 			for _, hit := range engine.Evaluate(ev) {
 				// allowlist first: a suppressed hit raises no alert AND does
 				// not feed the correlator (see the Emit wrapper above).
 				if suppressed(supMgr, hit.Rule.ID, ev.Host, time.Now()) {
 					if !tui {
-						log.Printf("[SUPPRESS] rule=%s host=%s", hit.Rule.ID, ev.Host)
+						log.Printf("[SUPPRESS] rule=%s host=%s", redact.TerminalText(hit.Rule.ID), redact.TerminalText(ev.Host))
 					}
 					continue
 				}
@@ -723,7 +723,6 @@ func runEngine(o *options, interactive bool) error {
 	if tui {
 		meta := tuiMeta{
 			rulesPath:  rulesPath,
-			ruleTypes:  engine.Types(),
 			ingestAddr: server.Addr(),
 			apiAddr:    apiAddr,
 			webhookURL: o.webhookURL,

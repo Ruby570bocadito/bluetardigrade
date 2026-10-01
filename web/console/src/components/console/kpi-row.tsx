@@ -11,7 +11,7 @@ import { GradientText } from '@/components/reactbits/gradient-text'
 import { SpotlightCard } from '@/components/reactbits/spotlight-card'
 import { formatUptime, SEVERITY_STYLE, type EngineStats, type Severity } from '@/lib/console-types'
 
-const SEV_ORDER: Severity[] = ['critical', 'high', 'medium', 'low']
+const SEV_ORDER: Severity[] = ['critical', 'high', 'medium', 'low', 'info']
 
 function Kpi({
   label,
@@ -39,6 +39,13 @@ function Kpi({
   )
 }
 
+function KpiNumber({ value }: { value: number | undefined }) {
+  const className = 'block font-mono text-xl tabular-nums tracking-tight text-zinc-50'
+  return value === undefined
+    ? <span className={className} aria-label="Sin datos">—</span>
+    : <AnimatedNumber value={value} className={className} />
+}
+
 export function KpiRow({ stats }: { stats: EngineStats | null }) {
   const severity = stats?.by_severity ?? {}
   const webhookIssues = (stats?.webhook_failed ?? 0) + (stats?.webhook_dropped ?? 0)
@@ -53,25 +60,19 @@ export function KpiRow({ stats }: { stats: EngineStats | null }) {
     >
       <Kpi label="Tiempo activo" icon={Timer}>
         <span className="block truncate font-mono text-xl tabular-nums tracking-tight text-zinc-50">
-          {stats ? formatUptime(stats.uptime_s) : '0s'}
+          {stats ? formatUptime(stats.uptime_s) : '—'}
         </span>
       </Kpi>
 
       <Kpi label="Eventos/min" icon={ActivityIcon}>
-        <AnimatedNumber
-          value={stats?.events_per_min ?? 0}
-          className="block font-mono text-xl tabular-nums tracking-tight text-zinc-50"
-        />
+        <KpiNumber value={stats?.events_per_min} />
         <span className="mt-0.5 block font-mono text-[11px] tabular-nums text-zinc-500">
-          total {stats?.events_total ?? 0}
+          {stats ? 'total ' + stats.events_total : 'sin datos'}
         </span>
       </Kpi>
 
       <Kpi label="Alertas" icon={WebhooksLogo}>
-        <AnimatedNumber
-          value={stats?.alerts_total ?? 0}
-          className="block font-mono text-xl tabular-nums tracking-tight text-zinc-50"
-        />
+        <KpiNumber value={stats?.alerts_total} />
         <span className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1">
           {SEV_ORDER.filter((sev) => (severity[sev] ?? 0) > 0).map((sev) => (
             <span key={sev} className="flex items-center gap-1 font-mono text-[11px] tabular-nums">
@@ -90,46 +91,34 @@ export function KpiRow({ stats }: { stats: EngineStats | null }) {
             </span>
           ))}
           {SEV_ORDER.every((sev) => (severity[sev] ?? 0) === 0) && (
-            <span className="text-[11px] text-zinc-500">sin detecciones</span>
+            <span className="text-[11px] text-zinc-500">{stats ? 'sin detecciones' : 'sin datos'}</span>
           )}
         </span>
       </Kpi>
 
       <Kpi label="Reglas activas" icon={ShieldCheck}>
-        <AnimatedNumber
-          value={stats?.rules_count ?? 0}
-          className="block font-mono text-xl tabular-nums tracking-tight text-zinc-50"
-        />
+        <KpiNumber value={stats?.rules_count} />
         <span className="mt-0.5 block truncate font-mono text-[11px] text-zinc-500">
-          {(stats?.rules_types ?? []).length} tipos de evento
+          {stats ? stats.rules_types.length + ' tipos de evento' : 'sin datos'}
         </span>
       </Kpi>
 
       <Kpi label="Búfer de eventos" icon={UploadSimple}>
-        <AnimatedNumber
-          value={stats?.events_buffered ?? 0}
-          className="block font-mono text-xl tabular-nums tracking-tight text-zinc-50"
-        />
+        <KpiNumber value={stats?.events_buffered} />
         <span className="mt-0.5 block font-mono text-[11px] tabular-nums text-zinc-500">
-          ingest: {ingestIssues > 0 ? <span className="text-orange-400">{ingestIssues} rechazados</span> : 'sin rechazos'}
+          {!stats ? 'sin datos' : ingestIssues > 0 ? <span className="text-orange-400">{ingestIssues} rechazados</span> : 'sin rechazos'}
         </span>
       </Kpi>
 
       <Kpi label="Webhooks" icon={MinusCircle}>
-        <AnimatedNumber
-          value={stats?.webhook_sent ?? 0}
-          className="block font-mono text-xl tabular-nums tracking-tight text-zinc-50"
-        />
+        <KpiNumber value={stats?.webhook_sent} />
         <span className="mt-0.5 block font-mono text-[11px] tabular-nums text-zinc-500">
-          {webhookIssues > 0 ? <span className="text-orange-400">{webhookIssues} con fallo</span> : 'sin fallos'}
+          {!stats ? 'sin datos' : webhookIssues > 0 ? <span className="text-orange-400">{webhookIssues} con fallo</span> : 'sin fallos'}
         </span>
       </Kpi>
 
       <Kpi label="Riesgo por host" icon={Flame}>
-        <AnimatedNumber
-          value={stats?.risk_hosts_tracked ?? 0}
-          className="block font-mono text-xl tabular-nums tracking-tight text-zinc-50"
-        />
+        <KpiNumber value={stats?.risk_hosts_tracked} />
         <span className="mt-0.5 block truncate font-mono text-[11px] tabular-nums text-zinc-500">
           {hot && top ? `máx ${top.host} · ${top.score}` : stats ? 'sin riesgo activo' : 'sin datos'}
         </span>

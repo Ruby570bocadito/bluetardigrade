@@ -397,6 +397,68 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Alert'
+  /api/alerts/search:
+    get:
+      tags: [telemetry]
+      operationId: searchAlerts
+      summary: Stable pages of alert history with lifecycle filters
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Reads SQLite when enabled, otherwise the retained 256-entry memory
+        ring. Pages are ordered by insertion sequence, newest received first,
+        independently of event timestamps. The first page pins an upper
+        sequence; subsequent arrivals do not shift earlier pages. Retention,
+        ring eviction and lifecycle decisions can still change membership.
+        No total count is claimed. The existing list/export routes are unchanged.
+        Use page_cursor to revisit the current page and next_cursor to continue.
+        A cursor is a read-only position tied to the source, engine lifetime
+        and query; restart the search after changing filters or restarting the
+        engine. Relative since/until bounds are frozen at the first page.
+        Lifecycle filtering is applied before the page limit. Each request
+        has a four-second time budget and examines at most 5000 matching
+        evidence records. scan_limited with
+        has_more means unexamined records remain, not that another matching
+        lifecycle result is guaranteed; an empty page can have a continuation.
+        Free-text q searches detection evidence, not lifecycle notes.
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+        - name: cursor
+          in: query
+          description: Opaque page position from this same query, at most 1024 characters.
+          schema: { type: string, maxLength: 1024 }
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [all, open, new, acknowledged, closed]
+            default: all
+        - $ref: '#/components/parameters/Host'
+        - $ref: '#/components/parameters/Severity'
+        - $ref: '#/components/parameters/RuleId'
+        - $ref: '#/components/parameters/Since'
+        - $ref: '#/components/parameters/Until'
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 120 }
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          description: Invalid filters, limit or expired/mismatched cursor.
+        '500':
+          description: Persistent store read failed; no partial page is served.
+        '504':
+          description: The search exceeded its four-second time budget; narrow the filters.
+        '200':
+          description: A bounded page and an explicit continuation, when needed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertSearchPage'
   /api/alerts/{id}/status:
     post:
       tags: [telemetry]
@@ -1325,6 +1387,34 @@ components:
           type: object
           additionalProperties:
             type: string
+    AlertSearchPage:
+      type: object
+      required: [items, source, has_more, next_cursor, page_cursor, scanned, scan_limited]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/Alert'
+        source:
+          type: string
+          enum: [memory, sqlite]
+        has_more:
+          type: boolean
+          description: A continuation exists; it may examine records without matching lifecycle state.
+        next_cursor:
+          type: string
+          description: Empty at the end, otherwise the cursor for the next request.
+        page_cursor:
+          type: string
+          description: Cursor for revisiting this page with the same upper sequence.
+        scanned:
+          type: integer
+          minimum: 0
+          maximum: 5000
+        scan_limited:
+          type: boolean
+          description: The request reached its evidence scan cap; continue instead of assuming no results.
     Alert:
       type: object
       description: |

@@ -21,7 +21,7 @@ import { RespondView } from './respond-view'
 import { SequencesView } from './sequences-view'
 import { AnalystPanel } from './analyst-panel'
 import { formatUptime, type EngineStats, type SfAlert } from '@/lib/console-types'
-import { currentSearch, pushOperatorState, viewFromParam, writeViewToSearch } from '@/lib/url-state'
+import { currentSearch, pushOperatorState, readOperatorState, writeViewToSearch } from '@/lib/url-state'
 import {
   SHORTCUT_ARM_MS,
   isTypingTarget,
@@ -52,8 +52,8 @@ export function ConsoleShell() {
   // the pre-rendered HTML always matches the default and hydration stays
   // quiet. Every view change pushes a history entry; popstate re-syncs.
   useEffect(() => {
-    setViewState(viewFromParam(currentSearch()))
-    const onPop = () => setViewState(viewFromParam(currentSearch()))
+    setViewState(readOperatorState(currentSearch()).view)
+    const onPop = () => setViewState(readOperatorState(currentSearch()).view)
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
@@ -111,6 +111,8 @@ export function ConsoleShell() {
   const sourceLabel =
     lastSource === 'sysmon'
       ? 'fuente: sf-sensor (Sysmon real)'
+      : lastSource === 'etw'
+        ? 'fuente: sf-sensor (ETW real)'
       : lastSource === 'simulate'
         ? 'fuente: sf-devsensor (demo)'
         : 'fuente: motor NDJSON'
@@ -127,6 +129,9 @@ export function ConsoleShell() {
 
   return (
     <div className="relative min-h-[100dvh] bg-zinc-950 text-zinc-100">
+      <a href="#console-main" className="sr-only z-50 rounded-md bg-emerald-300 px-4 py-2 text-sm text-zinc-950 focus:not-sr-only focus:fixed focus:left-4 focus:top-4">
+        Ir al contenido
+      </a>
       {/* DotGrid (React Bits): fondo de toda la consola, reactivo al puntero
           con la misma contención y congelado bajo prefers-reduced-motion. */}
       <DotGridLayer />
@@ -239,35 +244,37 @@ export function ConsoleShell() {
                 </span>
               )}
             </div>
-            <div className="chip shrink-0 px-2.5 py-1.5">
-              <span className="relative flex h-2 w-2" aria-hidden>
-                {status === 'live' ? (
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60 motion-reduce:hidden" />
-                ) : null}
-                <span
-                  aria-hidden
-                  className={`relative inline-flex h-2 w-2 rounded-full ${
-                    status === 'live' ? 'bg-emerald-500' : status === 'connecting' ? 'bg-amber-400' : 'bg-red-500'
-                  }`}
-                />
-              </span>
-              <span className="text-xs text-zinc-300">
-                {/* ShinyText (React Bits): el barrido solo corre con el motor
-                    en vivo — comunica flujo activo, no decora. */}
-                {status === 'live' ? (
-                  <ShinyText>En vivo</ShinyText>
-                ) : status === 'connecting' ? (
-                  'Conectando'
-                ) : (
-                  'Motor offline'
-                )}
-              </span>
-              <span className="hidden font-mono text-[11px] text-zinc-500 sm:inline">{sourceLabel}</span>
+            <div className="ml-auto flex min-w-0 items-center gap-2 overflow-x-auto">
+              <div className="chip shrink-0 px-2.5 py-1.5">
+                <span className="relative flex h-2 w-2" aria-hidden>
+                  {status === 'live' ? (
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60 motion-reduce:hidden" />
+                  ) : null}
+                  <span
+                    aria-hidden
+                    className={`relative inline-flex h-2 w-2 rounded-full ${
+                      status === 'live' ? 'bg-emerald-500' : status === 'connecting' ? 'bg-amber-400' : 'bg-red-500'
+                    }`}
+                  />
+                </span>
+                <span className="text-xs text-zinc-300">
+                  {/* ShinyText (React Bits): el barrido solo corre con el motor
+                      en vivo — comunica flujo activo, no decora. */}
+                  {status === 'live' ? (
+                    <ShinyText>En vivo</ShinyText>
+                  ) : status === 'connecting' ? (
+                    'Conectando'
+                  ) : (
+                    'Motor offline'
+                  )}
+                </span>
+                <span className="hidden font-mono text-[11px] text-zinc-500 sm:inline">{sourceLabel}</span>
+              </div>
+              <WebhookChip stats={stats} />
+              <CorrelatorChip stats={stats} />
+              <BeaconChip stats={stats} />
+              <ThresholdChip stats={stats} />
             </div>
-            <WebhookChip stats={stats} />
-            <CorrelatorChip stats={stats} />
-            <BeaconChip stats={stats} />
-            <ThresholdChip stats={stats} />
           </header>
 
           {/* Mobile nav: explicit collapse of the sidebar */}
@@ -294,7 +301,7 @@ export function ConsoleShell() {
             ))}
           </nav>
 
-          <main className="flex-1 px-4 py-5 lg:px-6">
+          <main id="console-main" tabIndex={-1} className="flex-1 px-4 py-5 outline-none lg:px-6">
             <AnimatedView viewKey={view}>
               {view === 'panel' && <Dashboard onAnalyze={openInAnalyst} onNavigate={setView} />}
               {view === 'flujo' && <LiveFeed />}
@@ -311,8 +318,7 @@ export function ConsoleShell() {
 
           <footer className="border-t border-white/[0.06] px-4 py-3 lg:px-6">
             <p className="text-[11px] text-zinc-500">
-              security-framework · consola SOC v0.1 · reglas YAML evaluadas en caliente · consulte docs/arquitectura para el
-              diseño completo
+              security-framework · consola de operaciones · v0.1.0
             </p>
           </footer>
         </div>
@@ -499,7 +505,7 @@ function BrandBlock() {
       </div>
       <div className="mt-3 flex items-center gap-2">
         <span className="chip px-1.5 py-0.5 font-mono text-[10px] leading-none text-zinc-500">
-          v0.1 · tracer bullet
+          v0.1.0 · consola SOC
         </span>
       </div>
       <div aria-hidden className="mt-3 h-px bg-gradient-to-r from-emerald-400/30 via-white/10 to-transparent" />

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/Ruby570bocadito/security-framework/internal/sigma"
 	"github.com/spf13/cobra"
@@ -54,10 +55,13 @@ func newSigmaCmd() *cobra.Command {
 				}
 				return fmt.Errorf("banderas invalidas para 'sigma': %v", err)
 			}
+			if fs.NArg() > 0 {
+				return fmt.Errorf("argumentos inesperados para 'sigma': %s; usa 'engine sigma -h'", strings.Join(fs.Args(), " "))
+			}
 			if *dir == "" {
 				return fmt.Errorf("falta -dir <fichero-o-directorio-sigma>")
 			}
-			return runSigma(*dir, *out, *strict)
+			return runSigma(cmd.OutOrStdout(), cmd.ErrOrStderr(), *dir, *out, *strict)
 		},
 	}
 }
@@ -65,7 +69,7 @@ func newSigmaCmd() *cobra.Command {
 // runSigma converts, emits, writes the output and prints the report.
 // Exit contract: 0 = at least one rule converted and (with -strict)
 // zero skips; 1 = hard error, zero conversions, or skips under -strict.
-func runSigma(dir, out string, strict bool) error {
+func runSigma(writer, errors io.Writer, dir, out string, strict bool) error {
 	res, err := sigma.ConvertDir(dir)
 	if err != nil {
 		return err
@@ -75,13 +79,13 @@ func runSigma(dir, out string, strict bool) error {
 		return err
 	}
 
-	fmt.Println("== sigma: conversion de reglas ==")
-	fmt.Printf("ficheros: %d | convertidas: %d | omitidas: %d\n",
+	fmt.Fprintln(writer, "== sigma: conversion de reglas ==")
+	fmt.Fprintf(writer, "ficheros: %d | convertidas: %d | omitidas: %d\n",
 		res.Files, len(res.Converted), len(res.Skipped))
 	if len(res.Skipped) > 0 {
-		fmt.Println("omitidas:")
+		fmt.Fprintln(writer, "omitidas:")
 		for _, s := range res.Skipped {
-			fmt.Printf("  - %q (%s): %s\n", s.Title, s.ID, s.Reason)
+			fmt.Fprintf(writer, "  - %q (%s): %s\n", s.Title, s.ID, s.Reason)
 		}
 	}
 
@@ -94,14 +98,14 @@ func runSigma(dir, out string, strict bool) error {
 		}
 		destino = out
 	}
-	fmt.Printf("salida: %s (%d reglas)\n", destino, len(res.Converted))
+	fmt.Fprintf(writer, "salida: %s (%d reglas)\n", destino, len(res.Converted))
 
 	switch {
 	case len(res.Converted) == 0:
-		fmt.Fprintln(os.Stderr, "error: cero reglas convertidas; revisa los motivos y el alcance del corpus")
+		fmt.Fprintln(errors, "error: cero reglas convertidas; revisa los motivos y el alcance del corpus")
 		return exitErr{code: 1}
 	case strict && len(res.Skipped) > 0:
-		fmt.Fprintln(os.Stderr, "error: -strict activo y hay reglas omitidas")
+		fmt.Fprintln(errors, "error: -strict activo y hay reglas omitidas")
 		return exitErr{code: 1}
 	}
 	return nil

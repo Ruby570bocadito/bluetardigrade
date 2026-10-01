@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/Ruby570bocadito/security-framework/internal/redact"
 	"github.com/Ruby570bocadito/security-framework/internal/rules"
 	"github.com/Ruby570bocadito/security-framework/pkg/model"
 )
@@ -190,6 +191,12 @@ func buildAlert(ev *model.Event, hit rules.Hit) Alert {
 }
 
 func (m *Manager) writeConsole(a Alert) {
+	// Only the display copy is sanitized; writeJSON and every observer
+	// retain the original forensic evidence.
+	a.Severity = redact.TerminalText(a.Severity)
+	a.RuleID = redact.TerminalText(a.RuleID)
+	a.Summary = redact.TerminalText(a.Summary)
+	a.Host = redact.TerminalText(a.Host)
 	color, colorName := severityColor(a.Severity)
 	b := &strings.Builder{}
 	if m.colored {

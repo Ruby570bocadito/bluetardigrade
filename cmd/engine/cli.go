@@ -84,7 +84,7 @@ func newRootCmd() *cobra.Command {
 		CompletionOptions: cobra.CompletionOptions{HiddenDefaultCmd: true},
 	}
 	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		fmt.Print(buildHelp(cmd))
+		fmt.Fprint(cmd.OutOrStdout(), buildHelp(cmd))
 	})
 	root.AddCommand(newRunCmd(), newRulesCmd(), newValidateCmd(), newSigmaCmd(), newVersionCmd())
 	return root
@@ -111,6 +111,9 @@ func newRunCmd() *cobra.Command {
 				}
 				return fmt.Errorf("banderas invalidas para 'run': %v", err)
 			}
+			if fs.NArg() > 0 {
+				return fmt.Errorf("argumentos inesperados para 'run': %s; usa 'engine run -h'", strings.Join(fs.Args(), " "))
+			}
 			return runEngine(opts, interactive)
 		},
 	}
@@ -133,7 +136,10 @@ func newRulesCmd() *cobra.Command {
 				}
 				return fmt.Errorf("banderas invalidas para 'rules': %v", err)
 			}
-			return runRules(*rulesDir)
+			if fs.NArg() > 0 {
+				return fmt.Errorf("argumentos inesperados para 'rules': %s; usa 'engine rules -h'", strings.Join(fs.Args(), " "))
+			}
+			return runRules(cmd.OutOrStdout(), *rulesDir)
 		},
 	}
 }
@@ -156,8 +162,11 @@ func newValidateCmd() *cobra.Command {
 				}
 				return fmt.Errorf("banderas invalidas para 'validate': %v", err)
 			}
+			if fs.NArg() > 0 {
+				return fmt.Errorf("argumentos inesperados para 'validate': %s; usa 'engine validate -h'", strings.Join(fs.Args(), " "))
+			}
 			rep := runValidation(*rulesDir, *seqDir)
-			fmt.Print(renderValidateReport(rep))
+			fmt.Fprint(cmd.OutOrStdout(), renderValidateReport(rep))
 			if rep.failed() {
 				return exitErr{code: 1}
 			}
@@ -172,7 +181,7 @@ func newVersionCmd() *cobra.Command {
 		Short: "Muestra la version del motor y datos de compilacion",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Print(renderVersion(buildInfoNow()))
+			fmt.Fprint(cmd.OutOrStdout(), renderVersion(buildInfoNow()))
 			return nil
 		},
 	}
@@ -192,14 +201,14 @@ func newValidateFlagSet() (*flag.FlagSet, *string, *string) {
 }
 
 // runRules loads the rule tree and prints the table.
-func runRules(flagPath string) error {
+func runRules(out io.Writer, flagPath string) error {
 	path := resolveDataDir(flagPath, "rules")
 	eng, err := rules.LoadDir(path)
 	if err != nil {
 		return fmt.Errorf("no se pudieron cargar las reglas desde %s: %w", path, err)
 	}
-	fmt.Println(renderRulesSummary(path, eng))
-	fmt.Println(renderRulesTable(eng.Snapshot()))
+	fmt.Fprintln(out, renderRulesSummary(path, eng))
+	fmt.Fprintln(out, renderRulesTable(eng.Snapshot()))
 	return nil
 }
 

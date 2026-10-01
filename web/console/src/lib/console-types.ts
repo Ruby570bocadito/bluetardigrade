@@ -4,7 +4,7 @@
 // and the SSE frames of /api/stream. The console never invents data:
 // when the engine is unreachable every view shows a real empty state.
 
-export type Severity = 'critical' | 'high' | 'medium' | 'low'
+export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info'
 
 // model.Event (pkg/model) as delivered by /api/events and /api/stream.
 export type SfEvent = {
@@ -59,8 +59,7 @@ export type SfEvent = {
 // alert.Alert (internal/alert) as served by /api/alerts and /api/stream.
 // Since r6 the engine assigns a unique 16-hex id to every alert (the
 // lifecycle key); older engines without it fall back to the
-// event_id + rule_id natural key (the provider derives a stable React
-// key from what is available plus a monotonic counter).
+// timestamp + event_id + rule_id natural key (stable across reconnects).
 export type SfAlert = {
   id?: string
   timestamp: string
@@ -329,10 +328,14 @@ export const SEVERITY_STYLE: Record<Severity, { label: string; text: string; bg:
     bar: 'bg-sky-400',
     dot: 'bg-sky-400',
   },
+  info: {
+    label: 'info', text: 'text-zinc-400', bg: 'bg-zinc-500/10',
+    border: 'border-zinc-500/30', bar: 'bg-zinc-500', dot: 'bg-zinc-500',
+  },
 }
 
 export function severityOf(value: string | undefined): Severity {
-  return value === 'critical' || value === 'high' || value === 'medium' || value === 'low' ? value : 'low'
+  return value === 'critical' || value === 'high' || value === 'medium' || value === 'low' || value === 'info' ? value : 'low'
 }
 
 export function formatTime(iso: string): string {

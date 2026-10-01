@@ -410,7 +410,7 @@ curl -X POST http://127.0.0.1:7778/api/alerts/<id>/status \
 # close it, reopen it ("new"), same endpoint — statuses: new, acknowledged, closed
 ```
 
-`GET /api/alerts` merges the current status into every alert (`status`, `status_note`, `status_by`, `status_at`), a `alert_lifecycle` SSE frame announces each decision live, and the web console renders the status chips plus the reconocer/cerrar/reabrir actions in the alert panel (the write goes console → hub → engine; the API token never leaves the hub). The API token gates the write endpoint exactly like every read endpoint.
+`GET /api/alerts` merges the current status into every alert (`status`, `status_note`, `status_by`, `status_at`), a `alert_lifecycle` SSE frame announces each decision live, and the web console renders the status chips plus the reconocer/cerrar/reabrir actions in the alert panel (the write goes console → same-origin Next.js proxy → engine; the API token stays on the server). The API token gates the write endpoint exactly like every read endpoint.
 
 Statuses persist across engine restarts with `-lifecycle <file>` (default `./alert-lifecycle.json`, falling back to the install root; `-lifecycle ""` keeps them in memory only). The file is written atomically on every decision and is FATAL to load if malformed — the same fail-loud standard as suppressions: triage work silently resetting to "new" would be a lie. One honest note on restarts: without `-store` the alert ring is in-memory, so after a restart the file preserves the audit record while the alerts it refers to are gone. With the SQLite store attached, alerts are served from the persisted history after a restart (see [Persistent storage](#persistent-storage-sqlite-opt-in)), so alert and lifecycle persist together and the triage status stays visible end to end.
 
@@ -626,6 +626,20 @@ Windows installer installs it as `sf-engine`). Subcommands:
 | `engine validate [-rules dir] [-sequences dir]` | validate rules and sequences, print a report; exit code 0 when everything loads, non-zero on error (CI-friendly) |
 | `engine sigma -dir dir-or-file [-out file] [-strict]` | convert a Sigma corpus to the native rule format; report lists every skipped rule with its reason; exit 0 only with at least one conversion (and, under `-strict`, zero skips) |
 | `engine version` | print the engine version and exit |
+
+### Interactive terminal
+
+Run `engine run -i` in a terminal. `1` / `2` / `Tab` switch between alerts
+and the rule catalogue; `/` searches, `s` cycles severity, `Enter` opens
+details, and `↑↓` / `PgUp` / `PgDown` / `Home` / `End` navigate.
+`p` or space pauses only the presentation; detection, API and delivery
+keep running. `Esc` returns or clears filters, `?` opens help, and
+`q` / `Ctrl+C` stop the engine.
+
+The panel retains 100 alerts and keeps historical selection steady.
+Human output neutralizes telemetry control characters; structured evidence
+is preserved. Webhook banners expose only scheme and host. Routed commands
+reject unexpected positional arguments; the classic invocation is preserved.
 
 ### `engine run` flags
 

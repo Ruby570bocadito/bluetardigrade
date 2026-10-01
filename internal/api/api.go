@@ -115,6 +115,7 @@ func New(addr string) (*Hub, error) {
 	mux.HandleFunc("GET /metrics", h.handleMetrics)
 	mux.HandleFunc("GET /api/events", h.handleEvents)
 	mux.HandleFunc("GET /api/alerts", h.handleAlerts)
+	mux.HandleFunc("GET /api/alerts/search", h.handleAlertSearch)
 	mux.HandleFunc("POST /api/alerts/{id}/status", h.handleAlertStatus)
 	mux.HandleFunc("GET /api/rules", h.handleRules)
 	mux.HandleFunc("GET /api/suppressions", h.handleSuppressions)
