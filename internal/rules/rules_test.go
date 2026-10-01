@@ -38,8 +38,8 @@ func loadTestEngine(t *testing.T) *Engine {
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
-	if e.Count() != 49 {
-		t.Fatalf("expected the seeded rule count (23 seeded + 26 new pack rules), got %d", e.Count())
+	if e.Count() != 55 {
+		t.Fatalf("expected 55 shipped rules (23 seeded + 26 process pack + 6 file staging), got %d", e.Count())
 	}
 	return e
 }

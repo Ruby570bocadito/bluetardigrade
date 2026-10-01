@@ -1,0 +1,142 @@
+# File artifacts, not commands to execute. Requires file.write telemetry
+# (sf-sensor / Sysmon 11). Conditions use the canonical file.path so a
+# missing or inconsistent optional file.extension cannot mute an alarm.
+# These are investigation signals: filenames and writers alone cannot
+# prove malicious content or a completed DLL hijack. Tune approved
+# deployment/profile changes through scoped, expiring suppressions.
+
+- name: "Office escribe un payload en una ruta de usuario"
+  id: "d4e5f607-1001-4a00-8000-000000000001"
+  description: >
+    Detecta que Office escribe ejecutables, bibliotecas o scripts en
+    carpetas de usuario o temporales. Revisar el documento origen y el
+    proceso padre: una exportacion normal de documentos no coincide.
+  severity: high
+  event_type: file.write
+  conditions:
+    - field: process.name
+      operator: iin
+      value: ["winword.exe", "excel.exe", "powerpnt.exe", "msaccess.exe", "outlook.exe", "onenote.exe"]
+    - field: file.path
+      operator: regex
+      value: '(?i)\\(Users\\Public|Users\\[^\\]+\\(AppData\\(Local|Roaming)|Downloads|Desktop)|Windows\\Temp|Temp)\\.*\.(exe|dll|scr|com|ps1|bat|cmd|vbs|vbe|js|jse|wsf|hta|lnk)$'
+  actions:
+    - type: alert
+      config:
+        message: "Office escribio un posible payload en {host}: revisar documento y cadena de procesos"
+        notify: "true"
+  tags: ["attack.t1204.002", "attack.execution", "sensor:file", "pack:file-staging"]
+  enabled: true
+
+- name: "Interprete escribe una DLL en una ruta temporal"
+  id: "d4e5f607-1002-4a00-8000-000000000002"
+  description: >
+    Detecta una DLL escrita por PowerShell o un interprete de scripts
+    en AppData, Public o temporales. Es una senal de preparacion de
+    carga: correlacionar con image.load antes de atribuir DLL hijacking.
+  severity: high
+  event_type: file.write
+  conditions:
+    - field: process.name
+      operator: iin
+      value: ["powershell.exe", "pwsh.exe", "wscript.exe", "cscript.exe", "mshta.exe"]
+    - field: file.path
+      operator: regex
+      value: '(?i)\\(Users\\Public|Users\\[^\\]+\\AppData\\(Local|Roaming)|Windows\\Temp|Temp)\\.*\.dll$'
+  actions:
+    - type: alert
+      config:
+        message: "Interprete preparo una DLL en una ruta de usuario de {host}: revisar carga posterior"
+        notify: "true"
+  tags: ["attack.t1574.001", "attack.defense-evasion", "sensor:file", "pack:file-staging"]
+  enabled: true
+
+- name: "DLL candidata a carga lateral descargada o extraida"
+  id: "d4e5f607-1003-4a00-8000-000000000003"
+  description: >
+    Detecta nombres de DLL usados en carga lateral cuando un navegador
+    o descompresor los escribe en una ruta de usuario. Confianza media:
+    paquetes legitimos tambien incluyen estas DLL; revisar el ejecutable
+    vecino, firma y carga posterior, sin aislar por esta senal sola.
+  severity: medium
+  event_type: file.write
+  conditions:
+    - field: process.name
+      operator: iin
+      value: ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "7z.exe", "7zg.exe", "7zfm.exe", "winrar.exe"]
+    - field: file.path
+      operator: regex
+      value: '(?i)\\(Users\\Public|Users\\[^\\]+\\(AppData\\(Local|Roaming)|Downloads|Desktop)|Windows\\Temp|Temp)\\(.*\\)?(version|winmm|dbghelp|winhttp|dxgi|d3d11)\.dll$'
+  actions:
+    - type: alert
+      config:
+        message: "DLL candidata a carga lateral en {host}: confirmar ejecutable vecino y image.load"
+        notify: "false"
+  tags: ["attack.t1574.001", "attack.defense-evasion", "sensor:file", "pack:file-staging"]
+  enabled: true
+
+- name: "Modificacion de un perfil de PowerShell"
+  id: "d4e5f607-1004-4a00-8000-000000000004"
+  description: >
+    Detecta escrituras en los perfiles de PowerShell de usuario o del
+    sistema, cargados al iniciar el interprete. Confianza media: cambios
+    administrativos y personalizacion son legitimos; revisar contenido
+    y correlacionar con inicios de PowerShell sin -NoProfile.
+  severity: medium
+  event_type: file.write
+  conditions:
+    - field: file.path
+      operator: regex
+      value: '(?i)\\(Documents\\(WindowsPowerShell|PowerShell)|Windows\\(System32|SysWOW64)\\WindowsPowerShell\\v1\.0|Program Files\\PowerShell\\[0-9]+(\.[0-9]+)*)\\(profile|Microsoft\.PowerShell(ISE)?_profile)\.ps1$'
+  actions:
+    - type: alert
+      config:
+        message: "Perfil de PowerShell modificado en {host}: comprobar cambio autorizado y contenido"
+        notify: "false"
+  tags: ["attack.t1546.013", "attack.persistence", "sensor:file", "pack:file-staging"]
+  enabled: true
+
+- name: "Contenido activo en el inicio automatico de Office"
+  id: "d4e5f607-1005-4a00-8000-000000000005"
+  description: >
+    Detecta plantillas de Word o libros y complementos activos de Excel
+    en STARTUP/XLSTART. Estas rutas cargan contenido al arrancar Office.
+    Revisar si la plantilla o complemento pertenece a un despliegue
+    aprobado; la extension no demuestra que contenga macros maliciosas.
+  severity: high
+  event_type: file.write
+  conditions:
+    - field: file.path
+      operator: regex
+      value: '(?i)\\((Microsoft\\Word\\STARTUP|Microsoft Office\\(root\\)?Office[0-9]+\\STARTUP)\\[^\\]+\.(dotm|dot)|(Microsoft\\Excel\\XLSTART|Microsoft Office\\(root\\)?Office[0-9]+\\XLSTART)\\[^\\]+\.(xlam|xla|xlsm|xlsb|xls|xll))$'
+  actions:
+    - type: alert
+      config:
+        message: "Contenido activo preparado para el arranque de Office en {host}: revisar persistencia"
+        notify: "true"
+  tags: ["attack.t1137", "attack.persistence", "sensor:file", "pack:file-staging"]
+  enabled: true
+
+- name: "Artefacto de volcado de LSASS escrito en disco"
+  id: "d4e5f607-1006-4a00-8000-000000000006"
+  description: >
+    Detecta un fichero lsass*.dmp escrito por herramientas capaces de
+    volcar memoria. Complementa process.access cuando ese evento falta.
+    El nombre no garantiza contenido: preservar evidencia y comprobar
+    si fue una captura de diagnostico autorizada.
+  severity: high
+  event_type: file.write
+  conditions:
+    - field: process.name
+      operator: iin
+      value: ["procdump.exe", "procdump64.exe", "procdump64a.exe", "rundll32.exe", "taskmgr.exe", "werfault.exe", "powershell.exe", "pwsh.exe"]
+    - field: file.path
+      operator: regex
+      value: '(?i)\\lsass([._-][^\\]*)?\.dmp$'
+  actions:
+    - type: alert
+      config:
+        message: "Posible volcado de memoria de LSASS en {host}: preservar fichero y verificar autorizacion"
+        notify: "true"
+  tags: ["attack.t1003.001", "attack.credential-access", "sensor:file", "pack:file-staging"]
+  enabled: true

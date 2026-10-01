@@ -93,7 +93,7 @@
         notify: "true"
   tags: ["attack.t1562.001", "attack.defense-evasion", "sensor:registry"]
   enabled: true
-# T1547.005 - Executable dropped into the Startup folder
+# T1547.001 - Executable dropped into the Startup folder
 # Source TTP: file-based autostart alternative to Run keys; caught on
 # the artifact (file.write) rather than the dropping command line, so
 # it also covers droppers writing via their own code. Validated in
@@ -112,15 +112,15 @@
     - field: file.path
       operator: regex
       value: '(?i)\\Start Menu\\Programs\\Startup\\'
-    - field: file.extension
+    - field: file.path
       operator: regex
-      value: '(?i)^(exe|dll|bat|cmd|ps1|vbs|vbe|js|jse|wsf|wsh|scr|hta|lnk)$'
+      value: '(?i)\.(exe|dll|bat|cmd|ps1|vbs|vbe|js|jse|wsf|wsh|scr|hta|lnk)$'
   actions:
     - type: alert
       config:
         message: "Persistencia por carpeta de Inicio en {host}: se solto un ejecutable/script que correra al iniciar sesion"
         notify: "true"
-  tags: ["attack.t1547.005", "attack.persistence", "sensor:file"]
+  tags: ["attack.t1547.001", "attack.persistence", "sensor:file"]
   enabled: true
 # T1036.007 - Masquerading: executable disguised as a document
 # Source TTP: double extensions (.pdf.exe) exploit the default Windows
