@@ -57,7 +57,7 @@ export function OperationsOverview({ onNavigate, onTriage }: {
               { target: 'closed', count: summary.closed, label: 'cerradas' },
             ] as const).map(({ target, count, label }) => (
               <button key={target} type="button" onClick={() => onTriage(target)} disabled={!available}
-                aria-label={`Ver alertas ${label}`}
+                aria-label={`Ver alertas ${label}: ${available ? count : 'sin datos'}`}
                 className="rounded-sm underline decoration-zinc-600 underline-offset-4 hover:text-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:no-underline">
                 {available ? count : '—'} {label}
               </button>

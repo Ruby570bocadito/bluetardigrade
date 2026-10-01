@@ -257,7 +257,7 @@ try {
       ['Ver alertas reconocidas', 'acknowledged', null],
       ['Ver alertas cerradas', 'closed', null],
     ]) {
-      await page.getByRole('button', { name, exact: true }).click()
+      await page.getByRole('button', { name: state === 'open' ? name : new RegExp('^' + name + ':') }).click()
       await waitView('alertas')
       const params = new URL(page.url()).searchParams
       assert.equal(params.get('estado'), state)

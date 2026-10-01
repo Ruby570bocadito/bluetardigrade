@@ -27,6 +27,7 @@ presentación, sin modificar la evidencia del motor.
 ## Accesos de triaje en el dashboard
 
 El resumen de operación ofrece cuatro accesos por teclado o puntero:
+las etiquetas accesibles de los contadores incluyen su cifra, o «sin datos».
 
 | Control | Severidad | Estado | Origen |
 |---------|-----------|--------|--------|
