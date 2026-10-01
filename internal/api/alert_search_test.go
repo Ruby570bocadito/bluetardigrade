@@ -181,3 +181,46 @@ func TestAlertSearchFreezesRelativeTimeBounds(t *testing.T) {
 		t.Fatal("relative window moved on revisit")
 	}
 }
+
+// TestAlertSearchFindsByID pins the free-text axis on the alert id
+// itself (symmetric with events): an id pasted from a handoff link
+// must find its record whether it lives in the ring or the store. A
+// forged field separator in the needle must never cross the id into
+// another field.
+func TestAlertSearchFindsByID(t *testing.T) {
+	for _, persisted := range []bool{false, true} {
+		t.Run(fmt.Sprintf("sqlite=%t", persisted), func(t *testing.T) {
+			h, addr := newTestHub(t)
+			if persisted {
+				st, err := store.Open(t.TempDir() + "/history.db")
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = st.Close() })
+				h.SetStore(st)
+			}
+			target := searchAlert(7)
+			target.Timestamp = "2026-09-01T00:00:00Z"
+			h.RecordAlert(target)
+			h.RecordAlert(searchAlert(8))
+
+			var page alertSearchPage
+			getJSON(t, "http://"+addr+"/api/alerts/search?q="+target.ID, &page)
+			if len(page.Items) != 1 || page.Items[0].ID != target.ID {
+				t.Fatalf("id search: got %d items, want exactly %s", len(page.Items), target.ID)
+			}
+			// partial id: the arnes range shares the leading zeros, so the
+			// distinctive half is the piece an operator can actually disambiguate
+			getJSON(t, "http://"+addr+"/api/alerts/search?q="+target.ID[8:], &page)
+			if len(page.Items) != 1 || page.Items[0].ID != target.ID {
+				t.Fatalf("partial id search: got %d items, want exactly %s", len(page.Items), target.ID)
+			}
+			// a needle carrying a raw field separator cannot forge a
+			// crossing between the id and any other field
+			getJSON(t, "http://"+addr+"/api/alerts/search?q="+url.QueryEscape(target.ID+"\x1fLAB"), &page)
+			if len(page.Items) != 0 {
+				t.Fatalf("forged separator matched: %d items", len(page.Items))
+			}
+		})
+	}
+}

@@ -191,11 +191,14 @@ func containsFold(list []string, s string) bool {
 }
 
 // alertHaystack is the free-text surface of an alert: identifiers,
-// context and the rendered message, all lowercase-contains.
+// context and the rendered message, all lowercase-contains. The alert
+// id leads the list (symmetric with eventHaystack): an id pasted from
+// a handoff link must find its record on either backend — the store's
+// mirror keeps the same field list.
 func alertHaystack(a alert.Alert, needle string) bool {
 	parts := []string{
-		a.RuleID, a.RuleName, a.Host, a.User, a.Summary, a.Message,
-		a.EventType, a.Severity,
+		a.ID, a.RuleID, a.RuleName, a.Host, a.User, a.Summary,
+		a.Message, a.EventType, a.Severity,
 		strings.Join(a.Tags, " "), strings.Join(a.MatchedOn, " "),
 	}
 	return containsFoldAll(parts, needle)

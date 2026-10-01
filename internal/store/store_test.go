@@ -356,3 +356,42 @@ func TestInsertEventReplaceServesNewPayload(t *testing.T) {
 		t.Fatalf("counts after replace: %d/%d, want 1/0", e, a)
 	}
 }
+
+// TestSearchAlertsByID pins the store side of the alert-id free-text
+// axis: the search column mirrors api.alertHaystack and must match the
+// same needles the ring matches. Rows written before the id joined the
+// haystack keep the old column (declared limitation); a fresh row must
+// be findable by full and partial id, and a separator-forged needle
+// must not cross field boundaries.
+func TestSearchAlertsByID(t *testing.T) {
+	s := openTestStore(t)
+	target := alert.Alert{
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		ID:        "ab12cd34ef56ab12",
+		RuleID:    "11111111-1111",
+		RuleName:  "rule 11111111-1111",
+		Severity:  "high",
+		Host:      "LAB-ONE",
+		User:      "alice",
+		EventID:   "ev-1",
+		EventType: model.TypeProcessCreate,
+		Summary:   "encoded powershell",
+		MatchedOn: []string{"process.name"},
+		Tags:      []string{"attack.t1059.001"},
+	}
+	if err := s.InsertAlert(target); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.QueryAlerts(AlertQuery{Q: target.ID, Limit: 10})
+	if err != nil || len(got) != 1 || got[0].ID != target.ID {
+		t.Fatalf("full id search: %d alerts, err %v", len(got), err)
+	}
+	got, err = s.QueryAlerts(AlertQuery{Q: target.ID[:6], Limit: 10})
+	if err != nil || len(got) != 1 || got[0].ID != target.ID {
+		t.Fatalf("partial id search: %d alerts, err %v", len(got), err)
+	}
+	got, err = s.QueryAlerts(AlertQuery{Q: target.ID + "\x1fLAB-ONE", Limit: 10})
+	if err != nil || len(got) != 0 {
+		t.Fatalf("forged separator matched: %d alerts, err %v", len(got), err)
+	}
+}

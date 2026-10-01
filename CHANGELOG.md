@@ -21,6 +21,16 @@ and the `make dist` target.
 - Historical triage updates through both SSE and successful POST responses;
   superseded queries are canceled and older engines show a capability error.
 
+### Added — alert handoff
+
+- Alert ids join the free-text search surface on both backends (ring and
+  store haystack mirrors): pasting an id from a handoff link finds its
+  record whether it lives in the live ring, the memory page or SQLite.
+- `?view=alertas&alert=<id>` pins the queue detail panel to a row, like
+  `?regla=` does for rules. If the alert already rotated out of the shown
+  window, the queue says so and offers the history search instead of
+  rendering a ghost panel.
+
 ### Fixed — alert investigation state
 
 - Informational severity no longer renders as low or disappears from filters/KPIs.

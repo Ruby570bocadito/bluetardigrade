@@ -444,11 +444,14 @@ func eventHaystack(ev *model.Event) string {
 
 // alertHaystack mirrors api.alertHaystack (same field list), already
 // Unicode-lowercased at write time — see eventHaystack for why the
-// fold cannot be left to SQLite's LIKE.
+// fold cannot be left to SQLite's LIKE. The alert id leads the list
+// like ev.ID does for events; rows written before the id joined the
+// haystack keep their old search column until they rotate out of
+// retention — the ring covers the gap in the meantime.
 func alertHaystack(a alert.Alert) string {
 	parts := []string{
-		a.RuleID, a.RuleName, a.Host, a.User, a.Summary, a.Message,
-		a.EventType, a.Severity,
+		a.ID, a.RuleID, a.RuleName, a.Host, a.User, a.Summary,
+		a.Message, a.EventType, a.Severity,
 		strings.Join(a.Tags, " "), strings.Join(a.MatchedOn, " "),
 	}
 	for i, p := range parts {
