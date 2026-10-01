@@ -178,13 +178,14 @@ func (r *Recorder) Capture(a alert.Alert, now time.Time) (string, bool, error) {
 		CapturedAt: now.UTC().Format(time.RFC3339Nano),
 		Host:       a.Host,
 		Window:     CaptureWindow.String() + " before alert (plus the triggering event)",
+		Timeline:   make([]*model.Event, 0),
 	}
 
 	r.mu.Lock()
 	cutoff := alerted.Add(-CaptureWindow)
 	ring := r.hosts[a.Host]
 	for _, ev := range ring {
-		if !ev.Timestamp.Before(cutoff) || ev.ID == a.EventID {
+		if (!ev.Timestamp.Before(cutoff) && !ev.Timestamp.After(alerted)) || ev.ID == a.EventID {
 			b.Timeline = append(b.Timeline, ev)
 		}
 	}
@@ -193,7 +194,20 @@ func (r *Recorder) Capture(a alert.Alert, now time.Time) (string, bool, error) {
 	// Keep the tail: the events closest to the alert are the ones an
 	// investigator reads; the head of the window is context.
 	if len(b.Timeline) > timelineCap {
-		b.Timeline = b.Timeline[len(b.Timeline)-timelineCap:]
+		start := len(b.Timeline) - timelineCap
+		var trigger *model.Event
+		for _, ev := range b.Timeline[:start] {
+			if ev.ID == a.EventID {
+				trigger = ev
+				break
+			}
+		}
+		if trigger != nil {
+			// Preserve the trigger when it predates the retained tail.
+			b.Timeline = append([]*model.Event{trigger}, b.Timeline[start+1:]...)
+		} else {
+			b.Timeline = b.Timeline[start:]
+		}
 	}
 	b.Summary = summarize(b.Timeline)
 

@@ -91,3 +91,50 @@ func TestGuardAcceptsMaxNesting(t *testing.T) {
 		t.Errorf("nesting at the cap rejected: %v", err)
 	}
 }
+
+func TestGuardRejectsCyclicAliasGraphs(t *testing.T) {
+	for _, doc := range []string{
+		"value: &a [*a]\n",
+		"value: &a {self: *a}\n",
+		"value: &a {nested: &b [*a, *b]}\n",
+		"value: &a {<<: *a}\n",
+	} {
+		if err := Guard("cycle.yaml", []byte(doc)); err == nil || !strings.Contains(err.Error(), "cyclic") {
+			t.Errorf("cyclic graph accepted or wrong error: %v", err)
+		}
+	}
+}
+
+func TestGuardCountsAliasReferencesOnce(t *testing.T) {
+	for _, count := range []int{MaxAliasRefs, MaxAliasRefs + 1} {
+		doc := "base: &a [x]\nrefs: [" + strings.Repeat("*a,", count-1) + "*a]\n"
+		err := Guard("refs.yaml", []byte(doc))
+		if count == MaxAliasRefs && err != nil {
+			t.Fatalf("references at the budget rejected: %v", err)
+		}
+		if count > MaxAliasRefs && (err == nil || !strings.Contains(err.Error(), "alias references")) {
+			t.Fatalf("reference budget not enforced: %v", err)
+		}
+	}
+}
+
+func TestGuardRejectsExpansionWithinAliasBudget(t *testing.T) {
+	// Fifteen doubling levels use 30 aliases but exceed the node budget.
+	var b strings.Builder
+	b.WriteString("a: &a [x]\n")
+	for i := 1; i <= 15; i++ {
+		next, prev := string(rune('a'+i)), string(rune('a'+i-1))
+		b.WriteString(next + ": &" + next + " [*" + prev + ", *" + prev + "]\n")
+	}
+	if err := Guard("expansion.yaml", []byte(b.String())); err == nil || !strings.Contains(err.Error(), "node cap") {
+		t.Fatalf("projected expansion budget not enforced: %v", err)
+	}
+}
+
+func TestQuotedClosersCannotHideFlowNesting(t *testing.T) {
+	// Quoted ']' tokens offset every structural '[' in the raw pre-scan.
+	doc := "a: " + strings.Repeat("[']', ", MaxNestingDepth+1) + "x" + strings.Repeat("]", MaxNestingDepth+1)
+	if err := Guard("nested.yaml", []byte(doc)); err == nil || !strings.Contains(err.Error(), "nesting") {
+		t.Fatalf("quoted closers hid excessive flow depth: %v", err)
+	}
+}

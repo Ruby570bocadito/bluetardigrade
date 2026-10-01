@@ -1,6 +1,7 @@
 package forensic
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,68 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
 	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
+
+func TestEmptyBundleUsesJSONArrayCollections(t *testing.T) {
+	r := New(t.TempDir())
+	a := mkAlert("0123456789abcdef", "lab-01", "high", base.Format(time.RFC3339))
+	path, ok, err := r.Capture(a, base)
+	if err != nil || !ok {
+		t.Fatalf("Capture: ok=%v err=%v", ok, err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body struct {
+		Timeline []json.RawMessage `json:"timeline"`
+		Summary  struct {
+			Images []string `json:"distinct_images"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Timeline == nil || body.Summary.Images == nil {
+		t.Fatal("empty evidence serialized as null rather than arrays")
+	}
+}
+
+func TestCaptureExcludesFutureEventsButRetainsTrigger(t *testing.T) {
+	r := New(t.TempDir())
+	r.ObserveEvent(mkEvent("before", "lab-01", model.TypeProcessCreate, base.Add(-time.Minute)))
+	r.ObserveEvent(mkEvent("future", "lab-01", model.TypeProcessCreate, base.Add(time.Hour)))
+	r.ObserveEvent(mkEvent("ev-0123456789abcdef", "lab-01", model.TypeFileWrite, base.Add(2*time.Hour)))
+	a := mkAlert("0123456789abcdef", "lab-01", "high", base.Format(time.RFC3339))
+	if _, ok, err := r.Capture(a, base); err != nil || !ok {
+		t.Fatalf("Capture: ok=%v err=%v", ok, err)
+	}
+	b, err := r.Load(a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Timeline) != 2 || b.Timeline[0].ID != "before" || b.Timeline[1].ID != a.EventID {
+		t.Fatalf("events outside the upper bound contaminated evidence: %+v", b.Timeline)
+	}
+}
+
+func TestTruncationRetainsObservedTrigger(t *testing.T) {
+	r := New(t.TempDir())
+	r.ObserveEvent(mkEvent("ev-0123456789abcdef", "lab-01", model.TypeProcessCreate, base.Add(-10*time.Minute)))
+	for i := 0; i < timelineCap+10; i++ {
+		r.ObserveEvent(mkEvent(fmt.Sprintf("e%d", i), "lab-01", model.TypeNetworkConnect, base.Add(-time.Minute)))
+	}
+	a := mkAlert("0123456789abcdef", "lab-01", "high", base.Format(time.RFC3339))
+	if _, ok, err := r.Capture(a, base); err != nil || !ok {
+		t.Fatalf("Capture: ok=%v err=%v", ok, err)
+	}
+	b, err := r.Load(a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Timeline) != timelineCap || b.Timeline[0].ID != a.EventID || b.Timeline[timelineCap-1].ID != "e209" {
+		t.Fatalf("truncated evidence lost the trigger/latest event: %+v", b.Timeline)
+	}
+}
 
 func mkEvent(id, host, typ string, at time.Time) *model.Event {
 	return &model.Event{

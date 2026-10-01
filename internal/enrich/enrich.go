@@ -27,6 +27,7 @@ const (
 type procEntry struct {
 	name     string
 	image    string
+	created  time.Time
 	lastSeen time.Time
 }
 
@@ -61,6 +62,11 @@ func (en *Enricher) Apply(ev *model.Event) {
 	if ev.Enrichment == nil {
 		ev.Enrichment = make(map[string]string, 6)
 	}
+	// These keys are engine-owned. A replay or sensor-supplied map must
+	// not retain an identity that the current evidence cannot establish.
+	for _, key := range []string{"user_domain", "user_name", "image_dir", "image_origin", "parent_name", "parent_image"} {
+		delete(ev.Enrichment, key)
+	}
 	ev.Enrichment["seen_at"] = time.Now().UTC().Format(time.RFC3339Nano)
 	ev.Enrichment["engine_uptime"] = time.Since(en.startedAt).Round(time.Second).String()
 
@@ -94,7 +100,7 @@ func (en *Enricher) Apply(ev *model.Event) {
 // aggressive and a stale name would misattribute the next parent.
 func (en *Enricher) trackProcess(ev *model.Event) {
 	p := ev.Process
-	if p.PID == 0 {
+	if p.PID <= 0 || ev.Host == "" {
 		return
 	}
 	host := ev.Host
@@ -103,29 +109,32 @@ func (en *Enricher) trackProcess(ev *model.Event) {
 	en.mu.Lock()
 	defer en.mu.Unlock()
 
-	switch ev.Type {
-	case model.TypeProcessTerminate:
-		if m := en.hosts[host]; m != nil {
-			delete(m, int64(p.PID))
+	m := en.hosts[host]
+	old, known := m[int64(p.PID)]
+	if known && now.Sub(old.lastSeen) > procTTL {
+		delete(m, int64(p.PID))
+		known = false
+	}
+	if known && !ev.Timestamp.IsZero() && !old.created.IsZero() && ev.Timestamp.Before(old.created) {
+		// A delayed event/termination from an earlier PID incarnation
+		// must not overwrite or evict the process that replaced it.
+		return
+	}
+	if ev.Type == model.TypeProcessTerminate {
+		delete(m, int64(p.PID))
+		if len(m) == 0 {
+			delete(en.hosts, host)
 		}
 		return
-	case model.TypeProcessCreate:
-		if p.PPID != 0 {
-			if parent, ok := en.hosts[host][int64(p.PPID)]; ok {
-				ev.Enrichment["parent_name"] = parent.name
-				if parent.image != "" {
-					ev.Enrichment["parent_image"] = parent.image
+	}
+	if p.PPID > 0 && p.PPID != p.PID {
+		if parent, ok := m[int64(p.PPID)]; ok {
+			if now.Sub(parent.lastSeen) > procTTL {
+				delete(m, int64(p.PPID))
+			} else if ev.Timestamp.IsZero() || parent.created.IsZero() || !ev.Timestamp.Before(parent.created) {
+				if parent.name != "" {
+					ev.Enrichment["parent_name"] = parent.name
 				}
-			}
-		}
-	default:
-		// non-create events still resolve their parent when the
-		// process is already known (file.write, network.connect and
-		// registry.set all carry the acting process): the sensor may
-		// have shipped the create event in the same batch.
-		if p.PPID != 0 {
-			if parent, ok := en.hosts[host][int64(p.PPID)]; ok {
-				ev.Enrichment["parent_name"] = parent.name
 				if parent.image != "" {
 					ev.Enrichment["parent_image"] = parent.image
 				}
@@ -133,7 +142,24 @@ func (en *Enricher) trackProcess(ev *model.Event) {
 		}
 	}
 
-	m := en.hosts[host]
+	entry := procEntry{name: p.Name, image: p.Image, created: ev.Timestamp, lastSeen: now}
+	if ev.Type != model.TypeProcessCreate && known &&
+		(p.Name == "" || old.name == "" || strings.EqualFold(p.Name, old.name)) &&
+		(p.Image == "" || old.image == "" || strings.EqualFold(p.Image, old.image)) {
+		// Non-create telemetry often carries only the PID. Preserve
+		// established fields, but never mix conflicting identities or
+		// inherit fields on a new process.create (PID reuse).
+		entry.created = old.created
+		if entry.name == "" {
+			entry.name = old.name
+		}
+		if entry.image == "" {
+			entry.image = old.image
+		}
+	}
+	if entry.name == "" && entry.image == "" {
+		return // no evidence of an identity: do not consume tracking slots
+	}
 	if m == nil {
 		if len(en.hosts) >= maxHosts {
 			en.evictOldestHost(now)
@@ -141,7 +167,7 @@ func (en *Enricher) trackProcess(ev *model.Event) {
 		m = make(map[int64]procEntry)
 		en.hosts[host] = m
 	}
-	m[int64(p.PID)] = procEntry{name: p.Name, image: p.Image, lastSeen: now}
+	m[int64(p.PID)] = entry
 	if len(m) > maxProcsPerHost {
 		en.trimHost(m, now)
 	}
