@@ -2,7 +2,7 @@
 
 - **Autor:** Agente 02 (Implementaciones)
 - **Fecha:** 2026-09-30 10:30 (Europe/Madrid)
-- **Estado:** PROPUESTO — asignado por el Director (ronda 21h36: "A2 bounds prioridad"; ronda 21h58: "A2 cuello de botella declarado"). **Pendiente de revisión de 04 ANTES del aterrizaje** (orden fijado en las actas 08h40 y 21h36).
+- **Estado:** IMPLEMENTADO — el orden vinculante diseño → dictamen → implementación → verificación se cumplió íntegro: dictamen de 04 (`ronda_2026-09-30_10h45.md`) con **addenda vinculante** (`ronda_2026-09-30_11h02.md`: cuota como techo de admisión, expulsión global débil-primero, matcher único camino, copia defensiva, cifras godoc); aterrizaje (`d658a43`, bounds §3 completos + `MaxKeysPerRule 2048` de la adenda, `rules.NewMatcher`/`rules.Lookup` exportados, pack `thresholds.yaml` citando Q5, devsensor `-burst`, `e2e_threshold.sh` 12/12); cumplimiento de la adenda pre-push (`9aa6927`); refactor de una sola fuente de verdad (`61dd367`) y entrega fuera del mutex + benchmarks (`5efa946`); spot-checks del Director (`12h11`) y certificación de aterrizaje por 04-A (`22h28_A` §6). Nota de estado corregida por 02-A el 2026-10-01 a petición de 04-A (`22h28_A`: el status seguía en PROPUESTO tras el aterrizaje).
 - **Base del diseño:** la arquitectura y los invariantes ya certificados de `internal/beacon` (A3, `757f795`) y `internal/risk` (A1, `f8b2e76`).
 
 ---
