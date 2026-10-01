@@ -3,10 +3,13 @@
 import { ArrowClockwise, ArrowRight, CheckCircle, WarningCircle } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import type { ConsoleView } from './dashboard'
-import { pipelineIssues, triageSummary } from '@/lib/operations'
+import { pipelineIssues, triageSummary, type TriageTarget } from '@/lib/operations'
 import { formatTime } from '@/lib/console-types'
 
-export function OperationsOverview({ onNavigate }: { onNavigate: (view: ConsoleView) => void }) {
+export function OperationsOverview({ onNavigate, onTriage }: {
+  onNavigate: (view: ConsoleView) => void
+  onTriage: (target: TriageTarget) => void
+}) {
   const { alerts, stats, status, streamStatus, lastSyncAt, refresh, refreshing } = useEngine()
   const summary = triageSummary(alerts)
   const issues = pipelineIssues(stats)
@@ -47,16 +50,28 @@ export function OperationsOverview({ onNavigate }: { onNavigate: (view: ConsoleV
             </span>
             <h2 className="text-sm text-zinc-300">alertas críticas sin cerrar</h2>
           </div>
-          <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-400">
-            <span>{available ? summary.pending : '—'} nuevas</span>
-            <span>{available ? summary.acknowledged : '—'} reconocidas</span>
-            <span>{available ? summary.closed : '—'} cerradas</span>
-          </p>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-400">
+            {([
+              { target: 'new', count: summary.pending, label: 'nuevas' },
+              { target: 'acknowledged', count: summary.acknowledged, label: 'reconocidas' },
+              { target: 'closed', count: summary.closed, label: 'cerradas' },
+            ] as const).map(({ target, count, label }) => (
+              <button key={target} type="button" onClick={() => onTriage(target)} disabled={!available}
+                aria-label={`Ver alertas ${label}: ${available ? count : 'sin datos'}`}
+                className="rounded-sm underline decoration-zinc-600 underline-offset-4 hover:text-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:no-underline">
+                {available ? count : '—'} {label}
+              </button>
+            ))}
+          </div>
           <p className="mt-2 text-[11px] text-zinc-500">
             {available ? 'Ventana de ' + alerts.length + ' alertas recibidas; los totales del motor aparecen debajo.' : 'El triaje se mostrará cuando se recupere la conexión.'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 md:flex-col md:items-stretch">
+          <button type="button" onClick={() => onTriage('critical')} disabled={!available}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-400/25 bg-red-400/10 px-3.5 py-2 text-xs font-medium text-red-300 transition-colors hover:bg-red-400/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-50">
+            Ver críticas sin cerrar <ArrowRight size={14} aria-hidden />
+          </button>
           <button type="button" onClick={() => onNavigate('alertas')}
             className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3.5 py-2 text-xs font-medium text-emerald-300 transition-colors hover:bg-emerald-400/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             Abrir cola de alertas <ArrowRight size={14} aria-hidden />

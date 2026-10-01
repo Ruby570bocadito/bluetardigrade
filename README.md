@@ -49,7 +49,7 @@ Real telemetry: [Windows installation](docs/OPERATIONS.md#one-command-install-wi
 
 ## Interactive CLI
 
-`engine run -i` provides a bounded, keyboard-driven workspace with alert and rule views. Search by rule, host, user, summary or ATT&CK tag; filter severity; inspect a selected alert or a rule's conditions. Historical selection stays steady when new alerts arrive, and the catalogue follows rule reloads.
+`engine run -i` provides a bounded, keyboard-driven workspace with alert and rule views. Search by alert/event ID, event type, rule, host, user, summary or ATT&CK tag; filter severity; inspect a selected alert or a rule's conditions. Search is case-insensitive and every whitespace-separated term must appear somewhere in the row's fields: `LAB-A powershell` combines host and rule evidence. Historical selection stays steady when new alerts arrive, and the catalogue follows rule reloads.
 
 | Key | Action |
 |-----|--------|
@@ -106,6 +106,12 @@ bun run dev
 | Analista IA | Optional explanation and investigation assistance through your configured model |
 
 Unavailable metrics show **`—`**, rather than zero. The panel distinguishes a reachable API from a reconnecting live channel. Reconnects merge snapshots with incoming frames without duplicating alerts or inflating counters, and a missing optional response surface clears its old state.
+
+Use **Ver críticas sin cerrar** or the new/acknowledged/closed counts in the
+operation summary to open that triage queue directly. These shortcuts use
+the same live window as the counts, clear old alert search/history/selection
+filters and preserve other views' URL lenses. Browser Back restores the
+previous investigation. The shortcuts are disabled while the API is unavailable.
 
 Deep links such as `/?view=alertas&historial=1&estado=open&sev=critical&q=lsass` survive refresh and browser history. Navigation also supports `g` followed by `p/f/a/r/c/s/k/n`; a keyboard skip link goes straight to the main content.
 
@@ -206,6 +212,7 @@ docs/                operations, architecture and development reports
 | [CLI/dashboard review](docs/REVISION-CLI-DASHBOARD.md) | First-round findings and verification |
 | [Historical investigations](docs/REVISION-HISTORICO.md) | Pagination, lifecycle filters and second-round verification |
 | [Command palette and browser checks](docs/PALETA-Y-PRUEBAS-NAVEGADOR.md) | Commands, keyboard scope, native dialogs and reproducible Chromium regressions |
+| [CLI search and dashboard triage](docs/INVESTIGACION-CLI-Y-TRIAJE.md) | Alert identity search, multiword queries and direct triage shortcuts |
 | [Technical architecture PDF](docs/arquitectura-tecnica-v0.11.pdf) | Spanish technical reference |
 | [Changelog](CHANGELOG.md) | Release history |
 | [Security policy](SECURITY.md) | Private vulnerability reporting |

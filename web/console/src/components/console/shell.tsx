@@ -37,6 +37,7 @@ import {
   shortcutRows,
 } from '@/lib/keyboard-nav'
 import { useAnalystChannel } from './socket-provider'
+import { writeTriageDestination, type TriageTarget } from '@/lib/operations'
 
 const NAV_ICONS: Record<ConsoleView, React.ElementType> = {
   panel: SquaresFour, flujo: ActivityIcon, alertas: Warning, reglas: ShieldCheck,
@@ -81,6 +82,11 @@ export function ConsoleShell() {
     if (readOperatorState(currentSearch()).view !== next) {
       pushOperatorState((search) => writeViewToSearch(search, next))
     }
+  }
+  const openTriage = (target: TriageTarget) => {
+    pushOperatorState((search) => writeTriageDestination(search, target))
+    setViewState('alertas')
+    requestAnimationFrame(() => document.getElementById('console-main')?.focus({ preventScroll: true }))
   }
   const hintTitle = (id: ConsoleView): string | undefined => {
     const hint = shortcutHintFor(id)
@@ -378,7 +384,7 @@ export function ConsoleShell() {
 
           <main id="console-main" tabIndex={-1} className="flex-1 px-4 py-5 outline-none lg:px-6">
             <AnimatedView viewKey={view}>
-              {view === 'panel' && <Dashboard onAnalyze={openInAnalyst} onNavigate={setView} />}
+              {view === 'panel' && <Dashboard onAnalyze={openInAnalyst} onNavigate={setView} onTriage={openTriage} />}
               {view === 'flujo' && <LiveFeed />}
               {view === 'alertas' && <AlertsView onAnalyze={openInAnalyst} />}
               {view === 'reglas' && <RulesView />}

@@ -12,6 +12,22 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Added — investigation shortcuts
+
+- Dashboard shortcuts open critical alerts that remain open, or new,
+  acknowledged and closed live alerts, directly from the operation summary.
+- Interactive CLI searches accept terms across multiple fields and include
+  alert IDs, event IDs and event types, with case-insensitive matching.
+- Browser coverage of fresh triage lenses and history restoration; DOM
+  checks of dashboard actions and offline disabled states.
+
+### Fixed — investigation context
+
+- Dashboard triage shortcuts clear stale alert search, severity, history
+  and selected-alert lenses while retaining feed, rule and audit context.
+- Whitespace-only terminal searches no longer hide all rows; all query
+  terms must match, and the severity filter remains an intersection.
+
 ### Added — command palette and browser regressions
 
 - Searchable console commands on desktop and mobile; Ctrl+K / Meta+K,

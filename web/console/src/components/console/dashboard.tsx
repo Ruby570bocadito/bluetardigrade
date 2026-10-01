@@ -16,15 +16,18 @@ import { EmptyState, OfflineNotice, SectionHeader, SkeletonRows, MonoTag } from 
 import { AnimatedItem } from '@/components/reactbits/animated-list'
 import { SpotlightCard } from '@/components/reactbits/spotlight-card'
 import { eventDetail, formatTime, type SfAlert } from '@/lib/console-types'
+import type { TriageTarget } from '@/lib/operations'
 
 export type ConsoleView = 'panel' | 'flujo' | 'alertas' | 'reglas' | 'cadenas' | 'supresiones' | 'respuesta' | 'analista'
 
 export function Dashboard({
   onAnalyze,
   onNavigate,
+  onTriage,
 }: {
   onAnalyze: (al: SfAlert) => void
   onNavigate: (view: ConsoleView) => void
+  onTriage: (target: TriageTarget) => void
 }) {
   const { events, status, stats } = useEngine()
 
@@ -37,7 +40,7 @@ export function Dashboard({
         />
       )}
 
-      <OperationsOverview onNavigate={onNavigate} />
+      <OperationsOverview onNavigate={onNavigate} onTriage={onTriage} />
       <KpiRow stats={stats} />
 
       <div className="grid gap-6 xl:grid-cols-3">

@@ -73,12 +73,14 @@ existentes pasan.
 El YAML de CI, los enlaces locales y el formato del diff se comprueban antes
 de publicar.
 
-El runner de navegador contiene diez comprobaciones: foco inicial y opción
+Esta ronda incorporó diez comprobaciones de navegador: foco inicial y opción
 activa, Tab/Shift+Tab y restauración, búsqueda y lentes, resultado vacío,
 flechas e historial, refresh en curso y cambio a ayuda, guards de teclado,
 histórico y triaje por POST, escritorio y móvil. Usa la consola real, con
 REST/SSE aislados como fixtures de prueba; las capturas se etiquetan como
 evidencia de regresión, no como una sesión real de un sensor.
+La [ronda posterior de triaje](INVESTIGACION-CLI-Y-TRIAJE.md) añade una
+comprobación de accesos del dashboard y eleva el runner actual a once.
 
 En la [ejecución de CI que descubrió el error de hidratación](https://github.com/Ruby570bocadito/security-framework/actions/runs/36881549412),
 las diez interacciones pasaron y el guard de errores de página detectó

@@ -137,10 +137,11 @@ on manual runs to catch regressions.
 
 `check_console_browser.mjs` runs the built application in Chromium. The
 browser uses isolated REST responses and an SSE fixture; it never sends
-triaje or commands to a live engine. Ten checks exercise command search,
+triaje or commands to a live engine. Eleven checks exercise command search,
 keyboard navigation, focus containment/restoration, URL lenses and history,
 busy refresh, help handoff, composition/consumed events, historical paging,
-POST-only triage, mobile access and reduced motion. Fixture screenshots are
+POST-only triage, dashboard triage shortcuts/history restoration, mobile
+access and reduced motion. Fixture screenshots are
 stored in the ignored `captures/browser-regression/` directory.
 The initial load and the final page must also be free of browser runtime
 errors, including server/client hydration mismatches under reduced motion.

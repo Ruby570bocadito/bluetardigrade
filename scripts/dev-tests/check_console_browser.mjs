@@ -239,6 +239,41 @@ try {
     await waitView('flujo')
     await page.keyboard.press('Escape')
   })
+  await check('dashboard shortcuts open the counted live lens and Back restores the prior investigation', async () => {
+    await openPalette()
+    await search().fill('panel')
+    await page.keyboard.press('Enter')
+    await waitView('panel')
+    const originalSearch = new URL(page.url()).search
+    await page.evaluate(() => {
+      const url = new URL(location.href)
+      for (const [key, value] of Object.entries({ q: 'obsolete', sev: 'low', estado: 'closed', historial: '1', alert: 'old-id' })) url.searchParams.set(key, value)
+      history.replaceState(history.state, '', url)
+    })
+    const prior = page.url()
+    for (const [name, state, severity] of [
+      ['Ver críticas sin cerrar', 'open', 'critical'],
+      ['Ver alertas nuevas', 'new', null],
+      ['Ver alertas reconocidas', 'acknowledged', null],
+      ['Ver alertas cerradas', 'closed', null],
+    ]) {
+      await page.getByRole('button', { name: state === 'open' ? name : new RegExp('^' + name + ':') }).click()
+      await waitView('alertas')
+      const params = new URL(page.url()).searchParams
+      assert.equal(params.get('estado'), state)
+      assert.equal(params.get('sev'), severity)
+      for (const key of ['q', 'historial', 'alert']) assert.equal(params.get(key), null)
+      assert.equal(params.get('custom'), 'keep')
+      assert.equal(params.get('fq'), new URLSearchParams(originalSearch).get('fq'))
+      await page.waitForFunction(() => document.activeElement?.id === 'console-main')
+      if (state === 'open' || state === 'new') await page.getByRole('button', { name: 'Fixture detection', exact: true }).waitFor()
+      await page.goBack()
+      await waitView('panel')
+      assert.equal(page.url(), prior)
+    }
+    await page.evaluate((search) => history.replaceState(history.state, '', location.pathname + search + location.hash), originalSearch)
+    await page.screenshot({ path: join(captures, 'dashboard-triage.png') })
+  })
   await check('historical alert paging and POST triage work without an SSE acknowledgement', async () => {
     await openPalette()
     await search().fill('historial')
