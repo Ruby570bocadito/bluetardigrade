@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/rules"
-	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
 // truncateRunes must cut on rune boundaries: byte slicing corrupted

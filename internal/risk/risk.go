@@ -1,7 +1,6 @@
 // Package risk maintains a per-host risk score from recent alerts,
 // with exponential time decay. It is package A1 of the owner's
-// roadmap (docs/agentes/01-director/ronda_2026-09-29_22h01.md,
-// section 7A): "acumular puntos por alertas recientes con decaimiento
+// roadmap (section 7A of the original design directive): "acumular puntos por alertas recientes con decaimiento
 // temporal, KPI 'hosts calientes' en /api/stats + consola".
 //
 // Design notes:
@@ -38,7 +37,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/rules"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
 )
 
 // HalfLife is the time over which a host's score halves without new

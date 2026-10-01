@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
 )
 
 // fakeSMTP is a minimal in-process SMTP server for exercising the

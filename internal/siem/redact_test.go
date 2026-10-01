@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
 )
 
 // Regression for the defect-#30 class inside the SIEM sinks: a
@@ -68,7 +68,7 @@ func TestElastic4xxIsPermanent(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	e := NewElastic(srv.URL, "sf-alerts")
+	e, _ := NewElastic(srv.URL, "sf-alerts")
 	e.backoff = time.Millisecond
 	e.deliverBatch(context.Background(), []alert.Alert{sampleAlert(), sampleAlert()})
 
@@ -87,7 +87,7 @@ func TestSplunkFailureLogRedactsCredentialURL(t *testing.T) {
 	// closed port: transport error on every attempt, retryable, the
 	// budget exhausts and the failure line lands with the URL in it
 	// (pre-fix) or the endpoint label (post-fix).
-	s := NewSplunk("http://SFUSER:SUPERSECRETKEY@127.0.0.1:1/services/collector/event")
+	s, _ := NewSplunk("http://SFUSER:SUPERSECRETKEY@127.0.0.1:1/services/collector/event")
 	s.backoff = time.Millisecond
 	s.deliver(context.Background(), sampleAlert())
 
@@ -109,7 +109,7 @@ func TestSplunkFailureLogRedactsCredentialURL(t *testing.T) {
 func TestElasticFailureLogRedactsCredentialURL(t *testing.T) {
 	read := captureLog(t)
 
-	e := NewElastic("http://SFUSER:SUPERSECRETKEY@127.0.0.1:1/_bulk", "sf-alerts")
+	e, _ := NewElastic("http://SFUSER:SUPERSECRETKEY@127.0.0.1:1/_bulk", "sf-alerts")
 	e.backoff = time.Millisecond
 	e.deliverBatch(context.Background(), []alert.Alert{sampleAlert()})
 

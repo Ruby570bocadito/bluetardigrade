@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Ruby570bocadito/security-framework/internal/rules"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
 )
 
 // The ANSI constants were corrupted once (round 1 of the audit): every

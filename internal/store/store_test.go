@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/alert"
-	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
 func openTestStore(t *testing.T) *Store {

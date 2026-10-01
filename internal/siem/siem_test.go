@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
 )
 
 // sampleAlert is the canonical fixture: a fixed ID and timestamp so
@@ -147,7 +147,7 @@ func TestElasticBulkExactBytes(t *testing.T) {
 	c := &capture{response: func() (int, string) { return http.StatusOK, bulkAnswer(201) }}
 	srv := newServer(t, c)
 
-	e := NewElastic(srv.URL, "sf-alerts")
+	e, _ := NewElastic(srv.URL, "sf-alerts")
 	e.SetAPIKey("c2Yta2V5")
 	e.backoff = time.Millisecond
 	go e.Run(context.Background())
@@ -198,7 +198,7 @@ func TestElasticNoAuthHeaderWithoutKey(t *testing.T) {
 	c := &capture{response: func() (int, string) { return http.StatusOK, bulkAnswer(201) }}
 	srv := newServer(t, c)
 
-	e := NewElastic(srv.URL, "")
+	e, _ := NewElastic(srv.URL, "")
 	e.backoff = time.Millisecond
 	go e.Run(context.Background())
 
@@ -218,7 +218,7 @@ func TestElasticPartialItemFailure(t *testing.T) {
 	c := &capture{response: func() (int, string) { return http.StatusOK, bulkAnswer(201, 400) }}
 	srv := newServer(t, c)
 
-	e := NewElastic(srv.URL, "sf-alerts")
+	e, _ := NewElastic(srv.URL, "sf-alerts")
 	e.backoff = time.Millisecond
 	e.maxBatch = 2
 	go e.Run(context.Background())
@@ -261,7 +261,7 @@ func TestElasticRetryOn429ThenSuccess(t *testing.T) {
 	c.mu.Unlock()
 	srv := newServer(t, c)
 
-	e := NewElastic(srv.URL, "sf-alerts")
+	e, _ := NewElastic(srv.URL, "sf-alerts")
 	e.backoff = time.Millisecond
 	go e.Run(context.Background())
 
@@ -279,7 +279,7 @@ func TestElasticBatchCap(t *testing.T) {
 	c := &capture{response: func() (int, string) { return http.StatusOK, bulkAnswer(201, 201, 201, 201) }}
 	srv := newServer(t, c)
 
-	e := NewElastic(srv.URL, "sf-alerts")
+	e, _ := NewElastic(srv.URL, "sf-alerts")
 	e.backoff = time.Millisecond
 	e.maxBatch = 4
 	go e.Run(context.Background())
@@ -302,7 +302,7 @@ func TestElasticBatchCap(t *testing.T) {
 }
 
 func TestElasticQueueFullDrops(t *testing.T) {
-	e := NewElastic("http://127.0.0.1:1", "sf-alerts")
+	e, _ := NewElastic("http://127.0.0.1:1", "sf-alerts")
 	e.queue = make(chan alert.Alert, 1) // direct override: tiny spool
 	for i := 0; i < 3; i++ {
 		e.Handle(sampleAlert())
@@ -321,7 +321,7 @@ func TestElasticDrainSingleAttempt(t *testing.T) {
 	c := &capture{response: func() (int, string) { return http.StatusOK, bulkAnswer(201) }}
 	srv := newServer(t, c)
 
-	e := NewElastic(srv.URL, "sf-alerts")
+	e, _ := NewElastic(srv.URL, "sf-alerts")
 	e.Handle(sampleAlert())
 	e.Handle(sampleAlert())
 	e.drain(func(a alert.Alert) { e.deliverBatch(context.Background(), []alert.Alert{a}) })
@@ -338,7 +338,7 @@ func TestSplunkExactBody(t *testing.T) {
 	c := &capture{response: func() (int, string) { return http.StatusOK, `{"text":"Success","code":0}` }}
 	srv := newServer(t, c)
 
-	s := NewSplunk(srv.URL)
+	s, _ := NewSplunk(srv.URL)
 	s.SetToken("hec-token-1")
 	s.backoff = time.Millisecond
 	go s.Run(context.Background())
@@ -387,7 +387,7 @@ func TestSplunkCodeNonZeroIsPermanent(t *testing.T) {
 	c := &capture{response: func() (int, string) { return http.StatusOK, `{"text":"Incorrect index","code":4}` }}
 	srv := newServer(t, c)
 
-	s := NewSplunk(srv.URL)
+	s, _ := NewSplunk(srv.URL)
 	s.SetToken("hec-token-1")
 	s.backoff = time.Millisecond
 	go s.Run(context.Background())
@@ -412,7 +412,7 @@ func TestSplunkRetryOn500ThenSuccess(t *testing.T) {
 	c.mu.Unlock()
 	srv := newServer(t, c)
 
-	s := NewSplunk(srv.URL)
+	s, _ := NewSplunk(srv.URL)
 	s.SetToken("hec-token-1")
 	s.backoff = time.Millisecond
 	go s.Run(context.Background())
@@ -428,7 +428,7 @@ func TestSplunkNoTokenNoHeader(t *testing.T) {
 	c := &capture{response: func() (int, string) { return http.StatusOK, `{"text":"Success","code":0}` }}
 	srv := newServer(t, c)
 
-	s := NewSplunk(srv.URL)
+	s, _ := NewSplunk(srv.URL)
 	s.backoff = time.Millisecond
 	go s.Run(context.Background())
 
@@ -442,7 +442,7 @@ func TestSplunkNoTokenNoHeader(t *testing.T) {
 }
 
 func TestSplunkQueueFullDrops(t *testing.T) {
-	s := NewSplunk("http://127.0.0.1:1")
+	s, _ := NewSplunk("http://127.0.0.1:1")
 	s.queue = make(chan alert.Alert, 1)
 	for i := 0; i < 3; i++ {
 		s.Handle(sampleAlert())
@@ -457,7 +457,7 @@ func TestSplunkDrainSingleAttempt(t *testing.T) {
 	c := &capture{response: func() (int, string) { return http.StatusOK, `{"text":"Success","code":0}` }}
 	srv := newServer(t, c)
 
-	s := NewSplunk(srv.URL)
+	s, _ := NewSplunk(srv.URL)
 	s.Handle(sampleAlert())
 	s.Handle(sampleAlert())
 	s.drain(func(a alert.Alert) { s.deliver(context.Background(), a) })

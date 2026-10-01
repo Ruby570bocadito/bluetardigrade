@@ -1,4 +1,4 @@
-// Shared types for the security-framework web console. They mirror the
+// Shared types for the bluetardigrade web console. They mirror the
 // JSON contracts served by the Go engine's local API (internal/api,
 // :7778 by default): /api/stats, /api/events, /api/alerts, /api/rules
 // and the SSE frames of /api/stream. The console never invents data:

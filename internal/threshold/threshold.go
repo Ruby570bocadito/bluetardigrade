@@ -63,9 +63,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/alert"
-	"github.com/Ruby570bocadito/security-framework/internal/rules"
-	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/yamlcheck"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 
 	"gopkg.in/yaml.v3"
 )
@@ -170,6 +171,9 @@ func loadFile(path string) ([]compiled, map[string]*compiled, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("threshold: read %s: %w", path, err)
+	}
+	if err := yamlcheck.Guard(path, data); err != nil {
+		return nil, nil, err
 	}
 	var defs []Definition
 	if err := yaml.Unmarshal(data, &defs); err != nil {

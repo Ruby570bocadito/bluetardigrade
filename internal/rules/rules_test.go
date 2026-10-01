@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 	"gopkg.in/yaml.v3"
 )
 

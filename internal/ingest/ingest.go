@@ -23,13 +23,24 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/tlsutil"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
 const (
 	maxLineSize = 1 << 20 // 1 MiB per event line
 	idleTimeout = 5 * time.Minute
 	ackOK       = `{"ack":"ok"}` + "\n"
+
+	// maxConns caps concurrent ingest connections. Every conn pins a
+	// goroutine and up to maxLineSize of scanner buffer BEFORE any
+	// authentication completes, so an unbounded accept loop turns a
+	// pre-auth connection flood into FD/RAM exhaustion — a remote-bind
+	// engine (0.0.0.0 + token) must not be cheaper to crash than to
+	// authenticate against. Legitimate fleets sit far below this; over
+	// the cap the connection is closed immediately and counted in
+	// Rejected (the same counter the console already surfaces).
+	maxConns = 512
 )
 
 // authTimeout bounds how long the server waits for the AUTH line.
@@ -56,10 +67,10 @@ type Server struct {
 	mu        sync.Mutex
 	closing   bool
 	open      map[net.Conn]struct{}
-	token     string        // empty = auth disabled (loopback deployments)
-	prevToken string        // still accepted during a rotation window
-	tls       bool          // true when the listener wraps connections in TLS
-	reloader  *certReloader // hot-rotation state; nil on plain listeners
+	token     string            // empty = auth disabled (loopback deployments)
+	prevToken string            // still accepted during a rotation window
+	tls       bool              // true when the listener wraps connections in TLS
+	reloader  *tlsutil.Reloader // hot-rotation state; nil on plain listeners
 
 	received atomic.Uint64
 	dropped  atomic.Uint64
@@ -109,8 +120,9 @@ func (s *Server) Received() uint64 { return s.received.Load() }
 // Dropped returns the number of malformed lines rejected.
 func (s *Server) Dropped() uint64 { return s.dropped.Load() }
 
-// Rejected returns the number of connections closed for failing the
-// AUTH handshake (wrong token, missing token, or timeout).
+// Rejected returns the number of connections closed before serving
+// events: failing the AUTH handshake (wrong token, missing token, or
+// timeout) or tripping the concurrent-connection cap.
 func (s *Server) Rejected() uint64 { return s.rejected.Load() }
 
 // Serve accepts connections until Shutdown is called.
@@ -139,6 +151,17 @@ func (s *Server) Serve() {
 		s.mu.Lock()
 		if s.closing {
 			s.mu.Unlock()
+			conn.Close()
+			continue
+		}
+		// connection cap: len(open) is exact under mu — the
+		// same critical section Shutdown uses, so a connection
+		// rejected here is closed by us and never counted as an
+		// open one anywhere else.
+		if len(s.open) >= maxConns {
+			s.mu.Unlock()
+			s.rejected.Add(1)
+			_, _ = fmt.Fprintln(conn, `{"ack":"error","error":"connection limit reached, retry shortly"}`)
 			conn.Close()
 			continue
 		}

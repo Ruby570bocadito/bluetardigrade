@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Ruby570bocadito/security-framework/internal/respond"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/respond"
 )
 
 // armedRespondReadHub builds a hub with the kill surface armed AND the

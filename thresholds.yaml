@@ -9,7 +9,7 @@
 # detection windows.
 #
 # Field vocabulary: dotted paths over the event schema (see README,
-# "Detection rules"). Operators: the 11 of internal/rules.
+# "Detection rules"). Operators: the 17 of internal/rules.
 
 # Credential spraying / brute force: many connections to a single
 # sensitive port from the same source. Grouped per source IP so one

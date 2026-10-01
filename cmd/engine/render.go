@@ -10,8 +10,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Ruby570bocadito/security-framework/internal/redact"
-	"github.com/Ruby570bocadito/security-framework/internal/rules"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/redact"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"golang.org/x/term"

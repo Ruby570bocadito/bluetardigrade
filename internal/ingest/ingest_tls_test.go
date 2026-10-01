@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
 // writeSelfSignedCert generates a self-signed TLS certificate with the

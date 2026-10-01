@@ -10,7 +10,7 @@
   --font-mono: var(--font-geist-mono);
   --font-display: var(--font-instrument-serif);
   --font-body: var(--font-geist-sans);
-  --color-sentira: #8fc573;
+  --color-blu: #4dc3ff;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -82,23 +82,23 @@
 }
 
 .dark {
-  --background: #0a0a09;
-  --foreground: #f4f3ef;
-  --card: #141412;
-  --card-foreground: #f4f3ef;
-  --popover: #141412;
-  --popover-foreground: #f4f3ef;
-  --primary: #f4f3ef;
+  --background: #060a10;
+  --foreground: #edf3fa;
+  --card: #0b111a;
+  --card-foreground: #edf3fa;
+  --popover: #0b111a;
+  --popover-foreground: #edf3fa;
+  --primary: #edf3fa;
   --primary-foreground: #111110;
   --secondary: #1c1c1a;
-  --secondary-foreground: #f4f3ef;
+  --secondary-foreground: #edf3fa;
   --muted: #1c1c1a;
   --muted-foreground: #a6a49c;
   --accent: #1c1c1a;
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: rgba(244, 243, 239, 0.09);
-  --input: rgba(244, 243, 239, 0.14);
+  --border: rgba(148, 189, 233, 0.11);
+  --input: rgba(148, 189, 233, 0.16);
   --ring: #8fc573;
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
@@ -161,12 +161,12 @@
   height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: #0a0a09;
+  background: #060a10;
 }
 ::-webkit-scrollbar-thumb {
   background: #2a2a27;
   border-radius: 8px;
-  border: 2px solid #0a0a09;
+  border: 2px solid #060a10;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #3a3a36;
@@ -174,5 +174,5 @@
 
 ::selection {
   background: rgba(143, 197, 115, 0.28);
-  color: #f4f3ef;
+  color: #edf3fa;
 }

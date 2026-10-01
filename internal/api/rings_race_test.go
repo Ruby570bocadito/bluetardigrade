@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/alert"
-	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
 // Regression (04-A, ronda 2026-10-01): handleEvents and handleAlerts

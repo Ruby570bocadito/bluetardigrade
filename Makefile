@@ -1,4 +1,4 @@
-# security-framework — build automation
+# bluetardigrade — build automation
 # Targets:
 #   make run-engine       start the detection engine (:7777)
 #   make run-devsensor    replay the simulated TTP scenario
@@ -19,7 +19,7 @@ GO      ?= go
 CARGO   ?= cargo
 BUN     ?= bun
 BIN_DIR ?= bin
-MODULE  := github.com/Ruby570bocadito/security-framework
+MODULE  := github.com/Ruby570bocadito/bluetardigrade
 
 .PHONY: all run-engine run-devsensor build test tidy fmt vet build-sensor build-sensor-windows docker-build console-install console-service console console-dom console-browser ci dist clean
 
@@ -58,7 +58,7 @@ build-sensor-windows:
 	@echo "sensor binary: sensor/target/x86_64-pc-windows-msvc/release/security-sensor.exe"
 
 docker-build:
-	docker build -t security-framework-engine .
+	docker build -t bluetardigrade-engine .
 
 console-install:
 	cd web/console && $(BUN) install

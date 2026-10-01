@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/correlate"
-	"github.com/Ruby570bocadito/security-framework/internal/rules"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/correlate"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
 	"github.com/spf13/cobra"
 )
 

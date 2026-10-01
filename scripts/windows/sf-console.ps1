@@ -14,7 +14,12 @@ param(
     [int]$ServicePort = 3003
 )
 
-$ErrorActionPreference = 'SilentlyContinue'
+# 'Continue' (the default the script used to override away): failures
+# print in red AND the launcher keeps going to the next section. The
+# old global 'SilentlyContinue' meant a failed spawn or corrupt pid
+# file produced a console that "did nothing" with zero output - the
+# empty-console failure mode needed three tools to diagnose.
+$ErrorActionPreference = 'Continue'
 
 # resolve install root: installed copy lives at <root>\scripts\
 $root = Split-Path -Parent $PSScriptRoot
@@ -134,7 +139,7 @@ if (-not (Test-PortLocal 7777)) {
         if (Test-Path $tokFile) {
             $tok = (Get-Content $tokFile -First 1 -ErrorAction SilentlyContinue)
             if ($tok) { $tok = $tok.Trim() }
-            if ($tok) { $engineArgs += " -token $tok" }
+            if ($tok) { $engineArgs += " -token `"$tok`"" }
         }
         # -pidfile: same contract as the autostart entry, so -Stop works
         # no matter which launcher started the engine.

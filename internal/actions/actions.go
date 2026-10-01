@@ -44,9 +44,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/alert"
-	"github.com/Ruby570bocadito/security-framework/internal/redact"
-	"github.com/Ruby570bocadito/security-framework/internal/rules"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/redact"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
 )
 
 const (
@@ -82,10 +82,18 @@ func New(logf *log.Logger) *Dispatcher {
 		logf = log.New(io.Discard, "", 0)
 	}
 	return &Dispatcher{
-		once:   map[string]bool{},
-		client: &http.Client{},
-		sem:    make(chan struct{}, maxInFlight),
-		log:    logf,
+		once: map[string]bool{},
+		// No transparent redirects: a 3xx from the receiver would
+		// re-POST the alert payload (command lines, users, hashes) to
+		// whatever host the redirect names. Go already drops the
+		// Authorization header cross-host, but the forensic body has no
+		// such protection — hand the redirect back to the caller as a
+		// response instead of following it.
+		client: &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		}},
+		sem: make(chan struct{}, maxInFlight),
+		log: logf,
 	}
 }
 

@@ -20,7 +20,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/Ruby570bocadito/security-framework/internal/respond"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/respond"
 )
 
 // respondMaxBodyBytes caps the request body, same limit and rationale

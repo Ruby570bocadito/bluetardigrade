@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/suppress"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/suppress"
 )
 
 // suppressMaxBodyBytes caps the POST /api/suppressions request body,

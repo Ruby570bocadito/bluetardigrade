@@ -73,3 +73,19 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
+
+  # Sensor Rust (ETW collector: ferrisetw, native-tls, serde...). Sin
+  # esta entrada el binario más expuesto al host Windows era el único
+  # componente sin seguimiento de dependencias (gap del propio objetivo
+  # G6: dependencias sin vulnerabilidades sin documentar).
+  - package-ecosystem: "cargo"
+    directory: "/sensor"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"

@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/suppress"
-	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/suppress"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
 // isLoopback reports whether the address binds a loopback interface

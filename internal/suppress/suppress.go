@@ -19,6 +19,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Ruby570bocadito/bluetardigrade/internal/yamlcheck"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -327,6 +329,9 @@ func parseFile(path string) ([]Parsed, error) {
 			return nil, nil // no file: suppression disabled, not an error
 		}
 		return nil, fmt.Errorf("suppress: read %s: %w", path, err)
+	}
+	if err := yamlcheck.Guard(path, data); err != nil {
+		return nil, err
 	}
 	var raw []Entry
 	if err := yaml.Unmarshal(data, &raw); err != nil {

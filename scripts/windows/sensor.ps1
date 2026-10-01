@@ -26,6 +26,9 @@
 #   sf-sensor -SetupSysmon             (one-time: install Sysmon + apply
 #                                       the bundled config; UAC prompt)
 #   sf-sensor -Addr 10.0.0.5:7777
+#   sf-sensor -Token <ingest-token>    (required when the engine runs
+#                                       with -token; also read from
+#                                       SF_INGEST_TOKEN)
 #   sf-sensor -NoEngine                (never auto-start the engine)
 #   sf-sensor -Quiet                   (suppress per-event console lines)
 #   sf-sensor -SelfTest                (validate the mapping layer, no
@@ -42,6 +45,7 @@
 # ======================================================================
 param(
     [string]$Addr = '127.0.0.1:7777',
+    [string]$Token = '',
     [switch]$NoEngine,
     [switch]$Quiet,
     [switch]$SelfTest,
@@ -50,6 +54,10 @@ param(
     [int]$ReconnectSeconds = 5
 )
 $ErrorActionPreference = 'Stop'
+
+# Same env fallback the engine honors, so an install that provisions
+# SF_INGEST_TOKEN works with a bare `sf-sensor` invocation.
+if (-not $Token) { $Token = [Environment]::GetEnvironmentVariable('SF_INGEST_TOKEN') }
 
 $sysmonLog = 'Microsoft-Windows-Sysmon/Operational'
 $watchedIds = 1, 3, 5, 7, 10, 11, 12, 13, 14, 22
@@ -460,16 +468,88 @@ function New-SensorWatcher {
     }
 }
 
+# ---- reconnection continuity -----------------------------------------
+# EventRecordID is monotonic inside one log, so remembering the last
+# processed id is a complete bookmark: after a reconnect the sensor (1)
+# arms the live watcher first (it buffers from activation), (2) drains
+# everything the log gained since the last seen id through a bounded
+# backlog query, (3) consumes the watcher skipping anything at or below
+# the drained maximum. Events emitted during a cut are RE-SENT, never
+# lost; a hard crash can re-send up to the last persisted id (duplicate
+# telemetry - the honest failure direction for a detection pipeline).
+$bookmarkFile = Join-Path $root 'run\sensor-bookmark.txt'
+
+function Load-LastRecordId {
+    try {
+        if (Test-Path $bookmarkFile) {
+            $v = [long](Get-Content -Path $bookmarkFile -ErrorAction Stop)
+            if ($v -gt 0) { return $v }
+        }
+    } catch { }
+    return 0
+}
+
+function Save-LastRecordId([long]$Id) {
+    if ($Id -le 0) { return }
+    try {
+        New-Item -ItemType Directory -Path (Join-Path $root 'run') -Force | Out-Null
+        Set-Content -Path $bookmarkFile -Value $Id -Encoding ASCII
+    } catch {
+        # persistence is best-effort: its only failure mode is
+        # re-sending a bounded slice of telemetry after a hard crash
+    }
+}
+
+# Read-BacklogSince returns every watched event with EventRecordID
+# greater than AfterId, oldest first, as raw records (same mapping the
+# live path applies). An empty log beyond AfterId returns nothing. The
+# XPath is passed RAW to EventLogQuery (not embedded in an XML
+# document), so the comparison is a literal '>' - an &gt; entity would
+# never be decoded here and the query would fail to parse.
+function Read-BacklogSince([long]$AfterId) {
+    $ids = ($watchedIds -join ') or (EventID=')
+    $xpathBacklog = '<QueryList><Query Id="0" Path="' + $sysmonLog + '"><Select Path="' + $sysmonLog + '">*[System[((EventID=' + $ids + ')) and (EventRecordID > ' + $AfterId + ')]]</Select></Query></QueryList>'
+    $query = New-Object System.Diagnostics.Eventing.Reader.EventLogQuery($sysmonLog, [System.Diagnostics.Eventing.Reader.PathType]::LogName, $xpathBacklog)
+    $reader = New-Object System.Diagnostics.Eventing.Reader.EventLogReader($query)
+    try {
+        while (($rec = $reader.ReadEvent()) -ne $null) { , $rec }
+    } finally {
+        $reader.Dispose()
+    }
+}
+
 function Send-EventLine([IO.StreamWriter]$W, [Net.Sockets.TcpClient]$C, [hashtable]$Ev) {
     $json = $Ev | ConvertTo-Json -Compress -Depth 6
     $W.WriteLine($json)
     $W.Flush()
 }
 
+# Convert-AndSend applies the shared mapping + shipping to one raw
+# Sysmon record and reports the record id (0 when the record maps to
+# nothing the engine cares about).
+function Convert-AndSend([object]$Rec, [IO.StreamWriter]$W) {
+    $xml = [xml]$Rec.ToXml()
+    $data = @{}
+    foreach ($d in $xml.Event.EventData.Data) {
+        if ($d.Name) { $data[$d.Name] = $d.'#text' }
+    }
+    $ev = ConvertFrom-SysmonRecord $Rec.Id $data $Rec.TimeCreated
+    $rid = 0
+    if ($xml.Event.System.EventRecordID) { $rid = [long]$xml.Event.System.EventRecordID }
+    if ($null -eq $ev) { return $rid }
+    Send-EventLine $W $null $ev
+    return $rid
+}
+
 Write-Host "[SENSOR] Sysmon subscription active ($sysmonLog) - streaming REAL activity to $Addr"
+if ($Token) { Write-Host '[SENSOR] ingest auth: ENABLED (AUTH handshake as first line)' }
 Write-Host '[SENSOR] press Ctrl+C to stop (engine keeps running)'
 
-# ---- main loop: connect -> subscribe -> consume, reconnect on failure --
+# ---- main loop: connect -> auth -> subscribe -> backlog -> consume --
+$lastRecordId = Load-LastRecordId
+if ($lastRecordId -gt 0) {
+    Write-Host "[SENSOR] resuming after record id $lastRecordId (events during the cut are re-sent)"
+}
 while ($true) {
     $client = New-Object Net.Sockets.TcpClient
     try { $client.Connect($ip, $port) } catch {
@@ -482,13 +562,63 @@ while ($true) {
     $writer = New-Object IO.StreamWriter($stream, (New-Object Text.UTF8Encoding($false)))
     $writer.NewLine = "`n"
 
+    # ---- ingest auth: must be the FIRST line when the engine has a
+    # token. A rejection is fatal on purpose - a wrong token never
+    # heals by retrying, and looping forever made the sensor look
+    # "connected" while the engine dropped every connection (the
+    # empty-console failure mode).
+    if ($Token) {
+        try {
+            $stream.ReadTimeout = 10000
+            $writer.WriteLine("AUTH $Token")
+            $writer.Flush()
+            $reader = New-Object IO.StreamReader($stream, (New-Object Text.UTF8Encoding($false)))
+            $ack = $reader.ReadLine()
+            if (-not $ack -or $ack -notmatch '"ack":"ok"') {
+                Write-Host "[SENSOR] auth rejected by engine: $ack" -ForegroundColor Red
+                Write-Host '[SENSOR] the engine requires a matching token: pass -Token here (or set SF_INGEST_TOKEN),'
+                Write-Host '[SENSOR] and make sure it is the SAME value the engine got via -token/SF_INGEST_TOKEN.'
+                exit 1
+            }
+            $stream.ReadTimeout = 0
+            Write-Host '[SENSOR] ingest auth accepted'
+        } catch {
+            Write-Host "[SENSOR] auth handshake failed: $($_.Exception.Message)" -ForegroundColor Red
+            exit 1
+        }
+    }
+
+    # Arm the live watcher FIRST: it buffers events raised while the
+    # backlog below is draining, which is what makes the reconnection
+    # gapless (see the bookmark note above the helpers).
     $watcher = New-SensorWatcher
     $sent = 0
     try {
         $watcher.Enabled = $true
+
+        # Backlog: everything the log gained since the last processed
+        # record, drained before the live wait loop starts. Skipped on
+        # the very first run (no bookmark = start from "now", never
+        # replay the whole log).
+        if ($lastRecordId -gt 0) {
+            foreach ($rec in (Read-BacklogSince $lastRecordId)) {
+                $rid = Convert-AndSend $rec $writer
+                if ($rid -gt $lastRecordId) { $lastRecordId = $rid }
+                $sent++
+            }
+            if ($sent -gt 0) { Write-Host "[SENSOR] backlog: $sent event(s) re-sent across the cut (up to record id $lastRecordId)" }
+        }
+
+        $saveCounter = 0
         while ($true) {
             $record = $watcher.WaitForNextEvent()
             $xml = [xml]$record.ToXml()
+            $rid = 0
+            if ($xml.Event.System.EventRecordID) { $rid = [long]$xml.Event.System.EventRecordID }
+            # the watcher can hand back events the backlog already
+            # shipped: EventRecordID is monotonic, so a single
+            # comparison is an exact dedupe
+            if ($rid -gt 0 -and $rid -le $lastRecordId) { continue }
             $data = @{}
             foreach ($d in $xml.Event.EventData.Data) {
                 if ($d.Name) { $data[$d.Name] = $d.'#text' }
@@ -498,6 +628,14 @@ while ($true) {
             if ($null -eq $ev) { continue }
             Send-EventLine $writer $client $ev
             $sent++
+            if ($rid -gt $lastRecordId) { $lastRecordId = $rid }
+            # periodic persistence: bounds how much telemetry a hard
+            # crash can duplicate on the next start
+            $saveCounter++
+            if ($saveCounter -ge 16) {
+                $saveCounter = 0
+                Save-LastRecordId $lastRecordId
+            }
             if (-not $Quiet) {
                 $detail = '-'
                 if ($ev.Contains('process') -and $ev['process']) { $detail = $ev['process']['name'] }
@@ -509,8 +647,10 @@ while ($true) {
         }
     } catch [Exception] {
         Write-Host "[SENSOR] stream interrupted: $($_.Exception.Message)"
-        Write-Host "[SENSOR] reconnecting in $ReconnectSeconds s..."
+        Write-Host "[SENSOR] reconnecting in $ReconnectSeconds s (the cut is covered by the record-id bookmark)..."
     } finally {
+        # persist the exact resume point before tearing down
+        Save-LastRecordId $lastRecordId
         $watcher.Enabled = $false
         $watcher.Dispose()
         $writer.Dispose()

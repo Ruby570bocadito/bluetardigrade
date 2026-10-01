@@ -7,7 +7,7 @@ Everything needed to install, configure and operate the framework: the one-comma
 From any PowerShell window, no admin account and no prior download required:
 
 ```powershell
-irm https://raw.githubusercontent.com/Ruby570bocadito/security-framework/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Ruby570bocadito/bluetardigrade/main/install.ps1 | iex
 ```
 
 The installer downloads the repository, provisions portable Go, Node and Bun under your user profile, builds the engine and the web console, and puts six commands on your PATH:
@@ -34,7 +34,7 @@ That installs Sysmon via winget (or finds an existing copy) and applies the bund
 
 ```powershell
 winget install Sysinternals.Sysmon
-sysmon -accepteula -i "$env:LOCALAPPDATA\security-framework\scripts\sysmon-config.xml"
+sysmon -accepteula -i "$env:LOCALAPPDATA\bluetardigrade\scripts\sysmon-config.xml"
 ```
 
 The shipped `sysmon-config.xml` is tuned to the detection pack and filters classic noise sources (ShimCache, UserAssist, MUICache, CDN DNS...). Then run `sf-sensor` (normal user; elevation or membership in the local `Event Log Readers` group is only needed to read the Sysmon log) and open `sf-console`: the alerts you see now correspond to real host activity - process creation, network and DNS, registry writes, file drops, and LSASS access (credential-dump detection).
@@ -42,10 +42,10 @@ The shipped `sysmon-config.xml` is tuned to the detection pack and filters class
 Optional switches (parameterized form):
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Ruby570bocadito/security-framework/main/install.ps1))) -WithSensor -AutoStart -Firewall
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Ruby570bocadito/bluetardigrade/main/install.ps1))) -WithSensor -AutoStart -Firewall
 ```
 
-`-WithSensor` also builds the Rust ETW sensor (needs Rust + MSVC Build Tools), `-AutoStart` registers engine and console as logon entries (HKCU Run, no admin required), `-Firewall` opens inbound TCP 7777 for remote sensors (domain and private network profiles only) and asks for elevation via UAC when needed; it only matters when the engine is explicitly started with `-addr 0.0.0.0:7777`, since the default bind is loopback. `-WebhookUrl http://siem.internal:8080/ingest` persists the alert webhook so the engine autostart POSTs every alert there as JSON (re-run with `-WebhookUrl ''` to clear it). Install location defaults to `%LOCALAPPDATA%\security-framework` and can be changed with `-InstallDir <path>`.
+`-WithSensor` also builds the Rust ETW sensor (needs Rust + MSVC Build Tools), `-AutoStart` registers engine and console as logon entries (HKCU Run, no admin required), `-Firewall` opens inbound TCP 7777 for remote sensors (domain and private network profiles only) and asks for elevation via UAC when needed; it only matters when the engine is explicitly started with `-addr 0.0.0.0:7777`, since the default bind is loopback. `-WebhookUrl http://siem.internal:8080/ingest` persists the alert webhook so the engine autostart POSTs every alert there as JSON (re-run with `-WebhookUrl ''` to clear it). Install location defaults to `%LOCALAPPDATA%\bluetardigrade` and can be changed with `-InstallDir <path>`.
 
 To uninstall:
 
@@ -56,7 +56,7 @@ sf-uninstall
 or, from a machine where it is not installed (or the PATH is gone):
 
 ```powershell
-irm https://raw.githubusercontent.com/Ruby570bocadito/security-framework/main/uninstall.ps1 | iex
+irm https://raw.githubusercontent.com/Ruby570bocadito/bluetardigrade/main/uninstall.ps1 | iex
 ```
 
 The uninstaller stops the processes, removes the logon entries (HKCU Run and any legacy scheduled tasks), the firewall rule, the PATH entry and the whole install folder, including the portable toolchains it created. Toolchains you had before are left alone.
@@ -66,7 +66,7 @@ The uninstaller stops the processes, removes the logon entries (HKCU Run and any
 
 ```bash
 make docker-build
-docker run --rm -p 7777:7777 -p 7778:7778 security-framework-engine
+docker build -t bluetardigrade-engine . && docker run --rm -p 7777:7777 -p 7778:7778 bluetardigrade-engine
 ```
 
 The image is built from the repo `Dockerfile` (Go 1.22 builder, alpine
@@ -198,7 +198,7 @@ The API can demand a bearer token: start the engine with `-api-token '...'` (or 
 
 ```yaml
 scrape_configs:
-  - job_name: security-framework
+  - job_name: bluetardigrade
     metrics_path: /metrics
     authorization:
       credentials: <SF_API_TOKEN>
@@ -351,7 +351,7 @@ Delivery semantics are at-least-once on both paths (the Elasticsearch `_id` make
 The webhook speaks JSON to machines; `-notify` speaks human to the on-call. One YAML config file arms any combination of chat and mail channels, and every raised alert — the same stream the webhook and the console see — fans out to each channel without ever blocking detection:
 
 ```bash
-bin/engine -notify /etc/security-framework/notify.yaml
+bin/engine -notify /etc/bluetardigrade/notify.yaml
 ```
 
 ```yaml

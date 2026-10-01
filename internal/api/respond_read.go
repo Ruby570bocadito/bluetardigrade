@@ -14,7 +14,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/Ruby570bocadito/security-framework/internal/respond"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/respond"
 )
 
 const (

@@ -22,8 +22,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/alert"
-	"github.com/Ruby570bocadito/security-framework/internal/redact"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/redact"
 )
 
 const (
@@ -53,13 +53,17 @@ type Elastic struct {
 }
 
 // NewElastic creates a sink for the cluster at url with the default
-// queue depth, batch cap and flush window.
-func NewElastic(url, index string) *Elastic {
+// queue depth, batch cap and flush window. The returned error carries
+// the scheme contract (see requireHTTPScheme); the caller decides how
+// loud to be about it.
+func NewElastic(url, index string) (*Elastic, error) {
 	return newElastic(url, index, queueSize)
 }
 
-func newElastic(url, index string, queue int) *Elastic {
-	requireHTTPScheme("elasticsearch", url)
+func newElastic(url, index string, queue int) (*Elastic, error) {
+	if err := requireHTTPScheme("elasticsearch", url); err != nil {
+		return nil, err
+	}
 	if index == "" {
 		index = elasticDefaultIndex
 	}
@@ -71,7 +75,7 @@ func newElastic(url, index string, queue int) *Elastic {
 		backoff:   400 * time.Millisecond,
 		flushEver: elasticFlushEvery,
 		maxBatch:  elasticMaxBatch,
-	}
+	}, nil
 }
 
 // SetAPIKey configures Elasticsearch API-key auth ("Authorization:

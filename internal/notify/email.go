@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
 )
 
 // Email delivers alerts as SMTP mail. Transport policy (fail loud,

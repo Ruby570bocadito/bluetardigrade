@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
 // The DOMINIO\usuario convention is how Windows sensors report

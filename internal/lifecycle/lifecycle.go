@@ -217,12 +217,31 @@ func (s *Store) persistLocked() error {
 		return err
 	}
 	data = append(data, '\n')
-	tmp := s.path + ".tmp"
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	// A unique temp name (create-then-rename) instead of the fixed
+	// "<path>.tmp": a second writer iterating the same directory would
+	// otherwise race on the same scratch file and a torn rename could
+	// lose one store's state. The engine's single-instance guard makes
+	// this rare, not impossible.
+	tmp, err := os.CreateTemp(filepath.Dir(s.path), filepath.Base(s.path)+".tmp-*")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.path)
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	if err := os.Chmod(tmpName, 0o600); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	return os.Rename(tmpName, s.path)
 }

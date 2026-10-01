@@ -1,4 +1,4 @@
-# security-framework console (SOC)
+# bluetardigrade console (SOC)
 
 Browser console for the framework: live telemetry feed, KPI dashboard,
 severity triage with a detail panel, the YAML rule pack, kill-chain
@@ -184,5 +184,5 @@ their tooltips state this explicitly.
 
 The engine must include the search endpoint. Older engines produce an
 explicit capability error, with the live view still available. See
-[the second-round report](../../docs/REVISION-HISTORICO.md) for the scan,
-retention, cursor and validation limits.
+[OPERATIONS.md](../../docs/OPERATIONS.md) for the scan, retention, cursor
+and validation limits.

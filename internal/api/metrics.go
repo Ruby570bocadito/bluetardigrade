@@ -10,7 +10,7 @@ import (
 // /metrics renders the same counters as /api/stats in the Prometheus
 // text exposition format (version 0.0.4). Package D1 of the owner's
 // roadmap, assigned to Bugs/Seguridad with two hard constraints from
-// the Director's acta (docs/agentes/01-director/ronda_2026-09-29_22h01.md):
+// the original design directive (archived with the 2026-09 round records):
 //
 //  1. It must not reveal more than /api/stats already does — it does
 //     not: the handler renders h.statsSnapshot(), the exact struct the

@@ -12,7 +12,7 @@ import "runtime"
 // (see the make dist target and .github/workflows/release.yml). A
 // plain `go build` keeps this default, which must always match the
 // most recent released version in the changelog.
-var engineVersion = "v0.1.0"
+var engineVersion = "v0.2.0"
 
 // buildInfo is the payload of the version block.
 type buildInfo struct {

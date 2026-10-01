@@ -10,9 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/alert"
-	"github.com/Ruby570bocadito/security-framework/internal/rules"
-	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/yamlcheck"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
 const seqYAML = `
@@ -413,7 +414,7 @@ func TestLoadRejectsOversizedFile(t *testing.T) {
 // pre-scan must reject it loudly.
 func TestLoadRejectsDeepNesting(t *testing.T) {
 	dir := t.TempDir()
-	deep := strings.Repeat("[", maxNestingDepth+1)
+	deep := strings.Repeat("[", yamlcheck.MaxNestingDepth+1)
 	if err := os.WriteFile(filepath.Join(dir, "deep.yaml"), []byte(deep), 0o600); err != nil {
 		t.Fatal(err)
 	}

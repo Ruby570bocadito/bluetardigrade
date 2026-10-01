@@ -56,9 +56,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/alert"
-	"github.com/Ruby570bocadito/security-framework/internal/rules"
-	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/yamlcheck"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 
 	"gopkg.in/yaml.v3"
 )
@@ -467,6 +468,9 @@ func (m *Manager) load(path string) error {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
+		return err
+	}
+	if err := yamlcheck.Guard(path, data); err != nil {
 		return err
 	}
 	var profs []Profile

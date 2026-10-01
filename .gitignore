@@ -50,10 +50,9 @@ suppressions.yaml
 captures/
 *.dmp
 
-# Agent tooling residue (not part of the product). The frontend design
-# skill lives with its provenance notes in docs/agentes/skills/ and its
-# lock manifest (skills-lock.json) stays tracked at the root for audits;
-# agent/ must not come back as a product-tree path.
+# Agent tooling residue (not part of the product; the round records
+# were archived out of the public tree in the bluetardigrade rename
+# round). agent/ must not come back as a product-tree path.
 .agents/
 agent/
 

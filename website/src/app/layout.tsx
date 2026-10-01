@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import "./globals.css";
-import { Toaster } from "@/components/ui/toaster";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -21,7 +20,7 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "security-framework — Real-time threat detection for Windows endpoints",
+  title: "bluetardigrade — Real-time threat detection for Windows endpoints",
   description:
     "A behavioral detection framework: Rust ETW sensor, Go behavioral engine, YAML rules mapped to MITRE ATT&CK, native Elasticsearch / Splunk SIEM sinks, opt-in audited active response, and a live operator console with AI triage. Measured p99 ingest→alert ≈ 0.4 ms.",
   keywords: [
@@ -40,7 +39,7 @@ export const metadata: Metadata = {
     "open source",
   ],
   openGraph: {
-    title: "security-framework — Real-time threat detection for Windows endpoints",
+    title: "bluetardigrade — Real-time threat detection for Windows endpoints",
     description:
       "ETW sensor + behavioral engine + operator console. Behavior over signatures, measured performance, no simulated data in the product path.",
     type: "website",
@@ -58,7 +57,6 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} antialiased bg-background text-foreground`}
       >
         {children}
-        <Toaster />
       </body>
     </html>
   );

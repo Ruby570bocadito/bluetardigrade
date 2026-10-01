@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
 // Enricher applies the v0.1 enrichment pipeline.

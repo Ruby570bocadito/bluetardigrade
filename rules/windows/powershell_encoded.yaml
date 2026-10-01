@@ -14,8 +14,14 @@
       operator: eq
       value: "powershell.exe"
     - field: process.command_line
-      operator: contains_any
-      value: ["-enc", "-EncodedCommand", "-w hidden"]
+      # regex instead of contains_any: a bare "-enc" substring also
+      # matched "-Encoding UTF8" in legitimate sign/scripts and raised
+      # a HIGH alert on it. The alternation with a word boundary keeps
+      # every real flag (-enc, -eNcoDeDcommand...) and drops -Encoding.
+      operator: regex
+      # (?i): powershell flags are case-insensitive (-ENC works); the
+      # colon/space class covers both -w hidden and -w:hidden syntax
+      value: '(?i)-e(nc(odedcommand)?)?\b|-w(indowstyle)?[: =]+hidden\b'
   actions:
     - type: alert
       config:

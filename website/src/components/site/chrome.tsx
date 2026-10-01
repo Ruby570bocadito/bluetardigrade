@@ -48,21 +48,23 @@ export const useSiteNav = () => useContext(NavContext);
 /* ---------------- Logo ---------------- */
 
 export function LogoMark({ className = "h-6 w-6" }: { className?: string }) {
+  // tardigrade mark: segmented capsule body, head with eyes and three
+  // leg pairs per side (see public/logo.svg for the full-color variant)
   return (
-    <svg viewBox="0 0 32 32" fill="none" className={className} aria-hidden="true">
-      <path
-        d="M16 2.5 L27.5 7 V16 C27.5 23.5 22.5 28.5 16 30 C9.5 28.5 4.5 23.5 4.5 16 V7 Z"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M11 16.2 L14.6 19.8 L21.5 12.5"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+    <svg viewBox="0 0 64 64" fill="none" className={className} aria-hidden="true">
+      <g stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" fill="none" opacity="0.85">
+        <path d="M22 30 C17 29 14 26 13 22" />
+        <path d="M21 37 C15 37 11 35 9 32" />
+        <path d="M22 44 C16 45 13 48 12 52" />
+        <path d="M42 30 C47 29 50 26 51 22" />
+        <path d="M43 37 C49 37 53 35 55 32" />
+        <path d="M42 44 C48 45 51 48 52 52" />
+      </g>
+      <rect x="20" y="24" width="24" height="22" rx="11" fill="currentColor" />
+      <rect x="26" y="25" width="12" height="20" rx="6" fill="none" stroke="#060a10" strokeWidth="1" opacity="0.35" />
+      <circle cx="32" cy="25.5" r="7.5" fill="currentColor" />
+      <circle cx="29" cy="24" r="1.7" fill="#060a10" />
+      <circle cx="35" cy="24" r="1.7" fill="#060a10" />
     </svg>
   );
 }
@@ -70,13 +72,13 @@ export function LogoMark({ className = "h-6 w-6" }: { className?: string }) {
 export function Logo({ compact = false }: { compact?: boolean }) {
   return (
     <span className="flex items-center gap-1.5 text-foreground md:gap-2">
-      <LogoMark className={`text-sentira ${compact ? "h-5 w-5" : "h-6 w-6"}`} />
+      <LogoMark className={`text-blu ${compact ? "h-5 w-5" : "h-6 w-6"}`} />
       <span
         className={`font-display leading-none tracking-tight ${
           compact ? "text-lg" : "text-[22px]"
         }`}
       >
-        security-framework
+        bluetardigrade
       </span>
     </span>
   );
@@ -87,8 +89,8 @@ export function Logo({ compact = false }: { compact?: boolean }) {
 export function SectionTag({ children }: { children: ReactNode }) {
   return (
     <span className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-foreground/90">
-      <span className="relative flex h-4 w-4 items-center justify-center rounded-full border border-sentira/60">
-        <span className="h-1.5 w-1.5 rounded-full bg-sentira" />
+      <span className="relative flex h-4 w-4 items-center justify-center rounded-full border border-blu/60">
+        <span className="h-1.5 w-1.5 rounded-full bg-blu" />
       </span>
       {children}
     </span>
@@ -130,7 +132,7 @@ export function StarButton() {
       className="group h-12 rounded-full border-border bg-card/60 px-8 font-medium text-foreground hover:bg-card hover:text-foreground"
     >
       <a href={`${REPO_URL}/stargazers`} target="_blank" rel="noreferrer">
-        <Star className="h-4 w-4 transition-colors group-hover:fill-sentira group-hover:text-sentira" />
+        <Star className="h-4 w-4 transition-colors group-hover:fill-blu group-hover:text-blu" />
         Star the project
       </a>
     </Button>
@@ -267,7 +269,7 @@ export function TechStrip({ title }: { title: string }) {
               className="flex items-center gap-3 whitespace-nowrap font-display text-2xl text-foreground/35"
             >
               {b}
-              <ShieldCheck className="h-4 w-4 text-sentira/30" />
+              <ShieldCheck className="h-4 w-4 text-blu/30" />
             </span>
           ))}
         </div>
@@ -291,7 +293,7 @@ export function FaqBlock() {
         <Accordion type="single" collapsible className="w-full">
           {FAQS.map((f, i) => (
             <AccordionItem key={i} value={`faq-${i}`} className="border-border">
-              <AccordionTrigger className="text-left text-base text-foreground hover:no-underline hover:text-sentira">
+              <AccordionTrigger className="text-left text-base text-foreground hover:no-underline hover:text-blu">
                 {f.q}
               </AccordionTrigger>
               <AccordionContent className="text-[15px] leading-relaxed text-muted-foreground">
@@ -413,7 +415,7 @@ export function SiteHeader() {
         {/* centered logo */}
         <button
           onClick={() => go()}
-          aria-label="security-framework — top"
+          aria-label="bluetardigrade — top"
           className="absolute left-1/2 -translate-x-1/2"
         >
           <Logo compact />
@@ -456,7 +458,7 @@ export function SiteFooter() {
           <li key={it.label}>
             <button
               onClick={it.action}
-              className="text-[15px] text-foreground/85 transition-colors hover:text-sentira"
+              className="text-[15px] text-foreground/85 transition-colors hover:text-blu"
             >
               {it.label}
             </button>
@@ -527,7 +529,7 @@ export function SiteFooter() {
       </div>
       <div className="border-t border-border">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-2 px-5 py-6 text-center text-[13px] text-muted-foreground sm:flex-row sm:text-left">
-          <p>© 2026 security-framework · Apache-2.0</p>
+          <p>© 2026 bluetardigrade · Apache-2.0</p>
           <p>
             Real-time threat detection for Windows endpoints — built in the
             open.

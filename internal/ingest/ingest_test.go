@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
 // startTestServer spins up an ingest server on a loopback port with an

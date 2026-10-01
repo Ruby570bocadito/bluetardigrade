@@ -23,16 +23,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/alert"
-	"github.com/Ruby570bocadito/security-framework/internal/correlate"
-	"github.com/Ruby570bocadito/security-framework/internal/lifecycle"
-	"github.com/Ruby570bocadito/security-framework/internal/notify"
-	"github.com/Ruby570bocadito/security-framework/internal/respond"
-	"github.com/Ruby570bocadito/security-framework/internal/risk"
-	"github.com/Ruby570bocadito/security-framework/internal/rules"
-	"github.com/Ruby570bocadito/security-framework/internal/store"
-	"github.com/Ruby570bocadito/security-framework/internal/suppress"
-	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/correlate"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/lifecycle"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/notify"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/respond"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/risk"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/store"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/suppress"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/tlsutil"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
 const (
@@ -40,13 +41,25 @@ const (
 	maxAlerts      = 256  // ring of recent alerts
 	sseBuffer      = 64   // messages per slow subscriber before drops
 	heartbeatEvery = 15 * time.Second
+	maxSSEClients  = 64 // concurrent SSE subscribers before refusal
+
+	// 401 brute-force throttle: failures are counted per remote
+	// address in a fixed window; past the budget the address gets
+	// 429s for the rest of the window instead of more comparisons.
+	authFailBudget = 30
+	authFailWindow = time.Minute
 )
 
 // Hub serves the local API and fans out live records to SSE clients.
 type Hub struct {
 	listener net.Listener
 	srv      *http.Server
-	token    string // bearer token for /api/* (empty = no auth)
+	token    string            // bearer token for /api/* (empty = no auth)
+	tls      bool              // true when the listener is TLS-wrapped
+	reloader *tlsutil.Reloader // hot-rotation state; nil on plain listeners
+
+	authMu    sync.Mutex              // guards authFails
+	authFails map[string]*authFailBox // per-RemoteAddr 401 throttle
 
 	mu          sync.Mutex
 	events      []*model.Event // oldest first, trimmed to maxEvents
@@ -89,12 +102,43 @@ type Hub struct {
 	respondOpsPath, respondProtPath, respondAuditPath string
 }
 
-// New binds the API listener. Use addr ":0" in tests to pick a free port.
+// New binds a plain-text API listener. Use addr ":0" in tests to pick
+// a free port. For an encrypted listener use NewTLS; when the API is
+// reachable beyond loopback and TLS termination happens elsewhere
+// (reverse proxy), document it — the bearer token otherwise crosses
+// the network in clear text.
 func New(addr string) (*Hub, error) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("api: listen %s: %w", addr, err)
 	}
+	return newHub(ln, nil)
+}
+
+// NewTLS binds the API listener wrapped in TLS with hot certificate
+// rotation: the pair is loaded eagerly (a wrong path or mismatched
+// pair fails at startup — a half-encrypted API never serves traffic)
+// and re-read on mtime change, the same semantics the ingest listener
+// has had since the beginning (see internal/tlsutil). Typical
+// deployment:   sf-engine -api 0.0.0.0:7778 -api-cert c.pem -api-key
+// k.pem -api-token ...  so the bearer token, the telemetry the read
+// routes hand out and the kill_process request body all travel
+// encrypted.
+func NewTLS(addr, certFile, keyFile string) (*Hub, error) {
+	reloader, err := tlsutil.NewReloader(certFile, keyFile)
+	if err != nil {
+		return nil, fmt.Errorf("api: %w", err)
+	}
+	ln, err := reloader.Listen(addr)
+	if err != nil {
+		return nil, fmt.Errorf("api: listen %s: %w", addr, err)
+	}
+	return newHub(ln, reloader)
+}
+
+// newHub assembles the routes and the server around an already-bound
+// listener; reloader nil means plain text.
+func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	h := &Hub{
 		listener:   ln,
 		subs:       make(map[chan []byte]struct{}),
@@ -102,6 +146,9 @@ func New(addr string) (*Hub, error) {
 		bySeverity: map[string]int{},
 		lifecycle:  mustMemoryLifecycle(),
 		risk:       risk.New(),
+		authFails:  map[string]*authFailBox{},
+		reloader:   reloader,
+		tls:        reloader != nil,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/stats", h.handleStats)
@@ -174,12 +221,89 @@ func (h *Hub) SetCounters(received func() (ingested, dropped, rejected uint64)) 
 // open port on a shared network is a silent data leak.
 func (h *Hub) SetToken(token string) { h.token = token }
 
+// TLS reports whether the API listener is TLS-wrapped (startup
+// banners and tests).
+func (h *Hub) TLS() bool { return h.tls }
+
+// CertReloads returns how many times the API certificate was rotated
+// in place (file mtime change); 0 on plain listeners.
+func (h *Hub) CertReloads() uint64 {
+	if h.reloader == nil {
+		return 0
+	}
+	return h.reloader.Reloads()
+}
+
+// CertReloadErrors returns how many API certificate reload attempts
+// were refused; the current certificate kept serving in every case.
+func (h *Hub) CertReloadErrors() uint64 {
+	if h.reloader == nil {
+		return 0
+	}
+	return h.reloader.Errors()
+}
+
+// SetReloadNotify wires the engine's voice into API certificate
+// rotation events. Call before Run; nil keeps the API silent.
+func (h *Hub) SetReloadNotify(fn func(event string, reloads, reloadErrs uint64)) {
+	if h.reloader != nil {
+		h.reloader.SetReloadNotify(fn)
+	}
+}
+
+// authFailBox counts unauthorized attempts from one remote address
+// inside a rolling window. The map that holds the boxes is guarded by
+// authMu; past authFailBudget failures in a window the address is
+// answered with 429 for the remainder of the window, so a brute-force
+// attempt cannot run comparisons (and fill the log) at line rate.
+type authFailBox struct {
+	windowStart time.Time
+	failures    int
+}
+
+// tooManyAuthFails records a 401 from addr and reports whether the
+// address has exhausted its budget for the current window. The map
+// grows one entry per offending address: it is trimmed opportunisti-
+// cally on each window rollover, and an address that stops failing
+// costs nothing after its window expires.
+func (h *Hub) tooManyAuthFails(addr string) bool {
+	key := remoteIP(addr)
+	now := time.Now()
+	h.authMu.Lock()
+	defer h.authMu.Unlock()
+	if len(h.authFails) > 1024 { // opportunistic trim of stale boxes
+		for k, box := range h.authFails {
+			if now.Sub(box.windowStart) > authFailWindow {
+				delete(h.authFails, k)
+			}
+		}
+	}
+	box := h.authFails[key]
+	if box == nil || now.Sub(box.windowStart) > authFailWindow {
+		box = &authFailBox{windowStart: now}
+		h.authFails[key] = box
+	}
+	box.failures++
+	return box.failures > authFailBudget
+}
+
+// remoteIP strips the port from a RemoteAddr ("host:port" for TCP).
+func remoteIP(addr string) string {
+	if host, _, err := net.SplitHostPort(addr); err == nil {
+		return host
+	}
+	return addr
+}
+
 // auth wraps the mux with the bearer check. The comparison is
 // constant-time and runs on every request (no early exits on the
 // header shape), mirroring the ingest token handling. The scheme is
 // matched case-insensitively (RFC 7235) and rejections carry a
 // WWW-Authenticate challenge plus an actionable error body, so an
-// operator hitting the 401 knows exactly which knob to set.
+// operator hitting the 401 knows exactly which knob to set. Addresses
+// that burn the failure budget get a 429 for the rest of the window:
+// the constant-time compare removes timing as an oracle, this removes
+// volume as one.
 func (h *Hub) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if h.token == "" || r.URL.Path == "/api/health" {
@@ -191,6 +315,12 @@ func (h *Hub) auth(next http.Handler) http.Handler {
 		ok := len(got) > len(prefix) && strings.EqualFold(got[:len(prefix)], prefix) &&
 			subtle.ConstantTimeCompare([]byte(got[len(prefix):]), []byte(h.token)) == 1
 		if !ok {
+			if h.tooManyAuthFails(r.RemoteAddr) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusTooManyRequests)
+				fmt.Fprintln(w, `{"error":"too many unauthorized requests from this address; retry after the window"}`)
+				return
+			}
 			w.Header().Set("WWW-Authenticate", `Bearer realm="security-framework api"`)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
@@ -967,6 +1097,19 @@ func (h *Hub) handleStream(w http.ResponseWriter, r *http.Request) {
 	}
 	ch := make(chan []byte, sseBuffer)
 	h.mu.Lock()
+	// subscriber cap: every SSE client pins a channel and a goroutine
+	// for as long as it stays connected, so an unbounded stream route
+	// is a slow-motion resource flood on the same listener that serves
+	// the operator console. Over the cap the client gets a 503 with a
+	// retry-after hint instead of a silently stalled stream.
+	if len(h.subs) >= maxSSEClients {
+		h.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Retry-After", "5")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprintln(w, `{"error":"stream subscriber limit reached; retry shortly"}`)
+		return
+	}
 	h.subs[ch] = struct{}{}
 	h.mu.Unlock()
 	defer func() {

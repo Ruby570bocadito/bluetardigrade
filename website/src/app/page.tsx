@@ -6,7 +6,7 @@ import {
   SiteHeader,
   SiteFooter,
 } from "@/components/site/chrome";
-import HomeView from "@/components/site/home-view";
+import { HomeView } from "@/components/site/home-view";
 import type { View } from "@/lib/site-data";
 
 function scrollToTarget(anchor?: string) {

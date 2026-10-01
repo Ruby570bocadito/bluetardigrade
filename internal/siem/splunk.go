@@ -23,8 +23,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/alert"
-	"github.com/Ruby570bocadito/security-framework/internal/redact"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/redact"
 )
 
 const (
@@ -48,20 +48,23 @@ type Splunk struct {
 }
 
 // NewSplunk creates a sink for the HEC collector at url (base URL;
-// the event endpoint path is appended by the sink).
-func NewSplunk(url string) *Splunk {
+// the event endpoint path is appended by the sink). The returned
+// error carries the scheme contract (see requireHTTPScheme).
+func NewSplunk(url string) (*Splunk, error) {
 	return newSplunk(url, queueSize)
 }
 
-func newSplunk(url string, queue int) *Splunk {
-	requireHTTPScheme("splunk hec", url)
+func newSplunk(url string, queue int) (*Splunk, error) {
+	if err := requireHTTPScheme("splunk hec", url); err != nil {
+		return nil, err
+	}
 	return &Splunk{
 		spool:       newSpool(queue),
 		url:         trimTrailingSlash(url),
 		hc:          &http.Client{Timeout: splunkPostTimeout},
 		backoff:     400 * time.Millisecond,
 		nowFallback: time.Now,
-	}
+	}, nil
 }
 
 // SetToken configures the HEC ingestion token ("Authorization: Splunk

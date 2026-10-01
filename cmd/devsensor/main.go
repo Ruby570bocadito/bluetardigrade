@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
 // Ingest and detector exercise knobs; the scenario itself is fixed
@@ -336,9 +336,14 @@ func offensive(ev *model.Event) *model.Event {
 }
 
 // newUUID returns a RFC 4122 v4 UUID without external dependencies.
+// A crypto/rand failure is fatal by design: silently proceeding would
+// emit all-zero event IDs, and the store keys replay idempotency on
+// those IDs (a replay would overwrite instead of append).
 func newUUID() string {
 	b := make([]byte, 16)
-	_, _ = rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic("devsensor: entropy source failed: " + err.Error())
+	}
 	b[6] = (b[6] & 0x0f) | 0x40
 	b[8] = (b[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])

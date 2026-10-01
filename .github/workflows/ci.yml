@@ -1,7 +1,7 @@
 # Continuous integration: every push and pull request re-verifies the
 # three build surfaces of the project with the same commands the agents
-# run locally (see docs/agentes rounds and Makefile):
-#   engine : gofmt + build + vet + test -race (Go 1.22)
+# run locally (see the Makefile and docs/OPERATIONS.md):
+#   engine : gofmt + build + vet + test -race (Go from go.mod, 1.26+)
 #   console: hub (bun test, tsc), web console (bun test, tsc, next build) and the DOM regression fixture
 #   spec   : OpenAPI drift guard against internal/api/api.go
 # The Windows-first ETW sensor gets `cargo check --locked` on two
@@ -53,19 +53,21 @@ jobs:
         run: go build ./...
       - name: vet
         run: go vet ./...
-      # staticcheck (defect-class G2 of docs/analisis-brechas-y-mejoras-04B.md):
+      # staticcheck (defect-class G2 of the 2026-09-30 gap-analysis round):
       # vet no ve la clase de hallazgo que el carril de pulimiento ya certifica
       # localmente (ST1000 doc-comment anclado a una cláusula package de un
       # fichero nuevo, U1000 código muerto, ST1012 vocabulario de errores) — un
       # hallazgo real de esa clase aterrizó CON el CI verde (ronda 19h15_A).
       # Dos pasadas, exactamente el estándar local de 03-A: el juego completo
       # menos el grupo de estilo, más el grupo de estilo/documentación.
-      # Versión fijada: 2024.1.1 es la que corre en las rondas locales; un
-      # @latest flotaría a la versión que el registry sirva en el push, la
-      # misma clase de referencia mutable que este workflow rechaza arriba.
+      # Versión fijada: 2026.2.1 es la que soporta la linea Go del go.mod
+      # (1.26+); 2024.1.1 quedaba por debajo y rompía los PRs de dependabot
+      # que suben la directiva go (causa raíz del rojo en PR #5). Un @latest
+      # flotaría a la versión que el registry sirva en el push, la misma clase
+      # de referencia mutable que este workflow rechaza arriba.
       - name: staticcheck (dos pasadas, estándar del carril de pulimiento)
         run: |
-          go install honnef.co/go/tools/cmd/staticcheck@2024.1.1
+          go install honnef.co/go/tools/cmd/staticcheck@2026.2.1
           staticcheck -checks "all,-ST1000" ./...
           staticcheck -checks "ST1000,ST1020,ST1021,ST1022" ./...
       - name: test
@@ -74,7 +76,7 @@ jobs:
         # audit, kill dispatcher, network sinks) and the house standard
         # (GUIA-VERIFICACION) already demands the race detector locally on
         # the concurrent packages — CI enforces it on every push now
-        # (defect-class G3 of docs/analisis-brechas-y-mejoras-04B.md).
+        # (defect-class G3 of the 2026-09-30 gap-analysis round).
         run: go test -race -count=1 ./...
       # Windows cross-check del motor (C3, requisito vinculante R1 del
       # dictamen 04-B 16h11): internal/respond tiene un carril windows
@@ -178,7 +180,7 @@ jobs:
           # lifecycle validation) runs on every push now: a regression in
           # the r6 client-side gate used to pass CI green because only the
           # hub battery ran here (defect-class G1 of
-          # docs/analisis-brechas-y-mejoras-04B.md).
+          # the 2026-09-30 gap-analysis round).
           bun test
           bunx tsc --noEmit
           bun run build

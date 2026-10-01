@@ -9,8 +9,8 @@ sigue la [guía de Sysmon](OPERATIONS.md#real-telemetry-with-sysmon-recommended)
 Necesitas Go 1.22+. En Linux/macOS o una terminal con `make`:
 
 ```bash
-git clone https://github.com/Ruby570bocadito/security-framework.git
-cd security-framework
+git clone https://github.com/Ruby570bocadito/bluetardigrade.git
+cd bluetardigrade
 make build
 ./bin/engine validate
 ```
@@ -78,7 +78,7 @@ Con `-store ./sf-store.db` se consulta SQLite. Sin ese flag solo están las
 últimas 256 alertas en memoria, y la interfaz lo indica. **Actualizar
 histórico** incorpora nuevas llegadas. Una búsqueda poco frecuente puede
 necesitar **Seguir buscando** aunque la página actual esté vacía.
-[Contrato y límites](REVISION-HISTORICO.md).
+Los límites exactos del escaneo (cursores, retención, presupuesto de 5 000 candidatos y 4 s) están en [OPERATIONS.md](OPERATIONS.md).
 
 La cabecera incluye **Comandos**, disponible también en móvil. Con teclado,
 **Ctrl+K / ⌘K** abre la paleta: busca una vista, actualiza datos del motor o
@@ -120,4 +120,4 @@ deben quedarse allí: las variables `NEXT_PUBLIC_*` llegan al navegador.
 con los requisitos del Makefile: staticcheck, Bun, Rust y Python con PyYAML.
 La inspección de procesos requiere un sistema compatible y ETW requiere Windows.
 
-[README](../README.md) · [Revisión y siguientes mejoras](REVISION-CLI-DASHBOARD.md)
+[README](../README.md) · [Mapa de documentación](README.md)

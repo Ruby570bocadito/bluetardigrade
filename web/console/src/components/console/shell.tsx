@@ -399,7 +399,7 @@ export function ConsoleShell() {
 
           <footer className="border-t border-white/[0.06] px-4 py-3 lg:px-6">
             <p className="text-[11px] text-zinc-500">
-              security-framework · consola de operaciones · v0.1.0
+              bluetardigrade · consola de operaciones · v0.1.0
             </p>
           </footer>
         </div>
@@ -580,10 +580,10 @@ function BrandBlock() {
           sf
         </span>
         <span className="leading-tight">
-          <span className="block text-sm font-medium tracking-tight text-zinc-50">security-framework</span>
+          <span className="block text-sm font-medium tracking-tight text-zinc-50">bluetardigrade</span>
           {/* DecryptedText (React Bits): la etiqueta se descodifica una vez
               al montar; gesto temático y contenido, cero ruido después. */}
-          <DecryptedText text="consola de detección" className="block text-[11px] text-zinc-500" />
+          <DecryptedText text="detección de endpoints" className="block text-[11px] text-zinc-500" />
         </span>
       </div>
       <div className="mt-3 flex items-center gap-2">
@@ -602,7 +602,7 @@ function BrandRow() {
       <span className="flex h-6 w-6 items-center justify-center rounded-md border border-emerald-500/40 bg-emerald-500/10 font-mono text-[11px] font-semibold text-emerald-400">
         sf
       </span>
-      <span className="text-sm font-medium text-zinc-100">security-framework</span>
+      <span className="text-sm font-medium text-zinc-100">bluetardigrade</span>
     </div>
   )
 }

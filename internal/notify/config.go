@@ -7,8 +7,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Ruby570bocadito/security-framework/internal/alert"
-	"github.com/Ruby570bocadito/security-framework/internal/redact"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/redact"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/yamlcheck"
 	"gopkg.in/yaml.v3"
 )
 
@@ -56,6 +57,9 @@ type channelConfig struct {
 func Load(path string) (*Service, error) {
 	raw, err := readFileCapped(path, maxFileBytes)
 	if err != nil {
+		return nil, err
+	}
+	if err := yamlcheck.Guard(path, raw); err != nil {
 		return nil, err
 	}
 	var cfg config

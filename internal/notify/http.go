@@ -8,7 +8,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/Ruby570bocadito/security-framework/internal/redact"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/redact"
 )
 
 // deliveryError carries the retry classification of one failed

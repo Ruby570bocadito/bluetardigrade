@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/alert"
-	"github.com/Ruby570bocadito/security-framework/internal/lifecycle"
-	"github.com/Ruby570bocadito/security-framework/internal/store"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/lifecycle"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/store"
 )
 
 func searchAlert(n int) alert.Alert {

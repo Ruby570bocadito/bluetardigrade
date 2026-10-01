@@ -12,24 +12,24 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/actions"
-	"github.com/Ruby570bocadito/security-framework/internal/alert"
-	"github.com/Ruby570bocadito/security-framework/internal/api"
-	"github.com/Ruby570bocadito/security-framework/internal/beacon"
-	"github.com/Ruby570bocadito/security-framework/internal/correlate"
-	"github.com/Ruby570bocadito/security-framework/internal/enrich"
-	"github.com/Ruby570bocadito/security-framework/internal/ingest"
-	"github.com/Ruby570bocadito/security-framework/internal/lifecycle"
-	"github.com/Ruby570bocadito/security-framework/internal/notify"
-	"github.com/Ruby570bocadito/security-framework/internal/redact"
-	"github.com/Ruby570bocadito/security-framework/internal/respond"
-	"github.com/Ruby570bocadito/security-framework/internal/rules"
-	"github.com/Ruby570bocadito/security-framework/internal/siem"
-	"github.com/Ruby570bocadito/security-framework/internal/store"
-	"github.com/Ruby570bocadito/security-framework/internal/suppress"
-	"github.com/Ruby570bocadito/security-framework/internal/threshold"
-	"github.com/Ruby570bocadito/security-framework/internal/webhook"
-	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/actions"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/api"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/beacon"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/correlate"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/enrich"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/ingest"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/lifecycle"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/notify"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/redact"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/respond"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/siem"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/store"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/suppress"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/threshold"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/webhook"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
 // runEngine boots the whole detection pipeline. It is the exact logic
@@ -51,7 +51,7 @@ func runEngine(o *options, interactive bool) error {
 	// PID file: lets sf-console -Stop (and operators) stop this engine
 	// even when it was launched by the autostart entry, not by sf-console.
 	if o.pidFile != "" {
-		if err := os.WriteFile(o.pidFile, []byte(fmt.Sprint(os.Getpid())), 0o644); err != nil {
+		if err := os.WriteFile(o.pidFile, []byte(fmt.Sprint(os.Getpid())), 0o600); err != nil {
 			log.Printf("[ENGINE] pidfile %s: %v", o.pidFile, err)
 		} else {
 			defer func() { _ = os.Remove(o.pidFile) }() // best effort on graceful paths
@@ -267,11 +267,31 @@ func runEngine(o *options, interactive bool) error {
 	// apply its token layer without duplicating the flag>env order
 	apiTok := ""
 	if o.apiAddr != "0" {
-		hub, err = api.New(o.apiAddr)
+		// API TLS: symmetric with the ingest listener — the pair
+		// is validated up front (cert without key or vice versa
+		// is a config error, not a silent plain-text fallback,
+		// because the operator asked for encryption and would
+		// otherwise believe they have it).
+		if (o.apiCert == "") != (o.apiKey == "") {
+			log.Fatalf("[ENGINE] -api-cert and -api-key must be set together (got cert=%q key=%q)", o.apiCert, o.apiKey)
+		}
+		if o.apiCert != "" {
+			hub, err = api.NewTLS(o.apiAddr, o.apiCert, o.apiKey)
+		} else {
+			hub, err = api.New(o.apiAddr)
+		}
 		if err != nil {
 			log.Printf("[ENGINE] api disabled: %v", err)
 			hub = nil
 		} else {
+			if hub.TLS() {
+				// rotation events go out in the engine's own voice,
+				// the same contract as the ingest TLS banner.
+				hub.SetReloadNotify(func(event string, reloads, reloadErrs uint64) {
+					fmt.Printf("[ENGINE] api TLS: %s (reloads=%d, reload_errors=%d)\n", event, reloads, reloadErrs)
+				})
+				fmt.Println("[ENGINE] api TLS: ENABLED (hot-rotated on cert/key mtime change)")
+			}
 			hub.SetRules(engine)
 			hub.SetSuppressions(supMgr)
 			if st != nil {
@@ -460,7 +480,10 @@ func runEngine(o *options, interactive bool) error {
 	sinkCtx, sinkCancel := context.WithCancel(context.Background())
 	var elasticSink *siem.Elastic
 	if o.elasticURL != "" {
-		elasticSink = siem.NewElastic(o.elasticURL, o.elasticIndex)
+		elasticSink, err = siem.NewElastic(o.elasticURL, o.elasticIndex)
+		if err != nil {
+			log.Fatalf("[ENGINE] %v", err)
+		}
 		// credential resolution: flag wins over the environment,
 		// mirroring the ingest and webhook token order
 		elasticKey := o.elasticAPIKey
@@ -480,7 +503,10 @@ func runEngine(o *options, interactive bool) error {
 	}
 	var splunkSink *siem.Splunk
 	if o.splunkURL != "" {
-		splunkSink = siem.NewSplunk(o.splunkURL)
+		splunkSink, err = siem.NewSplunk(o.splunkURL)
+		if err != nil {
+			log.Fatalf("[ENGINE] %v", err)
+		}
 		splunkTok := o.splunkToken
 		if splunkTok == "" {
 			splunkTok = os.Getenv("SF_SPLUNK_TOKEN")

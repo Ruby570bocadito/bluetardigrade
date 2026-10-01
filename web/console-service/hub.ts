@@ -13,7 +13,7 @@ import { EngineBridge } from './bridge'
 import { runAnalysis } from './analyst'
 import { HubState, MAX_EVENTS, MAX_ALERTS } from './hub-state'
 import { buildStatusData, renderNotFound, renderStatusPage, esc } from './http-ui'
-import { createSlotLimiter } from './limiter'
+import { createRateLimiter, createSlotLimiter } from './limiter'
 import { logLine, logError } from './log'
 import type { HubHealth, SfAlert, SfEvent, SfAlertLifecycle } from './types'
 
@@ -22,6 +22,12 @@ const SOCKET_PATH = '/'
 const BASE_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000']
 const MAX_QUESTION_LENGTH = 2000
 const MAX_ANALYST_CONCURRENT = 2
+// Temporal cap per connection: sequential requests are each a paid call
+// on the operator's API key, so concurrency alone (the slot limiter)
+// leaves the cost unbounded. 10 analyst runs per rolling minute per
+// console is generous for a human workflow and tight for a runaway
+// client or a scripted loop.
+const MAX_ANALYST_PER_MINUTE = 10
 
 export type HubOptions = {
   /** Listen port; 0 picks an ephemeral port (tests). Default: PORT env or 3003. */
@@ -138,9 +144,11 @@ export function createHub(opts: HubOptions = {}): HubHandle {
 
     socket.emit('console:snapshot', state.snapshot())
 
-    // One limiter per connection: the analyst panel cannot open
-    // parallel LLM calls beyond the cap from a single socket.
+    // One limiter set per connection: the analyst panel cannot open
+    // parallel LLM calls beyond the cap (slots) nor exceed the rolling
+    // request budget (rate) from a single socket.
     const limiter = createSlotLimiter(MAX_ANALYST_CONCURRENT)
+    const analystRate = createRateLimiter(MAX_ANALYST_PER_MINUTE, 60_000)
 
     socket.on('analyst:ask', async (payload: unknown) => {
       state.analystAsks += 1
@@ -157,6 +165,12 @@ export function createHub(opts: HubOptions = {}): HubHandle {
       const question = (payload as { question?: unknown }).question
       if (question !== undefined && (typeof question !== 'string' || question.length > MAX_QUESTION_LENGTH)) {
         socket.emit('analyst:error', { message: `Pregunta invalida: maximo ${MAX_QUESTION_LENGTH} caracteres` })
+        return
+      }
+      if (!analystRate.tryTake()) {
+        socket.emit('analyst:error', {
+          message: `Limite de ${MAX_ANALYST_PER_MINUTE} analisis por minuto en esta conexion; espera unos segundos antes de reintentar`,
+        })
         return
       }
       if (!limiter.tryAcquire()) {

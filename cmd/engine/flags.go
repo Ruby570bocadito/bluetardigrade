@@ -26,6 +26,8 @@ type options struct {
 	splunkURL        string
 	splunkToken      string
 	apiToken         string
+	apiCert          string
+	apiKey           string
 	token            string
 	prevToken        string
 	ingestCert       string
@@ -85,6 +87,10 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 		"Splunk HEC ingestion token sent as 'Authorization: Splunk' on every event (falls back to SF_SPLUNK_TOKEN); empty disables the header")
 	fs.StringVar(&o.apiToken, "api-token", "",
 		"bearer token the local API requires on /api/* (falls back to SF_API_TOKEN); /api/health stays open; empty disables")
+	fs.StringVar(&o.apiCert, "api-cert", "",
+		"TLS certificate (PEM) for the HTTP API listener; requires -api-key; hot-rotated on file mtime change; empty keeps plain HTTP")
+	fs.StringVar(&o.apiKey, "api-key", "",
+		"TLS private key (PEM) for the HTTP API listener; requires -api-cert; empty keeps plain HTTP")
 	fs.BoolVar(&o.apiWrite, "api-write", false,
 		"arm POST/DELETE /api/suppressions (writes land on the -suppressions file; refused at startup when the API has no token beyond loopback; falls back to SF_API_WRITE=1)")
 	fs.BoolVar(&o.allowKill, "allow-kill", false,

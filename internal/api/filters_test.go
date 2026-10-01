@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/alert"
-	"github.com/Ruby570bocadito/security-framework/internal/suppress"
-	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/suppress"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
 // eventAt builds an event with explicit type/host/timestamp (the fields

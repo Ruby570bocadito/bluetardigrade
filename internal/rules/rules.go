@@ -15,7 +15,8 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/yamlcheck"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 
 	"gopkg.in/yaml.v3"
 )
@@ -66,14 +67,9 @@ func (r *Rule) IsEnabled() bool { return r.Enabled == nil || *r.Enabled }
 const (
 	// maxFileBytes caps one rule file. os.ReadFile has no bound of
 	// its own: a multi-GB YAML would be read whole into memory
-	// before any other check could run (OOM).
+	// before any other check could run (OOM). maxNestingDepth moved
+	// to internal/yamlcheck together with the alias-bomb guard.
 	maxFileBytes = 4 << 20 // 4 MiB
-
-	// maxNestingDepth caps flow-style ('[' / '{') nesting, same
-	// rationale as the correlator loader: yaml.v3 recurses per
-	// nesting level, so a crafted deep list value can exhaust the
-	// stack before Unmarshal ever returns.
-	maxNestingDepth = 512
 
 	// maxRules caps the loaded ENABLED set: Evaluate walks every
 	// rule of the event's type on every event, so an unbounded
@@ -489,7 +485,10 @@ func (e *Engine) load(dir string) error {
 		if err != nil {
 			return err
 		}
-		if err := checkNestingDepth(path, data); err != nil {
+		// resource-bomb guard (alias expansion + flow nesting): the
+		// previous inline nesting scan moved into yamlcheck together with
+		// the alias-bomb rejection a plain bracket scan cannot see.
+		if err := yamlcheck.Guard(path, data); err != nil {
 			return err
 		}
 		var rules []Rule
@@ -519,32 +518,9 @@ func (e *Engine) load(dir string) error {
 	return nil
 }
 
-// checkNestingDepth scans the raw bytes for flow-style ('[' / '{')
-// nesting deeper than maxNestingDepth, the same cheap pre-scan the
-// correlator loader runs: yaml.v3 recurses per nesting level, so a
-// crafted deep list value could exhaust the stack inside Unmarshal.
-// Deliberately naive: it counts structural brackets everywhere —
-// quoted strings included — and clamps at zero on unmatched closers.
-// Neither shortcut can hide real depth: true nesting needs at least
-// as many consecutive opens as its own level count, and the scan
-// counts exactly that.
-func checkNestingDepth(path string, data []byte) error {
-	depth := 0
-	for _, b := range data {
-		switch b {
-		case '[', '{':
-			depth++
-			if depth > maxNestingDepth {
-				return fmt.Errorf("%s: YAML nesting deeper than %d levels (possible resource bomb)", path, maxNestingDepth)
-			}
-		case ']', '}':
-			if depth > 0 {
-				depth--
-			}
-		}
-	}
-	return nil
-}
+// The YAML resource-bomb pre-scan (nesting depth + alias expansion)
+// lives in internal/yamlcheck: one guard, every loader, instead of the
+// two inline copies this package and the correlator used to carry.
 
 // validOperators is the closed set of condition operators the engine
 // evaluates. Loading a rule with an unknown operator fails LOUD here:

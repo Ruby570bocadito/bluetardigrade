@@ -14,9 +14,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/Ruby570bocadito/security-framework/internal/redact"
-	"github.com/Ruby570bocadito/security-framework/internal/rules"
-	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/redact"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
 const (
@@ -134,14 +134,19 @@ func (m *Manager) Raise(ev *model.Event, hit rules.Hit) {
 	if len(m.seen) < dedupHardMax {
 		m.seen[key] = time.Now()
 	}
+	// capture prepare under mu: SetPreparer writes it under the same
+	// lock, and reading it after Unlock is a data race on the field
+	// even when the current wiring happens to call SetPreparer before
+	// the ingest starts (races are about contracts, not luck).
+	prepare := m.prepare
 	m.mu.Unlock()
 
 	a := buildAlert(ev, hit)
 	if a.ID == "" {
 		a.ID = NewID()
 	}
-	if m.prepare != nil {
-		m.prepare(&a, hit.Rule.Actions)
+	if prepare != nil {
+		prepare(&a, hit.Rule.Actions)
 	}
 	m.writeConsole(a)
 	m.writeJSON(a)
@@ -158,8 +163,11 @@ func (m *Manager) Emit(a Alert) {
 	if a.ID == "" {
 		a.ID = NewID()
 	}
-	if m.prepare != nil {
-		m.prepare(&a, nil)
+	m.mu.Lock()
+	prepare := m.prepare
+	m.mu.Unlock()
+	if prepare != nil {
+		prepare(&a, nil)
 	}
 	m.writeConsole(a)
 	m.writeJSON(a)

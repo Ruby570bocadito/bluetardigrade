@@ -1,8 +1,18 @@
 export type View = "home";
 
-export const REPO_URL = "https://github.com/Ruby570bocadito/security-framework";
+export const REPO_URL = "https://github.com/Ruby570bocadito/bluetardigrade";
+// El repositorio se renombró desde security-framework; GitHub redirige las
+// URLs antiguas, pero los enlaces canónicos apuntan al nombre nuevo.
+export const REPO_LEGACY_URL = "https://github.com/Ruby570bocadito/security-framework";
+export const PROJECT_NAME = "bluetardigrade";
+export const TAGLINE = "Real-time threat detection for Windows endpoints";
+
+/** One-command Windows install: download + run the installer (no admin). */
+export const WIN_INSTALL_CMD =
+  "irm https://raw.githubusercontent.com/Ruby570bocadito/bluetardigrade/main/install.ps1 | iex";
 
 export const NAV_LINKS: { label: string; anchor: string }[] = [
+  { label: "Live", anchor: "live" },
   { label: "Why", anchor: "why" },
   { label: "Architecture", anchor: "architecture" },
   { label: "Features", anchor: "features" },
@@ -47,6 +57,19 @@ export const STATS: Stat[] = [
     desc: "In the product path. The console shows only what the engine delivers.",
   },
 ];
+
+export const LIVE_DEMO = {
+  gif: "/console-live.gif",
+  poster: "/console-panel.png",
+  caption:
+    "Real captured session — not a mockup: the engine ingesting 411 events from the labeled demo scenario, detections arriving live in the SOC console.",
+  badges: [
+    "411 events · 18 detections",
+    "SSE live stream",
+    "kill-chain correlation",
+    "MITRE ATT&CK mapped",
+  ],
+};
 
 export const WHY_CARDS = [
   {
@@ -99,7 +122,7 @@ export const PIPELINE = [
     name: "Outputs",
     stack: "REST · SSE · SIEM · Webhooks",
     icon: "output",
-    desc: "REST + SSE on :7778, opt-in SQLite persistence with retention pruner, alert webhooks with Bearer auth, native Elasticsearch / Splunk SIEM sinks, Slack / Telegram / email notifications and Prometheus metrics.",
+    desc: "REST + SSE on :7778 with native TLS, opt-in SQLite persistence with retention pruner, alert webhooks with Bearer auth, native Elasticsearch / Splunk SIEM sinks, Slack / Telegram / email notifications and Prometheus metrics.",
     tags: ["OpenAPI 3.0", "Elastic / Splunk", "Prometheus"],
   },
 ];
@@ -158,6 +181,16 @@ export const FEATURES = [
 ];
 
 export const QUICKSTART = {
+  windows: {
+    label: "Windows · one command",
+    lines: [
+      { text: "# download and install (user-level, no admin required)", dim: true },
+      { text: WIN_INSTALL_CMD, cmd: true, copy: true },
+      { text: "", dim: false },
+      { text: "sf-console     # engine + SOC console + browser", ok: true },
+      { text: "sf-devsensor  # demo scenario: 18 labeled detections", ok: true },
+    ],
+  },
   terminals: [
     {
       title: "terminal 1 — engine",
@@ -187,7 +220,7 @@ export const QUICKSTART = {
       ],
     },
   ],
-  note: "Requirements: Go 1.22+. The demo scenario is simulated data for smoke-testing the pipeline — real hosts stream through sf-sensor.",
+  note: "Requirements: Go 1.26+ for the engine, Bun for the console. The demo scenario is simulated data for smoke-testing the pipeline — real hosts stream through sf-sensor.",
 };
 
 export const COMPARISON = {
@@ -248,6 +281,10 @@ export const FAQS = [
     a: "No. The Rust sensor streams ETW kernel-process providers natively, and a Sysmon ingestion path exists as an alternative feed. The engine refuses to run where there is no real telemetry.",
   },
   {
+    q: "Why the name bluetardigrade?",
+    a: "Tardigrades are the most resilient animal we know of — surviving vacuum, radiation and starvation — and this project aims at the same trait: a single static binary, zero external dependencies at runtime, fail-loud degradation instead of silent rot.",
+  },
+  {
     q: "How do rules work?",
     a: "Plain YAML with 17 operators, per-rule MITRE ATT&CK tags and actions, hot-reloaded every 15 seconds. Community Sigma rules can be imported deterministically with `engine sigma`, provenance preserved.",
   },
@@ -271,7 +308,7 @@ export const FAQS = [
 
 export const TECH_STRIP = [
   "Rust",
-  "Go 1.22",
+  "Go 1.26",
   "ETW",
   "MITRE ATT&CK",
   "Sigma",

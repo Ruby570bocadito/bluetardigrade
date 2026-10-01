@@ -15,6 +15,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Ruby570bocadito/bluetardigrade/internal/yamlcheck"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -39,6 +41,9 @@ func loadNameFile(path, field string, max int) (map[string]struct{}, error) {
 			return map[string]struct{}{}, nil
 		}
 		return nil, fmt.Errorf("respond %s: read %s: %w", field, path, err)
+	}
+	if err := yamlcheck.Guard(path, data); err != nil {
+		return nil, err
 	}
 	var nf nameFile
 	if err := yaml.Unmarshal(data, &nf); err != nil {

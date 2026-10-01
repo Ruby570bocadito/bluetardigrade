@@ -22,12 +22,12 @@
 # Examples:
 #
 # - # Change window: VSS deletions are sanctioned on this host until Monday.
-#   rule_id: vss-delete
+#   rule_id: 5a8c1e37-af69-4d40-b223-7cae5f9a4d77   # VSS/borrado masivo (rules/windows/credential-lateral.yaml)
 #   host: LAB-WKS-01
 #   reason: "ventana de cambio aprobada - backup migrado (INC-1234)"
 #   expires: 2026-10-05T06:00:00Z
 #
 # - # Accepted permanent exception: the lab honeypot fires this constantly.
-#   rule_id: suspicious-script-parent
+#   rule_id: 7d1e2f40-5a6b-4c7d-9e8f-0a1b2c3d4e5f   # script sospechoso (rules/windows/realtime-host.yaml)
 #   host: LAB-HONEYPOT-05
 #   reason: "honeypot: ruido esperado, aceptado por el responsable"

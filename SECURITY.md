@@ -1,6 +1,6 @@
 # Política de seguridad
 
-security-framework es un producto de seguridad de producción: la misma exigencia que el producto pide a sus entradas de datos se aplica a la recepción de sus propias vulnerabilidades. Este documento define el canal coordinado; el reporte público de vulnerabilidades con detalle de explotación no es el camino.
+bluetardigrade es un producto de seguridad de producción: la misma exigencia que el producto pide a sus entradas de datos se aplica a la recepción de sus propias vulnerabilidades. Este documento define el canal coordinado; el reporte público de vulnerabilidades con detalle de explotación no es el camino.
 
 ## Versiones con soporte
 
@@ -29,7 +29,7 @@ El proyecto todavía no publica releases versionadas (brecha G12 del análisis d
 
 **En alcance:** el motor Go (`cmd/engine`, `internal/*`, `pkg/*`), la consola web y su proxy (`web/`), el hub (`web/console-service`), la landing (`website/`), el instalador y desinstalador PowerShell, y la cadena de CI (`.github/workflows/`).
 
-**Fuera de alcance:** herramientas de laboratorio del equipo en `scripts/` y `docs/agentes/` (no se distribuyen como producto), escaneos automatizados no destructivos que solo reportan lo que ya es público, y hallazgos que requieran acceso físico al host del operador.
+**Fuera de alcance:** herramientas de laboratorio del equipo en `scripts/` (no se distribuyen como producto), escaneos automatizados no destructivos que solo reportan lo que ya es público, y hallazgos que requieran acceso físico al host del operador.
 
 ## Divulgación coordinada
 

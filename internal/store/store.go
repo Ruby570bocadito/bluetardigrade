@@ -30,8 +30,8 @@ import (
 
 	_ "modernc.org/sqlite" // pure-Go SQLite driver (registered as "sqlite")
 
-	"github.com/Ruby570bocadito/security-framework/internal/alert"
-	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
 // fieldSep joins the search haystack parts; a control character that
@@ -87,14 +87,28 @@ func Open(path string) (*Store, error) {
 	if err := ensurePrivateFile(path); err != nil {
 		return nil, fmt.Errorf("store: create %s: %w", path, err)
 	}
-	db, err := sql.Open("sqlite", path)
+	// The pool is two connections with the pragmas in the DSN, so EVERY
+	// pooled connection runs them (busy_timeout first — the driver
+	// applies that ordering itself). One connection kept the pragmas
+	// honest but serialized the API's history scans (LIKE over `search`
+	// with no index) against the detection loop's synchronous inserts:
+	// a slow query could stall ingest for its whole duration, which is
+	// the exact "readers never block the engine loop" contract this
+	// package documents — and could not honor with a single handle.
+	// WAL allows one writer plus concurrent readers; the second
+	// connection is the reader. The engine still writes from one loop,
+	// so writer-writer contention stays pathological (busy_timeout
+	// absorbs the rare retention-prune overlap).
+	dsn := path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("store: open %s: %w", path, err)
 	}
-	// A single connection keeps the per-connection pragmas honest and
-	// sqlite's own serialization happy: this engine writes from one
-	// loop and readers share the same handle.
-	db.SetMaxOpenConns(1)
+	db.SetMaxOpenConns(2)
+	db.SetMaxIdleConns(2)
+	// One eager pragma round-trip keeps the old fail-loud contract: a
+	// broken/corrupt file or an unwritable directory still fails Open
+	// instead of the first insert.
 	for _, pragma := range []string{
 		"PRAGMA journal_mode=WAL",
 		"PRAGMA synchronous=NORMAL",

@@ -125,6 +125,12 @@ async function forward(request: Request, body?: string): Promise<Response> {
       headers,
       body,
       cache: 'no-store',
+      // no transparent redirects: a 3xx emitted by the engine (or by
+      // anything sitting in front of it) would make this same-origin
+      // proxy serve another host's response - with the engine's
+      // content-type - as console origin. Hand the redirect status back
+      // to the browser instead of following it.
+      redirect: 'manual',
       signal: request.signal,
     })
   } catch {

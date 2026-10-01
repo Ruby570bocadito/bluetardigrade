@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/rules"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
 )
 
 var base = time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)

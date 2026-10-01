@@ -12,7 +12,87 @@ and the `make dist` target.
 
 ## [Unreleased]
 
-### Added — investigation shortcuts
+## [v0.2.0] — 2026-10-01 — the bluetardigrade round
+
+A hardening, cleanup and rebranding release: every open finding from the
+full external review of v0.1.0 landed, the repository lost ~19 MB of process
+artifacts, and the project is now **bluetardigrade** (renamed from
+`security-framework`; GitHub redirects old URLs, Windows shims keep their
+`sf-*` names for upgrade compatibility).
+
+### Added
+
+- **Native TLS for the HTTP API** (`-api-cert` / `-api-key`): hot-rotated on
+  file mtime change through the same reloader contract the ingest listener
+  has had all along (reloader promoted to the shared `internal/tlsutil`).
+- **YAML alias-bomb guard** (`internal/yamlcheck`): every loader now rejects
+  reference bombs (billion laughs) and deep flow nesting before a typed
+  decode can expand them — one guard for all nine YAML surfaces.
+- **Ingest connection cap** (512): a pre-auth connection flood can no longer
+  exhaust FD/RAM; rejections are counted in the existing `rejected` counter.
+- **401 brute-force throttle** per remote address (30/min window, then 429)
+  and an **SSE subscriber cap** (64) on the stream route.
+- **Console-service rate limiter**: 10 analyst requests per rolling minute
+  per connection, on top of the existing concurrency slots — sequential
+  paid calls on the operator's API key are bounded now.
+- `cargo` ecosystem in dependabot (the Rust sensor finally tracked).
+- New live capture set (`console-live.gif` + six views) taken from a real
+  engine session feeding the production console build.
+
+### Changed
+
+- **Renamed to bluetardigrade**: README, website (new animated landing with
+  React Bits components, blue identity, tardigrade logo), console branding,
+  installer defaults (`%LOCALAPPDATA%\bluetardigrade`, repo URL), docs.
+- **CI unblocked**: staticcheck pinned to 2026.2.1 (2024.1.1 did not support
+  the Go 1.26 line dependabot bumps to), Go module dependencies and base
+  images absorbed from the pending dependabot PRs.
+- **SQLite pool of 2 connections** with per-connection pragmas in the DSN:
+  history scans no longer stall the detection loop's synchronous inserts.
+- **install.ps1**: sha256 verification is fail-closed (an unreachable
+  checksum source aborts instead of downloading blind), `-WebhookUrl` /
+  `-WebhookToken` get the same strict charset whitelist as `-IngestToken`,
+  and the banner is new (figlet + colors, still pure ASCII).
+- **Windows one-command install** documented in the README and the website:
+  `irm .../install.ps1 | iex`.
+
+### Fixed
+
+- **`sf-sensor` (Sysmon) auth**: the real sensor now sends the `AUTH <token>`
+  handshake and exits loudly on rejection instead of silently looping forever
+  — the "connected but zero events" failure mode.
+- **Reconnection continuity for `sf-sensor`**: a record-id bookmark replays
+  events emitted during a cut (armed watcher + backlog drain + monotonic
+  dedupe), persisted every 16 events.
+- **Prompt-injection containment in the AI analyst**: telemetry is fenced in
+  delimiters, truncated (4 KiB events / 1 KiB rule conditions), declared
+  untrusted in the system prompt, and the operator question is labeled as
+  human-origin.
+- CSP + security headers on both Next.js apps; the engine proxy no longer
+  follows redirects (`redirect: 'manual'`).
+- Alert manager `prepare` field race (captured under the mutex), `log.Fatalf`
+  removed from `internal/siem` constructors (errors returned to the caller),
+  lifecycle tmp file collisions (unique temp + rename), devsensor UUID
+  entropy failure (fail loud), pidfile mode 0600, webhook dispatcher no
+  longer follows cross-host redirects.
+- Rule `powershell-encoded` no longer false-positives on `-Encoding` (regex
+  with word boundary, case-insensitive); PsExec header comment corrected to
+  T1021.002; thresholds doc says 17 operators; ARCHITECTURE.md synced to
+  v0.11 / 16-36-82 guard numbers.
+- Docker image: writable `WORKDIR`, `HEALTHCHECK` against `/api/health`, and
+  tokens documented through `SF_API_TOKEN` / `SF_INGEST_TOKEN` env.
+
+### Removed
+
+- **Repository slimmed by ~19 MB**: the agent round records (`docs/agentes/`,
+  249 files), eleven historical architecture PDFs (v0.1–v0.10, kept in
+  GitHub Releases), the process reports and gap-analysis documents, the
+  skills lock manifest, and ~700 lines of dead toast/notification code
+  duplicated across both Next.js apps.
+
+### Added & Fixed — the interface wave (PR #4 + PR #6, first shipped in v0.2.0)
+
+#### Added — investigation shortcuts
 
 - Dashboard shortcuts open critical alerts that remain open, or new,
   acknowledged and closed live alerts, directly from the operation summary.
@@ -21,21 +101,22 @@ and the `make dist` target.
 - Browser coverage of fresh triage lenses and history restoration; DOM
   checks of dashboard actions and offline disabled states.
 
-### Fixed — investigation context
+#### Fixed — investigation context
 
 - Dashboard triage shortcuts clear stale alert search, severity, history
   and selected-alert lenses while retaining feed, rule and audit context.
 - Whitespace-only terminal searches no longer hide all rows; all query
   terms must match, and the severity filter remains an intersection.
 
-### Added — command palette and browser regressions
+#### Added — command palette and browser regressions
+#### Added — command palette and browser regressions
 
 - Searchable console commands on desktop and mobile; Ctrl+K / Meta+K,
   arrow selection, keyboard help and shared engine refresh.
 - Chromium regression checks of the production console with isolated
   REST/SSE fixtures, keyboard/focus coverage and desktop/mobile captures.
 
-### Fixed — keyboard and modal focus
+#### Fixed — keyboard and modal focus
 
 - Native modal dialogs keep background controls inert, restore focus,
   support Escape/backdrop close and release page scroll on cleanup.
@@ -45,7 +126,7 @@ and the `make dist` target.
 - The animated view title keeps identical server/client markup; reduced
   motion is applied in CSS without a React hydration error.
 
-### Added — historical alert investigations
+#### Added — historical alert investigations
 
 - Live/history switch in the alert queue, lifecycle filters and shareable
   source/state lenses; 25-row pages with previous, next and refresh.
@@ -54,7 +135,7 @@ and the `make dist` target.
 - Historical triage updates through both SSE and successful POST responses;
   superseded queries are canceled and older engines show a capability error.
 
-### Added — alert handoff
+#### Added — alert handoff
 
 - Alert ids join the free-text search surface on both backends (ring and
   store haystack mirrors): pasting an id from a handoff link finds its
@@ -64,7 +145,7 @@ and the `make dist` target.
   window, the queue says so and offers the history search instead of
   rendering a ghost panel.
 
-### Fixed — alert investigation state
+#### Fixed — alert investigation state
 
 - Informational severity no longer renders as low or disappears from filters/KPIs.
 - The alert list shows offline state instead of an endless loading skeleton.
@@ -73,7 +154,7 @@ and the `make dist` target.
 - Export tooltips state the default limits and their independence from view filters.
 
 
-### Added
+#### Added
 
 - Interactive alert and rule workspaces with search, severity filters,
   stable historical selection, details, pause and contextual help.
@@ -82,7 +163,7 @@ and the `make dist` target.
 - Regression coverage for terminal display, request boundaries, rolling
   activity, alert replay and operation summaries; Spanish start guide.
 
-### Fixed
+#### Fixed
 
 - Console deep links and browser back/forward restore the requested view.
 - Activity ages out during sensor inactivity; an empty sample peaks at zero.
@@ -96,7 +177,7 @@ and the `make dist` target.
 - Routed CLI commands reject ignored arguments and respect output writers.
 - Sensor Makefile targets resolve their Cargo manifest from the repo root.
 
-### Added
+#### Added
 
 **Sensors and telemetry**
 

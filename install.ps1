@@ -1,11 +1,11 @@
 # ======================================================================
-# security-framework - one-command installer for Windows PowerShell 5.1+
+# bluetardigrade - one-command installer for Windows PowerShell 5.1+
 # (also works in PowerShell 7). No admin account required.
 #
-#   irm https://raw.githubusercontent.com/Ruby570bocadito/security-framework/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/Ruby570bocadito/bluetardigrade/main/install.ps1 | iex
 #
 # With parameters:
-#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/Ruby570bocadito/security-framework/main/install.ps1))) -WithSensor -AutoStart
+#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/Ruby570bocadito/bluetardigrade/main/install.ps1))) -WithSensor -AutoStart
 #
 # What it does:
 #   1. Downloads the repository (git if available, GitHub zip otherwise)
@@ -17,8 +17,8 @@
 #      and sf-uninstall on your user PATH
 #
 # Switches:
-#   -InstallDir <path>   install location (default %LOCALAPPDATA%\security-framework)
-#   -Repo <owner/name>   GitHub repository        (default Ruby570bocadito/security-framework)
+#   -InstallDir <path>   install location (default %LOCALAPPDATA%\bluetardigrade)
+#   -Repo <owner/name>   GitHub repository        (default Ruby570bocadito/bluetardigrade)
 #   -Branch <name>       branch or tag to install (default main)
 #   -NoConsole           skip the web console (engine + rules only)
 #   -WithSensor          also build the Rust ETW sensor (needs Rust + MSVC)
@@ -42,8 +42,8 @@
 #                        this flag instead of downloading twice)
 # ======================================================================
 param(
-    [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'security-framework'),
-    [string]$Repo = 'Ruby570bocadito/security-framework',
+    [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'bluetardigrade'),
+    [string]$Repo = 'Ruby570bocadito/bluetardigrade',
     [string]$Branch = 'main',
     [switch]$NoConsole,
     [switch]$WithSensor,
@@ -95,7 +95,12 @@ function Get-TempDir {
 
 # ---------------------------------------------------------------- net
 function Invoke-Download {
-    param([string]$Url, [string]$OutFile, [string]$ExpectedSha256)
+    # Fail-closed by default: a toolchain binary with no verifiable
+    # checksum is a supply-chain hole, not a convenience. The only
+    # exception is the repository source zip (-UnverifiedOk), for which
+    # no published checksum exists; the engine it builds is reviewed
+    # code, while the toolchains below run as build tooling.
+    param([string]$Url, [string]$OutFile, [string]$ExpectedSha256, [switch]$UnverifiedOk)
     if (Test-Path $OutFile) { Remove-Item $OutFile -Force -ErrorAction SilentlyContinue }
     Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $OutFile
     try { Unblock-File $OutFile -ErrorAction SilentlyContinue } catch { }
@@ -103,6 +108,8 @@ function Invoke-Download {
         $h = (Get-FileHash $OutFile -Algorithm SHA256).Hash.ToLower()
         if ($h -ne $ExpectedSha256.ToLower()) { throw "sha256 mismatch for $Url (got $h, want $ExpectedSha256)" }
         Write-Info "sha256 verified"
+    } elseif (-not $UnverifiedOk) {
+        throw "cannot verify $Url: no sha256 available (checksum source unreachable). Refusing to install an unverified binary - retry, or pin the hash manually."
     }
 }
 
@@ -292,7 +299,9 @@ function Get-SourceTree {
     }
     Write-Step "Downloading source zip ($RepoId@$Br)"
     $zip = Join-Path (Get-TempDir) ("sf-src-" + [guid]::NewGuid().ToString('N').Substring(0, 8) + ".zip")
-    Invoke-Download -Url "https://codeload.github.com/$RepoId/zip/refs/heads/$Br" -OutFile $zip
+    # repo source zip: no published checksum exists for a moving branch
+    # HEAD, so this is the one documented -UnverifiedOk download
+    Invoke-Download -Url "https://codeload.github.com/$RepoId/zip/refs/heads/$Br" -OutFile $zip -UnverifiedOk
     $tmp = Join-Path (Get-TempDir) ("sf-unz-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
     Expand-Archive -Path $zip -DestinationPath $tmp -Force
     $inner = Get-ChildItem $tmp -Directory | Select-Object -First 1
@@ -552,8 +561,11 @@ function Set-WebhookConfig {
         }
         return ''
     }
-    if ($u -notmatch '^https?://\S+$') {
-        throw "invalid -WebhookUrl '$u': must be an http(s) URL"
+    # strict charset: the URL is interpolated into the autostart command
+    # line inside single quotes, so quotes/backticks/whitespace would be
+    # command injection into the logon persistence, not just a bad URL
+    if ($u -notmatch '^https?://[A-Za-z0-9._~:/?#\[\]@!$&*+,;=%-]+$') {
+        throw "invalid -WebhookUrl: must be an http(s) URL without quotes, spaces or shell metacharacters"
     }
     New-Item -ItemType Directory -Path (Split-Path $File -Parent) -Force | Out-Null
     [IO.File]::WriteAllText($File, $u + "`r`n")
@@ -589,7 +601,11 @@ function Set-IngestTokenConfig {
 }
 
 function Register-Autostart {
-    # HKCU Run entries: always writable by the current user, no admin needed
+    # HKCU Run entries: always writable by the current user, no admin needed.
+    # NOTE: the Run-key and firewall-rule names deliberately stay
+    # 'security-framework-*': they are PERSISTED OS artifacts, and renaming
+    # them mid-product-rename would orphan every existing install (old
+    # entries would keep launching with no upgrade path to remove them).
     param([string]$Root, [string]$WebhookUrl = '', [string]$WebhookToken = '', [string]$IngestToken = '')
     $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
     New-Item -ItemType Directory -Path (Join-Path $Root 'run') -Force | Out-Null
@@ -653,18 +669,33 @@ function Stop-SfProcesses {
 if ($MyInvocation.InvocationName -ne '.') {
 
     if ($PSVersionTable.PSVersion.Major -lt 5) { throw "PowerShell 5.1 or newer required" }
-    if (-not $env:LOCALAPPDATA) { $InstallDir = Join-Path $env:USERPROFILE 'security-framework' }
+    if (-not $env:LOCALAPPDATA) { $InstallDir = Join-Path $env:USERPROFILE 'bluetardigrade' }
     $root = $InstallDir.TrimEnd('\')
     $tools = Join-Path $root 'tools'
     $binDir = Join-Path $root 'bin'
     $sw = [Diagnostics.Stopwatch]::StartNew()
 
+    # single-quoted here-string: the figlet art contains backticks and
+    # apostrophes, both of which PowerShell re-interprets inside regular
+    # quoted strings - a literal here-string prints them verbatim
+    $banner = @'
+ _     _            _                _ _                     _      
+| |__ | |_   _  ___| |_ __ _ _ __ __| (_) __ _ _ __ __ _  __| | ___ 
+| '_ \| | | | |/ _ \ __/ _` | '__/ _` | |/ _` | '__/ _` |/ _` |/ _ \
+| |_) | | |_| |  __/ || (_| | | | (_| | | (_| | | | (_| | (_| |  __/
+|_.__/|_|\__,_|\___|\__\__,_|_|  \__,_|_|\__, |_|  \__,_|\__,_|\___|
+                                         |___/                      
+'@
     Write-Host ''
-    Write-Host '============================================================'
-    Write-Host ' security-framework installer (Windows, no admin required)'
-    Write-Host " repo   : $Repo @ $Branch"
-    Write-Host " target : $root"
-    Write-Host '============================================================'
+    Write-Host '  ==========================================================' -ForegroundColor DarkCyan
+    Write-Host $banner -ForegroundColor Cyan
+    Write-Host '     bluetardigrade  |  Windows endpoint detection' -ForegroundColor White
+    Write-Host '     engine + SOC console + Sysmon sensor' -ForegroundColor DarkGray
+    Write-Host '     no admin required  |  user-level install' -ForegroundColor DarkGray
+    Write-Host '  ==========================================================' -ForegroundColor DarkCyan
+    Write-Host "   repo    : $Repo @ $Branch" -ForegroundColor Gray
+    Write-Host "   target  : $root" -ForegroundColor Gray
+    Write-Host '  ----------------------------------------------------------' -ForegroundColor DarkCyan
 
     # stop leftovers from a previous install, then refresh the tree
     if (Test-Path $root) {
@@ -753,6 +784,12 @@ if ($MyInvocation.InvocationName -ne '.') {
             if (Test-Path $wtFile) { Remove-Item $wtFile -Force; Write-Ok 'webhook token removed' }
             $webhookToken = ''
         } else {
+            # same contract as -IngestToken: the value is interpolated
+            # into the autostart command line (single quotes), so the
+            # charset excludes everything that could break out of it
+            if ($wt -notmatch '^[A-Za-z0-9._~+/=:-]{8,512}$') {
+                throw "invalid -WebhookToken: use 8-512 characters from letters/digits/._~+/=:- (no spaces or quotes)"
+            }
             New-Item -ItemType Directory -Path (Split-Path $wtFile -Parent) -Force | Out-Null
             Set-Content -Path $wtFile -Value $wt -Encoding ascii
             Write-Ok 'webhook token saved: deliveries carry Authorization: Bearer'
@@ -780,9 +817,9 @@ if ($MyInvocation.InvocationName -ne '.') {
 
     $sw.Stop()
     Write-Host ''
-    Write-Host '============================================================'
-    Write-Host " security-framework installed in $([int]$sw.Elapsed.TotalSeconds)s"
-    Write-Host " location : $root"
+    Write-Host '  ==========================================================' -ForegroundColor DarkCyan
+    Write-Host "   bluetardigrade installed in $([int]$sw.Elapsed.TotalSeconds)s" -ForegroundColor Cyan
+    Write-Host "   location : $root"
     if ($webhook) {
         Write-Host " webhook  : alerts POST to $webhook"
     }
@@ -803,5 +840,7 @@ if ($MyInvocation.InvocationName -ne '.') {
     Write-Host '                -> alerts from ACTUAL host activity, visible in sf-console'
     Write-Host '   demo only :  sf-devsensor      -> 18 alerts from the scripted scenario'
     Write-Host '   or simply:   sf-console'
-    Write-Host '============================================================'
+    Write-Host '  ----------------------------------------------------------' -ForegroundColor DarkCyan
+    Write-Host '   console:  http://localhost:3000  (engine API :7778)' -ForegroundColor Gray
+    Write-Host '  ==========================================================' -ForegroundColor DarkCyan
 }

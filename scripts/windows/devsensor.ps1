@@ -144,7 +144,10 @@ if (-not $NoEngine -and -not (Test-EngineUp)) {
             # the auto-started engine must accept the same token this
             # sensor is about to present, or the AUTH handshake fails
             $engineArgs = "-rules `"$root\rules`""
-            if ($Token) { $engineArgs += " -token $Token" }
+            # quote the token: a value with spaces would otherwise split
+            # into two arguments and the engine would read only the
+            # first half (same shape as the sf-console fix)
+            if ($Token) { $engineArgs += " -token `"$Token`"" }
             $spArgs['ArgumentList'] = $engineArgs
             if ([Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { $spArgs['WindowStyle'] = 'Hidden' }
             $eng = Start-Process @spArgs

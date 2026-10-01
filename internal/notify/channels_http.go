@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
 )
 
 // httpTimeoutClient wraps *http.Client so the HTTP channels share one

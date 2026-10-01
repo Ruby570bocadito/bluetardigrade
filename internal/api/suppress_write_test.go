@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Ruby570bocadito/security-framework/internal/suppress"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/suppress"
 	"gopkg.in/yaml.v3"
 )
 

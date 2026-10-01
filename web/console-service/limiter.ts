@@ -30,3 +30,42 @@ export function createSlotLimiter(max: number): SlotLimiter {
     },
   }
 }
+
+/** Sliding-window rate limiter. The slot limiter above bounds
+ * CONCURRENCY only: a socket could still fire unbounded SEQUENTIAL
+ * analyst requests (each a paid call on the operator's API key), so
+ * the hub also caps the per-connection request rate per time window.
+ * The window slides per request: old stamps age out lazily, no
+ * timers, nothing to clean up on disconnect. */
+export type RateLimiter = {
+  /** Records one request; false when the window budget is exhausted. */
+  tryTake(): boolean
+  /** Requests taken inside the current window (after pruning). */
+  taken(): number
+  readonly max: number
+  readonly windowMs: number
+}
+
+export function createRateLimiter(max: number, windowMs: number, now: () => number = Date.now): RateLimiter {
+  const budget = Math.max(1, Math.floor(max))
+  const window = Math.max(1, Math.floor(windowMs))
+  const stamps: number[] = []
+  const prune = (t: number) => {
+    while (stamps.length > 0 && t - stamps[0]! >= window) stamps.shift()
+  }
+  return {
+    max: budget,
+    windowMs: window,
+    tryTake() {
+      const t = now()
+      prune(t)
+      if (stamps.length >= budget) return false
+      stamps.push(t)
+      return true
+    },
+    taken() {
+      prune(now())
+      return stamps.length
+    },
+  }
+}

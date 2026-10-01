@@ -1,20 +1,34 @@
-# security-framework detection engine — production container
-FROM golang:1.22-alpine AS builder
+# bluetardigrade detection engine — production container
+FROM golang:1.27-alpine AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/engine ./cmd/engine
 
-FROM alpine:3.20
-RUN adduser -D -H sensor
+FROM alpine:3.24
+RUN adduser -D -H -g "bluetardigrade engine" sensor
 COPY --from=builder /out/engine /usr/local/bin/engine
 COPY rules/ /opt/security-framework/rules/
 COPY sequences/ /opt/security-framework/sequences/
+# Writable state home: the engine's relative default paths (./respond-audit.jsonl,
+# ./alert-lifecycle.json, ./respond-operators.yaml, ./suppressions.yaml) resolve
+# against the CWD — with the default / they would land in a root the non-root
+# USER cannot write and the triage/audit surfaces would degrade silently.
+RUN mkdir -p /var/lib/security-framework && chown sensor:sensor /var/lib/security-framework
+WORKDIR /var/lib/security-framework
 USER sensor
 EXPOSE 7777 7778
+# Liveness against the engine's own probe route (the same one CI smoke uses).
+# wget comes from busybox, already present in alpine.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:7778/api/health || exit 1
 ENTRYPOINT ["/usr/local/bin/engine"]
-# The API binds loopback by default on the host; inside the container it is
-# published explicitly so `docker run -p 7778:7778` keeps working for
-# consoles running outside (container isolation already gates exposure).
-CMD ["-addr", ":7777", "-rules", "/opt/security-framework/rules", "-sequences", "/opt/security-framework/sequences", "-api", "0.0.0.0:7778"]
+# Tokens are delivered through the environment (SF_API_TOKEN /
+# SF_INGEST_TOKEN — the engine reads both as flag fallbacks), NOT baked
+# into the command line: process arguments are world-readable metadata
+# (docker inspect, /proc) and a token there is a leak by construction.
+# A container started without SF_API_TOKEN still binds its API to
+# 0.0.0.0 (container isolation gates exposure) exactly like before;
+# publishing the port to the host without a token is on the operator.
+CMD ["-addr", ":7777", "-rules", "/opt/security-framework/rules", "-sequences", "/opt/security-framework/sequences", "-api", "0.0.0.0:7778", "-respond-audit", "/var/lib/security-framework/respond-audit.jsonl", "-lifecycle", "/var/lib/security-framework/alert-lifecycle.json"]

@@ -20,8 +20,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Ruby570bocadito/security-framework/internal/lifecycle"
-	"github.com/Ruby570bocadito/security-framework/internal/suppress"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/lifecycle"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/suppress"
 )
 
 // captureLog swaps the standard logger for a buffer; the returned

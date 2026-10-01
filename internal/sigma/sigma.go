@@ -44,6 +44,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Ruby570bocadito/bluetardigrade/internal/yamlcheck"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -212,6 +214,9 @@ func convertFile(path string, res *Result) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("sigma: read %s: %w", path, err)
+	}
+	if err := yamlcheck.Guard(path, data); err != nil {
+		return err
 	}
 	var sr sigmaRule
 	if err := yaml.Unmarshal(data, &sr); err != nil {

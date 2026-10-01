@@ -1,4 +1,4 @@
-# security-framework — Website
+# bluetardigrade — Website
 
 Sitio web oficial del proyecto: **Real-time threat detection for Windows endpoints**.
 

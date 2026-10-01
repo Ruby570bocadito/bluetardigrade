@@ -15,7 +15,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Ruby570bocadito/security-framework/internal/sigma"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/sigma"
 	"github.com/spf13/cobra"
 )
 

@@ -16,9 +16,10 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/Ruby570bocadito/security-framework/internal/alert"
-	"github.com/Ruby570bocadito/security-framework/internal/rules"
-	"github.com/Ruby570bocadito/security-framework/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/yamlcheck"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 
 	"gopkg.in/yaml.v3"
 )
@@ -95,19 +96,9 @@ const MaxTrackedStates = maxTrackedStates
 const (
 	// maxFileBytes caps one sequence file. os.ReadFile has no bound of
 	// its own: a multi-gigabyte file would be read whole into memory
-	// before any other check could run.
+	// before any other check could run. The flow-nesting cap moved to
+	// internal/yamlcheck together with the alias-bomb guard.
 	maxFileBytes = 4 << 20 // 4 MiB
-
-	// maxNestingDepth caps flow-style ('[' / '{') nesting. yaml.v3
-	// decodes recursively, and flow nesting costs 1 byte per level, so
-	// 4 MiB of '[' is ~4M recursion levels: stack exhaustion, i.e. a
-	// process crash rather than a config error. The pre-scan is
-	// byte-level and deliberately naive (brackets inside quoted strings
-	// count too — a real config with 512 nested brackets does not
-	// exist). Block-style nesting (indentation) costs bytes
-	// quadratically, so maxFileBytes alone keeps it in the hundreds of
-	// levels.
-	maxNestingDepth = 512
 
 	// maxSequences caps the loaded set: Observe walks EVERY sequence on
 	// each rule hit, so the per-hit cost is bounded by construction at
@@ -435,7 +426,9 @@ func (m *Manager) load(dir string) error {
 		if err != nil {
 			return err
 		}
-		if err := checkNestingDepth(path, data); err != nil {
+		// resource-bomb guard (alias expansion + flow nesting), shared
+		// with every other YAML loader through internal/yamlcheck.
+		if err := yamlcheck.Guard(path, data); err != nil {
 			return err
 		}
 		var list []Sequence
@@ -555,27 +548,6 @@ func firstControlRune(s string) (rune, bool) {
 	return 0, false
 }
 
-// checkNestingDepth is the byte-level pre-scan against stack
-// exhaustion in yaml.v3's recursive decoder (see maxNestingDepth).
-// Deliberately naive: it counts structural brackets everywhere —
-// quoted strings included — and clamps at zero on unmatched closers.
-// Neither shortcut can hide real depth: true nesting needs at least
-// as many consecutive opens as its own level count, and the scan
-// counts exactly that.
-func checkNestingDepth(path string, data []byte) error {
-	depth := 0
-	for _, b := range data {
-		switch b {
-		case '[', '{':
-			depth++
-			if depth > maxNestingDepth {
-				return fmt.Errorf("%s: YAML nesting deeper than %d levels (possible resource bomb)", path, maxNestingDepth)
-			}
-		case ']', '}':
-			if depth > 0 {
-				depth--
-			}
-		}
-	}
-	return nil
-}
+// The YAML resource-bomb pre-scan (nesting depth + alias expansion)
+// lives in internal/yamlcheck: one guard for every loader instead of
+// the inline copies this package and the rules loader used to carry.
