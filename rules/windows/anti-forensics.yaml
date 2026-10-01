@@ -1,0 +1,209 @@
+# Anti-forensics and evidence destruction: the techniques an attacker
+# uses after impact to blind the defenders — clearing audit trails,
+# deleting recovery copies, removing volume-change journals and
+# rewriting timestamps. Each of these fires AFTER something bad
+# happened on the host, so they double as high-value incident
+# markers: the engine's forensic timeline (internal/forensic) captures
+# the surrounding event window when they do.
+#
+# Sources: ATT&CK T1070/T1490/T1562 sub-techniques and the equivalent
+# Sigma rules, expressed with name+argument conjunctions so the
+# benign use of the same binaries (fsutil queries, bcdedit reports)
+# does not alert.
+
+# T1070.001 - PowerShell clearing the event log
+- name: "Borrado del registro de eventos con PowerShell"
+  id: "c3d4e5f6-0001-4c01-9e01-010101010101"
+  description: >
+    Detecta Clear-EventLog ejecutandose desde powershell: elimina los
+    registros de seguridad/sistema/aplicacion completos. Es la
+    tecnica de ceguera defensiva mas clasica tras un robo de
+    credenciales y complementa la deteccion existente de wevtutil.
+  severity: critical
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: in
+      value: ["powershell.exe", "pwsh.exe"]
+    - field: process.command_line
+      operator: regex
+      value: '(?i)clear-eventlog|limit-eventlog\s+-logname\s+\w+\s+-maximumsize\s+1'
+  actions:
+    - type: alert
+      config:
+        message: "Borrado de registros de eventos con PowerShell en {host}"
+        notify: "true"
+  tags: ["attack.t1070.001", "attack.defense-evasion"]
+  enabled: true
+
+# T1490 - alternate shadow-copy destruction via WMI
+- name: "Borrado de instantaneas VSS con wmic"
+  id: "c3d4e5f6-0002-4c02-9e02-020202020202"
+  description: >
+    Detecta el borrado de instantaneas de volumen por la via WMI
+    (wmic shadowcopy delete), alternativa a vssadmin que la regla
+    existente ya cubre. Destruir VSS es el paso previo estandar al
+    cifrado de ransomware para eliminar toda via de restauracion.
+  severity: critical
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: eq
+      value: "wmic.exe"
+    - field: process.command_line
+      operator: regex
+      value: '(?i)shadowcopy\s+(delete|call\s+delete)'
+  actions:
+    - type: alert
+      config:
+        message: "Borrado de instantaneas VSS con wmic en {host}"
+        notify: "true"
+  tags: ["attack.t1490", "attack.impact"]
+  enabled: true
+
+# T1490 - shrinking shadow storage to nothing (ransomware prep)
+- name: "Reduccion de almacenamiento VSS con vssadmin o PowerShell"
+  id: "c3d4e5f6-0003-4c03-9e03-030303030303"
+  description: >
+    Detecta Resize-ShadowStorage, vssadmin resize shadowstorage o el
+    equivalente por WMI (MaxSpace a pocos megas): variante silenciosa
+    de destruccion de copias que deja las instantaneas existentes
+    inservibles sin borrarlas explicitamente. Firma tipica de la fase
+    de preparacion de ransomware antes del cifrado masivo. UNBOUNDED
+    (quito del limite) queda fuera a proposito: es la direccion
+    benigna del mismo comando.
+  severity: critical
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)resize-shadowstorage.*maxsize\s+\d+\s*mb|vssadmin(\.exe)?\s+resize\s+shadowstorage.*\d+\s*(mb|kb)|maxspace\s*=?\s*''"?\s*\d+\s*(mb|kb)'
+  actions:
+    - type: alert
+      config:
+        message: "Reduccion del almacenamiento VSS en {host} (preparacion de cifrado)"
+        notify: "true"
+  tags: ["attack.t1490", "attack.impact"]
+  enabled: true
+
+# T1490 - boot recovery sabotage with bcdedit
+- name: "Sabotaje de recuperacion de arranque con bcdedit"
+  id: "c3d4e5f6-0004-4c04-9e04-040404040404"
+  description: >
+    Detecta bcdedit desactivando la recuperacion de arranque
+    (recoveryenabled no) o el arranque de error (bootstatuspolicy
+    ignoreallfailures): impide que el equipo arranque en modo
+    recuperacion. Combinado con destruccion de VSS, define la firma
+    completa del patron de ransomware destructivo.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: eq
+      value: "bcdedit.exe"
+    - field: process.command_line
+      operator: regex
+      value: '(?i)recoveryenabled\s+no|bootstatuspolicy\s+ignoreallfailures'
+  actions:
+    - type: alert
+      config:
+        message: "bcdedit desactivo la recuperacion de arranque en {host}"
+        notify: "true"
+  tags: ["attack.t1490", "attack.impact"]
+  enabled: true
+
+# T1070.005 - USN change journal deletion
+- name: "Borrado del diario USN con fsutil"
+  id: "c3d4e5f6-0005-4c05-9e05-050505050505"
+  description: >
+    Detecta fsutil usn deletejournal: elimina el diario de cambios de
+    NTFS, la fuente que permite reconstruir que ficheros se crearon o
+    modificaron. Sin diario, el rastro del movimiento de ficheros del
+    atacante desaparece para cualquier herramienta forense posterior.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: eq
+      value: "fsutil.exe"
+    - field: process.command_line
+      operator: regex
+      value: '(?i)usn\s+deletejournal'
+  actions:
+    - type: alert
+      config:
+        message: "Borrado del diario USN en {host} (borrado de rastro forense)"
+        notify: "true"
+  tags: ["attack.t1070.005", "attack.defense-evasion"]
+  enabled: true
+
+# T1003.003 - ntdsutil IFM: the domain database exfiltrated
+- name: "Volcado de ntds.dit con ntdsutil"
+  id: "c3d4e5f6-0006-4c06-9e06-060606060606"
+  description: >
+    Detecta ntdsutil creando medios de instalacion (acquire... ifm):
+    produce una copia de la base de datos del dominio (ntds.dit +
+    hive SYSTEM) desde la que se extraen los hashes de TODAS las
+    cuentas. Ejecutado en un controlador de dominio es el volcado de
+    credenciales de mayor alcance posible.
+  severity: critical
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: eq
+      value: "ntdsutil.exe"
+    - field: process.command_line
+      operator: regex
+      value: '(?i)\bac\s+(i\s+ntds|quire|tivate)\b.*\bifm\b'
+  actions:
+    - type: alert
+      config:
+        message: "Volcado de ntds.dit con ntdsutil en {host} (todos los hashes del dominio)"
+        notify: "true"
+  tags: ["attack.t1003.003", "attack.credential-access"]
+  enabled: true
+
+# T1070.006 - timestamp forgery (timestomping)
+- name: "Falsificacion de marcas de tiempo de ficheros"
+  id: "c3d4e5f6-0007-4c07-9e07-070707070707"
+  description: >
+    Detecta reescritura de LastWriteTime/CreationTime/LastAccessTime
+    desde powershell o la marca de SetFileTime por consola: el
+    atacante disfraza ficheros maliciosos de antiguos para que las
+    ordenaciones por fecha de una investigacion no los senalen.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)\$\((get-item|gc|get-childitem)[^)]*\)\.(creationtime|lastwritetime|lastaccesstime)\s*='
+  actions:
+    - type: alert
+      config:
+        message: "Falsificacion de timestamps de ficheros en {host} por {user}"
+        notify: "true"
+  tags: ["attack.t1070.006", "attack.defense-evasion"]
+  enabled: true
+
+# T1070.004 - targeted deletion of Windows forensic artifacts
+- name: "Borrado dirigido de artefactos forenses de Windows"
+  id: "c3d4e5f6-0008-4c08-9e08-080808080808"
+  description: >
+    Detecta borrado selectivo de los artefactos que alimentan las
+    investigaciones (Prefetch, logs de BITS, histórico de RDP y
+    volcados de memoria). Un borrado general de temporales es higiene
+    cotidiana; apuntar a estas rutas concretas es un atacante
+    cubriendo su rastro.
+  severity: medium
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)del\s+[^\n]*\\windows\\(prefetch|debug|livekernelreports)\\|remove-item[^\n]*\\prefetch\\|vssadmin(\.exe)?\s+delete\s+shadows\s+/all\s+/quiet.*\\windows\\'
+  actions:
+    - type: alert
+      config:
+        message: "Borrado de artefactos forenses de Windows en {host}"
+        notify: "false"
+  tags: ["attack.t1070.004", "attack.defense-evasion"]
+  enabled: true

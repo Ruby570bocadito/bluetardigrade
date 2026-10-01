@@ -1,0 +1,238 @@
+# Attacker tooling on the endpoint: dedicated credential-dumping,
+# enumeration and post-exploitation utilities whose process name or
+# command line is itself the detection signal (no legitimate Windows
+# workflow runs mimikatz). Sources: MITRE ATT&CK software entries and
+# the reference Sigma rules for each tool, adapted to the engine's
+# multi-condition schema (name AND behavioral markers, never a bare
+# name match that a renamed binary would defeat where a command-line
+# marker survives).
+#
+# Severity ladder: credential dumping and ticket theft are critical
+# (assume-breach response); discovery tooling is high; dual-use
+# administration tools are NOT here — they live in the host heuristics
+# with context conditions instead.
+
+# T1003.001 - Mimikatz family: LSASS credential dumping
+- name: "Herramienta de volcado Mimikatz"
+  id: "a1b2c3d4-0001-4a01-9e01-010101010101"
+  description: >
+    Detecta la ejecucion de Mimikatz o de sus variantes (powerkatz,
+    Invoke-Mimikatz) por nombre de proceso o por sus marcas de
+    subcomando canonicas (sekurlsa::logonpasswords, lsadump::sam,
+    lsadump::dcsync). El uso de cualquiera de ellas indica intento de
+    robo de credenciales en claro de la maquina.
+  severity: critical
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)mimikatz|sekurlsa::|lsadump::|crypto::certificates|ts::multirdp'
+  actions:
+    - type: alert
+      config:
+        message: "Ejecucion de Mimikatz o variante en {host} por {user}"
+        notify: "true"
+  tags: ["attack.t1003.001", "attack.credential-access"]
+  enabled: true
+
+# T1003 - LaZagne: cross-application password harvesting
+- name: "Cosecha de contrasenas con LaZagne"
+  id: "a1b2c3d4-0002-4a02-9e02-020202020202"
+  description: >
+    Detecta LaZagne (nativo o via python), herramienta que extrae
+    credenciales guardadas de navegadores, clientes de correo y
+    gestores locales. Su aparicion en un proceso es evidencia directa
+    de recoleccion masiva de accesos del usuario.
+  severity: critical
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)lazagne(\.exe)?\b|laZagne\.py'
+  actions:
+    - type: alert
+      config:
+        message: "Cosecha de credenciales con LaZagne en {host}"
+        notify: "true"
+  tags: ["attack.t1003", "attack.credential-access"]
+  enabled: true
+
+# T1003.002 - Local security authority hash dumpers
+- name: "Dumping local de hashes con Pwdump"
+  id: "a1b2c3d4-0003-4a03-9e03-030303030303"
+  description: >
+    Detecta volcadores de la base SAM/LSA clsicos de Windows (Pwdump,
+    QuarksPwDump, PwDumpX). Extraen los hashes NTLM de todas las
+    cuentas locales para cracking o pass-the-hash posterior.
+  severity: critical
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)(pwdump6?|quarkspwdump|pwdumpx)(\.exe)?\b'
+  actions:
+    - type: alert
+      config:
+        message: "Volcado de hashes locales (Pwdump/QuarksPwDump) en {host}"
+        notify: "true"
+  tags: ["attack.t1003.002", "attack.credential-access"]
+  enabled: true
+
+# T1558.003 - Rubeus: Kerberos ticket abuse
+- name: "Abuso de Kerberos con Rubeus"
+  id: "a1b2c3d4-0004-4a04-9e04-040404040404"
+  description: >
+    Detecta Rubeus por nombre o por sus subcomandos de abuso de
+    tickets (kerberoast, asreproast, asktgt, /ptt). Es el herramienta
+    canonica de robo y reutilizacion de tickets Kerberos en
+    campaas de dominio.
+  severity: critical
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)rubeus(\.exe)?\b|\b(kerberoast|asreproast|asktgt)\b|/ptt\s'
+  actions:
+    - type: alert
+      config:
+        message: "Abuso de tickets Kerberos (Rubeus) en {host} por {user}"
+        notify: "true"
+  tags: ["attack.t1558.003", "attack.credential-access"]
+  enabled: true
+
+# T1087.002 - SharpHound / BloodHound domain mapping
+- name: "Mapeo de dominio con SharpHound"
+  id: "a1b2c3d4-0005-4a05-9e05-050505050505"
+  description: >
+    Detecta SharpHound (incluido su uso reflexivo con powershell) y el
+    colector Python de BloodHound: recorren el dominio buscando rutas
+    de ataque hacia cuentas privilegiadas. Fase de reconocimiento
+    tipica de campaas dirigidas a Active Directory.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)sharphound(\.exe)?\b|bloodhound(\.py)?\b|-c\s+(All|DCOnly|Session)'
+  actions:
+    - type: alert
+      config:
+        message: "Reconocimiento de dominio con SharpHound/BloodHound en {host}"
+        notify: "true"
+  tags: ["attack.t1087.002", "attack.discovery"]
+  enabled: true
+
+# T1087.002 - AdFind: directory interrogation hallmark of APTs
+- name: "Enumeracion de directorio con AdFind"
+  id: "a1b2c3d4-0006-4a06-9e06-060606060606"
+  description: >
+    Detecta AdFind con sus filtros canonicos de enumeracion de
+    dominio (-f objectcategory, domain admins, domain trusts). Es una
+    herramienta legltima de administracion que figura en un numero
+    desproporcionado de intrusiones reales como sondeo de AD; el
+    marcador combinado de filtro reduce el falso positivo del binario
+    solo.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)adfind(\.exe)?\b.*(-f\s+|domain\s+(admins|trusts|controllers)|objectcategory)'
+  actions:
+    - type: alert
+      config:
+        message: "Enumeracion de AD con AdFind en {host}"
+        notify: "true"
+  tags: ["attack.t1087.002", "attack.discovery"]
+  enabled: true
+
+# T1021 - Remote execution frameworks from an endpoint
+- name: "Ejecucion remota con CrackMapExec o Impacket"
+  id: "a1b2c3d4-0007-4a07-9e07-070707070707"
+  description: >
+    Detecta frameworks de ejecucion remota masiva (CrackMapExec,
+    NetExec, impacket-wmiexec/psexec/smbexec/atexec/secretsdump,
+    evil-winrm) por sus marcas de linea de comandos. Su aparicion en
+    una estacion indica movimiento lateral automatizado desde ella o
+    materializacion de un ataque de credenciales validas.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)(crackmapexec|netexec|evil-winrm)(\.exe)?\b|impacket-(wmiexec|psexec|smbexec|atexec|secretsdump)'
+  actions:
+    - type: alert
+      config:
+        message: "Framework de ejecucion remota (CME/Impacket) en {host}"
+        notify: "true"
+  tags: ["attack.t1021", "attack.lateral-movement"]
+  enabled: true
+
+# T1059 - Meterpreter/metasploit payload stages
+- name: "Stager de Meterpreter o Metasploit"
+  id: "a1b2c3d4-0008-4a08-9e08-080808080808"
+  description: >
+    Detecta la materializacion de sesiones Meterpreter (stagers
+    windows/meterpreter, la marca meterpreter en powershell, o
+    msfvenom en la linea de comandos local). Evidencia de post
+    explotacion activa con framework.
+  severity: critical
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)meterpreter|msfvenom|windows/meterpreter/|stageless_'
+  actions:
+    - type: alert
+      config:
+        message: "Stager de Metasploit/Meterpreter en {host} por {user}"
+        notify: "true"
+  tags: ["attack.t1059", "attack.execution"]
+  enabled: true
+
+# T1219 - Remote admin abuse: silent AnyDesk install as a C2 channel
+- name: "Canal de control remoto silencioso con AnyDesk"
+  id: "a1b2c3d4-0009-4a09-9e09-090909090909"
+  description: >
+    Detecta instalacion silenciosa de AnyDesk o fijacion de contrasena
+    por linea de comandos (--silence, --password): el patron que usan
+    operadores para convertir una herramienta de soporte legitima en
+    canal de acceso persistente sin alertar al usuario.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)anydesk(\.exe)?\b.*(--silent|--password|ad.channel=)'
+  actions:
+    - type: alert
+      config:
+        message: "Instalacion silenciosa de AnyDesk en {host}"
+        notify: "true"
+  tags: ["attack.t1219", "attack.command-and-control"]
+  enabled: true
+
+# T1087.002 - Domain reconnaissance commands
+- name: "Reconocimiento de dominio con comandos net/nltest"
+  id: "a1b2c3d4-000a-4a0a-9e0a-0a0a0a0a0a0a"
+  description: >
+    Detecta enumeracion clasica de dominio desde consola: listado de
+    administradores del dominio y controladores con net, sondeo de
+    confianza con nltest o volcados con dsquery. Es el par de
+    comandos que precede a casi todo movimiento lateral dirigido; la
+    combinacion de subcomando+objetivo mantiene fuera el uso diario
+    de net use o net share.
+  severity: medium
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)\bnet(\.exe)?\s+(group|user|localgroup)\s+"[^"]*(admin|domain)|nltest(\.exe)?\s+/d(clist|c)|dsquery(\.exe)?\s'
+  actions:
+    - type: alert
+      config:
+        message: "Reconocimiento de dominio (net/nltest) en {host}"
+        notify: "false"
+  tags: ["attack.t1087.002", "attack.discovery"]
+  enabled: true

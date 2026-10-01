@@ -153,3 +153,132 @@ func TestEventsEnrichedIndependently(t *testing.T) {
 		t.Fatal("map sizes diverged unexpectedly")
 	}
 }
+
+// --- parent tracking (flight recorder of pid -> identity) ---
+
+// The canonical case: explorer.exe (pid 100) spawns cmd.exe (ppid 100)
+// and the child's enrichment resolves the parent's name and image.
+func TestParentNameResolution(t *testing.T) {
+	en := New()
+	en.Apply(&model.Event{
+		Type: model.TypeProcessCreate,
+		Host: "lab-01",
+		Process: &model.Process{PID: 100, Name: "explorer.exe",
+			Image: `C:\Windows\explorer.exe`},
+	})
+	child := &model.Event{
+		Type: model.TypeProcessCreate,
+		Host: "lab-01",
+		Process: &model.Process{PID: 101, PPID: 100, Name: "cmd.exe",
+			Image: `C:\Windows\System32\cmd.exe`},
+	}
+	en.Apply(child)
+	if got := child.Enrichment["parent_name"]; got != "explorer.exe" {
+		t.Fatalf("parent_name = %q, want explorer.exe", got)
+	}
+	if got := child.Enrichment["parent_image"]; got != `C:\Windows\explorer.exe` {
+		t.Fatalf("parent_image = %q, want the explorer image", got)
+	}
+}
+
+// Parent identity is per host: pid 200 on another endpoint must not
+// answer for lab-01's pid 200.
+func TestParentIsHostScoped(t *testing.T) {
+	en := New()
+	en.Apply(&model.Event{
+		Type:    model.TypeProcessCreate,
+		Host:    "lab-01",
+		Process: &model.Process{PID: 200, Name: "winword.exe"},
+	})
+	other := &model.Event{
+		Type:    model.TypeProcessCreate,
+		Host:    "lab-02",
+		Process: &model.Process{PID: 201, PPID: 200, Name: "cmd.exe"},
+	}
+	en.Apply(other)
+	if _, ok := other.Enrichment["parent_name"]; ok {
+		t.Fatalf("parent leaked across hosts: %q", other.Enrichment["parent_name"])
+	}
+}
+
+// A process.terminate evicts the identity immediately: pid reuse must
+// never misattribute a parent after the original exited.
+func TestTerminateEvictsEntry(t *testing.T) {
+	en := New()
+	en.Apply(&model.Event{
+		Type:    model.TypeProcessCreate,
+		Host:    "lab-01",
+		Process: &model.Process{PID: 300, Name: "old.exe"},
+	})
+	en.Apply(&model.Event{
+		Type:    model.TypeProcessTerminate,
+		Host:    "lab-01",
+		Process: &model.Process{PID: 300, Name: "old.exe"},
+	})
+	next := &model.Event{
+		Type:    model.TypeProcessCreate,
+		Host:    "lab-01",
+		Process: &model.Process{PID: 301, PPID: 300, Name: "new.exe"},
+	}
+	en.Apply(next)
+	if got, ok := next.Enrichment["parent_name"]; ok {
+		t.Fatalf("stale parent resolved after terminate: %q", got)
+	}
+}
+
+// Non-create events carrying the acting process resolve their parent
+// too (the sensor may batch the create with the follow-up event).
+func TestParentResolvedOnNonCreateEvent(t *testing.T) {
+	en := New()
+	en.Apply(&model.Event{
+		Type:    model.TypeProcessCreate,
+		Host:    "lab-01",
+		Process: &model.Process{PID: 400, Name: "word.exe"},
+	})
+	ev := &model.Event{
+		Type: model.TypeFileWrite,
+		Host: "lab-01",
+		Process: &model.Process{PID: 401, PPID: 400, Name: "wscript.exe",
+			Image: `C:\Windows\System32\wscript.exe`},
+	}
+	en.Apply(ev)
+	if got := ev.Enrichment["parent_name"]; got != "word.exe" {
+		t.Fatalf("parent_name on file.write = %q, want word.exe", got)
+	}
+}
+
+// The TTL sweep retires idle identities; Sweep is exported so this
+// does not need a wall-clock sleep.
+func TestSweepRetiresIdleEntries(t *testing.T) {
+	en := New()
+	now := time.Now()
+	en.Apply(&model.Event{
+		Type:    model.TypeProcessCreate,
+		Host:    "lab-01",
+		Process: &model.Process{PID: 500, Name: "idle.exe"},
+	})
+	if en.Tracked() != 1 {
+		t.Fatalf("tracked = %d, want 1", en.Tracked())
+	}
+	en.Sweep(now.Add(procTTL + time.Minute))
+	if got := en.Tracked(); got != 0 {
+		t.Fatalf("tracked after sweep = %d, want 0", got)
+	}
+}
+
+// The per-host cap holds under churn: a storm of unique pids must not
+// grow the map without bound.
+func TestPerHostCapBoundsChurn(t *testing.T) {
+	en := New()
+	for i := 1; i <= maxProcsPerHost*2; i++ {
+		en.Apply(&model.Event{
+			Type:    model.TypeProcessCreate,
+			Host:    "lab-01",
+			Process: &model.Process{PID: i, Name: "p.exe"},
+		})
+	}
+	if got := en.Tracked(); got > maxProcsPerHost+maxProcsPerHost/2 {
+		t.Fatalf("tracked = %d exceeds the cap + trim slack (%d)", got,
+			maxProcsPerHost+maxProcsPerHost/2)
+	}
+}

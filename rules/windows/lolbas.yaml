@@ -1,0 +1,222 @@
+# Indirect execution and process-context anomalies (LOLBAS): signed
+# OS binaries abused as script interpreters or execution trampolines,
+# and the parent/child relationships that phishing and droppers always
+# produce. Two signal classes live here:
+#   1. interpreter abuse — the binary itself interprets remote or
+#      inline script (mshta, rundll32 javascript:, installutil).
+#   2. context anomalies — an interpreter spawned by a document
+#      editor (macro payload) or a script running from user-writable
+#      staging paths. The parent signal comes from the engine's
+#      pid->name flight recorder (enrichment.parent_name), so it
+#      degrades to no-match instead of false-matching when the parent
+#      already left the window.
+#
+# Sources: LOLBAS project entries and the parent-child anomaly
+# references in ATT&CK (T1204 technique notes), re-expressed with
+# multi-condition logic instead of single-markers.
+
+# T1218.005 - mshta executing remote or inline script
+- name: "Ejecucion de scripts con mshta"
+  id: "b2c3d4e5-0001-4b01-9e01-010101010101"
+  description: >
+    Detecta mshta ejecutando contenido remoto o script embebido
+    (http(s), javascript: o vbscript: en su linea de comandos). mshta
+    es un interprete firmado de Windows sin uso legtimo en una
+    estacion de trabajo y el vehiculo clasico de droppers de
+    phishing.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: eq
+      value: "mshta.exe"
+    - field: process.command_line
+      operator: regex
+      value: '(?i)(https?://|javascript:|vbscript:|about:blank.*)'
+  actions:
+    - type: alert
+      config:
+        message: "mshta ejecutando script remoto/embebido en {host}"
+        notify: "true"
+  tags: ["attack.t1218.005", "attack.defense-evasion"]
+  enabled: true
+
+# T1218.011 - rundll32 as a JavaScript execution trampoline
+- name: "Ejecucion de JavaScript con rundll32"
+  id: "b2c3d4e5-0002-4b02-9e02-020202020202"
+  description: >
+    Detecta rundll32 invocando javascript: (eval embebido) o
+    ejecutando DLLs por ordinal desde rutas de usuario. La forma
+    javascript: es generacion cero de ofuscacion de campaigns de
+    malspam; el ordinal remoto (rundll32.exe shell32.dll,SHRunDLL
+    http...) lo extiende al mismo patron con otro binario.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: eq
+      value: "rundll32.exe"
+    - field: process.command_line
+      operator: regex
+      value: '(?i)javascript:|shell32\.dll,SHRunDLL'
+  actions:
+    - type: alert
+      config:
+        message: "rundll32 como interprete de JavaScript/pipe en {host}"
+        notify: "true"
+  tags: ["attack.t1218.011", "attack.defense-evasion"]
+  enabled: true
+
+# T1218.001 - InstallUtil code execution via uninstall flag
+- name: "Ejecucion evasiva con InstallUtil"
+  id: "b2c3d4e5-0003-4b03-9e03-030303030303"
+  description: >
+    Detecta InstallUtil con las banderas de bypass clsicas
+    (/U=desinstalacion, /LogFile=, bandera de log). El binario firmado
+    compila y ejecuta ensamblados .NET bajo un proceso legitimo,
+    tecnica preferida para saltar listas blancas de aplicacion.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: eq
+      value: "installutil.exe"
+    - field: process.command_line
+      operator: regex
+      value: '(?i)/logfile=|/u(ninstall)?\s|/enabledirenterop'
+  actions:
+    - type: alert
+      config:
+        message: "InstallUtil con banderas de bypass en {host}"
+        notify: "true"
+  tags: ["attack.t1218.001", "attack.defense-evasion"]
+  enabled: true
+
+# T1202 - forfiles as an indirect command executor
+- name: "Ejecucion indirecta con forfiles"
+  id: "b2c3d4e5-0004-4b04-9e04-040404040404"
+  description: >
+    Detecta forfiles lanzando cmd o powershell via /p y /c. El abuso
+    estandar usa forfiles como lanzador indirecto: los productos de
+    lista blanca ven forfiles.exe firmado y el comando real viaja en
+    /c. Un forfiles legitimo no lanza interpretes.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: eq
+      value: "forfiles.exe"
+    - field: process.command_line
+      operator: regex
+      value: '(?i)/c\s+"?(cmd|powershell|wscript|cscript|mshta)'
+  actions:
+    - type: alert
+      config:
+        message: "forfiles lanzando un interprete en {host}"
+        notify: "true"
+  tags: ["attack.t1202", "attack.defense-evasion"]
+  enabled: true
+
+# T1566.001/T1204.002 - office documents spawning interpreters
+- name: "Editor de Office lanzando un interprete"
+  id: "b2c3d4e5-0005-4b05-9e05-050505050505"
+  description: >
+    Detecta un editor de documentos (Word, Excel, PowerPoint,
+    Publisher, visor de Office) como padre de un interprete de
+    comandos o de scripts. Es la firma de ejecucion de macro maliciosa
+    o de plantilla maliciosa: ningun documento legitimo necesita
+    cmd, powershell, mshta ni wscript de hijo directo.
+  severity: critical
+  event_type: process.create
+  conditions:
+    - field: enrichment.parent_name
+      operator: iin
+      value: ["winword.exe", "excel.exe", "powerpnt.exe", "mspub.exe", "winproj.exe", "wordview.exe", "xlview.exe"]
+    - field: process.name
+      operator: in
+      value: ["cmd.exe", "powershell.exe", "wscript.exe", "cscript.exe", "mshta.exe", "rundll32.exe"]
+  actions:
+    - type: alert
+      config:
+        message: "Documento de Office lanzo un interprete en {host} (macro maliciosa)"
+        notify: "true"
+  tags: ["attack.t1566.001", "attack.execution"]
+  enabled: true
+
+# T1204.002 - script interpreters running from user-writable staging
+- name: "Interprete de script ejecutando desde staging de usuario"
+  id: "b2c3d4e5-0006-4b06-9e06-060606060606"
+  description: >
+    Detecta wscript/cscript/mshta ejecutando un script cuyo path vive
+    en directorios de escritura libre del usuario (AppData, Temp,
+    Downloads, Perfil). Los controles de aplicacion confian en el
+    interprete firmado; el payload de phishing siempre aterriza en
+    staging de usuario antes de invocarlo.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: in
+      value: ["wscript.exe", "cscript.exe", "mshta.exe"]
+    - field: process.command_line
+      operator: regex
+      value: '(?i)\\appdata\\|\\temp\\|\\downloads\\|%appdata%|%temp%'
+  actions:
+    - type: alert
+      config:
+        message: "Script ejecutado desde staging de usuario en {host}"
+        notify: "true"
+  tags: ["attack.t1204.002", "attack.execution"]
+  enabled: true
+
+# T1059.001 - PowerShell download cradles
+- name: "Cradle de descarga en PowerShell"
+  id: "b2c3d4e5-0007-4b07-9e07-070707070707"
+  description: >
+    Detecta el cradle de descarga canonico de PowerShell: IEX con
+    WebClient/Invoke-WebRequest/Invoke-RestMethod o descarga seguida
+    de invocacion en memoria. Combinacion de trafico y ejecucion en
+    una sola linea que define la primera etapa de casi todo ataque
+    moderno que llega por correo o documento.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: in
+      value: ["powershell.exe", "pwsh.exe"]
+    - field: process.command_line
+      operator: regex
+      value: '(?i)(iex|invoke-expression|\.\s+downloadstring|downloadfile)\b.*(net\.webclient|invoke-webrequest|invoke-restmethod|http)|\biwr\b.*\biex\b'
+  actions:
+    - type: alert
+      config:
+        message: "Cradle de descarga PowerShell en {host} por {user}"
+        notify: "true"
+  tags: ["attack.t1059.001", "attack.execution"]
+  enabled: true
+
+# T1055 - interpreter spawning from a browser sandbox escape pattern
+- name: "Navegador lanzando un interprete de comandos"
+  id: "b2c3d4e5-0008-4b08-9e08-080808080808"
+  description: >
+    Detecta navegadores y plugins de escritorio como padres directos
+    de interpretes. Legitimamente un navegador no engendra cmd ni
+    powershell; el patron indica explotacion tipo drive-by o descarga
+    autoejecutada. El conjunto de padres cubre los binarios de
+    escritorio mas comunes sin incluir procesos de instalacion.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: enrichment.parent_name
+      operator: iin
+      value: ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "acrobat.exe", "acrord32.exe"]
+    - field: process.name
+      operator: in
+      value: ["cmd.exe", "powershell.exe", "wscript.exe", "mshta.exe"]
+  actions:
+    - type: alert
+      config:
+        message: "Navegador lanzo un interprete de comandos en {host} (posible drive-by)"
+        notify: "true"
+  tags: ["attack.t1203", "attack.execution"]
+  enabled: true
