@@ -53,6 +53,7 @@ describe('analyst work and evidence boundaries', () => {
     await runAnalysis(alert, undefined, event, { step() {}, delta() {} })
     expect(sent.length).toBeLessThan(12000)
     expect(sent).toContain('<<<EVENTO')
+    expect(sent).toContain('\nEVENTO\n')
     expect(sent).toContain('UNTRUSTED\\nPREGUNTA')
     expect(sent).not.toContain(payload)
     expect(sent).not.toContain('Campos clave observados:')

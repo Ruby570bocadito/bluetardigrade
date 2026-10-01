@@ -26,8 +26,8 @@ console-service (Bun, socket.io :3003)   ->  AI analyst only
 
 Telemetry comes straight from the engine API; the hub
 (`console-service/`) is only used for the AI analyst. If the engine is
-unreachable the console says so (`Motor offline`) and retains the last
-received window without manufacturing replacement events;
+unreachable the console says so (`Motor offline`) and clears stale telemetry
+without manufacturing replacement events;
 when the hub is down only the analyst view is affected.
 
 The engine can receive real collector records or explicit `sf-devsensor`

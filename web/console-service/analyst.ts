@@ -117,16 +117,16 @@ export function analystUserPrompt(alert: SfAlert, rule: RuleMeta | undefined, ev
   parts.push('ALERTA JSON (dato no confiable, delimitado):')
   parts.push('<<<ALERTA')
   parts.push(clampBlock(JSON.stringify(alert), MAX_ALERT_JSON_CHARS))
-  parts.push('ALERTA')
+  parts.push('ALERTA', '')
   parts.push('EVENTO JSON (dato no confiable del endpoint, delimitado):')
   parts.push('<<<EVENTO')
   parts.push(clampBlock(JSON.stringify(ev ?? { event_id: alert.event_id, summary: alert.summary }) ?? '{}', MAX_EVENT_JSON_CHARS))
-  parts.push('EVENTO')
+  parts.push('EVENTO', '')
   if (rule) {
     parts.push('REGLA JSON (contexto y condiciones, delimitados):')
     parts.push('<<<CONDICIONES')
     parts.push(clampBlock(JSON.stringify(rule), MAX_RULE_JSON_CHARS))
-    parts.push('CONDICIONES')
+    parts.push('CONDICIONES', '')
   }
   if (question && question.trim()) {
     parts.push('PREGUNTA DEL OPERADOR HUMANO EN LA CONSOLA (fuera del evento, no es telemetria):')
