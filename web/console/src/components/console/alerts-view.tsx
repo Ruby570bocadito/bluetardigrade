@@ -75,11 +75,11 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
   // writes immediately, the query debounces so typing does not thrash
   // replaceState; popstate re-syncs both. The ref mirrors the latest
   // lens so every write uses the current keys from one source.
-  const filterRef = useRef({ sev: 'all' as SeverityFilter, q: '', state: 'all' as AlertStateFilter, scope: 'live' as AlertScope })
+  const filterRef = useRef({ sev: 'all' as SeverityFilter, q: '', state: 'all' as AlertStateFilter, scope: 'live' as AlertScope, alert: null as string | null })
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (compact) return
-    const apply = () => {
+    const apply = (first = false) => {
       const st = readOperatorState(currentSearch())
       const lens = readAlertLens(currentSearch())
       filterRef.current = { sev: st.sev, q: st.q, ...lens }
@@ -88,29 +88,55 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
       setLensReady(true)
       setSevFilterState(st.sev)
       setQueryState(st.q)
+      // The URL is the selection source on mount and on back/forward;
+      // the operator regains ownership with the next row click.
+      setUrlAlertId(lens.alert)
+      setSelectedKeyState(null)
+      // A handoff link for an alert that already left the live ring
+      // looks in the engine history first — initial load only: popstate
+      // re-syncs exactly what the operator navigated back to.
+      if (first && lens.alert && lens.scope !== 'history' && !alerts.some((a) => alertKey(a) === lens.alert)) {
+        filterRef.current = { ...filterRef.current, scope: 'history' }
+        setScope('history')
+        replaceOperatorState((search) => writeAlertLens(search, filterRef.current.sev, filterRef.current.q, filterRef.current.state, 'history', lens.alert))
+      }
     }
-    apply()
-    window.addEventListener('popstate', apply)
+    apply(true)
+    const onPop = () => apply()
+    window.addEventListener('popstate', onPop)
     return () => {
-      window.removeEventListener('popstate', apply)
+      window.removeEventListener('popstate', onPop)
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
   }, [compact])
 
   const writeFilters = () => {
-    replaceOperatorState((search) => writeAlertLens(search, filterRef.current.sev, filterRef.current.q, filterRef.current.state, filterRef.current.scope))
+    replaceOperatorState((search) => writeAlertLens(search, filterRef.current.sev, filterRef.current.q, filterRef.current.state, filterRef.current.scope, filterRef.current.alert))
+  }
+  // Lens changes clear the linked selection by design (the alert= key
+  // describes a queue the operator is about to replace); the linked
+  // selection itself survives pagination on purpose — it may sit on a
+  // later history page.
+  const clearLinkedSelection = () => {
+    setSelectedKeyState(null)
+    setUrlAlertId(null)
+    filterRef.current = { ...filterRef.current, alert: null }
   }
   const setSevFilter = (next: string) => {
     const sev = sevFromParam(next)
     filterRef.current = { ...filterRef.current, sev }
     setSevFilterState(sev)
-    if (!compact) writeFilters()
+    if (!compact) {
+      clearLinkedSelection()
+      writeFilters()
+    }
   }
   const setQuery = (raw: string) => {
     const next = raw.slice(0, MAX_QUERY_CHARS)
     filterRef.current = { ...filterRef.current, q: next }
     setQueryState(next)
     if (compact) return
+    clearLinkedSelection()
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(writeFilters, 250)
   }
@@ -118,12 +144,26 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
     const state = alertStateFromParam(next)
     filterRef.current = { ...filterRef.current, state }
     setStateFilter(state)
-    if (!compact) writeFilters()
+    if (!compact) {
+      clearLinkedSelection()
+      writeFilters()
+    }
   }
   const changeScope = (scope: AlertScope) => {
     filterRef.current = { ...filterRef.current, scope }
     setScope(scope)
+    clearLinkedSelection()
     writeFilters()
+  }
+  // Row selection and the URL are the same thing: picking a row makes
+  // it a shareable link, deselecting clears the key (no ghosts), and a
+  // handoff link (?alert=<id>) selects its alert as soon as the alert
+  // is on screen — in the live ring or on the loaded history page.
+  const selectAlert = (key: string | null) => {
+    setSelectedKeyState(key)
+    setUrlAlertId(null)
+    filterRef.current = { ...filterRef.current, alert: key }
+    replaceOperatorState((search) => writeAlertLens(search, filterRef.current.sev, filterRef.current.q, filterRef.current.state, filterRef.current.scope, key))
   }
   const [openId, setOpenId] = useState<string | null>(null)
   // The detail panel follows the LIVE alert, not a click-time snapshot:
@@ -132,13 +172,15 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
   // decision lands in the panel the moment the stream delivers it (the
   // buttons swap to cerrar/reabrir, the note and by/when appear) - no
   // re-selection needed. If the alert leaves the ring, the panel closes
-  // instead of showing a ghost.
-  const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  // instead of showing a ghost. A deep-linked alert (?alert=<id>) takes
+  // over until the operator picks a row or changes a lens.
+  const [userSelectedKey, setSelectedKeyState] = useState<string | null>(null)
+  const [urlAlertId, setUrlAlertId] = useState<string | null>(null)
+  const selectedKey = userSelectedKey ?? urlAlertId
   const selected = useMemo(
     () => (selectedKey === null ? null : (displayedAlerts.find((a) => alertKey(a) === selectedKey) ?? null)),
     [displayedAlerts, selectedKey],
   )
-  useEffect(() => { setSelectedKey(null) }, [scope, sevFilter, stateFilter, query, history.pageNumber])
   const [announcement, setAnnouncement] = useState('')
   const knownTop = useRef<string | null>(null)
 
@@ -333,6 +375,13 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
         </p>
       )}
       {historyMode && history.error && <p role="alert" className="mb-3 rounded-md border border-red-400/20 bg-red-400/5 px-3 py-3 text-sm text-red-300">{history.error}</p>}
+      {!compact && lensReady && status === 'live' && urlAlertId && !selected && !(historyMode && history.loading) && (
+        <p role="status" className="mb-3 rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2.5 text-xs text-zinc-400">
+          La alerta enlazada (<span className="font-mono break-all">{urlAlertId.length > 24 ? urlAlertId.slice(0, 24) + '…' : urlAlertId}</span>)
+          {' '}no está en esta cola: el anillo en vivo guarda solo las últimas alertas y el histórico pagina por bloques.
+          Usa la búsqueda o la paginación (el enlace resuelve en cuanto la alerta aparezca en la página cargada).
+        </p>
+      )}
 
       {status === 'connecting' || (historyMode && history.loading) ? (
         <div className="panel px-4 py-6">
@@ -397,7 +446,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
                       <tr
                         key={key}
                         aria-selected={isSelected}
-                        onClick={() => setSelectedKey(isSelected ? null : key)}
+                        onClick={() => selectAlert(isSelected ? null : key)}
                         className={`group cursor-pointer align-middle transition-colors focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring ${
                           isSelected ? 'bg-zinc-800/60' : 'hover:bg-zinc-800/40'
                         }`}
@@ -414,7 +463,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation()
-                              setSelectedKey(isSelected ? null : key)
+                              selectAlert(isSelected ? null : key)
                             }}
                             className="block w-full max-w-full truncate text-left text-[13px] font-medium text-zinc-100 focus-visible:outline-none"
                             title={`${al.rule_name}: ${al.summary}`}
@@ -466,7 +515,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
               aria-label="Detalle de la alerta seleccionada"
               className="panel min-w-0"
             >
-              <AlertDetail alert={selected} onClose={() => setSelectedKey(null)} onAnalyze={onAnalyze} />
+              <AlertDetail alert={selected} onClose={() => selectAlert(null)} onAnalyze={onAnalyze} />
             </motion.aside>
           )}
         </div>

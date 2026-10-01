@@ -10,12 +10,15 @@
 import { describe, expect, test } from 'bun:test'
 import type { ConsoleView } from '../components/console/dashboard'
 import {
+  MAX_ALERT_KEY_CHARS,
   MAX_FEED_TYPE_CHARS,
   MAX_QUERY_CHARS,
+  readAlertLens,
   readLensState,
   readOperatorState,
   sevFromParam,
   viewFromParam,
+  writeAlertLens,
   writeAuditKindToSearch,
   writeFeedToSearch,
   writeFilterToSearch,
@@ -280,5 +283,66 @@ describe('round-trip write → read (lenses)', () => {
     for (const c of cases) {
       expect(readLensState(c.search)).toEqual(c.expect)
     }
+  })
+})
+
+describe('readAlertLens — the alerts lens (estado/historial/alert)', () => {
+  test('defaults when the URL carries no lens keys', () => {
+    expect(readAlertLens('?view=alertas')).toEqual({ state: 'all', scope: 'live', alert: null })
+    expect(readAlertLens('')).toEqual({ state: 'all', scope: 'live', alert: null })
+  })
+
+  test('parses the full lens surface', () => {
+    expect(readAlertLens('?view=alertas&historial=1&estado=open&alert=a1b2c3')).toEqual({
+      state: 'open',
+      scope: 'history',
+      alert: 'a1b2c3',
+    })
+  })
+
+  test('estado falls back to all outside the closed whitelist', () => {
+    expect(readAlertLens('?estado=weird').state).toBe('all')
+    expect(readAlertLens('?estado=CLOSED').state).toBe('all') // case is not canonical
+  })
+
+  test('an oversized alert key reads as absent (honest unresolved, not a broken lens)', () => {
+    const oversized = 'k'.repeat(MAX_ALERT_KEY_CHARS + 1)
+    expect(readAlertLens(`?alert=${oversized}`).alert).toBeNull()
+    expect(readAlertLens(`?alert=${'k'.repeat(MAX_ALERT_KEY_CHARS)}`).alert).toBe('k'.repeat(MAX_ALERT_KEY_CHARS))
+    expect(readAlertLens('?alert=').alert).toBeNull()
+  })
+})
+
+describe('writeAlertLens — the alerts lens with the handoff key', () => {
+  test('writes every key and omits the defaults (no all/live noise)', () => {
+    expect(writeAlertLens('?view=alertas', 'all', '', 'all', 'live', null)).toBe('?view=alertas')
+    expect(writeAlertLens('?view=alertas', 'critical', 'lsass', 'open', 'history', 'a1b2c3')).toBe(
+      '?view=alertas&sev=critical&q=lsass&estado=open&historial=1&alert=a1b2c3',
+    )
+  })
+
+  test('deselecting clears the alert key (no ghosts)', () => {
+    const linked = writeAlertLens('?view=alertas', 'all', '', 'all', 'live', 'a1b2c3')
+    expect(readAlertLens(linked).alert).toBe('a1b2c3')
+    expect(writeAlertLens(linked, 'all', '', 'all', 'live', null)).toBe('?view=alertas')
+  })
+
+  test('a lens change clears the linked alert in the same write (handler contract)', () => {
+    const linked = writeAlertLens('?view=alertas', 'all', '', 'all', 'live', 'a1b2c3')
+    const changed = writeAlertLens(linked, 'high', '', 'all', 'live', null)
+    expect(changed).toBe('?view=alertas&sev=high')
+    expect(readAlertLens(changed).alert).toBeNull()
+  })
+
+  test('preserves unknown params and other lenses', () => {
+    expect(writeAlertLens('?tab=x&clase=denied', 'all', '', 'open', 'live', 'a1')).toBe('?tab=x&clase=denied&estado=open&alert=a1')
+  })
+
+  test('round-trip with a composite key (\\x1f separators survive the URL)', () => {
+    const composite = ['2026-10-01T10:00:00Z', 'evt-9', 'R-042'].join('\x1f')
+    const written = writeAlertLens('?view=alertas', 'all', '', 'all', 'history', composite)
+    const lens = readAlertLens(written)
+    expect(lens.alert).toBe(composite)
+    expect(lens.scope).toBe('history')
   })
 })

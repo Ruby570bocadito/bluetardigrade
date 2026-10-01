@@ -12,7 +12,7 @@
 //   ?view=respuesta&clase=denied        (audit queue lens)
 //   ?view=flujo&tipo=FileCreate&fq=mimikatz
 //   ?view=reglas&rq=lateral&regla=R-042 (expanded row, stable rule id)
-//   ?view=alertas&historial=1&estado=open&sev=critical&q=lsass
+//   ?view=alertas&historial=1&estado=open&sev=critical&q=lsass&alert=<id>
 //   historial: 1 uses engine history, else live buffer
 //   estado: all/open/new/acknowledged/closed, else all
 //   view:  one of the shell's nav ids, else 'panel'
@@ -26,6 +26,11 @@
 //          lenses never contaminate each other across navigation
 //   regla: expanded rule id (stable catalog ids, unlike the rotating
 //          alert ring), else absent
+//   alert: selected alert key, so a triage handoff is a plain link.
+//          Unlike a rule id this key CAN rot: the live ring keeps only
+//          the newest alerts and the history page loads in blocks, so
+//          an absent id is an honest "not on this queue" state — never
+//          a ghost selection, and a lens change clears the key.
 // Unknown params are always preserved verbatim (read-modify-write):
 // this lib owns its keys and touches nothing else.
 
@@ -83,6 +88,10 @@ const SEVERITY_FILTERS: readonly SeverityFilter[] = ['all', 'critical', 'high', 
 export const MAX_FEED_TYPE_CHARS = 60
 
 export const MAX_QUERY_CHARS = 120
+
+/** Alert keys are engine ids or composite keys; anything longer is
+ * treated as absent — the honest unresolved state, not a broken lens. */
+export const MAX_ALERT_KEY_CHARS = 200
 
 export type OperatorState = {
   view: ConsoleView
@@ -147,9 +156,14 @@ export function readOperatorState(search: string): OperatorState {
   }
 }
 
-export function readAlertLens(search: string): { state: AlertStateFilter; scope: AlertScope } {
+export function readAlertLens(search: string): { state: AlertStateFilter; scope: AlertScope; alert: string | null } {
   const params = new URLSearchParams(search)
-  return { state: alertStateFromParam(params.get('estado')), scope: params.get('historial') === '1' ? 'history' : 'live' }
+  const rawAlert = params.get('alert')
+  return {
+    state: alertStateFromParam(params.get('estado')),
+    scope: params.get('historial') === '1' ? 'history' : 'live',
+    alert: rawAlert && rawAlert.length <= MAX_ALERT_KEY_CHARS ? rawAlert : null,
+  }
 }
 
 /**
@@ -199,10 +213,11 @@ export function writeFilterToSearch(search: string, sev: SeverityFilter, q: stri
   })
 }
 
-export function writeAlertLens(search: string, sev: SeverityFilter, q: string, state: AlertStateFilter, scope: AlertScope): string {
+export function writeAlertLens(search: string, sev: SeverityFilter, q: string, state: AlertStateFilter, scope: AlertScope, alert: string | null = null): string {
   return writeKeys(writeFilterToSearch(search, sev, q), {
     estado: state === 'all' ? null : state,
     historial: scope === 'history' ? '1' : null,
+    alert,
   })
 }
 

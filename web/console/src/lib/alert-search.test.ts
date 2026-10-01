@@ -7,14 +7,14 @@ const alert = mapAlert({ id: 'a', timestamp: '2026-10-01T00:00:00Z', rule_id: 'r
 describe('alert investigation', () => {
   test('keeps lifecycle and source lenses on refresh and preserves unrelated URL keys', () => {
     const url = writeAlertLens('?view=alertas&fq=other', 'info', 'lab', 'closed', 'history')
-    expect(readAlertLens(url)).toEqual({ state: 'closed', scope: 'history' })
+    expect(readAlertLens(url)).toEqual({ state: 'closed', scope: 'history', alert: null })
     expect(new URLSearchParams(url).get('fq')).toBe('other')
     const clean = writeAlertLens(url, 'all', '', 'all', 'live')
-    expect(readAlertLens(clean)).toEqual({ state: 'all', scope: 'live' })
+    expect(readAlertLens(clean)).toEqual({ state: 'all', scope: 'live', alert: null })
     expect(new URLSearchParams(clean).has('historial')).toBe(false)
   })
   test('invalid lifecycle/source values fall back per key', () => {
-    expect(readAlertLens('?estado=wrong&historial=yes')).toEqual({ state: 'all', scope: 'live' })
+    expect(readAlertLens('?estado=wrong&historial=yes')).toEqual({ state: 'all', scope: 'live', alert: null })
   })
   test('maps info without fabricating a low severity and tolerates legacy missing arrays', () => {
     expect(alert.severity).toBe('info')
