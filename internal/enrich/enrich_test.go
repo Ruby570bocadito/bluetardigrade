@@ -282,3 +282,117 @@ func TestPerHostCapBoundsChurn(t *testing.T) {
 			maxProcsPerHost+maxProcsPerHost/2)
 	}
 }
+
+func TestPartialTelemetryPreservesParentIdentity(t *testing.T) {
+	en := New()
+	en.Apply(&model.Event{Type: model.TypeProcessCreate, Host: "lab-01",
+		Process: &model.Process{PID: 100, Name: "WINWORD.EXE", Image: `C:\Office\WINWORD.EXE`}})
+	for _, typ := range []string{model.TypeFileWrite, model.TypeNetworkConnect, model.TypeRegistrySet} {
+		en.Apply(&model.Event{Type: typ, Host: "lab-01", Process: &model.Process{PID: 100}})
+	}
+	child := &model.Event{Type: model.TypeProcessCreate, Host: "lab-01",
+		Process: &model.Process{PID: 101, PPID: 100, Name: "cmd.exe"}}
+	en.Apply(child)
+	if child.Enrichment["parent_name"] != "WINWORD.EXE" || child.Enrichment["parent_image"] != `C:\Office\WINWORD.EXE` {
+		t.Fatalf("partial telemetry erased the Office parent: %v", child.Enrichment)
+	}
+}
+
+func TestParentLookupRejectsExpiredEntryWithoutSweep(t *testing.T) {
+	en := New()
+	en.hosts["lab-01"] = map[int64]procEntry{100: {name: "winword.exe", lastSeen: time.Now().Add(-procTTL - time.Minute)}}
+	child := &model.Event{Type: model.TypeProcessCreate, Host: "lab-01",
+		Process: &model.Process{PID: 101, PPID: 100, Name: "cmd.exe"}}
+	en.Apply(child)
+	if _, ok := child.Enrichment["parent_name"]; ok {
+		t.Fatalf("expired parent was attributed before the periodic sweep: %v", child.Enrichment)
+	}
+}
+
+func TestEngineDerivedKeysCannotBeSuppliedByTelemetry(t *testing.T) {
+	en := New()
+	ev := &model.Event{Host: "lab-01", Type: model.TypeProcessCreate,
+		Process:    &model.Process{PID: 101, PPID: 100, Name: "cmd.exe"},
+		Enrichment: map[string]string{"parent_name": "winword.exe", "parent_image": "fake", "image_origin": "system", "image_dir": "fake", "user_domain": "fake", "user_name": "fake", "custom": "retained"}}
+	en.Apply(ev)
+	for _, key := range []string{"parent_name", "parent_image", "image_origin", "image_dir", "user_domain", "user_name"} {
+		if _, ok := ev.Enrichment[key]; ok {
+			t.Errorf("unsubstantiated engine key %s retained: %v", key, ev.Enrichment)
+		}
+	}
+	if ev.Enrichment["custom"] != "retained" {
+		t.Fatal("unrelated enrichment was lost")
+	}
+}
+
+func TestProcessCreateDoesNotInheritReusedPIDIdentity(t *testing.T) {
+	en := New()
+	en.Apply(&model.Event{Type: model.TypeProcessCreate, Host: "lab-01",
+		Process: &model.Process{PID: 100, Name: "old.exe", Image: `C:\old.exe`}})
+	en.Apply(&model.Event{Type: model.TypeProcessCreate, Host: "lab-01", Process: &model.Process{PID: 100, Name: "new.exe"}})
+	child := &model.Event{Type: model.TypeProcessCreate, Host: "lab-01", Process: &model.Process{PID: 101, PPID: 100}}
+	en.Apply(child)
+	if child.Enrichment["parent_name"] != "new.exe" || child.Enrichment["parent_image"] != "" {
+		t.Fatalf("reused pid inherited old identity: %v", child.Enrichment)
+	}
+}
+
+func TestIncompleteIdentityDoesNotLeakAcrossHostsOrProcesses(t *testing.T) {
+	en := New()
+	for i := 1; i <= maxHosts+10; i++ {
+		en.Apply(&model.Event{Type: model.TypeFileWrite, Host: "lab-01", Process: &model.Process{PID: i}})
+	}
+	en.Apply(&model.Event{Type: model.TypeProcessCreate, Process: &model.Process{PID: 100, Name: "winword.exe"}})
+	child := &model.Event{Type: model.TypeProcessCreate, Process: &model.Process{PID: 101, PPID: 100, Name: "cmd.exe"}}
+	en.Apply(child)
+	if child.Enrichment["parent_name"] != "" || en.Tracked() != 0 {
+		t.Fatalf("identity without host/evidence was tracked: %v, tracked=%d", child.Enrichment, en.Tracked())
+	}
+}
+
+func TestDelayedTerminationDoesNotEvictReusedPID(t *testing.T) {
+	en := New()
+	now := time.Now()
+	en.Apply(&model.Event{Type: model.TypeProcessCreate, Host: "lab-01", Timestamp: now,
+		Process: &model.Process{PID: 100, Name: "new.exe"}})
+	for _, typ := range []string{model.TypeProcessTerminate, model.TypeFileWrite, model.TypeProcessCreate} {
+		en.Apply(&model.Event{Type: typ, Host: "lab-01", Timestamp: now.Add(-time.Minute),
+			Process: &model.Process{PID: 100, Name: "old.exe"}})
+	}
+	child := &model.Event{Type: model.TypeProcessCreate, Host: "lab-01", Timestamp: now.Add(time.Second),
+		Process: &model.Process{PID: 101, PPID: 100}}
+	en.Apply(child)
+	if child.Enrichment["parent_name"] != "new.exe" {
+		t.Fatalf("delayed telemetry displaced the current pid: %v", child.Enrichment)
+	}
+}
+
+func TestConflictingPartialIdentityDoesNotMixImages(t *testing.T) {
+	en := New()
+	en.Apply(&model.Event{Type: model.TypeProcessCreate, Host: "lab-01",
+		Process: &model.Process{PID: 100, Name: "old.exe", Image: `C:\old.exe`}})
+	en.Apply(&model.Event{Type: model.TypeFileWrite, Host: "lab-01", Process: &model.Process{PID: 100, Name: "new.exe"}})
+	child := &model.Event{Type: model.TypeProcessCreate, Host: "lab-01", Process: &model.Process{PID: 101, PPID: 100}}
+	en.Apply(child)
+	if child.Enrichment["parent_name"] != "new.exe" || child.Enrichment["parent_image"] != "" {
+		t.Fatalf("conflicting identity inherited an unrelated image: %v", child.Enrichment)
+	}
+}
+
+func TestParentCannotBeSelfOrCreatedAfterChild(t *testing.T) {
+	en := New()
+	now := time.Now()
+	en.Apply(&model.Event{Type: model.TypeProcessCreate, Host: "lab-01", Timestamp: now,
+		Process: &model.Process{PID: 100, Name: "winword.exe"}})
+	for _, tc := range []struct {
+		pid, ppid int
+		at        time.Time
+	}{{100, 100, now}, {101, 100, now.Add(-time.Minute)}} {
+		child := &model.Event{Type: model.TypeFileWrite, Host: "lab-01", Timestamp: tc.at,
+			Process: &model.Process{PID: tc.pid, PPID: tc.ppid}}
+		en.Apply(child)
+		if child.Enrichment["parent_name"] != "" {
+			t.Fatalf("impossible parent attributed: %v", child.Enrichment)
+		}
+	}
+}

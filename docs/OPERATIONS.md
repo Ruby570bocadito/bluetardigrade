@@ -183,6 +183,7 @@ The engine serves a small read-only API used by the web console and handy for SI
 | `GET /api/sequences` | kill-chain sequences loaded by the correlator (read-only view; empty = correlator off) |
 | `GET /api/events/export?format=jsonl\|csv` | bulk download of the event history — in-memory ring, or the full SQLite history with `-store` (JSON Lines or CSV) |
 | `GET /api/alerts/export?format=ndjson\|csv&limit=256` | downloadable alert feed for SIEM/SOAR handoff, chronological order |
+| `GET /api/alerts/{id}/forensics` | frozen alert + host timeline; `404` missing, `501` capture disabled, `500` unreadable evidence; protected by the API bearer gate |
 | `GET /api/rules` | live rule set (hot-reload aware) |
 | `GET /api/stream` | Server-Sent Events with live events + alerts |
 
@@ -494,7 +495,7 @@ verified in conduct, not just in compilation.
 ## Detection rules
 
 
-Rules live in `rules/` as YAML, are validated at load, and hot-reload every 15 seconds by default (disable with `-reload-every 0`). The loader carries the same house caps as every other config surface: 4 MiB per file (checked before reading), a nesting-depth pre-scan and a 2048 enabled-rules ceiling — enforced fail-loud on startup and on every hot-reload tick, so an oversized or hostile file aborts startup, or keeps the previous set on reload, instead of degrading a running engine. The shipped pack uses 23 of those 2048 slots.
+Rules live in `rules/` as YAML, are validated at load, and hot-reload every 15 seconds by default (disable with `-reload-every 0`). The loader carries the same house caps as every other config surface: 4 MiB per file (checked before reading), a nesting-depth pre-scan and a 2048 enabled-rules ceiling — enforced fail-loud on startup and on every hot-reload tick, so an oversized or hostile file aborts startup, or keeps the previous set on reload, instead of degrading a running engine. The shipped pack uses 55 of those 2048 slots. The shared guard also rejects cyclic aliases and caps projected expansion and composed flow depth before typed decoding.
 
 ```yaml
 - name: "PowerShell con comando codificado"
@@ -514,37 +515,73 @@ Rules live in `rules/` as YAML, are validated at load, and hot-reload every 15 s
 
 Operators (17): case-sensitive `eq`, `neq`, `contains`, `contains_any`, `startswith`, `endswith`, `regex`, `in`, `not_in`, `gt`, `lt`, plus the case-insensitive `i*` family — `ieq`, `icontains`, `icontains_any`, `istartswith`, `iendswith`, `iin` — which shares one Unicode folding semantics across all six operators and the `(?i)` regex fallback (the same property the Sigma mapping table below relies on).
 
-The full shipped pack lives in `rules/` (YAML, several files): 23 rules
-over 6 event types, severities 6 critical / 15 high / 2 medium. Every
-rule documents its source TTP and the lab evidence that validates it.
-This table is generated from the YAML files themselves, so it matches
-what the engine loads:
+The enabled rule inventory is generated from the YAML files themselves:
+`python3 scripts/dev-tests/check_rule_inventory.py --write`. CI checks it on
+every change. Artifact rules have positive/negative fixtures; Windows lab
+validation and environment-specific noise tuning remain separate checks.
+
+<!-- BEGIN RULE INVENTORY -->
+The enabled pack contains **55 rules across 6 event types**: 16 critical / 33 high / 6 medium.
+Full IDs are retained because different rules in a pack can share a UUID prefix.
 
 | ID | Rule | Severity | Event type | ATT&CK | Tactic |
 |----|------|----------|------------|--------|--------|
-| `d37e8fa6` | Acceso a memoria de LSASS | critical | `process.access` | T1003.001 | credential-access |
-| `b8d5f6e2` | Borrado de instantaneas VSS | critical | `process.create` | T1490 | impact |
-| `a7c4e5f1` | Manipulacion de Windows Defender | critical | `process.create` | T1562.001 | defense-evasion |
-| `4f7b0d26` | Volcado de LSASS con procdump | critical | `process.create` | T1003.001 | credential-access |
-| `5b7e1f38` | Volcado de LSASS via comsvcs.dll | critical | `process.create` | T1003.001 | credential-access |
-| `3e6a9c15` | Volcado del registro SAM | critical | `process.create` | T1003.002 | credential-access |
-| `8dbf416a` | Borrado de registros de eventos | high | `process.create` | T1070.001 | defense-evasion |
-| `e8a1c72d` | Creacion de tarea programada | high | `process.create` | T1053.005 | persistence |
-| `8e2f3a51` | Defensa antivirus desactivada via registro | high | `registry.set` | T1562.001 | defense-evasion |
-| `c1d24e9b` | Descarga con certutil o bitsadmin | high | `process.create` | T1105 | command-and-control |
-| `9f31c2a4` | Ejecucion de PowerShell codificado | high | `process.create` | T1059.001 | execution |
-| `d4e5f6a7` | Ejecucion desde directorio temporal | high | `process.create` | T1059 | execution |
-| `f3b2d98e` | Ejecucion de procesos via WMI | high | `process.create` | T1047 | execution |
-| `b1c2d3e4` | Ejecucion de script VBS/VBScript | high | `process.create` | T1059.005 | execution |
-| `a1b2c3d4` | Servicios de Windows deshabilitados | high | `process.create` | T1562.001 | defense-evasion |
-| `e5f6a7b8` | Uso de rundll32 para ejecucion | high | `process.create` | T1218.011 | defense-evasion |
-| `f7a8b9c0` | Windows Defender exclusiones via linea de comandos | high | `process.create` | T1562.001 | defense-evasion |
-| `d5e6f7a8` | Cambio de politica de ejecucion de PowerShell | medium | `registry.set` | T1112 | defense-evasion |
-| `e9f0a1b2` | Consulta DNS a dominio generado (posible DGA) | medium | `network.connect` | T1568.002 | command-and-control |
-| `f0a1b2c3` | Escritura de script en ruta de arranque | high | `file.write` | T1547.001 | persistence |
-| `a9b8c7d6` | Nueva tarea remota via at o schtasks | high | `process.create` | T1053.002 | execution |
-| `b7c8d9e0` | Persistencia en clave Run via registro | high | `registry.set` | T1547.001 | persistence |
-| `c8d9e0f1` | Escritura de driver sin firmar | high | `image.load` | T1553.002 | defense-evasion |
+| `a1b2c3d4-0004-4a04-9e04-040404040404` | Abuso de Kerberos con Rubeus | critical | `process.create` | T1558.003 | credential-access |
+| `d37e8fa6-b0cf-42d3-f4e5-6a7b8c9dae10` | Acceso a memoria de LSASS | critical | `process.access` | T1003.001 | credential-access |
+| `b8d5f6e2-0e39-4c47-9a58-2f6b0d4e7c44` | Borrado de instantaneas VSS | critical | `process.create` | T1490 | impact |
+| `c3d4e5f6-0002-4c02-9e02-020202020202` | Borrado de instantaneas VSS con wmic | critical | `process.create` | T1490 | impact |
+| `c3d4e5f6-0001-4c01-9e01-010101010101` | Borrado del registro de eventos con PowerShell | critical | `process.create` | T1070.001 | defense-evasion |
+| `a1b2c3d4-0002-4a02-9e02-020202020202` | Cosecha de contrasenas con LaZagne | critical | `process.create` | T1003 | credential-access |
+| `a1b2c3d4-0003-4a03-9e03-030303030303` | Dumping local de hashes con Pwdump | critical | `process.create` | T1003.002 | credential-access |
+| `b2c3d4e5-0005-4b05-9e05-050505050505` | Editor de Office lanzando un interprete | critical | `process.create` | T1566.001 | execution |
+| `a1b2c3d4-0001-4a01-9e01-010101010101` | Herramienta de volcado Mimikatz | critical | `process.create` | T1003.001 | credential-access |
+| `a7c4e5f1-9d28-4b36-8f47-1e5a9c3d6b33` | Manipulacion de Windows Defender | critical | `process.create` | T1562.001 | defense-evasion |
+| `c3d4e5f6-0003-4c03-9e03-030303030303` | Reduccion de almacenamiento VSS con vssadmin o PowerShell | critical | `process.create` | T1490 | impact |
+| `a1b2c3d4-0008-4a08-9e08-080808080808` | Stager de Meterpreter o Metasploit | critical | `process.create` | T1059 | execution |
+| `4f7b0d26-9e58-4c3f-a112-6b9d4e8f3c66` | Volcado de LSASS con procdump | critical | `process.create` | T1003.001 | credential-access |
+| `5b7e1f38-2c94-4d0a-b6e7-19a8c3d54f02` | Volcado de LSASS via comsvcs.dll | critical | `process.create` | T1003.001 | credential-access |
+| `c3d4e5f6-0006-4c06-9e06-060606060606` | Volcado de ntds.dit con ntdsutil | critical | `process.create` | T1003.003 | credential-access |
+| `3e6a9c15-8d47-4b2e-9f01-5a8c3d7e2b55` | Volcado del registro SAM | critical | `process.create` | T1003.002 | credential-access |
+| `d4e5f607-1006-4a00-8000-000000000006` | Artefacto de volcado de LSASS escrito en disco | high | `file.write` | T1003.001 | credential-access |
+| `8dbf416a-d29c-4073-a556-afd182cd70aa` | Borrado de registros de eventos | high | `process.create` | T1070.001 | defense-evasion |
+| `c3d4e5f6-0005-4c05-9e05-050505050505` | Borrado del diario USN con fsutil | high | `process.create` | T1070.005 | defense-evasion |
+| `a1b2c3d4-0009-4a09-9e09-090909090909` | Canal de control remoto silencioso con AnyDesk | high | `process.create` | T1219 | command-and-control |
+| `d4e5f607-1005-4a00-8000-000000000005` | Contenido activo en el inicio automatico de Office | high | `file.write` | T1137 | persistence |
+| `b2c3d4e5-0007-4b07-9e07-070707070707` | Cradle de descarga en PowerShell | high | `process.create` | T1059.001 | execution |
+| `e8a1c72d-4b6f-4f39-9a52-0d3b7c5f1a11` | Creacion de tarea programada | high | `process.create` | T1053.005 | persistence |
+| `8e2f3a51-6b7c-4d8e-af90-1b2c3d4e5f60` | Defensa antivirus desactivada via registro | high | `registry.set` | T1562.001 | defense-evasion |
+| `7cae3059-c18b-4f62-9445-9ec071bc6f99` | Desactivacion del firewall de Windows | high | `process.create` | T1562.004 | defense-evasion |
+| `c1d24e9b-7a03-4c56-9f11-8e2b5a4d9c73` | Descarga con certutil o bitsadmin | high | `process.create` | T1105 | command-and-control |
+| `b2c3d4e5-0002-4b02-9e02-020202020202` | Ejecucion de JavaScript con rundll32 | high | `process.create` | T1218.011 | defense-evasion |
+| `f3b2d98e-7c15-4a58-8e0a-2c4d6e8f0b22` | Ejecucion de procesos via WMI | high | `process.create` | T1047 | execution |
+| `b2c3d4e5-0001-4b01-9e01-010101010101` | Ejecucion de scripts con mshta | high | `process.create` | T1218.005 | defense-evasion |
+| `5a8c1e37-af69-4d40-b223-7cae5f9a4d77` | Ejecucion de scripts con regsvr32 | high | `process.create` | T1218.010 | defense-evasion |
+| `b2c3d4e5-0003-4b03-9e03-030303030303` | Ejecucion evasiva con InstallUtil | high | `process.create` | T1218.001 | defense-evasion |
+| `b2c3d4e5-0004-4b04-9e04-040404040404` | Ejecucion indirecta con forfiles | high | `process.create` | T1202 | defense-evasion |
+| `a1b2c3d4-0007-4a07-9e07-070707070707` | Ejecucion remota con CrackMapExec o Impacket | high | `process.create` | T1021 | lateral-movement |
+| `b15c6d84-9eaf-40b1-d2c3-4e5f6a7b8c90` | Ejecutable disfrazado de documento | high | `file.write` | T1036.007 | defense-evasion |
+| `a04b5c73-8d9e-4fa0-c1b2-3d4e5f6a7b80` | Ejecutable soltado en carpeta de inicio | high | `file.write` | T1547.001 | persistence |
+| `a1b2c3d4-0006-4a06-9e06-060606060606` | Enumeracion de directorio con AdFind | high | `process.create` | T1087.002 | discovery |
+| `9f3a4b62-7c8d-4e9f-b0a1-2c3d4e5f6a70` | Exclusiones de Defender anadidas via registro | high | `registry.set` | T1562.001 | defense-evasion |
+| `c3d4e5f6-0007-4c07-9e07-070707070707` | Falsificacion de marcas de tiempo de ficheros | high | `process.create` | T1070.006 | defense-evasion |
+| `6b9d2f48-b07a-4e51-8334-8dbf60ab5e88` | Instalacion remota con msiexec | high | `process.create` | T1218.005 | defense-evasion |
+| `b2c3d4e5-0006-4b06-9e06-060606060606` | Interprete de script ejecutando desde staging de usuario | high | `process.create` | T1204.002 | execution |
+| `d4e5f607-1002-4a00-8000-000000000002` | Interprete escribe una DLL en una ruta temporal | high | `file.write` | T1574.001 | defense-evasion |
+| `a1b2c3d4-0005-4a05-9e05-050505050505` | Mapeo de dominio con SharpHound | high | `process.create` | T1087.002 | discovery |
+| `afd1638c-f4be-4295-c778-cfa36a4ef92c` | Movimiento lateral con PsExec | high | `process.create` | T1021.002 | lateral-movement |
+| `b2c3d4e5-0008-4b08-9e08-080808080808` | Navegador lanzando un interprete de comandos | high | `process.create` | T1203 | execution |
+| `d4e5f607-1001-4a00-8000-000000000001` | Office escribe un payload en una ruta de usuario | high | `file.write` | T1204.002 | execution |
+| `9ec0527b-e3ad-4184-b667-be92593de81b` | Persistencia en clave Run | high | `process.create` | T1547.001 | persistence |
+| `7d1e2f40-5a6b-4c7d-9e8f-0a1b2c3d4e5f` | Persistencia en clave Run via registro | high | `registry.set` | T1547.001 | persistence |
+| `9f31c2a4-5d7b-4e18-8a02-3b9c6d1e7f40` | PowerShell con comando codificado | high | `process.create` | T1059.001 | execution |
+| `c3d4e5f6-0004-4c04-9e04-040404040404` | Sabotaje de recuperacion de arranque con bcdedit | high | `process.create` | T1490 | impact |
+| `c3d4e5f6-0008-4c08-9e08-080808080808` | Borrado dirigido de artefactos forenses de Windows | medium | `process.create` | T1070.004 | defense-evasion |
+| `e48f9ab7-c1d0-43e4-a5f6-7b8c9daebf21` | Consulta DNS a dominio generado (posible DGA) | medium | `network.connect` | T1568.002 | command-and-control |
+| `d4e5f607-1003-4a00-8000-000000000003` | DLL candidata a carga lateral descargada o extraida | medium | `file.write` | T1574.001 | defense-evasion |
+| `c26d7e95-afbe-41c2-e3d4-5f6a7b8c9da0` | DLL cargada desde ruta de usuario | medium | `image.load` | T1574.001, T1574.002 | privilege-escalation |
+| `d4e5f607-1004-4a00-8000-000000000004` | Modificacion de un perfil de PowerShell | medium | `file.write` | T1546.013 | persistence |
+| `a1b2c3d4-000a-4a0a-9e0a-0a0a0a0a0a0a` | Reconocimiento de dominio con comandos net/nltest | medium | `process.create` | T1087.002 | discovery |
+<!-- END RULE INVENTORY -->
 
 Nota: los nombres de reglas y secuencias se mantienen en espanol, tal
 como viven en los YAML del repositorio; no se traducen en la doc.
@@ -701,7 +738,7 @@ Every push and pull request runs the same checks the maintainers run locally (`.
 
 Nightly (`.github/workflows/bench-nightly.yml`, also triggerable by hand), the pipeline bench runs the **real** engine over loopback with the documented baseline parameters (`cmd/bench -n 2000 -rate 1000`) in two passes on the same clock: a **rings** baseline, and a second identical pass with `-store` attached to a fresh SQLite file so the persistence overhead is measured, not assumed. The run summary records p50/p99 for both passes plus the store-overhead delta as data, alongside the runner identity and an fsync 4k dsync probe of the same medium the sqlite pass wrote to — the environment class that dominates the persistence tail, recorded per run because it is a datum of that run, not a property of the machine (the same role measured a 15.8 ms stalls-class tail one round and a 1.8 ms fast-fsync tail the next). The contract is enforced identically in each pass, and it is **advisory by design** (Director decision 6.2): a p99 at or above the phase-1 contract (< 10 ms) raises a warning annotation for the next review, but never fails the job — only a pipeline completeness failure (lost alerts, in either pass) turns the run red, because that is a functional defect, not a performance one. The same script runs locally: `bash scripts/dev-tests/bench_nightly.sh` (ports 7777/7778 free).
 
-To run the equivalent suite locally (Go 1.22+, bun, cargo via rustup, python3 with PyYAML):
+To run the equivalent suite locally (Go 1.26+, bun, cargo via rustup, python3 with PyYAML):
 
 ```bash
 make ci

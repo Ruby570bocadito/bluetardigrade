@@ -7,6 +7,7 @@ import assert from 'node:assert/strict'
 import { EngineProvider, useEngine } from '../../web/console/src/components/console/engine-provider'
 import { AlertsView } from '../../web/console/src/components/console/alerts-view'
 import { Dashboard } from '../../web/console/src/components/console/dashboard'
+import { ForensicPanel } from '../../web/console/src/components/console/forensic-panel'
 import type { TriageTarget } from '../../web/console/src/lib/operations'
 
 const dom = new JSDOM('<div id="root"></div>', {url:'http://localhost:3000', pretendToBeVisual:true})
@@ -260,6 +261,93 @@ async function main() {
   await until(()=>document.body.textContent!.includes('Este motor no ofrece búsqueda paginada'))
   assert.ok(!button('Historical evidence'))
   console.log('PASS: older engines show an actionable search capability error without stale rows')
+
+  const forensicToggle=()=>document.querySelector<HTMLButtonElement>('[aria-label="Línea de tiempo forense"]')!
+  root.render(<ForensicPanel alertId={alert.id} />)
+  await until(()=>Boolean(forensicToggle()))
+  let forensicMode: 'error' | 'bundle' | 'hold' = 'error'
+  let releaseForensic: (()=>void) | null = null
+  const forensicReads: string[] = []
+  const snapshot = (id:string) => ({
+    alert:{id,rule_name:'Frozen alert',matched_on:['process.name'],enrich:{parent_name:'winword.exe'}},
+    captured_at:'2026-10-01T12:00:00Z', host:'LAB', window:'5m before alert',
+    timeline:[{id:'frozen-event',timestamp:'2026-10-01T11:59:00Z',type:'process.create',host:'LAB',source:'sysmon',process:{pid:1,name:'cmd.exe',command_line:`${id} evidence`},enrichment:{parent_name:'winword.exe'}}],
+    summary:{events:1,process_creates:1,network_connects:0,file_writes:0,registry_sets:0,process_accesses:0,other:0,distinct_users:0,distinct_images:null},
+  })
+  globalThis.fetch = (async (input:any) => {
+    const id = String(input).match(/\/alerts\/([0-9a-f]{16})\/forensics$/)?.[1]
+    assert.ok(id, 'forensic fixture must only read addressed evidence')
+    forensicReads.push(id)
+    const mode=forensicMode
+    if (mode === 'hold') await new Promise<void>(resolve=>{releaseForensic=resolve})
+    return mode === 'error' ? new Response('',{status:500}) : Response.json(snapshot(id))
+  }) as typeof fetch
+  assert.equal(forensicReads.length,0,'collapsed evidence must not fetch')
+  forensicToggle().click()
+  await until(()=>Boolean(button('Reintentar evidencia')))
+  forensicMode='bundle'
+  button('Reintentar evidencia').click()
+  await until(()=>Boolean(document.querySelector('[aria-label="Descargar evidencia JSON"]')))
+  assert.equal(forensicReads.length,2)
+  const region=document.querySelector('[role="region"][aria-labelledby]')!
+  assert.equal(region.getAttribute('aria-busy'),'false')
+  console.log('PASS: forensic evidence is lazy, labels its region and retries a failed query')
+
+  const downloads:Array<{name:string;blob:Blob}>=[]
+  const realCreate=URL.createObjectURL, realRevoke=URL.revokeObjectURL
+  const realClick=dom.window.HTMLAnchorElement.prototype.click
+  let exportBlob:Blob
+  let revocations=0
+  URL.createObjectURL=(blob:Blob)=>{exportBlob=blob;return 'blob:fixture-forensic'}
+  URL.revokeObjectURL=()=>{revocations++}
+  dom.window.HTMLAnchorElement.prototype.click=function(){downloads.push({name:this.download,blob:exportBlob})}
+  try {
+    ;(document.querySelector('[aria-label="Descargar evidencia JSON"]') as HTMLButtonElement).click()
+    ;(document.querySelector('[aria-label="Descargar evidencia JSONL"]') as HTMLButtonElement).click()
+    assert.equal(downloads.length,2)
+    const json=JSON.parse(await downloads[0].blob.text())
+    const jsonl=(await downloads[1].blob.text()).trimEnd().split('\n').map(line=>JSON.parse(line))
+    assert.equal(json.alert.enrich.parent_name,'winword.exe')
+    assert.equal(json.timeline[0].source,'sysmon')
+    assert.deepEqual({...jsonl[0].bundle,timeline:jsonl.slice(1).map(row=>row.event)},json)
+    assert.equal(downloads[0].name,`forensic-${alert.id}.json`)
+    assert.equal(downloads[1].name,`forensic-${alert.id}.jsonl`)
+    assert.equal(revocations,2)
+    assert.equal(document.querySelectorAll('a[download]').length,0)
+  } finally {
+    URL.createObjectURL=realCreate;URL.revokeObjectURL=realRevoke
+    dom.window.HTMLAnchorElement.prototype.click=realClick
+  }
+  console.log('PASS: forensic export buttons download complete JSON/JSONL and clean their temporary URLs')
+
+  root.render(<ForensicPanel alertId={historicalAlert.id} />)
+  await until(()=>forensicToggle()?.getAttribute('aria-expanded')==='false')
+  assert.equal(document.querySelector('[aria-label="Descargar evidencia JSON"]'),null)
+  forensicMode='error'
+  forensicToggle().click()
+  await until(()=>Boolean(button('Reintentar evidencia')))
+  forensicToggle().click()
+  await until(()=>forensicToggle()?.getAttribute('aria-expanded')==='false')
+  forensicMode='bundle'
+  forensicToggle().click()
+  await until(()=>Boolean(document.querySelector('[aria-label="Descargar evidencia JSON"]')))
+  assert.equal(forensicReads.at(-1),historicalAlert.id)
+  console.log('PASS: changing alerts resets evidence, and reopening a failed panel really re-queries')
+
+  root.render(<ForensicPanel alertId={alert.id} />)
+  await until(()=>forensicToggle()?.getAttribute('aria-expanded')==='false')
+  forensicMode='hold'
+  forensicToggle().click()
+  await until(()=>releaseForensic!==null)
+  root.render(<ForensicPanel alertId={historicalAlert.id} />)
+  await until(()=>forensicToggle()?.getAttribute('aria-expanded')==='false')
+  forensicMode='bundle'
+  forensicToggle().click()
+  await until(()=>document.body.textContent!.includes(`${historicalAlert.id} evidence`))
+  releaseForensic!()
+  await delay(40)
+  assert.ok(!document.body.textContent!.includes(`${alert.id} evidence`))
+  console.log('PASS: a delayed forensic response cannot replace the newly selected alert\'s evidence')
 
   root.unmount()
   assert.ok(FakeSource.instances.every(s=>s.closed))

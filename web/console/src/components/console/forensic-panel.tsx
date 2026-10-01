@@ -9,34 +9,45 @@
 // Lazy by design: nothing is fetched until the operator expands it, so
 // the queue detail stays instant for every other triage action.
 
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import {
   CaretDown,
   CircleNotch,
   ClockCountdown,
+  DownloadSimple,
   Fingerprint,
   WarningCircle,
 } from '@phosphor-icons/react'
-import { readForensicBundle, forensicEventLine, type ForensicResult } from '@/lib/forensic'
+import { readForensicBundle, forensicEventLine, buildForensicExport, type ForensicResult } from '@/lib/forensic'
 import { formatTime } from '@/lib/console-types'
 
 type Props = { alertId?: string }
 
 export function ForensicPanel({ alertId }: Props) {
+  // Reset the query on identity changes, including a delayed response
+  // for the previous alert. Never show one alert's evidence under another.
+  return <ForensicQuery key={alertId || 'legacy'} alertId={alertId} />
+}
+
+function ForensicQuery({ alertId }: Props) {
   const [open, setOpen] = useState(false)
   const [result, setResult] = useState<ForensicResult | null>(null)
   const [busy, setBusy] = useState(false)
   const reduce = useReducedMotion()
+  const id = useId()
+
+  async function load() {
+    if (!alertId || busy) return
+    setBusy(true)
+    setResult(await readForensicBundle(alertId))
+    setBusy(false)
+  }
 
   async function toggle() {
     const next = !open
     setOpen(next)
-    if (next && result === null && alertId && !busy) {
-      setBusy(true)
-      setResult(await readForensicBundle(alertId))
-      setBusy(false)
-    }
+    if (next && (result === null || result.kind === 'error')) await load()
   }
 
   if (!alertId) {
@@ -58,6 +69,9 @@ export function ForensicPanel({ alertId }: Props) {
         type="button"
         onClick={toggle}
         aria-expanded={open}
+        aria-label="Línea de tiempo forense"
+        aria-controls={`${id}-content`}
+        id={`${id}-toggle`}
         className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-zinc-900/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-wider text-zinc-400">
@@ -83,18 +97,28 @@ export function ForensicPanel({ alertId }: Props) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.18 }}
           className="border-t border-zinc-800 px-3 py-3"
+          id={`${id}-content`}
+          role="region"
+          aria-labelledby={`${id}-toggle`}
+          aria-busy={busy}
         >
-          {busy && result === null && (
-            <div className="flex items-center gap-2 py-2 text-xs text-zinc-500">
+          {busy && (
+            <div role="status" className="flex items-center gap-2 py-2 text-xs text-zinc-500">
               <CircleNotch size={13} className="animate-spin" aria-hidden />
-              congelando la consulta de evidencia...
+              consultando evidencia guardada...
             </div>
           )}
 
           {result?.kind === 'error' && (
-            <Note tone="amber">
-              El motor no respondió a la consulta de evidencia (reintenta al reabrir el panel).
-            </Note>
+            <div className="space-y-2">
+              <Note tone="amber">
+                No se pudo cargar evidencia válida del motor. Reintenta la consulta.
+              </Note>
+              <button type="button" onClick={load} disabled={busy}
+                className="rounded-md border border-zinc-700 px-2 py-1 text-[11px] text-zinc-300 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
+                Reintentar evidencia
+              </button>
+            </div>
           )}
           {result?.kind === 'disabled' && (
             <Note tone="zinc">
@@ -128,9 +152,46 @@ function BundleView({ result }: { result: Extract<ForensicResult, { kind: 'bundl
   ]
   const active = chips.filter(([, n]) => n > 0)
   const images = bundle.summary.distinct_images.slice(0, 12)
+  const [exportError, setExportError] = useState(false)
+
+  function download(format: 'json' | 'jsonl') {
+    let url: string | undefined
+    let link: HTMLAnchorElement | undefined
+    try {
+      const file = buildForensicExport(bundle, format)
+      url = URL.createObjectURL(new Blob([file.contents], { type: file.mime }))
+      link = document.createElement('a')
+      link.href = url
+      link.download = file.filename
+      document.body.appendChild(link)
+      link.click()
+      setExportError(false)
+    } catch {
+      setExportError(true)
+    } finally {
+      link?.remove()
+      if (url) URL.revokeObjectURL(url)
+    }
+  }
 
   return (
     <div className="min-w-0">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <span className="font-mono text-[10px] text-zinc-500" title={bundle.captured_at}>
+          Capturada {formatTime(bundle.captured_at)} · {bundle.timeline.length} eventos
+        </span>
+        <div role="group" aria-label="Exportar evidencia forense" className="flex items-center gap-1.5">
+          {(['json', 'jsonl'] as const).map((format) => (
+            <button key={format} type="button" onClick={() => download(format)}
+              aria-label={`Descargar evidencia ${format.toUpperCase()}`}
+              title="Descarga la captura guardada: alerta completa, metadatos y eventos. La captura tiene la ventana y los límites del motor."
+              className="inline-flex items-center gap-1 rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1 font-mono text-[10px] text-zinc-300 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <DownloadSimple size={11} aria-hidden />{format}
+            </button>
+          ))}
+        </div>
+      </div>
+      {exportError && <p role="alert" className="mb-2 text-[11px] text-amber-300">No se pudo iniciar la descarga. Reintenta con el botón de exportación.</p>}
       <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[10px] text-zinc-500">
         <span className="flex items-center gap-1">
           <ClockCountdown size={11} aria-hidden />
@@ -156,9 +217,9 @@ function BundleView({ result }: { result: Extract<ForensicResult, { kind: 'bundl
         </p>
       ) : (
         <ol className="max-h-72 overflow-y-auto" aria-label="Línea de tiempo de evidencia">
-          {bundle.timeline.map((ev) => (
+          {bundle.timeline.map((ev, index) => (
             <li
-              key={ev.id}
+              key={`${ev.id}:${index}`}
               className="grid grid-cols-[52px_1fr] gap-2 border-b border-zinc-800/60 py-1.5 last:border-b-0"
             >
               <span className="font-mono text-[10px] tabular-nums text-zinc-600" title={ev.timestamp}>
@@ -177,7 +238,7 @@ function BundleView({ result }: { result: Extract<ForensicResult, { kind: 'bundl
 
       {bundle.timeline.length >= 200 && (
         <p className="mt-2 text-[10px] text-zinc-600">
-          Timeline truncada a los 200 eventos más recientes de la ventana (el motor conserva la cola).
+          Límite de 200 eventos: el motor conserva la cola y el evento que disparó la alerta si aún lo tenía registrado.
         </p>
       )}
     </div>

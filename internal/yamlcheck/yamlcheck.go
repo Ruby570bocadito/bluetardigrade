@@ -42,10 +42,9 @@ const (
 	// flow-style value could exhaust the stack inside Unmarshal before
 	// any allocation happens. The scan is deliberately naive: it counts
 	// structural brackets everywhere — quoted strings included — and
-	// clamps at zero on unmatched closers. Neither shortcut can hide
-	// real depth: true nesting needs at least as many consecutive opens
-	// as its own level count, and the scan counts exactly that. 512 is
-	// the historical loader cap, kept verbatim.
+	// clamps at zero on unmatched closers. It is a conservative pre-scan,
+	// not a YAML tokenizer. The composed graph is also checked below;
+	// quoted brackets cannot hide flow depth from that check.
 	MaxNestingDepth = 512
 )
 
@@ -71,13 +70,8 @@ func Guard(path string, data []byte) error {
 	if root.Kind == 0 { // empty document (comments only / empty file)
 		return nil
 	}
-	var refs int
-	size := projected(&root, make(map[*yaml.Node]int), &refs)
-	if refs > MaxAliasRefs {
-		return fmt.Errorf("%s: %d alias references (merge keys included), over the %d cap: YAML anchors are not supported in this file", path, refs, MaxAliasRefs)
-	}
-	if size > MaxExpandedNodes {
-		return fmt.Errorf("%s: alias expansion would materialize ~%d nodes, over the %d cap (possible YAML bomb)", path, size, MaxExpandedNodes)
+	if err := checkGraph(&root); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
 	}
 	return nil
 }
@@ -103,37 +97,88 @@ func checkNesting(path string, data []byte) error {
 	return nil
 }
 
-// projected returns the node count of n with every alias reference
-// counted as its target subtree (what the typed decode materializes)
-// and accumulates the number of alias references seen into *refs.
-// memo caches subtree sizes so an anchor referenced many times is
-// measured once — the whole walk stays linear in document size. Alias
-// graphs are acyclic by construction in valid YAML, so the recursion
-// terminates; a cyclic graph cannot compose in the first place.
-func projected(n *yaml.Node, memo map[*yaml.Node]int, refs *int) int {
-	if n == nil {
-		return 0
+// graphSize caches expansion cost and flow-container depth. The Node
+// composer accepts self-referential aliases; only the typed decoder
+// rejects them. A visiting set must detect those cycles BEFORE decode.
+type graphSize struct {
+	nodes int
+	flow  int
+}
+
+// checkGraph walks iteratively so even a deep block-style document
+// cannot exhaust this guard's call stack. Each node/alias is measured
+// once. Costs are rejected before addition, avoiding integer overflow
+// and stopping expansion estimates as soon as they exceed the budget.
+func checkGraph(root *yaml.Node) error {
+	type frame struct {
+		node *yaml.Node
+		next int
+		size graphSize
 	}
-	if s, ok := memo[n]; ok {
-		return s
-	}
-	size := 1
-	switch n.Kind {
-	case yaml.AliasNode:
-		*refs++
-		if n.Alias != nil {
-			size += projected(n.Alias, memo, refs)
+	stack := []frame{{node: root, size: graphSize{nodes: 1}}}
+	visiting := map[*yaml.Node]bool{root: true}
+	memo := make(map[*yaml.Node]graphSize)
+	refs := 0
+	add := func(dst *graphSize, child graphSize) error {
+		if dst.nodes > MaxExpandedNodes-child.nodes {
+			return fmt.Errorf("alias expansion exceeds the %d node cap (possible YAML bomb)", MaxExpandedNodes)
 		}
-	default:
-		for _, c := range n.Content {
-			size += projected(c, memo, refs)
+		dst.nodes += child.nodes
+		if child.flow > dst.flow {
+			dst.flow = child.flow
 		}
+		return nil
 	}
-	// Only memoize nodes that can be re-referenced (anchor targets);
-	// plain tree nodes are visited once anyway and memoizing them
-	// would just hold the map alive for the whole walk.
-	if n.Anchor != "" {
+	for len(stack) > 0 {
+		f := &stack[len(stack)-1]
+		n := f.node
+		var child *yaml.Node
+		hasChild := false
+		if n.Kind == yaml.AliasNode {
+			if f.next == 0 {
+				refs++
+				if refs > MaxAliasRefs {
+					return fmt.Errorf("%d alias references (merge keys included), over the %d cap", refs, MaxAliasRefs)
+				}
+				f.next++
+				child, hasChild = n.Alias, true
+			}
+		} else if f.next < len(n.Content) {
+			child, hasChild = n.Content[f.next], true
+			f.next++
+		}
+		if hasChild {
+			if child == nil {
+				continue
+			}
+			if visiting[child] {
+				return fmt.Errorf("cyclic YAML alias graph is not supported")
+			}
+			if size, ok := memo[child]; ok {
+				if err := add(&f.size, size); err != nil {
+					return err
+				}
+			} else {
+				visiting[child] = true
+				stack = append(stack, frame{node: child, size: graphSize{nodes: 1}})
+			}
+			continue
+		}
+		if n.Style&yaml.FlowStyle != 0 && (n.Kind == yaml.SequenceNode || n.Kind == yaml.MappingNode) {
+			f.size.flow++
+		}
+		if f.size.flow > MaxNestingDepth {
+			return fmt.Errorf("YAML flow nesting deeper than %d levels (possible resource bomb)", MaxNestingDepth)
+		}
+		size := f.size
 		memo[n] = size
+		delete(visiting, n)
+		stack = stack[:len(stack)-1]
+		if len(stack) > 0 {
+			if err := add(&stack[len(stack)-1].size, size); err != nil {
+				return err
+			}
+		}
 	}
-	return size
+	return nil
 }

@@ -6,21 +6,23 @@ roadmap sin criterios de aceptación es una lista de deseos. El estado
 "shipped" de cada horizontal vive en el [CHANGELOG](../CHANGELOG.md) y
 la arquitectura vigente en [ARCHITECTURE.md](ARCHITECTURE.md).
 
-Última actualización: 2026-10-01 (ronda de detección + forense).
+Última actualización: 2026-10-01 (ficheros, contexto y exportación forense).
 
 ---
 
 ## H1 — Detección: profundidad y cobertura (siguiente)
 
 **Problema**: la cobertura actual es fuerte en procesos y artefactos
-(49 reglas, 4 cadenas) pero delgada en memoria y ficheros: un payload
-que no genere patrones de línea de comandos visible sigue siendo ciego
-para el motor.
+(55 reglas, 4 cadenas), incluida una primera capa de ficheros; sigue
+siendo delgada en memoria y en la confirmación de cargas de DLL.
 
-- **Reglas de fichero y DLL hijacking** — `file.write` hacia rutas de
-  arranque (UpnpHost, ProgramData), side-loading (DLL junto a binarios
-  firmados de terceros). Cierre: paquete `rules/windows/file-staging.yaml`
-  con 6+ reglas y tests de gemelos benignos.
+- **Reglas de fichero: primera capa entregada** — paquete
+  `rules/windows/file-staging.yaml` con seis reglas y gemelos benignos:
+  Office, preparación de DLL, perfiles, inicio de Office y volcados de
+  LSASS. Startup ya usa la ruta canónica aunque falte la extensión.
+  Pendiente: medir ruido con telemetría real de Windows y correlacionar
+  la DLL escrita con `image.load`; el nombre de una DLL no confirma
+  carga lateral. Detalle: [DETECCION-Y-EVIDENCIA.md](DETECCION-Y-EVIDENCIA.md).
 - **ETW de imagen/driver** — el sensor Rust ya colecta
   `image.load`: reglas de drivers maliciosos y DLLs de ruta no estándar
   cargadas por servicios. Cierre: 4+ reglas sobre `image.load` validadas
@@ -29,9 +31,10 @@ para el motor.
   importar y mantener una selección curada del repositorio Sigma como
   fuente secundaria de reglas. Cierre: script de importación en CI con
   conteo de reglas convertidas y suite de diferencias.
-- **Detección de inyección** — `process.access` con máscaras de
-  escritura-remota (0x1F0FFF, 0x1010) sobre procesos que no son el
-  propio: correlación con la vista de contexto del padre. Cierre: regla
+- **Detección de inyección** — `process.access` con derechos de
+  escritura/operación de memoria sobre procesos que no son el propio,
+  correlacionado con ejecución remota y contexto del padre. Un acceso
+  de lectura como `0x1010` no basta para afirmar inyección. Cierre: regla
   de inyección con FP documentado bajo administración legítima (AV,
   debuggers).
 
@@ -45,9 +48,10 @@ esa evidencia.
   cada evento: derivar el árbol y renderizarlo en el panel forense de la
   consola en lugar de la lista plana. Cierre: componente de árbol en la
   consola con datos reales del E2E del laboratorio.
-- **Exportación del bundle** — botón de descarga JSON/JSONL del bundle
-  completo desde el panel (para adjuntar a un ticket o retenerlo más
-  allá de la evicción de 256). Cierre: export funcionando + test client-side.
+- **Exportación del bundle: entregada** — descarga JSON/JSONL desde el
+  panel, con alerta, metadatos y eventos completos, independiente del
+  filtro de vista. Pruebas de round-trip, DOM y descargas Chromium.
+  El archivo conserva la ventana capturada, no todo el histórico del host.
 - **Hashes y reputación** — los eventos ya transportan `hashes`:
   exponerlos en el bundle y enlazar con TI local (MISP offline) cuando
   esté configurado. Cierre: enriquecimiento de hash en el bundle + flag

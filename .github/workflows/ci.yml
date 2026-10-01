@@ -78,6 +78,10 @@ jobs:
         # the concurrent packages — CI enforces it on every push now
         # (defect-class G3 of the 2026-09-30 gap-analysis round).
         run: go test -race -count=1 ./...
+      - name: file alarms and forensic evidence (inert loopback fixtures)
+        run: |
+          go build -o "$RUNNER_TEMP/bluetardigrade-file-smoke" ./cmd/engine
+          python3 scripts/dev-tests/smoke_file_forensics.py --engine "$RUNNER_TEMP/bluetardigrade-file-smoke"
       # Windows cross-check del motor (C3, requisito vinculante R1 del
       # dictamen 04-B 16h11): internal/respond tiene un carril windows
       # (process_windows.go, OpenProcess/QueryFullProcessImageNameW/
@@ -100,6 +104,8 @@ jobs:
           # El guard también verifica el guard: fixtures embebidas
           # que deben producir hallazgos (el recuento crece con cada check nuevo).
           python3 scripts/dev-tests/check_openapi.py --self-test
+          # Keep the full operator inventory/counts in sync with rule packs.
+          python3 scripts/dev-tests/check_rule_inventory.py
 
   # Smoke CONDUCTUAL de la respuesta activa en Windows real (C3, R1):
   # hasta hoy el camino handle solo tenía certificación de COMPILACIÓN

@@ -10,6 +10,7 @@ conserva la trazabilidad completa.
 | Ruta | Contenido |
 |------|-----------|
 | [INVESTIGACION-CLI-Y-TRIAJE.md](INVESTIGACION-CLI-Y-TRIAJE.md) | Búsqueda CLI por ID y términos, accesos de triaje del dashboard, navegación y regresiones |
+| [DETECCION-Y-EVIDENCIA.md](DETECCION-Y-EVIDENCIA.md) | Nuevas alarmas de ficheros, correcciones de contexto/YAML/forense, exportación y pruebas |
 | [GUIA-INICIO.md](GUIA-INICIO.md) | Arranque y operación en español: primera instalación, CLI, consola, histórico y resolución de problemas |
 | [PALETA-Y-PRUEBAS-NAVEGADOR.md](PALETA-Y-PRUEBAS-NAVEGADOR.md) | Paleta de comandos de la consola: foco modal, proteccion de atajos y pruebas Chromium de escritorio/movil |
 | [OPERATIONS.md](OPERATIONS.md) | Guía de operación (inglés): instalación (Windows, Docker, fuente), referencia de flags y variables de entorno, API HTTP, Prometheus, almacenamiento, auth de ingest con rotación, sinks SIEM, notificaciones, supresiones, triaje, riesgo, beaconing, respuesta activa, contenido de detección, CLI y CI/bench |

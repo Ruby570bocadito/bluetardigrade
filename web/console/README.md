@@ -43,7 +43,7 @@ and describes a buffer sample, not complete historical retention.
 |------|----------------|
 | Panel | KPI strip (uptime, events/min, alerts by severity, rules, buffer, webhooks), 4-minute rate chart, engine summary (persistence mode included), latest alerts and telemetry |
 | Flujo en vivo | SSE-fed event table with sticky header, pause, search, type filter and JSONL/CSV export |
-| Alertas | Semantic table (search, severity filter, export) plus a detail panel: rule message, matched_on, ATT&CK tags, actions, enrichment |
+| Alertas | Semantic table (search, severity filter, export) plus detail: matched_on, ATT&CK, actions, enrichment, lazy forensic evidence with retry and full JSON/JSONL snapshot download |
 | Reglas | The rule pack as the engine sees it, with expandable conditions |
 | Cadenas | The armed kill-chain sequences with their numbered steps and ATT&CK tags, as the correlator tracks them in flight |
 | Supresiones | Operator allowlist, read-only by design: rule/host pairs with reason and live expiry countdown; editing happens in `suppressions.yaml`, hot-reloaded by the engine every 15 s |

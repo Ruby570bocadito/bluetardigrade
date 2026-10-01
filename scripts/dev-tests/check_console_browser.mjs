@@ -54,6 +54,8 @@ async function engineFixture(page) {
   let reads = 0
   let heldStats = null
   let releaseStats = null
+  let forensicReads = 0
+  let forensicAvailable = false
   const stamp = new Date().toISOString()
   const alert = { id: '0123456789abcdef', timestamp: stamp, rule_id: 'demo-rule', rule_name: 'Fixture detection', severity: 'critical', host: 'LAB-FIXTURE', event_id: 'fixture-event', event_type: 'process.create', summary: 'Isolated browser regression evidence', matched_on: [], status: 'new' }
   const second = { ...alert, id: 'fedcba9876543210', rule_name: 'Second page detection' }
@@ -87,11 +89,22 @@ async function engineFixture(page) {
       const action = request.postDataJSON()
       Object.assign(alert, { status: action.status, status_note: action.note, status_at: new Date().toISOString() })
       data = { alert_id: alert.id, status: action.status, note: action.note, by: action.by, at: alert.status_at }
+    } else if (path === '/api/alerts/0123456789abcdef/forensics') {
+      forensicReads++
+      if (!forensicAvailable) { await route.fulfill({ status: 500, body: '' }); return }
+      data = {
+        alert: { ...alert, enrich: { parent_name: 'winword.exe' } }, captured_at: stamp, host: 'LAB-FIXTURE', window: '5m before alert',
+        timeline: [{ id: 'fixture-event', timestamp: stamp, type: 'file.write', source: 'sysmon', host: 'LAB-FIXTURE',
+          file: { path: 'C:\\Users\\Public\\fixture.dll', hashes: { sha256: 'fixture-hash' } }, enrichment: { parent_name: 'winword.exe' } }],
+        summary: { events: 1, process_creates: 0, network_connects: 0, file_writes: 1, registry_sets: 0, process_accesses: 0, other: 0, distinct_users: 0, distinct_images: [] },
+      }
     } else { await route.fulfill({ status: 404, body: '' }); return }
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) })
   })
   return {
     reads: () => reads,
+    forensicReads: () => forensicReads,
+    enableForensics() { forensicAvailable = true },
     holdStats() { heldStats = new Promise((done) => { releaseStats = done }) },
     releaseStats() { const release = releaseStats; heldStats = releaseStats = null; release?.() },
   }
@@ -143,6 +156,10 @@ try {
     await waitView('reglas')
     assert.equal(new URL(page.url()).searchParams.get('custom'), 'keep')
     assert.equal(new URL(page.url()).searchParams.get('fq'), 'demo')
+    // URL navigation is synchronous; the shell transfers focus on the
+    // next animation frame after closing the command dialog. Wait for
+    // that observable behavior, with a bound that still fails on lost focus.
+    await page.waitForFunction(() => document.activeElement === document.getElementById('console-main'), undefined, { timeout: 5000 })
     assert.equal(await page.locator('#console-main').evaluate((main) => document.activeElement === main), true)
   })
   await check('unknown commands have no active descendant and Enter has no side effects', async () => {
@@ -288,6 +305,36 @@ try {
     await page.getByRole('button', { name: 'Reconocer', exact: true }).click()
     await page.getByRole('button', { name: 'Cerrar', exact: true }).waitFor()
   })
+  await check('forensic retry and real JSON/JSONL downloads preserve the complete frozen evidence', async () => {
+    const toggle = page.getByRole('button', { name: 'Línea de tiempo forense', exact: true })
+    assert.equal(fixture.forensicReads(), 0, 'Evidence should remain lazy until expanded')
+    await toggle.click()
+    await page.getByRole('button', { name: 'Reintentar evidencia', exact: true }).waitFor()
+    fixture.enableForensics()
+    await page.getByRole('button', { name: 'Reintentar evidencia', exact: true }).click()
+    const region = page.getByRole('region', { name: 'Línea de tiempo forense' })
+    await region.getByRole('button', { name: 'Descargar evidencia JSON', exact: true }).waitFor()
+    assert.equal(fixture.forensicReads(), 2)
+    const files = []
+    for (const format of ['JSON', 'JSONL']) {
+      const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        region.getByRole('button', { name: `Descargar evidencia ${format}`, exact: true }).click(),
+      ])
+      assert.equal(download.suggestedFilename(), `forensic-0123456789abcdef.${format.toLowerCase()}`)
+      const stream = await download.createReadStream()
+      assert.ok(stream, 'Download must contain readable evidence')
+      const parts = []
+      for await (const chunk of stream) parts.push(chunk)
+      files.push(Buffer.concat(parts).toString('utf8'))
+    }
+    const json = JSON.parse(files[0])
+    const jsonl = files[1].trimEnd().split('\n').map((line) => JSON.parse(line))
+    assert.equal(json.alert.enrich.parent_name, 'winword.exe')
+    assert.equal(json.timeline[0].file.hashes.sha256, 'fixture-hash')
+    assert.deepEqual({ ...jsonl[0].bundle, timeline: jsonl.slice(1).map((row) => row.event) }, json)
+    await page.screenshot({ path: join(captures, 'forensic-evidence-desktop.png') })
+  })
   await check('desktop palette has no horizontal overflow and captures a labelled fixture view', async () => {
     await openPalette()
     assert.ok(await palette().evaluate((dialog) => dialog.scrollWidth <= dialog.clientWidth))
@@ -303,6 +350,12 @@ try {
     await page.mouse.click(5, 5)
     await page.waitForFunction(() => !document.querySelector('dialog[open]'))
     assert.equal(await page.evaluate(() => document.documentElement.style.overflow), '')
+  })
+  await check('mobile forensic evidence and exports fit the alert detail', async () => {
+    const region = page.getByRole('region', { name: 'Línea de tiempo forense' })
+    await region.getByRole('button', { name: 'Descargar evidencia JSONL', exact: true }).waitFor()
+    assert.ok(await region.evaluate((node) => node.scrollWidth <= node.clientWidth))
+    await page.screenshot({ path: join(captures, 'forensic-evidence-mobile.png') })
   })
   assert.deepEqual(errors, [], 'Unexpected browser runtime errors')
   console.log(`Browser checks: ${passed}/${passed} passed; engine/SSE data are test fixtures.`)

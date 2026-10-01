@@ -48,6 +48,7 @@ suppressions.yaml
 
 # Local evidence
 captures/
+/forensics/
 *.dmp
 
 # Agent tooling residue (not part of the product; the round records
