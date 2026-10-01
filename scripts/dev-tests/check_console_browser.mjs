@@ -116,6 +116,7 @@ try {
   await page.goto(base + '/?view=flujo&fq=demo&tipo=process.create&custom=keep')
   await waitView('flujo')
   await page.getByRole('textbox', { name: 'Buscar en el flujo de telemetría' }).waitFor()
+  assert.deepEqual(errors, [], 'Unexpected runtime errors during reduced-motion hydration')
 
   await check('Ctrl+K opens the palette with search focus and a valid active option', async () => {
     await focusMain()
@@ -258,7 +259,7 @@ try {
     await page.screenshot({ path: join(captures, 'palette-desktop.png') })
     await page.keyboard.press('Escape')
   })
-  await check('mobile touch opens the palette and backdrop closes it with reduced motion', async () => {
+  await check('mobile viewport opens the palette and backdrop closes it with reduced motion', async () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await openPalette()
     assert.ok(await palette().evaluate((dialog) => dialog.getBoundingClientRect().width <= innerWidth && dialog.scrollWidth <= dialog.clientWidth))

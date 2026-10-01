@@ -26,6 +26,8 @@ and the `make dist` target.
 - Navigation ignores consumed events, repeats, composition, editable
   ancestors and composite controls; changing focus clears the g prefix.
 - Choosing the current view no longer creates duplicate history entries.
+- The animated view title keeps identical server/client markup; reduced
+  motion is applied in CSS without a React hydration error.
 
 ### Added — historical alert investigations
 

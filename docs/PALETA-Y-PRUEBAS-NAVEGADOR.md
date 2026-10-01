@@ -52,6 +52,7 @@ que una tecla posterior complete una navegación antigua.
 | Eventos consumidos, composición o repetición podían activar acciones | Guard antes de interpretar la tecla |
 | Volver a elegir la vista activa añadía historial redundante | Evitar push cuando la vista ya coincide |
 | Al reabrir, el reinicio de búsqueda podía competir con una entrada nueva | Estado inicial al montar; la regresión espera la opción activa antes de ejecutar |
+| El título cambiaba su marcado al hidratar con movimiento reducido, provocando React #418 | Mismo marcado de palabras en servidor/cliente; animación condicionada por CSS |
 
 ## Código y comprobación
 
@@ -62,12 +63,12 @@ que una tecla posterior complete una navegación antigua.
 | [`console-dialog.tsx`](../web/console/src/components/console/console-dialog.tsx) | Modalidad, foco, fondo y limpieza |
 | [`shortcuts-help.tsx`](../web/console/src/components/console/shortcuts-help.tsx) | Ayuda integrada con el mismo diálogo |
 | [`keyboard-nav.ts`](../web/console/src/lib/keyboard-nav.ts) | Protección de campos, ámbitos y combinación de paleta |
+| [`blur-text.tsx`](../web/console/src/components/reactbits/blur-text.tsx) y [`globals.css`](../web/console/src/app/globals.css) | Título sin divergencias de hidratación y movimiento reducido mediante CSS |
 | [`check_console_browser.mjs`](../scripts/dev-tests/check_console_browser.mjs) | Regresión Chromium contra la aplicación compilada |
 
 Las ocho pruebas nuevas del catálogo y la combinación de teclado se suman
-a las 97 existentes: **105/105** pasan con el adaptador temporal Node del
-entorno local. Tras integrar `6515a99` y sus tres pruebas nuevas, la batería
-vuelve a pasar con **108/108**. TypeScript y las **18 regresiones DOM**
+a las existentes: **108/108** pasan con el adaptador temporal Node del
+entorno local sobre la base integrada. TypeScript y las **18 regresiones DOM**
 existentes pasan.
 El YAML de CI, los enlaces locales y el formato del diff se comprueban antes
 de publicar.
@@ -78,6 +79,11 @@ flechas e historial, refresh en curso y cambio a ayuda, guards de teclado,
 histórico y triaje por POST, escritorio y móvil. Usa la consola real, con
 REST/SSE aislados como fixtures de prueba; las capturas se etiquetan como
 evidencia de regresión, no como una sesión real de un sensor.
+
+En la [ejecución de CI que descubrió el error de hidratación](https://github.com/Ruby570bocadito/security-framework/actions/runs/36881549412),
+las diez interacciones pasaron y el guard de errores de página detectó
+React #418 al cargar con movimiento reducido. Se corrigió el título sin
+silenciar el error; el runner comprueba tanto la carga inicial como el final.
 
 **Límite local:** Next.js sigue fallando con `ENOENT: uv_resident_set_memory`
 en este entorno. Chromium se descargó desde su fuente oficial, pero el
