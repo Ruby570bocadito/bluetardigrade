@@ -90,7 +90,7 @@ export const WHY_CARDS = [
 ];
 
 export const GOLDEN_RULE =
-  "No simulated data in the product path. The console never invents events, the engine degrades loudly instead of silently, and the only scripted piece is the demo scenario — clearly labeled as such.";
+  "The console never invents events or fills outages with synthetic telemetry. Demo records are explicitly labeled; fixture data belongs to development and tests.";
 
 export const PIPELINE = [
   {
@@ -98,7 +98,7 @@ export const PIPELINE = [
     name: "sf-sensor",
     stack: "Rust",
     icon: "cpu",
-    desc: "ETW kernel-process providers plus a Sysmon ingestion path. Streams a narrow NDJSON/TCP feed with an authenticated handshake — and refuses to run where there is no real telemetry.",
+    desc: "A Windows ETW kernel-process collector plus a Sysmon ingestion path. They send host activity as NDJSON/TCP; the engine also accepts the explicitly labeled development demo.",
     tags: ["ETW", "Sysmon", "NDJSON/TCP"],
   },
   {
@@ -236,7 +236,7 @@ export const COMPARISON = {
     "A fleet agent with compliance packs",
     "A replacement for your SOC stack",
     "A black-box rule format",
-    "Simulated demos in the product path",
+    "Synthetic telemetry hidden as real activity",
   ],
 };
 
@@ -278,7 +278,7 @@ export const FAQS = [
   },
   {
     q: "Does it depend on Sysmon?",
-    a: "No. The Rust sensor streams ETW kernel-process providers natively, and a Sysmon ingestion path exists as an alternative feed. The engine refuses to run where there is no real telemetry.",
+    a: "No. The Rust sensor collects ETW kernel-process providers on Windows and refuses unsupported platforms. The Sysmon path is an alternative. The engine accepts received records, including the explicitly labeled development demo; it does not manufacture telemetry when sensors are absent.",
   },
   {
     q: "Why the name bluetardigrade?",

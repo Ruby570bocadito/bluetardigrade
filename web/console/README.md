@@ -3,12 +3,12 @@
 Browser console for the framework: live telemetry feed, KPI dashboard,
 severity triage with a detail panel, the YAML rule pack, kill-chain
 chains, operator suppressions, a read-only active-response view with
-its forensic audit trail, and an AI analyst that explains each alert
-the way a senior SOC analyst would. Dark-mode locked product UI (zinc
+its forensic audit trail, and an optional AI analyst using the configured
+provider to assist alert triage. Dark-mode locked product UI (zinc
 structure, one emerald interaction accent, severity colors that encode
 data semantics).
 
-## Data flow (no fake data anywhere)
+## Data flow and demo boundaries
 
 ```
 Go engine (internal/api, 127.0.0.1:7778)
@@ -26,8 +26,15 @@ console-service (Bun, socket.io :3003)   ->  AI analyst only
 
 Telemetry comes straight from the engine API; the hub
 (`console-service/`) is only used for the AI analyst. If the engine is
-unreachable the console says so (`Motor offline`) and shows no data;
+unreachable the console says so (`Motor offline`) and clears stale telemetry
+without manufacturing replacement events;
 when the hub is down only the analyst view is affected.
+
+The engine can receive real collector records or explicit `sf-devsensor`
+demo records. The header lists declared sources across the received window
+and keeps a **demo** indicator visible for mixed data, also on mobile.
+`source` is sender-declared, not an attestation. Tests use isolated fixtures.
+README captures use the demo scenario, not a Windows endpoint lab capture.
 
 The provider uses bounded requests and serial polling. Snapshots merge with
 incoming frames, SSE replay preserves triage decisions, and optional response
@@ -42,13 +49,20 @@ and describes a buffer sample, not complete historical retention.
 | View | What it shows |
 |------|----------------|
 | Panel | KPI strip (uptime, events/min, alerts by severity, rules, buffer, webhooks), 4-minute rate chart, engine summary (persistence mode included), latest alerts and telemetry |
-| Flujo en vivo | SSE-fed event table with sticky header, pause, search, type filter and JSONL/CSV export |
-| Alertas | Semantic table (search, severity filter, export) plus detail: matched_on, ATT&CK, actions, enrichment, lazy forensic evidence with retry and full JSON/JSONL snapshot download |
+| Flujo en vivo | SSE-fed event table with sticky header, pause, search, type filter, saved searches and JSONL/CSV export |
+| Alertas | Semantic table (search, severity filter, saved searches, export) plus detail: matched_on, ATT&CK, actions, enrichment, lazy forensic evidence with retry and full JSON/JSONL snapshot download |
 | Reglas | The rule pack as the engine sees it, with expandable conditions |
 | Cadenas | The armed kill-chain sequences with their numbered steps and ATT&CK tags, as the correlator tracks them in flight |
 | Supresiones | Operator allowlist, read-only by design: rule/host pairs with reason and live expiry countdown; editing happens in `suppressions.yaml`, hot-reloaded by the engine every 15 s |
 | Respuesta activa | Read-only active-response surface: arm and audit-health cards plus the forensic audit tail with attempt-class filter (executed / denied / followups), operator-controlled tail window and JSONL export |
-| Analista IA | Streaming triage chat bound to a selected alert |
+| Analista IA | Triage chat bound to a selected alert; real preparation/request steps and a complete reply after provider completion |
+
+**Búsquedas guardadas** stores up to 20 alert/feed filter presets locally in
+this browser. Apply restores filters and updates URL history; save with the
+same name updates; delete removes a preset. Query text is persisted, so avoid
+credentials in it. It saves no evidence snapshot or pause state. Corrupt or
+blocked storage reports an error without overwriting unreadable data.
+[Operator guide and verification limits](../../docs/INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md).
 
 ## Header chips
 
@@ -161,6 +175,11 @@ the layer adds zero runtime dependencies beyond `motion`:
   `ANALYST_API_KEY` and `ANALYST_MODEL` for any OpenAI-compatible
   endpoint. Without configuration the analyst panel reports it clearly
   and the rest of the console keeps working.
+
+The analyst performs an actual HTTP request; it no longer animates an
+already-completed response as token streaming. Local ATT&CK context is a
+static note lookup. Alert/event/rule JSON and operator questions are bounded;
+all endpoint evidence is treated as untrusted. No model is called by tests.
 
 The interface copy is in Spanish by design: the primary audience of the
 project documentation is Spanish speaking.

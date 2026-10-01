@@ -47,7 +47,17 @@ flowchart LR
 
 The unified event schema (chapter 4 of the docs) is the master contract: sensors emit it, the engine validates and enriches it, rules index it, interfaces consume it.
 
-Full write-up: [docs/arquitectura-tecnica-v0.11.pdf](arquitectura-tecnica-v0.11.pdf) (Spanish). The v0.11 revision reflects the implemented and verified state — authenticated ingest, all four detection packages (risk, thresholds, beaconing, Sigma import) with the rules-loader house caps and the unified `i*` folding semantics, the C2 external notifications and the native Elasticsearch/Splunk SIEM sinks, the audited C3 active response with its read surface (`GET /api/respond/state`, `GET /api/respond/audit`) rendered in the console — now with forensic operability: attempt-class filter (executed / denied / followups), an operator-controlled 100/500 tail window and a client-side JSONL export of the visible tail — plus its dual kill mechanism (pidfd with declared `fallback_reason` on Linux, handle on Windows) carrying the permanent CI behavioral certification, real lab captures of the respond view embedded as Figures 3 and 4 (12 genuine audit lines, complete F1 pair), the export API, the OpenAPI spec (17 routes / 36 stats fields / 86 resolved refs, guard self-test included), the alert webhook, the two-pass nightly bench (rings vs. SQLite store), the opt-in SQLite store and the Next.js console — with the console-battery floors updated to the current eight-suite state (88 tests / 279 assertions after the PR #4 interface wave, re-measured in-tree per suite) — and keeps an honest roadmap-status column with cited provenance; [`docs/README.md`](README.md) tracks what remains design-only (YARA, gRPC, filaments, eBPF). It is produced by the versioned in-tree pipeline (`scripts/arq_v04/`), so each revision is a reproducible command rather than a hand edit. Earlier revisions (v0.1-v0.10) moved to GitHub Releases to keep the repository light; v0.11 is the in-tree reference.
+Full write-up: [docs/arquitectura-tecnica-v0.11.pdf](arquitectura-tecnica-v0.11.pdf)
+(Spanish). This is the last PDF snapshot, covering authenticated ingest,
+the behavioral detectors, SIEM/notification sinks, audited active response,
+SQLite and the console as of its generation. Its test counts are historical,
+not the current battery. Later file-detection and evidence work is described
+in [DETECCION-Y-EVIDENCIA.md](DETECCION-Y-EVIDENCIA.md); saved investigations,
+CSV protection, analyst behavior and real/demo verification boundaries are in
+[INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md](INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md).
+The current feature inventory is below and pending work is in
+[ROADMAP.md](ROADMAP.md). The PDF is produced by the versioned in-tree pipeline
+(`scripts/arq_v04/`); earlier revisions moved to GitHub Releases.
 
 ## Feature inventory
 
@@ -60,8 +70,8 @@ Full write-up: [docs/arquitectura-tecnica-v0.11.pdf](arquitectura-tecnica-v0.11.
 | **Risk scoring** | Severity-weighted per-host score with time decay (half-life 30 min, bounded host map): `hot_hosts` top-5 and `risk_hosts_tracked` in `/api/stats`, `sf_host_risk_score{host=...}` in `/metrics`, hot-hosts panel in the console dashboard |
 | **Beaconing** | Behavioral C2 call-home detector over `network.connect` (package A3): coefficient-of-variation regularity per (profile, host, destination), `min_interval` false-positive floor, per-key cooldown, bounded state — conservative profiles ship in `beacons.yaml` and detections flow through the standard alert pipeline (suppressions, triage, store, webhook, console) |
 | **Response** | Active response `kill_process` (C3, opt-in): armed only with `-allow-kill` + API token + open audit (otherwise a real `404`), five permission layers, append-only JSONL audit (fsync, 64 MiB ceiling) written before every signal, pidfd/handle process guard with declared `fallback_reason`; alert triage lifecycle (acknowledge / close / reopen with notes, persisted via `-lifecycle`), operator suppressions (rule/host, expiry, hot-reload), alert webhook with Bearer auth and bounded retries, external notifications to Slack / Telegram / email with per-channel severity floors (C2) |
-| **API** | Local REST API with OpenAPI 3.0 spec (drift-guarded in CI), SSE live stream, filters, JSONL/CSV export with formula-injection neutralization |
-| **Console** | Live feed, KPI dashboard, severity triage with free-text search, rule browser, kill-chain chains view, suppressions view, read-only active-response view with its forensic audit trail (attempt-class filter, operator-controlled tail window, JSONL export), AI analyst (bring-your-own OpenAI-compatible endpoint) |
+| **API** | Local REST API with OpenAPI 3.0 spec (drift-guarded in CI), SSE live stream, filters, exact JSONL export and formula-prefix mitigation on every CSV text column |
+| **Console** | Live feed, KPI dashboard, alert triage/history with free-text search, browser-local saved alert/feed filters, declared-source summary with mixed-demo indicator, rule/chain/suppression browsers, read-only response audit with filters/export, AI analyst calling the configured OpenAI-compatible endpoint with bounded evidence and actual progress steps (no provider token streaming) |
 | **Storage** | Opt-in SQLite persistence (`-store`): events and alerts outlive restarts, retention pruner, lists and exports read the full history |
 | **Auth** | Shared-token ingest handshake (constant-time), zero-downtime token rotation window, optional Bearer on the API and on outbound webhooks |
 | **Ops** | One-command Windows installer (six commands on PATH), Docker image for the engine, GitHub Actions CI on every push |
@@ -70,8 +80,8 @@ Full write-up: [docs/arquitectura-tecnica-v0.11.pdf](arquitectura-tecnica-v0.11.
 
 ```
 cmd/engine/       detection engine binary (Go)
-cmd/devsensor/    demo sensor for development (Go): scripted scenario,
-                  simulated data - the only simulated piece in the repo
+cmd/devsensor/    explicit simulated telemetry generator (Go); tests and
+                  browser fixtures separately use isolated synthetic data
 cmd/bench/        load and latency harness (measures ingest→alert p50/p99)
 internal/ingest/  NDJSON TCP listener + schema validation
 internal/enrich/  enrichment pipeline (context, not evidence mutation)

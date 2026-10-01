@@ -1,7 +1,8 @@
 'use client'
 
 // AI triage analyst. Agent-style interaction: steps report what stage the
-// analysis is in, the conclusion streams in as it is produced. Context
+// analysis is in; the provider's complete response arrives over the socket.
+// These steps do not simulate correlation or provider token streaming. Context
 // comes from an alert selected in the Alerts view (or picked here).
 // The transcript travels over the console-service socket; if that
 // service is down the view says so and everything else stays usable.

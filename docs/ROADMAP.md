@@ -6,7 +6,7 @@ roadmap sin criterios de aceptación es una lista de deseos. El estado
 "shipped" de cada horizontal vive en el [CHANGELOG](../CHANGELOG.md) y
 la arquitectura vigente en [ARCHITECTURE.md](ARCHITECTURE.md).
 
-Última actualización: 2026-10-01 (ficheros, contexto y exportación forense).
+Última actualización: 2026-10-01 (investigaciones guardadas y analista).
 
 ---
 
@@ -104,8 +104,15 @@ un cluster de alertas correlacionadas.
 - **Vista de árbol global** — navegador de procesos del host con el
   mapa pid->padre del enriquecedor servido por la API. Cierre: endpoint
   `GET /api/hosts/{h}/tree` + vista.
-- **Búsqueda guardada** — persistir hunts del operador (localStorage +
-  URL). Cierre: gestión de hunts con tests.
+- **Búsqueda guardada: entregada para Alertas y Flujo** — filtros locales
+  con gestión, validación, recarga, Atrás y actualización entre pestañas;
+  pruebas de datos, DOM y Chromium. No incluye sincronización entre cuentas
+  ni bundles capturados. Detalle:
+  [INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md](INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md).
+- **Progreso honesto del analista: entregado** — pasos de preparación y
+  consulta reales, sin demoras cosméticas ni reproducción artificial de
+  tokens. Streaming nativo del proveedor y análisis multi-alerta siguen
+  pendientes; las regresiones usan respuestas aisladas, no un modelo real.
 
 ---
 

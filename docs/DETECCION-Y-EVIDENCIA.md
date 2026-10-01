@@ -146,11 +146,14 @@ en CI y `make ci`, y también pasó en el workspace.
 La prueba espera las alertas publicadas: `events_total` se actualiza antes
 de que terminen la evaluación y la captura de evidencia.
 
-El cliente tiene **131 pruebas**; el fixture DOM tiene **23 comprobaciones**,
+En esta entrega de detección el cliente tenía **131 pruebas** y el fixture
+DOM **23 comprobaciones**,
 incluidas carga perezosa, reintento, cambio de alerta, respuesta tardía y
-descarga con todos los campos. El runner Chromium define **13 casos** de
+descarga con todos los campos. El runner Chromium tenía **13 casos** de
 escritorio/móvil y comprueba descargas reales JSON/JSONL. Los datos de
 estos fixtures están aislados; no son capturas de un laboratorio Windows.
+La ampliación posterior a 153/27/17 y sus nuevos casos se documenta en
+[Investigaciones guardadas y analista](INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md).
 
 ```bash
 go test -race -count=1 ./...

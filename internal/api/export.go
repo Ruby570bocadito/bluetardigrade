@@ -1,9 +1,8 @@
 // Alert and event export endpoints for the local API: bulk downloads
 // of the in-memory rings as JSON Lines or CSV, ready for SIEM import,
-// offline analysis or the forensic store. CSV cells are neutralized
-// against spreadsheet formula injection, the same way serious SOC
-// tooling does: attacker-controlled fields (command lines, summaries)
-// never open with a character a spreadsheet would interpret.
+// offline analysis or the forensic store. CSV text fields escape common
+// spreadsheet formula prefixes. JSONL preserves exact evidence; CSV
+// presentation escaping is not a universal spreadsheet security guarantee.
 
 package api
 
@@ -15,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/store"
@@ -95,9 +95,10 @@ func (h *Hub) handleAlertsExport(w http.ResponseWriter, r *http.Request) {
 			"message", "notify", "status_note", "status_by"})
 		for _, v := range views {
 			_ = cw.Write([]string{
-				v.ID, v.Status, v.Timestamp, v.Severity, v.RuleID, v.RuleName, v.EventType,
+				csvSafe(v.ID), csvSafe(v.Status), csvSafe(v.Timestamp), csvSafe(v.Severity),
+				csvSafe(v.RuleID), csvSafe(v.RuleName), csvSafe(v.EventType),
 				csvSafe(v.Host), csvSafe(v.User), csvSafe(v.Summary),
-				strings.Join(v.MatchedOn, " "), strings.Join(v.Tags, " "),
+				csvSafe(strings.Join(v.MatchedOn, " ")), csvSafe(strings.Join(v.Tags, " ")),
 				csvSafe(v.Message), strconv.FormatBool(v.Notify),
 				csvSafe(v.StatusNote), csvSafe(v.StatusBy),
 			})
@@ -171,16 +172,16 @@ func (h *Hub) handleEventsExport(w http.ResponseWriter, r *http.Request) {
 			"file_path", "network_destination", "network_port", "registry_key"})
 		for _, ev := range events {
 			_ = cw.Write([]string{
-				ev.ID,
-				ev.Timestamp.Format(time.RFC3339Nano),
-				ev.Type, ev.Source, csvSafe(ev.Host), csvSafe(ev.User),
+				csvSafe(ev.ID),
+				csvSafe(ev.Timestamp.Format(time.RFC3339Nano)),
+				csvSafe(ev.Type), csvSafe(ev.Source), csvSafe(ev.Host), csvSafe(ev.User),
 				csvSafe(eventProcessName(ev)),
 				strconv.Itoa(eventPID(ev)),
 				csvSafe(eventCommandLine(ev)),
 				csvSafe(eventFilePath(ev)),
-				eventNetworkDestination(ev),
+				csvSafe(eventNetworkDestination(ev)),
 				eventNetworkPort(ev),
-				eventRegistryKey(ev),
+				csvSafe(eventRegistryKey(ev)),
 			})
 		}
 		cw.Flush()
@@ -210,19 +211,20 @@ func exportFormat(w http.ResponseWriter, r *http.Request) string {
 	}
 }
 
-// csvSafe neutralizes CSV formula injection: a cell starting with =, +,
-// - or @ would be evaluated as a formula by spreadsheets. Prefixing a
-// single quote keeps the content literal.
+// csvSafe prefixes textual formula/control characters with an apostrophe,
+// including full-width variants and prefixes after leading whitespace.
+// The original string stays intact; exact-data imports should use JSONL.
 func csvSafe(s string) string {
-	if s == "" {
-		return s
+	for _, ch := range s {
+		switch ch {
+		case '=', '+', '-', '@', '＝', '＋', '－', '＠', '\t', '\r', '\n':
+			return "'" + s
+		}
+		if !unicode.IsSpace(ch) {
+			break
+		}
 	}
-	switch s[0] {
-	case '=', '+', '-', '@', '\t', '\r':
-		return "'" + s
-	default:
-		return s
-	}
+	return s
 }
 
 func eventProcessName(ev *model.Event) string {

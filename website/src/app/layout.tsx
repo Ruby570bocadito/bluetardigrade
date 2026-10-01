@@ -41,7 +41,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "bluetardigrade — Real-time threat detection for Windows endpoints",
     description:
-      "ETW sensor + behavioral engine + operator console. Behavior over signatures, measured performance, no simulated data in the product path.",
+      "ETW sensor + behavioral engine + operator console. Behavior over signatures, measured performance, explicitly labeled demo data and no fabricated telemetry fallback.",
     type: "website",
   },
 };

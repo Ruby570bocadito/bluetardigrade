@@ -11,6 +11,7 @@ conserva la trazabilidad completa.
 |------|-----------|
 | [INVESTIGACION-CLI-Y-TRIAJE.md](INVESTIGACION-CLI-Y-TRIAJE.md) | Búsqueda CLI por ID y términos, accesos de triaje del dashboard, navegación y regresiones |
 | [DETECCION-Y-EVIDENCIA.md](DETECCION-Y-EVIDENCIA.md) | Nuevas alarmas de ficheros, correcciones de contexto/YAML/forense, exportación y pruebas |
+| [INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md](INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md) | Búsquedas locales, protección CSV completa, progreso y límites del analista, código real frente a demo/fixtures |
 | [GUIA-INICIO.md](GUIA-INICIO.md) | Arranque y operación en español: primera instalación, CLI, consola, histórico y resolución de problemas |
 | [PALETA-Y-PRUEBAS-NAVEGADOR.md](PALETA-Y-PRUEBAS-NAVEGADOR.md) | Paleta de comandos de la consola: foco modal, proteccion de atajos y pruebas Chromium de escritorio/movil |
 | [OPERATIONS.md](OPERATIONS.md) | Guía de operación (inglés): instalación (Windows, Docker, fuente), referencia de flags y variables de entorno, API HTTP, Prometheus, almacenamiento, auth de ingest con rotación, sinks SIEM, notificaciones, supresiones, triaje, riesgo, beaconing, respuesta activa, contenido de detección, CLI y CI/bench |
@@ -18,13 +19,15 @@ conserva la trazabilidad completa.
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Arquitectura del sistema (inglés): diagrama, contrato del esquema de eventos, inventario de características y árbol del repositorio |
 | [false-positive-control.md](false-positive-control.md) | Guía de control de ruido: dedup, supresiones, correlación, filtrado en el receptor y límites anti-abuso |
 | [api/openapi.yaml](api/openapi.yaml) | Contrato OpenAPI de la API del motor (mantenido en sincronía por el guard de CI) |
-| [arquitectura-tecnica-v0.11.pdf](arquitectura-tecnica-v0.11.pdf) | Documento técnico de arquitectura, revisión vigente (26 páginas, español) |
+| [arquitectura-tecnica-v0.11.pdf](arquitectura-tecnica-v0.11.pdf) | Documento técnico de arquitectura, snapshot v0.11 (26 páginas, español); cambios posteriores en las guías Markdown |
 | `assets/` | Diagramas del README (`diagram_*.png`), capturas de la consola (`console-*.png/gif`) y sus fuentes en `assets/src/` |
 | `assets/src/` | Fuentes de capturas y portadas + utilidades de regeneración (Playwright, assemble_gif.py) |
 
 ## Documento de arquitectura
 
-`arquitectura-tecnica-v0.11.pdf` es la revisión vigente. Se produce con el
+`arquitectura-tecnica-v0.11.pdf` es la última revisión PDF y conserva las cifras
+de su generación; las entregas posteriores y los recuentos actuales de
+pruebas se documentan en las guías Markdown y el changelog. Se produce con el
 pipeline versionado del árbol (`scripts/arq_v04/`: cuerpo ReportLab + portada
 Playwright + fusión pypdf; el nombre del directorio registra dónde nació el
 pipeline, no la revisión que produce), así que cada revisión es un comando
