@@ -97,10 +97,14 @@ ci:
 	staticcheck -checks "all,-ST1000" ./...
 	staticcheck -checks "ST1000,ST1020,ST1021,ST1022" ./...
 	$(GO) test -race -count=1 ./...
+	mkdir -p bin
+	$(GO) build -o bin/engine-file-smoke ./cmd/engine
+	python3 scripts/dev-tests/smoke_file_forensics.py --engine ./bin/engine-file-smoke
 	GOOS=windows $(GO) build ./...
 	GOOS=windows $(GO) vet ./internal/respond/ ./internal/api/ ./cmd/engine/
 	python3 scripts/dev-tests/check_openapi.py
 	python3 scripts/dev-tests/check_openapi.py --self-test
+	python3 scripts/dev-tests/check_rule_inventory.py
 	cd web/console-service && $(BUN) install --frozen-lockfile && $(BUN) test && bunx tsc --noEmit
 	cd web/console && $(BUN) install --frozen-lockfile && $(BUN) test && bunx tsc --noEmit && $(BUN) run build
 	npm install --prefix tools/console-tests --no-audit --no-fund esbuild@0.25.11 jsdom@26.1.0

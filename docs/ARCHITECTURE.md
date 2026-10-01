@@ -54,7 +54,8 @@ Full write-up: [docs/arquitectura-tecnica-v0.11.pdf](arquitectura-tecnica-v0.11.
 | Area | What you get today |
 |------|--------------------|
 | **Telemetry** | Rust ETW sensor (Kernel-Process) + Sysmon ingestion path; NDJSON/TCP feed with schema validation and enrichment (user, command line, network context) |
-| **Detection** | YAML rules with 17 operators (`eq`, `regex`, `contains_any`, …), hot-reload every 15 s, per-rule MITRE ATT&CK tags and actions; `engine sigma` imports community Sigma rules (deterministic, fail-loud, provenance preserved) |
+| **Detection** | 55 enabled YAML rules with 17 operators (`eq`, `regex`, `contains_any`, …), hot-reload every 15 s, per-rule MITRE ATT&CK tags and actions; `engine sigma` imports community Sigma rules (deterministic, fail-loud, provenance preserved) |
+| **Forensics** | Bounded per-host flight recorder; atomic high/critical evidence bundles with a 5-minute window and preserved trigger, served through the bearer-gated API; lazy console timeline with full JSON/JSONL downloads |
 | **Correlation** | Kill-chain sequencer: named steps across the same host within a time window raise one high-signal campaign alert |
 | **Risk scoring** | Severity-weighted per-host score with time decay (half-life 30 min, bounded host map): `hot_hosts` top-5 and `risk_hosts_tracked` in `/api/stats`, `sf_host_risk_score{host=...}` in `/metrics`, hot-hosts panel in the console dashboard |
 | **Beaconing** | Behavioral C2 call-home detector over `network.connect` (package A3): coefficient-of-variation regularity per (profile, host, destination), `min_interval` false-positive floor, per-key cooldown, bounded state — conservative profiles ship in `beacons.yaml` and detections flow through the standard alert pipeline (suppressions, triage, store, webhook, console) |

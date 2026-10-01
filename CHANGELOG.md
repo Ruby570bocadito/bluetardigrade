@@ -12,6 +12,40 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Added
+
+- Six `file.write` alarms in `rules/windows/file-staging.yaml`: Office
+  payloads, script-written DLLs, downloaded/extracted DLL candidates,
+  PowerShell profiles, Office startup content and LSASS dump artifacts.
+  The pack now contains 55 enabled rules; medium signals document their
+  legitimate uses and require investigation rather than automatic response.
+- Full forensic snapshot downloads in JSON and versioned JSONL, retaining
+  the alert, metadata, raw event fields, hashes and enrichment.
+- A generated full-ID rule inventory with a CI/`make ci` drift check.
+  Regenerate with `python3 scripts/dev-tests/check_rule_inventory.py --write`.
+- An authenticated loopback smoke validates the real ingest → alarm →
+  frozen-evidence path with inert fixtures, including the capture threshold
+  and read authorization; no attack commands or active response are run.
+
+### Fixed
+
+- YAML graph validation detects cyclic aliases, bounds expansion before
+  arithmetic can overflow, and checks composed flow depth even when quoted
+  closers offset the raw pre-scan. The graph walk no longer recurses.
+- Partial process telemetry preserves known identity. Parent lookup checks
+  TTL immediately, engine-derived keys are recomputed, and dated events from
+  an older PID incarnation cannot replace/terminate a newer tracked process.
+- Startup detection uses the canonical filename when optional extension
+  metadata is absent or inconsistent; its ATT&CK tag is now T1547.001.
+- Forensic captures exclude unrelated future-dated events, retain an observed
+  triggering event when truncating, and serialize empty timelines as arrays.
+  The default evidence directory is excluded from Git.
+- The forensic panel retries failed queries, validates returned evidence and
+  alert identity, accepts older null collections, and resets on alert change.
+  DOM and Chromium checks cover retries, stale responses and real downloads.
+- Installation docs now require Go 1.26; rule counts and the roadmap reflect
+  the delivered artifact detections and evidence export.
+
 ## [v0.2.0] — 2026-10-01 — the bluetardigrade round
 
 A hardening, cleanup and rebranding release: every open finding from the

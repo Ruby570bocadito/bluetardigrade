@@ -114,7 +114,8 @@ isolated REST/SSE fixtures. They verify replay/triage preservation, rule
 reload, idle activity expiry, queue navigation, optional 404 handling,
 concurrent snapshot frames, live-channel warnings, outage/recovery, pinned
 historical navigation, POST-only triage, lifecycle deep links, superseded
-queries, batched decisions, memory-only limits, older engines and cleanup.
+queries, batched decisions, memory-only limits, older engines, forensic
+retries, complete JSON/JSONL exports, stale evidence responses and cleanup.
 They do not certify browser layout or replace the native Bun integration suite.
 
 From the repository root, with the console dependencies already installed:
@@ -133,15 +134,36 @@ The same two commands are wired into `make console-dom`, the `ci` recipe and
 the console job of `.github/workflows/ci.yml`, so the fixture no longer relies
 on manual runs to catch regressions.
 
+## File detections and frozen evidence
+
+`smoke_file_forensics.py` starts a real engine on authenticated loopback
+listeners, sends eleven inert fixture records and verifies eight alerts
+(the six new file alarms, Startup and the Office-parent alarm), no alert
+for an ordinary Office document, and six complete high/critical evidence
+bundles through the bearer-gated API. Medium alerts have no bundle.
+It clears inherited `SF_*` variables in the child, never arms response or
+external sinks, and removes the temporary state after stopping its engine.
+No attack commands are executed and no Windows collector is exercised.
+
+```bash
+go build -o bin/engine-file-smoke ./cmd/engine
+python3 scripts/dev-tests/smoke_file_forensics.py --engine ./bin/engine-file-smoke
+```
+
+This smoke runs in the engine CI job and `make ci`. It uses Python's
+standard library; PyYAML is only required by the separate documentation
+guard `check_rule_inventory.py`.
+
 ## Chromium console regression
 
 `check_console_browser.mjs` runs the built application in Chromium. The
 browser uses isolated REST responses and an SSE fixture; it never sends
-triaje or commands to a live engine. Eleven checks exercise command search,
+triaje or commands to a live engine. Thirteen checks exercise command search,
 keyboard navigation, focus containment/restoration, URL lenses and history,
 busy refresh, help handoff, composition/consumed events, historical paging,
 POST-only triage, dashboard triage shortcuts/history restoration, mobile
-access and reduced motion. Fixture screenshots are
+access, reduced motion, forensic retries and real JSON/JSONL downloads
+that retain the complete alert and telemetry fields. Fixture screenshots are
 stored in the ignored `captures/browser-regression/` directory.
 The initial load and the final page must also be free of browser runtime
 errors, including server/client hydration mismatches under reduced motion.

@@ -188,10 +188,10 @@ skip link and full `prefers-reduced-motion` support. Unavailable metrics show
 
 | Capability | Shipped surface |
 |------------|-----------------|
-| Detection content | 49 YAML rules (incl. attacker tooling, LOLBAS and anti-forensics packs), four kill chains, beaconing profiles and volumetric thresholds |
+| Detection content | 55 YAML rules (incl. attacker tooling, LOLBAS, anti-forensics and file-staging packs), four kill chains, beaconing profiles and volumetric thresholds |
 | Rule workflow | Hot reload, validation, 17 operators and Sigma import |
 | Process context | Per-host pid->name flight recorder: parent/child anomaly rules (Office/browser spawning interpreters) |
-| Forensics | Evidence bundles frozen at detection time (alert + 5m host timeline) served via `GET /api/alerts/{id}/forensics` and the console |
+| Forensics | Frozen alert + 5m host timeline, read via `GET /api/alerts/{id}/forensics`; JSON/JSONL downloads and retryable evidence queries in the console |
 | Triage | Alert lifecycle, operator notes and host-scoped suppressions |
 | Persistence | Optional pure-Go SQLite, WAL, retention pruner |
 | Delivery | Webhooks, Elasticsearch, Splunk HEC, Slack, Telegram and email |
@@ -261,6 +261,7 @@ docs/                operations, architecture and API reference
 | [False-positive control](docs/false-positive-control.md) | Suppression and deduplication tuning |
 | [Command palette and browser checks](docs/PALETA-Y-PRUEBAS-NAVEGADOR.md) | Commands, keyboard scope, native dialogs and reproducible Chromium regressions |
 | [CLI search and dashboard triage](docs/INVESTIGACION-CLI-Y-TRIAJE.md) | Alert identity search, multiword queries and direct triage shortcuts |
+| [File detections and forensic evidence](docs/DETECCION-Y-EVIDENCIA.md) | Six artifact alarms, process identity safeguards, evidence downloads and verification |
 | [Technical architecture PDF](docs/arquitectura-tecnica-v0.11.pdf) | Spanish technical reference |
 | [Changelog](CHANGELOG.md) | Release history |
 | [Security policy](SECURITY.md) | Private vulnerability reporting |
@@ -282,14 +283,14 @@ SHA-pinned, permissions minimal, releases gated on SemVer + CHANGELOG.
 
 ## Roadmap
 
-- **Shipped:** rule and behavioral detection (49 rules incl. tooling,
-  LOLBAS and anti-forensics packs), parent-process anomaly rules,
-  forensic evidence bundles, triage, storage, integrations, terminal
+- **Shipped:** rule and behavioral detection (55 rules incl. tooling,
+  LOLBAS, anti-forensics and file staging), parent-process anomaly rules,
+  forensic evidence bundles with JSON/JSONL export, triage, storage, integrations, terminal
   workspace, live console with command palette, native TLS on both
   listeners.
-- **Next detection work:** file/DLL-staging rules, image.load driver
-  rules, process-injection detection, curated Sigma import.
-- **Next forensics work:** process-tree view of bundles, bundle export,
+- **Next detection work:** validate the new artifact rules in a Windows
+  lab, deepen image.load driver/DLL rules, process-injection detection, curated Sigma import.
+- **Next forensics work:** process-tree view of bundles,
   hash enrichment, configurable retention.
 - **Sensor work:** ETW network/registry providers, certificate stream,
   persistent local queue.

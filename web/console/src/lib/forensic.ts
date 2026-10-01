@@ -3,8 +3,8 @@
 // The bundle is frozen at detection time by the engine's flight
 // recorder; this module only reads it back. The failure states are
 // modeled explicitly because the endpoint distinguishes them on
-// purpose: 404 = no bundle for this id (severity below threshold,
-// evicted or engine restarted), 501 = capture disabled on the engine,
+// purpose: 404 = no bundle for this id (severity below threshold or
+// evicted), 501 = capture disabled on the engine,
 // anything else = transient transport error. The panel renders an
 // honest sentence for each instead of a generic "error".
 
@@ -29,6 +29,8 @@ export type ForensicEvent = {
   }
   file?: { path?: string }
   registry?: { key?: string }
+  target?: { pid: number; name: string; image?: string }
+  access?: { granted_access?: string; call_trace?: string }
 }
 
 export type ForensicBundle = {
@@ -65,6 +67,55 @@ function engineApiBase(): string {
 
 const ID_PATTERN = /^[0-9a-f]{16}$/
 
+function record(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function optionalStrings(value: Record<string, unknown>, keys: string[]): boolean {
+  return keys.every((key) => value[key] === undefined || typeof value[key] === 'string')
+}
+
+function validEvent(value: unknown): value is ForensicEvent {
+  if (!record(value) || !['id', 'timestamp', 'type', 'host'].every((key) => typeof value[key] === 'string')) return false
+  const sections: Record<string, string[]> = {
+    process: ['name', 'command_line', 'image'],
+    target: ['name', 'image'],
+    network: ['protocol', 'destination_ip', 'domain'],
+    file: ['path'],
+    registry: ['key'],
+    access: ['granted_access', 'call_trace'],
+  }
+  for (const [key, fields] of Object.entries(sections)) {
+    const section = value[key]
+    if (section !== undefined && (!record(section) || !optionalStrings(section, fields))) return false
+  }
+  for (const key of ['process', 'target']) {
+    const section = value[key]
+    if (record(section) && (!Number.isSafeInteger(section.pid) || (section.pid as number) < 0 ||
+      (section.ppid !== undefined && (!Number.isSafeInteger(section.ppid) || (section.ppid as number) < 0)))) return false
+  }
+  if (record(value.network) && value.network.destination_port !== undefined &&
+    (!Number.isSafeInteger(value.network.destination_port) || (value.network.destination_port as number) < 0 || (value.network.destination_port as number) > 65535)) return false
+  return true
+}
+
+// Validate the fields the panel consumes instead of trusting a TS cast.
+// Older engine bundles used null for empty slices; normalize those only.
+// Spreads retain all other alert/event/enrichment fields for offline export.
+function normalizeBundle(value: unknown, alertId: string): ForensicBundle | null {
+  if (!record(value) || !record(value.alert) || value.alert.id !== alertId || !record(value.summary)) return null
+  if (!['captured_at', 'host', 'window'].every((key) => typeof value[key] === 'string')) return null
+  const timeline = value.timeline === null ? [] : value.timeline
+  if (!Array.isArray(timeline) || !timeline.every(validEvent)) return null
+  const summary = value.summary
+  const counts = ['events', 'process_creates', 'network_connects', 'file_writes', 'registry_sets', 'process_accesses', 'other', 'distinct_users']
+  if (!counts.every((key) => typeof summary[key] === 'number' && Number.isSafeInteger(summary[key]) && (summary[key] as number) >= 0)) return null
+  if (summary.events !== timeline.length || timeline.some((ev) => ev.host !== value.host)) return null
+  const images = summary.distinct_images === null ? [] : summary.distinct_images
+  if (!Array.isArray(images) || !images.every((item) => typeof item === 'string')) return null
+  return { ...value, timeline, summary: { ...summary, distinct_images: images } } as ForensicBundle
+}
+
 export async function readForensicBundle(alertId: string): Promise<ForensicResult> {
   if (!ID_PATTERN.test(alertId)) return { kind: 'missing' }
   try {
@@ -75,11 +126,30 @@ export async function readForensicBundle(alertId: string): Promise<ForensicResul
     if (res.status === 404) return { kind: 'missing' }
     if (res.status === 501) return { kind: 'disabled' }
     if (!res.ok) return { kind: 'error' }
-    const bundle = (await res.json()) as ForensicBundle
-    if (!bundle || !Array.isArray(bundle.timeline)) return { kind: 'error' }
+    const bundle = normalizeBundle(await res.json(), alertId)
+    if (!bundle) return { kind: 'error' }
     return { kind: 'bundle', bundle }
   } catch {
     return { kind: 'error' }
+  }
+}
+
+// JSON contains the whole frozen bundle. JSONL starts with one metadata
+// envelope (including the full alert), followed by one envelope per event.
+// Nesting avoids collisions with telemetry's own type/id fields.
+export function buildForensicExport(bundle: ForensicBundle, format: 'json' | 'jsonl') {
+  if (!ID_PATTERN.test(bundle.alert.id)) throw new Error('Invalid forensic alert id')
+  const { timeline, ...metadata } = bundle
+  const contents = format === 'json'
+    ? `${JSON.stringify(bundle, null, 2)}\n`
+    : [
+        { record_type: 'forensic.bundle', version: 1, bundle: metadata },
+        ...timeline.map((event) => ({ record_type: 'forensic.event', event })),
+      ].map((entry) => JSON.stringify(entry)).join('\n') + '\n'
+  return {
+    filename: `forensic-${bundle.alert.id}.${format}`,
+    mime: format === 'json' ? 'application/json;charset=utf-8' : 'application/x-ndjson;charset=utf-8',
+    contents,
   }
 }
 
@@ -102,7 +172,9 @@ export function forensicEventLine(ev: ForensicEvent): string {
     case 'registry.set':
       return ev.registry?.key ? `registro ${ev.registry.key}` : 'escritura de registro'
     case 'process.access':
-      return ev.process ? `${ev.process.name} abre maneja de otro proceso` : 'acceso a proceso'
+      return `${ev.process?.name || 'proceso'} accede a ${ev.target?.name || 'otro proceso'}${ev.access?.granted_access ? ` (${ev.access.granted_access})` : ''}`
+    case 'image.load':
+      return ev.file?.path ? `carga ${ev.file.path}` : 'carga de modulo'
     default:
       return ev.type
   }

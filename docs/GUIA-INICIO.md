@@ -6,7 +6,7 @@ sigue la [guía de Sysmon](OPERATIONS.md#real-telemetry-with-sysmon-recommended)
 
 ## Compilar y validar
 
-Necesitas Go 1.22+. En Linux/macOS o una terminal con `make`:
+Necesitas Go 1.26+, según `go.mod`. En Linux/macOS o una terminal con `make`:
 
 ```bash
 git clone https://github.com/Ruby570bocadito/bluetardigrade.git
