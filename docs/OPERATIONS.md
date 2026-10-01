@@ -137,6 +137,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `-elastic` / `-elastic-index` / `-elastic-api-key` | — / `sf-alerts` / — | Elasticsearch bulk indexing (daily `-YYYY.MM.DD` index, deterministic `_id`) / index prefix / API key (falls back to `SF_ELASTIC_API_KEY`) |
 | `-splunk` / `-splunk-token` | — | Splunk HEC collector base URL (events POSTed to `/services/collector/event`) / HEC token (falls back to `SF_SPLUNK_TOKEN`) |
 | `-store` / `-store-retention` | off / `72h` | SQLite persistence / pruning window (`0` keeps everything) |
+| `-forensic` / `-forensic-dir` | on / `<forensics>` next to rules | freeze an evidence bundle (alert + 5m host timeline) for every high/critical alert, served at `GET /api/alerts/{id}/forensics`; directory capped at 256 bundles, oldest-first eviction |
 | `-v` | off | print every event received |
 | `-pidfile` | — | write the engine PID to a file |
 | `-i`, `--interactive` | off | interactive TUI over the running engine (degrades to the classic flat run without a TTY) — see [Engine CLI reference](#engine-cli-reference) |
@@ -674,6 +675,8 @@ path (no subcommand) and on `engine run`.
 | `-suppressions file` | `./suppressions.yaml` | operator allowlist YAML silencing rule/host pairs (expirations supported); empty disables |
 | `-store path` | empty | SQLite file persisting events and alerts beyond the in-memory rings (e.g. `./sf-store.db`); empty disables — see [Persistent storage](#persistent-storage-sqlite-opt-in) |
 | `-store-retention dur` | `72h` | delete stored events/alerts older than this on a 5-minute ticker; `0` keeps everything |
+| `-forensic` | `true` | freeze evidence bundles (alert + 5-minute host timeline) for high/critical alerts; `-forensic=false` disables capture and the API answers `501` |
+| `-forensic-dir path` | `<forensics>` next to the rules directory | where evidence bundles are written (atomic per bundle, capped at 256 files) |
 | `-pidfile path` | empty | write the process PID at startup and remove it on shutdown (lets `sf-console -Stop` stop an engine it did not start) |
 | `-i`, `--interactive` | off | interactive TUI: live stats and alert feed in the terminal (degrades to the classic flat run when stdout is not a TTY) |
 

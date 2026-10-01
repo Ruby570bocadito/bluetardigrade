@@ -188,8 +188,10 @@ skip link and full `prefers-reduced-motion` support. Unavailable metrics show
 
 | Capability | Shipped surface |
 |------------|-----------------|
-| Detection content | 23 YAML rules, four kill chains, beaconing profiles and volumetric thresholds |
+| Detection content | 49 YAML rules (incl. attacker tooling, LOLBAS and anti-forensics packs), four kill chains, beaconing profiles and volumetric thresholds |
 | Rule workflow | Hot reload, validation, 17 operators and Sigma import |
+| Process context | Per-host pid->name flight recorder: parent/child anomaly rules (Office/browser spawning interpreters) |
+| Forensics | Evidence bundles frozen at detection time (alert + 5m host timeline) served via `GET /api/alerts/{id}/forensics` and the console |
 | Triage | Alert lifecycle, operator notes and host-scoped suppressions |
 | Persistence | Optional pure-Go SQLite, WAL, retention pruner |
 | Delivery | Webhooks, Elasticsearch, Splunk HEC, Slack, Telegram and email |
@@ -280,14 +282,23 @@ SHA-pinned, permissions minimal, releases gated on SemVer + CHANGELOG.
 
 ## Roadmap
 
-- **Shipped:** rule and behavioral detection, triage, storage, integrations,
-  terminal workspace, live console with command palette, native TLS on both
-  listeners, forensic timeline capture.
-- **Next interface work:** broaden browser coverage, saved hunts and moving
-  lifecycle persistence into SQLite.
-- **Sensor work:** extend native ETW providers beyond process creation;
-  broaden Windows runtime coverage.
+- **Shipped:** rule and behavioral detection (49 rules incl. tooling,
+  LOLBAS and anti-forensics packs), parent-process anomaly rules,
+  forensic evidence bundles, triage, storage, integrations, terminal
+  workspace, live console with command palette, native TLS on both
+  listeners.
+- **Next detection work:** file/DLL-staging rules, image.load driver
+  rules, process-injection detection, curated Sigma import.
+- **Next forensics work:** process-tree view of bundles, bundle export,
+  hash enrichment, configurable retention.
+- **Sensor work:** ETW network/registry providers, certificate stream,
+  persistent local queue.
+- **Engine work:** allocation-free field resolution, per-host rings,
+  correlator saturation gauges.
 - **Research:** YARA memory scanning, sandboxed extensions, eBPF collector.
+
+The full plan with acceptance criteria per item lives in
+[docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Contributing
 

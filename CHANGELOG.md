@@ -78,7 +78,7 @@ artifacts, and the project is now **bluetardigrade** (renamed from
 - Rule `powershell-encoded` no longer false-positives on `-Encoding` (regex
   with word boundary, case-insensitive); PsExec header comment corrected to
   T1021.002; thresholds doc says 17 operators; ARCHITECTURE.md synced to
-  v0.11 / 16-36-82 guard numbers.
+  v0.11 / 17-36-86 guard numbers.
 - Docker image: writable `WORKDIR`, `HEALTHCHECK` against `/api/health`, and
   tokens documented through `SF_API_TOKEN` / `SF_INGEST_TOKEN` env.
 
@@ -89,6 +89,46 @@ artifacts, and the project is now **bluetardigrade** (renamed from
   GitHub Releases), the process reports and gap-analysis documents, the
   skills lock manifest, and ~700 lines of dead toast/notification code
   duplicated across both Next.js apps.
+
+### Added — the detection & forensics round (v0.2.0, same release)
+
+- **Forensic evidence layer** (`internal/forensic`): a per-host flight
+  recorder plus evidence bundles frozen at detection time — every
+  `high`/`critical` alert writes an atomic JSON bundle (the alert, the
+  host's 5-minute event timeline, a counted summary) under
+  `<forensics>/`, disk-capped at 256 bundles with oldest-first
+  eviction. Served back via `GET /api/alerts/{id}/forensics` (distinct
+  200/400/401/404/500/501 states) and rendered in the console's alert
+  detail as an expandable "Línea de tiempo forense" panel. `-forensic`
+  / `-forensic-dir` flags; off is off.
+- **Parent-process tracking** (`internal/enrich`): the enricher keeps a
+  bounded pid->identity map per host (LRU hosts, ring per host, TTL
+  sweep, terminate-evicts) and annotates `parent_name` /
+  `parent_image`, enabling EDR-style parent/child anomaly rules.
+- **Attacker-tooling pack** (`rules/windows/hacktools.yaml`, 10 rules):
+  Mimikatz family (incl. Invoke-Mimikatz markers), LaZagne,
+  Pwdump/QuarksPwDump, Rubeus (kerberoast/asktgt), SharpHound,
+  AdFind-with-AD-filters, CrackMapExec/NetExec/Impacket/Evil-WinRM,
+  Meterpreter stagers, silent AnyDesk installs, and classic
+  net/nltest domain recon.
+- **LOLBAS pack** (`rules/windows/lolbas.yaml`, 8 rules): mshta remote
+  or inline script, rundll32 `javascript:`, InstallUtil bypass flags,
+  forfiles as an interpreter launcher, **Office editors spawning
+  interpreters** (the macro-phishing signature, via parent tracking),
+  script interpreters running from user staging paths, PowerShell
+  download cradles, and **browsers spawning interpreters** (drive-by).
+- **Anti-forensics pack** (`rules/windows/anti-forensics.yaml`, 8
+  rules): PowerShell Clear-EventLog, wmic shadowcopy deletion, VSS
+  storage shrinking (Resize-ShadowStorage/MaxSpace with an MB budget —
+  UNBOUNDED stays out on purpose: it is the benign direction),
+  bcdedit recovery sabotage, fsutil USN journal deletion, ntdsutil IFM
+  domain-database dumps, timestamp forgery, and targeted deletion of
+  Windows forensic artifacts. These are also the highest-value incident
+  markers for the forensic timeline.
+- 49 rules loaded total (23 seeded + 26 new), each with positive
+  and negative tests pinned in `rules_packs_test.go` (benign twins must
+  stay silent: `-Encoding UTF8`, `bcdedit /enum`, `fsutil usn
+  queryjournal`, `net use`, UNBOUNDED resize...).
 
 ### Added & Fixed — the interface wave (PR #4 + PR #6, first shipped in v0.2.0)
 
