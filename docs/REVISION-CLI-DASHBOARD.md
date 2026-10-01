@@ -7,8 +7,7 @@ Rust y smoke nativo del motor en Windows. Véanse la evidencia y los límites
 todavía vigentes en el [registro completo](RESUMEN-MEJORAS-2026-10-01.md).
 El resto del informe conserva los resultados locales de esta primera ronda.
 
-Primera ronda sobre `8c3b1d7`, preparada en
-`codex/interactive-cli-dashboard-review`. Incluye cambios de código y
+Primera ronda sobre `8c3b1d7`, preparada en una rama local de trabajo. Incluye cambios de código y
 regresiones, además de la revisión; la publicación remota requiere acceso
 de escritura a GitHub.
 

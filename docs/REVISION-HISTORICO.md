@@ -7,10 +7,10 @@ los cuatro jobs de CI correctos sobre `4b153af`. El
 evidencia remota que resuelve las verificaciones pendientes del entorno local.
 El resto del informe conserva los resultados de esta segunda ronda.
 
-Parte de `68b8bc2`, la primera entrega, en la rama local
-`codex/alert-history-triage`. El proyecto completo v2 incluye ambas rondas.
-La rama de integración para GitHub es `codex/cli-dashboard-history`,
-preparada sobre `c0aec2d` y conservando los cambios nuevos de TLS del sensor
+Parte de `68b8bc2`, la primera entrega, desarrollada en una rama local
+de trabajo. El proyecto completo v2 incluye ambas rondas.
+La rama de integración para GitHub se preparó sobre `c0aec2d` conservando
+los cambios nuevos de TLS del sensor
 y la separación del motor en flags/runtime.
 
 ## Cambios entregados

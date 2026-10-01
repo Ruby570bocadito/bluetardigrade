@@ -55,7 +55,6 @@ captures/
 # lock manifest (skills-lock.json) stays tracked at the root for audits;
 # agent/ must not come back as a product-tree path.
 .agents/
-.claude/
 agent/
 
 # Engine runtime state (alert triage, r6): operator-owned, never committed

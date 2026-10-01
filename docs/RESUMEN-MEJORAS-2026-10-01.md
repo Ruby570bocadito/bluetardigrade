@@ -6,7 +6,7 @@ corregidos, la documentación y la verificación de la entrega.
 
 La entrega se integra mediante el
 [PR #4](https://github.com/Ruby570bocadito/security-framework/pull/4), desde
-`codex/cli-dashboard-history` hacia `main`. Los informes de cada ronda se
+la rama de integración hacia `main`. Los informes de cada ronda se
 conservan como evidencia del estado y las limitaciones que existían entonces.
 
 ## 1. Resultado de la entrega
@@ -252,7 +252,7 @@ forma parte automáticamente de esos cuatro jobs.
    TLS del sensor y la separación previa del motor en flags/run/runtime.
 4. Commits de código integrados: `d1bba5e` y `db81f93`.
    `4b153af` documenta la integración y es el árbol con CI confirmada arriba.
-5. La publicación se realizó en `codex/cli-dashboard-history` mediante el
+5. La publicación se realizó desde la rama de integración mediante el
    PR #4; este resumen se añade a la misma entrega antes de fusionarla.
 
 ## 9. Límites y siguientes mejoras
