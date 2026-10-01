@@ -128,3 +128,7 @@ Optional tooling stays in the ignored `tools/` directory. Set
 `CONSOLE_TEST_TOOLS` to an absolute tooling directory if using another location.
 The script builds a temporary fixture, removes it on completion and returns
 nonzero on failure. Requires Node.js 20+.
+
+The same two commands are wired into `make console-dom`, the `ci` recipe and
+the console job of `.github/workflows/ci.yml`, so the fixture no longer relies
+on manual runs to catch regressions.

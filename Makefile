@@ -21,7 +21,7 @@ BUN     ?= bun
 BIN_DIR ?= bin
 MODULE  := github.com/Ruby570bocadito/security-framework
 
-.PHONY: all run-engine run-devsensor build test tidy fmt vet build-sensor build-sensor-windows docker-build console-install console-service console ci dist clean
+.PHONY: all run-engine run-devsensor build test tidy fmt vet build-sensor build-sensor-windows docker-build console-install console-service console console-dom ci dist clean
 
 all: build
 
@@ -70,6 +70,13 @@ console-service:
 console:
 	cd web/console && $(BUN) run dev
 
+# Functional DOM regression of the real client provider and dashboard
+# (esbuild + jsdom fixture; the optional tooling lives in the ignored
+# tools/ directory). Same commands the console job of ci.yml runs.
+console-dom:
+	npm install --prefix tools/console-tests --no-audit --no-fund esbuild@0.25.11 jsdom@26.1.0
+	node scripts/dev-tests/check_console_dom.mjs
+
 # Same suite the GitHub Actions workflow (.github/workflows/ci.yml)
 # runs on every push. Needs: Go 1.22+, staticcheck 2024.1.1
 # (go install honnef.co/go/tools/cmd/staticcheck@2024.1.1 — the exact
@@ -89,6 +96,8 @@ ci:
 	python3 scripts/dev-tests/check_openapi.py --self-test
 	cd web/console-service && $(BUN) install --frozen-lockfile && $(BUN) test && bunx tsc --noEmit
 	cd web/console && $(BUN) install --frozen-lockfile && $(BUN) test && bunx tsc --noEmit && $(BUN) run build
+	npm install --prefix tools/console-tests --no-audit --no-fund esbuild@0.25.11 jsdom@26.1.0
+	node scripts/dev-tests/check_console_dom.mjs
 	$(CARGO) check --locked --manifest-path sensor/Cargo.toml
 	rustup target add x86_64-pc-windows-msvc
 	$(CARGO) check --locked --target x86_64-pc-windows-msvc --manifest-path sensor/Cargo.toml

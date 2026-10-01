@@ -2,7 +2,7 @@
 # three build surfaces of the project with the same commands the agents
 # run locally (see docs/agentes rounds and Makefile):
 #   engine : gofmt + build + vet + test -race (Go 1.22)
-#   console: hub (bun test, tsc) and web console (bun test, tsc, next build)
+#   console: hub (bun test, tsc), web console (bun test, tsc, next build) and the DOM regression fixture
 #   spec   : OpenAPI drift guard against internal/api/api.go
 # The Windows-first ETW sensor gets `cargo check --locked` on two
 # targets: the host and a Windows cross-check (x86_64-pc-windows-msvc,
@@ -182,6 +182,10 @@ jobs:
           bun test
           bunx tsc --noEmit
           bun run build
+      - name: console DOM regression (real provider + dashboard in jsdom)
+        run: |
+          npm install --prefix tools/console-tests --no-audit --no-fund esbuild@0.25.11 jsdom@26.1.0
+          node scripts/dev-tests/check_console_dom.mjs
 
   sensor:
     name: Sensor (cargo check, locked)
