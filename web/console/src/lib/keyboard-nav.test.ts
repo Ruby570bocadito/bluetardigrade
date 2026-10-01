@@ -11,12 +11,15 @@
 
 import { describe, expect, test } from 'bun:test'
 import type { ConsoleView } from '../components/console/dashboard'
+import { CONSOLE_VIEWS } from './url-state'
 import {
   SHORTCUT_ARM_MS,
   SHORTCUT_PREFIX,
+  isHelpToggleKey,
   isTypingTarget,
   resolveShortcut,
   shortcutHintFor,
+  shortcutRows,
 } from './keyboard-nav'
 
 describe('resolveShortcut — arming', () => {
@@ -91,6 +94,38 @@ describe('shortcutHintFor', () => {
     for (const view of views) {
       // Every hint is the prefix plus exactly one of the mnemonic keys.
       expect(shortcutHintFor(view)).toMatch(/^g [pfarcskn]$/)
+    }
+  })
+})
+
+describe('shortcutRows — help sheet catalog', () => {
+  test('covers the console vocabulary exactly: every view once, no extras', () => {
+    const rows = shortcutRows()
+    expect(rows.map((r) => r.view).sort()).toEqual([...CONSOLE_VIEWS].sort())
+    expect(new Set(rows.map((r) => r.key)).size).toBe(rows.length)
+  })
+
+  test('every advertised row resolves through the REAL resolver (the help cannot lie)', () => {
+    for (const row of shortcutRows()) {
+      expect(resolveShortcut({ key: row.key, prefixed: true })).toEqual({
+        action: 'navigate',
+        view: row.view,
+      })
+    }
+  })
+
+  test('row keys and tooltip hints are the same binding for every view', () => {
+    for (const row of shortcutRows()) {
+      expect(shortcutHintFor(row.view)).toBe(`${SHORTCUT_PREFIX} ${row.key}`)
+    }
+  })
+})
+
+describe('isHelpToggleKey', () => {
+  test("'?' toggles the sheet, nothing else does", () => {
+    expect(isHelpToggleKey('?')).toBe(true)
+    for (const key of ['g', 'G', 'a', '/', 'shift', 'Escape', 'Enter', '??', '']) {
+      expect(isHelpToggleKey(key)).toBe(false)
     }
   })
 })

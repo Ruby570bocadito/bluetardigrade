@@ -49,7 +49,9 @@ function isAuditKind(raw: string): raw is AuditKindFilter {
   return (AUDIT_KINDS as readonly string[]).includes(raw)
 }
 
-const CONSOLE_VIEWS = [
+// Exported for the keyboard-nav coverage test: the help sheet must list
+// exactly this vocabulary, no more and no less.
+export const CONSOLE_VIEWS = [
   'panel',
   'flujo',
   'alertas',

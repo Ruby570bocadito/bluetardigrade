@@ -20,15 +20,20 @@ import { SuppressionsView } from './suppressions-view'
 import { RespondView } from './respond-view'
 import { SequencesView } from './sequences-view'
 import { AnalystPanel } from './analyst-panel'
+import { ShortcutsHelp, type ShortcutHelpRow } from './shortcuts-help'
 import { formatUptime, type EngineStats, type SfAlert } from '@/lib/console-types'
 import { currentSearch, pushOperatorState, readOperatorState, writeViewToSearch } from '@/lib/url-state'
 import {
   SHORTCUT_ARM_MS,
+  SHORTCUT_PREFIX,
+  isHelpToggleKey,
   isTypingTarget,
   resolveShortcut,
   shortcutHintFor,
+  shortcutRows,
 } from '@/lib/keyboard-nav'
 import { useAnalystChannel } from './socket-provider'
+import { Keyboard } from '@phosphor-icons/react'
 
 const NAV: { id: ConsoleView; label: string; group: string; icon: React.ElementType }[] = [
   { id: 'panel', label: 'Panel', group: 'Operación', icon: SquaresFour },
@@ -41,10 +46,26 @@ const NAV: { id: ConsoleView; label: string; group: string; icon: React.ElementT
   { id: 'analista', label: 'Analista IA', group: 'Asistencia', icon: ChatsCircle },
 ]
 
+// Help sheet rows: the resolver's map (keys, ordered) zipped with the
+// NAV labels/groups — both single sources of truth; flatMap drops a row
+// only if NAV ever lacks a view (type-impossible today), so the sheet
+// can never advertise an unlabeled binding.
+const HELP_ROWS: ShortcutHelpRow[] = shortcutRows().flatMap((row) => {
+  const nav = NAV.find((item) => item.id === row.view)
+  return nav ? [{ key: row.key, label: nav.label, group: nav.group }] : []
+})
+
 export function ConsoleShell() {
   const { status, stats, alerts, events, suppressions, sequences, endpoint } = useEngine()
   const { status: analystStatus } = useAnalystChannel()
   const [view, setViewState] = useState<ConsoleView>('panel')
+  // Shortcuts help sheet ('?'). The open flag mirrors into a ref so the
+  // global keydown listener (subscribed once) can gate the modal: while
+  // the sheet is open it swallows every shortcut except Escape (close)
+  // and '?' itself (toggle) — nothing navigates under a modal.
+  const [helpOpen, setHelpOpen] = useState(false)
+  const helpOpenRef = useRef(false)
+  helpOpenRef.current = helpOpen
 
   // Operator state in the URL (url-state.ts): the active view survives a
   // refresh, back/forward navigate between views and deep links open the
@@ -81,6 +102,21 @@ export function ConsoleShell() {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return
       if (isTypingTarget(e.target)) return
+      // Help sheet first: Escape closes, '?' toggles, the rest is
+      // swallowed while the modal is up (nothing navigates under it).
+      if (e.key === 'Escape') {
+        if (helpOpenRef.current) {
+          e.preventDefault()
+          setHelpOpen(false)
+        }
+        return
+      }
+      if (isHelpToggleKey(e.key)) {
+        e.preventDefault()
+        setHelpOpen((v) => !v)
+        return
+      }
+      if (helpOpenRef.current) return
       const wasArmed = armedRef.current
       armedRef.current = false
       if (armTimerRef.current) {
@@ -223,6 +259,14 @@ export function ConsoleShell() {
             <p className="mt-3 text-[11px] leading-relaxed text-zinc-500">
               Datos reales del pipeline NDJSON. Sin motor no hay datos: arranca cmd/engine o sf-console.
             </p>
+            <button
+              type="button"
+              onClick={() => setHelpOpen(true)}
+              className="mt-2 inline-flex items-center gap-1.5 rounded text-[11px] text-zinc-500 transition-colors hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <Keyboard size={12} aria-hidden />
+              Atajos: <span className="font-mono">{SHORTCUT_PREFIX}·vista</span> · <span className="font-mono">?</span>
+            </button>
           </div>
         </aside>
 
@@ -323,6 +367,7 @@ export function ConsoleShell() {
           </footer>
         </div>
       </div>
+      <ShortcutsHelp open={helpOpen} rows={HELP_ROWS} onClose={() => setHelpOpen(false)} />
     </div>
   )
 }

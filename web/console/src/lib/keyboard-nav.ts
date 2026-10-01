@@ -9,6 +9,9 @@
 //   p panel · f flujo · a alertas · r reglas · c cadenas
 //   s supresiones · k respuesta (the view's own action: kill)
 //   n analista
+// The help sheet (?) lists this map through shortcutRows(): keys come
+// from HERE, labels/groups from the shell's NAV — neither side can
+// drift from the resolver.
 
 import type { ConsoleView } from '../components/console/dashboard'
 
@@ -54,6 +57,27 @@ export function resolveShortcut(input: ShortcutInput): ShortcutResult {
   if (key.length !== 1) return { action: 'none' }
   const view = KEY_TO_VIEW[key]
   return view ? { action: 'navigate', view } : { action: 'none' }
+}
+
+export type ShortcutRow = { key: string; view: ConsoleView }
+
+/**
+ * Ordered rows for the shortcuts help sheet — the definition order of
+ * KEY_TO_VIEW itself, so the help can never advertise a binding the
+ * resolver would not honor (pinned by test against the real resolver).
+ */
+export function shortcutRows(): ShortcutRow[] {
+  return Object.entries(KEY_TO_VIEW).map(([key, view]) => ({ key, view }))
+}
+
+/**
+ * True when the keypress should toggle the shortcuts help sheet.
+ * '?' as the event delivers it (Shift+slash on most layouts), so the
+ * shell's keydown handler can stay declarative: guard typing targets,
+ * then ask this.
+ */
+export function isHelpToggleKey(key: string): boolean {
+  return key === '?'
 }
 
 /**
