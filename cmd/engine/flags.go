@@ -36,6 +36,8 @@ type options struct {
 	lifecycleFile    string
 	storePath        string
 	storeRetention   time.Duration
+	forensic         bool
+	forensicDir      string
 	pidFile          string
 	apiWrite         bool
 	allowKill        bool
@@ -117,6 +119,10 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 		"SQLite file persisting events and alerts beyond the in-memory rings (e.g. ./sf-store.db); empty disables")
 	fs.DurationVar(&o.storeRetention, "store-retention", 72*time.Hour,
 		"delete stored events/alerts older than this on a 5-minute ticker (0 keeps everything)")
+	fs.BoolVar(&o.forensic, "forensic", true,
+		"freeze an evidence bundle (alert + 5m host timeline) for every high/critical alert; -forensic=false disables")
+	fs.StringVar(&o.forensicDir, "forensic-dir", "",
+		"directory for forensic evidence bundles (default: <forensics> resolved next to the rules directory)")
 	fs.StringVar(&o.pidFile, "pidfile", "",
 		"write the process PID here at startup and remove it on shutdown (lets sf-console -Stop stop an engine it did not start)")
 	// CLI additions: single panel over the running engine.

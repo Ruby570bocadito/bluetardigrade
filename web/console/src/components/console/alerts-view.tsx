@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/button'
 import { useEngine } from './engine-provider'
 import { EmptyState, LiveAnnouncer, SectionHeader, SeverityBadge, SkeletonRows } from './ui-bits'
 import { ExportButtons } from './export-menu'
+import { ForensicPanel } from './forensic-panel'
 import { postAlertStatus } from '@/lib/lifecycle'
 import { alertKey } from '@/lib/engine-client'
 import { matchesAlertState, alertStateFromParam, type AlertScope, type AlertStateFilter } from '@/lib/alert-search'
@@ -646,6 +647,7 @@ export function AlertDetailBody({ alert, onAnalyze }: { alert: SfAlert; onAnalyz
       )}
 
       <TriagePanel alert={alert} />
+      <ForensicPanel alertId={alert.id} />
     </div>
   )
 }

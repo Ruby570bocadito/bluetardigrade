@@ -459,6 +459,90 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AlertSearchPage'
+  /api/alerts/{id}/forensics:
+    get:
+      tags: [telemetry]
+      operationId: getAlertForensics
+      summary: Frozen evidence bundle of one alert (timeline + summary)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The forensic layer of the engine: when a `high` or `critical`
+        alert fires, the engine freezes an evidence bundle — the alert
+        itself plus the host's event timeline for the 5 minutes that
+        preceded detection — to `<forensics>/<id>.json` at detection
+        time (atomic write, directory capped at 256 bundles,
+        oldest-first eviction).
+
+        The bundle exists independently of the in-memory ring, of
+        `-store` and of engine restarts within retention: an
+        investigation must not depend on where the alert currently
+        lives. Disabling capture (`-forensic=false`) keeps the route
+        answering `501` so the console can render "feature off"
+        instead of a misleading 404.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: alert id (16 lowercase hex characters, the `id` field of the alert)
+          schema:
+            type: string
+            pattern: '^[0-9a-f]{16}$'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '200':
+          description: The evidence bundle frozen at detection time.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForensicBundle'
+        '400':
+          description: Malformed alert id (not 16 lowercase hex). The
+            JSON body names the problem.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
+          description: Well-formed id but no bundle for it — severity
+            below the capture threshold (only high/critical freeze
+            evidence), evicted by the retention cap, or the engine
+            restarted before capture. The JSON body says which.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: The bundle exists but could not be decoded
+            (integrity failure; details in the engine log, a generic
+            body on the wire).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '501':
+          description: Forensic capture disabled on this engine
+            (`-forensic=false`); the id was never going to have a
+            bundle.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
   /api/alerts/{id}/status:
     post:
       tags: [telemetry]
@@ -1524,6 +1608,64 @@ components:
           type: string
           maxLength: 200
           description: operator name, informational only
+    ForensicBundle:
+      type: object
+      description: |
+        The evidence document frozen at detection time by the engine's
+        flight recorder: the alert plus the host's event timeline that
+        preceded it (window `-5m` to the alert, plus the triggering
+        event itself; the newest `200` events are kept when the window
+        overflows). Written atomically, readable back for the lifetime
+        of the bundle directory.
+      required: [alert, captured_at, host, window, timeline, summary]
+      properties:
+        alert:
+          $ref: '#/components/schemas/Alert'
+        captured_at:
+          type: string
+          format: date-time
+          description: RFC 3339 (nanosecond) capture moment.
+        host:
+          type: string
+          description: Host whose timeline was frozen.
+        window:
+          type: string
+          description: Human-readable window description (e.g. "5m0s
+            before alert (plus the triggering event)").
+        timeline:
+          type: array
+          description: Host events inside the window, oldest first,
+            capped at 200 entries (the tail closest to the alert is
+            the evidence an investigator reads first).
+          items:
+            $ref: '#/components/schemas/Event'
+        summary:
+          type: object
+          description: Counted shape of the timeline — what an
+            operator scans before reading a single event.
+          required: [events, process_creates, network_connects, file_writes, registry_sets, process_accesses, other, distinct_users, distinct_images]
+          properties:
+            events:
+              type: integer
+            process_creates:
+              type: integer
+            network_connects:
+              type: integer
+            file_writes:
+              type: integer
+            registry_sets:
+              type: integer
+            process_accesses:
+              type: integer
+            other:
+              type: integer
+            distinct_users:
+              type: integer
+            distinct_images:
+              type: array
+              items:
+                type: string
+
     AlertLifecycle:
       type: object
       description: One lifecycle record as stored (also the `alert_lifecycle` SSE frame payload)

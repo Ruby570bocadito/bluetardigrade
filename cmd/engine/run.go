@@ -18,6 +18,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/beacon"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/correlate"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/enrich"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/forensic"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/ingest"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/lifecycle"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/notify"
@@ -159,6 +160,23 @@ func runEngine(o *options, interactive bool) error {
 		if supCount > 0 {
 			fmt.Printf("[ENGINE] %d suppressions active from %s\n", supCount, supPath)
 		}
+	}
+
+	// forensic flight recorder + evidence bundles: every high/critical
+	// alert freezes the host's surrounding timeline to disk so an
+	// investigation never depends on the ring not having rotated or on
+	// SQLite being enabled. Off is off: -forensic=false keeps nothing.
+	var fore *forensic.Recorder
+	if o.forensic {
+		foreDir := o.forensicDir
+		if foreDir == "" {
+			// same resolution order as rules/sequences: the installed
+			// engine finds <forensics> next to its own tree
+			foreDir = resolveDataDir("./forensics", "forensics")
+		}
+		fore = forensic.New(foreDir)
+		fmt.Printf("[ENGINE] forensic: evidence bundles for high/critical alerts -> %s (window %s, disk-capped)\n",
+			foreDir, forensic.CaptureWindow)
 	}
 
 	events := make(chan *model.Event, 1024)
@@ -333,6 +351,7 @@ func runEngine(o *options, interactive bool) error {
 			})
 			hub.SetSequences(corr)
 			hub.SetLifecycle(lifeStore)
+			hub.SetForensic(fore)
 			// same standard as the ingest token: flag wins, env fallback
 			apiTok = o.apiToken
 			if apiTok == "" {
@@ -535,6 +554,19 @@ func runEngine(o *options, interactive bool) error {
 	}
 	alerts := alert.New(alertOut, func(a alert.Alert) {
 		stats.recordAlert(a)
+		if fore != nil {
+			// evidence first: the bundle freezes the timeline BEFORE
+			// any downstream consumer can act on the alert (an active
+			// response that kills the process tree must not erase the
+			// record of what happened). Capture is a bounded write
+			// (one JSON file, capped directory); failures are loud and
+			// never stop the alert itself.
+			if path, ok, ferr := fore.Capture(a, time.Now()); ferr != nil {
+				log.Printf("[FORENSIC] bundle for alert %s FAILED: %v", a.ID, ferr)
+			} else if ok && !tui {
+				fmt.Printf("[FORENSIC] evidence bundle frozen for alert %s -> %s\n", a.ID, path)
+			}
+		}
 		if hub != nil {
 			hub.RecordAlert(a)
 		} else if st != nil {
@@ -592,6 +624,26 @@ func runEngine(o *options, interactive bool) error {
 		// semantics of the sequencer. The suppression gate itself is
 		// the shared one above.
 		thr.SetEmit(emitAllowlisted)
+	}
+
+	// enrichment flight-recorder sweep: retire idle pid->identity
+	// entries (30 min TTL) so a long-lived engine's parent map does
+	// not leak dead pids. Reuses the reload cadence; a zero cadence
+	// skips the sweep the same way it skips reloads (process entries
+	// still evict on terminate and on the per-host cap).
+	if o.reloadEvery > 0 {
+		go func() {
+			t := time.NewTicker(o.reloadEvery)
+			defer t.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					enricher.Sweep(time.Now())
+				}
+			}
+		}()
 	}
 
 	if o.reloadEvery > 0 {
@@ -701,6 +753,12 @@ func runEngine(o *options, interactive bool) error {
 	loop := func() {
 		for ev := range events {
 			enricher.Apply(ev)
+			// flight recorder: before evaluation, so the event that
+			// triggers an alert is guaranteed to be in the ring when
+			// the alert's bundle is captured in the same iteration.
+			if fore != nil {
+				fore.ObserveEvent(ev)
+			}
 			switch {
 			case hub != nil:
 				// the hub persists to the store too when attached

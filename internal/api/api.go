@@ -25,6 +25,7 @@ import (
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/correlate"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/forensic"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/lifecycle"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/notify"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/respond"
@@ -100,6 +101,11 @@ type Hub struct {
 	// file paths the engine armed at startup (respond_read.go): the
 	// read surface reports them verbatim instead of guessing.
 	respondOpsPath, respondProtPath, respondAuditPath string
+
+	// forensic evidence bundles (internal/forensic): nil = capture
+	// disabled (-forensic=false); the route then answers 501 so the
+	// console can render "feature off" instead of a misleading 404.
+	forensic *forensic.Recorder
 }
 
 // New binds a plain-text API listener. Use addr ":0" in tests to pick
@@ -164,6 +170,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	mux.HandleFunc("GET /api/alerts", h.handleAlerts)
 	mux.HandleFunc("GET /api/alerts/search", h.handleAlertSearch)
 	mux.HandleFunc("POST /api/alerts/{id}/status", h.handleAlertStatus)
+	mux.HandleFunc("GET /api/alerts/{id}/forensics", h.handleAlertForensics)
 	mux.HandleFunc("GET /api/rules", h.handleRules)
 	mux.HandleFunc("GET /api/suppressions", h.handleSuppressions)
 	h.registerSuppressionsWrite(mux)
@@ -452,6 +459,16 @@ func (h *Hub) persistAlert(a alert.Alert) {
 			log.Printf("[API] store write FAILED (%d total): %v", n, err)
 		}
 	}
+}
+
+// SetForensic wires the evidence-bundle recorder. nil is a valid
+// state (-forensic=false): the route exists and answers 501 so the
+// console can distinguish "feature off" from "no bundle for this
+// id".
+func (h *Hub) SetForensic(r *forensic.Recorder) {
+	h.mu.Lock()
+	h.forensic = r
+	h.mu.Unlock()
 }
 
 // SetLifecycle wires the alert triage store. When no store is set the
