@@ -21,7 +21,7 @@ BUN     ?= bun
 BIN_DIR ?= bin
 MODULE  := github.com/Ruby570bocadito/security-framework
 
-.PHONY: all run-engine run-devsensor build test tidy fmt vet build-sensor build-sensor-windows docker-build console-install console-service console console-dom ci dist clean
+.PHONY: all run-engine run-devsensor build test tidy fmt vet build-sensor build-sensor-windows docker-build console-install console-service console console-dom console-browser ci dist clean
 
 all: build
 
@@ -77,6 +77,13 @@ console-dom:
 	npm install --prefix tools/console-tests --no-audit --no-fund esbuild@0.25.11 jsdom@26.1.0
 	node scripts/dev-tests/check_console_dom.mjs
 
+# Real Chromium checks of the production console with isolated REST/SSE fixtures.
+# Build the console first; CONSOLE_BROWSER_URL can select a running loopback app.
+console-browser:
+	npm install --prefix tools/console-tests --no-audit --no-fund playwright@1.63.0
+	node tools/console-tests/node_modules/playwright/cli.js install chromium
+	node scripts/dev-tests/check_console_browser.mjs
+
 # Same suite the GitHub Actions workflow (.github/workflows/ci.yml)
 # runs on every push. Needs: Go 1.22+, staticcheck 2024.1.1
 # (go install honnef.co/go/tools/cmd/staticcheck@2024.1.1 — the exact
@@ -98,6 +105,9 @@ ci:
 	cd web/console && $(BUN) install --frozen-lockfile && $(BUN) test && bunx tsc --noEmit && $(BUN) run build
 	npm install --prefix tools/console-tests --no-audit --no-fund esbuild@0.25.11 jsdom@26.1.0
 	node scripts/dev-tests/check_console_dom.mjs
+	npm install --prefix tools/console-tests --no-audit --no-fund playwright@1.63.0
+	node tools/console-tests/node_modules/playwright/cli.js install chromium
+	node scripts/dev-tests/check_console_browser.mjs
 	$(CARGO) check --locked --manifest-path sensor/Cargo.toml
 	rustup target add x86_64-pc-windows-msvc
 	$(CARGO) check --locked --target x86_64-pc-windows-msvc --manifest-path sensor/Cargo.toml

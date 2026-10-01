@@ -99,9 +99,17 @@ export function shortcutHintFor(view: ConsoleView): string | null {
 export function isTypingTarget(target: EventTarget | null): boolean {
   // No DOM (SSR, bun test): no keydown events exist there, so nothing
   // can be a typing target — the guard is only wired inside a browser.
-  if (typeof HTMLElement === 'undefined') return false
-  if (!(target instanceof HTMLElement)) return false
-  if (target.isContentEditable) return true
-  const tag = target.tagName
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+  if (typeof Element === 'undefined' || !(target instanceof Element)) return false
+  if (target instanceof HTMLElement && target.isContentEditable) return true
+  return Boolean(target.closest('input, textarea, select, [role="textbox"], [role="searchbox"], [role="combobox"], [contenteditable]:not([contenteditable="false"])'))
+}
+
+/** Global navigation yields to a modal or composite widget's own keyboard. */
+export function isKeyboardScope(target: EventTarget | null): boolean {
+  return typeof Element !== 'undefined' && target instanceof Element &&
+    Boolean(target.closest('dialog[open], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]'))
+}
+
+export function isPaletteToggleKey(event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>): boolean {
+  return event.key.toLowerCase() === 'k' && event.ctrlKey !== event.metaKey && !event.altKey && !event.shiftKey
 }

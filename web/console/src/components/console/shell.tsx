@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { ActivityIcon, Broadcast, Gauge, Lightning, Prohibit, ShieldCheck, SquaresFour, Warning, ChatsCircle, FlowArrow } from '@phosphor-icons/react'
+import { ActivityIcon, Broadcast, Gauge, Lightning, Prohibit, ShieldCheck, SquaresFour, Warning, ChatsCircle, FlowArrow, Keyboard, MagnifyingGlass } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { BlurText } from '@/components/reactbits/blur-text'
 import { ShinyText } from '@/components/reactbits/shiny-text'
@@ -21,30 +21,28 @@ import { RespondView } from './respond-view'
 import { SequencesView } from './sequences-view'
 import { AnalystPanel } from './analyst-panel'
 import { ShortcutsHelp, type ShortcutHelpRow } from './shortcuts-help'
+import { CommandPalette } from './command-palette'
+import { CONSOLE_DESTINATIONS, type ConsoleCommand } from '@/lib/console-commands'
 import { formatUptime, type EngineStats, type SfAlert } from '@/lib/console-types'
 import { currentSearch, pushOperatorState, readOperatorState, writeViewToSearch } from '@/lib/url-state'
 import {
   SHORTCUT_ARM_MS,
   SHORTCUT_PREFIX,
   isHelpToggleKey,
+  isKeyboardScope,
+  isPaletteToggleKey,
   isTypingTarget,
   resolveShortcut,
   shortcutHintFor,
   shortcutRows,
 } from '@/lib/keyboard-nav'
 import { useAnalystChannel } from './socket-provider'
-import { Keyboard } from '@phosphor-icons/react'
 
-const NAV: { id: ConsoleView; label: string; group: string; icon: React.ElementType }[] = [
-  { id: 'panel', label: 'Panel', group: 'Operación', icon: SquaresFour },
-  { id: 'flujo', label: 'Flujo en vivo', group: 'Operación', icon: ActivityIcon },
-  { id: 'alertas', label: 'Alertas', group: 'Operación', icon: Warning },
-  { id: 'reglas', label: 'Reglas', group: 'Detección', icon: ShieldCheck },
-  { id: 'cadenas', label: 'Cadenas', group: 'Detección', icon: FlowArrow },
-  { id: 'supresiones', label: 'Supresiones', group: 'Detección', icon: Prohibit },
-  { id: 'respuesta', label: 'Respuesta activa', group: 'Respuesta', icon: Lightning },
-  { id: 'analista', label: 'Analista IA', group: 'Asistencia', icon: ChatsCircle },
-]
+const NAV_ICONS: Record<ConsoleView, React.ElementType> = {
+  panel: SquaresFour, flujo: ActivityIcon, alertas: Warning, reglas: ShieldCheck,
+  cadenas: FlowArrow, supresiones: Prohibit, respuesta: Lightning, analista: ChatsCircle,
+}
+const NAV = CONSOLE_DESTINATIONS.map((item) => ({ ...item, icon: NAV_ICONS[item.id] }))
 
 // Help sheet rows: the resolver's map (keys, ordered) zipped with the
 // NAV labels/groups — both single sources of truth; flatMap drops a row
@@ -56,16 +54,15 @@ const HELP_ROWS: ShortcutHelpRow[] = shortcutRows().flatMap((row) => {
 })
 
 export function ConsoleShell() {
-  const { status, stats, alerts, events, suppressions, sequences, endpoint } = useEngine()
+  const { status, stats, alerts, events, suppressions, sequences, endpoint, refresh, refreshing } = useEngine()
   const { status: analystStatus } = useAnalystChannel()
   const [view, setViewState] = useState<ConsoleView>('panel')
-  // Shortcuts help sheet ('?'). The open flag mirrors into a ref so the
-  // global keydown listener (subscribed once) can gate the modal: while
-  // the sheet is open it swallows every shortcut except Escape (close)
-  // and '?' itself (toggle) — nothing navigates under a modal.
   const [helpOpen, setHelpOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
   const helpOpenRef = useRef(false)
+  const paletteOpenRef = useRef(false)
   helpOpenRef.current = helpOpen
+  paletteOpenRef.current = paletteOpen
 
   // Operator state in the URL (url-state.ts): the active view survives a
   // refresh, back/forward navigate between views and deep links open the
@@ -81,7 +78,9 @@ export function ConsoleShell() {
 
   const setView = (next: ConsoleView) => {
     setViewState(next)
-    pushOperatorState((search) => writeViewToSearch(search, next))
+    if (readOperatorState(currentSearch()).view !== next) {
+      pushOperatorState((search) => writeViewToSearch(search, next))
+    }
   }
   const hintTitle = (id: ConsoleView): string | undefined => {
     const hint = shortcutHintFor(id)
@@ -99,32 +98,37 @@ export function ConsoleShell() {
   const armedRef = useRef(false)
   const armTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
+    const clearPrefix = () => {
+      armedRef.current = false
+      if (armTimerRef.current) clearTimeout(armTimerRef.current)
+      armTimerRef.current = null
+    }
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return
-      if (isTypingTarget(e.target)) return
-      // Help sheet first: Escape closes, '?' toggles, the rest is
-      // swallowed while the modal is up (nothing navigates under it).
-      if (e.key === 'Escape') {
-        if (helpOpenRef.current) {
+      const wasArmed = armedRef.current
+      clearPrefix()
+      if (e.defaultPrevented || e.repeat || e.isComposing) return
+      if (isPaletteToggleKey(e)) {
+        if (paletteOpenRef.current || helpOpenRef.current || (!isTypingTarget(e.target) && !isKeyboardScope(e.target))) {
           e.preventDefault()
           setHelpOpen(false)
+          setPaletteOpen((value) => !value)
         }
         return
       }
-      if (isHelpToggleKey(e.key)) {
-        e.preventDefault()
-        setHelpOpen((v) => !v)
+      if (e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e.target)) return
+      if (paletteOpenRef.current) return
+      if (helpOpenRef.current) {
+        if (isHelpToggleKey(e.key)) { e.preventDefault(); setHelpOpen(false) }
         return
       }
-      if (helpOpenRef.current) return
-      const wasArmed = armedRef.current
-      armedRef.current = false
-      if (armTimerRef.current) {
-        clearTimeout(armTimerRef.current)
-        armTimerRef.current = null
+      if (isKeyboardScope(e.target)) return
+      if (isHelpToggleKey(e.key)) {
+        e.preventDefault()
+        setHelpOpen(true)
+        return
       }
       const result = resolveShortcut({ key: e.key, prefixed: wasArmed })
-      if (result.action === 'navigate') navRef.current(result.view)
+      if (result.action === 'navigate') { e.preventDefault(); navRef.current(result.view) }
       else if (result.action === 'arm') {
         armedRef.current = true
         armTimerRef.current = setTimeout(() => {
@@ -133,12 +137,26 @@ export function ConsoleShell() {
       }
     }
     window.addEventListener('keydown', onKey)
+    window.addEventListener('blur', clearPrefix)
+    document.addEventListener('focusin', clearPrefix)
     return () => {
       window.removeEventListener('keydown', onKey)
-      if (armTimerRef.current) clearTimeout(armTimerRef.current)
+      window.removeEventListener('blur', clearPrefix)
+      document.removeEventListener('focusin', clearPrefix)
+      clearPrefix()
     }
   }, [])
   const reduce = useReducedMotion()
+
+  const executeCommand = (command: ConsoleCommand) => {
+    setPaletteOpen(false)
+    if (command.kind === 'help') setHelpOpen(true)
+    else if (command.kind === 'refresh') refresh()
+    else {
+      setView(command.view)
+      requestAnimationFrame(() => document.getElementById('console-main')?.focus({ preventScroll: true }))
+    }
+  }
 
   // Real telemetry source, derived from the events the engine actually
   // delivered (Event.Source in pkg/model): 'sysmon' = sf-sensor reading
@@ -289,6 +307,19 @@ export function ConsoleShell() {
               )}
             </div>
             <div className="ml-auto flex min-w-0 items-center gap-2 overflow-x-auto">
+              <button
+                type="button"
+                onClick={() => { setHelpOpen(false); setPaletteOpen(true) }}
+                aria-label="Abrir comandos"
+                aria-haspopup="dialog"
+                aria-keyshortcuts="Control+k Meta+k"
+                title="Comandos (Ctrl+K / ⌘K)"
+                className="chip shrink-0 gap-2 px-2.5 py-1.5 text-zinc-300 transition-colors hover:border-emerald-400/30 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <MagnifyingGlass size={16} aria-hidden />
+                <span className="hidden text-xs sm:inline">Comandos</span>
+                <kbd aria-hidden className="hidden rounded border border-zinc-700 px-1 font-mono text-[10px] text-zinc-400 md:inline">Ctrl/⌘ K</kbd>
+              </button>
               <div className="chip shrink-0 px-2.5 py-1.5">
                 <span className="relative flex h-2 w-2" aria-hidden>
                   {status === 'live' ? (
@@ -368,6 +399,7 @@ export function ConsoleShell() {
         </div>
       </div>
       <ShortcutsHelp open={helpOpen} rows={HELP_ROWS} onClose={() => setHelpOpen(false)} />
+      {paletteOpen && <CommandPalette open refreshing={refreshing} onClose={() => setPaletteOpen(false)} onExecute={executeCommand} />}
     </div>
   )
 }

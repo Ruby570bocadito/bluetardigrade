@@ -124,9 +124,29 @@
 
 /* ---------------------------------------------------------------------------
    React Bits layer (adapted to the console theme)
-   ShinyText, SpotlightCard y el fondo ambiental de la shell. Todo CSS puro
+   BlurText, ShinyText, SpotlightCard y el fondo ambiental de la shell. Todo CSS puro
    salvo las custom properties que los componentes actualizan por puntero.
    --------------------------------------------------------------------------- */
+
+/* Stable word markup during hydration, including reduced-motion clients. */
+@keyframes blur-text-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .blur-text-word {
+    animation: blur-text-reveal 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+    will-change: filter, transform, opacity;
+  }
+}
 
 /* ShinyText: barrido de brillo con background-clip: text (sin JS por frame) */
 .shiny-text {
