@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 arq_v04/generator.py — versioned generator of the body of
-docs/arquitectura-tecnica-v0.10.pdf (cover is rendered separately from
-docs/assets/src/cover-v0.10.html and merged by merge_and_meta.py).
+docs/arquitectura-tecnica-v0.11.pdf (cover is rendered separately from
+docs/assets/src/cover-v0.11.html and merged by merge_and_meta.py).
 The directory name arq_v04 records where the pipeline was born (v0.4); it
 builds the current revision of the series.
 
@@ -49,7 +49,7 @@ from reportlab.platypus.tableofcontents import TableOfContents
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
-OUT_BODY = os.path.join(REPO, "docs", "arquitectura-tecnica-v0.10.body.pdf")
+OUT_BODY = os.path.join(REPO, "docs", "arquitectura-tecnica-v0.11.body.pdf")
 
 # ---------------------------------------------------------------- fonts ----
 FONT_DIR = "/usr/share/fonts"
@@ -91,7 +91,7 @@ AVAIL_H = PAGE_H - 2 * MARGIN
 H1_ORPHAN = AVAIL_H * 0.25
 
 DOC_TITLE = "Arquitectura Técnica - Framework de Detección de Amenazas en Tiempo Real"
-FOOTER_LEFT = "Ruby570bocadito · security-framework v0.10"
+FOOTER_LEFT = "Ruby570bocadito · security-framework v0.11"
 
 # ---------------------------------------------------------------- styles ---
 body = ParagraphStyle("Body", fontName="FreeSerif", fontSize=10.5, leading=16.5,
@@ -322,9 +322,9 @@ story += h1_block(1, "Visión y Filosofía de Diseño",
     "sistema anclado en ETW con un motor de detección de comportamiento, correlación de secuencias y una consola "
     "web interactiva de triaje. El nombre del proyecto es provisional (security-framework) y se mantendrá hasta "
     "que la comunidad elija la marca definitiva. A diferencia de la v0.1, que describía una promesa de diseño, "
-    "esta revisión v0.10 describe el sistema tal como está implementado y verificado hoy: cada afirmación de este "
+    "esta revisión v0.11 describe el sistema tal como está implementado y verificado hoy: cada afirmación de este "
     "texto corresponde a código en el repositorio, con pruebas de unidad, E2E sobre binarios reales y mediciones "
-    "de rendimiento publicadas. Es la séptima revisión producida por el pipeline de generación versionado en el "
+    "de rendimiento publicadas. Es la octava revisión producida por el pipeline de generación versionado en el "
     "propio árbol (scripts/arq_v04/, estrenado por la v0.4), de modo que ninguna revisión de la serie dependa "
     "de herramientas desaparecidas para reproducirse.")
 
@@ -392,7 +392,7 @@ story += h2_block("1.3 Del diseño a la implementación", para(
     "host, el importador Sigma, la persistencia SQLite opcional, el webhook de alertas, la exportación "
     "JSONL/CSV y la consola web de operaciones. Las notificaciones externas (C2), los sumideros SIEM "
     "nativos y la respuesta activa (C3) — documentados de primera mano por la v0.4 tras su ciclo completo "
-    "de diseño, dictamen, aterrizaje y re-revisión — se amplían en esta revisión con la operabilidad "
+    "de diseño, dictamen, aterrizaje y re-revisión — se ampliaron por las revisiones de esta serie con la operabilidad "
     "forense de la vista de consola de C3 — filtro por clase de intento, ventana de cola controlable por "
     "el operador y exportación JSONL de la cola visible —, aterrizada por la ola de consola 4967cad. "
     "El roadmap interno registra 13 de 17 líneas cerradas según las actas del Director (17h45) y del rol de "
@@ -553,15 +553,18 @@ story += h2_block("3.3 Consola web y API", para(
     "información, no decoración, y por eso los efectos ambientales son sutiles, respetan "
     "prefers-reduced-motion y nunca compiten con los datos."))
 story.append(para(
-    "Arquitectónicamente, la consola no habla con el motor en su tiempo real: el hub console-service (Bun + "
-    "socket.io) media la sesión, agrega el stream de alertas y expone una única superficie de tiempo real al "
-    "navegador, lo que permite reconexiones limpias y desplegar la consola sin exponer el motor más allá de su "
-    "API local; las lecturas puntuales de la vista de respuesta activa son la excepción declarada (acta "
-    "18h20): fluyen por el proxy same-origin de la consola y no añaden al hub un segundo camino que la "
-    "arquitectura actual no consume. La API REST del motor (net/http, puerto 7778) expone los mismos datos "
+    "Arquitectónicamente, el camino de datos primario de la consola es su proxy same-origin "
+    "(src/app/api/engine/[...path]): las lecturas REST y el stream SSE del motor fluyen por el propio "
+    "origen de la consola, con polling serial y plazos de petición, fusión del snapshot REST con los "
+    "frames SSE que llegan durante la consulta, deduplicación de replays sin inflar contadores y "
+    "cancelación de consultas sustituidas cuyas respuestas tardías se descartan; un 404 de una superficie "
+    "opcional limpia su estado antiguo mientras un error transitorio conserva la última lectura. El hub "
+    "console-service (Bun + socket.io) queda como superficie opcional del analista IA y no está en el "
+    "camino crítico de la telemetría. La API REST del motor (net/http, puerto 7778) expone los mismos datos "
     "con un spec OpenAPI (docs/api/openapi.yaml) que un guard de CI valida contra el motor vivo en cada "
-    "ronda: hoy son 15 rutas — las trece anteriores más las dos lecturas de respuesta activa — y 36 campos "
-    "de estadísticas con paridad exacta entre /api/stats y /metrics, con 74 referencias internas resueltas; "
+    "ronda: hoy son 16 rutas — las trece anteriores, las dos lecturas de respuesta activa y la búsqueda "
+    "histórica paginada — y 36 campos "
+    "de estadísticas con paridad exacta entre /api/stats y /metrics, con 82 referencias internas resueltas; "
     "el guard además porta su propio self-test (un fixture positivo y trece negativos que deben producir "
     "hallazgo). El proyecto añadió además website/, la landing oficial en Next.js 16, separada de la consola "
     "y sin acceso a telemetría; la batería TypeScript de la casa cubre hoy los tres paquetes TS del árbol en "
@@ -571,6 +574,27 @@ story.append(para(
     "navegación capturada incluye ya la vista de respuesta activa con su capa de operabilidad forense, por "
     "lo que la limitación de navegación que esta misma revisión heredó de la v0.6 queda resuelta — la "
     "recaptura se ejecutó dentro de la propia ronda (acta 20h05_B) con el stack real de laboratorio."))
+
+story.append(para(
+    "La ola de interfaz de octubre de 2026 (PR #4, con los cuatro jobs de CI verdes sobre su árbol de "
+    "integración) completa el ciclo de investigación del operador en las superficies de consumo. En la CLI "
+    "interactiva (engine run -i, bubbletea/lipgloss), las listas de alertas y reglas acotan su viewport al "
+    "tamaño del terminal, la selección persiste por identidad cuando llegan alertas o se recarga el "
+    "catálogo, la búsqueda filtra por regla, host, usuario, resumen y etiquetas ATT&CK con filtro cíclico "
+    "de severidad, y la pausa congela la vista sin detener la ingesta, la detección ni las entregas; la "
+    "salida humana neutraliza caracteres de control y escapes manteniendo el JSON original como evidencia, "
+    "el banner oculta las credenciales del webhook con la redacción existente y los subcomandos rechazan "
+    "argumentos posicionales inesperados. En la consola, el panel añade un resumen operativo que prioriza "
+    "el triaje crítico pendiente, las incidencias de entrega y la saturación de detectores, con "
+    "actualización manual y estados separados para la API y el canal en vivo; los indicadores sin lectura "
+    "muestran — en lugar de cero, y el gráfico de actividad expira su ventana aunque el sensor deje de "
+    "emitir. En la investigación, la cola de alertas alterna entre el búfer en vivo y un histórico que "
+    "consulta al motor: GET /api/alerts/search devuelve páginas de hasta 100 alertas (25 por defecto) "
+    "ordenadas por secuencia de inserción, con cursor fijado que no desplaza las páginas visitadas por "
+    "llegadas tardías o timestamps empatados, filtros de estado, severidad, regla, host, texto y tiempo, y "
+    "un presupuesto por petición de 5 000 candidatos de evidencia y cuatro segundos — 504 al agotarse, con "
+    "página vacía que puede continuar y fuente declarada (sqlite o memoria) —; el triaje histórico compara "
+    "status_at para que un frame tardío nunca revierta una decisión reciente del operador."))
 
 story += figure("docs/assets/console-panel.png",
                 "Figura 2. Dashboard de operaciones de la consola: KPIs, actividad del sensor, cola de "
@@ -767,7 +791,7 @@ story += make_table(
          "evidencia cruda."],
     ],
     [0.16, 0.10, 0.74],
-    "Tabla 4. Campos del esquema de eventos unificado (v0.10).")
+    "Tabla 4. Campos del esquema de eventos unificado (v0.11).")
 
 story += code_block([
     '{',
@@ -948,9 +972,9 @@ story += make_table(
          "Depurable con netcat desde el día uno; rotación de token sin reinicio coordinado; TLS nativo en el "
          "ingest para despliegues remotos (stdlib, TLS 1.2 mínimo, brecha B4 aterrizada en la ola 9dac572); "
          "gRPC queda como fase futura si la flota lo exige."],
-        ["Consola web", "Next.js 16, React 19, Tailwind 4, socket.io (hub Bun)",
-         "Cabina de operaciones con tipado estricto; el hub media la sesión en tiempo real y evita exponer "
-         "el motor más allá de su API local."],
+        ["Consola web", "Next.js 16, React 19, Tailwind 4, socket.io (hub opcional)",
+         "Cabina de operaciones con tipado estricto; el motor se consume por el proxy same-origin de la "
+         "consola (REST + SSE) y el hub Bun queda como superficie opcional del analista IA."],
         ["Salidas externas", "webhook HTTP, Slack/Telegram/SMTP, Elasticsearch Bulk, Splunk HEC",
          "Colas y spools acotados por conector; credenciales por entorno; saneado de URL en logs (#30); "
          "contrato de fallos permanente/transitorio declarado."],
@@ -958,11 +982,11 @@ story += make_table(
          "Evidencia en endpoint sin instalación; retención con poda automática (72 h por defecto); export "
          "con neutralización de inyección de fórmulas."],
         ["Build y CI", "Make, GitHub Actions (SHA-pinned), Docker",
-         "Un comando para compilar todo; guard del OpenAPI contra el motor vivo (15 rutas, 36 campos, "
-         "74 referencias, self-test incluido); bench nocturno con dos pasadas y sonda fsync; baterías Go y TS por paquete."],
+         "Un comando para compilar todo; guard del OpenAPI contra el motor vivo (16 rutas, 36 campos, "
+         "82 referencias, self-test incluido); bench nocturno con dos pasadas y sonda fsync; baterías Go y TS por paquete."],
     ],
     [0.15, 0.33, 0.52],
-    "Tabla 6. Stack tecnológico por capa con su justificación (v0.10).")
+    "Tabla 6. Stack tecnológico por capa con su justificación (v0.11).")
 
 story.append(para(
     "La estructura del monorepo delimita las fronteras con el sistema de ficheros: cada paquete interno es "
@@ -975,7 +999,7 @@ story.append(para(
 story += code_block([
     'security-framework/',
     '├── cmd/                    # engine (run/rules/validate/sigma/TUI), devsensor, bench',
-    '├── internal/               # 18 paquetes delimitados por frontera',
+    '├── internal/               # 19 paquetes delimitados por frontera',
     '│   ├── ingest/ enrich/ rules/ correlate/ beacon/ threshold/ risk/ sigma/',
     '│   ├── alert/ actions/ webhook/            # alertas, acciones, conector saliente',
     '│   ├── notify/ siem/                       # C2: Slack/Telegram/email · SIEM nativo',
@@ -992,7 +1016,7 @@ story += code_block([
     '├── scripts/windows/        # instalador PS1, servicio, config Sysmon',
     '├── scripts/arq_v04/        # este generador (pipeline versionado del documento)',
     '└── docs/                   # este documento, OpenAPI, assets, actas',
-], "Ejemplo 3. Estructura del monorepo (v0.10, árbol real del repositorio).")
+], "Ejemplo 3. Estructura del monorepo (v0.11, árbol real del repositorio).")
 
 story.append(para(
     "Las convenciones de código se aplican desde el primer commit: formato obligatorio (gofmt y rustfmt), "
@@ -1031,7 +1055,7 @@ story += h1_block(7, "Roadmap de Desarrollo",
     "sobre el árbol que los contiene, 246ce49).")
 
 story += make_table(
-    ["Fase", "Objetivos", "Estado hoy (v0.10)"],
+    ["Fase", "Objetivos", "Estado hoy (v0.11)"],
     [
         ["1. Core y MVP (Q4 2026)",
          "Tracer bullet end-to-end; sensor básico; reglas YAML puntuales; CLI de prueba.",
@@ -1048,13 +1072,15 @@ story += make_table(
          "respuesta activa C3 certificada y observable de punta a punta (detectar, actuar y leer el audit "
          "desde la API y la consola), con su cierre conductual permanente en CI sobre motor Windows nativo. "
          "El empaquetado oficial aterrizó tras esta tabla: release v0.1.0 con CHANGELOG y binarios "
-         "(make dist + release.yml), dependabot y SECURITY.md (olas 2bc6fc7 y 6eb6b02)."],
+         "(make dist + release.yml), dependabot y SECURITY.md (olas 2bc6fc7 y 6eb6b02). La ola de interfaz "
+         "de octubre (PR #4) suma la CLI interactiva acotada, el resumen operativo del panel y la "
+         "investigación histórica paginada con triaje."],
         ["4. Extensibilidad (Q2 2027)",
          "Filaments en sandbox Python; profiling; guía de contribución.",
          "Pendiente. Sin código simulado en el árbol; el diseño se mantiene en la sección 3.4."],
     ],
     [0.17, 0.33, 0.50],
-    "Tabla 7. Fases del roadmap con su estado real a septiembre de 2026 (v0.10).")
+    "Tabla 7. Fases del roadmap con su estado real a octubre de 2026 (v0.11).")
 
 story.append(para(
     "Las métricas de éxito miden la salud del proyecto, no solo el código. La fase 1 prometía un pipeline "
@@ -1120,7 +1146,7 @@ story += h2_block("8.2 Verificación continua", para(
     "e2e_store_sequences; el smoke_respond suma 29 aserciones sobre motor Windows nativo en CI — el cierre "
     "conductual permanente de C3: mechanism=handle con proceso real muerto, el cebo csrss.exe sobrevive "
     "como protegido y el desarmado mantiene su 404 real byte-idéntico. El guard del OpenAPI compara el "
-    "spec con el motor vivo (15 rutas y 36 campos "
+    "spec con el motor vivo (16 rutas y 36 campos "
     "de stats, con paridad exacta "
     "contra /metrics) y falla la ronda si hay deriva; su self-test verifica al propio guard con un fixture "
     "positivo y trece negativos que deben producir hallazgo. Los paquetes con estado se testean con -race "
@@ -1133,7 +1159,7 @@ story += h2_block("8.2 Verificación continua", para(
     "presupuesto de latencia asesor, no bloqueante: solo la pérdida de alertas pone la corrida en rojo."))
 story.append(para(
     "La batería TypeScript sigue el mismo estándar de evidencia por conteos en las tres superficies del "
-    "árbol: la batería de la consola (36 tests y 110 aserciones en tres suites: la del proxy, 10/10 y 29 aserciones, vigente desde la ronda 16h03; la de la ruta de escritura de triaje, 9/9 y 29, de la ronda 20h50 con cross-review certificada; y la del estado del operador en URL — deep-linking de vistas y filtros de triaje —, 17/17 y 52, aterrizada por la ola 49b3535 con su suite url-state), el hub console-service (50/50, 206 "
+    "árbol: la batería de la consola (84 tests y 251 aserciones en ocho suites, medida de primera mano para esta revisión: el proxy same-origin del motor, 13/13 y 45; el estado del operador en URL — deep-linking de vistas, filtros y reglas —, 31/31 y 92; la navegación por teclado con atajos g-prefijo, 11/11 y 34; la ruta de escritura de triaje, 9/9 y 29, con cross-review certificada; el cliente del motor — fusión snapshot/SSE, deduplicación y cancelación —, 9/9 y 20; la búsqueda histórica alert-search, 5/5 y 17; la ventana de actividad, 3/3 y 9; y el resumen operativo, 3/3 y 5), el hub console-service (50/50, 206 "
     "aserciones) y los cambios en el límite navegador→motor exigen además la matriz conductual en vivo con "
     "un escenario por guarda; la landing website/ aporta lockfile sin deriva, eslint y build de producción "
     "(4/4 páginas estáticas). El empaquetado oficial que la v0.9 reclamaba como pendiente aterrizó en la ola "
@@ -1144,7 +1170,7 @@ story.append(para(
     "explorar el collector eBPF para Linux. La arquitectura descrita en este documento es, sobre todo, una promesa de estabilidad "
     "para quien construya encima: el comportamiento del pipeline no cambiará, solo mejorará su "
     "implementación, y cada revisión futura vendrá acompañada de la misma columna de estado honesto que "
-    "distingue a esta v0.10 de su original — generada, además, por el pipeline versionado que este propio "
+    "distingue a esta v0.11 de su original — generada, además, por el pipeline versionado que este propio "
     "capítulo describe."))
 
 # ------------------------------------------------------------------ build --
@@ -1153,10 +1179,10 @@ doc = TocDocTemplate(
     pagesize=A4,
     leftMargin=MARGIN, rightMargin=MARGIN,
     topMargin=MARGIN, bottomMargin=MARGIN,
-    title="Arquitectura Técnica - Framework de Detección de Amenazas en Tiempo Real (v0.10)",
+    title="Arquitectura Técnica - Framework de Detección de Amenazas en Tiempo Real (v0.11)",
     author="Ruby570bocadito",
     creator="Ruby570bocadito",
-    subject="Documento de arquitectura tecnica v0.10: estado implementado y verificado del framework",
+    subject="Documento de arquitectura tecnica v0.11: estado implementado y verificado del framework",
 )
 doc.multiBuild(story, onFirstPage=on_page, onLaterPages=on_page)
 print(f"body written: {OUT_BODY}")

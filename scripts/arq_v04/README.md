@@ -6,17 +6,17 @@ vive versionado en el árbol, de modo que la revisión es reproducible y la
 siguiente versión no dependa de herramientas desaparecidas.
 
 El nombre del directorio (`arq_v04`) registra dónde nació el pipeline (v0.4);
-construye la revisión vigente de la serie — hoy la **v0.10**. Renombrarlo por
+construye la revisión vigente de la serie — hoy la **v0.11**. Renombrarlo por
 revisión rompería las referencias cruzadas de actas y READMEs sin añadir nada.
 
 ## Qué produce
 
-`docs/arquitectura-tecnica-v0.10.pdf` (portada + índice + 8 capítulos), a partir de:
+`docs/arquitectura-tecnica-v0.11.pdf` (portada + índice + 8 capítulos), a partir de:
 
 | Pieza | Fuente versionada | Herramienta |
 |---|---|---|
 | Cuerpo (TOC + capítulos) | `scripts/arq_v04/generator.py` | python3 + reportlab (`TocDocTemplate` + `multiBuild`, TOC automático con enlaces) |
-| Portada | `docs/assets/src/cover-v0.10.html` | node + playwright (`page.pdf`, vector, 794x1123 px A4 @96dpi) |
+| Portada | `docs/assets/src/cover-v0.11.html` | node + playwright (`page.pdf`, vector, 794x1123 px A4 @96dpi) |
 | Fusión + metadata | `scripts/arq_v04/merge_and_meta.py` | python3 + pypdf (portada como página 0, normalizada a A4) |
 | Diagrama de arquitectura | `docs/assets/src/diagram_arquitectura.html` | `render_diagram.mjs` (captura de `.canvas` a 2x, procedimiento de `docs/assets/README.md`) |
 
@@ -53,4 +53,4 @@ Requisitos: `python3` con `reportlab`, `pypdf` y `pillow`; `node` con
   de la vista de respuesta activa (olas `a3b8bd8`/`624d8ba`, Figuras 3 y 4 — el
   tracer pasó a Figura 5) y absorbió la Figura 2 recapturada sobre el árbol
   vigente por la ronda hermana 20h05_B (`ca51b95`), así como la precisión O4 del
-  export (acta 02-B 20h20) y la ratificación en fuente del esquema (acta 20h15_B); la v0.9 es un barrido de suelo (batería de la consola a dos suites, 19/58 — ola `9bd3c71`, certificación `cf6ec25`/`055d024`); la v0.10 actualiza el suelo a la batería de tres suites certificada por CI (36/110 — suite url-state de la ola `49b3535`) y absorbe la cadena de release (G12: v0.1.0 con CHANGELOG y binarios, ola `2bc6fc7`), dependabot (G6) y SECURITY.md (G9, ola `6eb6b02`), además de la certificación de F2/#34/#35 (acta 04-A 22h00).
+  export (acta 02-B 20h20) y la ratificación en fuente del esquema (acta 20h15_B); la v0.9 es un barrido de suelo (batería de la consola a dos suites, 19/58 — ola `9bd3c71`, certificación `cf6ec25`/`055d024`); la v0.10 actualiza el suelo a la batería de tres suites certificada por CI (36/110 — suite url-state de la ola `49b3535`) y absorbe la cadena de release (G12: v0.1.0 con CHANGELOG y binarios, ola `2bc6fc7`), dependabot (G6) y SECURITY.md (G9, ola `6eb6b02`), además de la certificación de F2/#34/#35 (acta 04-A 22h00); la v0.11 actualiza el suelo a las ocho suites de la consola post-PR #4 (84 tests / 251 aserciones, medidos de primera mano en la ronda 15h20_B: proxy 13/45, url-state 31/92, keyboard-nav 11/34, triaje 9/29, engine-client 9/20, alert-search 5/17, activity 3/9, operations 3/5), el guard a 16 rutas / 36 campos / 82 referencias (self-test 1+13), absorbe la ola de interfaz de octubre (CLI interactiva acotada, resumen operativo del panel, investigación histórica paginada `GET /api/alerts/search` con cursores fijados y presupuesto 5 000 candidatos / 4 s, triaje por `status_at`), corrige el camino de datos de la consola (proxy same-origin primario, hub console-service opcional) y re-cuenta el árbol a 19 paquetes internos.

@@ -194,7 +194,7 @@ docs/                operations, architecture and development reports
 | [Complete improvement report](docs/RESUMEN-MEJORAS-2026-10-01.md) | Both improvement rounds, fixed bugs, documentation and confirmed remote CI |
 | [CLI/dashboard review](docs/REVISION-CLI-DASHBOARD.md) | First-round findings and verification |
 | [Historical investigations](docs/REVISION-HISTORICO.md) | Pagination, lifecycle filters and second-round verification |
-| [Technical architecture PDF](docs/arquitectura-tecnica-v0.10.pdf) | Spanish technical reference |
+| [Technical architecture PDF](docs/arquitectura-tecnica-v0.11.pdf) | Spanish technical reference |
 | [Changelog](CHANGELOG.md) | Release history |
 | [Security policy](SECURITY.md) | Private vulnerability reporting |
 
