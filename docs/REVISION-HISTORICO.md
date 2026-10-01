@@ -2,6 +2,9 @@
 
 Parte de `68b8bc2`, la primera entrega, en la rama local
 `codex/alert-history-triage`. El proyecto completo v2 incluye ambas rondas.
+La rama de integración para GitHub es `codex/cli-dashboard-history`,
+preparada sobre `c0aec2d` y conservando los cambios nuevos de TLS del sensor
+y la separación del motor en flags/runtime.
 
 ## Cambios entregados
 
@@ -111,8 +114,7 @@ git apply --check /ruta/security-framework-historico.patch
 git apply /ruta/security-framework-historico.patch
 ```
 
-El ZIP v2 contiene el proyecto completo. La publicación remota sigue
-pendiente de una conexión de GitHub con acceso de escritura.
+El ZIP v2 contiene el proyecto completo. La publicación remota requiere acceso de escritura al repositorio de GitHub.
 
 Siguientes pasos: CI y capturas reales, paleta de comandos accesible,
 investigaciones guardadas, persistencia de lifecycle en SQLite y estado
