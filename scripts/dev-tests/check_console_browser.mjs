@@ -156,6 +156,10 @@ try {
     await waitView('reglas')
     assert.equal(new URL(page.url()).searchParams.get('custom'), 'keep')
     assert.equal(new URL(page.url()).searchParams.get('fq'), 'demo')
+    // URL navigation is synchronous; the shell transfers focus on the
+    // next animation frame after closing the command dialog. Wait for
+    // that observable behavior, with a bound that still fails on lost focus.
+    await page.waitForFunction(() => document.activeElement === document.getElementById('console-main'), undefined, { timeout: 5000 })
     assert.equal(await page.locator('#console-main').evaluate((main) => document.activeElement === main), true)
   })
   await check('unknown commands have no active descendant and Enter has no side effects', async () => {

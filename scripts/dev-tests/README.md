@@ -153,6 +153,8 @@ python3 scripts/dev-tests/smoke_file_forensics.py --engine ./bin/engine-file-smo
 This smoke runs in the engine CI job and `make ci`. It uses Python's
 standard library; PyYAML is only required by the separate documentation
 guard `check_rule_inventory.py`.
+It waits for the expected published alerts before comparing results:
+`events_total` is updated before detection and evidence capture finish.
 
 ## Chromium console regression
 
@@ -167,6 +169,9 @@ that retain the complete alert and telemetry fields. Fixture screenshots are
 stored in the ignored `captures/browser-regression/` directory.
 The initial load and the final page must also be free of browser runtime
 errors, including server/client hydration mismatches under reduced motion.
+Command navigation updates the URL before transferring focus on the next
+animation frame. Its focus check waits up to five seconds for the content
+to receive focus; it still fails if the transfer never happens.
 
 From the repository root, after installing and building `web/console`:
 

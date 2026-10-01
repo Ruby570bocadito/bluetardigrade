@@ -143,6 +143,8 @@ autenticado a un motor real: comprueba ocho alertas, ausencia de la alarma
 para un documento ordinario y seis bundles protegidos por el bearer de API.
 La respuesta activa y los sinks externos permanecen desarmados. Se ejecuta
 en CI y `make ci`, y también pasó en el workspace.
+La prueba espera las alertas publicadas: `events_total` se actualiza antes
+de que terminen la evaluación y la captura de evidencia.
 
 El cliente tiene **131 pruebas**; el fixture DOM tiene **23 comprobaciones**,
 incluidas carga perezosa, reintento, cambio de alerta, respuesta tardía y
