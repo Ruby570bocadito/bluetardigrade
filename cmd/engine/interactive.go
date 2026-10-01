@@ -310,7 +310,13 @@ func matchesTui(query, severity, sev string, fields ...string) bool {
 	if severity != "" && severity != sev {
 		return false
 	}
-	return query == "" || strings.Contains(strings.ToLower(strings.Join(fields, " ")), strings.ToLower(query))
+	haystack := strings.ToLower(strings.Join(fields, " "))
+	for _, term := range strings.Fields(strings.ToLower(query)) {
+		if !strings.Contains(haystack, term) {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *tuiModel) filteredAlerts() []alert.Alert {
@@ -318,7 +324,7 @@ func (m *tuiModel) filteredAlerts() []alert.Alert {
 	for i := len(m.snap.recent) - 1; i >= 0; i-- {
 		a := m.snap.recent[i]
 		if matchesTui(m.query, tuiSeverities[m.severity], a.Severity,
-			a.RuleID, a.RuleName, a.Host, a.User, a.Summary, a.Message, strings.Join(a.Tags, " ")) {
+			a.ID, a.EventID, a.EventType, a.RuleID, a.RuleName, a.Host, a.User, a.Summary, a.Message, strings.Join(a.Tags, " ")) {
 			out = append(out, a)
 		}
 	}
@@ -487,7 +493,8 @@ func (m *tuiModel) detailLines() []string {
 			"pgup / pgdown   Saltar una página",
 			"home / end      Inicio / final de la lista",
 			"enter           Abrir / cerrar detalle",
-			"/               Buscar regla, host, usuario, resumen o tag",
+			"/               Buscar ID, tipo, regla, host, usuario o tag",
+			"                Cada término debe aparecer en la evidencia",
 			"s               Rotar filtro de severidad",
 			"p / espacio     Pausar / reanudar SOLO la vista",
 			"esc             Volver; limpiar filtros en la lista",

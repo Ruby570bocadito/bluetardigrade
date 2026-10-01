@@ -1,4 +1,15 @@
 import type { EngineStats, SfAlert } from './console-types'
+import { writeAlertLens, writeViewToSearch } from './url-state'
+
+export type TriageTarget = 'critical' | 'new' | 'acknowledged' | 'closed'
+
+/** Open the same live alert window counted by the dashboard, with a fresh lens. */
+export function writeTriageDestination(search: string, target: TriageTarget): string {
+  const lens = target === 'critical'
+    ? writeAlertLens(search, 'critical', '', 'open', 'live')
+    : writeAlertLens(search, 'all', '', target, 'live')
+  return writeViewToSearch(lens, 'alertas')
+}
 
 export function triageSummary(alerts: readonly SfAlert[]) {
   return {

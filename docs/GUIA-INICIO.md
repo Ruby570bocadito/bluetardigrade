@@ -60,7 +60,11 @@ bun run dev
 
 Abre [localhost:3000](http://localhost:3000). El panel reúne críticas sin
 cerrar, estado operativo, indicadores, hosts con riesgo y actividad.
-Puedes actualizar manualmente y saltar a alertas o telemetría.
+Puedes actualizar manualmente y saltar a alertas o telemetría. **Ver críticas
+sin cerrar** y los contadores de nuevas, reconocidas y cerradas abren su cola
+filtrada. Limpian búsquedas antiguas de alertas, mantienen el contexto de las
+otras vistas y permiten volver con **Atrás**. Se deshabilitan sin conexión a
+la API. [Detalle de los accesos](INVESTIGACION-CLI-Y-TRIAJE.md).
 Los recuentos de triaje y el gráfico son muestras del búfer; los totales
 del motor se muestran por separado. `—` indica que falta una lectura.
 

@@ -69,6 +69,48 @@ func TestInteractivePauseDoesNotPauseEngine(t *testing.T) {
 	}
 }
 
+func TestInteractiveSearchTermsAcrossFields(t *testing.T) {
+	m := testPanel()
+	for _, tc := range []struct {
+		query string
+		want  int
+	}{
+		{"  LAB-B   lsass  ", 1},
+		{"LSASS\taccess", 1},
+		{"LSASS LAB-A", 0},
+		{"LAB", 2},
+		{" \t ", 2},
+	} {
+		m.query = tc.query
+		if got := len(m.filteredAlerts()); got != tc.want {
+			t.Fatalf("query %q: got %d alerts, want %d", tc.query, got, tc.want)
+		}
+	}
+	m.stats.setRuleCatalog([]rules.Rule{{ID: "R-1", Name: "PowerShell", EventType: "process.create", Severity: "high", Tags: []string{"attack.t1059"}}})
+	m.refresh()
+	m.query = "T1059 powershell process.create"
+	if got := len(m.filteredRules()); got != 1 {
+		t.Fatalf("terms across rule fields: got %d rules", got)
+	}
+	m.severity = 1 // critical: still an intersection with the query
+	if len(m.filteredRules()) != 0 {
+		t.Fatal("query must not bypass the severity filter")
+	}
+}
+
+func TestInteractiveSearchByAlertAndEventIdentity(t *testing.T) {
+	m := testPanel()
+	m.stats.recordAlert(alert.Alert{ID: "alert-42", EventID: "evt-99", EventType: "registry.set", Severity: "info"})
+	m.refresh()
+	for _, query := range []string{"ALERT-42", "evt-99", "registry.set", "alert-42 registry.set evt-99"} {
+		m.query = query
+		list := m.filteredAlerts()
+		if len(list) != 1 || list[0].ID != "alert-42" {
+			t.Fatalf("identity query %q: got %+v", query, list)
+		}
+	}
+}
+
 func TestInteractiveHistorySelectionAndEviction(t *testing.T) {
 	m := testPanel()
 	panelKey(m, "end")

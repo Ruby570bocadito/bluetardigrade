@@ -2,6 +2,7 @@
 
 | Ruta | Contenido |
 |------|-----------|
+| [INVESTIGACION-CLI-Y-TRIAJE.md](INVESTIGACION-CLI-Y-TRIAJE.md) | Búsqueda CLI por ID y términos, accesos de triaje del dashboard, navegación y regresiones |
 | [PALETA-Y-PRUEBAS-NAVEGADOR.md](PALETA-Y-PRUEBAS-NAVEGADOR.md) | Nueva paleta de comandos, foco modal, protección de atajos y pruebas Chromium de escritorio/móvil |
 | [RESUMEN-MEJORAS-2026-10-01.md](RESUMEN-MEJORAS-2026-10-01.md) | Registro completo de las dos rondas: CLI, dashboard, histórico, bugs corregidos, documentación, pruebas locales y CI remota del PR #4 |
 | [GUIA-INICIO.md](GUIA-INICIO.md) | Arranque y operación en español: CLI, consola, histórico y resolución de problemas |
