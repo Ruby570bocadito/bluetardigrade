@@ -174,6 +174,7 @@ try {
     const before = fixture.reads()
     await openPalette()
     await search().fill('recuperar motor')
+    await page.waitForFunction(() => document.querySelector('dialog[open] [role="combobox"]')?.getAttribute('aria-activedescendant')?.endsWith('-refresh'))
     fixture.holdStats()
     const request = page.waitForRequest((request) => request.url().endsWith('/api/engine/api/stats'))
     await page.keyboard.press('Enter')
@@ -181,7 +182,11 @@ try {
     assert.ok(fixture.reads() > before)
     await openPalette()
     await search().fill('recuperar motor')
-    await page.waitForFunction(() => document.querySelector('[role="option"][aria-disabled="true"]'))
+    await page.waitForFunction(() => {
+      const input = document.querySelector('dialog[open] [role="combobox"]')
+      const id = input?.getAttribute('aria-activedescendant')
+      return id?.endsWith('-refresh') && document.getElementById(id)?.getAttribute('aria-disabled') === 'true'
+    })
     const heldReads = fixture.reads()
     await page.keyboard.press('Enter')
     await search().waitFor()

@@ -51,6 +51,7 @@ que una tecla posterior complete una navegación antigua.
 | Un prefijo `g` podía sobrevivir a un cambio de foco o a abrir ayuda | Reinicio del buffer antes de cada guard y en focus/blur |
 | Eventos consumidos, composición o repetición podían activar acciones | Guard antes de interpretar la tecla |
 | Volver a elegir la vista activa añadía historial redundante | Evitar push cuando la vista ya coincide |
+| Al reabrir, el reinicio de búsqueda podía competir con una entrada nueva | Estado inicial al montar; la regresión espera la opción activa antes de ejecutar |
 
 ## Código y comprobación
 

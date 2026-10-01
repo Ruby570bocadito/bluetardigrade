@@ -399,7 +399,7 @@ export function ConsoleShell() {
         </div>
       </div>
       <ShortcutsHelp open={helpOpen} rows={HELP_ROWS} onClose={() => setHelpOpen(false)} />
-      <CommandPalette open={paletteOpen} refreshing={refreshing} onClose={() => setPaletteOpen(false)} onExecute={executeCommand} />
+      {paletteOpen && <CommandPalette open refreshing={refreshing} onClose={() => setPaletteOpen(false)} onExecute={executeCommand} />}
     </div>
   )
 }

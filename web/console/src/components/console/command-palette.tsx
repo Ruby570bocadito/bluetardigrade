@@ -20,10 +20,6 @@ export function CommandPalette({ open, refreshing, onClose, onExecute }: {
   const disabled = (command: ConsoleCommand) => command.kind === 'refresh' && refreshing
 
   useEffect(() => {
-    if (open) { setQuery(''); setActive(0) }
-  }, [open])
-
-  useEffect(() => {
     if (open && selected) document.getElementById(`${id}-${selected.id}`)?.scrollIntoView?.({ block: 'nearest' })
   }, [open, id, selected])
 
