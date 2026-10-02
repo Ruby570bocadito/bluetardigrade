@@ -41,7 +41,19 @@ try {
     Stop-SfTrackedProcesses $testRoot
     Assert ($script:stopped.Count -eq 0) 'Stale PID stopped foreign process'
     Assert (-not (Test-Path (Join-Path $testRoot 'run\engine.pid'))) 'Stale PID file retained'
-    Write-Output 'PASS: persisted settings, precedence, child environment, stable state directory and stale PID protection'
+    New-Item -ItemType Directory (Join-Path $testRoot 'bin'), (Join-Path $testRoot 'scripts') -Force | Out-Null
+    Set-Content (Join-Path $testRoot 'bin\engine.exe') 'fixture'
+    Copy-Item (Join-Path $repo 'scripts\windows\start-engine.ps1') (Join-Path $testRoot 'scripts\start-engine.ps1')
+    Set-Content (Join-Path $testRoot 'scripts\runtime.ps1') @'
+function Start-SfEngine {
+    param($Root, $Executable)
+    if (-not (Test-Path -LiteralPath $Executable)) { throw 'NoConsole startup resolved an incorrect root' }
+    Set-Content -LiteralPath (Join-Path $Root 'run\resolved-root.txt') $Root
+}
+'@
+    & (Join-Path $testRoot 'scripts\start-engine.ps1')
+    Assert ((Get-Content (Join-Path $testRoot 'run\resolved-root.txt')) -eq $testRoot) 'NoConsole startup depends on web sources'
+    Write-Output 'PASS: persisted settings, precedence, child environment, stable state directory, stale PID protection and NoConsole startup root'
 } finally {
     foreach ($key in $saved.Keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key], 'Process') }
     foreach ($name in @('Start-Process', 'Get-CimInstance', 'Stop-Process')) { Remove-Item ('Function:' + $name) -ErrorAction SilentlyContinue }

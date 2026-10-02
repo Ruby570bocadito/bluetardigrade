@@ -713,7 +713,7 @@ function Register-Autostart {
         } else { Remove-ItemProperty -Path $runKey -Name 'security-framework-console' -ErrorAction SilentlyContinue }
         $chk = Get-ItemProperty -Path $runKey
         if ($chk.'security-framework-engine' -and (-not $WithConsole -or $chk.'security-framework-console')) {
-            $note = 'engine minimized'
+            $note = 'engine hidden'
             if ($WithConsole) { $note += ' + console hidden' }
             if ($WebhookUrl) { $note += ", alerts POST to $WebhookUrl" }
             if ($IngestToken) { $note += ', ingest auth on' }
