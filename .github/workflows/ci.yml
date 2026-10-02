@@ -100,6 +100,13 @@ jobs:
         # 5.1, the installer's declared minimum target.
         shell: pwsh
         run: ./scripts/dev-tests/check_powershell_syntax.ps1
+      - name: Installer native stderr guard
+        # Native stderr redirected under EAP='Stop' (2>&1 / 2>$null)
+        # is a terminating NativeCommandError on Windows PowerShell
+        # 5.1: git's own 'Cloning into...' progress line killed the
+        # one-command installer. Invoke-Native is the only sanctioned
+        # pattern; this lint keeps the class from coming back.
+        run: python3 scripts/dev-tests/check_installer_native_stderr.py
       - name: OpenAPI spec drift guard
         run: |
           # PyYAML pinned: a PyPI version release is immutable once

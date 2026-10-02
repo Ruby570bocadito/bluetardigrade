@@ -40,6 +40,19 @@ and the `make dist` target.
 
 ### Fixed
 
+- The installer no longer dies on git's own progress banner: `git clone`
+  always writes "Cloning into ..." to stderr, and under
+  `$ErrorActionPreference='Stop'` Windows PowerShell 5.1 turns the first
+  REDIRECTED stderr line into a terminating `NativeCommandError` — the
+  `2>&1`/`2>$null` redirects materialize the ErrorRecord before
+  discarding it. Every native call (git, go builds, reg, netsh, tool
+  version probes) now goes through `Invoke-Native`, which runs with
+  `EAP=Continue`, echoes progress, keeps the text for diagnostics and
+  throws with the real exit code and detail. `go build` failures now
+  surface the compiler error in the throw. A CI/`make ci` lint
+  (`check_installer_native_stderr.py`, with `--self-test` fixtures from
+  the original crash) keeps the pattern from returning. The system-Go
+  probe also moved 1.22 → 1.26 to match `go.mod`.
 - The Windows installer was un-runnable: `"cannot verify $Url: …"` in
   `Invoke-Download` is a PowerShell parse error
   (`InvalidVariableReferenceWithDrive` — `:` after a variable is read as
