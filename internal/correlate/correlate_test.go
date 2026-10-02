@@ -566,3 +566,80 @@ func TestShippedSequencesStillLoad(t *testing.T) {
 		t.Fatalf("shipped sequences reference rules that do not exist: %v", missing)
 	}
 }
+
+// ---- window semantics over event times (review 2026-10-02) -------------
+
+// A stale early hit of one step must not anchor the window: the real
+// hit of that step inside the window refreshes it, and the chain fires
+// when the three real steps fit in the window.
+func TestStaleEarlyHitDoesNotAnchorWindow(t *testing.T) {
+	var c collector
+	m, _ := LoadDir(writeSeq(t, seqYAML), c.emit)
+	m.Observe(ev("H1", 0), "Regla A")                            // benign, old
+	m.Observe(ev("H1", 4*time.Minute), "Regla A")                // real step A
+	m.Observe(ev("H1", 5*time.Minute+30*time.Second), "Regla B") // real B
+	m.Observe(ev("H1", 6*time.Minute), "Regla C")                // A..C span 2m
+	if c.count() != 1 {
+		t.Fatalf("A,B,C inside 2 minutes must fire a 5m chain, alerts = %d", c.count())
+	}
+	if !strings.Contains(c.alerts[0].Summary, "2m0s") {
+		t.Fatalf("summary must report the real 2m span: %q", c.alerts[0].Summary)
+	}
+}
+
+// An event older than the recorded progress (offline import, skewed
+// clock) must not complete a chain whose steps are far apart in time.
+func TestOutOfOrderEventDoesNotStitchDistantSteps(t *testing.T) {
+	var c collector
+	m, _ := LoadDir(writeSeq(t, seqYAML), c.emit)
+	m.Observe(ev("H1", 72*time.Hour), "Regla A")
+	m.Observe(ev("H1", 0), "Regla B") // three days earlier
+	m.Observe(ev("H1", 72*time.Hour+time.Second), "Regla C")
+	if c.count() != 0 {
+		t.Fatalf("steps three days apart completed a 5m chain")
+	}
+	// a fresh B inside the window completes it
+	m.Observe(ev("H1", 72*time.Hour+2*time.Second), "Regla B")
+	if c.count() != 1 {
+		t.Fatalf("in-window B must complete the chain, alerts = %d", c.count())
+	}
+}
+
+// A late, OLDER hit of an already-matched step must not push recorded
+// progress back in time.
+func TestOlderHitDoesNotRewindStep(t *testing.T) {
+	var c collector
+	m, _ := LoadDir(writeSeq(t, seqYAML), c.emit)
+	m.Observe(ev("H1", 10*time.Minute), "Regla A")
+	m.Observe(ev("H1", 0), "Regla A") // late arrival, older
+	m.Observe(ev("H1", 11*time.Minute), "Regla B")
+	m.Observe(ev("H1", 12*time.Minute), "Regla C")
+	if c.count() != 1 {
+		t.Fatalf("older duplicate rewound step A, alerts = %d", c.count())
+	}
+}
+
+// Chains whose window elapsed on the wall clock are reclaimed: by the
+// periodic Sweep, and on admission when the cap is full, so long
+// uptimes do not silently stop correlation for new hosts.
+func TestExpiredStatesAreReclaimed(t *testing.T) {
+	var c collector
+	m, _ := LoadDir(writeSeq(t, seqYAML), c.emit)
+	wall := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	m.now = func() time.Time { return wall }
+	for i := 0; i < maxTrackedStates; i++ {
+		m.Observe(ev(fmt.Sprintf("h%d", i), 0), "Regla A")
+	}
+	if m.States() != maxTrackedStates {
+		t.Fatalf("states = %d, want the cap", m.States())
+	}
+	wall = wall.Add(6 * time.Minute) // past the 5m window
+	m.Observe(ev("late-host", 6*time.Minute), "Regla A")
+	if m.States() != 1 {
+		t.Fatalf("admission at the cap must reclaim expired states, states = %d", m.States())
+	}
+	wall = wall.Add(6 * time.Minute)
+	if n := m.Sweep(wall); n != 1 || m.States() != 0 {
+		t.Fatalf("Sweep removed %d, states left %d; want 1 and 0", n, m.States())
+	}
+}

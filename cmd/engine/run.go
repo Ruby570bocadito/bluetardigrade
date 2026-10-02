@@ -633,7 +633,8 @@ func runEngine(o *options, interactive bool) error {
 	// entries (30 min TTL) so a long-lived engine's parent map does
 	// not leak dead pids. Reuses the reload cadence; a zero cadence
 	// skips the sweep the same way it skips reloads (process entries
-	// still evict on terminate and on the per-host cap).
+	// still evict on terminate and on the per-host cap). The correlator
+	// sweep rides the same cadence.
 	if o.reloadEvery > 0 {
 		go func() {
 			t := time.NewTicker(o.reloadEvery)
@@ -643,7 +644,14 @@ func runEngine(o *options, interactive bool) error {
 				case <-ctx.Done():
 					return
 				case <-t.C:
-					enricher.Sweep(time.Now())
+					now := time.Now()
+					enricher.Sweep(now)
+					// correlator: retire chains whose window elapsed
+					// without progress, so correlator_states reports
+					// live chains and the cap never fills with dead ones
+					if corr != nil {
+						corr.Sweep(now)
+					}
 				}
 			}
 		}()
