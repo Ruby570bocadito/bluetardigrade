@@ -66,85 +66,54 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
     let capture = Arc::clone(&pipeline);
     let host = hostname();
 
-    let provider = Provider::kernel(&kernel_providers::PROCESS_PROVIDER)
-        .add_callback(move |record: &EventRecord, schema_locator: &SchemaLocator| {
-            if record.opcode() != OPCODE_PROCESS_START {
-                return;
-            }
-            let Ok(schema) = schema_locator.event_schema(record) else {
-                return;
-            };
-            let parser = Parser::create(record, &schema);
-            // ProcessID is the one field every useful event must carry;
-            // the rest degrade gracefully (ppid 0 is skipped on
-            // serialization, missing CommandLine serializes as absent).
-            let Ok(pid) = parser.try_parse::<u32>("ProcessId") else {
-                return;
-            };
-            let ppid = parser.try_parse::<u32>("ParentId").unwrap_or(0);
-            let short_name = parser
-                .try_parse::<String>("ImageFileName")
-                .unwrap_or_default();
-            let command_line = parser
-                .try_parse::<String>("CommandLine")
-                .ok()
-                .filter(|c| !c.is_empty());
-            let name = procinfo::process_name(&short_name, command_line.as_deref().unwrap_or(""));
-            // owner of the NEW process (the kernel's WBEM SID), not the
-            // account that runs the sensor
-            let user = parser
-                .try_parse::<Vec<u8>>("UserSID")
-                .ok()
-                .and_then(|b| procinfo::sid_from_wbem(&b));
-
-            let event = EventJson {
-                id: normalize::new_uuid(),
-                // Forensics-grade ordering: the ETW record's own time,
-                // not the processing clock (kernel buffering can delay
-                // delivery by seconds). Decoded from the raw FILETIME:
-                // ferrisetw 1.2.0's timestamp() drops the low dword.
-                timestamp: procinfo::filetime_to_rfc3339(record.raw_timestamp())
-                    .unwrap_or_else(normalize::now_rfc3339),
-                r#type: TYPE_PROCESS_CREATE.into(),
-                source: "etw".into(),
-                host: host.clone(),
-                user,
-                process: Some(ProcessJson {
-                    pid: pid as i32,
-                    ppid: ppid as i32,
-                    name,
-                    command_line,
-                    // the kernel event has no full image path; argv[0]
-                    // is caller-controlled, so it is not reported as one
-                    image: None,
-                    hashes: None, // phase 1: compute sha256 on image write
-                }),
-                network: None,
-                tags: vec!["sensor:etw".into()],
-            };
-            match serde_json::to_string(&event) {
-                Ok(line) => capture.push(line),
-                Err(err) => eprintln!("[SENSOR] serialize failed: {err}"),
-            }
-        })
-        .build();
+    // The provider is rebuilt for each start attempt (a stale session
+    // from a previous run is stopped and the start retried once).
+    let make_provider = || {
+        let capture = Arc::clone(&capture);
+        let host = host.clone();
+        Provider::kernel(&kernel_providers::PROCESS_PROVIDER)
+            .add_callback(move |record: &EventRecord, schema_locator: &SchemaLocator| {
+                handle_record(record, schema_locator, &host, &capture)
+            })
+            .build()
+    };
 
     // ferrisetw's TraceError implements neither Display nor
     // std::error::Error, so anyhow's `?` cannot lift it: map errors
     // explicitly through their Debug form.
-    let (trace, handle) = KernelTrace::new()
-        .named(String::from(SESSION_NAME))
-        .enable(provider)
-        .start()
-        .map_err(|e| {
-            let detail = format!("{e:?}");
-            if detail.contains("-2147024891") {
-                // E_ACCESSDENIED: kernel sessions need elevation
-                anyhow::anyhow!("starting ETW trace: access denied - run the sensor from an elevated (Administrator) prompt ({detail})")
-            } else {
-                anyhow::anyhow!("starting ETW trace: {detail}")
+    let start = || {
+        KernelTrace::new()
+            .named(String::from(SESSION_NAME))
+            .enable(make_provider())
+            .start()
+    };
+    let started = match start() {
+        // A kernel session outlives the process that created it: a
+        // previous sensor that was killed (or crashed) leaves the name
+        // taken. Stop that orphan and try once more.
+        Err(e) if format!("{e:?}").contains("AlreadyExist") => {
+            eprintln!("[SENSOR] stopping the ETW session left behind by a previous run ({SESSION_NAME})");
+            if let Err(stop_err) = ferrisetw::trace::stop_trace_by_name(SESSION_NAME) {
+                eprintln!(
+                    "[SENSOR] could not stop it ({stop_err:?}): run the sensor elevated, or stop it with 'logman stop {SESSION_NAME} -ets'"
+                );
             }
-        })?;
+            start()
+        }
+        other => other,
+    };
+    let (trace, handle) = started.map_err(|e| {
+        let detail = format!("{e:?}");
+        if detail.contains("-2147024891") {
+            // E_ACCESSDENIED: kernel sessions need elevation
+            anyhow::anyhow!("starting ETW trace: access denied - run the sensor from an elevated (Administrator) prompt ({detail})")
+        } else {
+            anyhow::anyhow!("starting ETW trace: {detail}")
+        }
+    })?;
+    // Ctrl+C / closing the console stops the session instead of leaving
+    // it running in the kernel after the process is gone.
+    install_console_handler();
 
     eprintln!("[SENSOR] ETW session active - streaming kernel process start events");
     // The session must stay alive while events are processed; dropping
@@ -165,3 +134,81 @@ fn hostname() -> String {
     std::env::var("COMPUTERNAME").unwrap_or_else(|_| "unknown-host".into())
 }
 
+/// Decodes one kernel process event and hands it to the delivery queue.
+fn handle_record(record: &EventRecord, schema_locator: &SchemaLocator, host: &str, capture: &Pipeline) {
+    if record.opcode() != OPCODE_PROCESS_START {
+        return;
+    }
+    let Ok(schema) = schema_locator.event_schema(record) else {
+        return;
+    };
+    let parser = Parser::create(record, &schema);
+    // ProcessID is the one field every useful event must carry;
+    // the rest degrade gracefully (ppid 0 is skipped on
+    // serialization, missing CommandLine serializes as absent).
+    let Ok(pid) = parser.try_parse::<u32>("ProcessId") else {
+        return;
+    };
+    let ppid = parser.try_parse::<u32>("ParentId").unwrap_or(0);
+    let short_name = parser
+        .try_parse::<String>("ImageFileName")
+        .unwrap_or_default();
+    let command_line = parser
+        .try_parse::<String>("CommandLine")
+        .ok()
+        .filter(|c| !c.is_empty());
+    let name = procinfo::process_name(&short_name, command_line.as_deref().unwrap_or(""));
+    // owner of the NEW process (the kernel's WBEM SID), not the
+    // account that runs the sensor
+    let user = parser
+        .try_parse::<Vec<u8>>("UserSID")
+        .ok()
+        .and_then(|b| procinfo::sid_from_wbem(&b));
+
+    let event = EventJson {
+        id: normalize::new_uuid(),
+        // Forensics-grade ordering: the ETW record's own time,
+        // not the processing clock (kernel buffering can delay
+        // delivery by seconds). Decoded from the raw FILETIME:
+        // ferrisetw 1.2.0's timestamp() drops the low dword.
+        timestamp: procinfo::filetime_to_rfc3339(record.raw_timestamp())
+            .unwrap_or_else(normalize::now_rfc3339),
+        r#type: TYPE_PROCESS_CREATE.into(),
+        source: "etw".into(),
+        host: host.to_string(),
+        user,
+        process: Some(ProcessJson {
+            pid: pid as i32,
+            ppid: ppid as i32,
+            name,
+            command_line,
+            // the kernel event has no full image path; argv[0]
+            // is caller-controlled, so it is not reported as one
+            image: None,
+            hashes: None, // phase 1: compute sha256 on image write
+        }),
+        network: None,
+        tags: vec!["sensor:etw".into()],
+    };
+    match serde_json::to_string(&event) {
+        Ok(line) => capture.push(line),
+        Err(err) => eprintln!("[SENSOR] serialize failed: {err}"),
+    }
+}
+
+/// Stops the kernel session on Ctrl+C, Ctrl+Break or console close, so
+/// ProcessTrace returns and the sensor exits through its normal path
+/// (session ended, counters reported) without leaving the session
+/// running in the kernel.
+fn install_console_handler() {
+    unsafe extern "system" fn on_console_event(_ctrl_type: u32) -> windows_sys::core::BOOL {
+        let _ = ferrisetw::trace::stop_trace_by_name(SESSION_NAME);
+        1 // handled: the main thread finishes once ProcessTrace returns
+    }
+    // SAFETY: registers a plain function with the documented signature;
+    // the handler only calls ControlTrace through ferrisetw.
+    let ok = unsafe { windows_sys::Win32::System::Console::SetConsoleCtrlHandler(Some(on_console_event), 1) };
+    if ok == 0 {
+        eprintln!("[SENSOR] warning: could not install the Ctrl+C handler; stop the session with 'logman stop {SESSION_NAME} -ets' after exiting");
+    }
+}
