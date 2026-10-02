@@ -74,9 +74,12 @@ medio: ETW nativo ampliado.
 - **Cert stream (firma de binarios)** — `Microsoft-Windows-Certificate`
   para validar firmantes de ejecutables. Cierre: campo `signer` en el
   evento + regla de binarios sin firmar desde rutas de sistema.
-- **Cola local con reintento** — buffer persistente del sensor para
-  cortes del motor (hoy el bookmark cubre el Sysmon watcher, no un
-  buffer del ETW). Cierre: cola con tope en disco y drenaje con dedupe.
+- **Cola local con reintento: entregada** — el callback ETW ya no envía:
+  cola acotada en memoria (`--queue`) y spool opcional en disco con tope
+  (`--spool`, `--spool-max-mb`) que sobrevive a reinicios y se drena en
+  orden; las repeticiones las absorbe el almacén (primera escritura
+  gana por id). Pendiente: validarlo en un host Windows real con cortes
+  largos del motor.
 
 ## H4 — Motor: rendimiento y escala
 
@@ -91,6 +94,9 @@ medio: ETW nativo ampliado.
 - **Sharding del ring por host** — el ring de eventos de la API es
   global (1000): particionar por host con cuota garantizada. Cierre:
   cambio de estructura + tests de equidad con 64 hosts.
+- **Escrituras SQLite por lotes: entregadas** — el bucle persiste en una
+  transacción los eventos ya encolados (hasta 256) antes de publicarlos:
+  de ~8 300 a ~23 600 eventos/s con `-store` en la misma máquina.
 - **Memoria del correlador** — `correlate.MaxTrackedStates` ya expone
   el tope: audit de saturación con alerta visible cuando se cruza el
   80%. Cierre: gauge en `/api/stats` + línea de consola.
