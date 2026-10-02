@@ -118,7 +118,7 @@ concurrent snapshot frames, live-channel warnings, outage/recovery, pinned
 historical navigation, POST-only triage, lifecycle deep links, superseded
 queries, batched decisions, memory-only limits, older engines, forensic
 retries, complete JSON/JSONL exports, stale evidence responses and cleanup.
-The 27 checks include saved-search capture/application, cross-tab updates,
+The 34 checks include report drafts/exports/revision conflicts/orphan snapshots and saved-search capture/application, cross-tab updates,
 text rendering and blocked/corrupt storage handling.
 They do not certify browser layout or replace the native Bun integration suite.
 

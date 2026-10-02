@@ -27,6 +27,14 @@ async function check(name, fn) {
   console.log(`PASS: ${name}`)
 }
 
+async function waitForFixture(predicate, message) {
+  const end = Date.now() + 5000
+  while (!predicate()) {
+    if (Date.now() >= end) throw new Error(message)
+    await new Promise((done) => setTimeout(done, 20))
+  }
+}
+
 async function startServer() {
   if (!external) {
     server = spawn(process.execPath, [join(repo, 'web/console/node_modules/next/dist/bin/next'), 'start', '-H', url.hostname, '-p', url.port], {
@@ -198,6 +206,9 @@ try {
     const request = page.waitForRequest((request) => request.url().endsWith('/api/engine/api/stats'))
     await page.keyboard.press('Enter')
     await request
+    // Playwright emits "request" before dispatching the async route handler.
+    // Wait for the fixture to observe the request before checking its counter.
+    await waitForFixture(() => fixture.reads() > before, 'Refresh request never reached the stats fixture')
     assert.ok(fixture.reads() > before)
     await openPalette()
     await search().fill('recuperar motor')

@@ -161,3 +161,23 @@ func TestMailOfflineMIMEIndicatorsAndSafeURLs(t *testing.T) {
 		}
 	}
 }
+
+func TestMailObserverIdentityAndURLLimitAreExplicit(t *testing.T) {
+	d, _ := NewDecoder("eml", "MAIL-A")
+	other, _ := NewDecoder("eml", "MAIL-B")
+	raw := []byte("From: sender@example.com\nContent-Type: text/plain\n\n" + strings.Repeat("https://example.com/review ", 101))
+	a, err := d.DecodeMail(raw, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := other.DecodeMail(raw, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.ID == b.ID || a.Attributes["mail_sha256"] != b.Attributes["mail_sha256"] {
+		t.Fatal("same mail collapsed distinct observers or changed original evidence hash")
+	}
+	if a.Attributes["mail_parts_not_inspected"] != "true" || len(strings.Split(a.Attributes["mail_urls"], "\n")) != 100 {
+		t.Fatal("URL limit was silent")
+	}
+}

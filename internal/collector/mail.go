@@ -75,7 +75,9 @@ func (d *Decoder) DecodeMail(raw []byte, imported time.Time) (*model.Event, erro
 	ev := d.event(model.TypeEmailMessage, d.Observer, ts)
 	a := ev.Attributes
 	hash := sha256.Sum256(raw)
-	ev.ID = hex.EncodeToString(hash[:16])
+	// Keep each observer's evidence row distinct, while mail_sha256 below
+	// identifies identical original bytes across observations.
+	ev.ID = d.id(raw)
 	put(a, "mail_sha256", hex.EncodeToString(hash[:]))
 	put(a, "mail_from", from[0].Address)
 	put(a, "mail_message_id", message.Header.Get("Message-ID"))
@@ -227,7 +229,12 @@ func (s *mailScan) part(header textproto.MIMEHeader, body io.Reader, depth int) 
 	if len(text) > 256<<10 || s.textBytes > 1<<20 {
 		return errors.New("EML decoded text limit exceeded")
 	}
-	for _, candidate := range mailURLs.FindAllString(string(text), 100) {
+	candidates := mailURLs.FindAllString(string(text), 101)
+	if len(candidates) > 100 {
+		s.notInspected = true
+		candidates = candidates[:100]
+	}
+	for _, candidate := range candidates {
 		u, err := url.Parse(strings.TrimRight(candidate, ".,);"))
 		if err != nil || u.Hostname() == "" {
 			continue

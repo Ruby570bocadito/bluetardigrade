@@ -5,12 +5,11 @@ desarrollo y los informes de proceso se archivaron fuera del árbol público en
 la ronda de renombrado a **bluetardigrade** (2026-10-01); el historial de git
 conserva la trazabilidad completa.
 
-- [SOC-INTEGRACIONES-E-INFORMES.md](SOC-INTEGRACIONES-E-INFORMES.md) — seis fuentes, phishing/firewall, informes CLI y dashboard, pruebas y límites.
-
 ## Mapa
 
 | Ruta | Contenido |
 |------|-----------|
+| [SOC-INTEGRACIONES-E-INFORMES.md](SOC-INTEGRACIONES-E-INFORMES.md) | Seis fuentes observadas, reglas SOC, phishing/firewall, informes humanos CLI/dashboard, pruebas y límites |
 | [INVESTIGACION-CLI-Y-TRIAJE.md](INVESTIGACION-CLI-Y-TRIAJE.md) | Búsqueda CLI por ID y términos, accesos de triaje del dashboard, navegación y regresiones |
 | [DETECCION-Y-EVIDENCIA.md](DETECCION-Y-EVIDENCIA.md) | Nuevas alarmas de ficheros, correcciones de contexto/YAML/forense, exportación y pruebas |
 | [INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md](INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md) | Búsquedas locales, protección CSV completa, progreso y límites del analista, código real frente a demo/fixtures |

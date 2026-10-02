@@ -165,6 +165,9 @@ validan firmas DKIM/SPF/DMARC, no se visita ningún enlace, no se resuelve
 DNS ni se ejecutan adjuntos. Las URLs guardadas omiten credenciales,
 query y fragmento; el cuerpo y los payloads no se almacenan en el evento.
 La evidencia original permanece en el archivo que proporciona el operador.
+Se inspeccionan hasta 100 URLs explícitas; al superar ese límite se marca
+contenido no inspeccionado. El ID incorpora el observador, mientras el
+SHA-256 permite reconocer el mismo mensaje original entre observadores.
 
 Archivos comprimidos, contenido no textual, mensajes anidados, charsets
 no soportados y partes no inspeccionadas se señalan explícitamente.
