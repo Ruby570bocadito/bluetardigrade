@@ -10,6 +10,7 @@ import {
   analystSystemPrompt,
   analystUserPrompt,
   chatCompletion,
+  mitreNote,
   type AnalystConfig,
 } from './analyst'
 import type { SfAlert, SfEvent } from './types'
@@ -175,4 +176,13 @@ describe('prompts', () => {
     expect(prompt).toContain('<<<CONDICIONES')
     expect(prompt).toContain('truncado')
   })
+})
+
+test('ATT&CK notes cover the shipped packs and fall back to the parent technique', () => {
+  expect(mitreNote('T1003.001')).toContain('LSASS')
+  expect(mitreNote('t1003.002')).toContain('SAM')
+  expect(mitreNote('T1003.999')).toBe(mitreNote('T1003'))
+  expect(mitreNote('T1218.011')).toBe(mitreNote('T1218'))
+  expect(mitreNote('T9999')).toBeUndefined()
+  expect(mitreNote(undefined)).toBeUndefined()
 })

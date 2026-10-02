@@ -37,7 +37,15 @@ async function loadRoute() {
   return import('./route')
 }
 
-const ENV_KEYS = ['SF_API_TOKEN', 'CONSOLE_ALLOWED_HOSTS', 'ENGINE_API_URL'] as const
+const ENV_KEYS = [
+  'SF_API_TOKEN',
+  'CONSOLE_ALLOWED_HOSTS',
+  'ENGINE_API_URL',
+  'CONSOLE_ACCESS_TOKEN',
+  'CONSOLE_ALLOW_UNAUTHENTICATED',
+] as const
+
+const basic = (password: string, user = 'ana') => 'Basic ' + btoa(`${user}:${password}`)
 const savedEnv: Record<string, string | undefined> = {}
 
 describe('engine proxy boundary', () => {
@@ -97,12 +105,50 @@ describe('engine proxy boundary', () => {
     expect(captured).toHaveLength(0) // nothing reached the engine
   })
 
-  test('CONSOLE_ALLOWED_HOSTS opens a non-loopback host explicitly', async () => {
+  test('CONSOLE_ALLOWED_HOSTS opens a non-loopback host only with credentials', async () => {
     process.env.CONSOLE_ALLOWED_HOSTS = 'lab.example'
+    const { GET } = await loadRoute()
+    // exposed beyond loopback with no credential configured: refused
+    let res = await GET(new Request('http://lab.example:3000/api/engine/api/stats'))
+    expect(res.status).toBe(403)
+    expect(((await res.json()) as { error: string }).error).toBe('console_auth_not_configured')
+    // ...and that refusal covers spoofed loopback Host headers too
+    res = await GET(new Request('http://lab.example:3000/api/engine/api/stats', { headers: { host: 'localhost' } }))
+    expect(res.status).toBe(403)
+    expect(captured).toHaveLength(0)
+    // with a console token the host is served to authenticated callers
+    process.env.CONSOLE_ACCESS_TOKEN = 'console-secret'
+    res = await GET(new Request('http://lab.example:3000/api/engine/api/stats', { headers: { authorization: basic('console-secret') } }))
+    expect(res.status).toBe(200)
+    expect(captured).toHaveLength(1)
+  })
+
+  test('CONSOLE_ALLOW_UNAUTHENTICATED declares an authenticating front end', async () => {
+    process.env.CONSOLE_ALLOWED_HOSTS = 'lab.example'
+    process.env.CONSOLE_ALLOW_UNAUTHENTICATED = '1'
     const { GET } = await loadRoute()
     const res = await GET(new Request('http://lab.example:3000/api/engine/api/stats'))
     expect(res.status).toBe(200)
     expect(captured).toHaveLength(1)
+  })
+
+  test('CONSOLE_ACCESS_TOKEN gates every request, spoofed loopback Host included', async () => {
+    process.env.CONSOLE_ACCESS_TOKEN = 'console-secret'
+    process.env.SF_API_TOKEN = 'engine-secret'
+    const { GET, POST } = await loadRoute()
+    for (const authorization of [undefined, basic('wrong'), 'Bearer console-secret', 'Basic !!!']) {
+      const headers: Record<string, string> = { host: 'localhost:3000' }
+      if (authorization) headers.authorization = authorization
+      const res = await GET(new Request('http://127.0.0.1:3000/api/engine/api/alerts', { headers }))
+      expect(res.status).toBe(401)
+      expect(res.headers.get('www-authenticate')).toContain('Basic')
+    }
+    const post = await POST(new Request(triageUrl, { method: 'POST', body: JSON.stringify({ status: 'closed' }) }))
+    expect(post.status).toBe(401)
+    expect(captured).toHaveLength(0) // the engine token never left the console
+    const ok = await GET(new Request('http://127.0.0.1:3000/api/engine/api/alerts', { headers: { authorization: basic('console-secret', 'any user') } }))
+    expect(ok.status).toBe(200)
+    expect((captured[0].init.headers as Record<string, string>).authorization).toBe('Bearer engine-secret')
   })
 
   test('IPv6 loopback and normalized DNS loopback are accepted', async () => {

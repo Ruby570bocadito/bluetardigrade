@@ -38,24 +38,40 @@ export function AnalystProvider({ children }: { children: React.ReactNode }) {
   const socketRef = useRef<Socket | null>(null)
 
   useEffect(() => {
-    const socket = io(consoleServiceUrl(), {
-      // keep in sync with the socket.io server path (console-service)
-      path: '/',
-      transports: ['websocket', 'polling'],
-      forceNew: true,
-      reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1500,
-      timeout: 8000,
-    })
-    socketRef.current = socket
-
-    socket.on('connect', () => setStatus('live'))
-    socket.on('disconnect', () => setStatus('down'))
-    socket.on('connect_error', () => setStatus('down'))
-
+    let cancelled = false
+    let socket: Socket | null = null
+    const connect = async () => {
+      // HUB_ACCESS_TOKEN (when the hub demands one) comes from the
+      // console's own authenticated route, never from the bundle. A
+      // loopback hub without a token answers with an empty string.
+      let token = ''
+      try {
+        const res = await fetch('/api/hub-token', { cache: 'no-store' })
+        if (res.ok) token = ((await res.json()) as { token?: string }).token ?? ''
+      } catch {
+        // offline console or older server: connect without credentials
+      }
+      if (cancelled) return
+      socket = io(consoleServiceUrl(), {
+        // keep in sync with the socket.io server path (console-service)
+        path: '/',
+        transports: ['websocket', 'polling'],
+        forceNew: true,
+        reconnection: true,
+        reconnectionAttempts: 10,
+        reconnectionDelay: 1500,
+        timeout: 8000,
+        auth: token ? { token } : {},
+      })
+      socketRef.current = socket
+      socket.on('connect', () => setStatus('live'))
+      socket.on('disconnect', () => setStatus('down'))
+      socket.on('connect_error', () => setStatus('down'))
+    }
+    void connect()
     return () => {
-      socket.disconnect()
+      cancelled = true
+      socket?.disconnect()
       socketRef.current = null
     }
   }, [])

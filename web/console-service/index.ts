@@ -14,7 +14,14 @@ import { logError, logLine } from './log'
 
 const hub = createHub()
 
-await hub.start()
+try {
+  await hub.start()
+} catch (err) {
+  // configuration refusals (e.g. exposed without HUB_ACCESS_TOKEN) and
+  // bind failures end the process with one readable line, not a stack
+  logError(err instanceof Error ? err.message : String(err))
+  process.exit(1)
+}
 
 async function shutdown(signal: string) {
   logLine(`senal ${signal} recibida; cerrando el hub`)

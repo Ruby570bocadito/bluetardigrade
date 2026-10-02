@@ -34,6 +34,16 @@
 //    live here, before anything is forwarded. Headerless clients
 //    (curl, REST tooling, the dev-tests smokes) keep working: no
 //    browser context, no CSRF.
+//
+// 3. Credentials. Host pinning cannot stop a NON-browser client: curl
+//    sends whatever Host it likes. When the console is reachable beyond
+//    loopback, CONSOLE_ACCESS_TOKEN (lib/access.ts, enforced for every
+//    path by src/proxy.ts and re-checked here) is the boundary. Allowing
+//    extra hosts without it is refused unless the operator states that
+//    something in front already authenticates
+//    (CONSOLE_ALLOW_UNAUTHENTICATED=1).
+
+import { accessToken, authorized, unauthorizedResponse } from '@/lib/access'
 
 const ENGINE_URL = process.env.ENGINE_API_URL || 'http://127.0.0.1:7778'
 
@@ -52,12 +62,23 @@ function apiToken(): string {
   return process.env.SF_API_TOKEN || ''
 }
 
-function allowedHosts(): Set<string> {
-  const extra = (process.env.CONSOLE_ALLOWED_HOSTS || '')
+function extraHosts(): string[] {
+  return (process.env.CONSOLE_ALLOWED_HOSTS || '')
     .split(',')
     .map((h) => h.trim().toLowerCase())
     .filter(Boolean)
-  return new Set([...LOOPBACK_HOSTS, ...extra])
+}
+
+function allowedHosts(): Set<string> {
+  return new Set([...LOOPBACK_HOSTS, ...extraHosts()])
+}
+
+// exposedWithoutCredentials: the operator allowed hosts beyond loopback
+// but configured no console credential and did not declare an
+// authenticating front end.
+function exposedWithoutCredentials(): boolean {
+  const beyondLoopback = extraHosts().some((h) => !LOOPBACK_HOSTS.has(h))
+  return beyondLoopback && !accessToken() && process.env.CONSOLE_ALLOW_UNAUTHENTICATED !== '1'
 }
 
 // hostAllowed checks the Host header (falling back to the request URL
@@ -181,9 +202,18 @@ function reject(request: Request, error: string, hint: string): Response {
   return Response.json({ error, hint, host: from }, { status: 403 })
 }
 
-// The boundary every forwarded request crosses: host pinning first (it
-// protects reads and writes alike), then the same-origin write guard.
-function refused(request: Request): Response | null {
+// The boundary every forwarded request crosses: credentials and the
+// exposure check first, then host pinning (it protects reads and
+// writes alike), then the same-origin write guard.
+async function refused(request: Request): Promise<Response | null> {
+  if (!(await authorized(request))) return unauthorizedResponse()
+  if (exposedWithoutCredentials()) {
+    return reject(
+      request,
+      'console_auth_not_configured',
+      'CONSOLE_ALLOWED_HOSTS expone la consola más allá de loopback sin credenciales: define CONSOLE_ACCESS_TOKEN (o CONSOLE_ALLOW_UNAUTHENTICATED=1 si un proxy inverso ya autentica a los operadores).',
+    )
+  }
   if (!hostAllowed(request)) {
     return reject(
       request,
@@ -202,13 +232,13 @@ function refused(request: Request): Response | null {
 }
 
 export async function GET(request: Request): Promise<Response> {
-  const guard = refused(request)
+  const guard = await refused(request)
   if (guard) return guard
   return forward(request)
 }
 
 export async function POST(request: Request): Promise<Response> {
-  const guard = refused(request)
+  const guard = await refused(request)
   if (guard) return guard
   const { pathname } = new URL(request.url)
   const path = pathname.replace(/^\/api\/engine/, '') || '/'
