@@ -509,3 +509,43 @@ func TestServeShutdownAcceptWindowHammer(t *testing.T) {
 		<-drained
 	}
 }
+
+// A sensor that never reads its acks (the bundled Rust sensor does not
+// after AUTH) must not park the handler once the socket buffers fill
+// with error acks: past the ack deadline the connection is closed.
+func TestNonReadingClientCannotParkHandler(t *testing.T) {
+	prev := ackTimeoutNanos.Load()
+	ackTimeoutNanos.Store(int64(200 * time.Millisecond))
+	defer ackTimeoutNanos.Store(prev)
+
+	srv, _, addr := startTestServer(t, "")
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if tc, ok := conn.(*net.TCPConn); ok {
+		_ = tc.SetReadBuffer(4096) // fill the path quickly
+	}
+	// malformed lines each earn an error ack; never read them
+	bad := []byte(strings.Repeat("not-json-at-all\n", 4096))
+	go func() {
+		_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		for i := 0; i < 64; i++ {
+			if _, err := conn.Write(bad); err != nil {
+				return
+			}
+		}
+	}()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		srv.mu.Lock()
+		open := len(srv.open)
+		srv.mu.Unlock()
+		if open == 0 && srv.Dropped() > 0 {
+			return // handler gave up on the non-reading client
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("handler still parked on a client that never reads (dropped=%d)", srv.Dropped())
+}
