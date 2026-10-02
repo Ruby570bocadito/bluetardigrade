@@ -14,6 +14,11 @@ and the `make dist` target.
 
 ### Added
 
+- A PowerShell syntax guard (`scripts/dev-tests/check_powershell_syntax.ps1`)
+  parses every `.ps1` in the tree with the real PowerShell AST parser. It
+  runs in CI twice — pwsh on Ubuntu and Windows PowerShell 5.1 on the
+  Windows job, the parser that actually executes `irm | iex` on a stock
+  box — and in `make ci` when pwsh is available.
 - Browser-local saved searches in Alertas and Flujo: 20 bounded, validated
   filter presets with apply/update/delete, cross-tab updates, reload and
   browser Back support. Only filters are saved, including the query text.
@@ -35,6 +40,13 @@ and the `make dist` target.
 
 ### Fixed
 
+- The Windows installer was un-runnable: `"cannot verify $Url: …"` in
+  `Invoke-Download` is a PowerShell parse error
+  (`InvalidVariableReferenceWithDrive` — `:` after a variable is read as
+  a drive/scope qualifier), so `irm | iex` aborted before any step. Now
+  `${Url}`. The Go toolchain pin also moved 1.22.10 → 1.26.8: `go.mod`
+  requires 1.26.0 and the installer sets `GOTOOLCHAIN=local`, so a green
+  parse still ended in a refused build.
 - CSV escaping now covers every event/alert text column, including IDs,
   sources, rules, tags, destinations and registry keys. LF, fullwidth formula
   prefixes and leading whitespace are handled; JSONL and stored data remain

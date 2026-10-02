@@ -61,7 +61,7 @@ $ErrorActionPreference = 'Stop'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
 $ProgressPreference = 'SilentlyContinue'   # makes Invoke-WebRequest usable on PS 5.1
 
-$GO_VERSION   = '1.22.10'
+$GO_VERSION   = '1.26.8'
 $NODE_VERSION = 'v22.14.0'
 $BUN_VERSION  = 'v1.3.14'
 $ENGINE_PORT  = 7777
@@ -109,7 +109,7 @@ function Invoke-Download {
         if ($h -ne $ExpectedSha256.ToLower()) { throw "sha256 mismatch for $Url (got $h, want $ExpectedSha256)" }
         Write-Info "sha256 verified"
     } elseif (-not $UnverifiedOk) {
-        throw "cannot verify $Url: no sha256 available (checksum source unreachable). Refusing to install an unverified binary - retry, or pin the hash manually."
+        throw "cannot verify ${Url}: no sha256 available (checksum source unreachable). Refusing to install an unverified binary - retry, or pin the hash manually."
     }
 }
 
