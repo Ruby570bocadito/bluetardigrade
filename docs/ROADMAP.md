@@ -83,9 +83,11 @@ medio: ETW nativo ampliado.
 **Problema**: `FieldMap` serializa cada evento ~4 veces por pasada; a
 50k eventos/seg el GC se convierte en el cuello de botella.
 
-- **FieldMap sin JSON round-trip** — resolver campos con acceso directo
-  tipado (un switch sobre el prefijo del path). Cierre: benchmark del
-  paquete rules mostrando la mejora y paridad exacta de tests.
+- **FieldMap sin JSON round-trip: entregado** — el mapa se construye
+  directamente desde la estructura (`pkg/model/fieldmap.go`): 1,7 µs y
+  29 asignaciones frente a 8,0 µs y 83 por evento. Paridad exacta con el
+  round-trip (claves, omitempty, float64, RFC 3339, UTF-8 inválido)
+  fijada por un test aleatorio de 20 000 eventos y un objetivo de fuzzing.
 - **Sharding del ring por host** — el ring de eventos de la API es
   global (1000): particionar por host con cuota garantizada. Cierre:
   cambio de estructura + tests de equidad con 64 hosts.

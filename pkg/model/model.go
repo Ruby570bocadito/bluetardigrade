@@ -101,21 +101,6 @@ const (
 	TypeEmailMessage     = "email.message"
 )
 
-// FieldMap flattens the event into a generic map so rule conditions can
-// address any field with a dotted path (e.g. "process.command_line").
-// Numeric values arrive as float64, as produced by encoding/json.
-func (e *Event) FieldMap() map[string]any {
-	b, err := json.Marshal(e)
-	if err != nil {
-		return nil
-	}
-	var m map[string]any
-	if err := json.Unmarshal(b, &m); err != nil {
-		return nil
-	}
-	return m
-}
-
 // Encode serializes the event as a single NDJSON line (no trailing
 // newline) ready to be written to a TCP stream or forensic log.
 func (e *Event) Encode() ([]byte, error) {
