@@ -226,7 +226,7 @@ func (d *Dispatcher) deliver(rawURL, secret string, timeout time.Duration, paylo
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "security-framework-engine")
+	req.Header.Set("User-Agent", "bluetardigrade-engine")
 	if secret != "" {
 		req.Header.Set("Authorization", "Bearer "+secret)
 	}

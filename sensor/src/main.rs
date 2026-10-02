@@ -1,4 +1,4 @@
-// security-sensor: ETW sensor for the security-framework engine.
+// security-sensor: ETW sensor for the bluetardigrade engine.
 //
 // Single operating mode: native (Windows). Opens ETW real-time sessions
 // over the Microsoft-Windows-Kernel-* providers and streams normalized

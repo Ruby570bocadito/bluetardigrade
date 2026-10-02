@@ -3,7 +3,7 @@ name = "security-sensor"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-description = "ETW sensor for the security-framework detection engine"
+description = "ETW sensor for the bluetardigrade detection engine"
 
 [dependencies]
 anyhow = "1"

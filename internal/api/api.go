@@ -363,7 +363,7 @@ func (h *Hub) auth(next http.Handler) http.Handler {
 				fmt.Fprintln(w, `{"error":"too many unauthorized requests from this address; retry after the window"}`)
 				return
 			}
-			w.Header().Set("WWW-Authenticate", `Bearer realm="security-framework api"`)
+			w.Header().Set("WWW-Authenticate", `Bearer realm="bluetardigrade api"`)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			fmt.Fprintln(w, `{"error":"unauthorized: send 'Authorization: Bearer <token>' (configure it with -api-token/SF_API_TOKEN)"}`)

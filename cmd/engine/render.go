@@ -124,7 +124,7 @@ func renderVersion(b buildInfo) string {
 		return "  " + label.Render(pad(l, 11)) + v
 	}
 	var sb strings.Builder
-	sb.WriteString(titleStyle.Render("security-framework engine") + dimStyle.Render("  "+b.Version) + "\n")
+	sb.WriteString(titleStyle.Render("bluetardigrade engine") + dimStyle.Render("  "+b.Version) + "\n")
 	sb.WriteString(line("version", b.Version) + "\n")
 	sb.WriteString(line("runtime", b.Go) + "\n")
 	sb.WriteString(line("plataforma", b.OS+"/"+b.Arch) + "\n")

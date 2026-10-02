@@ -1,4 +1,4 @@
-// console-service: real-time telemetry hub for the security-framework web
+// console-service: real-time telemetry hub for the bluetardigrade web
 // console. It forwards ONLY real data from the Go engine (local API on
 // :7778, see internal/api) over socket.io, and serves a small HTTP
 // status surface (panel at /, JSON at /health). There is no simulator

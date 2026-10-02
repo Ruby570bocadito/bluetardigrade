@@ -39,7 +39,7 @@ const (
 	// Delivery budget per request: first attempt plus two retries.
 	maxAttempts = 3
 	// User-Agent identifying the producer, useful on the receiver side.
-	userAgent = "security-framework-siem/0.1"
+	userAgent = "bluetardigrade-siem/0.1"
 	// Grace period for the best-effort drain after cancellation.
 	drainBudget = 2 * time.Second
 )
