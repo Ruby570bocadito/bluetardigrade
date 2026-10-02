@@ -17,7 +17,9 @@ use crate::queue::{Pipeline, Spool};
 use crate::transport::Sender;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::time::Duration;
 
 use ferrisetw::parser::Parser;
 use ferrisetw::provider::{kernel_providers, Provider};
@@ -61,8 +63,14 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
     // Delivery runs on its own thread: the ETW callback only pushes,
     // so an unreachable engine can no longer stall the trace consumer
     // (which made Windows drop events from the real-time buffers).
-    let (pipeline, _delivery_thread) =
-        Pipeline::start(delivery.queue_cap, spool, move |line: &str| sender.send_line(line));
+    let stopping = Arc::new(AtomicBool::new(false));
+    let transport_stop = Arc::clone(&stopping);
+    let (pipeline, delivery_thread) = Pipeline::start(
+        delivery.queue_cap,
+        spool,
+        stopping,
+        move |line: &str| sender.send_line(line, &transport_stop),
+    );
     let pipeline = Arc::new(pipeline);
     let capture = Arc::clone(&pipeline);
     let host = hostname();
@@ -123,6 +131,8 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
     let _session = trace;
     let result = KernelTrace::process_from_handle(handle)
         .map_err(|e| anyhow::anyhow!("ETW processing ended: {e:?}"));
+    // hand everything still in memory to the engine or the spool
+    pipeline.shutdown(delivery_thread, Duration::from_secs(10));
     let stats = pipeline.stats();
     eprintln!(
         "[SENSOR] ETW session ended: {} events spooled, {} dropped",

@@ -18,6 +18,14 @@
 // `<spool>.draining` first; a crash mid-drain replays that file at the
 // next start. Replays can repeat lines already delivered, which the
 // engine absorbs: stored evidence is first-write-wins by event id.
+//
+// Shutdown (Pipeline::shutdown, on Ctrl+C or console close) loses
+// nothing that a spool can hold: the stop flag makes the transport give
+// up its retry loop, the line it was holding and everything still in
+// the queue get one immediate delivery attempt each and are spilled to
+// the spool when the engine is unreachable, and an interrupted replay
+// keeps its file for the next start. Across a shutdown, order is
+// best-effort; every event keeps its own timestamp.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Write};
@@ -96,6 +104,8 @@ impl Spool {
 
 struct Shared {
     spool: Option<Mutex<Spool>>,
+    /// set by Pipeline::shutdown; the transport polls the same flag
+    stopping: Arc<AtomicBool>,
     /// set while the spool holds undelivered lines: new lines follow
     /// them there instead of overtaking them through the queue
     spooling: AtomicBool,
@@ -137,9 +147,16 @@ pub struct Stats {
 
 impl Pipeline {
     /// Starts the drain thread. `send` delivers one line and may block
-    /// (the transport retries until the engine accepts it); an Err is
-    /// logged and the line is not retried by the queue.
-    pub fn start<F>(capacity: usize, spool: Option<Spool>, send: F) -> (Self, JoinHandle<()>)
+    /// (the transport retries until the engine accepts it); it must give
+    /// up with an Err once `stopping` is set. An Err while running is
+    /// logged and the line is not retried; an Err while stopping spills
+    /// the line to the spool.
+    pub fn start<F>(
+        capacity: usize,
+        spool: Option<Spool>,
+        stopping: Arc<AtomicBool>,
+        send: F,
+    ) -> (Self, JoinHandle<()>)
     where
         F: FnMut(&str) -> anyhow::Result<()> + Send + 'static,
     {
@@ -150,6 +167,7 @@ impl Pipeline {
             .unwrap_or(false);
         let shared = Arc::new(Shared {
             spool: spool.map(Mutex::new),
+            stopping,
             spooling: AtomicBool::new(pending),
             dropped: AtomicU64::new(0),
             spooled: AtomicU64::new(0),
@@ -178,6 +196,20 @@ impl Pipeline {
         }
     }
 
+    /// Stops delivery: sets the stop flag and waits (up to `wait`) for
+    /// the delivery thread to hand everything it holds to the engine or,
+    /// failing that, to the spool.
+    pub fn shutdown(&self, delivery: JoinHandle<()>, wait: Duration) {
+        self.shared.stopping.store(true, Ordering::Release);
+        let deadline = Instant::now() + wait;
+        while !delivery.is_finished() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        if delivery.is_finished() {
+            let _ = delivery.join();
+        }
+    }
+
     pub fn stats(&self) -> Stats {
         Stats {
             dropped: self.shared.dropped.load(Ordering::Relaxed),
@@ -190,9 +222,17 @@ fn drain_loop<F>(rx: Receiver<String>, shared: Arc<Shared>, mut send: F)
 where
     F: FnMut(&str) -> anyhow::Result<()>,
 {
-    let mut deliver = |line: &str| {
-        if let Err(err) = send(line) {
-            eprintln!("[SENSOR] send failed: {err:#}");
+    // true = the line is gone (delivered, or failed and logged while
+    // running); false = the transport gave up because we are stopping
+    let stopping = Arc::clone(&shared.stopping);
+    let mut deliver = |line: &str| -> bool {
+        match send(line) {
+            Ok(()) => true,
+            Err(_) if stopping.load(Ordering::Acquire) => false,
+            Err(err) => {
+                eprintln!("[SENSOR] send failed: {err:#}");
+                true
+            }
         }
     };
     let mut reported = 0u64;
@@ -208,8 +248,22 @@ where
         }
     }
     loop {
+        if shared.stopping.load(Ordering::Acquire) {
+            // one fast attempt per queued line; what the engine cannot
+            // take now waits in the spool for the next start
+            while let Ok(line) = rx.try_recv() {
+                if !deliver(&line) {
+                    shared.spill(&line);
+                }
+            }
+            return;
+        }
         match rx.recv_timeout(IDLE_POLL) {
-            Ok(line) => deliver(&line),
+            Ok(line) => {
+                if !deliver(&line) {
+                    shared.spill(&line);
+                }
+            }
             Err(RecvTimeoutError::Timeout) => drain_spool(&shared, &mut deliver),
             Err(RecvTimeoutError::Disconnected) => {
                 drain_spool(&shared, &mut deliver);
@@ -237,7 +291,7 @@ where
 /// renamed under the lock and `spooling` cleared in the same critical
 /// section, so lines pushed afterwards go to the queue and are sent
 /// after the drained file (this thread drains it to the end first).
-fn drain_spool<F: FnMut(&str)>(shared: &Shared, deliver: &mut F) {
+fn drain_spool<F: FnMut(&str) -> bool>(shared: &Shared, deliver: &mut F) {
     let Some(spool) = &shared.spool else { return };
     let taken = {
         let mut s = spool.lock().unwrap_or_else(|p| p.into_inner());
@@ -254,12 +308,20 @@ fn drain_spool<F: FnMut(&str)>(shared: &Shared, deliver: &mut F) {
     }
 }
 
-fn replay<F: FnMut(&str)>(path: &Path, deliver: &mut F) {
+/// Replays a drained spool file and removes it. When delivery is
+/// interrupted by a shutdown the file is kept: the next start replays it
+/// from the beginning (lines already delivered are repeated, which the
+/// engine's first-write-wins store absorbs).
+fn replay<F: FnMut(&str) -> bool>(path: &Path, deliver: &mut F) {
     match File::open(path) {
         Ok(f) => {
             for line in BufReader::new(f).lines() {
                 match line {
-                    Ok(l) if !l.is_empty() => deliver(&l),
+                    Ok(l) if !l.is_empty() => {
+                        if !deliver(&l) {
+                            return; // stopping: keep the file for the next start
+                        }
+                    }
                     Ok(_) => {}
                     Err(err) => {
                         // a torn last line (crash mid-append) ends the replay
@@ -294,6 +356,31 @@ mod tests {
         dir.join("spool.ndjson")
     }
 
+    fn no_stop() -> Arc<AtomicBool> {
+        Arc::new(AtomicBool::new(false))
+    }
+
+    /// A send function for an engine that is down: it blocks (like the
+    /// transport's retry loop) until the stop flag is set, then fails.
+    fn engine_down(stop: Arc<AtomicBool>) -> impl FnMut(&str) -> anyhow::Result<()> + Send + 'static {
+        move |_line: &str| {
+            while !stop.load(Ordering::Acquire) {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            anyhow::bail!("sensor stopping")
+        }
+    }
+
+    fn spool_lines(path: &Path) -> Vec<String> {
+        let mut lines: Vec<String> = fs::read_to_string(path)
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_string)
+            .collect();
+        lines.sort();
+        lines
+    }
+
     /// A send function gated by a channel: the test decides when the
     /// "engine" accepts each line.
     fn gated() -> (
@@ -326,7 +413,7 @@ mod tests {
     #[test]
     fn push_never_blocks_and_counts_drops_without_spool() {
         let (send, got, gate) = gated();
-        let (p, _h) = Pipeline::start(2, None, send);
+        let (p, _h) = Pipeline::start(2, None, no_stop(), send);
         let start = Instant::now();
         for i in 0..10 {
             p.push(format!("l{i}"));
@@ -350,7 +437,7 @@ mod tests {
     fn overflow_spools_and_preserves_order() {
         let path = tmp("order");
         let (send, got, gate) = gated();
-        let (p, _h) = Pipeline::start(2, Some(Spool::new(path.clone(), 1 << 20).unwrap()), send);
+        let (p, _h) = Pipeline::start(2, Some(Spool::new(path.clone(), 1 << 20).unwrap()), no_stop(), send);
         for i in 0..20 {
             p.push(format!("l{i:02}"));
         }
@@ -376,7 +463,7 @@ mod tests {
     fn spool_cap_drops_and_counts() {
         let path = tmp("cap");
         let (send, _got, _gate) = gated();
-        let (p, _h) = Pipeline::start(1, Some(Spool::new(path, 16).unwrap()), send);
+        let (p, _h) = Pipeline::start(1, Some(Spool::new(path, 16).unwrap()), no_stop(), send);
         for i in 0..10 {
             p.push(format!("line-{i}")); // 7 bytes each with newline
         }
@@ -397,7 +484,7 @@ mod tests {
             tx.send(line.to_string()).unwrap();
             Ok(())
         };
-        let (p, _h) = Pipeline::start(8, Some(Spool::new(path.clone(), 1 << 20).unwrap()), send);
+        let (p, _h) = Pipeline::start(8, Some(Spool::new(path.clone(), 1 << 20).unwrap()), no_stop(), send);
         // a new line while old data is pending queues up behind it
         p.push("new-3".into());
         let mut got = Vec::new();
@@ -405,5 +492,79 @@ mod tests {
             got.push(rx.recv_timeout(Duration::from_secs(5)).unwrap());
         }
         assert_eq!(got, ["older-0", "old-1", "old-2", "new-3"]);
+    }
+
+    // Ctrl+C with the engine down: the in-flight line and the queued
+    // ones join the spool instead of dying with the process.
+    #[test]
+    fn shutdown_spills_in_flight_and_queued_lines() {
+        let path = tmp("shutdown-spill");
+        let stop = no_stop();
+        let (p, h) = Pipeline::start(
+            3,
+            Some(Spool::new(path.clone(), 1 << 20).unwrap()),
+            Arc::clone(&stop),
+            engine_down(Arc::clone(&stop)),
+        );
+        for i in 0..10 {
+            p.push(format!("l{i}"));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+        p.shutdown(h, Duration::from_secs(5));
+        let want: Vec<String> = (0..10).map(|i| format!("l{i}")).collect();
+        assert_eq!(spool_lines(&path), want, "lines lost on shutdown");
+        assert_eq!(p.stats().dropped, 0);
+    }
+
+    // Ctrl+C with the engine up: queued lines are delivered, not spooled.
+    #[test]
+    fn shutdown_delivers_what_the_engine_can_take() {
+        let path = tmp("shutdown-deliver");
+        let (tx, rx) = channel::<String>();
+        let send = move |line: &str| {
+            tx.send(line.to_string()).unwrap();
+            Ok(())
+        };
+        let (p, h) = Pipeline::start(64, Some(Spool::new(path.clone(), 1 << 20).unwrap()), no_stop(), send);
+        for i in 0..20 {
+            p.push(format!("l{i}"));
+        }
+        p.shutdown(h, Duration::from_secs(5));
+        let got: Vec<String> = rx.try_iter().collect();
+        assert_eq!(got.len(), 20, "queued lines not delivered on shutdown");
+        assert!(!path.exists(), "nothing should have been spooled");
+    }
+
+    // Without a spool, what cannot be delivered at shutdown is counted.
+    #[test]
+    fn shutdown_without_spool_counts_losses() {
+        let stop = no_stop();
+        let (p, h) = Pipeline::start(3, None, Arc::clone(&stop), engine_down(Arc::clone(&stop)));
+        for i in 0..10 {
+            p.push(format!("l{i}"));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+        p.shutdown(h, Duration::from_secs(5));
+        assert_eq!(p.stats().dropped, 10);
+    }
+
+    // A replay interrupted by shutdown keeps its file for the next start.
+    #[test]
+    fn interrupted_replay_keeps_the_spool_file() {
+        let path = tmp("shutdown-replay");
+        let mut draining = path.clone().into_os_string();
+        draining.push(".draining");
+        let draining = PathBuf::from(draining);
+        fs::write(&draining, "a\nb\nc\n").unwrap();
+        let stop = no_stop();
+        let (p, h) = Pipeline::start(
+            4,
+            Some(Spool::new(path.clone(), 1 << 20).unwrap()),
+            Arc::clone(&stop),
+            engine_down(Arc::clone(&stop)),
+        );
+        std::thread::sleep(Duration::from_millis(50));
+        p.shutdown(h, Duration::from_secs(5));
+        assert_eq!(fs::read_to_string(&draining).unwrap(), "a\nb\nc\n");
     }
 }

@@ -91,6 +91,10 @@ Rust ETW sensor fixes found on a real Windows host
 - Ctrl+C (or closing the console) stops the kernel session; a session
   left by a killed run is stopped and the start retried, instead of
   failing with AlreadyExist.
+- Ctrl+C no longer loses what the sensor holds in memory: the line it
+  was sending and the queued ones get one delivery attempt each and
+  otherwise go to the spool (counted as dropped when there is none); an
+  interrupted spool replay keeps its file for the next start.
 - The sensor starts even when the engine is not listening yet (boot
   order, engine restart): events wait in the queue/spool. Only
   configuration errors (CA bundle, TLS verification, rejected token)

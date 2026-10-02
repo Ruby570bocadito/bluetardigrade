@@ -24,6 +24,7 @@ use anyhow::{bail, Context, Result};
 use std::io::{BufWriter, Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -125,8 +126,10 @@ impl Sender {
     /// Send one NDJSON line (without the trailing newline), blocking
     /// until the engine accepts it. Reconnects with backoff on error;
     /// every reconnect repeats the TLS upgrade (when configured) and
-    /// the AUTH handshake.
-    pub fn send_line(&self, line: &str) -> Result<()> {
+    /// the AUTH handshake. Once `stop` is set it makes one last write
+    /// attempt and gives up with an error instead of retrying, so a
+    /// shutdown can spill the line to the spool.
+    pub fn send_line(&self, line: &str, stop: &AtomicBool) -> Result<()> {
         let mut backoff: u64 = 1;
         loop {
             {
@@ -143,11 +146,21 @@ impl Sender {
                     *guard = None; // drop the dead socket
                 }
             }
+            if stop.load(Ordering::Acquire) {
+                bail!("sensor stopping: engine {} unreachable", self.addr);
+            }
             eprintln!(
                 "[SENSOR] transport error - reconnecting to {} in {backoff}s",
                 self.addr
             );
-            std::thread::sleep(Duration::from_secs(backoff));
+            // sleep in short steps so a shutdown is not held for up to 30 s
+            let until = std::time::Instant::now() + Duration::from_secs(backoff);
+            while std::time::Instant::now() < until && !stop.load(Ordering::Acquire) {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            if stop.load(Ordering::Acquire) {
+                bail!("sensor stopping: engine {} unreachable", self.addr);
+            }
             backoff = (backoff * 2).min(30);
             match dial(&self.addr, self.token.as_deref(), self.tls_ca.as_deref()) {
                 Ok(stream) => {
