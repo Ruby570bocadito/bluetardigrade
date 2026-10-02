@@ -1,39 +1,56 @@
 'use client'
 
-// Operations dashboard: KPI strip, live rate chart, engine summary and
-// the two windows an analyst glances at first (latest alerts, latest
-// telemetry). Everything reads from the real engine stream; when the
-// engine is down every panel shows its own honest state.
+// Operations dashboard. Reading order of a SOC shift: what needs triage
+// now (hero + lifecycle), how the engine is doing (stat tiles), what the
+// sensors see (activity), what was detected (severity, timeline, ATT&CK
+// coverage, rules, hosts) and the latest raw rows. Everything reads from
+// the real engine stream; when the engine is down every card shows its
+// own honest state instead of empty axes.
 
-import { Cpu, Flame, MagnifyingGlass, Waveform } from '@phosphor-icons/react'
+import { useEffect, useMemo, useState } from 'react'
+import { ChartLineUp, Cpu, Crosshair, Flame, ListBullets, Pulse, ShieldWarning, Stack, Waveform } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import type { EngineStatus } from '@/hooks/use-engine-stream'
 import { KpiRow } from './kpi-row'
 import { OperationsOverview } from './operations-overview'
-import { ActivityChart } from './activity-chart'
+import { ActivityChart, useActivity } from './activity-chart'
 import { AlertsView } from './alerts-view'
-import { EmptyState, OfflineNotice, SectionHeader, SkeletonRows, MonoTag } from './ui-bits'
+import { EmptyState, OfflineNotice, SkeletonRows, MonoTag } from './ui-bits'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
-import { SpotlightCard } from '@/components/reactbits/spotlight-card'
-import { eventDetail, formatTime, type SfAlert } from '@/lib/console-types'
+import { ChartCard } from '@/components/charts/chart-frame'
+import { StackedColumns } from '@/components/charts/stacked-columns'
+import { BarList, Meter } from '@/components/charts/bars'
+import { AttackMatrix } from '@/components/charts/attack-matrix'
+import { SEV_COLOR, SeverityIcon } from '@/components/charts/severity'
+import { eventDetail, formatTime, type SfAlert, type Severity } from '@/lib/console-types'
+import { eventTypeMix, formatAgo, SEVERITIES, SEVERITY_LABEL, severityBuckets, severityCounts, tacticCoverage, topCounts } from '@/lib/soc-metrics'
 import type { TriageTarget } from '@/lib/operations'
+import type { SeverityFilter } from '@/lib/url-state'
 
 export type ConsoleView = 'panel' | 'flujo' | 'alertas' | 'reglas' | 'cadenas' | 'supresiones' | 'respuesta' | 'analista'
+export type HuntLens = { q?: string; sev?: SeverityFilter }
+
+const TIMELINE_WINDOW_MS = 60 * 60 * 1000
+const TIMELINE_BUCKET_MS = 5 * 60 * 1000
 
 export function Dashboard({
   onAnalyze,
   onNavigate,
   onTriage,
+  onHunt,
 }: {
   onAnalyze: (al: SfAlert) => void
   onNavigate: (view: ConsoleView) => void
   onTriage: (target: TriageTarget) => void
+  onHunt?: (lens: HuntLens) => void
 }) {
-  const { events, status, stats } = useEngine()
+  const { events, alerts, status, stats } = useEngine()
+  const activity = useActivity(events, alerts)
+  const down = status === 'down'
 
   return (
-    <div className="space-y-6">
-      {status === 'down' && (
+    <div className="space-y-5">
+      {down && (
         <OfflineNotice
           title="Motor offline"
           hint="La consola no muestra datos inventados. Arranca el motor (cmd/engine) con su API en 127.0.0.1:7778 y esta pantalla se recupera sola."
@@ -43,161 +60,342 @@ export function Dashboard({
       <OperationsOverview onNavigate={onNavigate} onTriage={onTriage} />
       <KpiRow stats={stats} />
 
-      <div className="grid gap-6 xl:grid-cols-3">
-        <section aria-label="Actividad del sensor" className="min-w-0 xl:col-span-2">
-          <SectionHeader title="Actividad del sensor" hint="muestra de los últimos 4 minutos" />
-          {/* SpotlightCard (React Bits): profundidad del panel bajo el puntero;
-              en reposo es la misma tarjeta con borde hairline de siempre */}
-          <SpotlightCard className="panel px-4 pb-3 pt-4">
-            <ActivityChart events={events} />
-          </SpotlightCard>
-        </section>
+      <div className="grid gap-5 xl:grid-cols-3">
+        <ChartCard
+          className="xl:col-span-2"
+          title="Actividad del sensor"
+          subtitle="Eventos por intervalo de 5 s en los últimos 4 minutos; las alertas del mismo periodo aparecen en la franja inferior"
+          icon={Pulse}
+          legend={[
+            { key: 'events', label: 'Eventos', color: 'var(--series-1)', shape: 'line' },
+            ...SEVERITIES.filter((s) => activity.markers.some((m) => m.color === SEV_COLOR[s])).map((s) => ({
+              key: s, label: 'Alerta ' + SEVERITY_LABEL[s].toLowerCase(), color: SEV_COLOR[s],
+            })),
+          ]}
+          table={{
+            caption: 'Eventos y alertas por intervalo de 5 segundos',
+            columns: ['Intervalo', 'Eventos', 'Alertas'],
+            rows: activity.points.slice().reverse().map((p) => [
+              formatAgo(activity.now - p.end),
+              p.value,
+              activity.markers.filter((m) => m.t >= p.start && m.t < p.end).length,
+            ]),
+          }}
+          footer={
+            <span className="flex flex-wrap gap-x-4">
+              <span>Muestra del búfer del cliente (últimos {events.length} eventos recibidos)</span>
+              <span>pico <span className="font-medium tabular-nums text-zinc-300">{activity.peak}</span> por intervalo</span>
+              <span>total <span className="font-medium tabular-nums text-zinc-300">{activity.total}</span> en 4 min</span>
+            </span>
+          }
+        >
+          {down ? <Unavailable /> : <ActivityChart activity={activity} withMarkers />}
+        </ChartCard>
 
-        <section aria-label="Resumen del motor" className="flex min-w-0 flex-col gap-6">
-          <div className="min-w-0">
-            <SectionHeader title="Motor de detección" />
-            <EngineSummary status={status} />
-          </div>
-          <HotHostsPanel />
-        </section>
+        <SeverityPanel alerts={alerts} down={down} onHunt={onHunt} />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-2">
-        <AlertsView compact onAnalyze={onAnalyze} />
+      <div className="grid gap-5 xl:grid-cols-3">
+        <TimelinePanel alerts={alerts} down={down} />
+        <HotHostsPanel onHunt={onHunt} />
+      </div>
 
-        <section aria-label="Telemetría reciente" className="min-w-0">
-          <SectionHeader
-            title="Telemetría reciente"
-            count={events.length}
-            action={
-              <button
-                type="button"
-                onClick={() => onNavigate('flujo')}
-                className="rounded-sm text-xs text-blue-400 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                Ver flujo completo
-              </button>
-            }
-          />
-          {status === 'connecting' ? (
-            <SkeletonRows rows={6} className="border-y border-white/[0.06] py-6" />
-          ) : status === 'down' ? (
-            <EmptyState icon={Waveform} title="Telemetría no disponible" hint="Esperando la reconexión con el motor." />
-          ) : events.length === 0 ? (
-            <div className="border-y border-white/[0.06]">
-              <EmptyState
-                icon={Waveform}
-                title="Sin eventos todavía"
-                hint="El búfer del cliente se llena en cuanto el motor emite telemetría por /api/stream."
-              />
-            </div>
-          ) : (
-            <ul className="divide-y divide-white/[0.06] border-y border-white/[0.06]">
-              {events.slice(0, 8).map((ev, i) => (
-                <li key={ev.id}>
-                  {/* AnimatedItem (React Bits): entrada escalonada en la carga
-                      inicial; las keys estables evitan re-animar filas ya
-                      visibles cuando llega un evento nuevo. */}
-                  <AnimatedItem
-                    index={i}
-                    className="grid grid-cols-[64px_120px_minmax(0,1fr)] items-center gap-3 px-1 py-2 md:grid-cols-[76px_140px_minmax(0,1fr)]"
-                  >
-                    <span className="font-mono text-xs tabular-nums text-zinc-500">{formatTime(ev.timestamp)}</span>
-                    <span className="truncate font-mono text-xs text-blue-400">{ev.type}</span>
-                    <span className="truncate font-mono text-xs text-zinc-400" title={eventDetail(ev)}>
-                      {eventDetail(ev)}
-                    </span>
-                  </AnimatedItem>
-                </li>
-              ))}
-            </ul>
-          )}
-          <p className="pt-2 text-xs text-zinc-500">Muestra de los últimos 8 eventos del búfer</p>
-        </section>
+      <AttackPanel onHunt={onHunt} />
+
+      <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-3">
+        <TopRulesPanel alerts={alerts} down={down} onHunt={onHunt} />
+        <TelemetryMixPanel down={down} />
+        <EngineSummary status={status} />
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <div className="panel min-w-0 px-4 pb-3 pt-3.5">
+          <AlertsView compact onAnalyze={onAnalyze} />
+        </div>
+        <RecentTelemetry onNavigate={onNavigate} />
       </div>
     </div>
   )
 }
 
+function Unavailable() {
+  return <EmptyState icon={ChartLineUp} title="Sin conexión con el motor" hint="El gráfico vuelve en cuanto el motor responda; no se dibujan datos antiguos." />
+}
+
+/** Alerts per severity in the received window: magnitude by category. */
+function SeverityPanel({ alerts, down, onHunt }: { alerts: SfAlert[]; down: boolean; onHunt?: (lens: HuntLens) => void }) {
+  const counts = severityCounts(alerts)
+  const total = alerts.length
+  return (
+    <ChartCard
+      title="Alertas por severidad"
+      subtitle={`Ventana de ${total} alertas recibidas por la consola`}
+      icon={ShieldWarning}
+      table={{
+        caption: 'Alertas por severidad en la ventana recibida',
+        columns: ['Severidad', 'Alertas', '% de la ventana'],
+        rows: SEVERITIES.map((s) => [SEVERITY_LABEL[s], counts[s], total ? Math.round((counts[s] / total) * 100) + ' %' : '—']),
+      }}
+    >
+      {down ? <Unavailable /> : total === 0 ? (
+        <EmptyState icon={ShieldWarning} title="Sin alertas en la ventana" hint="Las detecciones aparecen aquí en cuanto una regla dispara." />
+      ) : (
+        <BarList
+          rows={SEVERITIES.map((s: Severity) => ({
+            key: s,
+            label: (
+              <span className="flex items-center gap-2">
+                <SeverityIcon severity={s} size={14} />
+                {SEVERITY_LABEL[s]}
+              </span>
+            ),
+            value: counts[s],
+            hint: total ? Math.round((counts[s] / total) * 100) + ' %' : undefined,
+            color: SEV_COLOR[s],
+            onSelect: onHunt && counts[s] > 0 ? () => onHunt({ sev: s }) : undefined,
+            selectLabel: `Ver ${counts[s]} alertas de severidad ${SEVERITY_LABEL[s].toLowerCase()}`,
+          }))}
+        />
+      )}
+    </ChartCard>
+  )
+}
+
+/** Detections of the last hour by severity, 5-minute columns. */
+function TimelinePanel({ alerts, down }: { alerts: SfAlert[]; down: boolean }) {
+  const [now, setNow] = useState<number | null>(null)
+  useEffect(() => {
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(timer)
+  }, [])
+  const buckets = useMemo(() => severityBuckets(alerts, now ?? 0, TIMELINE_WINDOW_MS, TIMELINE_BUCKET_MS), [alerts, now])
+  const inWindow = buckets.reduce((sum, b) => sum + b.total, 0)
+  const counts = SEVERITIES.map((s) => buckets.reduce((sum, b) => sum + b.counts[s], 0))
+  const clock = (t: number) => new Date(t).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false })
+  return (
+    <ChartCard
+      className="xl:col-span-2"
+      title="Detecciones de la última hora"
+      subtitle="Alertas por severidad en intervalos de 5 minutos"
+      icon={Stack}
+      legend={SEVERITIES.map((s, i) => ({ key: s, label: SEVERITY_LABEL[s], color: SEV_COLOR[s], value: counts[i] }))}
+      table={{
+        caption: 'Alertas por severidad en intervalos de 5 minutos durante la última hora',
+        columns: ['Intervalo', ...SEVERITIES.map((s) => SEVERITY_LABEL[s]), 'Total'],
+        rows: buckets.slice().reverse().map((b) => [`${clock(b.start)}–${clock(b.end)}`, ...SEVERITIES.map((s) => b.counts[s]), b.total]),
+      }}
+      footer={`${inWindow} de ${alerts.length} alertas de la ventana caen en la última hora. Las más antiguas siguen en la cola y en el histórico.`}
+    >
+      {down ? <Unavailable /> : now === null ? <div style={{ height: 176 }} /> : (
+        <StackedColumns
+          buckets={buckets.map((b) => ({
+            key: String(b.start),
+            label: clock(b.end),
+            detail: `${clock(b.start)} – ${clock(b.end)}`,
+            values: b.counts,
+          }))}
+          series={SEVERITIES.map((s) => ({ key: s, label: SEVERITY_LABEL[s], color: SEV_COLOR[s] }))}
+          ariaLabel={`Detecciones de la última hora: ${inWindow} alertas en 12 intervalos de 5 minutos`}
+          unit="alertas en total"
+        />
+      )}
+    </ChartCard>
+  )
+}
+
 /**
- * Hot hosts (package A1): hosts currently carrying a non-cold decayed
- * risk score, highest first. The score models detection activity —
- * what the engine SAW — never the operator's triage judgment, so the
- * panel cools down on its own (30-minute half-life) and closing an
- * alert does not repaint it. Bar color is a display heuristic against
- * the weights the engine publishes (critical alert = 10 points).
+ * Hot hosts (engine A1): decayed per-host risk, highest first. The score
+ * models what the engine SAW, not the operator's triage, so it cools down
+ * on its own (30 min half-life). Meter state against the published
+ * weights (critical alert = 10 points): >= 20 critical, >= 5 elevated.
  */
-function HotHostsPanel() {
+function HotHostsPanel({ onHunt }: { onHunt?: (lens: HuntLens) => void }) {
   const { stats } = useEngine()
   const hot = stats?.hot_hosts ?? []
   const max = hot.reduce((m, h) => Math.max(m, h.score), 0)
-
-  const barColor = (score: number) =>
-    score >= 20 ? 'bg-red-500/70' : score >= 5 ? 'bg-amber-500/70' : 'bg-emerald-500/70'
+  const level = (score: number) =>
+    score >= 20
+      ? { label: 'crítico', color: 'var(--status-critical)', severity: 'critical' as const }
+      : score >= 5
+        ? { label: 'elevado', color: 'var(--status-warning)', severity: 'medium' as const }
+        : { label: 'bajo', color: 'var(--series-1)', severity: 'low' as const }
 
   return (
-    // SpotlightCard (React Bits): halo azul al pasar el raton o al
-    // enfocar un control interno; en reposo, la tarjeta hairline original.
-    <SpotlightCard className="panel panel-hover min-w-0 flex-1">
-      <div className="flex items-center gap-2.5 border-b border-white/[0.06] px-4 py-3">
-        <Flame size={16} aria-hidden className="text-amber-500" />
-        <span className="text-sm text-zinc-200">Hosts calientes</span>
-        <span className="ml-auto font-mono text-[11px] tabular-nums text-zinc-500">
-          {stats?.risk_hosts_tracked ?? '—'} en riesgo
-        </span>
-      </div>
+    <ChartCard
+      title="Hosts calientes"
+      subtitle={`${stats?.risk_hosts_tracked ?? '—'} hosts con riesgo activo · vida media 30 min`}
+      icon={Flame}
+      table={hot.length ? {
+        caption: 'Puntuación de riesgo por host',
+        columns: ['Host', 'Puntuación', 'Alertas', 'Nivel'],
+        rows: hot.map((h) => [h.host, h.score.toFixed(2), h.alerts, level(h.score).label]),
+      } : undefined}
+      footer="critical 10 · high 5 · medium 2 · low 1 punto por alerta. Señal de priorización, no un veredicto de compromiso."
+    >
       {stats && hot.length === 0 ? (
-        <div className="px-4 py-6">
-          <EmptyState
-            icon={Flame}
-            title="Sin riesgo activo"
-            hint="Ningún host acumula riesgo ahora mismo: las puntuaciones decaen solas (vida media de 30 minutos) y solo las alertas recientes las alimentan."
-          />
-        </div>
+        <EmptyState icon={Flame} title="Sin riesgo activo" hint="Ningún host acumula riesgo ahora: las puntuaciones decaen solas y solo las alertas recientes las alimentan." />
       ) : !stats ? (
-        <div className="px-4 py-6">
-          <EmptyState
-            icon={Flame}
-            title="Sin datos"
-            hint="La puntuación de riesgo llega con la telemetría del motor; sin conexión no se muestra nada."
-          />
+        <EmptyState icon={Flame} title="Sin datos" hint="La puntuación de riesgo llega con la telemetría del motor; sin conexión no se muestra nada." />
+      ) : (
+        <ul className="space-y-1">
+          {hot.map((h, i) => {
+            const lv = level(h.score)
+            const body = (
+              <>
+                <span className="flex items-baseline gap-3">
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-200" title={h.host}>{h.host}</span>
+                  <span className="flex items-center gap-1 text-[11px] text-zinc-400">
+                    <SeverityIcon severity={lv.severity} size={12} />
+                    {lv.label}
+                  </span>
+                  <span className="w-12 text-right text-xs font-semibold tabular-nums text-zinc-50">{h.score.toFixed(1)}</span>
+                </span>
+                <Meter className="mt-1.5" value={h.score} max={max} color={lv.color} />
+                <span className="mt-1 block text-[11px] text-zinc-500">{h.alerts} alertas · visto {formatTime(h.last_seen)}</span>
+              </>
+            )
+            return (
+              <li key={h.host}>
+                {/* AnimatedItem (React Bits): entrada escalonada; keys estables por host */}
+                <AnimatedItem index={i}>
+                  {onHunt ? (
+                    <button
+                      type="button"
+                      onClick={() => onHunt({ q: h.host })}
+                      aria-label={`Ver alertas de ${h.host}: riesgo ${lv.label}, ${h.score.toFixed(1)} puntos`}
+                      className="block w-full rounded-md px-1.5 py-1.5 text-left transition-colors hover:bg-zinc-800/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {body}
+                    </button>
+                  ) : (
+                    <div className="px-1.5 py-1.5">{body}</div>
+                  )}
+                </AnimatedItem>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </ChartCard>
+  )
+}
+
+/** ATT&CK coverage: rules loaded and alerts of the window per tactic. */
+function AttackPanel({ onHunt }: { onHunt?: (lens: HuntLens) => void }) {
+  const { rules, alerts, status } = useEngine()
+  const cells = useMemo(() => tacticCoverage(rules, alerts), [rules, alerts])
+  const covered = cells.filter((c) => c.rules > 0).length
+  return (
+    <ChartCard
+      title="Cobertura MITRE ATT&CK"
+      subtitle={`${covered} de 14 tácticas con reglas cargadas · intensidad = alertas de la ventana`}
+      icon={Crosshair}
+      table={{
+        caption: 'Reglas y alertas por táctica de MITRE ATT&CK',
+        columns: ['Táctica', 'Reglas', 'Alertas'],
+        rows: cells.map((c) => [c.label, c.rules, c.alerts]),
+      }}
+    >
+      {status === 'down' ? <Unavailable /> : (
+        <AttackMatrix cells={cells} onSelect={onHunt ? (cell) => onHunt({ q: 'attack.' + cell.slug }) : undefined} />
+      )}
+    </ChartCard>
+  )
+}
+
+function TopRulesPanel({ alerts, down, onHunt }: { alerts: SfAlert[]; down: boolean; onHunt?: (lens: HuntLens) => void }) {
+  const ranked = useMemo(() => topCounts(alerts, (a) => a.rule_name, 6), [alerts])
+  return (
+    <ChartCard
+      title="Reglas más activas"
+      subtitle={`${ranked.distinct} reglas distintas en la ventana`}
+      icon={ListBullets}
+      table={{ caption: 'Alertas por regla en la ventana', columns: ['Regla', 'Alertas'], rows: ranked.top.map((r) => [r.key, r.count]) }}
+      footer={ranked.rest > 0 ? `${ranked.rest} alertas más en otras reglas.` : undefined}
+    >
+      {down ? <Unavailable /> : (
+        <BarList
+          rows={ranked.top.map((r) => ({
+            key: r.key, label: r.key, title: r.key, value: r.count,
+            onSelect: onHunt ? () => onHunt({ q: r.key }) : undefined,
+            selectLabel: `Ver ${r.count} alertas de la regla ${r.key}`,
+          }))}
+          empty={<EmptyState icon={ListBullets} title="Sin detecciones" hint="El ranking aparece con la primera alerta." />}
+        />
+      )}
+    </ChartCard>
+  )
+}
+
+function TelemetryMixPanel({ down }: { down: boolean }) {
+  const { events } = useEngine()
+  const mix = useMemo(() => eventTypeMix(events, 6), [events])
+  return (
+    <ChartCard
+      title="Mezcla de telemetría"
+      subtitle={`Tipos de evento en el búfer (${events.length} eventos)`}
+      icon={Waveform}
+      table={{ caption: 'Eventos por tipo en el búfer del cliente', columns: ['Tipo', 'Eventos'], rows: mix.top.map((r) => [r.key, r.count]) }}
+      footer={mix.rest > 0 ? `${mix.rest} eventos más de otros ${mix.distinct - mix.top.length} tipos.` : undefined}
+    >
+      {down ? <Unavailable /> : (
+        <BarList
+          color="var(--series-2)"
+          rows={mix.top.map((r) => ({ key: r.key, label: <span className="font-mono">{r.key}</span>, value: r.count }))}
+          empty={<EmptyState icon={Waveform} title="Sin eventos todavía" hint="Conecta un sensor para ver qué tipos de telemetría llegan." />}
+        />
+      )}
+    </ChartCard>
+  )
+}
+
+function RecentTelemetry({ onNavigate }: { onNavigate: (view: ConsoleView) => void }) {
+  const { events, status } = useEngine()
+  return (
+    <section aria-label="Telemetría reciente" className="panel min-w-0 px-4 pb-3 pt-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
+        <div className="flex items-baseline gap-2">
+          <h2 className="text-sm font-medium text-zinc-100">Telemetría reciente</h2>
+          <span className="text-xs tabular-nums text-zinc-500">{events.length}</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => onNavigate('flujo')}
+          className="rounded-sm text-xs text-blue-400 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Ver flujo completo
+        </button>
+      </div>
+      {status === 'connecting' ? (
+        <SkeletonRows rows={6} className="border-y border-zinc-800 py-6" />
+      ) : status === 'down' ? (
+        <EmptyState icon={Waveform} title="Telemetría no disponible" hint="Esperando la reconexión con el motor." />
+      ) : events.length === 0 ? (
+        <div className="border-y border-zinc-800">
+          <EmptyState icon={Waveform} title="Sin eventos todavía" hint="El búfer del cliente se llena en cuanto el motor emite telemetría por /api/stream." />
         </div>
       ) : (
-        <ul className="divide-y divide-white/[0.06]">
-          {hot.map((h, i) => (
-            <li key={h.host}>
-              {/* AnimatedItem (React Bits): entrada escalonada; keys
-                  estables por hostname, sin re-animar en cada frame */}
-              <AnimatedItem index={i} className="px-4 py-2.5">
-                <div className="flex items-baseline gap-3">
-                  <span className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-200" title={h.host}>
-                    {h.host}
-                  </span>
-                  <span className="font-mono text-xs tabular-nums text-zinc-400">{h.alerts} alertas</span>
-                  <span className="w-12 text-right font-mono text-xs tabular-nums text-zinc-100">
-                    {h.score.toFixed(2)}
-                  </span>
-                </div>
-                <div className="mt-1.5 h-1 w-full rounded-full bg-zinc-800" aria-hidden>
-                  <div
-                    className={`h-1 rounded-full ${barColor(h.score)}`}
-                    style={{ width: max > 0 ? `${Math.max(4, (h.score / max) * 100)}%` : '0%' }}
-                  />
-                </div>
+        <ul className="divide-y divide-zinc-800/70 border-y border-zinc-800">
+          {events.slice(0, 8).map((ev, i) => (
+            <li key={ev.id}>
+              {/* AnimatedItem (React Bits): entrada escalonada en la carga
+                  inicial; las keys estables evitan re-animar filas visibles. */}
+              <AnimatedItem index={i} className="grid grid-cols-[64px_120px_minmax(0,1fr)] items-center gap-3 px-1 py-2 md:grid-cols-[72px_150px_minmax(0,1fr)]">
+                <span className="font-mono text-xs tabular-nums text-zinc-500">{formatTime(ev.timestamp)}</span>
+                <span className="truncate font-mono text-xs text-blue-300">{ev.type}</span>
+                <span className="truncate font-mono text-xs text-zinc-400" title={eventDetail(ev)}>{eventDetail(ev)}</span>
               </AnimatedItem>
             </li>
           ))}
         </ul>
       )}
-      <p className="border-t border-white/[0.06] px-4 py-2.5 text-[11px] leading-relaxed text-zinc-500">
-        Puntuación de riesgo por host con decaimiento temporal (vida media 30 min): critical 10 · high 5 · medium 2 ·
-        low 1 por alerta. Señal de priorización de triaje, no un veredicto de compromiso.
-      </p>
-    </SpotlightCard>
+      <p className="pt-2 text-xs text-zinc-500">Muestra de los últimos 8 eventos del búfer</p>
+    </section>
   )
 }
 
-/** Engine summary card: identity, counters and rule types. */
+/** Pipeline health: identity, counters and rule types. */
 function EngineSummary({ status }: { status: EngineStatus }) {
   const { stats, rules, endpoint } = useEngine()
 
@@ -207,87 +405,52 @@ function EngineSummary({ status }: { status: EngineStatus }) {
       : status === 'connecting'
         ? 'Consultando la API del motor por primera vez.'
         : 'Sin conexión con la API del motor: no se muestra ningún dato.'
+  const ingestIssues = stats ? stats.dropped + stats.ingest_rejected : 0
+  const webhookIssues = stats ? stats.webhook_failed + stats.webhook_dropped : 0
+  const storeFailures = stats?.store_write_failures ?? 0
 
-  const rows: { label: string; value: React.ReactNode }[] = [
-    { label: 'Modo', value: <span className="font-mono text-xs text-zinc-300">{stats?.mode ?? (stats ? 'engine' : 'sin datos')}</span> },
-    { label: 'API', value: <span className="font-mono text-xs text-zinc-300">{endpoint}</span> },
+  const rows: { label: string; value: React.ReactNode; bad?: boolean }[] = [
+    { label: 'Modo', value: stats?.mode ?? (stats ? 'engine' : 'sin datos') },
+    { label: 'API', value: endpoint },
+    { label: 'Eventos totales', value: stats?.events_total.toLocaleString('es-ES') ?? '—' },
+    { label: 'Descartados / rechazados', value: stats ? `${stats.dropped} / ${stats.ingest_rejected}` : '— / —', bad: ingestIssues > 0 },
+    { label: 'Webhooks', value: stats ? `${stats.webhook_sent} enviados · ${stats.webhook_failed} fallidos` : '—', bad: webhookIssues > 0 },
     {
-      label: 'Eventos totales',
-      value: <span className="font-mono text-xs tabular-nums text-zinc-300">{stats?.events_total ?? '—'}</span>,
-    },
-    {
-      label: 'Descartados / rechazados',
-      value: (
-        <span className="font-mono text-xs tabular-nums text-zinc-300">
-          {stats?.dropped ?? '—'} / {stats?.ingest_rejected ?? '—'}
-        </span>
-      ),
-    },
-    {
-      label: 'Webhooks',
-      value: (
-        <span className="font-mono text-xs tabular-nums text-zinc-300">
-          {stats?.webhook_sent ?? '—'} enviados · {stats?.webhook_failed ?? '—'} fallidos
-        </span>
-      ),
-    },
-    {
-      // opt-in SQLite persistence (engine -store flag): the store trio is
-      // part of the documented /api/stats contract but was never surfaced.
-      // undefined = engine predating the store or hub offline snapshot;
-      // the row says so instead of guessing.
+      // opt-in SQLite persistence (engine -store): undefined = engine
+      // predating the store or hub offline snapshot; said, not guessed.
       label: 'Persistencia',
-      value: stats?.store_enabled ? (
-        <span className="font-mono text-xs tabular-nums text-zinc-300">
-          SQLite · {stats.store_events} eventos · {stats.store_alerts} alertas
-        </span>
-      ) : stats ? (
-        <span className="font-mono text-xs text-zinc-500">sin store (-store off)</span>
-      ) : (
-        <span className="font-mono text-xs text-zinc-500">sin datos</span>
-      ),
+      value: stats?.store_enabled ? `SQLite · ${stats.store_events} eventos · ${stats.store_alerts} alertas` : stats ? 'sin store (-store off)' : 'sin datos',
     },
-    { label: 'Fallos SQLite desde arranque', value: <span className={`font-mono text-xs tabular-nums ${(stats?.store_write_failures ?? 0) > 0 ? 'text-amber-300' : 'text-zinc-300'}`}>{stats?.store_write_failures ?? '—'}</span> },
-    { label: 'Reglas cargadas', value: <span className="font-mono text-xs tabular-nums text-zinc-300">{stats ? rules.length : '—'}</span> },
+    { label: 'Fallos SQLite desde arranque', value: stats?.store_write_failures ?? '—', bad: storeFailures > 0 },
+    { label: 'Reglas cargadas', value: stats ? rules.length : '—' },
   ]
 
   return (
-    // SpotlightCard (React Bits): mismo criterio que HotHostsPanel.
-    <SpotlightCard className="panel panel-hover">
-      <div className="flex items-center gap-2.5 border-b border-white/[0.06] px-4 py-3">
-        <Cpu size={16} aria-hidden className="text-blue-400" />
-        <span className="text-sm text-zinc-200">sf-engine</span>
-        <span className="ml-auto flex items-center gap-1.5 font-mono text-[11px] text-zinc-500">
-          <span
-            aria-hidden
-            className={`h-2 w-2 rounded-full ${status === 'live' ? 'bg-emerald-500' : status === 'connecting' ? 'bg-amber-400' : 'bg-red-500'}`}
-          />
+    <section aria-label="Resumen del motor" className="panel flex min-w-0 flex-col">
+      <div className="flex items-center gap-2.5 px-4 pt-3.5">
+        <span className="icon-tile"><Cpu size={14} aria-hidden /></span>
+        <h2 className="text-sm font-medium text-zinc-100">Salud del pipeline</h2>
+        <span className="ml-auto flex items-center gap-1.5 text-[11px] text-zinc-500">
+          <span aria-hidden className={`h-2 w-2 rounded-full ${status === 'live' ? 'bg-emerald-500' : status === 'connecting' ? 'bg-amber-400' : 'bg-red-500'}`} />
           {status === 'live' ? 'en vivo' : status === 'connecting' ? 'conectando' : 'sin conexión'}
         </span>
       </div>
-      <dl className="divide-y divide-white/[0.06] px-4">
+      <dl className="mt-2 flex-1 divide-y divide-zinc-800/70 px-4">
         {rows.map((row) => (
           <div key={row.label} className="flex items-center justify-between gap-4 py-2">
             <dt className="text-xs text-zinc-500">{row.label}</dt>
-            <dd className="min-w-0 truncate text-right">{row.value}</dd>
+            <dd className={`min-w-0 truncate text-right font-mono text-xs tabular-nums ${row.bad ? 'text-amber-300' : 'text-zinc-300'}`}>{row.value}</dd>
           </div>
         ))}
       </dl>
-      <div className="border-t border-white/[0.06] px-4 py-3">
-        <p className="text-[10px] uppercase tracking-wider text-zinc-500">Tipos de evento con reglas</p>
+      <div className="border-t border-zinc-800/70 px-4 py-3">
+        <p className="kicker text-[10px]">Tipos de evento con reglas</p>
         <div className="mt-2 flex flex-wrap gap-1.5">
-          {(stats?.rules_types ?? []).map((t) => (
-            <MonoTag key={t}>{t}</MonoTag>
-          ))}
-          {(stats?.rules_types ?? []).length === 0 && (
-            <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-              <MagnifyingGlass size={12} aria-hidden />
-              sin catálogo todavía
-            </span>
-          )}
+          {(stats?.rules_types ?? []).map((t) => <MonoTag key={t}>{t}</MonoTag>)}
+          {(stats?.rules_types ?? []).length === 0 && <span className="text-xs text-zinc-500">sin catálogo todavía</span>}
         </div>
       </div>
-      <p className="border-t border-white/[0.06] px-4 py-2.5 text-[11px] leading-relaxed text-zinc-500">{statusLine}</p>
-    </SpotlightCard>
+      <p className="border-t border-zinc-800/70 px-4 py-2.5 text-[11px] leading-relaxed text-zinc-500">{statusLine}</p>
+    </section>
   )
 }

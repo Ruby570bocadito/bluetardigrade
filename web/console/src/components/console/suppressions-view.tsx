@@ -7,10 +7,9 @@
 // by the engine every 15 s) - there is no write API by design.
 
 import { useEffect, useState } from 'react'
-import { Prohibit, Timer } from '@phosphor-icons/react'
+import { Prohibit, Timer, Warning } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
-import { EmptyState, SectionHeader } from './ui-bits'
-import { AnimatedItem } from '@/components/reactbits/animated-list'
+import { EmptyState, StatTile } from './ui-bits'
 import type { SfSuppression } from '@/lib/console-types'
 
 /** Re-renders every 30 s so the expiry countdowns stay truthful. */
@@ -43,16 +42,23 @@ export function SuppressionsView() {
   const now = new Date()
 
   const ruleName = (id: string) => rules.find((r) => r.id === id)?.name
+  const withExpiry = suppressions.filter((s) => s.expires).length
+  const expired = suppressions.filter((s) => countdown(s.expires, now) === 'expirada').length
+  const broad = suppressions.filter((s) => !s.host || !s.rule_id).length
 
   return (
-    <section aria-label="Supresiones del operador">
-      <SectionHeader title="Supresiones" count={suppressions.length} />
+    <section aria-label="Supresiones del operador" className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <StatTile icon={Prohibit} label="Supresiones activas" value={suppressions.length} hint="suppressions.yaml, recarga en caliente" />
+        <StatTile icon={Timer} label="Con caducidad" value={withExpiry} hint={expired ? `${expired} ya expiradas: elimínalas del YAML` : 'el resto no caduca nunca'} warn={expired > 0} />
+        <StatTile icon={Warning} label="De alcance amplio" value={broad} hint="todas las reglas de un host o un host comodín" warn={broad > 0} />
+      </div>
 
-      <p className="max-w-[80ch] pb-4 text-xs leading-relaxed text-zinc-500">
-        Reglas silenciadas a propósito por el operador (ventanas de mantenimiento o excepciones aceptadas):
-        los eventos que coinciden <span className="text-zinc-400">no generan alertas</span>, no llegan al webhook ni
-        alimentan el correlador. Edite <code className="rounded bg-white/[0.06] px-1 font-mono text-[11px] text-zinc-300">suppressions.yaml</code>{' '}
-        y el motor lo recarga en caliente; esta vista es de solo lectura.
+      <p className="max-w-[90ch] text-xs leading-relaxed text-zinc-500">
+        Reglas silenciadas a propósito por el operador (ventanas de mantenimiento o excepciones aceptadas): los eventos que
+        coinciden <span className="text-zinc-300">no generan alertas</span>, no llegan al webhook ni alimentan el correlador.
+        Edite <code className="rounded bg-white/[0.06] px-1 font-mono text-[11px] text-zinc-300">suppressions.yaml</code> y el
+        motor lo recarga en caliente; esta vista es de solo lectura.
       </p>
 
       {status !== 'live' && suppressions.length === 0 ? (
@@ -69,69 +75,67 @@ export function SuppressionsView() {
         </div>
       ) : (
         <div className="panel overflow-hidden">
-          <ul className="divide-y divide-white/[0.06]">
-            {suppressions.map((s, i) => (
-              <SuppressionRow
-                key={`${s.rule_id}:${s.host ?? '*'}:${i}`}
-                index={i}
-                entry={s}
-                ruleName={ruleName(s.rule_id)}
-                now={now}
-              />
-            ))}
-          </ul>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left text-sm">
+              <caption className="sr-only">Supresiones activas: regla, alcance, motivo y caducidad</caption>
+              <thead>
+                <tr className="bg-zinc-900">
+                  {['Regla', 'Alcance', 'Motivo', 'Caducidad'].map((h) => (
+                    <th key={h} scope="col" className="border-b border-zinc-800 px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800/70">
+                {suppressions.map((s, i) => (
+                  <SuppressionRow key={`${s.rule_id}:${s.host ?? '*'}:${i}`} entry={s} ruleName={ruleName(s.rule_id)} now={now} />
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </section>
   )
 }
 
-function SuppressionRow({
-  index,
-  entry,
-  ruleName,
-  now,
-}: {
-  index: number
-  entry: SfSuppression
-  ruleName?: string
-  now: Date
-}) {
+function SuppressionRow({ entry, ruleName, now }: { entry: SfSuppression; ruleName?: string; now: Date }) {
   const left = countdown(entry.expires, now)
   return (
-    <li>
-      {/* AnimatedItem (React Bits): entrada escalonada en el montaje, misma
-          pauta que el resto de vistas; keys estables, sin re-animar. */}
-      <AnimatedItem index={index} className="px-4 py-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Prohibit size={14} weight="fill" aria-hidden className="shrink-0 text-zinc-500" />
-        <span className="font-mono text-sm text-zinc-100">{entry.rule_id || 'todas las reglas'}</span>
-        {ruleName && <span className="text-xs text-zinc-500">{ruleName}</span>}
+    <tr className="align-top transition-colors hover:bg-zinc-900/60">
+      <td className="max-w-[320px] px-4 py-3">
+        <span className="flex items-center gap-2">
+          <Prohibit size={14} weight="fill" aria-hidden className="shrink-0 text-zinc-500" />
+          <span className="min-w-0">
+            <span className="block truncate text-[13px] text-zinc-100">{ruleName ?? (entry.rule_id ? 'regla no cargada' : 'todas las reglas')}</span>
+            {entry.rule_id && <span className="block truncate font-mono text-[11px] text-zinc-500">{entry.rule_id}</span>}
+          </span>
+        </span>
+      </td>
+      <td className="whitespace-nowrap px-4 py-3">
         <span
-          className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${
-            entry.host ? 'border-white/10 text-zinc-400' : 'border-amber-300/30 bg-amber-300/10 text-amber-200'
+          className={`rounded-md border px-1.5 py-0.5 font-mono text-[11px] ${
+            entry.host ? 'border-zinc-700 text-zinc-300' : 'border-amber-300/30 bg-amber-300/10 text-amber-200'
           }`}
         >
-          {entry.host ? `host: ${entry.host}` : 'todos los hosts'}
+          {entry.host ? entry.host : 'todos los hosts'}
         </span>
-        {left && (
+      </td>
+      <td className="min-w-[220px] px-4 py-3 text-xs leading-relaxed text-zinc-400">{entry.reason || <span className="text-zinc-600">sin motivo declarado</span>}</td>
+      <td className="whitespace-nowrap px-4 py-3">
+        {left ? (
           <span
             title={entry.expires}
-            className={`flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[10px] ${
-              left === 'expirada'
-                ? 'border-red-400/30 bg-red-400/10 text-red-300'
-                : 'border-white/10 text-zinc-400'
+            className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] ${
+              left === 'expirada' ? 'border-red-400/30 bg-red-400/10 text-red-300' : 'border-zinc-700 text-zinc-300'
             }`}
           >
-            <Timer size={11} aria-hidden />
+            <Timer size={12} aria-hidden />
             {left}
           </span>
+        ) : (
+          <span className="text-[11px] text-zinc-500">sin caducidad</span>
         )}
-      </div>
-      {entry.reason && (
-        <p className="mt-1 pl-6 text-xs leading-relaxed text-zinc-400">{entry.reason}</p>
-      )}
-      </AnimatedItem>
-    </li>
+      </td>
+    </tr>
   )
 }

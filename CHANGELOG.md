@@ -12,6 +12,56 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Professional SOC console, README and brand (2026-10-03)
+
+The previous console is preserved at the `console-v1` tag.
+
+Console
+
+- Every view redesigned on one design system:
+  - blue-tinted dark surfaces and solid panels;
+  - a sidebar with the tardigrade mark and an engine status card;
+  - a header with view descriptions and a UTC clock;
+  - a favicon.
+- New dependency-free SVG chart kit (`src/components/charts`):
+  - area chart with crosshair and an alert marker rail;
+  - stacked columns, bar lists, part-to-whole bar, meters and sparklines;
+  - MITRE ATT&CK tactic strip.
+  - Every chart has a table view, a tooltip that never gates a value,
+    keyboard focus with arrow keys, and an honest unavailable state.
+- Palettes validated with the dataviz six-checks script against the
+  panel surface:
+  - severity is a five-step status scale, always with an icon and a label;
+  - categorical series use the validated adjacent order.
+- Panel:
+  - triage hero (open critical alerts), clickable lifecycle split;
+  - stat tiles with sparklines from the polled `/api/stats` history;
+  - sensor activity with alerts on the same time axis;
+  - alerts by severity, detections of the last hour, hot hosts;
+  - ATT&CK coverage, most active rules, telemetry mix, pipeline health.
+  - Charts open the alert queue with the matching lens.
+- Flujo en vivo: ingest rate and event-type mix; a type bar filters the feed.
+- Alertas: severity strip that also filters the queue; fixed column
+  layout so the alert name keeps room next to the detail panel.
+- Reglas: coverage by ATT&CK tactic, severity and event type, each a filter.
+- Cadenas: step nodes with the alerts each step's rule raised in the
+  window, armed state and completed campaigns.
+- Supresiones: scope and expiry summary plus a proper table.
+- Respuesta activa: audit decisions, denial codes and attempts per operator.
+- Analista IA: panel headers, channel state, conversation bubbles.
+- `src/lib/soc-metrics.ts` holds the pure aggregations, with tests.
+
+Repository
+
+- New README (validated Windows quickstart, features, security model,
+  architecture), `docs/assets/banner.svg` and a redrawn `logo.svg`.
+  `install.ps1` prints an ASCII tardigrade.
+- Retired `docs/arquitectura-tecnica-v0.11.pdf` and its `scripts/arq_v04`
+  generator: the PDF no longer matched the code.
+- Console captures regenerated from a loopback lab engine with
+  `docs/assets/src/capture_console.mjs`. The animated GIFs and the
+  superseded captures were removed.
+
 ### Security, detection correctness and throughput review (2026-10-02)
 
 Breaking for exposed consoles: a console allowed on non-loopback hosts

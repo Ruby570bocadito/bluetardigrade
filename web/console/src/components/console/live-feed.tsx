@@ -10,12 +10,16 @@ import { observationSearch } from '@/lib/source-observation'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { ActivityIcon, MagnifyingGlass, Pause, Play } from '@phosphor-icons/react'
+import { ActivityIcon, MagnifyingGlass, Pause, Play, Pulse, Stack } from '@phosphor-icons/react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { useEngine } from './engine-provider'
-import { EmptyState, LiveAnnouncer, SectionHeader, SkeletonRows } from './ui-bits'
+import { EmptyState, LiveAnnouncer, SkeletonRows } from './ui-bits'
+import { ActivityChart, useActivity } from './activity-chart'
+import { ChartCard } from '@/components/charts/chart-frame'
+import { BarList } from '@/components/charts/bars'
+import { eventTypeMix, formatAgo } from '@/lib/soc-metrics'
 import { ExportButtons } from './export-menu'
 import { SavedSearches } from './saved-searches'
 import { eventSearchLens, searchForSavedLens, type SavedLens } from '@/lib/saved-searches'
@@ -106,6 +110,9 @@ export function LiveFeed() {
     }
   }, [events, paused])
 
+  const activity = useActivity(events)
+  const mix = useMemo(() => eventTypeMix(events, 6), [events])
+
   const types = useMemo(() => {
     const set = new Set<string>()
     for (const ev of events.slice(0, 160)) set.add(ev.type)
@@ -153,12 +160,60 @@ export function LiveFeed() {
   }
 
   return (
-    <section aria-label="Flujo de eventos en vivo">
-      <SectionHeader
-        title="Flujo de telemetría"
-        count={visible.length}
-        hint={paused ? 'pausado para inspección' : undefined}
-        action={
+    <section aria-label="Flujo de eventos en vivo" className="space-y-4">
+      <div className="grid gap-4 xl:grid-cols-3">
+        <ChartCard
+          className="xl:col-span-2"
+          title="Ritmo de ingesta"
+          subtitle="Eventos por intervalo de 5 s en los últimos 4 minutos (búfer del cliente)"
+          icon={Pulse}
+          table={{
+            caption: 'Eventos por intervalo de 5 segundos',
+            columns: ['Intervalo', 'Eventos'],
+            rows: activity.points.slice().reverse().map((p) => [formatAgo(activity.now - p.end), p.value]),
+          }}
+          footer={
+            <span className="flex flex-wrap gap-x-4">
+              <span>pico <span className="font-medium tabular-nums text-zinc-300">{activity.peak}</span> por intervalo</span>
+              <span>total <span className="font-medium tabular-nums text-zinc-300">{activity.total}</span> en 4 min</span>
+              {paused && <span className="text-blue-300">vista pausada: el gráfico sigue en vivo</span>}
+            </span>
+          }
+        >
+          {status === 'down' ? (
+            <EmptyState icon={ActivityIcon} title="Sin conexión con el motor" hint="El ritmo vuelve en cuanto el motor responda." />
+          ) : (
+            <ActivityChart activity={activity} height={150} />
+          )}
+        </ChartCard>
+        <ChartCard
+          title="Tipos de evento"
+          subtitle="Pulsa un tipo para filtrar el flujo"
+          icon={Stack}
+          table={{ caption: 'Eventos por tipo en el búfer del cliente', columns: ['Tipo', 'Eventos'], rows: mix.top.map((r) => [r.key, r.count]) }}
+          footer={mix.rest > 0 ? `${mix.rest} eventos más de otros ${mix.distinct - mix.top.length} tipos.` : undefined}
+        >
+          <BarList
+            color="var(--series-2)"
+            rows={mix.top.map((r) => ({
+              key: r.key,
+              label: <span className="font-mono">{r.key}</span>,
+              value: r.count,
+              onSelect: () => setTypeFilter(typeFilter === r.key ? 'all' : r.key),
+              selectLabel: typeFilter === r.key ? `Quitar el filtro de tipo ${r.key}` : `Filtrar el flujo por ${r.key}: ${r.count} eventos`,
+            }))}
+            empty={<EmptyState icon={ActivityIcon} title="Sin eventos todavía" hint="Los tipos aparecen con la primera telemetría." />}
+          />
+        </ChartCard>
+      </div>
+
+      <div className="panel overflow-hidden">
+        <div className="panel-head justify-between">
+          <div className="flex min-w-0 items-baseline gap-2">
+            <h2 className="text-sm font-medium text-zinc-100">Flujo de telemetría</h2>
+            <span className="text-xs tabular-nums text-zinc-500">{visible.length}</span>
+            {paused && <span className="rounded bg-blue-500/10 px-1.5 text-[11px] text-blue-300">pausado para inspección</span>}
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
               <MagnifyingGlass
@@ -175,7 +230,7 @@ export function LiveFeed() {
                 placeholder="buscar en el flujo..."
                 aria-label="Buscar en el flujo de telemetría"
                 maxLength={MAX_QUERY_CHARS}
-                className="h-8 w-[200px] rounded-md border-zinc-800 bg-zinc-900 pl-7 font-mono text-xs text-zinc-200 placeholder:text-zinc-500"
+                className="h-8 w-[220px] rounded-md border-zinc-800 bg-zinc-900 pl-7 text-xs text-zinc-200 placeholder:text-zinc-500"
               />
             </div>
             <label className="chip px-2.5 py-1.5 text-xs text-zinc-400">
@@ -204,12 +259,10 @@ export function LiveFeed() {
             </Select>
             <ExportButtons kind="events" filterLabel={activeFilterLabel} hiddenCount={hiddenByFilter} />
           </div>
-        }
-      />
-
-      <SavedSearches kind="events" getLens={() => eventSearchLens(lensRef.current.tipo, lensRef.current.fq)} onApply={applySaved} />
-
-      <div className="panel overflow-hidden">
+        </div>
+        <div className="px-4 pt-3 [&>div]:mb-3">
+          <SavedSearches kind="events" getLens={() => eventSearchLens(lensRef.current.tipo, lensRef.current.fq)} onApply={applySaved} />
+        </div>
         <div className="max-h-[64vh] overflow-y-auto">
           {status !== 'live' && source.length === 0 ? (
             <div className="px-4 py-8">
@@ -228,15 +281,15 @@ export function LiveFeed() {
               hint="Ningún evento coincide con la búsqueda o el filtro actual"
             />
           ) : (
-            <table className="w-full border-collapse text-left text-sm">
+            <table className="w-full table-fixed border-collapse text-left text-sm">
               <caption className="sr-only">Flujo de eventos en vivo: hora, tipo, detalle, proceso y equipo</caption>
               <thead className="sticky top-0 z-10">
-                <tr className="bg-zinc-950/95">
-                  <th scope="col" className="border-b border-zinc-800 py-2 pl-4 pr-3 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Hora</th>
-                  <th scope="col" className="border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Tipo</th>
+                <tr className="bg-zinc-900">
+                  <th scope="col" className="w-[92px] border-b border-zinc-800 py-2 pl-4 pr-3 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Hora</th>
+                  <th scope="col" className="w-[150px] border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500 sm:w-[170px]">Tipo</th>
                   <th scope="col" className="border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Detalle</th>
-                  <th scope="col" className="hidden border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500 md:table-cell">PID</th>
-                  <th scope="col" className="hidden border-b border-zinc-800 px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-zinc-500 md:table-cell">Equipo</th>
+                  <th scope="col" className="hidden w-[80px] border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500 md:table-cell">PID</th>
+                  <th scope="col" className="hidden w-[170px] border-b border-zinc-800 px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-zinc-500 md:table-cell">Equipo</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60">
@@ -250,8 +303,8 @@ export function LiveFeed() {
                     <td className="whitespace-nowrap py-2 pl-4 pr-3 font-mono text-xs tabular-nums text-zinc-500">
                       {formatTime(ev.timestamp)}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-blue-400">
-                      {ev.type}
+                    <td className="whitespace-nowrap px-3 py-2">
+                      <span className="rounded border border-blue-400/20 bg-blue-500/[0.08] px-1.5 py-0.5 font-mono text-[11px] text-blue-200">{ev.type}</span>
                     </td>
                     <td className="max-w-0 px-3 py-2">
                       <span className="block truncate font-mono text-xs text-zinc-300" title={eventDetail(ev)}>
@@ -261,7 +314,7 @@ export function LiveFeed() {
                     <td className="hidden px-3 py-2 font-mono text-xs tabular-nums text-zinc-500 md:table-cell">
                       {ev.process ? ev.process.pid : ''}
                     </td>
-                    <td className="hidden max-w-[160px] truncate px-3 py-2 text-right font-mono text-xs text-zinc-500 md:table-cell">
+                    <td className="hidden truncate px-3 py-2 text-right font-mono text-xs text-zinc-500 md:table-cell">
                       {ev.host}
                     </td>
                   </motion.tr>

@@ -1,10 +1,24 @@
 'use client'
 
-import { ArrowClockwise, ArrowRight, CheckCircle, WarningCircle } from '@phosphor-icons/react'
+// Triage headline of the operations panel: the one hero figure (open
+// critical alerts), the lifecycle split of the received window and the
+// pipeline issues that need an operator. Every count opens the exact
+// queue it counts.
+
+import { ArrowClockwise, ArrowRight, CheckCircle, WarningCircle, WarningOctagon } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import type { ConsoleView } from './dashboard'
+import { SegmentBar } from '@/components/charts/bars'
 import { pipelineIssues, triageSummary, type TriageTarget } from '@/lib/operations'
-import { formatTime } from '@/lib/console-types'
+import { formatTime, formatUptime } from '@/lib/console-types'
+
+// Categorical slots 1-3 in their validated adjacent order (blue, aqua,
+// violet): new | acknowledged | closed.
+const LIFECYCLE = [
+  { target: 'new', label: 'nuevas', color: 'var(--series-1)' },
+  { target: 'acknowledged', label: 'reconocidas', color: 'var(--series-2)' },
+  { target: 'closed', label: 'cerradas', color: 'var(--series-3)' },
+] as const
 
 export function OperationsOverview({ onNavigate, onTriage }: {
   onNavigate: (view: ConsoleView) => void
@@ -20,17 +34,22 @@ export function OperationsOverview({ onNavigate, onTriage }: {
     : attention ? 'La operación necesita atención' : 'Motor operativo'
   const Icon = available && !attention ? CheckCircle : WarningCircle
   const color = !available ? 'text-zinc-400' : attention ? 'text-amber-300' : 'text-emerald-300'
+  const counts = { new: summary.pending, acknowledged: summary.acknowledged, closed: summary.closed }
+  const critical = available && summary.critical > 0
 
   return (
     <section aria-label="Resumen de operación" className="panel overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3">
+      <div className="panel-head justify-between">
         <div className={'flex items-center gap-2 text-sm font-medium ' + color}>
-          <Icon size={18} aria-hidden />
+          <Icon size={18} weight="fill" aria-hidden />
           <span role="status">{label}</span>
+          {available && stats && (
+            <span className="hidden text-xs font-normal text-zinc-500 sm:inline">· motor activo {formatUptime(stats.uptime_s)}</span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <span className="font-mono text-[11px] tabular-nums text-zinc-500">
-            {lastSyncAt ? 'Última lectura · ' + formatTime(new Date(lastSyncAt).toISOString()) : 'Esperando primera lectura'}
+          <span className="text-[11px] tabular-nums text-zinc-500">
+            {lastSyncAt ? 'Última lectura ' + formatTime(new Date(lastSyncAt).toISOString()) : 'Esperando primera lectura'}
           </span>
           <button
             type="button" onClick={refresh} disabled={refreshing} aria-busy={refreshing}
@@ -41,39 +60,58 @@ export function OperationsOverview({ onNavigate, onTriage }: {
           </button>
         </div>
       </div>
-      <div className="grid gap-5 px-4 py-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-        <div>
-          <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">Prioridad de triaje</p>
-          <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span className={'font-mono text-3xl tabular-nums tracking-tight ' + (summary.critical > 0 && available ? 'text-red-300' : 'text-zinc-100')}>
+
+      <div className="grid gap-6 px-5 py-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.3fr)_auto] lg:items-center">
+        <div className="min-w-0">
+          <p className="kicker">Prioridad de triaje</p>
+          <div className="mt-2 flex items-end gap-3">
+            <span className={'text-[56px] font-semibold leading-[0.9] tracking-tight ' + (critical ? 'text-red-300' : 'text-zinc-50')}>
               {available ? summary.critical : '—'}
             </span>
-            <h2 className="text-sm text-zinc-300">alertas críticas sin cerrar</h2>
+            <div className="pb-1.5">
+              {critical && <WarningOctagon size={18} weight="fill" aria-hidden className="mb-1 text-[var(--sev-critical)]" />}
+              <h2 className="text-sm leading-snug text-zinc-300">alertas críticas<br />sin cerrar</h2>
+            </div>
           </div>
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-400">
-            {([
-              { target: 'new', count: summary.pending, label: 'nuevas' },
-              { target: 'acknowledged', count: summary.acknowledged, label: 'reconocidas' },
-              { target: 'closed', count: summary.closed, label: 'cerradas' },
-            ] as const).map(({ target, count, label }) => (
-              <button key={target} type="button" onClick={() => onTriage(target)} disabled={!available}
-                aria-label={`Ver alertas ${label}: ${available ? count : 'sin datos'}`}
-                className="rounded-sm underline decoration-zinc-600 underline-offset-4 hover:text-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:no-underline">
-                {available ? count : '—'} {label}
+        </div>
+
+        <div className="min-w-0">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="kicker">Ciclo de vida</p>
+            <p className="text-[11px] text-zinc-500">
+              {available ? `ventana de ${alerts.length} alertas recibidas` : 'sin datos'}
+            </p>
+          </div>
+          <SegmentBar
+            className="mt-3"
+            segments={LIFECYCLE.map((s) => ({ key: s.target, label: s.label, value: available ? counts[s.target] : 0, color: s.color }))}
+          />
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {LIFECYCLE.map(({ target, label, color: swatch }) => (
+              <button
+                key={target} type="button" onClick={() => onTriage(target)} disabled={!available}
+                aria-label={`Ver alertas ${label}: ${available ? counts[target] : 'sin datos'}`}
+                className="group rounded-lg border border-zinc-800 px-3 py-2 text-left transition-colors hover:border-zinc-700 hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent"
+              >
+                <span className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+                  <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ background: swatch }} />
+                  {label}
+                </span>
+                <span className="mt-0.5 block text-xl font-semibold text-zinc-100 group-hover:text-blue-200">
+                  {available ? counts[target] : '—'}
+                </span>
               </button>
             ))}
           </div>
-          <p className="mt-2 text-[11px] text-zinc-500">
-            {available ? 'Ventana de ' + alerts.length + ' alertas recibidas; los totales del motor aparecen debajo.' : 'El triaje se mostrará cuando se recupere la conexión.'}
-          </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2 md:flex-col md:items-stretch">
+
+        <div className="flex flex-wrap items-center gap-2 lg:flex-col lg:items-stretch">
           <button type="button" onClick={() => onTriage('critical')} disabled={!available}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-400/25 bg-red-400/10 px-3.5 py-2 text-xs font-medium text-red-300 transition-colors hover:bg-red-400/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-50">
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-400/30 bg-red-500/10 px-3.5 py-2 text-xs font-medium text-red-200 transition-colors hover:bg-red-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-50">
             Ver críticas sin cerrar <ArrowRight size={14} aria-hidden />
           </button>
           <button type="button" onClick={() => onNavigate('alertas')}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-400/30 bg-blue-400/10 px-3.5 py-2 text-xs font-medium text-blue-300 transition-colors hover:bg-blue-400/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-400/30 bg-blue-500/10 px-3.5 py-2 text-xs font-medium text-blue-200 transition-colors hover:bg-blue-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             Abrir cola de alertas <ArrowRight size={14} aria-hidden />
           </button>
           <button type="button" onClick={() => onNavigate('flujo')}
@@ -83,8 +121,8 @@ export function OperationsOverview({ onNavigate, onTriage }: {
         </div>
       </div>
       {available && (attention || streamStatus === 'connecting') && (
-        <div className="border-t border-amber-400/10 bg-amber-400/[0.04] px-4 py-3">
-          <ul className="space-y-1 text-xs text-amber-200/80">
+        <div className="border-t border-amber-400/15 bg-amber-400/[0.05] px-5 py-3">
+          <ul className="space-y-1 text-xs text-amber-200/90">
             {streamStatus !== 'live' && <li>El canal en vivo está reconectando; la última lectura del motor sigue disponible.</li>}
             {issues.map((issue) => <li key={issue}>{issue}.</li>)}
           </ul>

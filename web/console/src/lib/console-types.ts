@@ -305,44 +305,45 @@ export type AnalystMessage = {
   error?: string
 }
 
-// Semantic severity colors (data semantics, not decoration):
-// critical=red-500/600, high=orange-500, medium=amber-400, low=sky-400.
+// Semantic severity colors (data semantics, not decoration). Marks use
+// the validated --sev-* tokens (globals.css); text keeps a lighter step
+// of the same hue so it clears contrast on the dark surfaces.
 export const SEVERITY_STYLE: Record<Severity, { label: string; text: string; bg: string; border: string; bar: string; dot: string }> = {
   critical: {
-    label: 'critical',
-    text: 'text-red-400',
-    bg: 'bg-red-500/10',
-    border: 'border-red-500/30',
-    bar: 'bg-red-500',
-    dot: 'bg-red-500',
+    label: 'crítica',
+    text: 'text-red-300',
+    bg: 'bg-red-500/12',
+    border: 'border-red-500/35',
+    bar: 'bg-[var(--sev-critical)]',
+    dot: 'bg-[var(--sev-critical)]',
   },
   high: {
-    label: 'high',
-    text: 'text-orange-400',
+    label: 'alta',
+    text: 'text-orange-300',
     bg: 'bg-orange-500/10',
     border: 'border-orange-500/30',
-    bar: 'bg-orange-500',
-    dot: 'bg-orange-500',
+    bar: 'bg-[var(--sev-high)]',
+    dot: 'bg-[var(--sev-high)]',
   },
   medium: {
-    label: 'medium',
-    text: 'text-amber-400',
-    bg: 'bg-amber-400/10',
-    border: 'border-amber-400/30',
-    bar: 'bg-amber-400',
-    dot: 'bg-amber-400',
+    label: 'media',
+    text: 'text-yellow-200',
+    bg: 'bg-yellow-400/10',
+    border: 'border-yellow-400/25',
+    bar: 'bg-[var(--sev-medium)]',
+    dot: 'bg-[var(--sev-medium)]',
   },
   low: {
-    label: 'low',
-    text: 'text-sky-400',
-    bg: 'bg-sky-400/10',
-    border: 'border-sky-400/30',
-    bar: 'bg-sky-400',
-    dot: 'bg-sky-400',
+    label: 'baja',
+    text: 'text-blue-300',
+    bg: 'bg-blue-500/10',
+    border: 'border-blue-400/30',
+    bar: 'bg-[var(--sev-low)]',
+    dot: 'bg-[var(--sev-low)]',
   },
   info: {
-    label: 'info', text: 'text-zinc-400', bg: 'bg-zinc-500/10',
-    border: 'border-zinc-500/30', bar: 'bg-zinc-500', dot: 'bg-zinc-500',
+    label: 'info', text: 'text-zinc-300', bg: 'bg-zinc-500/10',
+    border: 'border-zinc-500/30', bar: 'bg-[var(--sev-info)]', dot: 'bg-[var(--sev-info)]',
   },
 }
 

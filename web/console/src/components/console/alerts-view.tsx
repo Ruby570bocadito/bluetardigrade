@@ -39,6 +39,9 @@ import { postAlertStatus } from '@/lib/lifecycle'
 import { alertKey } from '@/lib/engine-client'
 import { matchesAlertState, alertStateFromParam, type AlertScope, type AlertStateFilter } from '@/lib/alert-search'
 import { useAlertHistory } from '@/hooks/use-alert-history'
+import { Meter } from '@/components/charts/bars'
+import { SEV_COLOR, SeverityIcon } from '@/components/charts/severity'
+import { SEVERITIES, SEVERITY_LABEL, severityCounts } from '@/lib/soc-metrics'
 import {
   currentSearch,
   readOperatorState,
@@ -54,6 +57,7 @@ import {
   formatDateTime,
   formatTime,
   SEVERITY_STYLE,
+  type Severity,
   type SfAlert,
   type SfAlertStatus,
 } from '@/lib/console-types'
@@ -236,6 +240,9 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
   }, [alerts, displayedAlerts, sevFilter, stateFilter, query, compact, historyMode])
 
   const filtering = sevFilter !== 'all' || stateFilter !== 'all' || query.trim() !== ''
+  // With the detail panel open the queue loses ~400px: the host column
+  // steps aside so the alert name keeps room.
+  const hostColumn = selected ? '2xl:table-cell' : 'lg:table-cell'
 
   // O4 honesty (export-menu): with a filter active, the export tooltips
   // declare that the bulk file ignores the lens — and how much it keeps.
@@ -275,7 +282,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
                 placeholder="buscar regla, host, usuario..."
                 aria-label="Buscar en alertas"
                 maxLength={MAX_QUERY_CHARS}
-                className="h-8 w-[220px] rounded-md border-zinc-800 bg-zinc-900 pl-7 font-mono text-xs text-zinc-200 placeholder:text-zinc-500"
+                className="h-8 w-[220px] rounded-md border-zinc-800 bg-zinc-900 pl-7 text-xs text-zinc-200 placeholder:text-zinc-500"
               />
             </div>
             <Select value={sevFilter} onValueChange={setSevFilter}>
@@ -284,10 +291,10 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">todas</SelectItem>
-                <SelectItem value="critical">critical</SelectItem>
-                <SelectItem value="high">high</SelectItem>
-                <SelectItem value="medium">medium</SelectItem>
-                <SelectItem value="low">low</SelectItem>
+                <SelectItem value="critical">crítica</SelectItem>
+                <SelectItem value="high">alta</SelectItem>
+                <SelectItem value="medium">media</SelectItem>
+                <SelectItem value="low">baja</SelectItem>
                 <SelectItem value="info">info</SelectItem>
               </SelectContent>
             </Select>
@@ -367,13 +374,14 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
   return (
     <section aria-label="Alertas de detección">
       {header}
+      <SeverityStrip alerts={alerts} active={sevFilter} onToggle={(sev) => setSevFilter(sevFilter === sev ? 'all' : sev)} />
       <ReportLibrary />
       <SavedSearches kind="alerts" getLens={() => alertSearchLens(filterRef.current.sev, filterRef.current.state, filterRef.current.scope, filterRef.current.q)} onApply={applySaved} />
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2.5">
-        <div role="group" aria-label="Origen de alertas" className="flex gap-1">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 px-3 py-2.5">
+        <div role="group" aria-label="Origen de alertas" className="flex gap-1 rounded-lg bg-zinc-950/60 p-0.5">
           {([['live', 'En vivo'], ['history', 'Histórico']] as const).map(([id, label]) => (
             <button key={id} type="button" aria-pressed={scope === id} onClick={() => changeScope(id)}
-              className={'rounded-md px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ' + (scope === id ? 'bg-blue-400/10 text-blue-300' : 'text-zinc-400 hover:text-zinc-100')}>
+              className={'rounded-md px-3 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ' + (scope === id ? 'bg-blue-500/15 text-blue-200 shadow-[inset_0_0_0_1px_rgba(96,165,250,0.25)]' : 'text-zinc-400 hover:text-zinc-100')}>
               {label}
             </button>
           ))}
@@ -440,21 +448,21 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
           />
         </div>
       ) : (
-        <div className={selected ? 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]' : ''}>
+        <div className={selected ? 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_400px]' : ''}>
           <div className="panel min-w-0 overflow-hidden">
             <div className="max-h-[68vh] overflow-y-auto">
-              <table className="w-full border-collapse text-left text-sm">
+              <table className="w-full table-fixed border-collapse text-left text-sm">
                 <caption className="sr-only">
                   Cola de alertas del motor: severidad, regla, equipo y hora. Selecciona una fila para ver el detalle.
                 </caption>
                 <thead className="sticky top-0 z-10">
-                  <tr className="bg-zinc-950">
-                    <th scope="col" className="border-b border-zinc-800 py-2 pl-4 pr-3 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Sev</th>
+                  <tr className="bg-zinc-900">
+                    <th scope="col" className="w-[124px] border-b border-zinc-800 py-2 pl-4 pr-3 text-[11px] font-medium uppercase tracking-wider text-zinc-500 sm:w-[136px]">Sev</th>
                     <th scope="col" className="border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Alerta</th>
-                    <th scope="col" className="hidden border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500 lg:table-cell">Equipo / Usuario</th>
-                    <th scope="col" className="hidden border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500 md:table-cell">Técnica</th>
-                    <th scope="col" className="border-b border-zinc-800 px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-zinc-500">Hora</th>
-                    <th scope="col" className="w-8 border-b border-zinc-800 px-2 py-2"><span className="sr-only">Detalle</span></th>
+                    <th scope="col" className={`hidden w-[180px] border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500 ${hostColumn}`}>Equipo / Usuario</th>
+                    <th scope="col" className="hidden w-[104px] border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500 md:table-cell">Técnica</th>
+                    <th scope="col" className="w-[84px] border-b border-zinc-800 px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-zinc-500">Hora</th>
+                    <th scope="col" className="w-9 border-b border-zinc-800 px-2 py-2"><span className="sr-only">Detalle</span></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-800/80">
@@ -472,7 +480,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
                         }`}
                       >
                         <td className="py-2.5 pl-4 pr-3 align-middle">
-                          <span className="flex items-center gap-2">
+                          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                             <span aria-hidden className={`h-4 w-[3px] rounded-full ${SEVERITY_STYLE[al.severity]?.bar ?? 'bg-sky-400'}`} />
                             <SeverityBadge severity={al.severity} />
                             <StatusChip status={al.status} />
@@ -492,13 +500,13 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
                           </button>
                           <span className="block truncate font-mono text-xs text-zinc-500">{al.summary}</span>
                         </td>
-                        <td className="hidden max-w-[180px] px-3 py-2.5 align-middle lg:table-cell">
+                        <td className={`hidden px-3 py-2.5 align-middle ${hostColumn}`}>
                           <span className="block truncate font-mono text-xs text-zinc-300">{al.host}</span>
                           <span className="block truncate font-mono text-xs text-zinc-500">{al.user ?? 'n/d'}</span>
                         </td>
                         <td className="hidden px-3 py-2.5 align-middle md:table-cell">
                           {mitre ? (
-                            <span className="inline-flex rounded-md border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-zinc-400">
+                            <span className="inline-flex rounded-md border border-blue-400/20 bg-blue-500/[0.08] px-1.5 py-0.5 font-mono text-[10px] text-blue-200">
                               {mitre.replace('attack.', '').toUpperCase()}
                             </span>
                           ) : (
@@ -542,6 +550,44 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
       )}
       <LiveAnnouncer message={announcement} />
     </section>
+  )
+}
+
+/**
+ * Severity strip of the live window: count, share and a one-click
+ * severity lens (the same filter as the select; a second click clears).
+ */
+function SeverityStrip({ alerts, active, onToggle }: { alerts: SfAlert[]; active: SeverityFilter; onToggle: (sev: Severity) => void }) {
+  const counts = severityCounts(alerts)
+  const total = alerts.length
+  return (
+    <div role="group" aria-label="Alertas por severidad en la ventana en vivo" className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+      {SEVERITIES.map((sev) => {
+        const pressed = active === sev
+        return (
+          <button
+            key={sev}
+            type="button"
+            aria-pressed={pressed}
+            onClick={() => onToggle(sev)}
+            title={pressed ? 'Quitar el filtro de severidad' : 'Filtrar la cola por esta severidad'}
+            className={`panel min-w-0 px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              pressed ? 'border-blue-400/50 bg-blue-500/[0.08]' : 'hover:border-zinc-700'
+            }`}
+          >
+            <span className="flex items-center gap-1.5 text-xs text-zinc-400">
+              <SeverityIcon severity={sev} size={13} />
+              {SEVERITY_LABEL[sev]}
+            </span>
+            <span className="mt-1 flex items-baseline justify-between gap-2">
+              <span className="text-xl font-semibold text-zinc-50">{counts[sev]}</span>
+              <span className="text-[11px] tabular-nums text-zinc-500">{total ? Math.round((counts[sev] / total) * 100) : 0} %</span>
+            </span>
+            <Meter className="mt-2" value={counts[sev]} max={Math.max(1, total)} color={SEV_COLOR[sev]} />
+          </button>
+        )
+      })}
+    </div>
   )
 }
 

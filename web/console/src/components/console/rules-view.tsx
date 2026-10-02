@@ -8,10 +8,14 @@
 // or the values the conditions match on.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CaretDown, MagnifyingGlass, ShieldCheck } from '@phosphor-icons/react'
+import { CaretDown, Crosshair, MagnifyingGlass, ShieldCheck, ShieldWarning, Stack } from '@phosphor-icons/react'
 import { Input } from '@/components/ui/input'
 import { useEngine } from './engine-provider'
-import { EmptyState, SectionHeader, SeverityBadge } from './ui-bits'
+import { EmptyState, SeverityBadge } from './ui-bits'
+import { ChartCard } from '@/components/charts/chart-frame'
+import { BarList } from '@/components/charts/bars'
+import { SEV_COLOR, SeverityIcon } from '@/components/charts/severity'
+import { ATTACK_TACTICS, SEVERITIES, SEVERITY_LABEL, tacticSlug, topCounts } from '@/lib/soc-metrics'
 import {
   currentSearch,
   readLensState,
@@ -87,33 +91,33 @@ export function RulesView() {
   const filtering = query.trim() !== ''
 
   return (
-    <section aria-label="Reglas de detección">
-      <SectionHeader
-        title="Reglas cargadas en el motor"
-        count={visible.length}
-        hint={filtering ? `de ${rules.length} totales` : 'hot-reload cada 15s'}
-        action={
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <MagnifyingGlass
-                size={13}
-                aria-hidden
-                className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500"
-              />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') setQuery('')
-                }}
-                placeholder="buscar regla, MITRE, táctica..."
-                aria-label="Buscar en reglas"
-                className="h-8 w-[230px] rounded-md border-zinc-800 bg-zinc-900 pl-7 font-mono text-xs text-zinc-200 placeholder:text-zinc-500"
-              />
-            </div>
-          </div>
-        }
-      />
+    <section aria-label="Reglas de detección" className="space-y-4">
+      {rules.length > 0 && <RuleCoverage rules={rules} onFilter={(text) => setQuery(query === text ? '' : text)} active={query} />}
+
+      <div className="panel-head panel justify-between">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-2">
+          <h2 className="text-sm font-medium text-zinc-100">Reglas cargadas en el motor</h2>
+          <span className="text-xs tabular-nums text-zinc-500">{visible.length}</span>
+          <span className="text-xs text-zinc-500">{filtering ? `de ${rules.length} totales` : 'recarga en caliente cada 15 s'}</span>
+        </div>
+        <div className="relative">
+          <MagnifyingGlass
+            size={13}
+            aria-hidden
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500"
+          />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setQuery('')
+            }}
+            placeholder="buscar regla, MITRE, táctica..."
+            aria-label="Buscar en reglas"
+            className="h-8 w-[240px] rounded-md border-zinc-800 bg-zinc-900 pl-7 text-xs text-zinc-200 placeholder:text-zinc-500"
+          />
+        </div>
+      </div>
 
       {rules.length === 0 ? (
         <div className="panel">
@@ -154,7 +158,7 @@ export function RulesView() {
                       <span className="block truncate font-mono text-[11px] text-zinc-500">{r.tactic || 'sin táctica'}</span>
                     </span>
                     {r.mitre ? (
-                      <span className="hidden rounded-md border border-zinc-800 bg-zinc-950 px-1.5 py-0.5 font-mono text-[10px] text-zinc-400 sm:inline">
+                      <span className="hidden rounded-md border border-blue-400/20 bg-blue-500/[0.08] px-1.5 py-0.5 font-mono text-[10px] text-blue-200 sm:inline">
                         {r.mitre}
                       </span>
                     ) : (
@@ -208,5 +212,73 @@ export function RulesView() {
         Formato YAML igual al del motor Go: internal/rules las indexa por event_type y las recarga en caliente cada 15s.
       </p>
     </section>
+  )
+}
+
+/**
+ * Coverage of the loaded pack: rules per ATT&CK tactic (kill-chain order),
+ * per severity and per event type. Each bar narrows the catalogue below
+ * with the same free-text search (a second click clears it).
+ */
+function RuleCoverage({ rules, onFilter, active }: { rules: RuleMeta[]; onFilter: (text: string) => void; active: string }) {
+  const byTactic = ATTACK_TACTICS.map((t) => ({
+    ...t,
+    count: rules.filter((r) => (tacticSlug(r.tactic) ?? r.tags.map(tacticSlug).find(Boolean)) === t.slug).length,
+  })).filter((t) => t.count > 0)
+  const uncovered = ATTACK_TACTICS.length - byTactic.length
+  const bySeverity = SEVERITIES.map((sev) => ({ sev, count: rules.filter((r) => r.severity === sev).length }))
+  const byType = topCounts(rules, (r) => r.event_type, 6)
+  const pressed = (text: string) => active.trim().toLowerCase() === text.toLowerCase()
+  return (
+    <div className="grid gap-4 lg:grid-cols-3">
+      <ChartCard
+        title="Reglas por táctica ATT&CK"
+        subtitle={`${byTactic.length} de 14 tácticas cubiertas${uncovered ? ` · ${uncovered} sin reglas` : ''}`}
+        icon={Crosshair}
+        table={{ caption: 'Reglas por táctica de MITRE ATT&CK', columns: ['Táctica', 'Reglas'], rows: ATTACK_TACTICS.map((t) => [t.label, byTactic.find((b) => b.slug === t.slug)?.count ?? 0]) }}
+      >
+        <BarList
+          rows={byTactic.map((t) => {
+            const label = rules.find((r) => tacticSlug(r.tactic) === t.slug)?.tactic || t.slug
+            return {
+              key: t.slug, label: t.label, value: t.count,
+              onSelect: () => onFilter(label),
+              selectLabel: pressed(label) ? `Quitar el filtro ${t.label}` : `Filtrar reglas de ${t.label}: ${t.count}`,
+            }
+          })}
+        />
+      </ChartCard>
+      <ChartCard
+        title="Reglas por severidad"
+        subtitle="Severidad declarada en el YAML de cada regla"
+        icon={ShieldWarning}
+        table={{ caption: 'Reglas por severidad', columns: ['Severidad', 'Reglas'], rows: bySeverity.map((b) => [SEVERITY_LABEL[b.sev], b.count]) }}
+      >
+        <BarList
+          rows={bySeverity.map((b) => ({
+            key: b.sev,
+            label: <span className="flex items-center gap-2"><SeverityIcon severity={b.sev} size={13} />{SEVERITY_LABEL[b.sev]}</span>,
+            value: b.count,
+            color: SEV_COLOR[b.sev],
+          }))}
+        />
+      </ChartCard>
+      <ChartCard
+        title="Tipos de evento evaluados"
+        subtitle={`${byType.distinct} tipos de telemetría con reglas`}
+        icon={Stack}
+        table={{ caption: 'Reglas por tipo de evento', columns: ['Tipo de evento', 'Reglas'], rows: byType.top.map((r) => [r.key, r.count]) }}
+        footer={byType.rest > 0 ? `${byType.rest} reglas más en otros tipos.` : undefined}
+      >
+        <BarList
+          color="var(--series-2)"
+          rows={byType.top.map((r) => ({
+            key: r.key, label: <span className="font-mono">{r.key}</span>, value: r.count,
+            onSelect: () => onFilter(r.key),
+            selectLabel: pressed(r.key) ? `Quitar el filtro ${r.key}` : `Filtrar reglas de ${r.key}: ${r.count}`,
+          }))}
+        />
+      </ChartCard>
+    </div>
   )
 }

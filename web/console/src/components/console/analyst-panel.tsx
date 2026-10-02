@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAnalystChannel } from './socket-provider'
 import { useEngine } from './engine-provider'
-import { EmptyState, OfflineNotice, SectionHeader, SeverityBadge } from './ui-bits'
+import { EmptyState, OfflineNotice, SeverityBadge } from './ui-bits'
 import { StarBorder } from '@/components/reactbits/star-border'
 import { formatTime, type AnalystMessage, type SfAlert, type SfSuppression } from '@/lib/console-types'
 
@@ -152,11 +152,15 @@ export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfA
   const canRetry = lastUser?.alertName && !running && channelLive
 
   return (
-    <section aria-label="Analista IA" className="grid gap-4 lg:grid-cols-[290px_minmax(0,1fr)]">
-      <div className="min-w-0">
-        <SectionHeader title="Cola de alertas" count={alerts.length} />
-        <div className="panel max-h-[56vh] overflow-y-auto">
-          <ul className="divide-y divide-white/[0.06]">
+    <section aria-label="Analista IA" className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+      <div className="panel flex min-w-0 flex-col overflow-hidden">
+        <div className="panel-head">
+          <Tray size={15} aria-hidden className="text-blue-400" />
+          <h2 className="text-sm font-medium text-zinc-100">Elige una alerta</h2>
+          <span className="ml-auto text-xs tabular-nums text-zinc-500">{alerts.length}</span>
+        </div>
+        <div className="max-h-[64vh] flex-1 overflow-y-auto">
+          <ul className="divide-y divide-zinc-800/70">
             {alerts.slice(0, 20).map((al) => (
               <li key={`${al.event_id}:${al.rule_id}`}>
                 <button
@@ -166,8 +170,8 @@ export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfA
                     void analyze(al, undefined)
                   }}
                   disabled={running || !channelLive}
-                  className={`w-full px-3 py-2.5 text-left transition-colors hover:bg-zinc-800/40 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
-                    pickerId === `${al.event_id}:${al.rule_id}` ? 'bg-zinc-800/60' : ''
+                  className={`w-full px-4 py-2.5 text-left transition-colors hover:bg-zinc-800/40 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+                    pickerId === `${al.event_id}:${al.rule_id}` ? 'bg-blue-500/[0.08]' : ''
                   }`}
                 >
                   <span className="flex items-center gap-2">
@@ -191,7 +195,18 @@ export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfA
           mientras el analista trabaja — es el indicador de "procesando",
           no decoración; al terminar vuelve al borde estático. La rama
           offline del canal (canalLive) conserva su aviso honesto dentro. */}
-      <StarBorder active={running} className="flex min-h-[56vh] min-w-0 flex-col rounded-lg border border-zinc-800 bg-zinc-900/40">
+      <StarBorder active={running} className="flex min-h-[64vh] min-w-0 flex-col rounded-[0.875rem] bg-[var(--viz-surface)]">
+        <div className="panel-head">
+          <span className="icon-tile"><Sparkle size={14} weight="fill" aria-hidden /></span>
+          <div className="min-w-0">
+            <h2 className="text-sm font-medium text-zinc-100">Analista IA</h2>
+            <p className="truncate text-[11px] text-zinc-500">Modelo propio configurado en web/console-service · respuesta completa, sin streaming simulado</p>
+          </div>
+          <span className={`ml-auto flex shrink-0 items-center gap-1.5 text-[11px] ${channelLive ? 'text-emerald-300' : 'text-zinc-500'}`}>
+            <span aria-hidden className={`h-2 w-2 rounded-full ${channelLive ? 'bg-emerald-500' : 'bg-zinc-600'}`} />
+            {channelLive ? (running ? 'analizando' : 'conectado') : 'sin conexión'}
+          </span>
+        </div>
         {!channelLive ? (
           <div className="p-4">
             <OfflineNotice
@@ -211,10 +226,10 @@ export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfA
               <ul className="space-y-5">
                 {messages.map((m) =>
                   m.role === 'user' ? (
-                    <li key={m.id} className="text-xs">
-                      <span className="text-zinc-500">Analizando </span>
-                      <span className="text-zinc-200">{m.alertName}</span>
-                      {m.question && <span className="block text-zinc-400">Pregunta: {m.question}</span>}
+                    <li key={m.id} className="ml-auto w-fit max-w-[85%] rounded-xl rounded-br-sm border border-blue-400/20 bg-blue-500/[0.08] px-3 py-2 text-xs">
+                      <span className="text-zinc-400">Analizar </span>
+                      <span className="font-medium text-zinc-100">{m.alertName}</span>
+                      {m.question && <span className="mt-0.5 block text-zinc-300">{m.question}</span>}
                       {m.suppressionNote && (
                         <p className="mt-1.5 max-w-[70ch] rounded border border-amber-300/30 bg-amber-300/10 px-2 py-1.5 text-[11px] leading-relaxed text-amber-200">
                           {m.suppressionNote}
@@ -222,7 +237,7 @@ export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfA
                       )}
                     </li>
                   ) : (
-                    <li key={m.id} className="min-w-0">
+                    <li key={m.id} className="min-w-0 rounded-xl rounded-bl-sm border border-zinc-800 bg-zinc-900/60 px-4 py-3">
                       {m.steps && m.steps.length > 0 && (
                         <ul className="mb-3 space-y-1.5">
                           {m.steps.map((s) => (

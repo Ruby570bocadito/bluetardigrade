@@ -1,128 +1,103 @@
 'use client'
 
-// KPI strip of the operations panel: uptime, event rate, alert total
-// with the severity breakdown, rule count and pipeline counters.
-// Cockpit density: no card boxes, hairline separators, Geist Mono for
-// every number (tabular so live updates do not jitter).
+// Stat tiles of the operations panel (dataviz stat-tile contract): label,
+// value, a delta or context line and a sparkline of the /api/stats polls
+// kept by the engine provider. Values are proportional sans figures; an
+// unavailable metric shows "—" with an accessible "Sin datos", never 0.
 
-import { ActivityIcon, Flame, MinusCircle, ShieldCheck, Timer, UploadSimple, WebhooksLogo } from '@phosphor-icons/react'
+import { ActivityIcon, Flame, ShieldCheck, TrendDown, TrendUp, UploadSimple, WebhooksLogo, Siren } from '@phosphor-icons/react'
 import { AnimatedNumber } from './ui-bits'
-import { GradientText } from '@/components/reactbits/gradient-text'
+import { useStatsHistory } from './engine-provider'
 import { SpotlightCard } from '@/components/reactbits/spotlight-card'
-import { formatUptime, SEVERITY_STYLE, type EngineStats, type Severity } from '@/lib/console-types'
+import { Sparkline } from '@/components/charts/bars'
+import { counterDelta, type StatsSample } from '@/lib/soc-metrics'
+import type { EngineStats } from '@/lib/console-types'
 
-const SEV_ORDER: Severity[] = ['critical', 'high', 'medium', 'low', 'info']
-
-function Kpi({
+function Tile({
   label,
   icon: Icon,
+  value,
+  trend,
   children,
 }: {
   label: string
   icon: React.ElementType
+  value: number | undefined
+  trend?: number[]
   children: React.ReactNode
 }) {
-  // SpotlightCard (React Bits): el halo azul solo existe bajo el
-  // puntero (transparente en reposo), asi que la superficie .panel y las
-  // hairlines del grid no cambian; el foco de teclado tambien lo enciende
-  // via focus-within. .panel-hover añade el lift del template premium.
+  // SpotlightCard (React Bits): el halo solo existe bajo el puntero o con
+  // el foco dentro; en reposo es la superficie del panel sin cambios.
   return (
-    <SpotlightCard className="panel panel-hover min-w-0 px-4 py-4">
-      <p className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">
-        <span className="icon-tile">
-          <Icon size={12} aria-hidden />
-        </span>
+    <SpotlightCard className="panel panel-hover min-w-0 px-4 py-3.5">
+      <p className="flex items-center gap-2 text-xs text-zinc-400">
+        <Icon size={15} aria-hidden className="text-blue-400" />
         {label}
       </p>
-      <div className="mt-2.5">{children}</div>
+      <div className="mt-2 flex items-end justify-between gap-2">
+        <KpiNumber value={value} />
+        {trend && <Sparkline values={trend} width={84} height={30} />}
+      </div>
+      <div className="mt-1.5 min-h-4 truncate text-[11px] text-zinc-500">{children}</div>
     </SpotlightCard>
   )
 }
 
 function KpiNumber({ value }: { value: number | undefined }) {
-  const className = 'block font-mono text-xl tabular-nums tracking-tight text-zinc-50'
+  const className = 'block text-[26px] font-semibold leading-none tracking-tight text-zinc-50'
   return value === undefined
     ? <span className={className} aria-label="Sin datos">—</span>
     : <AnimatedNumber value={value} className={className} />
 }
 
+function Delta({ value, span: label }: { value: number | null; span: string }) {
+  if (value === null) return <span>tendencia tras dos lecturas</span>
+  if (value === 0) return <span>sin cambios {label}</span>
+  const Up = value > 0 ? TrendUp : TrendDown
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Up size={12} aria-hidden className={value > 0 ? 'text-orange-300' : 'text-zinc-400'} />
+      <span className={value > 0 ? 'font-medium text-orange-200' : 'text-zinc-300'}>{value > 0 ? '+' : ''}{value.toLocaleString('es-ES')}</span>
+      {label}
+    </span>
+  )
+}
+
+const pick = (history: StatsSample[], f: (s: StatsSample) => number) => history.map(f)
+
 export function KpiRow({ stats }: { stats: EngineStats | null }) {
-  const severity = stats?.by_severity ?? {}
+  const history = useStatsHistory()
   const webhookIssues = (stats?.webhook_failed ?? 0) + (stats?.webhook_dropped ?? 0)
   const ingestIssues = (stats?.dropped ?? 0) + (stats?.ingest_rejected ?? 0)
-  const hot = stats?.hot_hosts
-  const top = hot?.[0]
+  const top = stats?.hot_hosts?.[0]
+  const span = history.length > 1 ? Math.max(1, Math.round((history[history.length - 1].t - history[0].t) / 60_000)) : 0
+  const spanLabel = span ? `en ${span} min` : ''
 
   return (
-    <div
-      aria-label="Indicadores del motor"
-      className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-7"
-    >
-      <Kpi label="Tiempo activo" icon={Timer}>
-        <span className="block truncate font-mono text-xl tabular-nums tracking-tight text-zinc-50">
-          {stats ? formatUptime(stats.uptime_s) : '—'}
-        </span>
-      </Kpi>
+    <div aria-label="Indicadores del motor" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <Tile label="Eventos por minuto" icon={ActivityIcon} value={stats?.events_per_min} trend={pick(history, (s) => s.eventsPerMin)}>
+        {stats ? `${stats.events_total.toLocaleString('es-ES')} desde el arranque` : 'sin datos'}
+      </Tile>
 
-      <Kpi label="Eventos/min" icon={ActivityIcon}>
-        <KpiNumber value={stats?.events_per_min} />
-        <span className="mt-0.5 block font-mono text-[11px] tabular-nums text-zinc-500">
-          {stats ? 'total ' + stats.events_total : 'sin datos'}
-        </span>
-      </Kpi>
+      <Tile label="Alertas" icon={Siren} value={stats?.alerts_total} trend={pick(history, (s) => s.alertsTotal)}>
+        {!stats ? 'sin datos' : <Delta value={counterDelta(history, (s) => s.alertsTotal)} span={spanLabel} />}
+      </Tile>
 
-      <Kpi label="Alertas" icon={WebhooksLogo}>
-        <KpiNumber value={stats?.alerts_total} />
-        <span className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1">
-          {SEV_ORDER.filter((sev) => (severity[sev] ?? 0) > 0).map((sev) => (
-            <span key={sev} className="flex items-center gap-1 font-mono text-[11px] tabular-nums">
-              <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${SEVERITY_STYLE[sev].dot}`} />
-              {/* GradientText (React Bits): el critical late en degradado
-                  rojo/ámbar mientras exista — urgencia de severidad, no
-                  adorno; el resto de severidades quedan estáticas. */}
-              {sev === 'critical' ? (
-                <GradientText colors={['#fca5a5', '#fb923c', '#f87171', '#fca5a5']} speed={4}>
-                  <span className={SEVERITY_STYLE[sev].text}>{severity[sev]}</span>
-                </GradientText>
-              ) : (
-                <span className={SEVERITY_STYLE[sev].text}>{severity[sev]}</span>
-              )}
-              <span className="text-zinc-500">{sev}</span>
-            </span>
-          ))}
-          {SEV_ORDER.every((sev) => (severity[sev] ?? 0) === 0) && (
-            <span className="text-[11px] text-zinc-500">{stats ? 'sin detecciones' : 'sin datos'}</span>
-          )}
-        </span>
-      </Kpi>
+      <Tile label="Hosts en riesgo" icon={Flame} value={stats?.risk_hosts_tracked} trend={pick(history, (s) => s.riskHosts)}>
+        {top ? <span title={top.host}>máx {top.host} · {top.score.toFixed(1)}</span> : stats ? 'sin riesgo activo' : 'sin datos'}
+      </Tile>
 
-      <Kpi label="Reglas activas" icon={ShieldCheck}>
-        <KpiNumber value={stats?.rules_count} />
-        <span className="mt-0.5 block truncate font-mono text-[11px] text-zinc-500">
-          {stats ? stats.rules_types.length + ' tipos de evento' : 'sin datos'}
-        </span>
-      </Kpi>
+      <Tile label="Reglas activas" icon={ShieldCheck} value={stats?.rules_count}>
+        {stats ? `${stats.rules_types.length} tipos de evento cubiertos` : 'sin datos'}
+      </Tile>
 
-      <Kpi label="Búfer de eventos" icon={UploadSimple}>
-        <KpiNumber value={stats?.events_buffered} />
-        <span className="mt-0.5 block font-mono text-[11px] tabular-nums text-zinc-500">
-          {!stats ? 'sin datos' : ingestIssues > 0 ? <span className="text-orange-400">{ingestIssues} rechazados</span> : 'sin rechazos'}
-        </span>
-      </Kpi>
+      <Tile label="Búfer de eventos" icon={UploadSimple} value={stats?.events_buffered}>
+        {!stats ? 'sin datos' : ingestIssues > 0 ? <span className="text-orange-300">{ingestIssues} descartados o rechazados</span> : 'sin rechazos de ingesta'}
+      </Tile>
 
-      <Kpi label="Webhooks" icon={MinusCircle}>
-        <KpiNumber value={stats?.webhook_sent} />
-        <span className="mt-0.5 block font-mono text-[11px] tabular-nums text-zinc-500">
-          {!stats ? 'sin datos' : webhookIssues > 0 ? <span className="text-orange-400">{webhookIssues} con fallo</span> : 'sin fallos'}
-        </span>
-      </Kpi>
-
-      <Kpi label="Riesgo por host" icon={Flame}>
-        <KpiNumber value={stats?.risk_hosts_tracked} />
-        <span className="mt-0.5 block truncate font-mono text-[11px] tabular-nums text-zinc-500">
-          {hot && top ? `máx ${top.host} · ${top.score}` : stats ? 'sin riesgo activo' : 'sin datos'}
-        </span>
-      </Kpi>
+      <Tile label="Entregas webhook" icon={WebhooksLogo} value={stats?.webhook_sent} trend={pick(history, (s) => s.webhookSent)}>
+        {!stats ? 'sin datos' : webhookIssues > 0 ? <span className="text-orange-300">{webhookIssues} con fallo</span> : 'sin fallos de entrega'}
+      </Tile>
     </div>
   )
 }

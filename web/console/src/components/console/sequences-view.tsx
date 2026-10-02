@@ -9,9 +9,9 @@
 // (hot-reloaded by the engine every 15 s) - there is no write API, same
 // as suppressions.
 
-import { FlowArrow, Timer } from '@phosphor-icons/react'
+import { CaretRight, CheckCircle, FlowArrow, Siren, Timer } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
-import { EmptyState, SectionHeader, SeverityBadge } from './ui-bits'
+import { EmptyState, SeverityBadge, StatTile } from './ui-bits'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
 import type { SfSequence } from '@/lib/console-types'
 
@@ -25,48 +25,50 @@ function formatWindow(seconds: number): string {
 }
 
 export function SequencesView() {
-  const { sequences, rules, status } = useEngine()
+  const { sequences, rules, alerts, status } = useEngine()
 
   const liveRules = new Set(rules.map((r) => r.name))
   const armed = sequences.filter((s) => s.steps.every((step) => liveRules.has(step))).length
+  const hits = new Map<string, number>()
+  for (const a of alerts) hits.set(a.rule_name, (hits.get(a.rule_name) ?? 0) + 1)
+  const campaigns = (seq: SfSequence) => alerts.filter((a) => a.rule_id === seq.id || a.rule_name === seq.name).length
+  const completed = sequences.reduce((sum, seq) => sum + campaigns(seq), 0)
 
   return (
-    <section aria-label="Cadenas de kill chain">
-      <SectionHeader title="Cadenas" count={sequences.length} />
+    <section aria-label="Cadenas de kill chain" className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <StatTile icon={FlowArrow} label="Cadenas cargadas" value={sequences.length} hint="sequences/*.yaml, recarga en caliente" />
+        <StatTile
+          icon={CheckCircle}
+          label="Cadenas armadas"
+          value={armed}
+          hint={sequences.length === 0 ? 'sin cadenas' : armed === sequences.length ? 'todos los pasos tienen regla' : `${sequences.length - armed} con pasos sin regla`}
+          warn={armed < sequences.length}
+        />
+        <StatTile icon={Siren} label="Campañas en la ventana" value={completed} hint={`alertas de correlación entre las ${alerts.length} recibidas`} />
+      </div>
 
-      <p className="max-w-[80ch] pb-4 text-xs leading-relaxed text-zinc-500">
-        Secuencias de kill chain cargadas por el correlador: cuando todos los pasos de una cadena se
-        observan en el <span className="text-zinc-400">mismo host dentro de la ventana</span>, el motor
-        levanta una sola alerta de campaña (el orden de los pasos no importa). Edite{' '}
-        <code className="rounded bg-white/[0.06] px-1 font-mono text-[11px] text-zinc-300">sequences/*.yaml</code>{' '}
-        y el motor lo recarga en caliente; esta vista es de solo lectura.
-        {sequences.length > 0 && (
-          <>
-            {' '}
-            {armed === sequences.length ? (
-              <span className="text-emerald-300/90">Todas las cadenas están armadas: cada paso tiene su regla cargada.</span>
-            ) : (
-              <span className="text-amber-300/90">
-                {sequences.length - armed} de {sequences.length} cadenas tienen pasos sin regla cargada y no
-                pueden completarse hasta que la regla exista.
-              </span>
-            )}
-          </>
-        )}
+      <p className="max-w-[90ch] text-xs leading-relaxed text-zinc-500">
+        Cuando todos los pasos de una cadena se observan en el <span className="text-zinc-300">mismo host dentro de la ventana</span>,
+        el correlador levanta una sola alerta de campaña (el orden de los pasos no importa). Cada paso muestra las alertas
+        de su regla en la ventana recibida. Edite{' '}
+        <code className="rounded bg-white/[0.06] px-1 font-mono text-[11px] text-zinc-300">sequences/*.yaml</code>; esta vista es de solo lectura.
       </p>
 
       {status !== 'live' && sequences.length === 0 ? (
-        <div className="h-24 animate-pulse rounded bg-white/5" />
+        <div className="h-24 animate-pulse rounded-xl bg-white/5" />
       ) : sequences.length === 0 ? (
-        <EmptyState
-          icon={FlowArrow}
-          title="Sin secuencias cargadas"
-          hint="El correlador está apagado: el motor no encontró un directorio sequences/ con YAML válido. Crea sequences/kill-chains.yaml y se cargará en el próximo hot-reload."
-        />
+        <div className="panel">
+          <EmptyState
+            icon={FlowArrow}
+            title="Sin secuencias cargadas"
+            hint="El correlador está apagado: el motor no encontró un directorio sequences/ con YAML válido. Crea sequences/kill-chains.yaml y se cargará en el próximo hot-reload."
+          />
+        </div>
       ) : (
-        <ul className="space-y-3">
+        <ul className="grid gap-4 xl:grid-cols-2">
           {sequences.map((s, i) => (
-            <SequenceCard key={s.id} seq={s} index={i} rules={rules.map((r) => r.name)} />
+            <SequenceCard key={s.id} seq={s} index={i} live={liveRules} hits={hits} campaigns={campaigns(s)} />
           ))}
         </ul>
       )}
@@ -74,97 +76,79 @@ export function SequencesView() {
   )
 }
 
-function SequenceCard({ seq, index, rules }: { seq: SfSequence; index: number; rules: string[] }) {
-  const live = new Set(rules)
+function SequenceCard({ seq, index, live, hits, campaigns }: { seq: SfSequence; index: number; live: Set<string>; hits: Map<string, number>; campaigns: number }) {
   const missing = seq.steps.filter((step) => !live.has(step))
   // armed = every step has a live rule in the engine: the chain CAN
-  // complete and raise its campaign alert. The connector color carries
-  // exactly that fact (emerald flow vs. neutral line) — state, not decor.
+  // complete and raise its campaign alert.
   const armed = missing.length === 0
+  const observed = seq.steps.filter((step) => (hits.get(step) ?? 0) > 0).length
   return (
-    <li>
-      {/* AnimatedItem (React Bits): entrada escalonada en el montaje, misma
-          pauta que la telemetría del Panel; keys estables, sin re-animar. */}
-      <AnimatedItem
-        index={index}
-        className="panel panel-hover px-4 py-3"
-      >
-      <div className="flex flex-wrap items-center gap-2">
-        {/* el icono comunica si la cadena puede completar: esmeralda armada,
-            ámbar con pasos huérfanos */}
-        <FlowArrow
-          size={14}
-          weight="fill"
-          aria-hidden
-          className={`shrink-0 ${armed ? 'text-emerald-300/80' : 'text-amber-300/80'}`}
-        />
-        <span className="text-sm font-medium text-zinc-100">{seq.name}</span>
-        <SeverityBadge severity={seq.severity} />
-        <span
-          title={`ventana: ${seq.window_seconds}s`}
-          className="flex items-center gap-1 rounded border border-white/10 px-1.5 py-0.5 font-mono text-[10px] text-zinc-400"
-        >
-          <Timer size={11} aria-hidden />
-          {formatWindow(seq.window_seconds)}
-        </span>
-        {seq.tags.map((t) => (
-          <span key={t} className="rounded border border-white/10 px-1.5 py-0.5 font-mono text-[10px] text-zinc-500">
-            {t.startsWith('attack.') ? t.replace('attack.', '') : t}
+    <li className="min-w-0">
+      {/* AnimatedItem (React Bits): entrada escalonada en el montaje; keys estables. */}
+      <AnimatedItem index={index} className="panel panel-hover flex h-full flex-col px-4 py-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`icon-tile ${armed ? '' : 'border-amber-300/30 bg-amber-300/10 text-amber-200'}`}>
+            <FlowArrow size={14} weight="fill" aria-hidden />
           </span>
-        ))}
-      </div>
+          <h2 className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-100" title={seq.name}>{seq.name}</h2>
+          <SeverityBadge severity={seq.severity} />
+          <span title={`ventana: ${seq.window_seconds}s`} className="flex items-center gap-1 rounded-md border border-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-400">
+            <Timer size={12} aria-hidden />
+            {formatWindow(seq.window_seconds)}
+          </span>
+        </div>
 
-      <p className="mt-2 max-w-[100ch] text-xs leading-relaxed text-zinc-400">{seq.description}</p>
+        <p className="mt-2 text-xs leading-relaxed text-zinc-400">{seq.description}</p>
 
-      {/* Cadena visual: nodo numerado + conector por paso. El conector es
-          la parte semántica — línea esmeralda cuando la cadena puede
-          completar, neutra cuando hay un paso sin regla. */}
-      <ol className="mt-3 flex flex-wrap items-center gap-y-2">
-        {seq.steps.map((step, i) => {
-          const ok = live.has(step)
-          const last = i === seq.steps.length - 1
-          return (
-            <li key={`${seq.id}:${i}`} className="flex items-center">
-              <span className="flex items-center gap-1.5">
-                <span
-                  aria-hidden
-                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border font-mono text-[9px] leading-none ${
-                    ok ? 'border-white/15 bg-white/[0.04] text-zinc-400' : 'border-amber-300/40 bg-amber-300/10 text-amber-200'
-                  }`}
-                >
-                  {i + 1}
-                </span>
-                <span
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-zinc-500">
+          <span className={armed ? 'text-emerald-300' : 'text-amber-300'}>{armed ? 'Armada' : `${missing.length} paso(s) sin regla`}</span>
+          <span>{observed} de {seq.steps.length} pasos observados en la ventana</span>
+          <span className={campaigns > 0 ? 'font-medium text-red-300' : ''}>{campaigns} {campaigns === 1 ? 'campaña completada' : 'campañas completadas'}</span>
+        </div>
+
+        {/* Cadena visual: un nodo por paso. Nodo azul = su regla disparó en la
+            ventana; ámbar = la regla no está cargada (la cadena no puede
+            completarse); neutro = cargada pero sin alertas todavía. */}
+        <ol className="mt-3 flex flex-1 flex-col gap-2 sm:flex-row sm:items-stretch">
+          {seq.steps.map((step, i) => {
+            const ok = live.has(step)
+            const count = hits.get(step) ?? 0
+            const last = i === seq.steps.length - 1
+            return (
+              <li key={`${seq.id}:${i}`} className="flex min-w-0 flex-1 items-center gap-2">
+                <div
                   title={ok ? 'regla cargada en el motor' : 'regla NO cargada: la cadena no puede completar con este paso'}
-                  className={`rounded border px-1.5 py-0.5 font-mono text-[11px] ${
-                    ok ? 'border-white/10 text-zinc-300' : 'border-amber-300/30 bg-amber-300/10 text-amber-200'
+                  className={`min-w-0 flex-1 rounded-lg border px-2.5 py-2 ${
+                    !ok ? 'border-amber-300/30 bg-amber-300/[0.06]' : count > 0 ? 'border-blue-400/40 bg-blue-500/[0.10]' : 'border-zinc-800 bg-zinc-900/60'
                   }`}
                 >
-                  {step}
-                </span>
-              </span>
-              {!last && (
-                <span
-                  aria-hidden
-                  title={armed ? 'paso siguiente observable en el mismo host y ventana' : undefined}
-                  className={`mx-1.5 h-px w-5 ${
-                    armed ? 'bg-gradient-to-r from-emerald-400/50 to-emerald-400/20' : 'bg-white/10'
-                  }`}
-                />
-              )}
-            </li>
-          )
-        })}
-      </ol>
+                  <span className="flex items-center gap-1.5 text-[10px] text-zinc-500">
+                    <span aria-hidden className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-semibold ${count > 0 ? 'bg-blue-500 text-white' : 'bg-zinc-800 text-zinc-400'}`}>{i + 1}</span>
+                    paso {i + 1}
+                  </span>
+                  <span className={`mt-1 line-clamp-2 break-words text-xs leading-snug ${ok ? 'text-zinc-200' : 'text-amber-200'}`} title={step}>{step}</span>
+                  <span className="mt-0.5 block text-[11px] text-zinc-500">{!ok ? 'regla no cargada' : count > 0 ? `${count} ${count === 1 ? 'alerta' : 'alertas'}` : 'sin alertas'}</span>
+                </div>
+                {!last && <CaretRight size={14} aria-hidden className="hidden shrink-0 text-zinc-600 sm:block" />}
+              </li>
+            )
+          })}
+        </ol>
 
-      {missing.length > 0 && (
-        <p className="mt-2 text-[11px] text-amber-300/80">
-          Pasos sin regla cargada: {missing.join(', ')}. El completion nunca se disparará hasta que esas reglas
-          existan en rules/.
-        </p>
-      )}
+        {missing.length > 0 && (
+          <p className="mt-2 text-[11px] text-amber-300/90">
+            Pasos sin regla cargada: {missing.join(', ')}. La campaña nunca se disparará hasta que esas reglas existan en rules/.
+          </p>
+        )}
 
-      <p className="mt-2 font-mono text-[10px] text-zinc-600">id: {seq.id}</p>
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          {seq.tags.map((t) => (
+            <span key={t} className="rounded-md border border-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-zinc-500">
+              {t.startsWith('attack.') ? t.replace('attack.', '') : t}
+            </span>
+          ))}
+          <span className="ml-auto font-mono text-[10px] text-zinc-600">id: {seq.id}</span>
+        </div>
       </AnimatedItem>
     </li>
   )

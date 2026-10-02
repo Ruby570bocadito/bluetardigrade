@@ -1,142 +1,64 @@
-// Captures the console screenshots and the search-interaction GIF used
-// by the root README. Working source, same spirit as the diagram HTMLs
-// in this directory.
+// Captures the console screenshots used by the root README
+// (docs/assets/console-*.png) from a RUNNING console. Nothing here
+// fabricates data: point it at a console wired to a real engine.
 //
-// Prerequisites:
-//   - the stack running: engine (default :7778), console-service (:3003)
-//     and the console (production or dev build on :3000)
-//   - Node with `playwright-core` and a Chromium binary (resolved from
-//     the standard Playwright cache; adjust CHROME_GLOB if yours lives
-//     elsewhere, or pass executablePath explicitly)
+// Lab recipe used for the committed set (loopback only):
+//   1. go build -o /tmp/lab/engine ./cmd/engine
+//      go build -o /tmp/lab/scenario ./scripts/dev-tests/scenario
+//   2. engine run -addr 127.0.0.1:17777 -api 127.0.0.1:17778 -rules rules
+//      -sequences sequences -beacons beacons.yaml -thresholds thresholds.yaml
+//      -suppressions <file> -store <db> -lifecycle <file> -api-token <t>
+//      -allow-kill -respond-operators <v2 file> -respond-audit <file>
+//   3. feed it with the scenario in a loop (plus -beacon / -burst rounds)
+//      and a few POST /api/respond/kill attempts (executed and denied);
+//   4. cd web/console && bun run build && ENGINE_API_URL=http://127.0.0.1:17778
+//      SF_API_TOKEN=<t> bun run start
+//   5. node docs/assets/src/capture_console.mjs
 //
-// Usage:  node docs/assets/src/capture_console.mjs
-// Output: console-panel.png, console-alertas.png,
-//         console-alertas-triaje.png, console-cadenas.png,
-//         console-reglas.png, console-supresiones.png
-//         and per-frame PNGs in the system temp dir (assemble the GIF
-//         from those frames; frames are 2x viewport of `main`).
-import { chromium } from 'playwright-core'
-import { execSync } from 'node:child_process'
-import fs from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
+// Scenario events carry source=simulate, so the console labels the window
+// as demo in the header: the captures keep that label on purpose.
+//
+// Env: CONSOLE_URL (default http://127.0.0.1:3000), CONSOLE_TEST_TOOLS
+// (directory with playwright, default tools/console-tests).
+
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+import path from 'node:path'
 
-// PNGs belong in docs/assets (the directory the README links from);
-// the script lives one level below, so anchor ASSETS to its parent
-// instead of the script's own directory.
-const ASSETS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const FRAMES = fs.mkdtempSync(path.join(os.tmpdir(), 'console-frames-'))
+const here = path.dirname(fileURLToPath(import.meta.url))
+const repo = path.resolve(here, '../../..')
+const ASSETS = path.resolve(here, '..')
+const tooling = process.env.CONSOLE_TEST_TOOLS || path.join(repo, 'tools/console-tests')
+const { chromium } = createRequire(path.join(tooling, 'package.json'))('playwright')
+const base = (process.env.CONSOLE_URL || 'http://127.0.0.1:3000').replace(/\/$/, '')
 
-const CHROME_GLOB = '/home/z/.cache/ms-playwright/chromium-*/chrome-linux*/chrome'
-const chromePath = execSync(`ls -d ${CHROME_GLOB} 2>/dev/null | tail -1`, {
-  encoding: 'utf8',
-}).trim()
-if (!chromePath) throw new Error('chromium binary not found; set CHROME_GLOB')
+const SHOTS = [
+  { file: 'console-panel.png', query: '', height: 1240 },
+  { file: 'console-flujo.png', query: '?view=flujo', height: 1000 },
+  { file: 'console-alertas.png', query: '?view=alertas', height: 1000, selectFirst: true },
+  { file: 'console-reglas.png', query: '?view=reglas', height: 1000 },
+  { file: 'console-cadenas.png', query: '?view=cadenas', height: 1000 },
+  { file: 'console-supresiones.png', query: '?view=supresiones', height: 700 },
+  { file: 'console-respuesta-activa.png', query: '?view=respuesta', height: 1100 },
+]
 
-const browser = await chromium.launch({ executablePath: chromePath, args: ['--no-sandbox'] })
-const ctx = await browser.newContext({
-  viewport: { width: 1280, height: 800 },
-  deviceScaleFactor: 2,
-})
-const page = await ctx.newPage()
-
-await page.goto('http://localhost:3000', { waitUntil: 'domcontentloaded' })
-await page.waitForTimeout(5000) // let the socket fill KPIs and charts
-
-const navOn = (pg) => (name) =>
-  pg
-    .getByRole('navigation', { name: 'Secciones de la consola' })
-    .getByRole('button', { name })
-const navBtn = (name) => navOn(page)(name)
-
-// Dashboard: tall viewport so the engine column shows the FULL stack -
-// KPIs (risk tile included), sensor activity, engine summary and the
-// hot-hosts panel at the bottom (the v0.3-era capture cut it off).
-await page.setViewportSize({ width: 1280, height: 1780 })
-await page.waitForTimeout(800)
-await page.screenshot({ path: path.join(ASSETS, 'console-panel.png') })
-console.log('shot: console-panel.png')
-
-// back to the standard viewport for the rest of the tour
-await page.setViewportSize({ width: 1280, height: 800 })
-await page.waitForTimeout(400)
-
-await navBtn('Alertas').click()
-await page.waitForTimeout(1200)
-
-// Expand the first alert: the detail panel carries the rendered rule
-// message, matched fields, enrichment and the triage panel (Ciclo de
-// vida) - the operator queue the README documents (r6).
-const firstRow = page.locator('tbody tr').first()
-await firstRow.click()
-await page.getByLabel('Detalle de la alerta seleccionada').waitFor({ timeout: 8000 })
-await page.waitForTimeout(400)
-await page.screenshot({ path: path.join(ASSETS, 'console-alertas.png') })
-console.log('shot: console-alertas.png')
-
-// Apply a REAL triage decision end to end (console -> engine proxy ->
-// engine POST; the row updates itself through the alert_lifecycle
-// stream) and capture the recorded state as a second still. The detail
-// panel is ~1050px tall (the grid row stretches to it and the PAGE
-// scrolls), so this shot runs on a taller viewport page: chip on the
-// row, recorded note and the cerrar/reabrir buttons share one frame
-// with no scroll choreography.
-const tallPage = await ctx.newPage()
-await tallPage.setViewportSize({ width: 1280, height: 1240 })
-await tallPage.goto('http://localhost:3000', { waitUntil: 'domcontentloaded' })
-await tallPage.waitForTimeout(4000)
-await navOn(tallPage)('Alertas').click()
-await tallPage.waitForTimeout(1200)
-const tallRow = tallPage.locator('tbody tr').first()
-await tallRow.click()
-await tallPage.getByLabel('Detalle de la alerta seleccionada').waitFor({ timeout: 8000 })
-await tallPage.getByLabel('Nota de triaje').fill('visto - investigando con el equipo de TI (INC-4187)')
-await tallPage.getByRole('button', { name: 'Reconocer' }).click()
-await tallPage.getByText('reconocida', { exact: true }).first().waitFor({ timeout: 8000 })
-await tallPage.waitForTimeout(400)
-await tallPage.screenshot({ path: path.join(ASSETS, 'console-alertas-triaje.png') })
-console.log('shot: console-alertas-triaje.png')
-await tallPage.close()
-
-// Close the detail panel so the search GIF stays focused on the queue.
-await firstRow.click()
-await page.waitForTimeout(300)
-
-const search = page.getByPlaceholder('buscar regla, host, usuario...')
-await search.click()
-let i = 0
-for (const ch of 'lsass') {
-  await search.pressSequentially(ch, { delay: 60 })
-  await page.waitForTimeout(450)
-  await page.locator('main').screenshot({ path: path.join(FRAMES, `f${i++}.png`) })
+const browser = await chromium.launch({ headless: true })
+try {
+  for (const shot of SHOTS) {
+    const page = await browser.newPage({ viewport: { width: 1440, height: shot.height }, deviceScaleFactor: 1, reducedMotion: 'reduce' })
+    await page.goto(base + '/' + shot.query)
+    await page.locator('#console-main').waitFor()
+    // let the first poll, the SSE snapshot and the stats history land
+    await page.waitForTimeout(5000)
+    if (shot.selectFirst) {
+      await page.locator('table tbody tr button').first().click()
+      await page.getByRole('complementary', { name: 'Detalle de la alerta seleccionada' }).waitFor()
+      await page.waitForTimeout(500)
+    }
+    await page.screenshot({ path: path.join(ASSETS, shot.file) })
+    console.log('shot: ' + shot.file)
+    await page.close()
+  }
+} finally {
+  await browser.close()
 }
-await page.waitForTimeout(600)
-await page.locator('main').screenshot({ path: path.join(FRAMES, `f${i}.png`) })
-console.log('frames:', FRAMES)
-
-await navBtn('Reglas').click()
-await page.waitForTimeout(1200)
-await page.screenshot({ path: path.join(ASSETS, 'console-reglas.png') })
-console.log('shot: console-reglas.png')
-
-// Kill-chain chains view: the sequences the correlator actually loaded
-// (steps, window, tags), with the armed/broken state of each chain.
-await navBtn('Cadenas').click()
-await page.waitForTimeout(1200)
-await page.screenshot({ path: path.join(ASSETS, 'console-cadenas.png') })
-console.log('shot: console-cadenas.png')
-
-// Operator suppressions view: renders the live allowlist the engine
-// loaded from suppressions.yaml (honest empty state when none armed).
-// To capture it populated, arm 1-2 entries in ./suppressions.yaml
-// before starting the engine - any entry matching replay traffic
-// works, e.g. a rule id from rules/windows/ scoped to host
-// LAB-WKS-01 (see suppressions.example.yaml for the format).
-await navBtn('Supresiones').click()
-await page.waitForTimeout(1200)
-await page.screenshot({ path: path.join(ASSETS, 'console-supresiones.png') })
-console.log('shot: console-supresiones.png')
-
-await browser.close()
-console.log('done')

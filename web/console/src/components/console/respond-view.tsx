@@ -11,13 +11,16 @@
 // /api/respond/kill by an operator (R8), never from the console UI.
 
 import { useEffect, useMemo, useState } from 'react'
-import { Crosshair, Lightning, LockKey } from '@phosphor-icons/react'
+import { CheckCircle, Crosshair, Lightning, LockKey, Prohibit, Scales, UserCircle, Warning } from '@phosphor-icons/react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { useEngine } from './engine-provider'
 import { EmptyState, SectionHeader, MonoTag } from './ui-bits'
 import { AuditExportButton } from './export-menu'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
+import { ChartCard } from '@/components/charts/chart-frame'
+import { BarList, Meter, SegmentBar } from '@/components/charts/bars'
+import { topCounts } from '@/lib/soc-metrics'
 import { formatDateTime, type SfRespondRecord, type SfRespondState } from '@/lib/console-types'
 import {
   auditKindFromParam,
@@ -61,8 +64,9 @@ export function RespondView() {
           hint="El motor está corriendo sin -allow-kill (o sin token, o su archivo de audit no abrió): la ruta no existe para esta consola, igual que para cualquier sonda. Arranca el motor con -allow-kill, -respond-operators y -respond-audit para armarla."
         />
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-5">
           <SurfaceCard state={respondState} />
+          <AuditSummary />
           <AuditFeed />
         </div>
       )}
@@ -130,12 +134,7 @@ function SurfaceCard({ state }: { state: SfRespondState }) {
             {pct.toFixed(pct < 10 ? 1 : 0)}% del techo
           </span>
         </div>
-        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-zinc-800" role="presentation">
-          <div
-            className={`h-full rounded-full ${nearCeiling ? 'bg-red-500' : 'bg-emerald-500'}`}
-            style={{ width: `${Math.max(pct, 1.5)}%` }}
-          />
-        </div>
+        <Meter className="mt-3" value={state.audit_size} max={state.audit_ceiling} color={nearCeiling ? 'var(--status-critical)' : 'var(--series-1)'} />
         <dl className="mt-3 space-y-2 text-xs">
           <div className="flex items-baseline justify-between gap-3">
             <dt className="text-zinc-500">Tamaño / techo</dt>
@@ -160,6 +159,70 @@ function SurfaceCard({ state }: { state: SfRespondState }) {
           </p>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Audit window at a glance: decisions (executed / denied / followup),
+ * denial codes and attempts per operator. Outcome colors are status
+ * colors and always carry a label.
+ */
+function AuditSummary() {
+  const { respondAudit } = useEngine()
+  const records = respondAudit?.records ?? []
+  if (records.length === 0) return null
+  const executed = records.filter((r) => r.decision === 'executed' && !r.followup).length
+  const followups = records.filter((r) => r.followup).length
+  const denied = records.filter((r) => r.decision === 'denied' && !r.followup).length
+  const codes = topCounts(records.filter((r) => r.decision === 'denied'), (r) => r.code || 'sin código', 5)
+  const operators = topCounts(records, (r) => r.operator || 'sin operador', 5)
+  const outcomes = [
+    { key: 'executed', label: 'ejecutados', value: executed, color: 'var(--status-good)', Icon: CheckCircle },
+    { key: 'denied', label: 'denegados', value: denied, color: 'var(--status-critical)', Icon: Prohibit },
+    { key: 'followup', label: 'followups', value: followups, color: 'var(--status-warning)', Icon: Warning },
+  ]
+  return (
+    <div className="grid gap-4 lg:grid-cols-3">
+      <ChartCard
+        title="Decisiones del audit"
+        subtitle={`${records.length} intentos en la ventana del audit`}
+        icon={Scales}
+        table={{ caption: 'Intentos por decisión', columns: ['Decisión', 'Intentos'], rows: outcomes.map((o) => [o.label, o.value]) }}
+      >
+        <SegmentBar segments={outcomes} className="mt-1" />
+        <ul className="mt-3 grid grid-cols-3 gap-2">
+          {outcomes.map(({ key, label, value, color, Icon }) => (
+            <li key={key} className="rounded-lg border border-zinc-800 px-2.5 py-2">
+              <span className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+                <Icon size={12} weight="fill" aria-hidden style={{ color }} />
+                {label}
+              </span>
+              <span className="mt-0.5 block text-xl font-semibold text-zinc-50">{value}</span>
+            </li>
+          ))}
+        </ul>
+      </ChartCard>
+      <ChartCard
+        title="Motivos de denegación"
+        subtitle="Código devuelto por cada intento denegado"
+        icon={Prohibit}
+        table={{ caption: 'Intentos denegados por código', columns: ['Código', 'Intentos'], rows: codes.top.map((c) => [c.key, c.count]) }}
+      >
+        <BarList
+          color="var(--status-critical)"
+          rows={codes.top.map((c) => ({ key: c.key, label: <span className="font-mono">{c.key}</span>, value: c.count }))}
+          empty={<p className="py-6 text-center text-xs text-zinc-500">Ninguna denegación en la ventana.</p>}
+        />
+      </ChartCard>
+      <ChartCard
+        title="Intentos por operador"
+        subtitle="Quién invocó kill_process (credencial por operador)"
+        icon={UserCircle}
+        table={{ caption: 'Intentos por operador', columns: ['Operador', 'Intentos'], rows: operators.top.map((o) => [o.key, o.count]) }}
+      >
+        <BarList rows={operators.top.map((o) => ({ key: o.key, label: o.key, value: o.count }))} />
+      </ChartCard>
     </div>
   )
 }
@@ -286,7 +349,7 @@ function AuditFeed() {
           }
         />
       ) : (
-        <ul className="divide-y divide-white/[0.06] border-y border-white/[0.08]">
+        <ul className="panel divide-y divide-zinc-800/70 overflow-hidden">
           {visible.map((r, i) => (
             // Composite key WITHOUT the index (F3, cross-ref 04-B 20h04 §2
             // + 20h43 class sweep): the kill flow writes TWO JSONL lines

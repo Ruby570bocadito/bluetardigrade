@@ -9,16 +9,31 @@ import { motion, useMotionValue, useSpring, useTransform, useReducedMotion } fro
 import { useEffect } from 'react'
 import { SEVERITY_STYLE, type Severity } from '@/lib/console-types'
 import { cn } from '@/lib/utils'
+import { SeverityIcon } from '@/components/charts/severity'
 
 export function SeverityBadge({ severity, className }: { severity: Severity; className?: string }) {
   const s = SEVERITY_STYLE[severity] ?? SEVERITY_STYLE.low
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 font-mono text-[11px] leading-none ${s.text} ${s.bg} ${s.border} ${className ?? ''}`}
+      className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium leading-none ${s.text} ${s.bg} ${s.border} ${className ?? ''}`}
     >
-      <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
+      <SeverityIcon severity={SEVERITY_STYLE[severity] ? severity : 'low'} size={11} />
       {s.label}
     </span>
+  )
+}
+
+/** Stat tile: label, value (proportional sans figures) and a context line. */
+export function StatTile({ icon: Icon, label, value, hint, warn = false }: { icon: React.ElementType; label: string; value: React.ReactNode; hint: React.ReactNode; warn?: boolean }) {
+  return (
+    <div className="panel px-4 py-3.5">
+      <p className="flex items-center gap-2 text-xs text-zinc-400">
+        <Icon size={15} aria-hidden className="text-blue-400" />
+        {label}
+      </p>
+      <p className="mt-2 text-[26px] font-semibold leading-none text-zinc-50">{value}</p>
+      <p className={`mt-1.5 truncate text-[11px] ${warn ? 'text-amber-300' : 'text-zinc-500'}`}>{hint}</p>
+    </div>
   )
 }
 
