@@ -66,6 +66,7 @@ func (h *Hub) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 	writeMetric(&b, "sf_suppressions_active", "Operator suppressions currently active.", "gauge", float64(s.Suppressions))
+	writeMetric(&b, "sf_store_write_failures_total", "Failed event or alert writes to SQLite since API start; affected evidence may exist only in memory.", "counter", float64(s.StoreWriteFailures))
 	if s.StoreEnabled {
 		writeMetric(&b, "sf_store_enabled", "SQLite persistence attached (1 = yes).", "gauge", 1)
 		writeMetric(&b, "sf_store_events", "Events persisted in the SQLite store.", "gauge", float64(s.StoreEvents))

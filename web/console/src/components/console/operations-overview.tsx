@@ -34,7 +34,7 @@ export function OperationsOverview({ onNavigate, onTriage }: {
           </span>
           <button
             type="button" onClick={refresh} disabled={refreshing} aria-busy={refreshing}
-            className="chip px-2.5 py-1.5 text-xs text-zinc-300 transition-colors hover:text-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
+            className="chip px-2.5 py-1.5 text-xs text-zinc-300 transition-colors hover:text-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
           >
             <ArrowClockwise size={13} aria-hidden className={refreshing ? 'animate-spin motion-reduce:animate-none' : ''} />
             {refreshing ? 'Actualizando' : 'Actualizar'}
@@ -58,7 +58,7 @@ export function OperationsOverview({ onNavigate, onTriage }: {
             ] as const).map(({ target, count, label }) => (
               <button key={target} type="button" onClick={() => onTriage(target)} disabled={!available}
                 aria-label={`Ver alertas ${label}: ${available ? count : 'sin datos'}`}
-                className="rounded-sm underline decoration-zinc-600 underline-offset-4 hover:text-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:no-underline">
+                className="rounded-sm underline decoration-zinc-600 underline-offset-4 hover:text-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:no-underline">
                 {available ? count : '—'} {label}
               </button>
             ))}
@@ -73,7 +73,7 @@ export function OperationsOverview({ onNavigate, onTriage }: {
             Ver críticas sin cerrar <ArrowRight size={14} aria-hidden />
           </button>
           <button type="button" onClick={() => onNavigate('alertas')}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3.5 py-2 text-xs font-medium text-emerald-300 transition-colors hover:bg-emerald-400/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-400/30 bg-blue-400/10 px-3.5 py-2 text-xs font-medium text-blue-300 transition-colors hover:bg-blue-400/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             Abrir cola de alertas <ArrowRight size={14} aria-hidden />
           </button>
           <button type="button" onClick={() => onNavigate('flujo')}

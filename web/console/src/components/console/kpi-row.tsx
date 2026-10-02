@@ -22,7 +22,7 @@ function Kpi({
   icon: React.ElementType
   children: React.ReactNode
 }) {
-  // SpotlightCard (React Bits): el halo esmeralda solo existe bajo el
+  // SpotlightCard (React Bits): el halo azul solo existe bajo el
   // puntero (transparente en reposo), asi que la superficie .panel y las
   // hairlines del grid no cambian; el foco de teclado tambien lo enciende
   // via focus-within. .panel-hover añade el lift del template premium.

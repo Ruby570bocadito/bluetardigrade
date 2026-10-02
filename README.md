@@ -60,7 +60,14 @@ Connect host telemetry after installation:
 ```powershell
 sf-sensor -SetupSysmon   # one-time Sysmon install with the tuned config (UAC)
 sf-sensor               # real host activity -> detections
+sf-engine doctor        # diagnose the running deployment without generating events
 ```
+
+Windows Server can run the components at boot without an interactive
+session: [server deployment](docs/WINDOWS-SERVER.md). If Windows blocks a
+download or executable, follow the [application-control diagnosis and
+signing requirements](docs/SMART-APP-CONTROL.md); source-built EXEs are unsigned.
+Import observed email for [offline phishing inspection](docs/PHISHING.md).
 
 With arguments (webhook delivery, ingest auth, autostart):
 
@@ -214,7 +221,7 @@ are generated fixtures; live provider deployments need external configuration.
 
 | Capability | Shipped surface |
 |------------|-----------------|
-| Detection content | 69 YAML rules (incl. attacker tooling, LOLBAS, anti-forensics and file-staging packs), four kill chains, beaconing profiles and four volumetric thresholds |
+| Detection content | 75 YAML rules (incl. phishing, attacker tooling, LOLBAS, anti-forensics and file-staging packs), four kill chains, beaconing profiles and four volumetric thresholds |
 | Rule workflow | Hot reload, validation, 17 operators and Sigma import |
 | Process context | Per-host pid->name flight recorder: parent/child anomaly rules (Office/browser spawning interpreters) |
 | Forensics | Frozen alert + 5m host timeline, read via `GET /api/alerts/{id}/forensics`; JSON/JSONL downloads and retryable evidence queries in the console |
@@ -290,6 +297,10 @@ docs/                operations, architecture and API reference
 | [False-positive control](docs/false-positive-control.md) | Suppression and deduplication tuning |
 | [Command palette and browser checks](docs/PALETA-Y-PRUEBAS-NAVEGADOR.md) | Commands, keyboard scope, native dialogs and reproducible Chromium regressions |
 | [CLI search and dashboard triage](docs/INVESTIGACION-CLI-Y-TRIAJE.md) | Alert identity search, multiword queries and direct triage shortcuts |
+| [Deployment doctor](docs/DOCTOR.md) | Rule packs, tokens, TLS, SQLite, sensors and console diagnostics with JSON output |
+| [Email phishing](docs/PHISHING.md) | Ten explainable indicators in explicitly imported EML |
+| [Windows Server](docs/WINDOWS-SERVER.md) | Protected boot tasks, persisted credentials and foreground recovery |
+| [Smart App Control](docs/SMART-APP-CONTROL.md) | Execution-block diagnosis and trusted package signing |
 | [File detections and forensic evidence](docs/DETECCION-Y-EVIDENCIA.md) | Six artifact alarms, process identity safeguards, evidence downloads and verification |
 | [Technical architecture PDF](docs/arquitectura-tecnica-v0.11.pdf) | Spanish technical reference |
 | [Changelog](CHANGELOG.md) | Release history |
@@ -312,7 +323,7 @@ SHA-pinned, permissions minimal, releases gated on SemVer + CHANGELOG.
 
 ## Roadmap
 
-- **Shipped:** rule and behavioral detection (69 rules incl. tooling,
+- **Shipped:** rule and behavioral detection (75 rules incl. phishing, tooling,
   LOLBAS, anti-forensics, file staging and SOC observations), parent-process anomaly rules,
   forensic evidence bundles with JSON/JSONL export, triage, storage, integrations, terminal
   workspace, live console with command palette, native TLS on both

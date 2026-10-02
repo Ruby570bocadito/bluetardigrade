@@ -1,0 +1,62 @@
+# Offline, explainable EML indicators. They identify reviewable properties,
+# not a malware verdict or verified sender reputation.
+- name: "Phishing: enlace HTML muestra otro host"
+  id: soc-mail-html-link-mismatch
+  description: "El texto completo de un enlace es una URL HTTP(S), pero href lleva a otro hostname. Evidencia en mail_html_link_mismatches; redirects y trackers legitimos tambien pueden diferir. No se visito el enlace."
+  severity: low
+  event_type: email.message
+  conditions:
+    - {field: source, operator: eq, value: eml}
+    - {field: attributes.mail_html_link_host_mismatch, operator: eq, value: "true"}
+  tags: ["attack.t1566.002", "sensor:mail", "pack:phishing"]
+  enabled: true
+- name: "Phishing: URL contiene credenciales antes del host"
+  id: soc-mail-url-credentials
+  description: "URL HTTP(S) con userinfo antes de @. Puede disfrazar el destino (https://dominio-confiable@otro-host/); el host real queda en mail_urls sin credenciales ni tokens. No confirma phishing."
+  severity: medium
+  event_type: email.message
+  conditions:
+    - {field: source, operator: eq, value: eml}
+    - {field: attributes.mail_url_credentials, operator: eq, value: "true"}
+  tags: ["attack.t1566.002", "sensor:mail", "pack:phishing"]
+  enabled: true
+- name: "Phishing: enlace con hostname internacionalizado"
+  id: soc-mail-url-punycode
+  description: "El hostname HTTP(S) contiene una etiqueta xn--. Dominio IDN que conviene comprobar visualmente; muchos dominios internacionalizados son legitimos. No se calculo similitud con marcas ni reputacion."
+  severity: info
+  event_type: email.message
+  conditions:
+    - {field: source, operator: eq, value: eml}
+    - {field: attributes.mail_url_punycode, operator: eq, value: "true"}
+  tags: ["attack.t1566.002", "sensor:mail", "pack:phishing"]
+  enabled: true
+- name: "Phishing: adjunto Office compatible con macros"
+  id: soc-mail-macro-attachment
+  description: "Nombre de adjunto Office con extension compatible con macros. No demuestra macros presentes ni ejecutadas; el contenido binario no fue inspeccionado. Revisar mail_attachments."
+  severity: low
+  event_type: email.message
+  conditions:
+    - {field: source, operator: eq, value: eml}
+    - {field: attributes.mail_macro_capable_attachment, operator: eq, value: "true"}
+  tags: ["attack.t1566.001", "sensor:mail", "pack:phishing"]
+  enabled: true
+- name: "Phishing: doble extension de documento y ejecutable"
+  id: soc-mail-double-extension
+  description: "Nombre de adjunto con extension de documento o imagen inmediatamente seguida por una extension ejecutable/script (por ejemplo factura.pdf.exe). Solo se inspecciono el nombre; no confirma malware."
+  severity: medium
+  event_type: email.message
+  conditions:
+    - {field: source, operator: eq, value: eml}
+    - {field: attributes.mail_attachment_double_extension, operator: eq, value: "true"}
+  tags: ["attack.t1566.001", "sensor:mail", "pack:phishing"]
+  enabled: true
+- name: "Phishing: nombre de adjunto invierte texto Unicode"
+  id: soc-mail-bidi-filename
+  description: "Nombre de adjunto contiene el control Unicode RIGHT-TO-LEFT OVERRIDE (U+202E), capaz de ocultar visualmente su extension. Revisar el nombre original sin ejecutar el archivo."
+  severity: medium
+  event_type: email.message
+  conditions:
+    - {field: source, operator: eq, value: eml}
+    - {field: attributes.mail_attachment_name_bidi, operator: eq, value: "true"}
+  tags: ["attack.t1566.001", "sensor:mail", "pack:phishing"]
+  enabled: true

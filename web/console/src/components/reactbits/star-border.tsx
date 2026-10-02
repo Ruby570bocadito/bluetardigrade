@@ -22,7 +22,7 @@ type StarBorderProps = {
 export function StarBorder({
   children,
   active = false,
-  color = 'rgba(52, 211, 153, 0.55)',
+  color = 'rgba(96, 165, 250, 0.55)',
   speed = 6,
   className = '',
 }: StarBorderProps) {

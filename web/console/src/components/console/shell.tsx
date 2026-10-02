@@ -180,7 +180,7 @@ export function ConsoleShell() {
 
   return (
     <div className="relative min-h-[100dvh] bg-zinc-950 text-zinc-100">
-      <a href="#console-main" className="sr-only z-50 rounded-md bg-emerald-300 px-4 py-2 text-sm text-zinc-950 focus:not-sr-only focus:fixed focus:left-4 focus:top-4">
+      <a href="#console-main" className="sr-only z-50 rounded-md bg-blue-300 px-4 py-2 text-sm text-zinc-950 focus:not-sr-only focus:fixed focus:left-4 focus:top-4">
         Ir al contenido
       </a>
       {/* DotGrid (React Bits): fondo de toda la consola, reactivo al puntero
@@ -218,18 +218,18 @@ export function ConsoleShell() {
                     {view === item.id && (
                       <motion.span
                         layoutId="nav-pill"
-                        className="pointer-events-none absolute inset-0 rounded-lg border border-emerald-400/20 bg-gradient-to-r from-emerald-500/[0.14] via-emerald-500/[0.06] to-transparent shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]"
+                        className="pointer-events-none absolute inset-0 rounded-lg border border-blue-400/30 bg-gradient-to-r from-blue-500/[0.18] via-blue-500/[0.08] to-transparent shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]"
                         transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 380, damping: 32 }}
                       />
                     )}
                     {view === item.id && (
-                      <span aria-hidden className="pointer-events-none absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-gradient-to-b from-emerald-300 to-emerald-500" />
+                      <span aria-hidden className="pointer-events-none absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-gradient-to-b from-blue-300 to-blue-500" />
                     )}
                     <item.icon
                       size={16}
                       weight={view === item.id ? 'fill' : 'regular'}
                       aria-hidden
-                      className={`relative ${view === item.id ? 'text-emerald-500' : ''}`}
+                      className={`relative ${view === item.id ? 'text-blue-400' : ''}`}
                     />
                     <span className="relative">{item.label}</span>
                     {item.id === 'alertas' && alerts.length > 0 && (
@@ -311,7 +311,7 @@ export function ConsoleShell() {
                 aria-haspopup="dialog"
                 aria-keyshortcuts="Control+k Meta+k"
                 title="Comandos (Ctrl+K / ⌘K)"
-                className="chip shrink-0 gap-2 px-2.5 py-1.5 text-zinc-300 transition-colors hover:border-emerald-400/30 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="chip shrink-0 gap-2 px-2.5 py-1.5 text-zinc-300 transition-colors hover:border-blue-400/40 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <MagnifyingGlass size={16} aria-hidden />
                 <span className="hidden text-xs sm:inline">Comandos</span>
@@ -364,11 +364,11 @@ export function ConsoleShell() {
                 title={hintTitle(item.id)}
                 className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                   view === item.id
-                    ? 'border-emerald-400/20 bg-emerald-500/[0.12] text-zinc-100'
+                    ? 'border-blue-400/30 bg-blue-500/[0.16] text-zinc-100'
                     : 'border-transparent text-zinc-400'
                 }`}
               >
-                <item.icon size={14} aria-hidden className={view === item.id ? 'text-emerald-400' : ''} />
+                <item.icon size={14} aria-hidden className={view === item.id ? 'text-blue-400' : ''} />
                 {item.label}
               </button>
             ))}
@@ -568,7 +568,7 @@ function BrandBlock() {
   return (
     <div className="px-4 pt-5">
       <div className="flex items-center gap-2.5">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-400/30 bg-gradient-to-b from-emerald-400/20 to-emerald-500/[0.06] font-mono text-xs font-semibold text-emerald-300 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.10),0_0_18px_rgba(52,211,153,0.22)]">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-blue-400/35 bg-gradient-to-b from-blue-400/25 to-blue-500/[0.08] font-mono text-xs font-semibold text-blue-300 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.10),0_0_18px_rgba(96,165,250,0.22)]">
           sf
         </span>
         <span className="leading-tight">
@@ -583,7 +583,7 @@ function BrandBlock() {
           v0.1.0 · consola SOC
         </span>
       </div>
-      <div aria-hidden className="mt-3 h-px bg-gradient-to-r from-emerald-400/30 via-white/10 to-transparent" />
+      <div aria-hidden className="mt-3 h-px bg-gradient-to-r from-blue-400/35 via-white/10 to-transparent" />
     </div>
   )
 }
@@ -591,7 +591,7 @@ function BrandBlock() {
 function BrandRow() {
   return (
     <div className="flex items-center gap-2">
-      <span className="flex h-6 w-6 items-center justify-center rounded-md border border-emerald-500/40 bg-emerald-500/10 font-mono text-[11px] font-semibold text-emerald-400">
+      <span className="flex h-6 w-6 items-center justify-center rounded-md border border-blue-400/40 bg-blue-400/10 font-mono text-[11px] font-semibold text-blue-300">
         sf
       </span>
       <span className="text-sm font-medium text-zinc-100">bluetardigrade</span>

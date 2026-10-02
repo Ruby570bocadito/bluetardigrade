@@ -35,10 +35,10 @@ export function ActivityChart({ events }: { events: SfEvent[] }) {
           <motion.div
             key={i}
             title={`${c} eventos · hace ${(buckets.length - 1 - i) * 5}s`}
-            className="min-w-[3px] flex-1 rounded-t-sm bg-emerald-500/80"
+            className="min-w-[3px] flex-1 rounded-t-sm bg-blue-400/80"
             initial={false}
             animate={{
-              height: `${Math.max(c === 0 ? 2 : 8, (c / max) * 100)}%`,
+              height: `${c === 0 ? 0 : Math.max(8, (c / max) * 100)}%`,
               opacity: c === 0 ? 0.3 : 0.5 + (c / max) * 0.5,
             }}
             transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 160, damping: 26 }}

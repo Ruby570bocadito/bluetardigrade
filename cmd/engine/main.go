@@ -3,7 +3,7 @@
 // raises alerts.
 //
 // Since the CLI round it also exposes a subcommand surface (run, rules,
-// validate, version) built on Cobra with a lipgloss presentation layer,
+// validate, doctor, version) built on Cobra with a lipgloss presentation layer,
 // but the no-subcommand invocation keeps the historical single-dash
 // flag behavior byte for byte (see legacyMain).
 package main
@@ -30,7 +30,7 @@ func main() {
 // treat as a positional) keeps the pre-CLI behavior unchanged.
 func isRoutedSubcommand(arg string) bool {
 	switch arg {
-	case "run", "rules", "validate", "version", "sigma", "report",
+	case "run", "rules", "validate", "doctor", "version", "sigma", "report",
 		"help", "completion", "__complete", "__completeNoDesc",
 		"-h", "--help":
 		return true

@@ -73,7 +73,7 @@ export function Dashboard({
               <button
                 type="button"
                 onClick={() => onNavigate('flujo')}
-                className="rounded-sm text-xs text-emerald-400 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="rounded-sm text-xs text-blue-400 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 Ver flujo completo
               </button>
@@ -103,7 +103,7 @@ export function Dashboard({
                     className="grid grid-cols-[64px_120px_minmax(0,1fr)] items-center gap-3 px-1 py-2 md:grid-cols-[76px_140px_minmax(0,1fr)]"
                   >
                     <span className="font-mono text-xs tabular-nums text-zinc-500">{formatTime(ev.timestamp)}</span>
-                    <span className="truncate font-mono text-xs text-emerald-400">{ev.type}</span>
+                    <span className="truncate font-mono text-xs text-blue-400">{ev.type}</span>
                     <span className="truncate font-mono text-xs text-zinc-400" title={eventDetail(ev)}>
                       {eventDetail(ev)}
                     </span>
@@ -136,7 +136,7 @@ function HotHostsPanel() {
     score >= 20 ? 'bg-red-500/70' : score >= 5 ? 'bg-amber-500/70' : 'bg-emerald-500/70'
 
   return (
-    // SpotlightCard (React Bits): halo esmeralda al pasar el raton o al
+    // SpotlightCard (React Bits): halo azul al pasar el raton o al
     // enfocar un control interno; en reposo, la tarjeta hairline original.
     <SpotlightCard className="panel panel-hover min-w-0 flex-1">
       <div className="flex items-center gap-2.5 border-b border-white/[0.06] px-4 py-3">
@@ -247,6 +247,7 @@ function EngineSummary({ status }: { status: EngineStatus }) {
         <span className="font-mono text-xs text-zinc-500">sin datos</span>
       ),
     },
+    { label: 'Fallos SQLite desde arranque', value: <span className={`font-mono text-xs tabular-nums ${(stats?.store_write_failures ?? 0) > 0 ? 'text-amber-300' : 'text-zinc-300'}`}>{stats?.store_write_failures ?? '—'}</span> },
     { label: 'Reglas cargadas', value: <span className="font-mono text-xs tabular-nums text-zinc-300">{stats ? rules.length : '—'}</span> },
   ]
 
@@ -254,7 +255,7 @@ function EngineSummary({ status }: { status: EngineStatus }) {
     // SpotlightCard (React Bits): mismo criterio que HotHostsPanel.
     <SpotlightCard className="panel panel-hover">
       <div className="flex items-center gap-2.5 border-b border-white/[0.06] px-4 py-3">
-        <Cpu size={16} aria-hidden className="text-emerald-500" />
+        <Cpu size={16} aria-hidden className="text-blue-400" />
         <span className="text-sm text-zinc-200">sf-engine</span>
         <span className="ml-auto flex items-center gap-1.5 font-mono text-[11px] text-zinc-500">
           <span

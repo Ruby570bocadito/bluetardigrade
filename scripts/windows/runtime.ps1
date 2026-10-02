@@ -13,6 +13,7 @@ function Start-SfEngine {
     param([string]$Root, [string]$Executable, [string]$IngestToken = '')
     $settings = @{
         SF_INGEST_TOKEN = Get-SfSetting $Root 'SF_INGEST_TOKEN' 'ingest.token' $IngestToken
+        SF_API_TOKEN = Get-SfSetting $Root 'SF_API_TOKEN' 'api.token'
         SF_WEBHOOK_URL = Get-SfSetting $Root 'SF_WEBHOOK_URL' 'webhook.url'
         SF_WEBHOOK_TOKEN = Get-SfSetting $Root 'SF_WEBHOOK_TOKEN' 'webhook.token'
     }

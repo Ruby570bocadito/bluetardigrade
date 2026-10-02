@@ -26,6 +26,9 @@
 #                        private profiles only (asks via UAC); pair it
 #                        with:  sf-engine -addr 0.0.0.0:7777
 #   -AutoStart           start engine + console at logon (HKCU Run, no admin)
+#   -Server              boot tasks without an interactive session; requires
+#                        admin and a dedicated directory below ProgramData
+#   -ServerSensor <mode> optional boot sensor: none (default), sysmon or etw
 #   -WebhookUrl <url>    POST every alert as JSON to this SIEM/SOAR endpoint;
 #                        persisted, engine autostart delivers it (empty clears)
 #   -WebhookToken <t>    bearer token the deliveries carry as
@@ -49,6 +52,8 @@ param(
     [switch]$WithSensor,
     [switch]$Firewall,
     [switch]$AutoStart,
+    [switch]$Server,
+    [ValidateSet('none', 'sysmon', 'etw')][string]$ServerSensor = 'none',
     [string]$WebhookUrl = '',
     [string]$WebhookToken = '',
     [string]$IngestToken = '',
@@ -58,6 +63,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') {
+    throw 'This installer is not authorized by the Windows App Control policy (ConstrainedLanguage). Use an approved signed package and review docs/SMART-APP-CONTROL.md; ExecutionPolicy cannot override application trust.'
+}
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
 $ProgressPreference = 'SilentlyContinue'   # makes Invoke-WebRequest usable on PS 5.1
 
@@ -93,6 +101,24 @@ function Get-TempDir {
     return [IO.Path]::GetTempPath()
 }
 
+function Get-SfSmartAppControlState {
+    # Read-only hint. It is not a replacement for citool -lp or CodeIntegrity
+    # events, and a missing value does not prove there is no corporate policy.
+    try {
+        $policy = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy' -Name VerifiedAndReputablePolicyState -ErrorAction Stop
+        return $policy.VerifiedAndReputablePolicyState
+    } catch { return $null }
+}
+
+function Assert-SfInstallEnvironment {
+    if ($env:OS -ne 'Windows_NT') { throw 'This installer requires Windows; use the documented platform-specific deployment.' }
+    if ($PSVersionTable.PSVersion -lt [version]'5.1') { throw 'Windows PowerShell 5.1 or newer is required.' }
+    if (-not [Environment]::Is64BitOperatingSystem) { throw 'The portable toolchains require a 64-bit Windows installation.' }
+    if ((Get-SfSmartAppControlState) -eq 1) {
+        throw 'Smart App Control is enforcing application trust. This source installer builds unsigned binaries, so it cannot provide a trusted release automatically. Use a release signed with a trusted code-signing certificate; see docs/SMART-APP-CONTROL.md and scripts/release/sign-windows.ps1. No security setting was changed.'
+    }
+}
+
 function Invoke-Native {
     # Native commands (git, netsh, reg, go, node, bun) write progress and
     # diagnostics to STDERR, and 'git clone' ALWAYS opens with one
@@ -125,6 +151,9 @@ function Invoke-Native {
     }
     if ($LASTEXITCODE -ne 0 -and -not $AllowFailure) {
         $detail = ($lines | Where-Object { $_ }) -join ' '
+        if ($LASTEXITCODE -eq -1) {
+            throw "Windows could not start the native tool. Check Smart App Control/App Control and CodeIntegrity Operational event 3077. A checksum does not confer executable trust; see docs/SMART-APP-CONTROL.md. $detail"
+        }
         if ($Activity) { throw "$Activity failed (exit $LASTEXITCODE): $detail" }
         throw "native command failed (exit $LASTEXITCODE): $detail"
     }
@@ -136,6 +165,7 @@ function Get-ToolVersion {
     # Invoke-Native always returns a string array. Collection -match does
     # not populate $Matches, so version parsing must use a scalar string.
     $text = ((Invoke-Native -Command { & $Executable @Arguments } -Quiet -AllowFailure) -join "`n").Trim()
+    if ($LASTEXITCODE -eq -1) { throw "Windows could not start $Executable. Review CodeIntegrity Operational event 3077 and docs/SMART-APP-CONTROL.md; redownloading the same tool or ExecutionPolicy Bypass does not establish application trust." }
     if ($LASTEXITCODE -ne 0) { return $null }
     $match = [regex]::Match($text, $Pattern)
     if (-not $match.Success) { return $null }
@@ -176,7 +206,6 @@ function Invoke-Download {
     param([string]$Url, [string]$OutFile, [string]$ExpectedSha256, [switch]$UnverifiedOk)
     if (Test-Path $OutFile) { Remove-Item $OutFile -Force -ErrorAction SilentlyContinue }
     Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $OutFile
-    try { Unblock-File $OutFile -ErrorAction SilentlyContinue } catch { }
     if ($ExpectedSha256) {
         $h = (Get-FileHash $OutFile -Algorithm SHA256).Hash.ToLower()
         if ($h -ne $ExpectedSha256.ToLower()) { throw "sha256 mismatch for $Url (got $h, want $ExpectedSha256)" }
@@ -276,7 +305,7 @@ function Ensure-Go {
 
 function Ensure-Node {
     # returns the full path to a usable node.exe (portable or system)
-    param([string]$Tools)
+    param([string]$Tools, [switch]$PortableOnly)
     $portable = Join-Path $Tools 'node\node.exe'
     if (Test-Path $portable) {
         $version = Get-ToolVersion -Executable $portable -Arguments @('--version') -Pattern '^v(\d+\.\d+\.\d+)'
@@ -289,7 +318,7 @@ function Ensure-Node {
     }
     $sys = Get-Command node.exe -ErrorAction SilentlyContinue
     if (-not $sys) { $sys = Get-Command node -ErrorAction SilentlyContinue }
-    if ($sys) {
+    if ($sys -and -not $PortableOnly) {
         $v = Get-ToolVersion -Executable $sys.Source -Arguments @('--version') -Pattern '^v(\d+\.\d+\.\d+)'
         if ($v) {
             if ($v -ge [version]'20.9.0') { Write-Ok "Node.js $v (system)"; return $sys.Source }
@@ -314,7 +343,7 @@ function Ensure-Node {
 }
 
 function Ensure-Bun {
-    param([string]$Tools)
+    param([string]$Tools, [switch]$PortableOnly)
     if (Test-Path (Join-Path $Tools 'bun.exe')) {
         $version = Get-ToolVersion -Executable (Join-Path $Tools 'bun.exe') -Arguments @('--version') -Pattern '^(\d+\.\d+\.\d+)'
         if ($version -and $version -ge [version]$BUN_VERSION.TrimStart('v')) {
@@ -326,7 +355,7 @@ function Ensure-Bun {
     }
     $sys = Get-Command bun.exe -ErrorAction SilentlyContinue
     if (-not $sys) { $sys = Get-Command bun -ErrorAction SilentlyContinue }
-    if ($sys) {
+    if ($sys -and -not $PortableOnly) {
         $v = Get-ToolVersion -Executable $sys.Source -Arguments @('--version') -Pattern '^(\d+\.\d+\.\d+)'
         if ($v -and $v -ge [version]$BUN_VERSION.TrimStart('v')) { Write-Ok "Bun $v (system)"; return }
     }
@@ -478,6 +507,8 @@ function Copy-RuntimeScripts {
     Copy-Item (Join-Path $Root 'scripts\windows\sensor.ps1') (Join-Path $scripts 'sensor.ps1') -Force
     Copy-Item (Join-Path $Root 'scripts\windows\runtime.ps1') (Join-Path $scripts 'runtime.ps1') -Force
     Copy-Item (Join-Path $Root 'scripts\windows\start-engine.ps1') (Join-Path $scripts 'start-engine.ps1') -Force
+    Copy-Item (Join-Path $Root 'scripts\windows\server.ps1') (Join-Path $scripts 'server.ps1') -Force
+    Copy-Item (Join-Path $Root 'scripts\windows\server-runner.ps1') (Join-Path $scripts 'server-runner.ps1') -Force
     if (Test-Path (Join-Path $Root 'scripts\windows\sysmon-config.xml')) {
         Copy-Item (Join-Path $Root 'scripts\windows\sysmon-config.xml') (Join-Path $scripts 'sysmon-config.xml') -Force
     }
@@ -726,6 +757,11 @@ function Register-Autostart {
 
 function Stop-SfProcesses {
     param([string]$Root)
+    if (Test-Path -LiteralPath (Join-Path $Root 'tools\config\server.json')) {
+        $serverManager = Join-Path $Root 'scripts\server.ps1'
+        if (-not (Test-Path -LiteralPath $serverManager -PathType Leaf)) { throw 'The server task manager is missing; stop/remove the installed boot tasks before updating.' }
+        & $serverManager -InstallDir $Root -Action Stop
+    }
     # trailing separator required: a plain StartsWith(prefix) would also
     # match unrelated installs whose directory NAME extends this one
     # (e.g. 'security-framework-backup') and stop their processes too.
@@ -767,9 +803,38 @@ function Stop-SfProcesses {
 # ======================================================================
 if ($MyInvocation.InvocationName -ne '.') {
 
-    if ($PSVersionTable.PSVersion.Major -lt 5) { throw "PowerShell 5.1 or newer required" }
+    Assert-SfInstallEnvironment
+    if ($Server -and -not $InstallDir) { $InstallDir = Join-Path $env:ProgramData 'bluetardigrade' }
     if ($Repo -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' -or $Branch -notmatch '^[A-Za-z0-9._/+-]+$' -or $Branch.StartsWith('-')) { throw 'Invalid repository or source ref.' }
     $root = Resolve-InstallRoot $InstallDir
+    $serverConfigFile = Join-Path $root 'tools\config\server.json'
+    if (Test-Path -LiteralPath $serverConfigFile) {
+        $serverConfig = Get-Content -LiteralPath $serverConfigFile -Raw | ConvertFrom-Json
+        $Server = $true
+        if (-not $PSBoundParameters.ContainsKey('ServerSensor')) { $ServerSensor = [string]$serverConfig.sensor }
+        if (-not $PSBoundParameters.ContainsKey('NoConsole') -and -not $serverConfig.withConsole) { $NoConsole = $true }
+    }
+    if ($Server) {
+        if ($AutoStart -or $SkipBuild) { throw '-Server cannot be combined with -AutoStart or -SkipBuild.' }
+        if ($PSBoundParameters.ContainsKey('IngestToken') -and -not $IngestToken.Trim()) { throw '-Server requires ingest authentication; an empty -IngestToken is not supported.' }
+        $serverBase = [IO.Path]::GetFullPath($env:ProgramData).TrimEnd('\') + '\'
+        if (-not $root.StartsWith($serverBase, [StringComparison]::OrdinalIgnoreCase) -or $root -match '["`\r\n]') { throw '-Server requires a dedicated directory below ProgramData without command-line delimiters.' }
+        # Check existing ancestors before source fetching/updating can write
+        # through a junction. A new install may not have a root yet.
+        $ancestor = $root
+        while ($ancestor) {
+            if (Test-Path -LiteralPath $ancestor) {
+                $entry = Get-Item -LiteralPath $ancestor -Force -ErrorAction Stop
+                if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw '-Server refuses junctions or symbolic links in the installation path.' }
+            }
+            $parent = Split-Path -Parent $ancestor
+            if ($parent -eq $ancestor) { break }
+            $ancestor = $parent
+        }
+        $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+        $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+        if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw '-Server requires an elevated PowerShell session; no automatic elevation is attempted.' }
+    }
     $tools = Join-Path $root 'tools'
     $binDir = Join-Path $root 'bin'
     $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -790,7 +855,8 @@ if ($MyInvocation.InvocationName -ne '.') {
     Write-Host $banner -ForegroundColor Cyan
     Write-Host '     bluetardigrade  |  Windows endpoint detection' -ForegroundColor White
     Write-Host '     engine + SOC console + Sysmon sensor' -ForegroundColor DarkGray
-    Write-Host '     no admin required  |  user-level install' -ForegroundColor DarkGray
+    if ($Server) { Write-Host '     server boot tasks  |  admin-managed ProgramData install' -ForegroundColor DarkGray }
+    else { Write-Host '     no admin required  |  user-level install' -ForegroundColor DarkGray }
     Write-Host '  ==========================================================' -ForegroundColor DarkCyan
     Write-Host "   repo    : $Repo @ $Branch" -ForegroundColor Gray
     Write-Host "   target  : $root" -ForegroundColor Gray
@@ -812,7 +878,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         (Test-InstallerStale -Root $root -RunningPath $scriptInstallerPath -RunningHash $scriptInstallerHash)) {
         Write-Step "Installer updated - re-running with the fresh version"
         $fwd = @{ Update = $true; InstallDir = $root; SourceReady = $true }
-        foreach ($k in @('Repo','Branch','NoConsole','WithSensor','Firewall','AutoStart','WebhookUrl','WebhookToken','IngestToken','SkipBuild')) {
+        foreach ($k in @('Repo','Branch','NoConsole','WithSensor','Firewall','AutoStart','Server','ServerSensor','WebhookUrl','WebhookToken','IngestToken','SkipBuild')) {
             if ($PSBoundParameters.ContainsKey($k)) { $fwd[$k] = $PSBoundParameters[$k] }
         }
         & (Join-Path $root 'install.ps1') @fwd
@@ -823,8 +889,8 @@ if ($MyInvocation.InvocationName -ne '.') {
     Ensure-Go   -Tools $tools
     $nodeExe = $null
     if (-not $NoConsole) {
-        $nodeExe = Ensure-Node -Tools $tools
-        Ensure-Bun -Tools $tools
+        $nodeExe = Ensure-Node -Tools $tools -PortableOnly:$Server
+        Ensure-Bun -Tools $tools -PortableOnly:$Server
     }
 
     $consoleReady = $false
@@ -904,12 +970,17 @@ if ($MyInvocation.InvocationName -ne '.') {
     # entry if it already exists, so a webhook change reaches the Run key
     # without requiring -AutoStart again
     $register = [bool]$AutoStart
-    if (-not $register) {
+    if (-not $register -and -not $Server) {
         $cur = Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' `
             -Name 'security-framework-engine' -ErrorAction SilentlyContinue
         if ($cur -and $cur.'security-framework-engine') { $register = $true }
     }
     if ($register -and -not $SkipBuild) { Register-Autostart -Root $root -WebhookUrl $webhook -WebhookToken $webhookToken -IngestToken $ingestToken -WithConsole $consoleReady }
+    if ($Server) {
+        if ($consoleError) { throw "Console build failed; server tasks were not registered: $consoleError" }
+        & (Join-Path $root 'scripts\server.ps1') -InstallDir $root -Action Register -WithConsole:$consoleReady -Sensor $ServerSensor
+        if (-not $ingestToken) { $ingestToken = 'configured' }
+    }
 
     if (Test-PortLocal $ENGINE_PORT) {
         Write-Warn2 "port $ENGINE_PORT is busy: an engine may already be running"
@@ -937,6 +1008,12 @@ if ($MyInvocation.InvocationName -ne '.') {
     else { Write-Host '   console        not built in this run; re-run without -NoConsole to enable it' }
     Write-Host '   sf-update      update to the latest code and rebuild'
     Write-Host '   sf-uninstall   remove everything'
+    if ($Server) {
+        Write-Host ' server tasks (elevated PowerShell):'
+        Write-Host "   & `"$root\scripts\server.ps1`" -InstallDir `"$root`" -Action Start"
+        Write-Host "   & `"$root\scripts\server.ps1`" -InstallDir `"$root`" -Action Status"
+        Write-Host '   boot deployment uses loopback and persistent run\soc.db; see docs/WINDOWS-SERVER.md'
+    }
     Write-Host '------------------------------------------------------------'
     Write-Host ' quick test (open a NEW terminal first):'
     Write-Host '   real mode :  sf-sensor -SetupSysmon  (once, UAC) then sf-sensor'

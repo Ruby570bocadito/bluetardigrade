@@ -17,6 +17,35 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
+func TestFailedPersistenceIsVisibleInStatsAndMetrics(t *testing.T) {
+	st, err := store.Open(t.TempDir() + "/failed.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, addr := newTestHub(t)
+	h.SetStore(st)
+	// Inject a real write failure while the hub keeps accepting telemetry.
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	h.RecordEvent(&model.Event{ID: "failed-event", Timestamp: time.Now().UTC(), Type: model.TypeProcessCreate, Host: "fixture"})
+	h.RecordAlert(alert.Alert{ID: "failed-alert", Timestamp: time.Now().UTC().Format(time.RFC3339Nano), RuleID: "fixture-rule", Severity: "high"})
+	var stats map[string]any
+	getJSON(t, "http://"+addr+"/api/stats", &stats)
+	if stats["store_write_failures"] != float64(2) || stats["store_enabled"] != true || stats["events_buffered"] != float64(1) {
+		t.Fatalf("lost evidence not surfaced: %+v", stats)
+	}
+	res, err := http.Get("http://" + addr + "/metrics")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	body, _ := io.ReadAll(res.Body)
+	if !strings.Contains(string(body), "sf_store_write_failures_total 2\n") {
+		t.Fatalf("missing failed-write counter: %s", body)
+	}
+}
+
 func TestStoreBackedTelemetry(t *testing.T) {
 	path := t.TempDir() + "/api.db"
 	st, err := store.Open(path)

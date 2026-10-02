@@ -23,7 +23,7 @@ export function ShortcutsHelp({ open, rows, onClose }: {
       <div className="p-5">
         <div className="flex items-center justify-between gap-3">
           <h2 id={`${id}-title`} className="flex items-center gap-2 text-sm font-medium">
-            <Keyboard size={16} aria-hidden className="text-emerald-400" />
+            <Keyboard size={16} aria-hidden className="text-blue-400" />
             Atajos de teclado
           </h2>
           <button type="button" onClick={onClose} aria-label="Cerrar la hoja de atajos" className="rounded-md p-1.5 text-zinc-400 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">

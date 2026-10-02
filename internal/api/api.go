@@ -84,7 +84,7 @@ type Hub struct {
 	beacon      func() (int, int, uint64)       // live beacon keys, cap, fired (A3)
 	threshold   func() (int, int, uint64)       // defs, live keys, fired (A2)
 
-	storeFails uint64 // throttles store write-error logging (atomic)
+	storeFails uint64 // cumulative failed event/alert writes, also throttles logging (atomic)
 
 	// suppression write surface (armed only with -api-write; see
 	// suppress_write.go): the file writes are serialized by their own
@@ -188,7 +188,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	mux.HandleFunc("GET /api/health", h.handleHealth)
 	mux.HandleFunc("GET /api/alerts/export", h.handleAlertsExport)
 	mux.HandleFunc("GET /api/events/export", h.handleEventsExport)
-	h.srv = &http.Server{Handler: h.auth(mux), ReadHeaderTimeout: 5 * time.Second}
+	h.srv = &http.Server{Handler: h.auth(guardWriteOrigin(mux)), ReadHeaderTimeout: 5 * time.Second}
 	return h, nil
 }
 
@@ -596,20 +596,21 @@ type statsPayload struct {
 	WebhookDropped uint64         `json:"webhook_dropped"`
 	// SIEM sinks (Elasticsearch bulk / Splunk HEC): same delivery
 	// triple as the webhook, per platform.
-	ElasticSent      uint64 `json:"elastic_sent"`
-	ElasticFailed    uint64 `json:"elastic_failed"`
-	ElasticDropped   uint64 `json:"elastic_dropped"`
-	SplunkSent       uint64 `json:"splunk_sent"`
-	SplunkFailed     uint64 `json:"splunk_failed"`
-	SplunkDropped    uint64 `json:"splunk_dropped"`
-	Suppressions     int    `json:"suppressions_active"`
-	StoreEnabled     bool   `json:"store_enabled"`
-	StoreEvents      int64  `json:"store_events"`
-	StoreAlerts      int64  `json:"store_alerts"`
-	CorrelatorStates int    `json:"correlator_states"`
-	CorrelatorSeqs   int    `json:"correlator_sequences"`
-	CorrelatorCap    int    `json:"correlator_cap"`
-	Mode             string `json:"mode"`
+	ElasticSent        uint64 `json:"elastic_sent"`
+	ElasticFailed      uint64 `json:"elastic_failed"`
+	ElasticDropped     uint64 `json:"elastic_dropped"`
+	SplunkSent         uint64 `json:"splunk_sent"`
+	SplunkFailed       uint64 `json:"splunk_failed"`
+	SplunkDropped      uint64 `json:"splunk_dropped"`
+	Suppressions       int    `json:"suppressions_active"`
+	StoreEnabled       bool   `json:"store_enabled"`
+	StoreWriteFailures uint64 `json:"store_write_failures"`
+	StoreEvents        int64  `json:"store_events"`
+	StoreAlerts        int64  `json:"store_alerts"`
+	CorrelatorStates   int    `json:"correlator_states"`
+	CorrelatorSeqs     int    `json:"correlator_sequences"`
+	CorrelatorCap      int    `json:"correlator_cap"`
+	Mode               string `json:"mode"`
 
 	// Host risk scoring (A1): how many hosts currently carry non-cold
 	// risk, and the top-5 list the console dashboard renders.
@@ -752,42 +753,43 @@ func (h *Hub) statsSnapshot() statsPayload {
 	}
 
 	return statsPayload{
-		UptimeS:          int64(time.Since(h.started) / time.Second),
-		EventsTotal:      ingested,
-		Dropped:          dropped,
-		IngestRejected:   rejected,
-		EventsPerMin:     last60,
-		AlertsTotal:      alTotal,
-		BySeverity:       bySev,
-		RulesCount:       rulesCount,
-		RulesTypes:       rulesTypes,
-		EventsBuffered:   evCount,
-		WebhookSent:      whSent,
-		WebhookFailed:    whFailed,
-		WebhookDropped:   whDropped,
-		ElasticSent:      esSent,
-		ElasticFailed:    esFailed,
-		ElasticDropped:   esDropped,
-		SplunkSent:       spSent,
-		SplunkFailed:     spFailed,
-		SplunkDropped:    spDropped,
-		Suppressions:     supActive,
-		StoreEnabled:     storeEnabled,
-		StoreEvents:      storeEvents,
-		StoreAlerts:      storeAlerts,
-		CorrelatorStates: corrStates,
-		CorrelatorSeqs:   corrSeqs,
-		CorrelatorCap:    corrCap,
-		Mode:             "engine",
-		RiskHostsTracked: riskHosts,
-		HotHosts:         hotHosts,
-		BeaconsTracked:   bTracked,
-		BeaconsCap:       bCap,
-		BeaconsFired:     bFired,
-		ThresholdRules:   tDefs,
-		ThresholdKeys:    tKeys,
-		ThresholdFired:   tFired,
-		NotifyChannels:   notifyRows,
+		UptimeS:            int64(time.Since(h.started) / time.Second),
+		EventsTotal:        ingested,
+		Dropped:            dropped,
+		IngestRejected:     rejected,
+		EventsPerMin:       last60,
+		AlertsTotal:        alTotal,
+		BySeverity:         bySev,
+		RulesCount:         rulesCount,
+		RulesTypes:         rulesTypes,
+		EventsBuffered:     evCount,
+		WebhookSent:        whSent,
+		WebhookFailed:      whFailed,
+		WebhookDropped:     whDropped,
+		ElasticSent:        esSent,
+		ElasticFailed:      esFailed,
+		ElasticDropped:     esDropped,
+		SplunkSent:         spSent,
+		SplunkFailed:       spFailed,
+		SplunkDropped:      spDropped,
+		Suppressions:       supActive,
+		StoreEnabled:       storeEnabled,
+		StoreWriteFailures: atomic.LoadUint64(&h.storeFails),
+		StoreEvents:        storeEvents,
+		StoreAlerts:        storeAlerts,
+		CorrelatorStates:   corrStates,
+		CorrelatorSeqs:     corrSeqs,
+		CorrelatorCap:      corrCap,
+		Mode:               "engine",
+		RiskHostsTracked:   riskHosts,
+		HotHosts:           hotHosts,
+		BeaconsTracked:     bTracked,
+		BeaconsCap:         bCap,
+		BeaconsFired:       bFired,
+		ThresholdRules:     tDefs,
+		ThresholdKeys:      tKeys,
+		ThresholdFired:     tFired,
+		NotifyChannels:     notifyRows,
 	}
 }
 

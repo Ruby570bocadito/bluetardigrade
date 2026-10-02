@@ -6,6 +6,11 @@ Everything needed to install, configure and operate the framework: the one-comma
 
 Installer fixes, update preservation, recovery and current SOC limitations: [INSTALACION-Y-ESTADO-SOC.md](INSTALACION-Y-ESTADO-SOC.md).
 
+Diagnose an existing deployment with `sf-engine doctor`: [checks, JSON,
+credentials and TLS](DOCTOR.md). Server deployments and application-control
+requirements are described in [Windows Server](WINDOWS-SERVER.md) and
+[Smart App Control](SMART-APP-CONTROL.md).
+
 From any PowerShell window, no admin account and no prior download required:
 
 ```powershell
@@ -191,6 +196,8 @@ Exports are for SIEM import, offline analysis and the forensic store: JSONL roun
 
 The API can demand a bearer token: start the engine with `-api-token '...'` (or `SF_API_TOKEN`) and every `/api/*` route — stats, events, alerts, rules, sequences, suppressions, stream, exports — answers `401` without a valid `Authorization: Bearer <token>` header, with a loud log line per rejected request. `/metrics` is gated by the same credential, and `/api/health` stays open on purpose: it is the liveness probe the engine, the console bridge and uptime checks rely on, and it reveals nothing but `{"mode":"engine","status":"ok"}`. The console-service bridge honors the same `SF_API_TOKEN` variable, so a token-protected console stack needs exactly one extra environment entry. This follows the same standard as the ingest auth: loopback stays friction-free by default, but a listener reachable beyond loopback must never serve telemetry without an explicit credential.
 
+Native API writes also reject foreign or malformed browser `Origin` headers and `Sec-Fetch-Site: cross-site` with `403`, including when a bearer token is valid. CLI clients without these browser headers remain supported. Reverse proxies must preserve a consistent public Host/scheme or route console writes through the existing console proxy; forwarded headers are not used to relax this boundary.
+
 ## Prometheus metrics
 
 
@@ -221,8 +228,9 @@ sf-engine -store ./sf-store.db -store-retention 0  # keep everything, prune noth
 While the store is attached:
 
 - The telemetry lists (`/api/events`, `/api/alerts`) and both `/export` endpoints read the **full stored history** (same filters, same wire format, subject to the configured retention) instead of the rings, so `since=24h` reaches beyond the 1000-event window. The SSE stream and the console keep their live behavior unchanged.
-- `/api/stats` reports `store_enabled`, `store_events` and `store_alerts` — the counts survive a restart, because the history does: kill the engine, start it again on the same file, and the API serves everything it persisted.
+- `/api/stats` reports `store_enabled`, `store_events` and `store_alerts` — the counts survive a restart, because the history does: kill the engine, start it again on the same file, and the API serves everything it persisted. `store_write_failures` counts failed event/alert writes since the current API process started; Prometheus exposes `sf_store_write_failures_total`. A nonzero count appears in the SOC operations summary and `doctor`. Those records may have reached live memory/SSE without being saved. The cumulative counter does not certify a current database fault or recover lost records.
 - Rows older than `-store-retention` (default 72h; `0` keeps everything) are pruned on a 5-minute ticker, loudly when something is removed.
+- On first open, a legacy database's derived search columns are rebuilt in a transaction to include current identity/evidence fields. Original JSON, timestamps and retained rows are preserved. A version marker prevents repeating the rebuild on every start; invalid evidence aborts the migration rather than leaving a partially indexed history. Back up large databases before upgrades and allow time for this first scan.
 - The database (and its WAL side files) is created `0600` — full telemetry (users, command lines, file paths) must not be readable by other local users. A file that already exists keeps its mode (no surprise permission changes; tighten it yourself if it predates this change).
 - A store that cannot be opened is a FATAL startup error, by the same standard as a malformed suppressions file: persistence you believe is armed must not silently stay off. Write failures at runtime are logged with a throttle and never stop detection.
 
@@ -495,7 +503,7 @@ verified in conduct, not just in compilation.
 ## Detection rules
 
 
-Rules live in `rules/` as YAML, are validated at load, and hot-reload every 15 seconds by default (disable with `-reload-every 0`). The loader carries the same house caps as every other config surface: 4 MiB per file (checked before reading), a nesting-depth pre-scan and a 2048 enabled-rules ceiling — enforced fail-loud on startup and on every hot-reload tick, so an oversized or hostile file aborts startup, or keeps the previous set on reload, instead of degrading a running engine. The shipped pack uses 69 of those 2048 slots. The shared guard also rejects cyclic aliases and caps projected expansion and composed flow depth before typed decoding.
+Rules live in `rules/` as YAML, are validated at load, and hot-reload every 15 seconds by default (disable with `-reload-every 0`). The loader carries the same house caps as every other config surface: 4 MiB per file (checked before reading), a nesting-depth pre-scan and a 2048 enabled-rules ceiling — enforced fail-loud on startup and on every hot-reload tick, so an oversized or hostile file aborts startup, or keeps the previous set on reload, instead of degrading a running engine. The shipped pack uses 75 of those 2048 slots. The shared guard also rejects cyclic aliases and caps projected expansion and composed flow depth before typed decoding.
 
 ```yaml
 - name: "PowerShell con comando codificado"
@@ -521,7 +529,7 @@ every change. Artifact rules have positive/negative fixtures; Windows lab
 validation and environment-specific noise tuning remain separate checks.
 
 <!-- BEGIN RULE INVENTORY -->
-The enabled pack contains **69 rules across 12 event types**: 16 critical / 37 high / 13 medium / 1 low / 2 info.
+The enabled pack contains **75 rules across 12 event types**: 16 critical / 37 high / 16 medium / 3 low / 3 info.
 Full IDs are retained because different rules in a pack can share a UUID prefix.
 
 | ID | Rule | Severity | Event type | ATT&CK | Tactic |
@@ -588,12 +596,18 @@ Full IDs are retained because different rules in a pack can share a UUID prefix.
 | `soc-ndr-public-rdp` | NDR: RDP hacia una direccion publica | medium | `network.connect` | T1021.001 |  |
 | `soc-osquery-admin-listener` | osquery: nuevo puerto administrativo en todas las interfaces | medium | `host.query` |  |  |
 | `soc-mail-risky-attachment` | Phishing: adjunto de extension activa | medium | `email.message` | T1566.001 |  |
+| `soc-mail-double-extension` | Phishing: doble extension de documento y ejecutable | medium | `email.message` | T1566.001 |  |
 | `soc-mail-dmarc-fail` | Phishing: fallo DMARC declarado en cabecera | medium | `email.message` | T1566 |  |
+| `soc-mail-bidi-filename` | Phishing: nombre de adjunto invierte texto Unicode | medium | `email.message` | T1566.001 |  |
 | `soc-mail-ip-url` | Phishing: URL con direccion IP literal | medium | `email.message` | T1566.002 |  |
+| `soc-mail-url-credentials` | Phishing: URL contiene credenciales antes del host | medium | `email.message` | T1566.002 |  |
 | `a1b2c3d4-000a-4a0a-9e0a-0a0a0a0a0a0a` | Reconocimiento de dominio con comandos net/nltest | medium | `process.create` | T1087.002 | discovery |
 | `soc-ids-priority-medium` | Suricata: firma de prioridad media | medium | `network.alert` |  |  |
+| `soc-mail-macro-attachment` | Phishing: adjunto Office compatible con macros | low | `email.message` | T1566.001 |  |
+| `soc-mail-html-link-mismatch` | Phishing: enlace HTML muestra otro host | low | `email.message` | T1566.002 |  |
 | `soc-mail-reply-mismatch` | Phishing: Reply-To de otro dominio | low | `email.message` | T1566 |  |
 | `soc-firewall-admin-drop` | Firewall: intento administrativo entrante descartado | info | `network.firewall` |  |  |
+| `soc-mail-url-punycode` | Phishing: enlace con hostname internacionalizado | info | `email.message` | T1566.002 |  |
 | `soc-ips-reported-drop` | Suricata: bloqueo declarado por el proveedor | info | `network.alert` |  |  |
 <!-- END RULE INVENTORY -->
 

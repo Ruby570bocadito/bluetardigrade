@@ -27,6 +27,12 @@ go build -o bin/collector.exe ./cmd/collector
 La [instalación de Windows](OPERATIONS.md#one-command-install-windows)
 también incluye comandos `sf-*` y herramientas de Sysmon.
 
+Con los servicios iniciados, ejecuta `sf-engine doctor` (o
+`.\bin\engine.exe doctor` desde el repositorio). Comprueba reglas, ingesta,
+tokens, persistencia, Sysmon y consola sin generar eventos. Un error devuelve
+codigo 1; una muestra vacia o datos de prueba generan avisos. Puedes exportar
+el diagnostico con `-json`: [opciones y limites](DOCTOR.md).
+
 ## CLI interactiva
 
 Abre `./bin/engine run -i` —en Windows, `.\bin\engine.exe run -i`— y en

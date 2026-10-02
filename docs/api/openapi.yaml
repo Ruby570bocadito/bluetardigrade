@@ -583,6 +583,13 @@ paths:
       responses:
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Native API writes reject a foreign or malformed browser Origin
+            and Sec-Fetch-Site cross-site. Originless CLI clients remain supported.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '200':
           description: The stored lifecycle entry
           content:
@@ -1140,6 +1147,7 @@ components:
         - correlator_sequences
         - correlator_cap
         - store_enabled
+        - store_write_failures
         - store_events
         - store_alerts
         - mode
@@ -1159,6 +1167,12 @@ components:
         store_enabled:
           type: boolean
           description: whether the engine runs with persistent SQLite storage (-store)
+        store_write_failures:
+          type: integer
+          format: int64
+          minimum: 0
+          description: cumulative failed event or alert writes since API process start;
+            affected evidence may exist only in memory. This is not a current database health probe.
         store_events:
           type: integer
           format: int64

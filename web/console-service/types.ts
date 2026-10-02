@@ -135,6 +135,7 @@ export type HubStats = {
   correlator_cap: number
   // optional SQLite persistence (-store): present since the store landed
   store_enabled?: boolean
+  store_write_failures?: number
   store_events?: number
   store_alerts?: number
   // per-host risk scoring (engine A1): width of the signal (how many

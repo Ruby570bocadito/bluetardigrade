@@ -27,6 +27,9 @@ export function pipelineIssues(stats: EngineStats | null): string[] {
   const webhook = stats.webhook_failed + stats.webhook_dropped
   if (ingest) issues.push(ingest + ' eventos descartados o rechazados')
   if (webhook) issues.push(webhook + ' entregas de webhook con fallo')
+  if ((stats.store_write_failures ?? 0) > 0) {
+    issues.push(stats.store_write_failures + ' escrituras SQLite fallidas desde el arranque; revisa la evidencia persistida')
+  }
   if (stats.correlator_cap > 0 && stats.correlator_states >= stats.correlator_cap) {
     issues.push('Correlador al límite de capacidad')
   }

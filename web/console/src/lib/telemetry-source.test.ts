@@ -22,3 +22,15 @@ test('unknown declarations are never promoted to a verified origin or echoed int
 test('repeated source labels do not grow with the event count', () => {
   expect(describeTelemetrySources(Array.from({ length: 256 }, () => ({ source: 'sysmon' })))).toEqual(describeTelemetrySources([{ source: 'sysmon' }]))
 })
+
+test('benchmark-generated telemetry is explicitly identified as demo data', () => {
+  expect(describeTelemetrySources([{ source: 'bench' }])).toEqual({ label: 'fuentes declaradas: demo de rendimiento', hasDemo: true })
+})
+
+test('a newest real-source declaration cannot hide older benchmark events', () => {
+  expect(describeTelemetrySources([{ source: 'sysmon' }, { source: 'bench' }, { source: 'etw' }])).toEqual({ label: 'fuentes declaradas: Sysmon + ETW + demo de rendimiento', hasDemo: true })
+})
+
+test('benchmark and scenario demos remain identifiable without repeating their labels', () => {
+  expect(describeTelemetrySources([{ source: 'bench' }, { source: 'simulate' }, { source: 'bench' }])).toEqual({ label: 'fuentes declaradas: demo simulada + demo de rendimiento', hasDemo: true })
+})

@@ -373,7 +373,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
         <div role="group" aria-label="Origen de alertas" className="flex gap-1">
           {([['live', 'En vivo'], ['history', 'Histórico']] as const).map(([id, label]) => (
             <button key={id} type="button" aria-pressed={scope === id} onClick={() => changeScope(id)}
-              className={'rounded-md px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ' + (scope === id ? 'bg-emerald-400/10 text-emerald-300' : 'text-zinc-400 hover:text-zinc-100')}>
+              className={'rounded-md px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ' + (scope === id ? 'bg-blue-400/10 text-blue-300' : 'text-zinc-400 hover:text-zinc-100')}>
               {label}
             </button>
           ))}

@@ -45,7 +45,7 @@
 
 /* security-framework SOC console: dark-mode locked product UI.
    Tokens are Tailwind zinc for structure, one interaction accent
-   (emerald-500) and severity colors that encode data semantics:
+   (blue-400) and severity colors that encode data semantics:
    critical red-500/600, high orange-500, medium amber-400, low sky-400. */
 :root {
   --radius: 0.5rem;
@@ -55,8 +55,8 @@
   --card-foreground: #f4f4f5;
   --popover: #18181b;
   --popover-foreground: #f4f4f5;
-  --primary: #10b981; /* emerald-500 */
-  --primary-foreground: #022c22; /* emerald-950: AA on the accent */
+  --primary: #60a5fa; /* blue-400 */
+  --primary-foreground: #172554; /* blue-950: AA on the accent */
   --secondary: #27272a; /* zinc-800 */
   --secondary-foreground: #f4f4f5;
   --muted: #18181b;
@@ -66,20 +66,20 @@
   --destructive: #ef4444; /* red-500 */
   --border: #27272a; /* zinc-800 */
   --input: #27272a;
-  --ring: rgba(16, 185, 129, 0.5);
-  --chart-1: #10b981; /* accent */
+  --ring: #60a5fa; /* opaque focus indicator on dark surfaces */
+  --chart-1: #60a5fa; /* accent */
   --chart-2: #f97316; /* high */
   --chart-3: #ef4444; /* critical */
   --chart-4: #fbbf24; /* medium */
   --chart-5: #38bdf8; /* low */
   --sidebar: #09090b;
   --sidebar-foreground: #f4f4f5;
-  --sidebar-primary: #10b981;
-  --sidebar-primary-foreground: #022c22;
+  --sidebar-primary: #60a5fa;
+  --sidebar-primary-foreground: #172554;
   --sidebar-accent: #27272a;
   --sidebar-accent-foreground: #f4f4f5;
   --sidebar-border: #27272a;
-  --sidebar-ring: rgba(16, 185, 129, 0.5);
+  --sidebar-ring: #60a5fa;
   color-scheme: dark;
 }
 
@@ -91,7 +91,7 @@
     @apply bg-background text-foreground;
   }
   ::selection {
-    background: rgba(16, 185, 129, 0.28);
+    background: rgba(96, 165, 250, 0.28);
   }
   /* dense product UI: slim dark scrollbars everywhere */
   * {
@@ -209,7 +209,7 @@
                  highlight + soft ambient shadow: depth without noise
    .panel-hover  lift-on-hover, frozen under prefers-reduced-motion
    .chip         compact status chip used across the topbar
-   .icon-tile    soft emerald square behind KPI/card icons
+   .icon-tile    soft blue square behind KPI/card icons
    .glass        translucent blurred chrome (sidebar/topbar)
    --------------------------------------------------------------------------- */
 /* TODO el sistema de superficies vive en @layer components: las utilidades
@@ -266,9 +266,9 @@
   align-items: center;
   justify-content: center;
   border-radius: 0.5rem;
-  border: 1px solid rgba(52, 211, 153, 0.25);
-  background: linear-gradient(180deg, rgba(52, 211, 153, 0.16), rgba(52, 211, 153, 0.06));
-  color: #6ee7b7;
+  border: 1px solid rgba(96, 165, 250, 0.25);
+  background: linear-gradient(180deg, rgba(96, 165, 250, 0.16), rgba(96, 165, 250, 0.06));
+  color: #93c5fd;
   box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
 }
 .glass {
@@ -278,7 +278,7 @@
 }
 }
 
-/* Fondo ambiental de la shell: resplandor esmeralda muy tenue en la
+/* Fondo ambiental de la shell: resplandor azul muy tenue en la
    cabecera + vignette superior. La rejilla de puntos ahora la pinta el
    canvas DotGrid (React Bits) y reacciona al puntero; debajo del contenido
    siempre. isolation + z-index -1: el halo queda SIEMPRE detrás del contenido. */
@@ -292,9 +292,9 @@
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(700px 190px at 15% -12%, rgba(52, 211, 153, 0.09), transparent 70%),
-    radial-gradient(560px 170px at 88% -18%, rgba(45, 212, 191, 0.05), transparent 70%),
-    radial-gradient(1100px 480px at 50% 118%, rgba(52, 211, 153, 0.03), transparent 72%);
+    radial-gradient(700px 190px at 15% -12%, rgba(96, 165, 250, 0.09), transparent 70%),
+    radial-gradient(560px 170px at 88% -18%, rgba(59, 130, 246, 0.05), transparent 70%),
+    radial-gradient(1100px 480px at 50% 118%, rgba(96, 165, 250, 0.03), transparent 72%);
 }
 
 /* GradientText: degradado animado sobre texto con background-clip: text.
@@ -339,7 +339,7 @@
     linear-gradient(
         var(--sb-angle, 120deg),
         rgba(16, 20, 26, 0) 20%,
-        var(--sb-color, rgba(52, 211, 153, 0.55)) 45%,
+        var(--sb-color, rgba(96, 165, 250, 0.55)) 45%,
         rgba(16, 20, 26, 0) 70%
       )
       border-box;
@@ -360,12 +360,12 @@
 @media (prefers-reduced-motion: reduce) {
   .star-border--active {
     animation: none;
-    /* estático: el borde esmeralda fijo sigue marcando el estado activo */
+    /* estático: el borde azul fijo sigue marcando el estado activo */
   }
 }
 
 /* Pulido de cabina: scrollbar fina y discreta (la consola vive con listas
-   largas) y selección esmeralda coherente con el acento. */
+   largas) y selección azul coherente con el acento. */
 * {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
@@ -382,9 +382,9 @@
   border-radius: 4px;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(52, 211, 153, 0.35);
+  background: rgba(96, 165, 250, 0.35);
 }
 ::selection {
-  background: rgba(52, 211, 153, 0.28);
+  background: rgba(96, 165, 250, 0.28);
   color: #e7eaed;
 }

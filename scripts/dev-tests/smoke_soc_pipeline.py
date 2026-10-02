@@ -75,7 +75,21 @@ def main():
                 }
                 inputs = {source: "\n".join(json.dumps(row) for row in rows) + "\n" for source, rows in records.items()}
                 inputs["windows-firewall"] = "#Version: 1.5\n#Time Format: UTC\n#Fields: date time action protocol src-ip dst-ip src-port dst-port path pid\n" + now.strftime("%Y-%m-%d %H:%M:%S") + " ALLOW TCP 10.0.0.5 10.0.0.6 32000 3389 RECEIVE 42\n"
-                inputs["eml"] = "From: sender@example.com\r\nSubject: Inert mail fixture\r\nAuthentication-Results: fixture; dmarc=fail\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nReview https://192.0.2.1/inert?token=fixture-mail-secret\r\n"
+                inputs["eml"] = (
+                    "From: sender@example.com\r\nSubject: Inert mail fixture\r\n"
+                    "Authentication-Results: fixture; dmarc=fail\r\nMIME-Version: 1.0\r\n"
+                    'Content-Type: multipart/mixed; boundary="fixture-boundary"\r\n\r\n'
+                    "--fixture-boundary\r\nContent-Type: text/html; charset=utf-8\r\n\r\n"
+                    '<a href="https://fixture-cred-secret@xn--bcher-kva.example.invalid/login?token=fixture-mail-secret">https://bank.example.invalid/login</a>\r\n'
+                    "Review https://192.0.2.1/inert?token=fixture-mail-secret\r\n"
+                    "--fixture-boundary\r\nContent-Type: application/octet-stream\r\n"
+                    'Content-Disposition: attachment; filename="agenda.docm"\r\n\r\nINERT\r\n'
+                    "--fixture-boundary\r\nContent-Type: application/octet-stream\r\n"
+                    'Content-Disposition: attachment; filename="invoice.pdf.exe"\r\n\r\nINERT\r\n'
+                    "--fixture-boundary\r\nContent-Type: application/octet-stream\r\n"
+                    'Content-Disposition: attachment; filename="invoice\u202egnp.exe"\r\n\r\nINERT\r\n'
+                    "--fixture-boundary--\r\n"
+                )
                 ingest_env = {**env, "SF_INGEST_TOKEN": "fixture-ingest-token"}
                 for source, contents in inputs.items():
                     path = work / (source + ".input")
@@ -85,6 +99,8 @@ def main():
                     if completed.returncode != 0:
                         raise RuntimeError(f"{source} collector failed: {completed.stderr.decode()}")
                 expected = {"soc-ids-priority-high", "soc-ips-reported-drop", "soc-ndr-public-smb", "soc-osquery-admin-listener", "soc-honeypot-login", "soc-firewall-admin-allow", "soc-mail-dmarc-fail", "soc-mail-ip-url"}
+                expected.update({"soc-mail-risky-attachment", "soc-mail-html-link-mismatch", "soc-mail-url-credentials",
+                                 "soc-mail-url-punycode", "soc-mail-macro-attachment", "soc-mail-double-extension", "soc-mail-bidi-filename"})
                 deadline = time.monotonic() + 8
                 while True:
                     stats = request("/api/stats")
@@ -94,11 +110,38 @@ def main():
                     if time.monotonic() > deadline:
                         raise RuntimeError("SOC source pipeline missed expected events/alarms")
                     time.sleep(0.05)
-                assert stats["rules_count"] == 69 and stats["dropped"] == 0
-                assert len(alerts) == 8 and {row["rule_id"] for row in alerts} == expected
+                assert stats["rules_count"] == 75 and stats["dropped"] == 0
+                assert len(alerts) == len(expected) and {row["rule_id"] for row in alerts} == expected
                 events = request("/api/events?limit=100")
                 assert {row["source"] for row in events} == set(inputs)
-                assert "fixture-honeypot-secret" not in json.dumps(events) and "fixture-stdin-secret" not in json.dumps(events) and "fixture-mail-secret" not in json.dumps(events)
+                evidence_json = json.dumps(events) + json.dumps(alerts)
+                assert not any(secret in evidence_json for secret in
+                               ("fixture-honeypot-secret", "fixture-stdin-secret", "fixture-mail-secret", "fixture-cred-secret"))
+                mail_event = next(row for row in events if row["source"] == "eml")
+                assert mail_event["attributes"]["mail_html_link_mismatches"] == "bank.example.invalid -> xn--bcher-kva.example.invalid"
+                # The real CLI must diagnose the live authenticated engine
+                # without manufacturing a telemetry record or exposing tokens.
+                doctor_env = {**ingest_env, "SF_API_TOKEN": "fixture-api-token"}
+                doctor_command = [str(engine_binary), "doctor", "-root", str(ROOT),
+                                  "-addr", f"127.0.0.1:{ingest}", "-api-url", base,
+                                  "-console-url=", "-hub-url=", "-sensor", "providers", "-json"]
+                diagnosis = subprocess.run(doctor_command, env=doctor_env, cwd=work, capture_output=True, timeout=15)
+                assert diagnosis.returncode == 0, "live engine diagnosis failed: " + diagnosis.stdout.decode()
+                diagnosed = json.loads(diagnosis.stdout)
+                statuses = {check["name"]: check["status"] for check in diagnosed["checks"]}
+                assert diagnosed["errors"] == 0 and statuses["Autenticacion de ingesta"] == "ok"
+                assert statuses["API del motor"] == "ok" and statuses["Persistencia"] == "ok" and statuses["Telemetria"] == "ok"
+                assert request("/api/stats")["events_total"] == 7, "doctor generated events"
+                assert not list(ROOT.glob(".doctor-write-*")), "doctor left temporary state"
+                wrong = subprocess.run(doctor_command, env={**doctor_env, "SF_API_TOKEN": "wrong-fixture-token"},
+                                       cwd=work, capture_output=True, timeout=15)
+                wrong_report = json.loads(wrong.stdout)
+                wrong_statuses = {check["name"]: check["status"] for check in wrong_report["checks"]}
+                assert wrong.returncode == 1 and wrong_statuses["API del motor"] == "ok"
+                assert wrong_statuses["Acceso a estadisticas"] == "error"
+                for result in (diagnosis, wrong):
+                    assert not any(secret.encode() in result.stdout + result.stderr for secret in
+                                   ("fixture-api-token", "fixture-ingest-token", "wrong-fixture-token", "fixture-mail-secret"))
                 selected = next(row for row in alerts if row["rule_id"] == "soc-ids-priority-high")
                 assert selected["attributes"]["ids_action"] == "allowed" and selected["attributes"]["ids_verdict"] == "drop"
                 assert next(row for row in alerts if row["rule_id"] == "soc-ips-reported-drop")["severity"] == "info"
@@ -123,7 +166,7 @@ def main():
                 assert saved["alert"]["attributes"]["ids_action"] == "allowed"
                 repeat = subprocess.run(report_cmd, env=report_env, cwd=work, capture_output=True, timeout=12)
                 assert repeat.returncode != 0 and report.read_bytes() == contents
-                print("SOC smoke: PASS — six source formats, seven fixture records, eight actual alarms, SQLite, forensics, triage and CLI report; no attack executed")
+                print("SOC smoke: PASS — six source formats, seven fixture records, 15 actual alarms including offline phishing, SQLite, doctor, forensics, triage and CLI report; no attack executed")
             finally:
                 engine.terminate()
                 try:

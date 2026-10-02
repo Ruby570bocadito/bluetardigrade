@@ -12,7 +12,7 @@ type SpotlightCardProps = {
   children: React.ReactNode
   /** radio del halo en px */
   radius?: number
-  /** rgba del halo (por defecto, el esmeralda de la consola) */
+  /** rgba del halo (por defecto, el azul de la consola) */
   color?: string
   className?: string
 }
@@ -20,7 +20,7 @@ type SpotlightCardProps = {
 export function SpotlightCard({
   children,
   radius = 200,
-  color = 'rgba(52, 211, 153, 0.09)',
+  color = 'rgba(96, 165, 250, 0.10)',
   className = '',
 }: SpotlightCardProps) {
   const ref = useRef<HTMLDivElement>(null)

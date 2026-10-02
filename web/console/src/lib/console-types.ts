@@ -239,6 +239,8 @@ export type EngineStats = {
   // optional SQLite persistence (engine -store flag), forwarded by the
   // hub when the engine reports it; undefined = no store attached
   store_enabled?: boolean
+  // Undefined on older engines; never equate missing data with zero failures.
+  store_write_failures?: number
   store_events?: number
   store_alerts?: number
   // per-host risk scoring (engine A1): width of the signal (how many

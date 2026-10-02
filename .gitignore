@@ -6,6 +6,7 @@ bin/
 *.test
 *.out
 vendor/
+.cache/
 
 # Release build output (make dist; the release workflow rebuilds it
 # fresh on the runner — never committed)

@@ -25,6 +25,13 @@ describe('operations summary', () => {
     expect(pipelineIssues(stats)).toHaveLength(4)
     expect(pipelineIssues({ ...stats, correlator_states: 9, beacons_tracked: 19 })).toHaveLength(2)
   })
+  test('surfaces cumulative SQLite loss without manufacturing errors for old engines', () => {
+    const stats = { dropped: 0, ingest_rejected: 0, webhook_failed: 0, webhook_dropped: 0, correlator_cap: 0 } as EngineStats
+    expect(pipelineIssues(stats)).toEqual([])
+    expect(pipelineIssues({ ...stats, store_enabled: true, store_write_failures: 2 })).toEqual([
+      '2 escrituras SQLite fallidas desde el arranque; revisa la evidencia persistida',
+    ])
+  })
 })
 
 describe('dashboard triage destinations', () => {

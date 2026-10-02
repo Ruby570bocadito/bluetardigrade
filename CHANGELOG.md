@@ -12,6 +12,24 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Deployment diagnostics, phishing and SOC reliability
+
+- Add `engine doctor` with JSON/exit status, bounded authenticated probes,
+  verified TLS, local rule validation, Sysmon checks and console/hub checks.
+  Generated `bench` telemetry is labelled alongside scenario data.
+- Expand offline EML inspection with six explainable phishing indicators
+  and shipped rules (75 enabled rules total); do not visit URLs or execute attachments.
+- Change console brand/navigation/chart accents to blue and make empty
+  activity intervals actually empty.
+- Add Windows Server boot tasks with protected installation files, shared
+  credentials, SQLite and foreground process recovery; document unsigned
+  build limitations under Smart App Control and provide a package signing tool.
+- Expose failed SQLite writes through stats, Prometheus, doctor and the
+  dashboard so retained evidence loss is visible to SOC operators.
+- Reject native API writes from foreign browser origins while preserving
+  originless CLI clients. Rebuild legacy SQLite search indexes transactionally
+  once so retained alerts/events remain searchable by their complete identity.
+
 ### Installer and product telemetry
 
 - Fix PowerShell collection/version parsing, validate reusable portable tools,

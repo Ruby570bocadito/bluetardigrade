@@ -19,7 +19,7 @@ instalación de Suricata, Zeek, osquery, Cowrie o Windows Firewall.
 | `windows-firewall` | `pfirewall.log` W3C con cabeceras | `ALLOW` / `DROP`, dirección cuando está presente y flujo |
 | `eml` | Mensaje MIME completo, archivo o stdin | Metadatos, SHA-256 e indicadores de revisión offline |
 
-Se añaden **14 reglas SOC** a las 55 anteriores: **69 reglas habilitadas**.
+La primera ampliación añadió **14 reglas SOC** a las 55 anteriores. Con las seis reglas adicionales de phishing, el inventario actual contiene **75 reglas habilitadas**.
 Los dos umbrales nuevos completan **4 definiciones volumétricas**:
 20 logins fallidos de Cowrie o 50 descartes entrantes de firewall en cinco
 minutos, agrupados por IP origen y host, con cooldown de quince minutos.

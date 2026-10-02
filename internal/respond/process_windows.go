@@ -1,5 +1,7 @@
 //go:build windows
 
+// Package respond provides guarded active response to verified local processes.
+//
 // Windows process resolution and verified kill (R1/R2, dictamen 04-B
 // 16h11): ONE OpenProcess handle serves BOTH verification
 // (QueryFullProcessImageNameW) and termination (TerminateProcess) —
@@ -40,10 +42,9 @@ var (
 	procCloseHandle                = modkernel32.NewProc("CloseHandle")
 )
 
-// resolvedTarget carries the pinned object and what the OS says it is.
+// resolvedTarget carries the pinned process handle.
 type resolvedTarget struct {
-	handle   syscall.Handle
-	resolved string
+	handle syscall.Handle
 }
 
 // openTarget opens the process with the single handle that will both

@@ -4,8 +4,22 @@
 # errors, printing file + message for each error found.
 param([string]$RepoRoot = (Split-Path (Split-Path $PSScriptRoot)))
 
-$files = @(Get-ChildItem -Path $RepoRoot -Recurse -Filter '*.ps1' -File |
-    Where-Object { $_.FullName -notmatch 'node_modules|\.next|tools[\\/](go|node|bun)' })
+$ErrorActionPreference = 'Stop'
+# Exclude generated/dependency directories before descending. Filtering after
+# -Recurse still traverses inaccessible caches and could report success after
+# nonterminating enumeration errors hid scripts from the check.
+$excluded = @('.git', '.cache', 'node_modules', '.next', 'tools', 'bin', 'dist', 'vendor', 'target', 'captures', 'run')
+$pending = New-Object 'System.Collections.Generic.Queue[string]'
+$pending.Enqueue([IO.Path]::GetFullPath($RepoRoot))
+$files = @()
+while ($pending.Count -gt 0) {
+    foreach ($entry in Get-ChildItem -LiteralPath ($pending.Dequeue()) -Force -ErrorAction Stop) {
+        if ($entry.PSIsContainer -and $entry.Name -in $excluded) { continue }
+        if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Syntax guard cannot certify a linked source path.' }
+        if ($entry.PSIsContainer) { $pending.Enqueue($entry.FullName) }
+        elseif ($entry.Extension -eq '.ps1') { $files += $entry }
+    }
+}
 if (-not $files -or $files.Count -eq 0) { Write-Output 'no .ps1 files found'; exit 1 }
 
 $failed = 0

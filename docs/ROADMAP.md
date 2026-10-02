@@ -13,7 +13,7 @@ la arquitectura vigente en [ARCHITECTURE.md](ARCHITECTURE.md).
 ## H1 — Detección: profundidad y cobertura (siguiente)
 
 **Problema**: la cobertura actual es fuerte en procesos y artefactos
-(69 reglas, 4 cadenas), incluida una primera capa de ficheros; sigue
+(75 reglas, 4 cadenas), incluida una primera capa de ficheros y phishing; sigue
 siendo delgada en memoria y en la confirmación de cargas de DLL.
 
 - **Reglas de fichero: primera capa entregada** — paquete

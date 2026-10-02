@@ -25,6 +25,7 @@ $ErrorActionPreference = 'Continue'
 $root = Split-Path -Parent $PSScriptRoot
 if (-not (Test-Path (Join-Path $root 'web'))) { $root = Split-Path -Parent $root }
 . (Join-Path $PSScriptRoot 'runtime.ps1')
+$env:SF_API_TOKEN = Get-SfSetting $root 'SF_API_TOKEN' 'api.token'
 
 $web      = Join-Path $root 'web'
 $run      = Join-Path $root 'run'

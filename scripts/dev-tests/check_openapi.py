@@ -174,7 +174,9 @@ def run_checks(spec: dict, go_src: str) -> tuple[list[str], dict]:
             errors.append(f"Stats: {name} missing from the required list")
 
     # ---- security: bearer middleware in api.go vs securitySchemes/security
-    has_mw = bool(re.search(r"\bh\.auth\(\s*mux\s*\)", go_src))
+    # Native writes also have an Origin guard inside authentication. Anchor
+    # on the actual server Handler, not an unrelated call to h.auth elsewhere.
+    has_mw = bool(re.search(r"\bHandler:\s*h\.auth\(\s*(?:mux\s*|guardWriteOrigin\(\s*mux\s*\))\s*\)", go_src))
     exempt: set[str] = set()
     m_auth = re.search(r"func \(h \*Hub\) auth\(.*?(?=\nfunc |\Z)", go_src, re.S)
     if m_auth:
@@ -533,6 +535,17 @@ def self_test() -> int:
         print(f"self-test: good fixture produced unexpected findings: {findings}", file=sys.stderr)
         return 1
 
+    wrapped = GO_FIXTURE.replace('Handler: h.auth(mux)', 'Handler: h.auth(guardWriteOrigin(mux))')
+    findings, _ = run_checks(good_spec(), wrapped)
+    if findings:
+        print(f"self-test: Origin-guarded authenticated handler produced findings: {findings}", file=sys.stderr)
+        return 1
+    unguarded = GO_FIXTURE.replace('Handler: h.auth(mux)', 'Handler: mux')
+    findings, _ = run_checks(good_spec(), unguarded)
+    if not any('no auth middleware' in finding for finding in findings):
+        print('self-test: removing Handler authentication was not detected', file=sys.stderr)
+        return 1
+
     variants = [
         (
             "stats op with security dropped",
@@ -631,7 +644,7 @@ def self_test() -> int:
             return 1
 
     print(
-        f"self-test: OK — 1 positive fixture + {len(variants)} negative variants, "
+        f"self-test: OK — 2 positive fixtures + {len(variants) + 1} negative variants, "
         "the guard catches its own class of drift"
     )
     return 0

@@ -179,7 +179,7 @@ export function LiveFeed() {
               />
             </div>
             <label className="chip px-2.5 py-1.5 text-xs text-zinc-400">
-              {paused ? <Play size={13} aria-hidden className="text-emerald-400" /> : <Pause size={13} aria-hidden />}
+              {paused ? <Play size={13} aria-hidden className="text-blue-400" /> : <Pause size={13} aria-hidden />}
               <span className="hidden sm:inline">{paused ? 'Reanudar' : 'Pausar'}</span>
               <Switch checked={paused} onCheckedChange={togglePause} aria-label="Pausar flujo en vivo" />
             </label>
@@ -250,7 +250,7 @@ export function LiveFeed() {
                     <td className="whitespace-nowrap py-2 pl-4 pr-3 font-mono text-xs tabular-nums text-zinc-500">
                       {formatTime(ev.timestamp)}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-emerald-400">
+                    <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-blue-400">
                       {ev.type}
                     </td>
                     <td className="max-w-0 px-3 py-2">

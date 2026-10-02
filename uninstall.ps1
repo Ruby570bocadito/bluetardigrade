@@ -23,6 +23,54 @@ function Write-Ok($m)   { Write-Host "    [ok] $m" -ForegroundColor Green }
 function Write-Warn2($m){ Write-Host "    [!]  $m" -ForegroundColor Yellow }
 function Write-Info($m) { Write-Host "    $m" }
 
+function Assert-SfRemovalTree {
+    param([string]$Root)
+    $ancestor = $Root
+    while ($ancestor) {
+        $item = Get-Item -LiteralPath $ancestor -Force -ErrorAction Stop
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Refusing to uninstall through a junction or symbolic link.' }
+        $parent = Split-Path -Parent $ancestor
+        if ($parent -eq $ancestor) { break }
+        $ancestor = $parent
+    }
+    $queue = New-Object 'System.Collections.Generic.Queue[string]'
+    $queue.Enqueue($Root)
+    while ($queue.Count -gt 0) {
+        foreach ($item in (Get-ChildItem -LiteralPath ($queue.Dequeue()) -Force -ErrorAction Stop)) {
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Installation contains a junction/symbolic link; remove the link explicitly before uninstalling. No recursive deletion was attempted.' }
+            if ($item.PSIsContainer) { $queue.Enqueue($item.FullName) }
+        }
+    }
+}
+
+function Assert-SfServerRemovalAdmin {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Removing server boot tasks requires elevated PowerShell; no installation files were deleted.' }
+}
+
+function Remove-SfServerBootTasks {
+    param([string]$Root)
+    # Inspect ownership independently of server.json, so even a partial setup
+    # or a manually removed configuration marker cannot orphan SYSTEM tasks.
+    $tasks = @()
+    foreach ($component in @('engine', 'hub', 'console', 'sysmon', 'etw')) {
+        $errors = @()
+        $task = Get-ScheduledTask -TaskPath '\' -TaskName ('bluetardigrade-server-' + $component) -ErrorAction SilentlyContinue -ErrorVariable errors
+        foreach ($entry in $errors) {
+            if ($entry.CategoryInfo.Category -ne 'ObjectNotFound') { throw 'Cannot verify server task ownership; installation was kept.' }
+        }
+        if ($task -and $task.Description -eq ('bluetardigrade server root=' + $Root)) { $tasks += $task }
+    }
+    if ($tasks.Count -eq 0) { return }
+    Assert-SfServerRemovalAdmin
+    foreach ($task in $tasks) {
+        Stop-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -ErrorAction SilentlyContinue
+        Unregister-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -Confirm:$false -ErrorAction Stop
+        Write-Ok "removed server boot task $($task.TaskName)"
+    }
+}
+
 function Remove-LogonEntries {
     foreach ($v in @('security-framework-engine', 'security-framework-console')) {
         try {
@@ -130,6 +178,11 @@ if ($MyInvocation.InvocationName -ne '.') {
         if ($blocked -and $root -ieq ([IO.Path]::GetFullPath($blocked).TrimEnd('\', '/'))) { throw 'Refusing to uninstall a profile, system folder or drive root.' }
     }
     if ((Test-Path $root) -and -not (Test-Path (Join-Path $root 'install.ps1'))) { throw 'Directory is not a bluetardigrade installation; nothing was removed.' }
+    if (Test-Path -LiteralPath $root) { Assert-SfRemovalTree $root }
+    # Never delete privileged task code while SYSTEM entries remain. This
+    # also removes owned tasks when the install directory is already absent.
+    try { Remove-SfServerBootTasks $root }
+    catch { throw "Server boot tasks could not be removed; installation was kept: $($_.Exception.Message)" }
 
     Write-Host ''
     Write-Host '============================================================'

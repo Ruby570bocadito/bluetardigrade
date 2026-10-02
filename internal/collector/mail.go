@@ -6,11 +6,11 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"html"
 	"io"
 	"mime"
 	"mime/multipart"
 	"mime/quotedprintable"
-	"net"
 	"net/mail"
 	"net/textproto"
 	"net/url"
@@ -37,6 +37,11 @@ type mailScan struct {
 	notInspected  bool
 	ipURL         bool
 	credentialURL bool
+	punycodeURL   bool
+	linkMismatch  []string
+	macroCapable  bool
+	doubleExt     bool
+	bidiName      bool
 }
 
 // DecodeMail inspects bounded MIME text offline. It never visits URLs,
@@ -134,6 +139,22 @@ func (d *Decoder) DecodeMail(raw []byte, imported time.Time) (*model.Event, erro
 	if scan.credentialURL {
 		a["mail_url_credentials"] = "true"
 	}
+	if scan.punycodeURL {
+		a["mail_url_punycode"] = "true"
+	}
+	if len(scan.linkMismatch) > 0 {
+		a["mail_html_link_host_mismatch"] = "true"
+		put(a, "mail_html_link_mismatches", strings.Join(scan.linkMismatch, "; "))
+	}
+	if scan.macroCapable {
+		a["mail_macro_capable_attachment"] = "true"
+	}
+	if scan.doubleExt {
+		a["mail_attachment_double_extension"] = "true"
+	}
+	if scan.bidiName {
+		a["mail_attachment_name_bidi"] = "true"
+	}
 	return ev, nil
 }
 
@@ -171,7 +192,8 @@ func (s *mailScan) part(header textproto.MIMEHeader, body io.Reader, depth int) 
 	if filename != "" {
 		s.attachments = append(s.attachments, filename)
 		s.notInspected = true
-		switch strings.ToLower(filepath.Ext(filename)) {
+		s.inspectAttachmentName(filename)
+		switch strings.ToLower(filepath.Ext(strings.TrimRight(filename, " .\t"))) {
 		case ".exe", ".scr", ".com", ".bat", ".cmd", ".ps1", ".js", ".jse", ".vbs", ".vbe", ".wsf", ".hta", ".lnk", ".msi", ".dll":
 			s.risky = true
 		case ".zip", ".rar", ".7z", ".gz", ".iso":
@@ -229,7 +251,14 @@ func (s *mailScan) part(header textproto.MIMEHeader, body io.Reader, depth int) 
 	if len(text) > 256<<10 || s.textBytes > 1<<20 {
 		return errors.New("EML decoded text limit exceeded")
 	}
-	candidates := mailURLs.FindAllString(string(text), 101)
+	if media == "text/html" {
+		s.inspectHTMLLinks(string(text))
+	}
+	urlText := string(text)
+	if media == "text/html" {
+		urlText = html.UnescapeString(urlText)
+	}
+	candidates := mailURLs.FindAllString(urlText, 101)
 	if len(candidates) > 100 {
 		s.notInspected = true
 		candidates = candidates[:100]
@@ -239,22 +268,7 @@ func (s *mailScan) part(header textproto.MIMEHeader, body io.Reader, depth int) 
 		if err != nil || u.Hostname() == "" {
 			continue
 		}
-		if net.ParseIP(u.Hostname()) != nil {
-			s.ipURL = true
-		}
-		if u.User != nil {
-			s.credentialURL = true
-		}
-		// Indicators omit URL credentials, query tokens and fragments.
-		u.User = nil
-		u.RawQuery = ""
-		u.ForceQuery = false
-		u.Fragment = ""
-		if len(s.urls) >= 100 {
-			s.notInspected = true
-			break
-		}
-		s.urls = append(s.urls, u.String())
+		s.observeURL(u)
 	}
 	return nil
 }

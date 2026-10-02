@@ -91,7 +91,7 @@ en ese equipo. No se desactiva la política del host.
 
 | Área | Implementado | Límite / siguiente trabajo |
 |---|---|---|
-| Motor | 69 reglas, correlación, riesgo, umbrales, API/SSE, SQLite y búsqueda | Ajuste y validación con datos del entorno |
+| Motor | 75 reglas, correlación, riesgo, umbrales, API/SSE, SQLite y búsqueda | Ajuste y validación con datos del entorno |
 | Endpoint | Sysmon y Rust ETW de procesos | Más providers ETW y validación del despliegue |
 | IDS/NDR/osquery/honeypots | Adaptadores de Suricata, Zeek, osquery y Cowrie | Servicios externos se configuran aparte; no hay NDR de paquetes propio |
 | Correo/firewall | MIME offline, indicadores de phishing y ALLOW/DROP observados | Sin validación criptográfica, sandbox ni cambio automático de política |

@@ -38,7 +38,7 @@ async function waitForFixture(predicate, message) {
 async function startServer() {
   if (!external) {
     server = spawn(process.execPath, [join(repo, 'web/console/node_modules/next/dist/bin/next'), 'start', '-H', url.hostname, '-p', url.port], {
-      cwd: join(repo, 'web/console'), stdio: ['ignore', 'pipe', 'pipe'],
+      cwd: join(repo, 'web/console'), windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1' },
     })
     server.stdout.on('data', (data) => { serverLog = (serverLog + data).slice(-8000) })
@@ -128,7 +128,7 @@ const search = () => palette().getByRole('combobox', { name: 'Buscar comandos' }
 
 try {
   await startServer()
-  browser = await chromium.launch({ headless: true, executablePath: process.env.CONSOLE_CHROMIUM_PATH })
+  browser = await chromium.launch({ headless: true, executablePath: process.env.CONSOLE_CHROMIUM_PATH || process.env.BROWSER_EXE })
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' })
   page = await context.newPage()
   const errors = []

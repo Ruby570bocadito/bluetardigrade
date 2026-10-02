@@ -161,6 +161,15 @@ jobs:
       - name: Shared launcher configuration and process ownership
         shell: powershell
         run: ./scripts/dev-tests/check_runtime_behavior.ps1
+      - name: Windows Server task plans and failure handling (isolated fixtures)
+        shell: powershell
+        run: ./scripts/windows/check-server-deployment.ps1
+      - name: Windows Server foreground runner (inert local fixture)
+        shell: powershell
+        run: ./scripts/windows/smoke-server-runner.ps1
+      - name: Windows package signing policy and read-only verification
+        shell: powershell
+        run: ./scripts/release/test-sign-windows.ps1
       - name: installer behavior (Windows PowerShell 5.1, real engine/collector/console installation)
         shell: powershell
         run: ./scripts/dev-tests/check_installer_behavior.ps1

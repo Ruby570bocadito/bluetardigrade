@@ -101,14 +101,15 @@ a instrucciones maliciosas. La pregunta humana permanece separada.
 |------------|---------------------------------------------|
 | Motor Go, ingest, reglas, API, persistencia y consola | Código operativo. Los smokes arrancan el motor y recorren sus rutas con registros inertes; esos registros de prueba no son actividad capturada en un endpoint. |
 | Sensor Rust ETW y `scripts/windows/sensor.ps1` (Sysmon) | Colectores implementados para Windows. El sensor Rust rechaza plataformas no compatibles. Esta entrega no ejecuta una captura ETW/Sysmon de laboratorio. |
-| `cmd/devsensor` / `sf-devsensor` | Generador explícito de una secuencia ficticia, con banner de simulación y `source=simulate`. Sirve para demostrar el pipeline. |
+| `scripts/dev-tests/scenario` y `scripts/dev-tests/bench` | Generadores explícitos de eventos ficticios para verificar el pipeline y medir rendimiento, con `source=simulate` y `source=bench` respectivamente. Solo aceptan destinos loopback y no se instalan ni publican como comandos del producto. |
 | Capturas de consola del README y web | La sesión de ingest/consola es real, con eventos del escenario demo; no acredita actividad maliciosa real ni eficacia de detección en Windows. |
 | Analista IA | Llama al proveedor configurado. Las regresiones usan respuestas HTTP aisladas; esta entrega no consulta un modelo real ni verifica la calidad de su análisis. |
 | Tests DOM, Chromium y fixtures | Sustituyen servicios externos y datos para comprobar comportamiento reproducible. Están en herramientas/pruebas y no rellenan caídas del motor en la consola. |
 
 El encabezado describe **toda la ventana recibida**, no solo el último evento.
-Si hay algún `source=simulate`, mantiene visible el indicador **demo**, también
-en móvil, aunque después lleguen registros `sysmon` o `etw`. Muestra
+Si hay algún `source=simulate` o `source=bench`, mantiene visible el indicador **demo**, también
+en móvil, aunque después lleguen registros `sysmon` o `etw`. Los eventos de
+rendimiento se identifican como «demo de rendimiento». Muestra
 “fuentes declaradas” porque `source` lo aporta el emisor: no es una
 atestación criptográfica de procedencia. Los orígenes desconocidos se
 agrupan sin reflejar su texto arbitrario en el encabezado.

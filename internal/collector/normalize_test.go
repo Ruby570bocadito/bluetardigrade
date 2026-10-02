@@ -2,6 +2,7 @@ package collector
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -165,7 +166,11 @@ func TestMailOfflineMIMEIndicatorsAndSafeURLs(t *testing.T) {
 func TestMailObserverIdentityAndURLLimitAreExplicit(t *testing.T) {
 	d, _ := NewDecoder("eml", "MAIL-A")
 	other, _ := NewDecoder("eml", "MAIL-B")
-	raw := []byte("From: sender@example.com\nContent-Type: text/plain\n\n" + strings.Repeat("https://example.com/review ", 101))
+	var links strings.Builder
+	for i := range 101 {
+		fmt.Fprintf(&links, "https://example.com/review/%d ", i)
+	}
+	raw := []byte("From: sender@example.com\nContent-Type: text/plain\n\n" + links.String())
 	a, err := d.DecodeMail(raw, time.Now())
 	if err != nil {
 		t.Fatal(err)

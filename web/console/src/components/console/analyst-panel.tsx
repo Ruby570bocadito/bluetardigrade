@@ -228,7 +228,7 @@ export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfA
                           {m.steps.map((s) => (
                             <li key={s.label} className="flex items-center gap-2 text-xs">
                               {s.state === 'run' ? (
-                                <CircleNotch size={14} className="animate-spin text-emerald-400" aria-hidden />
+                                <CircleNotch size={14} className="animate-spin text-blue-400" aria-hidden />
                               ) : (
                                 <CheckCircle size={14} className="text-emerald-500" aria-hidden />
                               )}

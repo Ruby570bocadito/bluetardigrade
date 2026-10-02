@@ -2,7 +2,7 @@
 
 // DotGrid — adaptado de React Bits (reactbits.dev). Rejilla de puntos en
 // canvas que reacciona al puntero: los puntos cercanos ganan tamaño y un
-// tinte esmeralda que decae al reposo. Es el fondo de toda la consola,
+// tinte azul que decae al reposo. Es el fondo de toda la consola,
 // sustituye a la rejilla estática .ambient-dots del sidebar.
 //
 // Presupuesto de rendimiento (una consola SOC vive abierta horas):
@@ -137,12 +137,12 @@ export function DotGridLayer({ gap = 22, radius = 150, className = '' }: DotGrid
           if (e === 0) continue
           const x = dots[d * 3]
           const y = dots[d * 3 + 1]
-          // halo esmeralda + punto central: dos arcs por punto activo
-          ctx.fillStyle = `rgba(52, 211, 153, ${(e * 0.22).toFixed(3)})`
+          // halo azul + punto central: dos arcs por punto activo
+          ctx.fillStyle = `rgba(96, 165, 250, ${(e * 0.22).toFixed(3)})`
           ctx.beginPath()
           ctx.arc(x, y, BASE_RADIUS + e * 4.2, 0, Math.PI * 2)
           ctx.fill()
-          ctx.fillStyle = `rgba(110, 231, 183, ${(BASE_ALPHA + e * 0.5).toFixed(3)})`
+          ctx.fillStyle = `rgba(147, 197, 253, ${(BASE_ALPHA + e * 0.5).toFixed(3)})`
           ctx.beginPath()
           ctx.arc(x, y, BASE_RADIUS + e * 0.9, 0, Math.PI * 2)
           ctx.fill()

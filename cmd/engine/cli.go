@@ -1,4 +1,4 @@
-// Cobra command tree of the engine: run, rules, validate, version.
+// Cobra command tree of the engine, including operational diagnostics.
 // The root only serves help; the no-subcommand invocation never gets
 // here (main routes it to legacyMain so the single-dash flags keep
 // working exactly as before).
@@ -30,6 +30,7 @@ const engineExamples = `  engine run                     arranca el motor con lo
   engine -addr 0.0.0.0:7777      modo clasico: sin subcomando, banderas de un guion
   engine rules                   tabla de las reglas cargadas
   engine validate                valida reglas y secuencias y reporta avisos
+  engine doctor                  diagnostica instalacion y telemetria sin generar eventos
   engine sigma -dir corpus -out rules/convertidas.yaml   convierte reglas Sigma
   engine report --alert ID --interactive --out reports/ID.md   informe humano
   engine version                 version, runtime de Go y plataforma`
@@ -87,7 +88,7 @@ func newRootCmd() *cobra.Command {
 	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		fmt.Fprint(cmd.OutOrStdout(), buildHelp(cmd))
 	})
-	root.AddCommand(newRunCmd(), newRulesCmd(), newValidateCmd(), newSigmaCmd(), newReportCmd(), newVersionCmd())
+	root.AddCommand(newRunCmd(), newRulesCmd(), newValidateCmd(), newDoctorCmd(), newSigmaCmd(), newReportCmd(), newVersionCmd())
 	return root
 }
 
@@ -362,6 +363,9 @@ func buildHelp(cmd *cobra.Command) string {
 // so the help lists them from there instead of pflag.
 func helpFlagRows(cmd *cobra.Command) [][2]string {
 	switch cmd.Name() {
+	case "doctor":
+		fs, _ := newDoctorFlagSet()
+		return flagRows(fs)
 	case "report":
 		return [][2]string{{"--alert string", "ID de alerta (16 hex)"}, {"--api string", "API HTTP local o HTTPS remoto"}, {"--interactive", "Entrevista de investigacion"}, {"--notes string", "Campos humanos en JSON estricto"}, {"--format string", "md o json (por defecto md)"}, {"--out string", "Archivo nuevo para el informe"}}
 	case "run":

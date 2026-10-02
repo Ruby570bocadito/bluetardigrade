@@ -15,6 +15,10 @@ conserva la trazabilidad completa.
 | [DETECCION-Y-EVIDENCIA.md](DETECCION-Y-EVIDENCIA.md) | Nuevas alarmas de ficheros, correcciones de contexto/YAML/forense, exportación y pruebas |
 | [INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md](INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md) | Búsquedas locales, protección CSV completa, progreso y límites del analista, código real frente a demo/fixtures |
 | [GUIA-INICIO.md](GUIA-INICIO.md) | Arranque y operación en español: primera instalación, CLI, consola, histórico y resolución de problemas |
+| [DOCTOR.md](DOCTOR.md) | Diagnóstico de reglas, autenticación, persistencia, sensores y consola, con salida JSON |
+| [PHISHING.md](PHISHING.md) | Señales observables en correo EML y límites de la detección offline |
+| [WINDOWS-SERVER.md](WINDOWS-SERVER.md) | Despliegue persistente sin sesión gráfica y configuración del servidor |
+| [SMART-APP-CONTROL.md](SMART-APP-CONTROL.md) | Diagnóstico de bloqueos de ejecución y distribución con firmas Authenticode |
 | [PALETA-Y-PRUEBAS-NAVEGADOR.md](PALETA-Y-PRUEBAS-NAVEGADOR.md) | Paleta de comandos de la consola: foco modal, proteccion de atajos y pruebas Chromium de escritorio/movil |
 | [OPERATIONS.md](OPERATIONS.md) | Guía de operación (inglés): instalación (Windows, Docker, fuente), referencia de flags y variables de entorno, API HTTP, Prometheus, almacenamiento, auth de ingest con rotación, sinks SIEM, notificaciones, supresiones, triaje, riesgo, beaconing, respuesta activa, contenido de detección, CLI y CI/bench |
 | [ROADMAP.md](ROADMAP.md) | Direccion del producto: entregas proximas por horizontal (deteccion, forense, sensor, consola) |
