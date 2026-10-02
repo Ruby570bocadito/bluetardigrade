@@ -679,6 +679,24 @@ func runEngine(o *options, interactive bool) error {
 	}
 
 	if o.reloadEvery > 0 {
+		// Hot-reload runs every -reload-every (15 s by default): announce
+		// a set only when its size changes, and a failed reload when the
+		// error first appears or changes. Printing every cycle buried the
+		// engine window in identical "reloaded" lines, while a broken
+		// edit to rules or sequences used to be silently ignored.
+		rulesRep := reloadReporter{name: "rules", count: engine.Count(), quiet: tui}
+		seqRep := reloadReporter{name: "sequences", count: -1, quiet: tui}
+		if corr != nil {
+			seqRep.count = corr.Count()
+		}
+		bcnRep := reloadReporter{name: "beacons", count: -1, quiet: tui}
+		if bcn != nil {
+			bcnRep.count = bcn.Count()
+		}
+		thrRep := reloadReporter{name: "thresholds", count: -1, quiet: tui}
+		if thr != nil {
+			thrRep.count = thr.Count()
+		}
 		go func() {
 			t := time.NewTicker(o.reloadEvery)
 			defer t.Stop()
@@ -692,16 +710,14 @@ func runEngine(o *options, interactive bool) error {
 					// directory, startup fell back to the directory
 					// next to the executable, and reloading from the
 					// raw flag would fail (silently) every cycle.
-					if err := engine.Reload(rulesPath); err == nil {
+					err := engine.Reload(rulesPath)
+					if err == nil {
 						stats.setRuleCatalog(engine.Snapshot())
-						if !tui {
-							fmt.Printf("[ENGINE] rules reloaded (%d active)\n", engine.Count())
-						}
 					}
+					rulesRep.report(engine.Count(), err)
 					if corr != nil && dirExists(seqPath) {
-						if err := corr.Reload(seqPath); err == nil && !tui {
-							fmt.Printf("[ENGINE] sequences reloaded (%d active)\n", corr.Count())
-						}
+						err := corr.Reload(seqPath)
+						seqRep.report(corr.Count(), err)
 					}
 					if o.suppressionsFile != "" {
 						// reload errors are LOUD here: keeping the previous set is the
@@ -717,14 +733,12 @@ func runEngine(o *options, interactive bool) error {
 						}
 					}
 					if bcn != nil && fileExists(bcnPath) {
-						if err := bcn.Reload(bcnPath); err == nil && !tui {
-							fmt.Printf("[ENGINE] beacons reloaded (%d active)\n", bcn.Count())
-						}
+						err := bcn.Reload(bcnPath)
+						bcnRep.report(bcn.Count(), err)
 					}
 					if thr != nil && fileExists(thrPath) {
-						if err := thr.Reload(thrPath); err == nil && !tui {
-							fmt.Printf("[ENGINE] thresholds reloaded (%d active)\n", thr.Count())
-						}
+						err := thr.Reload(thrPath)
+						thrRep.report(thr.Count(), err)
 					}
 					// per-sensor identities: a failed reload keeps the
 					// previous set (a half-edited file must not lock
