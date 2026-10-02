@@ -13,6 +13,9 @@ considera una plataforma SOC terminada ni certificada para producción.
 - Se comprueba que los portables puedan arrancar y cumplan Go 1.26+,
   Node 20.9+ y la versión mínima de Bun. Bun portable usa baseline
   para reducir requisitos de CPU; siguen aplicando los mínimos del proveedor.
+- Los índices de hashes entregados como bytes HTTP se decodifican y se
+  admiten finales CRLF, validando 64 dígitos hexadecimales. El fallo de esa
+  lectura impedía instalar Bun en PowerShell 5.1. La verificación sigue obligatoria.
 - `-NoConsole` omite Node/Bun. Los installs de consola usan lockfile
   congelado. Un fallo deja estado incompleto y error, sin activar autostart
   de la consola ni anunciar que se instaló correctamente.

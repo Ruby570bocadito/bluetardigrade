@@ -41,6 +41,17 @@ try {
         $v = Get-ToolVersion $env:ComSpec @('/d', '/c', 'echo v22.14.0 & exit /b 3') '^v(\d+\.\d+\.\d+)'
         Assert ($null -eq $v) 'Failing executable accepted as a toolchain.'
     }
+    Check 'checksum indexes parse binary HTTP content and CRLF without accepting an invalid hash' {
+        $script:checksumText = (('a' * 64) + "  bun-windows-x64-baseline.zip`r`n")
+        function Invoke-WebRequest { param([switch]$UseBasicParsing, [string]$Uri)
+            return [pscustomobject]@{ Content = [Text.Encoding]::UTF8.GetBytes($script:checksumText) }
+        }
+        try {
+            Assert ((Get-DistSha256 'https://example.invalid/checksums' 'bun-windows-x64-baseline\.zip$') -eq ('a' * 64)) 'Binary/CRLF checksum was not decoded.'
+            $script:checksumText = "bad-hash  bun-windows-x64-baseline.zip`r`n"
+            Assert ($null -eq (Get-DistSha256 'https://example.invalid/checksums' 'bun-windows-x64-baseline\.zip$')) 'Invalid checksum was accepted.'
+        } finally { Remove-Item Function:Invoke-WebRequest }
+    }
     Check 'dangerous and unrelated installation roots are refused' {
         Throws { Resolve-InstallRoot ([IO.Path]::GetPathRoot($work)) }
         Throws { Resolve-InstallRoot $env:USERPROFILE }

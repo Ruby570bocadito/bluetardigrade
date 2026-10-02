@@ -205,8 +205,15 @@ function Get-DistSha256 {
     param([string]$IndexUrl, [string]$FilePattern)
     try {
         $raw = (Invoke-WebRequest -UseBasicParsing $IndexUrl).Content
+        # Release assets use application/octet-stream. PowerShell 5.1
+        # returns byte[] for those responses, not a decoded string.
+        if ($raw -is [byte[]]) { $raw = [Text.Encoding]::UTF8.GetString($raw) }
         foreach ($line in ($raw -split "`n")) {
-            if ($line -match $FilePattern) { return ($line -split '\s+')[0] }
+            $line = $line.Trim()
+            if ($line -match $FilePattern) {
+                $digest = ($line -split '\s+')[0]
+                if ($digest -match '^[a-fA-F0-9]{64}$') { return $digest }
+            }
         }
     } catch { }
     return $null

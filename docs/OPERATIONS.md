@@ -242,7 +242,8 @@ Every connection must then send `AUTH <token>` as its FIRST line (before any eve
 |--------|-----------------------|
 | `sf-engine` | `-token <t>` flag or `SF_INGEST_TOKEN` env |
 | `collector` | `SF_INGEST_TOKEN` env |
-| `sf-sensor` (Rust/Sysmon) | `--token <t>` flag or `SF_INGEST_TOKEN` env |
+| `sf-sensor` (PowerShell Sysmon) | `-Token <t>` or `SF_INGEST_TOKEN` env |
+| `security-sensor.exe` (Rust) | `--token <t>` or `SF_INGEST_TOKEN` env |
 
 Mismatch behavior is loud on purpose: a sensor with a stale token is closed with a clear `{"ack":"error",...}` message, a sensor sending `AUTH` to a token-less engine is closed too, and a silent client that never authenticates is dropped after 10 seconds. The comparison is constant-time. Loopback-only deployments without a token keep working exactly as before (auth disabled); a non-loopback bind without a token prints a startup warning, because any host that reaches the port could then inject events.
 
@@ -274,8 +275,10 @@ sf-engine -addr 0.0.0.0:7777 -ingest-cert /etc/sf/ingest.pem -ingest-key /etc/sf
 
 # sensor: verify the engine against your CA and stream over the encrypted channel
 collector -source suricata -observer IDS-01 -file /path/to/eve.json -addr engine.example:7777 -tls-ca /etc/sf/ingest-ca.pem # SF_INGEST_TOKEN in env
-sf-sensor --addr engine.example:7777 --tls-ca /etc/sf/ingest-ca.pem --token 'pick-a-long-random-secret'
+security-sensor.exe --addr engine.example:7777 --tls-ca /etc/sf/ingest-ca.pem --token 'pick-a-long-random-secret' # Rust binary
 ```
+
+The installed `sf-sensor` launcher invokes the PowerShell Sysmon path; it does not accept Rust TLS flags. Use that path on loopback. Remote TLS collection uses the Rust binary or the SOC collector.
 
 Behavior and failure modes:
 
