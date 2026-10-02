@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- README header banner. Same mark as logo.svg (inlined so the file is
+     self-contained when GitHub serves it through its image proxy). -->
+<svg viewBox="0 0 1280 340" xmlns="http://www.w3.org/2000/svg" role="img"
+     aria-label="bluetardigrade: SOC detection, investigation and response for Windows endpoints">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1220"/>
+      <stop offset="0.55" stop-color="#0a0f1a"/>
+      <stop offset="1" stop-color="#0d1a33"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.22" cy="0.5" r="0.45">
+      <stop offset="0" stop-color="#2f74f0" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#2f74f0" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0 H0 V32" fill="none" stroke="#1b2a44" stroke-width="1"/>
+    </pattern>
+    <linearGradient id="fade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0b1220" stop-opacity="0"/>
+      <stop offset="1" stop-color="#0b1220" stop-opacity="0.9"/>
+    </linearGradient>
+    <linearGradient id="btShield" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#132036"/>
+      <stop offset="1" stop-color="#0b1220"/>
+    </linearGradient>
+    <linearGradient id="btBody" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#67d3ff"/>
+      <stop offset="1" stop-color="#2f74f0"/>
+    </linearGradient>
+    <linearGradient id="btLeg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3f8af5"/>
+      <stop offset="1" stop-color="#2a5fd6"/>
+    </linearGradient>
+    <linearGradient id="word" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#e8f3ff"/>
+      <stop offset="1" stop-color="#8cc8ff"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="340" rx="18" fill="url(#bg)"/>
+  <rect width="1280" height="340" rx="18" fill="url(#grid)" opacity="0.55"/>
+  <rect width="1280" height="340" rx="18" fill="url(#glow)"/>
+
+  <!-- telemetry trace across the bottom -->
+  <path d="M0 304 L980 304 L1005 286 L1030 318 L1055 266 L1080 304 L1150 304 L1165 296 L1180 304 L1280 304"
+        fill="none" stroke="#2f74f0" stroke-opacity="0.45" stroke-width="2"/>
+  <circle cx="1055" cy="266" r="4.5" fill="#67d3ff"/>
+
+  <!-- mark (logo.svg at 3.4x) -->
+  <g transform="translate(150 62) scale(3.4)">
+    <path d="M32 3 L56 11 V31 C56 45 46 55 32 61 C18 55 8 45 8 31 V11 Z"
+          fill="url(#btShield)" stroke="#2f74f0" stroke-opacity="0.6" stroke-width="1.2"/>
+    <g fill="url(#btLeg)">
+      <rect x="17.5" y="35" width="5.6" height="9" rx="2.8"/>
+      <rect x="25.5" y="36" width="5.6" height="9" rx="2.8"/>
+      <rect x="33.5" y="36" width="5.6" height="9" rx="2.8"/>
+      <rect x="41.5" y="35" width="5.6" height="9" rx="2.8"/>
+    </g>
+    <g stroke="#9fe3ff" stroke-width="1.1" stroke-linecap="round" fill="none">
+      <path d="M18.6 43.6 l-1 1.6 M20.3 44 v1.8 M22 43.6 l1 1.6"/>
+      <path d="M26.6 44.6 l-1 1.6 M28.3 45 v1.8 M30 44.6 l1 1.6"/>
+      <path d="M34.6 44.6 l-1 1.6 M36.3 45 v1.8 M38 44.6 l1 1.6"/>
+      <path d="M42.6 43.6 l-1 1.6 M44.3 44 v1.8 M46 43.6 l1 1.6"/>
+    </g>
+    <path d="M17 24.5 C19 19 26 17.5 33 17.5 C41 17.5 49 19.5 51 26 C52.5 31 50.5 37.5 44 38.5 C37 39.6 26 39.8 19.5 38 C14.5 36.6 15.4 28.8 17 24.5 Z"
+          fill="url(#btBody)"/>
+    <g stroke="#1f56c9" stroke-opacity="0.55" stroke-width="1.2" stroke-linecap="round" fill="none">
+      <path d="M27 19 C25.5 25 25.5 32 27 38.8"/>
+      <path d="M35 18.2 C33.6 25 33.6 32 35 39.2"/>
+      <path d="M43 19.6 C41.8 25.5 41.8 32 43 38.6"/>
+    </g>
+    <path d="M22 21.5 C28 19.3 38 19.2 46 21.4" stroke="#c9f1ff" stroke-opacity="0.55"
+          stroke-width="1.4" stroke-linecap="round" fill="none"/>
+    <circle cx="16.5" cy="29" r="7.2" fill="url(#btBody)"/>
+    <ellipse cx="10.4" cy="30.4" rx="2.6" ry="2.1" fill="#3f8af5"/>
+    <circle cx="9.6" cy="30.4" r="0.9" fill="#0b1220"/>
+    <circle cx="15.6" cy="26.6" r="1.7" fill="#0b1220"/>
+    <circle cx="16.1" cy="26.1" r="0.55" fill="#ffffff"/>
+  </g>
+
+  <!-- wordmark -->
+  <g font-family="'Segoe UI', 'Inter', 'Helvetica Neue', Arial, sans-serif">
+    <text x="440" y="150" font-size="76" font-weight="700" fill="url(#word)" textLength="560" lengthAdjust="spacingAndGlyphs">bluetardigrade</text>
+    <text x="443" y="198" font-size="24" font-weight="500" fill="#a9bfdc" textLength="720" lengthAdjust="spacingAndGlyphs">SOC detection, investigation and response for Windows endpoints</text>
+    <g font-size="17" font-weight="600">
+      <rect x="443" y="226" width="118" height="34" rx="17" fill="#13233d" stroke="#2f74f0" stroke-opacity="0.6"/>
+      <text x="502" y="248" text-anchor="middle" fill="#cfe4ff">Detect</text>
+      <rect x="573" y="226" width="134" height="34" rx="17" fill="#13233d" stroke="#2f74f0" stroke-opacity="0.6"/>
+      <text x="640" y="248" text-anchor="middle" fill="#cfe4ff">Correlate</text>
+      <rect x="719" y="226" width="134" height="34" rx="17" fill="#13233d" stroke="#2f74f0" stroke-opacity="0.6"/>
+      <text x="786" y="248" text-anchor="middle" fill="#cfe4ff">Investigate</text>
+      <rect x="865" y="226" width="124" height="34" rx="17" fill="#13233d" stroke="#2f74f0" stroke-opacity="0.6"/>
+      <text x="927" y="248" text-anchor="middle" fill="#cfe4ff">Respond</text>
+    </g>
+  </g>
+</svg>

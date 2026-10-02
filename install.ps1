@@ -963,24 +963,33 @@ if ($MyInvocation.InvocationName -ne '.') {
     $binDir = Join-Path $root 'bin'
     $sw = [Diagnostics.Stopwatch]::StartNew()
 
-    # single-quoted here-string: the figlet art contains backticks and
-    # apostrophes, both of which PowerShell re-interprets inside regular
-    # quoted strings - a literal here-string prints them verbatim
-    $banner = @'
- _     _            _                _ _                     _      
-| |__ | |_   _  ___| |_ __ _ _ __ __| (_) __ _ _ __ __ _  __| | ___ 
-| '_ \| | | | |/ _ \ __/ _` | '__/ _` | |/ _` | '__/ _` |/ _` |/ _ \
-| |_) | | |_| |  __/ || (_| | | | (_| | | (_| | | | (_| | (_| |  __/
-|_.__/|_|\__,_|\___|\__\__,_|_|  \__,_|_|\__, |_|  \__,_|\__,_|\___|
-                                         |___/                      
-'@
+    # The mascot: a water bear in profile (segments, four clawed legs).
+    # Literal here-string so quotes print verbatim; plain ASCII so it
+    # renders in every console code page.
+    $art = @'
+              .-~~~~~~~~~~~~~~~~~~-.
+          .-~~     :      :      :   ~~-.
+        .'  (o)    :      :      :       '.
+       (  <=       :      :      :         )
+        '.      _      _      _      _   .'
+          '-._ ( )----( )----( )----( )-'
+              'vvv'  'vvv'  'vvv'  'vvv'
+'@ -split "`n" | ForEach-Object { $_.TrimEnd("`r") }
+    $side = @(
+        @('', 'Gray'),
+        @('b l u e t a r d i g r a d e', 'White'),
+        @('Windows endpoint detection for SOC teams', 'Gray'),
+        @('detect - correlate - investigate - respond', 'DarkCyan'),
+        @('', 'Gray'),
+        @($(if ($Server) { 'server boot tasks | admin-managed ProgramData' } else { 'no admin required | user-level install' }), 'DarkGray'),
+        @('', 'Gray')
+    )
     Write-Host ''
-    Write-Host '  ==========================================================' -ForegroundColor DarkCyan
-    Write-Host $banner -ForegroundColor Cyan
-    Write-Host '     bluetardigrade  |  Windows endpoint detection' -ForegroundColor White
-    Write-Host '     engine + SOC console + Sysmon sensor' -ForegroundColor DarkGray
-    if ($Server) { Write-Host '     server boot tasks  |  admin-managed ProgramData install' -ForegroundColor DarkGray }
-    else { Write-Host '     no admin required  |  user-level install' -ForegroundColor DarkGray }
+    for ($i = 0; $i -lt $art.Count; $i++) {
+        Write-Host ('  ' + $art[$i].PadRight(46)) -NoNewline -ForegroundColor Cyan
+        $text = if ($i -lt $side.Count) { $side[$i] } else { @('', 'Gray') }
+        Write-Host $text[0] -ForegroundColor $text[1]
+    }
     Write-Host '  ==========================================================' -ForegroundColor DarkCyan
     Write-Host "   repo    : $Repo @ $Branch" -ForegroundColor Gray
     Write-Host "   target  : $root" -ForegroundColor Gray

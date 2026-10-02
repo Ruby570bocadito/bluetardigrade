@@ -7,6 +7,8 @@ remains regenerable.
 
 | File                        | Kind    | What it is                                            |
 |-----------------------------|---------|-------------------------------------------------------|
+| `logo.svg`                  | source  | bluetardigrade mark: tardigrade inside a shield (favicon, README, console) |
+| `banner.svg`                | source  | README header banner (1280x340, mark inlined so GitHub's image proxy serves it standalone) |
 | `diagram_arquitectura.png`  | output  | four-layer architecture diagram (linked from the root README) |
 | `diagram_tracer.png`        | output  | tracer-bullet pipeline: devsensor -> engine -> alert |
 | `console-panel.png`         | output  | console operations dashboard, live session (root README hero) |

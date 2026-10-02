@@ -1,371 +1,415 @@
 <div align="center">
 
-<img src="docs/assets/logo.svg" width="96" alt="bluetardigrade logo" />
-
-# bluetardigrade
-
-**SOC detection, investigation and reporting for endpoint, network and mail evidence.**
-
-Named after the most resilient animal on Earth: a static Go engine with
-no runtime dependencies, collectors and an operator console.
+<img src="docs/assets/banner.svg" alt="bluetardigrade: SOC detection, investigation and response for Windows endpoints" width="100%" />
 
 [![CI](https://github.com/Ruby570bocadito/bluetardigrade/actions/workflows/ci.yml/badge.svg)](https://github.com/Ruby570bocadito/bluetardigrade/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)](go.mod)
+[![Release](https://img.shields.io/badge/release-v0.2.0-2f74f0)](CHANGELOG.md)
+[![License](https://img.shields.io/badge/license-Apache--2.0-2f74f0.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/engine-Go%201.26-00ADD8?logo=go&logoColor=white)](go.mod)
 [![Rust](https://img.shields.io/badge/sensor-Rust%20%2B%20ETW-DEA584?logo=rust&logoColor=white)](sensor/)
-[![Release](https://img.shields.io/badge/release-v0.2.0-34d399)](CHANGELOG.md)
-[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](#contributing)
+[![Next.js](https://img.shields.io/badge/console-Next.js-000000?logo=nextdotjs&logoColor=white)](web/console/)
 
-[Quickstart](#quickstart) · [Web console](#web-console) · [Detection](#detection-and-integrations) · [Architecture](#architecture) · [Roadmap](#roadmap) · **[Guía en español](docs/GUIA-INICIO.md)**
+**[Quickstart](#quickstart)** · [Features](#what-you-get) · [Console](#the-soc-console) · [Security model](#security-model) · [Architecture](#architecture) · [Docs](#documentation) · **[Guía en español](docs/GUIA-INICIO.md)**
 
 </div>
 
----
+bluetardigrade is a self-hosted SOC toolkit for Windows endpoints. A Rust ETW
+sensor (or Sysmon) streams process telemetry into a single static Go engine
+that detects, correlates and scores it. Analysts then triage, investigate and
+respond from a live web console.
 
-A Rust ETW sensor streams process telemetry from Windows hosts into a single
-Go binary: YAML rules mapped to MITRE ATT&CK, kill-chain correlation, C2
-beaconing detection, volumetric thresholds and decaying per-host risk —
-delivered to an interactive CLI, a REST+SSE API, a live SOC console, and
-optional SQLite history with SIEM/webhook fan-out.
+<p align="center">
+  <img src="docs/assets/console-panel.png" alt="SOC console operations panel with live KPIs, activity and severity charts" width="92%" />
+</p>
 
-**Pre-1.0, intended for labs and research.** Windows collection uses Rust ETW
-or Sysmon; the SOC collector imports observed provider logs and offline mail.
-Product builds, installation and releases contain no demo telemetry generator.
-An empty or disconnected console stays empty. Isolated fixtures and
-loopback-only load generators live under `scripts/dev-tests/`. Older stored
-`source=simulate` evidence remains visibly labeled. Validate the collectors
-with actual host/provider activity before relying on them in production.
+> [!NOTE]
+> **Pre-1.0, built for labs, research and small SOC teams.** Product builds
+> contain no demo telemetry generator: an empty or disconnected console stays
+> empty. Validate the collectors with real host activity before relying on
+> them in production.
+
+## Why bluetardigrade
+
+- **One binary, no runtime dependencies.** The engine is a static Go
+  executable: ingest, detection, API, SQLite history and delivery in one process.
+- **Detections you can read.** Every rule is YAML mapped to MITRE ATT&CK, and
+  hot-reloaded. Sigma rules can be imported. Nothing is a black box.
+- **From alert to evidence.** Every alert freezes a forensic bundle: the
+  triggering event plus a five-minute timeline of the host.
+- **Safe by default.** Loopback-only listeners, authenticated ingest,
+  append-only evidence, and active response that is off until you arm it.
+
+## What you get
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### Detect
+- **75 YAML rules**: LOLBAS, credential access, lateral movement,
+  anti-forensics, file staging, hack tools and phishing.
+- **4 kill-chain correlations** across events of the same host.
+- **C2 beaconing** detection on event time.
+- **Volumetric thresholds** and decaying per-host risk scores.
+- **Sigma import** and 17 rule operators.
+
+</td>
+<td width="50%" valign="top">
+
+### Investigate
+- Live SOC console with **eight views**, command palette and deep links.
+- **Forensic bundles** (alert + 5 min host timeline) with JSON/JSONL export.
+- Paged engine **history** backed by SQLite.
+- Alert lifecycle, operator notes and saved searches.
+- Markdown/JSON **analyst reports**, plus an optional AI analyst.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### Respond
+- Opt-in **`kill_process`** response.
+- Requires per-operator credentials, so every action has an owner.
+- Every request (executed or denied) lands in a forensic **audit log**.
+- Visible in the console's **Respuesta activa** view.
+
+</td>
+<td width="50%" valign="top">
+
+### Integrate
+- **Webhooks**, **Elasticsearch**, **Splunk HEC**, **Slack**,
+  **Telegram** and **email** delivery.
+- **REST + SSE** API with an OpenAPI contract checked in CI.
+- **Prometheus** metrics.
+- Imports **Suricata, Zeek, osquery, Cowrie**, Windows firewall logs and
+  offline **EML** mail.
+
+</td>
+</tr>
+</table>
 
 ## Quickstart
 
-### Windows — one command
+> [!IMPORTANT]
+> Use **two windows**:
+> - a **normal PowerShell** for installing and running the console;
+> - a **PowerShell opened as Administrator** for the sensor, because kernel ETW
+>   tracing needs elevation.
 
-Open **PowerShell** and paste:
+**1. Install** (normal PowerShell, user-level, no admin):
 
 ```powershell
 irm https://raw.githubusercontent.com/Ruby570bocadito/bluetardigrade/main/install.ps1 | iex
 ```
 
-That is the whole install: user-level (no admin), sha256-verified toolchain
-downloads, shims on your `PATH` (`sf-engine`, `sf-sensor`, `sf-console`,
-`sf-collector`, `sf-update`, `sf-uninstall`), with an optional autostart and
-Sysmon setup. Then:
+To build the Rust ETW sensor too, or to pass any other option:
 
 ```powershell
-sf-console      # engine + SOC console + browser opens at localhost:3000
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Ruby570bocadito/bluetardigrade/main/install.ps1))) -WithSensor
 ```
 
-Connect host telemetry after installation:
+The installer verifies every toolchain download by SHA-256. It then puts
+these commands on your `PATH`:
+
+| Command | What it does |
+|---|---|
+| `sf-engine` | The detection engine |
+| `sf-console` | Engine + console |
+| `sf-sensor` | Sysmon sensor |
+| `sf-collector` | Log and mail importer |
+| `sf-update` | Updates the install |
+| `sf-uninstall` | Removes it |
+
+**2. Open a new terminal** so the `PATH` change applies, then check the install:
 
 ```powershell
-sf-sensor -SetupSysmon   # one-time Sysmon install with the tuned config (UAC)
-sf-sensor               # real host activity -> detections
-sf-engine doctor        # diagnose the running deployment without generating events
+sf-engine version
 ```
 
-Windows Server can run the components at boot without an interactive
-session: [server deployment](docs/WINDOWS-SERVER.md). If Windows blocks a
-download or executable, follow the [application-control diagnosis and
-signing requirements](docs/SMART-APP-CONTROL.md); source-built EXEs are unsigned.
-Import observed email for [offline phishing inspection](docs/PHISHING.md).
-
-With arguments (webhook delivery, ingest auth, autostart):
+**3. Start the engine and the console** (normal PowerShell). The browser opens
+at <http://localhost:3000>:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Ruby570bocadito/bluetardigrade/main/install.ps1))) -WithSensor -AutoStart -IngestToken <token>
+sf-console
 ```
 
-The one-liner tracks `main`, and so does `sf-update`. For a reproducible
-install that only changes when you decide, pin a release tag in both the
-script URL and `-Branch` (`sf-update` then stays on that tag):
+**4. Connect a sensor**, choosing one of these:
+
+- **Rust ETW sensor**, in an Administrator PowerShell:
+
+  ```powershell
+  & "$env:LOCALAPPDATA\bluetardigrade\bin\security-sensor.exe" --addr 127.0.0.1:7777 --spool "$env:LOCALAPPDATA\bluetardigrade\spool\sensor.ndjson"
+  ```
+
+- **Sysmon**: run `sf-sensor -SetupSysmon` once (UAC prompt), then `sf-sensor`.
+
+**5. Verify the pipeline** end to end:
 
 ```powershell
-$tag = 'v0.1.0'   # the release you reviewed
+sf-engine doctor
+```
+
+**6. Fire a harmless detection.** The download target is a closed local
+port, so nothing is fetched:
+
+```powershell
+certutil -urlcache -f http://127.0.0.1:9/prueba.txt "$env:TEMP\prueba.txt"
+```
+
+The console raises **"Descarga con certutil o bitsadmin"** (MITRE T1105)
+within a few seconds.
+
+<details>
+<summary><b>Pin a release, run with options, Windows Server</b></summary>
+
+The one-liner and `sf-update` track `main`. For a reproducible install, pin a
+release tag in both the URL and `-Branch`:
+
+```powershell
+$tag = 'v0.1.0'   # a published tag you reviewed
 & ([scriptblock]::Create((irm "https://raw.githubusercontent.com/Ruby570bocadito/bluetardigrade/$tag/install.ps1"))) -Branch $tag
 ```
 
-Release binaries carry a Sigstore-signed build provenance attestation:
-`gh attestation verify <file> --repo Ruby570bocadito/bluetardigrade`.
+Useful installer switches:
 
-### Any OS with Go
+| Switch | What it does |
+|---|---|
+| `-WithSensor` | Also builds the Rust ETW sensor |
+| `-AutoStart` | Starts the engine at logon |
+| `-IngestToken <t>` | Sets the ingest authentication token |
+| `-Server` | Installs boot tasks under ProgramData (admin) |
+
+- **Release provenance:** release binaries carry a Sigstore build attestation
+  (`gh attestation verify <file> --repo Ruby570bocadito/bluetardigrade`).
+- **Windows Server** without an interactive session:
+  [server deployment](docs/WINDOWS-SERVER.md).
+- **Smart App Control blocks a binary:** see
+  [application-control diagnosis](docs/SMART-APP-CONTROL.md).
+
+</details>
+
+<details>
+<summary><b>Linux, macOS or Docker (engine + collectors)</b></summary>
 
 ```bash
 git clone https://github.com/Ruby570bocadito/bluetardigrade.git
 cd bluetardigrade
 make build
-./bin/engine run -i        # interactive terminal panel
+./bin/engine run -i                       # interactive terminal workspace
 ./bin/collector -source suricata -observer IDS-01 -file /path/to/eve.json
 ```
 
-Or with Docker (tokens via `SF_API_TOKEN` / `SF_INGEST_TOKEN` env):
-
 ```bash
 docker build -t bluetardigrade .
-docker run --rm -p 127.0.0.1:7777:7777 -p 127.0.0.1:7778:7778 bluetardigrade
+docker run --rm -p 127.0.0.1:7777:7777 -p 127.0.0.1:7778:7778 \
+  -e SF_API_TOKEN -e SF_INGEST_TOKEN bluetardigrade
 ```
 
 | Component | Default endpoint |
-|-----------|------------------|
-| Sensor ingest | `127.0.0.1:7777`, NDJSON over TCP (TLS + AUTH optional) |
-| Engine API | `http://127.0.0.1:7778`, REST + SSE (TLS optional) |
+|---|---|
+| Sensor ingest | `127.0.0.1:7777`: NDJSON over TCP, optional TLS + AUTH |
+| Engine API | `http://127.0.0.1:7778`: REST, SSE and Prometheus |
 | Web console | `http://localhost:3000` |
-| Optional AI analyst hub | `http://127.0.0.1:3003` |
+| AI analyst hub (optional) | `http://127.0.0.1:3003` |
 
-Real telemetry: [Windows installation](docs/OPERATIONS.md#one-command-install-windows) · [Sysmon setup](docs/OPERATIONS.md#real-telemetry-with-sysmon-recommended) · [Rust sensor build](docs/OPERATIONS.md#building-the-real-sensor-windows) · [Docker](docs/OPERATIONS.md#docker).
+</details>
 
-## Interactive CLI
+## Telemetry sources
 
-`engine run -i` provides a bounded, keyboard-driven workspace with alert and rule views. Search by alert/event ID, event type, rule, host, user, summary or ATT&CK tag; filter severity; inspect a selected alert or a rule's conditions. Search is case-insensitive and every whitespace-separated term must appear somewhere in the row's fields: `LAB-A powershell` combines host and rule evidence. Historical selection stays steady when new alerts arrive, and the catalogue follows rule reloads.
+| Source | What it collects | Notes |
+|---|---|---|
+| **Rust ETW sensor** (`sensor/`) | Process creation with full command line, parent and owner SID, read from the kernel process provider | Bounded queue plus an on-disk spool (`--spool`): an engine restart loses no events |
+| **Sysmon** (`sf-sensor`) | Process, network, registry, file and image-load events | Ships a tuned config; `sf-sensor -SetupSysmon` installs it |
+| **Collector** (`sf-collector`) | Suricata EVE, Zeek conn, osquery differential, Cowrie, Windows firewall logs, EML mail | Offline import; never runs provider commands or visits mail URLs |
 
-| Key | Action |
-|-----|--------|
-| `1` / `2` / `Tab` | Alerts / rules |
-| `↑` / `↓` or `j` / `k` | Select a row; scroll details |
-| `PgUp` / `PgDown`, `Home` / `End` | Page, first or last row |
-| `Enter` | Open / close details |
-| `/` | Search; `Enter` applies, `Esc` clears |
-| `s` | Cycle the severity filter |
-| `p` / `Space` | Pause / resume the **view** |
-| `Esc` | Return to the list; clear filters in the list |
-| `?` / `h` | Help |
-| `q` / `Ctrl+C` | Stop the engine |
+## The SOC console
 
-The terminal retains the last **100 alerts**. Pausing leaves ingest, detection, the API and delivery running. Control characters in telemetry are neutralized for human display; JSON evidence remains unchanged. Webhook credentials are hidden in the banner.
+A Next.js operator console. Everything reaches the engine through its
+same-origin proxy, so the API token never reaches the browser.
 
-```bash
-./bin/engine rules                           # inspect the loaded pack
-./bin/engine validate                        # configuration errors and warnings
-./bin/engine sigma -dir corpus -out rules/imported.yaml
-./bin/engine version
-./bin/engine run -h                          # complete runtime flags
-```
+| View | What the analyst does there |
+|---|---|
+| **Panel** | KPIs, activity and severity trends, MITRE coverage, hot hosts, triage backlog |
+| **Flujo en vivo** | Live telemetry with pause, search, type filters and JSONL/CSV export |
+| **Alertas** | Live queue or paged history. Severity/lifecycle filters, evidence, forensic bundle, triage, reports |
+| **Reglas** / **Cadenas** | Rule conditions with ATT&CK mapping; kill-chain steps |
+| **Supresiones** | Host-scoped allowlist with reason and expiry |
+| **Respuesta activa** | Arming state and the forensic response audit |
+| **Analista IA** | Optional triage assistant with your own model |
 
-The classic `engine -addr ... -rules ...` invocation still works. Routed commands reject unexpected positional arguments instead of silently ignoring subsequent flags.
-## Web console
+Navigation and keyboard support:
 
-With the engine running:
-
-```bash
-cd web/console
-bun install --frozen-lockfile
-bun run dev               # or: bun run build && bun run start
-```
-
-Everything the browser needs travels through the console's same-origin
-engine proxy — the API token never reaches the client. The AI hub
-(`web/console-service`) is optional and bring-your-own-model.
-
-| View | Operator workflow |
-|------|-------------------|
-| Panel | Pending critical triage, KPIs, rolling activity, hot hosts |
-| Flujo en vivo | Pause, search, event-type filters, saved searches, JSONL/CSV export |
-| Alertas | Live buffer or paged engine history; saved searches; severity and lifecycle filters; evidence; ack / close / reopen |
-| Reglas / Cadenas | Loaded conditions, ATT&CK mappings and kill-chain steps |
-| Supresiones | Operator allowlist with reasons and expirations |
-| Respuesta activa | Read-only response state and forensic audit |
-| Analista IA | Optional triage assistance through your configured model; actual work steps, complete response after the request |
+- **Command palette:** `Ctrl+K` / `⌘K`.
+- **Go to a view:** `g` followed by `p` `f` `a` `r` `c` `s` `k` `n`.
+- **Deep links** such as `/?view=alertas&historial=1&sev=critical&q=lsass`
+  survive a refresh.
+- Full **`prefers-reduced-motion`** support.
+- Unavailable metrics show **`—`**, never a fake zero.
 
 <details>
-<summary><b>Console captures</b> (live session)</summary>
-
-Use **Ver críticas sin cerrar** or the new/acknowledged/closed counts in the
-operation summary to open that triage queue directly. These shortcuts use
-the same live window as the counts, clear old alert search/history/selection
-filters and preserve other views' URL lenses. Browser Back restores the
-previous investigation. The shortcuts are disabled while the API is unavailable.
-
-Deep links such as `/?view=alertas&historial=1&estado=open&sev=critical&q=lsass` survive refresh and browser history. Navigation also supports `g` followed by `p/f/a/r/c/s/k/n`; a keyboard skip link goes straight to the main content.
+<summary><b>More screenshots</b></summary>
 
 | | |
 |---|---|
-| ![Panel](docs/assets/console-panel.png) | ![Alertas](docs/assets/console-alertas.png) |
-| Operations panel with live KPIs | Alert triage queue with severity classes |
-| ![Histórico](docs/assets/console-historico.png) | ![Reglas](docs/assets/console-reglas.png) |
-| Paged engine history with search | Rule browser with ATT&CK mapping |
-| ![Cadenas](docs/assets/console-cadenas.png) | ![Flujo](docs/assets/console-flujo.png) |
-| Kill-chain sequences | Live telemetry feed |
+| ![Alertas](docs/assets/console-alertas.png) | ![Flujo en vivo](docs/assets/console-flujo.png) |
+| Alert triage queue | Live telemetry feed |
+| ![Reglas](docs/assets/console-reglas.png) | ![Cadenas](docs/assets/console-cadenas.png) |
+| Rules with ATT&CK mapping | Kill-chain correlations |
+| ![Respuesta activa](docs/assets/console-respuesta-activa.png) | ![Supresiones](docs/assets/console-supresiones.png) |
+| Active response audit | Operator suppressions |
 
-Open **Comandos** in the header or press **Ctrl+K / ⌘K** to search all eight
-views, refresh engine data or open keyboard help. Search accepts accents,
-multiple words and common operator terms. Use ↑/↓ to choose, Enter to run
-and Escape to close. Navigation respects text fields, composite controls,
-composition and other modals; closing a dialog restores focus.
-
-In **Alertas**, switch to **Histórico** to search the engine rather than the browser's retained buffer. SQLite provides persisted history when `-store` is enabled; otherwise the view clearly identifies the 256-alert memory window. Pages contain 25 alerts ordered by reception. Cursor navigation pins the upper sequence, so new arrivals do not shift visited pages. Retention and triage decisions can still change membership. **Actualizar histórico** starts a fresh search. Detection evidence and lifecycle state are server filters; lifecycle notes remain searchable in the live view. A bounded scan can return an empty page with **Seguir buscando**, and an older engine reports the missing capability explicitly.
 </details>
 
-Save reusable alert/feed filters with **Búsquedas guardadas**: up to 20
-searches in this browser, with apply/update/delete and browser Back support.
-Search text is stored locally; avoid putting credentials in it. A visible
-**demo** chip identifies mixed windows containing simulated records.
-[Saved investigations, CSV protection and real/demo boundaries](docs/INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md).
+Run the console from source: [web/console/README.md](web/console/README.md).
 
-Deep links (`?view=alertas&historial=1&estado=open&sev=critical&q=lsass`)
-survive refresh; keyboard-first navigation with `g` + view key; a keyboard
-skip link and full `prefers-reduced-motion` support. Unavailable metrics show
-**`—`**, never zero. [Console configuration and AI setup](web/console/README.md)
-· [Environment template](web/console/.env.example).
+There is also an **interactive terminal** alternative: `engine run -i`, a
+keyboard-driven alert and rule workspace (see the
+[operations guide](docs/OPERATIONS.md)).
 
-## SOC investigation workflow
+## Security model
 
-Build the real import adapter with `make build`. It accepts explicit source
-formats without executing provider commands or visiting mail URLs:
+| Layer | Control |
+|---|---|
+| Ingest | Shared token or **per-sensor identities** bound to their hosts; events for other hosts are refused and counted |
+| Transport | Native TLS on both listeners; the sensor trusts only the CA you give it |
+| API | Bearer token; listens on loopback by default |
+| Console | `CONSOLE_ACCESS_TOKEN` (HTTP Basic) gates every page and API call off-loopback |
+| AI hub | `HUB_ACCESS_TOKEN` per socket, Origin allowlist and shared rate limits |
+| Response | `kill_process` needs an arm flag, a response token and **per-operator credentials**. Protected processes are refused, and every attempt is audited |
+| Evidence | Stored events are **append-only**: a second copy of an event id cannot rewrite the first |
+| Supply chain | SHA-pinned GitHub Actions, minimal permissions, Sigstore release attestations |
 
-```bash
-./bin/collector -source suricata -observer IDS-LAB -file eve.json -stdout
-./bin/collector -source suricata -observer IDS-LAB -file eve.json
-./bin/engine report --alert 0123456789abcdef --interactive --out reports/alerta.md
-```
-
-In **Alertas**, inspect source observations and the forensic bundle, use
-triage, then open **Redactar informe** to write findings, classification,
-actions and recommendations. **Informes guardados** retains up to ten
-snapshots in this browser, including after an alert leaves engine retention.
-Save before navigating; export Markdown/JSON for handoff. Reports do not
-change alert lifecycle. There is no multiuser case backend yet.
-
-[Spanish SOC setup, formats, commands, validation and limits](docs/SOC-INTEGRACIONES-E-INFORMES.md).
-Suricata IPS verdicts and firewall drops are observed provider records;
-bluetardigrade does not introduce inline packet blocking. Test/demo inputs
-are generated fixtures; live provider deployments need external configuration.
-
-## Detection and integrations
-
-| Capability | Shipped surface |
-|------------|-----------------|
-| Detection content | 75 YAML rules (incl. phishing, attacker tooling, LOLBAS, anti-forensics and file-staging packs), four kill chains, beaconing profiles and four volumetric thresholds |
-| Rule workflow | Hot reload, validation, 17 operators and Sigma import |
-| Process context | Per-host pid->name flight recorder: parent/child anomaly rules (Office/browser spawning interpreters) |
-| Forensics | Frozen alert + 5m host timeline, read via `GET /api/alerts/{id}/forensics`; JSON/JSONL downloads and retryable evidence queries in the console |
-| Triage | Alert lifecycle, operator notes and host-scoped suppressions |
-| SOC ingestion | Suricata EVE, Zeek JSON conn, osquery differential rows, Cowrie JSONL, Windows firewall logs and offline EML |
-| Analyst reports | Interactive CLI report; ten browser-local drafts with frozen alert snapshots, Markdown/JSON exports and orphan access |
-| Persistence | Optional pure-Go SQLite, WAL, retention pruner |
-| Delivery | Webhooks, Elasticsearch, Splunk HEC, Slack, Telegram and email |
-| API | REST + SSE + Prometheus, native TLS, OpenAPI contract drift-guarded in CI |
-| Response | Opt-in, authenticated and audited `kill_process`; console visibility is read-only |
-
-```mermaid
-flowchart TD
-    W["Windows ETW / Sysmon collectors"] --> I["Go ingest + enrichment"]
-    L["IDS / NDR / osquery / honeypot / firewall / mail"] --> G["Observed-log collector"]
-    G --> I
-    I --> R["Rules + behavioral detectors"]
-    R --> A["Alerts + risk + lifecycle"]
-    A --> T["Interactive terminal"]
-    A --> P["HTTP API + SSE"]
-    A --> S["SQLite + delivery sinks"]
-    P --> C["Web console"]
-```
-
-See [the operations guide](docs/OPERATIONS.md) for configuration, detection
-tables, authentication, TLS and response requirements, and
-[false-positive control](docs/false-positive-control.md) for noise tuning.
+Report vulnerabilities privately: [SECURITY.md](SECURITY.md).
 
 ## Architecture
 
-`pkg/model` defines the event contract. Four moving parts, zero black boxes:
-the Rust sensor, the Go engine, the console and the outputs. Detailed data
-flow and package responsibilities: [ARCHITECTURE.md](docs/ARCHITECTURE.md) ·
-[Technical PDF (Spanish)](docs/arquitectura-tecnica-v0.11.pdf).
+```mermaid
+flowchart LR
+    subgraph Endpoints
+      E["Rust ETW sensor"]
+      S["Sysmon"]
+    end
+    L["Suricata · Zeek · osquery<br/>Cowrie · firewall · EML"] --> C["Collector"]
+    E -->|NDJSON / TLS| I
+    S -->|NDJSON / TLS| I
+    C --> I
+    subgraph Engine["Go engine (single binary)"]
+      I["Ingest + auth"] --> D["Rules · kill chains<br/>beaconing · thresholds"]
+      D --> A["Alerts · risk · lifecycle<br/>forensic bundles"]
+    end
+    A --> API["REST · SSE · Prometheus"]
+    A --> DB[("SQLite history")]
+    A --> OUT["Webhook · Elastic · Splunk<br/>Slack · Telegram · email"]
+    API --> UI["SOC console"]
+    API --> T["Terminal workspace"]
+```
 
-The console job also runs DOM regressions and Chromium checks of the built
-application on desktop and mobile viewports. REST/SSE data in those browser
-checks are isolated fixtures. `make console-browser` runs them locally after
-building the console; screenshots are retained as CI artifacts.
+`pkg/model` defines the event contract that every sensor emits. Package
+responsibilities and data flow: [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-### Measured performance
+**Performance**, from loopback lab measurements (not deployment guarantees):
 
-Historical loopback runs recorded ingest→alert p99 around **0.4 ms** with the
-23-rule pack. This is a lab measurement, not a deployment guarantee. Run
-`scripts/dev-tests/bench` or the nightly harness to measure an isolated loopback environment.
-[Method and results](docs/OPERATIONS.md#measured-performance).
+| Measurement | Before | Now |
+|---|---|---|
+| Throughput with `-store` (SQLite on), using batched transactions | ~8.3k events/s | **~23.6k events/s** |
+| Rule field resolution | 8.0 µs per event | **1.7 µs per event** |
 
-## Repository layout
+Ingest→alert p99 latency was about 0.4 ms. Reproduce the numbers with
+`scripts/dev-tests/bench`, following the
+[method](docs/OPERATIONS.md#measured-performance).
+
+<details>
+<summary><b>Repository layout</b></summary>
 
 ```text
-cmd/engine/           Go engine and interactive CLI
-cmd/collector/        observed-log and offline mail collector
-scripts/dev-tests/   isolated fixtures and loopback-only load tools
-internal/            detection, persistence, API and delivery packages
+cmd/engine/          Go engine, interactive CLI, doctor, reports
+cmd/collector/       observed-log and offline mail importer
+internal/            detection, correlation, store, API, delivery, response
 pkg/model/           event wire contract
-sensor/              Rust Windows ETW collector
-rules/  sequences/   YAML detection content
-web/console/         Next.js operator console
+sensor/              Rust Windows ETW sensor
+rules/  sequences/   YAML detection content and kill chains
+web/console/         Next.js SOC console
 web/console-service/ Bun + socket.io AI analyst hub
 website/             project landing page
-scripts/             Windows tooling and verification harnesses
-docs/                operations, architecture and API reference
+scripts/             Windows tooling, dev tests and verification harnesses
+docs/                guides, architecture and API reference
 ```
+
+</details>
 
 ## Documentation
 
 | Document | Use it for |
-|----------|------------|
-| [Guía de inicio](docs/GUIA-INICIO.md) | First run and troubleshooting in Spanish |
-| [Operations](docs/OPERATIONS.md) | Installation, flags, API, storage, integrations and CLI |
-| [Architecture](docs/ARCHITECTURE.md) | System design and event contract |
+|---|---|
+| [Guía de inicio](docs/GUIA-INICIO.md) | First run, operation and troubleshooting (Spanish) |
+| [Operations](docs/OPERATIONS.md) | Flags, environment, API, storage, integrations, response, CLI |
+| [Architecture](docs/ARCHITECTURE.md) | System design, event contract, feature inventory |
+| [Startup fixes](docs/STARTUP-FIXES.md) | Windows startup: hub origin, console CSP, inherited credentials |
+| [Deployment doctor](docs/DOCTOR.md) | Diagnosing rules, tokens, TLS, SQLite, sensors and console |
+| [False-positive control](docs/false-positive-control.md) | Dedup, suppressions and noise tuning |
+| [File detections and evidence](docs/DETECCION-Y-EVIDENCIA.md) | Artifact alarms and forensic evidence |
+| [SOC integrations and reports](docs/SOC-INTEGRACIONES-E-INFORMES.md) | Collector formats, investigation workflow, reports |
+| [Email phishing](docs/PHISHING.md) | Explainable indicators in imported EML |
+| [Windows Server](docs/WINDOWS-SERVER.md) | Boot tasks and persisted credentials |
+| [Smart App Control](docs/SMART-APP-CONTROL.md) | Execution blocks and signing |
 | [OpenAPI](docs/api/openapi.yaml) | API integration |
-| [False-positive control](docs/false-positive-control.md) | Suppression and deduplication tuning |
-| [Command palette and browser checks](docs/PALETA-Y-PRUEBAS-NAVEGADOR.md) | Commands, keyboard scope, native dialogs and reproducible Chromium regressions |
-| [CLI search and dashboard triage](docs/INVESTIGACION-CLI-Y-TRIAJE.md) | Alert identity search, multiword queries and direct triage shortcuts |
-| [Deployment doctor](docs/DOCTOR.md) | Rule packs, tokens, TLS, SQLite, sensors and console diagnostics with JSON output |
-| [Email phishing](docs/PHISHING.md) | Ten explainable indicators in explicitly imported EML |
-| [Windows Server](docs/WINDOWS-SERVER.md) | Protected boot tasks, persisted credentials and foreground recovery |
-| [Smart App Control](docs/SMART-APP-CONTROL.md) | Execution-block diagnosis and trusted package signing |
-| [File detections and forensic evidence](docs/DETECCION-Y-EVIDENCIA.md) | Six artifact alarms, process identity safeguards, evidence downloads and verification |
-| [Technical architecture PDF](docs/arquitectura-tecnica-v0.11.pdf) | Spanish technical reference |
+| [Roadmap](docs/ROADMAP.md) | What's next, with acceptance criteria |
 | [Changelog](CHANGELOG.md) | Release history |
-| [Security policy](SECURITY.md) | Private vulnerability reporting |
 
 ## Development
 
 ```bash
-make test             # Go tests
-make ci               # full CI-equivalent checks; prerequisites in Makefile
+make test        # Go tests
+make ci          # everything CI runs (prerequisites in the Makefile)
 
-cd web/console
-bun test && bun run typecheck && bun run build
+cd web/console && bun test && bun run typecheck && bun run build
+make console-browser   # Chromium checks of the built console, desktop + mobile
 ```
 
-CI covers Go formatting, build, vet, staticcheck and race tests; console and
-hub tests/types; a production console build; the OpenAPI drift guard; Rust
-checks on Linux and Windows; and a native Windows response smoke. Actions are
-SHA-pinned, permissions minimal, releases gated on SemVer + CHANGELOG.
+CI runs the following, on SHA-pinned actions with minimal permissions:
+
+- Go: formatting, vet, staticcheck and race tests.
+- Console and hub: tests and type checks, plus a production console build.
+- Browser regression tests of the console (DOM and Chromium).
+- The OpenAPI drift guard.
+- Rust checks on Linux and Windows.
+- A native Windows response smoke test.
+
+Releases are gated on SemVer and the changelog.
 
 ## Roadmap
 
-- **Shipped:** rule and behavioral detection (75 rules incl. phishing, tooling,
-  LOLBAS, anti-forensics, file staging and SOC observations), parent-process anomaly rules,
-  forensic evidence bundles with JSON/JSONL export, triage, storage, integrations, terminal
-  workspace, live console with command palette, native TLS on both
-  listeners, six source adapters and human-authored Markdown/JSON reports.
-- **Next SOC work:** durable collection cursors and queues, provider lab validation,
-  multiuser case management and authenticated report ownership.
-- **Next detection work:** validate the new artifact rules in a Windows
-  lab, deepen image.load driver/DLL rules, process-injection detection, curated Sigma import.
-- **Next forensics work:** process-tree view of bundles,
-  hash enrichment, configurable retention.
-- **Sensor work:** ETW network/registry providers, certificate stream,
-  persistent local queue.
-- **Engine work:** allocation-free field resolution, per-host rings,
-  correlator saturation gauges.
-- **Research:** YARA memory scanning, sandboxed extensions, eBPF collector.
+- **Shipped:**
+  - rule and behavioral detection;
+  - forensic bundles;
+  - per-sensor identities;
+  - the sensor's disk spool;
+  - append-only evidence;
+  - operator-attributed response;
+  - console access control.
+- **Next:**
+  - ETW network and registry providers in the Rust sensor;
+  - process-tree view of forensic bundles;
+  - hash enrichment;
+  - multi-user case management.
+- **Research:** YARA memory scanning, sandboxed extensions, an eBPF collector.
 
-The full plan with acceptance criteria per item lives in
-[docs/ROADMAP.md](docs/ROADMAP.md).
+The full plan is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Contributing
 
-Open an issue or a focused PR with the problem, resulting behavior and
-verification. Detection changes should include the modeled TTP, lab events
-and the observed false-positive profile. Report vulnerabilities privately
-using [SECURITY.md](SECURITY.md).
+Open an issue, or a focused PR that states the problem, the resulting behavior
+and how you verified it. Detection changes should include:
 
-> The repository was renamed from `security-framework` to `bluetardigrade`;
-> GitHub redirects the old URLs, and the Windows shims keep their `sf-*`
-> names so existing installs keep working across `sf-update`.
+- the modeled TTP;
+- lab events that trigger it;
+- the observed false-positive profile.
+
+> The project was renamed from `security-framework`. GitHub redirects the old
+> URLs, and the Windows shims keep their `sf-*` names so existing installs
+> keep updating.
 
 ## License
 
-[Apache License 2.0](LICENSE).
+[Apache License 2.0](LICENSE)

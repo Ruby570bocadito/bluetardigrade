@@ -42,19 +42,15 @@ flowchart LR
 
 ```
 
-The unified event schema (chapter 4 of the docs) is the master contract: sensors emit it, the engine validates and enriches it, rules index it, interfaces consume it.
+The unified event schema (`pkg/model`) is the master contract: sensors emit it, the engine validates and enriches it, rules index it, interfaces consume it.
 
-Full write-up: [docs/arquitectura-tecnica-v0.11.pdf](arquitectura-tecnica-v0.11.pdf)
-(Spanish). This is the last PDF snapshot, covering authenticated ingest,
-the behavioral detectors, SIEM/notification sinks, audited active response,
-SQLite and the console as of its generation. Its test counts are historical,
-not the current battery. Later file-detection and evidence work is described
-in [DETECCION-Y-EVIDENCIA.md](DETECCION-Y-EVIDENCIA.md); saved investigations,
+File detections and evidence are described in
+[DETECCION-Y-EVIDENCIA.md](DETECCION-Y-EVIDENCIA.md); saved investigations,
 CSV protection, analyst behavior and real/demo verification boundaries are in
 [INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md](INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md).
 The current feature inventory is below and pending work is in
-[ROADMAP.md](ROADMAP.md). The PDF is produced by the versioned in-tree pipeline
-(`scripts/arq_v04/`); earlier revisions moved to GitHub Releases.
+[ROADMAP.md](ROADMAP.md). The old architecture PDF (v0.11) was retired: it
+no longer matched the code; its earlier revisions live in GitHub Releases.
 
 ## Feature inventory
 
@@ -116,10 +112,6 @@ scripts/windows/  installed runtime scripts (sf-sensor, sf-console, ...)
 scripts/dev-tests/ end-to-end verification scripts (per-detector and lifecycle E2E,
                   OpenAPI drift check, two-pass nightly bench, webhook and SIEM
                   receivers, ingest-auth and SQLite store smokes, all with real binaries)
-scripts/arq_v04/  versioned pipeline that renders the architecture PDF (generator,
-                  cover/diagram renderers, merge+metadata, build.sh - every
-                  revision of docs/arquitectura-tecnica-v*.pdf is a reproducible
-                  command, not a hand edit)
 install.ps1       one-command Windows installer
 uninstall.ps1     standalone uninstaller
 Makefile          build automation (engine, sensor, console, docker)

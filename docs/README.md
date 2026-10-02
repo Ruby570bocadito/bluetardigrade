@@ -15,6 +15,7 @@ conserva la trazabilidad completa.
 | [DETECCION-Y-EVIDENCIA.md](DETECCION-Y-EVIDENCIA.md) | Nuevas alarmas de ficheros, correcciones de contexto/YAML/forense, exportación y pruebas |
 | [INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md](INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md) | Búsquedas locales, protección CSV completa, progreso y límites del analista, código real frente a demo/fixtures |
 | [GUIA-INICIO.md](GUIA-INICIO.md) | Arranque y operación en español: primera instalación, CLI, consola, histórico y resolución de problemas |
+| [STARTUP-FIXES.md](STARTUP-FIXES.md) | Arranque en Windows (inglés): origen del hub, CSP de la consola, credenciales de ingest y webhook heredadas por los procesos hijos |
 | [DOCTOR.md](DOCTOR.md) | Diagnóstico de reglas, autenticación, persistencia, sensores y consola, con salida JSON |
 | [PHISHING.md](PHISHING.md) | Señales observables en correo EML y límites de la detección offline |
 | [WINDOWS-SERVER.md](WINDOWS-SERVER.md) | Despliegue persistente sin sesión gráfica y configuración del servidor |
@@ -25,24 +26,11 @@ conserva la trazabilidad completa.
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Arquitectura del sistema (inglés): diagrama, contrato del esquema de eventos, inventario de características y árbol del repositorio |
 | [false-positive-control.md](false-positive-control.md) | Guía de control de ruido: dedup, supresiones, correlación, filtrado en el receptor y límites anti-abuso |
 | [api/openapi.yaml](api/openapi.yaml) | Contrato OpenAPI de la API del motor (mantenido en sincronía por el guard de CI) |
-| [arquitectura-tecnica-v0.11.pdf](arquitectura-tecnica-v0.11.pdf) | Documento técnico de arquitectura, snapshot v0.11 (26 páginas, español); cambios posteriores en las guías Markdown |
 | `assets/` | Diagramas del README (`diagram_*.png`), capturas de la consola (`console-*.png/gif`) y sus fuentes en `assets/src/` |
 | `assets/src/` | Fuentes de capturas y portadas + utilidades de regeneración (Playwright, assemble_gif.py) |
 
 ## Documento de arquitectura
 
-`arquitectura-tecnica-v0.11.pdf` es la última revisión PDF y conserva las cifras
-de su generación; las entregas posteriores y los recuentos actuales de
-pruebas se documentan en las guías Markdown y el changelog. Se produce con el
-pipeline versionado del árbol (`scripts/arq_v04/`: cuerpo ReportLab + portada
-Playwright + fusión pypdf; el nombre del directorio registra dónde nació el
-pipeline, no la revisión que produce), así que cada revisión es un comando
-reproducible en lugar de una edición manual.
-
-Las revisiones anteriores (v0.1–v0.10) se movieron a los assets de GitHub
-Releases para mantener el repositorio ligero. El contenido que aportaban está
-supersedido por la v0.11 y por `ARCHITECTURE.md`.
-
-Para generar la siguiente revisión: copia el cuerpo del pipeline con un nuevo
-número de versión, actualiza portada y datos, y ejecuta
-`scripts/arq_v04/build.sh` (requisitos en su cabecera).
+La arquitectura vigente está en [ARCHITECTURE.md](ARCHITECTURE.md). El PDF
+técnico v0.11 se retiró porque ya no coincidía con el código; sus revisiones
+anteriores siguen en los assets de GitHub Releases.
