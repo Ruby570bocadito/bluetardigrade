@@ -57,7 +57,7 @@ async function engineFixture(page) {
   let forensicReads = 0
   let forensicAvailable = false
   const stamp = new Date().toISOString()
-  const alert = { id: '0123456789abcdef', timestamp: stamp, rule_id: 'demo-rule', rule_name: 'Fixture detection', severity: 'critical', host: 'LAB-FIXTURE', event_id: 'fixture-event', event_type: 'process.create', summary: 'Isolated browser regression evidence', matched_on: [], status: 'new' }
+  const alert = { id: '0123456789abcdef', timestamp: stamp, rule_id: 'demo-rule', rule_name: 'Fixture detection', severity: 'critical', host: 'LAB-FIXTURE', event_id: 'fixture-event', event_type: 'process.create', summary: 'Isolated browser regression evidence', source: 'suricata', attributes: { ids_signature: 'Fixture IDS signature', ids_action: 'allowed', ids_verdict: 'drop' }, network: { source_ip: '10.0.0.1', destination_ip: '8.8.8.8', destination_port: 443 }, matched_on: [], status: 'new' }
   const second = { ...alert, id: 'fedcba9876543210', rule_name: 'Second page detection' }
   const stats = { uptime_s: 100, events_total: 1, alerts_total: 1, events_per_min: 1, dropped: 0, ingest_rejected: 0, by_severity: { critical: 1 }, rules_count: 1, rules_types: ['process.create'], events_buffered: 1, webhook_sent: 0, webhook_failed: 0, webhook_dropped: 0, suppressions_active: 0, correlator_states: 0, correlator_sequences: 0, correlator_cap: 0, risk_hosts_tracked: 0, hot_hosts: [] }
   await page.addInitScript(() => {
@@ -446,6 +446,58 @@ try {
     await page.screenshot({ path: join(captures, 'saved-searches-mobile.png') })
     await page.getByRole('button', { name: 'Eliminar búsqueda Telemetría pendiente', exact: true }).click()
     await page.getByText('Búsqueda eliminada.', { exact: true }).waitFor()
+  })
+  const reportKey = 'bluetardigrade.soc-reports.v1'
+  const reportRegion = () => page.getByRole('region', { name: 'Informe de investigación', exact: true })
+  await check('SOC report saves and reloads human analysis with exact source evidence and exports', async () => {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await page.goto(base + '/?view=alertas&alert=0123456789abcdef')
+    await reportRegion().getByRole('button', { name: 'Redactar informe', exact: true }).click()
+    await reportRegion().getByLabel('Título del informe', { exact: true }).fill('Fixture SOC report')
+    await reportRegion().getByLabel('Analista declarado', { exact: true }).fill('Fixture analyst')
+    await reportRegion().getByLabel('Hallazgos', { exact: true }).fill('Human fixture investigation')
+    await reportRegion().getByLabel('Clasificación humana', { exact: true }).selectOption('false_positive')
+    await reportRegion().getByRole('button', { name: 'Guardar informe', exact: true }).click()
+    await reportRegion().getByText('Informe guardado en este navegador.', { exact: true }).waitFor()
+    const saved = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)).items[0], reportKey)
+    assert.equal(saved.fields.decision, 'false_positive')
+    assert.equal(saved.alert.source, 'suricata')
+    assert.equal(saved.alert.attributes.ids_action, 'allowed')
+    assert.equal(saved.alert.attributes.ids_verdict, 'drop')
+    const files = []
+    for (const name of ['Exportar Markdown', 'Exportar JSON']) {
+      const downloading = page.waitForEvent('download')
+      await reportRegion().getByRole('button', { name, exact: true }).click()
+      const download = await downloading
+      const stream = await download.createReadStream()
+      const chunks = []; for await (const chunk of stream) chunks.push(chunk)
+      files.push(Buffer.concat(chunks).toString('utf8'))
+    }
+    assert.equal(JSON.parse(files[1]).fields.findings, 'Human fixture investigation')
+    assert.equal(JSON.parse(files[1]).alert.network.destination_port, 443)
+    assert.ok(files[0].includes('Evidencia recibida'))
+    assert.ok(await reportRegion().evaluate((node) => node.scrollWidth <= node.clientWidth))
+    await reportRegion().scrollIntoViewIfNeeded()
+    await page.screenshot({ path: join(captures, 'soc-report-desktop.png') })
+    await page.reload()
+    await reportRegion().getByRole('button', { name: 'Redactar informe', exact: true }).click()
+    await page.waitForFunction(() => document.querySelector('textarea[id$="-findings"]')?.value === 'Human fixture investigation')
+  })
+  await check('mobile SOC report controls remain within the alert detail', async () => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    assert.ok(await reportRegion().evaluate((node) => node.scrollWidth <= node.clientWidth))
+    await reportRegion().getByLabel('Hallazgos', { exact: true }).scrollIntoViewIfNeeded()
+    await page.screenshot({ path: join(captures, 'soc-report-mobile.png') })
+  })
+  await check('saved report catalog reopens and deletes snapshots without selecting the live alert', async () => {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await page.goto(base + '/?view=alertas')
+    await page.getByText('Informes guardados (1/10)', { exact: true }).click()
+    await page.getByRole('button', { name: 'Abrir informe', exact: true }).click()
+    await page.waitForFunction(() => document.querySelector('textarea[id$="-findings"]')?.value === 'Human fixture investigation')
+    await reportRegion().getByRole('button', { name: 'Eliminar versión local', exact: true }).click()
+    await page.getByText('Informes guardados (0/10)', { exact: true }).waitFor()
+    assert.deepEqual(await page.evaluate((key) => JSON.parse(localStorage.getItem(key)).items, reportKey), [])
   })
   assert.deepEqual(errors, [], 'Unexpected browser runtime errors')
   console.log(`Browser checks: ${passed}/${passed} passed; engine/SSE data are test fixtures.`)

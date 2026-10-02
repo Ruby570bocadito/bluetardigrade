@@ -12,6 +12,7 @@ export type SfEvent = {
   timestamp: string
   type: string
   source: string
+  attributes?: Record<string, string>
   host: string
   user?: string
   process?: {
@@ -70,6 +71,9 @@ export type SfAlert = {
   user?: string
   event_id: string
   event_type: string
+  source?: string
+  attributes?: Record<string, string>
+  network?: SfEvent['network']
   summary: string
   // rendered by the engine when the rule declares an alert action
   message?: string
@@ -366,6 +370,12 @@ export function formatUptime(s: number): string {
 // One-line human summary of an event, mirroring what the engine stores
 // per event type (process, network, file, registry, process.access).
 export function eventDetail(ev: SfEvent): string {
+  const a = ev.attributes ?? {}
+  if (ev.type === 'network.alert') return `IDS ${a.ids_signature ?? 'detección'} · prioridad ${a.ids_priority ?? '?'} · firma ${a.ids_action ?? '?'} · veredicto ${a.ids_verdict ?? 'no declarado'}`
+  if (ev.type === 'host.query') return `osquery ${a.query_name ?? '?'} · ${a.query_action ?? '?'} · ${a.column_name ?? ''}`
+  if (ev.type.startsWith('honeypot.')) return `Cowrie ${a.honeypot_event ?? ev.type} · ${a.honeypot_input_kind === 'stdin' ? 'stdin omitido' : a.honeypot_input ?? ev.user ?? ''}`
+  if (ev.type === 'network.firewall') return `Firewall ${a.firewall_action ?? '?'} ${a.firewall_direction ?? ''} · ${ev.network?.source_ip ?? '?'} -> ${ev.network?.destination_ip ?? '?'}:${ev.network?.destination_port ?? '?'}`
+  if (ev.type === 'email.message') return `Correo ${a.mail_subject ?? '(sin asunto)'} · de ${a.mail_from ?? '?'}${a.mail_risky_attachment === 'true' ? ' · adjunto activo' : ''}`
   if (ev.access) {
     const who = ev.process?.name ?? '?'
     const target = ev.target?.name ?? '?'

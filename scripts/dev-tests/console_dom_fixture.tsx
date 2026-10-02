@@ -7,6 +7,9 @@ import { EngineProvider, useEngine } from '../../web/console/src/components/cons
 import { AlertsView } from '../../web/console/src/components/console/alerts-view'
 import { Dashboard } from '../../web/console/src/components/console/dashboard'
 import { ForensicPanel } from '../../web/console/src/components/console/forensic-panel'
+import { ReportPanel } from '../../web/console/src/components/console/report-panel'
+import { ReportLibrary } from '../../web/console/src/components/console/report-library'
+import { readReports, REPORT_KEY, saveReport } from '../../web/console/src/lib/soc-report'
 import { SavedSearches } from '../../web/console/src/components/console/saved-searches'
 import { alertSearchLens, SAVED_SEARCH_KEY } from '../../web/console/src/lib/saved-searches'
 import type { TriageTarget } from '../../web/console/src/lib/operations'
@@ -422,6 +425,70 @@ async function main() {
   await delay(30)
   assert.equal(window.localStorage.getItem(SAVED_SEARCH_KEY),corrupted)
   console.log('PASS: incompatible saved state is not silently overwritten')
+
+  window.localStorage.clear()
+  const reportAlert={...alert,status:'new' as const,source:'suricata',attributes:{ids_action:'allowed',ids_verdict:'drop'},network:{source_ip:'10.0.0.1',destination_port:443},severity:'high' as const}
+  root.render(<ReportPanel alert={reportAlert} initiallyOpen />)
+  const findings=()=>document.querySelector<HTMLTextAreaElement>('textarea[id$="-findings"]')!
+  await until(()=>Boolean(findings()))
+  Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype,'value')!.set!.call(findings(),'Human fixture findings')
+  findings().dispatchEvent(new dom.window.Event('input',{bubbles:true}))
+  await delay(30)
+  root.render(<ReportPanel alert={{...reportAlert,status:'closed'}} initiallyOpen />)
+  await delay(30)
+  assert.equal(findings().value,'Human fixture findings')
+  assert.ok(document.body.textContent!.includes('Cambios sin guardar'))
+  console.log('PASS: lifecycle updates cannot reset an unsaved report draft')
+  button('Guardar informe').click()
+  await until(()=>document.body.textContent!.includes('Informe guardado en este navegador.'))
+  assert.equal(readReports(window.localStorage)[0].alert.status,'new')
+  assert.equal(readReports(window.localStorage)[0].alert.attributes!.ids_verdict,'drop')
+  console.log('PASS: report saves human findings and frozen source evidence without changing triage')
+  downloads.length=0
+  URL.createObjectURL=(blob:Blob)=>{exportBlob=blob;return 'blob:fixture-report'}
+  URL.revokeObjectURL=()=>{}
+  dom.window.HTMLAnchorElement.prototype.click=function(){downloads.push({name:this.download,blob:exportBlob})}
+  try {
+    button('Exportar Markdown').click(); button('Exportar JSON').click()
+    await until(()=>downloads.length===2)
+    const result=JSON.parse(await downloads[1].blob.text())
+    assert.equal(result.fields.findings,'Human fixture findings')
+    assert.equal(result.alert.source,'suricata')
+    assert.equal(downloads[1].name,`soc-${reportAlert.id}.json`)
+  } finally {URL.createObjectURL=realCreate;URL.revokeObjectURL=realRevoke;dom.window.HTMLAnchorElement.prototype.click=realClick}
+  console.log('PASS: report downloads contain exactly the current human fields and observed evidence')
+  const stale=readReports(window.localStorage)[0]
+  saveReport(window.localStorage,{...stale,fields:{...stale.fields,findings:'Other tab'}},stale.revision)
+  window.dispatchEvent(new dom.window.StorageEvent('storage',{key:REPORT_KEY}))
+  await until(()=>document.body.textContent!.includes('cambió en otra pestaña'))
+  button('Guardar informe').click()
+  await until(()=>document.querySelector('[role="alert"]')?.textContent?.includes('otra pestaña') ?? false)
+  assert.equal(readReports(window.localStorage)[0].fields.findings,'Other tab')
+  button('Cargar versión guardada').click()
+  await until(()=>findings().value==='Other tab')
+  console.log('PASS: stale tab drafts cannot overwrite a detected newer report revision')
+  dom.window.Storage.prototype.setItem=function(){throw new Error('fixture report quota')}
+  try { button('Guardar informe').click(); await until(()=>Boolean(document.querySelector('[role="alert"]'))); assert.equal(readReports(window.localStorage)[0].revision,2) }
+  finally {dom.window.Storage.prototype.setItem=realSet}
+  console.log('PASS: report storage errors remain visible and preserve the saved revision')
+  root.render(<ReportLibrary />)
+  await until(()=>document.body.textContent!.includes('Informes guardados (1/10)'))
+  ;(document.querySelector('summary') as HTMLElement).click()
+  button('Abrir informe').click()
+  await until(()=>Boolean(findings()))
+  assert.equal(findings().value,'Other tab')
+  button('Eliminar versión local').click()
+  await until(()=>document.body.textContent!.includes('Informes guardados (0/10)'))
+  assert.deepEqual(readReports(window.localStorage),[])
+  console.log('PASS: orphan snapshots can be reopened and removed without the engine alert')
+  window.localStorage.setItem(REPORT_KEY,'{corrupt report fixture')
+  root.render(<ReportPanel alert={reportAlert} initiallyOpen />)
+  await until(()=>Boolean(findings()))
+  button('Guardar informe').click()
+  await delay(30)
+  assert.equal(window.localStorage.getItem(REPORT_KEY),'{corrupt report fixture')
+  assert.ok(document.querySelector('[role="alert"]'))
+  console.log('PASS: corrupt report stores are not silently replaced')
 
   root.unmount()
   assert.ok(FakeSource.instances.every(s=>s.closed))

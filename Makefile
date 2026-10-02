@@ -34,6 +34,7 @@ run-devsensor:
 build:
 	$(GO) build -o $(BIN_DIR)/engine ./cmd/engine
 	$(GO) build -o $(BIN_DIR)/devsensor ./cmd/devsensor
+	$(GO) build -o $(BIN_DIR)/collector ./cmd/collector
 
 test:
 	$(GO) test -count=1 ./...
@@ -85,8 +86,8 @@ console-browser:
 	node scripts/dev-tests/check_console_browser.mjs
 
 # Same suite the GitHub Actions workflow (.github/workflows/ci.yml)
-# runs on every push. Needs: Go 1.22+, staticcheck 2024.1.1
-# (go install honnef.co/go/tools/cmd/staticcheck@2024.1.1 — the exact
+# runs on every push. Needs: Go 1.26+, staticcheck 2026.2.1
+# (go install honnef.co/go/tools/cmd/staticcheck@2026.2.1 — the exact
 # version CI installs), bun, cargo via rustup, python3 + PyYAML.
 # The engine Windows cross-check mirrors the ci.yml engine job; the
 # Windows-only real-kills smoke stays runner-side (engine-windows job).
@@ -100,6 +101,8 @@ ci:
 	mkdir -p bin
 	$(GO) build -o bin/engine-file-smoke ./cmd/engine
 	python3 scripts/dev-tests/smoke_file_forensics.py --engine ./bin/engine-file-smoke
+	$(GO) build -o bin/collector-smoke ./cmd/collector
+	python3 scripts/dev-tests/smoke_soc_pipeline.py --engine ./bin/engine-file-smoke --collector ./bin/collector-smoke
 	GOOS=windows $(GO) build ./...
 	GOOS=windows $(GO) vet ./internal/respond/ ./internal/api/ ./cmd/engine/
 	python3 scripts/dev-tests/check_openapi.py
@@ -130,6 +133,8 @@ dist:
 	GOOS=linux   CGO_ENABLED=0 $(GO) build -trimpath -ldflags "-s -w" -o $(DIST_DIR)/devsensor-$(VERSION)-linux-amd64 ./cmd/devsensor
 	GOOS=windows CGO_ENABLED=0 $(GO) build -trimpath -ldflags "-s -w -X main.engineVersion=$(VERSION)" -o $(DIST_DIR)/engine-$(VERSION)-windows-amd64.exe ./cmd/engine
 	GOOS=windows CGO_ENABLED=0 $(GO) build -trimpath -ldflags "-s -w" -o $(DIST_DIR)/devsensor-$(VERSION)-windows-amd64.exe ./cmd/devsensor
+	GOOS=linux CGO_ENABLED=0 $(GO) build -trimpath -ldflags "-s -w" -o $(DIST_DIR)/collector-$(VERSION)-linux-amd64 ./cmd/collector
+	GOOS=windows CGO_ENABLED=0 $(GO) build -trimpath -ldflags "-s -w" -o $(DIST_DIR)/collector-$(VERSION)-windows-amd64.exe ./cmd/collector
 	./$(DIST_DIR)/engine-$(VERSION)-linux-amd64 version | grep -qF "$(VERSION)" || { echo "version injection failed for $(VERSION)"; exit 1; }
 	@echo "dist ready in $(DIST_DIR)/ (version $(VERSION))"
 

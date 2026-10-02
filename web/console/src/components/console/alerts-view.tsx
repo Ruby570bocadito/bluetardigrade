@@ -30,6 +30,9 @@ import { useEngine } from './engine-provider'
 import { EmptyState, LiveAnnouncer, SectionHeader, SeverityBadge, SkeletonRows } from './ui-bits'
 import { ExportButtons } from './export-menu'
 import { ForensicPanel } from './forensic-panel'
+import { ReportPanel } from './report-panel'
+import { ReportLibrary } from './report-library'
+import { observationSearch } from '@/lib/source-observation'
 import { SavedSearches } from './saved-searches'
 import { alertSearchLens, searchForSavedLens, type SavedLens } from '@/lib/saved-searches'
 import { postAlertStatus } from '@/lib/lifecycle'
@@ -225,7 +228,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
       // triage search: anything an analyst remembers about the alert
       const haystack = [
         a.rule_name, a.rule_id, a.summary, a.host, a.user ?? '',
-        a.event_type, a.status_note ?? '', ...a.tags ?? [], ...a.matched_on,
+        a.event_type, a.source ?? '', a.status_note ?? '', ...a.tags ?? [], ...a.matched_on, ...observationSearch(a.attributes, a.network),
       ].join(' ').toLowerCase()
       return haystack.includes(q)
     })
@@ -364,6 +367,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
   return (
     <section aria-label="Alertas de detección">
       {header}
+      <ReportLibrary />
       <SavedSearches kind="alerts" getLens={() => alertSearchLens(filterRef.current.sev, filterRef.current.state, filterRef.current.scope, filterRef.current.q)} onApply={applySaved} />
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2.5">
         <div role="group" aria-label="Origen de alertas" className="flex gap-1">
@@ -595,6 +599,7 @@ export function AlertDetailBody({ alert, onAnalyze }: { alert: SfAlert; onAnalyz
       <dl className="grid grid-cols-1 gap-x-6 gap-y-2.5 text-xs sm:grid-cols-2">
         <Detail label="Equipo" value={alert.host} mono />
         <Detail label="Usuario" value={alert.user ?? 'n/d'} mono />
+        <Detail label="Fuente declarada" value={alert.source ?? 'no declarada'} mono />
         <Detail label="Tipo de evento" value={alert.event_type} mono />
         <Detail label="ID de evento" value={alert.event_id} mono />
         <Detail label="ID de regla" value={alert.rule_id} mono />
@@ -638,6 +643,8 @@ export function AlertDetailBody({ alert, onAnalyze }: { alert: SfAlert; onAnalyz
         </div>
       )}
 
+      {alert.network && <div className="mt-4 min-w-0"><p className="text-[10px] uppercase tracking-wider text-zinc-500">Flujo observado</p><p className="mt-1 break-all font-mono text-xs text-zinc-300">{alert.network.protocol ?? '?'} · {alert.network.source_ip ?? '?'}:{alert.network.source_port ?? '?'} → {alert.network.destination_ip ?? '?'}:{alert.network.destination_port ?? '?'}</p></div>}
+      {Object.keys(alert.attributes ?? {}).length > 0 && <div className="mt-4 min-w-0"><p className="text-[10px] uppercase tracking-wider text-zinc-500">Observaciones declaradas por la fuente</p><p className="mt-1 text-xs text-zinc-500">Metadatos recibidos; no acreditan por sí solos autenticidad ni compromiso.</p><dl className="mt-2 divide-y divide-zinc-800 rounded-md border border-zinc-800">{Object.entries(alert.attributes ?? {}).map(([key, value]) => <div key={key} className="grid min-w-0 grid-cols-1 gap-1 p-2 sm:grid-cols-[minmax(0,120px)_minmax(0,1fr)]"><dt className="break-all font-mono text-[10px] text-zinc-500">{key}</dt><dd className="whitespace-pre-wrap break-all font-mono text-[11px] text-zinc-300">{value}</dd></div>)}</dl></div>}
       {enrichmentEntries.length > 0 && (
         <div className="mt-4">
           <p className="text-[10px] uppercase tracking-wider text-zinc-500">Enriquecimiento</p>
@@ -663,6 +670,7 @@ export function AlertDetailBody({ alert, onAnalyze }: { alert: SfAlert; onAnalyz
 
       <TriagePanel alert={alert} />
       <ForensicPanel alertId={alert.id} />
+      <ReportPanel alert={alert} />
     </div>
   )
 }

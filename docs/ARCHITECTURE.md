@@ -64,7 +64,9 @@ The current feature inventory is below and pending work is in
 | Area | What you get today |
 |------|--------------------|
 | **Telemetry** | Rust ETW sensor (Kernel-Process) + Sysmon ingestion path; NDJSON/TCP feed with schema validation and enrichment (user, command line, network context) |
-| **Detection** | 55 enabled YAML rules with 17 operators (`eq`, `regex`, `contains_any`, …), hot-reload every 15 s, per-rule MITRE ATT&CK tags and actions; `engine sigma` imports community Sigma rules (deterministic, fail-loud, provenance preserved) |
+| **SOC imports** | Explicit Go adapter for six observed log/mail formats; TLS/auth remote ingest, bounded attributes separated from engine enrichment |
+| **Analyst reports** | CLI API lookup plus human notes and exclusive file output; browser-local report catalog, frozen snapshots and Markdown/JSON exports |
+| **Detection** | 69 enabled YAML rules with 17 operators (`eq`, `regex`, `contains_any`, …), hot-reload every 15 s, per-rule MITRE ATT&CK tags and actions; `engine sigma` imports community Sigma rules (deterministic, fail-loud, provenance preserved) |
 | **Forensics** | Bounded per-host flight recorder; atomic high/critical evidence bundles with a 5-minute window and preserved trigger, served through the bearer-gated API; lazy console timeline with full JSON/JSONL downloads |
 | **Correlation** | Kill-chain sequencer: named steps across the same host within a time window raise one high-signal campaign alert |
 | **Risk scoring** | Severity-weighted per-host score with time decay (half-life 30 min, bounded host map): `hot_hosts` top-5 and `risk_hosts_tracked` in `/api/stats`, `sf_host_risk_score{host=...}` in `/metrics`, hot-hosts panel in the console dashboard |
@@ -87,6 +89,9 @@ internal/ingest/  NDJSON TCP listener + schema validation
 internal/enrich/  enrichment pipeline (context, not evidence mutation)
 internal/rules/   YAML parser, rule index and evaluator
 internal/beacon/  C2 beaconing detector (timing analysis over network.connect)
+internal/collector/ source normalization, offline MIME and ingest transport
+internal/socreport/ human report validation, rendering and exclusive output
+cmd/collector/     explicit SOC import command
 internal/threshold/ volumetric detector (windowed per-rule/per-host counts)
 internal/correlate/  kill-chain sequence correlator
 internal/sigma/   Sigma rule converter (YAML -> native rule pack via engine CLI)
@@ -130,3 +135,5 @@ web/console/          Next.js console (live feed, triage, AI analyst)
 web/console-service/  realtime telemetry hub (bun + socket.io)
 website/          official landing page (Next.js 16 + Tailwind 4 + shadcn/ui)
 ```
+
+SOC formats, operating boundaries and report workflow: [SOC-INTEGRACIONES-E-INFORMES.md](SOC-INTEGRACIONES-E-INFORMES.md).

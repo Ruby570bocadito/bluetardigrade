@@ -5,6 +5,8 @@ desarrollo y los informes de proceso se archivaron fuera del árbol público en
 la ronda de renombrado a **bluetardigrade** (2026-10-01); el historial de git
 conserva la trazabilidad completa.
 
+- [SOC-INTEGRACIONES-E-INFORMES.md](SOC-INTEGRACIONES-E-INFORMES.md) — seis fuentes, phishing/firewall, informes CLI y dashboard, pruebas y límites.
+
 ## Mapa
 
 | Ruta | Contenido |

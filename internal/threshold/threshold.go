@@ -484,18 +484,21 @@ func (d *Detector) fireLocked(c *compiled, ev *model.Event, group string, st *ke
 		matched = append(matched, c.def.Threshold.GroupBy)
 	}
 	a := alert.Alert{
-		Timestamp: now.UTC().Format(time.RFC3339Nano),
-		RuleID:    c.def.ID,
-		RuleName:  c.def.Name,
-		Severity:  c.def.Severity,
-		Host:      ev.Host,
-		User:      ev.User,
-		EventID:   ev.ID,
-		EventType: ev.Type,
-		Summary:   summary,
-		MatchedOn: matched,
-		Tags:      c.def.Tags,
-		Enrich:    ev.Enrichment,
+		Timestamp:  now.UTC().Format(time.RFC3339Nano),
+		RuleID:     c.def.ID,
+		RuleName:   c.def.Name,
+		Severity:   c.def.Severity,
+		Host:       ev.Host,
+		User:       ev.User,
+		EventID:    ev.ID,
+		EventType:  ev.Type,
+		Source:     ev.Source,
+		Attributes: ev.Attributes,
+		Network:    ev.Network,
+		Summary:    summary,
+		MatchedOn:  matched,
+		Tags:       c.def.Tags,
+		Enrich:     ev.Enrichment,
 	}
 	return a
 }

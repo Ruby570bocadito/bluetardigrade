@@ -4,10 +4,10 @@
 
 # bluetardigrade
 
-**Real-time threat detection for Windows endpoints.**
+**SOC detection, investigation and reporting for endpoint, network and mail evidence.**
 
-Named after the most resilient animal on Earth: one static Go binary,
-zero runtime dependencies, fail-loud degradation instead of silent rot.
+Named after the most resilient animal on Earth: a static Go engine with
+no runtime dependencies, collectors and an operator console.
 
 [![CI](https://github.com/Ruby570bocadito/bluetardigrade/actions/workflows/ci.yml/badge.svg)](https://github.com/Ruby570bocadito/bluetardigrade/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -194,15 +194,40 @@ skip link and full `prefers-reduced-motion` support. Unavailable metrics show
 **`—`**, never zero. [Console configuration and AI setup](web/console/README.md)
 · [Environment template](web/console/.env.example).
 
+## SOC investigation workflow
+
+Build the real import adapter with `make build`. It accepts explicit source
+formats without executing provider commands or visiting mail URLs:
+
+```bash
+./bin/collector -source suricata -observer IDS-LAB -file eve.json -stdout
+./bin/collector -source suricata -observer IDS-LAB -file eve.json
+./bin/engine report --alert 0123456789abcdef --interactive --out reports/alerta.md
+```
+
+In **Alertas**, inspect source observations and the forensic bundle, use
+triage, then open **Redactar informe** to write findings, classification,
+actions and recommendations. **Informes guardados** retains up to ten
+snapshots in this browser, including after an alert leaves engine retention.
+Save before navigating; export Markdown/JSON for handoff. Reports do not
+change alert lifecycle. There is no multiuser case backend yet.
+
+[Spanish SOC setup, formats, commands, validation and limits](docs/SOC-INTEGRACIONES-E-INFORMES.md).
+Suricata IPS verdicts and firewall drops are observed provider records;
+bluetardigrade does not introduce inline packet blocking. Test/demo inputs
+are generated fixtures; live provider deployments need external configuration.
+
 ## Detection and integrations
 
 | Capability | Shipped surface |
 |------------|-----------------|
-| Detection content | 55 YAML rules (incl. attacker tooling, LOLBAS, anti-forensics and file-staging packs), four kill chains, beaconing profiles and volumetric thresholds |
+| Detection content | 69 YAML rules (incl. attacker tooling, LOLBAS, anti-forensics and file-staging packs), four kill chains, beaconing profiles and four volumetric thresholds |
 | Rule workflow | Hot reload, validation, 17 operators and Sigma import |
 | Process context | Per-host pid->name flight recorder: parent/child anomaly rules (Office/browser spawning interpreters) |
 | Forensics | Frozen alert + 5m host timeline, read via `GET /api/alerts/{id}/forensics`; JSON/JSONL downloads and retryable evidence queries in the console |
 | Triage | Alert lifecycle, operator notes and host-scoped suppressions |
+| SOC ingestion | Suricata EVE, Zeek JSON conn, osquery differential rows, Cowrie JSONL, Windows firewall logs and offline EML |
+| Analyst reports | Interactive CLI report; ten browser-local drafts with frozen alert snapshots, Markdown/JSON exports and orphan access |
 | Persistence | Optional pure-Go SQLite, WAL, retention pruner |
 | Delivery | Webhooks, Elasticsearch, Splunk HEC, Slack, Telegram and email |
 | API | REST + SSE + Prometheus, native TLS, OpenAPI contract drift-guarded in CI |
@@ -293,11 +318,13 @@ SHA-pinned, permissions minimal, releases gated on SemVer + CHANGELOG.
 
 ## Roadmap
 
-- **Shipped:** rule and behavioral detection (55 rules incl. tooling,
-  LOLBAS, anti-forensics and file staging), parent-process anomaly rules,
+- **Shipped:** rule and behavioral detection (69 rules incl. tooling,
+  LOLBAS, anti-forensics, file staging and SOC observations), parent-process anomaly rules,
   forensic evidence bundles with JSON/JSONL export, triage, storage, integrations, terminal
   workspace, live console with command palette, native TLS on both
-  listeners.
+  listeners, six source adapters and human-authored Markdown/JSON reports.
+- **Next SOC work:** durable collection cursors and queues, provider lab validation,
+  multiuser case management and authenticated report ownership.
 - **Next detection work:** validate the new artifact rules in a Windows
   lab, deepen image.load driver/DLL rules, process-injection detection, curated Sigma import.
 - **Next forensics work:** process-tree view of bundles,

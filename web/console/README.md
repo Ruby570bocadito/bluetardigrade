@@ -205,3 +205,14 @@ The engine must include the search endpoint. Older engines produce an
 explicit capability error, with the live view still available. See
 [OPERATIONS.md](../../docs/OPERATIONS.md) for the scan, retention, cursor
 and validation limits.
+
+## Informes SOC
+
+En Alertas, el detalle conserva fuente declarada, atributos y flujo del motor.
+Redactar informe recoge análisis humano y congela el snapshot: no ejecuta una
+respuesta ni cambia el triaje. Hasta diez borradores se guardan explícitamente
+en este navegador/origen. Informes guardados permite editar/exportar/eliminar
+snapshots de alertas fuera de retención. Guarda antes de cambiar de alerta o
+navegar. Revisiones detectan pestañas desactualizadas; localStorage no es una
+transacción multiusuario. Errores de cuota y registro corrupto son visibles.
+[Operación completa y límites](../../docs/SOC-INTEGRACIONES-E-INFORMES.md).

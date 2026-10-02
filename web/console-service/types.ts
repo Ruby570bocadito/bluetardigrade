@@ -6,6 +6,7 @@ export type SfEvent = {
   timestamp: string
   type: string
   source: string
+  attributes?: Record<string, string>
   host: string
   user?: string
   process?: {
@@ -37,11 +38,16 @@ export type SfAlert = {
   timestamp: string
   rule_id: string
   rule_name: string
-  severity: 'high' | 'critical' | 'medium' | 'low'
+  severity: 'high' | 'critical' | 'medium' | 'low' | 'info'
   host: string
   user?: string
   event_id: string
   event_type: string
+  source?: string
+  attributes?: Record<string, string>
+  network?: SfEvent['network']
+  actions?: string[]
+  enrichment?: Record<string, string>
   summary: string
   // engine-side fields: the engine renders rule messages (internal/actions)
   // and the notify flag; alerts without an alert action leave them unset

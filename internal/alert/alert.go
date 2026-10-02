@@ -54,22 +54,25 @@ type Alert struct {
 	// or close an alert by this id (POST /api/alerts/{id}/status), so
 	// it must stay stable across every surface that repeats the alert
 	// (JSON log line, webhook, SSE, API ring).
-	ID        string            `json:"id"`
-	Timestamp string            `json:"timestamp"`
-	RuleID    string            `json:"rule_id"`
-	RuleName  string            `json:"rule_name"`
-	Severity  string            `json:"severity"`
-	Host      string            `json:"host"`
-	User      string            `json:"user,omitempty"`
-	EventID   string            `json:"event_id"`
-	EventType string            `json:"event_type"`
-	Summary   string            `json:"summary"`
-	Message   string            `json:"message,omitempty"` // rendered from the rule's alert action, if any
-	Notify    bool              `json:"notify,omitempty"`  // rule asks for external notification
-	MatchedOn []string          `json:"matched_on"`
-	Tags      []string          `json:"tags,omitempty"`
-	Actions   []string          `json:"actions,omitempty"`
-	Enrich    map[string]string `json:"enrichment,omitempty"`
+	ID         string            `json:"id"`
+	Timestamp  string            `json:"timestamp"`
+	RuleID     string            `json:"rule_id"`
+	RuleName   string            `json:"rule_name"`
+	Severity   string            `json:"severity"`
+	Host       string            `json:"host"`
+	User       string            `json:"user,omitempty"`
+	EventID    string            `json:"event_id"`
+	EventType  string            `json:"event_type"`
+	Source     string            `json:"source,omitempty"`
+	Attributes map[string]string `json:"attributes,omitempty"`
+	Network    *model.Network    `json:"network,omitempty"`
+	Summary    string            `json:"summary"`
+	Message    string            `json:"message,omitempty"` // rendered from the rule's alert action, if any
+	Notify     bool              `json:"notify,omitempty"`  // rule asks for external notification
+	MatchedOn  []string          `json:"matched_on"`
+	Tags       []string          `json:"tags,omitempty"`
+	Actions    []string          `json:"actions,omitempty"`
+	Enrich     map[string]string `json:"enrichment,omitempty"`
 }
 
 // New creates a Manager writing human alerts to out. onAlert, when
@@ -114,6 +117,11 @@ func (m *Manager) SetPreparer(prepare func(*Alert, []rules.Action)) {
 // triple inside the TTL window are silently dropped.
 func (m *Manager) Raise(ev *model.Event, hit rules.Hit) {
 	key := fmt.Sprintf("%s|%s|%d", hit.Rule.ID, ev.Host, pidOf(ev))
+	// Imported observations have no reliable process identity. Preserve
+	// distinct mail, IDS and query records while deduplicating exact replays.
+	if ev.Attributes["observer_host"] != "" {
+		key = fmt.Sprintf("%s|%s|%s|%s", hit.Rule.ID, ev.Host, ev.Source, ev.ID)
+	}
 	m.mu.Lock()
 	if t, ok := m.seen[key]; ok && time.Since(t) < dedupTTL {
 		m.mu.Unlock()
@@ -182,19 +190,22 @@ func buildAlert(ev *model.Event, hit rules.Hit) Alert {
 		actions = append(actions, ac.Type)
 	}
 	return Alert{
-		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
-		RuleID:    hit.Rule.ID,
-		RuleName:  hit.Rule.Name,
-		Severity:  hit.Rule.Severity,
-		Host:      ev.Host,
-		User:      ev.User,
-		EventID:   ev.ID,
-		EventType: ev.Type,
-		Summary:   summarize(ev),
-		MatchedOn: hit.MatchedOn,
-		Tags:      hit.Rule.Tags,
-		Actions:   actions,
-		Enrich:    ev.Enrichment,
+		Timestamp:  time.Now().UTC().Format(time.RFC3339Nano),
+		RuleID:     hit.Rule.ID,
+		RuleName:   hit.Rule.Name,
+		Severity:   hit.Rule.Severity,
+		Host:       ev.Host,
+		User:       ev.User,
+		EventID:    ev.ID,
+		EventType:  ev.Type,
+		Source:     ev.Source,
+		Attributes: ev.Attributes,
+		Network:    ev.Network,
+		Summary:    summarize(ev),
+		MatchedOn:  hit.MatchedOn,
+		Tags:       hit.Rule.Tags,
+		Actions:    actions,
+		Enrich:     ev.Enrichment,
 	}
 }
 
@@ -227,6 +238,25 @@ func (m *Manager) writeJSON(a Alert) {
 }
 
 func summarize(ev *model.Event) string {
+	var observation string
+	switch ev.Type {
+	case model.TypeNetworkAlert:
+		observation = fmt.Sprintf("IDS %s (prioridad=%s, firma=%s, veredicto=%s)", ev.Attributes["ids_signature"], ev.Attributes["ids_priority"], ev.Attributes["ids_action"], ev.Attributes["ids_verdict"])
+	case model.TypeHostQuery:
+		observation = fmt.Sprintf("osquery %s: %s", ev.Attributes["query_name"], ev.Attributes["query_action"])
+	case model.TypeHoneypotConnect, model.TypeHoneypotLogin, model.TypeHoneypotCommand:
+		observation = fmt.Sprintf("Cowrie %s %s", ev.Attributes["honeypot_event"], ev.Attributes["honeypot_input"])
+	case model.TypeNetworkFirewall:
+		observation = "Firewall: " + ev.Attributes["firewall_action"] + " " + ev.Attributes["firewall_direction"]
+		if ev.Network != nil {
+			observation += fmt.Sprintf(" %s -> %s:%d", ev.Network.SourceIP, ev.Network.DestinationIP, ev.Network.DestinationPort)
+		}
+	case model.TypeEmailMessage:
+		observation = fmt.Sprintf("Correo: %s (de %s)", ev.Attributes["mail_subject"], ev.Attributes["mail_from"])
+	}
+	if observation != "" {
+		return truncateRunes(observation, 240)
+	}
 	if ev.Process != nil {
 		s := ev.Process.Name
 		if ev.Process.CommandLine != "" {

@@ -112,7 +112,7 @@ def main():
                         raise AssertionError(("fixture alarms did not finish", set(expected) - set(actual)))
                     time.sleep(0.05)
                 assert set(actual) == set(expected), ("unexpected/missing alarms", set(actual) ^ set(expected))
-                assert len(alerts) == len(expected) and stats["rules_count"] == 55 and stats["dropped"] == 0
+                assert len(alerts) == len(expected) and stats["rules_count"] == 69 and stats["dropped"] == 0
                 print("PASS: six file alarms + Startup + Office-parent alarm, no benign-document alarm")
                 captured = 0
                 for rule_id, alert in actual.items():

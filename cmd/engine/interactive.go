@@ -13,6 +13,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/redact"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
+	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -324,7 +325,7 @@ func (m *tuiModel) filteredAlerts() []alert.Alert {
 	for i := len(m.snap.recent) - 1; i >= 0; i-- {
 		a := m.snap.recent[i]
 		if matchesTui(m.query, tuiSeverities[m.severity], a.Severity,
-			a.ID, a.EventID, a.EventType, a.RuleID, a.RuleName, a.Host, a.User, a.Summary, a.Message, strings.Join(a.Tags, " ")) {
+			a.ID, a.EventID, a.EventType, a.RuleID, a.RuleName, a.Host, a.User, a.Summary, a.Message, a.Source, strings.Join(a.Tags, " "), strings.Join(model.ObservationSearchFields(a.Attributes, a.Network), " ")) {
 			out = append(out, a)
 		}
 	}
@@ -535,6 +536,9 @@ func (m *tuiModel) detailLines() []string {
 				add("Host", a.Host)
 				add("Usuario", a.User)
 				add("Evento", a.EventType+" · "+a.EventID)
+				add("Fuente declarada", a.Source)
+				add("Observaciones", strings.Join(model.ObservationSearchFields(a.Attributes, a.Network), " · "))
+				add("Informe humano", "engine report --alert "+a.ID+" --interactive --out reports/"+a.ID+".md")
 				add("Resumen", a.Summary)
 				add("Mensaje", a.Message)
 				add("Coincidencias", strings.Join(a.MatchedOn, ", "))

@@ -76,3 +76,6 @@ sf-store.db-shm
 
 # Document build artifacts (regenerable via scripts/arq_v04/build.sh)
 docs/arquitectura-tecnica-v*.cover.pdf
+
+# Operator reports contain incident evidence.
+/reports/

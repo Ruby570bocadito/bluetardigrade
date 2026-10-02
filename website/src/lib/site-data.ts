@@ -198,7 +198,7 @@ export const QUICKSTART = {
         { text: "# start the detection engine", dim: true },
         { text: "make run-engine", cmd: true },
         { text: "", dim: false },
-        { text: "[ENGINE] 23 rules loaded from ./rules", ok: true },
+        { text: "[ENGINE] 69 rules loaded from ./rules", ok: true },
         { text: "[ENGINE] 4 sequences loaded (correlator on)", ok: true },
         { text: "[ENGINE] 2 beacon profiles loaded", ok: true },
         { text: "[ENGINE] 2 threshold definitions loaded", ok: true },

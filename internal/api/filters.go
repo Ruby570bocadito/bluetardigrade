@@ -198,9 +198,10 @@ func containsFold(list []string, s string) bool {
 func alertHaystack(a alert.Alert, needle string) bool {
 	parts := []string{
 		a.ID, a.RuleID, a.RuleName, a.Host, a.User, a.Summary,
-		a.Message, a.EventType, a.Severity,
+		a.Message, a.EventType, a.Severity, a.Source,
 		strings.Join(a.Tags, " "), strings.Join(a.MatchedOn, " "),
 	}
+	parts = append(parts, model.ObservationSearchFields(a.Attributes, a.Network)...)
 	return containsFoldAll(parts, needle)
 }
 
@@ -213,9 +214,7 @@ func eventHaystack(ev *model.Event, needle string) bool {
 	if ev.File != nil {
 		parts = append(parts, ev.File.Path)
 	}
-	if ev.Network != nil {
-		parts = append(parts, ev.Network.DestinationIP, ev.Network.Domain)
-	}
+	parts = append(parts, model.ObservationSearchFields(ev.Attributes, ev.Network)...)
 	if ev.Registry != nil {
 		parts = append(parts, ev.Registry.Key, ev.Registry.ValueName)
 	}
