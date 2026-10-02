@@ -8,7 +8,14 @@
 //
 // Usage:
 //   security-sensor --addr 127.0.0.1:7777 [--token <shared-token>]
-//                   [--tls-ca <ca.pem>]
+//                   [--tls-ca <ca.pem>] [--queue <events>]
+//                   [--spool <file>] [--spool-max-mb <MiB>]
+//
+// Delivery never runs on the ETW thread: events wait in a bounded
+// in-memory queue (--queue, default 50000) while the engine is
+// unreachable, then in the optional on-disk spool (--spool or
+// SF_SENSOR_SPOOL, capped by --spool-max-mb, default 256); past both
+// they are dropped and the drops are reported.
 //
 // The token can also come from the SF_INGEST_TOKEN environment
 // variable (same var the engine and the other sensors honor); the
@@ -29,6 +36,11 @@ mod transport;
 #[cfg(target_os = "windows")]
 mod collector;
 
+// The delivery queue is platform-independent so its tests run on any
+// host; outside Windows it is only compiled for those tests.
+#[cfg(any(target_os = "windows", test))]
+mod queue;
+
 use anyhow::Result;
 use std::path::PathBuf;
 
@@ -36,6 +48,11 @@ fn main() -> Result<()> {
     let mut addr = String::from("127.0.0.1:7777");
     let mut token: Option<String> = None;
     let mut tls_ca: Option<PathBuf> = None;
+    // process-start events are a few hundred bytes: 50 000 of them is
+    // hours of a busy host held in a bounded ~25 MB
+    let mut queue_cap: usize = 50_000;
+    let mut spool: Option<PathBuf> = None;
+    let mut spool_max_mb: u64 = 256;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -57,10 +74,22 @@ fn main() -> Result<()> {
                     std::process::exit(2);
                 })));
             }
+            "--queue" => {
+                queue_cap = parse_number(args.next(), "--queue");
+            }
+            "--spool" => {
+                spool = Some(PathBuf::from(args.next().unwrap_or_else(|| {
+                    eprintln!("--spool requires a value");
+                    std::process::exit(2);
+                })));
+            }
+            "--spool-max-mb" => {
+                spool_max_mb = parse_number(args.next(), "--spool-max-mb");
+            }
             other => {
                 eprintln!("unknown argument: {other}");
                 eprintln!(
-                    "usage: security-sensor --addr <ip:port> [--token <shared-token>] [--tls-ca <ca.pem>]"
+                    "usage: security-sensor --addr <ip:port> [--token <shared-token>] [--tls-ca <ca.pem>] [--queue <events>] [--spool <file>] [--spool-max-mb <MiB>]"
                 );
                 std::process::exit(2);
             }
@@ -69,6 +98,12 @@ fn main() -> Result<()> {
     if token.is_none() {
         token = std::env::var("SF_INGEST_TOKEN").ok().filter(|t| !t.is_empty());
     }
+    if spool.is_none() {
+        spool = std::env::var("SF_SENSOR_SPOOL")
+            .ok()
+            .filter(|p| !p.is_empty())
+            .map(PathBuf::from);
+    }
     if tls_ca.is_none() {
         tls_ca = std::env::var("SF_INGEST_CA")
             .ok()
@@ -76,9 +111,13 @@ fn main() -> Result<()> {
             .map(PathBuf::from);
     }
 
-    eprintln!("[SENSOR] addr={addr} auth={} tls={}",
+    eprintln!("[SENSOR] addr={addr} auth={} tls={} queue={queue_cap} spool={}",
         if token.is_some() { "token" } else { "none" },
-        if tls_ca.is_some() { "verified-ca" } else { "off" });
+        if tls_ca.is_some() { "verified-ca" } else { "off" },
+        spool
+            .as_ref()
+            .map(|p| format!("{} (max {spool_max_mb} MiB)", p.display()))
+            .unwrap_or_else(|| "off".into()));
 
     if !cfg!(target_os = "windows") {
         eprintln!(
@@ -89,10 +128,26 @@ fn main() -> Result<()> {
 
     #[cfg(target_os = "windows")]
     {
-        collector::run(&addr, token.as_deref(), tls_ca.as_deref())
+        let delivery = collector::Delivery {
+            queue_cap,
+            spool,
+            spool_max_bytes: spool_max_mb.saturating_mul(1 << 20),
+        };
+        collector::run(&addr, token.as_deref(), tls_ca.as_deref(), delivery)
     }
     #[cfg(not(target_os = "windows"))]
     {
         unreachable!("guarded by cfg!(target_os) above")
+    }
+}
+
+/// Parses a positive integer flag value or exits with a usage error.
+fn parse_number<T: std::str::FromStr + PartialOrd + Default>(value: Option<String>, flag: &str) -> T {
+    match value.as_deref().map(str::parse::<T>) {
+        Some(Ok(n)) if n > T::default() => n,
+        _ => {
+            eprintln!("{flag} requires a positive integer");
+            std::process::exit(2);
+        }
     }
 }

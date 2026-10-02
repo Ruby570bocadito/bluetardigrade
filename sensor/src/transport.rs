@@ -10,7 +10,8 @@
 //
 // Transport encryption: when a CA bundle is configured (--tls-ca /
 // SF_INGEST_CA), every (re)connection upgrades to TLS and the engine's
-// certificate must chain to one of the bundle's roots. TLS sits below
+// certificate must chain to one of the bundle's roots (and only to them:
+// the system trust store is disabled). TLS sits below
 // the AUTH handshake, so the wire protocol is unchanged; there is
 // deliberately no skip-verification mode — a sensor that cannot verify
 // the engine refuses to connect instead of streaming host telemetry
@@ -184,6 +185,12 @@ fn tls_connect(
     let ca_pem = std::fs::read(ca_path)
         .with_context(|| format!("reading TLS CA bundle {}", ca_path.display()))?;
     let mut builder = native_tls::TlsConnector::builder();
+    // Trust ONLY the operator's bundle. native-tls keeps the system
+    // roots by default, so any certificate a public or enterprise CA
+    // (AD CS autoenrollment) issued for the engine's name would have
+    // been accepted too: whoever can obtain one could sit between the
+    // sensor and the engine.
+    builder.disable_built_in_roots(true);
     for cert in load_ca_certificates(&ca_pem, ca_path)? {
         builder.add_root_certificate(cert);
     }

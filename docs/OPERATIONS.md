@@ -111,6 +111,10 @@ make build-sensor-windows
 
 The sensor has no simulated mode: it runs only where real telemetry exists (Windows ETW) and refuses to start anywhere else.
 
+Delivery never runs on the ETW thread. Events wait in a bounded in-memory queue (`--queue`, default 50000) while the engine is unreachable, so an engine restart or a network cut no longer stalls the trace consumer (which made Windows discard events from the real-time buffers). For outages longer than the queue, `--spool <file>` (or `SF_SENSOR_SPOOL`) adds an on-disk overflow capped by `--spool-max-mb` (default 256); it survives a sensor restart and is replayed in order once the engine is back. Replays can repeat events already delivered, which the engine absorbs (stored evidence is first-write-wins by event id). Past both limits events are dropped and the count is reported on stderr. Put the spool in a directory only the sensor's account can read: it holds command lines.
+
+With `--tls-ca` the engine's certificate must chain to that bundle and nothing else: the system trust store is disabled, so a certificate issued for the engine's name by a public or enterprise CA is refused.
+
 ## Configuration reference
 
 
