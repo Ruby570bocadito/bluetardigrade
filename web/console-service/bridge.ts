@@ -1,3 +1,4 @@
+import { stringMap, observedNetwork } from './observations'
 // Bridge from the real Go engine's local HTTP API (:7778) into the
 // console bus. While the engine is reachable, the hub forwards live
 // events and alerts from the SSE stream and polls /api/stats; the
@@ -125,6 +126,7 @@ export class EngineBridge {
 
   private async establish() {
     if (!(await this.probe())) throw new Error('engine api not reachable')
+    if (this.stopped) return
 
     // every (re)connect resets the change-only caches: consumers cleared
     // their lists on engine-down (onDown pushes []), so a payload
@@ -142,31 +144,39 @@ export class EngineBridge {
       this.getJson<unknown[]>(`${this.base}/api/events?limit=${this.maxEvents}`),
       this.getJson<unknown[]>(`${this.base}/api/alerts?limit=${this.maxAlerts}`),
     ])
+    if (this.stopped) return
     this.cb.onRules(rules.map((r) => mapRule(r as Record<string, unknown>)))
     // API returns newest first; replay oldest first so the ring order holds
     for (let i = events.length - 1; i >= 0; i--) this.cb.onEvent(events[i] as SfEvent)
     for (let i = alerts.length - 1; i >= 0; i--) this.cb.onAlert(mapAlert(alerts[i] as Record<string, unknown>))
 
-    this.ctrl = new AbortController()
-    // Bound only the header phase: a server that accepts the request but
-    // never flushes headers (or an idle proxy) must not hang the bridge
-    // forever. Once headers arrive the race is decided and the signal
-    // keeps governing the whole stream lifetime as before.
-    const res = await Promise.race([
-      fetch(`${this.base}/api/stream`, { signal: this.ctrl.signal, headers: authHeaders() }),
-      new Promise<never>((_, reject) => {
-        const t = setTimeout(() => reject(new Error('engine stream: no headers')), STREAM_HEADERS_TIMEOUT_MS)
-        t.unref?.()
-      }),
-    ])
-    if (!res.ok || !res.body) throw new Error(`stream failed (${res.status})`)
-
-    this.cb.onUp()
-    this.pullStats()
-    this.statsTimer = setInterval(() => this.pullStats(), STATS_POLL_MS)
-    await this.pumpSSE(res.body)
-    if (this.statsTimer) clearInterval(this.statsTimer)
-    this.statsTimer = null
+    const ctrl = new AbortController()
+    this.ctrl = ctrl
+    let headerTimer: ReturnType<typeof setTimeout> | undefined
+    let statsTimer: ReturnType<typeof setInterval> | undefined
+    try {
+      const res = await Promise.race([
+        fetch(`${this.base}/api/stream`, { signal: ctrl.signal, headers: authHeaders() }),
+        new Promise<never>((_, reject) => {
+          headerTimer = setTimeout(() => { ctrl.abort(); reject(new Error('engine stream: no headers')) }, STREAM_HEADERS_TIMEOUT_MS)
+          headerTimer.unref?.()
+        }),
+      ])
+      clearTimeout(headerTimer)
+      if (this.stopped) { await res.body?.cancel(); return }
+      if (!res.ok || !res.body) throw new Error(`stream failed (${res.status})`)
+      this.cb.onUp()
+      void this.pullStats()
+      statsTimer = setInterval(() => { void this.pullStats() }, STATS_POLL_MS)
+      this.statsTimer = statsTimer
+      await this.pumpSSE(res.body, ctrl.signal)
+    } finally {
+      clearTimeout(headerTimer)
+      if (statsTimer) clearInterval(statsTimer)
+      if (this.statsTimer === statsTimer) this.statsTimer = null
+      ctrl.abort()
+      if (this.ctrl === ctrl) this.ctrl = null
+    }
   }
 
   private async pullSuppressions() {
@@ -175,6 +185,7 @@ export class EngineBridge {
     // which only the stats poll and the SSE stream are allowed to touch.
     try {
       const raw = await this.getJson<Record<string, unknown>>(`${this.base}/api/suppressions`)
+      if (this.stopped) return
       const entries = (raw.entries as SfSuppression[]) ?? []
       const json = JSON.stringify(entries)
       if (json === this.lastSuppressions) return
@@ -191,6 +202,7 @@ export class EngineBridge {
     // the engine's 15 s hot-reload of the sequences/ directory.
     try {
       const seqs = await this.getJson<SfSequence[]>(`${this.base}/api/sequences`)
+      if (this.stopped) return
       const json = JSON.stringify(seqs)
       if (json === this.lastSequences) return
       this.lastSequences = json
@@ -207,32 +219,47 @@ export class EngineBridge {
   }
 
   private async pullStats() {
+    if (this.stopped) return
     try {
       const st = await this.getJson<Record<string, unknown>>(`${this.base}/api/stats`)
+      if (this.stopped) return
       this.cb.onStats(mapStats(st))
     } catch {
       /* transient; the SSE stream will signal a real disconnection */
     }
+    if (this.stopped) return
     await this.pullSuppressions()
+    if (this.stopped) return
     await this.pullSequences()
   }
 
-  private async pumpSSE(body: ReadableStream<Uint8Array>) {
+  private async pumpSSE(body: ReadableStream<Uint8Array>, signal: AbortSignal) {
     const reader = body.getReader()
     const decoder = new TextDecoder()
+    const cancel = () => { void reader.cancel().catch(() => {}) }
+    signal.addEventListener('abort', cancel, { once: true })
     let buf = ''
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buf += decoder.decode(value, { stream: true })
-      let idx: number
-      while ((idx = buf.indexOf('\n\n')) >= 0) {
-        const frame = buf.slice(0, idx)
-        buf = buf.slice(idx + 2)
-        this.handleFrame(frame)
+    try {
+      if (signal.aborted) return
+      while (!this.stopped && !signal.aborted) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        let idx: number
+        while ((idx = buf.indexOf('\n\n')) >= 0) {
+          if (idx > 2 * 1024 * 1024) throw new Error('engine SSE frame exceeds limit')
+          const frame = buf.slice(0, idx)
+          buf = buf.slice(idx + 2)
+          if (!this.stopped) this.handleFrame(frame)
+        }
+        if (buf.length > 2 * 1024 * 1024) throw new Error('engine SSE buffer exceeds limit')
       }
+      if (!this.stopped && !signal.aborted) throw new Error('sse stream closed')
+    } finally {
+      signal.removeEventListener('abort', cancel)
+      await reader.cancel().catch(() => {})
+      reader.releaseLock()
     }
-    throw new Error('sse stream closed')
   }
 
   private handleFrame(frame: string) {
@@ -321,7 +348,7 @@ function mapHotHosts(raw: unknown): HotHost[] {
 
 function mapAlert(a: Record<string, unknown>): SfAlert {
   const severity = String(a.severity ?? 'low')
-  const known: SfAlert['severity'][] = ['critical', 'high', 'medium', 'low']
+  const known: SfAlert['severity'][] = ['critical', 'high', 'medium', 'low', 'info']
   return {
     // engine-assigned alert id (r6, the lifecycle key); older engines
     // without it fall back to the event+rule synthesized id
@@ -334,11 +361,16 @@ function mapAlert(a: Record<string, unknown>): SfAlert {
     user: a.user ? String(a.user) : undefined,
     event_id: String(a.event_id ?? ''),
     event_type: String(a.event_type ?? ''),
+    source: typeof a.source === 'string' ? a.source : undefined,
+    attributes: stringMap(a.attributes),
+    network: observedNetwork(a.network),
+    enrichment: stringMap(a.enrichment),
+    actions: Array.isArray(a.actions) ? a.actions.filter((item): item is string => typeof item === 'string') : undefined,
     summary: String(a.summary ?? ''),
     message: a.message ? String(a.message) : undefined,
     notify: a.notify === true,
-    matched_on: (a.matched_on as string[]) ?? [],
-    tags: (a.tags as string[]) ?? [],
+    matched_on: Array.isArray(a.matched_on) ? a.matched_on.filter((item): item is string => typeof item === 'string') : [],
+    tags: Array.isArray(a.tags) ? a.tags.filter((item): item is string => typeof item === 'string') : [],
     // lifecycle overlay (GET /api/alerts merges it read-side)
     status: isStatus(a.status) ? (a.status as SfAlert['status']) : undefined,
     status_note: a.status_note ? String(a.status_note) : undefined,

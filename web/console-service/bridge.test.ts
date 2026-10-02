@@ -16,7 +16,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test'
 import { EngineBridge, type EngineBridgeCallbacks } from './bridge'
-import type { HubStats, SfSequence, SfSuppression } from './types'
+import type { HubStats, SfSequence, SfSuppression, SfAlert } from './types'
 
 const SEQS: SfSequence[] = [
   { id: 'seq-1', name: 'Cadena A', description: 'd', severity: 'high', window_seconds: 600, tags: [], steps: ['rule-a'] },
@@ -118,6 +118,49 @@ afterEach(() => {
 })
 
 describe('EngineBridge (agent-04 hardening)', () => {
+  test('stop during a probe or snapshot cannot reopen SSE or emit late snapshots', async () => {
+    for (const phase of ['probe', 'snapshot']) {
+      const rec = recorder(); const streams: ReadableStreamDefaultController<Uint8Array>[] = []
+      const base = stubEngine({ sequences: [], suppressions: { entries: [] }, stats: STATS, streams })
+      let release: (() => void) | undefined
+      globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        const target = String(input)
+        if (target.endsWith(phase === 'probe' ? '/api/health' : '/api/rules')) await new Promise<void>((done) => { release = done })
+        return base(input, init)
+      }) as typeof fetch
+      const bridge = new EngineBridge(rec.cb, { retryMs: 5 }); const running = bridge.start()
+      await until(() => Boolean(release), 2000, phase)
+      bridge.stop(); release!(); await running
+      expect(streams).toHaveLength(0); expect(rec.ups).toBe(0); expect(rec.stats).toHaveLength(0)
+    }
+  })
+  test('stop cancels a live stream reader and releases polling', async () => {
+    const rec = recorder(); const streams: ReadableStreamDefaultController<Uint8Array>[] = []
+    const base = stubEngine({ sequences: [], suppressions: { entries: [] }, stats: STATS, streams }); let cancelled = false
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => String(input).endsWith('/api/stream')
+      ? { ok: true, body: new ReadableStream<Uint8Array>({ cancel() { cancelled = true } }) } : base(input, init)) as typeof fetch
+    const bridge = new EngineBridge(rec.cb, { retryMs: 5 }); const running = bridge.start()
+    await until(() => rec.ups === 1, 2000, 'connected'); bridge.stop(); await running
+    expect(cancelled).toBe(true); expect(rec.downs).toBe(0)
+  })
+  test('imported source evidence and info severity survive hub mapping', async () => {
+    const rec = recorder(); const seen: SfAlert[] = []; rec.cb.onAlert = (value) => seen.push(value)
+    const streams: ReadableStreamDefaultController<Uint8Array>[] = []
+    globalThis.fetch = stubEngine({ sequences: [], suppressions: { entries: [] }, stats: STATS, streams })
+    const bridge = new EngineBridge(rec.cb, { retryMs: 5 }); const running = bridge.start()
+    await until(() => streams.length === 1, 2000, 'stream')
+    streams[0].enqueue(new TextEncoder().encode('event: alert\ndata: ' + JSON.stringify({ id: '0123456789abcdef', source: 'suricata', severity: 'info', attributes: { ids_action: 'allowed', ids_verdict: 'drop' }, network: { destination_port: 443, source_ip: '10.0.0.1' }, actions: ['alert'], enrichment: { owner: 'SOC' } }) + '\n\n'))
+    await until(() => seen.length === 1, 2000, 'source alert')
+    expect(seen[0].severity).toBe('info'); expect(seen[0].source).toBe('suricata'); expect(seen[0].attributes!.ids_verdict).toBe('drop'); expect(seen[0].network!.destination_port).toBe(443); expect(seen[0].enrichment!.owner).toBe('SOC')
+    bridge.stop(); await running
+  })
+  test('oversized incomplete SSE frames fail visibly and release the reader', async () => {
+    const rec = recorder(); const streams: ReadableStreamDefaultController<Uint8Array>[] = []
+    globalThis.fetch = stubEngine({ sequences: [], suppressions: { entries: [] }, stats: STATS, streams })
+    const bridge = new EngineBridge(rec.cb, { retryMs: 5 }); rec.cb.onDown = () => { rec.downs++; bridge.stop() }; const running = bridge.start()
+    await until(() => streams.length === 1, 2000, 'stream'); streams[0].enqueue(new TextEncoder().encode('x'.repeat(2 * 1024 * 1024 + 1)))
+    await running; expect(rec.downs).toBe(1)
+  })
   test('re-emits unchanged sequences/suppressions after an engine flap and forwards store stats', async () => {
     const rec = recorder()
     const streams: ReadableStreamDefaultController<Uint8Array>[] = []

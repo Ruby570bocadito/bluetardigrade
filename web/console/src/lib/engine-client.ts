@@ -1,3 +1,4 @@
+import { stringMap, observedNetwork } from './source-observation'
 import { severityOf, type SfAlert } from './console-types'
 
 // Fetches are bounded and linked to the provider lifetime. A stalled
@@ -92,8 +93,8 @@ export function engineApiBase(): string {
 }
 
 export function mapAlert(raw: Record<string, unknown>): SfAlert {
-  const tags = Array.isArray(raw.tags) ? (raw.tags as string[]) : []
-  const matched = Array.isArray(raw.matched_on) ? (raw.matched_on as string[]) : []
+  const tags = Array.isArray(raw.tags) ? raw.tags.filter((item): item is string => typeof item === 'string') : []
+  const matched = Array.isArray(raw.matched_on) ? raw.matched_on.filter((item): item is string => typeof item === 'string') : []
   const status = raw.status
   return {
     id: raw.id ? String(raw.id) : undefined,
@@ -105,13 +106,16 @@ export function mapAlert(raw: Record<string, unknown>): SfAlert {
     user: raw.user ? String(raw.user) : undefined,
     event_id: String(raw.event_id ?? ''),
     event_type: String(raw.event_type ?? ''),
+    source: typeof raw.source === 'string' ? raw.source : undefined,
+    attributes: stringMap(raw.attributes),
+    network: observedNetwork(raw.network),
     summary: String(raw.summary ?? ''),
     message: raw.message ? String(raw.message) : undefined,
     notify: raw.notify === true,
     matched_on: matched,
     tags,
-    actions: Array.isArray(raw.actions) ? (raw.actions as string[]) : undefined,
-    enrichment: (raw.enrichment as Record<string, string>) ?? undefined,
+    actions: Array.isArray(raw.actions) ? raw.actions.filter((item): item is string => typeof item === 'string') : undefined,
+    enrichment: stringMap(raw.enrichment),
     status: status === 'new' || status === 'acknowledged' || status === 'closed' ? status : undefined,
     status_note: raw.status_note ? String(raw.status_note) : undefined,
     status_by: raw.status_by ? String(raw.status_by) : undefined,

@@ -75,6 +75,8 @@ type Event struct {
 	Network   *Network       `json:"network,omitempty"`
 	Registry  *Registry      `json:"registry,omitempty"`
 	Tags      []string       `json:"tags,omitempty"`
+	// Attributes contains declared source observations, never engine enrichment.
+	Attributes map[string]string `json:"attributes,omitempty"`
 
 	// Enrichment is added by the engine, never by sensors, and never
 	// mutates the raw evidence fields above.
@@ -90,6 +92,13 @@ const (
 	TypeNetworkConnect   = "network.connect"
 	TypeImageLoad        = "image.load"
 	TypeRegistrySet      = "registry.set"
+	TypeNetworkAlert     = "network.alert"
+	TypeHostQuery        = "host.query"
+	TypeHoneypotConnect  = "honeypot.connect"
+	TypeHoneypotLogin    = "honeypot.login"
+	TypeHoneypotCommand  = "honeypot.command"
+	TypeNetworkFirewall  = "network.firewall"
+	TypeEmailMessage     = "email.message"
 )
 
 // FieldMap flattens the event into a generic map so rule conditions can

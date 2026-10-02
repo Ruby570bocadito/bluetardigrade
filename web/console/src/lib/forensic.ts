@@ -12,6 +12,8 @@ export type ForensicEvent = {
   id: string
   timestamp: string
   type: string
+  source?: string
+  attributes?: Record<string, string>
   host: string
   user?: string
   process?: {
@@ -23,6 +25,8 @@ export type ForensicEvent = {
   }
   network?: {
     protocol?: string
+    source_ip?: string
+    source_port?: number
     destination_ip?: string
     destination_port?: number
     domain?: string
@@ -77,10 +81,12 @@ function optionalStrings(value: Record<string, unknown>, keys: string[]): boolea
 
 function validEvent(value: unknown): value is ForensicEvent {
   if (!record(value) || !['id', 'timestamp', 'type', 'host'].every((key) => typeof value[key] === 'string')) return false
+  if (value.source !== undefined && typeof value.source !== 'string') return false
+  if (value.attributes !== undefined && (!record(value.attributes) || !Object.values(value.attributes).every((item) => typeof item === 'string'))) return false
   const sections: Record<string, string[]> = {
     process: ['name', 'command_line', 'image'],
     target: ['name', 'image'],
-    network: ['protocol', 'destination_ip', 'domain'],
+    network: ['protocol', 'source_ip', 'destination_ip', 'domain'],
     file: ['path'],
     registry: ['key'],
     access: ['granted_access', 'call_trace'],
@@ -94,8 +100,12 @@ function validEvent(value: unknown): value is ForensicEvent {
     if (record(section) && (!Number.isSafeInteger(section.pid) || (section.pid as number) < 0 ||
       (section.ppid !== undefined && (!Number.isSafeInteger(section.ppid) || (section.ppid as number) < 0)))) return false
   }
-  if (record(value.network) && value.network.destination_port !== undefined &&
-    (!Number.isSafeInteger(value.network.destination_port) || (value.network.destination_port as number) < 0 || (value.network.destination_port as number) > 65535)) return false
+  if (record(value.network)) {
+    for (const key of ['source_port', 'destination_port']) {
+      const port = value.network[key]
+      if (port !== undefined && (!Number.isSafeInteger(port) || (port as number) < 0 || (port as number) > 65535)) return false
+    }
+  }
   return true
 }
 
@@ -156,7 +166,15 @@ export function buildForensicExport(bundle: ForensicBundle, format: 'json' | 'js
 // One-line description of a timeline event, the same vocabulary the
 // live feed uses so operators read both surfaces with one eye.
 export function forensicEventLine(ev: ForensicEvent): string {
+  const a = ev.attributes ?? {}
   switch (ev.type) {
+    case 'network.alert': return `IDS ${a.ids_signature ?? '?'} · veredicto ${a.ids_verdict ?? 'no declarado'}`
+    case 'host.query': return `osquery ${a.query_name ?? '?'} · ${a.query_action ?? '?'}`
+    case 'network.firewall': return `Firewall ${a.firewall_action ?? '?'} ${a.firewall_direction ?? ''}`
+    case 'email.message': return `Correo ${a.mail_subject ?? '(sin asunto)'}`
+    case 'honeypot.connect':
+    case 'honeypot.login':
+    case 'honeypot.command': return `Cowrie ${a.honeypot_event ?? ev.type} ${a.honeypot_input ?? ''}`
     case 'process.create':
       return ev.process?.command_line || ev.process?.name || 'proceso creado'
     case 'process.terminate':

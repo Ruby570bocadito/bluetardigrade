@@ -1,0 +1,157 @@
+# Observed SOC signals. These rules alert; they do not enable inline IPS,
+# change firewall policy, execute mail or confirm compromise by themselves.
+- name: "Suricata: firma de prioridad alta"
+  id: soc-ids-priority-high
+  description: "Firma EVE de prioridad 1. Investigar firma, flujo y contexto antes de responder."
+  severity: high
+  event_type: network.alert
+  conditions:
+    - {field: source, operator: eq, value: suricata}
+    - {field: attributes.ids_priority, operator: eq, value: "1"}
+  actions:
+    - type: alert
+      config: {message: "IDS: {host}; revisar firma y evidencia de red", notify: "true"}
+  tags: ["sensor:suricata", "pack:soc"]
+  enabled: true
+- name: "Suricata: firma de prioridad media"
+  id: soc-ids-priority-medium
+  description: "Firma EVE de prioridad 2 o 3. Ajustar firmas ruidosas con supresiones acotadas."
+  severity: medium
+  event_type: network.alert
+  conditions:
+    - {field: source, operator: eq, value: suricata}
+    - {field: attributes.ids_priority, operator: in, value: ["2", "3"]}
+  tags: ["sensor:suricata", "pack:soc"]
+  enabled: true
+- name: "Suricata: bloqueo declarado por el proveedor"
+  id: soc-ips-reported-drop
+  description: "Veredicto drop o registro EVE drop. Observacion del proveedor; el motor no bloqueo este paquete."
+  severity: info
+  event_type: network.alert
+  conditions:
+    - {field: source, operator: eq, value: suricata}
+    - {field: attributes.ids_verdict, operator: in, value: [drop, reported_drop]}
+  tags: ["sensor:suricata", "pack:soc"]
+  enabled: true
+- name: "NDR: SMB hacia una direccion publica"
+  id: soc-ndr-public-smb
+  description: "Flujo TCP hacia 445 en una IP no privada unicast. No prueba exposicion ni alcance; comprobar politica y activo."
+  severity: high
+  event_type: network.connect
+  conditions:
+    - {field: source, operator: in, value: [suricata, zeek]}
+    - {field: network.protocol, operator: eq, value: TCP}
+    - {field: attributes.destination_scope, operator: eq, value: public}
+    - {field: network.destination_port, operator: eq, value: 445}
+  tags: ["attack.t1021.002", "sensor:network", "pack:soc"]
+  enabled: true
+- name: "NDR: RDP hacia una direccion publica"
+  id: soc-ndr-public-rdp
+  description: "Flujo TCP hacia 3389 en una IP no privada unicast. Puede ser administracion autorizada; revisar politica."
+  severity: medium
+  event_type: network.connect
+  conditions:
+    - {field: source, operator: in, value: [suricata, zeek]}
+    - {field: network.protocol, operator: eq, value: TCP}
+    - {field: attributes.destination_scope, operator: eq, value: public}
+    - {field: network.destination_port, operator: eq, value: 3389}
+  tags: ["attack.t1021.001", "sensor:network", "pack:soc"]
+  enabled: true
+- name: "Cowrie: acceso aceptado en el honeypot"
+  id: soc-honeypot-login
+  description: "El honeypot declara login.success. No equivale a compromiso de un host productivo."
+  severity: high
+  event_type: honeypot.login
+  conditions:
+    - {field: source, operator: eq, value: cowrie}
+    - {field: attributes.honeypot_event, operator: eq, value: cowrie.login.success}
+  tags: ["attack.t1078", "sensor:cowrie", "pack:soc"]
+  enabled: true
+- name: "Cowrie: comando observado en la sesion"
+  id: soc-honeypot-command
+  description: "Comando escrito en la shell emulada. El colector no lo ejecuta; stdin con realm se omite por privacidad."
+  severity: high
+  event_type: honeypot.command
+  conditions:
+    - {field: source, operator: eq, value: cowrie}
+    - {field: attributes.honeypot_input_kind, operator: eq, value: command}
+  tags: ["attack.t1059", "sensor:cowrie", "pack:soc"]
+  enabled: true
+- name: "osquery: nuevo puerto administrativo en todas las interfaces"
+  id: soc-osquery-admin-listener
+  description: "Fila added de la consulta entregada, posterior al baseline (counter > 0). No confirma acceso externo."
+  severity: medium
+  event_type: host.query
+  conditions:
+    - {field: source, operator: eq, value: osquery}
+    - {field: attributes.query_name, operator: eq, value: bt_exposed_admin_ports}
+    - {field: attributes.query_action, operator: eq, value: added}
+    - {field: attributes.query_counter, operator: regex, value: '^[1-9][0-9]*$'}
+    - {field: attributes.column_address, operator: in, value: ["0.0.0.0", "::"]}
+    - {field: attributes.column_port, operator: in, value: ["22", "445", "3389"]}
+  tags: ["sensor:osquery", "pack:soc"]
+  enabled: true
+- name: "Firewall: conexion administrativa entrante permitida"
+  id: soc-firewall-admin-allow
+  description: "ALLOW/RECEIVE hacia un puerto administrativo; revisar origen y autorizacion, sin modificar reglas."
+  severity: medium
+  event_type: network.firewall
+  conditions:
+    - {field: source, operator: eq, value: windows-firewall}
+    - {field: attributes.firewall_action, operator: eq, value: allow}
+    - {field: attributes.firewall_direction, operator: eq, value: inbound}
+    - {field: network.destination_port, operator: in, value: [22, 445, 3389]}
+  tags: ["sensor:firewall", "pack:soc"]
+  enabled: true
+- name: "Firewall: intento administrativo entrante descartado"
+  id: soc-firewall-admin-drop
+  description: "DROP/RECEIVE declarado por Windows Firewall. Un intento aislado descartado es informativo."
+  severity: info
+  event_type: network.firewall
+  conditions:
+    - {field: source, operator: eq, value: windows-firewall}
+    - {field: attributes.firewall_action, operator: eq, value: drop}
+    - {field: attributes.firewall_direction, operator: eq, value: inbound}
+    - {field: network.destination_port, operator: in, value: [22, 445, 3389]}
+  tags: ["sensor:firewall", "pack:soc"]
+  enabled: true
+- name: "Phishing: adjunto de extension activa"
+  id: soc-mail-risky-attachment
+  description: "Nombre de adjunto ejecutable o script. Extension no demuestra malware; no se ejecuto ni analizo el binario."
+  severity: medium
+  event_type: email.message
+  conditions:
+    - {field: source, operator: eq, value: eml}
+    - {field: attributes.mail_risky_attachment, operator: eq, value: "true"}
+  tags: ["attack.t1566.001", "sensor:mail", "pack:soc"]
+  enabled: true
+- name: "Phishing: fallo DMARC declarado en cabecera"
+  id: soc-mail-dmarc-fail
+  description: "Authentication-Results contiene dmarc=fail. Cabecera no verificada, modificable por el remitente; validar en el gateway."
+  severity: medium
+  event_type: email.message
+  conditions:
+    - {field: source, operator: eq, value: eml}
+    - {field: attributes.mail_dmarc_reported_fail, operator: eq, value: "true"}
+  tags: ["attack.t1566", "sensor:mail", "pack:soc"]
+  enabled: true
+- name: "Phishing: URL con direccion IP literal"
+  id: soc-mail-ip-url
+  description: "URL HTTP(S) explicita con IPv4/IPv6 literal. No se visito ni se consulto reputacion; revisar enlace."
+  severity: medium
+  event_type: email.message
+  conditions:
+    - {field: source, operator: eq, value: eml}
+    - {field: attributes.mail_url_ip_literal, operator: eq, value: "true"}
+  tags: ["attack.t1566.002", "sensor:mail", "pack:soc"]
+  enabled: true
+- name: "Phishing: Reply-To de otro dominio"
+  id: soc-mail-reply-mismatch
+  description: "From y Reply-To pertenecen a dominios distintos. Servicios legitimos tambien lo hacen; senal de revision."
+  severity: low
+  event_type: email.message
+  conditions:
+    - {field: source, operator: eq, value: eml}
+    - {field: attributes.mail_reply_domain_mismatch, operator: eq, value: "true"}
+  tags: ["attack.t1566", "sensor:mail", "pack:soc"]
+  enabled: true

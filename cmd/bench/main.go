@@ -10,7 +10,8 @@
 // rule evaluation, alert build, hub broadcast — plus the SSE hop, which
 // is exactly what the console experiences.
 //
-// Nothing is simulated: if the engine deduplicates, drops or rejects,
+// Inputs are generated benchmark events; pipeline delivery and timing are real.
+// If the engine deduplicates, drops or rejects,
 // the report says so and the exit code is non-zero. Dedup is avoided by
 // construction (unique PID per event, unique host per run; the dedup
 // key is rule|host|pid and the engine keeps it for a 60 s TTL — a fixed

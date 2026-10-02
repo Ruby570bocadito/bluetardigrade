@@ -1,5 +1,7 @@
 'use client'
 
+import { observationSearch } from '@/lib/source-observation'
+
 // Live telemetry stream. Rows enter with a short fade (feedback for new
 // events, skipped while paused), the stream can be frozen for
 // inspection and the whole buffer exports as JSONL/CSV. The type filter
@@ -116,9 +118,9 @@ export function LiveFeed() {
       if (typeFilter !== 'all' && e.type !== typeFilter) return false
       if (!q) return true
       const haystack = [
-        e.type, e.host, e.user ?? '', eventDetail(e),
+        e.id, e.type, e.source, e.host, e.user ?? '', eventDetail(e),
         e.process ? `pid ${e.process.pid}` : '',
-        e.network?.destination_ip ?? '', e.network?.domain ?? '',
+        ...observationSearch(e.attributes, e.network),
       ].join(' ').toLowerCase()
       return haystack.includes(q)
     })

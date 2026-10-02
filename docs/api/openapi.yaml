@@ -1358,15 +1358,14 @@ components:
       type: object
       description: |
         Unified event schema (the wire contract, pkg/model). Sensors
-        emit it, the engine validates and enriches it. Exactly one of
-        the payload objects (process / access / file / network /
-        registry) is populated depending on `type`; `target` appears
-        only on `process.access`.
+        emit it, the engine validates and enriches it. Payload objects
+        depend on type and may coexist (for example process and file).
+        Imported SOC observations use attributes; source is declared, not attested.
       required: [id, timestamp, type, source, host]
       properties:
         id:
           type: string
-          description: event UUID (set by the sensor)
+          description: sender-provided identifier; collectors use a stable 32-hex digest of source, observer and record
         timestamp:
           type: string
           format: date-time
@@ -1380,9 +1379,16 @@ components:
             - network.connect
             - image.load
             - registry.set
+            - network.alert
+            - host.query
+            - honeypot.connect
+            - honeypot.login
+            - honeypot.command
+            - network.firewall
+            - email.message
         source:
           type: string
-          description: emitting sensor, e.g. sf-sensor or sf-devsensor
+          description: declared sender, e.g. sysmon, etw, simulate, suricata, zeek, osquery, cowrie, windows-firewall or eml
         host:
           type: string
         user:
@@ -1448,6 +1454,11 @@ components:
           type: array
           items:
             type: string
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
+          description: declared source observations, bounded and normalized by the collector; separate from enrichment
         enrichment:
           type: object
           additionalProperties:
@@ -1535,12 +1546,11 @@ components:
           format: date-time
         rule_id:
           type: string
-          format: uuid
         rule_name:
           type: string
         severity:
           type: string
-          enum: [critical, high, medium, low]
+          enum: [critical, high, medium, low, info]
         host:
           type: string
         user:
@@ -1550,6 +1560,13 @@ components:
           description: id of the event that triggered the alert
         event_type:
           type: string
+        source:
+          type: string
+          description: source declaration of the triggering observation
+        attributes:
+          $ref: '#/components/schemas/Event/properties/attributes'
+        network:
+          $ref: '#/components/schemas/Event/properties/network'
         summary:
           type: string
           description: human-readable one-liner (may contain attacker-controlled text)
@@ -1573,7 +1590,7 @@ components:
           type: array
           items:
             type: string
-          description: action names declared by the rule (empty so far)
+          description: action names declared by the rule; declaration is not proof of execution
         enrichment:
           type: object
           additionalProperties:
@@ -1698,14 +1715,13 @@ components:
       properties:
         id:
           type: string
-          format: uuid
         name:
           type: string
         description:
           type: string
         severity:
           type: string
-          enum: [critical, high, medium, low]
+          enum: [critical, high, medium, low, info]
         event_type:
           type: string
         mitre:

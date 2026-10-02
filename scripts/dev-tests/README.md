@@ -118,7 +118,7 @@ concurrent snapshot frames, live-channel warnings, outage/recovery, pinned
 historical navigation, POST-only triage, lifecycle deep links, superseded
 queries, batched decisions, memory-only limits, older engines, forensic
 retries, complete JSON/JSONL exports, stale evidence responses and cleanup.
-The 27 checks include saved-search capture/application, cross-tab updates,
+The 34 checks include report drafts/exports/revision conflicts/orphan snapshots and saved-search capture/application, cross-tab updates,
 text rendering and blocked/corrupt storage handling.
 They do not certify browser layout or replace the native Bun integration suite.
 
@@ -205,3 +205,20 @@ as the `console-browser-regression` artifact for seven days. The checks
 verify browser behavior; they do not certify a live ETW capture, the engine
 transport or every UI flow. Cross-browser and additional mobile interaction
 coverage remain follow-up work.
+
+## Incremento SOC
+
+```bash
+go build -o bin/engine-soc-smoke ./cmd/engine
+go build -o bin/collector-soc-smoke ./cmd/collector
+python3 scripts/dev-tests/smoke_soc_pipeline.py --engine ./bin/engine-soc-smoke --collector ./bin/collector-soc-smoke
+```
+
+El smoke usa logs/MIME generados e inertes y binarios reales en loopback
+con AUTH, API bearer y SQLite: seis formatos, siete registros, ocho alertas,
+forensics, reconocimiento/cierre, informe CLI y rechazo de sobrescritura.
+No contacta proveedores ni ejecuta ataques. La suite DOM incluye borradores,
+actualizaciones lifecycle, descargas, conflictos, corrupción, cuota y catálogo
+huérfano. Chromium añade guardado/reload/export exacto, bounds móvil y catálogo;
+las capturas se etiquetan como fixtures. Las verificaciones DOM son 34 y las
+verificaciones Chromium son 20 en la suite actual.

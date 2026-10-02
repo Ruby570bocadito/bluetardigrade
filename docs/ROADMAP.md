@@ -6,14 +6,14 @@ roadmap sin criterios de aceptación es una lista de deseos. El estado
 "shipped" de cada horizontal vive en el [CHANGELOG](../CHANGELOG.md) y
 la arquitectura vigente en [ARCHITECTURE.md](ARCHITECTURE.md).
 
-Última actualización: 2026-10-01 (investigaciones guardadas y analista).
+Última actualización: 2026-10-02 (integraciones SOC e informes).
 
 ---
 
 ## H1 — Detección: profundidad y cobertura (siguiente)
 
 **Problema**: la cobertura actual es fuerte en procesos y artefactos
-(55 reglas, 4 cadenas), incluida una primera capa de ficheros; sigue
+(69 reglas, 4 cadenas), incluida una primera capa de ficheros; sigue
 siendo delgada en memoria y en la confirmación de cargas de DLL.
 
 - **Reglas de fichero: primera capa entregada** — paquete
@@ -23,8 +23,9 @@ siendo delgada en memoria y en la confirmación de cargas de DLL.
   Pendiente: medir ruido con telemetría real de Windows y correlacionar
   la DLL escrita con `image.load`; el nombre de una DLL no confirma
   carga lateral. Detalle: [DETECCION-Y-EVIDENCIA.md](DETECCION-Y-EVIDENCIA.md).
-- **ETW de imagen/driver** — el sensor Rust ya colecta
-  `image.load`: reglas de drivers maliciosos y DLLs de ruta no estándar
+- **ETW de imagen/driver** — el sensor Rust colecta
+  `process.create` en su implementación actual; Sysmon cubre más tipos.
+  Pendiente `image.load`: reglas de drivers maliciosos y DLLs de ruta no estándar
   cargadas por servicios. Cierre: 4+ reglas sobre `image.load` validadas
   en laboratorio Windows real.
 - **Sigma import real** — el convertidor existe (`cmd/engine sigma`);
@@ -127,3 +128,13 @@ un cluster de alertas correlacionadas.
   el cuello.
 - **Multi-tenant** — un motor por despliegue; el aislamiento por
   cliente es responsabilidad del orquestador (Docker/K8s), no del motor.
+
+## SOC — primera integración entregada; operación multiusuario pendiente
+
+Entregado: seis adaptadores observados, 14 reglas SOC, dos umbrales nuevos,
+configuración osquery de solo lectura e informes humanos en CLI/dashboard.
+[Guía y límites](SOC-INTEGRACIONES-E-INFORMES.md). Pendiente: laboratorio de
+proveedores con medición de falsos positivos, cola durable y cursores de
+rotación, casos compartidos en backend, identidades autenticadas, permisos,
+auditoría de versiones y sincronización de informes. IPS inline pertenece
+al proveedor; no se anuncia un bloqueador nativo de paquetes.

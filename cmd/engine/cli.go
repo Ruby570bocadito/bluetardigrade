@@ -18,7 +18,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const engineLong = `Motor de deteccion de security-framework: ingiere eventos NDJSON de
+const engineLong = `Motor de deteccion de bluetardigrade: ingiere eventos NDJSON de
 los sensores, los enriquece, evalua reglas YAML, correlaciona cadenas
 de kill-chain y emite alertas por consola, API local y webhook.
 
@@ -31,6 +31,7 @@ const engineExamples = `  engine run                     arranca el motor con lo
   engine rules                   tabla de las reglas cargadas
   engine validate                valida reglas y secuencias y reporta avisos
   engine sigma -dir corpus -out rules/convertidas.yaml   convierte reglas Sigma
+  engine report --alert ID --interactive --out reports/ID.md   informe humano
   engine version                 version, runtime de Go y plataforma`
 
 const runLong = `Arranca el motor completo: ingesta TCP de eventos NDJSON, enriquecido,
@@ -50,7 +51,7 @@ const runExamples = `  engine run                       valores por defecto (loo
 
 const rulesLong = `Carga el arbol de reglas y lo presenta en una tabla: id, nombre,
 severidad (con color por severidad), tipo de evento y tags ATT&CK.
-Con el arbol del repositorio deben aparecer 23 reglas.`
+El recuento se obtiene del arbol de reglas cargado.`
 
 const validateLong = `Carga y valida reglas y secuencias sin arrancar el motor: reporta
 errores de parseo o compilacion, secuencias con pasos que no apuntan a
@@ -74,7 +75,7 @@ func Execute() {
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:     "engine [comando]",
-		Short:   "Motor de deteccion de security-framework",
+		Short:   "Motor de deteccion de bluetardigrade",
 		Long:    engineLong,
 		Example: engineExamples,
 		// Errors are rendered by Execute (red "error:" line + hint),
@@ -86,7 +87,7 @@ func newRootCmd() *cobra.Command {
 	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		fmt.Fprint(cmd.OutOrStdout(), buildHelp(cmd))
 	})
-	root.AddCommand(newRunCmd(), newRulesCmd(), newValidateCmd(), newSigmaCmd(), newVersionCmd())
+	root.AddCommand(newRunCmd(), newRulesCmd(), newValidateCmd(), newSigmaCmd(), newReportCmd(), newVersionCmd())
 	return root
 }
 
@@ -361,6 +362,8 @@ func buildHelp(cmd *cobra.Command) string {
 // so the help lists them from there instead of pflag.
 func helpFlagRows(cmd *cobra.Command) [][2]string {
 	switch cmd.Name() {
+	case "report":
+		return [][2]string{{"--alert string", "ID de alerta (16 hex)"}, {"--api string", "API HTTP local o HTTPS remoto"}, {"--interactive", "Entrevista de investigacion"}, {"--notes string", "Campos humanos en JSON estricto"}, {"--format string", "md o json (por defecto md)"}, {"--out string", "Archivo nuevo para el informe"}}
 	case "run":
 		return flagRows(newRunFlagSet("engine run", &options{}, new(bool), flag.ContinueOnError))
 	case "rules":

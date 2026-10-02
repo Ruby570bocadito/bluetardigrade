@@ -69,6 +69,8 @@ jobs:
           GOOS=linux   CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o dist/devsensor-${VER}-linux-amd64           ./cmd/devsensor
           GOOS=windows CGO_ENABLED=0 go build -trimpath -ldflags "$VER_LDFLAGS" -o dist/engine-${VER}-windows-amd64.exe  ./cmd/engine
           GOOS=windows CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o dist/devsensor-${VER}-windows-amd64.exe      ./cmd/devsensor
+          GOOS=linux CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o dist/collector-${VER}-linux-amd64 ./cmd/collector
+          GOOS=windows CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o dist/collector-${VER}-windows-amd64.exe ./cmd/collector
           # the version the linux binary reports must be the tag itself,
           # not the source default: fail loud on drift
           ./dist/engine-${VER}-linux-amd64 version | grep -qF "$VER" \

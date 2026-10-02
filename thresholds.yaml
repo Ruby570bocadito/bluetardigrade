@@ -53,3 +53,28 @@
     window: 5m
   cooldown: 15m
   tags: ["attack.t1485", "impact", "threshold"]
+
+- name: "Cowrie: rafaga de logins fallidos"
+  id: thr-cowrie-login-burst
+  description: "20 logins fallidos en 5 minutos por IP y observador del honeypot; no prueba acceso productivo."
+  severity: medium
+  event_type: honeypot.login
+  conditions:
+    - {field: source, operator: eq, value: cowrie}
+    - {field: attributes.honeypot_event, operator: eq, value: cowrie.login.failed}
+  threshold: {count: 20, window: 5m, group_by: network.source_ip}
+  cooldown: 15m
+  tags: ["attack.t1110", "sensor:cowrie", "threshold"]
+
+- name: "Firewall: rafaga de descartes entrantes"
+  id: thr-firewall-drop-burst
+  description: "50 DROP/RECEIVE en 5 minutos por IP y host; revisar escaneo, ruido y configuracion."
+  severity: medium
+  event_type: network.firewall
+  conditions:
+    - {field: source, operator: eq, value: windows-firewall}
+    - {field: attributes.firewall_action, operator: eq, value: drop}
+    - {field: attributes.firewall_direction, operator: eq, value: inbound}
+  threshold: {count: 50, window: 5m, group_by: network.source_ip}
+  cooldown: 15m
+  tags: ["attack.t1046", "sensor:firewall", "threshold"]

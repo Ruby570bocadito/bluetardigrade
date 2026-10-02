@@ -9,6 +9,7 @@ conserva la trazabilidad completa.
 
 | Ruta | Contenido |
 |------|-----------|
+| [SOC-INTEGRACIONES-E-INFORMES.md](SOC-INTEGRACIONES-E-INFORMES.md) | Seis fuentes observadas, reglas SOC, phishing/firewall, informes humanos CLI/dashboard, pruebas y límites |
 | [INVESTIGACION-CLI-Y-TRIAJE.md](INVESTIGACION-CLI-Y-TRIAJE.md) | Búsqueda CLI por ID y términos, accesos de triaje del dashboard, navegación y regresiones |
 | [DETECCION-Y-EVIDENCIA.md](DETECCION-Y-EVIDENCIA.md) | Nuevas alarmas de ficheros, correcciones de contexto/YAML/forense, exportación y pruebas |
 | [INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md](INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md) | Búsquedas locales, protección CSV completa, progreso y límites del analista, código real frente a demo/fixtures |

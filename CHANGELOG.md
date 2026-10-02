@@ -14,6 +14,21 @@ and the `make dist` target.
 
 ### Added
 
+- Six explicit SOC import formats in the operational Go `collector`: Suricata
+  EVE, Zeek JSON conn, individual osquery differential rows, Cowrie JSONL,
+  Windows Firewall W3C logs and offline EML. Verified remote TLS/auth,
+  bounded records, explicit source timezone and no uncertain-write replay.
+- Fourteen source-gated SOC rules (69 enabled total) and two volumetric
+  thresholds for Cowrie logins and inbound firewall drops (four total).
+  osquery readonly schedule in `configs/osquery-soc.conf`.
+- `engine report` interactive/strict-notes workflow with exact API alert lookup,
+  frozen evidence, human classification and exclusive Markdown/JSON output.
+- Ten browser-local investigation reports with explicit save, detected stale
+  revision protection, Markdown/JSON downloads and a saved snapshot catalog.
+  Reports remain accessible after alert retention and do not change triage.
+- Authenticated real collector/engine smoke plus parser, rule, TLS, report,
+  DOM and Chromium regressions; test inputs remain labelled inert fixtures.
+
 - A PowerShell syntax guard (`scripts/dev-tests/check_powershell_syntax.ps1`)
   parses every `.ps1` in the tree with the real PowerShell AST parser. It
   runs in CI twice — pwsh on Ubuntu and Windows PowerShell 5.1 on the
@@ -28,7 +43,7 @@ and the `make dist` target.
 - Six `file.write` alarms in `rules/windows/file-staging.yaml`: Office
   payloads, script-written DLLs, downloaded/extracted DLL candidates,
   PowerShell profiles, Office startup content and LSASS dump artifacts.
-  The pack now contains 55 enabled rules; medium signals document their
+  That increment brought the pack to 55 enabled rules; medium signals document their
   legitimate uses and require investigation rather than automatic response.
 - Full forensic snapshot downloads in JSON and versioned JSONL, retaining
   the alert, metadata, raw event fields, hashes and enrichment.
@@ -39,6 +54,18 @@ and the `make dist` target.
   and read authorization; no attack commands or active response are run.
 
 ### Fixed
+
+- Direct and hub alert mappings retain source, observation attributes and
+  network context; the hub preserves `info` severity. Ring and SQLite searches
+  share source/attribute/flow fields. Distinct imported mail records no longer
+  collapse into one observer/PID-zero dedup key.
+- Bridge stop during probe/snapshot no longer opens a late stream; polling and
+  header timers are released on failures, stream readers cancel on shutdown,
+  and SSE frames/incomplete buffers are bounded.
+- Source declaration summaries identify all six imported formats while
+  retaining the demo label for mixed windows; source remains unattested.
+- CLI stale rule counts and Makefile Go/staticcheck prerequisites corrected;
+  collector included in future Linux/Windows release builds.
 
 - The installer no longer dies on git's own progress banner: `git clone`
   always writes "Cloning into ..." to stderr, and under
@@ -270,7 +297,6 @@ artifacts, and the project is now **bluetardigrade** (renamed from
 - Legacy alert selection uses timestamp, event and rule identity consistently.
 - Delayed lifecycle frames cannot undo newer close/reopen decisions.
 - Export tooltips state the default limits and their independence from view filters.
-
 
 #### Added
 

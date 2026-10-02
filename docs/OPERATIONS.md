@@ -495,7 +495,7 @@ verified in conduct, not just in compilation.
 ## Detection rules
 
 
-Rules live in `rules/` as YAML, are validated at load, and hot-reload every 15 seconds by default (disable with `-reload-every 0`). The loader carries the same house caps as every other config surface: 4 MiB per file (checked before reading), a nesting-depth pre-scan and a 2048 enabled-rules ceiling — enforced fail-loud on startup and on every hot-reload tick, so an oversized or hostile file aborts startup, or keeps the previous set on reload, instead of degrading a running engine. The shipped pack uses 55 of those 2048 slots. The shared guard also rejects cyclic aliases and caps projected expansion and composed flow depth before typed decoding.
+Rules live in `rules/` as YAML, are validated at load, and hot-reload every 15 seconds by default (disable with `-reload-every 0`). The loader carries the same house caps as every other config surface: 4 MiB per file (checked before reading), a nesting-depth pre-scan and a 2048 enabled-rules ceiling — enforced fail-loud on startup and on every hot-reload tick, so an oversized or hostile file aborts startup, or keeps the previous set on reload, instead of degrading a running engine. The shipped pack uses 69 of those 2048 slots. The shared guard also rejects cyclic aliases and caps projected expansion and composed flow depth before typed decoding.
 
 ```yaml
 - name: "PowerShell con comando codificado"
@@ -521,7 +521,7 @@ every change. Artifact rules have positive/negative fixtures; Windows lab
 validation and environment-specific noise tuning remain separate checks.
 
 <!-- BEGIN RULE INVENTORY -->
-The enabled pack contains **55 rules across 6 event types**: 16 critical / 33 high / 6 medium.
+The enabled pack contains **69 rules across 12 event types**: 16 critical / 37 high / 13 medium / 1 low / 2 info.
 Full IDs are retained because different rules in a pack can share a UUID prefix.
 
 | ID | Rule | Severity | Event type | ATT&CK | Tactic |
@@ -547,6 +547,8 @@ Full IDs are retained because different rules in a pack can share a UUID prefix.
 | `c3d4e5f6-0005-4c05-9e05-050505050505` | Borrado del diario USN con fsutil | high | `process.create` | T1070.005 | defense-evasion |
 | `a1b2c3d4-0009-4a09-9e09-090909090909` | Canal de control remoto silencioso con AnyDesk | high | `process.create` | T1219 | command-and-control |
 | `d4e5f607-1005-4a00-8000-000000000005` | Contenido activo en el inicio automatico de Office | high | `file.write` | T1137 | persistence |
+| `soc-honeypot-login` | Cowrie: acceso aceptado en el honeypot | high | `honeypot.login` | T1078 |  |
+| `soc-honeypot-command` | Cowrie: comando observado en la sesion | high | `honeypot.command` | T1059 |  |
 | `b2c3d4e5-0007-4b07-9e07-070707070707` | Cradle de descarga en PowerShell | high | `process.create` | T1059.001 | execution |
 | `e8a1c72d-4b6f-4f39-9a52-0d3b7c5f1a11` | Creacion de tarea programada | high | `process.create` | T1053.005 | persistence |
 | `8e2f3a51-6b7c-4d8e-af90-1b2c3d4e5f60` | Defensa antivirus desactivada via registro | high | `registry.set` | T1562.001 | defense-evasion |
@@ -570,17 +572,29 @@ Full IDs are retained because different rules in a pack can share a UUID prefix.
 | `a1b2c3d4-0005-4a05-9e05-050505050505` | Mapeo de dominio con SharpHound | high | `process.create` | T1087.002 | discovery |
 | `afd1638c-f4be-4295-c778-cfa36a4ef92c` | Movimiento lateral con PsExec | high | `process.create` | T1021.002 | lateral-movement |
 | `b2c3d4e5-0008-4b08-9e08-080808080808` | Navegador lanzando un interprete de comandos | high | `process.create` | T1203 | execution |
+| `soc-ndr-public-smb` | NDR: SMB hacia una direccion publica | high | `network.connect` | T1021.002 |  |
 | `d4e5f607-1001-4a00-8000-000000000001` | Office escribe un payload en una ruta de usuario | high | `file.write` | T1204.002 | execution |
 | `9ec0527b-e3ad-4184-b667-be92593de81b` | Persistencia en clave Run | high | `process.create` | T1547.001 | persistence |
 | `7d1e2f40-5a6b-4c7d-9e8f-0a1b2c3d4e5f` | Persistencia en clave Run via registro | high | `registry.set` | T1547.001 | persistence |
 | `9f31c2a4-5d7b-4e18-8a02-3b9c6d1e7f40` | PowerShell con comando codificado | high | `process.create` | T1059.001 | execution |
 | `c3d4e5f6-0004-4c04-9e04-040404040404` | Sabotaje de recuperacion de arranque con bcdedit | high | `process.create` | T1490 | impact |
+| `soc-ids-priority-high` | Suricata: firma de prioridad alta | high | `network.alert` |  |  |
 | `c3d4e5f6-0008-4c08-9e08-080808080808` | Borrado dirigido de artefactos forenses de Windows | medium | `process.create` | T1070.004 | defense-evasion |
 | `e48f9ab7-c1d0-43e4-a5f6-7b8c9daebf21` | Consulta DNS a dominio generado (posible DGA) | medium | `network.connect` | T1568.002 | command-and-control |
 | `d4e5f607-1003-4a00-8000-000000000003` | DLL candidata a carga lateral descargada o extraida | medium | `file.write` | T1574.001 | defense-evasion |
 | `c26d7e95-afbe-41c2-e3d4-5f6a7b8c9da0` | DLL cargada desde ruta de usuario | medium | `image.load` | T1574.001, T1574.002 | privilege-escalation |
+| `soc-firewall-admin-allow` | Firewall: conexion administrativa entrante permitida | medium | `network.firewall` |  |  |
 | `d4e5f607-1004-4a00-8000-000000000004` | Modificacion de un perfil de PowerShell | medium | `file.write` | T1546.013 | persistence |
+| `soc-ndr-public-rdp` | NDR: RDP hacia una direccion publica | medium | `network.connect` | T1021.001 |  |
+| `soc-osquery-admin-listener` | osquery: nuevo puerto administrativo en todas las interfaces | medium | `host.query` |  |  |
+| `soc-mail-risky-attachment` | Phishing: adjunto de extension activa | medium | `email.message` | T1566.001 |  |
+| `soc-mail-dmarc-fail` | Phishing: fallo DMARC declarado en cabecera | medium | `email.message` | T1566 |  |
+| `soc-mail-ip-url` | Phishing: URL con direccion IP literal | medium | `email.message` | T1566.002 |  |
 | `a1b2c3d4-000a-4a0a-9e0a-0a0a0a0a0a0a` | Reconocimiento de dominio con comandos net/nltest | medium | `process.create` | T1087.002 | discovery |
+| `soc-ids-priority-medium` | Suricata: firma de prioridad media | medium | `network.alert` |  |  |
+| `soc-mail-reply-mismatch` | Phishing: Reply-To de otro dominio | low | `email.message` | T1566 |  |
+| `soc-firewall-admin-drop` | Firewall: intento administrativo entrante descartado | info | `network.firewall` |  |  |
+| `soc-ips-reported-drop` | Suricata: bloqueo declarado por el proveedor | info | `network.alert` |  |  |
 <!-- END RULE INVENTORY -->
 
 Nota: los nombres de reglas y secuencias se mantienen en espanol, tal
@@ -773,3 +787,7 @@ go build -o bin/bench ./cmd/bench
 bin/bench -addr 127.0.0.1:7777 -api 127.0.0.1:7778 -n 2000 -rate 1000
 bin/bench -addr 127.0.0.1:7777 -api 127.0.0.1:7778 -api-token <token> -n 2000
 ```
+
+## SOC imports and analyst reports
+
+See [SOC-INTEGRACIONES-E-INFORMES.md](SOC-INTEGRACIONES-E-INFORMES.md) for the six collector formats, TLS/auth requirements, osquery schedule, Windows firewall timezone and offline phishing analysis. Reports contain analyst statements plus a frozen alert snapshot; they do not execute actions or change triage. Browser drafts are local to this origin, with ten report slots and explicit save/export/delete.

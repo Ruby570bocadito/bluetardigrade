@@ -82,6 +82,10 @@ jobs:
         run: |
           go build -o "$RUNNER_TEMP/bluetardigrade-file-smoke" ./cmd/engine
           python3 scripts/dev-tests/smoke_file_forensics.py --engine "$RUNNER_TEMP/bluetardigrade-file-smoke"
+      - name: SOC connectors, alert triage and analyst report (inert loopback fixtures)
+        run: |
+          go build -o "$RUNNER_TEMP/bluetardigrade-collector-smoke" ./cmd/collector
+          python3 scripts/dev-tests/smoke_soc_pipeline.py --engine "$RUNNER_TEMP/bluetardigrade-file-smoke" --collector "$RUNNER_TEMP/bluetardigrade-collector-smoke"
       # Windows cross-check del motor (C3, requisito vinculante R1 del
       # dictamen 04-B 16h11): internal/respond tiene un carril windows
       # (process_windows.go, OpenProcess/QueryFullProcessImageNameW/
