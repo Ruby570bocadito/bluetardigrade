@@ -462,29 +462,37 @@ func (h *Hub) SetStore(st *store.Store) {
 	h.mu.Unlock()
 }
 
-// persistEvent writes one event to the store if attached. Failures are
-// logged with a throttle (first, then every 500th) so a full disk does
-// not flood the log while detection keeps running.
-func (h *Hub) persistEvent(ev *model.Event) {
+// persistEvent writes one event to the store if attached.
+func (h *Hub) persistEvent(ev *model.Event) { h.PersistEvents([]*model.Event{ev}) }
+
+// PersistEvents writes a batch of events to the store (one SQLite
+// transaction) when one is attached. Failures are logged with a
+// throttle (first, then every 500th) so a full disk does not flood the
+// log while detection keeps running; id conflicts are not failures —
+// the first copy is safe on disk — and are logged on their own
+// throttle. The engine loop calls it once per drained batch, BEFORE
+// PublishEvent fans each event out: durable evidence first, live
+// delivery second.
+func (h *Hub) PersistEvents(evs []*model.Event) {
 	h.mu.Lock()
 	st := h.store
 	h.mu.Unlock()
-	if st == nil {
+	if st == nil || len(evs) == 0 {
 		return
 	}
-	if err := st.InsertEvent(ev); err != nil {
-		if errors.Is(err, store.ErrIDConflict) {
-			// not a failed write: the first copy is safe on disk. The
-			// counter lives in the store (store_id_conflicts); log the
-			// first and every 500th so a forging feed cannot flood it.
-			if n := st.IDConflicts(); n == 1 || n%500 == 0 {
-				log.Printf("[API] event id conflict, stored evidence kept (%d total): %v", n, err)
-			}
-			return
-		}
+	res := st.InsertEvents(evs)
+	for _, err := range res.Failed {
 		n := atomic.AddUint64(&h.storeFails, 1)
 		if n == 1 || n%500 == 0 {
 			log.Printf("[API] store write FAILED (%d total): %v", n, err)
+		}
+	}
+	if len(res.Conflicts) > 0 {
+		total := st.IDConflicts()
+		prev := total - int64(len(res.Conflicts))
+		// log when the running total crosses 1 or a multiple of 500
+		if prev == 0 || prev/500 != total/500 {
+			log.Printf("[API] event id conflict, stored evidence kept (%d total, last id %s)", total, oneLine(res.Conflicts[len(res.Conflicts)-1]))
 		}
 	}
 }
@@ -565,8 +573,20 @@ func (h *Hub) Shutdown() {
 
 // RecordEvent stores an event in the ring, persists it (store attached)
 // and streams it to subscribers. The store write happens BEFORE the
-// fan-out: durable evidence first, live delivery second.
+// fan-out: durable evidence first, live delivery second. The engine
+// loop uses the split form (PersistEvents per batch, then PublishEvent
+// per event) to amortize the SQLite commit.
 func (h *Hub) RecordEvent(ev *model.Event) {
+	if ev == nil {
+		return
+	}
+	h.persistEvent(ev)
+	h.PublishEvent(ev)
+}
+
+// PublishEvent adds an already-persisted event to the ring and streams
+// it to subscribers.
+func (h *Hub) PublishEvent(ev *model.Event) {
 	if ev == nil {
 		return
 	}
@@ -576,7 +596,6 @@ func (h *Hub) RecordEvent(ev *model.Event) {
 		h.events = h.events[len(h.events)-maxEvents:]
 	}
 	h.mu.Unlock()
-	h.persistEvent(ev)
 	h.broadcast("event", ev)
 }
 

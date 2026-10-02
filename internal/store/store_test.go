@@ -446,3 +446,54 @@ func TestSearchAlertsByID(t *testing.T) {
 		t.Fatalf("forged separator matched: %d alerts, err %v", len(got), err)
 	}
 }
+
+// A batch keeps per-event semantics: new rows insert, exact replays
+// (also inside the same batch) are silent, conflicts keep the first
+// copy and are reported by id.
+func TestInsertEventsBatchSemantics(t *testing.T) {
+	s := openTestStore(t)
+	at := time.Now().UTC()
+	if err := s.InsertEvent(ev("old", "DC-01", model.TypeProcessCreate, "first", at)); err != nil {
+		t.Fatal(err)
+	}
+	res := s.InsertEvents([]*model.Event{
+		ev("a", "H1", model.TypeProcessCreate, "x", at),
+		ev("a", "H1", model.TypeProcessCreate, "x", at), // replay inside the batch
+		ev("b", "H1", model.TypeProcessCreate, "y", at),
+		ev("old", "WKS-99", model.TypeProcessCreate, "forged", at), // conflict with stored row
+		ev("b", "H2", model.TypeProcessCreate, "z", at),            // conflict inside the batch
+	})
+	if res.Inserted != 2 || len(res.Failed) != 0 {
+		t.Fatalf("inserted=%d failed=%v, want 2 and none", res.Inserted, res.Failed)
+	}
+	if strings.Join(res.Conflicts, ",") != "old,b" {
+		t.Fatalf("conflicts = %v, want [old b]", res.Conflicts)
+	}
+	if e, _ := s.Counts(); e != 3 || s.IDConflicts() != 2 {
+		t.Fatalf("events=%d conflicts=%d, want 3 and 2", e, s.IDConflicts())
+	}
+	got, err := s.QueryEvents(EventQuery{Q: "forged", Limit: 10})
+	if err != nil || len(got) != 0 {
+		t.Fatalf("forged payload reached the store: %d rows, %v", len(got), err)
+	}
+	if res := s.InsertEvents(nil); res.Inserted != 0 || res.Failed != nil || res.Conflicts != nil {
+		t.Fatalf("empty batch: %+v", res)
+	}
+}
+
+// A batch whose transaction cannot be written degrades to per-event
+// writes: each failure is reported once, nothing is counted as stored.
+func TestInsertEventsReportsFailures(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now().UTC()
+	res := s.InsertEvents([]*model.Event{ev("x", "H", model.TypeProcessCreate, "a", at), ev("y", "H", model.TypeProcessCreate, "b", at)})
+	if len(res.Failed) != 2 || res.Inserted != 0 {
+		t.Fatalf("closed store: inserted=%d failed=%d, want 0 and 2", res.Inserted, len(res.Failed))
+	}
+	if e, _ := s.Counts(); e != 0 {
+		t.Fatalf("failed batch moved the counter to %d", e)
+	}
+}

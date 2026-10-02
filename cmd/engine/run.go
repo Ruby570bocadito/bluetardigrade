@@ -792,57 +792,97 @@ func runEngine(o *options, interactive bool) error {
 
 	processed := 0
 	start := time.Now()
+	// process runs one event through detection after it was persisted.
+	process := func(ev *model.Event) {
+		// flight recorder: before evaluation, so the event that
+		// triggers an alert is guaranteed to be in the ring when
+		// the alert's bundle is captured in the same iteration.
+		if fore != nil {
+			fore.ObserveEvent(ev)
+		}
+		if hub != nil {
+			hub.PublishEvent(ev)
+		}
+		stats.recordEvent()
+		if o.verbose && !tui {
+			log.Printf("[EVENT] %-18s %s pid=%d host=%s",
+				redact.TerminalText(ev.Type), redact.TerminalText(describe(ev)), pidOf(ev), redact.TerminalText(ev.Host))
+		}
+		for _, hit := range engine.Evaluate(ev) {
+			// allowlist first: a suppressed hit raises no alert AND does
+			// not feed the correlator (see the Emit wrapper above).
+			if suppressed(supMgr, hit.Rule.ID, ev.Host, time.Now()) {
+				if !tui {
+					log.Printf("[SUPPRESS] rule=%s host=%s", redact.TerminalText(hit.Rule.ID), redact.TerminalText(ev.Host))
+				}
+				continue
+			}
+			alerts.Raise(ev, hit)
+			if corr != nil {
+				corr.Observe(ev, hit.Rule.Name)
+			}
+		}
+		// behavioral detector (A3): consumes raw network.connect
+		// events regardless of rule hits — beaconing is a
+		// property of event timing, not of any single event.
+		if bcn != nil {
+			bcn.Observe(ev, time.Now())
+		}
+		// volumetric detector (A2): consumes raw events that pass
+		// each definition's predicate — the signal is the COUNT
+		// within a window, orthogonal to rules and beaconing.
+		if thr != nil {
+			thr.Observe(ev, time.Now())
+		}
+		processed++
+	}
+
+	// The loop drains whatever the ingest has already queued (up to
+	// maxEventBatch) and persists it in ONE store transaction before
+	// any of those events is published or evaluated: durable evidence
+	// first, live delivery second, as before, but SQLite's commit is
+	// paid once per batch. Idle traffic yields batches of one, so no
+	// event ever waits for company.
+	const maxEventBatch = 256
 	loop := func() {
+		batch := make([]*model.Event, 0, maxEventBatch)
 		for ev := range events {
-			enricher.Apply(ev)
-			// flight recorder: before evaluation, so the event that
-			// triggers an alert is guaranteed to be in the ring when
-			// the alert's bundle is captured in the same iteration.
-			if fore != nil {
-				fore.ObserveEvent(ev)
+			batch = append(batch[:0], ev)
+		drain:
+			for len(batch) < maxEventBatch {
+				select {
+				case more, ok := <-events:
+					if !ok {
+						break drain // closed: the range ends after this batch
+					}
+					batch = append(batch, more)
+				default:
+					break drain
+				}
+			}
+			// enrichment is part of the stored record, so it runs
+			// before persistence (sequentially: the process map
+			// follows the stream order exactly as before)
+			for _, e := range batch {
+				enricher.Apply(e)
 			}
 			switch {
 			case hub != nil:
-				// the hub persists to the store too when attached
-				hub.RecordEvent(ev)
+				// the hub persists to the store when attached
+				hub.PersistEvents(batch)
 			case st != nil:
 				// -api 0 with -store: keep persisting without a hub
-				if err := st.InsertEvent(ev); err != nil {
+				res := st.InsertEvents(batch)
+				for _, err := range res.Failed {
 					storeWriteErr(err)
 				}
-			}
-			stats.recordEvent()
-			if o.verbose && !tui {
-				log.Printf("[EVENT] %-18s %s pid=%d host=%s",
-					redact.TerminalText(ev.Type), redact.TerminalText(describe(ev)), pidOf(ev), redact.TerminalText(ev.Host))
-			}
-			for _, hit := range engine.Evaluate(ev) {
-				// allowlist first: a suppressed hit raises no alert AND does
-				// not feed the correlator (see the Emit wrapper above).
-				if suppressed(supMgr, hit.Rule.ID, ev.Host, time.Now()) {
-					if !tui {
-						log.Printf("[SUPPRESS] rule=%s host=%s", redact.TerminalText(hit.Rule.ID), redact.TerminalText(ev.Host))
-					}
-					continue
-				}
-				alerts.Raise(ev, hit)
-				if corr != nil {
-					corr.Observe(ev, hit.Rule.Name)
+				for _, id := range res.Conflicts {
+					storeWriteErr(fmt.Errorf("%w (id %s)", store.ErrIDConflict, id))
 				}
 			}
-			// behavioral detector (A3): consumes raw network.connect
-			// events regardless of rule hits — beaconing is a
-			// property of event timing, not of any single event.
-			if bcn != nil {
-				bcn.Observe(ev, time.Now())
+			for _, e := range batch {
+				process(e)
 			}
-			// volumetric detector (A2): consumes raw events that pass
-			// each definition's predicate — the signal is the COUNT
-			// within a window, orthogonal to rules and beaconing.
-			if thr != nil {
-				thr.Observe(ev, time.Now())
-			}
-			processed++
 		}
 	}
 
