@@ -241,6 +241,8 @@ export type EngineStats = {
   store_enabled?: boolean
   // Undefined on older engines; never equate missing data with zero failures.
   store_write_failures?: number
+  // Event ids re-sent with a different payload; the stored copy is kept.
+  store_id_conflicts?: number
   store_events?: number
   store_alerts?: number
   // per-host risk scoring (engine A1): width of the signal (how many

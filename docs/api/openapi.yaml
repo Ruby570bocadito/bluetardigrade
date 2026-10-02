@@ -1150,6 +1150,7 @@ components:
         - store_write_failures
         - store_events
         - store_alerts
+        - store_id_conflicts
         - mode
         - risk_hosts_tracked
         - hot_hosts
@@ -1182,6 +1183,14 @@ components:
           type: integer
           format: int64
           description: alerts currently persisted in the store (0 while store_enabled is false)
+        store_id_conflicts:
+          type: integer
+          format: int64
+          minimum: 0
+          description: event writes refused since process start because the id was already
+            stored with a different payload. Stored evidence is append-only (first write wins);
+            a non-zero value means a feed re-sent an id with other content (possible forgery
+            or id collision). 0 while store_enabled is false.
         uptime_s:
           type: integer
           description: seconds since the API hub started

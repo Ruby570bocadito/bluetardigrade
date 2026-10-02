@@ -20,6 +20,7 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -47,7 +48,17 @@ type Store struct {
 
 	events int64 // live row counts, maintained by insert/prune
 	alerts int64
+
+	conflicts int64 // event ids re-sent with a DIFFERENT payload (first copy kept)
 }
+
+// ErrIDConflict reports an event whose id is already stored with a
+// different payload. The stored copy is kept untouched (first write
+// wins): ids are chosen by the feed, and every sensor shares the
+// ingest token, so letting a later write replace the row would let
+// one compromised endpoint rewrite another host's evidence. Callers
+// treat it as a signal to log, not as a failed write.
+var ErrIDConflict = errors.New("store: event id already stored with a different payload; first copy kept")
 
 // EventQuery is the filter form of the API telemetry parameters for
 // events (same semantics as the hub's recordFilter).
@@ -129,6 +140,7 @@ CREATE TABLE IF NOT EXISTS events (
         json   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS events_ts_idx ON events(ts);
+CREATE INDEX IF NOT EXISTS events_host_ts_idx ON events(host COLLATE NOCASE, ts);
 CREATE TABLE IF NOT EXISTS alerts (
         seq      INTEGER PRIMARY KEY AUTOINCREMENT,
         ts       INTEGER NOT NULL,
@@ -140,6 +152,7 @@ CREATE TABLE IF NOT EXISTS alerts (
 );
 CREATE INDEX IF NOT EXISTS alerts_ts_idx ON alerts(ts);
 CREATE INDEX IF NOT EXISTS alerts_rule_idx ON alerts(rule_id);
+CREATE INDEX IF NOT EXISTS alerts_host_ts_idx ON alerts(host COLLATE NOCASE, ts);
 `
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
@@ -190,9 +203,11 @@ func (s *Store) Counts() (events, alerts int64) {
 	return atomic.LoadInt64(&s.events), atomic.LoadInt64(&s.alerts)
 }
 
-// InsertEvent persists one event. Re-inserting an existing ID
-// replaces the row (sensor replays are idempotent) without inflating
-// the row count.
+// InsertEvent persists one event. Evidence is append-only: the first
+// write of an id wins. Re-sending the exact same payload (a sensor or
+// collector replay) is an idempotent no-op; re-sending the id with a
+// different payload leaves the stored row untouched, counts a conflict
+// and returns ErrIDConflict.
 func (s *Store) InsertEvent(ev *model.Event) error {
 	payload, err := json.Marshal(ev)
 	if err != nil {
@@ -200,36 +215,36 @@ func (s *Store) InsertEvent(ev *model.Event) error {
 	}
 	s.wmu.Lock()
 	defer s.wmu.Unlock()
-	// DELETE+INSERT (not INSERT OR REPLACE) so the live counter can
-	// account for replays: a replace must not look like a new row.
-	// One transaction: API readers share the single connection, so a
-	// two-step replace let them observe the row missing (a silent gap
-	// in a forensic timeline) and a failure between the steps would
-	// drop the previous evidence while inflating the counter.
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("store: begin event %s: %w", ev.ID, err)
-	}
-	defer tx.Rollback() // no-op after Commit
-	res, err := tx.Exec(`DELETE FROM events WHERE id = ?`, ev.ID)
-	if err != nil {
-		return fmt.Errorf("store: replace-lookup event %s: %w", ev.ID, err)
-	}
-	existed, _ := res.RowsAffected()
-	if _, err := tx.Exec(
+	res, err := s.db.Exec(
 		`INSERT INTO events (id, ts, type, host, search, json)
-                 VALUES (?, ?, ?, ?, ?, ?)`,
+                 VALUES (?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(id) DO NOTHING`,
 		ev.ID, ev.Timestamp.UnixNano(), ev.Type, strings.ToLower(ev.Host),
 		eventHaystack(ev), string(payload),
-	); err != nil {
+	)
+	if err != nil {
 		return fmt.Errorf("store: insert event %s: %w", ev.ID, err)
 	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("store: commit event %s: %w", ev.ID, err)
+	if n, _ := res.RowsAffected(); n > 0 {
+		atomic.AddInt64(&s.events, n)
+		return nil
 	}
-	atomic.AddInt64(&s.events, 1-existed)
-	return nil
+	// the id is already stored: tell a replay from a conflict
+	var stored string
+	if err := s.db.QueryRow(`SELECT json FROM events WHERE id = ?`, ev.ID).Scan(&stored); err != nil {
+		return fmt.Errorf("store: lookup duplicate event %s: %w", ev.ID, err)
+	}
+	if stored == string(payload) {
+		return nil
+	}
+	atomic.AddInt64(&s.conflicts, 1)
+	return fmt.Errorf("%w (id %s)", ErrIDConflict, ev.ID)
 }
+
+// IDConflicts returns how many event writes were refused since this
+// process opened the store because their id was already stored with a
+// different payload (possible evidence tampering or an id collision).
+func (s *Store) IDConflicts() int64 { return atomic.LoadInt64(&s.conflicts) }
 
 // InsertAlert persists one alert. Alerts have no natural key, so
 // every raised alert is a new row (the dedup TTL lives upstream).

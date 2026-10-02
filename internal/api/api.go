@@ -438,6 +438,15 @@ func (h *Hub) persistEvent(ev *model.Event) {
 		return
 	}
 	if err := st.InsertEvent(ev); err != nil {
+		if errors.Is(err, store.ErrIDConflict) {
+			// not a failed write: the first copy is safe on disk. The
+			// counter lives in the store (store_id_conflicts); log the
+			// first and every 500th so a forging feed cannot flood it.
+			if n := st.IDConflicts(); n == 1 || n%500 == 0 {
+				log.Printf("[API] event id conflict, stored evidence kept (%d total): %v", n, err)
+			}
+			return
+		}
 		n := atomic.AddUint64(&h.storeFails, 1)
 		if n == 1 || n%500 == 0 {
 			log.Printf("[API] store write FAILED (%d total): %v", n, err)
@@ -607,10 +616,14 @@ type statsPayload struct {
 	StoreWriteFailures uint64 `json:"store_write_failures"`
 	StoreEvents        int64  `json:"store_events"`
 	StoreAlerts        int64  `json:"store_alerts"`
-	CorrelatorStates   int    `json:"correlator_states"`
-	CorrelatorSeqs     int    `json:"correlator_sequences"`
-	CorrelatorCap      int    `json:"correlator_cap"`
-	Mode               string `json:"mode"`
+	// StoreIDConflicts counts event writes refused because the id was
+	// already stored with a different payload (first copy kept):
+	// possible evidence forgery by a feed, or an id collision.
+	StoreIDConflicts int64  `json:"store_id_conflicts"`
+	CorrelatorStates int    `json:"correlator_states"`
+	CorrelatorSeqs   int    `json:"correlator_sequences"`
+	CorrelatorCap    int    `json:"correlator_cap"`
+	Mode             string `json:"mode"`
 
 	// Host risk scoring (A1): how many hosts currently carry non-cold
 	// risk, and the top-5 list the console dashboard renders.
@@ -701,10 +714,11 @@ func (h *Hub) statsSnapshot() statsPayload {
 	if corrFn != nil {
 		corrStates, corrSeqs, corrCap = corrFn()
 	}
-	storeEnabled, storeEvents, storeAlerts := false, int64(0), int64(0)
+	storeEnabled, storeEvents, storeAlerts, storeConflicts := false, int64(0), int64(0), int64(0)
 	if st != nil {
 		storeEnabled = true
 		storeEvents, storeAlerts = st.Counts()
+		storeConflicts = st.IDConflicts()
 	}
 	supActive := 0
 	if sup != nil {
@@ -777,6 +791,7 @@ func (h *Hub) statsSnapshot() statsPayload {
 		StoreWriteFailures: atomic.LoadUint64(&h.storeFails),
 		StoreEvents:        storeEvents,
 		StoreAlerts:        storeAlerts,
+		StoreIDConflicts:   storeConflicts,
 		CorrelatorStates:   corrStates,
 		CorrelatorSeqs:     corrSeqs,
 		CorrelatorCap:      corrCap,

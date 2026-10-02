@@ -136,6 +136,8 @@ export type HubStats = {
   // optional SQLite persistence (-store): present since the store landed
   store_enabled?: boolean
   store_write_failures?: number
+  // event ids re-sent with different content (first copy kept)
+  store_id_conflicts?: number
   store_events?: number
   store_alerts?: number
   // per-host risk scoring (engine A1): width of the signal (how many

@@ -71,6 +71,7 @@ func (h *Hub) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 		writeMetric(&b, "sf_store_enabled", "SQLite persistence attached (1 = yes).", "gauge", 1)
 		writeMetric(&b, "sf_store_events", "Events persisted in the SQLite store.", "gauge", float64(s.StoreEvents))
 		writeMetric(&b, "sf_store_alerts", "Alerts persisted in the SQLite store.", "gauge", float64(s.StoreAlerts))
+		writeMetric(&b, "sf_store_id_conflicts_total", "Event writes refused because the id was already stored with a different payload (first copy kept).", "counter", float64(s.StoreIDConflicts))
 	} else {
 		writeMetric(&b, "sf_store_enabled", "SQLite persistence attached (1 = yes).", "gauge", 0)
 	}

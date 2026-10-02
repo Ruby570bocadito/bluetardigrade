@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -336,24 +337,74 @@ func TestLegacySeparatorRowsCannotBeCrossed(t *testing.T) {
 	}
 }
 
-func TestInsertEventReplaceServesNewPayload(t *testing.T) {
+// Evidence is append-only: a second write of the same id with a
+// different payload (another sensor reusing the id, a forged event)
+// must not replace the stored row. The conflict is reported and
+// counted; the original evidence stays byte-identical.
+func TestInsertEventFirstWriteWins(t *testing.T) {
 	s := openTestStore(t)
 	at := time.Now().UTC()
-	if err := s.InsertEvent(ev("rep", "H1", model.TypeProcessCreate, "first", at)); err != nil {
+	if err := s.InsertEvent(ev("rep", "DC-01", model.TypeProcessCreate, "procdump -ma lsass.exe", at)); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.InsertEvent(ev("rep", "H1", model.TypeProcessCreate, "second", at)); err != nil {
-		t.Fatalf("replace insert: %v", err)
+	err := s.InsertEvent(ev("rep", "WKS-99", model.TypeProcessCreate, "notepad.exe", at))
+	if !errors.Is(err, ErrIDConflict) {
+		t.Fatalf("conflicting rewrite: err = %v, want ErrIDConflict", err)
 	}
 	got, err := s.QueryEvents(EventQuery{Limit: 10})
 	if err != nil || len(got) != 1 {
-		t.Fatalf("want 1 row after replace, got %d, err %v", len(got), err)
+		t.Fatalf("want 1 row after conflict, got %d, err %v", len(got), err)
 	}
-	if got[0].Process.CommandLine != "second" {
-		t.Fatalf("replace served stale payload: %q", got[0].Process.CommandLine)
+	if got[0].Host != "DC-01" || got[0].Process.CommandLine != "procdump -ma lsass.exe" {
+		t.Fatalf("stored evidence was rewritten: host=%s cmd=%q", got[0].Host, got[0].Process.CommandLine)
 	}
 	if e, a := s.Counts(); e != 1 || a != 0 {
-		t.Fatalf("counts after replace: %d/%d, want 1/0", e, a)
+		t.Fatalf("counts after conflict: %d/%d, want 1/0", e, a)
+	}
+	if n := s.IDConflicts(); n != 1 {
+		t.Fatalf("IDConflicts = %d, want 1", n)
+	}
+	// an exact replay stays a silent no-op and is not a conflict
+	if err := s.InsertEvent(ev("rep", "DC-01", model.TypeProcessCreate, "procdump -ma lsass.exe", at)); err != nil {
+		t.Fatalf("exact replay: %v", err)
+	}
+	if n := s.IDConflicts(); n != 1 {
+		t.Fatalf("exact replay counted as conflict: %d", n)
+	}
+}
+
+// Host-filtered history must be served from the (host, ts) index, not
+// a full scan; legacy mixed-case rows still match (NOCASE index).
+func TestHostFilterUsesIndex(t *testing.T) {
+	s := openTestStore(t)
+	for _, q := range []string{
+		`EXPLAIN QUERY PLAN SELECT json FROM events WHERE host = ? COLLATE NOCASE ORDER BY ts DESC, rowid DESC LIMIT 10`,
+		`EXPLAIN QUERY PLAN SELECT json FROM alerts WHERE host = ? COLLATE NOCASE ORDER BY ts DESC, seq DESC LIMIT 10`,
+	} {
+		rows, err := s.db.Query(q, "lab-a")
+		if err != nil {
+			t.Fatal(err)
+		}
+		plan := ""
+		for rows.Next() {
+			var id, parent, unused int
+			var detail string
+			if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+				t.Fatal(err)
+			}
+			plan += detail + "; "
+		}
+		rows.Close()
+		if !strings.Contains(plan, "host_ts_idx") {
+			t.Fatalf("host filter does not use the host index: %s", plan)
+		}
+	}
+	if _, err := s.db.Exec(`INSERT INTO events (id, ts, type, host, search, json) VALUES ('legacy', 1, 't', 'LAB-A', '', '{"id":"legacy","type":"t","host":"LAB-A","timestamp":"2026-01-01T00:00:00Z"}')`); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.QueryEvents(EventQuery{Host: "lab-a", Limit: 10})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("legacy mixed-case host row not found through the index: %d, %v", len(got), err)
 	}
 }
 

@@ -789,6 +789,7 @@ func TestMetricsParityWithStats(t *testing.T) {
 	}
 
 	wantMetric("sf_events_total", "events_total")
+	wantMetric("sf_store_write_failures_total", "store_write_failures")
 	wantMetric("sf_events_dropped_total", "dropped")
 	wantMetric("sf_ingest_rejected_total", "ingest_rejected")
 	wantMetric("sf_alerts_total", "alerts_total")
