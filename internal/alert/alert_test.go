@@ -59,6 +59,51 @@ func TestRaiseDedupMapIsBounded(t *testing.T) {
 	}
 }
 
+// Expired keys leave the map through the FIFO queue: once their TTL
+// has elapsed the same hit raises again, the queue never outgrows the
+// map by more than its dead prefix, and a flood of live keys costs
+// O(1) per alert instead of a full-map sweep.
+func TestRaiseDedupExpiresInInsertionOrder(t *testing.T) {
+	var raised int
+	m := New(&strings.Builder{}, func(Alert) { raised++ })
+	hit := rules.Hit{Rule: &rules.Rule{ID: "r1", Name: "n", Severity: rules.SevLow}}
+	raise := func(pid int) {
+		ev := &model.Event{ID: "e", Type: model.TypeProcessCreate, Host: "h"}
+		ev.Process = &model.Process{PID: pid}
+		m.Raise(ev, hit)
+	}
+	for pid := 0; pid < 5000; pid++ {
+		raise(pid)
+	}
+	raise(0) // live duplicate: dropped
+	if raised != 5000 {
+		t.Fatalf("raised %d alerts, want 5000 (live duplicate must be dropped)", raised)
+	}
+	// age the first 3000 keys past the TTL
+	m.mu.Lock()
+	old := time.Now().Add(-2 * dedupTTL)
+	for i := 0; i < 3000; i++ {
+		e := &m.order[m.head+i]
+		e.at = old
+		m.seen[e.key] = old
+	}
+	m.mu.Unlock()
+	raise(0) // expired: raises again and is remembered afresh
+	if raised != 5001 {
+		t.Fatalf("expired key did not raise again (raised=%d)", raised)
+	}
+	if len(m.seen) != 2001 {
+		t.Fatalf("seen = %d keys, want 2001 (2000 live + the re-raised one)", len(m.seen))
+	}
+	if live := len(m.order) - m.head; live != len(m.seen) {
+		t.Fatalf("queue holds %d live entries for %d keys", live, len(m.seen))
+	}
+	raise(4999) // still live: dropped
+	if raised != 5001 {
+		t.Fatalf("live key raised again after expiry pass (raised=%d)", raised)
+	}
+}
+
 // Dedup within the TTL still drops repeated hits for the same key.
 func TestRaiseDedupsWithinTTL(t *testing.T) {
 	m := New(&strings.Builder{}, nil)

@@ -21,7 +21,6 @@ import (
 
 const (
 	dedupTTL     = 60 * time.Second
-	dedupSoftMax = 4096  // above this, purge expired keys opportunistically
 	dedupHardMax = 65536 // hard cap: beyond this, alerts skip dedup
 )
 
@@ -38,12 +37,25 @@ const (
 
 // Manager raises alerts for rule hits.
 type Manager struct {
-	mu      sync.Mutex
-	seen    map[string]time.Time
+	mu   sync.Mutex
+	seen map[string]time.Time
+	// order holds the keys of seen in insertion order. Every key gets
+	// the same TTL, so insertion order IS expiry order: Raise pops the
+	// expired prefix in amortized O(1) instead of scanning the whole
+	// map under the lock (the old opportunistic sweep cost ~2 ms per
+	// alert with 60k live keys and stalled the single detection loop).
+	order   []dedupEntry
+	head    int // first live index of order
 	out     io.Writer
 	colored bool
 	onAlert func(Alert)                  // optional observer (local API, SIEM taps)
 	prepare func(*Alert, []rules.Action) // optional rule-action executor
+}
+
+// dedupEntry is one remembered key and the instant it was stored.
+type dedupEntry struct {
+	key string
+	at  time.Time
 }
 
 // Alert is the structured JSON payload emitted for downstream
@@ -113,6 +125,30 @@ func (m *Manager) SetPreparer(prepare func(*Alert, []rules.Action)) {
 	m.mu.Unlock()
 }
 
+// expireLocked forgets every key whose TTL has elapsed. The queue is
+// ordered by insertion time, so the loop stops at the first live
+// entry: the cost is proportional to the keys that actually expired,
+// never to the size of the map. Caller holds mu.
+func (m *Manager) expireLocked(now time.Time) {
+	for m.head < len(m.order) {
+		e := m.order[m.head]
+		if now.Sub(e.at) < dedupTTL {
+			break
+		}
+		delete(m.seen, e.key)
+		m.order[m.head] = dedupEntry{} // release the key string
+		m.head++
+	}
+	// compact once the dead prefix dominates, so the backing array
+	// does not keep growing under a steady stream of unique keys
+	if m.head > 1024 && m.head*2 > len(m.order) {
+		n := copy(m.order, m.order[m.head:])
+		clear(m.order[n:])
+		m.order = m.order[:n]
+		m.head = 0
+	}
+}
+
 // Raise processes one hit; duplicate hits for the same rule/host/event
 // triple inside the TTL window are silently dropped.
 func (m *Manager) Raise(ev *model.Event, hit rules.Hit) {
@@ -123,24 +159,22 @@ func (m *Manager) Raise(ev *model.Event, hit rules.Hit) {
 		key = fmt.Sprintf("%s|%s|%s|%s", hit.Rule.ID, ev.Host, ev.Source, ev.ID)
 	}
 	m.mu.Lock()
-	if t, ok := m.seen[key]; ok && time.Since(t) < dedupTTL {
+	// read the clock under mu: concurrent Raise calls then append to
+	// order in non-decreasing time, which expireLocked relies on
+	now := time.Now()
+	m.expireLocked(now)
+	if _, ok := m.seen[key]; ok {
+		// expireLocked ran first: every key still present is live
 		m.mu.Unlock()
 		return
-	}
-	// opportunistic cleanup
-	if len(m.seen) > dedupSoftMax {
-		for k, t := range m.seen {
-			if time.Since(t) > dedupTTL {
-				delete(m.seen, k)
-			}
-		}
 	}
 	// hard cap: a flood of unique keys (e.g. fake hosts injected by
 	// an untrusted feed) must not grow the map without bound. Past
 	// the cap, stop remembering new keys but keep raising alerts:
 	// visibility wins over deduplication.
 	if len(m.seen) < dedupHardMax {
-		m.seen[key] = time.Now()
+		m.seen[key] = now
+		m.order = append(m.order, dedupEntry{key: key, at: now})
 	}
 	// capture prepare under mu: SetPreparer writes it under the same
 	// lock, and reading it after Unlock is a data race on the field
