@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -149,4 +150,39 @@ func pidOf(ev *model.Event) int {
 		return ev.Process.PID
 	}
 	return 0
+}
+
+// reloadReporter keeps the hot-reload output meaningful: a set is
+// announced when its size changes, a failure when its message first
+// appears or changes (the previous set keeps serving), and a recovery
+// once the file loads again.
+type reloadReporter struct {
+	name    string
+	count   int
+	lastErr string
+	quiet   bool // interactive panel: no stdout lines
+	out     io.Writer
+}
+
+func (r *reloadReporter) report(count int, err error) {
+	w := r.out
+	if w == nil {
+		w = os.Stdout
+	}
+	if err != nil {
+		if msg := err.Error(); msg != r.lastErr {
+			r.lastErr = msg
+			log.Printf("[ENGINE] %s reload FAILED, keeping previous set: %v", r.name, err)
+		}
+		return
+	}
+	recovered := r.lastErr != ""
+	r.lastErr = ""
+	if count == r.count && !recovered {
+		return
+	}
+	r.count = count
+	if !r.quiet {
+		fmt.Fprintf(w, "[ENGINE] %s reloaded (%d active)\n", r.name, count)
+	}
 }

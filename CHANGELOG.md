@@ -113,6 +113,13 @@ Rust ETW sensor fixes found on a real Windows host
   aborts the end of the install.
 - Installer: native tool output is no longer printed twice, and go, git,
   bun, Next and cargo output is decoded as UTF-8 (no more `Ô£ô`).
+- Engine: hot-reload announces rules/sequences/beacons/thresholds only
+  when a set changes (it printed four lines every 15 s), and a broken
+  edit to any of them is now logged once instead of ignored.
+- Ingest: error acks are written with a deadline. The Rust sensor never
+  reads them after AUTH, so ~1000 refused lines (malformed JSON or a host
+  outside the identity binding) used to park the connection handler for
+  good; the connection is now closed and the refusals stay counted.
 
 Also: tests for `internal/tlsutil`, 28 ATT&CK context notes for the
 analyst, and cosmetic leftovers of the old product name replaced

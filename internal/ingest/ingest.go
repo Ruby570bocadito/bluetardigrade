@@ -73,7 +73,32 @@ const defaultAuthTimeout = 10 * time.Second
 
 func authTimeout() time.Duration { return time.Duration(authTimeoutNanos.Load()) }
 
-func init() { authTimeoutNanos.Store(int64(defaultAuthTimeout)) }
+// ackTimeoutNanos bounds every error ack written back to a sensor. The
+// bundled Rust sensor never reads after the AUTH handshake, so the acks
+// of refused lines pile up in the socket buffers; once they are full a
+// plain write blocks forever and parks this handler (and its connection
+// slot) for good. Past the deadline the connection is closed instead:
+// the sensor reconnects and its operator sees the refusals counted in
+// /api/stats. Atomic for the same reason as authTimeoutNanos.
+var ackTimeoutNanos atomic.Int64
+
+const defaultAckTimeout = 5 * time.Second
+
+func init() {
+	authTimeoutNanos.Store(int64(defaultAuthTimeout))
+	ackTimeoutNanos.Store(int64(defaultAckTimeout))
+}
+
+// writeAck writes one ack line with a bounded deadline and reports
+// whether the client took it.
+func writeAck(conn net.Conn, line string) bool {
+	_ = conn.SetWriteDeadline(time.Now().Add(time.Duration(ackTimeoutNanos.Load())))
+	_, err := fmt.Fprintln(conn, line)
+	_ = conn.SetWriteDeadline(time.Time{})
+	return err == nil
+}
+
+func errorAck(msg string) string { return fmt.Sprintf(`{"ack":"error","error":%q}`, msg) }
 
 // Server is a concurrent NDJSON-over-TCP listener. Connections arrive
 // either in clear text (New) or wrapped in TLS (NewTLS); the handlers
@@ -217,7 +242,8 @@ func (s *Server) Serve() {
 		if len(s.open) >= maxConns {
 			s.mu.Unlock()
 			s.rejected.Add(1)
-			_, _ = fmt.Fprintln(conn, `{"ack":"error","error":"connection limit reached, retry shortly"}`)
+			// bounded: this runs in the accept loop itself
+			writeAck(conn, `{"ack":"error","error":"connection limit reached, retry shortly"}`)
 			conn.Close()
 			continue
 		}
@@ -309,14 +335,17 @@ func (s *Server) handle(conn net.Conn) {
 		ev, err := decode(line)
 		if err != nil {
 			s.dropped.Add(1)
-			fmt.Fprintf(conn, `{"ack":"error","error":%q}`+"\n", err.Error())
+			if !writeAck(conn, errorAck(err.Error())) {
+				return // client does not read its acks: close, do not block
+			}
 			continue
 		}
 		if s.identitiesActive() {
 			if !who.AllowsHost(ev.Host) {
 				s.violations.Add(1)
-				fmt.Fprintf(conn, `{"ack":"error","error":%q}`+"\n",
-					fmt.Sprintf("host %q is outside the binding of ingest identity %q", ev.Host, who.Name))
+				if !writeAck(conn, errorAck(fmt.Sprintf("host %q is outside the binding of ingest identity %q", ev.Host, who.Name))) {
+					return
+				}
 				continue
 			}
 			stampIdentity(ev, who)
@@ -327,7 +356,7 @@ func (s *Server) handle(conn net.Conn) {
 	}
 	if errors.Is(scanner.Err(), errAuthLineTooLong) {
 		s.rejected.Add(1)
-		fmt.Fprintln(conn, `{"ack":"error","error":"auth failed: AUTH line too long"}`)
+		writeAck(conn, `{"ack":"error","error":"auth failed: AUTH line too long"}`)
 	}
 }
 
@@ -359,12 +388,12 @@ func isAuthLine(line []byte) bool {
 func (s *Server) checkAuth(conn net.Conn, line []byte) (*Identity, bool) {
 	if !s.authRequired() {
 		s.rejected.Add(1)
-		fmt.Fprintln(conn, `{"ack":"error","error":"engine has no ingest token configured; unset -token/SF_INGEST_TOKEN on the sensor or set one on the engine"}`)
+		writeAck(conn, `{"ack":"error","error":"engine has no ingest token configured; unset -token/SF_INGEST_TOKEN on the sensor or set one on the engine"}`)
 		return nil, false
 	}
 	if !isAuthLine(line) {
 		s.rejected.Add(1)
-		fmt.Fprintln(conn, `{"ack":"error","error":"auth failed: send 'AUTH <token>' as the first line"}`)
+		writeAck(conn, `{"ack":"error","error":"auth failed: send 'AUTH <token>' as the first line"}`)
 		return nil, false
 	}
 	supplied := line[5:]
@@ -375,10 +404,12 @@ func (s *Server) checkAuth(conn net.Conn, line []byte) (*Identity, bool) {
 	shared := s.token != "" && s.tokenMatches(supplied)
 	if who == nil && !shared {
 		s.rejected.Add(1)
-		fmt.Fprintln(conn, `{"ack":"error","error":"auth failed: send 'AUTH <token>' as the first line"}`)
+		writeAck(conn, `{"ack":"error","error":"auth failed: send 'AUTH <token>' as the first line"}`)
 		return nil, false
 	}
-	_, _ = fmt.Fprint(conn, ackOK)
+	if !writeAck(conn, strings.TrimSuffix(ackOK, "\n")) {
+		return nil, false
+	}
 	return who, true
 }
 
