@@ -123,7 +123,7 @@ describe('EngineBridge (agent-04 hardening)', () => {
       const rec = recorder(); const streams: ReadableStreamDefaultController<Uint8Array>[] = []
       const base = stubEngine({ sequences: [], suppressions: { entries: [] }, stats: STATS, streams })
       let release: (() => void) | undefined
-      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
         const target = String(input)
         if (target.endsWith(phase === 'probe' ? '/api/health' : '/api/rules')) await new Promise<void>((done) => { release = done })
         return base(input, init)
@@ -137,7 +137,7 @@ describe('EngineBridge (agent-04 hardening)', () => {
   test('stop cancels a live stream reader and releases polling', async () => {
     const rec = recorder(); const streams: ReadableStreamDefaultController<Uint8Array>[] = []
     const base = stubEngine({ sequences: [], suppressions: { entries: [] }, stats: STATS, streams }); let cancelled = false
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => String(input).endsWith('/api/stream')
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => String(input).endsWith('/api/stream')
       ? { ok: true, body: new ReadableStream<Uint8Array>({ cancel() { cancelled = true } }) } : base(input, init)) as typeof fetch
     const bridge = new EngineBridge(rec.cb, { retryMs: 5 }); const running = bridge.start()
     await until(() => rec.ups === 1, 2000, 'connected'); bridge.stop(); await running

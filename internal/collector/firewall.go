@@ -84,7 +84,7 @@ func (d *Decoder) decodeFirewall(line string) (*model.Event, error) {
 	zone := time.UTC
 	if d.firewallFormat == "Local" {
 		if d.firewallZone == nil {
-			return nil, errors.New("Local firewall timestamps require -firewall-timezone")
+			return nil, errors.New("firewall Local timestamps require -firewall-timezone")
 		}
 		zone = d.firewallZone
 	}
