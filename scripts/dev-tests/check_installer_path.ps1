@@ -49,6 +49,15 @@ try {
         Add-ToUserPath -Dir $newBin -KeyPath $scratchKey
         Assert ((Read-Scratch).Raw -eq "C:\tools;%USERPROFILE%\.cargo\bin;$newBin") "unexpected PATH: $((Read-Scratch).Raw)"
     }
+    Check 'entries of a deleted security-framework install are removed, live ones kept' {
+        $gone = Join-Path $work 'deleted\security-framework\bin'
+        Set-UserPathRaw -KeyPath $scratchKey -Value "C:\tools;$gone;$newBin"
+        Add-ToUserPath -Dir $newBin -KeyPath $scratchKey
+        Assert ((Read-Scratch).Raw -eq "C:\tools;$newBin") "stale entry kept: $((Read-Scratch).Raw)"
+        Set-UserPathRaw -KeyPath $scratchKey -Value "$legacyBin;$newBin"
+        Add-ToUserPath -Dir $newBin -KeyPath $scratchKey
+        Assert ((Read-Scratch).Raw -eq "$newBin;$legacyBin") "live legacy entry must be kept (only moved behind): $((Read-Scratch).Raw)"
+    }
     Check 'an empty user PATH is created with the bin' {
         [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree('Software\BluetardigradeInstallerTest', $false)
         Add-ToUserPath -Dir $newBin -KeyPath $scratchKey

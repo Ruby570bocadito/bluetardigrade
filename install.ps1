@@ -682,6 +682,10 @@ function Add-ToUserPath {
     $entries = @()
     if ($raw) { $entries = @(([string]$raw) -split ';' | Where-Object { $_.Trim() }) }
     $norm = { param($e) [Environment]::ExpandEnvironmentVariables($e).Trim().TrimEnd('\') }
+    # entries left behind by an old security-framework install whose folder
+    # is gone (its uninstaller did not always clean the PATH)
+    $stale = @($entries | Where-Object { $d = & $norm $_; $d -match '\\security-framework\\bin$' -and -not (Test-Path -LiteralPath $d) })
+    if ($stale.Count -gt 0) { $entries = @($entries | Where-Object { $stale -notcontains $_ }) }
     $at = -1
     for ($i = 0; $i -lt $entries.Count; $i++) { if ((& $norm $entries[$i]) -ieq $mine) { $at = $i; break } }
     $limit = $entries.Count
@@ -693,15 +697,19 @@ function Add-ToUserPath {
         $entryDir = & $norm $entries[$i]
         if ($entryDir -and (Test-Path -LiteralPath (Join-Path $entryDir 'sf-engine.exe'))) { $shadows += $entryDir }
     }
-    if ($at -ge 0 -and $shadows.Count -eq 0) { Write-Ok 'PATH already up to date'; return }
+    if ($at -ge 0 -and $shadows.Count -eq 0 -and $stale.Count -eq 0) { Write-Ok 'PATH already up to date'; return }
     $others = @($entries | Where-Object { (& $norm $_) -ine $mine })
     if ($shadows.Count -gt 0) {
         $new = @($Dir) + $others
         $message = "moved to the front of the user PATH, ahead of $($shadows -join ', ') (open a NEW terminal)"
+    } elseif ($at -ge 0) {
+        $new = $entries
+        $message = 'PATH up to date'
     } else {
         $new = $others + @($Dir)
         $message = 'added to user PATH (open a NEW terminal to use sf-*)'
     }
+    if ($stale.Count -gt 0) { $message += "; removed stale entries of a deleted install: $($stale -join ', ')" }
     try {
         Set-UserPathRaw -Value ($new -join ';') -KeyPath $KeyPath
         Write-Ok $message
