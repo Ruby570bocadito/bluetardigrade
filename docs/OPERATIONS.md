@@ -129,6 +129,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `-lifecycle` | `./alert-lifecycle.json` | alert triage state file (acknowledged/closed + notes; empty keeps statuses in memory only) |
 | `-reload-every` | `15s` | hot-reload cadence for rules/sequences/suppressions (`0` disables) |
 | `-token` / `-token-previous` | — | ingest shared token / previous token during a rotation window |
+| `-ingest-identities` | — | per-sensor ingest identities (own token + bound hosts); see [Per-sensor ingest identities](#per-sensor-ingest-identities) |
 | `-ingest-cert` / `-ingest-key` | — | TLS certificate (PEM) / private key for the ingest listener (both or neither; min TLS 1.2; sensors connect with `-tls -ca`) |
 | `-api-token` | — | Bearer required on every `/api/*` route and on `/metrics` (`/api/health` stays open) |
 | `-api-write` | off | arm `POST`/`DELETE /api/suppressions` (writes land on the `-suppressions` file; refused beyond loopback without `-api-token`) |
@@ -272,6 +273,23 @@ sf-engine -token 'the-new-secret'
 During the window the startup banner says `rotation window OPEN` so an operator can see at a glance when a migration is still in progress. Both comparisons are constant-time and combined without branching on the content, so the window does not leak which token matched.
 
 On Windows the installer can persist the token for you (`install.ps1 -IngestToken '...'`, stored under `tools\config\ingest.token`, cleared with an empty value): the autostart entry, `sf-console` and `sf-sensor` then all start the engine with that token enforced. The installer's `-Firewall` switch **requires** a configured token — it refuses to open TCP 7777 otherwise (and removes a rule left behind by a pre-gate install), because a reachable ingest without a token is an open event-injection channel for the whole network segment.
+
+## Per-sensor ingest identities
+
+The shared token proves "some sensor of this deployment": every endpoint holds the same secret, so one compromised host can report events in the name of any other machine — fabricate alerts for it, inflate its risk score, feed its kill chains. `-ingest-identities <file>` (or `SF_INGEST_IDENTITIES`) gives each sensor its own credential, bound to the hosts it may report for:
+
+```bash
+# generate one entry per sensor (random 256-bit token, shown once, + its SHA-256)
+sf-engine ingest-identity --name wks-01 --host WKS-01
+sf-engine ingest-identity --name ids-01 --any-host        # collectors that report many hosts
+
+# collect the entries in a file (see ingest-identities.example.yaml) and start the engine with it
+sf-engine -addr 0.0.0.0:7777 -ingest-identities ./ingest-identities.yaml -ingest-cert c.pem -ingest-key k.pem
+```
+
+Each sensor sends its own token in the usual `AUTH <token>` handshake. The engine stores only digests, compares them in constant time and, for every accepted event, sets `attributes.ingest_identity` to the identity name (a feed-supplied value is overwritten), so stored evidence records which credential delivered it. An event whose `host` is outside the sender's binding is refused with an ack error and counted as `ingest_identity_violations` in `/api/stats` (`sf_ingest_identity_violations_total` in `/metrics`); the console lists it as a pipeline issue. The shared `-token` keeps working alongside identities while a fleet migrates (its events are stamped `shared-token`); drop it once every sensor has its own identity. The file is validated strictly (version 1, unknown fields rejected, one token per identity, `["*"]` only on its own) and hot-reloaded on the `-reload-every` cadence: a malformed edit keeps the previous set and is logged.
+
+While the handshake is pending the first line is capped at 4 KiB: an unauthenticated connection can no longer make the engine buffer up to 1 MiB before presenting a credential.
 
 ## Ingest TLS (encryption in transit)
 
@@ -617,7 +635,7 @@ como viven en los YAML del repositorio; no se traducen en la doc.
 
 ### Kill-chain correlation
 
-Beyond per-event rules, the engine ships a sequence correlator: `sequences/*.yaml` lists named steps (exact rule names) that, when all observed on the same host inside a `window` (e.g. `5m`), raise a single high-signal alert describing the campaign. The shipped pack models credential-dump campaigns, full intrusion chains, defensive shutdown and registry-based persistence. Sequences hot-reload together with the rules. Load-time caps keep the config surface bounded (4 MiB/file, nesting depth 512, 512 sequences, 64 steps/chain, window ≤ 7 days, id/name/tag length caps, no control runes in strings that reach logs or alerts): an oversized or hostile file fails the load loudly instead of degrading a running engine. Steps naming rules that do not exist are reported as a WARNING at startup and on every reload, because a chain waiting on a ghost rule can never complete. Note: suppressing a rule also removes it from every chain it feeds on that host (accepted-state semantics — see [docs/false-positive-control.md](false-positive-control.md)).
+Beyond per-event rules, the engine ships a sequence correlator: `sequences/*.yaml` lists named steps (exact rule names) that, when all observed on the same host inside a `window` (e.g. `5m`), raise a single high-signal alert describing the campaign. Each step remembers the event time of its latest hit on that host; the chain fires when every step is present and the spread between the oldest and the newest fits in the window, so a stale early hit cannot anchor the window and an out-of-order event cannot stitch steps days apart. Chains whose window elapses without progress are reclaimed on the maintenance cadence. The shipped pack models credential-dump campaigns, full intrusion chains, defensive shutdown and registry-based persistence. Sequences hot-reload together with the rules. Load-time caps keep the config surface bounded (4 MiB/file, nesting depth 512, 512 sequences, 64 steps/chain, window ≤ 7 days, id/name/tag length caps, no control runes in strings that reach logs or alerts): an oversized or hostile file fails the load loudly instead of degrading a running engine. Steps naming rules that do not exist are reported as a WARNING at startup and on every reload, because a chain waiting on a ghost rule can never complete. Note: suppressing a rule also removes it from every chain it feeds on that host (accepted-state semantics — see [docs/false-positive-control.md](false-positive-control.md)).
 
 The shipped pack (`sequences/kill-chains.yaml`) defines 4 sequences, all
 `critical`, window `5m`:
@@ -737,6 +755,7 @@ path (no subcommand) and on `engine run`.
 | `-respond-audit file` | `./respond-audit.jsonl` | append-only JSONL audit file, one line per attempt (denials included), fsync per line, 64 MiB ceiling: beyond it every action denies with `audit_unavailable` until the file is rotated |
 | `-token t` | empty | shared ingest token (falls back to `SF_INGEST_TOKEN`); empty disables auth |
 | `-token-previous t` | empty | previous ingest token, still accepted during a rotation window (falls back to `SF_INGEST_TOKEN_PREVIOUS`) |
+| `-ingest-identities f` | empty | YAML file of per-sensor ingest identities (falls back to `SF_INGEST_IDENTITIES`); events for hosts outside a sensor's binding are refused; hot-reloaded |
 | `-suppressions file` | `./suppressions.yaml` | operator allowlist YAML silencing rule/host pairs (expirations supported); empty disables |
 | `-store path` | empty | SQLite file persisting events and alerts beyond the in-memory rings (e.g. `./sf-store.db`); empty disables — see [Persistent storage](#persistent-storage-sqlite-opt-in) |
 | `-store-retention dur` | `72h` | delete stored events/alerts older than this on a 5-minute ticker; `0` keeps everything |

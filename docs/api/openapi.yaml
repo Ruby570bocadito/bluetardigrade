@@ -1127,6 +1127,8 @@ components:
         - events_total
         - dropped
         - ingest_rejected
+        - ingest_identities
+        - ingest_identity_violations
         - events_per_min
         - alerts_total
         - by_severity
@@ -1211,6 +1213,18 @@ components:
             handshake (no AUTH line, wrong or missing token, AUTH sent to
             a tokenless engine, or auth timeout) — how visible probes
             against a remote bind show up; zero while auth is disabled
+        ingest_identities:
+          type: integer
+          minimum: 0
+          description: per-sensor ingest identities configured with -ingest-identities
+            (0 = shared token only or auth disabled)
+        ingest_identity_violations:
+          type: integer
+          format: int64
+          minimum: 0
+          description: events refused since start because the sending sensor reported a
+            host outside the binding of its ingest identity — a sensor speaking for
+            another machine is a compromise signal
         events_per_min:
           type: integer
           description: events received in the last 60 seconds

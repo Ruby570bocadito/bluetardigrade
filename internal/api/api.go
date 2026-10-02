@@ -72,6 +72,7 @@ type Hub struct {
 	rules       *rules.Engine
 	suppress    *suppress.Manager               // operator allowlist (read-only view)
 	received    func() (uint64, uint64, uint64) // ingested, dropped, rejected
+	identities  func() (int, uint64)            // per-sensor ingest identities, host-binding violations
 	webhook     func() (uint64, uint64, uint64) // sent, failed, dropped
 	notify      func() []notify.ChannelStats    // per-channel delivery counters (C2)
 	elastic     func() (uint64, uint64, uint64) // Elasticsearch sink: sent, failed, dropped
@@ -217,6 +218,16 @@ func (h *Hub) SetSuppressions(m *suppress.Manager) {
 func (h *Hub) SetCounters(received func() (ingested, dropped, rejected uint64)) {
 	h.mu.Lock()
 	h.received = received
+	h.mu.Unlock()
+}
+
+// SetIngestIdentityStats wires the per-sensor ingest identities into
+// /api/stats: how many are configured and how many events were refused
+// because a sensor reported a host outside its binding (a compromise
+// signal). No wiring means identities are off (reported as zeros).
+func (h *Hub) SetIngestIdentityStats(fn func() (identities int, violations uint64)) {
+	h.mu.Lock()
+	h.identities = fn
 	h.mu.Unlock()
 }
 
@@ -590,19 +601,23 @@ func (h *Hub) broadcast(topic string, payload any) {
 // ------------------------------------------------------------- handlers
 
 type statsPayload struct {
-	UptimeS        int64          `json:"uptime_s"`
-	EventsTotal    uint64         `json:"events_total"`
-	Dropped        uint64         `json:"dropped"`
-	IngestRejected uint64         `json:"ingest_rejected"`
-	EventsPerMin   int            `json:"events_per_min"`
-	AlertsTotal    int            `json:"alerts_total"`
-	BySeverity     map[string]int `json:"by_severity"`
-	RulesCount     int            `json:"rules_count"`
-	RulesTypes     []string       `json:"rules_types"`
-	EventsBuffered int            `json:"events_buffered"`
-	WebhookSent    uint64         `json:"webhook_sent"`
-	WebhookFailed  uint64         `json:"webhook_failed"`
-	WebhookDropped uint64         `json:"webhook_dropped"`
+	UptimeS        int64  `json:"uptime_s"`
+	EventsTotal    uint64 `json:"events_total"`
+	Dropped        uint64 `json:"dropped"`
+	IngestRejected uint64 `json:"ingest_rejected"`
+	// Per-sensor ingest identities: configured credentials and events
+	// refused for claiming a host outside the sender's binding.
+	IngestIdentities         int            `json:"ingest_identities"`
+	IngestIdentityViolations uint64         `json:"ingest_identity_violations"`
+	EventsPerMin             int            `json:"events_per_min"`
+	AlertsTotal              int            `json:"alerts_total"`
+	BySeverity               map[string]int `json:"by_severity"`
+	RulesCount               int            `json:"rules_count"`
+	RulesTypes               []string       `json:"rules_types"`
+	EventsBuffered           int            `json:"events_buffered"`
+	WebhookSent              uint64         `json:"webhook_sent"`
+	WebhookFailed            uint64         `json:"webhook_failed"`
+	WebhookDropped           uint64         `json:"webhook_dropped"`
 	// SIEM sinks (Elasticsearch bulk / Splunk HEC): same delivery
 	// triple as the webhook, per platform.
 	ElasticSent        uint64 `json:"elastic_sent"`
@@ -671,6 +686,7 @@ func (h *Hub) statsSnapshot() statsPayload {
 	if h.received != nil {
 		ingested, dropped, rejected = h.received()
 	}
+	idFn := h.identities
 	var whSent, whFailed, whDropped uint64
 	if h.webhook != nil {
 		whSent, whFailed, whDropped = h.webhook()
@@ -710,6 +726,11 @@ func (h *Hub) statsSnapshot() statsPayload {
 	// never deadlock, but the idiom costs nothing and keeps
 	// statsSnapshot's rule uniform: closures and other managers' locks
 	// are only ever taken after Unlock.
+	var idCount int
+	var idViolations uint64
+	if idFn != nil {
+		idCount, idViolations = idFn()
+	}
 	var corrStates, corrSeqs, corrCap int
 	if corrFn != nil {
 		corrStates, corrSeqs, corrCap = corrFn()
@@ -767,44 +788,46 @@ func (h *Hub) statsSnapshot() statsPayload {
 	}
 
 	return statsPayload{
-		UptimeS:            int64(time.Since(h.started) / time.Second),
-		EventsTotal:        ingested,
-		Dropped:            dropped,
-		IngestRejected:     rejected,
-		EventsPerMin:       last60,
-		AlertsTotal:        alTotal,
-		BySeverity:         bySev,
-		RulesCount:         rulesCount,
-		RulesTypes:         rulesTypes,
-		EventsBuffered:     evCount,
-		WebhookSent:        whSent,
-		WebhookFailed:      whFailed,
-		WebhookDropped:     whDropped,
-		ElasticSent:        esSent,
-		ElasticFailed:      esFailed,
-		ElasticDropped:     esDropped,
-		SplunkSent:         spSent,
-		SplunkFailed:       spFailed,
-		SplunkDropped:      spDropped,
-		Suppressions:       supActive,
-		StoreEnabled:       storeEnabled,
-		StoreWriteFailures: atomic.LoadUint64(&h.storeFails),
-		StoreEvents:        storeEvents,
-		StoreAlerts:        storeAlerts,
-		StoreIDConflicts:   storeConflicts,
-		CorrelatorStates:   corrStates,
-		CorrelatorSeqs:     corrSeqs,
-		CorrelatorCap:      corrCap,
-		Mode:               "engine",
-		RiskHostsTracked:   riskHosts,
-		HotHosts:           hotHosts,
-		BeaconsTracked:     bTracked,
-		BeaconsCap:         bCap,
-		BeaconsFired:       bFired,
-		ThresholdRules:     tDefs,
-		ThresholdKeys:      tKeys,
-		ThresholdFired:     tFired,
-		NotifyChannels:     notifyRows,
+		UptimeS:                  int64(time.Since(h.started) / time.Second),
+		EventsTotal:              ingested,
+		Dropped:                  dropped,
+		IngestRejected:           rejected,
+		IngestIdentities:         idCount,
+		IngestIdentityViolations: idViolations,
+		EventsPerMin:             last60,
+		AlertsTotal:              alTotal,
+		BySeverity:               bySev,
+		RulesCount:               rulesCount,
+		RulesTypes:               rulesTypes,
+		EventsBuffered:           evCount,
+		WebhookSent:              whSent,
+		WebhookFailed:            whFailed,
+		WebhookDropped:           whDropped,
+		ElasticSent:              esSent,
+		ElasticFailed:            esFailed,
+		ElasticDropped:           esDropped,
+		SplunkSent:               spSent,
+		SplunkFailed:             spFailed,
+		SplunkDropped:            spDropped,
+		Suppressions:             supActive,
+		StoreEnabled:             storeEnabled,
+		StoreWriteFailures:       atomic.LoadUint64(&h.storeFails),
+		StoreEvents:              storeEvents,
+		StoreAlerts:              storeAlerts,
+		StoreIDConflicts:         storeConflicts,
+		CorrelatorStates:         corrStates,
+		CorrelatorSeqs:           corrSeqs,
+		CorrelatorCap:            corrCap,
+		Mode:                     "engine",
+		RiskHostsTracked:         riskHosts,
+		HotHosts:                 hotHosts,
+		BeaconsTracked:           bTracked,
+		BeaconsCap:               bCap,
+		BeaconsFired:             bFired,
+		ThresholdRules:           tDefs,
+		ThresholdKeys:            tKeys,
+		ThresholdFired:           tFired,
+		NotifyChannels:           notifyRows,
 	}
 }
 

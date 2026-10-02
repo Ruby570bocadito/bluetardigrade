@@ -217,6 +217,10 @@ export type EngineStats = {
   events_total: number
   dropped: number
   ingest_rejected: number
+  // Per-sensor ingest identities (engine -ingest-identities); undefined on
+  // older engines. Violations = events claiming a host outside the binding.
+  ingest_identities?: number
+  ingest_identity_violations?: number
   events_per_min: number
   alerts_total: number
   by_severity: Record<string, number>

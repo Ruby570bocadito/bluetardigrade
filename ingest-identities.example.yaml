@@ -1,0 +1,36 @@
+# bluetardigrade per-sensor ingest identities (-ingest-identities).
+#
+# Each sensor authenticates with its OWN token instead of the shared
+# -token, and may only report events for the hosts listed under it.
+# An event claiming any other host is refused (ack error) and counted
+# in /api/stats as ingest_identity_violations: a sensor speaking for
+# another machine is a compromise signal. Every accepted event carries
+# attributes.ingest_identity = <name> so the evidence records which
+# credential delivered it.
+#
+# Only the SHA-256 of each token is stored here. Generate an entry
+# (random 256-bit token + digest) with:
+#
+#   engine ingest-identity --name wks-01 --host WKS-01
+#   engine ingest-identity --name ids-01 --any-host
+#
+# and hand the printed token to that sensor (SF_INGEST_TOKEN / -token).
+# Collectors that import evidence about many machines (IDS, mail,
+# firewall) use hosts: ["*"].
+#
+# The shared -token keeps working alongside identities while a fleet
+# migrates (its events are stamped "shared-token"); remove it once
+# every sensor has its own identity. The file is hot-reloaded every
+# -reload-every interval; a malformed edit keeps the previous set and
+# is logged. Unknown fields are rejected (a clear "token:" is an error).
+#
+# The digests below are the SHA-256 of the strings "example-wks-01" and
+# "example-ids": replace them, never deploy these.
+version: 1
+identities:
+  - name: wks-01
+    token_sha256: 5ca2b00806ddb65e9c5e3a232f1e600552597eb31aedd7a0aafbe5be4565a209
+    hosts: ["WKS-01", "wks-01.corp.local"]
+  - name: ids-01
+    token_sha256: 5eea702c2e0e8acccdb269d0c816cce40e8d44fc3745c8f1ef2621be855209c0
+    hosts: ["*"]

@@ -30,6 +30,7 @@ type options struct {
 	apiKey           string
 	token            string
 	prevToken        string
+	ingestIdentities string
 	ingestCert       string
 	ingestKey        string
 	suppressionsFile string
@@ -107,6 +108,8 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 		"shared token sensors must send as 'AUTH <token>' on connect (falls back to SF_INGEST_TOKEN); empty disables auth")
 	fs.StringVar(&o.prevToken, "token-previous", "",
 		"previous ingest token, still accepted during a rotation window (falls back to SF_INGEST_TOKEN_PREVIOUS); requires -token")
+	fs.StringVar(&o.ingestIdentities, "ingest-identities", "",
+		"YAML file of per-sensor ingest identities (own token as sha256 + bound hosts; see 'engine ingest-identity'); events for hosts outside a sensor's binding are refused; hot-reloaded; falls back to SF_INGEST_IDENTITIES; empty disables")
 	fs.StringVar(&o.ingestCert, "ingest-cert", "",
 		"TLS certificate (PEM) for the ingest listener; requires -ingest-key; empty keeps plain TCP")
 	fs.StringVar(&o.ingestKey, "ingest-key", "",

@@ -241,10 +241,12 @@ func runEngine(o *options, interactive bool) error {
 		}
 		log.Fatalf("[ENGINE] %v", err)
 	}
-	go server.Serve()
 	// shared-token auth: flag wins over the env var, so operators
 	// can override SF_INGEST_TOKEN per process without touching the
 	// autostart entry. The bundled sensors honor the same env var.
+	// Every credential is configured BEFORE Serve starts: a connection
+	// accepted earlier would be handled as unauthenticated (and read
+	// the token fields while they are being written).
 	ingestToken := o.token
 	if ingestToken == "" {
 		ingestToken = os.Getenv("SF_INGEST_TOKEN")
@@ -259,6 +261,19 @@ func runEngine(o *options, interactive bool) error {
 		}
 		server.SetPreviousToken(prev)
 	}
+	identitiesPath := o.ingestIdentities
+	if identitiesPath == "" {
+		identitiesPath = os.Getenv("SF_INGEST_IDENTITIES")
+	}
+	if identitiesPath != "" {
+		ids, ierr := ingest.LoadIdentities(identitiesPath)
+		if ierr != nil {
+			log.Fatalf("[ENGINE] %v", ierr)
+		}
+		server.SetIdentities(ids)
+		fmt.Printf("[ENGINE] ingest identities: %d per-sensor credentials bound to their hosts (%s)\n", len(ids), identitiesPath)
+	}
+	go server.Serve()
 	if server.AuthEnabled() {
 		if server.Rotating() {
 			fmt.Println("[ENGINE] ingest auth: ENABLED, rotation window OPEN (current and previous token both accepted; redeploy sensors, then restart without -token-previous)")
@@ -320,6 +335,9 @@ func runEngine(o *options, interactive bool) error {
 			}
 			hub.SetCounters(func() (uint64, uint64, uint64) {
 				return server.Received(), server.Dropped(), server.Rejected()
+			})
+			hub.SetIngestIdentityStats(func() (int, uint64) {
+				return server.Identities(), server.IdentityViolations()
 			})
 			// kill-chain observability: in-flight states, loaded
 			// sequences and the tracking cap, so the correlator's
@@ -703,6 +721,16 @@ func runEngine(o *options, interactive bool) error {
 					if thr != nil && fileExists(thrPath) {
 						if err := thr.Reload(thrPath); err == nil && !tui {
 							fmt.Printf("[ENGINE] thresholds reloaded (%d active)\n", thr.Count())
+						}
+					}
+					// per-sensor identities: a failed reload keeps the
+					// previous set (a half-edited file must not lock
+					// every sensor out) and says so
+					if identitiesPath != "" {
+						if ids, ierr := ingest.LoadIdentities(identitiesPath); ierr != nil {
+							log.Printf("[ENGINE] ingest identities reload FAILED, keeping previous set: %v", ierr)
+						} else {
+							server.SetIdentities(ids)
 						}
 					}
 					// active response lists (C3): a missing file on
