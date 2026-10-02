@@ -49,6 +49,11 @@ const (
 	// 429s for the rest of the window instead of more comparisons.
 	authFailBudget = 30
 	authFailWindow = time.Minute
+	// authFailMaxAddrs hard-caps the throttle map: the stale-entry
+	// trim only frees addresses whose window ended, so a client
+	// rotating source addresses (an IPv6 /64 is plenty) could grow it
+	// without bound inside one window.
+	authFailMaxAddrs = 4096
 )
 
 // Hub serves the local API and fans out live records to SSE clients.
@@ -189,7 +194,17 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	mux.HandleFunc("GET /api/health", h.handleHealth)
 	mux.HandleFunc("GET /api/alerts/export", h.handleAlertsExport)
 	mux.HandleFunc("GET /api/events/export", h.handleEventsExport)
-	h.srv = &http.Server{Handler: h.auth(guardWriteOrigin(mux)), ReadHeaderTimeout: 5 * time.Second}
+	h.srv = &http.Server{
+		Handler:           h.auth(guardWriteOrigin(mux)),
+		ReadHeaderTimeout: 5 * time.Second,
+		// idle keep-alive connections are reclaimed instead of pinning
+		// a goroutine and a socket each for as long as a client likes;
+		// no ReadTimeout/WriteTimeout on purpose: the SSE stream is a
+		// long-lived response, and Go cancels a request context when
+		// its read deadline expires
+		IdleTimeout:    2 * time.Minute,
+		MaxHeaderBytes: 64 << 10,
+	}
 	return h, nil
 }
 
@@ -294,6 +309,15 @@ func (h *Hub) tooManyAuthFails(addr string) bool {
 			if now.Sub(box.windowStart) > authFailWindow {
 				delete(h.authFails, k)
 			}
+		}
+	}
+	if _, known := h.authFails[key]; !known && len(h.authFails) >= authFailMaxAddrs {
+		// still full of live boxes: forget an arbitrary one (map order
+		// is randomized) — the memory bound wins over perfect
+		// attribution against an attacker who owns thousands of IPs
+		for k := range h.authFails {
+			delete(h.authFails, k)
+			break
 		}
 	}
 	box := h.authFails[key]

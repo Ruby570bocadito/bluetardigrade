@@ -5,6 +5,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -37,5 +38,27 @@ func TestStoreQueryErrorHidesInternals(t *testing.T) {
 		if strings.Contains(body, leak) {
 			t.Fatalf("body leaks internal detail %q: %q", leak, body)
 		}
+	}
+}
+
+// The 401 throttle map stays bounded even when every failing request
+// comes from a new address inside one window.
+func TestAuthFailMapIsBounded(t *testing.T) {
+	h, _ := newTestHub(t)
+	for i := 0; i < authFailMaxAddrs*2; i++ {
+		h.tooManyAuthFails(fmt.Sprintf("[2001:db8::%x]:4242", i))
+	}
+	h.authMu.Lock()
+	n := len(h.authFails)
+	h.authMu.Unlock()
+	if n > authFailMaxAddrs {
+		t.Fatalf("auth-failure map grew to %d entries, cap %d", n, authFailMaxAddrs)
+	}
+	// a known address keeps its budget accounting under the cap
+	for i := 0; i < authFailBudget; i++ {
+		h.tooManyAuthFails("192.0.2.7:1")
+	}
+	if !h.tooManyAuthFails("192.0.2.7:1") {
+		t.Fatal("an address over its budget was not throttled")
 	}
 }
