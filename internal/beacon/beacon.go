@@ -30,11 +30,16 @@
 //     fake destinations can only ever evict other flood entries and
 //     cannot wash out a key that has been building beacon evidence
 //     (the same invariant A1 pinned for risk scores).
-//   - Every Observe takes `now` as a parameter: the tracker has no
-//     clock of its own (the A1 rule), tests are deterministic and the
-//     engine owns the time source. The caller must pass
-//     non-decreasing timestamps, which the event loop guarantees by
-//     construction (events are processed in arrival order).
+//   - Every Observe takes `now` (the engine's wall clock) as a
+//     parameter: the tracker has no clock of its own (the A1 rule) and
+//     tests are deterministic. Intervals are measured on the EVENT
+//     time (model.Event.DetectionTime): arrival time measures the
+//     transport — sensor batching, a Sysmon poll, an offline import
+//     replaying a day of Zeek logs in seconds — not the beacon. Late
+//     events are inserted in order; an event more than one window
+//     older than the newest sample of its key is a discontinuity
+//     (clock stepped back, a different capture) and restarts the
+//     ring. The wall clock only decides which keys are dead weight.
 //   - A beacon alert flows through the SAME alert.Manager pipeline as
 //     rule and sequence alerts: dedup, lifecycle triage, store
 //     persistence, webhook and console come for free, and the
@@ -126,8 +131,19 @@ type compiled struct {
 // 1 MiB): timestamps only, the same slim-evidence principle the
 // correlator's state applies.
 type keyState struct {
-	times     []time.Time // connection timestamps, oldest first
-	lastFired time.Time   // zero until the key has fired once
+	times     []time.Time // connection event times, oldest first
+	lastFired time.Time   // event time of the last fire; zero until the key fired once
+	seen      time.Time   // wall clock of the last observation (staleness only)
+}
+
+// insertSorted adds t to times keeping them in ascending order (the
+// common in-order case is a plain append).
+func insertSorted(times []time.Time, t time.Time) []time.Time {
+	i := sort.Search(len(times), func(i int) bool { return times[i].After(t) })
+	times = append(times, time.Time{})
+	copy(times[i+1:], times[i:])
+	times[i] = t
+	return times
 }
 
 // beaconKey identifies one tracked destination. A struct, not a
@@ -231,7 +247,7 @@ func (m *Manager) Tracked(now time.Time) int {
 		if c == nil || len(st.times) == 0 {
 			continue
 		}
-		if now.Sub(st.times[len(st.times)-1]) <= c.window {
+		if now.Sub(st.seen) <= c.window {
 			n++
 		}
 	}
@@ -265,6 +281,7 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 	}
 	port := n.DestinationPort
 	host := strings.ToLower(ev.Host)
+	t := ev.DetectionTime(now)
 
 	m.mu.Lock()
 	emit := m.emit
@@ -286,9 +303,17 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 			st = &keyState{}
 			m.state[key] = st
 		}
-		st.times = append(st.times, now)
-		// window prune: drop timestamps older than the profile window
-		cutoff := now.Add(-c.window)
+		st.seen = now
+		// a sample more than one window older than the newest one is
+		// a discontinuity, not a late arrival: restart the ring
+		if n := len(st.times); n > 0 && st.times[n-1].Sub(t) > c.window {
+			st.times = st.times[:0]
+			st.lastFired = time.Time{}
+		}
+		st.times = insertSorted(st.times, t)
+		// window prune: drop samples older than the profile window,
+		// measured back from the newest event time of the key
+		cutoff := st.times[len(st.times)-1].Add(-c.window)
 		drop := 0
 		for drop < len(st.times) && st.times[drop].Before(cutoff) {
 			drop++
@@ -307,10 +332,11 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 		if !ok || cv > c.p.MaxJitter || mean < c.minInterval {
 			continue
 		}
-		if !st.lastFired.IsZero() && now.Sub(st.lastFired) < c.cooldown {
+		newest := st.times[len(st.times)-1]
+		if !st.lastFired.IsZero() && newest.Sub(st.lastFired) < c.cooldown {
 			continue
 		}
-		st.lastFired = now
+		st.lastFired = newest
 		m.fired++
 		fired = append(fired, m.fire(c, ev, dest, port, len(st.times), mean, cv))
 	}
@@ -356,7 +382,7 @@ func (m *Manager) reclaimLocked(c *compiled, now time.Time) {
 			delete(m.state, k) // orphaned or empty: dead weight
 			continue
 		}
-		if now.Sub(st.times[len(st.times)-1]) > 2*pc.window {
+		if now.Sub(st.seen) > 2*pc.window {
 			delete(m.state, k)
 		}
 	}

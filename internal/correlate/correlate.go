@@ -343,10 +343,7 @@ func (m *Manager) Observe(ev *model.Event, ruleName string) {
 	}
 	m.mu.Lock()
 	wall := m.clock()
-	ts := ev.Timestamp
-	if ts.IsZero() {
-		ts = wall
-	}
+	ts := ev.DetectionTime(wall)
 	emit := m.emit
 	var completed []alert.Alert
 	for _, c := range m.seqs {
