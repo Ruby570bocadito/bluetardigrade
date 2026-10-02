@@ -10,12 +10,19 @@
 // The comparison is constant-time and failures close the connection
 // with a clear ack, so a misconfigured sensor fails loudly instead of
 // silently losing events.
+//
+// Per-sensor identities (SetIdentities, identity.go) go one step
+// further: each sensor authenticates with its own token, bound to the
+// hosts it may report for, and every event carries the identity that
+// delivered it. Both mechanisms can run side by side while a fleet
+// migrates from the shared token.
 package ingest
 
 import (
 	"bufio"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -41,7 +48,19 @@ const (
 	// the cap the connection is closed immediately and counted in
 	// Rejected (the same counter the console already surfaces).
 	maxConns = 512
+
+	// maxAuthLine caps the first line while the AUTH handshake is
+	// pending. Before it, every connection could grow its scanner
+	// buffer to maxLineSize (1 MiB): 512 unauthenticated connections
+	// pinned ~512 MiB without knowing any credential. "AUTH " plus a
+	// token fits comfortably in 4 KiB; past it the connection is
+	// rejected and closed before the buffer grows.
+	maxAuthLine = 4 << 10
 )
+
+// errAuthLineTooLong ends the scan of a connection whose first line
+// outgrew maxAuthLine while authentication was still pending.
+var errAuthLineTooLong = errors.New("auth line too long")
 
 // authTimeout bounds how long the server waits for the AUTH line.
 // Held atomically (not a plain var) so tests can shorten it: handle()
@@ -72,9 +91,14 @@ type Server struct {
 	tls       bool              // true when the listener wraps connections in TLS
 	reloader  *tlsutil.Reloader // hot-rotation state; nil on plain listeners
 
-	received atomic.Uint64
-	dropped  atomic.Uint64
-	rejected atomic.Uint64
+	// per-sensor identities (identity.go): swapped atomically so the
+	// file can be hot-reloaded while connections are being served.
+	identities atomic.Pointer[[]Identity]
+
+	received   atomic.Uint64
+	dropped    atomic.Uint64
+	rejected   atomic.Uint64
+	violations atomic.Uint64 // events refused: host outside the identity binding
 }
 
 // New creates a server bound to addr, pushing parsed events into the
@@ -105,11 +129,43 @@ func (s *Server) SetPreviousToken(prev string) {
 	}
 }
 
+// SetIdentities installs (or replaces, on hot-reload) the per-sensor
+// identities. Safe to call while serving: new handshakes see the new
+// set at once; established connections keep the identity they
+// authenticated with. An empty slice removes them.
+func (s *Server) SetIdentities(ids []Identity) {
+	if len(ids) == 0 {
+		s.identities.Store(nil)
+		return
+	}
+	cp := append([]Identity(nil), ids...)
+	s.identities.Store(&cp)
+}
+
+// Identities returns how many per-sensor identities are configured.
+func (s *Server) Identities() int {
+	if ids := s.identities.Load(); ids != nil {
+		return len(*ids)
+	}
+	return 0
+}
+
+// IdentityViolations returns how many events were refused because
+// their host fell outside the binding of the identity that sent them.
+func (s *Server) IdentityViolations() uint64 { return s.violations.Load() }
+
+// identitiesActive reports whether per-sensor identities are in force.
+func (s *Server) identitiesActive() bool { return s.Identities() > 0 }
+
+// authRequired reports whether connections must open with AUTH.
+func (s *Server) authRequired() bool { return s.token != "" || s.identitiesActive() }
+
 // Rotating reports whether a previous token is still being accepted.
 func (s *Server) Rotating() bool { return s.prevToken != "" }
 
-// AuthEnabled reports whether the ingest requires the AUTH handshake.
-func (s *Server) AuthEnabled() bool { return s.token != "" }
+// AuthEnabled reports whether the ingest requires the AUTH handshake
+// (shared token and/or per-sensor identities).
+func (s *Server) AuthEnabled() bool { return s.authRequired() }
 
 // Addr returns the bound address (useful when listening on :0).
 func (s *Server) Addr() string { return s.listener.Addr().String() }
@@ -206,22 +262,31 @@ func (s *Server) handle(conn net.Conn) {
 		conn.Close()
 	}()
 
-	scanner := bufio.NewScanner(conn)
-	scanner.Buffer(make([]byte, 0, 64*1024), maxLineSize)
-
-	// First line decides the connection's fate:
-	//   - token configured: it MUST be "AUTH <token>" within
-	//     authTimeout, before any event.
-	//   - no token: an AUTH line is still rejected (closed) so a
+	// The first line decides the connection's fate:
+	//   - auth required (token or identities): it MUST be
+	//     "AUTH <token>" within authTimeout, before any event, and
+	//     no longer than maxAuthLine.
+	//   - no auth: an AUTH line is still rejected (closed) so a
 	//     sensor with a stale token fails loudly; anything else is
 	//     a regular event and gets the regular idle timeout, so
 	//     legacy sensors keep their original behavior.
-	if s.token != "" {
+	authPending := s.authRequired()
+	scanner := bufio.NewScanner(conn)
+	scanner.Buffer(make([]byte, 0, maxAuthLine), maxLineSize)
+	scanner.Split(func(data []byte, atEOF bool) (int, []byte, error) {
+		adv, tok, err := bufio.ScanLines(data, atEOF)
+		if authPending && tok == nil && err == nil && len(data) > maxAuthLine {
+			return 0, nil, errAuthLineTooLong
+		}
+		return adv, tok, err
+	})
+	if authPending {
 		conn.SetReadDeadline(time.Now().Add(authTimeout()))
 	} else {
 		conn.SetReadDeadline(time.Now().Add(idleTimeout))
 	}
 
+	var who *Identity // identity the connection authenticated as (nil = shared token / no auth)
 	first := true
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -230,10 +295,13 @@ func (s *Server) handle(conn net.Conn) {
 		}
 		if first {
 			first = false
-			if s.token != "" || isAuthLine(line) {
-				if !s.checkAuth(conn, line) {
+			if authPending || isAuthLine(line) {
+				id, ok := s.checkAuth(conn, line)
+				if !ok {
 					return
 				}
+				who = id
+				authPending = false
 				conn.SetReadDeadline(time.Now().Add(idleTimeout))
 				continue // AUTH consumed; events come next
 			}
@@ -244,10 +312,37 @@ func (s *Server) handle(conn net.Conn) {
 			fmt.Fprintf(conn, `{"ack":"error","error":%q}`+"\n", err.Error())
 			continue
 		}
+		if s.identitiesActive() {
+			if !who.AllowsHost(ev.Host) {
+				s.violations.Add(1)
+				fmt.Fprintf(conn, `{"ack":"error","error":%q}`+"\n",
+					fmt.Sprintf("host %q is outside the binding of ingest identity %q", ev.Host, who.Name))
+				continue
+			}
+			stampIdentity(ev, who)
+		}
 		s.received.Add(1)
 		conn.SetReadDeadline(time.Now().Add(idleTimeout))
 		s.events <- ev
 	}
+	if errors.Is(scanner.Err(), errAuthLineTooLong) {
+		s.rejected.Add(1)
+		fmt.Fprintln(conn, `{"ack":"error","error":"auth failed: AUTH line too long"}`)
+	}
+}
+
+// stampIdentity records which credential delivered the event, so the
+// evidence carries its provenance. A feed-supplied value is overwritten:
+// the attribute is only meaningful when the engine sets it.
+func stampIdentity(ev *model.Event, who *Identity) {
+	name := sharedIdentityName
+	if who != nil {
+		name = who.Name
+	}
+	if ev.Attributes == nil {
+		ev.Attributes = map[string]string{}
+	}
+	ev.Attributes[IdentityAttribute] = name
 }
 
 // isAuthLine reports whether line is an AUTH request.
@@ -257,21 +352,34 @@ func isAuthLine(line []byte) bool {
 
 // checkAuth validates the first line of a connection. It returns false
 // when the connection must be closed: wrong or missing token with auth
-// enabled, or any AUTH attempt with auth disabled. The token comparison
-// is constant-time so connection timing cannot be used to probe it.
-func (s *Server) checkAuth(conn net.Conn, line []byte) bool {
-	if s.token == "" {
+// enabled, or any AUTH attempt with auth disabled. On success it
+// returns the per-sensor identity that matched (nil when the shared
+// token did). Token comparisons are constant-time so connection timing
+// cannot be used to probe them.
+func (s *Server) checkAuth(conn net.Conn, line []byte) (*Identity, bool) {
+	if !s.authRequired() {
 		s.rejected.Add(1)
 		fmt.Fprintln(conn, `{"ack":"error","error":"engine has no ingest token configured; unset -token/SF_INGEST_TOKEN on the sensor or set one on the engine"}`)
-		return false
+		return nil, false
 	}
-	if !isAuthLine(line) || !s.tokenMatches(line[5:]) {
+	if !isAuthLine(line) {
 		s.rejected.Add(1)
 		fmt.Fprintln(conn, `{"ack":"error","error":"auth failed: send 'AUTH <token>' as the first line"}`)
-		return false
+		return nil, false
+	}
+	supplied := line[5:]
+	var who *Identity
+	if ids := s.identities.Load(); ids != nil {
+		who = matchIdentity(*ids, supplied)
+	}
+	shared := s.token != "" && s.tokenMatches(supplied)
+	if who == nil && !shared {
+		s.rejected.Add(1)
+		fmt.Fprintln(conn, `{"ack":"error","error":"auth failed: send 'AUTH <token>' as the first line"}`)
+		return nil, false
 	}
 	_, _ = fmt.Fprint(conn, ackOK)
-	return true
+	return who, true
 }
 
 // tokenMatches reports whether supplied equals the current token or,

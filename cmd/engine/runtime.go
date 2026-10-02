@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Ruby570bocadito/bluetardigrade/internal/store"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/suppress"
 	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
@@ -34,10 +36,21 @@ func suppressed(m *suppress.Manager, ruleID, host string, now time.Time) bool {
 
 var storeFails uint64
 
+// storeConflicts throttles the id-conflict log line on the -api 0 path.
+var storeConflicts uint64
+
 // storeWriteErr logs store write failures with a throttle (first, then
 // every 500th): a full disk must be visible without flooding the log
 // or stopping detection.
 func storeWriteErr(err error) {
+	if errors.Is(err, store.ErrIDConflict) {
+		// first copy kept on disk: a forged or colliding id is a
+		// signal, not a lost write (counted by the store itself)
+		if n := atomic.AddUint64(&storeConflicts, 1); n == 1 || n%500 == 0 {
+			log.Printf("[ENGINE] event id conflict, stored evidence kept (%d total): %v", n, err)
+		}
+		return
+	}
 	n := atomic.AddUint64(&storeFails, 1)
 	if n == 1 || n%500 == 0 {
 		log.Printf("[ENGINE] store write FAILED (%d total): %v", n, err)

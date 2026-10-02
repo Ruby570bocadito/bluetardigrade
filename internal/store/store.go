@@ -20,6 +20,7 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -47,7 +48,17 @@ type Store struct {
 
 	events int64 // live row counts, maintained by insert/prune
 	alerts int64
+
+	conflicts int64 // event ids re-sent with a DIFFERENT payload (first copy kept)
 }
+
+// ErrIDConflict reports an event whose id is already stored with a
+// different payload. The stored copy is kept untouched (first write
+// wins): ids are chosen by the feed, and every sensor shares the
+// ingest token, so letting a later write replace the row would let
+// one compromised endpoint rewrite another host's evidence. Callers
+// treat it as a signal to log, not as a failed write.
+var ErrIDConflict = errors.New("store: event id already stored with a different payload; first copy kept")
 
 // EventQuery is the filter form of the API telemetry parameters for
 // events (same semantics as the hub's recordFilter).
@@ -129,6 +140,7 @@ CREATE TABLE IF NOT EXISTS events (
         json   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS events_ts_idx ON events(ts);
+CREATE INDEX IF NOT EXISTS events_host_ts_idx ON events(host COLLATE NOCASE, ts);
 CREATE TABLE IF NOT EXISTS alerts (
         seq      INTEGER PRIMARY KEY AUTOINCREMENT,
         ts       INTEGER NOT NULL,
@@ -140,6 +152,7 @@ CREATE TABLE IF NOT EXISTS alerts (
 );
 CREATE INDEX IF NOT EXISTS alerts_ts_idx ON alerts(ts);
 CREATE INDEX IF NOT EXISTS alerts_rule_idx ON alerts(rule_id);
+CREATE INDEX IF NOT EXISTS alerts_host_ts_idx ON alerts(host COLLATE NOCASE, ts);
 `
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
@@ -190,46 +203,127 @@ func (s *Store) Counts() (events, alerts int64) {
 	return atomic.LoadInt64(&s.events), atomic.LoadInt64(&s.alerts)
 }
 
-// InsertEvent persists one event. Re-inserting an existing ID
-// replaces the row (sensor replays are idempotent) without inflating
-// the row count.
+// InsertEvent persists one event. Evidence is append-only: the first
+// write of an id wins. Re-sending the exact same payload (a sensor or
+// collector replay) is an idempotent no-op; re-sending the id with a
+// different payload leaves the stored row untouched, counts a conflict
+// and returns ErrIDConflict.
 func (s *Store) InsertEvent(ev *model.Event) error {
-	payload, err := json.Marshal(ev)
-	if err != nil {
-		return fmt.Errorf("store: marshal event %s: %w", ev.ID, err)
+	res := s.InsertEvents([]*model.Event{ev})
+	if len(res.Failed) > 0 {
+		return res.Failed[0]
+	}
+	if len(res.Conflicts) > 0 {
+		return fmt.Errorf("%w (id %s)", ErrIDConflict, res.Conflicts[0])
+	}
+	return nil
+}
+
+// BatchResult reports what InsertEvents did with a batch.
+type BatchResult struct {
+	Inserted  int      // new rows
+	Conflicts []string // ids refused: already stored with a different payload
+	Failed    []error  // events that could not be written (one error each)
+}
+
+// insertEventSQL is the append-only insert shared by both write paths.
+const insertEventSQL = `INSERT INTO events (id, ts, type, host, search, json)
+                 VALUES (?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(id) DO NOTHING`
+
+// InsertEvents persists a batch in ONE transaction: SQLite pays its
+// commit once per batch instead of once per event (about 6x cheaper per
+// event under load). Semantics per event are those of InsertEvent. If
+// the batch transaction fails as a whole, every event is retried on its
+// own, so one bad record cannot cost the rest of the batch its
+// evidence.
+func (s *Store) InsertEvents(evs []*model.Event) BatchResult {
+	if len(evs) == 0 {
+		return BatchResult{}
+	}
+	payloads := make([]string, len(evs))
+	var res BatchResult
+	ok := make([]bool, len(evs))
+	for i, ev := range evs {
+		b, err := json.Marshal(ev)
+		if err != nil {
+			res.Failed = append(res.Failed, fmt.Errorf("store: marshal event %s: %w", ev.ID, err))
+			continue
+		}
+		payloads[i], ok[i] = string(b), true
 	}
 	s.wmu.Lock()
 	defer s.wmu.Unlock()
-	// DELETE+INSERT (not INSERT OR REPLACE) so the live counter can
-	// account for replays: a replace must not look like a new row.
-	// One transaction: API readers share the single connection, so a
-	// two-step replace let them observe the row missing (a silent gap
-	// in a forensic timeline) and a failure between the steps would
-	// drop the previous evidence while inflating the counter.
+	batch, err := s.insertBatchLocked(evs, payloads, ok)
+	if err == nil {
+		res.Inserted += batch.Inserted
+		res.Conflicts = append(res.Conflicts, batch.Conflicts...)
+		return res
+	}
+	// degrade: one transaction per event, each failing on its own
+	for i, ev := range evs {
+		if !ok[i] {
+			continue
+		}
+		one, err := s.insertBatchLocked([]*model.Event{ev}, []string{payloads[i]}, []bool{true})
+		if err != nil {
+			res.Failed = append(res.Failed, err)
+			continue
+		}
+		res.Inserted += one.Inserted
+		res.Conflicts = append(res.Conflicts, one.Conflicts...)
+	}
+	return res
+}
+
+// insertBatchLocked writes the events marked ok in one transaction.
+// Caller holds wmu. Counters are only updated after a successful commit.
+func (s *Store) insertBatchLocked(evs []*model.Event, payloads []string, ok []bool) (BatchResult, error) {
+	var res BatchResult
 	tx, err := s.db.Begin()
 	if err != nil {
-		return fmt.Errorf("store: begin event %s: %w", ev.ID, err)
+		return res, fmt.Errorf("store: begin event batch: %w", err)
 	}
 	defer tx.Rollback() // no-op after Commit
-	res, err := tx.Exec(`DELETE FROM events WHERE id = ?`, ev.ID)
+	stmt, err := tx.Prepare(insertEventSQL)
 	if err != nil {
-		return fmt.Errorf("store: replace-lookup event %s: %w", ev.ID, err)
+		return res, fmt.Errorf("store: prepare event insert: %w", err)
 	}
-	existed, _ := res.RowsAffected()
-	if _, err := tx.Exec(
-		`INSERT INTO events (id, ts, type, host, search, json)
-                 VALUES (?, ?, ?, ?, ?, ?)`,
-		ev.ID, ev.Timestamp.UnixNano(), ev.Type, strings.ToLower(ev.Host),
-		eventHaystack(ev), string(payload),
-	); err != nil {
-		return fmt.Errorf("store: insert event %s: %w", ev.ID, err)
+	defer stmt.Close()
+	for i, ev := range evs {
+		if !ok[i] {
+			continue
+		}
+		r, err := stmt.Exec(ev.ID, ev.Timestamp.UnixNano(), ev.Type, strings.ToLower(ev.Host),
+			eventHaystack(ev), payloads[i])
+		if err != nil {
+			return BatchResult{}, fmt.Errorf("store: insert event %s: %w", ev.ID, err)
+		}
+		if n, _ := r.RowsAffected(); n > 0 {
+			res.Inserted++
+			continue
+		}
+		// the id is already stored: tell a replay from a conflict
+		var stored string
+		if err := tx.QueryRow(`SELECT json FROM events WHERE id = ?`, ev.ID).Scan(&stored); err != nil {
+			return BatchResult{}, fmt.Errorf("store: lookup duplicate event %s: %w", ev.ID, err)
+		}
+		if stored != payloads[i] {
+			res.Conflicts = append(res.Conflicts, ev.ID)
+		}
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("store: commit event %s: %w", ev.ID, err)
+		return BatchResult{}, fmt.Errorf("store: commit event batch: %w", err)
 	}
-	atomic.AddInt64(&s.events, 1-existed)
-	return nil
+	atomic.AddInt64(&s.events, int64(res.Inserted))
+	atomic.AddInt64(&s.conflicts, int64(len(res.Conflicts)))
+	return res, nil
 }
+
+// IDConflicts returns how many event writes were refused since this
+// process opened the store because their id was already stored with a
+// different payload (possible evidence tampering or an id collision).
+func (s *Store) IDConflicts() int64 { return atomic.LoadInt64(&s.conflicts) }
 
 // InsertAlert persists one alert. Alerts have no natural key, so
 // every raised alert is a new row (the dedup TTL lives upstream).

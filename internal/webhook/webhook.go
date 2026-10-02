@@ -36,7 +36,7 @@ const (
 	// Hard timeout for each individual POST.
 	postTimeout = 3 * time.Second
 	// User-Agent identifying the producer, useful on the receiver side.
-	userAgent = "security-framework-webhook/0.1"
+	userAgent = "bluetardigrade-webhook/0.1"
 )
 
 // Client queues alerts and delivers them to one HTTP endpoint.

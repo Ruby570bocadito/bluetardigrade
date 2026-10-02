@@ -241,10 +241,12 @@ func runEngine(o *options, interactive bool) error {
 		}
 		log.Fatalf("[ENGINE] %v", err)
 	}
-	go server.Serve()
 	// shared-token auth: flag wins over the env var, so operators
 	// can override SF_INGEST_TOKEN per process without touching the
 	// autostart entry. The bundled sensors honor the same env var.
+	// Every credential is configured BEFORE Serve starts: a connection
+	// accepted earlier would be handled as unauthenticated (and read
+	// the token fields while they are being written).
 	ingestToken := o.token
 	if ingestToken == "" {
 		ingestToken = os.Getenv("SF_INGEST_TOKEN")
@@ -259,6 +261,19 @@ func runEngine(o *options, interactive bool) error {
 		}
 		server.SetPreviousToken(prev)
 	}
+	identitiesPath := o.ingestIdentities
+	if identitiesPath == "" {
+		identitiesPath = os.Getenv("SF_INGEST_IDENTITIES")
+	}
+	if identitiesPath != "" {
+		ids, ierr := ingest.LoadIdentities(identitiesPath)
+		if ierr != nil {
+			log.Fatalf("[ENGINE] %v", ierr)
+		}
+		server.SetIdentities(ids)
+		fmt.Printf("[ENGINE] ingest identities: %d per-sensor credentials bound to their hosts (%s)\n", len(ids), identitiesPath)
+	}
+	go server.Serve()
 	if server.AuthEnabled() {
 		if server.Rotating() {
 			fmt.Println("[ENGINE] ingest auth: ENABLED, rotation window OPEN (current and previous token both accepted; redeploy sensors, then restart without -token-previous)")
@@ -320,6 +335,9 @@ func runEngine(o *options, interactive bool) error {
 			}
 			hub.SetCounters(func() (uint64, uint64, uint64) {
 				return server.Received(), server.Dropped(), server.Rejected()
+			})
+			hub.SetIngestIdentityStats(func() (int, uint64) {
+				return server.Identities(), server.IdentityViolations()
 			})
 			// kill-chain observability: in-flight states, loaded
 			// sequences and the tracking cap, so the correlator's
@@ -444,6 +462,9 @@ func runEngine(o *options, interactive bool) error {
 				}
 				fmt.Printf("[ENGINE] active response: kill_process ENABLED (operators: %d, protected: %d, audit: %s, signal: SIGKILL fixed)\n",
 					respMgr.OperatorsCount(), respMgr.ProtectedCount(), auditPath)
+				if n := respMgr.OperatorsCount(); n > 0 && respMgr.CredentialedOperators() == 0 {
+					fmt.Println("[ENGINE] active response: WARNING operators are listed by name only (version 1): anyone holding the API token can act as any of them; move to version 2 with per-operator credentials ('engine operator-credential --name <op>')")
+				}
 			}
 		}
 	} else {
@@ -633,7 +654,8 @@ func runEngine(o *options, interactive bool) error {
 	// entries (30 min TTL) so a long-lived engine's parent map does
 	// not leak dead pids. Reuses the reload cadence; a zero cadence
 	// skips the sweep the same way it skips reloads (process entries
-	// still evict on terminate and on the per-host cap).
+	// still evict on terminate and on the per-host cap). The correlator
+	// sweep rides the same cadence.
 	if o.reloadEvery > 0 {
 		go func() {
 			t := time.NewTicker(o.reloadEvery)
@@ -643,7 +665,14 @@ func runEngine(o *options, interactive bool) error {
 				case <-ctx.Done():
 					return
 				case <-t.C:
-					enricher.Sweep(time.Now())
+					now := time.Now()
+					enricher.Sweep(now)
+					// correlator: retire chains whose window elapsed
+					// without progress, so correlator_states reports
+					// live chains and the cap never fills with dead ones
+					if corr != nil {
+						corr.Sweep(now)
+					}
 				}
 			}
 		}()
@@ -695,6 +724,16 @@ func runEngine(o *options, interactive bool) error {
 					if thr != nil && fileExists(thrPath) {
 						if err := thr.Reload(thrPath); err == nil && !tui {
 							fmt.Printf("[ENGINE] thresholds reloaded (%d active)\n", thr.Count())
+						}
+					}
+					// per-sensor identities: a failed reload keeps the
+					// previous set (a half-edited file must not lock
+					// every sensor out) and says so
+					if identitiesPath != "" {
+						if ids, ierr := ingest.LoadIdentities(identitiesPath); ierr != nil {
+							log.Printf("[ENGINE] ingest identities reload FAILED, keeping previous set: %v", ierr)
+						} else {
+							server.SetIdentities(ids)
 						}
 					}
 					// active response lists (C3): a missing file on
@@ -753,57 +792,97 @@ func runEngine(o *options, interactive bool) error {
 
 	processed := 0
 	start := time.Now()
+	// process runs one event through detection after it was persisted.
+	process := func(ev *model.Event) {
+		// flight recorder: before evaluation, so the event that
+		// triggers an alert is guaranteed to be in the ring when
+		// the alert's bundle is captured in the same iteration.
+		if fore != nil {
+			fore.ObserveEvent(ev)
+		}
+		if hub != nil {
+			hub.PublishEvent(ev)
+		}
+		stats.recordEvent()
+		if o.verbose && !tui {
+			log.Printf("[EVENT] %-18s %s pid=%d host=%s",
+				redact.TerminalText(ev.Type), redact.TerminalText(describe(ev)), pidOf(ev), redact.TerminalText(ev.Host))
+		}
+		for _, hit := range engine.Evaluate(ev) {
+			// allowlist first: a suppressed hit raises no alert AND does
+			// not feed the correlator (see the Emit wrapper above).
+			if suppressed(supMgr, hit.Rule.ID, ev.Host, time.Now()) {
+				if !tui {
+					log.Printf("[SUPPRESS] rule=%s host=%s", redact.TerminalText(hit.Rule.ID), redact.TerminalText(ev.Host))
+				}
+				continue
+			}
+			alerts.Raise(ev, hit)
+			if corr != nil {
+				corr.Observe(ev, hit.Rule.Name)
+			}
+		}
+		// behavioral detector (A3): consumes raw network.connect
+		// events regardless of rule hits — beaconing is a
+		// property of event timing, not of any single event.
+		if bcn != nil {
+			bcn.Observe(ev, time.Now())
+		}
+		// volumetric detector (A2): consumes raw events that pass
+		// each definition's predicate — the signal is the COUNT
+		// within a window, orthogonal to rules and beaconing.
+		if thr != nil {
+			thr.Observe(ev, time.Now())
+		}
+		processed++
+	}
+
+	// The loop drains whatever the ingest has already queued (up to
+	// maxEventBatch) and persists it in ONE store transaction before
+	// any of those events is published or evaluated: durable evidence
+	// first, live delivery second, as before, but SQLite's commit is
+	// paid once per batch. Idle traffic yields batches of one, so no
+	// event ever waits for company.
+	const maxEventBatch = 256
 	loop := func() {
+		batch := make([]*model.Event, 0, maxEventBatch)
 		for ev := range events {
-			enricher.Apply(ev)
-			// flight recorder: before evaluation, so the event that
-			// triggers an alert is guaranteed to be in the ring when
-			// the alert's bundle is captured in the same iteration.
-			if fore != nil {
-				fore.ObserveEvent(ev)
+			batch = append(batch[:0], ev)
+		drain:
+			for len(batch) < maxEventBatch {
+				select {
+				case more, ok := <-events:
+					if !ok {
+						break drain // closed: the range ends after this batch
+					}
+					batch = append(batch, more)
+				default:
+					break drain
+				}
+			}
+			// enrichment is part of the stored record, so it runs
+			// before persistence (sequentially: the process map
+			// follows the stream order exactly as before)
+			for _, e := range batch {
+				enricher.Apply(e)
 			}
 			switch {
 			case hub != nil:
-				// the hub persists to the store too when attached
-				hub.RecordEvent(ev)
+				// the hub persists to the store when attached
+				hub.PersistEvents(batch)
 			case st != nil:
 				// -api 0 with -store: keep persisting without a hub
-				if err := st.InsertEvent(ev); err != nil {
+				res := st.InsertEvents(batch)
+				for _, err := range res.Failed {
 					storeWriteErr(err)
 				}
-			}
-			stats.recordEvent()
-			if o.verbose && !tui {
-				log.Printf("[EVENT] %-18s %s pid=%d host=%s",
-					redact.TerminalText(ev.Type), redact.TerminalText(describe(ev)), pidOf(ev), redact.TerminalText(ev.Host))
-			}
-			for _, hit := range engine.Evaluate(ev) {
-				// allowlist first: a suppressed hit raises no alert AND does
-				// not feed the correlator (see the Emit wrapper above).
-				if suppressed(supMgr, hit.Rule.ID, ev.Host, time.Now()) {
-					if !tui {
-						log.Printf("[SUPPRESS] rule=%s host=%s", redact.TerminalText(hit.Rule.ID), redact.TerminalText(ev.Host))
-					}
-					continue
-				}
-				alerts.Raise(ev, hit)
-				if corr != nil {
-					corr.Observe(ev, hit.Rule.Name)
+				for _, id := range res.Conflicts {
+					storeWriteErr(fmt.Errorf("%w (id %s)", store.ErrIDConflict, id))
 				}
 			}
-			// behavioral detector (A3): consumes raw network.connect
-			// events regardless of rule hits — beaconing is a
-			// property of event timing, not of any single event.
-			if bcn != nil {
-				bcn.Observe(ev, time.Now())
+			for _, e := range batch {
+				process(e)
 			}
-			// volumetric detector (A2): consumes raw events that pass
-			// each definition's predicate — the signal is the COUNT
-			// within a window, orthogonal to rules and beaconing.
-			if thr != nil {
-				thr.Observe(ev, time.Now())
-			}
-			processed++
 		}
 	}
 

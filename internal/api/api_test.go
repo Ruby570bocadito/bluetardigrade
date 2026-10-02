@@ -712,6 +712,7 @@ func TestStatsHotHostsRanking(t *testing.T) {
 func TestMetricsParityWithStats(t *testing.T) {
 	h, addr := newTestHub(t)
 	h.SetCounters(func() (uint64, uint64, uint64) { return 7, 2, 1 })
+	h.SetIngestIdentityStats(func() (int, uint64) { return 3, 2 })
 	h.SetWebhookStats(func() (uint64, uint64, uint64) { return 5, 1, 0 })
 	h.SetNotifyStats(func() []notify.ChannelStats {
 		return []notify.ChannelStats{
@@ -789,6 +790,9 @@ func TestMetricsParityWithStats(t *testing.T) {
 	}
 
 	wantMetric("sf_events_total", "events_total")
+	wantMetric("sf_store_write_failures_total", "store_write_failures")
+	wantMetric("sf_ingest_identities", "ingest_identities")
+	wantMetric("sf_ingest_identity_violations_total", "ingest_identity_violations")
 	wantMetric("sf_events_dropped_total", "dropped")
 	wantMetric("sf_ingest_rejected_total", "ingest_rejected")
 	wantMetric("sf_alerts_total", "alerts_total")

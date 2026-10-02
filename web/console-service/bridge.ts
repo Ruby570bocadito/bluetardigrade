@@ -305,6 +305,8 @@ function mapStats(st: Record<string, unknown>): HubStats {
     store_enabled: st.store_enabled === true,
     store_write_failures: typeof st.store_write_failures === 'number' && Number.isFinite(st.store_write_failures) && st.store_write_failures >= 0
       ? st.store_write_failures : undefined,
+    store_id_conflicts: typeof st.store_id_conflicts === 'number' && Number.isFinite(st.store_id_conflicts) && st.store_id_conflicts >= 0
+      ? st.store_id_conflicts : undefined,
     store_events: Number(st.store_events ?? 0),
     store_alerts: Number(st.store_alerts ?? 0),
     // per-host risk scoring (engine A1): every entry is sanitized —

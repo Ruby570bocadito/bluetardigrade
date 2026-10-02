@@ -30,6 +30,7 @@ type options struct {
 	apiKey           string
 	token            string
 	prevToken        string
+	ingestIdentities string
 	ingestCert       string
 	ingestKey        string
 	suppressionsFile string
@@ -98,7 +99,7 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 	fs.BoolVar(&o.allowKill, "allow-kill", false,
 		"arm POST /api/respond/kill (active response, kill_process, SIGKILL fixed); REQUIRES -api-token/SF_API_TOKEN even on loopback; requires -respond-audit to open, or the surface stays disabled; the process-name check protects against killing the wrong PID, not against malware disguising its identity - the kill decision belongs to a human operator (falls back to SF_ALLOW_KILL=1)")
 	fs.StringVar(&o.respondOperators, "respond-operators", "./respond-operators.yaml",
-		"YAML allowlist ({version: 1, names: [ana, beto]}) of operators allowed to run active response actions; missing file = empty allowlist = every action denied; malformed file = fatal; hot-reloaded on the -reload-every ticker")
+		"YAML allowlist ({version: 1, names: [ana, beto]}, or {version: 2, operators: [{name, token_sha256}]} with per-operator credentials sent as X-SF-Operator-Token) of operators allowed to run active response actions; missing file = empty allowlist = every action denied; malformed file = fatal; hot-reloaded on the -reload-every ticker")
 	fs.StringVar(&o.respondProtected, "respond-protected", "",
 		"optional YAML ({version: 1, names: [...]}) with extra protected process names, merged with the platform defaults (Windows: csrss/smss/wininit/services/lsass); missing file = defaults only; malformed file = fatal; hot-reloaded")
 	fs.StringVar(&o.respondAudit, "respond-audit", "./respond-audit.jsonl",
@@ -107,6 +108,8 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 		"shared token sensors must send as 'AUTH <token>' on connect (falls back to SF_INGEST_TOKEN); empty disables auth")
 	fs.StringVar(&o.prevToken, "token-previous", "",
 		"previous ingest token, still accepted during a rotation window (falls back to SF_INGEST_TOKEN_PREVIOUS); requires -token")
+	fs.StringVar(&o.ingestIdentities, "ingest-identities", "",
+		"YAML file of per-sensor ingest identities (own token as sha256 + bound hosts; see 'engine ingest-identity'); events for hosts outside a sensor's binding are refused; hot-reloaded; falls back to SF_INGEST_IDENTITIES; empty disables")
 	fs.StringVar(&o.ingestCert, "ingest-cert", "",
 		"TLS certificate (PEM) for the ingest listener; requires -ingest-key; empty keeps plain TCP")
 	fs.StringVar(&o.ingestKey, "ingest-key", "",

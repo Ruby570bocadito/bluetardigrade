@@ -68,13 +68,75 @@ export function analystConfigFromEnv(env: Record<string, string | undefined> = p
   return { baseUrl: status.baseUrl, apiKey: env.ANALYST_API_KEY!.trim(), model: status.model }
 }
 
+// Local ATT&CK context for the techniques the shipped rule packs map to.
+// Sub-techniques without a note of their own fall back to the parent
+// technique (T1003.002 -> T1003); see mitreNote.
 const MITRE_NOTES: Record<string, string> = {
-  'T1059.001':
-    'PowerShell ofuscado es el caballo de Troya de la fase de ejecución: permite cargar payloads en memoria, evadir el registro de línea de comandos y moverse lateralmente con WMI o WinRM.',
-  T1105:
-    'La transferencia de herramientas entrantes marca la transición de acceso inicial a preparación: el atacante ya tiene un punto de apoyo y está trayendo su arsenal (implantes, túneles, exfiltradores).',
+  T1003:
+    'El volcado de credenciales del sistema operativo convierte un equipo comprometido en una llave de dominio: hashes y tickets reutilizables para movimiento lateral.',
   'T1003.001':
     'Un volcado de LSASS expone hashes NTLM y tickets Kerberos de cada sesión del equipo. Con ellos se abre la puerta a pass-the-hash y movimiento lateral a escala de dominio.',
+  'T1003.002':
+    'Copiar las colmenas SAM y SYSTEM permite extraer offline los hashes de las cuentas locales, incluida la de administrador, a menudo reutilizada en otros equipos.',
+  T1021:
+    'El uso de servicios remotos (SMB, RDP, WinRM) con credenciales válidas es la vía principal de movimiento lateral; distingue administración legítima por origen, cuenta y horario.',
+  'T1021.002':
+    'Acceso a recursos administrativos SMB (ADMIN$, C$): patrón típico de PsExec y herramientas similares para ejecutar en otro equipo con credenciales robadas.',
+  T1047:
+    'WMI permite ejecución local y remota sin binarios nuevos en disco; es habitual en movimiento lateral y en persistencia mediante suscripciones de eventos.',
+  T1053:
+    'Las tareas programadas dan persistencia y ejecución diferida con privilegios elevados; revisa autor, acción y desencadenante de la tarea.',
+  'T1053.005':
+    'Crear una tarea programada con schtasks es una de las formas más comunes de persistencia y de ejecución remota en Windows.',
+  T1059:
+    'Los intérpretes de comandos son el vehículo de casi toda ejecución posterior al acceso inicial; la línea de comandos completa es la evidencia clave.',
+  'T1059.001':
+    'PowerShell ofuscado es el caballo de Troya de la fase de ejecución: permite cargar payloads en memoria, evadir el registro de línea de comandos y moverse lateralmente con WMI o WinRM.',
+  T1070:
+    'Borrar indicadores (registros, ficheros, historial) busca dejar al equipo de respuesta sin evidencia; suele indicar que el atacante ya ha cumplido un objetivo o va a hacerlo.',
+  'T1070.001':
+    'Vaciar los registros de eventos de Windows elimina la evidencia de autenticaciones y ejecuciones previas; trata el equipo como comprometido y busca la telemetría en otras fuentes.',
+  T1087:
+    'El reconocimiento de cuentas prepara la escalada: el atacante busca administradores de dominio, cuentas de servicio y objetivos con privilegios.',
+  'T1087.002':
+    'Enumerar cuentas y grupos del dominio (net group, AdFind, consultas LDAP) suele preceder al robo de credenciales dirigido a cuentas privilegiadas.',
+  T1105:
+    'La transferencia de herramientas entrantes marca la transición de acceso inicial a preparación: el atacante ya tiene un punto de apoyo y está trayendo su arsenal (implantes, túneles, exfiltradores).',
+  T1110:
+    'La fuerza bruta contra servicios expuestos busca credenciales válidas; un éxito tras muchos fallos desde el mismo origen es la señal que importa.',
+  T1204:
+    'La ejecución por el usuario (adjuntos, enlaces, macros) es el punto de entrada más frecuente; reconstruye la cadena desde el correo o la descarga.',
+  'T1204.002':
+    'Un fichero malicioso abierto por el usuario suele ser el primer eslabón: identifica el origen (correo, navegador, USB) y otros destinatarios del mismo fichero.',
+  T1218:
+    'Los binarios firmados del sistema (LOLBins) se usan para ejecutar código sorteando controles de aplicaciones; el binario es legítimo, su uso no.',
+  T1490:
+    'Borrar instantáneas de volumen y deshabilitar la recuperación es la antesala clásica del cifrado por ransomware: aísla el equipo de inmediato.',
+  T1547:
+    'Los mecanismos de inicio automático garantizan que el implante sobreviva a reinicios; la clave o carpeta concreta y el binario apuntado son la evidencia.',
+  'T1547.001':
+    'Una entrada en las claves Run o en la carpeta de inicio ejecuta el binario en cada inicio de sesión: persistencia sencilla y muy común.',
+  T1562:
+    'Deshabilitar defensas (antivirus, firewall, registro) prepara las fases ruidosas del ataque; quien lo hace suele tener ya privilegios de administrador.',
+  'T1562.001':
+    'Desactivar o excluir rutas en Windows Defender deja vía libre a herramientas que serían detectadas; revisa exclusiones añadidas y quién las añadió.',
+  T1566:
+    'El phishing sigue siendo el acceso inicial más habitual; busca otros destinatarios del mismo remitente, adjunto o enlace.',
+  'T1566.001':
+    'Un adjunto malicioso convierte la apertura de un documento en ejecución de código; revisa si el adjunto llegó a abrirse y qué procesos lanzó.',
+  'T1566.002':
+    'Un enlace de phishing lleva a robo de credenciales o descarga de malware; comprueba clics, inicios de sesión posteriores y reglas de reenvío nuevas.',
+  T1574:
+    'El secuestro del flujo de ejecución (DLL sideloading, search order) ejecuta código malicioso dentro de un proceso legítimo y a menudo firmado.',
+  'T1574.001':
+    'Una DLL plantada junto a un ejecutable legítimo se carga por orden de búsqueda; la ruta de la DLL y su firma son la evidencia decisiva.',
+}
+
+/** Context note for a technique id, falling back to its parent technique. */
+export function mitreNote(technique: string | undefined): string | undefined {
+  if (!technique) return undefined
+  const id = technique.toUpperCase()
+  return MITRE_NOTES[id] ?? MITRE_NOTES[id.split('.')[0]]
 }
 
 export function analystSystemPrompt(): string {
@@ -203,7 +265,7 @@ export async function runAnalysis(alert: SfAlert, rule: RuleMeta | undefined, ev
 
   // This is a local note lookup, not a second threat correlation engine.
   emit.step({ label: 'Consultando contexto local ATT&CK', state: 'run' })
-  const note = rule ? MITRE_NOTES[rule.mitre] : undefined
+  const note = mitreNote(rule?.mitre)
   emit.step({ label: 'Consultando contexto local ATT&CK', state: 'done' })
 
   emit.step({ label: 'Consultando proveedor de IA', state: 'run' })

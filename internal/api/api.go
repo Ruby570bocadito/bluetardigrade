@@ -49,6 +49,11 @@ const (
 	// 429s for the rest of the window instead of more comparisons.
 	authFailBudget = 30
 	authFailWindow = time.Minute
+	// authFailMaxAddrs hard-caps the throttle map: the stale-entry
+	// trim only frees addresses whose window ended, so a client
+	// rotating source addresses (an IPv6 /64 is plenty) could grow it
+	// without bound inside one window.
+	authFailMaxAddrs = 4096
 )
 
 // Hub serves the local API and fans out live records to SSE clients.
@@ -72,6 +77,7 @@ type Hub struct {
 	rules       *rules.Engine
 	suppress    *suppress.Manager               // operator allowlist (read-only view)
 	received    func() (uint64, uint64, uint64) // ingested, dropped, rejected
+	identities  func() (int, uint64)            // per-sensor ingest identities, host-binding violations
 	webhook     func() (uint64, uint64, uint64) // sent, failed, dropped
 	notify      func() []notify.ChannelStats    // per-channel delivery counters (C2)
 	elastic     func() (uint64, uint64, uint64) // Elasticsearch sink: sent, failed, dropped
@@ -188,7 +194,17 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	mux.HandleFunc("GET /api/health", h.handleHealth)
 	mux.HandleFunc("GET /api/alerts/export", h.handleAlertsExport)
 	mux.HandleFunc("GET /api/events/export", h.handleEventsExport)
-	h.srv = &http.Server{Handler: h.auth(guardWriteOrigin(mux)), ReadHeaderTimeout: 5 * time.Second}
+	h.srv = &http.Server{
+		Handler:           h.auth(guardWriteOrigin(mux)),
+		ReadHeaderTimeout: 5 * time.Second,
+		// idle keep-alive connections are reclaimed instead of pinning
+		// a goroutine and a socket each for as long as a client likes;
+		// no ReadTimeout/WriteTimeout on purpose: the SSE stream is a
+		// long-lived response, and Go cancels a request context when
+		// its read deadline expires
+		IdleTimeout:    2 * time.Minute,
+		MaxHeaderBytes: 64 << 10,
+	}
 	return h, nil
 }
 
@@ -217,6 +233,16 @@ func (h *Hub) SetSuppressions(m *suppress.Manager) {
 func (h *Hub) SetCounters(received func() (ingested, dropped, rejected uint64)) {
 	h.mu.Lock()
 	h.received = received
+	h.mu.Unlock()
+}
+
+// SetIngestIdentityStats wires the per-sensor ingest identities into
+// /api/stats: how many are configured and how many events were refused
+// because a sensor reported a host outside its binding (a compromise
+// signal). No wiring means identities are off (reported as zeros).
+func (h *Hub) SetIngestIdentityStats(fn func() (identities int, violations uint64)) {
+	h.mu.Lock()
+	h.identities = fn
 	h.mu.Unlock()
 }
 
@@ -285,6 +311,15 @@ func (h *Hub) tooManyAuthFails(addr string) bool {
 			}
 		}
 	}
+	if _, known := h.authFails[key]; !known && len(h.authFails) >= authFailMaxAddrs {
+		// still full of live boxes: forget an arbitrary one (map order
+		// is randomized) — the memory bound wins over perfect
+		// attribution against an attacker who owns thousands of IPs
+		for k := range h.authFails {
+			delete(h.authFails, k)
+			break
+		}
+	}
 	box := h.authFails[key]
 	if box == nil || now.Sub(box.windowStart) > authFailWindow {
 		box = &authFailBox{windowStart: now}
@@ -328,7 +363,7 @@ func (h *Hub) auth(next http.Handler) http.Handler {
 				fmt.Fprintln(w, `{"error":"too many unauthorized requests from this address; retry after the window"}`)
 				return
 			}
-			w.Header().Set("WWW-Authenticate", `Bearer realm="security-framework api"`)
+			w.Header().Set("WWW-Authenticate", `Bearer realm="bluetardigrade api"`)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			fmt.Fprintln(w, `{"error":"unauthorized: send 'Authorization: Bearer <token>' (configure it with -api-token/SF_API_TOKEN)"}`)
@@ -427,20 +462,37 @@ func (h *Hub) SetStore(st *store.Store) {
 	h.mu.Unlock()
 }
 
-// persistEvent writes one event to the store if attached. Failures are
-// logged with a throttle (first, then every 500th) so a full disk does
-// not flood the log while detection keeps running.
-func (h *Hub) persistEvent(ev *model.Event) {
+// persistEvent writes one event to the store if attached.
+func (h *Hub) persistEvent(ev *model.Event) { h.PersistEvents([]*model.Event{ev}) }
+
+// PersistEvents writes a batch of events to the store (one SQLite
+// transaction) when one is attached. Failures are logged with a
+// throttle (first, then every 500th) so a full disk does not flood the
+// log while detection keeps running; id conflicts are not failures —
+// the first copy is safe on disk — and are logged on their own
+// throttle. The engine loop calls it once per drained batch, BEFORE
+// PublishEvent fans each event out: durable evidence first, live
+// delivery second.
+func (h *Hub) PersistEvents(evs []*model.Event) {
 	h.mu.Lock()
 	st := h.store
 	h.mu.Unlock()
-	if st == nil {
+	if st == nil || len(evs) == 0 {
 		return
 	}
-	if err := st.InsertEvent(ev); err != nil {
+	res := st.InsertEvents(evs)
+	for _, err := range res.Failed {
 		n := atomic.AddUint64(&h.storeFails, 1)
 		if n == 1 || n%500 == 0 {
 			log.Printf("[API] store write FAILED (%d total): %v", n, err)
+		}
+	}
+	if len(res.Conflicts) > 0 {
+		total := st.IDConflicts()
+		prev := total - int64(len(res.Conflicts))
+		// log when the running total crosses 1 or a multiple of 500
+		if prev == 0 || prev/500 != total/500 {
+			log.Printf("[API] event id conflict, stored evidence kept (%d total, last id %s)", total, oneLine(res.Conflicts[len(res.Conflicts)-1]))
 		}
 	}
 }
@@ -521,8 +573,20 @@ func (h *Hub) Shutdown() {
 
 // RecordEvent stores an event in the ring, persists it (store attached)
 // and streams it to subscribers. The store write happens BEFORE the
-// fan-out: durable evidence first, live delivery second.
+// fan-out: durable evidence first, live delivery second. The engine
+// loop uses the split form (PersistEvents per batch, then PublishEvent
+// per event) to amortize the SQLite commit.
 func (h *Hub) RecordEvent(ev *model.Event) {
+	if ev == nil {
+		return
+	}
+	h.persistEvent(ev)
+	h.PublishEvent(ev)
+}
+
+// PublishEvent adds an already-persisted event to the ring and streams
+// it to subscribers.
+func (h *Hub) PublishEvent(ev *model.Event) {
 	if ev == nil {
 		return
 	}
@@ -532,7 +596,6 @@ func (h *Hub) RecordEvent(ev *model.Event) {
 		h.events = h.events[len(h.events)-maxEvents:]
 	}
 	h.mu.Unlock()
-	h.persistEvent(ev)
 	h.broadcast("event", ev)
 }
 
@@ -581,19 +644,23 @@ func (h *Hub) broadcast(topic string, payload any) {
 // ------------------------------------------------------------- handlers
 
 type statsPayload struct {
-	UptimeS        int64          `json:"uptime_s"`
-	EventsTotal    uint64         `json:"events_total"`
-	Dropped        uint64         `json:"dropped"`
-	IngestRejected uint64         `json:"ingest_rejected"`
-	EventsPerMin   int            `json:"events_per_min"`
-	AlertsTotal    int            `json:"alerts_total"`
-	BySeverity     map[string]int `json:"by_severity"`
-	RulesCount     int            `json:"rules_count"`
-	RulesTypes     []string       `json:"rules_types"`
-	EventsBuffered int            `json:"events_buffered"`
-	WebhookSent    uint64         `json:"webhook_sent"`
-	WebhookFailed  uint64         `json:"webhook_failed"`
-	WebhookDropped uint64         `json:"webhook_dropped"`
+	UptimeS        int64  `json:"uptime_s"`
+	EventsTotal    uint64 `json:"events_total"`
+	Dropped        uint64 `json:"dropped"`
+	IngestRejected uint64 `json:"ingest_rejected"`
+	// Per-sensor ingest identities: configured credentials and events
+	// refused for claiming a host outside the sender's binding.
+	IngestIdentities         int            `json:"ingest_identities"`
+	IngestIdentityViolations uint64         `json:"ingest_identity_violations"`
+	EventsPerMin             int            `json:"events_per_min"`
+	AlertsTotal              int            `json:"alerts_total"`
+	BySeverity               map[string]int `json:"by_severity"`
+	RulesCount               int            `json:"rules_count"`
+	RulesTypes               []string       `json:"rules_types"`
+	EventsBuffered           int            `json:"events_buffered"`
+	WebhookSent              uint64         `json:"webhook_sent"`
+	WebhookFailed            uint64         `json:"webhook_failed"`
+	WebhookDropped           uint64         `json:"webhook_dropped"`
 	// SIEM sinks (Elasticsearch bulk / Splunk HEC): same delivery
 	// triple as the webhook, per platform.
 	ElasticSent        uint64 `json:"elastic_sent"`
@@ -607,10 +674,14 @@ type statsPayload struct {
 	StoreWriteFailures uint64 `json:"store_write_failures"`
 	StoreEvents        int64  `json:"store_events"`
 	StoreAlerts        int64  `json:"store_alerts"`
-	CorrelatorStates   int    `json:"correlator_states"`
-	CorrelatorSeqs     int    `json:"correlator_sequences"`
-	CorrelatorCap      int    `json:"correlator_cap"`
-	Mode               string `json:"mode"`
+	// StoreIDConflicts counts event writes refused because the id was
+	// already stored with a different payload (first copy kept):
+	// possible evidence forgery by a feed, or an id collision.
+	StoreIDConflicts int64  `json:"store_id_conflicts"`
+	CorrelatorStates int    `json:"correlator_states"`
+	CorrelatorSeqs   int    `json:"correlator_sequences"`
+	CorrelatorCap    int    `json:"correlator_cap"`
+	Mode             string `json:"mode"`
 
 	// Host risk scoring (A1): how many hosts currently carry non-cold
 	// risk, and the top-5 list the console dashboard renders.
@@ -658,6 +729,7 @@ func (h *Hub) statsSnapshot() statsPayload {
 	if h.received != nil {
 		ingested, dropped, rejected = h.received()
 	}
+	idFn := h.identities
 	var whSent, whFailed, whDropped uint64
 	if h.webhook != nil {
 		whSent, whFailed, whDropped = h.webhook()
@@ -697,14 +769,20 @@ func (h *Hub) statsSnapshot() statsPayload {
 	// never deadlock, but the idiom costs nothing and keeps
 	// statsSnapshot's rule uniform: closures and other managers' locks
 	// are only ever taken after Unlock.
+	var idCount int
+	var idViolations uint64
+	if idFn != nil {
+		idCount, idViolations = idFn()
+	}
 	var corrStates, corrSeqs, corrCap int
 	if corrFn != nil {
 		corrStates, corrSeqs, corrCap = corrFn()
 	}
-	storeEnabled, storeEvents, storeAlerts := false, int64(0), int64(0)
+	storeEnabled, storeEvents, storeAlerts, storeConflicts := false, int64(0), int64(0), int64(0)
 	if st != nil {
 		storeEnabled = true
 		storeEvents, storeAlerts = st.Counts()
+		storeConflicts = st.IDConflicts()
 	}
 	supActive := 0
 	if sup != nil {
@@ -753,43 +831,46 @@ func (h *Hub) statsSnapshot() statsPayload {
 	}
 
 	return statsPayload{
-		UptimeS:            int64(time.Since(h.started) / time.Second),
-		EventsTotal:        ingested,
-		Dropped:            dropped,
-		IngestRejected:     rejected,
-		EventsPerMin:       last60,
-		AlertsTotal:        alTotal,
-		BySeverity:         bySev,
-		RulesCount:         rulesCount,
-		RulesTypes:         rulesTypes,
-		EventsBuffered:     evCount,
-		WebhookSent:        whSent,
-		WebhookFailed:      whFailed,
-		WebhookDropped:     whDropped,
-		ElasticSent:        esSent,
-		ElasticFailed:      esFailed,
-		ElasticDropped:     esDropped,
-		SplunkSent:         spSent,
-		SplunkFailed:       spFailed,
-		SplunkDropped:      spDropped,
-		Suppressions:       supActive,
-		StoreEnabled:       storeEnabled,
-		StoreWriteFailures: atomic.LoadUint64(&h.storeFails),
-		StoreEvents:        storeEvents,
-		StoreAlerts:        storeAlerts,
-		CorrelatorStates:   corrStates,
-		CorrelatorSeqs:     corrSeqs,
-		CorrelatorCap:      corrCap,
-		Mode:               "engine",
-		RiskHostsTracked:   riskHosts,
-		HotHosts:           hotHosts,
-		BeaconsTracked:     bTracked,
-		BeaconsCap:         bCap,
-		BeaconsFired:       bFired,
-		ThresholdRules:     tDefs,
-		ThresholdKeys:      tKeys,
-		ThresholdFired:     tFired,
-		NotifyChannels:     notifyRows,
+		UptimeS:                  int64(time.Since(h.started) / time.Second),
+		EventsTotal:              ingested,
+		Dropped:                  dropped,
+		IngestRejected:           rejected,
+		IngestIdentities:         idCount,
+		IngestIdentityViolations: idViolations,
+		EventsPerMin:             last60,
+		AlertsTotal:              alTotal,
+		BySeverity:               bySev,
+		RulesCount:               rulesCount,
+		RulesTypes:               rulesTypes,
+		EventsBuffered:           evCount,
+		WebhookSent:              whSent,
+		WebhookFailed:            whFailed,
+		WebhookDropped:           whDropped,
+		ElasticSent:              esSent,
+		ElasticFailed:            esFailed,
+		ElasticDropped:           esDropped,
+		SplunkSent:               spSent,
+		SplunkFailed:             spFailed,
+		SplunkDropped:            spDropped,
+		Suppressions:             supActive,
+		StoreEnabled:             storeEnabled,
+		StoreWriteFailures:       atomic.LoadUint64(&h.storeFails),
+		StoreEvents:              storeEvents,
+		StoreAlerts:              storeAlerts,
+		StoreIDConflicts:         storeConflicts,
+		CorrelatorStates:         corrStates,
+		CorrelatorSeqs:           corrSeqs,
+		CorrelatorCap:            corrCap,
+		Mode:                     "engine",
+		RiskHostsTracked:         riskHosts,
+		HotHosts:                 hotHosts,
+		BeaconsTracked:           bTracked,
+		BeaconsCap:               bCap,
+		BeaconsFired:             bFired,
+		ThresholdRules:           tDefs,
+		ThresholdKeys:            tKeys,
+		ThresholdFired:           tFired,
+		NotifyChannels:           notifyRows,
 	}
 }
 

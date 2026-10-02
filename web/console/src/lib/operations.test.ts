@@ -32,6 +32,20 @@ describe('operations summary', () => {
       '2 escrituras SQLite fallidas desde el arranque; revisa la evidencia persistida',
     ])
   })
+  test('flags sensors reporting hosts outside their ingest identity', () => {
+    const stats = { dropped: 0, ingest_rejected: 0, webhook_failed: 0, webhook_dropped: 0, correlator_cap: 0 } as EngineStats
+    expect(pipelineIssues({ ...stats, ingest_identities: 4, ingest_identity_violations: 0 })).toEqual([])
+    expect(pipelineIssues({ ...stats, ingest_identities: 4, ingest_identity_violations: 2 })).toEqual([
+      '2 eventos rechazados: un sensor informó de un host fuera de su identidad (posible equipo comprometido)',
+    ])
+  })
+  test('flags evidence id conflicts (first copy kept) and stays silent at zero', () => {
+    const stats = { dropped: 0, ingest_rejected: 0, webhook_failed: 0, webhook_dropped: 0, correlator_cap: 0 } as EngineStats
+    expect(pipelineIssues({ ...stats, store_enabled: true, store_id_conflicts: 0 })).toEqual([])
+    expect(pipelineIssues({ ...stats, store_enabled: true, store_id_conflicts: 3 })).toEqual([
+      '3 eventos reenviados con un id ya guardado y contenido distinto; se conservó la copia original (posible falsificación)',
+    ])
+  })
 })
 
 describe('dashboard triage destinations', () => {

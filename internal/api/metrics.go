@@ -34,6 +34,8 @@ func (h *Hub) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 	writeMetric(&b, "sf_events_total", "Events accepted by ingest since engine start.", "counter", float64(s.EventsTotal))
 	writeMetric(&b, "sf_events_dropped_total", "Events dropped by ingest as malformed.", "counter", float64(s.Dropped))
 	writeMetric(&b, "sf_ingest_rejected_total", "Connections rejected by the ingest auth handshake.", "counter", float64(s.IngestRejected))
+	writeMetric(&b, "sf_ingest_identities", "Per-sensor ingest identities configured (0 = shared token only).", "gauge", float64(s.IngestIdentities))
+	writeMetric(&b, "sf_ingest_identity_violations_total", "Events refused because the sending sensor reported a host outside its identity binding.", "counter", float64(s.IngestIdentityViolations))
 	writeMetric(&b, "sf_events_per_minute", "Events ingested in the last 60 seconds.", "gauge", float64(s.EventsPerMin))
 	writeMetric(&b, "sf_alerts_total", "Alerts raised since engine start.", "counter", float64(s.AlertsTotal))
 	writeMetric(&b, "sf_rules", "Detection rules currently loaded.", "gauge", float64(s.RulesCount))
@@ -71,6 +73,7 @@ func (h *Hub) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 		writeMetric(&b, "sf_store_enabled", "SQLite persistence attached (1 = yes).", "gauge", 1)
 		writeMetric(&b, "sf_store_events", "Events persisted in the SQLite store.", "gauge", float64(s.StoreEvents))
 		writeMetric(&b, "sf_store_alerts", "Alerts persisted in the SQLite store.", "gauge", float64(s.StoreAlerts))
+		writeMetric(&b, "sf_store_id_conflicts_total", "Event writes refused because the id was already stored with a different payload (first copy kept).", "counter", float64(s.StoreIDConflicts))
 	} else {
 		writeMetric(&b, "sf_store_enabled", "SQLite persistence attached (1 = yes).", "gauge", 0)
 	}

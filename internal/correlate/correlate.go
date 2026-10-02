@@ -4,6 +4,15 @@
 // on the same host inside the window, a single high-signal alert is
 // emitted through the alert.Manager pipeline. Steps are unordered and
 // the manager survives rule hot-reloads without losing progress.
+//
+// Window semantics: each step remembers the event time of its most
+// recent hit, and a chain completes when every step is present AND the
+// spread between the oldest and the newest of those times fits in the
+// window. Measuring the spread over real event times (instead of
+// "since the first match") means a stale early hit cannot anchor the
+// window and swallow the real attack that follows it, and an event
+// that arrives out of order (offline import, skewed clock) cannot
+// stitch steps days apart into one chain.
 package correlate
 
 import (
@@ -46,17 +55,52 @@ type compiled struct {
 }
 
 type state struct {
-	matched map[int]bool
-	first   time.Time
-	lastEv  *model.Event
+	// at maps a matched step index to the event time of its most
+	// recent hit. Only times are kept (never the event itself): a
+	// state lives until its chain completes or is reclaimed, and
+	// ingest lines can carry up to 1 MiB, so a hostile feed must not
+	// be able to park one full event per tracked state.
+	at map[int]time.Time
+	// expires is the WALL-clock instant after which the state is dead
+	// weight (last update + window). It only drives reclamation of the
+	// tracking cap; completion is decided on event times.
+	expires time.Time
 }
+
+// span returns the spread between the oldest and newest step times.
+func (st *state) span() time.Duration {
+	var lo, hi time.Time
+	for _, t := range st.at {
+		if lo.IsZero() || t.Before(lo) {
+			lo = t
+		}
+		if hi.IsZero() || t.After(hi) {
+			hi = t
+		}
+	}
+	return hi.Sub(lo)
+}
+
+// reclaimEvery rate-limits the full-map sweep that runs when a new
+// chain finds the tracking cap full: a cap full of LIVE states must
+// not turn every rule hit into an O(maxTrackedStates) scan.
+const reclaimEvery = time.Second
 
 // Manager tracks per-host progress of every sequence.
 type Manager struct {
-	mu    sync.Mutex
-	seqs  []*compiled
-	state map[stateKey]*state
-	emit  func(alert.Alert)
+	mu          sync.Mutex
+	seqs        []*compiled
+	state       map[stateKey]*state
+	emit        func(alert.Alert)
+	now         func() time.Time // wall clock; nil = time.Now (tests inject)
+	lastReclaim time.Time
+}
+
+func (m *Manager) clock() time.Time {
+	if m.now != nil {
+		return m.now()
+	}
+	return time.Now()
 }
 
 // stateKey identifies one in-flight chain. A struct, not the old
@@ -74,8 +118,10 @@ type stateKey struct {
 // maxTrackedStates bounds the per-(sequence, host) progress map. A
 // hostile or misconfigured feed can invent hostnames at will, and each
 // new host would otherwise pin a state entry forever (kill chains that
-// never complete are never deleted): past the cap, NEW hosts stop
-// being tracked instead of letting the map grow without bound.
+// never complete would otherwise never be deleted): past the cap,
+// states whose window elapsed on the wall clock are reclaimed first,
+// and only if the map is still full do NEW hosts stop being tracked.
+// Sweep runs the same reclamation periodically from the engine.
 // Reload prunes states of sequences that no longer exist, so config
 // churn (renames, removals) cannot silently exhaust the cap with
 // entries that can never complete. Exported as MaxTrackedStates so
@@ -296,45 +342,51 @@ func (m *Manager) Observe(ev *model.Event, ruleName string) {
 		return
 	}
 	m.mu.Lock()
+	wall := m.clock()
+	ts := ev.DetectionTime(wall)
 	emit := m.emit
 	var completed []alert.Alert
 	for _, c := range m.seqs {
-		stepIdx := -1
+		if !c.references(ruleName) {
+			continue
+		}
 		key := stateKey{seqID: c.seq.ID, host: strings.ToLower(ev.Host)}
 		st := m.state[key]
 		if st == nil {
-			if len(m.state) >= maxTrackedStates {
+			if len(m.state) >= maxTrackedStates && !m.reclaimLocked(wall, false) {
 				continue
 			}
-			st = &state{matched: map[int]bool{}, first: time.Time{}}
+			st = &state{at: map[int]time.Time{}}
 		}
-		// window expiry: progress older than the window from the first
-		// match cannot complete; restart the chain from this hit
-		if len(st.matched) > 0 && ev.Timestamp.Sub(st.first) > c.window {
-			st = &state{matched: map[int]bool{}, first: time.Time{}}
-		}
+		// Pick the step this hit advances: an unmatched step naming
+		// the rule wins; otherwise the matched one holding the OLDEST
+		// time is refreshed, but only by a newer hit (a late, older
+		// event never pushes recorded progress back in time).
+		stepIdx := -1
 		for i, s := range c.seq.Steps {
-			if !st.matched[i] && s.Rule == ruleName {
+			if s.Rule != ruleName {
+				continue
+			}
+			prev, seen := st.at[i]
+			if !seen {
 				stepIdx = i
 				break
+			}
+			if ts.After(prev) && (stepIdx < 0 || prev.Before(st.at[stepIdx])) {
+				stepIdx = i
 			}
 		}
 		if stepIdx < 0 {
 			continue
 		}
-		if len(st.matched) == 0 {
-			if ev.Timestamp.IsZero() {
-				st.first = time.Now()
-			} else {
-				st.first = ev.Timestamp
+		st.at[stepIdx] = ts
+		st.expires = wall.Add(c.window)
+		if len(st.at) == len(c.seq.Steps) {
+			if span := st.span(); span <= c.window {
+				completed = append(completed, m.fire(c, span, ev))
+				delete(m.state, key) // re-arm
+				continue
 			}
-		}
-		st.matched[stepIdx] = true
-		st.lastEv = slim(ev)
-		if len(st.matched) == len(c.seq.Steps) {
-			completed = append(completed, m.fire(c, st, ev))
-			delete(m.state, key) // re-arm
-			continue
 		}
 		m.state[key] = st
 	}
@@ -355,34 +407,52 @@ func (m *Manager) Observe(ev *model.Event, ruleName string) {
 	}
 }
 
-// slim copies the fields fire() needs instead of pinning the whole
-// event: a state lives until its chain completes (or is pruned), and
-// ingest lines can carry up to 1 MiB, so a hostile feed must not be
-// able to park one full event per tracked state.
-func slim(ev *model.Event) *model.Event {
-	return &model.Event{
-		ID:         ev.ID,
-		Type:       ev.Type,
-		Timestamp:  ev.Timestamp,
-		Host:       ev.Host,
-		User:       ev.User,
-		Enrichment: ev.Enrichment,
+// Sweep drops every in-flight chain whose window elapsed on the wall
+// clock without progress, and reports how many it removed. The engine
+// calls it on its maintenance cadence so /api/stats reports live
+// chains, not chains that can no longer complete.
+func (m *Manager) Sweep(now time.Time) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	before := len(m.state)
+	m.reclaimLocked(now, true)
+	return before - len(m.state)
+}
+
+// reclaimLocked deletes expired states (rate-limited unless force) and
+// reports whether the map has room for a new one. Caller holds mu.
+func (m *Manager) reclaimLocked(now time.Time, force bool) bool {
+	if force || now.Sub(m.lastReclaim) >= reclaimEvery {
+		m.lastReclaim = now
+		for k, st := range m.state {
+			if now.After(st.expires) {
+				delete(m.state, k)
+			}
+		}
 	}
+	return len(m.state) < maxTrackedStates
+}
+
+// references reports whether any step of the sequence names rule.
+func (c *compiled) references(rule string) bool {
+	for _, s := range c.seq.Steps {
+		if s.Rule == rule {
+			return true
+		}
+	}
+	return false
 }
 
 // fire builds the sequence alert for a completed chain. Caller holds
 // mu; the returned alert is delivered by Observe AFTER mu is released —
 // the pipeline takes the hub lock and can block, and no stats read
 // should queue behind that (see Observe).
-func (m *Manager) fire(c *compiled, st *state, ev *model.Event) alert.Alert {
+func (m *Manager) fire(c *compiled, span time.Duration, ev *model.Event) alert.Alert {
 	steps := make([]string, 0, len(c.seq.Steps))
 	for _, s := range c.seq.Steps {
 		steps = append(steps, s.Rule)
 	}
-	span := st.lastEv.Timestamp.Sub(st.first).Round(time.Second)
-	if span < 0 {
-		span = 0
-	}
+	span = span.Round(time.Second)
 	a := alert.Alert{
 		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
 		RuleID:    c.seq.ID,

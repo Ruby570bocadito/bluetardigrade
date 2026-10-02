@@ -27,6 +27,7 @@ const STATS: Record<string, unknown> = {
   events_total: 1,
   store_enabled: true,
   store_write_failures: 2,
+  store_id_conflicts: 1,
   store_events: 7,
   store_alerts: 2,
   risk_hosts_tracked: 2,
@@ -181,6 +182,7 @@ describe('EngineBridge (agent-04 hardening)', () => {
     // F2: the store trio declared by both type contracts is forwarded
     expect(rec.stats[0].store_enabled).toBe(true)
     expect(rec.stats[0].store_write_failures).toBe(2)
+    expect(rec.stats[0].store_id_conflicts).toBe(1)
     expect(rec.stats[0].store_events).toBe(7)
     expect(rec.stats[0].store_alerts).toBe(2)
     // A1: hot hosts forwarded, malformed rows dropped, count forwarded

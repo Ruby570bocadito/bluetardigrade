@@ -2,6 +2,8 @@ package api
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -186,5 +188,54 @@ func TestRespondKillHostMismatch(t *testing.T) {
 	})
 	if code != http.StatusForbidden || out["error"] != "host_mismatch" {
 		t.Fatalf("want 403 host_mismatch, got %d (%v)", code, out)
+	}
+}
+
+// Operators file version 2: the X-SF-Operator-Token header reaches the
+// manager, a missing or wrong credential is a 403 with its own code,
+// and the right one lets the request through to the process guard.
+func TestRespondKillOperatorCredentialHeader(t *testing.T) {
+	h, base := newTestHub(t)
+	a, err := respond.OpenAudit(filepath.Join(t.TempDir(), "audit.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = a.Close() })
+	m := respond.NewManager(respondHostNameForTest(), a)
+	sum := sha256.Sum256([]byte("ana-own-credential"))
+	f := filepath.Join(t.TempDir(), "ops.yaml")
+	if err := os.WriteFile(f, []byte("version: 2\noperators:\n  - name: ana\n    token_sha256: "+hex.EncodeToString(sum[:])+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.LoadOperators(f); err != nil {
+		t.Fatal(err)
+	}
+	h.EnableRespondKill(m)
+	post := func(credential string) (int, map[string]any) {
+		body, _ := json.Marshal(map[string]any{
+			"host": respondHostNameForTest(), "pid": 2147483647, "process_name": "sleep",
+			"operator": "ana", "reason": "credential test",
+		})
+		req, _ := http.NewRequest(http.MethodPost, "http://"+base+"/api/respond/kill", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		if credential != "" {
+			req.Header.Set("X-SF-Operator-Token", credential)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var out map[string]any
+		_ = json.NewDecoder(res.Body).Decode(&out)
+		return res.StatusCode, out
+	}
+	for _, cred := range []string{"", "wrong"} {
+		if code, out := post(cred); code != http.StatusForbidden || out["error"] != "operator_credential_invalid" {
+			t.Fatalf("credential %q: got %d %v", cred, code, out)
+		}
+	}
+	if code, out := post("ana-own-credential"); out["error"] == "operator_credential_invalid" || code == http.StatusOK {
+		t.Fatalf("right credential: got %d %v (want the process guard's verdict)", code, out)
 	}
 }

@@ -170,6 +170,9 @@ jobs:
       - name: Windows package signing policy and read-only verification
         shell: powershell
         run: ./scripts/release/test-sign-windows.ps1
+      - name: installer PATH order, running-binary lock and UTF-8 tool output (scratch registry key)
+        shell: powershell
+        run: ./scripts/dev-tests/check_installer_path.ps1
       - name: installer behavior (Windows PowerShell 5.1, real engine/collector/console installation)
         shell: powershell
         run: ./scripts/dev-tests/check_installer_behavior.ps1

@@ -7,9 +7,9 @@
 #
 # Schema: a YAML list of sequences with
 #   name, id, description, severity, window (e.g. 5m), tags, steps.
-# Steps are unordered: the correlator tracks which of them already
-# matched per host and fires when the set is complete within the
-# window measured from the first match.
+# Steps are unordered: the correlator remembers the event time of the
+# latest hit of each step per host and fires when every step is present
+# and the spread between the oldest and the newest fits in the window.
 - name: "Campana de robo de credenciales"
   id: "c0a5e7d1-1a2b-4c3d-8e4f-a5b6c7d8e9f0"
   description: >

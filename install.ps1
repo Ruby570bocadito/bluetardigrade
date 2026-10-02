@@ -131,20 +131,31 @@ function Invoke-Native {
     # the records so they can never become terminating, and keep the text
     # for diagnostics. -AllowFailure marks a non-zero exit as an expected
     # outcome (reg/netsh probes); -Quiet suppresses the echo of output
-    # lines; -Activity names the operation in the failure message.
+    # lines; -Activity names the operation in the failure message; -Utf8
+    # decodes the tool's output as UTF-8 (go, git, bun, Next, cargo write
+    # UTF-8; with the console code page their symbols came out as Ô£ô).
+    # Callers that do not use the returned lines must discard them
+    # ($null = ...): an uncaptured return is printed a second time.
     param(
         [Parameter(Mandatory)][ScriptBlock]$Command,
         [switch]$AllowFailure,
         [switch]$Quiet,
+        [switch]$Utf8,
         [string]$Activity
     )
     $prev = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     $global:LASTEXITCODE = -1
+    $prevEncoding = $null
+    if ($Utf8) {
+        # no console (scheduled task, redirected host): keep the default
+        try { $prevEncoding = [Console]::OutputEncoding; [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false) } catch { $prevEncoding = $null }
+    }
     try {
         $lines = @(. $Command 2>&1 | ForEach-Object { "$_" })
     } finally {
         $ErrorActionPreference = $prev
+        if ($prevEncoding) { try { [Console]::OutputEncoding = $prevEncoding } catch { } }
     }
     if (-not $Quiet) {
         foreach ($l in $lines) { Write-Info $l }
@@ -389,11 +400,12 @@ function Get-SourceTree {
         try {
             $changes = ((Invoke-Native -Command { & git status --porcelain --untracked-files=no } -Quiet -Activity 'git status') -join "`n").Trim()
             if ($changes) { throw 'Tracked source files have local changes. Commit or back them up before updating; no reset was performed.' }
-            Invoke-Native -Command { & git fetch origin $Br } -Quiet -Activity 'git fetch'
+            $null = Invoke-Native -Command { & git fetch origin $Br } -Quiet -Utf8 -Activity 'git fetch'
             # Confirm fast-forward before stopping services or modifying files.
-            Invoke-Native -Command { & git merge-base --is-ancestor HEAD FETCH_HEAD } -Quiet -Activity 'update fast-forward preflight'
+            $null = Invoke-Native -Command { & git merge-base --is-ancestor HEAD FETCH_HEAD } -Quiet -Activity 'update fast-forward preflight'
             Stop-SfProcesses -Root $Root
-            Invoke-Native -Command { & git merge --ff-only FETCH_HEAD } -Quiet -Activity 'git fast-forward'
+            Assert-InstallNotRunning -Root $Root
+            $null = Invoke-Native -Command { & git merge --ff-only FETCH_HEAD } -Quiet -Utf8 -Activity 'git fast-forward'
         } finally { Pop-Location }
         Write-Ok "source updated"
         return
@@ -406,7 +418,7 @@ function Get-SourceTree {
     try {
         if ($git) {
             Write-Step "Cloning $RepoId ($Br) into staging"
-            Invoke-Native -Command { & git clone --depth 1 --branch $Br "https://github.com/$RepoId.git" $tmp } -Quiet -Activity 'git clone'
+            $null = Invoke-Native -Command { & git clone --depth 1 --branch $Br "https://github.com/$RepoId.git" $tmp } -Quiet -Utf8 -Activity 'git clone'
             $source = $tmp
         } else {
             Write-Step "Downloading source zip ($RepoId@$Br)"
@@ -423,6 +435,7 @@ function Get-SourceTree {
             if (-not (Test-Path (Join-Path $source $required))) { throw "Incomplete source download: $required is missing." }
         }
         Stop-SfProcesses -Root $Root
+        Assert-InstallNotRunning -Root $Root
         New-Item -ItemType Directory -Path $Root -Force | Out-Null
         foreach ($entry in Get-ChildItem $source -Force) {
             Copy-Item -LiteralPath $entry.FullName -Destination $Root -Recurse -Force
@@ -442,8 +455,8 @@ function Build-Engine {
     Push-Location $Root
     try {
         $env:GOTOOLCHAIN = 'local'
-        Invoke-Native -Command { & go build -o (Join-Path $Root 'bin\engine.exe') ./cmd/engine } -Activity 'go build ./cmd/engine'
-        Invoke-Native -Command { & go build -o (Join-Path $Root 'bin\collector.exe') ./cmd/collector } -Activity 'go build ./cmd/collector'
+        $null = Invoke-Native -Command { & go build -o (Join-Path $Root 'bin\engine.exe') ./cmd/engine } -Utf8 -Activity 'go build ./cmd/engine'
+        $null = Invoke-Native -Command { & go build -o (Join-Path $Root 'bin\collector.exe') ./cmd/collector } -Utf8 -Activity 'go build ./cmd/collector'
     } finally { Pop-Location }
     Write-Ok "bin\engine.exe + bin\collector.exe"
 }
@@ -464,14 +477,14 @@ function Build-Console {
     Write-Step "Installing console dependencies (bun)"
     Push-Location (Join-Path $web 'console-service')
     try {
-        Invoke-Native -Command { & bun install --frozen-lockfile } -Activity 'bun install (console-service)'
+        $null = Invoke-Native -Command { & bun install --frozen-lockfile } -Utf8 -Activity 'bun install (console-service)'
     } finally { Pop-Location }
     Push-Location (Join-Path $web 'console')
     try {
-        Invoke-Native -Command { & bun install --frozen-lockfile } -Activity 'bun install (console)'
+        $null = Invoke-Native -Command { & bun install --frozen-lockfile } -Utf8 -Activity 'bun install (console)'
         Write-Step "Building web console (Next.js, 1-2 min)"
         $env:NEXT_TELEMETRY_DISABLED = '1'
-        Invoke-Native -Command { & $NodeExe (Join-Path $web 'console\node_modules\next\dist\bin\next') build } -Activity 'next build'
+        $null = Invoke-Native -Command { & $NodeExe (Join-Path $web 'console\node_modules\next\dist\bin\next') build } -Utf8 -Activity 'next build'
     } finally { Pop-Location }
     Write-Ok "web console ready (start it with sf-console)"
 }
@@ -489,12 +502,18 @@ function Build-Sensor {
     Write-Step "Building Rust sensor (release)"
     Push-Location (Join-Path $Root 'sensor')
     try {
-        Invoke-Native -Command { & cargo build --release --locked } -Activity 'cargo build'
+        $null = Invoke-Native -Command { & cargo build --release --locked } -Utf8 -Activity 'cargo build'
     } finally { Pop-Location }
     $exe = Join-Path $Root 'sensor\target\release\security-sensor.exe'
     if (Test-Path $exe) {
-        Copy-Item $exe (Join-Path $Root 'bin\security-sensor.exe') -Force
-        Write-Ok "bin\security-sensor.exe (run with --addr 127.0.0.1:7777)"
+        try {
+            Copy-Item $exe (Join-Path $Root 'bin\security-sensor.exe') -Force
+            Write-Ok "bin\security-sensor.exe (run it from an Administrator prompt: security-sensor.exe --addr 127.0.0.1:7777)"
+        } catch {
+            # the sensor runs elevated, so Stop-SfProcesses cannot stop it
+            Write-Warn2 "bin\security-sensor.exe is in use (a sensor is running, usually from an Administrator window)."
+            Write-Info  "  stop it with Ctrl+C there and re-run with -Update -WithSensor; the new build is at $exe"
+        }
     }
 }
 
@@ -590,30 +609,110 @@ function Write-Shims {
     Write-Ok "sf-engine / sf-collector / sf-sensor / sf-console / sf-update / sf-uninstall"
 }
 
-function Add-ToUserPath {
-    param([string]$Dir)
-    $dirLow = $Dir.TrimEnd('\').ToLower()
-    $raw = $null
-    try {
-        $q = Invoke-Native -Command { & reg query HKCU\Environment /v Path } -Quiet -AllowFailure
-        if ($q) {
-            foreach ($l in $q) {
-                if ($l -match '^\s*Path\s+REG_(EXPAND_)?SZ\s+(.*)$') { $raw = $Matches[2] }
-            }
+# Whatever still comes before this install on the effective PATH after
+# Add-ToUserPath (only the system PATH can, and it needs an administrator
+# to change), plus a notice for an install left from when the project was
+# called security-framework: its commands no longer run, but it is still
+# on disk and confused real deployments.
+function Show-ShadowingInstalls {
+    param([string]$BinDir)
+    $mine = $BinDir.TrimEnd('\')
+    $before = @()
+    :scan foreach ($scope in @('Machine', 'User')) {
+        $value = [Environment]::GetEnvironmentVariable('Path', $scope)
+        if (-not $value) { continue }
+        foreach ($e in ([Environment]::ExpandEnvironmentVariables($value) -split ';')) {
+            $dir = $e.Trim().TrimEnd('\')
+            if (-not $dir) { continue }
+            if ($dir -ieq $mine) { break scan }
+            if (Test-Path -LiteralPath (Join-Path $dir 'sf-engine.exe')) { $before += [pscustomobject]@{ Dir = $dir; Scope = $scope } }
         }
-    } catch { }
-    if ($null -eq $raw) {
-        try {
-            [Environment]::SetEnvironmentVariable('Path', $Dir, 'User')
-            Write-Ok "user PATH created"
-        } catch { Write-Warn2 "could not write user PATH: $($_.Exception.Message)" }
-        return
     }
-    $have = [Environment]::ExpandEnvironmentVariables($raw).ToLower()
-    if (($have -split ';') -contains $dirLow) { Write-Ok "PATH already up to date"; return }
+    foreach ($s in $before) {
+        Write-Warn2 "another install comes first on PATH ($($s.Scope.ToLower()) PATH): $($s.Dir)"
+        Write-Info  "  new terminals will run its sf-engine/sf-console/sf-sensor instead of these."
+        if ($s.Scope -eq 'Machine') {
+            Write-Info "  it is in the system PATH: remove it there from an Administrator prompt"
+        }
+    }
+    $legacy = Join-Path $env:LOCALAPPDATA 'security-framework'
+    if ((Test-Path -LiteralPath (Join-Path $legacy 'bin\sf-engine.exe')) -and -not ($mine -ilike "$legacy*")) {
+        Write-Warn2 "an older install (security-framework) is still on disk: $legacy"
+        Write-Info  "  this install's commands take precedence now. Once you have copied anything you want"
+        Write-Info  "  to keep from it (alerts, sf-store.db, reports), delete the folder:"
+        Write-Info  "  Remove-Item -Recurse -Force '$legacy'"
+    }
+}
+
+# The user PATH is read and written through the registry API: reg.exe
+# output is decoded with the console code page (a folder with an accent
+# would be garbled and written back), and
+# [Environment]::SetEnvironmentVariable stores REG_SZ, which freezes
+# %VARIABLE% entries. -KeyPath lets the behavior checks use a scratch key.
+function Get-UserPathRaw {
+    param([string]$KeyPath = 'Environment')
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($KeyPath)
+    if (-not $key) { return $null }
+    try { return $key.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) }
+    finally { $key.Close() }
+}
+
+function Set-UserPathRaw {
+    param([string]$Value, [string]$KeyPath = 'Environment')
+    $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($KeyPath)
+    try { $key.SetValue('Path', $Value, [Microsoft.Win32.RegistryValueKind]::ExpandString) }
+    finally { $key.Close() }
+    if ($KeyPath -eq 'Environment') {
+        # broadcast WM_SETTINGCHANGE so terminals opened from Explorer see
+        # the new PATH without signing out (reg.exe never announced it)
+        [Environment]::SetEnvironmentVariable('BLUETARDIGRADE_PATH_REFRESH', '1', 'User')
+        [Environment]::SetEnvironmentVariable('BLUETARDIGRADE_PATH_REFRESH', $null, 'User')
+    }
+}
+
+# Appends the install's bin to the user PATH, or moves it to the FRONT
+# when an earlier entry provides the same commands (typically an install
+# from when the project was called security-framework): appending behind
+# it left every new terminal running the old sf-engine/sf-console.
+function Add-ToUserPath {
+    param([string]$Dir, [string]$KeyPath = 'Environment')
+    $mine = $Dir.Trim().TrimEnd('\')
+    try { $raw = Get-UserPathRaw -KeyPath $KeyPath }
+    catch { Write-Warn2 "could not read user PATH: $($_.Exception.Message)"; return }
+    $entries = @()
+    if ($raw) { $entries = @(([string]$raw) -split ';' | Where-Object { $_.Trim() }) }
+    $norm = { param($e) [Environment]::ExpandEnvironmentVariables($e).Trim().TrimEnd('\') }
+    # entries left behind by an old security-framework install whose folder
+    # is gone (its uninstaller did not always clean the PATH)
+    $stale = @($entries | Where-Object { $d = & $norm $_; $d -match '\\security-framework\\bin$' -and -not (Test-Path -LiteralPath $d) })
+    if ($stale.Count -gt 0) { $entries = @($entries | Where-Object { $stale -notcontains $_ }) }
+    $at = -1
+    for ($i = 0; $i -lt $entries.Count; $i++) { if ((& $norm $entries[$i]) -ieq $mine) { $at = $i; break } }
+    $limit = $entries.Count
+    if ($at -ge 0) { $limit = $at }
+    $shadows = @()
+    for ($i = 0; $i -lt $limit; $i++) {
+        # not $dir: PowerShell names are case-insensitive, it would
+        # overwrite the $Dir parameter
+        $entryDir = & $norm $entries[$i]
+        if ($entryDir -and (Test-Path -LiteralPath (Join-Path $entryDir 'sf-engine.exe'))) { $shadows += $entryDir }
+    }
+    if ($at -ge 0 -and $shadows.Count -eq 0 -and $stale.Count -eq 0) { Write-Ok 'PATH already up to date'; return }
+    $others = @($entries | Where-Object { (& $norm $_) -ine $mine })
+    if ($shadows.Count -gt 0) {
+        $new = @($Dir) + $others
+        $message = "moved to the front of the user PATH, ahead of $($shadows -join ', ') (open a NEW terminal)"
+    } elseif ($at -ge 0) {
+        $new = $entries
+        $message = 'PATH up to date'
+    } else {
+        $new = $others + @($Dir)
+        $message = 'added to user PATH (open a NEW terminal to use sf-*)'
+    }
+    if ($stale.Count -gt 0) { $message += "; removed stale entries of a deleted install: $($stale -join ', ')" }
     try {
-        reg add HKCU\Environment /v Path /t REG_EXPAND_SZ /d "$raw;$Dir" /f | Out-Null
-        Write-Ok "added to user PATH (open a NEW terminal to use sf-*)"
+        Set-UserPathRaw -Value ($new -join ';') -KeyPath $KeyPath
+        Write-Ok $message
     } catch { Write-Warn2 "could not write user PATH: $($_.Exception.Message)" }
 }
 
@@ -753,6 +852,31 @@ function Register-Autostart {
             Write-Warn2 "autostart entries could not be verified in the registry"
         }
     } catch { Write-Warn2 "autostart registration failed: $($_.Exception.Message)" }
+}
+
+# Stop-SfProcesses cannot see processes started from an elevated window
+# (Win32_Process hides their path from a normal one), and Windows locks a
+# running .exe: the update then died halfway with a bare "Access is
+# denied" from go build or Copy-Item. Probe the binaries first and stop
+# with an actionable message before anything is modified.
+function Assert-InstallNotRunning {
+    param([string]$Root)
+    $busy = @()
+    foreach ($name in @('engine.exe', 'sf-engine.exe', 'collector.exe', 'sf-collector.exe')) {
+        $file = Join-Path $Root (Join-Path 'bin' $name)
+        if (-not (Test-Path -LiteralPath $file)) { continue }
+        try {
+            $handle = [IO.File]::Open($file, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+            $handle.Close()
+        } catch [IO.IOException] {
+            $busy += $name
+        } catch [UnauthorizedAccessException] {
+            $busy += $name
+        }
+    }
+    if ($busy.Count -gt 0) {
+        throw "Still running: $($busy -join ', '). It was probably started from an Administrator window: run 'sf-console -Stop' (or close sf-engine) there, then re-run the update. Nothing was changed."
+    }
 }
 
 function Stop-SfProcesses {
@@ -914,6 +1038,7 @@ if ($MyInvocation.InvocationName -ne '.') {
     Write-Shims -Root $root -RepoId $Repo -Ref $Branch -ConsoleExcluded:([bool]$NoConsole)
     Add-ToUserPath -Dir $binDir
     $env:Path = "$binDir;" + $env:Path
+    Show-ShadowingInstalls -BinDir $binDir
 
     # ingest token: -IngestToken rewrites the persisted one (empty
     # clears); without the flag an existing one is picked up so

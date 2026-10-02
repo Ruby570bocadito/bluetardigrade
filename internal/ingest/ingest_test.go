@@ -242,7 +242,10 @@ func TestAuthTimeout(t *testing.T) {
 
 // The AUTH token comparison must not leak through an oversized first
 // line either: a >maxLineSize AUTH attempt closes the connection
-// without crashing the server (scanner error path).
+// without crashing the server (scanner error path). Since the
+// pre-auth cap (maxAuthLine) the server gives up after 4 KiB, so the
+// client's write of the rest may fail with a reset: that is the
+// expected outcome, not a test failure.
 func TestOversizedAuthLineDoesNotCrash(t *testing.T) {
 	srv, _, addr := startTestServer(t, "s3cret")
 	conn, err := net.Dial("tcp", addr)
@@ -252,26 +255,21 @@ func TestOversizedAuthLineDoesNotCrash(t *testing.T) {
 	defer conn.Close()
 	big := "AUTH " + strings.Repeat("x", maxLineSize+16)
 	conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
-	if _, err := conn.Write([]byte(big + "\n")); err != nil {
-		t.Fatalf("write oversized line: %v", err)
-	}
-	// the server may ack or just close; either way it must survive
+	_, _ = conn.Write([]byte(big + "\n")) // may be reset mid-write
 	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	buf := make([]byte, 256)
 	_, _ = conn.Read(buf) // best effort
-	deadline := time.Now().Add(500 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		if srv.Rejected() > 0 {
-			break
-		}
+	deadline := time.Now().Add(2 * time.Second)
+	for srv.Rejected() == 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	// server is still alive: a normal connection still works
-	if _, r := dialAndSend(t, addr, "AUTH s3cret"); false {
-		_ = r
+	if srv.Rejected() != 1 {
+		t.Fatalf("oversized AUTH line not rejected (rejected=%d)", srv.Rejected())
 	}
-	if srv.Rejected() == 0 {
-		t.Log("oversized line closed without counting a rejection (acceptable)")
+	// server is still alive: a normal connection still authenticates
+	_, r := dialAndSend(t, addr, "AUTH s3cret")
+	if ack := readAck(t, r); !strings.Contains(ack, `"ok"`) {
+		t.Fatalf("server unusable after an oversized AUTH line: %s", ack)
 	}
 	var _ = json.Marshal
 }

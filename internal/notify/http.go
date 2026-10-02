@@ -51,7 +51,7 @@ func postJSON(ctx context.Context, hc *http.Client, url string, payload []byte) 
 		return &deliveryError{err: redact.URLErr(err, "notification endpoint"), retryable: false}
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "security-framework-notify/0.1")
+	req.Header.Set("User-Agent", "bluetardigrade-notify/0.1")
 
 	resp, err := hc.Do(req)
 	if err != nil {

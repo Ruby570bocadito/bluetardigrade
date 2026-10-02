@@ -30,6 +30,18 @@ export function pipelineIssues(stats: EngineStats | null): string[] {
   if ((stats.store_write_failures ?? 0) > 0) {
     issues.push(stats.store_write_failures + ' escrituras SQLite fallidas desde el arranque; revisa la evidencia persistida')
   }
+  if ((stats.ingest_identity_violations ?? 0) > 0) {
+    issues.push(
+      stats.ingest_identity_violations +
+        ' eventos rechazados: un sensor informó de un host fuera de su identidad (posible equipo comprometido)',
+    )
+  }
+  if ((stats.store_id_conflicts ?? 0) > 0) {
+    issues.push(
+      stats.store_id_conflicts +
+        ' eventos reenviados con un id ya guardado y contenido distinto; se conservó la copia original (posible falsificación)',
+    )
+  }
   if (stats.correlator_cap > 0 && stats.correlator_states >= stats.correlator_cap) {
     issues.push('Correlador al límite de capacidad')
   }

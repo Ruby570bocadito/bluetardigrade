@@ -96,6 +96,19 @@ if ($Status) {
 
 if ($Stop) {
     Stop-Tracked
+    # Stop-Tracked cannot see (let alone stop) processes started from an
+    # elevated window: Win32_Process hides their path from a normal one.
+    # Never claim a stop that did not happen.
+    Start-Sleep -Milliseconds 500
+    $left = @()
+    if (Test-PortLocal 7777) { $left += 'engine :7777' }
+    if (Test-PortLocal $ServicePort) { $left += "hub :$ServicePort" }
+    if (Test-PortLocal $ConsolePort) { $left += "console :$ConsolePort" }
+    if ($left.Count -gt 0) {
+        Write-Host "  [!] still running: $($left -join ', ')" -ForegroundColor Yellow
+        Write-Host '      if they were started from an Administrator window, run sf-console -Stop there' -ForegroundColor Yellow
+        return
+    }
     Write-Host '  console stopped'
     return
 }

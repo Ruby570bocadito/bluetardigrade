@@ -75,6 +75,18 @@ With arguments (webhook delivery, ingest auth, autostart):
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/Ruby570bocadito/bluetardigrade/main/install.ps1))) -WithSensor -AutoStart -IngestToken <token>
 ```
 
+The one-liner tracks `main`, and so does `sf-update`. For a reproducible
+install that only changes when you decide, pin a release tag in both the
+script URL and `-Branch` (`sf-update` then stays on that tag):
+
+```powershell
+$tag = 'v0.1.0'   # the release you reviewed
+& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/Ruby570bocadito/bluetardigrade/$tag/install.ps1"))) -Branch $tag
+```
+
+Release binaries carry a Sigstore-signed build provenance attestation:
+`gh attestation verify <file> --repo Ruby570bocadito/bluetardigrade`.
+
 ### Any OS with Go
 
 ```bash

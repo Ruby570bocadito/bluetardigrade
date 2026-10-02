@@ -46,6 +46,44 @@ func TestFailedPersistenceIsVisibleInStatsAndMetrics(t *testing.T) {
 	}
 }
 
+// A feed re-sending a stored event id with other content must not
+// rewrite the evidence, must not count as a failed write, and must be
+// visible to the operator in /api/stats and /metrics.
+func TestEventIDConflictKeepsEvidenceAndIsVisible(t *testing.T) {
+	st, err := store.Open(t.TempDir() + "/conflict.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	h, addr := newTestHub(t)
+	h.SetStore(st)
+	at := time.Now().UTC()
+	h.RecordEvent(&model.Event{ID: "shared-id", Timestamp: at, Type: model.TypeProcessCreate, Host: "DC-01",
+		Process: &model.Process{Name: "procdump.exe", CommandLine: "procdump -ma lsass.exe"}})
+	h.RecordEvent(&model.Event{ID: "shared-id", Timestamp: at, Type: model.TypeProcessCreate, Host: "WKS-99",
+		Process: &model.Process{Name: "notepad.exe"}})
+	var stats map[string]any
+	getJSON(t, "http://"+addr+"/api/stats", &stats)
+	if stats["store_id_conflicts"] != float64(1) || stats["store_write_failures"] != float64(0) || stats["store_events"] != float64(1) {
+		t.Fatalf("conflict not surfaced correctly: conflicts=%v failures=%v events=%v",
+			stats["store_id_conflicts"], stats["store_write_failures"], stats["store_events"])
+	}
+	var events []model.Event
+	getJSON(t, "http://"+addr+"/api/events?limit=10", &events)
+	if len(events) != 1 || events[0].Host != "DC-01" {
+		t.Fatalf("stored evidence rewritten: %+v", events)
+	}
+	res, err := http.Get("http://" + addr + "/metrics")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	body, _ := io.ReadAll(res.Body)
+	if !strings.Contains(string(body), "sf_store_id_conflicts_total 1\n") {
+		t.Fatalf("missing id-conflict counter: %s", body)
+	}
+}
+
 func TestStoreBackedTelemetry(t *testing.T) {
 	path := t.TempDir() + "/api.db"
 	st, err := store.Open(path)

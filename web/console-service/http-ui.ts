@@ -183,7 +183,7 @@ export function renderStatusPage(d: StatusData): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
-<title>console-service / security-framework</title>
+<title>console-service / bluetardigrade</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
@@ -252,7 +252,7 @@ footer .links span{margin-right:14px}
 <div class="wrap">
   <header class="top">
     <div>
-      <div class="eyebrow">security-framework · hub de telemetria</div>
+      <div class="eyebrow">bluetardigrade · hub de telemetria</div>
       <h1>console-service</h1>
     </div>
     <div class="head-right">

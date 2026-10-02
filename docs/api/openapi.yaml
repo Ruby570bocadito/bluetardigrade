@@ -792,7 +792,11 @@ paths:
 
         - the `operator` must be on the `-respond-operators` allowlist
           (`operator_not_allowed`; a missing file means an empty
-          allowlist: everything denied);
+          allowlist: everything denied). With a version-2 operators
+          file every operator also presents their own credential in the
+          `X-SF-Operator-Token` header (`operator_credential_invalid`
+          otherwise): the shared bearer token does not tell operators
+          apart, their credential does. It is never audited or logged;
         - `host` must equal the engine's own hostname (`host_mismatch`)
           — a console replaying a REMOTE sensor's alert can never turn
           it into a local kill;
@@ -822,6 +826,15 @@ paths:
         automation path: rules, sequences, the correlator and the
         actions dispatcher cannot reach this surface (binding landing
         requirement R8).
+      parameters:
+        - name: X-SF-Operator-Token
+          in: header
+          required: false
+          description: the operator's own credential, required when the
+            operators file is version 2 (at most 256 bytes)
+          schema:
+            type: string
+            maxLength: 256
       requestBody:
         required: true
         content:
@@ -849,7 +862,8 @@ paths:
         '403':
           description: |
             Permission or guard denial: the body names one of
-            `operator_not_allowed`, `host_mismatch`, `pid_invalid`,
+            `operator_not_allowed`, `operator_credential_invalid`,
+            `host_mismatch`, `pid_invalid`,
             `pid_mismatch`, `pid_not_found`, `pid_access_denied`,
             `self_protected`, `process_protected`, `audit_unavailable`.
             Every 403 here is audited in the engine's respond-audit
@@ -1127,6 +1141,8 @@ components:
         - events_total
         - dropped
         - ingest_rejected
+        - ingest_identities
+        - ingest_identity_violations
         - events_per_min
         - alerts_total
         - by_severity
@@ -1150,6 +1166,7 @@ components:
         - store_write_failures
         - store_events
         - store_alerts
+        - store_id_conflicts
         - mode
         - risk_hosts_tracked
         - hot_hosts
@@ -1182,6 +1199,14 @@ components:
           type: integer
           format: int64
           description: alerts currently persisted in the store (0 while store_enabled is false)
+        store_id_conflicts:
+          type: integer
+          format: int64
+          minimum: 0
+          description: event writes refused since process start because the id was already
+            stored with a different payload. Stored evidence is append-only (first write wins);
+            a non-zero value means a feed re-sent an id with other content (possible forgery
+            or id collision). 0 while store_enabled is false.
         uptime_s:
           type: integer
           description: seconds since the API hub started
@@ -1202,6 +1227,18 @@ components:
             handshake (no AUTH line, wrong or missing token, AUTH sent to
             a tokenless engine, or auth timeout) — how visible probes
             against a remote bind show up; zero while auth is disabled
+        ingest_identities:
+          type: integer
+          minimum: 0
+          description: per-sensor ingest identities configured with -ingest-identities
+            (0 = shared token only or auth disabled)
+        ingest_identity_violations:
+          type: integer
+          format: int64
+          minimum: 0
+          description: events refused since start because the sending sensor reported a
+            host outside the binding of its ingest identity — a sensor speaking for
+            another machine is a compromise signal
         events_per_min:
           type: integer
           description: events received in the last 60 seconds

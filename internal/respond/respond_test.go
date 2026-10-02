@@ -297,7 +297,7 @@ func TestPerOperatorRateCeiling(t *testing.T) {
 	// another allowlisted operator still has budget: the per-op
 	// ceiling is attribution hygiene, not a global lock
 	m.mu.Lock()
-	m.operators["beto"] = struct{}{}
+	m.operators["beto"] = nil
 	m.mu.Unlock()
 	req := killReq(2147483647, "sleep")
 	req.Operator = "beto"

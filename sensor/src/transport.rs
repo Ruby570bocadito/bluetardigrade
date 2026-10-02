@@ -10,7 +10,8 @@
 //
 // Transport encryption: when a CA bundle is configured (--tls-ca /
 // SF_INGEST_CA), every (re)connection upgrades to TLS and the engine's
-// certificate must chain to one of the bundle's roots. TLS sits below
+// certificate must chain to one of the bundle's roots (and only to them:
+// the system trust store is disabled). TLS sits below
 // the AUTH handshake, so the wire protocol is unchanged; there is
 // deliberately no skip-verification mode — a sensor that cannot verify
 // the engine refuses to connect instead of streaming host telemetry
@@ -23,6 +24,7 @@ use anyhow::{bail, Context, Result};
 use std::io::{BufWriter, Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -91,20 +93,43 @@ pub struct Sender {
 
 impl Sender {
     pub fn connect(addr: &str, token: Option<&str>, tls_ca: Option<&Path>) -> Result<Self> {
-        let stream = dial(addr, token, tls_ca)?;
+        // Configuration is checked up front and fails loudly: an
+        // unreadable or invalid CA bundle, a TLS certificate that does
+        // not verify and a rejected token never fix themselves. An
+        // engine that is simply not listening yet (boot order, network
+        // still coming up, engine restarting) is not a reason to die:
+        // the sensor starts, events wait in the queue/spool, and
+        // send_line keeps dialing with backoff.
+        if let Some(ca) = tls_ca {
+            let pem = std::fs::read(ca)
+                .with_context(|| format!("reading TLS CA bundle {}", ca.display()))?;
+            load_ca_certificates(&pem, ca)?;
+        }
+        let writer = match dial(addr, token, tls_ca) {
+            Ok(stream) => Some(BufWriter::new(stream)),
+            Err(err) if err.downcast_ref::<EngineUnreachable>().is_some() => {
+                eprintln!(
+                    "[SENSOR] engine {addr} not reachable yet ({err:#}); events wait in the queue/spool until it is"
+                );
+                None
+            }
+            Err(err) => return Err(err),
+        };
         Ok(Self {
             addr: addr.to_string(),
             token: token.map(str::to_string),
             tls_ca: tls_ca.map(Path::to_path_buf),
-            writer: Mutex::new(Some(BufWriter::new(stream))),
+            writer: Mutex::new(writer),
         })
     }
 
     /// Send one NDJSON line (without the trailing newline), blocking
     /// until the engine accepts it. Reconnects with backoff on error;
     /// every reconnect repeats the TLS upgrade (when configured) and
-    /// the AUTH handshake.
-    pub fn send_line(&self, line: &str) -> Result<()> {
+    /// the AUTH handshake. Once `stop` is set it makes one last write
+    /// attempt and gives up with an error instead of retrying, so a
+    /// shutdown can spill the line to the spool.
+    pub fn send_line(&self, line: &str, stop: &AtomicBool) -> Result<()> {
         let mut backoff: u64 = 1;
         loop {
             {
@@ -121,11 +146,21 @@ impl Sender {
                     *guard = None; // drop the dead socket
                 }
             }
+            if stop.load(Ordering::Acquire) {
+                bail!("sensor stopping: engine {} unreachable", self.addr);
+            }
             eprintln!(
                 "[SENSOR] transport error - reconnecting to {} in {backoff}s",
                 self.addr
             );
-            std::thread::sleep(Duration::from_secs(backoff));
+            // sleep in short steps so a shutdown is not held for up to 30 s
+            let until = std::time::Instant::now() + Duration::from_secs(backoff);
+            while std::time::Instant::now() < until && !stop.load(Ordering::Acquire) {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            if stop.load(Ordering::Acquire) {
+                bail!("sensor stopping: engine {} unreachable", self.addr);
+            }
             backoff = (backoff * 2).min(30);
             match dial(&self.addr, self.token.as_deref(), self.tls_ca.as_deref()) {
                 Ok(stream) => {
@@ -138,12 +173,36 @@ impl Sender {
     }
 }
 
+/// The TCP connect itself failed: nobody is listening (yet) or the
+/// network is not up. Transient by nature, unlike TLS and AUTH errors.
+#[derive(Debug)]
+struct EngineUnreachable {
+    addr: String,
+    source: std::io::Error,
+}
+
+impl std::fmt::Display for EngineUnreachable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // the io error itself is the source: anyhow's {:#} appends it
+        write!(f, "dial {}", self.addr)
+    }
+}
+
+impl std::error::Error for EngineUnreachable {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
 /// Dial and, when a CA bundle is configured, upgrade to TLS; then,
 /// when a token is configured, run the AUTH handshake on top. An auth
 /// rejection is fatal (misconfiguration, not a transient fault): the
 /// engine answered and said no.
 fn dial(addr: &str, token: Option<&str>, tls_ca: Option<&Path>) -> Result<Stream> {
-    let tcp = TcpStream::connect(addr).with_context(|| format!("dial {addr}"))?;
+    let tcp = TcpStream::connect(addr).map_err(|source| EngineUnreachable {
+        addr: addr.to_string(),
+        source,
+    })?;
     // Handshake-phase timeouts go on the raw socket so both the TLS
     // handshake and the AUTH exchange are bounded by the same deadline.
     tcp.set_read_timeout(Some(AUTH_TIMEOUT))?;
@@ -184,6 +243,12 @@ fn tls_connect(
     let ca_pem = std::fs::read(ca_path)
         .with_context(|| format!("reading TLS CA bundle {}", ca_path.display()))?;
     let mut builder = native_tls::TlsConnector::builder();
+    // Trust ONLY the operator's bundle. native-tls keeps the system
+    // roots by default, so any certificate a public or enterprise CA
+    // (AD CS autoenrollment) issued for the engine's name would have
+    // been accepted too: whoever can obtain one could sit between the
+    // sensor and the engine.
+    builder.disable_built_in_roots(true);
     for cert in load_ca_certificates(&ca_pem, ca_path)? {
         builder.add_root_certificate(cert);
     }

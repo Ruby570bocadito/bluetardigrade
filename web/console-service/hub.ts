@@ -6,6 +6,7 @@
 // extension point to answer those) and keeps the exact event contract
 // the web console already consumes.
 
+import { createHash, timingSafeEqual } from 'crypto'
 import http from 'http'
 import { Server } from 'socket.io'
 import pkg from './package.json'
@@ -39,6 +40,21 @@ export type HubOptions = {
   quiet?: boolean
 }
 
+const LOOPBACK_BINDS = new Set(['127.0.0.1', '::1', 'localhost'])
+
+/** True when a hub bound to host is reachable from other machines. */
+export function bindsBeyondLoopback(host: string): boolean {
+  return !LOOPBACK_BINDS.has(host.trim().toLowerCase().replace(/^\[|\]$/g, ''))
+}
+
+/** Constant-time token check over fixed-length digests. */
+export function hubTokenMatches(supplied: unknown, expected: string): boolean {
+  if (typeof supplied !== 'string') return false
+  const a = createHash('sha256').update(supplied).digest()
+  const b = createHash('sha256').update(expected).digest()
+  return timingSafeEqual(a, b)
+}
+
 export type HubHandle = {
   io: Server
   state: HubState
@@ -65,6 +81,16 @@ export function createHub(opts: HubOptions = {}): HubHandle {
       .filter(Boolean),
   ]
 
+  // HUB_ACCESS_TOKEN: the Origin allowlist below only binds browsers —
+  // any other client can send whatever Origin it likes and read the
+  // whole telemetry feed or spend the analyst's provider budget. With a
+  // token every socket must present it (the console fetches it from its
+  // own authenticated /api/hub-token route). Binding beyond loopback
+  // without one is refused at start() unless the operator declares an
+  // authenticating front end (HUB_ALLOW_UNAUTHENTICATED=1).
+  const accessToken = env.HUB_ACCESS_TOKEN || ''
+  const exposedWithoutToken = bindsBeyondLoopback(host) && !accessToken && env.HUB_ALLOW_UNAUTHENTICATED !== '1'
+
   const state = new HubState(env)
   const httpServer = createHttpServer()
   const io = new Server(httpServer, {
@@ -80,6 +106,15 @@ export function createHub(opts: HubOptions = {}): HubHandle {
     pingTimeout: 60000,
     pingInterval: 25000,
   })
+
+  if (accessToken) {
+    io.use((socket, next) => {
+      if (hubTokenMatches((socket.handshake.auth as { token?: unknown } | undefined)?.token, accessToken)) return next()
+      const err = new Error('hub_auth_required') as Error & { data?: unknown }
+      err.data = { hint: 'El hub exige HUB_ACCESS_TOKEN: la consola lo obtiene de /api/hub-token.' }
+      next(err)
+    })
+  }
 
   // Plain HTTP surface. engine.io claims every URL under its path
   // (here: '/', i.e. all of them), so the only supported way to answer
@@ -162,7 +197,13 @@ export function createHub(opts: HubOptions = {}): HubHandle {
         socket.emit('analyst:error', { message: 'Peticion invalida: se esperaba un objeto con la alerta a analizar' })
         return
       }
-      const alert = (payload as { alert?: unknown }).alert as SfAlert | undefined
+      const sent = (payload as { alert?: unknown }).alert as SfAlert | undefined
+      // The hub's own copy (fed by the engine) is authoritative: the
+      // panel only names WHICH alert to analyze. The client copy is the
+      // fallback for alerts already rotated out of the hub ring (paged
+      // history), still validated below.
+      const known = typeof sent?.id === 'string' && sent.id ? state.alerts.find((a) => a.id === sent.id) : undefined
+      const alert = known ?? sent
       if (typeof alert?.rule_id !== 'string' || alert.rule_id.trim() === '') {
         socket.emit('analyst:error', { message: 'Alerta invalida: falta rule_id' })
         return
@@ -279,6 +320,12 @@ export function createHub(opts: HubOptions = {}): HubHandle {
   let stopping = false
 
   async function start(): Promise<void> {
+    if (exposedWithoutToken) {
+      throw new Error(
+        `console-service: CONSOLE_HOST=${host} expone el hub fuera de loopback sin HUB_ACCESS_TOKEN; ` +
+          'define HUB_ACCESS_TOKEN (y el mismo valor en la consola) o HUB_ALLOW_UNAUTHENTICATED=1 si un proxy inverso ya autentica',
+      )
+    }
     await new Promise<void>((resolve, reject) => {
       const onError = (err: Error) => reject(err)
       httpServer.once('error', onError)
@@ -318,6 +365,7 @@ export function createHub(opts: HubOptions = {}): HubHandle {
     logLine(`console-service v${HUB_VERSION} (hub de telemetria, sin simulador)`)
     row('hub', `http://${host}:${listenPort()} (panel / y estado /health)`)
     row('socket.io', `path '${SOCKET_PATH}' con CORS de ${corsOrigins.length} origenes`)
+    row('acceso', accessToken ? 'token HUB_ACCESS_TOKEN exigido a cada socket' : 'sin token (solo loopback)')
     row('motor', `${bridge.endpoint} (reintento periodico si esta caido)`)
     const analyst = state.analystStatus
     row(

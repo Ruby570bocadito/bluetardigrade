@@ -18,6 +18,17 @@
 // overhead). Beaconing (A3), where the boundary IS the signal, keeps
 // its sliding ring — that is why they are two packages, not one.
 //
+// Time model: windows and cooldowns run on the EVENT time
+// (model.Event.DetectionTime), not on arrival. An offline import of a
+// day of firewall or honeypot logs reaches the engine in seconds; on
+// arrival time every source IP that dropped 50 packets over 24 hours
+// looked like a 5-minute burst. Late events that fall less than one
+// window behind the current window start are counted in it (normal
+// reordering between sources); an event more than a window behind is a
+// discontinuity (clock stepped back, another capture) and restarts the
+// key. The engine wall clock (Observe's now) only decides which keys
+// are dead weight and stamps the alert's raise time.
+//
 // Bounds (design §3 + dictamen Q2, all load- or admission-enforced):
 //
 //	MaxRules 64          unbounded per-event walk cost
@@ -122,8 +133,9 @@ type key struct {
 // keyState is the fixed-window counter (~48 B, no pointers).
 type keyState struct {
 	count       int
-	windowStart time.Time
-	lastFired   time.Time
+	windowStart time.Time // event time
+	lastFired   time.Time // event time
+	seen        time.Time // wall clock of the last observation (expiry only)
 }
 
 // Detector holds the compiled definitions and the bounded key table.
@@ -316,6 +328,7 @@ func (d *Detector) Observe(ev *model.Event, now time.Time) {
 	}
 	fields := ev.FieldMap()
 	host := strings.ToLower(ev.Host)
+	t := ev.DetectionTime(now)
 	d.mu.Lock()
 	emit := d.emit
 	var fired []alert.Alert
@@ -332,26 +345,36 @@ func (d *Detector) Observe(ev *model.Event, now time.Time) {
 			group = rules.AsString(rules.Lookup(fields, c.def.Threshold.GroupBy))
 		}
 		k := key{ruleID: c.def.ID, host: host, group: group}
-		st := d.admitLocked(k, c, now)
+		st := d.admitLocked(k, c, t, now)
 		if st == nil {
 			// F1: the rule is at its admission quota — the event is
 			// dropped for THIS rule (other rules still see it) and its
 			// existing keys keep counting and firing normally.
 			continue
 		}
-		// fixed-window rollover: a window older than the period is
-		// closed and the counter restarts from zero
-		if now.Sub(st.windowStart) >= c.window {
-			st.windowStart = now
+		st.seen = now
+		switch {
+		case t.Sub(st.windowStart) >= c.window:
+			// fixed-window rollover: a window older than the period
+			// is closed and the counter restarts from zero
+			st.windowStart = t
 			st.count = 0
+		case st.windowStart.Sub(t) > c.window:
+			// discontinuity: more than a window behind the current
+			// window (clock stepped back, another capture) restarts
+			// the key instead of being counted into a burst it never
+			// belonged to
+			st.windowStart = t
+			st.count = 0
+			st.lastFired = time.Time{}
 		}
 		st.count++
 		// fire: the window reached the threshold AND the cooldown
 		// (since the last fire for THIS key) has elapsed. Firing
 		// resets the window, so a sustained flow raises one alert
 		// per burst, not one per period.
-		if st.count >= c.def.Threshold.Count && now.Sub(st.lastFired) >= c.cooldown {
-			fired = append(fired, d.fireLocked(c, ev, group, st, now))
+		if st.count >= c.def.Threshold.Count && (st.lastFired.IsZero() || t.Sub(st.lastFired) >= c.cooldown) {
+			fired = append(fired, d.fireLocked(c, ev, group, st, t, now))
 		}
 	}
 	d.mu.Unlock()
@@ -375,7 +398,7 @@ func (d *Detector) Observe(ev *model.Event, now time.Time) {
 // policy documented in the package doc. A nil return means the event
 // is DROPPED for this rule (F1: quota = admission ceiling). Caller
 // holds mu.
-func (d *Detector) admitLocked(k key, _ *compiled, now time.Time) *keyState {
+func (d *Detector) admitLocked(k key, _ *compiled, t, now time.Time) *keyState {
 	if st, ok := d.keys[k]; ok {
 		return st
 	}
@@ -397,21 +420,21 @@ func (d *Detector) admitLocked(k key, _ *compiled, now time.Time) *keyState {
 	if len(d.keys) >= MaxKeys {
 		d.evictWeakestGlobalLocked(k)
 	}
-	st := &keyState{windowStart: now}
+	st := &keyState{windowStart: t, seen: now}
 	d.keys[k] = st
 	d.perRule[k.ruleID]++
 	return st
 }
 
-// purgeExpiredLocked deletes every key whose window closed more than
-// 2×window ago. Caller holds mu.
+// purgeExpiredLocked deletes every key not observed for more than
+// 2×window of wall-clock time. Caller holds mu.
 func (d *Detector) purgeExpiredLocked(now time.Time) {
 	for k, st := range d.keys {
 		c := d.byID[k.ruleID]
 		if c == nil {
 			continue // unreachable: Reload prunes unknown rule ids
 		}
-		if now.Sub(st.windowStart) > 2*c.window {
+		if now.Sub(st.seen) > 2*c.window {
 			d.deleteKeyLocked(k)
 		}
 	}
@@ -468,10 +491,10 @@ func lessKey(a, b key) bool {
 // alert is delivered by Observe AFTER mu is released — the pipeline
 // takes the hub lock and can block, and no stats read should queue
 // behind that (see Observe).
-func (d *Detector) fireLocked(c *compiled, ev *model.Event, group string, st *keyState, now time.Time) alert.Alert {
-	st.lastFired = now
+func (d *Detector) fireLocked(c *compiled, ev *model.Event, group string, st *keyState, t, now time.Time) alert.Alert {
+	st.lastFired = t
 	st.count = 0
-	st.windowStart = now
+	st.windowStart = t
 	d.fired.Add(1)
 	summary := fmt.Sprintf("umbral alcanzado: %d eventos de %s en la ventana %s",
 		c.def.Threshold.Count, ev.Type, c.window)

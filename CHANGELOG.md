@@ -12,6 +12,113 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Security, detection correctness and throughput review (2026-10-02)
+
+Breaking for exposed consoles: a console allowed on non-loopback hosts
+now needs `CONSOLE_ACCESS_TOKEN` (or `CONSOLE_ALLOW_UNAUTHENTICATED=1`),
+and an analyst hub bound beyond loopback needs `HUB_ACCESS_TOKEN` (or
+`HUB_ALLOW_UNAUTHENTICATED=1`). Loopback deployments are unchanged.
+
+Security
+
+- Stored evidence is append-only: an event id already stored with a
+  different payload keeps the first copy (it was replaced, so one
+  sensor could rewrite another host's evidence). Conflicts are counted
+  (`store_id_conflicts`, `sf_store_id_conflicts_total`, console issue).
+- Per-sensor ingest identities (`-ingest-identities`, `engine
+  ingest-identity`): own token per sensor, bound to its hosts; events
+  for other hosts are refused and counted
+  (`ingest_identity_violations`); accepted events carry
+  `attributes.ingest_identity`.
+- Ingest: the first line is capped at 4 KiB while AUTH is pending (512
+  unauthenticated connections could pin ~512 MiB); credentials are set
+  before the listener starts serving (startup race).
+- Console: `bun run dev/start` bind 127.0.0.1; `CONSOLE_ACCESS_TOKEN`
+  gates every page, asset and API call with HTTP Basic auth. Host
+  pinning alone did not stop `curl -H 'Host: localhost'` from the LAN
+  reading the engine with the operator's token.
+- Analyst hub: `HUB_ACCESS_TOKEN` authenticates every socket (the
+  Origin allowlist only binds browsers); the console fetches it from
+  the authenticated `/api/hub-token` route. The analyst analyzes the
+  hub's own copy of an alert instead of the client payload.
+- Active response: operators file version 2 with a credential per
+  operator (`X-SF-Operator-Token`, `engine operator-credential`);
+  version 1 still works with a startup warning.
+- Sensor TLS trusts only the `--tls-ca` bundle (native-tls also trusted
+  the system roots).
+- API server: idle timeout, header cap, bounded 401 throttle map.
+- Releases carry a Sigstore-signed SLSA build provenance attestation.
+
+Detection correctness
+
+- Kill chains: each step keeps the event time of its latest hit and the
+  chain fires when max-min fits the window. A stale early hit no longer
+  anchors the window (A, B, C within 2 minutes now fire a 5m chain) and
+  an out-of-order event no longer stitches steps days apart. Dead
+  chains are reclaimed, so a long uptime cannot fill the 8192-state
+  cap and stop correlation for new hosts.
+- Beaconing and thresholds run on event time (future timestamps clamped
+  at +5 min): imported logs no longer fake bursts or hide beacons, and
+  batching sensors no longer blur jitter. Clock steps back restart the
+  affected key.
+
+Performance
+
+- Alert dedup expires keys through a FIFO queue: ~1.9 ms per alert with
+  60k live keys before, constant now.
+- `FieldMap` without the JSON round trip: 8.0 to 1.7 us per event, exact
+  parity pinned by randomized and fuzz tests.
+- With `-store`, drained event batches are persisted in one transaction
+  before publication: ~8.3k to ~23.6k events/s on the same machine.
+- Sensor: delivery moved off the ETW thread to a bounded queue with an
+  optional on-disk spool (`--queue`, `--spool`, `--spool-max-mb`).
+
+Rust ETW sensor fixes found on a real Windows host
+
+- Every event inside a ~7 minute bucket carried the same timestamp:
+  ferrisetw 1.2.0 rebuilds the FILETIME from the high dword twice. The
+  sensor now decodes the raw record time itself.
+- The sensor never reported command lines or parent PIDs: the
+  Microsoft-Windows-Kernel-Process ProcessStart event has no
+  CommandLine and names the parent ParentProcessID, so all 46 rule
+  conditions on `process.command_line` were blind to it. It now reads
+  the kernel Process/Start event (named system-logger session), which
+  carries both; names truncated by the kernel are recovered from the
+  command line, and `user` is the new process owner's SID instead of
+  the account running the sensor. `process.image` is no longer
+  reported (the kernel event has no full path).
+- "Access denied" now says to run the sensor elevated.
+- Ctrl+C (or closing the console) stops the kernel session; a session
+  left by a killed run is stopped and the start retried, instead of
+  failing with AlreadyExist.
+- Ctrl+C no longer loses what the sensor holds in memory: the line it
+  was sending and the queued ones get one delivery attempt each and
+  otherwise go to the spool (counted as dropped when there is none); an
+  interrupted spool replay keeps its file for the next start.
+- The sensor starts even when the engine is not listening yet (boot
+  order, engine restart): events wait in the queue/spool. Only
+  configuration errors (CA bundle, TLS verification, rejected token)
+  abort the start.
+- `sf-console -Stop` no longer claims success when the processes were
+  started from an Administrator window and could not be stopped.
+- Installer: when another install (e.g. the old security-framework one)
+  comes first on the user PATH, the new bin moves to the front instead
+  of being appended behind it; the PATH is read and written through the
+  registry API (keeps REG_EXPAND_SZ and non-ASCII folders) and the
+  change is broadcast to new terminals. A leftover security-framework
+  install is reported with how to remove it.
+- Installer: an update stops with a clear message, before modifying
+  anything, when the engine/collector binaries are still running (e.g.
+  started from an Administrator window); a running sensor no longer
+  aborts the end of the install.
+- Installer: native tool output is no longer printed twice, and go, git,
+  bun, Next and cargo output is decoded as UTF-8 (no more `Ô£ô`).
+
+Also: tests for `internal/tlsutil`, 28 ATT&CK context notes for the
+analyst, and cosmetic leftovers of the old product name replaced
+(Splunk source, notification subject, Message-ID and ETW session name
+kept on purpose).
+
 ### Deployment diagnostics, phishing and SOC reliability
 
 - Add `engine doctor` with JSON/exit status, bounded authenticated probes,

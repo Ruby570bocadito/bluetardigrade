@@ -111,6 +111,10 @@ make build-sensor-windows
 
 The sensor has no simulated mode: it runs only where real telemetry exists (Windows ETW) and refuses to start anywhere else.
 
+Delivery never runs on the ETW thread. Events wait in a bounded in-memory queue (`--queue`, default 50000) while the engine is unreachable, so an engine restart or a network cut no longer stalls the trace consumer (which made Windows discard events from the real-time buffers). For outages longer than the queue, `--spool <file>` (or `SF_SENSOR_SPOOL`) adds an on-disk overflow capped by `--spool-max-mb` (default 256); it survives a sensor restart and is replayed in order once the engine is back. Replays can repeat events already delivered, which the engine absorbs (stored evidence is first-write-wins by event id). Past both limits events are dropped and the count is reported on stderr. Put the spool in a directory only the sensor's account can read: it holds command lines.
+
+With `--tls-ca` the engine's certificate must chain to that bundle and nothing else: the system trust store is disabled, so a certificate issued for the engine's name by a public or enterprise CA is refused.
+
 ## Configuration reference
 
 
@@ -129,11 +133,12 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `-lifecycle` | `./alert-lifecycle.json` | alert triage state file (acknowledged/closed + notes; empty keeps statuses in memory only) |
 | `-reload-every` | `15s` | hot-reload cadence for rules/sequences/suppressions (`0` disables) |
 | `-token` / `-token-previous` | — | ingest shared token / previous token during a rotation window |
+| `-ingest-identities` | — | per-sensor ingest identities (own token + bound hosts); see [Per-sensor ingest identities](#per-sensor-ingest-identities) |
 | `-ingest-cert` / `-ingest-key` | — | TLS certificate (PEM) / private key for the ingest listener (both or neither; min TLS 1.2; sensors connect with `-tls -ca`) |
 | `-api-token` | — | Bearer required on every `/api/*` route and on `/metrics` (`/api/health` stays open) |
 | `-api-write` | off | arm `POST`/`DELETE /api/suppressions` (writes land on the `-suppressions` file; refused beyond loopback without `-api-token`) |
 | `-allow-kill` | off | arm `POST /api/respond/kill` (active response, SIGKILL fixed; REQUIRES `-api-token` even on loopback + open `-respond-audit`; falls back to `SF_ALLOW_KILL=1`) |
-| `-respond-operators` | `./respond-operators.yaml` | allowlist of operators who may run active response (`{version: 1, names: [...]}`; missing = empty = everything denied; malformed = fatal; hot-reloaded) |
+| `-respond-operators` | `./respond-operators.yaml` | allowlist of operators who may run active response (`{version: 1, names: [...]}`, or `{version: 2, operators: [{name, token_sha256}]}` with per-operator credentials sent as `X-SF-Operator-Token`; missing = empty = everything denied; malformed = fatal; hot-reloaded) |
 | `-respond-protected` | — | optional extra protected process names merged with the platform defaults (hot-reloaded) |
 | `-respond-audit` | `./respond-audit.jsonl` | append-only JSONL audit, one line per attempt, fsync per line, 64 MiB ceiling |
 | `-webhook` / `-webhook-token` | — | SIEM/SOAR connector URL / outbound Bearer token |
@@ -160,6 +165,10 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `NEXT_PUBLIC_CONSOLE_URL` | web console | point the UI at a remote hub |
 | `NEXT_PUBLIC_ENGINE_API` | web console | direct engine API base for polling (default same-origin proxy `/api/engine`) |
 | `CONSOLE_ALLOWED_HOSTS` | web console | comma-separated hostnames the console proxy serves besides loopback (`localhost`/`127.0.0.1`/`::1` are always served); any other `Host` gets a `403` naming this var — the console posture mirrors the engine's: loopback friction-free, beyond loopback loud and explicit |
+| `CONSOLE_ACCESS_TOKEN` | web console | console credential: every page, asset and proxied API call requires HTTP Basic auth (any user name, this token as the password). Required when `CONSOLE_ALLOWED_HOSTS` lists a non-loopback host — host pinning only stops browsers, any other client can send `Host: localhost` |
+| `CONSOLE_ALLOW_UNAUTHENTICATED` | web console | `1` declares that a front end (reverse proxy, SSO) already authenticates operators, so extra hosts are served without `CONSOLE_ACCESS_TOKEN` |
+| `HUB_ACCESS_TOKEN` | console-service + web console | token every analyst socket must present; the browser obtains it from the console's authenticated `/api/hub-token` route. Required when the hub binds beyond loopback (`CONSOLE_HOST`), otherwise the hub refuses to start |
+| `HUB_ALLOW_UNAUTHENTICATED` | console-service | `1` lets a non-loopback hub start without `HUB_ACCESS_TOKEN` (an authenticating front end is in place) |
 | `ANALYST_BASE_URL` / `ANALYST_API_KEY` / `ANALYST_MODEL` | console-service | OpenAI-compatible endpoint for the AI triage analyst |
 | `PORT` / `CONSOLE_SERVICE_PORT`, `CONSOLE_HOST`, `CONSOLE_CORS_ORIGIN` | console-service | hub networking and allowed origins |
 
@@ -272,6 +281,23 @@ sf-engine -token 'the-new-secret'
 During the window the startup banner says `rotation window OPEN` so an operator can see at a glance when a migration is still in progress. Both comparisons are constant-time and combined without branching on the content, so the window does not leak which token matched.
 
 On Windows the installer can persist the token for you (`install.ps1 -IngestToken '...'`, stored under `tools\config\ingest.token`, cleared with an empty value): the autostart entry, `sf-console` and `sf-sensor` then all start the engine with that token enforced. The installer's `-Firewall` switch **requires** a configured token — it refuses to open TCP 7777 otherwise (and removes a rule left behind by a pre-gate install), because a reachable ingest without a token is an open event-injection channel for the whole network segment.
+
+## Per-sensor ingest identities
+
+The shared token proves "some sensor of this deployment": every endpoint holds the same secret, so one compromised host can report events in the name of any other machine — fabricate alerts for it, inflate its risk score, feed its kill chains. `-ingest-identities <file>` (or `SF_INGEST_IDENTITIES`) gives each sensor its own credential, bound to the hosts it may report for:
+
+```bash
+# generate one entry per sensor (random 256-bit token, shown once, + its SHA-256)
+sf-engine ingest-identity --name wks-01 --host WKS-01
+sf-engine ingest-identity --name ids-01 --any-host        # collectors that report many hosts
+
+# collect the entries in a file (see ingest-identities.example.yaml) and start the engine with it
+sf-engine -addr 0.0.0.0:7777 -ingest-identities ./ingest-identities.yaml -ingest-cert c.pem -ingest-key k.pem
+```
+
+Each sensor sends its own token in the usual `AUTH <token>` handshake. The engine stores only digests, compares them in constant time and, for every accepted event, sets `attributes.ingest_identity` to the identity name (a feed-supplied value is overwritten), so stored evidence records which credential delivered it. An event whose `host` is outside the sender's binding is refused with an ack error and counted as `ingest_identity_violations` in `/api/stats` (`sf_ingest_identity_violations_total` in `/metrics`); the console lists it as a pipeline issue. The shared `-token` keeps working alongside identities while a fleet migrates (its events are stamped `shared-token`); drop it once every sensor has its own identity. The file is validated strictly (version 1, unknown fields rejected, one token per identity, `["*"]` only on its own) and hot-reloaded on the `-reload-every` cadence: a malformed edit keeps the previous set and is logged.
+
+While the handshake is pending the first line is capped at 4 KiB: an unauthenticated connection can no longer make the engine buffer up to 1 MiB before presenting a credential.
 
 ## Ingest TLS (encryption in transit)
 
@@ -434,6 +460,8 @@ Running alongside triage, the engine keeps a per-host risk score: every alert ad
 
 The engine also ships a behavioral detector that no single-event rule can express: beaconing. For every (profile, host, destination) triple it keeps the last 64 connection timestamps inside the profile's sliding window and measures the regularity of the inter-arrival intervals with the coefficient of variation (stddev/mean): implants sleep on a schedule, human browsing does not. When at least `min_count` connections show a CV at or under `max_jitter` with a mean interval of at least `min_interval`, exactly one alert fires — naming the destination, the observed cadence and the measured jitter, so an analyst can reproduce the verdict by hand.
 
+**Time model (beaconing, thresholds and kill chains).** Every time-window detector runs on the event's own timestamp, not on its arrival: an offline import of a day of Zeek, firewall or honeypot logs reaches the engine in seconds, and a batching sensor delivers a minute of activity at once — on arrival time the first looked like one huge burst and the second hid a beacon's cadence. Timestamps more than 5 minutes ahead of the engine clock are clamped to it. Late events are placed where they belong (beacon rings stay ordered; a threshold window counts events that are less than one window late); an event more than one window behind its key is treated as a discontinuity (clock stepped back, another capture) and restarts that key. The engine clock only decides which state is dead weight and stamps when the alert was raised.
+
 Profiles live in `beacons.yaml` (committed and loaded by default; `-beacons ""` turns the detector off; a file that exists but does not parse is FATAL at startup — the same fail-loud standard as suppressions). The shipped pack is deliberately conservative: the web profile needs 12 regular connections inside a 15-minute window with a mean interval of at least 2 s — CDNs, load balancers and NTP pools are regular too, but at sub-second cadences the `min_interval` floor keeps that chatter out by construction. Detections honor the rest of the pipeline for free: profile+host suppressions, triage lifecycle, store, webhook and console, because a beacon alert is just another alert (its `rule_id` is the profile's id). The tracker's state is bounded (8192 keys, weakest-evicted-first — a flood of one-connection fake destinations can only evict other flood entries, never wash out evidence that is building), and re-fires are throttled per key by the profile's `cooldown`. `/api/stats` exposes the live signal (`beacons_tracked` / `beacons_cap` / `beacons_fired`) and `/metrics` the same families as `sf_beacon_keys_tracked` / `sf_beacon_cap` / `sf_beacons_fired_total`. The console header carries the same signal as a `beacons N/cap` chip — red the moment the cap is reached (new destinations silently stop being tracked, which is detection loss on a flooded feed) — next to the `umbrales N · M` chip that keeps the volumetric thresholds detector (A2) visible the same way, fed by `threshold_rules` / `threshold_keys` / `threshold_fired`.
 
 ## Active response (kill_process, opt-in)
@@ -451,7 +479,22 @@ Five permission layers run before every signal, and every well-formed
 attempt (denied included) is written to the `-respond-audit` JSONL
 **before** the signal, with fsync and a 64 MiB ceiling: the action that
 cannot be proven to have happened, does not happen. The operator must
-be on the `-respond-operators` allowlist; the `host` field must equal
+be on the `-respond-operators` allowlist. A version-1 file lists names
+only, so anyone holding the shared API token can act as any listed
+operator (the engine warns at startup); a version-2 file binds every
+operator to a credential of their own, presented in the
+`X-SF-Operator-Token` header of each request and never audited or
+logged (`operator_credential_invalid` otherwise):
+
+```yaml
+# generate each entry with: sf-engine operator-credential --name ana
+version: 2
+operators:
+  - name: ana
+    token_sha256: 14b372f0d6d4b9101f821d8447db87dfe555888830e7b40b85e371c0220bf30d
+```
+
+The `host` field must equal
 the engine's own hostname (a console replaying a REMOTE sensor's alert
 gets `host_mismatch`, never a local kill); budgets cap committed
 actions (60 s cooldown per host+pid, 20/min global, 6/min per
@@ -617,7 +660,7 @@ como viven en los YAML del repositorio; no se traducen en la doc.
 
 ### Kill-chain correlation
 
-Beyond per-event rules, the engine ships a sequence correlator: `sequences/*.yaml` lists named steps (exact rule names) that, when all observed on the same host inside a `window` (e.g. `5m`), raise a single high-signal alert describing the campaign. The shipped pack models credential-dump campaigns, full intrusion chains, defensive shutdown and registry-based persistence. Sequences hot-reload together with the rules. Load-time caps keep the config surface bounded (4 MiB/file, nesting depth 512, 512 sequences, 64 steps/chain, window ≤ 7 days, id/name/tag length caps, no control runes in strings that reach logs or alerts): an oversized or hostile file fails the load loudly instead of degrading a running engine. Steps naming rules that do not exist are reported as a WARNING at startup and on every reload, because a chain waiting on a ghost rule can never complete. Note: suppressing a rule also removes it from every chain it feeds on that host (accepted-state semantics — see [docs/false-positive-control.md](false-positive-control.md)).
+Beyond per-event rules, the engine ships a sequence correlator: `sequences/*.yaml` lists named steps (exact rule names) that, when all observed on the same host inside a `window` (e.g. `5m`), raise a single high-signal alert describing the campaign. Each step remembers the event time of its latest hit on that host; the chain fires when every step is present and the spread between the oldest and the newest fits in the window, so a stale early hit cannot anchor the window and an out-of-order event cannot stitch steps days apart. Chains whose window elapses without progress are reclaimed on the maintenance cadence. The shipped pack models credential-dump campaigns, full intrusion chains, defensive shutdown and registry-based persistence. Sequences hot-reload together with the rules. Load-time caps keep the config surface bounded (4 MiB/file, nesting depth 512, 512 sequences, 64 steps/chain, window ≤ 7 days, id/name/tag length caps, no control runes in strings that reach logs or alerts): an oversized or hostile file fails the load loudly instead of degrading a running engine. Steps naming rules that do not exist are reported as a WARNING at startup and on every reload, because a chain waiting on a ghost rule can never complete. Note: suppressing a rule also removes it from every chain it feeds on that host (accepted-state semantics — see [docs/false-positive-control.md](false-positive-control.md)).
 
 The shipped pack (`sequences/kill-chains.yaml`) defines 4 sequences, all
 `critical`, window `5m`:
@@ -732,11 +775,12 @@ path (no subcommand) and on `engine run`.
 | `-api-token t` | empty | bearer token the local API requires on `/api/*` and `/metrics` (falls back to `SF_API_TOKEN`); `/api/health` stays open |
 | `-api-write` | off | arm `POST`/`DELETE /api/suppressions` (falls back to `SF_API_WRITE=1`); writes go to the `-suppressions` file, which stays the source of truth; refused at startup when the API has no token beyond loopback |
 | `-allow-kill` | off | arm `POST /api/respond/kill` (falls back to `SF_ALLOW_KILL=1`): active response, kill_process, SIGKILL fixed; REQUIRES `-api-token`/`SF_API_TOKEN` even on loopback and an openable `-respond-audit` (otherwise the surface stays disabled, loud); the name check protects against killing the wrong PID, not against malware disguising its identity |
-| `-respond-operators file` | `./respond-operators.yaml` | YAML allowlist (`{version: 1, names: [ana, beto]}`) of operators allowed to run active response; missing file = empty allowlist = every action denied; malformed file is fatal; hot-reloaded on the `-reload-every` ticker |
+| `-respond-operators file` | `./respond-operators.yaml` | YAML allowlist (`{version: 1, names: [ana, beto]}`, or version 2 with per-operator credentials, see [Active response](#active-response-kill_process-opt-in)) of operators allowed to run active response; missing file = empty allowlist = every action denied; malformed file is fatal; hot-reloaded on the `-reload-every` ticker |
 | `-respond-protected file` | empty | optional YAML (`{version: 1, names: [...]}`) with extra protected process names, merged with the platform defaults (Windows: csrss/smss/wininit/services/lsass); malformed file is fatal; hot-reloaded |
 | `-respond-audit file` | `./respond-audit.jsonl` | append-only JSONL audit file, one line per attempt (denials included), fsync per line, 64 MiB ceiling: beyond it every action denies with `audit_unavailable` until the file is rotated |
 | `-token t` | empty | shared ingest token (falls back to `SF_INGEST_TOKEN`); empty disables auth |
 | `-token-previous t` | empty | previous ingest token, still accepted during a rotation window (falls back to `SF_INGEST_TOKEN_PREVIOUS`) |
+| `-ingest-identities f` | empty | YAML file of per-sensor ingest identities (falls back to `SF_INGEST_IDENTITIES`); events for hosts outside a sensor's binding are refused; hot-reloaded |
 | `-suppressions file` | `./suppressions.yaml` | operator allowlist YAML silencing rule/host pairs (expirations supported); empty disables |
 | `-store path` | empty | SQLite file persisting events and alerts beyond the in-memory rings (e.g. `./sf-store.db`); empty disables — see [Persistent storage](#persistent-storage-sqlite-opt-in) |
 | `-store-retention dur` | `72h` | delete stored events/alerts older than this on a 5-minute ticker; `0` keeps everything |

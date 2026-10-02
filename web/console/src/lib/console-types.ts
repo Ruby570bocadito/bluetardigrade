@@ -217,6 +217,10 @@ export type EngineStats = {
   events_total: number
   dropped: number
   ingest_rejected: number
+  // Per-sensor ingest identities (engine -ingest-identities); undefined on
+  // older engines. Violations = events claiming a host outside the binding.
+  ingest_identities?: number
+  ingest_identity_violations?: number
   events_per_min: number
   alerts_total: number
   by_severity: Record<string, number>
@@ -241,6 +245,8 @@ export type EngineStats = {
   store_enabled?: boolean
   // Undefined on older engines; never equate missing data with zero failures.
   store_write_failures?: number
+  // Event ids re-sent with a different payload; the stored copy is kept.
+  store_id_conflicts?: number
   store_events?: number
   store_alerts?: number
   // per-host risk scoring (engine A1): width of the signal (how many

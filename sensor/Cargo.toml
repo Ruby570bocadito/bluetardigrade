@@ -3,7 +3,7 @@ name = "security-sensor"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-description = "ETW sensor for the security-framework detection engine"
+description = "ETW sensor for the bluetardigrade detection engine"
 
 [dependencies]
 anyhow = "1"
@@ -23,6 +23,10 @@ ferrisetw = { version = "1", features = ["time_rs"] }
 # the OS TLS stack), so the CI cross-check of the Windows target stays
 # a pure cargo check with no C toolchain on the runner.
 native-tls = "0.2"
+# SetConsoleCtrlHandler: Ctrl+C stops the kernel ETW session instead of
+# leaving it running after the process exits. Already in the dependency
+# tree (same version), so no new code is pulled in.
+windows-sys = { version = "0.61", features = ["Win32_System_Console"] }
 
 [profile.release]
 lto = true

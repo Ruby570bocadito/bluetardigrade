@@ -1,4 +1,4 @@
-// console-service: real-time telemetry hub for the security-framework web
+// console-service: real-time telemetry hub for the bluetardigrade web
 // console. It forwards ONLY real data from the Go engine (local API on
 // :7778, see internal/api) over socket.io, and serves a small HTTP
 // status surface (panel at /, JSON at /health). There is no simulator
@@ -14,7 +14,14 @@ import { logError, logLine } from './log'
 
 const hub = createHub()
 
-await hub.start()
+try {
+  await hub.start()
+} catch (err) {
+  // configuration refusals (e.g. exposed without HUB_ACCESS_TOKEN) and
+  // bind failures end the process with one readable line, not a stack
+  logError(err instanceof Error ? err.message : String(err))
+  process.exit(1)
+}
 
 async function shutdown(signal: string) {
   logLine(`senal ${signal} recibida; cerrando el hub`)

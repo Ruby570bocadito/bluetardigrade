@@ -101,25 +101,27 @@ const (
 	TypeEmailMessage     = "email.message"
 )
 
-// FieldMap flattens the event into a generic map so rule conditions can
-// address any field with a dotted path (e.g. "process.command_line").
-// Numeric values arrive as float64, as produced by encoding/json.
-func (e *Event) FieldMap() map[string]any {
-	b, err := json.Marshal(e)
-	if err != nil {
-		return nil
-	}
-	var m map[string]any
-	if err := json.Unmarshal(b, &m); err != nil {
-		return nil
-	}
-	return m
-}
-
 // Encode serializes the event as a single NDJSON line (no trailing
 // newline) ready to be written to a TCP stream or forensic log.
 func (e *Event) Encode() ([]byte, error) {
 	return json.Marshal(e)
+}
+
+// MaxFutureSkew bounds how far ahead of the engine clock an event
+// timestamp is trusted by the time-window detectors.
+const MaxFutureSkew = 5 * time.Minute
+
+// DetectionTime is the instant the time-window detectors (correlator,
+// beaconing, thresholds) assign to the event: its own timestamp, so
+// imported logs and batching sensors are judged on when things
+// happened rather than on when they reached the engine, or wall when
+// the timestamp is missing or more than MaxFutureSkew ahead of wall (a
+// skewed or hostile clock must not push detector windows forward).
+func (e *Event) DetectionTime(wall time.Time) time.Time {
+	if e.Timestamp.IsZero() || e.Timestamp.After(wall.Add(MaxFutureSkew)) {
+		return wall
+	}
+	return e.Timestamp
 }
 
 // Validate performs the minimal sanity checks required at ingestion.

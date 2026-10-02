@@ -124,7 +124,7 @@ func TestWebhookDeliversRenderedAlert(t *testing.T) {
 		if got.ctype != "application/json" {
 			t.Fatalf("content-type = %q", got.ctype)
 		}
-		if !strings.HasPrefix(got.ua, "security-framework") {
+		if !strings.HasPrefix(got.ua, "bluetardigrade") {
 			t.Fatalf("user-agent = %q", got.ua)
 		}
 		if msg, _ := got.payload["message"].(string); msg != "Robo en LAB-WKS-01" {

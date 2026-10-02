@@ -569,3 +569,92 @@ func TestConcurrentObserveAndReads(t *testing.T) {
 	wg.Wait()
 	<-done
 }
+
+// ---- event-time semantics (review 2026-10-02) ---------------------------
+
+func netEvAt(ts time.Time) *model.Event {
+	ev := netEv("LAB-WKS-01", "185.220.101.47", "", 443)
+	ev.Timestamp = ts
+	return ev
+}
+
+// An offline import replays a regular beacon in a burst: every event
+// reaches the engine at the same wall instant. Arrival times would see
+// zero intervals; event times see the real 30 s cadence.
+func TestImportedBeaconJudgedOnEventTime(t *testing.T) {
+	m, err := LoadFile(writeProfiles(t, strictProfile), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got int
+	m.SetEmit(func(alert.Alert) { got++ })
+	happened := time.Date(2026, 9, 1, 3, 0, 0, 0, time.UTC)
+	wall := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < 9; i++ {
+		m.Observe(netEvAt(happened.Add(time.Duration(i)*30*time.Second)), wall)
+	}
+	if got != 1 {
+		t.Fatalf("imported 30s beacon fired %d alerts, want 1", got)
+	}
+}
+
+// A live sensor batching its events (arrival jitter) still shows the
+// beacon's real regularity.
+func TestArrivalJitterDoesNotHideBeacon(t *testing.T) {
+	m, _ := LoadFile(writeProfiles(t, strictProfile), nil)
+	var got int
+	m.SetEmit(func(alert.Alert) { got++ })
+	base := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < 9; i++ {
+		happened := base.Add(time.Duration(i) * 20 * time.Second)
+		// delivered in batches every 60 s
+		arrival := base.Add(time.Duration(i/3+1) * time.Minute)
+		m.Observe(netEvAt(happened), arrival)
+	}
+	if got != 1 {
+		t.Fatalf("batched 20s beacon fired %d alerts, want 1", got)
+	}
+}
+
+// Late events are placed in order; a far older one restarts the ring
+// instead of being silently pruned forever.
+func TestLateAndDiscontinuousSamples(t *testing.T) {
+	m, _ := LoadFile(writeProfiles(t, strictProfile), nil)
+	var got int
+	m.SetEmit(func(alert.Alert) { got++ })
+	base := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	order := []int{0, 2, 1, 3, 5, 4, 6, 8, 7} // pairwise swapped arrivals
+	for _, i := range order {
+		m.Observe(netEvAt(base.Add(time.Duration(i)*10*time.Second)), base.Add(2*time.Minute))
+	}
+	if got != 1 {
+		t.Fatalf("reordered regular samples fired %d alerts, want 1", got)
+	}
+	// clock stepped back an hour: the ring restarts at the new time
+	m.mu.Lock()
+	var st *keyState
+	for _, s := range m.state {
+		st = s
+	}
+	m.mu.Unlock()
+	m.Observe(netEvAt(base.Add(-time.Hour)), base.Add(3*time.Minute))
+	m.mu.Lock()
+	n, first := len(st.times), st.times[0]
+	m.mu.Unlock()
+	if n != 1 || !first.Equal(base.Add(-time.Hour)) {
+		t.Fatalf("discontinuity did not restart the ring: %d samples, first %v", n, first)
+	}
+}
+
+// A timestamp far in the future is clamped to the engine clock.
+func TestFutureTimestampClamped(t *testing.T) {
+	wall := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	ev := netEvAt(wall.Add(24 * time.Hour))
+	if got := ev.DetectionTime(wall); !got.Equal(wall) {
+		t.Fatalf("future timestamp used as is: %v", got)
+	}
+	ev.Timestamp = wall.Add(-time.Hour)
+	if got := ev.DetectionTime(wall); !got.Equal(wall.Add(-time.Hour)) {
+		t.Fatalf("past timestamp not used: %v", got)
+	}
+}

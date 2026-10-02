@@ -176,7 +176,18 @@ the layer adds zero runtime dependencies beyond `motion`:
   localhost it defaults to `http://localhost:3003`; behind a reverse
   proxy it falls back to the same origin.
 - `PORT` / `CONSOLE_HOST` / `CONSOLE_CORS_ORIGIN` (console-service):
-  hub bind and CORS allowlist, unchanged; see `console-service/`.
+  hub bind and CORS allowlist; see `console-service/`.
+- Access control. `bun run dev` / `bun run start` bind `127.0.0.1`.
+  Host pinning stops DNS rebinding but not a non-browser client, which
+  can send `Host: localhost` from anywhere it can reach the port; so a
+  console served to other machines needs `CONSOLE_ACCESS_TOKEN` (HTTP
+  Basic auth on every request, any user name, the token as password;
+  put TLS in front). Extra hosts without it are refused unless
+  `CONSOLE_ALLOW_UNAUTHENTICATED=1` declares an authenticating front
+  end. The analyst hub accepts sockets only with `HUB_ACCESS_TOKEN` when
+  it is set (mandatory when the hub binds beyond loopback); the browser
+  obtains it from the authenticated `/api/hub-token` route, never from
+  the bundle.
 - Analyst triage (console-service): `ANALYST_BASE_URL`,
   `ANALYST_API_KEY` and `ANALYST_MODEL` for any OpenAI-compatible
   endpoint. Without configuration the analyst panel reports it clearly

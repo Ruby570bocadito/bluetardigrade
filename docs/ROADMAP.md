@@ -74,21 +74,29 @@ medio: ETW nativo ampliado.
 - **Cert stream (firma de binarios)** — `Microsoft-Windows-Certificate`
   para validar firmantes de ejecutables. Cierre: campo `signer` en el
   evento + regla de binarios sin firmar desde rutas de sistema.
-- **Cola local con reintento** — buffer persistente del sensor para
-  cortes del motor (hoy el bookmark cubre el Sysmon watcher, no un
-  buffer del ETW). Cierre: cola con tope en disco y drenaje con dedupe.
+- **Cola local con reintento: entregada** — el callback ETW ya no envía:
+  cola acotada en memoria (`--queue`) y spool opcional en disco con tope
+  (`--spool`, `--spool-max-mb`) que sobrevive a reinicios y se drena en
+  orden; las repeticiones las absorbe el almacén (primera escritura
+  gana por id). Pendiente: validarlo en un host Windows real con cortes
+  largos del motor.
 
 ## H4 — Motor: rendimiento y escala
 
 **Problema**: `FieldMap` serializa cada evento ~4 veces por pasada; a
 50k eventos/seg el GC se convierte en el cuello de botella.
 
-- **FieldMap sin JSON round-trip** — resolver campos con acceso directo
-  tipado (un switch sobre el prefijo del path). Cierre: benchmark del
-  paquete rules mostrando la mejora y paridad exacta de tests.
+- **FieldMap sin JSON round-trip: entregado** — el mapa se construye
+  directamente desde la estructura (`pkg/model/fieldmap.go`): 1,7 µs y
+  29 asignaciones frente a 8,0 µs y 83 por evento. Paridad exacta con el
+  round-trip (claves, omitempty, float64, RFC 3339, UTF-8 inválido)
+  fijada por un test aleatorio de 20 000 eventos y un objetivo de fuzzing.
 - **Sharding del ring por host** — el ring de eventos de la API es
   global (1000): particionar por host con cuota garantizada. Cierre:
   cambio de estructura + tests de equidad con 64 hosts.
+- **Escrituras SQLite por lotes: entregadas** — el bucle persiste en una
+  transacción los eventos ya encolados (hasta 256) antes de publicarlos:
+  de ~8 300 a ~23 600 eventos/s con `-store` en la misma máquina.
 - **Memoria del correlador** — `correlate.MaxTrackedStates` ya expone
   el tope: audit de saturación con alerta visible cuando se cruza el
   80%. Cierre: gauge en `/api/stats` + línea de consola.
