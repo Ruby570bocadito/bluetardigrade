@@ -590,6 +590,34 @@ function Write-Shims {
     Write-Ok "sf-engine / sf-collector / sf-sensor / sf-console / sf-update / sf-uninstall"
 }
 
+# Another directory on the PATH with the same commands (typically an
+# install from when the project was called security-framework) wins in
+# every NEW terminal when it comes first: sf-engine, sf-console and
+# sf-sensor then silently run the old build. This session is fine (the
+# installer prepends its bin), which is exactly why it goes unnoticed.
+function Show-ShadowingInstalls {
+    param([string]$BinDir)
+    $mine = $BinDir.TrimEnd('\')
+    $entries = @()
+    foreach ($scope in @('Machine', 'User')) {
+        $value = [Environment]::GetEnvironmentVariable('Path', $scope)
+        if ($value) { $entries += [Environment]::ExpandEnvironmentVariables($value) -split ';' }
+    }
+    $before = @()
+    foreach ($e in $entries) {
+        $dir = $e.Trim().TrimEnd('\')
+        if (-not $dir) { continue }
+        if ($dir -ieq $mine) { break }
+        if (Test-Path -LiteralPath (Join-Path $dir 'sf-engine.exe')) { $before += $dir }
+    }
+    foreach ($dir in ($before | Select-Object -Unique)) {
+        Write-Warn2 "another install comes first on PATH: $dir"
+        Write-Info  "  new terminals will run its sf-engine/sf-console/sf-sensor instead of these."
+        Write-Info  "  remove it from your user PATH (files are kept):"
+        Write-Info  "  `$p = [Environment]::GetEnvironmentVariable('Path','User') -split ';' | ? { `$_ -and `$_.TrimEnd('\') -ine '$dir' }; [Environment]::SetEnvironmentVariable('Path', (`$p -join ';'), 'User')"
+    }
+}
+
 function Add-ToUserPath {
     param([string]$Dir)
     $dirLow = $Dir.TrimEnd('\').ToLower()
@@ -914,6 +942,7 @@ if ($MyInvocation.InvocationName -ne '.') {
     Write-Shims -Root $root -RepoId $Repo -Ref $Branch -ConsoleExcluded:([bool]$NoConsole)
     Add-ToUserPath -Dir $binDir
     $env:Path = "$binDir;" + $env:Path
+    Show-ShadowingInstalls -BinDir $binDir
 
     # ingest token: -IngestToken rewrites the persisted one (empty
     # clears); without the flag an existing one is picked up so
