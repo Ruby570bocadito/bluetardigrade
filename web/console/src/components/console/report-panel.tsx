@@ -47,7 +47,7 @@ function ReportEditor({ alert, initiallyOpen }: { alert: SfAlert; initiallyOpen:
   }
   const remove = () => {
     if (!report) return
-    try { deleteReport(window.localStorage, report.alert_id, report.revision); setReport({ ...report, revision: 0, created_at: new Date().toISOString() }); setDirty(true); setError(''); setNotice('Versión local eliminada; el texto sigue en el editor.'); savedChanged() } catch (problem) { failure(problem) }
+    try { deleteReport(window.localStorage, report.alert_id, report.revision); const now = new Date().toISOString(); setReport({ ...report, revision: 0, created_at: now, updated_at: now }); setDirty(true); setError(''); setNotice('Versión local eliminada; el texto sigue en el editor.'); savedChanged() } catch (problem) { failure(problem) }
   }
   const download = (format: 'md' | 'json') => {
     if (!report) return

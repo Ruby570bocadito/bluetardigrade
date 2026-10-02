@@ -97,10 +97,11 @@ export function readReports(storage: StorageReader): SocReport[] {
   return items
 }
 export function saveReport(storage: StorageWriter, draft: SocReport, expectedRevision: number, now = new Date()): SocReport {
+  const evidence = alertSnapshot(draft.alert, draft.alert_id)
   const items = readReports(storage); const old = items.find((item) => item.alert_id === draft.alert_id)
   if ((old?.revision ?? 0) !== expectedRevision) throw new Error('El informe cambió en otra pestaña. Carga la versión guardada antes de guardar.')
   if (!old && items.length >= MAX_REPORTS) throw new Error(`Puedes guardar hasta ${MAX_REPORTS} informes. Exporta y elimina uno para añadir otro.`)
-  const saved = parseReport({ ...draft, fields: fields(draft.fields), alert: old?.alert ?? draft.alert, created_at: old?.created_at ?? draft.created_at, updated_at: now.toISOString(), revision: expectedRevision + 1 })
+  const saved = parseReport({ ...draft, fields: fields(draft.fields), alert: old?.alert ?? evidence, created_at: old?.created_at ?? draft.created_at, updated_at: now.toISOString(), revision: expectedRevision + 1 })
   storage.setItem(REPORT_KEY, JSON.stringify({ version: 1, items: [...items.filter((item) => item.alert_id !== saved.alert_id), saved] }))
   return saved
 }
@@ -114,7 +115,8 @@ function fence(value: string, language: string): string {
   return `${marker}${language}\n${value}\n${marker}`
 }
 export function buildReportExport(report: SocReport, format: 'md' | 'json') {
-  const checked = { ...report, fields: fields(report.fields), alert: alertSnapshot(report.alert, report.alert_id) }
+  if (!Number.isSafeInteger(report.revision) || report.revision < 0) throw new Error('Revisión de informe incompatible.')
+  const checked = { ...parseReport({ ...report, revision: Math.max(1, report.revision) }), revision: report.revision }
   let contents: string
   if (format === 'json') contents = JSON.stringify(checked, null, 2) + '\n'
   else {

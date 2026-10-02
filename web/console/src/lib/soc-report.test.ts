@@ -68,3 +68,15 @@ test('orphan report snapshots remain available and can free capacity offline', (
   expect(buildReportExport(readReports(store)[0], 'json').contents).toContain('suricata')
   deleteReport(store, saved.alert_id, saved.revision); expect(readReports(store)).toEqual([])
 })
+test('saved reports reject changed draft identity even when old evidence exists', () => {
+  const store = storage(); const saved = saveReport(store, newReport(alert, now()), 0, now())
+  saved.alert = { ...saved.alert, id: 'fedcba9876543210' }
+  expect(() => saveReport(store, saved, 1, now())).toThrow(/corresponde/)
+  expect(readReports(store)[0].revision).toBe(1)
+})
+test('exports validate metadata and omit unknown envelope properties', () => {
+  const draft = newReport(alert, now()); const file = buildReportExport(Object.assign(draft, { injected: 'unknown field' }), 'json')
+  expect(JSON.parse(file.contents).injected).toBeUndefined()
+  expect(JSON.parse(file.contents).revision).toBe(0)
+  expect(() => buildReportExport({ ...draft, created_at: 'invalid date' }, 'md')).toThrow()
+})
