@@ -92,12 +92,33 @@ pub struct Sender {
 
 impl Sender {
     pub fn connect(addr: &str, token: Option<&str>, tls_ca: Option<&Path>) -> Result<Self> {
-        let stream = dial(addr, token, tls_ca)?;
+        // Configuration is checked up front and fails loudly: an
+        // unreadable or invalid CA bundle, a TLS certificate that does
+        // not verify and a rejected token never fix themselves. An
+        // engine that is simply not listening yet (boot order, network
+        // still coming up, engine restarting) is not a reason to die:
+        // the sensor starts, events wait in the queue/spool, and
+        // send_line keeps dialing with backoff.
+        if let Some(ca) = tls_ca {
+            let pem = std::fs::read(ca)
+                .with_context(|| format!("reading TLS CA bundle {}", ca.display()))?;
+            load_ca_certificates(&pem, ca)?;
+        }
+        let writer = match dial(addr, token, tls_ca) {
+            Ok(stream) => Some(BufWriter::new(stream)),
+            Err(err) if err.downcast_ref::<EngineUnreachable>().is_some() => {
+                eprintln!(
+                    "[SENSOR] engine {addr} not reachable yet ({err:#}); events wait in the queue/spool until it is"
+                );
+                None
+            }
+            Err(err) => return Err(err),
+        };
         Ok(Self {
             addr: addr.to_string(),
             token: token.map(str::to_string),
             tls_ca: tls_ca.map(Path::to_path_buf),
-            writer: Mutex::new(Some(BufWriter::new(stream))),
+            writer: Mutex::new(writer),
         })
     }
 
@@ -139,12 +160,36 @@ impl Sender {
     }
 }
 
+/// The TCP connect itself failed: nobody is listening (yet) or the
+/// network is not up. Transient by nature, unlike TLS and AUTH errors.
+#[derive(Debug)]
+struct EngineUnreachable {
+    addr: String,
+    source: std::io::Error,
+}
+
+impl std::fmt::Display for EngineUnreachable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // the io error itself is the source: anyhow's {:#} appends it
+        write!(f, "dial {}", self.addr)
+    }
+}
+
+impl std::error::Error for EngineUnreachable {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
 /// Dial and, when a CA bundle is configured, upgrade to TLS; then,
 /// when a token is configured, run the AUTH handshake on top. An auth
 /// rejection is fatal (misconfiguration, not a transient fault): the
 /// engine answered and said no.
 fn dial(addr: &str, token: Option<&str>, tls_ca: Option<&Path>) -> Result<Stream> {
-    let tcp = TcpStream::connect(addr).with_context(|| format!("dial {addr}"))?;
+    let tcp = TcpStream::connect(addr).map_err(|source| EngineUnreachable {
+        addr: addr.to_string(),
+        source,
+    })?;
     // Handshake-phase timeouts go on the raw socket so both the TLS
     // handshake and the AUTH exchange are bounded by the same deadline.
     tcp.set_read_timeout(Some(AUTH_TIMEOUT))?;

@@ -88,6 +88,15 @@ Rust ETW sensor fixes found on a real Windows host
   the account running the sensor. `process.image` is no longer
   reported (the kernel event has no full path).
 - "Access denied" now says to run the sensor elevated.
+- Ctrl+C (or closing the console) stops the kernel session; a session
+  left by a killed run is stopped and the start retried, instead of
+  failing with AlreadyExist.
+- The sensor starts even when the engine is not listening yet (boot
+  order, engine restart): events wait in the queue/spool. Only
+  configuration errors (CA bundle, TLS verification, rejected token)
+  abort the start.
+- `sf-console -Stop` no longer claims success when the processes were
+  started from an Administrator window and could not be stopped.
 
 Also: tests for `internal/tlsutil`, 28 ATT&CK context notes for the
 analyst, and cosmetic leftovers of the old product name replaced

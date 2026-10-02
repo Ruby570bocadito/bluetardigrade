@@ -47,8 +47,9 @@ pub struct Delivery {
 /// (re)connection to TLS with the engine's certificate verified
 /// against that CA bundle (no skip-verification mode).
 pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Delivery) -> Result<()> {
-    // The first connection is still made up front: a wrong address,
-    // token or CA must fail loudly at startup, not inside the queue.
+    // Configuration errors (CA bundle, TLS verification, rejected token)
+    // fail loudly here; an engine that is not listening yet does not:
+    // the sensor starts and the queue/spool hold events until it is.
     let sender = Sender::connect(addr, token, tls_ca)?;
     let spool = match delivery.spool {
         Some(path) => Some(
