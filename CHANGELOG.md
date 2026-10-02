@@ -73,6 +73,22 @@ Performance
 - Sensor: delivery moved off the ETW thread to a bounded queue with an
   optional on-disk spool (`--queue`, `--spool`, `--spool-max-mb`).
 
+Rust ETW sensor fixes found on a real Windows host
+
+- Every event inside a ~7 minute bucket carried the same timestamp:
+  ferrisetw 1.2.0 rebuilds the FILETIME from the high dword twice. The
+  sensor now decodes the raw record time itself.
+- The sensor never reported command lines or parent PIDs: the
+  Microsoft-Windows-Kernel-Process ProcessStart event has no
+  CommandLine and names the parent ParentProcessID, so all 46 rule
+  conditions on `process.command_line` were blind to it. It now reads
+  the kernel Process/Start event (named system-logger session), which
+  carries both; names truncated by the kernel are recovered from the
+  command line, and `user` is the new process owner's SID instead of
+  the account running the sensor. `process.image` is no longer
+  reported (the kernel event has no full path).
+- "Access denied" now says to run the sensor elevated.
+
 Also: tests for `internal/tlsutil`, 28 ATT&CK context notes for the
 analyst, and cosmetic leftovers of the old product name replaced
 (Splunk source, notification subject, Message-ID and ETW session name

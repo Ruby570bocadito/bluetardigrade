@@ -36,8 +36,11 @@ mod transport;
 #[cfg(target_os = "windows")]
 mod collector;
 
-// The delivery queue is platform-independent so its tests run on any
-// host; outside Windows it is only compiled for those tests.
+// The delivery queue and the kernel event decoders are
+// platform-independent so their tests run on any host; outside Windows
+// they are only compiled for those tests.
+#[cfg(any(target_os = "windows", test))]
+mod procinfo;
 #[cfg(any(target_os = "windows", test))]
 mod queue;
 
