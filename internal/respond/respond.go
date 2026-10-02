@@ -79,6 +79,8 @@ const (
 	MaxReasonLen   = 512
 	MaxOperatorLen = 64
 	MaxKeyLen      = 128
+	// MaxOperatorTokenLen caps the X-SF-Operator-Token header.
+	MaxOperatorTokenLen = 256
 
 	// Signal is fixed for iteration 1 (dictamen Q1 vetoed
 	// configurability: a destructive action needs no extra degree of
@@ -90,7 +92,10 @@ const (
 // Denial codes (R5a vocabulary). They travel verbatim in the HTTP
 // body, the audit line and the engine log.
 const (
-	CodeOperatorNotAllowed  = "operator_not_allowed"
+	CodeOperatorNotAllowed = "operator_not_allowed"
+	// CodeOperatorCredential: the operator is listed with a credential
+	// (operators file version 2) and the request did not present it.
+	CodeOperatorCredential  = "operator_credential_invalid"
 	CodeHostMismatch        = "host_mismatch"
 	CodePIDInvalid          = "pid_invalid"
 	CodePIDMismatch         = "pid_mismatch"
@@ -134,6 +139,10 @@ type Request struct {
 	Reason         string
 	IdempotencyKey string
 	Source         string
+	// OperatorToken is the operator's own credential (header
+	// X-SF-Operator-Token). It is checked and then forgotten: never
+	// audited, never logged.
+	OperatorToken string
 }
 
 // Result is the outcome of one attempt. Code is empty exactly when
@@ -160,8 +169,8 @@ type Manager struct {
 	audit    *Audit
 	now      func() time.Time
 
-	mu        sync.RWMutex // guards operators, protected and keys
-	operators map[string]struct{}
+	mu        sync.RWMutex              // guards operators, protected and keys
+	operators map[string]operatorDigest // nil digest = version-1 name-only entry
 	protected map[string]struct{}
 	keys      map[string]struct{}
 	keyOrder  []string
@@ -189,7 +198,7 @@ func NewManager(hostname string, audit *Audit) *Manager {
 		hostname:  strings.ToLower(strings.TrimSpace(hostname)),
 		audit:     audit,
 		now:       time.Now,
-		operators: map[string]struct{}{},
+		operators: map[string]operatorDigest{},
 		protected: map[string]struct{}{},
 		keys:      map[string]struct{}{},
 		opTimes:   map[string][]time.Time{},
@@ -204,7 +213,7 @@ func NewManager(hostname string, audit *Audit) *Manager {
 // IS an error, so the caller can go FATAL at startup and keep the
 // previous set loud on hot-reload.
 func (m *Manager) LoadOperators(path string) error {
-	set, err := loadNameFile(path, "operators", MaxOperators)
+	set, err := loadOperatorFile(path)
 	if err != nil {
 		return err
 	}
@@ -212,6 +221,20 @@ func (m *Manager) LoadOperators(path string) error {
 	m.operators = set
 	m.mu.Unlock()
 	return nil
+}
+
+// CredentialedOperators reports how many listed operators must present
+// their own credential (operators file version 2).
+func (m *Manager) CredentialedOperators() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	n := 0
+	for _, d := range m.operators {
+		if d != nil {
+			n++
+		}
+	}
+	return n
 }
 
 // OperatorsCount reports the live allowlist size (banner).
@@ -270,10 +293,16 @@ func (m *Manager) Kill(req Request) Result {
 
 	// ---- layer 3: operator allowlist (empty allowlist denies all)
 	m.mu.RLock()
-	_, opOK := m.operators[req.Operator]
+	digest, opOK := m.operators[req.Operator]
 	m.mu.RUnlock()
 	if !opOK {
 		return m.deny(res, req, now, CodeOperatorNotAllowed, "", "")
+	}
+	// layer 3b: with a version-2 file the name is not enough — the
+	// shared API token does not tell operators apart, their own
+	// credential does
+	if digest != nil && !credentialMatches(req.OperatorToken, digest) {
+		return m.deny(res, req, now, CodeOperatorCredential, "", "")
 	}
 
 	// ---- R3: the host field cannot be decorative. A console
@@ -580,6 +609,9 @@ func (r Request) Validate() error {
 	}
 	if len([]rune(r.Operator)) > MaxOperatorLen {
 		return fmt.Errorf("operator exceeds %d characters", MaxOperatorLen)
+	}
+	if len(r.OperatorToken) > MaxOperatorTokenLen {
+		return fmt.Errorf("X-SF-Operator-Token exceeds %d bytes", MaxOperatorTokenLen)
 	}
 	if len([]rune(r.RuleID)) > MaxRuleIDLen {
 		return fmt.Errorf("rule_id exceeds %d characters", MaxRuleIDLen)

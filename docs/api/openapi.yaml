@@ -792,7 +792,11 @@ paths:
 
         - the `operator` must be on the `-respond-operators` allowlist
           (`operator_not_allowed`; a missing file means an empty
-          allowlist: everything denied);
+          allowlist: everything denied). With a version-2 operators
+          file every operator also presents their own credential in the
+          `X-SF-Operator-Token` header (`operator_credential_invalid`
+          otherwise): the shared bearer token does not tell operators
+          apart, their credential does. It is never audited or logged;
         - `host` must equal the engine's own hostname (`host_mismatch`)
           — a console replaying a REMOTE sensor's alert can never turn
           it into a local kill;
@@ -822,6 +826,15 @@ paths:
         automation path: rules, sequences, the correlator and the
         actions dispatcher cannot reach this surface (binding landing
         requirement R8).
+      parameters:
+        - name: X-SF-Operator-Token
+          in: header
+          required: false
+          description: the operator's own credential, required when the
+            operators file is version 2 (at most 256 bytes)
+          schema:
+            type: string
+            maxLength: 256
       requestBody:
         required: true
         content:
@@ -849,7 +862,8 @@ paths:
         '403':
           description: |
             Permission or guard denial: the body names one of
-            `operator_not_allowed`, `host_mismatch`, `pid_invalid`,
+            `operator_not_allowed`, `operator_credential_invalid`,
+            `host_mismatch`, `pid_invalid`,
             `pid_mismatch`, `pid_not_found`, `pid_access_denied`,
             `self_protected`, `process_protected`, `audit_unavailable`.
             Every 403 here is audited in the engine's respond-audit

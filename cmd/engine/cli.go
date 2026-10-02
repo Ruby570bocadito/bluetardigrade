@@ -34,6 +34,7 @@ const engineExamples = `  engine run                     arranca el motor con lo
   engine sigma -dir corpus -out rules/convertidas.yaml   convierte reglas Sigma
   engine report --alert ID --interactive --out reports/ID.md   informe humano
   engine ingest-identity --name wks-01 --host WKS-01   credencial de ingesta por sensor
+  engine operator-credential --name ana   credencial propia de un operador de respuesta activa
   engine version                 version, runtime de Go y plataforma`
 
 const runLong = `Arranca el motor completo: ingesta TCP de eventos NDJSON, enriquecido,
@@ -89,7 +90,7 @@ func newRootCmd() *cobra.Command {
 	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		fmt.Fprint(cmd.OutOrStdout(), buildHelp(cmd))
 	})
-	root.AddCommand(newRunCmd(), newRulesCmd(), newValidateCmd(), newDoctorCmd(), newSigmaCmd(), newReportCmd(), newIngestIdentityCmd(), newVersionCmd())
+	root.AddCommand(newRunCmd(), newRulesCmd(), newValidateCmd(), newDoctorCmd(), newSigmaCmd(), newReportCmd(), newIngestIdentityCmd(), newOperatorCredentialCmd(), newVersionCmd())
 	return root
 }
 

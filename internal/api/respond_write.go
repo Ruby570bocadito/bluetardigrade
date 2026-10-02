@@ -84,6 +84,9 @@ func (h *Hub) handleRespondKill(w http.ResponseWriter, r *http.Request) {
 		Reason:         in.Reason,
 		IdempotencyKey: in.IdempotencyKey,
 		Source:         r.RemoteAddr,
+		// the operator's own credential travels in a header, never in
+		// the body that tooling tends to log
+		OperatorToken: r.Header.Get("X-SF-Operator-Token"),
 	}
 	if err := req.Validate(); err != nil {
 		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)

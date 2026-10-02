@@ -130,7 +130,7 @@ func benchEvent() *Event {
 		Source: "sysmon", Host: "LAB-WKS-01", User: `CORP\ana`,
 		Process: &Process{PID: 4242, PPID: 812, Name: "powershell.exe",
 			CommandLine: `powershell.exe -NoP -W Hidden -Enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkA`,
-			Image: `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`, Hashes: Hashes{"sha256": "ab12cd34"}},
+			Image:       `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`, Hashes: Hashes{"sha256": "ab12cd34"}},
 		Tags: []string{"sensor:sysmon"}, Enrichment: map[string]string{"parent_name": "winword.exe"}}
 }
 

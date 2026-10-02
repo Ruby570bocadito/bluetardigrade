@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/ingest"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/respond"
 )
 
 // The generated entry must load as a valid identities file and its
@@ -58,5 +59,35 @@ func TestIngestIdentityRejectsBadInput(t *testing.T) {
 		if err := runIngestIdentity(strings.NewReader(c.stdin), &out, c.name, c.hosts, c.any, c.fromStd); err == nil {
 			t.Errorf("case %d accepted: %+v", i, c)
 		}
+	}
+}
+
+// The generated operator entry loads as a version-2 operators file and
+// authenticates exactly the printed credential.
+func TestOperatorCredentialRoundTrip(t *testing.T) {
+	var out strings.Builder
+	if err := runOperatorCredential(strings.NewReader(""), &out, "ana", false); err != nil {
+		t.Fatal(err)
+	}
+	token := strings.TrimPrefix(strings.Split(out.String(), "\n")[1], "# ")
+	entry := out.String()[strings.Index(out.String(), "  - name:"):]
+	p := filepath.Join(t.TempDir(), "ops.yaml")
+	if err := os.WriteFile(p, []byte("version: 2\noperators:\n"+entry), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	audit, err := respond.OpenAudit(filepath.Join(t.TempDir(), "audit.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer audit.Close()
+	m := respond.NewManager("engine-lab", audit)
+	if err := m.LoadOperators(p); err != nil {
+		t.Fatalf("generated entry does not load: %v\n%s", err, out.String())
+	}
+	if m.CredentialedOperators() != 1 || len(token) != 64 {
+		t.Fatalf("credentialed=%d token=%q", m.CredentialedOperators(), token)
+	}
+	if err := runOperatorCredential(strings.NewReader(""), &out, "a: b", false); err == nil {
+		t.Fatal("YAML-breaking operator name accepted")
 	}
 }

@@ -138,7 +138,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `-api-token` | — | Bearer required on every `/api/*` route and on `/metrics` (`/api/health` stays open) |
 | `-api-write` | off | arm `POST`/`DELETE /api/suppressions` (writes land on the `-suppressions` file; refused beyond loopback without `-api-token`) |
 | `-allow-kill` | off | arm `POST /api/respond/kill` (active response, SIGKILL fixed; REQUIRES `-api-token` even on loopback + open `-respond-audit`; falls back to `SF_ALLOW_KILL=1`) |
-| `-respond-operators` | `./respond-operators.yaml` | allowlist of operators who may run active response (`{version: 1, names: [...]}`; missing = empty = everything denied; malformed = fatal; hot-reloaded) |
+| `-respond-operators` | `./respond-operators.yaml` | allowlist of operators who may run active response (`{version: 1, names: [...]}`, or `{version: 2, operators: [{name, token_sha256}]}` with per-operator credentials sent as `X-SF-Operator-Token`; missing = empty = everything denied; malformed = fatal; hot-reloaded) |
 | `-respond-protected` | — | optional extra protected process names merged with the platform defaults (hot-reloaded) |
 | `-respond-audit` | `./respond-audit.jsonl` | append-only JSONL audit, one line per attempt, fsync per line, 64 MiB ceiling |
 | `-webhook` / `-webhook-token` | — | SIEM/SOAR connector URL / outbound Bearer token |
@@ -479,7 +479,22 @@ Five permission layers run before every signal, and every well-formed
 attempt (denied included) is written to the `-respond-audit` JSONL
 **before** the signal, with fsync and a 64 MiB ceiling: the action that
 cannot be proven to have happened, does not happen. The operator must
-be on the `-respond-operators` allowlist; the `host` field must equal
+be on the `-respond-operators` allowlist. A version-1 file lists names
+only, so anyone holding the shared API token can act as any listed
+operator (the engine warns at startup); a version-2 file binds every
+operator to a credential of their own, presented in the
+`X-SF-Operator-Token` header of each request and never audited or
+logged (`operator_credential_invalid` otherwise):
+
+```yaml
+# generate each entry with: sf-engine operator-credential --name ana
+version: 2
+operators:
+  - name: ana
+    token_sha256: 14b372f0d6d4b9101f821d8447db87dfe555888830e7b40b85e371c0220bf30d
+```
+
+The `host` field must equal
 the engine's own hostname (a console replaying a REMOTE sensor's alert
 gets `host_mismatch`, never a local kill); budgets cap committed
 actions (60 s cooldown per host+pid, 20/min global, 6/min per
@@ -760,7 +775,7 @@ path (no subcommand) and on `engine run`.
 | `-api-token t` | empty | bearer token the local API requires on `/api/*` and `/metrics` (falls back to `SF_API_TOKEN`); `/api/health` stays open |
 | `-api-write` | off | arm `POST`/`DELETE /api/suppressions` (falls back to `SF_API_WRITE=1`); writes go to the `-suppressions` file, which stays the source of truth; refused at startup when the API has no token beyond loopback |
 | `-allow-kill` | off | arm `POST /api/respond/kill` (falls back to `SF_ALLOW_KILL=1`): active response, kill_process, SIGKILL fixed; REQUIRES `-api-token`/`SF_API_TOKEN` even on loopback and an openable `-respond-audit` (otherwise the surface stays disabled, loud); the name check protects against killing the wrong PID, not against malware disguising its identity |
-| `-respond-operators file` | `./respond-operators.yaml` | YAML allowlist (`{version: 1, names: [ana, beto]}`) of operators allowed to run active response; missing file = empty allowlist = every action denied; malformed file is fatal; hot-reloaded on the `-reload-every` ticker |
+| `-respond-operators file` | `./respond-operators.yaml` | YAML allowlist (`{version: 1, names: [ana, beto]}`, or version 2 with per-operator credentials, see [Active response](#active-response-kill_process-opt-in)) of operators allowed to run active response; missing file = empty allowlist = every action denied; malformed file is fatal; hot-reloaded on the `-reload-every` ticker |
 | `-respond-protected file` | empty | optional YAML (`{version: 1, names: [...]}`) with extra protected process names, merged with the platform defaults (Windows: csrss/smss/wininit/services/lsass); malformed file is fatal; hot-reloaded |
 | `-respond-audit file` | `./respond-audit.jsonl` | append-only JSONL audit file, one line per attempt (denials included), fsync per line, 64 MiB ceiling: beyond it every action denies with `audit_unavailable` until the file is rotated |
 | `-token t` | empty | shared ingest token (falls back to `SF_INGEST_TOKEN`); empty disables auth |

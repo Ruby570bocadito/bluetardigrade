@@ -60,22 +60,9 @@ func runIngestIdentity(in io.Reader, out io.Writer, name string, hosts []string,
 			return fmt.Errorf("host invalido %q", h)
 		}
 	}
-	token := ""
-	if fromStdin {
-		line, err := bufio.NewReader(io.LimitReader(in, 4096)).ReadString('\n')
-		if err != nil && !errors.Is(err, io.EOF) {
-			return fmt.Errorf("leyendo el token de stdin: %w", err)
-		}
-		token = strings.TrimRight(line, "\r\n")
-		if len(token) < 16 {
-			return errors.New("el token de stdin debe tener al menos 16 caracteres")
-		}
-	} else {
-		var b [32]byte
-		if _, err := rand.Read(b[:]); err != nil {
-			return fmt.Errorf("generando el token: %w", err)
-		}
-		token = hex.EncodeToString(b[:])
+	token, err := credentialToken(in, fromStdin)
+	if err != nil {
+		return err
 	}
 	hostList := `["*"]`
 	if !anyHost {
@@ -92,5 +79,70 @@ func runIngestIdentity(in io.Reader, out io.Writer, name string, hosts []string,
 	}
 	fmt.Fprintln(out, "# Entrada para el fichero de -ingest-identities (version: 1, identities: [...]):")
 	fmt.Fprintf(out, "  - name: %s\n    token_sha256: %s\n    hosts: %s\n", name, ingest.TokenDigest(token), hostList)
+	return nil
+}
+
+// credentialToken generates a 256-bit hex token, or reads an existing
+// one (>= 16 characters) from in.
+func credentialToken(in io.Reader, fromStdin bool) (string, error) {
+	if fromStdin {
+		line, err := bufio.NewReader(io.LimitReader(in, 4096)).ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return "", fmt.Errorf("leyendo el token de stdin: %w", err)
+		}
+		token := strings.TrimRight(line, "\r\n")
+		if len(token) < 16 {
+			return "", errors.New("el token de stdin debe tener al menos 16 caracteres")
+		}
+		return token, nil
+	}
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("generando el token: %w", err)
+	}
+	return hex.EncodeToString(b[:]), nil
+}
+
+const operatorCredentialLong = `Genera la credencial propia de un operador de respuesta activa: un
+token aleatorio de 256 bits (se muestra una sola vez) y la entrada YAML
+con su SHA-256 para el fichero -respond-operators en formato version 2.
+Cada peticion POST /api/respond/kill de ese operador debe llevar el token
+en la cabecera X-SF-Operator-Token, ademas del token de la API: el token
+de la API es compartido, la credencial del operador no.`
+
+func newOperatorCredentialCmd() *cobra.Command {
+	var name string
+	var fromStdin bool
+	cmd := &cobra.Command{
+		Use:     "operator-credential",
+		Short:   "Genera la credencial de un operador de respuesta activa (token + entrada YAML)",
+		Long:    operatorCredentialLong,
+		Example: "  engine operator-credential --name ana\n  echo -n \"$TOKEN\" | engine operator-credential --name beto --token-stdin",
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runOperatorCredential(cmd.InOrStdin(), cmd.OutOrStdout(), name, fromStdin)
+		},
+	}
+	cmd.Flags().StringVar(&name, "name", "", "nombre del operador (el campo operator de cada peticion)")
+	cmd.Flags().BoolVar(&fromStdin, "token-stdin", false, "lee un token existente de stdin en vez de generar uno")
+	return cmd
+}
+
+func runOperatorCredential(in io.Reader, out io.Writer, name string, fromStdin bool) error {
+	name = strings.TrimSpace(name)
+	if name == "" || len([]rune(name)) > 64 || strings.IndexFunc(name, unicode.IsControl) >= 0 || strings.ContainsAny(name, `"'\:#{}[],`) {
+		return errors.New("--name es obligatorio (maximo 64 caracteres, sin caracteres de control, comillas, ':', '#', llaves, corchetes ni comas)")
+	}
+	token, err := credentialToken(in, fromStdin)
+	if err != nil {
+		return err
+	}
+	if !fromStdin {
+		fmt.Fprintln(out, "# Credencial del operador (cabecera X-SF-Operator-Token). Se muestra UNA vez:")
+		fmt.Fprintln(out, "# "+token)
+		fmt.Fprintln(out)
+	}
+	fmt.Fprintln(out, "# Entrada para -respond-operators (version: 2, operators: [...]):")
+	fmt.Fprintf(out, "  - name: %s\n    token_sha256: %s\n", name, ingest.TokenDigest(token))
 	return nil
 }

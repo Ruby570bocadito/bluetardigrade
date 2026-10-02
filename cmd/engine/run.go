@@ -462,6 +462,9 @@ func runEngine(o *options, interactive bool) error {
 				}
 				fmt.Printf("[ENGINE] active response: kill_process ENABLED (operators: %d, protected: %d, audit: %s, signal: SIGKILL fixed)\n",
 					respMgr.OperatorsCount(), respMgr.ProtectedCount(), auditPath)
+				if n := respMgr.OperatorsCount(); n > 0 && respMgr.CredentialedOperators() == 0 {
+					fmt.Println("[ENGINE] active response: WARNING operators are listed by name only (version 1): anyone holding the API token can act as any of them; move to version 2 with per-operator credentials ('engine operator-credential --name <op>')")
+				}
 			}
 		}
 	} else {
