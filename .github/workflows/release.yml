@@ -16,6 +16,13 @@
 #     already certifies GOOS=windows compiles on Linux runners.
 #   - The tag is the source of truth for the version; CHANGELOG.md
 #     must carry an entry for it before the tag is cut.
+#   - Build provenance: every published binary (and checksums.txt) gets
+#     a Sigstore-signed SLSA provenance attestation from GitHub's own
+#     first-party action, SHA-pinned like the rest. checksums.txt alone
+#     proves integrity against the file next to it, not origin: whoever
+#     can replace a release asset can replace both. Verify with
+#       gh attestation verify engine-vX.Y.Z-windows-amd64.exe \
+#         --repo Ruby570bocadito/bluetardigrade
 name: release
 
 on:
@@ -39,6 +46,8 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write # create the GitHub Release and upload binaries
+      id-token: write # OIDC token for the Sigstore signing of the attestation
+      attestations: write # store the build provenance attestation
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -75,6 +84,12 @@ jobs:
             || { echo "el binario no reporta $VER: la inyeccion -X fallo" >&2; exit 1; }
           sha256sum dist/* > dist/checksums.txt
           ls -l dist
+
+      - name: Attest build provenance (SLSA, Sigstore)
+        if: ${{ github.event_name == 'push' && inputs.dry_run != true }}
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
 
       - name: Publish GitHub Release
         if: ${{ github.event_name == 'push' && inputs.dry_run != true }}
