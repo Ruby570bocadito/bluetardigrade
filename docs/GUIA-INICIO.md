@@ -1,8 +1,9 @@
 # Inicio rápido
 
-Ejecuta estos pasos desde la raíz del repositorio. La demo usa eventos
-simulados identificados como `sf-devsensor`; para datos reales de Windows
-sigue la [guía de Sysmon](OPERATIONS.md#real-telemetry-with-sysmon-recommended).
+Ejecuta estos pasos desde la raíz del repositorio. Conecta
+[Sysmon](OPERATIONS.md#real-telemetry-with-sysmon-recommended), el sensor ETW
+o [logs observados de proveedores SOC](SOC-INTEGRACIONES-E-INFORMES.md).
+El producto no instala un generador de eventos demo; sin sensor no aparecen eventos.
 
 ## Compilar y validar
 
@@ -19,7 +20,7 @@ En Windows puedes compilar directamente:
 
 ```powershell
 go build -o bin/engine.exe ./cmd/engine
-go build -o bin/devsensor.exe ./cmd/devsensor
+go build -o bin/collector.exe ./cmd/collector
 .\bin\engine.exe validate
 ```
 
@@ -29,8 +30,8 @@ también incluye comandos `sf-*` y herramientas de Sysmon.
 ## CLI interactiva
 
 Abre `./bin/engine run -i` —en Windows, `.\bin\engine.exe run -i`— y en
-otra terminal ejecuta `./bin/devsensor -addr 127.0.0.1:7777`
-o `.\bin\devsensor.exe -addr 127.0.0.1:7777`.
+otra terminal conecta el sensor o importa logs observados con
+`./bin/collector -source suricata -observer IDS-01 -file /ruta/eve.json`.
 
 | Tecla | Uso |
 |-------|-----|

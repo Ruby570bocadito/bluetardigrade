@@ -4,6 +4,8 @@ Everything needed to install, configure and operate the framework: the one-comma
 
 ## One-command install (Windows)
 
+Installer fixes, update preservation, recovery and current SOC limitations: [INSTALACION-Y-ESTADO-SOC.md](INSTALACION-Y-ESTADO-SOC.md).
+
 From any PowerShell window, no admin account and no prior download required:
 
 ```powershell
@@ -16,7 +18,7 @@ The installer downloads the repository, provisions portable Go, Node and Bun und
 |-----------------|------------------------------------------------|
 | `sf-engine`     | detection engine, prints alerts live           |
 | `sf-sensor`     | streams REAL host telemetry through the engine via Sysmon (`-SetupSysmon` installs it in one command) |
-| `sf-devsensor`  | demo only: replays a scripted scenario (simulated data, clearly labeled; works under WDAC/Smart App Control) |
+| `sf-collector`  | imports observed IDS/NDR/osquery/honeypot/firewall logs and offline EML |
 | `sf-console`    | starts the web console and opens the browser   |
 | `sf-update`     | updates the code and rebuilds                  |
 | `sf-uninstall`  | removes everything                             |
@@ -24,7 +26,7 @@ The installer downloads the repository, provisions portable Go, Node and Bun und
 ## Real telemetry with Sysmon (recommended)
 
 
-`sf-devsensor` replays a scripted demo scenario (simulated data - the only simulated piece in the project). To detect what actually happens on the machine, set up Sysmon (free Microsoft telemetry driver) with one command - accept the UAC prompt once:
+Product installs contain no demo generator. Set up Sysmon to observe actual host activity; its installation asks for elevation:
 
 ```powershell
 sf-sensor -SetupSysmon
@@ -69,15 +71,11 @@ make docker-build
 docker build -t bluetardigrade-engine . && docker run --rm -p 7777:7777 -p 7778:7778 bluetardigrade-engine
 ```
 
-The image is built from the repo `Dockerfile` (Go 1.22 builder, alpine
+The image is built from the repo `Dockerfile` (Go builder pinned in the Dockerfile, alpine
 runtime, non-root user) and exposes TCP 7777 (NDJSON ingest) and 7778
 (HTTP API, bound to `0.0.0.0` inside the container so a console on the
-host can reach it). Replay the demo scenario against the container from
-the repo root:
-
-```bash
-go run ./cmd/devsensor -addr 127.0.0.1:7777
-```
+host can reach it). Connect actual sensors or import provider logs using
+`collector`; see [SOC integrations](SOC-INTEGRACIONES-E-INFORMES.md).
 
 For anything beyond a local lab, set a token and publish the ports
 deliberately: see [Ingest authentication](#ingest-authentication-shared-token).
@@ -86,9 +84,9 @@ deliberately: see [Ingest authentication](#ingest-authentication-shared-token).
 
 
 ```bash
-make build          # produces bin/engine and bin/devsensor
-./bin/engine        # same behavior as make run-engine
-./bin/devsensor     # same behavior as make run-devsensor
+make build          # produces bin/engine and bin/collector
+./bin/engine run -i # interactive engine
+./bin/collector -source suricata -observer IDS-01 -file /path/to/eve.json
 ```
 
 Other Makefile targets: `make test` (Go unit tests), `make vet`,
@@ -243,9 +241,9 @@ Every connection must then send `AUTH <token>` as its FIRST line (before any eve
 | Sensor | How to pass the token |
 |--------|-----------------------|
 | `sf-engine` | `-token <t>` flag or `SF_INGEST_TOKEN` env |
-| `devsensor` (Go demo) | `-token <t>` flag or `SF_INGEST_TOKEN` env |
-| `sf-sensor` (Rust/Sysmon) | `--token <t>` flag or `SF_INGEST_TOKEN` env |
-| `sf-devsensor` (PowerShell demo) | `-Token <t>` param or `SF_INGEST_TOKEN` env |
+| `collector` | `SF_INGEST_TOKEN` env |
+| `sf-sensor` (PowerShell Sysmon) | `-Token <t>` or `SF_INGEST_TOKEN` env |
+| `security-sensor.exe` (Rust) | `--token <t>` or `SF_INGEST_TOKEN` env |
 
 Mismatch behavior is loud on purpose: a sensor with a stale token is closed with a clear `{"ack":"error",...}` message, a sensor sending `AUTH` to a token-less engine is closed too, and a silent client that never authenticates is dropped after 10 seconds. The comparison is constant-time. Loopback-only deployments without a token keep working exactly as before (auth disabled); a non-loopback bind without a token prints a startup warning, because any host that reaches the port could then inject events.
 
@@ -265,7 +263,7 @@ sf-engine -token 'the-new-secret'
 
 During the window the startup banner says `rotation window OPEN` so an operator can see at a glance when a migration is still in progress. Both comparisons are constant-time and combined without branching on the content, so the window does not leak which token matched.
 
-On Windows the installer can persist the token for you (`install.ps1 -IngestToken '...'`, stored under `tools\config\ingest.token`, cleared with an empty value): the autostart entry, `sf-console` and `sf-devsensor` then all start the engine with that token enforced. The installer's `-Firewall` switch **requires** a configured token — it refuses to open TCP 7777 otherwise (and removes a rule left behind by a pre-gate install), because a reachable ingest without a token is an open event-injection channel for the whole network segment.
+On Windows the installer can persist the token for you (`install.ps1 -IngestToken '...'`, stored under `tools\config\ingest.token`, cleared with an empty value): the autostart entry, `sf-console` and `sf-sensor` then all start the engine with that token enforced. The installer's `-Firewall` switch **requires** a configured token — it refuses to open TCP 7777 otherwise (and removes a rule left behind by a pre-gate install), because a reachable ingest without a token is an open event-injection channel for the whole network segment.
 
 ## Ingest TLS (encryption in transit)
 
@@ -276,15 +274,17 @@ The shared token authenticates the sender but does not encrypt the channel: with
 sf-engine -addr 0.0.0.0:7777 -ingest-cert /etc/sf/ingest.pem -ingest-key /etc/sf/ingest-key.pem -token 'pick-a-long-random-secret'
 
 # sensor: verify the engine against your CA and stream over the encrypted channel
-devsensor -addr engine.example:7777 -tls -ca /etc/sf/ingest-ca.pem -token 'pick-a-long-random-secret'
-sf-sensor --addr engine.example:7777 --tls-ca /etc/sf/ingest-ca.pem --token 'pick-a-long-random-secret'
+collector -source suricata -observer IDS-01 -file /path/to/eve.json -addr engine.example:7777 -tls-ca /etc/sf/ingest-ca.pem # SF_INGEST_TOKEN in env
+security-sensor.exe --addr engine.example:7777 --tls-ca /etc/sf/ingest-ca.pem --token 'pick-a-long-random-secret' # Rust binary
 ```
+
+The installed `sf-sensor` launcher invokes the PowerShell Sysmon path; it does not accept Rust TLS flags. Use that path on loopback. Remote TLS collection uses the Rust binary or the SOC collector.
 
 Behavior and failure modes:
 
 - The certificate/key pair is loaded **at startup, before the bind**: a wrong path, a missing file or a mismatched pair aborts the engine with an error naming the file — a half-encrypted feed never serves traffic. Passing only one of the two flags is a startup error too (`pass both or neither`).
 - TLS 1.2 is the minimum negotiated version.
-- `devsensor -tls` verifies the engine's certificate chain against the `-ca` PEM file (self-signed lab deployments pass their own CA; production deployments can use a system-trusted CA by omitting `-ca`). There is deliberately **no skip-verification mode**: an encrypted channel to an unauthenticated endpoint would protect the feed from nobody. The certificate must match the hostname/IP the sensor dials (e.g. a self-signed cert needs `subjectAltName=IP:127.0.0.1` for loopback tests).
+- `collector -tls` verifies the engine's certificate chain against the `-tls-ca` PEM file (self-signed lab deployments pass their own CA; production deployments can use a system-trusted CA by omitting `-tls-ca`). There is deliberately **no skip-verification mode**: an encrypted channel to an unauthenticated endpoint would protect the feed from nobody. The certificate must match the hostname/IP the sensor dials (e.g. a self-signed cert needs `subjectAltName=IP:127.0.0.1` for loopback tests).
 - A plain-TCP sensor dialing a TLS port fails loudly and ingests nothing, and a TLS sensor dialing a plain port fails the handshake the same way — mismatched deployments are visible, not silent.
 - TLS composes with the shared-token AUTH handshake (the token travels encrypted). For untrusted networks use both layers: TLS encrypts the channel, the token authenticates the sender. The startup banner reports `ingest TLS: ENABLED (cert ...)` so the state is visible at a glance.
 
@@ -750,7 +750,7 @@ Every push and pull request runs the same checks the maintainers run locally (`.
 - **Console** — hub: `bun install --frozen-lockfile`, `bun test`, `tsc --noEmit`; web console: same install, `bun test` (G1 landed in CI), `tsc --noEmit`, `next build`.
 - **Sensor** — `cargo check --locked` on two targets: the host and a Windows cross-check (`--target x86_64-pc-windows-msvc`, type/borrow check without linking — the ETW collector is Windows-first and this is the only way to verify it still compiles without a Windows host). The crate itself compiles on any OS; ETW ingestion is cfg-gated to Windows and refuses to run off-Windows.
 
-Nightly (`.github/workflows/bench-nightly.yml`, also triggerable by hand), the pipeline bench runs the **real** engine over loopback with the documented baseline parameters (`cmd/bench -n 2000 -rate 1000`) in two passes on the same clock: a **rings** baseline, and a second identical pass with `-store` attached to a fresh SQLite file so the persistence overhead is measured, not assumed. The run summary records p50/p99 for both passes plus the store-overhead delta as data, alongside the runner identity and an fsync 4k dsync probe of the same medium the sqlite pass wrote to — the environment class that dominates the persistence tail, recorded per run because it is a datum of that run, not a property of the machine (the same role measured a 15.8 ms stalls-class tail one round and a 1.8 ms fast-fsync tail the next). The contract is enforced identically in each pass, and it is **advisory by design** (Director decision 6.2): a p99 at or above the phase-1 contract (< 10 ms) raises a warning annotation for the next review, but never fails the job — only a pipeline completeness failure (lost alerts, in either pass) turns the run red, because that is a functional defect, not a performance one. The same script runs locally: `bash scripts/dev-tests/bench_nightly.sh` (ports 7777/7778 free).
+Nightly (`.github/workflows/bench-nightly.yml`, also triggerable by hand), the pipeline bench runs the **real** engine over loopback with the documented baseline parameters (`scripts/dev-tests/bench -n 2000 -rate 1000`) in two passes on the same clock: a **rings** baseline, and a second identical pass with `-store` attached to a fresh SQLite file so the persistence overhead is measured, not assumed. The run summary records p50/p99 for both passes plus the store-overhead delta as data, alongside the runner identity and an fsync 4k dsync probe of the same medium the sqlite pass wrote to — the environment class that dominates the persistence tail, recorded per run because it is a datum of that run, not a property of the machine (the same role measured a 15.8 ms stalls-class tail one round and a 1.8 ms fast-fsync tail the next). The contract is enforced identically in each pass, and it is **advisory by design** (Director decision 6.2): a p99 at or above the phase-1 contract (< 10 ms) raises a warning annotation for the next review, but never fails the job — only a pipeline completeness failure (lost alerts, in either pass) turns the run red, because that is a functional defect, not a performance one. The same script runs locally: `bash scripts/dev-tests/bench_nightly.sh` (ports 7777/7778 free).
 
 To run the equivalent suite locally (Go 1.26+, bun, cargo via rustup, python3 with PyYAML):
 
@@ -758,14 +758,14 @@ To run the equivalent suite locally (Go 1.26+, bun, cargo via rustup, python3 wi
 make ci
 ```
 
-There are no mocked tests in the product path: the same rule of honesty the runtime follows applies to CI — what it verifies is what runs.
+Runtime telemetry is received from sensors/providers. Automated unit, DOM and browser checks use isolated fixtures; native smokes run actual binaries. These checks do not certify a live provider deployment.
 
 ## Measured performance
 
 
-The phase-1 promise (p99 < 10 ms) is now measured, not assumed. `cmd/bench` is a load and latency harness: it streams process.create events that deterministically fire one seeded rule, listens on the engine SSE stream and measures every alert on the same clock — from the NDJSON line leaving the client to the alert frame arriving, i.e. the full pipeline (ingest parse, rule evaluation, alert build, broadcast) plus the SSE hop the console experiences.
+The phase-1 promise (p99 < 10 ms) is now measured, not assumed. `scripts/dev-tests/bench` is a load and latency harness: it streams process.create events that deterministically fire one seeded rule, listens on the engine SSE stream and measures every alert on the same clock — from the NDJSON line leaving the client to the alert frame arriving, i.e. the full pipeline (ingest parse, rule evaluation, alert build, broadcast) plus the SSE hop the console experiences.
 
-Measured with `go run ./cmd/bench -n 2000 -rate 1000` against a live engine (loopback, Linux development VM, 23 rules loaded), three consecutive runs, 2000/2000 alerts produced and sampled each time:
+Measured with `go run ./scripts/dev-tests/bench -n 2000 -rate 1000` against a live engine (loopback, Linux development VM, 23 rules loaded), three consecutive runs, 2000/2000 alerts produced and sampled each time:
 
 ```
 latency p50 : 133-139 µs      latency p90 : 187-211 µs
@@ -783,7 +783,7 @@ a second run; engines started with `-api-token` need the same
 credential passed to the bench):
 
 ```bash
-go build -o bin/bench ./cmd/bench
+go build -o bin/bench ./scripts/dev-tests/bench
 bin/bench -addr 127.0.0.1:7777 -api 127.0.0.1:7778 -n 2000 -rate 1000
 bin/bench -addr 127.0.0.1:7777 -api 127.0.0.1:7778 -api-token <token> -n 2000
 ```

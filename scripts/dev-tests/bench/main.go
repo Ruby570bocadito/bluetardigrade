@@ -19,7 +19,7 @@
 //
 // Usage (start an engine first, see README "Rendimiento"):
 //
-//	go run ./cmd/bench -addr 127.0.0.1:7777 -api 127.0.0.1:7778 -n 2000
+//	go run ./scripts/dev-tests/bench -addr 127.0.0.1:7777 -api 127.0.0.1:7778 -n 2000
 //
 // Flags allow the ingest token (-token), the API bearer token
 // (-api-token, for engines started with -api-token; falls back to
@@ -48,6 +48,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Ruby570bocadito/bluetardigrade/scripts/dev-tests/loopback"
 )
 
 func main() {
@@ -59,6 +61,12 @@ func main() {
 	rate := flag.Float64("rate", 1000, "events per second cap (0 = as fast as possible)")
 	wait := flag.Duration("wait", 10*time.Second, "max wait after the last send for pending alerts")
 	flag.Parse()
+	for _, target := range []string{*addr, *api} {
+		if err := loopback.Address(target); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+	}
 
 	if *n <= 0 {
 		fmt.Fprintln(os.Stderr, "bench: -n must be > 0")

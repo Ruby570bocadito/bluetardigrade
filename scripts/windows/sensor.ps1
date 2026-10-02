@@ -1,8 +1,7 @@
 # ======================================================================
 # security-framework - REAL sensor (Windows Sysmon edition)
 #
-# Unlike sf-devsensor (which replays a scripted scenario of synthetic
-# events), sf-sensor streams REAL telemetry from your machine: it
+# sf-sensor streams observed telemetry from your machine: it
 # subscribes to the Microsoft-Windows-Sysmon/Operational event log in
 # real time and translates every Sysmon record into the unified event
 # schema, then ships it as NDJSON to the engine ingest port. The
@@ -40,7 +39,7 @@
 # registry create/set/rename, 22 DNS query. All real telemetry.
 #
 # If the engine is not listening, this script starts it in the
-# background first (same mechanism as sf-devsensor: hidden window,
+# background first (hidden window,
 # pid in run\engine.pid). Works on PowerShell 5.1+.
 # ======================================================================
 param(
@@ -451,7 +450,6 @@ if ($session.GetLogNames() -notcontains $sysmonLog) {
     Write-Host '[SENSOR]   winget install Sysinternals.Sysmon'
     Write-Host "[SENSOR]   sysmon -accepteula -i `"$root\scripts\sysmon-config.xml`""
     Write-Host '[SENSOR] (the config ships with security-framework: tuned to the detections, low noise)'
-    Write-Host '[SENSOR] meanwhile, the demo scenario (NOT real data) is:  sf-devsensor'
     exit 1
 }
 

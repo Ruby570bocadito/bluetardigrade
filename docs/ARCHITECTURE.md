@@ -12,11 +12,9 @@ flowchart LR
         direction TB
         ETW["ETW Kernel-Process providers"] --> RS["sf-sensor · Rust"]
         SYS["Sysmon"] --> RS
-        DS["sf-devsensor · demo"]:::demo
     end
 
     RS -- "NDJSON/TCP · AUTH handshake" --> ING
-    DS -. "smoke test only" .-> ING
 
     subgraph ENG["sf-engine · Go, single binary"]
         direction TB
@@ -42,7 +40,6 @@ flowchart LR
         HUB["console-service · socket.io hub"] --> UI["Next.js UI · live triage + AI analyst"]
     end
 
-    classDef demo stroke-dasharray: 5 5;
 ```
 
 The unified event schema (chapter 4 of the docs) is the master contract: sensors emit it, the engine validates and enriches it, rules index it, interfaces consume it.
@@ -82,9 +79,7 @@ The current feature inventory is below and pending work is in
 
 ```
 cmd/engine/       detection engine binary (Go)
-cmd/devsensor/    explicit simulated telemetry generator (Go); tests and
-                  browser fixtures separately use isolated synthetic data
-cmd/bench/        load and latency harness (measures ingest→alert p50/p99)
+scripts/dev-tests/ loopback-only scenario/bench tools and isolated test fixtures
 internal/ingest/  NDJSON TCP listener + schema validation
 internal/enrich/  enrichment pipeline (context, not evidence mutation)
 internal/rules/   YAML parser, rule index and evaluator

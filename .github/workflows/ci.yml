@@ -139,7 +139,7 @@ jobs:
   engine-windows:
     name: Engine conductual Windows (respond handle path, C3)
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -152,6 +152,9 @@ jobs:
         run: ./scripts/dev-tests/check_powershell_syntax.ps1
       - name: build engine (nativo Windows)
         run: go build -o engine-smoke.exe ./cmd/engine
+      - name: installer behavior (Windows PowerShell 5.1, real engine/collector/console installation)
+        shell: powershell
+        run: ./scripts/dev-tests/check_installer_behavior.ps1
       - name: smoke conductual del camino handle (kills reales, audit JSONL)
         shell: pwsh
         # Reintento flaky-tolerant ACOTADO (directiva 23h55 §3.4, decision

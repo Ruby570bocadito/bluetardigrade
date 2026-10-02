@@ -28,13 +28,13 @@ beaconing detection, volumetric thresholds and decaying per-host risk —
 delivered to an interactive CLI, a REST+SSE API, a live SOC console, and
 optional SQLite history with SIEM/webhook fan-out.
 
-**Pre-1.0, intended for labs and research.** The engine, demo and console run
-independently of Windows. Real Windows collection uses the Rust ETW sensor or
-the Sysmon path; the separate `sf-devsensor` replays a clearly-labeled demo
-scenario. The console displays received data and labels demo records; it
-does not fabricate telemetry during outages. Automated tests also use
-isolated fixtures. Implemented collectors and rules still require validation
-with real Windows activity in your environment.
+**Pre-1.0, intended for labs and research.** Windows collection uses Rust ETW
+or Sysmon; the SOC collector imports observed provider logs and offline mail.
+Product builds, installation and releases contain no demo telemetry generator.
+An empty or disconnected console stays empty. Isolated fixtures and
+loopback-only load generators live under `scripts/dev-tests/`. Older stored
+`source=simulate` evidence remains visibly labeled. Validate the collectors
+with actual host/provider activity before relying on them in production.
 
 ## Quickstart
 
@@ -48,15 +48,14 @@ irm https://raw.githubusercontent.com/Ruby570bocadito/bluetardigrade/main/instal
 
 That is the whole install: user-level (no admin), sha256-verified toolchain
 downloads, shims on your `PATH` (`sf-engine`, `sf-sensor`, `sf-console`,
-`sf-devsensor`, `sf-update`, `sf-uninstall`), with an optional autostart and
+`sf-collector`, `sf-update`, `sf-uninstall`), with an optional autostart and
 Sysmon setup. Then:
 
 ```powershell
 sf-console      # engine + SOC console + browser opens at localhost:3000
-sf-devsensor   # demo scenario: 18 labeled detections flow into the console
 ```
 
-Want **real telemetry** from the host instead of the demo?
+Connect host telemetry after installation:
 
 ```powershell
 sf-sensor -SetupSysmon   # one-time Sysmon install with the tuned config (UAC)
@@ -76,7 +75,7 @@ git clone https://github.com/Ruby570bocadito/bluetardigrade.git
 cd bluetardigrade
 make build
 ./bin/engine run -i        # interactive terminal panel
-./bin/devsensor -addr 127.0.0.1:7777   # second terminal: demo scenario
+./bin/collector -source suricata -observer IDS-01 -file /path/to/eve.json
 ```
 
 Or with Docker (tokens via `SF_API_TOKEN` / `SF_INGEST_TOKEN` env):
@@ -136,12 +135,6 @@ bun run dev               # or: bun run build && bun run start
 Everything the browser needs travels through the console's same-origin
 engine proxy — the API token never reaches the client. The AI hub
 (`web/console-service`) is optional and bring-your-own-model.
-
-![SOC console: detections arriving live](docs/assets/console-live.gif)
-
-*Captured engine/console session with 411 events from the labeled demo
-scenario and detections arriving over SSE. These are simulated endpoint
-events, not a Windows lab capture.*
 
 | View | Operator workflow |
 |------|-------------------|
@@ -236,7 +229,8 @@ are generated fixtures; live provider deployments need external configuration.
 ```mermaid
 flowchart TD
     W["Windows ETW / Sysmon collectors"] --> I["Go ingest + enrichment"]
-    D["Demo sensor: sf-devsensor"] --> I
+    L["IDS / NDR / osquery / honeypot / firewall / mail"] --> G["Observed-log collector"]
+    G --> I
     I --> R["Rules + behavioral detectors"]
     R --> A["Alerts + risk + lifecycle"]
     A --> T["Interactive terminal"]
@@ -265,15 +259,15 @@ building the console; screenshots are retained as CI artifacts.
 
 Historical loopback runs recorded ingest→alert p99 around **0.4 ms** with the
 23-rule pack. This is a lab measurement, not a deployment guarantee. Run
-`cmd/bench` or the nightly harness to measure your own environment.
+`scripts/dev-tests/bench` or the nightly harness to measure an isolated loopback environment.
 [Method and results](docs/OPERATIONS.md#measured-performance).
 
 ## Repository layout
 
 ```text
 cmd/engine/           Go engine and interactive CLI
-cmd/devsensor/        labeled demo scenario
-cmd/bench/            latency and load harness
+cmd/collector/        observed-log and offline mail collector
+scripts/dev-tests/   isolated fixtures and loopback-only load tools
 internal/            detection, persistence, API and delivery packages
 pkg/model/           event wire contract
 sensor/              Rust Windows ETW collector

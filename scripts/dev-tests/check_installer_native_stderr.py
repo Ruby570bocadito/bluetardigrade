@@ -28,7 +28,7 @@ TARGETS = [REPO / "install.ps1", REPO / "uninstall.ps1"]
 
 # the helper's own merge line, and comment lines, are the only allowed
 # occurrences of a stderr redirection.
-HELPER_LINE = re.compile(r"&\s*\$Command\s*2>&1")
+HELPER_LINE = re.compile(r"[&.]\s*\$Command\s*2>&1")
 REDIRECT = re.compile(r"2>&1|2>\$null")
 COMMENT = re.compile(r"^\s*#")
 

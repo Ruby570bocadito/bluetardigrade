@@ -82,7 +82,7 @@ else
   }
   echo "[e2e-siem] compilando binarios frescos..."
   (cd "$REPO" && go build -o "$TMPDIR_E2E/engine" ./cmd/engine &&
-   go build -o "$TMPDIR_E2E/devsensor" ./cmd/devsensor) || { echo "FALLO: go build"; exit 1; }
+   go build -o "$TMPDIR_E2E/devsensor" ./scripts/dev-tests/scenario) || { echo "FALLO: go build"; exit 1; }
   ENGINE="$TMPDIR_E2E/engine"; DEVSENSOR="$TMPDIR_E2E/devsensor"
 fi
 

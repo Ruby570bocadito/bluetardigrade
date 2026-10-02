@@ -1,7 +1,8 @@
-// Command devsensor generates simulated process events (some benign,
+// Command scenario generates isolated test process events (some benign,
 // some emulating well-known offensive TTPs) and streams them as NDJSON
 // to the engine. It exists so the full pipeline can be exercised on
-// any platform without ETW, exactly like the tracer bullet in the docs.
+// any platform without ETW. It is not installed or released as a product
+// command, and only accepts a literal loopback test-engine address.
 package main
 
 import (
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
+	"github.com/Ruby570bocadito/bluetardigrade/scripts/dev-tests/loopback"
 )
 
 // Ingest and detector exercise knobs; the scenario itself is fixed
@@ -166,6 +168,10 @@ var scenario = []*model.Event{
 
 func main() {
 	flag.Parse()
+	if err := loopback.Address(*addr); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 
 	conn, err := dialEngine()
 	if err != nil {

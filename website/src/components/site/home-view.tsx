@@ -130,17 +130,17 @@ function Hero() {
                 <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
                 <span className="h-3 w-3 rounded-full bg-[#28c840]" />
                 <span className="ml-3 font-mono text-xs text-muted-foreground">
-                  localhost:3000 · consola SOC · sesión real
+                  consola SOC · captura archivada de pruebas
                 </span>
                 <span className="ml-auto flex items-center gap-1.5 rounded-full border border-blu/30 bg-blu/10 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-blu">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blu" />
-                  en vivo
+                  archivo
                 </span>
               </div>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={LIVE_DEMO.gif}
-                alt="bluetardigrade SOC console: detections arriving live"
+                alt="Archived SOC console capture with generated test inputs"
                 className="block w-full"
                 width={960}
               />

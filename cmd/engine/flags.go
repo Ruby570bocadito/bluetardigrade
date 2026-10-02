@@ -55,7 +55,7 @@ type options struct {
 // the run subcommand (which translates errors into its own help).
 func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.ErrorHandling) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, errMode)
-	// Loopback defaults: the bundled sensors (devsensor, sf-sensor, the
+	// Loopback defaults: the bundled sensors (collector, sf-sensor, the
 	// Rust collector) all dial 127.0.0.1, so exposing the ingest and
 	// the read-only API on every interface would hand the whole LAN
 	// an unauthenticated event feed and a copy of the alert data.
