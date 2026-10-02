@@ -39,6 +39,9 @@ import (
 // panel (a TUI that renders what the engine is already doing; when
 // stdout is not a TTY the request degrades to the classic flat run).
 func runEngine(o *options, interactive bool) error {
+	if o.webhookURL == "" {
+		o.webhookURL = os.Getenv("SF_WEBHOOK_URL")
+	}
 	ctx, stop := signal.NotifyContext(context.Background(),
 		os.Interrupt, syscall.SIGTERM)
 	defer stop()

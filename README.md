@@ -82,7 +82,7 @@ Or with Docker (tokens via `SF_API_TOKEN` / `SF_INGEST_TOKEN` env):
 
 ```bash
 docker build -t bluetardigrade .
-docker run --rm -p 7777:7777 -p 7778:7778 bluetardigrade
+docker run --rm -p 127.0.0.1:7777:7777 -p 127.0.0.1:7778:7778 bluetardigrade
 ```
 
 | Component | Default endpoint |

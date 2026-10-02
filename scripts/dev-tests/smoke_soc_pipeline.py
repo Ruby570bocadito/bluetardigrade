@@ -79,7 +79,8 @@ def main():
                 ingest_env = {**env, "SF_INGEST_TOKEN": "fixture-ingest-token"}
                 for source, contents in inputs.items():
                     path = work / (source + ".input")
-                    path.write_text(contents, encoding="utf-8")
+                    # Preserve provider bytes, especially EML CRLF on Windows.
+                    path.write_bytes(contents.encode("utf-8"))
                     completed = subprocess.run([str(collector_binary), "-source", source, "-observer", "SOC-FIXTURE", "-file", str(path), "-addr", f"127.0.0.1:{ingest}"], env=ingest_env, cwd=work, capture_output=True, timeout=15)
                     if completed.returncode != 0:
                         raise RuntimeError(f"{source} collector failed: {completed.stderr.decode()}")

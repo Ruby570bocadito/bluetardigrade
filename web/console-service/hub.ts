@@ -22,11 +22,8 @@ const SOCKET_PATH = '/'
 const BASE_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000']
 const MAX_QUESTION_LENGTH = 2000
 const MAX_ANALYST_CONCURRENT = 2
-// Temporal cap per connection: sequential requests are each a paid call
-// on the operator's API key, so concurrency alone (the slot limiter)
-// leaves the cost unbounded. 10 analyst runs per rolling minute per
-// console is generous for a human workflow and tight for a runaway
-// client or a scripted loop.
+// Per-connection and hub-wide budgets protect the provider API key.
+// Reconnecting must not reset the shared rate or concurrency allowance.
 const MAX_ANALYST_PER_MINUTE = 10
 
 export type HubOptions = {
@@ -74,6 +71,12 @@ export function createHub(opts: HubOptions = {}): HubHandle {
     // Keep in sync with the console client (socket-provider.tsx)
     path: SOCKET_PATH,
     cors: { origin: corsOrigins, methods: ['GET', 'POST'] },
+    // CORS alone does not gate WebSocket upgrades. Reject browser origins
+    // before any transport can receive telemetry or submit analyst work.
+    allowRequest: (req, done) => {
+      const origin = req.headers.origin
+      done(null, origin === undefined || corsOrigins.includes(origin))
+    },
     pingTimeout: 60000,
     pingInterval: 25000,
   })
@@ -138,6 +141,8 @@ export function createHub(opts: HubOptions = {}): HubHandle {
 
   // ------------------------------------------------------------ sockets
 
+  const globalSlots = createSlotLimiter(MAX_ANALYST_CONCURRENT)
+  const globalRate = createRateLimiter(MAX_ANALYST_PER_MINUTE, 60_000)
   io.on('connection', (socket) => {
     state.incClients()
     logLine(`consola conectada: ${socket.id} (${state.clientsConnected} activas)`)
@@ -179,6 +184,17 @@ export function createHub(opts: HubOptions = {}): HubHandle {
         })
         return
       }
+      if (!globalSlots.tryAcquire()) {
+        limiter.release()
+        socket.emit('analyst:error', { message: 'El hub ya tiene dos analisis en curso; espera a que terminen' })
+        return
+      }
+      if (!globalRate.tryTake()) {
+        globalSlots.release()
+        limiter.release()
+        socket.emit('analyst:error', { message: 'Limite global de diez analisis por minuto; espera antes de reintentar' })
+        return
+      }
 
       const rule = state.rules.find((r) => r.id === alert.rule_id)
       const ev = state.events.find((e) => e.id === alert.event_id)
@@ -194,6 +210,7 @@ export function createHub(opts: HubOptions = {}): HubHandle {
         logError(`analyst error (${socket.id}): ${message}`)
         socket.emit('analyst:error', { message })
       } finally {
+        globalSlots.release()
         limiter.release()
       }
     })

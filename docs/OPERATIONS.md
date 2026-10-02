@@ -68,7 +68,7 @@ The uninstaller stops the processes, removes the logon entries (HKCU Run and any
 
 ```bash
 make docker-build
-docker build -t bluetardigrade-engine . && docker run --rm -p 7777:7777 -p 7778:7778 bluetardigrade-engine
+docker build -t bluetardigrade-engine . && docker run --rm -p 127.0.0.1:7777:7777 -p 127.0.0.1:7778:7778 bluetardigrade-engine
 ```
 
 The image is built from the repo `Dockerfile` (Go builder pinned in the Dockerfile, alpine

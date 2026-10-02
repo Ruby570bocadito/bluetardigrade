@@ -102,6 +102,13 @@ except the analyst view.
 
 ## Lockfile policy
 
+The analyst hub's HTTP and WebSocket origins are included in the production
+CSP from `NEXT_PUBLIC_CONSOLE_URL` (default `http://localhost:3003`). Changing
+this public URL requires rebuilding the console. The hub independently
+validates browser origins for polling and WebSocket handshakes; extend
+`CONSOLE_CORS_ORIGIN` when serving the console at another origin. Analyst
+concurrency and the request budget also apply across all hub connections.
+
 `bun.lock` is the only lockfile in this package: bun is the toolchain
 the docs and the installer rely on, and keeping a second `package-lock.json`
 in parallel produced real drift (the two files resolved different

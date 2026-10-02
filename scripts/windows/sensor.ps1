@@ -327,6 +327,8 @@ $ip = $parts[0]; $port = [int]$parts[1]
 # ---- resolve install root (installed: <root>\scripts\, repo: <root>\scripts\windows\) ----
 $root = Split-Path -Parent $PSScriptRoot
 if (-not (Test-Path (Join-Path $root 'bin'))) { $root = Split-Path -Parent $root }
+. (Join-Path $PSScriptRoot 'runtime.ps1')
+$Token = Get-SfSetting $root 'SF_INGEST_TOKEN' 'ingest.token' $Token
 
 # ---- one-command Sysmon setup (-SetupSysmon): winget install + config --
 function Test-IsAdmin {
@@ -424,9 +426,7 @@ if (-not $NoEngine -and -not (Test-EngineUp)) {
     if (Test-Path $engineExe) {
         Write-Host '[SENSOR] engine is not running - starting it in the background...'
         try {
-            $spArgs = @{ FilePath = $engineExe; ArgumentList = "-rules `"$root\rules`""; PassThru = $true }
-            if ([Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { $spArgs['WindowStyle'] = 'Hidden' }
-            $eng = Start-Process @spArgs
+            $eng = Start-SfEngine -Root $root -Executable $engineExe -IngestToken $Token
             New-Item -ItemType Directory -Path (Join-Path $root 'run') -Force | Out-Null
             Set-Content -Path (Join-Path $root 'run\engine.pid') -Value $eng.Id
             for ($i = 0; $i -lt 20; $i++) {

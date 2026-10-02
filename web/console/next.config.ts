@@ -11,13 +11,16 @@ import type { NextConfig } from "next";
 //     EXTERNAL script origin.
 //   - style-src 'unsafe-inline': Tailwind + component-level inline
 //     styles and the reactbits animation keyframes.
-//   - connect-src 'self': the engine proxy and the SSE stream are
-//     same-origin by design; the optional AI hub is reached through
-//     the same origin (socket.io path), so 'self' covers ws:// too.
+// The engine stays same-origin; the local analyst hub has its own port.
+// Keep HTTP polling and WebSocket origins aligned with the client URL.
 //   - img-src data:: inline chart markers and data URIs.
 // X-Frame-Options + frame-ancestors: the console must never be framed
 // (clickjacking on a kill-adjacent UI); nosniff and the referrer policy
 // round out the baseline.
+const hubUrl = new URL(process.env.NEXT_PUBLIC_CONSOLE_URL || 'http://localhost:3003', 'http://localhost:3000')
+if (!['http:', 'https:'].includes(hubUrl.protocol)) throw new Error('NEXT_PUBLIC_CONSOLE_URL must use HTTP(S)')
+const hubOrigin = hubUrl.origin
+const hubSocketOrigin = hubOrigin.replace(/^http/, 'ws')
 const securityHeaders = [
   {
     key: "Content-Security-Policy",
@@ -27,7 +30,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data:",
       "font-src 'self' data:",
-      "connect-src 'self'",
+      `connect-src 'self' ${hubOrigin} ${hubSocketOrigin}`,
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",

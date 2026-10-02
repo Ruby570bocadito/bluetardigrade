@@ -24,6 +24,7 @@ $ErrorActionPreference = 'Continue'
 # resolve install root: installed copy lives at <root>\scripts\
 $root = Split-Path -Parent $PSScriptRoot
 if (-not (Test-Path (Join-Path $root 'web'))) { $root = Split-Path -Parent $root }
+. (Join-Path $PSScriptRoot 'runtime.ps1')
 
 $web      = Join-Path $root 'web'
 $run      = Join-Path $root 'run'
@@ -68,31 +69,7 @@ function Write-PidFile {
     Set-Content -Path (Join-Path $run $Name) -Value $Value
 }
 
-function Stop-Tracked {
-    foreach ($f in @('engine.pid', 'console.pid', 'console-service.pid')) {
-        $procId = Read-PidFile -Name $f
-        if ($procId) {
-            Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
-            Remove-Item (Join-Path $run $f) -Force -ErrorAction SilentlyContinue
-        }
-    }
-    # fallback: any hub/console process running from the install tree
-    $rootLow = $root.ToLower().TrimEnd('\')
-    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-        $_.ExecutablePath -and $_.ExecutablePath.ToLower().StartsWith($rootLow) -and
-        ($_.CommandLine -match 'console-service|next|server\.js')
-    } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-    # fallback 2: an engine started without a pidfile (older autostart
-    # entries, manual launches) still gets stopped by its exe path, so
-    # 'stop it: sf-console -Stop' keeps its promise in every layout.
-    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-        $_.ExecutablePath -and $_.ExecutablePath.ToLower().StartsWith($rootLow) -and
-        $_.ExecutablePath -match 'engine(\.exe)?$' -and $_.CommandLine -match 'rules'
-    } | ForEach-Object {
-        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
-        Remove-Item (Join-Path $run 'engine.pid') -Force -ErrorAction SilentlyContinue
-    }
-}
+function Stop-Tracked { Stop-SfTrackedProcesses -Root $root }
 
 if ($Status) {
     $svcPid = Read-PidFile -Name 'console-service.pid'
@@ -131,22 +108,7 @@ if (-not (Test-Path (Join-Path $web 'console-service\index.ts'))) {
 # engine first: the console bridge picks it up from :7778
 if (-not (Test-PortLocal 7777)) {
     if (Test-Path $engineExe) {
-        # honor the persisted ingest token so the auto-started engine
-        # accepts the same handshake the installer-configured autostart
-        # enforces (no token file = loopback demo mode, no auth)
-        $engineArgs = "-rules `"$root\rules`""
-        $tokFile = Join-Path $root 'tools\config\ingest.token'
-        if (Test-Path $tokFile) {
-            $tok = (Get-Content $tokFile -First 1 -ErrorAction SilentlyContinue)
-            if ($tok) { $tok = $tok.Trim() }
-            if ($tok) { $engineArgs += " -token `"$tok`"" }
-        }
-        # -pidfile: same contract as the autostart entry, so -Stop works
-        # no matter which launcher started the engine.
-        New-Item -ItemType Directory -Path $run -Force | Out-Null
-        $engineArgs = "$engineArgs -pidfile `"$run\engine.pid`""
-        $eng = Start-Process -FilePath $engineExe -ArgumentList $engineArgs `
-            -WindowStyle Hidden -PassThru
+        $eng = Start-SfEngine -Root $root -Executable $engineExe
         Write-PidFile -Name 'engine.pid' -Value $eng.Id
         if (Wait-Port -Port 7777 -Seconds 10) {
             Write-Host '  engine started (:7777 + api :7778)'
@@ -161,7 +123,9 @@ if (-not (Test-PortLocal 7777)) {
 }
 
 if (-not (Test-PortLocal $ServicePort)) {
-    $svc = Start-Process -FilePath $bunExe -ArgumentList 'index.ts' `
+    $env:CONSOLE_SERVICE_PORT = [string]$ServicePort
+    $env:CONSOLE_CORS_ORIGIN = (@($env:CONSOLE_CORS_ORIGIN, "http://localhost:$ConsolePort", "http://127.0.0.1:$ConsolePort") | Where-Object { $_ }) -join ','
+    $svc = Start-Process -FilePath $bunExe -ArgumentList "`"$web\console-service\index.ts`"" `
         -WorkingDirectory (Join-Path $web 'console-service') -WindowStyle Hidden -PassThru
     Write-PidFile -Name 'console-service.pid' -Value $svc.Id
     if (-not (Wait-Port -Port $ServicePort -Seconds 20)) {
@@ -173,7 +137,7 @@ if (-not (Test-PortLocal $ServicePort)) {
 
 if (-not (Test-PortLocal $ConsolePort)) {
     $nextBin = Join-Path $web 'console\node_modules\next\dist\bin\next'
-    $app = Start-Process -FilePath $nodeExe -ArgumentList "`"$nextBin`"", 'start', '-p', "$ConsolePort" `
+    $app = Start-Process -FilePath $nodeExe -ArgumentList "`"$nextBin`"", 'start', '-H', '127.0.0.1', '-p', "$ConsolePort" `
         -WorkingDirectory (Join-Path $web 'console') -WindowStyle Hidden -PassThru
     Write-PidFile -Name 'console.pid' -Value $app.Id
     if (-not (Wait-Port -Port $ConsolePort -Seconds 60)) {

@@ -152,6 +152,15 @@ jobs:
         run: ./scripts/dev-tests/check_powershell_syntax.ps1
       - name: build engine (nativo Windows)
         run: go build -o engine-smoke.exe ./cmd/engine
+      - name: Windows unit tests and provider fixtures
+        run: |
+          go test -count=1 ./...
+          go build -o collector-smoke.exe ./cmd/collector
+          python scripts/dev-tests/smoke_soc_pipeline.py --engine engine-smoke.exe --collector collector-smoke.exe
+          python scripts/dev-tests/smoke_file_forensics.py --engine engine-smoke.exe
+      - name: Shared launcher configuration and process ownership
+        shell: powershell
+        run: ./scripts/dev-tests/check_runtime_behavior.ps1
       - name: installer behavior (Windows PowerShell 5.1, real engine/collector/console installation)
         shell: powershell
         run: ./scripts/dev-tests/check_installer_behavior.ps1
@@ -227,6 +236,7 @@ jobs:
           npm install --prefix tools/console-tests --no-audit --no-fund playwright@1.63.0
           node tools/console-tests/node_modules/playwright/cli.js install --with-deps chromium
           node scripts/dev-tests/check_console_browser.mjs
+          node scripts/dev-tests/check_analyst_browser.mjs
       - name: browser regression captures (isolated fixtures)
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

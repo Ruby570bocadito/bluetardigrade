@@ -72,7 +72,7 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 	fs.DurationVar(&o.reloadEvery, "reload-every", 15*time.Second,
 		"hot-reload interval for the rules directory (0 disables)")
 	fs.StringVar(&o.webhookURL, "webhook", "",
-		"POST every alert as JSON to this URL (SIEM/SOAR connector); empty disables")
+		"POST every alert as JSON to this URL (SIEM/SOAR connector; falls back to SF_WEBHOOK_URL); empty disables")
 	fs.StringVar(&o.webhookToken, "webhook-token", "",
 		"Bearer token sent on every webhook delivery as 'Authorization: Bearer' (falls back to SF_WEBHOOK_TOKEN); empty disables the header")
 	fs.StringVar(&o.notifyPath, "notify", "",

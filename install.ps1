@@ -476,6 +476,8 @@ function Copy-RuntimeScripts {
     New-Item -ItemType Directory -Path $scripts -Force | Out-Null
     Copy-Item (Join-Path $Root 'scripts\windows\sf-console.ps1') (Join-Path $scripts 'sf-console.ps1') -Force
     Copy-Item (Join-Path $Root 'scripts\windows\sensor.ps1') (Join-Path $scripts 'sensor.ps1') -Force
+    Copy-Item (Join-Path $Root 'scripts\windows\runtime.ps1') (Join-Path $scripts 'runtime.ps1') -Force
+    Copy-Item (Join-Path $Root 'scripts\windows\start-engine.ps1') (Join-Path $scripts 'start-engine.ps1') -Force
     if (Test-Path (Join-Path $Root 'scripts\windows\sysmon-config.xml')) {
         Copy-Item (Join-Path $Root 'scripts\windows\sysmon-config.xml') (Join-Path $scripts 'sysmon-config.xml') -Force
     }
@@ -701,11 +703,7 @@ function Register-Autostart {
     # an autostart-launched instance (the Run entry does not go through
     # sf-console, which is how run\engine.pid used to exist only when
     # the console launcher happened to start the engine itself).
-    $engineArgs = "-rules '$Root\rules' -pidfile '$Root\run\engine.pid'"
-    if ($WebhookUrl) { $engineArgs = "$engineArgs -webhook '$WebhookUrl'" }
-    if ($WebhookToken) { $engineArgs = "$engineArgs -webhook-token '$WebhookToken'" }
-    if ($IngestToken) { $engineArgs = "$engineArgs -token '$IngestToken'" }
-    $engineCmd  = "powershell.exe -NoProfile -WindowStyle Minimized -ExecutionPolicy Bypass -Command `"& '$Root\bin\engine.exe' $engineArgs`""
+    $engineCmd = "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Root\scripts\start-engine.ps1`""
     $consoleCmd = "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Root\scripts\sf-console.ps1`" -NoBrowser"
     try {
         if (-not (Test-Path $runKey)) { New-Item -Path $runKey -Force | Out-Null }

@@ -274,7 +274,7 @@ func TestDeliverLogRedactsCredentialURL(t *testing.T) {
 	if strings.Contains(out, "ACTIONSECRET") {
 		t.Fatalf("dispatcher log leaks the credential-bearing URL: %q", out)
 	}
-	if !strings.Contains(out, "connection refused") {
+	if !strings.Contains(out, "dial tcp 127.0.0.1:1") {
 		t.Fatalf("dispatcher log lost the underlying cause: %q", out)
 	}
 }

@@ -98,7 +98,7 @@ func TestSplunkFailureLogRedactsCredentialURL(t *testing.T) {
 	if !strings.Contains(out, "http://127.0.0.1:1") {
 		t.Fatalf("failure log lost the endpoint label: %q", out)
 	}
-	if !strings.Contains(out, "connection refused") {
+	if !strings.Contains(out, "dial tcp 127.0.0.1:1") {
 		t.Fatalf("failure log lost the underlying cause: %q", out)
 	}
 	if _, f, _ := s.Stats(); f != 1 {
@@ -120,7 +120,7 @@ func TestElasticFailureLogRedactsCredentialURL(t *testing.T) {
 	if !strings.Contains(out, "http://127.0.0.1:1") {
 		t.Fatalf("failure log lost the endpoint label: %q", out)
 	}
-	if !strings.Contains(out, "connection refused") {
+	if !strings.Contains(out, "dial tcp 127.0.0.1:1") {
 		t.Fatalf("failure log lost the underlying cause: %q", out)
 	}
 	if _, f, _ := e.Stats(); f != 1 {
