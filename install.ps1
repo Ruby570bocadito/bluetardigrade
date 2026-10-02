@@ -61,7 +61,7 @@ $ErrorActionPreference = 'Stop'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
 $ProgressPreference = 'SilentlyContinue'   # makes Invoke-WebRequest usable on PS 5.1
 
-$GO_VERSION   = '1.22.10'
+$GO_VERSION   = '1.26.8'
 $NODE_VERSION = 'v22.14.0'
 $BUN_VERSION  = 'v1.3.14'
 $ENGINE_PORT  = 7777
@@ -93,6 +93,43 @@ function Get-TempDir {
     return [IO.Path]::GetTempPath()
 }
 
+function Invoke-Native {
+    # Native commands (git, netsh, reg, go, node, bun) write progress and
+    # diagnostics to STDERR, and 'git clone' ALWAYS opens with one
+    # ("Cloning into ..."). Under $ErrorActionPreference = 'Stop' (this
+    # script's default), PowerShell 5.1 turns the first REDIRECTED stderr
+    # line into a terminating NativeCommandError: both 2>&1 and 2>$null
+    # materialize the ErrorRecord before discarding it, so the whole
+    # installer died on git's own progress banner. Judge by exit code
+    # instead: run with EAP=Continue while stderr is merged, stringify
+    # the records so they can never become terminating, and keep the text
+    # for diagnostics. -AllowFailure marks a non-zero exit as an expected
+    # outcome (reg/netsh probes); -Quiet suppresses the echo of output
+    # lines; -Activity names the operation in the failure message.
+    param(
+        [Parameter(Mandatory)][ScriptBlock]$Command,
+        [switch]$AllowFailure,
+        [switch]$Quiet,
+        [string]$Activity
+    )
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $lines = @(& $Command 2>&1 | ForEach-Object { "$_" })
+    } finally {
+        $ErrorActionPreference = $prev
+    }
+    if (-not $Quiet) {
+        foreach ($l in $lines) { Write-Info $l }
+    }
+    if ($LASTEXITCODE -ne 0 -and -not $AllowFailure) {
+        $detail = ($lines | Where-Object { $_ }) -join ' '
+        if ($Activity) { throw "$Activity failed (exit $LASTEXITCODE): $detail" }
+        throw "native command failed (exit $LASTEXITCODE): $detail"
+    }
+    return ,$lines
+}
+
 # ---------------------------------------------------------------- net
 function Invoke-Download {
     # Fail-closed by default: a toolchain binary with no verifiable
@@ -109,7 +146,7 @@ function Invoke-Download {
         if ($h -ne $ExpectedSha256.ToLower()) { throw "sha256 mismatch for $Url (got $h, want $ExpectedSha256)" }
         Write-Info "sha256 verified"
     } elseif (-not $UnverifiedOk) {
-        throw "cannot verify $Url: no sha256 available (checksum source unreachable). Refusing to install an unverified binary - retry, or pin the hash manually."
+        throw "cannot verify ${Url}: no sha256 available (checksum source unreachable). Refusing to install an unverified binary - retry, or pin the hash manually."
     }
 }
 
@@ -172,14 +209,14 @@ function Ensure-Go {
     $sys = Get-Command go.exe -ErrorAction SilentlyContinue
     if (-not $sys) { $sys = Get-Command go -ErrorAction SilentlyContinue }
     if ($sys) {
-        $v = (& $sys.Source version) 2>$null
+        $v = Invoke-Native -Command { & $sys.Source version } -Quiet -AllowFailure
         if ($v -match 'go version go(\d+)\.(\d+)') {
             $maj = [int]$Matches[1]; $min = [int]$Matches[2]
-            if (($maj -gt 1) -or ($maj -eq 1 -and $min -ge 22)) {
+            if (($maj -gt 1) -or ($maj -eq 1 -and $min -ge 26)) {
                 Write-Ok "Go $maj.$min (system)"
                 return
             }
-            Write-Warn2 "system Go is $maj.$min (need 1.22+); installing a portable one"
+            Write-Warn2 "system Go is $maj.$min (need 1.26+); installing a portable one"
         }
     }
     Write-Step "Downloading Go $GO_VERSION (portable, ~105 MB)"
@@ -204,7 +241,7 @@ function Ensure-Node {
     $sys = Get-Command node.exe -ErrorAction SilentlyContinue
     if (-not $sys) { $sys = Get-Command node -ErrorAction SilentlyContinue }
     if ($sys) {
-        $v = (& $sys.Source --version) 2>$null
+        $v = Invoke-Native -Command { & $sys.Source --version } -Quiet -AllowFailure
         if ($v -match 'v(\d+)') {
             if ([int]$Matches[1] -ge 20) { Write-Ok "Node.js $($v.Trim()) (system)"; return $sys.Source }
             Write-Warn2 "system Node $($v.Trim()) is too old (need 20+); installing a portable one"
@@ -235,7 +272,7 @@ function Ensure-Bun {
     $sys = Get-Command bun.exe -ErrorAction SilentlyContinue
     if (-not $sys) { $sys = Get-Command bun -ErrorAction SilentlyContinue }
     if ($sys) {
-        $v = (& $sys.Source --version) 2>$null
+        $v = Invoke-Native -Command { & $sys.Source --version } -Quiet -AllowFailure
         if ($v -match '^\d+\.\d+') { Write-Ok "Bun $v (system)"; return }
     }
     Write-Step "Downloading Bun $BUN_VERSION (portable)"
@@ -264,8 +301,8 @@ function Get-SourceTree {
         Write-Step "Updating source (git)"
         Push-Location $Root
         try {
-            & git fetch --depth 1 origin $Br 2>&1 | Out-Null
-            & git reset --hard FETCH_HEAD 2>&1 | Out-Null
+            Invoke-Native -Command { & git fetch --depth 1 origin $Br } -Quiet -Activity 'git fetch'
+            Invoke-Native -Command { & git reset --hard FETCH_HEAD } -Quiet -Activity 'git reset'
         } finally { Pop-Location }
         Write-Ok "source updated"
         return
@@ -284,14 +321,12 @@ function Get-SourceTree {
         if ($onlyTools) {
             # git clone needs an empty target: clone aside, then move in
             $tmp = Join-Path (Get-TempDir) ("sf-clone-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
-            & git clone --depth 1 --branch $Br "https://github.com/$RepoId.git" $tmp 2>&1 |
-                ForEach-Object { Write-Info $_ }
+            Invoke-Native -Command { & git clone --depth 1 --branch $Br "https://github.com/$RepoId.git" $tmp } -Activity 'git clone'
             if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
             Get-ChildItem $tmp -Force | Move-Item -Destination $Root -Force
             Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
         } else {
-            & git clone --depth 1 --branch $Br "https://github.com/$RepoId.git" $Root 2>&1 |
-                ForEach-Object { Write-Info $_ }
+            Invoke-Native -Command { & git clone --depth 1 --branch $Br "https://github.com/$RepoId.git" $Root } -Activity 'git clone'
             if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
         }
         Write-Ok "source ready"
@@ -319,10 +354,8 @@ function Build-Engine {
     Push-Location $Root
     try {
         $env:GOTOOLCHAIN = 'local'
-        & go build -o (Join-Path $Root 'bin\engine.exe') ./cmd/engine
-        if ($LASTEXITCODE -ne 0) { throw "go build ./cmd/engine failed" }
-        & go build -o (Join-Path $Root 'bin\devsensor.exe') ./cmd/devsensor
-        if ($LASTEXITCODE -ne 0) { throw "go build ./cmd/devsensor failed" }
+        Invoke-Native -Command { & go build -o (Join-Path $Root 'bin\engine.exe') ./cmd/engine } -Activity 'go build ./cmd/engine'
+        Invoke-Native -Command { & go build -o (Join-Path $Root 'bin\devsensor.exe') ./cmd/devsensor } -Activity 'go build ./cmd/devsensor'
     } finally { Pop-Location }
     Write-Ok "bin\engine.exe + bin\devsensor.exe"
 }
@@ -474,7 +507,7 @@ function Add-ToUserPath {
     $dirLow = $Dir.TrimEnd('\').ToLower()
     $raw = $null
     try {
-        $q = reg query HKCU\Environment /v Path 2>$null
+        $q = Invoke-Native -Command { & reg query HKCU\Environment /v Path } -Quiet -AllowFailure
         if ($q) {
             foreach ($l in $q) {
                 if ($l -match '^\s*Path\s+REG_(EXPAND_)?SZ\s+(.*)$') { $raw = $Matches[2] }
@@ -512,7 +545,7 @@ function Add-FirewallRule {
     if (-not $HasToken) {
         Write-Warn2 "-Firewall refused: no ingest token configured. Opening TCP $ENGINE_PORT without one would let any host on the network inject events (NDJSON, no auth)."
         Write-Info "configure a token and re-run:  .\install.ps1 -Firewall -IngestToken 'a-long-random-secret'"
-        $chk = netsh advfirewall firewall show rule "name=security-framework engine" 2>$null
+        $chk = Invoke-Native -Command { & netsh advfirewall firewall show rule "name=security-framework engine" } -Quiet -AllowFailure
         if ("$chk" -match 'security-framework engine') {
             netsh advfirewall firewall delete rule "name=security-framework engine" | Out-Null
             Write-Warn2 "existing firewall rule REMOVED (it predates the token requirement; remote sensors need the token anyway)"
@@ -537,7 +570,7 @@ function Add-FirewallRule {
         netsh advfirewall firewall add rule "name=security-framework engine" dir=in action=allow protocol=TCP "localport=$ENGINE_PORT" profile=$profiles | Out-Null
         if ($LASTEXITCODE -ne 0) { Write-Warn2 "netsh failed (exit $LASTEXITCODE)"; return }
     }
-    $chk = netsh advfirewall firewall show rule "name=security-framework engine" 2>$null
+    $chk = Invoke-Native -Command { & netsh advfirewall firewall show rule "name=security-framework engine" } -Quiet -AllowFailure
     if ("$chk" -match 'security-framework engine') {
         Write-Ok "firewall rule added (inbound TCP $ENGINE_PORT, domain/private profiles only)"
     } else {

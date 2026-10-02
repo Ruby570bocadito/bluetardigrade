@@ -29,7 +29,11 @@ and the `make dist` target.
 - Authenticated real collector/engine smoke plus parser, rule, TLS, report,
   DOM and Chromium regressions; test inputs remain labelled inert fixtures.
 
-
+- A PowerShell syntax guard (`scripts/dev-tests/check_powershell_syntax.ps1`)
+  parses every `.ps1` in the tree with the real PowerShell AST parser. It
+  runs in CI twice — pwsh on Ubuntu and Windows PowerShell 5.1 on the
+  Windows job, the parser that actually executes `irm | iex` on a stock
+  box — and in `make ci` when pwsh is available.
 - Browser-local saved searches in Alertas and Flujo: 20 bounded, validated
   filter presets with apply/update/delete, cross-tab updates, reload and
   browser Back support. Only filters are saved, including the query text.
@@ -63,7 +67,26 @@ and the `make dist` target.
 - CLI stale rule counts and Makefile Go/staticcheck prerequisites corrected;
   collector included in future Linux/Windows release builds.
 
-
+- The installer no longer dies on git's own progress banner: `git clone`
+  always writes "Cloning into ..." to stderr, and under
+  `$ErrorActionPreference='Stop'` Windows PowerShell 5.1 turns the first
+  REDIRECTED stderr line into a terminating `NativeCommandError` — the
+  `2>&1`/`2>$null` redirects materialize the ErrorRecord before
+  discarding it. Every native call (git, go builds, reg, netsh, tool
+  version probes) now goes through `Invoke-Native`, which runs with
+  `EAP=Continue`, echoes progress, keeps the text for diagnostics and
+  throws with the real exit code and detail. `go build` failures now
+  surface the compiler error in the throw. A CI/`make ci` lint
+  (`check_installer_native_stderr.py`, with `--self-test` fixtures from
+  the original crash) keeps the pattern from returning. The system-Go
+  probe also moved 1.22 → 1.26 to match `go.mod`.
+- The Windows installer was un-runnable: `"cannot verify $Url: …"` in
+  `Invoke-Download` is a PowerShell parse error
+  (`InvalidVariableReferenceWithDrive` — `:` after a variable is read as
+  a drive/scope qualifier), so `irm | iex` aborted before any step. Now
+  `${Url}`. The Go toolchain pin also moved 1.22.10 → 1.26.8: `go.mod`
+  requires 1.26.0 and the installer sets `GOTOOLCHAIN=local`, so a green
+  parse still ended in a refused build.
 - CSV escaping now covers every event/alert text column, including IDs,
   sources, rules, tags, destinations and registry keys. LF, fullwidth formula
   prefixes and leading whitespace are handled; JSONL and stored data remain
@@ -274,7 +297,6 @@ artifacts, and the project is now **bluetardigrade** (renamed from
 - Legacy alert selection uses timestamp, event and rule identity consistently.
 - Delayed lifecycle frames cannot undo newer close/reopen decisions.
 - Export tooltips state the default limits and their independence from view filters.
-
 
 #### Added
 

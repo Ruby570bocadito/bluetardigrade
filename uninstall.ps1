@@ -73,7 +73,7 @@ function Stop-SfProcesses {
 
 function Remove-FirewallRule {
     try {
-        $out = netsh advfirewall firewall delete rule "name=security-framework engine" 2>$null
+        $out = netsh advfirewall firewall delete rule "name=security-framework engine"
         if ($LASTEXITCODE -eq 0) { Write-Ok "firewall rule removed" }
     } catch { }
 }
@@ -83,7 +83,7 @@ function Remove-FromUserPath {
     $dirLow = $Dir.TrimEnd('\').ToLower()
     $raw = $null
     try {
-        $q = reg query HKCU\Environment /v Path 2>$null
+        $q = reg query HKCU\Environment /v Path
         if ($q) {
             foreach ($l in $q) {
                 if ($l -match '^\s*Path\s+REG_(EXPAND_)?SZ\s+(.*)$') { $raw = $Matches[2] }

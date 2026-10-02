@@ -95,6 +95,22 @@ jobs:
         run: |
           GOOS=windows go build ./...
           GOOS=windows go vet ./internal/respond/ ./internal/api/ ./cmd/engine/
+      - name: PowerShell syntax guard (pwsh AST parse)
+        # The $Url: parse error class (InvalidVariableReferenceWithDrive)
+        # shipped a BROKEN installer through a green CI: nothing parsed
+        # install.ps1 before it reached users via irm|iex. This guard runs
+        # the real PowerShell parser over every .ps1 in the tree; the
+        # engine-windows job below repeats it under Windows PowerShell
+        # 5.1, the installer's declared minimum target.
+        shell: pwsh
+        run: ./scripts/dev-tests/check_powershell_syntax.ps1
+      - name: Installer native stderr guard
+        # Native stderr redirected under EAP='Stop' (2>&1 / 2>$null)
+        # is a terminating NativeCommandError on Windows PowerShell
+        # 5.1: git's own 'Cloning into...' progress line killed the
+        # one-command installer. Invoke-Native is the only sanctioned
+        # pattern; this lint keeps the class from coming back.
+        run: python3 scripts/dev-tests/check_installer_native_stderr.py
       - name: OpenAPI spec drift guard
         run: |
           # PyYAML pinned: a PyPI version release is immutable once
@@ -129,6 +145,11 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      - name: PowerShell syntax guard (Windows PowerShell 5.1 parser)
+        # Same guard as the ubuntu job, but under the 5.1 parser: the
+        # one that actually runs "irm | iex" on a stock Windows box.
+        shell: powershell
+        run: ./scripts/dev-tests/check_powershell_syntax.ps1
       - name: build engine (nativo Windows)
         run: go build -o engine-smoke.exe ./cmd/engine
       - name: smoke conductual del camino handle (kills reales, audit JSONL)
