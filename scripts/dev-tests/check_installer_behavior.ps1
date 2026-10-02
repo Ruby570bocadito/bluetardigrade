@@ -6,7 +6,17 @@ if ($env:OS -ne 'Windows_NT') { throw 'Run this check on native Windows PowerShe
 $work = Join-Path ([IO.Path]::GetTempPath()) ('sf-installer-test-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $work -Force | Out-Null
 $originalPath = $env:Path
-$originalUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+# Raw, unexpanded user PATH: [Environment]::GetEnvironmentVariable expands
+# %VARIABLES% and SetEnvironmentVariable writes REG_SZ, so restoring with
+# them would freeze every %VARIABLE% entry of the developer's PATH.
+$envKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
+$originalUserPath = $null
+$originalUserPathKind = [Microsoft.Win32.RegistryValueKind]::ExpandString
+if ($envKey) {
+    $originalUserPath = $envKey.GetValue('Path', $null, 'DoNotExpandEnvironmentNames')
+    if ($null -ne $originalUserPath) { $originalUserPathKind = $envKey.GetValueKind('Path') }
+    $envKey.Close()
+}
 $checks = 0
 function Assert($Condition, $Message) { if (-not $Condition) { throw $Message } }
 function Check($Name, [scriptblock]$Body) { & $Body; $script:checks++; Write-Host "PASS: $Name" }
@@ -196,6 +206,9 @@ try {
     Write-Host "Installer behavioral checks: $checks/$checks passed."
 } finally {
     $env:Path = $originalPath
-    [Environment]::SetEnvironmentVariable('Path', $originalUserPath, 'User')
+    $envKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+    if ($null -eq $originalUserPath) { $envKey.DeleteValue('Path', $false) }
+    else { $envKey.SetValue('Path', $originalUserPath, $originalUserPathKind) }
+    $envKey.Close()
     Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 }

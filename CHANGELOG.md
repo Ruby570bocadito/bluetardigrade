@@ -101,6 +101,18 @@ Rust ETW sensor fixes found on a real Windows host
   abort the start.
 - `sf-console -Stop` no longer claims success when the processes were
   started from an Administrator window and could not be stopped.
+- Installer: when another install (e.g. the old security-framework one)
+  comes first on the user PATH, the new bin moves to the front instead
+  of being appended behind it; the PATH is read and written through the
+  registry API (keeps REG_EXPAND_SZ and non-ASCII folders) and the
+  change is broadcast to new terminals. A leftover security-framework
+  install is reported with how to remove it.
+- Installer: an update stops with a clear message, before modifying
+  anything, when the engine/collector binaries are still running (e.g.
+  started from an Administrator window); a running sensor no longer
+  aborts the end of the install.
+- Installer: native tool output is no longer printed twice, and go, git,
+  bun, Next and cargo output is decoded as UTF-8 (no more `Ô£ô`).
 
 Also: tests for `internal/tlsutil`, 28 ATT&CK context notes for the
 analyst, and cosmetic leftovers of the old product name replaced
