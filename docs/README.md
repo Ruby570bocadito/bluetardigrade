@@ -9,6 +9,7 @@ conserva la trazabilidad completa.
 
 | Ruta | Contenido |
 |------|-----------|
+| [INSTALACION-Y-ESTADO-SOC.md](INSTALACION-Y-ESTADO-SOC.md) | Instalador, retirada de demo, recuperación, estado operativo y próximos pasos |
 | [SOC-INTEGRACIONES-E-INFORMES.md](SOC-INTEGRACIONES-E-INFORMES.md) | Seis fuentes observadas, reglas SOC, phishing/firewall, informes humanos CLI/dashboard, pruebas y límites |
 | [INVESTIGACION-CLI-Y-TRIAJE.md](INVESTIGACION-CLI-Y-TRIAJE.md) | Búsqueda CLI por ID y términos, accesos de triaje del dashboard, navegación y regresiones |
 | [DETECCION-Y-EVIDENCIA.md](DETECCION-Y-EVIDENCIA.md) | Nuevas alarmas de ficheros, correcciones de contexto/YAML/forense, exportación y pruebas |

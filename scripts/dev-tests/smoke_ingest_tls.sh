@@ -77,7 +77,7 @@ command -v openssl >/dev/null || { fail "FALLO preflight: openssl no está en PA
 # --- build binaries if not supplied
 if [ ! -x "$ENGINE" ] || [ ! -x "$DEVSENSOR" ]; then
   log "building engine and devsensor with go..."
-  (cd "$ROOT" && go build -o "$WORK/engine" ./cmd/engine && go build -o "$WORK/devsensor" ./cmd/devsensor) || {
+  (cd "$ROOT" && go build -o "$WORK/engine" ./cmd/engine && go build -o "$WORK/devsensor" ./scripts/dev-tests/scenario) || {
     fail "go build failed"; exit 1; }
 fi
 

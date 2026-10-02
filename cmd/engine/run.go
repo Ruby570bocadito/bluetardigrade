@@ -222,7 +222,7 @@ func runEngine(o *options, interactive bool) error {
 	if err != nil {
 		// A bind failure almost always means another engine
 		// instance is already running (e.g. started by
-		// sf-devsensor or sf-console). Probe the port instead of
+		// sf-sensor or sf-console). Probe the port instead of
 		// comparing errno: bind error text is locale-dependent
 		// on Windows ("Solo se permite un uso de cada...").
 		if listening(o.addr) {

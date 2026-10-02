@@ -11,9 +11,9 @@
 #   1. Downloads the repository (git if available, GitHub zip otherwise)
 #   2. Provisions portable Go + Node + Bun under <InstallDir>\tools
 #      (reuses any compatible tool already on your PATH)
-#   3. Builds the Go detection engine (bin\engine.exe, bin\devsensor.exe)
+#   3. Builds the Go detection engine and observed-log collector
 #   4. Builds the web console (Next.js) unless -NoConsole
-#   5. Puts sf-engine, sf-devsensor, sf-sensor, sf-console, sf-update
+#   5. Puts sf-engine, sf-collector, sf-sensor, sf-console, sf-update
 #      and sf-uninstall on your user PATH
 #
 # Switches:
@@ -42,7 +42,7 @@
 #                        this flag instead of downloading twice)
 # ======================================================================
 param(
-    [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'bluetardigrade'),
+    [string]$InstallDir = '',
     [string]$Repo = 'Ruby570bocadito/bluetardigrade',
     [string]$Branch = 'main',
     [switch]$NoConsole,
@@ -62,14 +62,14 @@ try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::
 $ProgressPreference = 'SilentlyContinue'   # makes Invoke-WebRequest usable on PS 5.1
 
 $GO_VERSION   = '1.26.8'
-$NODE_VERSION = 'v22.14.0'
-$BUN_VERSION  = 'v1.3.14'
+$NODE_VERSION = 'v22.23.3'
+$BUN_VERSION  = 'v1.4.2'
 $ENGINE_PORT  = 7777
 $CONSOLE_PORT = 3000
 $SERVICE_PORT = 3003
 
 # Snapshot of the running installer, taken BEFORE Get-SourceTree can
-# delete scripts\ mid-run (non-git updates wipe everything but tools\).
+# replace scripts\install.ps1 mid-run. Runtime data survives source updates.
 # sf-update.cmd always invokes <Root>\scripts\install.ps1, which is the
 # copy left by the PREVIOUS install - without the snapshot + re-exec
 # below, an update would rebuild everything with new code but regenerate
@@ -114,8 +114,9 @@ function Invoke-Native {
     )
     $prev = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
+    $global:LASTEXITCODE = -1
     try {
-        $lines = @(& $Command 2>&1 | ForEach-Object { "$_" })
+        $lines = @(. $Command 2>&1 | ForEach-Object { "$_" })
     } finally {
         $ErrorActionPreference = $prev
     }
@@ -128,6 +129,41 @@ function Invoke-Native {
         throw "native command failed (exit $LASTEXITCODE): $detail"
     }
     return ,$lines
+}
+
+function Get-ToolVersion {
+    param([string]$Executable, [string[]]$Arguments, [string]$Pattern)
+    # Invoke-Native always returns a string array. Collection -match does
+    # not populate $Matches, so version parsing must use a scalar string.
+    $text = ((Invoke-Native -Command { & $Executable @Arguments } -Quiet -AllowFailure) -join "`n").Trim()
+    if ($LASTEXITCODE -ne 0) { return $null }
+    $match = [regex]::Match($text, $Pattern)
+    if (-not $match.Success) { return $null }
+    return [version]$match.Groups[1].Value
+}
+
+function Resolve-InstallRoot {
+    param([string]$Path)
+    if (-not $Path) {
+        $base = $env:LOCALAPPDATA
+        if (-not $base) { $base = $env:USERPROFILE }
+        if (-not $base) { throw 'Set -InstallDir: LOCALAPPDATA and USERPROFILE are unavailable.' }
+        $Path = Join-Path $base 'bluetardigrade'
+    }
+    $full = [IO.Path]::GetFullPath($Path).TrimEnd('\', '/')
+    $forbidden = @([IO.Path]::GetPathRoot($full), $env:USERPROFILE, $env:LOCALAPPDATA, $env:SystemRoot, (Get-TempDir))
+    foreach ($entry in $forbidden) {
+        if ($entry -and $full -ieq ([IO.Path]::GetFullPath($entry).TrimEnd('\', '/'))) {
+            throw 'Choose a dedicated installation directory, not a drive root, profile or system folder.'
+        }
+    }
+    if (Test-Path $full) {
+        if (-not (Test-Path $full -PathType Container)) { throw 'InstallDir must be a directory.' }
+        if (-not (Test-Path (Join-Path $full 'install.ps1')) -and @(Get-ChildItem $full -Force).Count -gt 0) {
+            throw 'Existing directory is not a bluetardigrade installation. Choose an empty directory.'
+        }
+    }
+    return $full
 }
 
 # ---------------------------------------------------------------- net
@@ -185,13 +221,11 @@ function Test-PortLocal {
 function Test-InstallerStale {
     # true when the RUNNING installer differs from the freshly fetched
     # <Root>\install.ps1 (so the update must re-exec the new one).
-    # False when: run via irm|iex (no script file), already running from
-    # <Root>\install.ps1, or contents are identical.
+    # False when run via irm|iex (no script file), or contents are identical.
     param([string]$Root, [string]$RunningPath, [string]$RunningHash)
     if (-not $RunningPath -or -not $RunningHash) { return $false }
     $fresh = Join-Path $Root 'install.ps1'
     if (-not (Test-Path $fresh)) { return $false }
-    if ($RunningPath -ieq $fresh) { return $false }
     try {
         if ((Get-FileHash $fresh).Hash -ieq $RunningHash) { return $false }
     } catch { return $false }
@@ -201,22 +235,26 @@ function Test-InstallerStale {
 # ---------------------------------------------------------------- tools
 function Ensure-Go {
     param([string]$Tools)
-    if (Test-Path (Join-Path $Tools 'go\bin\go.exe')) {
-        $env:Path = "$Tools\go\bin;" + $env:Path
-        Write-Ok "Go $GO_VERSION (portable)"
-        return
+    $portable = Join-Path $Tools 'go\bin\go.exe'
+    if (Test-Path $portable) {
+        $version = Get-ToolVersion -Executable $portable -Arguments @('version') -Pattern 'go version go(\d+\.\d+(?:\.\d+)?)'
+        if ($version -and $version -ge [version]'1.26.0') {
+            $env:Path = "$Tools\go\bin;" + $env:Path
+            Write-Ok "Go $version (portable)"
+            return
+        }
+        Write-Warn2 'Portable Go is incompatible or cannot run; replacing it.'
     }
     $sys = Get-Command go.exe -ErrorAction SilentlyContinue
     if (-not $sys) { $sys = Get-Command go -ErrorAction SilentlyContinue }
     if ($sys) {
-        $v = Invoke-Native -Command { & $sys.Source version } -Quiet -AllowFailure
-        if ($v -match 'go version go(\d+)\.(\d+)') {
-            $maj = [int]$Matches[1]; $min = [int]$Matches[2]
-            if (($maj -gt 1) -or ($maj -eq 1 -and $min -ge 26)) {
-                Write-Ok "Go $maj.$min (system)"
+        $v = Get-ToolVersion -Executable $sys.Source -Arguments @('version') -Pattern 'go version go(\d+\.\d+(?:\.\d+)?)'
+        if ($v) {
+            if ($v -ge [version]'1.26.0') {
+                Write-Ok "Go $v (system)"
                 return
             }
-            Write-Warn2 "system Go is $maj.$min (need 1.26+); installing a portable one"
+            Write-Warn2 "system Go is $v (need 1.26+); installing a portable one"
         }
     }
     Write-Step "Downloading Go $GO_VERSION (portable, ~105 MB)"
@@ -234,17 +272,21 @@ function Ensure-Node {
     param([string]$Tools)
     $portable = Join-Path $Tools 'node\node.exe'
     if (Test-Path $portable) {
-        $env:Path = "$Tools\node;" + $env:Path
-        Write-Ok "Node.js $NODE_VERSION (portable)"
-        return $portable
+        $version = Get-ToolVersion -Executable $portable -Arguments @('--version') -Pattern '^v(\d+\.\d+\.\d+)'
+        if ($version -and $version -ge [version]'20.9.0') {
+            $env:Path = "$Tools\node;" + $env:Path
+            Write-Ok "Node.js $version (portable)"
+            return $portable
+        }
+        Write-Warn2 'Portable Node is incompatible or cannot run; replacing it.'
     }
     $sys = Get-Command node.exe -ErrorAction SilentlyContinue
     if (-not $sys) { $sys = Get-Command node -ErrorAction SilentlyContinue }
     if ($sys) {
-        $v = Invoke-Native -Command { & $sys.Source --version } -Quiet -AllowFailure
-        if ($v -match 'v(\d+)') {
-            if ([int]$Matches[1] -ge 20) { Write-Ok "Node.js $($v.Trim()) (system)"; return $sys.Source }
-            Write-Warn2 "system Node $($v.Trim()) is too old (need 20+); installing a portable one"
+        $v = Get-ToolVersion -Executable $sys.Source -Arguments @('--version') -Pattern '^v(\d+\.\d+\.\d+)'
+        if ($v) {
+            if ($v -ge [version]'20.9.0') { Write-Ok "Node.js $v (system)"; return $sys.Source }
+            Write-Warn2 "system Node $v is too old (need 20.9+); installing a portable one"
         }
     }
     Write-Step "Downloading Node.js $NODE_VERSION (portable, ~30 MB)"
@@ -253,7 +295,9 @@ function Ensure-Node {
     $sha = Get-DistSha256 -IndexUrl "https://nodejs.org/dist/$NODE_VERSION/SHASUMS256.txt" -FilePattern "node-$NODE_VERSION-win-x64\.zip"
     Invoke-Download -Url $url -OutFile $zip -ExpectedSha256 $sha
     $dest = Join-Path $Tools 'node-tmp'
+    if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
     Expand-Archive -Path $zip -DestinationPath $dest -Force
+    if (Test-Path (Join-Path $Tools 'node')) { Remove-Item (Join-Path $Tools 'node') -Recurse -Force }
     Move-Item (Join-Path $dest "node-$NODE_VERSION-win-x64") (Join-Path $Tools 'node')
     Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item $zip -Force -ErrorAction SilentlyContinue
@@ -265,24 +309,29 @@ function Ensure-Node {
 function Ensure-Bun {
     param([string]$Tools)
     if (Test-Path (Join-Path $Tools 'bun.exe')) {
-        $env:Path = "$Tools;" + $env:Path
-        Write-Ok "Bun $BUN_VERSION (portable)"
-        return
+        $version = Get-ToolVersion -Executable (Join-Path $Tools 'bun.exe') -Arguments @('--version') -Pattern '^(\d+\.\d+\.\d+)'
+        if ($version -and $version -ge [version]$BUN_VERSION.TrimStart('v')) {
+            $env:Path = "$Tools;" + $env:Path
+            Write-Ok "Bun $version (portable)"
+            return
+        }
+        Write-Warn2 'Portable Bun is incompatible or cannot run; replacing it.'
     }
     $sys = Get-Command bun.exe -ErrorAction SilentlyContinue
     if (-not $sys) { $sys = Get-Command bun -ErrorAction SilentlyContinue }
     if ($sys) {
-        $v = Invoke-Native -Command { & $sys.Source --version } -Quiet -AllowFailure
-        if ($v -match '^\d+\.\d+') { Write-Ok "Bun $v (system)"; return }
+        $v = Get-ToolVersion -Executable $sys.Source -Arguments @('--version') -Pattern '^(\d+\.\d+\.\d+)'
+        if ($v -and $v -ge [version]$BUN_VERSION.TrimStart('v')) { Write-Ok "Bun $v (system)"; return }
     }
     Write-Step "Downloading Bun $BUN_VERSION (portable)"
     $zip = Join-Path $Tools 'bun.zip'
-    $url = "https://github.com/oven-sh/bun/releases/download/bun-$BUN_VERSION/bun-windows-x64.zip"
-    $sha = Get-DistSha256 -IndexUrl "https://github.com/oven-sh/bun/releases/download/bun-$BUN_VERSION/SHASUMS256.txt" -FilePattern 'bun-windows-x64\.zip'
+    $url = "https://github.com/oven-sh/bun/releases/download/bun-$BUN_VERSION/bun-windows-x64-baseline.zip"
+    $sha = Get-DistSha256 -IndexUrl "https://github.com/oven-sh/bun/releases/download/bun-$BUN_VERSION/SHASUMS256.txt" -FilePattern 'bun-windows-x64-baseline\.zip$'
     Invoke-Download -Url $url -OutFile $zip -ExpectedSha256 $sha
     $dest = Join-Path $Tools 'bun-tmp'
+    if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
     Expand-Archive -Path $zip -DestinationPath $dest -Force
-    $exe = Join-Path $dest 'bun-windows-x64\bun.exe'
+    $exe = Join-Path $dest 'bun-windows-x64-baseline\bun.exe'
     if (-not (Test-Path $exe)) {
         $exe = Get-ChildItem $dest -Recurse -Filter bun.exe | Select-Object -First 1 -ExpandProperty FullName
     }
@@ -296,54 +345,57 @@ function Ensure-Bun {
 # ---------------------------------------------------------------- source
 function Get-SourceTree {
     param([string]$Root, [string]$RepoId, [string]$Br, [bool]$IsUpdate)
+    $Root = Resolve-InstallRoot $Root
     $git = Get-Command git -ErrorAction SilentlyContinue
-    if ($IsUpdate -and (Test-Path (Join-Path $Root '.git')) -and $git) {
+    if ((Test-Path (Join-Path $Root '.git')) -and $git) {
         Write-Step "Updating source (git)"
         Push-Location $Root
         try {
-            Invoke-Native -Command { & git fetch --depth 1 origin $Br } -Quiet -Activity 'git fetch'
-            Invoke-Native -Command { & git reset --hard FETCH_HEAD } -Quiet -Activity 'git reset'
+            $changes = ((Invoke-Native -Command { & git status --porcelain --untracked-files=no } -Quiet -Activity 'git status') -join "`n").Trim()
+            if ($changes) { throw 'Tracked source files have local changes. Commit or back them up before updating; no reset was performed.' }
+            Invoke-Native -Command { & git fetch origin $Br } -Quiet -Activity 'git fetch'
+            # Confirm fast-forward before stopping services or modifying files.
+            Invoke-Native -Command { & git merge-base --is-ancestor HEAD FETCH_HEAD } -Quiet -Activity 'update fast-forward preflight'
+            Stop-SfProcesses -Root $Root
+            Invoke-Native -Command { & git merge --ff-only FETCH_HEAD } -Quiet -Activity 'git fast-forward'
         } finally { Pop-Location }
         Write-Ok "source updated"
         return
     }
-    if (Test-Path $Root) {
-        # refresh an existing non-git tree: keep tools/, replace the rest
-        Get-ChildItem $Root -Force | Where-Object { $_.Name -ne 'tools' } |
-            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-    } else {
-        New-Item -ItemType Directory -Path $Root -Force | Out-Null
-    }
-    if ($git) {
-        Write-Step "Cloning $RepoId ($Br)"
-        $onlyTools = (Test-Path $Root) -and
-            -not (Get-ChildItem $Root -Force | Where-Object { $_.Name -ne 'tools' })
-        if ($onlyTools) {
-            # git clone needs an empty target: clone aside, then move in
-            $tmp = Join-Path (Get-TempDir) ("sf-clone-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
-            Invoke-Native -Command { & git clone --depth 1 --branch $Br "https://github.com/$RepoId.git" $tmp } -Activity 'git clone'
-            if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
-            Get-ChildItem $tmp -Force | Move-Item -Destination $Root -Force
-            Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path (Join-Path $Root '.git')) { throw 'This installation uses git; restore git on PATH before updating it.' }
+    # Stage and validate a complete download before touching an existing
+    # install. Overlay source files; never wipe operator data or toolchains.
+    $tmp = Join-Path (Get-TempDir) ("sf-source-" + [guid]::NewGuid().ToString('N'))
+    $zip = $tmp + '.zip'
+    try {
+        if ($git) {
+            Write-Step "Cloning $RepoId ($Br) into staging"
+            Invoke-Native -Command { & git clone --depth 1 --branch $Br "https://github.com/$RepoId.git" $tmp } -Quiet -Activity 'git clone'
+            $source = $tmp
         } else {
-            Invoke-Native -Command { & git clone --depth 1 --branch $Br "https://github.com/$RepoId.git" $Root } -Activity 'git clone'
-            if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
+            Write-Step "Downloading source zip ($RepoId@$Br)"
+            # Source refs may be branches or tags; the GitHub zipball API
+            # resolves both, unlike /zip/refs/heads/<tag>.
+            $ref = [Uri]::EscapeDataString($Br)
+            Invoke-Download -Url "https://api.github.com/repos/$RepoId/zipball/$ref" -OutFile $zip -UnverifiedOk
+            Expand-Archive -Path $zip -DestinationPath $tmp -Force
+            $inner = @(Get-ChildItem $tmp -Directory)
+            if ($inner.Count -ne 1) { throw 'Source archive must contain exactly one repository directory.' }
+            $source = $inner[0].FullName
+        }
+        foreach ($required in @('install.ps1', 'go.mod', 'cmd\engine\main.go')) {
+            if (-not (Test-Path (Join-Path $source $required))) { throw "Incomplete source download: $required is missing." }
+        }
+        Stop-SfProcesses -Root $Root
+        New-Item -ItemType Directory -Path $Root -Force | Out-Null
+        foreach ($entry in Get-ChildItem $source -Force) {
+            Copy-Item -LiteralPath $entry.FullName -Destination $Root -Recurse -Force
         }
         Write-Ok "source ready"
-        return
+    } finally {
+        if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
+        if (Test-Path $zip) { Remove-Item $zip -Force }
     }
-    Write-Step "Downloading source zip ($RepoId@$Br)"
-    $zip = Join-Path (Get-TempDir) ("sf-src-" + [guid]::NewGuid().ToString('N').Substring(0, 8) + ".zip")
-    # repo source zip: no published checksum exists for a moving branch
-    # HEAD, so this is the one documented -UnverifiedOk download
-    Invoke-Download -Url "https://codeload.github.com/$RepoId/zip/refs/heads/$Br" -OutFile $zip -UnverifiedOk
-    $tmp = Join-Path (Get-TempDir) ("sf-unz-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
-    Expand-Archive -Path $zip -DestinationPath $tmp -Force
-    $inner = Get-ChildItem $tmp -Directory | Select-Object -First 1
-    Get-ChildItem $inner.FullName -Force | Move-Item -Destination $Root -Force
-    Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item $zip -Force -ErrorAction SilentlyContinue
-    Write-Ok "source ready"
 }
 
 # ---------------------------------------------------------------- build
@@ -355,17 +407,16 @@ function Build-Engine {
     try {
         $env:GOTOOLCHAIN = 'local'
         Invoke-Native -Command { & go build -o (Join-Path $Root 'bin\engine.exe') ./cmd/engine } -Activity 'go build ./cmd/engine'
-        Invoke-Native -Command { & go build -o (Join-Path $Root 'bin\devsensor.exe') ./cmd/devsensor } -Activity 'go build ./cmd/devsensor'
+        Invoke-Native -Command { & go build -o (Join-Path $Root 'bin\collector.exe') ./cmd/collector } -Activity 'go build ./cmd/collector'
     } finally { Pop-Location }
-    Write-Ok "bin\engine.exe + bin\devsensor.exe"
+    Write-Ok "bin\engine.exe + bin\collector.exe"
 }
 
 function Build-Console {
     param([string]$Root, [string]$NodeExe)
     $web = Join-Path $Root 'web'
     if (-not (Test-Path (Join-Path $web 'console\package.json'))) {
-        Write-Warn2 "web console sources not found; skipping"
-        return
+        throw 'Web console sources are missing; use -NoConsole for an engine-only install.'
     }
     # resolve a working node.exe: explicit path, then whatever is on PATH
     if (-not $NodeExe -or -not (Test-Path $NodeExe)) {
@@ -377,17 +428,14 @@ function Build-Console {
     Write-Step "Installing console dependencies (bun)"
     Push-Location (Join-Path $web 'console-service')
     try {
-        & bun install
-        if ($LASTEXITCODE -ne 0) { throw "bun install (console-service) failed" }
+        Invoke-Native -Command { & bun install --frozen-lockfile } -Activity 'bun install (console-service)'
     } finally { Pop-Location }
     Push-Location (Join-Path $web 'console')
     try {
-        & bun install
-        if ($LASTEXITCODE -ne 0) { throw "bun install (console) failed" }
+        Invoke-Native -Command { & bun install --frozen-lockfile } -Activity 'bun install (console)'
         Write-Step "Building web console (Next.js, 1-2 min)"
         $env:NEXT_TELEMETRY_DISABLED = '1'
-        & $NodeExe (Join-Path $web 'console\node_modules\next\dist\bin\next') build
-        if ($LASTEXITCODE -ne 0) { throw "next build failed" }
+        Invoke-Native -Command { & $NodeExe (Join-Path $web 'console\node_modules\next\dist\bin\next') build } -Activity 'next build'
     } finally { Pop-Location }
     Write-Ok "web console ready (start it with sf-console)"
 }
@@ -405,8 +453,7 @@ function Build-Sensor {
     Write-Step "Building Rust sensor (release)"
     Push-Location (Join-Path $Root 'sensor')
     try {
-        & cargo build --release
-        if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
+        Invoke-Native -Command { & cargo build --release --locked } -Activity 'cargo build'
     } finally { Pop-Location }
     $exe = Join-Path $Root 'sensor\target\release\security-sensor.exe'
     if (Test-Path $exe) {
@@ -421,7 +468,6 @@ function Copy-RuntimeScripts {
     $scripts = Join-Path $Root 'scripts'
     New-Item -ItemType Directory -Path $scripts -Force | Out-Null
     Copy-Item (Join-Path $Root 'scripts\windows\sf-console.ps1') (Join-Path $scripts 'sf-console.ps1') -Force
-    Copy-Item (Join-Path $Root 'scripts\windows\devsensor.ps1') (Join-Path $scripts 'devsensor.ps1') -Force
     Copy-Item (Join-Path $Root 'scripts\windows\sensor.ps1') (Join-Path $scripts 'sensor.ps1') -Force
     if (Test-Path (Join-Path $Root 'scripts\windows\sysmon-config.xml')) {
         Copy-Item (Join-Path $Root 'scripts\windows\sysmon-config.xml') (Join-Path $scripts 'sysmon-config.xml') -Force
@@ -431,7 +477,7 @@ function Copy-RuntimeScripts {
 }
 
 function Write-Shims {
-    param([string]$Root)
+    param([string]$Root, [string]$RepoId = 'Ruby570bocadito/bluetardigrade', [string]$Ref = 'main', [bool]$ConsoleExcluded = $false)
     $bin = Join-Path $Root 'bin'
     $scripts = Join-Path $Root 'scripts'
     New-Item -ItemType Directory -Path $bin -Force | Out-Null
@@ -439,19 +485,14 @@ function Write-Shims {
     $enc = $null
     try { $enc = [Text.Encoding]::GetEncoding(0) } catch { $enc = [Text.Encoding]::ASCII }
     $consolePs1   = Join-Path $scripts 'sf-console.ps1'
-    $devsensorPs1 = Join-Path $scripts 'devsensor.ps1'
     $sensorPs1    = Join-Path $scripts 'sensor.ps1'
     $installPs1   = Join-Path $scripts 'install.ps1'
     $uninstallPs1 = Join-Path $scripts 'uninstall.ps1'
+    $updateArgs = "-Update -InstallDir `"$Root`" -Repo `"$RepoId`" -Branch `"$Ref`""
+    if ($ConsoleExcluded) { $updateArgs += ' -NoConsole' }
     # sf-engine is exposed as a hard-linked exe, not a .cmd wrapper:
     # Ctrl+C on a batch wrapper makes cmd ask 'Terminate batch job
     # (Y/N)?'. The engine resolves rules next to its own exe.
-    # sf-devsensor is intentionally NOT an exe: Windows Application
-    # Control / Smart App Control blocks unsigned binaries (users hit
-    # "una directiva de Control de aplicaciones bloqueo este archivo"
-    # on devsensor.exe), so it ships as a .cmd wrapper around the
-    # PowerShell simulator (devsensor.ps1) - powershell.exe is a
-    # signed system interpreter those policies never block.
     # NOTE: single pair - do not use foreach over @(@('a','b')) here,
     # PowerShell unrolls a one-element array-of-arrays into a flat array
     # and $pair[0] becomes a char (real bug caught by the shim test).
@@ -465,9 +506,17 @@ function Write-Shims {
         else { Write-Warn2 "engine.exe not found; sf-engine shim skipped" }
     }
     Remove-Item (Join-Path $bin 'sf-engine.cmd') -Force -ErrorAction SilentlyContinue
-    # upgrades: drop the stale sf-devsensor.exe hardlink from previous
-    # installs - .exe wins PATH resolution over .cmd (PATHEXT order)
-    Remove-Item (Join-Path $bin 'sf-devsensor.exe') -Force -ErrorAction SilentlyContinue
+    # Remove obsolete shipped demo code and launchers on upgrade.
+    foreach ($obsolete in @('bin\sf-devsensor.exe', 'bin\sf-devsensor.cmd', 'bin\devsensor.exe', 'scripts\devsensor.ps1', 'scripts\windows\devsensor.ps1', 'cmd\devsensor', 'cmd\bench')) {
+        Remove-Item (Join-Path $Root $obsolete) -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    $collectorLink = Join-Path $bin 'sf-collector.exe'
+    $collectorTarget = Join-Path $bin 'collector.exe'
+    Remove-Item $collectorLink -Force -ErrorAction SilentlyContinue
+    if (Test-Path $collectorTarget) {
+        try { New-Item -ItemType HardLink -Path $collectorLink -Target $collectorTarget -ErrorAction Stop | Out-Null }
+        catch { Copy-Item $collectorTarget $collectorLink -Force }
+    }
     # sf-update/sf-uninstall self-copy to %TEMP% and run the copy: they
     # delete files under <Root>\bin (their own folder) while running, and
     # cmd prints "The system cannot find the path specified" if it has to
@@ -476,7 +525,6 @@ function Write-Shims {
     # (built as line arrays: avoids "$nlif"-style variable-name pitfalls)
     $shims = [ordered]@{
         'sf-console.cmd' = "@echo off$nl powershell -NoProfile -ExecutionPolicy Bypass -File `"$consolePs1`" %*$nl"
-        'sf-devsensor.cmd' = "@echo off$nl powershell -NoProfile -ExecutionPolicy Bypass -File `"$devsensorPs1`" %*$nl"
         'sf-sensor.cmd' = "@echo off$nl powershell -NoProfile -ExecutionPolicy Bypass -File `"$sensorPs1`" %*$nl"
         'sf-update.cmd' = (@(
             '@echo off'
@@ -484,7 +532,7 @@ function Write-Shims {
             'copy /y "%~f0" "%TEMP%\sf-update.cmd" >nul'
             '"%TEMP%\sf-update.cmd" -run'
             ':run'
-            "powershell -NoProfile -ExecutionPolicy Bypass -File `"$installPs1`" -Update -InstallDir `"$Root`""
+            "powershell -NoProfile -ExecutionPolicy Bypass -File `"$installPs1`" $updateArgs"
         ) -join $nl) + $nl
         'sf-uninstall.cmd' = (@(
             '@echo off'
@@ -499,7 +547,7 @@ function Write-Shims {
     foreach ($k in $shims.Keys) {
         [IO.File]::WriteAllText((Join-Path $bin $k), $shims[$k], $enc)
     }
-    Write-Ok "sf-engine / sf-devsensor / sf-sensor / sf-console / sf-update / sf-uninstall"
+    Write-Ok "sf-engine / sf-collector / sf-sensor / sf-console / sf-update / sf-uninstall"
 }
 
 function Add-ToUserPath {
@@ -639,7 +687,7 @@ function Register-Autostart {
     # 'security-framework-*': they are PERSISTED OS artifacts, and renaming
     # them mid-product-rename would orphan every existing install (old
     # entries would keep launching with no upgrade path to remove them).
-    param([string]$Root, [string]$WebhookUrl = '', [string]$WebhookToken = '', [string]$IngestToken = '')
+    param([string]$Root, [string]$WebhookUrl = '', [string]$WebhookToken = '', [string]$IngestToken = '', [bool]$WithConsole = $true)
     $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
     New-Item -ItemType Directory -Path (Join-Path $Root 'run') -Force | Out-Null
     # -pidfile: the engine records its PID so sf-console -Stop can stop
@@ -655,10 +703,13 @@ function Register-Autostart {
     try {
         if (-not (Test-Path $runKey)) { New-Item -Path $runKey -Force | Out-Null }
         New-ItemProperty -Path $runKey -Name 'security-framework-engine'  -Value $engineCmd  -PropertyType String -Force | Out-Null
-        New-ItemProperty -Path $runKey -Name 'security-framework-console' -Value $consoleCmd -PropertyType String -Force | Out-Null
+        if ($WithConsole) {
+            New-ItemProperty -Path $runKey -Name 'security-framework-console' -Value $consoleCmd -PropertyType String -Force | Out-Null
+        } else { Remove-ItemProperty -Path $runKey -Name 'security-framework-console' -ErrorAction SilentlyContinue }
         $chk = Get-ItemProperty -Path $runKey
-        if ($chk.'security-framework-engine' -and $chk.'security-framework-console') {
-            $note = 'engine minimized + console hidden'
+        if ($chk.'security-framework-engine' -and (-not $WithConsole -or $chk.'security-framework-console')) {
+            $note = 'engine minimized'
+            if ($WithConsole) { $note += ' + console hidden' }
             if ($WebhookUrl) { $note += ", alerts POST to $WebhookUrl" }
             if ($IngestToken) { $note += ', ingest auth on' }
             Write-Ok "autostart at logon registered ($note)"
@@ -686,8 +737,18 @@ function Stop-SfProcesses {
     $runDir = Join-Path $Root 'run'
     if (Test-Path $runDir) {
         Get-ChildItem $runDir -Filter *.pid -ErrorAction SilentlyContinue | ForEach-Object {
-            $procId = Get-Content $_.FullName -ErrorAction SilentlyContinue
-            if ($procId -match '^\d+$') { Stop-Process -Id ([int]$procId) -Force -ErrorAction SilentlyContinue }
+            $rawPID = Get-Content $_.FullName -First 1 -ErrorAction SilentlyContinue
+            $reportedPID = 0
+            if ($rawPID -and [int]::TryParse($rawPID.Trim(), [ref]$reportedPID) -and $reportedPID -gt 0 -and $reportedPID -ne $PID) {
+                # A stale PID can now belong to an unrelated process. Verify
+                # its executable or command line still belongs to this install.
+                $candidate = Get-CimInstance Win32_Process -Filter "ProcessId = $reportedPID" -ErrorAction SilentlyContinue
+                $owned = $candidate -and (
+                    ($candidate.ExecutablePath -and $candidate.ExecutablePath.ToLower().StartsWith($rootLow)) -or
+                    ($candidate.CommandLine -and $candidate.CommandLine.ToLower().Contains($rootLow)))
+                if ($owned) { Stop-Process -Id $reportedPID -Force -ErrorAction SilentlyContinue }
+                elseif ($candidate) { Write-Warn2 "stale PID $reportedPID belongs to another process; it was left running" }
+            }
             Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
         }
     }
@@ -702,8 +763,8 @@ function Stop-SfProcesses {
 if ($MyInvocation.InvocationName -ne '.') {
 
     if ($PSVersionTable.PSVersion.Major -lt 5) { throw "PowerShell 5.1 or newer required" }
-    if (-not $env:LOCALAPPDATA) { $InstallDir = Join-Path $env:USERPROFILE 'bluetardigrade' }
-    $root = $InstallDir.TrimEnd('\')
+    if ($Repo -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' -or $Branch -notmatch '^[A-Za-z0-9._/+-]+$' -or $Branch.StartsWith('-')) { throw 'Invalid repository or source ref.' }
+    $root = Resolve-InstallRoot $InstallDir
     $tools = Join-Path $root 'tools'
     $binDir = Join-Path $root 'bin'
     $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -730,11 +791,6 @@ if ($MyInvocation.InvocationName -ne '.') {
     Write-Host "   target  : $root" -ForegroundColor Gray
     Write-Host '  ----------------------------------------------------------' -ForegroundColor DarkCyan
 
-    # stop leftovers from a previous install, then refresh the tree
-    if (Test-Path $root) {
-        Write-Step "Existing install found (tools are preserved)"
-        Stop-SfProcesses -Root $root
-    }
     if ($SourceReady) {
         Write-Ok "source already refreshed by the previous installer pass"
     } else {
@@ -760,16 +816,22 @@ if ($MyInvocation.InvocationName -ne '.') {
 
     New-Item -ItemType Directory -Path $tools -Force | Out-Null
     Ensure-Go   -Tools $tools
-    $nodeExe = Ensure-Node -Tools $tools
-    Ensure-Bun  -Tools $tools
+    $nodeExe = $null
+    if (-not $NoConsole) {
+        $nodeExe = Ensure-Node -Tools $tools
+        Ensure-Bun -Tools $tools
+    }
 
+    $consoleReady = $false
+    $consoleError = ''
     if ($SkipBuild) {
         Write-Warn2 "-SkipBuild: binaries not compiled"
     } else {
         Build-Engine -Root $root
         if (-not $NoConsole) {
-            try { Build-Console -Root $root -NodeExe $nodeExe }
+            try { Build-Console -Root $root -NodeExe $nodeExe; $consoleReady = $true }
             catch {
+                $consoleError = $_.Exception.Message
                 Write-Warn2 "console build failed: $($_.Exception.Message)"
                 Write-Info "engine installed anyway; re-run with -Update to retry the console"
             }
@@ -778,7 +840,7 @@ if ($MyInvocation.InvocationName -ne '.') {
     }
 
     Copy-RuntimeScripts -Root $root
-    Write-Shims -Root $root
+    Write-Shims -Root $root -RepoId $Repo -Ref $Branch -ConsoleExcluded:([bool]$NoConsole)
     Add-ToUserPath -Dir $binDir
     $env:Path = "$binDir;" + $env:Path
 
@@ -842,7 +904,7 @@ if ($MyInvocation.InvocationName -ne '.') {
             -Name 'security-framework-engine' -ErrorAction SilentlyContinue
         if ($cur -and $cur.'security-framework-engine') { $register = $true }
     }
-    if ($register) { Register-Autostart -Root $root -WebhookUrl $webhook -WebhookToken $webhookToken -IngestToken $ingestToken }
+    if ($register -and -not $SkipBuild) { Register-Autostart -Root $root -WebhookUrl $webhook -WebhookToken $webhookToken -IngestToken $ingestToken -WithConsole $consoleReady }
 
     if (Test-PortLocal $ENGINE_PORT) {
         Write-Warn2 "port $ENGINE_PORT is busy: an engine may already be running"
@@ -851,7 +913,9 @@ if ($MyInvocation.InvocationName -ne '.') {
     $sw.Stop()
     Write-Host ''
     Write-Host '  ==========================================================' -ForegroundColor DarkCyan
-    Write-Host "   bluetardigrade installed in $([int]$sw.Elapsed.TotalSeconds)s" -ForegroundColor Cyan
+    if ($consoleError) { Write-Host '   Installation incomplete: console build failed' -ForegroundColor Yellow }
+    elseif ($SkipBuild) { Write-Host '   Sources prepared; binaries were not built' -ForegroundColor Yellow }
+    else { Write-Host "   bluetardigrade installed in $([int]$sw.Elapsed.TotalSeconds)s" -ForegroundColor Cyan }
     Write-Host "   location : $root"
     if ($webhook) {
         Write-Host " webhook  : alerts POST to $webhook"
@@ -863,17 +927,18 @@ if ($MyInvocation.InvocationName -ne '.') {
     Write-Host ' commands  :'
     Write-Host '   sf-engine      detection engine, prints alerts live'
     Write-Host '   sf-sensor      REAL telemetry via Sysmon (setup: sf-sensor -SetupSysmon)'
-    Write-Host '   sf-devsensor   demo scenario replay - simulated data, for pipeline check'
-    Write-Host '   sf-console     web console + browser (engine + hub + UI)'
+    Write-Host '   sf-collector   import observed IDS/NDR/osquery/honeypot/firewall/EML logs'
+    if ($consoleReady) { Write-Host '   sf-console     web console + browser (engine + hub + UI)' }
+    else { Write-Host '   console        not built in this run; re-run without -NoConsole to enable it' }
     Write-Host '   sf-update      update to the latest code and rebuild'
     Write-Host '   sf-uninstall   remove everything'
     Write-Host '------------------------------------------------------------'
     Write-Host ' quick test (open a NEW terminal first):'
     Write-Host '   real mode :  sf-sensor -SetupSysmon  (once, UAC) then sf-sensor'
-    Write-Host '                -> alerts from ACTUAL host activity, visible in sf-console'
-    Write-Host '   demo only :  sf-devsensor      -> 18 alerts from the scripted scenario'
-    Write-Host '   or simply:   sf-console'
+    Write-Host '                -> alerts depend on observed activity and configured rules'
+    if ($consoleReady) { Write-Host '   dashboard:   sf-console' }
     Write-Host '  ----------------------------------------------------------' -ForegroundColor DarkCyan
-    Write-Host '   console:  http://localhost:3000  (engine API :7778)' -ForegroundColor Gray
+    if ($consoleReady) { Write-Host '   console:  http://localhost:3000  (engine API :7778)' -ForegroundColor Gray }
     Write-Host '  ==========================================================' -ForegroundColor DarkCyan
+    if ($consoleError) { throw "Console build failed: $consoleError. Engine/collector are available; run sf-update to retry." }
 }

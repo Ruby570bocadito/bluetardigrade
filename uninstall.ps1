@@ -1,9 +1,9 @@
 # ======================================================================
-# security-framework uninstaller for Windows PowerShell 5.1+
+# bluetardigrade uninstaller for Windows PowerShell 5.1+
 #
 #   sf-uninstall          (if installed - recommended)
 #
-#   irm https://raw.githubusercontent.com/Ruby570bocadito/security-framework/main/uninstall.ps1 | iex
+#   irm https://raw.githubusercontent.com/Ruby570bocadito/bluetardigrade/main/uninstall.ps1 | iex
 #
 # Removes: running processes, logon entries (HKCU Run + legacy scheduled
 # tasks), the firewall rule, the user PATH entry and the whole install
@@ -14,7 +14,7 @@
 #          Rust/MSVC) - the uninstaller never touches third-party tools.
 # ======================================================================
 param(
-    [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'security-framework')
+    [string]$InstallDir = ''
 )
 
 $ErrorActionPreference = 'Continue'
@@ -54,8 +54,18 @@ function Stop-SfProcesses {
     $runDir = Join-Path $Root 'run'
     if (Test-Path $runDir) {
         Get-ChildItem $runDir -Filter *.pid -ErrorAction SilentlyContinue | ForEach-Object {
-            $procId = Get-Content $_.FullName -ErrorAction SilentlyContinue
-            if ($procId -match '^\d+$') { Stop-Process -Id ([int]$procId) -Force -ErrorAction SilentlyContinue }
+            $rawPID = Get-Content $_.FullName -First 1 -ErrorAction SilentlyContinue
+            $reportedPID = 0
+            if ($rawPID -and [int]::TryParse($rawPID.Trim(), [ref]$reportedPID) -and $reportedPID -gt 0 -and $reportedPID -ne $PID) {
+                # A stale PID can now belong to an unrelated process. Verify
+                # its executable or command line still belongs to this install.
+                $candidate = Get-CimInstance Win32_Process -Filter "ProcessId = $reportedPID" -ErrorAction SilentlyContinue
+                $owned = $candidate -and (
+                    ($candidate.ExecutablePath -and $candidate.ExecutablePath.ToLower().StartsWith($rootLow)) -or
+                    ($candidate.CommandLine -and $candidate.CommandLine.ToLower().Contains($rootLow)))
+                if ($owned) { Stop-Process -Id $reportedPID -Force -ErrorAction SilentlyContinue }
+                elseif ($candidate) { Write-Warn2 "stale PID $reportedPID belongs to another process; it was left running" }
+            }
             Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
         }
     }
@@ -109,11 +119,21 @@ function Remove-FromUserPath {
 
 if ($MyInvocation.InvocationName -ne '.') {
 
-    $root = $InstallDir.TrimEnd('\')
+    if (-not $InstallDir) {
+        $base = $env:LOCALAPPDATA
+        if (-not $base) { $base = $env:USERPROFILE }
+        if (-not $base) { throw 'Set -InstallDir: LOCALAPPDATA and USERPROFILE are unavailable.' }
+        $InstallDir = Join-Path $base 'bluetardigrade'
+    }
+    $root = [IO.Path]::GetFullPath($InstallDir).TrimEnd('\', '/')
+    foreach ($blocked in @([IO.Path]::GetPathRoot($root), $env:USERPROFILE, $env:LOCALAPPDATA, $env:SystemRoot, [IO.Path]::GetTempPath())) {
+        if ($blocked -and $root -ieq ([IO.Path]::GetFullPath($blocked).TrimEnd('\', '/'))) { throw 'Refusing to uninstall a profile, system folder or drive root.' }
+    }
+    if ((Test-Path $root) -and -not (Test-Path (Join-Path $root 'install.ps1'))) { throw 'Directory is not a bluetardigrade installation; nothing was removed.' }
 
     Write-Host ''
     Write-Host '============================================================'
-    Write-Host ' security-framework uninstaller'
+    Write-Host ' bluetardigrade uninstaller'
     Write-Host " target : $root"
     Write-Host '============================================================'
 
@@ -147,7 +167,7 @@ if ($MyInvocation.InvocationName -ne '.') {
 
     Write-Host ''
     Write-Host '==> cleaning user PATH'
-    Remove-FromUserPath -Dir $root
+    Remove-FromUserPath -Dir (Join-Path $root 'bin')
 
     Write-Host ''
     Write-Host '============================================================'

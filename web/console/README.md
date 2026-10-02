@@ -30,11 +30,10 @@ unreachable the console says so (`Motor offline`) and clears stale telemetry
 without manufacturing replacement events;
 when the hub is down only the analyst view is affected.
 
-The engine can receive real collector records or explicit `sf-devsensor`
-demo records. The header lists declared sources across the received window
+Product installs contain no demo generator. The engine receives sensor/provider records; older stored `source=simulate` records remain explicitly labeled. The header lists declared sources across the received window
 and keeps a **demo** indicator visible for mixed data, also on mobile.
 `source` is sender-declared, not an attestation. Tests use isolated fixtures.
-README captures use the demo scenario, not a Windows endpoint lab capture.
+Archived screenshots use historical generated inputs; they are not proof of a Windows endpoint deployment.
 
 The provider uses bounded requests and serial polling. Snapshots merge with
 incoming frames, SSE replay preserves triage decisions, and optional response

@@ -73,7 +73,7 @@ done
 if [ ! -x "$ENGINE" ] || [ ! -x "$DEVSENSOR" ]; then
   command -v go >/dev/null || { fail "FALLO preflight: go no está en PATH (exporta el toolchain para compilar los binarios)"; exit 1; }
   log "building engine and devsensor with go..."
-  (cd "$ROOT" && go build -o "$WORK/engine" ./cmd/engine && go build -o "$WORK/devsensor" ./cmd/devsensor) || {
+  (cd "$ROOT" && go build -o "$WORK/engine" ./cmd/engine && go build -o "$WORK/devsensor" ./scripts/dev-tests/scenario) || {
     fail "go build failed"; exit 1; }
 fi
 

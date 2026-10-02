@@ -12,6 +12,22 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Installer and product telemetry
+
+- Fix PowerShell collection/version parsing, validate reusable portable tools,
+  require Node 20.9+, use baseline Bun and frozen console lockfiles.
+- Preserve operator data in staged ZIP updates and use git fast-forwards
+  with explicit refusal of local changes/divergence.
+- Correct uninstall location and bin PATH cleanup, reject dangerous roots
+  and detect same-path installer self-replacement.
+- Honor NoConsole without Node/Bun provisioning; report console failures as
+  incomplete and do not enable failed console autostart.
+- Remove shipped demo generators/launchers/release binaries; install the
+  observed-log collector. Scenario/bench helpers are tests-only, restricted
+  to literal loopback targets. Keep historical evidence labels.
+- Add Windows PowerShell 5.1 behavioral installer/update checks, including
+  real engine/collector compilation in a temporary install.
+
 ### Added
 
 - Six explicit SOC import formats in the operational Go `collector`: Suricata

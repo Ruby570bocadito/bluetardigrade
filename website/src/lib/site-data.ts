@@ -62,7 +62,7 @@ export const LIVE_DEMO = {
   gif: "/console-live.gif",
   poster: "/console-panel.png",
   caption:
-    "Real captured session — not a mockup: the engine ingesting 411 events from the labeled demo scenario, detections arriving live in the SOC console.",
+    "Archived console capture with generated test inputs. Product installations collect observed telemetry; this capture does not certify a live endpoint deployment.",
   badges: [
     "411 events · 18 detections",
     "SSE live stream",
@@ -80,7 +80,7 @@ export const WHY_CARDS = [
   {
     num: "02",
     title: "Offensive provenance",
-    desc: "Every seeded rule corresponds to a technique validated in a lab against its real TTP, and documents the noise it produces on a clean host.",
+    desc: "Rules document explicit detection conditions and ATT&CK mappings. Validate them with observed activity and tune false positives in your own environment.",
   },
   {
     num: "03",
@@ -98,7 +98,7 @@ export const PIPELINE = [
     name: "sf-sensor",
     stack: "Rust",
     icon: "cpu",
-    desc: "A Windows ETW kernel-process collector plus a Sysmon ingestion path. They send host activity as NDJSON/TCP; the engine also accepts the explicitly labeled development demo.",
+    desc: "A Windows ETW kernel-process collector plus a Sysmon ingestion path. They send observed host activity as NDJSON/TCP; no demo generator is installed.",
     tags: ["ETW", "Sysmon", "NDJSON/TCP"],
   },
   {
@@ -188,7 +188,8 @@ export const QUICKSTART = {
       { text: WIN_INSTALL_CMD, cmd: true, copy: true },
       { text: "", dim: false },
       { text: "sf-console     # engine + SOC console + browser", ok: true },
-      { text: "sf-devsensor  # demo scenario: 18 labeled detections", ok: true },
+      { text: "sf-sensor -SetupSysmon # one-time setup, elevation required", cmd: true },
+      { text: "sf-sensor # observe host activity", cmd: true },
     ],
   },
   terminals: [
@@ -198,29 +199,18 @@ export const QUICKSTART = {
         { text: "# start the detection engine", dim: true },
         { text: "make run-engine", cmd: true },
         { text: "", dim: false },
-        { text: "[ENGINE] 69 rules loaded from ./rules", ok: true },
-        { text: "[ENGINE] 4 sequences loaded (correlator on)", ok: true },
-        { text: "[ENGINE] 2 beacon profiles loaded", ok: true },
-        { text: "[ENGINE] 2 threshold definitions loaded", ok: true },
-        { text: "[ENGINE] listening on 127.0.0.1:7777 (NDJSON, 1 event per line)", ok: true },
-        { text: "[ENGINE] api on 127.0.0.1:7778 (stats / events / alerts / rules / stream)", ok: true },
       ],
     },
     {
-      title: "terminal 2 — demo scenario",
+      title: "terminal 2 — observed provider log",
       lines: [
-        { text: "# replay the labeled demo scenario", dim: true },
-        { text: "make run-devsensor", cmd: true },
+        { text: "# configure Suricata to produce EVE logs first", dim: true },
+        { text: "./bin/collector -source suricata -observer IDS-01 -file /path/to/eve.json", cmd: true },
         { text: "", dim: false },
-        { text: "[ALERT] HIGH      powershell.exe -nop -w hidden -enc ...", warn: true },
-        { text: "[ALERT] HIGH      certutil.exe -urlcache -split -f https://...", warn: true },
-        { text: "[ALERT] CRITICAL  rundll32.exe ... comsvcs.dll, MiniDump...", crit: true },
-        { text: "[ALERT] HIGH      schtasks.exe /create /tn EdgeUpdaterCore...", warn: true },
-        { text: "[ALERT] CRITICAL  powershell -c Set-MpPreference -Disable...", crit: true },
       ],
     },
   ],
-  note: "Requirements: Go 1.26+ for the engine, Bun for the console. The demo scenario is simulated data for smoke-testing the pipeline — real hosts stream through sf-sensor.",
+  note: "Requirements: Go 1.26+ for the engine, Bun for the console. Hosts stream through sf-sensor; external providers must be configured before importing their logs. No events are generated when sensors are absent.",
 };
 
 export const COMPARISON = {
@@ -278,7 +268,7 @@ export const FAQS = [
   },
   {
     q: "Does it depend on Sysmon?",
-    a: "No. The Rust sensor collects ETW kernel-process providers on Windows and refuses unsupported platforms. The Sysmon path is an alternative. The engine accepts received records, including the explicitly labeled development demo; it does not manufacture telemetry when sensors are absent.",
+    a: "No. The Rust sensor collects ETW kernel-process providers on Windows and refuses unsupported platforms. The Sysmon path is an alternative. The engine accepts received records, from configured sensors and log providers; it does not manufacture telemetry when sensors are absent.",
   },
   {
     q: "Why the name bluetardigrade?",

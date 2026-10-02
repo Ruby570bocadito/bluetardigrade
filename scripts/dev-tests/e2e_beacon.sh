@@ -67,7 +67,7 @@ else
   echo "[e2e-beacon] compilando binarios frescos en $TMPDIR_E2E/bin"
   mkdir -p "$TMPDIR_E2E/bin"
   (cd "$REPO" && go build -o "$TMPDIR_E2E/bin/engine" ./cmd/engine) || { echo "FALLO: build engine"; exit 1; }
-  (cd "$REPO" && go build -o "$TMPDIR_E2E/bin/devsensor" ./cmd/devsensor) || { echo "FALLO: build devsensor"; exit 1; }
+  (cd "$REPO" && go build -o "$TMPDIR_E2E/bin/devsensor" ./scripts/dev-tests/scenario) || { echo "FALLO: build devsensor"; exit 1; }
   ENGINE="$TMPDIR_E2E/bin/engine"; DEVSENSOR="$TMPDIR_E2E/bin/devsensor"
 fi
 

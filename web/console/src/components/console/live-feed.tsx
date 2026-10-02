@@ -219,7 +219,7 @@ export function LiveFeed() {
             <EmptyState
               icon={ActivityIcon}
               title="Esperando eventos del sensor"
-              hint="Sin telemetría en el búfer. Arranca el motor (cmd/engine) y un sensor (sf-sensor o cmd/devsensor) para ver el flujo en directo."
+              hint="Sin telemetría en el búfer. Arranca el motor y conecta Sysmon, el sensor ETW o sf-collector con logs observados para ver el flujo."
             />
           ) : visible.length === 0 ? (
             <EmptyState

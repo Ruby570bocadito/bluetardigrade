@@ -2,7 +2,7 @@
 # Nightly pipeline bench (Director decision 6.2 — ADVISORY, never a gate).
 #
 # Runs the REAL pipeline end to end over loopback TWICE with the
-# documented baseline parameters: a freshly built engine, then cmd/bench
+# documented baseline parameters: a freshly built engine, then scripts/dev-tests/bench
 # streams 2000 events at a 1000 ev/s cap and measures every alert on the
 # SSE stream (ingest parse -> rules -> alert -> broadcast -> SSE hop).
 #
@@ -60,7 +60,7 @@ fi
 command -v go >/dev/null || { echo "[bench-nightly] FALLO preflight: go no está en PATH (exporta el toolchain)" >&2; exit 1; }
 echo "[bench-nightly] building engine and bench harness..."
 go build -o "$TMP/engine" ./cmd/engine
-go build -o "$TMP/bench" ./cmd/bench
+go build -o "$TMP/bench" ./scripts/dev-tests/bench
 
 # run_pass <label> [extra engine flags...]
 # Starts the engine with the extra flags, streams the bench, stops the
