@@ -546,7 +546,7 @@ verified in conduct, not just in compilation.
 ## Detection rules
 
 
-Rules live in `rules/` as YAML, are validated at load, and hot-reload every 15 seconds by default (disable with `-reload-every 0`). The loader carries the same house caps as every other config surface: 4 MiB per file (checked before reading), a nesting-depth pre-scan and a 2048 enabled-rules ceiling — enforced fail-loud on startup and on every hot-reload tick, so an oversized or hostile file aborts startup, or keeps the previous set on reload, instead of degrading a running engine. The shipped pack uses 75 of those 2048 slots. The shared guard also rejects cyclic aliases and caps projected expansion and composed flow depth before typed decoding.
+Rules live in `rules/` as YAML, are validated at load, and hot-reload every 15 seconds by default (disable with `-reload-every 0`). The loader carries the same house caps as every other config surface: 4 MiB per file (checked before reading), a nesting-depth pre-scan and a 2048 enabled-rules ceiling — enforced fail-loud on startup and on every hot-reload tick, so an oversized or hostile file aborts startup, or keeps the previous set on reload, instead of degrading a running engine. The shipped pack uses 114 of those 2048 slots. The shared guard also rejects cyclic aliases and caps projected expansion and composed flow depth before typed decoding.
 
 ```yaml
 - name: "PowerShell con comando codificado"
@@ -572,7 +572,7 @@ every change. Artifact rules have positive/negative fixtures; Windows lab
 validation and environment-specific noise tuning remain separate checks.
 
 <!-- BEGIN RULE INVENTORY -->
-The enabled pack contains **75 rules across 12 event types**: 16 critical / 37 high / 16 medium / 3 low / 3 info.
+The enabled pack contains **114 rules across 12 event types**: 25 critical / 55 high / 28 medium / 3 low / 3 info.
 Full IDs are retained because different rules in a pack can share a UUID prefix.
 
 | ID | Rule | Severity | Event type | ATT&CK | Tactic |
@@ -582,29 +582,43 @@ Full IDs are retained because different rules in a pack can share a UUID prefix.
 | `b8d5f6e2-0e39-4c47-9a58-2f6b0d4e7c44` | Borrado de instantaneas VSS | critical | `process.create` | T1490 | impact |
 | `c3d4e5f6-0002-4c02-9e02-020202020202` | Borrado de instantaneas VSS con wmic | critical | `process.create` | T1490 | impact |
 | `c3d4e5f6-0001-4c01-9e01-010101010101` | Borrado del registro de eventos con PowerShell | critical | `process.create` | T1070.001 | defense-evasion |
+| `4c877f28-95f0-4c8d-b4ad-e4e904274d56` | Bypass de AMSI en PowerShell | critical | `process.create` | T1562.001 | defense-evasion |
+| `42bdb9ee-3c00-4f9f-a62c-095c9b07fd14` | Bypass de UAC con eventvwr, sdclt o la clase Folder | critical | `registry.set` | T1548.002 | defense-evasion, privilege-escalation |
+| `1039ed0d-bec2-47ce-a651-9395cb069219` | Bypass de UAC con fodhelper o computerdefaults | critical | `registry.set` | T1548.002 | defense-evasion, privilege-escalation |
 | `a1b2c3d4-0002-4a02-9e02-020202020202` | Cosecha de contrasenas con LaZagne | critical | `process.create` | T1003 | credential-access |
 | `a1b2c3d4-0003-4a03-9e03-030303030303` | Dumping local de hashes con Pwdump | critical | `process.create` | T1003.002 | credential-access |
 | `b2c3d4e5-0005-4b05-9e05-050505050505` | Editor de Office lanzando un interprete | critical | `process.create` | T1566.001 | execution |
+| `75793606-cc2c-4eab-92d5-c9f0c6806290` | Escalada por suplantacion de token (Potato, PrintSpoofer) | critical | `process.create` | T1134.001 | privilege-escalation |
+| `deba0967-c92e-4d74-bd95-a8eebdff7d1a` | Exfiltracion con rclone | critical | `process.create` | T1567.002 | exfiltration |
+| `f518432f-f5f4-403b-8e13-d4f40f183dd3` | Exploit de Office via Equation Editor | critical | `process.create` | T1203 | execution, initial-access |
 | `a1b2c3d4-0001-4a01-9e01-010101010101` | Herramienta de volcado Mimikatz | critical | `process.create` | T1003.001 | credential-access |
 | `a7c4e5f1-9d28-4b36-8f47-1e5a9c3d6b33` | Manipulacion de Windows Defender | critical | `process.create` | T1562.001 | defense-evasion |
+| `b9531063-662b-4159-9b37-21bc52655ba1` | Nota de rescate escrita en disco | critical | `file.write` | T1486 | impact |
+| `ca55c08b-ae3e-4e55-a2b0-32bc8c383187` | Proceso hijo de un servidor web o de base de datos | critical | `process.create` | T1190, T1505.003 | initial-access, persistence |
 | `c3d4e5f6-0003-4c03-9e03-030303030303` | Reduccion de almacenamiento VSS con vssadmin o PowerShell | critical | `process.create` | T1490 | impact |
 | `a1b2c3d4-0008-4a08-9e08-080808080808` | Stager de Meterpreter o Metasploit | critical | `process.create` | T1059 | execution |
+| `97da41f5-351c-4aa2-8e63-f47bd144a6f5` | Sustitucion de binarios de accesibilidad | critical | `file.write` | T1546.008 | persistence, privilege-escalation |
 | `4f7b0d26-9e58-4c3f-a112-6b9d4e8f3c66` | Volcado de LSASS con procdump | critical | `process.create` | T1003.001 | credential-access |
 | `5b7e1f38-2c94-4d0a-b6e7-19a8c3d54f02` | Volcado de LSASS via comsvcs.dll | critical | `process.create` | T1003.001 | credential-access |
 | `c3d4e5f6-0006-4c06-9e06-060606060606` | Volcado de ntds.dit con ntdsutil | critical | `process.create` | T1003.003 | credential-access |
 | `3e6a9c15-8d47-4b2e-9f01-5a8c3d7e2b55` | Volcado del registro SAM | critical | `process.create` | T1003.002 | credential-access |
+| `839b58d4-e21c-4184-ad3e-8ec277fa5d46` | Acceso a contrasenas y cookies del navegador | high | `process.create` | T1555.003 | collection, credential-access |
 | `d4e5f607-1006-4a00-8000-000000000006` | Artefacto de volcado de LSASS escrito en disco | high | `file.write` | T1003.001 | credential-access |
 | `8dbf416a-d29c-4073-a556-afd182cd70aa` | Borrado de registros de eventos | high | `process.create` | T1070.001 | defense-evasion |
 | `c3d4e5f6-0005-4c05-9e05-050505050505` | Borrado del diario USN con fsutil | high | `process.create` | T1070.005 | defense-evasion |
+| `d61a77f2-80db-491c-856b-a05f76d468f8` | Borrado seguro del espacio libre con cipher | high | `process.create` | T1485 | impact |
 | `a1b2c3d4-0009-4a09-9e09-090909090909` | Canal de control remoto silencioso con AnyDesk | high | `process.create` | T1219 | command-and-control |
+| `ae3ac8b8-76bf-4d9e-ba1d-2b2f5568b35e` | Compresion de datos protegida con contrasena | high | `process.create` | T1560.001 | collection |
 | `d4e5f607-1005-4a00-8000-000000000005` | Contenido activo en el inicio automatico de Office | high | `file.write` | T1137 | persistence |
 | `soc-honeypot-login` | Cowrie: acceso aceptado en el honeypot | high | `honeypot.login` | T1078 |  |
 | `soc-honeypot-command` | Cowrie: comando observado en la sesion | high | `honeypot.command` | T1059 |  |
 | `b2c3d4e5-0007-4b07-9e07-070707070707` | Cradle de descarga en PowerShell | high | `process.create` | T1059.001 | execution |
 | `e8a1c72d-4b6f-4f39-9a52-0d3b7c5f1a11` | Creacion de tarea programada | high | `process.create` | T1053.005 | persistence |
 | `8e2f3a51-6b7c-4d8e-af90-1b2c3d4e5f60` | Defensa antivirus desactivada via registro | high | `registry.set` | T1562.001 | defense-evasion |
+| `49c01324-6def-4587-bc30-dce3d7ce5b6c` | Depurador en Image File Execution Options | high | `registry.set` | T1546.012 | persistence, privilege-escalation |
 | `7cae3059-c18b-4f62-9445-9ec071bc6f99` | Desactivacion del firewall de Windows | high | `process.create` | T1562.004 | defense-evasion |
 | `c1d24e9b-7a03-4c56-9f11-8e2b5a4d9c73` | Descarga con certutil o bitsadmin | high | `process.create` | T1105 | command-and-control |
+| `321f9cec-40b5-4f60-90ac-800775b351d4` | Detencion de servicios de copia de seguridad o de seguridad | high | `process.create` | T1489 | impact |
 | `b2c3d4e5-0002-4b02-9e02-020202020202` | Ejecucion de JavaScript con rundll32 | high | `process.create` | T1218.011 | defense-evasion |
 | `f3b2d98e-7c15-4a58-8e0a-2c4d6e8f0b22` | Ejecucion de procesos via WMI | high | `process.create` | T1047 | execution |
 | `b2c3d4e5-0001-4b01-9e01-010101010101` | Ejecucion de scripts con mshta | high | `process.create` | T1218.005 | defense-evasion |
@@ -613,11 +627,16 @@ Full IDs are retained because different rules in a pack can share a UUID prefix.
 | `b2c3d4e5-0004-4b04-9e04-040404040404` | Ejecucion indirecta con forfiles | high | `process.create` | T1202 | defense-evasion |
 | `a1b2c3d4-0007-4a07-9e07-070707070707` | Ejecucion remota con CrackMapExec o Impacket | high | `process.create` | T1021 | lateral-movement |
 | `b15c6d84-9eaf-40b1-d2c3-4e5f6a7b8c90` | Ejecutable disfrazado de documento | high | `file.write` | T1036.007 | defense-evasion |
+| `a18ae438-82b6-478f-8e8d-b33d61996057` | Ejecutable lanzado desde un adjunto o un archivo comprimido | high | `process.create` | T1204.002, T1566.001 | initial-access |
 | `a04b5c73-8d9e-4fa0-c1b2-3d4e5f6a7b80` | Ejecutable soltado en carpeta de inicio | high | `file.write` | T1547.001 | persistence |
 | `a1b2c3d4-0006-4a06-9e06-060606060606` | Enumeracion de directorio con AdFind | high | `process.create` | T1087.002 | discovery |
+| `f3497a36-89e6-4b5e-b49c-b17ff3105a4f` | Escaner de red o de puertos en el equipo | high | `process.create` | T1046 | discovery |
+| `5e1cbafb-d9a2-4bbf-8f42-7bb9a6760d95` | Escritorio remoto habilitado por registro | high | `registry.set` | T1021.001 | lateral-movement |
 | `9f3a4b62-7c8d-4e9f-b0a1-2c3d4e5f6a70` | Exclusiones de Defender anadidas via registro | high | `registry.set` | T1562.001 | defense-evasion |
 | `c3d4e5f6-0007-4c07-9e07-070707070707` | Falsificacion de marcas de tiempo de ficheros | high | `process.create` | T1070.006 | defense-evasion |
+| `046007e6-8ed6-49e4-87dd-e03963d9c269` | Formato ejecutable inusual lanzado desde Descargas | high | `process.create` | T1204.002, T1566.002 | initial-access |
 | `6b9d2f48-b07a-4e51-8334-8dbf60ab5e88` | Instalacion remota con msiexec | high | `process.create` | T1218.005 | defense-evasion |
+| `f92d7cee-8ce6-4bf2-bd9a-dec05bcf0b54` | Interprete conectando a un puerto tipico de C2 | high | `network.connect` | T1571 | command-and-control |
 | `b2c3d4e5-0006-4b06-9e06-060606060606` | Interprete de script ejecutando desde staging de usuario | high | `process.create` | T1204.002 | execution |
 | `d4e5f607-1002-4a00-8000-000000000002` | Interprete escribe una DLL en una ruta temporal | high | `file.write` | T1574.001 | defense-evasion |
 | `a1b2c3d4-0005-4a05-9e05-050505050505` | Mapeo de dominio con SharpHound | high | `process.create` | T1087.002 | discovery |
@@ -628,13 +647,32 @@ Full IDs are retained because different rules in a pack can share a UUID prefix.
 | `9ec0527b-e3ad-4184-b667-be92593de81b` | Persistencia en clave Run | high | `process.create` | T1547.001 | persistence |
 | `7d1e2f40-5a6b-4c7d-9e8f-0a1b2c3d4e5f` | Persistencia en clave Run via registro | high | `registry.set` | T1547.001 | persistence |
 | `9f31c2a4-5d7b-4e18-8a02-3b9c6d1e7f40` | PowerShell con comando codificado | high | `process.create` | T1059.001 | execution |
+| `6a6b145f-34d4-440e-8041-238dde766981` | Reconocimiento lanzado desde un proceso sospechoso | high | `process.create` | T1033, T1082 | discovery |
+| `f000c873-4dbe-485e-8328-120a9e3e8339` | Registro de bloques de PowerShell desactivado | high | `registry.set` | T1562.002 | defense-evasion |
 | `c3d4e5f6-0004-4c04-9e04-040404040404` | Sabotaje de recuperacion de arranque con bcdedit | high | `process.create` | T1490 | impact |
+| `b75edbba-b156-4c8b-9619-323fdb019781` | Servicio nuevo con binario en ruta de usuario | high | `process.create` | T1543.003 | persistence, privilege-escalation |
+| `4160fe22-e519-486c-91f2-779c5b814869` | Servicio remoto creado o arrancado con sc | high | `process.create` | T1021.002, T1569.002 | lateral-movement |
+| `909287cd-287a-4336-8109-a3e946334e61` | Subida de ficheros con bitsadmin | high | `process.create` | T1048, T1197 | exfiltration |
+| `53eeff7e-dd36-4321-b468-b2ff0365b223` | Subida de ficheros con curl o PowerShell | high | `process.create` | T1048.003 | exfiltration |
 | `soc-ids-priority-high` | Suricata: firma de prioridad alta | high | `network.alert` |  |  |
+| `87f5f6c7-1ce0-4d07-b2f9-c1732e3e7163` | Suscripcion permanente de eventos WMI | high | `process.create` | T1546.003 | persistence |
+| `b360548f-35ee-4a5a-be3c-26b4ad06181b` | Tunel o proxy inverso hacia el exterior | high | `process.create` | T1572 | command-and-control |
+| `2a01df90-a2e0-4a97-a01e-55f2a2c6360c` | Borrado del historial de PowerShell | medium | `process.create` | T1070.003 | defense-evasion |
 | `c3d4e5f6-0008-4c08-9e08-080808080808` | Borrado dirigido de artefactos forenses de Windows | medium | `process.create` | T1070.004 | defense-evasion |
+| `f6cd9a23-7e15-4721-83e3-d8115583e6e4` | Busqueda de contrasenas en ficheros | medium | `process.create` | T1552.001 | credential-access |
+| `0ae5fea0-77bd-42f5-b3ef-fb5c55639bc0` | Captura de pantalla desde PowerShell | medium | `process.create` | T1113 | collection |
 | `e48f9ab7-c1d0-43e4-a5f6-7b8c9daebf21` | Consulta DNS a dominio generado (posible DGA) | medium | `network.connect` | T1568.002 | command-and-control |
+| `9f6e6665-e794-4cf6-bdf3-4e7a047b7071` | Copia de buzones de correo locales (PST/OST) | medium | `process.create` | T1114.001 | collection |
+| `soc-cowrie-recon` | Cowrie: reconocimiento del sistema en el honeypot | medium | `honeypot.command` | T1592 | reconnaissance |
 | `d4e5f607-1003-4a00-8000-000000000003` | DLL candidata a carga lateral descargada o extraida | medium | `file.write` | T1574.001 | defense-evasion |
 | `c26d7e95-afbe-41c2-e3d4-5f6a7b8c9da0` | DLL cargada desde ruta de usuario | medium | `image.load` | T1574.001, T1574.002 | privilege-escalation |
+| `94e4f915-b57c-43ef-90d1-6692d89d64a9` | Ejecucion remota con WinRM o PowerShell Remoting | medium | `process.create` | T1021.006 | lateral-movement |
+| `edfb0e26-5df2-4c41-a759-6252a7257be0` | Enumeracion de SPN con setspn | medium | `process.create` | T1087.002, T1558.003 | discovery |
 | `soc-firewall-admin-allow` | Firewall: conexion administrativa entrante permitida | medium | `network.firewall` |  |  |
+| `2033a3e6-2c86-4588-99e2-0c7a2bf2cf55` | Herramienta de acceso remoto en el equipo | medium | `process.create` | T1219 | command-and-control |
+| `soc-ids-active-scan` | IDS: escaneo activo de red | medium | `network.alert` | T1595 | reconnaissance |
+| `ae73b409-f020-4596-b490-b1aad8bd6a59` | Inventario del antivirus instalado | medium | `process.create` | T1518.001 | discovery |
+| `f0de8115-78c7-4ebd-add3-a1ac994d6a1c` | Lectura del portapapeles desde la linea de comandos | medium | `process.create` | T1115 | collection |
 | `d4e5f607-1004-4a00-8000-000000000004` | Modificacion de un perfil de PowerShell | medium | `file.write` | T1546.013 | persistence |
 | `soc-ndr-public-rdp` | NDR: RDP hacia una direccion publica | medium | `network.connect` | T1021.001 |  |
 | `soc-osquery-admin-listener` | osquery: nuevo puerto administrativo en todas las interfaces | medium | `host.query` |  |  |
@@ -646,6 +684,7 @@ Full IDs are retained because different rules in a pack can share a UUID prefix.
 | `soc-mail-url-credentials` | Phishing: URL contiene credenciales antes del host | medium | `email.message` | T1566.002 |  |
 | `a1b2c3d4-000a-4a0a-9e0a-0a0a0a0a0a0a` | Reconocimiento de dominio con comandos net/nltest | medium | `process.create` | T1087.002 | discovery |
 | `soc-ids-priority-medium` | Suricata: firma de prioridad media | medium | `network.alert` |  |  |
+| `8fb44944-2a7f-4ae6-b8d3-1bd6fcd7490b` | Transferencia FTP con guion de comandos | medium | `process.create` | T1048.003 | exfiltration |
 | `soc-mail-macro-attachment` | Phishing: adjunto Office compatible con macros | low | `email.message` | T1566.001 |  |
 | `soc-mail-html-link-mismatch` | Phishing: enlace HTML muestra otro host | low | `email.message` | T1566.002 |  |
 | `soc-mail-reply-mismatch` | Phishing: Reply-To de otro dominio | low | `email.message` | T1566 |  |

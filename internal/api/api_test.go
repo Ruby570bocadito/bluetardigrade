@@ -518,7 +518,17 @@ func TestSequencesEndpoint(t *testing.T) {
 	if len(out) != m.Count() {
 		t.Fatalf("sequences = %d, want %d", len(out), m.Count())
 	}
-	first := out[0]
+	// assert on a known shipped chain (files load in name order, so
+	// position in the list is not part of the contract)
+	var first map[string]any
+	for _, seq := range out {
+		if seq["name"] == "Campana de robo de credenciales" {
+			first = seq
+		}
+	}
+	if first == nil {
+		t.Fatalf("shipped credential-theft chain missing from /api/sequences")
+	}
 	for _, k := range []string{"id", "name", "description", "severity", "window_seconds", "tags", "steps"} {
 		if _, ok := first[k]; !ok {
 			t.Errorf("sequence payload missing %q (spec drift)", k)

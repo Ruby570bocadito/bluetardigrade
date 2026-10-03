@@ -1,0 +1,96 @@
+# Second set of kill-chain sequences: data theft, ransomware
+# preparation, webshell operations, credential theft followed by lateral
+# movement, privilege escalation to credential dumping, and mail
+# delivery to payload download. Same schema and semantics as
+# kill-chains.yaml: steps are rule names, unordered, all on the same host
+# inside the window.
+
+- name: "Robo de datos: compresion y subida"
+  id: "5e0c7a31-6f1d-4b8e-9a52-1c3d4e5f6a70"
+  description: >
+    Datos empaquetados con contrasena y subidos desde la linea de
+    comandos en el mismo equipo. Juntos describen una exfiltracion en
+    curso, no una copia de seguridad.
+  severity: critical
+  window: 30m
+  tags: ["attack.t1560.001", "attack.t1048.003", "attack.exfiltration", "correlacion"]
+  steps:
+    - rule: "Compresion de datos protegida con contrasena"
+    - rule: "Subida de ficheros con curl o PowerShell"
+
+- name: "Robo de datos hacia la nube"
+  id: "6f1d8b42-7a2e-4c9f-8b63-2d4e5f6a7b81"
+  description: >
+    Archivo cifrado con contrasena y rclone sincronizando hacia un
+    remoto. Es el patron de doble extorsion: robar antes de cifrar.
+  severity: critical
+  window: 30m
+  tags: ["attack.t1560.001", "attack.t1567.002", "attack.exfiltration", "correlacion"]
+  steps:
+    - rule: "Compresion de datos protegida con contrasena"
+    - rule: "Exfiltracion con rclone"
+
+- name: "Preparacion de ransomware"
+  id: "7a2e9c53-8b3f-4da0-9c74-3e5f6a7b8c92"
+  description: >
+    Servicios de copia o de seguridad detenidos, copias de sombra
+    borradas y una nota de rescate en disco. El cifrado esta en marcha:
+    aislar el equipo de inmediato.
+  severity: critical
+  window: 30m
+  tags: ["attack.t1489", "attack.t1490", "attack.t1486", "attack.impact", "correlacion"]
+  steps:
+    - rule: "Detencion de servicios de copia de seguridad o de seguridad"
+    - rule: "Borrado de instantaneas VSS"
+    - rule: "Nota de rescate escrita en disco"
+
+- name: "Webshell con reconocimiento interno"
+  id: "8b3fad64-9c40-4eb1-8d85-4f6a7b8c9da3"
+  description: >
+    Un servidor web lanzo un interprete y, en el mismo equipo, se
+    enumero el dominio. El atacante ya opera desde la webshell y busca
+    a donde moverse.
+  severity: critical
+  window: 30m
+  tags: ["attack.t1505.003", "attack.t1087.002", "attack.initial-access", "correlacion"]
+  steps:
+    - rule: "Proceso hijo de un servidor web o de base de datos"
+    - rule: "Reconocimiento de dominio con comandos net/nltest"
+
+- name: "Credenciales robadas y movimiento lateral"
+  id: "9c40be75-ad51-4fc2-9e96-5a7b8c9daeb4"
+  description: >
+    Mimikatz en un equipo seguido de PsExec desde el mismo equipo: las
+    credenciales robadas se estan usando para saltar a otras maquinas.
+  severity: critical
+  window: 30m
+  tags: ["attack.t1003.001", "attack.t1021.002", "attack.lateral-movement", "correlacion"]
+  steps:
+    - rule: "Herramienta de volcado Mimikatz"
+    - rule: "Movimiento lateral con PsExec"
+
+- name: "Escalada y volcado de credenciales"
+  id: "ad51cf86-be62-40d3-8fa7-6b8c9daebfc5"
+  description: >
+    Bypass de UAC preparado y volcado de LSASS en el mismo equipo y en
+    poco tiempo: alguien paso de usuario a administrador para leer las
+    credenciales de la memoria.
+  severity: critical
+  window: 10m
+  tags: ["attack.t1548.002", "attack.t1003.001", "attack.privilege-escalation", "correlacion"]
+  steps:
+    - rule: "Bypass de UAC con fodhelper o computerdefaults"
+    - rule: "Volcado de LSASS via comsvcs.dll"
+
+- name: "Documento malicioso con descarga"
+  id: "be62d097-cf73-41e4-90b8-7c9daebfc0d6"
+  description: >
+    Office lanzo un interprete y ese mismo equipo descargo un fichero
+    con certutil o bitsadmin. Es la entrega clasica por macro: el
+    documento abre la puerta y trae la segunda fase.
+  severity: critical
+  window: 10m
+  tags: ["attack.t1566.001", "attack.t1105", "attack.initial-access", "correlacion"]
+  steps:
+    - rule: "Editor de Office lanzando un interprete"
+    - rule: "Descarga con certutil o bitsadmin"

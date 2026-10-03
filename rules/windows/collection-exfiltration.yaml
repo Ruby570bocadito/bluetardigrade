@@ -1,0 +1,218 @@
+# Collection and exfiltration: the last steps of a data theft, and the
+# ones the pack did not cover. Password-protected archives, screen and
+# clipboard capture, browser credential stores, mailbox files, and the
+# usual ways out (rclone to cloud storage, curl/PowerShell uploads, BITS
+# uploads, scripted FTP).
+
+# T1560.001 - password-protected archive
+- name: "Compresion de datos protegida con contrasena"
+  id: "ae3ac8b8-76bf-4d9e-ba1d-2b2f5568b35e"
+  description: >
+    Detecta 7-Zip o RAR creando un archivo cifrado con contrasena desde
+    la linea de comandos (-p o -hp). Empaquetar con contrasena oculta
+    el contenido a la inspeccion de red y es el paso previo clasico a
+    la exfiltracion y a la doble extorsion del ransomware.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: iin
+      value: ["7z.exe", "7za.exe", "7zr.exe", "rar.exe", "winrar.exe"]
+    - field: process.command_line
+      operator: regex
+      value: '(?i)\s(a|u)\s'
+    - field: process.command_line
+      operator: regex
+      value: '(?i)\s-h?p[^\s]+'
+  actions:
+    - type: alert
+      config:
+        message: "Archivo comprimido con contrasena creado en {host}"
+        notify: "true"
+  tags: ["attack.t1560.001", "attack.collection"]
+  enabled: true
+
+# T1113 - screen capture from PowerShell
+- name: "Captura de pantalla desde PowerShell"
+  id: "0ae5fea0-77bd-42f5-b3ef-fb5c55639bc0"
+  description: >
+    Detecta PowerShell usando System.Drawing/Windows.Forms para copiar
+    la pantalla. Es la tecnica de los stealers y de los modulos de
+    espionaje de los RAT; un administrador no captura pantallas por
+    linea de comandos.
+  severity: medium
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: iin
+      value: ["powershell.exe", "pwsh.exe"]
+    - field: process.command_line
+      operator: icontains_any
+      value: ["CopyFromScreen", "PrimaryScreen.Bounds", "System.Windows.Forms.Screen"]
+  actions:
+    - type: alert
+      config:
+        message: "Captura de pantalla por linea de comandos en {host}"
+        notify: "false"
+  tags: ["attack.t1113", "attack.collection"]
+  enabled: true
+
+# T1115 - clipboard collection
+- name: "Lectura del portapapeles desde la linea de comandos"
+  id: "f0de8115-78c7-4ebd-add3-a1ac994d6a1c"
+  description: >
+    Detecta Get-Clipboard o el acceso a Windows.Forms.Clipboard desde
+    PowerShell. Los stealers lo usan para robar contrasenas copiadas
+    y direcciones de monederos.
+  severity: medium
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: iin
+      value: ["powershell.exe", "pwsh.exe"]
+    - field: process.command_line
+      operator: icontains_any
+      value: ["Get-Clipboard", "Windows.Forms.Clipboard"]
+  actions:
+    - type: alert
+      config:
+        message: "Lectura del portapapeles por linea de comandos en {host}"
+        notify: "false"
+  tags: ["attack.t1115", "attack.collection"]
+  enabled: true
+
+# T1555.003 - browser credential and cookie stores
+- name: "Acceso a contrasenas y cookies del navegador"
+  id: "839b58d4-e21c-4184-ad3e-8ec277fa5d46"
+  description: >
+    Detecta un proceso que no es el navegador nombrando sus almacenes
+    de credenciales y sesion: Login Data, Cookies y Web Data de
+    Chromium o logins.json, key4.db y cookies.sqlite de Firefox. Es la
+    firma de los infostealers y del robo de sesiones.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)\\(Login Data|Cookies|Web Data)\b|\b(logins\.json|key4\.db|cookies\.sqlite)\b'
+    - field: process.name
+      operator: not_in
+      value: ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe"]
+  actions:
+    - type: alert
+      config:
+        message: "Acceso a credenciales del navegador en {host}"
+        notify: "true"
+  tags: ["attack.t1555.003", "attack.credential-access", "attack.collection"]
+  enabled: true
+
+# T1114.001 - local mailbox files copied or archived
+- name: "Copia de buzones de correo locales (PST/OST)"
+  id: "9f6e6665-e794-4cf6-bdf3-4e7a047b7071"
+  description: >
+    Detecta la copia o el empaquetado de ficheros .pst y .ost. Un
+    buzon contiene meses de correo y es objetivo directo del espionaje
+    y de la extorsion.
+  severity: medium
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)\b(copy|xcopy|robocopy|move|compress-archive|7z|7za|rar)\b.*\.(pst|ost)\b'
+  actions:
+    - type: alert
+      config:
+        message: "Copia de buzones PST/OST en {host}"
+        notify: "false"
+  tags: ["attack.t1114.001", "attack.collection"]
+  enabled: true
+
+# T1567.002 - exfiltration to cloud storage with rclone
+- name: "Exfiltracion con rclone"
+  id: "deba0967-c92e-4d74-bd95-a8eebdff7d1a"
+  description: >
+    Detecta rclone copiando o sincronizando hacia un remoto, o
+    cargando un rclone.conf. Es la herramienta de exfiltracion mas
+    usada por los grupos de ransomware hacia MEGA, Dropbox o S3.
+  severity: critical
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)\brclone(\.exe)?["]?\s+(copy|copyto|sync|move)\b|\brclone\.conf\b'
+  actions:
+    - type: alert
+      config:
+        message: "Exfiltracion con rclone en {host}"
+        notify: "true"
+  tags: ["attack.t1567.002", "attack.exfiltration"]
+  enabled: true
+
+# T1048.003 - file upload with curl or PowerShell
+- name: "Subida de ficheros con curl o PowerShell"
+  id: "53eeff7e-dd36-4321-b468-b2ff0365b223"
+  description: >
+    Detecta curl subiendo un fichero (-T, --upload-file, -F campo=@,
+    --data-binary @) o Invoke-WebRequest/Invoke-RestMethod con POST o
+    PUT y -InFile. Las descargas son frecuentes; las subidas desde la
+    linea de comandos de un puesto de trabajo no.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)\bcurl(\.exe)?\b.*(\s-T\s|--upload-file|\s-F\s+\S*=@|--data-binary\s+@)|\b(invoke-webrequest|invoke-restmethod|iwr|irm)\b.*-infile\b'
+  actions:
+    - type: alert
+      config:
+        message: "Subida de ficheros por linea de comandos en {host}"
+        notify: "true"
+  tags: ["attack.t1048.003", "attack.exfiltration"]
+  enabled: true
+
+# T1048 - upload through a BITS job
+- name: "Subida de ficheros con bitsadmin"
+  id: "909287cd-287a-4336-8109-a3e946334e61"
+  description: >
+    Detecta bitsadmin creando un trabajo de subida (/upload). BITS
+    sobrevive a reinicios y sale por el proxy del sistema, por eso se
+    usa para sacar datos sin levantar sospechas.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: ieq
+      value: "bitsadmin.exe"
+    - field: process.command_line
+      operator: regex
+      value: '(?i)\s/upload\b'
+  actions:
+    - type: alert
+      config:
+        message: "Trabajo BITS de subida en {host}"
+        notify: "true"
+  tags: ["attack.t1048", "attack.exfiltration", "attack.t1197"]
+  enabled: true
+
+# T1048.003 - scripted FTP transfer
+- name: "Transferencia FTP con guion de comandos"
+  id: "8fb44944-2a7f-4ae6-b8d3-1bd6fcd7490b"
+  description: >
+    Detecta ftp.exe ejecutando un guion de comandos (-s:). Automatiza
+    subidas sin interaccion y aparece en exfiltraciones de bajo coste.
+  severity: medium
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: ieq
+      value: "ftp.exe"
+    - field: process.command_line
+      operator: regex
+      value: '(?i)\s-s:'
+  actions:
+    - type: alert
+      config:
+        message: "Transferencia FTP automatizada en {host}"
+        notify: "false"
+  tags: ["attack.t1048.003", "attack.exfiltration"]
+  enabled: true

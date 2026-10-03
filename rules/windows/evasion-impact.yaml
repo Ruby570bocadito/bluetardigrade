@@ -1,0 +1,183 @@
+# Defense evasion, persistence and impact that the pack did not cover:
+# AMSI bypasses, WMI event subscriptions, PowerShell history and logging
+# tampering, password hunting in files, and the last steps of
+# ransomware (stopping backup and security services, wiping free space,
+# writing the ransom note).
+
+# T1562.001 - AMSI bypass
+- name: "Bypass de AMSI en PowerShell"
+  id: "4c877f28-95f0-4c8d-b4ad-e4e904274d56"
+  description: >
+    Detecta las cadenas de los bypass de AMSI publicos (AmsiUtils,
+    amsiInitFailed, AmsiScanBuffer, AmsiOpenSession). Desactivar AMSI
+    ciega al antivirus ante el script que viene a continuacion.
+  severity: critical
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: icontains_any
+      value: ["AmsiUtils", "amsiInitFailed", "AmsiScanBuffer", "AmsiOpenSession"]
+  actions:
+    - type: alert
+      config:
+        message: "Bypass de AMSI en {host}"
+        notify: "true"
+  tags: ["attack.t1562.001", "attack.defense-evasion"]
+  enabled: true
+
+# T1546.003 - permanent WMI event subscription
+- name: "Suscripcion permanente de eventos WMI"
+  id: "87f5f6c7-1ce0-4d07-b2f9-c1732e3e7163"
+  description: >
+    Detecta la creacion de filtros y consumidores WMI permanentes
+    (__EventFilter, CommandLineEventConsumer, ActiveScriptEventConsumer,
+    __FilterToConsumerBinding). Persistencia sin fichero que sobrevive
+    a reinicios y no aparece en las claves Run.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: icontains_any
+      value: ["__EventFilter", "CommandLineEventConsumer", "ActiveScriptEventConsumer", "__FilterToConsumerBinding"]
+  actions:
+    - type: alert
+      config:
+        message: "Suscripcion WMI permanente creada en {host}"
+        notify: "true"
+  tags: ["attack.t1546.003", "attack.persistence"]
+  enabled: true
+
+# T1070.003 - PowerShell history wiped or disabled
+- name: "Borrado del historial de PowerShell"
+  id: "2a01df90-a2e0-4a97-a01e-55f2a2c6360c"
+  description: >
+    Detecta HistorySaveStyle SaveNothing, el borrado de
+    ConsoleHost_history.txt o Clear-History. Elimina el rastro de los
+    comandos tecleados en la sesion.
+  severity: medium
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)historysavestyle\s+savenothing|remove-item\b.*(consolehost_history|historysavepath)|\bclear-history\b'
+  actions:
+    - type: alert
+      config:
+        message: "Historial de PowerShell borrado en {host}"
+        notify: "false"
+  tags: ["attack.t1070.003", "attack.defense-evasion"]
+  enabled: true
+
+# T1562.002 - PowerShell script block logging disabled
+- name: "Registro de bloques de PowerShell desactivado"
+  id: "f000c873-4dbe-485e-8328-120a9e3e8339"
+  description: >
+    Detecta EnableScriptBlockLogging puesto a 0 en las directivas de
+    PowerShell. Apaga el registro que guarda el codigo real de cada
+    script, incluso el ofuscado.
+  severity: high
+  event_type: registry.set
+  conditions:
+    - field: registry.key
+      operator: regex
+      value: '(?i)\\PowerShell\\ScriptBlockLogging$'
+    - field: registry.value_name
+      operator: ieq
+      value: "EnableScriptBlockLogging"
+    - field: registry.value
+      operator: regex
+      value: '(?i)^(0|dword \(0x00000000\)|0x0+)$'
+  actions:
+    - type: alert
+      config:
+        message: "Registro de bloques de PowerShell desactivado en {host}"
+        notify: "true"
+  tags: ["attack.t1562.002", "attack.defense-evasion"]
+  enabled: true
+
+# T1552.001 - password hunting in files
+- name: "Busqueda de contrasenas en ficheros"
+  id: "f6cd9a23-7e15-4721-83e3-d8115583e6e4"
+  description: >
+    Detecta findstr recursivo o Select-String buscando "password",
+    "passwd", "pwd=" o "contrasena" en ficheros. Scripts de despliegue
+    y ficheros de configuracion siguen guardando credenciales en claro.
+  severity: medium
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)\bfindstr(\.exe)?\b.*\s/[a-z]*s[a-z]*\b.*(password|passwd|contrase|pwd=)|\bselect-string\b.*-pattern\s+["]?(password|passwd|pwd)'
+  actions:
+    - type: alert
+      config:
+        message: "Busqueda de contrasenas en ficheros en {host}"
+        notify: "false"
+  tags: ["attack.t1552.001", "attack.credential-access"]
+  enabled: true
+
+# T1489 - backup and security services stopped or disabled
+- name: "Detencion de servicios de copia de seguridad o de seguridad"
+  id: "321f9cec-40b5-4f60-90ac-800775b351d4"
+  description: >
+    Detecta net stop o sc stop/config sobre servicios de VSS, SQL,
+    Veeam, Acronis, Windows Backup, Exchange o antivirus. El
+    ransomware los para justo antes de cifrar para que no queden
+    copias ni ficheros bloqueados.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)\b(net1?|sc)(\.exe)?\s+(stop|config)\s+["]?[^\s"]*(vss|sql|backup|veeam|acronis|wbengine|msexchange|windefend|sophos|eset|kaspersky|bitdefender|mbam)'
+  actions:
+    - type: alert
+      config:
+        message: "Servicios de copia o de seguridad detenidos en {host}"
+        notify: "true"
+  tags: ["attack.t1489", "attack.impact"]
+  enabled: true
+
+# T1485 - free space wiped with cipher /w
+- name: "Borrado seguro del espacio libre con cipher"
+  id: "d61a77f2-80db-491c-856b-a05f76d468f8"
+  description: >
+    Detecta cipher /w, que sobrescribe el espacio libre del disco. Tras
+    un cifrado o un borrado impide recuperar los ficheros originales.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: ieq
+      value: "cipher.exe"
+    - field: process.command_line
+      operator: regex
+      value: '(?i)\s/w:'
+  actions:
+    - type: alert
+      config:
+        message: "Espacio libre sobrescrito con cipher en {host}"
+        notify: "true"
+  tags: ["attack.t1485", "attack.impact"]
+  enabled: true
+
+# T1486 - ransom note written to disk
+- name: "Nota de rescate escrita en disco"
+  id: "b9531063-662b-4159-9b37-21bc52655ba1"
+  description: >
+    Detecta ficheros de texto o HTML cuyo nombre es el de una nota de
+    rescate (decrypt, ransom, restore files, how to recover...). Aparece
+    en cada carpeta cifrada: si salta, el cifrado esta en curso.
+  severity: critical
+  event_type: file.write
+  conditions:
+    - field: file.path
+      operator: regex
+      value: '(?i)\\[^\\]*(decrypt|ransom|restore[-_ ]?(my|your|all)?[-_ ]?files|how[-_ ]to[-_ ](decrypt|recover|restore)|recover[-_ ]?files)[^\\]*\.(txt|html?|hta)$'
+  actions:
+    - type: alert
+      config:
+        message: "Nota de rescate escrita en {host}: posible cifrado en curso"
+        notify: "true"
+  tags: ["attack.t1486", "attack.impact"]
+  enabled: true

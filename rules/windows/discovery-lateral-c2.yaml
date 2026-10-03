@@ -1,0 +1,236 @@
+# Discovery, lateral movement and command and control: reconnaissance
+# launched by processes that never do it legitimately, security
+# software inventory, SPN and network scanning, remote services and
+# WinRM, RDP enabled through the registry, tunnels and interpreters
+# calling classic C2 ports.
+
+# T1082 / T1033 - discovery commands spawned by documents or script hosts
+- name: "Reconocimiento lanzado desde un proceso sospechoso"
+  id: "6a6b145f-34d4-440e-8041-238dde766981"
+  description: >
+    Detecta whoami, systeminfo, ipconfig, net, nltest, tasklist y
+    similares cuyo padre es Office, Outlook o un host de scripts
+    (mshta, wscript, cscript, rundll32, regsvr32). Los administradores
+    los lanzan desde una consola; colgando de un documento son el
+    primer vistazo de un implante.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: enrichment.parent_name
+      operator: iin
+      value: ["winword.exe", "excel.exe", "powerpnt.exe", "outlook.exe", "mshta.exe", "wscript.exe", "cscript.exe", "rundll32.exe", "regsvr32.exe"]
+    - field: process.name
+      operator: iin
+      value: ["whoami.exe", "systeminfo.exe", "ipconfig.exe", "net.exe", "net1.exe", "nltest.exe", "tasklist.exe", "quser.exe", "qwinsta.exe", "hostname.exe", "netstat.exe", "arp.exe", "route.exe"]
+  actions:
+    - type: alert
+      config:
+        message: "Reconocimiento lanzado desde un proceso sospechoso en {host}"
+        notify: "true"
+  tags: ["attack.t1082", "attack.discovery", "attack.t1033"]
+  enabled: true
+
+# T1518.001 - security software inventory through SecurityCenter2
+- name: "Inventario del antivirus instalado"
+  id: "ae73b409-f020-4596-b490-b1aad8bd6a59"
+  description: >
+    Detecta consultas WMI a root\SecurityCenter2 AntiVirusProduct desde
+    la linea de comandos. El malware pregunta que antivirus hay antes
+    de decidir como desactivarlo o evitarlo.
+  severity: medium
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)securitycenter2.*antivirusproduct|antivirusproduct.*securitycenter2'
+  actions:
+    - type: alert
+      config:
+        message: "Consulta del antivirus instalado en {host}"
+        notify: "false"
+  tags: ["attack.t1518.001", "attack.discovery"]
+  enabled: true
+
+# T1087.002 - SPN enumeration (Kerberoasting preparation)
+- name: "Enumeracion de SPN con setspn"
+  id: "edfb0e26-5df2-4c41-a759-6252a7257be0"
+  description: >
+    Detecta setspn consultando nombres de servicio (-Q, -T). Listar
+    SPN del dominio es el paso previo al Kerberoasting: pedir tickets
+    de cuentas de servicio para romper sus contrasenas fuera de linea.
+  severity: medium
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: ieq
+      value: "setspn.exe"
+    - field: process.command_line
+      operator: regex
+      value: '(?i)\s[-/](q|t)\b'
+  actions:
+    - type: alert
+      config:
+        message: "Enumeracion de SPN en {host}"
+        notify: "false"
+  tags: ["attack.t1087.002", "attack.discovery", "attack.t1558.003"]
+  enabled: true
+
+# T1046 - network and port scanners on an endpoint
+- name: "Escaner de red o de puertos en el equipo"
+  id: "f3497a36-89e6-4b5e-b49c-b17ff3105a4f"
+  description: >
+    Detecta escaneres conocidos (nmap, masscan, Advanced IP Scanner,
+    SoftPerfect NetScan, Angry IP Scanner). Los operadores de
+    ransomware los traen para mapear la red interna antes de moverse.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: iin
+      value: ["nmap.exe", "masscan.exe", "advanced_ip_scanner.exe", "netscan.exe", "ipscan.exe", "angryip.exe"]
+  actions:
+    - type: alert
+      config:
+        message: "Escaner de red ejecutado en {host}"
+        notify: "true"
+  tags: ["attack.t1046", "attack.discovery"]
+  enabled: true
+
+# T1021.002 / T1569.002 - remote service through sc \\host
+- name: "Servicio remoto creado o arrancado con sc"
+  id: "4160fe22-e519-486c-91f2-779c5b814869"
+  description: >
+    Detecta sc.exe creando, reconfigurando o arrancando un servicio en
+    otro equipo (\\host). Es la forma nativa de ejecutar codigo remoto
+    como SYSTEM, la misma mecanica que PsExec sin la herramienta.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: ieq
+      value: "sc.exe"
+    - field: process.command_line
+      operator: regex
+      value: '(?i)\\\\[^\\\s]+\s+(create|config|start)\b'
+  actions:
+    - type: alert
+      config:
+        message: "Servicio remoto manipulado con sc desde {host}"
+        notify: "true"
+  tags: ["attack.t1021.002", "attack.lateral-movement", "attack.t1569.002"]
+  enabled: true
+
+# T1021.006 - WinRM / PowerShell remoting
+- name: "Ejecucion remota con WinRM o PowerShell Remoting"
+  id: "94e4f915-b57c-43ef-90d1-6692d89d64a9"
+  description: >
+    Detecta winrs -r: y Invoke-Command, Enter-PSSession o
+    New-PSSession contra otro equipo. Es legitimo en equipos de
+    administracion; en un puesto de usuario indica movimiento lateral.
+  severity: medium
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)\bwinrs(\.exe)?\b.*\s-r(emote)?:|\b(invoke-command|enter-pssession|new-pssession)\b.*-computername\b'
+  actions:
+    - type: alert
+      config:
+        message: "Ejecucion remota por WinRM desde {host}"
+        notify: "false"
+  tags: ["attack.t1021.006", "attack.lateral-movement"]
+  enabled: true
+
+# T1021.001 - RDP enabled through the registry
+- name: "Escritorio remoto habilitado por registro"
+  id: "5e1cbafb-d9a2-4bbf-8f42-7bb9a6760d95"
+  description: >
+    Detecta fDenyTSConnections puesto a 0 en Terminal Server. Habilitar
+    RDP en caliente es el paso previo a entrar con credenciales robadas
+    o a dejar un acceso interactivo de respaldo.
+  severity: high
+  event_type: registry.set
+  conditions:
+    - field: registry.key
+      operator: regex
+      value: '(?i)\\Control\\Terminal Server$'
+    - field: registry.value_name
+      operator: ieq
+      value: "fDenyTSConnections"
+    - field: registry.value
+      operator: regex
+      value: '(?i)^(0|dword \(0x00000000\)|0x0+)$'
+  actions:
+    - type: alert
+      config:
+        message: "Escritorio remoto habilitado en {host}"
+        notify: "true"
+  tags: ["attack.t1021.001", "attack.lateral-movement"]
+  enabled: true
+
+# T1572 - tunnels and reverse proxies
+- name: "Tunel o proxy inverso hacia el exterior"
+  id: "b360548f-35ee-4a5a-be3c-26b4ad06181b"
+  description: >
+    Detecta ngrok, chisel, frp o cloudflared abriendo un tunel y plink
+    con reenvio remoto (-R). Exponen servicios internos o un canal de
+    control a traves de conexiones salientes permitidas.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)\b(ngrok|chisel|frpc|cloudflared)(\.exe)?["]?\s+(tcp|http|client|tunnel|server|-c)\b|\bplink(\.exe)?["]?\s.*\s-R\s'
+  actions:
+    - type: alert
+      config:
+        message: "Tunel o proxy inverso abierto en {host}"
+        notify: "true"
+  tags: ["attack.t1572", "attack.command-and-control"]
+  enabled: true
+
+# T1571 - script hosts calling classic C2 ports
+- name: "Interprete conectando a un puerto tipico de C2"
+  id: "f92d7cee-8ce6-4bf2-bd9a-dec05bcf0b54"
+  description: >
+    Detecta PowerShell, rundll32, regsvr32, mshta o los hosts de
+    scripts conectando a puertos por defecto de Metasploit y de otros
+    marcos (4444, 4445, 5555, 1337, 31337, 6666, 8888).
+  severity: high
+  event_type: network.connect
+  conditions:
+    - field: process.name
+      operator: iin
+      value: ["powershell.exe", "pwsh.exe", "rundll32.exe", "regsvr32.exe", "mshta.exe", "wscript.exe", "cscript.exe", "cmd.exe"]
+    - field: network.destination_port
+      operator: in
+      value: [4444, 4445, 5555, 1337, 31337, 6666, 8888]
+  actions:
+    - type: alert
+      config:
+        message: "Conexion a puerto tipico de C2 desde un interprete en {host}"
+        notify: "true"
+  tags: ["attack.t1571", "attack.command-and-control"]
+  enabled: true
+
+# T1219 - remote access tools outside AnyDesk
+- name: "Herramienta de acceso remoto en el equipo"
+  id: "2033a3e6-2c86-4588-99e2-0c7a2bf2cf55"
+  description: >
+    Detecta clientes de acceso remoto que los atacantes instalan como
+    puerta trasera con apariencia legitima (ScreenConnect, TeamViewer,
+    RustDesk, Splashtop, NetSupport, Atera). Si la organizacion usa
+    alguno, suprimelo para sus equipos de soporte.
+  severity: medium
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: iin
+      value: ["screenconnect.clientservice.exe", "screenconnect.windowsclient.exe", "teamviewer.exe", "rustdesk.exe", "srservice.exe", "client32.exe", "ateraagent.exe"]
+  actions:
+    - type: alert
+      config:
+        message: "Herramienta de acceso remoto ejecutada en {host}"
+        notify: "false"
+  tags: ["attack.t1219", "attack.command-and-control"]
+  enabled: true

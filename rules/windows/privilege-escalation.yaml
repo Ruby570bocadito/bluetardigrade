@@ -1,0 +1,147 @@
+# Privilege escalation on Windows: UAC bypasses through per-user COM
+# and shell handler keys, debugger hijacks in Image File Execution
+# Options, accessibility binary replacement, token impersonation tools
+# and services pointed at user-writable binaries. Registry rules fire on
+# the artifact (registry.set from Sysmon 12/13/14), so they also catch
+# malware that writes the keys through the API.
+
+# T1548.002 - fodhelper / computerdefaults UAC bypass
+- name: "Bypass de UAC con fodhelper o computerdefaults"
+  id: "1039ed0d-bec2-47ce-a651-9395cb069219"
+  description: >
+    Detecta la escritura del manejador ms-settings\shell\open\command
+    en el perfil del usuario. fodhelper.exe y computerdefaults.exe se
+    elevan solos y ejecutan ese comando sin preguntar: la clave no
+    tiene ningun uso legitimo.
+  severity: critical
+  event_type: registry.set
+  conditions:
+    - field: registry.key
+      operator: regex
+      value: '(?i)\\Software\\Classes\\ms-settings\\shell\\open\\command'
+  actions:
+    - type: alert
+      config:
+        message: "Bypass de UAC (ms-settings) preparado en {host}"
+        notify: "true"
+  tags: ["attack.t1548.002", "attack.privilege-escalation", "attack.defense-evasion"]
+  enabled: true
+
+# T1548.002 - eventvwr / sdclt / Folder handler UAC bypasses
+- name: "Bypass de UAC con eventvwr, sdclt o la clase Folder"
+  id: "42bdb9ee-3c00-4f9f-a62c-095c9b07fd14"
+  description: >
+    Detecta manejadores de shell sembrados en HKCU para clases que
+    binarios autoelevados consultan primero (mscfile para eventvwr,
+    exefile y Folder para sdclt, Launcher.SystemSettings). Misma
+    familia que fodhelper con otros puntos de entrada.
+  severity: critical
+  event_type: registry.set
+  conditions:
+    - field: registry.key
+      operator: regex
+      value: '(?i)\\Software\\Classes\\(mscfile|exefile|Folder|Launcher\.SystemSettings)\\shell\\(open|runas)\\command'
+  actions:
+    - type: alert
+      config:
+        message: "Bypass de UAC por manejador de clase en {host}"
+        notify: "true"
+  tags: ["attack.t1548.002", "attack.privilege-escalation", "attack.defense-evasion"]
+  enabled: true
+
+# T1546.012 - debugger hijack in Image File Execution Options
+- name: "Depurador en Image File Execution Options"
+  id: "49c01324-6def-4587-bc30-dce3d7ce5b6c"
+  description: >
+    Detecta un valor Debugger bajo Image File Execution Options. Windows
+    lanza ese "depurador" en lugar del programa original: con sethc o
+    utilman da una consola SYSTEM en la pantalla de inicio de sesion,
+    y con cualquier otro binario es persistencia silenciosa.
+  severity: high
+  event_type: registry.set
+  conditions:
+    - field: registry.key
+      operator: regex
+      value: '(?i)\\Image File Execution Options\\[^\\]+$'
+    - field: registry.value_name
+      operator: ieq
+      value: "Debugger"
+  actions:
+    - type: alert
+      config:
+        message: "Depurador IFEO configurado en {host}"
+        notify: "true"
+  tags: ["attack.t1546.012", "attack.privilege-escalation", "attack.persistence"]
+  enabled: true
+
+# T1546.008 - accessibility binaries replaced on disk
+- name: "Sustitucion de binarios de accesibilidad"
+  id: "97da41f5-351c-4aa2-8e63-f47bd144a6f5"
+  description: >
+    Detecta escrituras sobre sethc, utilman, osk, narrator, magnify,
+    displayswitch o atbroker en System32. Reemplazarlos por cmd.exe da
+    una consola SYSTEM desde la pantalla de bloqueo. Las
+    actualizaciones de Windows (TiWorker y TrustedInstaller) quedan
+    fuera.
+  severity: critical
+  event_type: file.write
+  conditions:
+    - field: file.path
+      operator: regex
+      value: '(?i)\\Windows\\(System32|SysWOW64)\\(sethc|utilman|osk|narrator|magnify|displayswitch|atbroker)\.exe$'
+    - field: process.name
+      operator: not_in
+      value: ["TiWorker.exe", "TrustedInstaller.exe", "tiworker.exe", "trustedinstaller.exe"]
+  actions:
+    - type: alert
+      config:
+        message: "Binario de accesibilidad sustituido en {host}"
+        notify: "true"
+  tags: ["attack.t1546.008", "attack.privilege-escalation", "attack.persistence"]
+  enabled: true
+
+# T1134.001 - token impersonation tools (Potato family, PrintSpoofer)
+- name: "Escalada por suplantacion de token (Potato, PrintSpoofer)"
+  id: "75793606-cc2c-4eab-92d5-c9f0c6806290"
+  description: >
+    Detecta las herramientas publicas que convierten SeImpersonate de
+    una cuenta de servicio en SYSTEM: la familia Potato y PrintSpoofer.
+    Aparecen tras comprometer IIS o SQL Server.
+  severity: critical
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: regex
+      value: '(?i)(printspoofer|juicypotato|roguepotato|sweetpotato|godpotato|efspotato|badpotato)'
+  actions:
+    - type: alert
+      config:
+        message: "Herramienta de suplantacion de token en {host}"
+        notify: "true"
+  tags: ["attack.t1134.001", "attack.privilege-escalation"]
+  enabled: true
+
+# T1543.003 - new service pointing at a user-writable binary
+- name: "Servicio nuevo con binario en ruta de usuario"
+  id: "b75edbba-b156-4c8b-9619-323fdb019781"
+  description: >
+    Detecta servicios creados con sc.exe o New-Service cuyo binario
+    vive en Users, ProgramData, Windows\Temp o PerfLogs. Los servicios
+    legitimos se instalan en Program Files o System32; uno en una ruta
+    escribible es escalada a SYSTEM y persistencia a la vez.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: iin
+      value: ["sc.exe", "powershell.exe", "pwsh.exe"]
+    - field: process.command_line
+      operator: regex
+      value: '(?i)(\bcreate\b.*binpath=|new-service\b.*-binarypathname)\s*["]?[a-z]:\\(users|programdata|windows\\temp|perflogs)\\'
+  actions:
+    - type: alert
+      config:
+        message: "Servicio creado con binario en ruta de usuario en {host}"
+        notify: "true"
+  tags: ["attack.t1543.003", "attack.privilege-escalation", "attack.persistence"]
+  enabled: true

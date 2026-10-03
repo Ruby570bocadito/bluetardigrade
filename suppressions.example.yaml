@@ -31,3 +31,39 @@
 #   rule_id: 7d1e2f40-5a6b-4c7d-9e8f-0a1b2c3d4e5f   # script sospechoso (rules/windows/realtime-host.yaml)
 #   host: LAB-HONEYPOT-05
 #   reason: "honeypot: ruido esperado, aceptado por el responsable"
+#
+# Typical exceptions for the coverage pack. Each one names the host it
+# applies to: an entry without host silences the rule everywhere, which
+# also hides an attacker doing the same thing on any other machine.
+#
+# - # IT support uses ScreenConnect on its own workstations only.
+#   rule_id: 2033a3e6-2c86-4588-99e2-0c7a2bf2cf55   # herramienta de acceso remoto
+#   host: IT-SUPPORT-01
+#   reason: "cliente de soporte remoto corporativo (ticket IT-882)"
+#
+# - # The admin jump host runs PowerShell remoting by design.
+#   rule_id: 94e4f915-b57c-43ef-90d1-6692d89d64a9   # WinRM / PowerShell remoting
+#   host: ADMIN-JUMP-01
+#   reason: "servidor de salto de administracion"
+#
+# - # The backup server encrypts its nightly archives with 7-Zip.
+#   rule_id: ae3ac8b8-76bf-4d9e-ba1d-2b2f5568b35e   # compresion con contrasena
+#   host: BACKUP-01
+#   reason: "copia nocturna cifrada (procedimiento BCK-03)"
+#
+# - # Terminal servers enable RDP when they are rebuilt.
+#   rule_id: 5e1cbafb-d9a2-4bbf-8f42-7bb9a6760d95   # RDP habilitado por registro
+#   host: RDS-01
+#   reason: "servidor de escritorios remotos"
+#   expires: 2026-12-31T23:59:59Z
+#
+# - # The vulnerability scanner sweeps the network every week.
+#   rule_id: f3497a36-89e6-4b5e-b49c-b17ff3105a4f   # escaner de red
+#   host: VULNSCAN-01
+#   reason: "escaneo autorizado de vulnerabilidades"
+#
+# - # A one-off audit: SPN enumeration allowed until the audit closes.
+#   rule_id: edfb0e26-5df2-4c41-a759-6252a7257be0   # enumeracion de SPN
+#   host: AUDIT-LAPTOP-02
+#   reason: "auditoria de Active Directory contratada (AUD-2026-10)"
+#   expires: 2026-10-31T23:59:59Z

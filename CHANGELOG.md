@@ -12,6 +12,37 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Detection coverage pack (2026-10-04)
+
+- 39 new rules (75 -> 114) so 13 of the 14 ATT&CK tactics have
+  detections:
+  - initial access: webshells and xp_cmdshell, payloads run from mail
+    attachments or archive caches, Equation Editor, unusual formats
+    from Downloads;
+  - privilege escalation: fodhelper/eventvwr/sdclt UAC bypasses, IFEO
+    debuggers, accessibility binary replacement, Potato/PrintSpoofer,
+    services in user-writable paths;
+  - collection and exfiltration: password-protected archives, screen and
+    clipboard capture, browser credential stores, PST/OST copies,
+    rclone, curl/PowerShell/BITS uploads, scripted FTP;
+  - discovery, lateral movement and C2: recon spawned by documents or
+    script hosts, antivirus inventory, setspn, network scanners, remote
+    sc services, WinRM, RDP enabled by registry, tunnels, interpreters
+    on classic C2 ports, remote access tools;
+  - evasion and impact: AMSI bypass, WMI subscriptions, PowerShell
+    history and script block logging tampering, password hunting,
+    backup/security services stopped, cipher /w, ransom notes;
+  - reconnaissance: IDS active scanning, honeypot fingerprinting.
+- 7 new kill chains (4 -> 11) in `sequences/campaigns.yaml`: data theft
+  (archive + upload, archive + rclone), ransomware preparation, webshell
+  with internal recon, credential theft then lateral movement, UAC
+  bypass then LSASS dump, malicious document then download.
+- Every new rule has an attack case and benign twins in
+  `internal/rules/attack_coverage_test.go`; the scenario feed and the
+  store/sequences E2E keep their canonical counts.
+- `suppressions.example.yaml` documents host-scoped exceptions for the
+  rules that legitimately fire in some organisations.
+
 ### Professional SOC console, README and brand (2026-10-03)
 
 The previous console is preserved at the `console-v1` tag.

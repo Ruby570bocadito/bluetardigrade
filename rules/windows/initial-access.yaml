@@ -1,0 +1,99 @@
+# Initial access on the endpoint: the first process an intrusion
+# leaves behind. Web servers spawning shells (webshells, exploited
+# services), payloads executed straight out of mail attachments and
+# archives, and Office's Equation Editor exploit chain. Parent signals
+# come from the engine's pid->name flight recorder
+# (enrichment.parent_name) and degrade to no-match when the parent left
+# the window.
+
+# T1505.003 / T1190 - a web or database server spawning a shell
+- name: "Proceso hijo de un servidor web o de base de datos"
+  id: "ca55c08b-ae3e-4e55-a2b0-32bc8c383187"
+  description: >
+    Detecta un servidor web (IIS, Apache, nginx, Tomcat, PHP-CGI,
+    Exchange) o SQL Server lanzando un interprete o una herramienta de
+    sistema. Un servidor no abre cmd ni PowerShell en su
+    funcionamiento normal: es la huella de una webshell, de un
+    servicio expuesto explotado o de xp_cmdshell.
+  severity: critical
+  event_type: process.create
+  conditions:
+    - field: enrichment.parent_name
+      operator: iin
+      value: ["w3wp.exe", "httpd.exe", "nginx.exe", "php-cgi.exe", "tomcat8.exe", "tomcat9.exe", "tomcat10.exe", "umworkerprocess.exe", "sqlservr.exe"]
+    - field: process.name
+      operator: iin
+      value: ["cmd.exe", "powershell.exe", "pwsh.exe", "whoami.exe", "net.exe", "net1.exe", "certutil.exe", "bitsadmin.exe", "rundll32.exe", "mshta.exe", "wscript.exe", "cscript.exe"]
+  actions:
+    - type: alert
+      config:
+        message: "Servidor web o SQL lanzo un interprete en {host} (posible webshell)"
+        notify: "true"
+  tags: ["attack.t1505.003", "attack.t1190", "attack.initial-access", "attack.persistence"]
+  enabled: true
+
+# T1566.001 - executable launched from a mail attachment or archive cache
+- name: "Ejecutable lanzado desde un adjunto o un archivo comprimido"
+  id: "a18ae438-82b6-478f-8e8d-b33d61996057"
+  description: >
+    Detecta procesos cuya imagen vive en la cache de adjuntos de
+    Outlook o en las carpetas temporales donde Windows, 7-Zip y WinRAR
+    extraen un archivo comprimido al abrirlo con doble clic. Es el
+    camino de un adjunto de phishing hasta la ejecucion.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.image
+      operator: regex
+      value: '(?i)\\(INetCache\\Content\.Outlook|Temp\\Temp\d+_[^\\]+\.zip|Temp\\7z[^\\]*|Temp\\Rar\$[^\\]*)\\'
+  actions:
+    - type: alert
+      config:
+        message: "Ejecucion directa desde un adjunto o archivo comprimido en {host}"
+        notify: "true"
+  tags: ["attack.t1566.001", "attack.initial-access", "attack.t1204.002"]
+  enabled: true
+
+# T1203 - Equation Editor exploit (CVE-2017-11882 family)
+- name: "Exploit de Office via Equation Editor"
+  id: "f518432f-f5f4-403b-8e13-d4f40f183dd3"
+  description: >
+    Detecta cualquier proceso hijo de EQNEDT32.EXE, el editor de
+    ecuaciones heredado de Office. El componente no lanza procesos en
+    uso normal; un hijo es el resultado de la familia de exploits
+    CVE-2017-11882 que sigue circulando en campañas de phishing.
+  severity: critical
+  event_type: process.create
+  conditions:
+    - field: enrichment.parent_name
+      operator: ieq
+      value: "eqnedt32.exe"
+  actions:
+    - type: alert
+      config:
+        message: "Equation Editor lanzo un proceso en {host} (exploit de Office)"
+        notify: "true"
+  tags: ["attack.t1203", "attack.execution", "attack.initial-access"]
+  enabled: true
+
+# T1204.002 - screensaver / legacy executable formats run from Downloads
+- name: "Formato ejecutable inusual lanzado desde Descargas"
+  id: "046007e6-8ed6-49e4-87dd-e03963d9c269"
+  description: >
+    Detecta .scr, .com, .pif o .cpl ejecutados desde la carpeta de
+    descargas del usuario. Nadie instala software legitimo en esos
+    formatos; son el disfraz habitual de un ejecutable entregado por
+    enlace de phishing.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.image
+      operator: regex
+      value: '(?i)\\(Downloads|Descargas)\\[^\\]+\.(scr|com|pif|cpl)$'
+  actions:
+    - type: alert
+      config:
+        message: "Ejecutable .scr/.com/.pif/.cpl lanzado desde Descargas en {host}"
+        notify: "true"
+  tags: ["attack.t1204.002", "attack.initial-access", "attack.t1566.002"]
+  enabled: true

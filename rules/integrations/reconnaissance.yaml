@@ -1,0 +1,37 @@
+# Reconnaissance seen by the SOC sensors: active scanning reported by
+# the IDS and an attacker fingerprinting the honeypot after logging in.
+# Both are observed provider records imported by sf-collector.
+
+- name: "IDS: escaneo activo de red"
+  id: soc-ids-active-scan
+  description: >
+    Firma IDS de escaneo (familias ET/GPL SCAN, nmap, masscan, zmap).
+    Alguien esta mapeando servicios expuestos: revisar el origen y si
+    el escaneo llego a algun puerto abierto.
+  severity: medium
+  event_type: network.alert
+  conditions:
+    - {field: source, operator: in, value: [suricata, zeek]}
+    - {field: attributes.ids_signature, operator: regex, value: '(?i)\b(ET|GPL) SCAN\b|\bnmap\b|masscan|zmap|port ?scan'}
+  actions:
+    - type: alert
+      config: {message: "IDS: escaneo activo contra {host}", notify: "false"}
+  tags: ["attack.t1595", "attack.reconnaissance", "sensor:ids", "pack:soc"]
+  enabled: true
+
+- name: "Cowrie: reconocimiento del sistema en el honeypot"
+  id: soc-cowrie-recon
+  description: >
+    Comandos de huella del sistema tras entrar en el honeypot (uname,
+    cpuinfo, whoami, id, ifconfig, nproc, lscpu). Los bots los lanzan
+    para decidir si el equipo merece un minero o una puerta trasera.
+  severity: medium
+  event_type: honeypot.command
+  conditions:
+    - {field: source, operator: eq, value: cowrie}
+    - {field: attributes.honeypot_input, operator: regex, value: '(?i)\b(uname\s+-a|cat\s+/proc/cpuinfo|whoami|id|ifconfig|ip\s+a|nproc|lscpu)\b'}
+  actions:
+    - type: alert
+      config: {message: "Honeypot: reconocimiento del sistema en {host}", notify: "false"}
+  tags: ["attack.t1592", "attack.reconnaissance", "sensor:cowrie", "pack:soc"]
+  enabled: true

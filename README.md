@@ -53,9 +53,11 @@ respond from a live web console.
 <td width="50%" valign="top">
 
 ### Detect
-- **75 YAML rules**: LOLBAS, credential access, lateral movement,
-  anti-forensics, file staging, hack tools and phishing.
-- **4 kill-chain correlations** across events of the same host.
+- **114 YAML rules** covering 13 of the 14 ATT&CK tactics: initial access,
+  LOLBAS, privilege escalation, credential access, lateral movement,
+  collection, exfiltration, ransomware impact, hack tools and phishing.
+- **11 kill-chain correlations** across events of the same host (intrusion,
+  credential theft, data theft, ransomware preparation, webshells...).
 - **C2 beaconing** detection on event time.
 - **Volumetric thresholds** and decaying per-host risk scores.
 - **Sigma import** and 17 rule operators.

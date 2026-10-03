@@ -59,7 +59,7 @@ no longer matched the code; its earlier revisions live in GitHub Releases.
 | **Telemetry** | Rust ETW sensor (Kernel-Process) + Sysmon ingestion path; NDJSON/TCP feed with schema validation and enrichment (user, command line, network context) |
 | **SOC imports** | Explicit Go adapter for six observed log/mail formats; TLS/auth remote ingest, bounded attributes separated from engine enrichment |
 | **Analyst reports** | CLI API lookup plus human notes and exclusive file output; browser-local report catalog, frozen snapshots and Markdown/JSON exports |
-| **Detection** | 75 enabled YAML rules with 17 operators (`eq`, `regex`, `contains_any`, …), hot-reload every 15 s, per-rule MITRE ATT&CK tags and actions; `engine sigma` imports community Sigma rules (deterministic, fail-loud, provenance preserved) |
+| **Detection** | 114 enabled YAML rules with 17 operators (`eq`, `regex`, `contains_any`, …), hot-reload every 15 s, per-rule MITRE ATT&CK tags and actions; `engine sigma` imports community Sigma rules (deterministic, fail-loud, provenance preserved) |
 | **Forensics** | Bounded per-host flight recorder; atomic high/critical evidence bundles with a 5-minute window and preserved trigger, served through the bearer-gated API; lazy console timeline with full JSON/JSONL downloads |
 | **Correlation** | Kill-chain sequencer: named steps across the same host within a time window raise one high-signal campaign alert |
 | **Risk scoring** | Severity-weighted per-host score with time decay (half-life 30 min, bounded host map): `hot_hosts` top-5 and `risk_hosts_tracked` in `/api/stats`, `sf_host_risk_score{host=...}` in `/metrics`, hot-hosts panel in the console dashboard |

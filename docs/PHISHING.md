@@ -37,7 +37,7 @@ Conservar el archivo original por separado permite revisar esos límites.
 
 Las seis reglas nuevas están en `rules/integrations/phishing.yaml`; las cuatro
 señales originales permanecen en `rules/integrations/soc.yaml`. El pack total
-contiene 75 reglas habilitadas. Se pueden suprimir alertas conocidas mediante
+contiene 114 reglas habilitadas. Se pueden suprimir alertas conocidas mediante
 el flujo normal de supresiones y ajustar las reglas YAML al entorno.
 
 ## Cobertura

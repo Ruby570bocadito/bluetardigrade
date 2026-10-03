@@ -126,7 +126,7 @@ kill "$DPID" 2>/dev/null; wait "$DPID" 2>/dev/null
 
 SEQ_JSON=$(curl -s "$BASE/api/sequences")
 NSEQ=$(printf '%s' "$SEQ_JSON" | jqpy 'print(len(d))' 2>/dev/null || echo 0)
-check "/api/sequences (ruta 10) sirve 4 secuencias (got $NSEQ)" "$([ "$NSEQ" = "4" ] && echo 1 || echo 0)"
+check "/api/sequences (ruta 10) sirve 11 secuencias (got $NSEQ)" "$([ "$NSEQ" = "11" ] && echo 1 || echo 0)"
 SCHEMA_OK=$(printf '%s' "$SEQ_JSON" | jqpy 'need={"id","name","description","severity","window_seconds","tags","steps"}; print(1 if d and all(need <= set(s) for s in d) else 0)' 2>/dev/null || echo 0)
 check "cada secuencia lleva id/name/description/severity/window_seconds/tags/steps" "$SCHEMA_OK"
 
@@ -135,8 +135,8 @@ SE_EN=$(printf '%s' "$ST" | jqpy 'print(1 if d.get("store_enabled") is True else
 check "stats.store_enabled == true" "$SE_EN"
 N=$(printf '%s' "$ST" | jqpy 'print(d.get("store_events", -1))' 2>/dev/null || echo -1)
 check "stats.store_events > 0 tras el feed (got $N; canónico del devsensor: 19)" "$([ "$N" -gt 0 ] 2>/dev/null && echo 1 || echo 0)"
-CORR=$(printf '%s' "$ST" | jqpy 'print(1 if d.get("correlator_sequences")==4 and d.get("correlator_cap")==8192 else 0)' 2>/dev/null || echo 0)
-check "stats correlator_sequences=4, correlator_cap=8192" "$CORR"
+CORR=$(printf '%s' "$ST" | jqpy 'print(1 if d.get("correlator_sequences")==11 and d.get("correlator_cap")==8192 else 0)' 2>/dev/null || echo 0)
+check "stats correlator_sequences=11, correlator_cap=8192" "$CORR"
 LIST_A=$(curl -s "$BASE/api/events?limit=1000" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0)
 check "lista /api/events coherente con el contador del store ($LIST_A >= $N)" "$([ "$LIST_A" -ge "$N" ] 2>/dev/null && echo 1 || echo 0)"
 
