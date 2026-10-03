@@ -9,11 +9,46 @@ function Get-SfSetting {
     return ''
 }
 
+# The local API carries a bearer token on every install, so the write
+# surfaces the console uses (suppressions, incidents, response) are never
+# open to an unauthenticated local process. Created once, user-only like
+# the rest of tools\config; engine, console, hub and doctor all read it.
+function Initialize-SfApiToken {
+    param([string]$Root)
+    $existing = Get-SfSetting $Root 'SF_API_TOKEN' 'api.token'
+    if ($existing) { return $existing }
+    $config = Join-Path $Root 'tools\config'
+    New-Item -ItemType Directory -Path $config -Force | Out-Null
+    $bytes = New-Object byte[] 32
+    $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+    $token = -join ($bytes | ForEach-Object { $_.ToString('x2') })
+    [IO.File]::WriteAllText((Join-Path $config 'api.token'), $token, [Text.Encoding]::ASCII)
+    return $token
+}
+
+# Engine arguments for a managed start: rules and pid file as before,
+# plus the console's write surfaces (suppressions from the alert view,
+# behind the bearer token) and SQLite history under data\. Active
+# response is armed only when the operator created an allowlist with
+# per-operator credentials (tools\config\respond-operators.yaml, see
+# 'sf-engine operator-credential'); without it the surface stays off.
+function Get-SfEngineArguments {
+    param([string]$Root)
+    $data = Join-Path $Root 'data'
+    $arguments = "-rules `"$Root\rules`" -pidfile `"$Root\run\engine.pid`" -api-write -store `"$data\sf-store.db`""
+    $operators = Join-Path $Root 'tools\config\respond-operators.yaml'
+    if (Test-Path -LiteralPath $operators) {
+        $arguments += " -allow-kill -respond-operators `"$operators`" -respond-audit `"$data\respond-audit.jsonl`""
+    }
+    return $arguments
+}
+
 function Start-SfEngine {
     param([string]$Root, [string]$Executable, [string]$IngestToken = '')
     $settings = @{
         SF_INGEST_TOKEN = Get-SfSetting $Root 'SF_INGEST_TOKEN' 'ingest.token' $IngestToken
-        SF_API_TOKEN = Get-SfSetting $Root 'SF_API_TOKEN' 'api.token'
+        SF_API_TOKEN = Initialize-SfApiToken $Root
         SF_WEBHOOK_URL = Get-SfSetting $Root 'SF_WEBHOOK_URL' 'webhook.url'
         SF_WEBHOOK_TOKEN = Get-SfSetting $Root 'SF_WEBHOOK_TOKEN' 'webhook.token'
     }
@@ -23,8 +58,8 @@ function Start-SfEngine {
             $previous[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
             [Environment]::SetEnvironmentVariable($key, $settings[$key], 'Process')
         }
-        New-Item -ItemType Directory -Path (Join-Path $Root 'run') -Force | Out-Null
-        $arguments = "-rules `"$Root\rules`" -pidfile `"$Root\run\engine.pid`""
+        New-Item -ItemType Directory -Path (Join-Path $Root 'run'), (Join-Path $Root 'data') -Force | Out-Null
+        $arguments = Get-SfEngineArguments $Root
         $process = Start-Process -FilePath $Executable -ArgumentList $arguments -WorkingDirectory $Root -WindowStyle Hidden -PassThru -ErrorAction Stop
         Set-Content -LiteralPath (Join-Path $Root 'run\engine.pid') -Value $process.Id
         return $process

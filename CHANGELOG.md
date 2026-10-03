@@ -12,6 +12,16 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Windows launcher: token, writes and history (2026-10-04)
+
+- `sf-console` and `sf-sensor` now start the engine with a bearer token
+  on every install (generated once into `tools\config\api.token`, read
+  by the engine, console, hub and `doctor`), `-api-write` so the console
+  can create suppressions, and SQLite history in `data\sf-store.db`.
+- Active response is armed only when `tools\config\respond-operators.yaml`
+  exists (per-operator credentials from `sf-engine operator-credential`);
+  the audit goes to `data\respond-audit.jsonl`.
+
 ### Incidents, rule tester and reputation lookups (2026-10-04)
 
 - Incidents (`internal/incident`, `-incidents ./incidents.json`): cases

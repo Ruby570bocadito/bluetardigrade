@@ -3,7 +3,7 @@ $repo = Split-Path (Split-Path $PSScriptRoot)
 . (Join-Path $repo 'scripts\windows\runtime.ps1')
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('sf-runtime-test-' + [guid]::NewGuid().ToString('N'))
 $saved = @{}
-foreach ($key in @('SF_INGEST_TOKEN', 'SF_WEBHOOK_URL', 'SF_WEBHOOK_TOKEN')) {
+foreach ($key in @('SF_INGEST_TOKEN', 'SF_API_TOKEN', 'SF_WEBHOOK_URL', 'SF_WEBHOOK_TOKEN')) {
     $saved[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
     [Environment]::SetEnvironmentVariable($key, $null, 'Process')
 }
@@ -24,10 +24,23 @@ try {
         Assert ($env:SF_WEBHOOK_URL -eq 'http://127.0.0.1:1/hook') 'Child webhook URL missing'
         Assert ($WorkingDirectory -eq $testRoot) 'State working directory differs'
         Assert ($ArgumentList -notmatch 'saved-token|flag-token|saved-webhook') 'Secret in process arguments'
+        $script:childApiToken = $env:SF_API_TOKEN
+        $script:childArguments = $ArgumentList
         return [pscustomobject]@{ Id = 42424 }
     }
     Start-SfEngine $testRoot (Join-Path $testRoot 'bin\engine.exe') 'flag-token' | Out-Null
     Assert ($env:SF_INGEST_TOKEN -eq 'env-token' -and -not $env:SF_WEBHOOK_TOKEN) 'Parent environment not restored'
+    $savedApi = (Get-Content (Join-Path $testRoot 'tools\config\api.token') -First 1)
+    Assert ($savedApi -match '^[0-9a-f]{64}$') 'API token not generated on first start'
+    Assert ($script:childApiToken -eq $savedApi -and -not $env:SF_API_TOKEN) 'Child API token differs or leaked to the parent'
+    Assert ($script:childArguments -notmatch $savedApi) 'API token in process arguments'
+    Assert ($script:childArguments -match '-api-write' -and $script:childArguments -match '-store ') 'Console write surface or history not enabled'
+    Assert ($script:childArguments -notmatch '-allow-kill') 'Active response armed without an operator allowlist'
+    Assert ((Initialize-SfApiToken $testRoot) -eq $savedApi) 'API token regenerated on a later start'
+    Set-Content (Join-Path $testRoot 'tools\config\respond-operators.yaml') 'version: 2'
+    Start-SfEngine $testRoot (Join-Path $testRoot 'bin\engine.exe') 'flag-token' | Out-Null
+    Assert ($script:childArguments -match '-allow-kill' -and $script:childArguments -match 'respond-audit') 'Operator allowlist did not arm active response'
+    Remove-Item (Join-Path $testRoot 'tools\config\respond-operators.yaml')
     Remove-Item Function:Start-Process
     $owned = [pscustomobject]@{ ExecutablePath = (Join-Path $testRoot 'bin\engine.exe'); CommandLine = ''; ProcessId = 42424 }
     $foreign = [pscustomobject]@{ ExecutablePath = ($testRoot + '-backup\bin\engine.exe'); CommandLine = ''; ProcessId = 42424 }
@@ -53,7 +66,7 @@ function Start-SfEngine {
 '@
     & (Join-Path $testRoot 'scripts\start-engine.ps1')
     Assert ((Get-Content (Join-Path $testRoot 'run\resolved-root.txt')) -eq $testRoot) 'NoConsole startup depends on web sources'
-    Write-Output 'PASS: persisted settings, precedence, child environment, stable state directory, stale PID protection and NoConsole startup root'
+    Write-Output 'PASS: persisted settings, precedence, child environment, API token and engine arguments, stable state directory, stale PID protection and NoConsole startup root'
 } finally {
     foreach ($key in $saved.Keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key], 'Process') }
     foreach ($name in @('Start-Process', 'Get-CimInstance', 'Stop-Process')) { Remove-Item ('Function:' + $name) -ErrorAction SilentlyContinue }
