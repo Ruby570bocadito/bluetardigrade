@@ -35,6 +35,7 @@ type options struct {
 	ingestKey        string
 	suppressionsFile string
 	lifecycleFile    string
+	incidentsFile    string
 	storePath        string
 	storeRetention   time.Duration
 	forensic         bool
@@ -118,6 +119,8 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 		"operator allowlist YAML silencing rule/host pairs (expires supported); empty disables")
 	fs.StringVar(&o.lifecycleFile, "lifecycle", "./alert-lifecycle.json",
 		"JSON file persisting alert triage status (acknowledged/closed + notes); empty keeps statuses in memory only")
+	fs.StringVar(&o.incidentsFile, "incidents", "./incidents.json",
+		"JSON file persisting incidents (cases grouping alerts, with status, owner and timeline); empty keeps them in memory only")
 	fs.StringVar(&o.storePath, "store", "",
 		"SQLite file persisting events and alerts beyond the in-memory rings (e.g. ./sf-store.db); empty disables")
 	fs.DurationVar(&o.storeRetention, "store-retention", 72*time.Hour,

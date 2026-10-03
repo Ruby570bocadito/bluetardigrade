@@ -19,10 +19,12 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/correlate"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/enrich"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/forensic"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/incident"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/ingest"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/lifecycle"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/notify"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/redact"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/reputation"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/respond"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/siem"
@@ -216,6 +218,23 @@ func runEngine(o *options, interactive bool) error {
 		fmt.Println("[ENGINE] alert lifecycle: in-memory only (-lifecycle unset: statuses reset on restart)")
 	}
 
+	// incidents: cases grouping alerts (internal/incident). Same fatal
+	// standard as the lifecycle file: a malformed file would silently
+	// drop the cases the operators believe are recorded.
+	incPath := ""
+	if o.incidentsFile != "" {
+		incPath = resolveDataFile(o.incidentsFile, "incidents.json")
+	}
+	incStore, err := incident.New(incPath)
+	if err != nil {
+		log.Fatalf("[ENGINE] %v", err)
+	}
+	if incPath == "" {
+		fmt.Println("[ENGINE] incidents: in-memory only (-incidents unset: cases reset on restart)")
+	} else if open, total := incStore.Counts(); total > 0 {
+		fmt.Printf("[ENGINE] incidents: %d loaded (%d open) from %s\n", total, open, incPath)
+	}
+
 	var server *ingest.Server
 	if o.ingestCert != "" {
 		server, err = ingest.NewTLS(o.addr, o.ingestCert, o.ingestKey, events)
@@ -372,6 +391,15 @@ func runEngine(o *options, interactive bool) error {
 			})
 			hub.SetSequences(corr)
 			hub.SetLifecycle(lifeStore)
+			hub.SetIncidents(incStore)
+			// reputation lookups stay off unless the operator sets a
+			// provider key; keys come from the environment only (a flag
+			// would show them in the process list)
+			if rep := reputation.New(os.Getenv("SF_VT_API_KEY"), os.Getenv("SF_ABUSEIPDB_API_KEY")); rep.Any() {
+				hub.SetReputation(rep)
+				p := rep.Providers()
+				fmt.Printf("[ENGINE] reputation lookups on demand: virustotal=%v abuseipdb=%v\n", p["virustotal"], p["abuseipdb"])
+			}
 			hub.SetForensic(fore)
 			// same standard as the ingest token: flag wins, env fallback
 			apiTok = o.apiToken

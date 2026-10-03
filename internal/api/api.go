@@ -26,8 +26,10 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/correlate"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/forensic"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/incident"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/lifecycle"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/notify"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/reputation"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/respond"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/risk"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
@@ -86,6 +88,8 @@ type Hub struct {
 	sequences   *correlate.Manager              // kill-chain sequences (read-only view)
 	store       *store.Store                    // optional SQLite persistence (nil = rings only)
 	lifecycle   *lifecycle.Store                // alert triage state (status overlay)
+	incidents   *incident.Store                 // investigation cases grouping alerts
+	reputation  *reputation.Client              // opt-in VirusTotal/AbuseIPDB lookups (nil = off)
 	risk        *risk.Tracker                   // per-host decayed risk score (A1)
 	beacon      func() (int, int, uint64)       // live beacon keys, cap, fired (A3)
 	threshold   func() (int, int, uint64)       // defs, live keys, fired (A2)
@@ -157,6 +161,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 		started:    time.Now(),
 		bySeverity: map[string]int{},
 		lifecycle:  mustMemoryLifecycle(),
+		incidents:  mustMemoryIncidents(),
 		risk:       risk.New(),
 		authFails:  map[string]*authFailBox{},
 		reloader:   reloader,
@@ -178,6 +183,9 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	mux.HandleFunc("POST /api/alerts/{id}/status", h.handleAlertStatus)
 	mux.HandleFunc("GET /api/alerts/{id}/forensics", h.handleAlertForensics)
 	mux.HandleFunc("GET /api/rules", h.handleRules)
+	mux.HandleFunc("POST /api/rules/test", h.handleRuleTest)
+	h.registerIncidents(mux)
+	mux.HandleFunc("GET /api/reputation", h.handleReputation)
 	mux.HandleFunc("GET /api/suppressions", h.handleSuppressions)
 	h.registerSuppressionsWrite(mux)
 	// active response (C3): registered unconditionally, answers a

@@ -450,6 +450,48 @@ curl -X POST http://127.0.0.1:7778/api/alerts/<id>/status \
 
 Statuses persist across engine restarts with `-lifecycle <file>` (default `./alert-lifecycle.json`, falling back to the install root; `-lifecycle ""` keeps them in memory only). The file is written atomically on every decision and is FATAL to load if malformed — the same fail-loud standard as suppressions: triage work silently resetting to "new" would be a lie. One honest note on restarts: without `-store` the alert ring is in-memory, so after a restart the file preserves the audit record while the alerts it refers to are gone. With the SQLite store attached, alerts are served from the persisted history after a restart (see [Persistent storage](#persistent-storage-sqlite-opt-in)), so alert and lifecycle persist together and the triage status stays visible end to end.
 
+## Incidents (cases)
+
+An incident groups related alerts into one case with a title, severity,
+status (`open`, `investigating`, `contained`, `closed`), an owner, the
+affected hosts and a timeline. Every change (creation, status, severity,
+owner, alerts added, analyst notes) is appended to the timeline, so the
+case carries its own audit trail.
+
+- API: `GET/POST /api/incidents`, `GET/PATCH /api/incidents/{id}`,
+  `POST /api/incidents/{id}/alerts`, `POST /api/incidents/{id}/notes`.
+  Each change is broadcast as an `incident` SSE frame.
+- Persistence: `-incidents ./incidents.json` (the default, resolved like
+  `-lifecycle`), written atomically on every change; empty keeps cases in
+  memory. A malformed file stops the engine at startup instead of
+  silently dropping cases.
+- Like alert triage, incidents are operator workflow and do not need
+  `-api-write`; they sit behind the same bearer token and same-origin
+  write guard.
+
+## Rule tester
+
+`POST /api/rules/test` with `{"event": {...}}` evaluates one event in the
+ingest wire format against the live rule set and returns the matching
+rules and the fields they matched on. Nothing is ingested, stored,
+alerted, correlated or forwarded: it is a dry run for writing and tuning
+rules. The console exposes it in **Detección -> Probador**.
+
+## Reputation lookups (opt-in)
+
+Set `SF_VT_API_KEY` (VirusTotal) and/or `SF_ABUSEIPDB_API_KEY`
+(AbuseIPDB) in the engine environment to enable on-demand lookups:
+
+- `GET /api/reputation` lists the configured providers;
+  `GET /api/reputation?ip=...` or `?hash=...` queries them.
+- The engine never looks anything up on its own: the console asks only
+  when an analyst presses **Consultar reputación** in an alert.
+- Private, loopback and non-routable addresses are refused, answers are
+  cached for six hours, and each provider is rate limited for its free
+  tier (VirusTotal 4/min, AbuseIPDB 30/min).
+- Keys are read from the environment only, never from flags (flags show
+  in the process list).
+
 ## Host risk scoring (hot hosts)
 
 

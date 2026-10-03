@@ -12,6 +12,21 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Incidents, rule tester and reputation lookups (2026-10-04)
+
+- Incidents (`internal/incident`, `-incidents ./incidents.json`): cases
+  grouping alerts with status, severity, owner, hosts and a timeline that
+  records every change. REST under `/api/incidents` and an `incident` SSE
+  frame per change; atomic JSON persistence, fatal on a malformed file,
+  bounded store and fields.
+- `POST /api/rules/test`: dry-run one event against the live rules and
+  get the matches and matched fields, with no side effects.
+- `GET /api/reputation`: opt-in, on-demand VirusTotal / AbuseIPDB
+  lookups (`SF_VT_API_KEY`, `SF_ABUSEIPDB_API_KEY`). Private addresses
+  refused, six-hour cache, per-provider rate limits, nothing looked up
+  unless an analyst asks.
+- OpenAPI documents the eight new operations (drift guard in sync).
+
 ### Detection coverage pack (2026-10-04)
 
 - 39 new rules (75 -> 114) so 13 of the 14 ATT&CK tactics have

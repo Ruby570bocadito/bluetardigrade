@@ -65,6 +65,10 @@ tags:
     description: real-time Server-Sent Events feed
   - name: export
     description: bulk download (JSONL / CSV) for SIEM import and forensics
+  - name: incidents
+    description: investigation cases grouping alerts, with status, owner and timeline
+  - name: reputation
+    description: opt-in, on-demand VirusTotal and AbuseIPDB lookups
   - name: respond
     description: >
       active response (C3, opt-in): operator-invoked kill_process over a
@@ -972,6 +976,359 @@ paths:
               schema:
                 type: string
 
+  /api/incidents:
+    get:
+      tags: [incidents]
+      operationId: listIncidents
+      summary: Investigation cases, most recently updated first
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Every incident (case grouping alerts) with its timeline.
+        `persistent` is false when the engine runs without `-incidents`:
+        cases then reset on restart.
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '200':
+          description: The incident list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentList'
+    post:
+      tags: [incidents]
+      operationId: createIncident
+      summary: Open an incident
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Opens a case in status `open`. Hosts and, when `severity` is
+        omitted, the highest severity are also derived from the given
+        alert ids still in the live ring. Broadcasts an `incident` SSE
+        frame. Operator workflow, like alert triage: writable without
+        `-api-write`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IncidentCreate'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Native API writes reject a foreign or malformed browser Origin and Sec-Fetch-Site cross-site.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '201':
+          description: The new incident
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Incident'
+        '400':
+          description: Invalid body, empty or oversized title, unknown severity or malformed alert id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The store holds the maximum number of incidents
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/incidents/{id}:
+    get:
+      tags: [incidents]
+      operationId: getIncident
+      summary: One incident with its timeline
+      security:
+        - bearerAuth: []
+        - {}
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: incident id (16 lowercase hex characters)
+          schema:
+            type: string
+            pattern: '^[0-9a-f]{16}$'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '200':
+          description: The incident
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Incident'
+        '400':
+          description: Malformed incident id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Unknown incident id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      tags: [incidents]
+      operationId: updateIncident
+      summary: Change status, severity, owner, title or summary
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Omitted fields stay as they are. Each change is appended to the
+        timeline; closing stamps `closed_at` and reopening clears it.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: incident id (16 lowercase hex characters)
+          schema:
+            type: string
+            pattern: '^[0-9a-f]{16}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IncidentPatch'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Native API writes reject a foreign or malformed browser Origin and Sec-Fetch-Site cross-site.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: The updated incident
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Incident'
+        '400':
+          description: Malformed id or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Unknown incident id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/incidents/{id}/alerts:
+    post:
+      tags: [incidents]
+      operationId: addIncidentAlerts
+      summary: Link alerts to an incident
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Adds alert ids (duplicates skipped) and their hosts; the case
+        severity rises to the highest severity given or found in the ring.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: incident id (16 lowercase hex characters)
+          schema:
+            type: string
+            pattern: '^[0-9a-f]{16}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IncidentAlertsAdd'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Native API writes reject a foreign or malformed browser Origin and Sec-Fetch-Site cross-site.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: The updated incident
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Incident'
+        '400':
+          description: Malformed id or alert id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Unknown incident id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/incidents/{id}/notes:
+    post:
+      tags: [incidents]
+      operationId: addIncidentNote
+      summary: Append an analyst note to the timeline
+      security:
+        - bearerAuth: []
+        - {}
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: incident id (16 lowercase hex characters)
+          schema:
+            type: string
+            pattern: '^[0-9a-f]{16}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IncidentNote'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Native API writes reject a foreign or malformed browser Origin and Sec-Fetch-Site cross-site.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: The updated incident
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Incident'
+        '400':
+          description: Malformed id, empty or oversized note
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Unknown incident id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/rules/test:
+    post:
+      tags: [rules]
+      operationId: testRules
+      summary: Dry-run one event against the loaded rules
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Evaluates the event with the live rule set and reports the
+        matching rules and the fields they matched on. Nothing is
+        ingested, stored, alerted, correlated or forwarded. POST only
+        because the event travels in the body (32 KiB limit).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuleTestRequest'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Native API writes reject a foreign or malformed browser Origin and Sec-Fetch-Site cross-site.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Rules evaluated for the event type and the matches
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuleTestResult'
+        '400':
+          description: Invalid or oversized body, or missing event.type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: No rule set loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/reputation:
+    get:
+      tags: [reputation]
+      operationId: lookupReputation
+      summary: Configured providers, or one indicator's reputation
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Without parameters: which providers the operator configured
+        (`SF_VT_API_KEY`, `SF_ABUSEIPDB_API_KEY`). With `ip` or `hash`:
+        an on-demand lookup in those providers. Private, loopback and
+        non-routable addresses are refused, answers are cached for six
+        hours and each provider is rate limited for its free tier. The
+        engine never looks anything up on its own.
+      parameters:
+        - name: ip
+          in: query
+          required: false
+          description: public IPv4 or IPv6 address
+          schema:
+            type: string
+        - name: hash
+          in: query
+          required: false
+          description: MD5, SHA-1 or SHA-256 in hex
+          schema:
+            type: string
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '200':
+          description: Provider list (no parameters) or the report for one indicator
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ReputationProviders'
+                  - $ref: '#/components/schemas/ReputationReport'
+        '400':
+          description: Both or invalid indicators, or a private address
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: "No provider key configured, lookups are disabled"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 components:
   securitySchemes:
     bearerAuth:
@@ -2083,3 +2440,243 @@ components:
           items:
             type: string
           description: contributing rule names (exact match against the live rule set)
+    IncidentEntry:
+      type: object
+      required: [at, kind, text]
+      properties:
+        at:
+          type: string
+          format: date-time
+        by:
+          type: string
+          description: free-text operator name (informational, not authenticated)
+        kind:
+          type: string
+          enum: [created, status, severity, owner, alerts, note]
+        text:
+          type: string
+    Incident:
+      type: object
+      required: [id, title, severity, status, hosts, alert_ids, timeline, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          pattern: '^[0-9a-f]{16}$'
+        title:
+          type: string
+          maxLength: 200
+        summary:
+          type: string
+          maxLength: 4000
+        severity:
+          type: string
+          enum: [critical, high, medium, low, info]
+        status:
+          type: string
+          enum: [open, investigating, contained, closed]
+        owner:
+          type: string
+        hosts:
+          type: array
+          items:
+            type: string
+        alert_ids:
+          type: array
+          items:
+            type: string
+        timeline:
+          type: array
+          items:
+            $ref: '#/components/schemas/IncidentEntry'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        closed_at:
+          type: string
+          format: date-time
+    IncidentList:
+      type: object
+      required: [incidents, persistent]
+      properties:
+        incidents:
+          type: array
+          items:
+            $ref: '#/components/schemas/Incident'
+        persistent:
+          type: boolean
+          description: false when the engine runs without -incidents (cases reset on restart)
+    IncidentCreate:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          maxLength: 200
+        summary:
+          type: string
+        severity:
+          type: string
+          enum: [critical, high, medium, low, info]
+        owner:
+          type: string
+        by:
+          type: string
+        alert_ids:
+          type: array
+          items:
+            type: string
+            pattern: '^[0-9a-f]{16}$'
+        hosts:
+          type: array
+          items:
+            type: string
+    IncidentPatch:
+      type: object
+      properties:
+        title:
+          type: string
+        summary:
+          type: string
+        severity:
+          type: string
+          enum: [critical, high, medium, low, info]
+        status:
+          type: string
+          enum: [open, investigating, contained, closed]
+        owner:
+          type: string
+        by:
+          type: string
+    IncidentAlertsAdd:
+      type: object
+      required: [alert_ids]
+      properties:
+        alert_ids:
+          type: array
+          maxItems: 500
+          items:
+            type: string
+            pattern: '^[0-9a-f]{16}$'
+        hosts:
+          type: array
+          items:
+            type: string
+        severity:
+          type: string
+          enum: [critical, high, medium, low, info]
+        by:
+          type: string
+    IncidentNote:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          maxLength: 4000
+        by:
+          type: string
+    RuleTestRequest:
+      type: object
+      required: [event]
+      properties:
+        event:
+          type: object
+          description: one event in the ingest wire format (`type` required; timestamp and id are filled when missing)
+          additionalProperties: true
+    RuleTestMatch:
+      type: object
+      required: [id, name, severity, matched_on]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        severity:
+          type: string
+        mitre:
+          type: string
+        tactic:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        matched_on:
+          type: array
+          items:
+            type: string
+    RuleTestResult:
+      type: object
+      required: [event_type, evaluated, matches]
+      properties:
+        event_type:
+          type: string
+        evaluated:
+          type: integer
+          description: enabled rules for this event type
+        matches:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleTestMatch'
+    ReputationProviders:
+      type: object
+      required: [providers]
+      properties:
+        providers:
+          type: object
+          additionalProperties:
+            type: boolean
+    ReputationResult:
+      type: object
+      required: [provider, status]
+      properties:
+        provider:
+          type: string
+          enum: [virustotal, abuseipdb]
+        status:
+          type: string
+          enum: [ok, not_found, rate_limited, error, unsupported]
+        detail:
+          type: string
+        link:
+          type: string
+        malicious:
+          type: integer
+        suspicious:
+          type: integer
+        harmless:
+          type: integer
+        undetected:
+          type: integer
+        score:
+          type: integer
+          description: AbuseIPDB confidence of abuse, 0-100
+        reports:
+          type: integer
+        country:
+          type: string
+        owner:
+          type: string
+        name:
+          type: string
+    ReputationReport:
+      type: object
+      required: [indicator, kind, results, cached, at]
+      properties:
+        indicator:
+          type: string
+        kind:
+          type: string
+          enum: [ip, hash]
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReputationResult'
+        cached:
+          type: boolean
+        at:
+          type: string
+          format: date-time
