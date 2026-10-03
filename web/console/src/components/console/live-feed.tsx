@@ -10,7 +10,7 @@ import { observationSearch } from '@/lib/source-observation'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { ActivityIcon, MagnifyingGlass, Pause, Play, Pulse, Stack } from '@phosphor-icons/react'
+import { ActivityIcon, Globe, MagnifyingGlass, Pause, Play, Pulse, Stack } from '@phosphor-icons/react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -19,7 +19,7 @@ import { EmptyState, LiveAnnouncer, SkeletonRows } from './ui-bits'
 import { ActivityChart, useActivity } from './activity-chart'
 import { ChartCard } from '@/components/charts/chart-frame'
 import { BarList } from '@/components/charts/bars'
-import { eventTypeMix, formatAgo } from '@/lib/soc-metrics'
+import { eventTypeMix, formatAgo, topCounts } from '@/lib/soc-metrics'
 import { ExportButtons } from './export-menu'
 import { SavedSearches } from './saved-searches'
 import { eventSearchLens, searchForSavedLens, type SavedLens } from '@/lib/saved-searches'
@@ -112,6 +112,13 @@ export function LiveFeed() {
 
   const activity = useActivity(events)
   const mix = useMemo(() => eventTypeMix(events, 6), [events])
+  const destinations = useMemo(
+    () => topCounts(events.filter((e) => e.type === 'network.connect'), (e) => {
+      const host = e.network?.domain || e.network?.destination_ip
+      return host ? (e.network?.destination_port ? `${host}:${e.network.destination_port}` : host) : null
+    }, 6),
+    [events],
+  )
 
   const types = useMemo(() => {
     const set = new Set<string>()
@@ -161,9 +168,9 @@ export function LiveFeed() {
 
   return (
     <section aria-label="Flujo de eventos en vivo" className="space-y-4">
-      <div className="grid gap-4 xl:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
         <ChartCard
-          className="xl:col-span-2"
+          className="lg:col-span-2"
           title="Ritmo de ingesta"
           subtitle="Eventos por intervalo de 5 s en los últimos 4 minutos (búfer del cliente)"
           icon={Pulse}
@@ -188,7 +195,7 @@ export function LiveFeed() {
         </ChartCard>
         <ChartCard
           title="Tipos de evento"
-          subtitle="Pulsa un tipo para filtrar el flujo"
+          subtitle="Pulsa uno para filtrar"
           icon={Stack}
           table={{ caption: 'Eventos por tipo en el búfer del cliente', columns: ['Tipo', 'Eventos'], rows: mix.top.map((r) => [r.key, r.count]) }}
           footer={mix.rest > 0 ? `${mix.rest} eventos más de otros ${mix.distinct - mix.top.length} tipos.` : undefined}
@@ -203,6 +210,25 @@ export function LiveFeed() {
               selectLabel: typeFilter === r.key ? `Quitar el filtro de tipo ${r.key}` : `Filtrar el flujo por ${r.key}: ${r.count} eventos`,
             }))}
             empty={<EmptyState icon={ActivityIcon} title="Sin eventos todavía" hint="Los tipos aparecen con la primera telemetría." />}
+          />
+        </ChartCard>
+        <ChartCard
+          title="Destinos de red"
+          subtitle="Conexiones en el búfer"
+          icon={Globe}
+          table={{ caption: 'Conexiones por destino en el búfer del cliente', columns: ['Destino', 'Conexiones'], rows: destinations.top.map((r) => [r.key, r.count]) }}
+          footer={destinations.rest > 0 ? `${destinations.rest} conexiones más a otros ${destinations.distinct - destinations.top.length} destinos.` : undefined}
+        >
+          <BarList
+            color="var(--series-4)"
+            rows={destinations.top.map((r) => ({
+              key: r.key,
+              label: <span className="font-mono">{r.key}</span>,
+              value: r.count,
+              onSelect: () => setQuery(query === r.key.replace(/:\d+$/, '') ? '' : r.key.replace(/:\d+$/, '')),
+              selectLabel: `Buscar ${r.key} en el flujo: ${r.count} conexiones`,
+            }))}
+            empty={<EmptyState icon={Globe} title="Sin conexiones" hint="Aparecen con los eventos network.connect del sensor." />}
           />
         </ChartCard>
       </div>

@@ -9,6 +9,7 @@ import { ArrowClockwise, ArrowRight, CheckCircle, WarningCircle, WarningOctagon 
 import { useEngine } from './engine-provider'
 import type { ConsoleView } from './dashboard'
 import { SegmentBar } from '@/components/charts/bars'
+import { Counter } from '@/components/reactbits/counter'
 import { pipelineIssues, triageSummary, type TriageTarget } from '@/lib/operations'
 import { formatTime, formatUptime } from '@/lib/console-types'
 
@@ -65,8 +66,9 @@ export function OperationsOverview({ onNavigate, onTriage }: {
         <div className="min-w-0">
           <p className="kicker">Prioridad de triaje</p>
           <div className="mt-2 flex items-end gap-3">
-            <span className={'text-[56px] font-semibold leading-[0.9] tracking-tight ' + (critical ? 'text-red-300' : 'text-zinc-50')}>
-              {available ? summary.critical : '—'}
+            <span className={'text-[56px] font-semibold leading-none tracking-tight ' + (critical ? 'text-red-300' : 'text-zinc-50')}>
+              {/* Counter (React Bits): each digit rolls to its value */}
+              {available ? <Counter value={summary.critical} height={56} /> : '—'}
             </span>
             <div className="pb-1.5">
               {critical && <WarningOctagon size={18} weight="fill" aria-hidden className="mb-1 text-[var(--sev-critical)]" />}

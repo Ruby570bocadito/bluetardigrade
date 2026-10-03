@@ -8,7 +8,7 @@
 // own honest state instead of empty axes.
 
 import { useEffect, useMemo, useState } from 'react'
-import { ChartLineUp, Cpu, Crosshair, Flame, ListBullets, Pulse, ShieldWarning, Stack, Waveform } from '@phosphor-icons/react'
+import { ChartLineUp, Cpu, Crosshair, Flame, Graph, GridFour, ListBullets, Pulse, ShieldWarning, Stack, Waveform } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import type { EngineStatus } from '@/hooks/use-engine-stream'
 import { KpiRow } from './kpi-row'
@@ -17,13 +17,17 @@ import { ActivityChart, useActivity } from './activity-chart'
 import { AlertsView } from './alerts-view'
 import { EmptyState, OfflineNotice, SkeletonRows, MonoTag } from './ui-bits'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
+import { AnimatedContent } from '@/components/reactbits/animated-content'
+import { EntityGraphView, GraphLegend, NODE_KIND } from '@/components/charts/entity-graph'
+import { HostTacticHeatmap } from '@/components/charts/heatmap'
+import { buildEntityGraph } from '@/lib/entity-graph'
 import { ChartCard } from '@/components/charts/chart-frame'
 import { StackedColumns } from '@/components/charts/stacked-columns'
 import { BarList, Meter } from '@/components/charts/bars'
 import { AttackMatrix } from '@/components/charts/attack-matrix'
 import { SEV_COLOR, SeverityIcon } from '@/components/charts/severity'
 import { eventDetail, formatTime, type SfAlert, type Severity } from '@/lib/console-types'
-import { eventTypeMix, formatAgo, SEVERITIES, SEVERITY_LABEL, severityBuckets, severityCounts, tacticCoverage, topCounts } from '@/lib/soc-metrics'
+import { eventTypeMix, formatAgo, hostTacticMatrix, SEVERITIES, SEVERITY_LABEL, severityBuckets, severityCounts, tacticCoverage, topCounts } from '@/lib/soc-metrics'
 import type { TriageTarget } from '@/lib/operations'
 import type { SeverityFilter } from '@/lib/url-state'
 
@@ -57,14 +61,18 @@ export function Dashboard({
         />
       )}
 
-      <OperationsOverview onNavigate={onNavigate} onTriage={onTriage} />
-      <KpiRow stats={stats} />
+      <AnimatedContent order={0}>
+        <OperationsOverview onNavigate={onNavigate} onTriage={onTriage} />
+      </AnimatedContent>
+      <AnimatedContent order={1}>
+        <KpiRow stats={stats} />
+      </AnimatedContent>
 
-      <div className="grid gap-5 xl:grid-cols-3">
+      <AnimatedContent order={2} className="grid gap-5 xl:grid-cols-3">
         <ChartCard
           className="xl:col-span-2"
           title="Actividad del sensor"
-          subtitle="Eventos por intervalo de 5 s en los últimos 4 minutos; las alertas del mismo periodo aparecen en la franja inferior"
+          subtitle="Eventos por intervalo de 5 s en los últimos 4 minutos, con las alertas del periodo en la franja inferior"
           icon={Pulse}
           legend={[
             { key: 'events', label: 'Eventos', color: 'var(--series-1)', shape: 'line' },
@@ -93,28 +101,97 @@ export function Dashboard({
         </ChartCard>
 
         <SeverityPanel alerts={alerts} down={down} onHunt={onHunt} />
-      </div>
+      </AnimatedContent>
 
-      <div className="grid gap-5 xl:grid-cols-3">
+      <AnimatedContent order={3} className="grid gap-5 xl:grid-cols-3">
+        <InvestigationGraphPanel onHunt={onHunt} />
+        <div className="flex min-w-0 flex-col gap-5">
+          <HotHostsPanel onHunt={onHunt} />
+          <TopRulesPanel alerts={alerts} down={down} onHunt={onHunt} />
+        </div>
+      </AnimatedContent>
+
+      <AnimatedContent order={4} className="grid gap-5 xl:grid-cols-3">
         <TimelinePanel alerts={alerts} down={down} />
-        <HotHostsPanel onHunt={onHunt} />
-      </div>
-
-      <AttackPanel onHunt={onHunt} />
-
-      <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-3">
-        <TopRulesPanel alerts={alerts} down={down} onHunt={onHunt} />
         <TelemetryMixPanel down={down} />
-        <EngineSummary status={status} />
-      </div>
+      </AnimatedContent>
 
-      <div className="grid gap-5 xl:grid-cols-2">
+      <AnimatedContent order={5}>
+        <AttackPanel onHunt={onHunt} />
+      </AnimatedContent>
+
+      <AnimatedContent order={6}>
+        <HeatmapPanel onHunt={onHunt} />
+      </AnimatedContent>
+
+      <AnimatedContent order={7}>
+        <EngineSummary status={status} />
+      </AnimatedContent>
+
+      <AnimatedContent order={8} className="grid gap-5 xl:grid-cols-2">
         <div className="panel min-w-0 px-4 pb-3 pt-3.5">
           <AlertsView compact onAnalyze={onAnalyze} />
         </div>
         <RecentTelemetry onNavigate={onNavigate} />
-      </div>
+      </AnimatedContent>
     </div>
+  )
+}
+
+/**
+ * Investigation graph of the received window. Nodes open the alert queue
+ * searching for that entity (a destination searches its address).
+ */
+function InvestigationGraphPanel({ onHunt }: { onHunt?: (lens: HuntLens) => void }) {
+  const { alerts, events, status } = useEngine()
+  const graph = useMemo(() => buildEntityGraph(alerts, events), [alerts, events])
+  const degree = (id: string) => graph.edges.filter((e) => e.source === id || e.target === id).length
+  return (
+    <ChartCard
+      className="xl:col-span-2"
+      title="Grafo de investigación"
+      subtitle="Equipos, usuarios, procesos, detecciones y destinos de red de la ventana. Pulsa un nodo para ver sus alertas"
+      icon={Graph}
+      table={{
+        caption: 'Entidades del grafo de investigación',
+        columns: ['Entidad', 'Tipo', 'Conexiones', 'Alertas o eventos'],
+        rows: graph.nodes.map((n) => [n.label, NODE_KIND[n.kind].label, degree(n.id), n.weight]),
+      }}
+      footer={graph.folded > 0 ? `${graph.folded} entidades menos activas quedan fuera del grafo; búscalas en la cola o en el flujo.` : 'Aristas animadas: detecciones críticas abiertas y conexiones de red observadas.'}
+    >
+      {status === 'down' ? <Unavailable /> : graph.nodes.length === 0 ? (
+        <EmptyState icon={Graph} title="Sin entidades todavía" hint="El grafo se dibuja con la primera alerta o conexión de red recibida." />
+      ) : (
+        <div className="space-y-2">
+          <GraphLegend graph={graph} />
+          <EntityGraphView
+            graph={graph}
+            height={430}
+            ariaLabel={`Grafo de investigación: ${graph.nodes.length} entidades y ${graph.edges.length} relaciones`}
+            onSelect={onHunt ? (node) => onHunt({ q: node.kind === 'destination' ? node.label.replace(/:\d+$/, '') : node.label }) : undefined}
+          />
+        </div>
+      )}
+    </ChartCard>
+  )
+}
+
+/** Alerts per host and ATT&CK tactic. */
+function HeatmapPanel({ onHunt }: { onHunt?: (lens: HuntLens) => void }) {
+  const { alerts, status } = useEngine()
+  const matrix = useMemo(() => hostTacticMatrix(alerts), [alerts])
+  return (
+    <ChartCard
+      title="Equipos por táctica"
+      subtitle="Alertas de la ventana por equipo y táctica de ATT&CK"
+      icon={GridFour}
+    >
+      {status === 'down' ? <Unavailable /> : matrix.hosts.length === 0 ? (
+        <EmptyState icon={GridFour} title="Sin tácticas observadas" hint="Las alertas con etiqueta de táctica ATT&CK llenan esta matriz." />
+      ) : (
+        <HostTacticHeatmap matrix={matrix} onHost={onHunt ? (host) => onHunt({ q: host }) : undefined} />
+      )}
+    </ChartCard>
   )
 }
 
@@ -308,6 +385,7 @@ function TopRulesPanel({ alerts, down, onHunt }: { alerts: SfAlert[]; down: bool
   const ranked = useMemo(() => topCounts(alerts, (a) => a.rule_name, 6), [alerts])
   return (
     <ChartCard
+      className="flex-1"
       title="Reglas más activas"
       subtitle={`${ranked.distinct} reglas distintas en la ventana`}
       icon={ListBullets}
@@ -421,36 +499,34 @@ function EngineSummary({ status }: { status: EngineStatus }) {
       label: 'Persistencia',
       value: stats?.store_enabled ? `SQLite · ${stats.store_events} eventos · ${stats.store_alerts} alertas` : stats ? 'sin store (-store off)' : 'sin datos',
     },
-    { label: 'Fallos SQLite desde arranque', value: stats?.store_write_failures ?? '—', bad: storeFailures > 0 },
+    { label: 'Fallos SQLite', value: stats?.store_write_failures ?? '—', bad: storeFailures > 0 },
     { label: 'Reglas cargadas', value: stats ? rules.length : '—' },
   ]
 
   return (
-    <section aria-label="Resumen del motor" className="panel flex min-w-0 flex-col">
-      <div className="flex items-center gap-2.5 px-4 pt-3.5">
+    <section aria-label="Resumen del motor" className="panel min-w-0">
+      <div className="flex flex-wrap items-center gap-2.5 px-4 pt-3.5">
         <span className="icon-tile"><Cpu size={14} aria-hidden /></span>
         <h2 className="text-sm font-medium text-zinc-100">Salud del pipeline</h2>
-        <span className="ml-auto flex items-center gap-1.5 text-[11px] text-zinc-500">
+        <span className="flex items-center gap-1.5 text-[11px] text-zinc-500">
           <span aria-hidden className={`h-2 w-2 rounded-full ${status === 'live' ? 'bg-emerald-500' : status === 'connecting' ? 'bg-amber-400' : 'bg-red-500'}`} />
           {status === 'live' ? 'en vivo' : status === 'connecting' ? 'conectando' : 'sin conexión'}
         </span>
+        <p className="ml-auto hidden max-w-[60ch] truncate text-[11px] text-zinc-500 lg:block">{statusLine}</p>
       </div>
-      <dl className="mt-2 flex-1 divide-y divide-zinc-800/70 px-4">
+      <dl className="grid grid-cols-2 gap-px p-4 sm:grid-cols-4 xl:grid-cols-8">
         {rows.map((row) => (
-          <div key={row.label} className="flex items-center justify-between gap-4 py-2">
-            <dt className="text-xs text-zinc-500">{row.label}</dt>
-            <dd className={`min-w-0 truncate text-right font-mono text-xs tabular-nums ${row.bad ? 'text-amber-300' : 'text-zinc-300'}`}>{row.value}</dd>
+          <div key={row.label} className={`min-w-0 rounded-lg px-3 py-2.5 ${row.bad ? 'bg-amber-400/[0.06]' : 'bg-white/[0.02]'}`}>
+            <dt className="truncate text-[11px] text-zinc-500" title={row.label}>{row.label}</dt>
+            <dd className={`mt-1 truncate font-mono text-xs tabular-nums ${row.bad ? 'text-amber-300' : 'text-zinc-200'}`} title={String(row.value)}>{row.value}</dd>
           </div>
         ))}
       </dl>
-      <div className="border-t border-zinc-800/70 px-4 py-3">
-        <p className="kicker text-[10px]">Tipos de evento con reglas</p>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {(stats?.rules_types ?? []).map((t) => <MonoTag key={t}>{t}</MonoTag>)}
-          {(stats?.rules_types ?? []).length === 0 && <span className="text-xs text-zinc-500">sin catálogo todavía</span>}
-        </div>
+      <div className="flex flex-wrap items-center gap-1.5 border-t border-white/[0.06] px-4 py-3">
+        <span className="mr-1 text-[11px] text-zinc-500">Tipos de evento con reglas</span>
+        {(stats?.rules_types ?? []).map((t) => <MonoTag key={t}>{t}</MonoTag>)}
+        {(stats?.rules_types ?? []).length === 0 && <span className="text-xs text-zinc-500">sin catálogo todavía</span>}
       </div>
-      <p className="border-t border-zinc-800/70 px-4 py-2.5 text-[11px] leading-relaxed text-zinc-500">{statusLine}</p>
     </section>
   )
 }

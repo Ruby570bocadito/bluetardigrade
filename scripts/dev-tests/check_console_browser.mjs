@@ -268,10 +268,21 @@ try {
     await waitView('flujo')
     await page.keyboard.press('Escape')
   })
+  await check('reduced-motion hydration leaves every dashboard block visible', async () => {
+    // A fresh load hydrates the server-rendered panel (a client-side
+    // navigation would mount it without the server's initial styles).
+    await page.goto(base + '/?fq=demo&tipo=process.create&custom=keep')
+    await waitView('panel')
+    await page.getByRole('region', { name: 'Resumen de operación' }).waitFor()
+    await page.waitForTimeout(500)
+    // The server renders entrance animations at opacity 0; the client must
+    // lift them even when it skips the motion. Hover-only halos are exempt.
+    const hidden = await page.locator('#console-main').evaluate((main) =>
+      [...main.querySelectorAll('*')].filter((el) => el instanceof HTMLElement && el.offsetParent !== null
+        && getComputedStyle(el).opacity === '0' && !el.classList.contains('spotlight-card__halo')).length)
+    assert.equal(hidden, 0, 'dashboard blocks stayed transparent under reduced motion')
+  })
   await check('dashboard shortcuts open the counted live lens and Back restores the prior investigation', async () => {
-    await openPalette()
-    await search().fill('panel')
-    await page.keyboard.press('Enter')
     await waitView('panel')
     const originalSearch = new URL(page.url()).search
     await page.evaluate(() => {

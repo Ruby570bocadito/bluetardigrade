@@ -1,51 +1,47 @@
 'use client'
 
-// The bluetardigrade mark (docs/assets/logo.svg) inlined so it inherits
-// no external request; gradient ids are per instance.
+// The bluetardigrade mark (docs/assets/logo.svg) inlined: no extra
+// request, per-instance gradient ids, and the halo breathes only when
+// the engine is live (frozen under prefers-reduced-motion).
 
 import { useId } from 'react'
 
-export function BrandMark({ size = 32, className }: { size?: number; className?: string }) {
+export function BrandMark({ size = 32, live = false, className }: { size?: number; live?: boolean; className?: string }) {
   const id = useId().replace(/:/g, '')
-  const shield = `bt-shield-${id}`
   const body = `bt-body-${id}`
-  const leg = `bt-leg-${id}`
+  const glow = `bt-glow-${id}`
   return (
     <svg viewBox="0 0 64 64" width={size} height={size} aria-hidden className={className}>
       <defs>
-        <linearGradient id={shield} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#132036" />
-          <stop offset="1" stopColor="#0b1220" />
-        </linearGradient>
         <linearGradient id={body} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#67d3ff" />
-          <stop offset="1" stopColor="#2f74f0" />
+          <stop offset="0" stopColor="#4dc3ff" />
+          <stop offset="1" stopColor="#2f6fed" />
         </linearGradient>
-        <linearGradient id={leg} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#3f8af5" />
-          <stop offset="1" stopColor="#2a5fd6" />
+        <linearGradient id={glow} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#4dc3ff" stopOpacity="0.35" />
+          <stop offset="1" stopColor="#2f6fed" stopOpacity="0.05" />
         </linearGradient>
       </defs>
-      <path d="M32 3 L56 11 V31 C56 45 46 55 32 61 C18 55 8 45 8 31 V11 Z" fill={`url(#${shield})`} stroke="#2f74f0" strokeOpacity="0.55" strokeWidth="1.5" />
-      <g fill={`url(#${leg})`}>
-        <rect x="17.5" y="35" width="5.6" height="9" rx="2.8" />
-        <rect x="25.5" y="36" width="5.6" height="9" rx="2.8" />
-        <rect x="33.5" y="36" width="5.6" height="9" rx="2.8" />
-        <rect x="41.5" y="35" width="5.6" height="9" rx="2.8" />
+      <circle cx="32" cy="34" r="26" fill={`url(#${glow})`} className={live ? 'bt-breathe' : undefined} />
+      <g stroke={`url(#${body})`} strokeWidth="3.4" strokeLinecap="round" fill="none">
+        <path d="M22 30 C17 29 14 26 13 22" />
+        <path d="M21 37 C15 37 11 35 9 32" />
+        <path d="M22 44 C16 45 13 48 12 52" />
+        <path d="M42 30 C47 29 50 26 51 22" />
+        <path d="M43 37 C49 37 53 35 55 32" />
+        <path d="M42 44 C48 45 51 48 52 52" />
       </g>
-      <path
-        d="M17 24.5 C19 19 26 17.5 33 17.5 C41 17.5 49 19.5 51 26 C52.5 31 50.5 37.5 44 38.5 C37 39.6 26 39.8 19.5 38 C14.5 36.6 15.4 28.8 17 24.5 Z"
-        fill={`url(#${body})`}
-      />
-      <g stroke="#1f56c9" strokeOpacity="0.55" strokeWidth="1.2" strokeLinecap="round" fill="none">
-        <path d="M27 19 C25.5 25 25.5 32 27 38.8" />
-        <path d="M35 18.2 C33.6 25 33.6 32 35 39.2" />
-        <path d="M43 19.6 C41.8 25.5 41.8 32 43 38.6" />
+      <g fill={`url(#${body})`}>
+        <rect x="20" y="24" width="24" height="22" rx="11" />
+        <rect x="26" y="25" width="12" height="20" rx="6" opacity="0.25" stroke="#4dc3ff" strokeWidth="1" fill="none" />
+        <rect x="21.5" y="32" width="21" height="1.6" rx="0.8" opacity="0.28" />
+        <rect x="21.5" y="38" width="21" height="1.6" rx="0.8" opacity="0.28" />
       </g>
-      <circle cx="16.5" cy="29" r="7.2" fill={`url(#${body})`} />
-      <ellipse cx="10.4" cy="30.4" rx="2.6" ry="2.1" fill="#3f8af5" />
-      <circle cx="15.6" cy="26.6" r="1.7" fill="#0b1220" />
-      <circle cx="16.1" cy="26.1" r="0.55" fill="#ffffff" />
+      <circle cx="32" cy="25.5" r="7.5" fill={`url(#${body})`} />
+      <circle cx="29" cy="24" r="1.7" fill="#060a10" />
+      <circle cx="35" cy="24" r="1.7" fill="#060a10" />
+      <circle cx="29.5" cy="23.4" r="0.55" fill="#cfeaff" />
+      <circle cx="35.5" cy="23.4" r="0.55" fill="#cfeaff" />
     </svg>
   )
 }

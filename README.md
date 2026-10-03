@@ -1,6 +1,13 @@
 <div align="center">
 
-<img src="docs/assets/banner.svg" alt="bluetardigrade: SOC detection, investigation and response for Windows endpoints" width="100%" />
+<img src="docs/assets/logo.svg" width="96" alt="bluetardigrade logo" />
+
+# bluetardigrade
+
+**SOC detection, investigation and reporting for endpoint, network and mail evidence.**
+
+Named after the most resilient animal on Earth: a static Go engine with
+no runtime dependencies, collectors and an operator console.
 
 [![CI](https://github.com/Ruby570bocadito/bluetardigrade/actions/workflows/ci.yml/badge.svg)](https://github.com/Ruby570bocadito/bluetardigrade/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/badge/release-v0.2.0-2f74f0)](CHANGELOG.md)
@@ -230,10 +237,10 @@ same-origin proxy, so the API token never reaches the browser.
 
 | View | What the analyst does there |
 |---|---|
-| **Panel** | KPIs, activity and severity trends, MITRE coverage, hot hosts, triage backlog |
+| **Panel** | Triage backlog, KPIs, activity and severity trends, an investigation graph (hosts, users, processes, detections, destinations), MITRE coverage and a host x tactic heatmap |
 | **Flujo en vivo** | Live telemetry with pause, search, type filters and JSONL/CSV export |
-| **Alertas** | Live queue or paged history. Severity/lifecycle filters, evidence, forensic bundle, triage, reports |
-| **Reglas** / **Cadenas** | Rule conditions with ATT&CK mapping; kill-chain steps |
+| **Alertas** | Live queue or paged history. Severity/lifecycle filters, per-alert entity graph, forensic bundle with process tree, triage, reports |
+| **Reglas** / **Cadenas** | Rule conditions with ATT&CK coverage; kill chains drawn as flows with per-step alerts and completed campaigns |
 | **Supresiones** | Host-scoped allowlist with reason and expiry |
 | **Respuesta activa** | Arming state and the forensic response audit |
 | **Analista IA** | Optional triage assistant with your own model |

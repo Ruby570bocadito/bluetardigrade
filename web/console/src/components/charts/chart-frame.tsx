@@ -119,7 +119,7 @@ export function ChartCard({
       <div className={cn('min-w-0 flex-1 px-4 pb-4 pt-3', bodyClassName)}>
         {tableView && table ? <DataTable table={table} /> : children}
       </div>
-      {footer && <div className="border-t border-[#1a2433] px-4 py-2.5 text-[11px] leading-relaxed text-zinc-500">{footer}</div>}
+      {footer && <div className="border-t border-white/[0.06] px-4 py-2.5 text-[11px] leading-relaxed text-zinc-500">{footer}</div>}
     </section>
   )
 }

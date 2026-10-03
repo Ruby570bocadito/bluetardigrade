@@ -18,43 +18,55 @@ The previous console is preserved at the `console-v1` tag.
 
 Console
 
-- Every view redesigned on one design system:
-  - blue-tinted dark surfaces and solid panels;
-  - a sidebar with the tardigrade mark and an engine status card;
-  - a header with view descriptions and a UTC clock;
-  - a favicon.
-- New dependency-free SVG chart kit (`src/components/charts`):
-  - area chart with crosshair and an alert marker rail;
-  - stacked columns, bar lists, part-to-whole bar, meters and sparklines;
-  - MITRE ATT&CK tactic strip.
-  - Every chart has a table view, a tooltip that never gates a value,
-    keyboard focus with arrow keys, and an honest unavailable state.
-- Palettes validated with the dataviz six-checks script against the
-  panel surface:
+- Every view redesigned on the neutral zinc design system of the first
+  console, refined: glass panels with hairline borders, one blue accent,
+  the original tardigrade mark in the sidebar (its halo breathes while the
+  engine is live), view descriptions and a UTC clock in the header.
+- React Bits motion, all frozen under `prefers-reduced-motion`:
+  - CountUp on stat tiles, a rolling Counter on the critical hero;
+  - AnimatedContent cascade when a view mounts, GlareHover on tiles;
+  - plus the existing SpotlightCard, AnimatedList, DotGrid, BlurText,
+    ShinyText, DecryptedText and StarBorder.
+- Graphs:
+  - investigation graph of the window (hosts, users, processes,
+    detections, network destinations), with a deterministic force layout,
+    neighbourhood highlight, flowing edges for open critical detections and
+    observed connections, and click-through to the alert queue;
+  - per-alert graph (radial: detection, host, user, process and parent,
+    destination) in the alert detail;
+  - process tree built from the forensic bundle, with the process that
+    fired highlighted;
+  - kill chains drawn as flows: steps, live connectors and a campaign node.
+- Charts (dependency-free SVG kit in `src/components/charts`):
+  - area with crosshair and an alert marker rail;
+  - stacked columns, bar lists, part-to-whole bar, meters, sparklines;
+  - ATT&CK tactic strip and a host x tactic heatmap.
+  - Every chart has a table view or is a table, tooltips never gate a
+    value, keyboard focus with arrow keys, honest unavailable states.
+- Palettes validated with the dataviz six-checks script on the panel
+  surface:
   - severity is a five-step status scale, always with an icon and a label;
   - categorical series use the validated adjacent order.
-- Panel:
-  - triage hero (open critical alerts), clickable lifecycle split;
-  - stat tiles with sparklines from the polled `/api/stats` history;
-  - sensor activity with alerts on the same time axis;
-  - alerts by severity, detections of the last hour, hot hosts;
-  - ATT&CK coverage, most active rules, telemetry mix, pipeline health.
-  - Charts open the alert queue with the matching lens.
-- Flujo en vivo: ingest rate and event-type mix; a type bar filters the feed.
-- Alertas: severity strip that also filters the queue; fixed column
-  layout so the alert name keeps room next to the detail panel.
+- Panel: triage hero, lifecycle split, stat tiles with sparklines from the
+  polled `/api/stats` history, sensor activity, alerts by severity,
+  investigation graph, hot hosts, top rules, detections of the last hour,
+  telemetry mix, ATT&CK coverage, host x tactic heatmap and a pipeline
+  health strip. Charts open the alert queue with the matching lens.
+- Flujo en vivo: ingest rate, event-type mix and network destinations;
+  the bars filter or search the feed.
+- Alertas: severity strip that also filters the queue; fixed column layout
+  so the alert name keeps room next to the detail panel.
 - Reglas: coverage by ATT&CK tactic, severity and event type, each a filter.
-- Cadenas: step nodes with the alerts each step's rule raised in the
-  window, armed state and completed campaigns.
 - Supresiones: scope and expiry summary plus a proper table.
 - Respuesta activa: audit decisions, denial codes and attempts per operator.
 - Analista IA: panel headers, channel state, conversation bubbles.
-- `src/lib/soc-metrics.ts` holds the pure aggregations, with tests.
+- `src/lib/soc-metrics.ts` and `src/lib/entity-graph.ts` hold the pure
+  aggregations and layouts, with tests.
 
 Repository
 
-- New README (validated Windows quickstart, features, security model,
-  architecture), `docs/assets/banner.svg` and a redrawn `logo.svg`.
+- New README body (validated Windows quickstart, features, security
+  model, architecture) under the original header and logo.
   `install.ps1` prints an ASCII tardigrade.
 - Retired `docs/arquitectura-tecnica-v0.11.pdf` and its `scripts/arq_v04`
   generator: the PDF no longer matched the code.

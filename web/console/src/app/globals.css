@@ -44,83 +44,68 @@
 }
 
 /* bluetardigrade SOC console: dark-mode locked product UI.
-   Neutrals are a blue-tinted slate (the zinc scale is re-stepped below so
-   every view inherits it), one interaction accent (blue-400) and two
+   Neutral zinc structure, one interaction accent (blue-400) and two
    validated data palettes (see the viz tokens): severity is an ordered
    status scale, categorical series never reuse its hues. */
-@theme {
-  --color-zinc-50: #f3f6fb;
-  --color-zinc-100: #e4e9f1;
-  --color-zinc-200: #cbd4e1;
-  --color-zinc-300: #aeb9c9;
-  --color-zinc-400: #8b98ad;
-  --color-zinc-500: #7a879c; /* muted ink: 5.1:1 on the panel surface */
-  --color-zinc-600: #56637a;
-  --color-zinc-700: #344055;
-  --color-zinc-800: #1d2737;
-  --color-zinc-900: #121a27;
-  --color-zinc-950: #070b12;
-}
-
 :root {
   --radius: 0.5rem;
-  --background: #070b12;
-  --foreground: #e4e9f1;
-  --card: #0e1420;
-  --card-foreground: #e4e9f1;
-  --popover: #121a27;
-  --popover-foreground: #e4e9f1;
+  --background: #09090b; /* zinc-950 */
+  --foreground: #f4f4f5; /* zinc-100 */
+  --card: #18181b; /* zinc-900 */
+  --card-foreground: #f4f4f5;
+  --popover: #18181b;
+  --popover-foreground: #f4f4f5;
   --primary: #60a5fa; /* blue-400 */
-  --primary-foreground: #0b1730;
-  --secondary: #1d2737;
-  --secondary-foreground: #e4e9f1;
-  --muted: #121a27;
-  --muted-foreground: #8b98ad;
-  --accent: #1d2737;
-  --accent-foreground: #e4e9f1;
-  --destructive: #ef4444;
-  --border: #1d2737;
-  --input: #1d2737;
+  --primary-foreground: #172554; /* blue-950: AA on the accent */
+  --secondary: #27272a; /* zinc-800 */
+  --secondary-foreground: #f4f4f5;
+  --muted: #18181b;
+  --muted-foreground: #a1a1aa; /* zinc-400 */
+  --accent: #27272a;
+  --accent-foreground: #f4f4f5;
+  --destructive: #ef4444; /* red-500 */
+  --border: #27272a; /* zinc-800 */
+  --input: #27272a;
   --ring: #60a5fa; /* opaque focus indicator on dark surfaces */
   --chart-1: #3987e5;
   --chart-2: #199e70;
   --chart-3: #9085e9;
   --chart-4: #d55181;
-  --chart-5: #56637a;
-  --sidebar: #070b12;
-  --sidebar-foreground: #e4e9f1;
+  --chart-5: #52525b;
+  --sidebar: #09090b;
+  --sidebar-foreground: #f4f4f5;
   --sidebar-primary: #60a5fa;
-  --sidebar-primary-foreground: #0b1730;
-  --sidebar-accent: #1d2737;
-  --sidebar-accent-foreground: #e4e9f1;
-  --sidebar-border: #1d2737;
+  --sidebar-primary-foreground: #172554;
+  --sidebar-accent: #27272a;
+  --sidebar-accent-foreground: #f4f4f5;
+  --sidebar-border: #27272a;
   --sidebar-ring: #60a5fa;
 
   /* Data-viz tokens. Validated with the dataviz six-checks script against
-     --viz-surface (#0e1420, dark mode):
+     --viz-surface (#101012, the panel fill over zinc-950, dark mode):
      - severity critical/high/medium/low/info: adjacent CVD dE >= 13.8,
-       normal-vision dE >= 15.8, every step >= 3:1 on the surface. It is
+       normal-vision dE >= 17.4, every step >= 3:1 on the surface. It is
        a status scale: always shipped with an icon and a text label.
      - categorical (fixed order, never cycled; folds into "otros" past 4):
        all checks pass, worst adjacent CVD dE 16.0.
      - sequential (one hue, ordinal steps >= 2:1 on the surface). */
-  --viz-surface: #0e1420;
-  --viz-raised: #121a27;
-  --viz-grid: #1c2636;
-  --viz-axis: #2a3546;
-  --viz-ink: #e4e9f1;
-  --viz-ink-2: #aeb9c9;
-  --viz-muted: #7a879c;
+  --viz-surface: #101012;
+  --viz-raised: #18181b;
+  --viz-grid: #1f1f23;
+  --viz-axis: #2e2e33;
+  --viz-ink: #f4f4f5;
+  --viz-ink-2: #d4d4d8;
+  --viz-muted: #a1a1aa;
   --sev-critical: #d03b3b;
   --sev-high: #f98924;
   --sev-medium: #f6d732;
   --sev-low: #3987e5;
-  --sev-info: #5d6b80;
+  --sev-info: #6b6b75;
   --series-1: #3987e5;
   --series-2: #199e70;
   --series-3: #9085e9;
   --series-4: #d55181;
-  --series-other: #56637a;
+  --series-other: #52525b;
   --seq-1: #184f95;
   --seq-2: #1c5cab;
   --seq-3: #2a78d6;
@@ -268,43 +253,46 @@
    unlayered gana a @layer utilities en la cascada y los estados rojo/verde
    de los chips mueren en silencio (defecto #36, ronda 04-A 2026-09-30). */
 @layer components {
-/* Solid surfaces (SOC dashboards are read for hours: no translucency
-   behind data). .panel is the chart surface the palettes were validated
-   on, so the 2px surface gaps between chart marks match it exactly. */
+/* Surfaces: hairline border, a faint vertical light fill, an inner top
+   highlight and a soft ambient shadow. Depth without noise. The fill
+   over zinc-950 averages #101012, the surface the palettes were
+   validated on. */
 .panel {
   border-radius: 0.875rem;
-  border: 1px solid #1a2433;
-  background: var(--viz-surface);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.014));
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.035),
-    0 10px 30px -18px rgba(0, 0, 0, 0.8);
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.05),
+    0 12px 32px -18px rgba(0, 0, 0, 0.75);
 }
 .panel-hover {
   transition:
     border-color 0.2s ease,
+    transform 0.2s ease,
     box-shadow 0.2s ease;
 }
 .panel-hover:hover,
 .panel-hover:focus-within {
-  border-color: #26334a;
+  border-color: rgba(255, 255, 255, 0.13);
+  transform: translateY(-1px);
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.05),
-    0 16px 40px -20px rgba(0, 0, 0, 0.9);
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
+    0 18px 44px -20px rgba(0, 0, 0, 0.85);
 }
 @media (prefers-reduced-motion: reduce) {
   .panel-hover,
   .panel-hover:hover,
   .panel-hover:focus-within {
+    transform: none;
     transition: none;
   }
 }
-/* Panel header row: title + hint on the left, controls on the right. */
 .panel-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem 0.75rem;
-  border-bottom: 1px solid #1a2433;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   padding: 0.75rem 1rem;
 }
 .chip {
@@ -312,17 +300,16 @@
   align-items: center;
   gap: 0.375rem;
   border-radius: 0.5rem;
-  border: 1px solid #1d2737;
-  background: #0e1420;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
 }
-/* Small uppercase label above a value or a group (sentence case text
-   everywhere else). */
 .kicker {
   font-size: 0.6875rem;
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #7a879c;
+  color: #71717a;
 }
 .icon-tile {
   display: flex;
@@ -332,16 +319,16 @@
   align-items: center;
   justify-content: center;
   border-radius: 0.5rem;
-  border: 1px solid rgba(96, 165, 250, 0.22);
-  background: rgba(57, 135, 229, 0.12);
+  border: 1px solid rgba(96, 165, 250, 0.25);
+  background: linear-gradient(180deg, rgba(96, 165, 250, 0.16), rgba(96, 165, 250, 0.06));
   color: #93c5fd;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
 }
 .glass {
-  background: rgba(7, 11, 18, 0.86);
-  backdrop-filter: blur(12px) saturate(1.3);
-  -webkit-backdrop-filter: blur(12px) saturate(1.3);
+  background: rgba(9, 9, 11, 0.72);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
 }
-/* Chart tooltip: values lead, labels follow (dataviz interaction spec). */
 .viz-tooltip {
   pointer-events: none;
   position: absolute;
@@ -349,13 +336,71 @@
   min-width: 9rem;
   max-width: 16rem;
   border-radius: 0.625rem;
-  border: 1px solid #26334a;
-  background: rgba(18, 26, 39, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(24, 24, 27, 0.96);
   padding: 0.5rem 0.625rem;
   box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.9);
+  backdrop-filter: blur(8px);
   font-size: 0.75rem;
   color: var(--viz-ink-2);
 }
+}
+
+/* GlareHover (React Bits): diagonal shine across a card on hover/focus. */
+.glare-hover {
+  position: relative;
+  overflow: hidden;
+}
+.glare-hover__shine {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, 0.07) 50%, transparent 60%);
+  background-size: 250% 250%;
+  background-position: 120% 0;
+  transition: background-position 0.8s ease;
+}
+.glare-hover:hover .glare-hover__shine,
+.glare-hover:focus-within .glare-hover__shine {
+  background-position: -20% 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .glare-hover__shine { display: none; }
+}
+
+/* Brand halo breathing (sidebar mark, only while the engine is live). */
+.bt-breathe {
+  animation: bt-breathe 3.2s ease-in-out infinite;
+}
+@keyframes bt-breathe {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+/* Graph edges with live traffic: a slow dash flow along the edge. */
+.edge-flow {
+  stroke-dasharray: 4 6;
+  animation: edge-flow 1.6s linear infinite;
+}
+@keyframes edge-flow {
+  to { stroke-dashoffset: -20; }
+}
+/* Critical graph nodes: one soft expanding ring. */
+.node-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: node-pulse 2.4s ease-out infinite;
+}
+@keyframes node-pulse {
+  0% { opacity: 0.55; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.9); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bt-breathe,
+  .edge-flow,
+  .node-pulse {
+    animation: none;
+  }
+  .node-pulse { opacity: 0; }
 }
 
 /* Fondo ambiental de la shell: resplandor azul muy tenue en la
@@ -377,33 +422,6 @@
     radial-gradient(1100px 480px at 50% 118%, rgba(96, 165, 250, 0.03), transparent 72%);
 }
 
-/* GradientText: degradado animado sobre texto con background-clip: text.
-   Solo para el contador critical: urgencia de severidad, no decoración. */
-.gradient-text {
-  color: transparent;
-  -webkit-background-clip: text;
-  background-clip: text;
-  background-size: 220% 100%;
-  animation: gradient-pan var(--gt-speed, 5s) ease-in-out infinite;
-}
-@keyframes gradient-pan {
-  0% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .gradient-text {
-    animation: none;
-    /* congelado en la parada inicial: sigue siendo texto rojo legible */
-  }
-}
-
 /* StarBorder: borde de 1px con degradado en movimiento. En reposo es el
    borde estático de siempre (fondo transparente, pelo blanco al 8%); en
    activo, el truco clásico: el contenedor lleva el degradado animado en
@@ -415,7 +433,7 @@
 .star-border--active {
   border-color: transparent;
   background:
-    radial-gradient(120% 120% at 50% 50%, #0e1420 0%, #0e1420 100%) padding-box,
+    radial-gradient(120% 120% at 50% 50%, #10141a 0%, #10141a 100%) padding-box,
     linear-gradient(
         var(--sb-angle, 120deg),
         rgba(16, 20, 26, 0) 20%,

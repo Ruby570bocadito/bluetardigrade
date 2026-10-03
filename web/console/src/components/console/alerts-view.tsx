@@ -40,6 +40,8 @@ import { alertKey } from '@/lib/engine-client'
 import { matchesAlertState, alertStateFromParam, type AlertScope, type AlertStateFilter } from '@/lib/alert-search'
 import { useAlertHistory } from '@/hooks/use-alert-history'
 import { Meter } from '@/components/charts/bars'
+import { EntityGraphView, GraphLegend } from '@/components/charts/entity-graph'
+import { buildAlertGraph } from '@/lib/entity-graph'
 import { SEV_COLOR, SeverityIcon } from '@/components/charts/severity'
 import { SEVERITIES, SEVERITY_LABEL, severityCounts } from '@/lib/soc-metrics'
 import {
@@ -652,6 +654,8 @@ export function AlertDetailBody({ alert, onAnalyze }: { alert: SfAlert; onAnalyz
         <Detail label="Campos coincidentes" value={alert.matched_on.join(', ') || 'n/d'} mono />
       </dl>
 
+      <AlertGraph alert={alert} />
+
       {(attackTags.length > 0 || otherTags.length > 0) && (
         <div className="mt-4">
           <p className="text-[10px] uppercase tracking-wider text-zinc-500">Etiquetas</p>
@@ -717,6 +721,19 @@ export function AlertDetailBody({ alert, onAnalyze }: { alert: SfAlert; onAnalyz
       <TriagePanel alert={alert} />
       <ForensicPanel alertId={alert.id} />
       <ReportPanel alert={alert} />
+    </div>
+  )
+}
+
+/** Neighbourhood of the alert: rule, host, user, process chain, destination. */
+function AlertGraph({ alert }: { alert: SfAlert }) {
+  const { events } = useEngine()
+  const graph = useMemo(() => buildAlertGraph(alert, events), [alert, events])
+  return (
+    <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-950/40 p-2">
+      <p className="px-1 text-[11px] font-medium text-zinc-300">Grafo de la alerta</p>
+      <EntityGraphView graph={graph} height={250} ariaLabel={`Grafo de la alerta ${alert.rule_name}: ${graph.nodes.length} entidades relacionadas`} />
+      <div className="px-1 pb-1"><GraphLegend graph={graph} /></div>
     </div>
   )
 }

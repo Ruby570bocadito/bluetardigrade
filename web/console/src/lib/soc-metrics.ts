@@ -68,6 +68,37 @@ export function tacticCoverage(rules: readonly Pick<RuleMeta, 'tactic' | 'tags'>
   return ATTACK_TACTICS.map((t) => ({ ...t, rules: ruleCount.get(t.slug) ?? 0, alerts: alertCount.get(t.slug) ?? 0 }))
 }
 
+export type HostTacticMatrix = {
+  hosts: { host: string; total: number }[]
+  tactics: (typeof ATTACK_TACTICS)[number][]
+  /** cells[host][tactic slug] = alerts */
+  cells: Record<string, Partial<Record<TacticSlug, number>>>
+  max: number
+}
+
+/**
+ * Alerts per host and ATT&CK tactic: the heaviest hosts as rows, only
+ * the tactics observed in the window as columns (kill-chain order).
+ */
+export function hostTacticMatrix(alerts: readonly Pick<SfAlert, 'host' | 'tags'>[], maxHosts = 8): HostTacticMatrix {
+  const cells: HostTacticMatrix['cells'] = {}
+  const totals = new Map<string, number>()
+  const seen = new Set<TacticSlug>()
+  let max = 0
+  for (const alert of alerts) {
+    const slug = alertTactic(alert)
+    if (!slug) continue
+    const host = alert.host || 'host desconocido'
+    seen.add(slug)
+    totals.set(host, (totals.get(host) ?? 0) + 1)
+    const row = (cells[host] ??= {})
+    row[slug] = (row[slug] ?? 0) + 1
+    max = Math.max(max, row[slug]!)
+  }
+  const hosts = [...totals].map(([host, total]) => ({ host, total })).sort((a, b) => b.total - a.total || a.host.localeCompare(b.host)).slice(0, maxHosts)
+  return { hosts, tactics: ATTACK_TACTICS.filter((t) => seen.has(t.slug)), cells, max }
+}
+
 export function severityCounts(alerts: readonly Pick<SfAlert, 'severity'>[]): Record<Severity, number> {
   const out: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
   for (const alert of alerts) if (alert.severity in out) out[alert.severity]++

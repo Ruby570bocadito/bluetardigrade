@@ -6,7 +6,8 @@
 // unavailable metric shows "—" with an accessible "Sin datos", never 0.
 
 import { ActivityIcon, Flame, ShieldCheck, TrendDown, TrendUp, UploadSimple, WebhooksLogo, Siren } from '@phosphor-icons/react'
-import { AnimatedNumber } from './ui-bits'
+import { CountUp } from '@/components/reactbits/count-up'
+import { GlareHover } from '@/components/reactbits/glare-hover'
 import { useStatsHistory } from './engine-provider'
 import { SpotlightCard } from '@/components/reactbits/spotlight-card'
 import { Sparkline } from '@/components/charts/bars'
@@ -28,7 +29,9 @@ function Tile({
 }) {
   // SpotlightCard (React Bits): el halo solo existe bajo el puntero o con
   // el foco dentro; en reposo es la superficie del panel sin cambios.
+  // GlareHover (React Bits): a reflection crosses the tile on hover/focus.
   return (
+    <GlareHover className="rounded-[0.875rem]">
     <SpotlightCard className="panel panel-hover min-w-0 px-4 py-3.5">
       <p className="flex items-center gap-2 text-xs text-zinc-400">
         <Icon size={15} aria-hidden className="text-blue-400" />
@@ -40,6 +43,7 @@ function Tile({
       </div>
       <div className="mt-1.5 min-h-4 truncate text-[11px] text-zinc-500">{children}</div>
     </SpotlightCard>
+    </GlareHover>
   )
 }
 
@@ -47,7 +51,7 @@ function KpiNumber({ value }: { value: number | undefined }) {
   const className = 'block text-[26px] font-semibold leading-none tracking-tight text-zinc-50'
   return value === undefined
     ? <span className={className} aria-label="Sin datos">—</span>
-    : <AnimatedNumber value={value} className={className} />
+    : <CountUp to={value} className={className} />
 }
 
 function Delta({ value, span: label }: { value: number | null; span: string }) {

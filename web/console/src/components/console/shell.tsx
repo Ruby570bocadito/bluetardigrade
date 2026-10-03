@@ -197,8 +197,8 @@ export function ConsoleShell() {
           con la misma contención y congelado bajo prefers-reduced-motion. */}
       <DotGridLayer />
       <div className="relative flex min-h-[100dvh] w-full flex-col lg:flex-row">
-        <aside className="sticky top-0 hidden h-[100dvh] w-64 shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/92 lg:flex">
-          <BrandBlock />
+        <aside className="glass sticky top-0 hidden h-[100dvh] w-64 shrink-0 flex-col border-r border-white/[0.06] lg:flex">
+          <BrandBlock live={status === 'live'} />
           <nav aria-label="Secciones de la consola" className="mt-2 flex-1 overflow-y-auto px-3">
             <ul className="space-y-0.5">
               {NAV.map((item, idx) => {
@@ -214,7 +214,7 @@ export function ConsoleShell() {
                       aria-current={current ? 'page' : undefined}
                       title={hintTitle(item.id)}
                       className={`relative flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                        current ? 'text-zinc-50' : 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'
+                        current ? 'text-zinc-50' : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
                       }`}
                     >
                       {/* píldora activa con layoutId: el resalte viaja entre
@@ -223,7 +223,7 @@ export function ConsoleShell() {
                       {current && (
                         <motion.span
                           layoutId="nav-pill"
-                          className="pointer-events-none absolute inset-0 rounded-lg border border-blue-400/20 bg-blue-500/[0.12]"
+                          className="pointer-events-none absolute inset-0 rounded-lg border border-blue-400/25 bg-gradient-to-r from-blue-500/[0.16] via-blue-500/[0.07] to-transparent shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]"
                           transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 380, damping: 32 }}
                         />
                       )}
@@ -258,7 +258,7 @@ export function ConsoleShell() {
             </ul>
           </nav>
           <div className="space-y-3 px-4 pb-4 pt-3">
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 px-3 py-3">
+            <div className="panel px-3 py-3">
               <p className="flex items-center gap-2 text-xs font-medium text-zinc-200">
                 <span className="relative flex h-2 w-2" aria-hidden>
                   {status === 'live' ? (
@@ -290,7 +290,7 @@ export function ConsoleShell() {
 
         {/* Main column */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="glass sticky top-0 z-20 border-b border-zinc-800/80">
+          <header className="glass sticky top-0 z-20 border-b border-white/[0.06]">
             <div className="flex min-h-16 items-center justify-between gap-3 px-4 py-2.5 lg:px-8">
               <div className="flex min-w-0 items-center gap-3">
                 <div className="lg:hidden">
@@ -343,7 +343,7 @@ export function ConsoleShell() {
           </header>
 
           {/* Mobile nav: explicit collapse of the sidebar */}
-          <nav aria-label="Secciones de la consola" className="flex gap-1 overflow-x-auto border-b border-zinc-800/80 px-3 py-2 lg:hidden">
+          <nav aria-label="Secciones de la consola" className="flex gap-1 overflow-x-auto border-b border-white/[0.06] px-3 py-2 lg:hidden">
             {NAV.map((item) => (
               <button
                 key={item.id}
@@ -378,7 +378,7 @@ export function ConsoleShell() {
             </div>
           </main>
 
-          <footer className="border-t border-zinc-800/80 px-4 py-3 lg:px-8">
+          <footer className="border-t border-white/[0.06] px-4 py-3 lg:px-8">
             <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-500">
               <span>bluetardigrade · consola SOC</span>
               <span aria-hidden>·</span>
@@ -572,11 +572,11 @@ function ThresholdChip({ stats }: { stats: EngineStats | null }) {
   )
 }
 
-function BrandBlock() {
+function BrandBlock({ live }: { live: boolean }) {
   return (
     <div className="px-5 pb-2 pt-5">
       <div className="flex items-center gap-3">
-        <BrandMark size={36} className="shrink-0 drop-shadow-[0_0_14px_rgba(47,116,240,0.35)]" />
+        <BrandMark size={38} live={live} className="shrink-0" />
         <span className="min-w-0 leading-tight">
           <span className="block text-[15px] font-semibold tracking-tight text-zinc-50">bluetardigrade</span>
           {/* DecryptedText (React Bits): la etiqueta se descodifica una vez
@@ -584,7 +584,7 @@ function BrandBlock() {
           <DecryptedText text="Security Operations Center" className="block text-[11px] text-zinc-500" />
         </span>
       </div>
-      <div aria-hidden className="mt-4 h-px bg-gradient-to-r from-blue-400/30 via-zinc-800 to-transparent" />
+      <div aria-hidden className="mt-4 h-px bg-gradient-to-r from-blue-400/35 via-white/10 to-transparent" />
     </div>
   )
 }

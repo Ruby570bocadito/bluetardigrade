@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   alertTactic,
   counterDelta,
+  hostTacticMatrix,
   formatAgo,
   formatCompact,
   niceTicks,
@@ -41,6 +42,22 @@ describe('ATT&CK tactics', () => {
     expect(cells[0].slug).toBe('reconnaissance')
     expect(cells.find((c) => c.slug === 'execution')).toMatchObject({ rules: 2, alerts: 1 })
     expect(cells.find((c) => c.slug === 'impact')).toMatchObject({ rules: 1, alerts: 0 })
+  })
+})
+
+describe('host x tactic matrix', () => {
+  test('rows are the busiest hosts, columns only the observed tactics in kill-chain order', () => {
+    const m = hostTacticMatrix([
+      { host: 'B', tags: ['attack.impact'] },
+      { host: 'A', tags: ['attack.execution'] },
+      { host: 'A', tags: ['attack.execution'] },
+      { host: 'A', tags: ['attack.t1003'] },
+      { host: 'C', tags: ['attack.impact'] },
+    ], 2)
+    expect(m.hosts).toEqual([{ host: 'A', total: 2 }, { host: 'B', total: 1 }])
+    expect(m.tactics.map((t) => t.slug)).toEqual(['execution', 'impact'])
+    expect(m.cells.A.execution).toBe(2)
+    expect(m.max).toBe(2)
   })
 })
 

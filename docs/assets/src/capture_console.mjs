@@ -3,12 +3,15 @@
 // fabricates data: point it at a console wired to a real engine.
 //
 // Lab recipe used for the committed set (loopback only):
-//   1. go build -o /tmp/lab/engine ./cmd/engine
-//      go build -o /tmp/lab/scenario ./scripts/dev-tests/scenario
+//   1. go build -o <lab>/engine ./cmd/engine
+//      go build -o <lab>/scenario ./scripts/dev-tests/scenario
 //   2. engine run -addr 127.0.0.1:17777 -api 127.0.0.1:17778 -rules rules
 //      -sequences sequences -beacons beacons.yaml -thresholds thresholds.yaml
 //      -suppressions <file> -store <db> -lifecycle <file> -api-token <t>
 //      -allow-kill -respond-operators <v2 file> -respond-audit <file>
+//      (relative paths, and the engine started under
+//      `unshare -r -u` with `hostname LAB-SOC-01`, so no local path or
+//      machine name reaches a screenshot)
 //   3. feed it with the scenario in a loop (plus -beacon / -burst rounds)
 //      and a few POST /api/respond/kill attempts (executed and denied);
 //   4. cd web/console && bun run build && ENGINE_API_URL=http://127.0.0.1:17778
@@ -33,7 +36,7 @@ const { chromium } = createRequire(path.join(tooling, 'package.json'))('playwrig
 const base = (process.env.CONSOLE_URL || 'http://127.0.0.1:3000').replace(/\/$/, '')
 
 const SHOTS = [
-  { file: 'console-panel.png', query: '', height: 1240 },
+  { file: 'console-panel.png', query: '', height: 1500 },
   { file: 'console-flujo.png', query: '?view=flujo', height: 1000 },
   { file: 'console-alertas.png', query: '?view=alertas', height: 1000, selectFirst: true },
   { file: 'console-reglas.png', query: '?view=reglas', height: 1000 },

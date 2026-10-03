@@ -9,7 +9,7 @@
 // Lazy by design: nothing is fetched until the operator expands it, so
 // the queue detail stays instant for every other triage action.
 
-import { useId, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import {
   CaretDown,
@@ -21,6 +21,8 @@ import {
 } from '@phosphor-icons/react'
 import { readForensicBundle, forensicEventLine, buildForensicExport, type ForensicResult } from '@/lib/forensic'
 import { formatTime } from '@/lib/console-types'
+import { buildProcessTree } from '@/lib/entity-graph'
+import { ProcessTree } from '@/components/charts/process-tree'
 
 type Props = { alertId?: string }
 
@@ -153,6 +155,11 @@ function BundleView({ result }: { result: Extract<ForensicResult, { kind: 'bundl
   const active = chips.filter(([, n]) => n > 0)
   const images = bundle.summary.distinct_images.slice(0, 12)
   const [exportError, setExportError] = useState(false)
+  // The engine freezes the whole alert in the bundle; its event_id names
+  // the process that fired, highlighted in the tree.
+  const trigger = (bundle.alert as { event_id?: string }).event_id
+  const focusName = bundle.timeline.find((ev) => ev.id === trigger)?.process?.name
+  const tree = useMemo(() => buildProcessTree(bundle.timeline, focusName), [bundle, focusName])
 
   function download(format: 'json' | 'jsonl') {
     let url: string | undefined
@@ -209,6 +216,13 @@ function BundleView({ result }: { result: Extract<ForensicResult, { kind: 'bundl
         <p className="mb-2.5 truncate font-mono text-[10px] text-zinc-600" title={images.join('  ')}>
           {images.join('  ')}
         </p>
+      )}
+
+      {tree.length > 0 && (
+        <div className="mb-3 rounded-lg border border-zinc-800 bg-zinc-950/40 p-2">
+          <p className="mb-1.5 px-1 text-[11px] font-medium text-zinc-300">Árbol de procesos</p>
+          <ProcessTree roots={tree} />
+        </div>
       )}
 
       {bundle.timeline.length === 0 ? (

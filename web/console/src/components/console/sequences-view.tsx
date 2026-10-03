@@ -9,7 +9,7 @@
 // (hot-reloaded by the engine every 15 s) - there is no write API, same
 // as suppressions.
 
-import { CaretRight, CheckCircle, FlowArrow, Siren, Timer } from '@phosphor-icons/react'
+import { CheckCircle, FlowArrow, Siren, Timer } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { EmptyState, SeverityBadge, StatTile } from './ui-bits'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
@@ -66,13 +66,23 @@ export function SequencesView() {
           />
         </div>
       ) : (
-        <ul className="grid gap-4 xl:grid-cols-2">
+        <ul className="grid gap-4">
           {sequences.map((s, i) => (
             <SequenceCard key={s.id} seq={s} index={i} live={liveRules} hits={hits} campaigns={campaigns(s)} />
           ))}
         </ul>
       )}
     </section>
+  )
+}
+
+/** Arrow between two chain nodes; the dash flows while the link is live. */
+function FlowConnector({ flowing }: { flowing: boolean }) {
+  return (
+    <svg aria-hidden width="26" height="12" viewBox="0 0 26 12" className="hidden shrink-0 sm:block">
+      <line x1="1" y1="6" x2="20" y2="6" stroke={flowing ? 'var(--series-1)' : '#3f3f46'} strokeWidth="2" strokeLinecap="round" className={flowing ? 'edge-flow' : undefined} />
+      <path d="M19 2 L25 6 L19 10" fill="none" stroke={flowing ? 'var(--series-1)' : '#3f3f46'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   )
 }
 
@@ -106,33 +116,47 @@ function SequenceCard({ seq, index, live, hits, campaigns }: { seq: SfSequence; 
           <span className={campaigns > 0 ? 'font-medium text-red-300' : ''}>{campaigns} {campaigns === 1 ? 'campaña completada' : 'campañas completadas'}</span>
         </div>
 
-        {/* Cadena visual: un nodo por paso. Nodo azul = su regla disparó en la
-            ventana; ámbar = la regla no está cargada (la cadena no puede
-            completarse); neutro = cargada pero sin alertas todavía. */}
-        <ol className="mt-3 flex flex-1 flex-col gap-2 sm:flex-row sm:items-stretch">
+        {/* Grafo de flujo: un nodo por paso y un nodo final de campaña. El
+            conector fluye (animado) cuando los dos pasos que une ya se
+            observaron en la ventana; azul = la regla del paso disparó,
+            ámbar = la regla no está cargada, neutro = cargada sin alertas. */}
+        <ol aria-label={`Pasos de ${seq.name}`} className="mt-3 flex flex-1 flex-col gap-2 sm:flex-row sm:items-stretch">
           {seq.steps.map((step, i) => {
             const ok = live.has(step)
             const count = hits.get(step) ?? 0
-            const last = i === seq.steps.length - 1
+            const next = seq.steps[i + 1]
+            const flowing = count > 0 && (next === undefined ? campaigns > 0 : (hits.get(next) ?? 0) > 0)
             return (
-              <li key={`${seq.id}:${i}`} className="flex min-w-0 flex-1 items-center gap-2">
+              <li key={`${seq.id}:${i}`} className="flex min-w-0 flex-1 items-center gap-1.5">
                 <div
                   title={ok ? 'regla cargada en el motor' : 'regla NO cargada: la cadena no puede completar con este paso'}
-                  className={`min-w-0 flex-1 rounded-lg border px-2.5 py-2 ${
+                  className={`min-w-0 flex-1 rounded-lg border px-2.5 py-2 transition-colors ${
                     !ok ? 'border-amber-300/30 bg-amber-300/[0.06]' : count > 0 ? 'border-blue-400/40 bg-blue-500/[0.10]' : 'border-zinc-800 bg-zinc-900/60'
                   }`}
                 >
                   <span className="flex items-center gap-1.5 text-[10px] text-zinc-500">
                     <span aria-hidden className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-semibold ${count > 0 ? 'bg-blue-500 text-white' : 'bg-zinc-800 text-zinc-400'}`}>{i + 1}</span>
-                    paso {i + 1}
+                    {!ok ? 'regla no cargada' : count > 0 ? `${count} ${count === 1 ? 'alerta' : 'alertas'}` : 'sin alertas'}
                   </span>
                   <span className={`mt-1 line-clamp-2 break-words text-xs leading-snug ${ok ? 'text-zinc-200' : 'text-amber-200'}`} title={step}>{step}</span>
-                  <span className="mt-0.5 block text-[11px] text-zinc-500">{!ok ? 'regla no cargada' : count > 0 ? `${count} ${count === 1 ? 'alerta' : 'alertas'}` : 'sin alertas'}</span>
                 </div>
-                {!last && <CaretRight size={14} aria-hidden className="hidden shrink-0 text-zinc-600 sm:block" />}
+                <FlowConnector flowing={flowing} />
               </li>
             )
           })}
+          <li className="flex shrink-0 items-center">
+            <div
+              className={`flex h-full min-w-[96px] flex-col justify-center rounded-lg border px-3 py-2 ${
+                campaigns > 0 ? 'border-red-400/40 bg-red-500/[0.10]' : 'border-dashed border-zinc-700 bg-transparent'
+              }`}
+            >
+              <span className="flex items-center gap-1.5 text-[10px] text-zinc-500">
+                <Siren size={12} weight={campaigns > 0 ? 'fill' : 'regular'} aria-hidden className={campaigns > 0 ? 'text-red-300' : ''} />
+                campaña
+              </span>
+              <span className={`mt-0.5 text-lg font-semibold leading-none ${campaigns > 0 ? 'text-red-200' : 'text-zinc-500'}`}>{campaigns}</span>
+            </div>
+          </li>
         </ol>
 
         {missing.length > 0 && (

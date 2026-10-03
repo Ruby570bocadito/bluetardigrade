@@ -5,8 +5,6 @@
 // skeletons. Motion only communicates state changes (MOTION 3): no
 // decorative or infinite loops anywhere.
 
-import { motion, useMotionValue, useSpring, useTransform, useReducedMotion } from 'motion/react'
-import { useEffect } from 'react'
 import { SEVERITY_STYLE, type Severity } from '@/lib/console-types'
 import { cn } from '@/lib/utils'
 import { SeverityIcon } from '@/components/charts/severity'
@@ -49,18 +47,6 @@ export function MonoTag({ children, className }: { children: React.ReactNode; cl
       {children}
     </span>
   )
-}
-
-/** Number that springs to new values instead of jumping. */
-export function AnimatedNumber({ value, className }: { value: number; className?: string }) {
-  const reduce = useReducedMotion()
-  const mv = useMotionValue(value)
-  const spring = useSpring(mv, { stiffness: 160, damping: 28 })
-  const rounded = useTransform(spring, (v) => Math.round(v).toLocaleString('es-ES'))
-  useEffect(() => {
-    mv.set(value)
-  }, [value, mv])
-  return <motion.span className={className}>{reduce ? value.toLocaleString('es-ES') : rounded}</motion.span>
 }
 
 export function SectionHeader({
