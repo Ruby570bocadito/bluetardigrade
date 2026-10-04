@@ -12,6 +12,50 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Threat intel, baseline, cross-host chains, analyst accounts and sensor hashes (2026-10-04)
+
+- **Offline threat intelligence** (`internal/intel`, `-intel`, default
+  `./intel`): indicator lists the operator drops in a folder (IPs, CIDR
+  ranges, domains with their subdomains, hosts-file lines, URLs, MD5 /
+  SHA-1 / SHA-256). Every event is matched by destination/source IP,
+  domain and process/file hash; a hit is a high `intel-match-<list>`
+  alert, once per indicator and host every 10 minutes. Re-read on
+  change, never downloads anything; a bad file is logged and retried
+  instead of stopping the engine. `GET /api/intel` (OpenAPI documented).
+- **Per-host process baseline** (`internal/baseline`, `-baseline-learn`,
+  default 24 h): after its learning period a host running a process it
+  never ran raises a low `baseline-new-process` alert, rate-limited to
+  10 per host per hour. Persisted with `-store`.
+- **Fleet inventory persistence**: with `-store` the machine inventory
+  survives restarts, and restored sensors get a full grace period, so
+  an engine restart raises no wave of silent-sensor alerts.
+- **Cross-host kill chains**: sequences gain `scope: user` with
+  `min_hosts` (follow one account across several machines) and steps
+  with alternatives (`rules: [...]`). `sequences/lateral.yaml` ships two
+  lateral-movement chains. `/api/sequences` reports `step_rules`,
+  `scope` and `min_hosts`; the Cadenas view shows them.
+- **Console accounts and roles** (`CONSOLE_USERS_FILE`, optional):
+  per-analyst logins with viewer / analyst / admin roles enforced by the
+  engine proxy, the account name written as `by` on triage, incidents
+  and notes, an audit trail of every console write
+  (`CONSOLE_AUDIT_FILE`, `data\console-audit.jsonl` on Windows) visible
+  to administrators, and `scripts/console-user.mjs` to create entries
+  (PBKDF2-SHA256). Without the file nothing changes.
+- **Incident report export**: Markdown and a printable HTML page with
+  the entity graph, from the incident page.
+- **Detección -> Inteligencia** tab: loaded lists, counts per kind,
+  baseline state and the latest hits. Reputation lookups now include
+  the SHA-256 of the image (VirusTotal).
+- **ETW sensor**: process starts carry the full image path and its
+  SHA-256 (hashed off the ETW threads, cached, files over 100 MiB
+  skipped; `--no-hash`); DNS queries from Microsoft-Windows-DNS-Client
+  become `network.connect` with `protocol: dns`, and recent answers
+  name the domain of the TCP connections that follow (`--no-dns`).
+- Fixes: the incident graph only draws the case hosts' connections
+  (it used to pull every host in the event buffer); clippy findings in
+  the sensor (boxed TLS stream, `is_ok`). CI now runs the sensor's unit
+  tests and clippy (host and Windows target).
+
 ### Remote fleet: machine inventory, sensor heartbeats and silent-sensor alerts (2026-10-04)
 
 - `internal/fleet` keeps one record per reporting host: first and last

@@ -56,8 +56,14 @@ respond from a live web console.
 - **114 YAML rules** covering 13 of the 14 ATT&CK tactics: initial access,
   LOLBAS, privilege escalation, credential access, lateral movement,
   collection, exfiltration, ransomware impact, hack tools and phishing.
-- **11 kill-chain correlations** across events of the same host (intrusion,
-  credential theft, data theft, ransomware preparation, webshells...).
+- **13 kill-chain correlations**: 11 across events of the same host
+  (intrusion, credential theft, data theft, ransomware preparation,
+  webshells...) and 2 that follow one account across several machines
+  (lateral movement).
+- **Offline threat-intel lists** (IPs, ranges, domains, hashes) that you
+  drop in a folder; nothing is downloaded.
+- **Per-host process baseline**: flags the first process a machine never
+  ran.
 - **C2 beaconing** detection on event time.
 - **Volumetric thresholds** and decaying per-host risk scores.
 - **Sigma import** and 17 rule operators.
@@ -70,6 +76,7 @@ respond from a live web console.
 - **Forensic bundles** (alert + 5 min host timeline) with JSON/JSONL export.
 - Paged engine **history** backed by SQLite.
 - Alert lifecycle, operator notes and saved searches.
+- **Incidents** with timeline and a Markdown or printable report export.
 - Markdown/JSON **analyst reports**, plus an optional AI analyst.
 
 </td>
@@ -228,7 +235,7 @@ docker run --rm -p 127.0.0.1:7777:7777 -p 127.0.0.1:7778:7778 \
 
 | Source | What it collects | Notes |
 |---|---|---|
-| **Rust ETW sensor** (`sensor/`) | Process creation (full command line, parent, owner SID), TCP connection attempts and writes to the registry keys detections read (Run, IFEO, Defender, LSA, services...) | Bounded queue plus an on-disk spool (`--spool`): an engine restart loses no events |
+| **Rust ETW sensor** (`sensor/`) | Process creation (full command line, parent, owner SID, image path and SHA-256), TCP connection attempts with the resolved domain, DNS queries and writes to the registry keys detections read (Run, IFEO, Defender, LSA, services...) | Bounded queue plus an on-disk spool (`--spool`): an engine restart loses no events |
 | **Sysmon** (`sf-sensor`) | Process, network, registry, file and image-load events | Ships a tuned config; `sf-sensor -SetupSysmon` installs it |
 | **Collector** (`sf-collector`) | Suricata EVE, Zeek conn, osquery differential, Cowrie, Windows firewall logs, EML mail | Offline import; never runs provider commands or visits mail URLs |
 
@@ -293,7 +300,7 @@ keyboard-driven alert and rule workspace (see the
 | Ingest | Shared token or **per-sensor identities** bound to their hosts; events for other hosts are refused and counted |
 | Transport | Native TLS on both listeners; the sensor trusts only the CA you give it |
 | API | Bearer token; listens on loopback by default |
-| Console | `CONSOLE_ACCESS_TOKEN` (HTTP Basic) gates every page and API call off-loopback |
+| Console | `CONSOLE_ACCESS_TOKEN` (HTTP Basic) gates every page and API call off-loopback; optional **per-analyst accounts** with viewer/analyst/admin roles, signed triage and an audit trail of every write |
 | AI hub | `HUB_ACCESS_TOKEN` per socket, Origin allowlist and shared rate limits |
 | Response | `kill_process` needs an arm flag, a response token and **per-operator credentials**. Protected processes are refused, and every attempt is audited |
 | Evidence | Stored events are **append-only**: a second copy of an event id cannot rewrite the first |

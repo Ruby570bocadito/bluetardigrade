@@ -115,17 +115,21 @@ What it captures, in two real-time ETW sessions:
 
 | Event | Source | Notes |
 |---|---|---|
-| `process.create` | kernel process provider | Full command line, parent PID and the new process owner's SID |
-| `network.connect` | Microsoft-Windows-Kernel-Network, events 12/28 | TCP connection attempts (IPv4 and IPv6) with the process name. Loopback destinations are skipped |
+| `process.create` | kernel process provider | Full command line, parent PID, the new process owner's SID, the full image path (queried from the live process, not argv[0]) and its SHA-256 |
+| `network.connect` | Microsoft-Windows-Kernel-Network, events 12/28 | TCP connection attempts (IPv4 and IPv6) with the process name. Loopback destinations are skipped. When the address came from a recent DNS answer, `network.domain` names it |
+| `network.connect` (`protocol: dns`) | Microsoft-Windows-DNS-Client, event 3008 | DNS queries with the process that asked, the name, the first answer as `destination_ip` and `dns_status` / `dns_query_type` attributes. A repeat of the same name by the same process within a minute is not forwarded, and reverse lookups (`.arpa`) are skipped |
 | `registry.set` | Microsoft-Windows-Kernel-Registry, event 5 | Value writes to the keys detections read: Run keys, IFEO, SilentProcessExit, Winlogon, Defender, PowerShell logging policy, Terminal Server, LSA/WDigest, shell `open`/`runas` handlers, user shell folders, `AppInit_DLLs`, service `ImagePath`/`ServiceDll` and `UserInitMprLogonScript` |
 
 - Event ids are filtered inside the kernel, and registry writes are then limited to that key list, because SetValueKey fires thousands of times per second on a busy host.
 - Registry paths use the Sysmon hive names (`HKLM\...`, `HKU\<SID>\...`, with the per-user classes hive shown as `HKU\<SID>\Software\Classes\...`), and values use Sysmon's rendering (`DWORD (0x00000001)`). The same rules therefore match both sensors.
 - Network and registry events carry only a PID; the sensor names it from the process starts and the start-up rundown it has seen.
+- Image hashes are computed on a separate thread with a cache keyed by path, size and modification time, so the ETW consumers never wait for a file read; files over 100 MiB are not hashed (the path is still reported). When the hashing thread falls behind, process starts go out without the hash rather than wait. The engine matches the hash against the [threat-intel lists](#offline-threat-intelligence) and the console offers a VirusTotal lookup for it.
+- DNS answers are remembered for ten minutes, so the TCP connection that follows a lookup carries the domain it was for: the field rules and intel lists read on Sysmon telemetry too.
 - Flags:
-  - `--no-network` and `--no-registry` turn either capture off.
+  - `--no-network`, `--no-dns` and `--no-registry` turn each capture off.
+  - `--no-hash` skips image hashing (the path is still reported).
   - `--registry-all` forwards every value write (noisy, for lab work).
-- If the network/registry session cannot start, the sensor logs a warning and keeps streaming process events.
+- If the network/DNS/registry session cannot start, the sensor logs a warning and keeps streaming process events.
 
 Delivery never runs on the ETW thread. Events wait in a bounded in-memory queue (`--queue`, default 50000) while the engine is unreachable, so an engine restart or a network cut no longer stalls the trace consumer (which made Windows discard events from the real-time buffers). For outages longer than the queue, `--spool <file>` (or `SF_SENSOR_SPOOL`) adds an on-disk overflow capped by `--spool-max-mb` (default 256); it survives a sensor restart and is replayed in order once the engine is back. Replays can repeat events already delivered, which the engine absorbs (stored evidence is first-write-wins by event id). Past both limits events are dropped and the count is reported on stderr. Put the spool in a directory only the sensor's account can read: it holds command lines.
 
@@ -319,9 +323,16 @@ raises one `fleet-sensor-silent` alert per outage (high, ATT&CK
 T1562.001). The alert goes through the suppression gate, so planned
 maintenance can be silenced per host. Hosts without heartbeats (log
 imports, older sensors) are `online` while they send data and `idle`
-afterwards; they never alert. The inventory is in memory, covers what
-the engine saw since it started, and retires hosts unseen for seven
-days.
+afterwards; they never alert. The inventory retires hosts unseen for
+seven days.
+
+With `-store` the inventory survives restarts: it is saved to the SQLite
+file every 30 s (`fleet_hosts` table) and restored at startup. Restored
+sensors get a full grace period from the restart before they can be
+declared silent, so an engine upgrade does not raise a wave of
+"sensor sin señal" alerts, and an outage already reported before the
+restart is not reported again. Without `-store` the inventory starts
+empty on every run.
 
 On Windows the launcher opens the ingest to the network
 (`-addr 0.0.0.0:7777`) only when `tools\config\ingest-identities.yaml`
@@ -516,6 +527,48 @@ case carries its own audit trail.
 - Like alert triage, incidents are operator workflow and do not need
   `-api-write`; they sit behind the same bearer token and same-origin
   write guard.
+- Report export: the incident page downloads the case as Markdown (for
+  a ticket or a wiki) or as a self-contained printable HTML page with
+  the metadata, summary, ATT&CK techniques, case alerts, entity graph
+  and timeline (open it and print to get a PDF). Both are built in the
+  browser from what the console holds; alerts that already left the
+  live window are counted, not invented.
+
+## Console accounts, roles and audit
+
+By default the console has no accounts: on loopback, or behind
+`CONSOLE_ACCESS_TOKEN` (any user name, the token as password), whoever
+gets in acts as administrator. That stays unchanged unless
+`CONSOLE_USERS_FILE` points at a users file.
+
+- File: JSON `{"users": [{"user": "ana", "role": "analyst",
+  "password": "pbkdf2-sha256$..."}]}`. Generate each entry with
+  `bun scripts/console-user.mjs <user> <admin|analyst|viewer>` from
+  `web/console` (it asks for the password, at least 12 characters, and
+  prints only its PBKDF2-SHA256 hash). The console re-reads the file
+  when it changes. On Windows the launcher uses
+  `tools\config\console-users.json` when it exists.
+- With accounts, only they get in (HTTP Basic, the browser's own
+  prompt; put TLS in front when the console leaves the machine). The
+  shared token no longer bypasses them. A file that is configured but
+  missing, empty or malformed locks the console instead of opening it.
+- Roles: **viewer** reads everything and may dry-run rules; **analyst**
+  also triages alerts, manages incidents and notes, and edits
+  suppressions; **admin** also runs active response (which still asks
+  for the operator credential). The engine proxy enforces the role on
+  every write; the UI shows the account and role in the header and a
+  read-only banner for viewers.
+- Attribution: the proxy overwrites the `by` field of triage, incident
+  and note writes with the account name, so the engine's timeline says
+  who did it whatever the browser sent.
+- Audit: with `CONSOLE_AUDIT_FILE` (the Windows launcher always sets
+  `data\console-audit.jsonl`) every write sent through the proxy,
+  allowed or refused, is appended as one JSON line: time, account,
+  role, method, path, status and outcome. Administrators read the latest
+  entries in the session panel (click the account chip).
+- Failed logins: 10 wrong passwords for an account within 5 minutes
+  block it for the rest of that window. Verified credentials are cached
+  for 10 minutes so the slow key derivation runs once per session.
 
 ## Rule tester
 
@@ -533,12 +586,72 @@ Set `SF_VT_API_KEY` (VirusTotal) and/or `SF_ABUSEIPDB_API_KEY`
 - `GET /api/reputation` lists the configured providers;
   `GET /api/reputation?ip=...` or `?hash=...` queries them.
 - The engine never looks anything up on its own: the console asks only
-  when an analyst presses **Consultar reputación** in an alert.
+  when an analyst presses **Consultar** in an alert. Public IPs go to
+  both providers; the SHA-256 of a process image or written file (the
+  ETW sensor and Sysmon file events carry it) goes to VirusTotal.
 - Private, loopback and non-routable addresses are refused, answers are
   cached for six hours, and each provider is rate limited for its free
   tier (VirusTotal 4/min, AbuseIPDB 30/min).
 - Keys are read from the environment only, never from flags (flags show
   in the process list).
+
+## Offline threat intelligence
+
+`-intel <dir>` (default `./intel`, resolved next to the executable like
+the rules) points the engine at a folder of indicator lists that the
+operator places and maintains. The engine reads them locally; it never
+downloads lists or contacts a feed.
+
+- Files: `*.txt` and `*.list` in the folder (not subfolders). The file
+  name without extension is the list name, and its hits raise
+  `intel-match-<name>`, so one noisy list can be suppressed on its own.
+- One indicator per line; `#` and `;` start comments. Understood: IPv4
+  and IPv6 addresses, CIDR ranges, domains (they also match every
+  subdomain), hosts-file lines (`0.0.0.0 bad.example.com`), URLs (the
+  host is kept) and MD5 / SHA-1 / SHA-256 hashes. Loopback,
+  unspecified, link-local and multicast addresses are skipped and
+  counted per list.
+- Matched fields: destination and source IP (including ranges), the
+  connection or DNS domain and its parent domains, and process and file
+  hashes. At most three hits per event.
+- Each hit is a **high** alert naming the list, the indicator and the
+  field, through the suppression gate. The same indicator on the same
+  host alerts at most once every 10 minutes, so a beaconing implant
+  does not raise one alert per connection.
+- The folder is re-read on the `-reload-every` ticker when a file is
+  added, removed or changes size or date. A file that cannot be read
+  (or has a line over 4 KB) is logged and the previous lists are kept;
+  the engine keeps running and retries on the next reload. Caps: 64 MB
+  per file, 2 million indicators in total.
+- `GET /api/intel` lists the loaded lists with their counts per kind,
+  skipped lines and modification time. The console shows it in
+  **Detección -> Inteligencia**, with the latest hits.
+- The Windows launcher passes `-intel <install>\intel`; the folder ships
+  with a Spanish README ([intel/README.md](../intel/README.md)) and no
+  lists.
+
+## Per-host process baseline
+
+The engine learns which processes each host runs and flags the first
+one a host never ran before: the tool nobody wrote a rule for (an
+`rclone.exe` on the accounting PC).
+
+- `-baseline-learn <duration>` (default `24h`, env `SF_BASELINE_LEARN`,
+  launcher setting `tools\config\baseline.learn`) is the learning
+  period, counted per host from its first process start. `0` disables
+  novelties.
+- After it, a process name (basename, case-insensitive) the host never
+  ran raises one **low** alert `baseline-new-process` ("Proceso nunca
+  visto en este equipo") with the image path and when learning started.
+  Each name is novel once per host. At most 10 novelties per host per
+  hour, so a software rollout raises a handful of alerts, not a storm.
+- With `-store` the baseline is persisted every 30 s (`baseline` and
+  `baseline_hosts` tables) and restored at startup, so a restart neither
+  forgets what was learned nor restarts the learning period.
+- Bounded: 4096 hosts and 4096 names per host; a full host stops
+  learning instead of forgetting.
+- `GET /api/intel` also reports the baseline (`learn_s`, hosts tracked,
+  hosts still learning).
 
 ## Host risk scoring (hot hosts)
 
@@ -791,6 +904,23 @@ como viven en los YAML del repositorio; no se traducen en la doc.
 
 Beyond per-event rules, the engine ships a sequence correlator: `sequences/*.yaml` lists named steps (exact rule names) that, when all observed on the same host inside a `window` (e.g. `5m`), raise a single high-signal alert describing the campaign. Each step remembers the event time of its latest hit on that host; the chain fires when every step is present and the spread between the oldest and the newest fits in the window, so a stale early hit cannot anchor the window and an out-of-order event cannot stitch steps days apart. Chains whose window elapses without progress are reclaimed on the maintenance cadence. The shipped pack models credential-dump campaigns, full intrusion chains, defensive shutdown and registry-based persistence. Sequences hot-reload together with the rules. Load-time caps keep the config surface bounded (4 MiB/file, nesting depth 512, 512 sequences, 64 steps/chain, window ≤ 7 days, id/name/tag length caps, no control runes in strings that reach logs or alerts): an oversized or hostile file fails the load loudly instead of degrading a running engine. Steps naming rules that do not exist are reported as a WARNING at startup and on every reload, because a chain waiting on a ghost rule can never complete. Note: suppressing a rule also removes it from every chain it feeds on that host (accepted-state semantics — see [docs/false-positive-control.md](false-positive-control.md)).
 
+A sequence can also follow one **account across several hosts**
+(lateral movement): `scope: user` keys the chain by the event's user
+instead of the host, and `min_hosts: N` (2..16) requires the steps to
+have been seen on at least N different machines inside the window.
+Service accounts (SYSTEM, LOCAL SERVICE, NETWORK SERVICE, anonymous
+logon and machine accounts ending in `$`) are never tracked this way.
+Any step can list alternatives (`rules: [A, B, C]` instead of
+`rule: A`, up to 16): any one of them completes the step. A single-step
+sequence is allowed only with `min_hosts` above 1 ("the same remote
+execution, from one account, on three machines"). The completion alert
+names the account and the hosts. `sequences/lateral.yaml` ships two:
+*Credenciales y ejecucion remota en varios equipos* (critical, 1 h,
+credential access then remote execution, 2 hosts) and *Cuenta saltando
+entre equipos* (high, 1 h, remote execution on 3 hosts). `/api/sequences`
+reports `step_rules`, `scope` and `min_hosts`, and the Cadenas view
+shows the alternatives and the scope.
+
 The shipped pack (`sequences/kill-chains.yaml`) defines 4 sequences, all
 `critical`, window `5m`:
 
@@ -891,6 +1021,8 @@ path (no subcommand) and on `engine run`.
 | `-rules dir` | `./rules` | rules directory (falls back to the directory next to the executable) |
 | `-sequences dir` | `./sequences` | kill-chain sequences directory for the correlator |
 | `-beacons file` | `./beacons.yaml` | beacon detector profiles (C2 call-home over `network.connect`; empty disables) |
+| `-intel dir` | `./intel` | offline threat-intel lists (`*.txt`/`*.list`: IPs, CIDRs, domains, URLs, hashes) matched against every event and re-read on change; nothing is downloaded; empty disables — see [Offline threat intelligence](#offline-threat-intelligence) |
+| `-baseline-learn dur` | `24h` | per-host learning period before a never-seen process raises a low `baseline-new-process` alert (falls back to `SF_BASELINE_LEARN`); `0` disables — see [Per-host process baseline](#per-host-process-baseline) |
 | `-thresholds file` | `./thresholds.yaml` | volumetric threshold definitions (A2: alert when N predicate-matching events accumulate in one window, optionally grouped by a field); a definition without `group_by` aggregates every matching event under one internal key — the alert's host is whichever event crossed the threshold; missing file disables, malformed file is fatal, hot-reloaded |
 | `-v` | off | print every event received |
 | `-reload-every dur` | `15s` | hot-reload interval for rules, sequences and suppressions; `0` disables |
@@ -935,7 +1067,7 @@ Every push and pull request runs the same checks the maintainers run locally (`.
 
 - **Go engine** — `gofmt` (no diffs), `go build`, `go vet`, `go test -race -count=1 ./...` (the engine is concurrent by design — G3 landed in CI), plus the OpenAPI drift guard (`scripts/dev-tests/check_openapi.py`, spec vs. `internal/api/api.go`) and the guard's self-test (`--self-test`: one positive plus thirteen negative fixtures that must produce findings).
 - **Console** — hub: `bun install --frozen-lockfile`, `bun test`, `tsc --noEmit`; web console: same install, `bun test` (G1 landed in CI), `tsc --noEmit`, `next build`.
-- **Sensor** — `cargo check --locked` on two targets: the host and a Windows cross-check (`--target x86_64-pc-windows-msvc`, type/borrow check without linking — the ETW collector is Windows-first and this is the only way to verify it still compiles without a Windows host). The crate itself compiles on any OS; ETW ingestion is cfg-gated to Windows and refuses to run off-Windows.
+- **Sensor** — `cargo check --locked`, `cargo test --locked` (the platform-independent decoders: process fields, network/registry, DNS answers, SHA-256, heartbeat, delivery queue) and `cargo clippy --all-targets -- -D warnings` on the host, plus a Windows cross-check (`cargo check` and `cargo clippy` with `--target x86_64-pc-windows-msvc`, type/borrow check without linking — the ETW collector is Windows-first and this is the only way to verify it still compiles without a Windows host). The crate itself compiles on any OS; ETW ingestion is cfg-gated to Windows and refuses to run off-Windows.
 
 Nightly (`.github/workflows/bench-nightly.yml`, also triggerable by hand), the pipeline bench runs the **real** engine over loopback with the documented baseline parameters (`scripts/dev-tests/bench -n 2000 -rate 1000`) in two passes on the same clock: a **rings** baseline, and a second identical pass with `-store` attached to a fresh SQLite file so the persistence overhead is measured, not assumed. The run summary records p50/p99 for both passes plus the store-overhead delta as data, alongside the runner identity and an fsync 4k dsync probe of the same medium the sqlite pass wrote to — the environment class that dominates the persistence tail, recorded per run because it is a datum of that run, not a property of the machine (the same role measured a 15.8 ms stalls-class tail one round and a 1.8 ms fast-fsync tail the next). The contract is enforced identically in each pass, and it is **advisory by design** (Director decision 6.2): a p99 at or above the phase-1 contract (< 10 ms) raises a warning annotation for the next review, but never fails the job — only a pipeline completeness failure (lost alerts, in either pass) turns the run red, because that is a functional defect, not a performance one. The same script runs locally: `bash scripts/dev-tests/bench_nightly.sh` (ports 7777/7778 free).
 

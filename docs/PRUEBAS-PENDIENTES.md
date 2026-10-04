@@ -1,8 +1,16 @@
 # Pruebas pendientes en Windows (rama `feat/soc-dashboard-readme`)
 
-Lo que ya está comprobado automáticamente: pruebas de Go, de la consola, del hub,
-del sensor (Linux y Windows), DOM, Chromium y del lanzador. Se probó además en un
-laboratorio local con motor real.
+Comprobado automáticamente:
+- pruebas de Go, de la consola, del hub y del sensor (Linux y Windows), con clippy limpio;
+- DOM, Chromium y analista;
+- lanzador y sintaxis de PowerShell.
+
+En el laboratorio local, con motor real y navegador, se probó además:
+- la inteligencia (IP, rango, dominio con subdominio y hash);
+- la línea base (aprender, avisar y recordar tras reiniciar);
+- la pestaña Inteligencia, las cadenas entre equipos y el informe del incidente;
+- las cuentas con roles: el lector es rechazado y el triaje queda firmado con la
+  cuenta, no con «consola».
 
 Lo de esta lista necesita **tu Windows real**: privilegios de administrador,
 Sysmon o un segundo equipo. Marca cada casilla al terminar.
@@ -42,6 +50,21 @@ administrador; **[otro equipo]** = el equipo remoto. Pega los comandos de uno en
   - Pulsa el botón del monitor en la cabecera (o `Ctrl+K` y escribe «noc»).
   - Debe ir a pantalla completa y rotar cada 20 s.
   - Las flechas cambian de pantalla, Espacio pausa y Esc sale.
+- [ ] **Chip de sesión (cabecera):**
+  - Muestra «local · Administrador».
+  - Al pulsarlo se abre un panel con tus permisos y «Auditoría de la consola».
+  - Tras reconocer una alerta, pulsa «Actualizar»: la acción aparece como «Triaje de alerta · Hecho».
+- [ ] **Informe del incidente:**
+  - En un incidente, pulsa «Informe .md» y luego «Informe imprimible».
+  - Abre el `.html` descargado: se ve el caso con el grafo y la línea de tiempo.
+  - El botón «Imprimir / guardar PDF» abre el diálogo de impresión.
+  - El grafo del incidente solo muestra los equipos del caso, no los demás.
+- [ ] **Detección → Inteligencia:** la pestaña existe (también `g l` o `Ctrl+K` «inteligencia»).
+  Sin listas, dice cómo añadirlas. La tarjeta «Equipos en línea base» cuenta al menos 1.
+- [ ] **Detección → Cadenas:**
+  - Aparecen «Credenciales y ejecucion remota en varios equipos» y «Cuenta saltando entre equipos».
+  - Ambas con la etiqueta «misma cuenta en N equipos o más».
+  - Cada paso muestra sus alternativas (por ejemplo, «5 alternativas»).
 
 ## 2. Sensor ETW con red, registro y latido
 
@@ -51,9 +74,23 @@ administrador; **[otro equipo]** = el equipo remoto. Pega los comandos de uno en
   & "$env:LOCALAPPDATA\bluetardigrade\bin\security-sensor.exe" --addr 127.0.0.1:7777 --spool "$env:LOCALAPPDATA\bluetardigrade\spool\sensor.ndjson"
   ```
 
-  La primera línea debe terminar en `capture=process+network+registry`.
+  La primera línea debe terminar en `capture=process+sha256+network+dns+registry`.
 - [ ] **[normal]** Red: `Test-NetConnection example.com -Port 443`. En Flujo en vivo
-  aparece un `network.connect` de `powershell.exe` hacia el puerto 443.
+  aparece un `network.connect` de `powershell.exe` hacia el puerto 443. **Nuevo:** en
+  su detalle, `domain` debe ser `example.com`, porque el sensor recuerda la respuesta DNS.
+- [ ] **[normal]** DNS: `Resolve-DnsName example.org`. Aparece un `network.connect`
+  con protocolo `dns`, dominio `example.org`, una IP de respuesta y `dns_status` 0.
+  Si repites el comando en menos de un minuto, no sale otro: es intencionado.
+- [ ] **[normal]** Ruta y hash del ejecutable. Ejecuta `whoami` y luego:
+
+  ```powershell
+  (Get-FileHash C:\Windows\System32\whoami.exe).Hash.ToLower()
+  ```
+
+  En Flujo en vivo, el `process.create` de `whoami.exe` debe tener
+  `image = C:\Windows\System32\whoami.exe` y `hashes.sha256` igual al valor del comando.
+- [ ] Con el sensor en marcha, el Administrador de tareas no debe mostrar más de un
+  par de % de CPU para `security-sensor.exe` en reposo.
 - [ ] **[normal]** Registro (inofensivo). Debe saltar «Persistencia en clave Run via registro»:
 
   ```powershell
@@ -74,6 +111,10 @@ administrador; **[otro equipo]** = el equipo remoto. Pega los comandos de uno en
   - En Equipos tu equipo pasa a «sin señal», con un contador rojo en la barra
     lateral, y en Alertas aparece «Sensor sin señal» (alta).
   - Vuelve a arrancar el sensor: el equipo vuelve a «en línea».
+- [ ] **El inventario sobrevive a un reinicio del motor (con el sensor en marcha):**
+  - **[normal]** `sf-console -Stop; sf-console`
+  - Equipos muestra tu equipo enseguida, sin esperar al siguiente latido.
+  - Durante los 3 minutos siguientes **no** debe aparecer «Sensor sin señal».
 - [ ] **Tras Ctrl+C no queda ninguna sesión ETW abierta:**
   - **[admin]** Ejecuta `logman query -ets`.
   - En la lista no deben aparecer `bluetardigrade-sensor` ni `bluetardigrade-sensor-netreg`.
@@ -120,7 +161,91 @@ equipo remoto», que genera todos los comandos.
 - [ ] **Tarea programada** (FLOTA-REMOTA.md): reinicia el otro equipo; el sensor debe
   arrancar solo y el equipo volver a «en línea».
 
-## 5. Al terminar
+## 5. Inteligencia offline (listas locales)
+
+El motor no descarga listas: lee los ficheros que dejes en la carpeta `intel`.
+Formato en `intel\README.md`. Con el sensor ETW en marcha:
+
+- [ ] **[normal]** Crea una lista de prueba con un dominio y el hash de `charmap.exe`:
+
+  ```powershell
+  Set-Content -Path "$env:LOCALAPPDATA\bluetardigrade\intel\prueba.txt" -Value @('# lista de prueba', 'example.net', (Get-FileHash C:\Windows\System32\charmap.exe).Hash)
+  ```
+
+- [ ] En unos 15 s, Detección → Inteligencia muestra la lista `prueba` con «Dominios 1» y «Hashes 1».
+- [ ] **[normal]** `Resolve-DnsName www.example.net`: salta «Indicador de amenaza conocido»
+  (alta, regla `intel-match-prueba`) por el dominio, aunque la lista diga solo `example.net`.
+- [ ] **[normal]** `Start-Process charmap`: salta otra alerta, esta vez por el hash.
+  Cierra el Mapa de caracteres.
+- [ ] Las coincidencias aparecen en «Últimas coincidencias y procesos nuevos».
+- [ ] **[normal]** Borra la lista. La pestaña vuelve a «Sin listas» en unos 15 s:
+
+  ```powershell
+  Remove-Item "$env:LOCALAPPDATA\bluetardigrade\intel\prueba.txt"
+  ```
+
+## 6. Línea base: proceso nunca visto
+
+Por defecto aprende durante 24 horas. Para probarlo, se acorta a 3 minutos y luego
+se deja como estaba.
+
+- [ ] **[normal]** Acorta el aprendizaje y reinicia:
+
+  ```powershell
+  Set-Content "$env:LOCALAPPDATA\bluetardigrade\tools\config\baseline.learn" '3m'; sf-console -Stop; sf-console
+  ```
+
+- [ ] Detección → Inteligencia, tarjeta «Equipos en línea base»: dice «periodo 3 min».
+- [ ] Con el sensor en marcha, usa el equipo 3 o 4 minutos y luego ejecuta `winver`.
+  Debe salir «Proceso nunca visto en este equipo» (baja), con la ruta
+  `C:\Windows\System32\winver.exe`. Si ya habías ejecutado `winver`, prueba con `msinfo32`.
+- [ ] Ejecuta `winver` otra vez: **no** sale otra alerta (solo la primera vez).
+- [ ] **[normal]** Vuelve a las 24 horas:
+
+  ```powershell
+  Remove-Item "$env:LOCALAPPDATA\bluetardigrade\tools\config\baseline.learn"; sf-console -Stop; sf-console
+  ```
+
+## 7. Cuentas de analista y roles en la consola (opcional)
+
+Sin el fichero de cuentas, la consola sigue como siempre. Con él, cada persona entra con su
+usuario y queda registrado quién hace cada cosa.
+
+- [ ] **[normal]** Crea una cuenta de administrador y otra de solo lectura. Cada comando
+  pide una contraseña de al menos 12 caracteres e imprime una línea que empieza por `{"user"`:
+
+  ```powershell
+  & "$env:LOCALAPPDATA\bluetardigrade\tools\bun.exe" "$env:LOCALAPPDATA\bluetardigrade\web\console\scripts\console-user.mjs" jefa admin
+  ```
+
+  ```powershell
+  & "$env:LOCALAPPDATA\bluetardigrade\tools\bun.exe" "$env:LOCALAPPDATA\bluetardigrade\web\console\scripts\console-user.mjs" luis viewer
+  ```
+
+- [ ] **[normal]** Abre el fichero de cuentas:
+  `notepad "$env:LOCALAPPDATA\bluetardigrade\tools\config\console-users.json"`.
+  Escribe `{"users": [LINEA1, LINEA2]}`, cambiando LINEA1 y LINEA2 por las dos líneas
+  anteriores. Guarda el fichero y ejecuta `sf-console -Stop; sf-console`.
+- [ ] El navegador pide usuario y contraseña. Con una contraseña mala no entra.
+- [ ] Entra como `luis`:
+  - La cabecera dice «luis · Lector» y debajo sale «Modo lectura…».
+  - Al intentar reconocer una alerta sale «Tu cuenta (luis, lector) no puede hacer esto…».
+- [ ] Entra como `jefa` (ventana de incógnito):
+  - Reconoce una alerta. En su detalle, en «Ciclo de vida», junto al id sale `· jefa`, no `· consola`.
+  - En el chip de sesión, la auditoría muestra el intento denegado de `luis` y la acción de `jefa`.
+- [ ] El fichero `"$env:LOCALAPPDATA\bluetardigrade\data\console-audit.jsonl"` tiene esas líneas.
+- [ ] **[normal]** Para volver a la consola sin cuentas, borra el fichero y reinicia:
+
+  ```powershell
+  Remove-Item "$env:LOCALAPPDATA\bluetardigrade\tools\config\console-users.json"; sf-console -Stop; sf-console
+  ```
+
+## 8. Reputación por hash (solo si tienes clave de VirusTotal)
+
+- [ ] Con `SF_VT_API_KEY` configurada, abre una alerta de un proceso del sensor ETW.
+  En «Reputación» aparece una fila «SHA-256» con el hash y su botón «Consultar».
+
+## 9. Al terminar
 
 - [ ] Si algo falla, copia lo que muestre la ventana del sensor o la consola y pégamelo.
 - [ ] Subir a GitHub (WSL):

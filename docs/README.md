@@ -20,10 +20,11 @@ conserva la trazabilidad completa.
 | [PHISHING.md](PHISHING.md) | Señales observables en correo EML y límites de la detección offline |
 | [WINDOWS-SERVER.md](WINDOWS-SERVER.md) | Despliegue persistente sin sesión gráfica y configuración del servidor |
 | [FLOTA-REMOTA.md](FLOTA-REMOTA.md) | Vigilar varios equipos desde un servidor: alta de equipos, identidades, TLS, cortafuegos, tarea de arranque y alerta de sensor sin señal |
-| [PRUEBAS-PENDIENTES.md](PRUEBAS-PENDIENTES.md) | Lista de pruebas que necesitan un Windows real (sensor, Sysmon, flota remota) |
+| [PRUEBAS-PENDIENTES.md](PRUEBAS-PENDIENTES.md) | Lista de pruebas que necesitan un Windows real (sensor, Sysmon, flota remota, inteligencia, línea base, cuentas de la consola) |
+| [../intel/README.md](../intel/README.md) | Listas de inteligencia offline: formato de los ficheros, qué se compara, recarga y límites |
 | [SMART-APP-CONTROL.md](SMART-APP-CONTROL.md) | Diagnóstico de bloqueos de ejecución y distribución con firmas Authenticode |
 | [PALETA-Y-PRUEBAS-NAVEGADOR.md](PALETA-Y-PRUEBAS-NAVEGADOR.md) | Paleta de comandos de la consola: foco modal, proteccion de atajos y pruebas Chromium de escritorio/movil |
-| [OPERATIONS.md](OPERATIONS.md) | Guía de operación (inglés): instalación (Windows, Docker, fuente), referencia de flags y variables de entorno, API HTTP, Prometheus, almacenamiento, auth de ingest con rotación, sinks SIEM, notificaciones, supresiones, triaje, riesgo, beaconing, respuesta activa, contenido de detección, CLI y CI/bench |
+| [OPERATIONS.md](OPERATIONS.md) | Guía de operación (inglés): instalación (Windows, Docker, fuente), referencia de flags y variables de entorno, API HTTP, Prometheus, almacenamiento, auth de ingest con rotación, sinks SIEM, notificaciones, supresiones, triaje, riesgo, beaconing, respuesta activa, inteligencia offline, línea base de procesos, cuentas de la consola, contenido de detección, CLI y CI/bench |
 | [ROADMAP.md](ROADMAP.md) | Direccion del producto: entregas proximas por horizontal (deteccion, forense, sensor, consola) |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Arquitectura del sistema (inglés): diagrama, contrato del esquema de eventos, inventario de características y árbol del repositorio |
 | [false-positive-control.md](false-positive-control.md) | Guía de control de ruido: dedup, supresiones, correlación, filtrado en el receptor y límites anti-abuso |
