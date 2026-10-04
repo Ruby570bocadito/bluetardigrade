@@ -27,6 +27,12 @@ and the `make dist` target.
     carried their answer.
   - Ctrl+C closes both ETW sessions cleanly; 0.1 s of CPU and 15 MB of
     memory at idle.
+- Beaconing: four false "C2 beacon web lento" alerts on the first real
+  run, all legitimate polling: DNS lookups that Chrome and a web app repeat
+  every ~64 s, and TCP to the router's DNS on a link-local address. DNS
+  query events and loopback, link-local and multicast destinations no
+  longer feed the detector; connections to routable addresses (with the
+  domain the sensor attaches) still do.
 
 ### Second review round (2026-10-04)
 

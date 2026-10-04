@@ -55,6 +55,7 @@ package beacon
 import (
 	"fmt"
 	"math"
+	"net"
 	"os"
 	"sort"
 	"strings"
@@ -272,8 +273,22 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 		return
 	}
 	n := ev.Network
+	// A DNS query is not a connection: applications re-resolve names on
+	// a timer (record TTLs, connectivity checks), which reads as a
+	// perfect cadence. The connection that follows a lookup is what
+	// counts, and it carries the domain (Sysmon, and the ETW sensor's DNS
+	// memory).
+	if strings.EqualFold(n.Protocol, "dns") {
+		return
+	}
 	dest := strings.ToLower(n.Domain)
 	if dest == "" {
+		ip := net.ParseIP(strings.TrimSpace(n.DestinationIP))
+		// loopback, link-local (the router's DNS on fe80::), multicast:
+		// local plumbing, never a C2 destination
+		if ip != nil && (ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified()) {
+			return
+		}
 		dest = strings.ToLower(n.DestinationIP)
 	}
 	if dest == "" {

@@ -658,3 +658,32 @@ func TestFutureTimestampClamped(t *testing.T) {
 		t.Fatalf("past timestamp not used: %v", got)
 	}
 }
+
+// Found on a real desktop: browsers and telemetry re-resolve names every
+// ~64 s and a router answers DNS on a link-local address; neither is C2.
+func TestDNSQueriesAndLocalPlumbingNeverBeacon(t *testing.T) {
+	m, err := LoadFile(writeProfiles(t, strictProfile), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 10, 4, 19, 40, 0, 0, time.UTC)
+	var got []alert.Alert
+	m.SetEmit(func(a alert.Alert) { got = append(got, a) })
+	for i := 0; i < 20; i++ {
+		at := base.Add(time.Duration(i) * time.Second)
+		dns := netEv("PC", "", "www.google.com", 0)
+		dns.Network.Protocol = "dns"
+		m.Observe(dns, at)
+		m.Observe(netEv("PC", "fe80::ceba:bdff:fe7e:7ee8", "", 53), at)
+		m.Observe(netEv("PC", "127.0.0.1", "", 8080), at)
+		m.Observe(netEv("PC", "ff02::fb", "", 5353), at)
+	}
+	if len(got) != 0 {
+		t.Fatalf("DNS lookups and local addresses fired: %+v", got)
+	}
+	// the same cadence to a routable address still fires
+	feedRegular(m, 12, time.Second, "PC", "203.0.113.50", "", 443, base.Add(time.Hour))
+	if len(got) != 1 {
+		t.Fatalf("a real beacon must still fire, got %d", len(got))
+	}
+}
