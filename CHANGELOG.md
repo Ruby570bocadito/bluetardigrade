@@ -35,6 +35,13 @@ and the `make dist` target.
 - Intel hits on DNS events say "consulta DNS" / "respuesta DNS" instead
   of the raw field, and "proceso nuevo" alerts carry the image SHA-256
   in their enrichment (`image_sha256`).
+- Sysmon sensor (`sf-sensor`): DNS queries never carried their answer.
+  The parser expected an invented `A:1.2.3.4` form (and its self-test
+  used it); Sysmon writes `type:  5 alias;::ffff:1.2.3.4;`. It now reads
+  the real format, so IP intel lists match Sysmon DNS answers too. CI
+  runs the sensor self-test on Windows PowerShell 5.1.
+- `sf-engine doctor` validates `ingest-identities.yaml` with the engine's
+  loader (a malformed file stops the engine at startup).
 
 ### Review round: fixes, observability and the host baseline (2026-10-04)
 

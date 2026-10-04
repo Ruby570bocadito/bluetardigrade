@@ -161,6 +161,9 @@ jobs:
       - name: Shared launcher configuration and process ownership
         shell: powershell
         run: ./scripts/dev-tests/check_runtime_behavior.ps1
+      - name: Sysmon sensor mapping self-test (sample records, no Sysmon needed)
+        shell: powershell
+        run: ./scripts/windows/sensor.ps1 -SelfTest
       - name: Windows Server task plans and failure handling (isolated fixtures)
         shell: powershell
         run: ./scripts/windows/check-server-deployment.ps1

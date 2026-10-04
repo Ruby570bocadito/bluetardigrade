@@ -57,7 +57,14 @@ rellenados con el nombre del equipo y la IP del servidor.
    notepad "$env:LOCALAPPDATA\bluetardigrade\tools\config\ingest-identities.yaml"
    ```
 
-   El motor recarga el fichero solo cada 15 s.
+   El motor recarga el fichero solo cada 15 s. Comprueba que está bien escrito
+   antes de reiniciar: si el fichero está mal, el motor no arranca.
+
+   ```powershell
+   sf-engine doctor
+   ```
+
+   Debe decir «Identidades de sensores: 1 identidad de sensor valida».
 
 3. **Solo la primera vez**, reinicia para que el motor escuche a la red:
 

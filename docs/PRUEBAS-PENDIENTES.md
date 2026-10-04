@@ -146,7 +146,10 @@ equipo remoto», que genera todos los comandos.
 - [ ] **[normal]** Identidad: `sf-engine ingest-identity --name pc-prueba --host <NOMBRE-DEL-OTRO-EQUIPO>`.
   Guarda el token.
 - [ ] **[normal]** Pega la entrada en `tools\config\ingest-identities.yaml` (el
-  asistente lo abre con notepad), y luego `sf-console -Stop; sf-console`.
+  asistente lo abre con notepad).
+- [ ] **[normal]** `sf-engine doctor` dice «Identidades de sensores: 1 identidad de sensor
+  valida». Si dice «El motor no arrancaria», corrige el fichero antes de seguir.
+- [ ] **[normal]** `sf-console -Stop; sf-console`
 - [ ] **[normal]** Comprueba que el motor escucha en la red: `netstat -ano | findstr :7777`
   debe mostrar `0.0.0.0:7777`.
 - [ ] El sensor de **este** equipo necesita ahora token: crea también una identidad
@@ -243,7 +246,7 @@ usuario y queda registrado quién hace cada cosa.
   Escribe `{"users": [LINEA1, LINEA2]}`, cambiando LINEA1 y LINEA2 por las dos líneas
   anteriores. Guarda el fichero.
 - [ ] **[normal]** `sf-engine doctor` debe decir «Cuentas de la consola: 2 cuentas
-  (administradores 1, analistas 0, lectores 1)». Si dice «la consola quedaría bloqueada»,
+  (administradores 1, analistas 0, lectores 1)». Si dice «la consola quedaria bloqueada»,
   corrige lo que indique antes de seguir.
 - [ ] **[normal]** `sf-console -Stop; sf-console`
 - [ ] El navegador pide usuario y contraseña. Con una contraseña mala no entra.

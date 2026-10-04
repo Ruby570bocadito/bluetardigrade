@@ -100,3 +100,30 @@ func TestDoctorConsoleUsers(t *testing.T) {
 		}
 	}
 }
+
+func TestDoctorIdentities(t *testing.T) {
+	t.Setenv("SF_INGEST_IDENTITIES", "")
+	root := t.TempDir()
+	if c := doctorIdentities(root); c.Status != "skip" {
+		t.Fatalf("no file: %+v", c)
+	}
+	cfg := filepath.Join(root, "tools", "config")
+	if err := os.MkdirAll(cfg, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(cfg, "ingest-identities.yaml")
+	good := "version: 1\nidentities:\n  - name: pc-prueba\n    token_sha256: 5914e8eec927c95053c050849aecf35f60ac0feb17b4a16c31d68000ef524e52\n    hosts: [\"PC-PRUEBA\"]\n"
+	if err := os.WriteFile(path, []byte(good), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c := doctorIdentities(root); c.Status != "ok" || !strings.Contains(c.Detail, "1 identidad de sensor valida;") {
+		t.Fatalf("valid: %+v", c)
+	}
+	// the entry pasted without the header the engine needs
+	if err := os.WriteFile(path, []byte("  - name: pc-prueba\n    token_sha256: abc\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c := doctorIdentities(root); c.Status != "error" || !strings.Contains(c.Detail, "no arrancaria") {
+		t.Fatalf("malformed: %+v", c)
+	}
+}

@@ -95,6 +95,26 @@ function ConvertFrom-SysmonHashes([string]$hashes) {
     return $out
 }
 
+function Get-SfDnsAnswer([string]$Results) {
+    # Sysmon EID 22 renders the answer like the DNS client does:
+    # "type:  5 cdn.example.net;::ffff:93.184.216.34;2606:2800::1;" -
+    # CNAME hops carry a "type:" prefix and IPv4 answers come IPv4-mapped.
+    # Returns the first address, IPv4-mapped shown as IPv4, or $null.
+    if (-not $Results -or $Results -eq '-') { return $null }
+    foreach ($entry in ($Results -split ';')) {
+        $e = $entry.Trim()
+        if (-not $e -or $e.StartsWith('type:')) { continue }
+        $e = $e -replace '^(A|AAAA):', ''
+        if ($e.StartsWith('::ffff:')) { $e = $e.Substring(7) }
+        $ip = $null
+        if ([System.Net.IPAddress]::TryParse($e, [ref]$ip)) {
+            if ($ip.Equals([System.Net.IPAddress]::Loopback) -or $ip.Equals([System.Net.IPAddress]::Any) -or $ip.Equals([System.Net.IPAddress]::IPv6Any)) { continue }
+            return $ip.ToString()
+        }
+    }
+    return $null
+}
+
 function New-SfEvent([string]$Type, [hashtable]$Data, [datetime]$Time) {
     # Shared envelope. Returns an ordered hashtable matching
     # pkg/model/model.go byte-for-byte (snake_case keys).
@@ -164,18 +184,15 @@ function ConvertFrom-SysmonRecord([int]$EventId, [hashtable]$Data, [datetime]$Ti
         }
         22 {
             # DNS query: mapped to network.connect with protocol=dns. The
-            # requested name is the domain; the first A record (when the
-            # resolver answered) fills destination_ip.
+            # requested name is the domain; the first address of the answer
+            # fills destination_ip (Get-SfDnsAnswer reads Sysmon's format).
             $ev = New-SfEvent 'network.connect' $Data $Time
             $name = $Data['QueryName']
             if ($name) { $name = $name.TrimEnd('.') }
             $net = [ordered]@{ protocol = 'dns' }
             if ($name -and $name -ne '-') { $net['domain'] = $name }
-            if ($Data['QueryResults'] -and $Data['QueryResults'] -ne '-') {
-                foreach ($entry in ($Data['QueryResults'] -split ';')) {
-                    if ($entry -match '^A:(\d+\.\d+\.\d+\.\d+)$') { $net['destination_ip'] = $Matches[1]; break }
-                }
-            }
+            $answer = Get-SfDnsAnswer $Data['QueryResults']
+            if ($answer) { $net['destination_ip'] = $answer }
             $ev['network'] = $net
             return $ev
         }
@@ -342,12 +359,16 @@ function Invoke-SelfTest {
     Check 'EID10 -> process.access' ($ev['type'] -eq 'process.access' -and $ev['process']['name'] -eq 'dump.exe')
     Check 'EID10 target + access' ($ev['target']['name'] -eq 'lsass.exe' -and $ev['access']['granted_access'] -eq '0x1010')
 
+    # the QueryResults format Sysmon really writes (CNAME hops, mapped IPv4)
     $ev = ConvertFrom-SysmonRecord 22 @{
-        QueryName = 'evil.example.com.'; QueryResults = 'A:93.184.216.34;AAAA:2606:2800::1'
+        QueryName = 'evil.example.com.'; QueryResults = 'type:  5 cdn.example.net;type:  5 edge.example.net;::ffff:93.184.216.34;2606:2800:220:1::248;'
         ProcessId = '900'; Image = 'C:\Program Files\browser.exe'
     } $t
     Check 'EID22 -> network.connect dns' ($ev['type'] -eq 'network.connect' -and $ev['network']['protocol'] -eq 'dns')
     Check 'EID22 domain + resolved ip' ($ev['network']['domain'] -eq 'evil.example.com' -and $ev['network']['destination_ip'] -eq '93.184.216.34')
+    Check 'EID22 IPv6-only answer' ((Get-SfDnsAnswer '2606:2800:220:1::248;') -eq '2606:2800:220:1::248')
+    Check 'EID22 no answer' ($null -eq (Get-SfDnsAnswer '-') -and $null -eq (Get-SfDnsAnswer 'type:  5 only.cname.example;'))
+    Check 'EID22 legacy A: form' ((Get-SfDnsAnswer 'A:198.51.100.4;') -eq '198.51.100.4')
 
     $ev = ConvertFrom-SysmonRecord 255 @{ Whatever = '1' } $t
     Check 'unknown EID skipped' ($null -eq $ev)

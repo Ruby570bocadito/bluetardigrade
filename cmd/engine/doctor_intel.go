@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Ruby570bocadito/bluetardigrade/internal/ingest"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/intel"
 )
 
@@ -58,8 +59,34 @@ func doctorIntelChecks(root string) []doctorCheck {
 		}
 	}
 
-	checks = append(checks, doctorConsoleUsers(root))
+	checks = append(checks, doctorConsoleUsers(root), doctorIdentities(root))
 	return checks
+}
+
+// doctorIdentities validates the per-sensor identities file with the
+// engine's own loader: the engine refuses to start on a malformed one,
+// and the launcher opens the ingest to the network only when it exists.
+func doctorIdentities(root string) doctorCheck {
+	const name = "Identidades de sensores"
+	path := os.Getenv("SF_INGEST_IDENTITIES")
+	if path == "" {
+		path = filepath.Join(root, "tools", "config", "ingest-identities.yaml")
+		if !fileExists(path) {
+			return doctorCheck{name, "skip", "Sin fichero de identidades: la ingesta solo escucha en loopback", "Para vigilar otros equipos sigue docs/FLOTA-REMOTA.md"}
+		}
+	}
+	ids, err := ingest.LoadIdentities(path)
+	if err != nil {
+		return doctorCheck{name, "error", "El motor no arrancaria: " + err.Error(), "Corrige " + path + " (empieza por «version: 1» e «identities:»; cada entrada sale de sf-engine ingest-identity)"}
+	}
+	if len(ids) == 0 {
+		return doctorCheck{name, "warn", "El fichero no tiene identidades: ningun sensor remoto podra autenticarse", "Anade una entrada con sf-engine ingest-identity --name <nombre> --host <EQUIPO>"}
+	}
+	noun := "identidades de sensor validas"
+	if len(ids) == 1 {
+		noun = "identidad de sensor valida"
+	}
+	return doctorCheck{name, "ok", fmt.Sprintf("%d %s; la ingesta escucha en la red", len(ids), noun), ""}
 }
 
 var consoleUserName = regexp.MustCompile(`^[\p{L}\p{N}._@-]{1,64}$`)

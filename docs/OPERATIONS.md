@@ -670,11 +670,14 @@ one a host never ran before: the tool nobody wrote a rule for (an
 - An invalid `SF_BASELINE_LEARN` is reported at startup and the default
   (24 h) is used; `sf-engine doctor` reports it too.
 
-`sf-engine doctor` checks the three operator files of these features
-before a restart: the intel lists (unreadable files, lines it would
-skip), the `baseline.learn` setting and the console accounts file (it
-validates the file with the console's own rules, since a rejected file
-locks the console, and warns when no account is an administrator).
+`sf-engine doctor` checks the operator files a typo can break before a
+restart: the intel lists (unreadable files, lines it would skip), the
+`baseline.learn` setting, the console accounts file (validated with the
+console's own rules, since a rejected file locks the console; it warns
+when no account is an administrator) and `ingest-identities.yaml`
+(validated with the engine's loader, since the engine refuses to start
+on a malformed one). Files saved by Windows tools with a UTF-8 BOM or as
+UTF-16 are read correctly.
 
 ## Host risk scoring (hot hosts)
 
