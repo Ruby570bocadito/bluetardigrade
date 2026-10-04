@@ -11,7 +11,7 @@
 //                   [--tls-ca <ca.pem>] [--queue <events>]
 //                   [--spool <file>] [--spool-max-mb <MiB>]
 //                   [--no-network] [--no-registry] [--registry-all]
-//                   [--no-dns] [--no-hash]
+//                   [--no-dns] [--no-hash] [--debug-registry <fragment>]
 //
 // Besides process creation the sensor captures TCP connection attempts
 // (network.connect), DNS queries (network.connect with protocol dns;
@@ -132,7 +132,7 @@ fn main() -> Result<()> {
             other => {
                 eprintln!("unknown argument: {other}");
                 eprintln!(
-                    "usage: security-sensor --addr <ip:port> [--token <shared-token>] [--tls-ca <ca.pem>] [--queue <events>] [--spool <file>] [--spool-max-mb <MiB>] [--no-network] [--no-registry] [--registry-all] [--no-dns] [--no-hash]"
+                    "usage: security-sensor --addr <ip:port> [--token <shared-token>] [--tls-ca <ca.pem>] [--queue <events>] [--spool <file>] [--spool-max-mb <MiB>] [--no-network] [--no-registry] [--registry-all] [--no-dns] [--no-hash] [--debug-registry <fragment>]"
                 );
                 std::process::exit(2);
             }

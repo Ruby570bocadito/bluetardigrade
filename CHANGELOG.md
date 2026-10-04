@@ -25,8 +25,17 @@ and the `make dist` target.
     a query first with that status and then with the result, and the
     repeat suppression kept the first. After the fix 15 of 16 queries
     carried their answer.
-  - Ctrl+C closes both ETW sessions cleanly; 0.1 s of CPU and 15 MB of
-    memory at idle.
+  - not one registry write was reported: Kernel-Registry's SetValueKey
+    names the key only by its kernel object (KeyName empty on all of
+    them). Keys are now named from the OpenKey/CreateKey/CloseKey events;
+    a handle opened relative to a base that predates the sensor keeps
+    its known part under an unknown root (`?\Software\...\Run`).
+    Verified: the HKCU Run-key write raised "Persistencia en clave Run via
+    registro". `--debug-registry <fragment>` prints how keys are named.
+  - the transport says when it reconnects (only failures were printed).
+  - "Sensor sin señal" fired on its own while the sensor was stopped.
+  - Ctrl+C closes both ETW sessions cleanly; 0.1-0.2 s of CPU and 15 MB
+    of memory at idle, also with the registry key tracking.
 - Beaconing: four false "C2 beacon web lento" alerts on the first real
   run, all legitimate polling: DNS lookups that Chrome and a web app repeat
   every ~64 s, and TCP to the router's DNS on a link-local address. DNS

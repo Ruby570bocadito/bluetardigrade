@@ -99,7 +99,10 @@ administrador; **[otro equipo]** = el equipo remoto. Pega los comandos de uno en
   El nombre debe salir completo, no cortado a 14 letras (`RuntimeBroker.`).
 - [ ] Con el sensor en marcha, el Administrador de tareas no debe mostrar más de un
   par de % de CPU para `security-sensor.exe` en reposo.
-- [ ] **[normal]** Registro (inofensivo). Debe saltar «Persistencia en clave Run via registro»:
+- [ ] **[normal]** Registro (inofensivo). Debe saltar «Persistencia en clave Run via registro».
+  Si la ventana de PowerShell ya estaba abierta antes de arrancar el sensor, la clave sale como
+  `?\Software\Microsoft\Windows\CurrentVersion\Run`: el `?` indica que la raíz (HKCU) no se pudo
+  resolver, y es normal.
 
   ```powershell
   New-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'bt-prueba' -Value 'C:\Windows\notepad.exe' -PropertyType String -Force
