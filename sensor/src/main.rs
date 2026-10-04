@@ -59,6 +59,8 @@ mod imagehash;
 #[cfg(any(target_os = "windows", test))]
 mod netreg;
 #[cfg(any(target_os = "windows", test))]
+mod ntpath;
+#[cfg(any(target_os = "windows", test))]
 mod procinfo;
 #[cfg(any(target_os = "windows", test))]
 mod queue;

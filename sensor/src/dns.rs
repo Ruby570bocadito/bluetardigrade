@@ -12,7 +12,9 @@
 //     window). A fixed "once a minute" would turn a 5-second poller into
 //     a perfectly regular 60-second series, which the engine's beacon
 //     detector would read as an implant; this way only real gaps of over
-//     a minute produce new events, so true cadences stay visible.
+//     a minute produce new events, so true cadences stay visible. One
+//     exception: a repeat that brings the first answer is forwarded, since
+//     Windows reports some queries twice (first without an answer).
 //   - IP -> domain: answers are remembered for ten minutes so the TCP
 //     connection that follows the lookup carries the domain it was for
 //     (the same field Sysmon-based rules and the intel lists read).
@@ -58,7 +60,8 @@ pub fn answer_ips(results: &str) -> Vec<IpAddr> {
 
 /// Deduplication of repeated queries and the IP -> domain memory.
 pub struct DnsState {
-    recent: HashMap<(u32, String), Instant>,
+    // (pid, name) -> (last seen, an answer was already forwarded)
+    recent: HashMap<(u32, String), (Instant, bool)>,
     answers: HashMap<IpAddr, (String, Instant)>,
 }
 
@@ -88,18 +91,25 @@ impl DnsState {
             self.answers.insert(*ip, (name.to_string(), now));
         }
         let key = (pid, name.to_string());
-        if let Some(at) = self.recent.get_mut(&key) {
+        let answered = !ips.is_empty();
+        if let Some((at, had_answer)) = self.recent.get_mut(&key) {
             let quiet = now.duration_since(*at) >= REPEAT_WINDOW;
             *at = now; // sliding: every repeat extends the quiet period
-            return quiet;
+            let first_answer = answered && !*had_answer;
+            if quiet {
+                *had_answer = answered;
+            } else if first_answer {
+                *had_answer = true;
+            }
+            return quiet || first_answer;
         }
         if self.recent.len() >= MAX_RECENT {
-            self.recent.retain(|_, at| now.duration_since(*at) < REPEAT_WINDOW);
+            self.recent.retain(|_, (at, _)| now.duration_since(*at) < REPEAT_WINDOW);
             if self.recent.len() >= MAX_RECENT {
                 self.recent.clear();
             }
         }
-        self.recent.insert(key, now);
+        self.recent.insert(key, (now, answered));
         true
     }
 
@@ -148,6 +158,18 @@ mod tests {
         assert_eq!(st.domain_for(&ip, t0 + Duration::from_secs(70)).as_deref(), Some("mal.example.com"));
         assert_eq!(st.domain_for(&ip, t0 + Duration::from_secs(66 + 601)), None, "answers expire");
         assert_eq!(st.domain_for(&"192.0.2.1".parse().unwrap(), t0), None);
+    }
+
+    #[test]
+    fn the_first_answer_of_a_repeated_query_is_forwarded() {
+        let mut st = DnsState::new();
+        let t0 = Instant::now();
+        let ip: IpAddr = "203.0.113.10".parse().unwrap();
+        // Windows reports the query once without an answer, then answered
+        assert!(st.observe(9, "cdn.example.com", &[], t0));
+        assert!(st.observe(9, "cdn.example.com", &[ip], t0 + Duration::from_millis(30)), "the answer goes out");
+        assert!(!st.observe(9, "cdn.example.com", &[ip], t0 + Duration::from_secs(5)), "later repeats do not");
+        assert!(!st.observe(9, "cdn.example.com", &[], t0 + Duration::from_secs(6)));
     }
 
     #[test]

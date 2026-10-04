@@ -18,7 +18,9 @@
 //     the TCP connections that follow.
 //
 // Process starts carry the full image path (queried from the live
-// process in the callback, a couple of system calls) and its SHA-256,
+// process in the callback, a couple of system calls; for a process that
+// already exited, from Microsoft-Windows-Kernel-Process event 1, which
+// the user trace also consumes) and its SHA-256,
 // computed on a separate enrichment thread with a cache (imagehash.rs)
 // so file reads never stall the ETW consumers. When that thread falls
 // behind, events go out without the hash rather than wait.
@@ -34,6 +36,7 @@ use crate::dns::{self, DnsState};
 use crate::heartbeat::{self, Health};
 use crate::imagehash::HashCache;
 use crate::netreg::{self, ProcessTable};
+use crate::ntpath::{DeviceMap, RecentImages};
 use crate::normalize::{self, EventJson, HashesJson, NetworkJson, ProcessJson, RegistryJson};
 use crate::normalize::{TYPE_NETWORK_CONNECT, TYPE_PROCESS_CREATE, TYPE_REGISTRY_SET};
 use crate::procinfo;
@@ -76,6 +79,22 @@ const KERNEL_REGISTRY: &str = "70eb4f03-c1de-4f73-a051-33d13d5413bd";
 const EVENT_REG_SET_VALUE: u16 = 5;
 
 const DNS_CLIENT: &str = "1c95126e-7eea-49a9-a3fe-a378b03ddb4d";
+/// DNS-Client reports some queries first with this status (invalid
+/// parameter) and no answer, then again with the result: the first is
+/// not a resolution outcome and is ignored.
+const DNS_STATUS_INVALID_PARAMETER: u32 = 87;
+
+/// Microsoft-Windows-Kernel-Process: event 1 (ProcessStart) carries the
+/// image path, so short-lived processes get one too.
+const KERNEL_PROCESS: &str = "22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716";
+/// WINEVENT_KEYWORD_PROCESS
+const KERNEL_PROCESS_KEYWORD: u64 = 0x10;
+const EVENT_KP_PROCESS_START: u16 = 1;
+/// Images kept per PID, for how long, and how long the enrichment thread
+/// waits for the image of a process that exited before it was read.
+const RECENT_IMAGES_CAP: usize = 8192;
+const RECENT_IMAGES_KEEP: Duration = Duration::from_secs(120);
+const IMAGE_WAIT: Duration = Duration::from_secs(2);
 /// "DNS query is completed": name, status and answers, in the context
 /// of the process that asked.
 const EVENT_DNS_QUERY_COMPLETED: u16 = 3008;
@@ -113,7 +132,12 @@ pub struct Capture {
 /// A process start waiting for its image hash.
 struct Pending {
     event: EventJson,
-    image: String,
+    /// None: the process exited before its image could be read; the
+    /// enrichment thread waits briefly for Kernel-Process to name it
+    image: Option<String>,
+    pid: u32,
+    kernel_name: String,
+    queued: Instant,
 }
 
 /// Shared state of the ETW callbacks.
@@ -126,6 +150,11 @@ struct Shared {
     dns: Mutex<DnsState>,
     /// hand-off to the image-hash thread (None: hashing off or stopped)
     enrich: Mutex<Option<SyncSender<Pending>>>,
+    /// image paths from Kernel-Process, by PID
+    images: Arc<Mutex<RecentImages>>,
+    devices: DeviceMap,
+    /// the Kernel-Process provider is running (worth waiting for)
+    images_live: AtomicBool,
 }
 
 impl Shared {
@@ -140,10 +169,15 @@ impl Shared {
         emit_to(&self.pipeline, event);
     }
 
-    /// Queues a process start for hashing, or emits it as it is when
+    /// Queues a process start for its image (when it is still missing)
+    /// and hash, or emits it as it is when there is nothing to wait for,
     /// hashing is off or the enrichment thread is behind.
-    fn emit_hashed(&self, event: EventJson, image: String) {
-        let pending = Pending { event, image };
+    fn emit_enriched(&self, event: EventJson, image: Option<String>, pid: u32, kernel_name: String) {
+        if image.is_none() && !self.images_live.load(Ordering::Relaxed) {
+            self.emit(&event);
+            return;
+        }
+        let pending = Pending { event, image, pid, kernel_name, queued: Instant::now() };
         let rejected = match self.enrich.lock() {
             Ok(guard) => match guard.as_ref() {
                 Some(tx) => match tx.try_send(pending) {
@@ -155,6 +189,10 @@ impl Shared {
             Err(_) => pending,
         };
         self.emit(&rejected.event);
+    }
+
+    fn recent_image(&self, pid: u32) -> Option<String> {
+        self.images.lock().ok().and_then(|m| m.get(pid, Instant::now()))
     }
 
     fn domain_for(&self, ip: &IpAddr) -> Option<String> {
@@ -169,21 +207,76 @@ fn emit_to(pipeline: &Pipeline, event: &EventJson) {
     }
 }
 
-/// The enrichment thread: hashes each queued image (cached by path, size
+/// The enrichment thread: finds the image of processes that exited
+/// before it could be read (waiting up to IMAGE_WAIT from the event for
+/// Kernel-Process to report it), hashes each image (cached by path, size
 /// and modification time) and emits the event.
-fn start_enricher(pipeline: Arc<Pipeline>, rx: Receiver<Pending>) -> Option<JoinHandle<()>> {
+fn start_enricher(pipeline: Arc<Pipeline>, rx: Receiver<Pending>, images: Arc<Mutex<RecentImages>>) -> Option<JoinHandle<()>> {
     std::thread::Builder::new()
         .name("image-hash".into())
         .spawn(move || {
             let mut cache = HashCache::new(HASH_CACHE_CAP, HASH_MAX_BYTES);
-            for Pending { mut event, image } in rx {
-                if let (Some(process), Some(digest)) = (event.process.as_mut(), cache.sha256(&image)) {
-                    process.hashes = Some(HashesJson::sha256(digest));
+            for Pending { mut event, image, pid, kernel_name, queued } in rx {
+                let image = image.or_else(|| wait_for_image(&images, pid, &kernel_name, queued));
+                if let (Some(process), Some(path)) = (event.process.as_mut(), image) {
+                    if process.image.is_none() {
+                        if let Some(name) = procinfo::name_from_image(&kernel_name, &path) {
+                            process.name = name;
+                        }
+                        process.image = Some(path.clone());
+                    }
+                    if let Some(digest) = cache.sha256(&path) {
+                        process.hashes = Some(HashesJson::sha256(digest));
+                    }
                 }
                 emit_to(&pipeline, &event);
             }
         })
         .ok()
+}
+
+/// Polls the Kernel-Process images for pid until one matching the
+/// kernel's name shows up or the wait from `queued` runs out. Items are
+/// handled in order, so the wait never stacks beyond IMAGE_WAIT.
+fn wait_for_image(images: &Mutex<RecentImages>, pid: u32, kernel_name: &str, queued: Instant) -> Option<String> {
+    let deadline = queued + IMAGE_WAIT;
+    loop {
+        let now = Instant::now();
+        if let Some(path) = images.lock().ok().and_then(|m| m.get(pid, now)) {
+            // an entry under a reused PID names another process: keep waiting
+            if procinfo::name_from_image(kernel_name, &path).is_some() {
+                return Some(path);
+            }
+        }
+        if now >= deadline {
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// NT device prefixes of the drive letters, to turn Kernel-Process image
+/// names ("\Device\HarddiskVolume3\...") into Win32 paths.
+fn device_map() -> DeviceMap {
+    use windows_sys::Win32::Storage::FileSystem::QueryDosDeviceW;
+    let mut drives = Vec::new();
+    for letter in b'A'..=b'Z' {
+        let drive = format!("{}:", letter as char);
+        let name: Vec<u16> = drive.encode_utf16().chain(std::iter::once(0)).collect();
+        let mut buf = [0u16; 512];
+        // SAFETY: name is NUL-terminated UTF-16 and buf is writable for the
+        // length passed; the call writes at most that many characters.
+        let n = unsafe { QueryDosDeviceW(name.as_ptr(), buf.as_mut_ptr(), buf.len() as u32) };
+        if n == 0 {
+            continue;
+        }
+        let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+        let target = String::from_utf16_lossy(&buf[..end]);
+        if !target.is_empty() {
+            drives.push((target, drive));
+        }
+    }
+    DeviceMap::new(drives, &std::env::var("SystemRoot").unwrap_or_else(|_| String::from(r"C:\Windows")))
 }
 
 /// Full Win32 path of a running process's image, from the kernel (not
@@ -246,9 +339,10 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
         move |line: &str| sender.send_line(line, &transport_stop),
     );
     let pipeline = Arc::new(pipeline);
+    let images = Arc::new(Mutex::new(RecentImages::new(RECENT_IMAGES_CAP, RECENT_IMAGES_KEEP)));
     let (enrich_tx, enricher) = if capture.hash {
         let (tx, rx) = sync_channel(ENRICH_QUEUE);
-        match start_enricher(Arc::clone(&pipeline), rx) {
+        match start_enricher(Arc::clone(&pipeline), rx, Arc::clone(&images)) {
             Some(thread) => (Some(tx), Some(thread)),
             None => {
                 eprintln!("[SENSOR] warning: image hashing unavailable (thread could not start)");
@@ -266,6 +360,9 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
         registry_all: capture.registry_all,
         dns: Mutex::new(DnsState::new()),
         enrich: Mutex::new(enrich_tx),
+        images,
+        devices: device_map(),
+        images_live: AtomicBool::new(false),
     });
 
     // The provider is rebuilt for each start attempt (a stale session
@@ -283,25 +380,31 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
     // them running in the kernel after the process is gone.
     install_console_handler();
 
-    // The DNS provider shares the session with network and registry, and
-    // ferrisetw aborts the start on the first provider that fails: if the
-    // session cannot start with DNS, network and registry are retried on
-    // their own instead of being lost with it.
-    let mut dns_live = capture.dns;
-    let netreg = if capture.network || capture.registry || capture.dns {
-        match start_netreg(&ctx, capture.network, capture.dns, capture.registry) {
-            Some(session) => Some(session),
-            None if capture.dns && (capture.network || capture.registry) => {
-                dns_live = false;
-                eprintln!("[SENSOR] retrying network and registry capture without DNS");
-                let _ = ferrisetw::trace::stop_trace_by_name(NETREG_SESSION_NAME);
-                start_netreg(&ctx, capture.network, false, capture.registry)
-            }
-            None => None,
+    // Network, DNS, registry and the Kernel-Process image provider share
+    // one session, and ferrisetw aborts the start on the first provider
+    // that fails: if it cannot start, DNS and then the image provider are
+    // left out, so one failing provider never costs the others.
+    let mut dns_live = false;
+    let mut netreg = None;
+    let attempts = [(capture.dns, true), (false, true), (false, false)];
+    for (i, &(dns, images)) in attempts.iter().enumerate() {
+        if i > 0 && attempts[i - 1] == (dns, images) {
+            continue; // DNS was not requested: the first retry is the same
         }
-    } else {
-        None
-    };
+        if !(capture.network || capture.registry || dns || images) {
+            continue;
+        }
+        if i > 0 {
+            eprintln!("[SENSOR] retrying the session without {}", if images { "DNS" } else { "process images" });
+            let _ = ferrisetw::trace::stop_trace_by_name(NETREG_SESSION_NAME);
+        }
+        if let Some(session) = start_netreg(&ctx, capture.network, dns, capture.registry, images) {
+            dns_live = dns;
+            ctx.images_live.store(images, Ordering::Relaxed);
+            netreg = Some(session);
+            break;
+        }
+    }
     let live = netreg.is_some();
     if !live && (capture.network || capture.registry || capture.dns) {
         eprintln!("[SENSOR] warning: continuing with process events only");
@@ -376,11 +479,21 @@ fn start_with_recovery<R, E: std::fmt::Debug>(name: &str, start: impl Fn() -> st
     })
 }
 
-/// Starts the network/DNS/registry session on its own thread. Best
-/// effort: a failure is reported and None returned.
-fn start_netreg(ctx: &Arc<Shared>, network: bool, dns: bool, registry: bool) -> Option<(UserTrace, std::thread::JoinHandle<()>)> {
+/// Starts the network/DNS/registry/process-image session on its own
+/// thread. Best effort: a failure is reported and None returned.
+fn start_netreg(ctx: &Arc<Shared>, network: bool, dns: bool, registry: bool, images: bool) -> Option<(UserTrace, std::thread::JoinHandle<()>)> {
     let build = || {
         let mut builder = UserTrace::new().named(String::from(NETREG_SESSION_NAME));
+        if images {
+            let ctx = Arc::clone(ctx);
+            builder = builder.enable(
+                Provider::by_guid(KERNEL_PROCESS)
+                    .any(KERNEL_PROCESS_KEYWORD)
+                    .add_filter(EventFilter::ByEventIds(vec![EVENT_KP_PROCESS_START]))
+                    .add_callback(move |record: &EventRecord, schema_locator: &SchemaLocator| handle_process_image(record, schema_locator, &ctx))
+                    .build(),
+            );
+        }
         if network {
             let ctx = Arc::clone(ctx);
             builder = builder.enable(
@@ -428,7 +541,7 @@ fn start_netreg(ctx: &Arc<Shared>, network: bool, dns: bool, registry: bool) -> 
             Some((trace, thread))
         }
         Err(err) => {
-            let what = [(network, "network"), (dns, "DNS"), (registry, "registry")]
+            let what = [(network, "network"), (dns, "DNS"), (registry, "registry"), (images, "process-image")]
                 .iter()
                 .filter(|w| w.0)
                 .map(|w| w.1)
@@ -563,10 +676,13 @@ fn handle_process(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &Sh
     // kept only when it matches the kernel's name (a process that already
     // exited may have had its PID reused), and then names the process
     // exactly: the kernel's name is cut at 14 characters.
-    let verified = if matches!(opcode, OPCODE_PROCESS_START | OPCODE_PROCESS_DC_START) {
-        image_path(pid).and_then(|path| procinfo::name_from_image(&short_name, &path).map(|name| (path, name)))
-    } else {
-        None
+    // a process that already exited is named by Kernel-Process, when its
+    // event came first; otherwise the enrichment thread waits for it
+    let verify = |path: String| procinfo::name_from_image(&short_name, &path).map(|name| (path, name));
+    let verified = match opcode {
+        OPCODE_PROCESS_START => image_path(pid).and_then(verify).or_else(|| ctx.recent_image(pid).and_then(verify)),
+        OPCODE_PROCESS_DC_START => image_path(pid).and_then(verify),
+        _ => None,
     };
     let (image, name) = match verified {
         Some((path, name)) => (Some(path), name),
@@ -602,9 +718,26 @@ fn handle_process(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &Sh
         attributes: None,
         tags: vec!["sensor:etw".into()],
     };
-    match image {
-        Some(path) => ctx.emit_hashed(event, path),
-        None => ctx.emit(&event),
+    ctx.emit_enriched(event, image, pid, short_name);
+}
+
+/// Kernel-Process ProcessStart: remembers the image of every new process,
+/// for the ones that exit before the kernel trace's event is handled.
+fn handle_process_image(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &Shared) {
+    if record.event_id() != EVENT_KP_PROCESS_START {
+        return;
+    }
+    let Ok(schema) = schema_locator.event_schema(record) else {
+        return;
+    };
+    let parser = Parser::create(record, &schema);
+    let (Ok(pid), Ok(nt)) = (parser.try_parse::<u32>("ProcessID"), parser.try_parse::<String>("ImageName")) else {
+        return;
+    };
+    if let Some(path) = ctx.devices.to_dos(&nt) {
+        if let Ok(mut images) = ctx.images.lock() {
+            images.insert(pid, path, Instant::now());
+        }
     }
 }
 
@@ -678,6 +811,10 @@ fn handle_dns(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &Shared
     let Some(name) = parser.try_parse::<String>("QueryName").ok().and_then(|raw| dns::query_name(&raw)) else {
         return;
     };
+    let status = parser.try_parse::<u32>("QueryStatus").ok();
+    if status == Some(DNS_STATUS_INVALID_PARAMETER) {
+        return; // the unanswered first report of a query; the result follows
+    }
     let results = parser.try_parse::<String>("QueryResults").unwrap_or_default();
     let ips = dns::answer_ips(&results);
     let forward = match ctx.dns.lock() {
@@ -691,7 +828,7 @@ fn handle_dns(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &Shared
     if let Ok(qtype) = parser.try_parse::<u32>("QueryType") {
         attributes.insert("dns_query_type".to_string(), qtype.to_string());
     }
-    if let Ok(status) = parser.try_parse::<u32>("QueryStatus") {
+    if let Some(status) = status {
         // 0 answered, 9003 name does not exist, 1460 timeout...
         attributes.insert("dns_status".to_string(), status.to_string());
     }
