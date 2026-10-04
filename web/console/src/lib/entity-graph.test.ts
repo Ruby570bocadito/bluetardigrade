@@ -71,8 +71,8 @@ describe('layout', () => {
 })
 
 describe('process tree', () => {
-  const pc = (id: string, pid: number, ppid: number | undefined, name: string, t: string, parent?: string) => ({
-    id, timestamp: t, type: 'process.create', host: 'h', process: { pid, ppid, name }, enrichment: parent ? { parent_name: parent } : undefined,
+  const pc = (_id: string, pid: number, ppid: number | undefined, name: string, t: string, parent?: string) => ({
+    timestamp: t, type: 'process.create', process: { pid, ppid, name }, enrichment: parent ? { parent_name: parent } : undefined,
   })
 
   test('nests children by ppid and roots unknown parents by name', () => {
@@ -80,7 +80,7 @@ describe('process tree', () => {
       pc('1', 100, 4, 'cmd.exe', '2026-10-03T10:00:01Z', 'winword.exe'),
       pc('2', 101, 100, 'powershell.exe', '2026-10-03T10:00:02Z'),
       pc('3', 102, 101, 'certutil.exe', '2026-10-03T10:00:03Z'),
-      { id: 'n', timestamp: '2026-10-03T10:00:04Z', type: 'network.connect', host: 'h' },
+      { timestamp: '2026-10-03T10:00:04Z', type: 'network.connect' },
     ], 'certutil.exe')
     expect(roots).toHaveLength(1)
     expect(roots[0]).toMatchObject({ name: 'winword.exe', external: true })

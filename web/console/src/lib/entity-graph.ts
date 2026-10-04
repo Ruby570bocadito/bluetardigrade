@@ -4,7 +4,6 @@
 // forensic bundle); a missing link stays missing, nothing is inferred.
 
 import type { Severity, SfAlert, SfEvent } from './console-types'
-import type { ForensicEvent } from './forensic'
 
 export type NodeKind = 'host' | 'user' | 'rule' | 'process' | 'destination'
 
@@ -307,7 +306,15 @@ export type ProcessNode = {
  * ppid. Parents outside the captured window become external roots named
  * from the enrichment when the engine recorded it.
  */
-export function buildProcessTree(timeline: readonly (ForensicEvent & { enrichment?: Record<string, string> })[], focusName?: string): ProcessNode[] {
+/** The fields the tree needs: forensic bundle events and live events both fit. */
+export type ProcessEventLike = {
+  type: string
+  timestamp?: string
+  process?: { pid: number; ppid?: number; name: string; command_line?: string }
+  enrichment?: Record<string, string>
+}
+
+export function buildProcessTree(timeline: readonly ProcessEventLike[], focusName?: string): ProcessNode[] {
   const byPid = new Map<number, ProcessNode>()
   const parentOf = new Map<number, number | undefined>()
   const parentName = new Map<number, string | undefined>()

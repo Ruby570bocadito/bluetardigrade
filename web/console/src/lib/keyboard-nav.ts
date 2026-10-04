@@ -6,9 +6,9 @@
 // guard wiring.
 //
 // The map is mnemonic and collision-free across the shell's nav ids:
-//   p panel · f flujo · a alertas · r reglas · c cadenas
-//   s supresiones · k respuesta (the view's own action: kill)
-//   n analista
+//   p panel · f flujo · a alertas · i incidentes · e equipos
+//   r reglas · c cadenas · s supresiones · t probador (test)
+//   k respuesta (the view's own action: kill) · n analista
 // The help sheet (?) lists this map through shortcutRows(): keys come
 // from HERE, labels/groups from the shell's NAV — neither side can
 // drift from the resolver.
@@ -25,9 +25,12 @@ const KEY_TO_VIEW: Record<string, ConsoleView> = {
   p: 'panel',
   f: 'flujo',
   a: 'alertas',
+  i: 'incidentes',
+  e: 'equipos',
   r: 'reglas',
   c: 'cadenas',
   s: 'supresiones',
+  t: 'probador',
   k: 'respuesta',
   n: 'analista',
 }

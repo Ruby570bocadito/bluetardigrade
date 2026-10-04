@@ -246,6 +246,61 @@ describe('engine proxy boundary', () => {
     expect(captured).toHaveLength(0)
   })
 
+  test('the write allowlist forwards each console write with its own method', async () => {
+    const { POST, PATCH, DELETE } = await loadRoute()
+    const base = 'http://127.0.0.1:3000/api/engine'
+    const calls: [typeof POST, string, string][] = [
+      [POST, 'POST', '/api/incidents'],
+      [PATCH, 'PATCH', '/api/incidents/0123456789abcdef'],
+      [POST, 'POST', '/api/incidents/0123456789abcdef/alerts'],
+      [POST, 'POST', '/api/incidents/0123456789abcdef/notes'],
+      [POST, 'POST', '/api/rules/test'],
+      [POST, 'POST', '/api/suppressions'],
+      [DELETE, 'DELETE', '/api/suppressions?rule_id=r&host=lab'],
+    ]
+    for (const [handler, method, path] of calls) {
+      const res = await handler(new Request(base + path, {
+        method,
+        headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:3000' },
+        body: method === 'DELETE' ? undefined : JSON.stringify({ title: 'x' }),
+      }))
+      expect(res.status).toBe(200)
+    }
+    expect(captured.map((c) => `${c.init.method} ${new URL(c.url).pathname}`)).toEqual(
+      calls.map(([, method, path]) => `${method} ${path.split('?')[0]}`),
+    )
+    expect(captured[6].url).toContain('?rule_id=r&host=lab')
+  })
+
+  test('the operator credential is forwarded on the kill route only', async () => {
+    const { POST } = await loadRoute()
+    const headers = { 'content-type': 'application/json', 'x-sf-operator-token': 'operator-secret' }
+    await POST(new Request('http://127.0.0.1:3000/api/engine/api/respond/kill', { method: 'POST', headers, body: '{}' }))
+    await POST(new Request('http://127.0.0.1:3000/api/engine/api/incidents', { method: 'POST', headers, body: '{}' }))
+    const sent: (string | undefined)[] = captured.map((c) => (c.init.headers as Record<string, string | undefined>)['x-sf-operator-token'])
+    expect(sent).toEqual(['operator-secret', undefined])
+  })
+
+  test('PATCH outside incidents, unknown ids and oversized incident bodies are refused', async () => {
+    const { PATCH, POST, DELETE } = await loadRoute()
+    const base = 'http://127.0.0.1:3000/api/engine'
+    expect((await PATCH(new Request(base + '/api/rules', { method: 'PATCH', body: '{}' }))).status).toBe(405)
+    expect((await PATCH(new Request(base + '/api/incidents/NOT-AN-ID', { method: 'PATCH', body: '{}' }))).status).toBe(405)
+    expect((await DELETE(new Request(base + '/api/incidents/0123456789abcdef', { method: 'DELETE' }))).status).toBe(405)
+    const big = await POST(new Request(base + '/api/incidents', { method: 'POST', body: 'x'.repeat(33 * 1024) }))
+    expect(big.status).toBe(413)
+    expect(captured).toHaveLength(0)
+  })
+
+  test('cross-site PATCH and DELETE are refused like POST', async () => {
+    const { PATCH, DELETE } = await loadRoute()
+    const base = 'http://127.0.0.1:3000/api/engine'
+    const cross = { 'sec-fetch-site': 'cross-site' }
+    expect((await PATCH(new Request(base + '/api/incidents/0123456789abcdef', { method: 'PATCH', headers: cross, body: '{}' }))).status).toBe(403)
+    expect((await DELETE(new Request(base + '/api/suppressions?rule_id=r', { method: 'DELETE', headers: cross }))).status).toBe(403)
+    expect(captured).toHaveLength(0)
+  })
+
   test('the read-only contract is untouched: non-triage POST answers 405', async () => {
     const { POST } = await loadRoute()
     const res = await POST(

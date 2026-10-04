@@ -22,6 +22,8 @@ import {
   writeAuditKindToSearch,
   writeFeedToSearch,
   writeFilterToSearch,
+  writeHostToSearch,
+  writeIncidentToSearch,
   writeRulesToSearch,
   writeViewToSearch,
   type LensState,
@@ -222,6 +224,8 @@ describe('readLensState — per-lens keys never contaminate each other', () => {
       fq: 'mimikatz',
       rq: 'lateral',
       regla: 'R-042',
+      host: '',
+      incidente: '',
     })
   })
 })
@@ -276,9 +280,11 @@ describe('writeRulesToSearch', () => {
 describe('round-trip write → read (lenses)', () => {
   test('every written lens state reads back identical', () => {
     const cases: { search: string; expect: LensState }[] = [
-      { search: writeAuditKindToSearch('', 'denied'), expect: { clase: 'denied', tipo: 'all', fq: '', rq: '', regla: '' } },
-      { search: writeFeedToSearch('', 'FileCreate', 'mimikatz'), expect: { clase: 'all', tipo: 'FileCreate', fq: 'mimikatz', rq: '', regla: '' } },
-      { search: writeRulesToSearch('', 'lateral', 'R-042'), expect: { clase: 'all', tipo: 'all', fq: '', rq: 'lateral', regla: 'R-042' } },
+      { search: writeAuditKindToSearch('', 'denied'), expect: { clase: 'denied', tipo: 'all', fq: '', rq: '', regla: '', host: '', incidente: '' } },
+      { search: writeFeedToSearch('', 'FileCreate', 'mimikatz'), expect: { clase: 'all', tipo: 'FileCreate', fq: 'mimikatz', rq: '', regla: '', host: '', incidente: '' } },
+      { search: writeRulesToSearch('', 'lateral', 'R-042'), expect: { clase: 'all', tipo: 'all', fq: '', rq: 'lateral', regla: 'R-042', host: '', incidente: '' } },
+      { search: writeHostToSearch('', 'LAB-WKS-01'), expect: { clase: 'all', tipo: 'all', fq: '', rq: '', regla: '', host: 'LAB-WKS-01', incidente: '' } },
+      { search: writeIncidentToSearch('', '0123456789abcdef'), expect: { clase: 'all', tipo: 'all', fq: '', rq: '', regla: '', host: '', incidente: '0123456789abcdef' } },
     ]
     for (const c of cases) {
       expect(readLensState(c.search)).toEqual(c.expect)

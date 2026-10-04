@@ -60,12 +60,22 @@ export const CONSOLE_VIEWS = [
   'panel',
   'flujo',
   'alertas',
+  'incidentes',
+  'equipos',
   'reglas',
   'cadenas',
   'supresiones',
+  'probador',
   'respuesta',
   'analista',
 ] as const
+
+/** Views rendered as tabs of the single Detección section. */
+export const DETECTION_VIEWS = ['reglas', 'cadenas', 'supresiones', 'probador'] as const
+export type DetectionView = (typeof DETECTION_VIEWS)[number]
+export function isDetectionView(view: ConsoleView): view is DetectionView {
+  return (DETECTION_VIEWS as readonly string[]).includes(view)
+}
 
 // Compile-time proof that the vocabulary here and the shell's
 // ConsoleView union never drift apart (both directions, exhaustive).
@@ -106,6 +116,10 @@ export type LensState = {
   fq: string
   rq: string
   regla: string
+  /** host shown by the Equipos view ('' = list) */
+  host: string
+  /** incident opened by the Incidentes view ('' = list) */
+  incidente: string
 }
 
 function isView(raw: string): raw is ConsoleView {
@@ -179,7 +193,19 @@ export function readLensState(search: string): LensState {
     fq: queryFromParam(params.get('fq')),
     rq: queryFromParam(params.get('rq')),
     regla: queryFromParam(params.get('regla')),
+    host: queryFromParam(params.get('host')),
+    incidente: /^[0-9a-f]{16}$/.test(params.get('incidente') ?? '') ? (params.get('incidente') as string) : '',
   }
+}
+
+/** Query string with the host page lens applied ('' = host list). */
+export function writeHostToSearch(search: string, host: string): string {
+  return writeKeys(search, { host: queryFromParam(host) || null })
+}
+
+/** Query string with the open incident applied ('' = incident list). */
+export function writeIncidentToSearch(search: string, id: string): string {
+  return writeKeys(search, { incidente: /^[0-9a-f]{16}$/.test(id) ? id : null })
 }
 
 // Internal: clone the current params, apply the writer's own keys and

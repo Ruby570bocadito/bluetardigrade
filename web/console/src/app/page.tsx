@@ -8,12 +8,15 @@
 import { EngineProvider } from '@/components/console/engine-provider'
 import { AnalystProvider } from '@/components/console/socket-provider'
 import { ConsoleShell } from '@/components/console/shell'
+import { IncidentsProvider } from '@/components/console/incidents-provider'
 
 export default function ConsolePage() {
   return (
     <EngineProvider>
       <AnalystProvider>
-        <ConsoleShell />
+        <IncidentsProvider>
+          <ConsoleShell />
+        </IncidentsProvider>
       </AnalystProvider>
     </EngineProvider>
   )

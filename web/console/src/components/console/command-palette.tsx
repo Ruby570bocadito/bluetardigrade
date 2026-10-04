@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useId, useRef, useState } from 'react'
-import { ArrowElbowDownLeft, ArrowClockwise, Keyboard, MagnifyingGlass, X } from '@phosphor-icons/react'
+import { ArrowClockwise, ArrowElbowDownLeft, Keyboard, MagnifyingGlass, Monitor, X } from '@phosphor-icons/react'
 import { ConsoleDialog } from './console-dialog'
 import { findConsoleCommands, type ConsoleCommand } from '@/lib/console-commands'
 
@@ -79,7 +79,7 @@ export function CommandPalette({ open, refreshing, onClose, onExecute }: {
             onClick={() => execute(command)}
             className={`flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 ${disabled(command) ? 'cursor-wait opacity-50' : selected?.id === command.id ? 'bg-blue-500/15 ring-1 ring-inset ring-blue-400/30' : 'hover:bg-white/[0.04]'}`}
           >
-            {command.kind === 'refresh' ? <ArrowClockwise size={18} aria-hidden className={refreshing ? 'animate-spin motion-reduce:animate-none' : 'text-zinc-400'} /> : command.kind === 'help' ? <Keyboard size={18} aria-hidden className="text-zinc-400" /> : <ArrowElbowDownLeft size={18} aria-hidden className="text-zinc-400" />}
+            {command.kind === 'refresh' ? <ArrowClockwise size={18} aria-hidden className={refreshing ? 'animate-spin motion-reduce:animate-none' : 'text-zinc-400'} /> : command.kind === 'help' ? <Keyboard size={18} aria-hidden className="text-zinc-400" /> : command.kind === 'noc' ? <Monitor size={18} aria-hidden className="text-zinc-400" /> : <ArrowElbowDownLeft size={18} aria-hidden className="text-zinc-400" />}
             <span className="min-w-0 flex-1">
               <span className="block text-sm text-zinc-100">{command.label}</span>
               <span className="block text-xs text-zinc-400">{disabled(command) ? 'Actualización en curso' : command.description}</span>

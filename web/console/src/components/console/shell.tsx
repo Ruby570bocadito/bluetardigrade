@@ -6,9 +6,9 @@ import { describeTelemetrySources } from '@/lib/telemetry-source'
 // on mobile (explicit collapse). The topbar carries the only status dot
 // of the chrome: it reflects the real engine connection state.
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { ActivityIcon, Broadcast, Gauge, Lightning, Prohibit, ShieldCheck, SquaresFour, Warning, ChatsCircle, FlowArrow, Keyboard, MagnifyingGlass } from '@phosphor-icons/react'
+import { ActivityIcon, Broadcast, Desktop, Flask, FolderOpen, Gauge, Lightning, Prohibit, ShieldCheck, SquaresFour, Warning, ChatsCircle, FlowArrow, Keyboard, MagnifyingGlass, Monitor } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { BlurText } from '@/components/reactbits/blur-text'
 import { ShinyText } from '@/components/reactbits/shiny-text'
@@ -18,16 +18,19 @@ import { BrandMark } from './brand-mark'
 import { Dashboard, type ConsoleView, type HuntLens } from './dashboard'
 import { LiveFeed } from './live-feed'
 import { AlertsView } from './alerts-view'
-import { RulesView } from './rules-view'
-import { SuppressionsView } from './suppressions-view'
+import { DetectionHub } from './detection-hub'
+import { IncidentsView } from './incidents-view'
+import { HostsView } from './hosts-view'
+import { useIncidents } from './incidents-provider'
 import { RespondView } from './respond-view'
-import { SequencesView } from './sequences-view'
 import { AnalystPanel } from './analyst-panel'
 import { ShortcutsHelp, type ShortcutHelpRow } from './shortcuts-help'
 import { CommandPalette } from './command-palette'
+import { NotifyMenu } from './critical-notifier'
+import { NocMode } from './noc-mode'
 import { CONSOLE_DESTINATIONS, type ConsoleCommand } from '@/lib/console-commands'
 import { formatUptime, type EngineStats, type SfAlert } from '@/lib/console-types'
-import { currentSearch, pushOperatorState, readOperatorState, writeAlertLens, writeViewToSearch } from '@/lib/url-state'
+import { currentSearch, isDetectionView, pushOperatorState, readOperatorState, writeAlertLens, writeHostToSearch, writeIncidentToSearch, writeRulesToSearch, writeViewToSearch } from '@/lib/url-state'
 import {
   SHORTCUT_ARM_MS,
   SHORTCUT_PREFIX,
@@ -43,10 +46,18 @@ import { useAnalystChannel } from './socket-provider'
 import { writeTriageDestination, type TriageTarget } from '@/lib/operations'
 
 const NAV_ICONS: Record<ConsoleView, React.ElementType> = {
-  panel: SquaresFour, flujo: ActivityIcon, alertas: Warning, reglas: ShieldCheck,
-  cadenas: FlowArrow, supresiones: Prohibit, respuesta: Lightning, analista: ChatsCircle,
+  panel: SquaresFour, flujo: ActivityIcon, alertas: Warning, incidentes: FolderOpen, equipos: Desktop,
+  reglas: ShieldCheck, cadenas: FlowArrow, supresiones: Prohibit, probador: Flask,
+  respuesta: Lightning, analista: ChatsCircle,
 }
 const NAV = CONSOLE_DESTINATIONS.map((item) => ({ ...item, icon: NAV_ICONS[item.id] }))
+
+// Sidebar and mobile nav: the detection tabs collapse into one
+// "Detección" entry (the palette and the help sheet keep every view).
+const SIDEBAR = NAV.filter((item) => !isDetectionView(item.id) || item.id === 'reglas').map((item) =>
+  item.id === 'reglas' ? { ...item, label: 'Detección' } : item,
+)
+const isCurrent = (id: ConsoleView, view: ConsoleView) => (id === 'reglas' ? isDetectionView(view) : id === view)
 
 // Help sheet rows: the resolver's map (keys, ordered) zipped with the
 // NAV labels/groups — both single sources of truth; flatMap drops a row
@@ -58,15 +69,21 @@ const HELP_ROWS: ShortcutHelpRow[] = shortcutRows().flatMap((row) => {
 })
 
 export function ConsoleShell() {
-  const { status, stats, alerts, events, suppressions, sequences, endpoint, refresh, refreshing } = useEngine()
+  const { status, stats, alerts, events, suppressions, sequences, rules, endpoint, refresh, refreshing } = useEngine()
   const { status: analystStatus } = useAnalystChannel()
+  const { incidents } = useIncidents()
+  const openIncidents = incidents.filter((i) => i.status !== 'closed').length
   const [view, setViewState] = useState<ConsoleView>('panel')
   const [helpOpen, setHelpOpen] = useState(false)
+  const [nocOpen, setNocOpen] = useState(false)
+  const closeNoc = useCallback(() => setNocOpen(false), [])
   const [paletteOpen, setPaletteOpen] = useState(false)
   const helpOpenRef = useRef(false)
   const paletteOpenRef = useRef(false)
   helpOpenRef.current = helpOpen
   paletteOpenRef.current = paletteOpen
+  const nocOpenRef = useRef(false)
+  nocOpenRef.current = nocOpen
 
   // Operator state in the URL (url-state.ts): the active view survives a
   // refresh, back/forward navigate between views and deep links open the
@@ -97,6 +114,15 @@ export function ConsoleShell() {
     setViewState('alertas')
     requestAnimationFrame(() => document.getElementById('console-main')?.focus({ preventScroll: true }))
   }
+  const jump = (mutate: (search: string) => string, next: ConsoleView) => {
+    pushOperatorState((search) => writeViewToSearch(mutate(search), next))
+    setViewState(next)
+    requestAnimationFrame(() => document.getElementById('console-main')?.focus({ preventScroll: true }))
+  }
+  const openHost = (host: string) => jump((search) => writeHostToSearch(search, host), 'equipos')
+  const openIncident = (id: string) => jump((search) => writeIncidentToSearch(search, id), 'incidentes')
+  const openAlert = (id: string) => jump((search) => writeAlertLens(search, 'all', '', 'all', 'live', id), 'alertas')
+  const openRule = (id: string) => jump((search) => writeRulesToSearch(search, '', id), 'reglas')
   const hintTitle = (id: ConsoleView): string | undefined => {
     const hint = shortcutHintFor(id)
     return hint ? `Atajo: ${hint}` : undefined
@@ -121,7 +147,8 @@ export function ConsoleShell() {
     const onKey = (e: KeyboardEvent) => {
       const wasArmed = armedRef.current
       clearPrefix()
-      if (e.defaultPrevented || e.repeat || e.isComposing) return
+      // NOC mode owns the keyboard while it is open.
+      if (e.defaultPrevented || e.repeat || e.isComposing || nocOpenRef.current) return
       if (isPaletteToggleKey(e)) {
         if (paletteOpenRef.current || helpOpenRef.current || (!isTypingTarget(e.target) && !isKeyboardScope(e.target))) {
           e.preventDefault()
@@ -167,6 +194,7 @@ export function ConsoleShell() {
     setPaletteOpen(false)
     if (command.kind === 'help') setHelpOpen(true)
     else if (command.kind === 'refresh') refresh()
+    else if (command.kind === 'noc') setNocOpen(true)
     else {
       setView(command.view)
       requestAnimationFrame(() => document.getElementById('console-main')?.focus({ preventScroll: true }))
@@ -201,11 +229,11 @@ export function ConsoleShell() {
           <BrandBlock live={status === 'live'} />
           <nav aria-label="Secciones de la consola" className="mt-2 flex-1 overflow-y-auto px-3">
             <ul className="space-y-0.5">
-              {NAV.map((item, idx) => {
-                const current = view === item.id
+              {SIDEBAR.map((item, idx) => {
+                const current = isCurrent(item.id, view)
                 return (
                   <li key={item.id}>
-                    {(idx === 0 || NAV[idx - 1].group !== item.group) && (
+                    {(idx === 0 || SIDEBAR[idx - 1].group !== item.group) && (
                       <p className="kicker px-3 pb-1.5 pt-4 text-[10px] text-zinc-600">{item.group}</p>
                     )}
                     <button
@@ -241,6 +269,14 @@ export function ConsoleShell() {
                         >
                           {openAlerts.length}
                         </span>
+                      )}
+                      {item.id === 'incidentes' && openIncidents > 0 && (
+                        <span title={`${openIncidents} incidentes sin cerrar`} className="relative ml-auto rounded-md bg-amber-400/15 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-amber-200">
+                          {openIncidents}
+                        </span>
+                      )}
+                      {item.id === 'reglas' && rules.length > 0 && (
+                        <span className="relative ml-auto text-[11px] tabular-nums text-zinc-500">{rules.length}</span>
                       )}
                       {item.id === 'analista' && analystStatus !== 'live' && (
                         <span aria-hidden className="relative ml-auto h-1.5 w-1.5 rounded-full bg-zinc-600" title="servicio de analista sin conexión" />
@@ -333,6 +369,16 @@ export function ConsoleShell() {
                   </span>
                   {telemetry.hasDemo && <span className="rounded bg-amber-400/10 px-1 text-[11px] text-amber-300" aria-label="La ventana recibida contiene datos de demostración">demo</span>}
                 </div>
+                <NotifyMenu />
+                <button
+                  type="button"
+                  onClick={() => setNocOpen(true)}
+                  aria-label="Abrir modo NOC"
+                  title="Modo NOC: pantalla completa rotativa para un monitor de sala"
+                  className="chip shrink-0 px-2 py-1.5 text-zinc-400 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Monitor size={15} aria-hidden />
+                </button>
                 <WebhookChip stats={stats} />
                 <CorrelatorChip stats={stats} />
                 <BeaconChip stats={stats} />
@@ -344,18 +390,18 @@ export function ConsoleShell() {
 
           {/* Mobile nav: explicit collapse of the sidebar */}
           <nav aria-label="Secciones de la consola" className="flex gap-1 overflow-x-auto border-b border-white/[0.06] px-3 py-2 lg:hidden">
-            {NAV.map((item) => (
+            {SIDEBAR.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => setView(item.id)}
-                aria-current={view === item.id ? 'page' : undefined}
+                aria-current={isCurrent(item.id, view) ? 'page' : undefined}
                 title={hintTitle(item.id)}
                 className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  view === item.id ? 'border-blue-400/30 bg-blue-500/[0.14] text-zinc-100' : 'border-transparent text-zinc-400'
+                  isCurrent(item.id, view) ? 'border-blue-400/30 bg-blue-500/[0.14] text-zinc-100' : 'border-transparent text-zinc-400'
                 }`}
               >
-                <item.icon size={14} aria-hidden className={view === item.id ? 'text-blue-400' : ''} />
+                <item.icon size={14} aria-hidden className={isCurrent(item.id, view) ? 'text-blue-400' : ''} />
                 {item.label}
               </button>
             ))}
@@ -364,12 +410,12 @@ export function ConsoleShell() {
           <main id="console-main" tabIndex={-1} className="flex-1 px-4 py-5 outline-none lg:px-8 lg:py-6">
             <div className="mx-auto w-full max-w-[1560px]">
               <AnimatedView viewKey={view}>
-                {view === 'panel' && <Dashboard onAnalyze={openInAnalyst} onNavigate={setView} onTriage={openTriage} onHunt={openHunt} />}
+                {view === 'panel' && <Dashboard onAnalyze={openInAnalyst} onNavigate={setView} onTriage={openTriage} onHunt={openHunt} onHost={openHost} />}
                 {view === 'flujo' && <LiveFeed />}
-                {view === 'alertas' && <AlertsView onAnalyze={openInAnalyst} />}
-                {view === 'reglas' && <RulesView />}
-                {view === 'cadenas' && <SequencesView />}
-                {view === 'supresiones' && <SuppressionsView />}
+                {view === 'alertas' && <AlertsView onAnalyze={openInAnalyst} onHost={openHost} onOpenIncident={openIncident} />}
+                {view === 'incidentes' && <IncidentsView onHost={openHost} onOpenAlert={openAlert} />}
+                {view === 'equipos' && <HostsView onHunt={(q) => openHunt({ q })} onOpenAlert={openAlert} onOpenIncident={openIncident} />}
+                {isDetectionView(view) && <DetectionHub tab={view} onTab={setView} onOpenRule={openRule} />}
                 {view === 'respuesta' && <RespondView />}
                 {view === 'analista' && (
                   <AnalystPanel pendingAlert={pendingAlert} clearPending={() => setPendingAlert(null)} />
@@ -389,6 +435,7 @@ export function ConsoleShell() {
       </div>
       <ShortcutsHelp open={helpOpen} rows={HELP_ROWS} onClose={() => setHelpOpen(false)} />
       {paletteOpen && <CommandPalette open refreshing={refreshing} onClose={() => setPaletteOpen(false)} onExecute={executeCommand} />}
+      {nocOpen && <NocMode onClose={closeNoc} />}
     </div>
   )
 }
@@ -418,6 +465,12 @@ function titleFor(view: ConsoleView): string {
       return 'Flujo en vivo'
     case 'alertas':
       return 'Cola de alertas'
+    case 'incidentes':
+      return 'Incidentes'
+    case 'equipos':
+      return 'Equipos'
+    case 'probador':
+      return 'Probador de reglas'
     case 'reglas':
       return 'Reglas de detección'
     case 'cadenas':

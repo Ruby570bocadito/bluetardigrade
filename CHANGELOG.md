@@ -12,6 +12,46 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Console: incidents, hosts, alert actions and NOC mode (2026-10-04)
+
+- **Detección:** one section with tabs for Reglas, Cadenas, Supresiones
+  and Probador. The old view ids and deep links keep working.
+- **Probador:** paste an event (or pick an example) and see which live
+  rules match and on which fields, with no alert and nothing stored.
+- **Incidentes:** case list and detail.
+  - Status, severity, owner and summary.
+  - Affected hosts and the alerts of the case.
+  - An incident graph and a timeline with notes.
+- **Equipos:** one page per host, opening the riskiest one by default.
+  - Risk and stat tiles.
+  - Live process tree, entity graph and timeline.
+  - Network destinations, and an "open incident with its alerts" action.
+- **Alertas:**
+  - Checkbox selection with select-all.
+  - An action bar for the selection:
+    - acknowledge, close or reopen with one note;
+    - add to a new or existing incident;
+    - suppress each rule on its host (reason and expiry required);
+    - export JSONL or CSV;
+    - send the most severe alert to the analyst.
+  - Quick actions in the detail:
+    - open the host page;
+    - add to an incident;
+    - suppress on this host;
+    - contain the process (operator name and credential; the engine
+      verifies and audits it);
+    - on-demand IP reputation when a provider key is set.
+- **Critical alert notifications:** a bell in the header turns on browser
+  notifications and an optional tone for new open critical alerts.
+  - Off by default and stored per browser.
+  - The backlog is never replayed on open or on reconnect.
+- **Modo NOC:** full-screen rotation for a wall monitor.
+  - Three screens: situation, investigation graph, and coverage and hosts.
+  - Arrows switch, Space pauses, Escape or leaving full screen exits.
+  - Shell shortcuts are paused while it is open.
+- The command palette ranks matches in a command's name first ("noc"
+  finds Modo NOC before a description that contains the word).
+
 ### Windows launcher: token, writes and history (2026-10-04)
 
 - `sf-console` and `sf-sensor` now start the engine with a bearer token

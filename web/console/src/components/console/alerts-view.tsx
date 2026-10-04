@@ -63,13 +63,16 @@ import {
   type SfAlert,
   type SfAlertStatus,
 } from '@/lib/console-types'
+import { AlertActionBar, AlertQuickActions, useAlertSelection } from './alert-actions'
 
 type Props = {
   compact?: boolean
   onAnalyze?: (alert: SfAlert) => void
+  onHost?: (host: string) => void
+  onOpenIncident?: (id: string) => void
 }
 
-export function AlertsView({ compact = false, onAnalyze }: Props) {
+export function AlertsView({ compact = false, onAnalyze, onHost, onOpenIncident }: Props) {
   const { alerts, status, lifecycleUpdates } = useEngine()
   const reduce = useReducedMotion()
   const [sevFilter, setSevFilterState] = useState<SeverityFilter>('all')
@@ -241,6 +244,10 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
     return compact ? list.slice(0, 6) : list
   }, [alerts, displayedAlerts, sevFilter, stateFilter, query, compact, historyMode])
 
+  // Multi-select (full mode): the picked set is pruned to what is on
+  // screen, so a lens change never acts on rows the analyst cannot see.
+  const selection = useAlertSelection(useMemo(() => visible.map(alertKey), [visible]))
+  const pickedAlerts = visible.filter((a) => selection.picked.has(alertKey(a)))
   const filtering = sevFilter !== 'all' || stateFilter !== 'all' || query.trim() !== ''
   // With the detail panel open the queue loses ~400px: the host column
   // steps aside so the alert name keeps room.
@@ -360,7 +367,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
                   </button>
                   {open && (
                     <div className="border-t border-zinc-800/80 bg-zinc-900/60 px-4 py-3.5">
-                      <AlertDetailBody alert={al} onAnalyze={onAnalyze} />
+                      <AlertDetailBody alert={al} onAnalyze={onAnalyze} onHost={onHost} onOpenIncident={onOpenIncident} />
                     </div>
                   )}
                 </li>
@@ -450,6 +457,10 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
           />
         </div>
       ) : (
+        <>
+        {pickedAlerts.length > 0 && (
+          <AlertActionBar alerts={pickedAlerts} onClear={selection.clear} onAnalyze={onAnalyze} onOpenIncident={onOpenIncident} />
+        )}
         <div className={selected ? 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_400px]' : ''}>
           <div className="panel min-w-0 overflow-hidden">
             <div className="max-h-[68vh] overflow-y-auto">
@@ -459,7 +470,17 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
                 </caption>
                 <thead className="sticky top-0 z-10">
                   <tr className="bg-zinc-900">
-                    <th scope="col" className="w-[124px] border-b border-zinc-800 py-2 pl-4 pr-3 text-[11px] font-medium uppercase tracking-wider text-zinc-500 sm:w-[136px]">Sev</th>
+                    <th scope="col" className="w-10 border-b border-zinc-800 py-2 pl-4">
+                      <input
+                        type="checkbox"
+                        checked={selection.allPicked}
+                        ref={(el) => { if (el) el.indeterminate = pickedAlerts.length > 0 && !selection.allPicked }}
+                        onChange={selection.toggleAll}
+                        aria-label="Seleccionar todas las alertas visibles"
+                        className="h-3.5 w-3.5 accent-blue-500"
+                      />
+                    </th>
+                    <th scope="col" className="w-[124px] border-b border-zinc-800 py-2 pl-2 pr-3 text-[11px] font-medium uppercase tracking-wider text-zinc-500 sm:w-[136px]">Sev</th>
                     <th scope="col" className="border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Alerta</th>
                     <th scope="col" className={`hidden w-[180px] border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500 ${hostColumn}`}>Equipo / Usuario</th>
                     <th scope="col" className="hidden w-[104px] border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500 md:table-cell">Técnica</th>
@@ -471,6 +492,7 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
                   {visible.map((al) => {
                     const key = alertKey(al)
                     const isSelected = selectedKey === key
+                    const picked = selection.picked.has(key)
                     const mitre = (al.tags ?? []).find((t) => t.startsWith('attack.t'))
                     return (
                       <tr
@@ -478,10 +500,19 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
                         aria-selected={isSelected}
                         onClick={() => selectAlert(isSelected ? null : key)}
                         className={`group cursor-pointer align-middle transition-colors focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring ${
-                          isSelected ? 'bg-zinc-800/60' : 'hover:bg-zinc-800/40'
+                          isSelected ? 'bg-zinc-800/60' : picked ? 'bg-blue-500/[0.06]' : 'hover:bg-zinc-800/40'
                         }`}
                       >
-                        <td className="py-2.5 pl-4 pr-3 align-middle">
+                        <td className="py-2.5 pl-4 align-middle" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={picked}
+                            onChange={() => selection.toggle(key)}
+                            aria-label={`Seleccionar ${al.rule_name} (${formatTime(al.timestamp)})`}
+                            className="h-3.5 w-3.5 accent-blue-500"
+                          />
+                        </td>
+                        <td className="py-2.5 pl-2 pr-3 align-middle">
                           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                             <span aria-hidden className={`h-4 w-[3px] rounded-full ${SEVERITY_STYLE[al.severity]?.bar ?? 'bg-sky-400'}`} />
                             <SeverityBadge severity={al.severity} />
@@ -545,10 +576,11 @@ export function AlertsView({ compact = false, onAnalyze }: Props) {
               aria-label="Detalle de la alerta seleccionada"
               className="panel min-w-0"
             >
-              <AlertDetail alert={selected} onClose={() => selectAlert(null)} onAnalyze={onAnalyze} />
+              <AlertDetail alert={selected} onClose={() => selectAlert(null)} onAnalyze={onAnalyze} onHost={onHost} onOpenIncident={onOpenIncident} />
             </motion.aside>
           )}
         </div>
+        </>
       )}
       <LiveAnnouncer message={announcement} />
     </section>
@@ -598,10 +630,14 @@ function AlertDetail({
   alert,
   onClose,
   onAnalyze,
+  onHost,
+  onOpenIncident,
 }: {
   alert: SfAlert
   onClose: () => void
   onAnalyze?: (alert: SfAlert) => void
+  onHost?: (host: string) => void
+  onOpenIncident?: (id: string) => void
 }) {
   return (
     <div className="flex h-full flex-col">
@@ -623,14 +659,14 @@ function AlertDetail({
         </button>
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-3.5">
-        <AlertDetailBody alert={alert} onAnalyze={onAnalyze} />
+        <AlertDetailBody alert={alert} onAnalyze={onAnalyze} onHost={onHost} onOpenIncident={onOpenIncident} />
       </div>
     </div>
   )
 }
 
 /** Every field the engine attached to the alert, shared by both modes. */
-export function AlertDetailBody({ alert, onAnalyze }: { alert: SfAlert; onAnalyze?: (alert: SfAlert) => void }) {
+export function AlertDetailBody({ alert, onAnalyze, onHost, onOpenIncident }: { alert: SfAlert; onAnalyze?: (alert: SfAlert) => void; onHost?: (host: string) => void; onOpenIncident?: (id: string) => void }) {
   const attackTags = (alert.tags ?? []).filter((t) => t.startsWith('attack.'))
   const otherTags = (alert.tags ?? []).filter((t) => !t.startsWith('attack.'))
   const enrichmentEntries = Object.entries(alert.enrichment ?? {})
@@ -719,6 +755,7 @@ export function AlertDetailBody({ alert, onAnalyze }: { alert: SfAlert; onAnalyz
       )}
 
       <TriagePanel alert={alert} />
+      <AlertQuickActions alert={alert} onHost={onHost} onOpenIncident={onOpenIncident} />
       <ForensicPanel alertId={alert.id} />
       <ReportPanel alert={alert} />
     </div>

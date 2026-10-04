@@ -486,3 +486,16 @@
   background: rgba(96, 165, 250, 0.28);
   color: #e7eaed;
 }
+
+/* NOC mode: progress of the current slide (static under reduced motion). */
+.noc-progress {
+  width: 0;
+  animation: noc-progress linear forwards;
+}
+@keyframes noc-progress {
+  from { width: 0; }
+  to { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .noc-progress { animation: none; width: 100%; opacity: 0.4; }
+}

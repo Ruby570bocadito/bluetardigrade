@@ -241,16 +241,22 @@ same-origin proxy, so the API token never reaches the browser.
 |---|---|
 | **Panel** | Triage backlog, KPIs, activity and severity trends, an investigation graph (hosts, users, processes, detections, destinations), MITRE coverage and a host x tactic heatmap |
 | **Flujo en vivo** | Live telemetry with pause, search, type filters and JSONL/CSV export |
-| **Alertas** | Live queue or paged history. Severity/lifecycle filters, per-alert entity graph, forensic bundle with process tree, triage, reports |
-| **Reglas** / **Cadenas** | Rule conditions with ATT&CK coverage; kill chains drawn as flows with per-step alerts and completed campaigns |
-| **Supresiones** | Host-scoped allowlist with reason and expiry |
+| **Alertas** | Live queue or paged history with severity/lifecycle filters. Select several alerts to triage them together, add them to an incident, suppress the rule on that host or export them. The detail adds a per-alert graph, the forensic bundle with its process tree, reputation lookups, containment and reports |
+| **Incidentes** | Cases that group alerts: status, severity, owner, summary, affected hosts, an incident graph and a timeline of every change and note |
+| **Equipos** | One page per host: risk, live process tree, entity graph, timeline and network destinations |
+| **Detección** | Rules with ATT&CK coverage, kill chains drawn as flows with per-step alerts, suppressions, and a rule tester that dry-runs an event against the live rules |
 | **Respuesta activa** | Arming state and the forensic response audit |
 | **Analista IA** | Optional triage assistant with your own model |
+
+For a wall monitor, **Modo NOC** (header button or command palette)
+rotates the situation, the investigation graph and the coverage
+full screen. The bell in the header enables browser notifications and
+an optional sound for new critical alerts.
 
 Navigation and keyboard support:
 
 - **Command palette:** `Ctrl+K` / `⌘K`.
-- **Go to a view:** `g` followed by `p` `f` `a` `r` `c` `s` `k` `n`.
+- **Go to a view:** `g` followed by `p` `f` `a` `i` `e` `r` `c` `s` `t` `k` `n`.
 - **Deep links** such as `/?view=alertas&historial=1&sev=critical&q=lsass`
   survive a refresh.
 - Full **`prefers-reduced-motion`** support.

@@ -5,11 +5,12 @@
 // exactly as the engine serves them.
 //
 // Surface policy: everything the engine serves as GET is forwarded as
-// is. The ONE write path (r6 alert triage,
-// POST /api/alerts/{id}/status) is forwarded too — it is how the
-// console's reconocer/cerrar/reabrir actions reach the engine. Every
-// other write method stays rejected: configuration, rules and
-// suppressions remain flag/YAML-driven, never writable through here.
+// is. Writes go through a closed allowlist (WRITES below): alert triage,
+// incidents, the rule tester dry run, suppressions (the engine refuses
+// them unless started with -api-write) and kill_process (armed only by
+// -allow-kill, and it still demands the operator's own credential, the
+// one header forwarded on that path alone). Any other method or path is
+// rejected here, before the engine sees it.
 //
 // Boundary posture (mirrors the engine's own: loopback friction-free,
 // beyond loopback loud): this route is the one listener that bridges a
@@ -49,8 +50,24 @@ const ENGINE_URL = process.env.ENGINE_API_URL || 'http://127.0.0.1:7778'
 
 const PASS_HEADERS = ['content-type', 'content-disposition', 'cache-control']
 
-// The triage endpoint is the only POST the proxy forwards.
-const TRIAGE_RE = /^\/api\/alerts\/[0-9a-f]{16}\/status$/
+// Writes the console performs: method, path and body cap. The caps
+// mirror the engine's own limits so oversized bodies stop here.
+type WriteRoute = { method: string; path: RegExp; limit: number; operatorToken?: boolean }
+const KIB = 1024
+const WRITES: WriteRoute[] = [
+  { method: 'POST', path: /^\/api\/alerts\/[0-9a-f]{16}\/status$/, limit: 8 * KIB },
+  { method: 'POST', path: /^\/api\/incidents$/, limit: 32 * KIB },
+  { method: 'PATCH', path: /^\/api\/incidents\/[0-9a-f]{16}$/, limit: 32 * KIB },
+  { method: 'POST', path: /^\/api\/incidents\/[0-9a-f]{16}\/(alerts|notes)$/, limit: 32 * KIB },
+  { method: 'POST', path: /^\/api\/rules\/test$/, limit: 32 * KIB },
+  { method: 'POST', path: /^\/api\/suppressions$/, limit: 8 * KIB },
+  { method: 'DELETE', path: /^\/api\/suppressions$/, limit: 0 },
+  { method: 'POST', path: /^\/api\/respond\/kill$/, limit: 8 * KIB, operatorToken: true },
+]
+
+function writeRoute(method: string, path: string): WriteRoute | undefined {
+  return WRITES.find((route) => route.method === method && route.path.test(path))
+}
 
 // Loopback hostnames served by default; everything else must be
 // allowlisted explicitly via CONSOLE_ALLOWED_HOSTS.
@@ -125,7 +142,7 @@ function engineTarget(request: Request): string {
   return `${ENGINE_URL}${path}${search}`
 }
 
-async function forward(request: Request, body?: string): Promise<Response> {
+async function forward(request: Request, body?: string, operatorToken = false): Promise<Response> {
   // Bearer pass-through (SF_API_TOKEN, the same env var the engine and
   // the console-service bridge honor): without it a token-protected
   // engine (-api-token) would leave this console stuck in 401s, and the
@@ -134,10 +151,13 @@ async function forward(request: Request, body?: string): Promise<Response> {
   const headers: Record<string, string> = {
     accept: request.headers.get('accept') ?? '*/*',
   }
-  // the triage POST carries a JSON body; the engine caps it at 8 KiB
-  if (request.method === 'POST' && request.headers.get('content-type')) {
+  // write bodies are JSON; the engine caps each route itself too
+  if (request.method !== 'GET' && request.headers.get('content-type')) {
     headers['content-type'] = request.headers.get('content-type') as string
   }
+  // the operator's own credential travels on the kill route only
+  const operator = request.headers.get('x-sf-operator-token')
+  if (operatorToken && operator) headers['x-sf-operator-token'] = operator
   if (token) headers.authorization = `Bearer ${token}`
   let upstream: Response
   try {
@@ -170,10 +190,9 @@ async function forward(request: Request, body?: string): Promise<Response> {
   return new Response(upstream.body, { status: upstream.status, headers: outHeaders })
 }
 
-// Match the engine's 8 KiB triage cap before buffering or forwarding.
-// Count bytes, not characters, and cancel oversized streamed bodies.
-async function triageBody(request: Request): Promise<string | Response> {
-  const limit = 8 * 1024
+// Match the engine's body caps before buffering or forwarding. Count
+// bytes, not characters, and cancel oversized streamed bodies.
+async function writeBody(request: Request, limit: number): Promise<string | Response> {
   const tooLarge = () => Response.json({ error: 'body_too_large' }, { status: 413 })
   if (Number(request.headers.get('content-length')) > limit) return tooLarge()
   if (!request.body) return ''
@@ -221,11 +240,11 @@ async function refused(request: Request): Promise<Response | null> {
       'La consola solo responde en loopback (localhost/127.0.0.1/::1). Para otro host añádelo a CONSOLE_ALLOWED_HOSTS y asume que quien alcance la consola alcanza la telemetría del motor.',
     )
   }
-  if (request.method === 'POST' && crossSiteContext(request)) {
+  if (request.method !== 'GET' && crossSiteContext(request)) {
     return reject(
       request,
       'cross_site_write',
-      'Escritura de triaje rechazada: contexto cross-site. Solo la propia consola (mismo origen) puede mover el estado de una alerta.',
+      'Escritura rechazada: contexto cross-site. Solo la propia consola (mismo origen) puede escribir en el motor.',
     )
   }
   return null
@@ -237,21 +256,35 @@ export async function GET(request: Request): Promise<Response> {
   return forward(request)
 }
 
-export async function POST(request: Request): Promise<Response> {
+async function write(request: Request): Promise<Response> {
   const guard = await refused(request)
   if (guard) return guard
   const { pathname } = new URL(request.url)
   const path = pathname.replace(/^\/api\/engine/, '') || '/'
-  if (!TRIAGE_RE.test(path)) {
+  const route = writeRoute(request.method, path)
+  if (!route) {
     return Response.json(
       {
         error: 'read_only',
-        hint: 'La API del motor solo acepta escrituras de triaje en POST /api/alerts/{id}/status.',
+        hint: 'La consola solo reenvía al motor el triaje, los incidentes, el probador de reglas, las supresiones y la respuesta activa.',
       },
       { status: 405 },
     )
   }
-  const body = await triageBody(request)
+  if (route.limit === 0) return forward(request, undefined, route.operatorToken)
+  const body = await writeBody(request, route.limit)
   if (body instanceof Response) return body
-  return forward(request, body)
+  return forward(request, body, route.operatorToken)
+}
+
+export async function POST(request: Request): Promise<Response> {
+  return write(request)
+}
+
+export async function PATCH(request: Request): Promise<Response> {
+  return write(request)
+}
+
+export async function DELETE(request: Request): Promise<Response> {
+  return write(request)
 }

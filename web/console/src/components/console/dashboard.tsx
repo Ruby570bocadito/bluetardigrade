@@ -31,7 +31,10 @@ import { eventTypeMix, formatAgo, hostTacticMatrix, SEVERITIES, SEVERITY_LABEL, 
 import type { TriageTarget } from '@/lib/operations'
 import type { SeverityFilter } from '@/lib/url-state'
 
-export type ConsoleView = 'panel' | 'flujo' | 'alertas' | 'reglas' | 'cadenas' | 'supresiones' | 'respuesta' | 'analista'
+export type ConsoleView =
+  | 'panel' | 'flujo' | 'alertas' | 'incidentes' | 'equipos'
+  | 'reglas' | 'cadenas' | 'supresiones' | 'probador'
+  | 'respuesta' | 'analista'
 export type HuntLens = { q?: string; sev?: SeverityFilter }
 
 const TIMELINE_WINDOW_MS = 60 * 60 * 1000
@@ -42,12 +45,16 @@ export function Dashboard({
   onNavigate,
   onTriage,
   onHunt,
+  onHost,
 }: {
   onAnalyze: (al: SfAlert) => void
   onNavigate: (view: ConsoleView) => void
   onTriage: (target: TriageTarget) => void
   onHunt?: (lens: HuntLens) => void
+  /** open the Equipos page of a host (falls back to the alert lens) */
+  onHost?: (host: string) => void
 }) {
+  const hostLens = onHost ?? (onHunt ? (host: string) => onHunt({ q: host }) : undefined)
   const { events, alerts, status, stats } = useEngine()
   const activity = useActivity(events, alerts)
   const down = status === 'down'
@@ -104,9 +111,9 @@ export function Dashboard({
       </AnimatedContent>
 
       <AnimatedContent order={3} className="grid gap-5 xl:grid-cols-3">
-        <InvestigationGraphPanel onHunt={onHunt} />
+        <InvestigationGraphPanel onHunt={onHunt} onHost={hostLens} />
         <div className="flex min-w-0 flex-col gap-5">
-          <HotHostsPanel onHunt={onHunt} />
+          <HotHostsPanel onHost={hostLens} />
           <TopRulesPanel alerts={alerts} down={down} onHunt={onHunt} />
         </div>
       </AnimatedContent>
@@ -121,7 +128,7 @@ export function Dashboard({
       </AnimatedContent>
 
       <AnimatedContent order={6}>
-        <HeatmapPanel onHunt={onHunt} />
+        <HeatmapPanel onHost={hostLens} />
       </AnimatedContent>
 
       <AnimatedContent order={7}>
@@ -142,7 +149,7 @@ export function Dashboard({
  * Investigation graph of the received window. Nodes open the alert queue
  * searching for that entity (a destination searches its address).
  */
-function InvestigationGraphPanel({ onHunt }: { onHunt?: (lens: HuntLens) => void }) {
+function InvestigationGraphPanel({ onHunt, onHost }: { onHunt?: (lens: HuntLens) => void; onHost?: (host: string) => void }) {
   const { alerts, events, status } = useEngine()
   const graph = useMemo(() => buildEntityGraph(alerts, events), [alerts, events])
   const degree = (id: string) => graph.edges.filter((e) => e.source === id || e.target === id).length
@@ -168,7 +175,7 @@ function InvestigationGraphPanel({ onHunt }: { onHunt?: (lens: HuntLens) => void
             graph={graph}
             height={430}
             ariaLabel={`Grafo de investigación: ${graph.nodes.length} entidades y ${graph.edges.length} relaciones`}
-            onSelect={onHunt ? (node) => onHunt({ q: node.kind === 'destination' ? node.label.replace(/:\d+$/, '') : node.label }) : undefined}
+            onSelect={onHunt ? (node) => (node.kind === 'host' && onHost ? onHost(node.label) : onHunt({ q: node.kind === 'destination' ? node.label.replace(/:\d+$/, '') : node.label })) : undefined}
           />
         </div>
       )}
@@ -177,7 +184,7 @@ function InvestigationGraphPanel({ onHunt }: { onHunt?: (lens: HuntLens) => void
 }
 
 /** Alerts per host and ATT&CK tactic. */
-function HeatmapPanel({ onHunt }: { onHunt?: (lens: HuntLens) => void }) {
+function HeatmapPanel({ onHost }: { onHost?: (host: string) => void }) {
   const { alerts, status } = useEngine()
   const matrix = useMemo(() => hostTacticMatrix(alerts), [alerts])
   return (
@@ -189,7 +196,7 @@ function HeatmapPanel({ onHunt }: { onHunt?: (lens: HuntLens) => void }) {
       {status === 'down' ? <Unavailable /> : matrix.hosts.length === 0 ? (
         <EmptyState icon={GridFour} title="Sin tácticas observadas" hint="Las alertas con etiqueta de táctica ATT&CK llenan esta matriz." />
       ) : (
-        <HostTacticHeatmap matrix={matrix} onHost={onHunt ? (host) => onHunt({ q: host }) : undefined} />
+        <HostTacticHeatmap matrix={matrix} onHost={onHost} />
       )}
     </ChartCard>
   )
@@ -287,7 +294,7 @@ function TimelinePanel({ alerts, down }: { alerts: SfAlert[]; down: boolean }) {
  * on its own (30 min half-life). Meter state against the published
  * weights (critical alert = 10 points): >= 20 critical, >= 5 elevated.
  */
-function HotHostsPanel({ onHunt }: { onHunt?: (lens: HuntLens) => void }) {
+function HotHostsPanel({ onHost }: { onHost?: (host: string) => void }) {
   const { stats } = useEngine()
   const hot = stats?.hot_hosts ?? []
   const max = hot.reduce((m, h) => Math.max(m, h.score), 0)
@@ -336,11 +343,11 @@ function HotHostsPanel({ onHunt }: { onHunt?: (lens: HuntLens) => void }) {
               <li key={h.host}>
                 {/* AnimatedItem (React Bits): entrada escalonada; keys estables por host */}
                 <AnimatedItem index={i}>
-                  {onHunt ? (
+                  {onHost ? (
                     <button
                       type="button"
-                      onClick={() => onHunt({ q: h.host })}
-                      aria-label={`Ver alertas de ${h.host}: riesgo ${lv.label}, ${h.score.toFixed(1)} puntos`}
+                      onClick={() => onHost(h.host)}
+                      aria-label={`Abrir la ficha de ${h.host}: riesgo ${lv.label}, ${h.score.toFixed(1)} puntos`}
                       className="block w-full rounded-md px-1.5 py-1.5 text-left transition-colors hover:bg-zinc-800/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {body}

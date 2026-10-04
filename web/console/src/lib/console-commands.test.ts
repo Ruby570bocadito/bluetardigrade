@@ -23,6 +23,10 @@ describe('operator command search', () => {
     expect(findConsoleCommands('kill chain').map((command) => command.id)).toEqual(['view:cadenas'])
     expect(findConsoleCommands('reglas recuperar')).toEqual([])
   })
+  test('a match in the command name ranks before a match in a description', () => {
+    expect(findConsoleCommands('noc')[0].id).toBe('noc')
+    expect(findConsoleCommands('noc').map((command) => command.id)).toContain('view:alertas')
+  })
   test('unknown commands are not interpreted as an action or route', () => {
     expect(findConsoleCommands('<script>kill all</script>')).toEqual([])
     expect(findConsoleCommands('https://unrelated.test')).toEqual([])
