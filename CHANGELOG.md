@@ -12,6 +12,22 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### First run on a real Windows host (2026-10-04)
+
+- ETW sensor, found and verified on the first real run:
+  - short-lived processes (`reg.exe`, `whoami.exe`, `conhost.exe`) had
+    no image or hash: they exit within the ~1 s ETW delivery. The image
+    now also comes from Microsoft-Windows-Kernel-Process event 1 (NT
+    path mapped to the drive letter); after the fix 19 of 19 process
+    starts carried it, and the hash of `whoami.exe` matched
+    `Get-FileHash`.
+  - every DNS query arrived with status 87 and no answer: Windows reports
+    a query first with that status and then with the result, and the
+    repeat suppression kept the first. After the fix 15 of 16 queries
+    carried their answer.
+  - Ctrl+C closes both ETW sessions cleanly; 0.1 s of CPU and 15 MB of
+    memory at idle.
+
 ### Second review round (2026-10-04)
 
 - Fixes:
