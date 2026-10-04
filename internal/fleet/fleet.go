@@ -239,11 +239,9 @@ func statusOf(r *record, now time.Time) string {
 		}
 		return StatusOnline
 	}
-	last := r.LastSeen
-	if r.graceFrom.After(last) {
-		last = r.graceFrom
-	}
-	if now.Sub(last) <= activeWindow {
+	// hosts without heartbeats never alert, so a restart needs no grace
+	// for them: their status is what their own data says
+	if now.Sub(r.LastSeen) <= activeWindow {
 		return StatusOnline
 	}
 	return StatusIdle
@@ -284,9 +282,11 @@ func (t *Tracker) TakeRetired() []string {
 	return out
 }
 
-// Restore loads persisted hosts at engine start. Each restored host gets
-// a full grace from now before it can be declared silent, and a silence
-// already reported before the restart is not reported again.
+// Restore loads persisted hosts at engine start. A sensor that was
+// healthy when the engine stopped gets a full grace from now before it
+// can be declared silent (the engine's own downtime is not its
+// silence); one already reported silent stays silent, without a second
+// alert, until it sends a heartbeat again.
 func (t *Tracker) Restore(docs map[string][]byte, now time.Time) int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -302,7 +302,10 @@ func (t *Tracker) Restore(docs map[string][]byte, now time.Time) int {
 		h := st.Host
 		h.Host = clip(h.Host)
 		h.EventsLast5m = 0
-		r := &record{Host: h, graceFrom: now, alerted: st.Alerted}
+		r := &record{Host: h, alerted: st.Alerted}
+		if !st.Alerted {
+			r.graceFrom = now
+		}
 		t.hosts[strings.ToLower(key)] = r
 		n++
 	}

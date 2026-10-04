@@ -115,7 +115,7 @@ What it captures, in two real-time ETW sessions:
 
 | Event | Source | Notes |
 |---|---|---|
-| `process.create` | kernel process provider | Full command line, parent PID, the new process owner's SID, the full image path (queried from the live process, not argv[0]) and its SHA-256 |
+| `process.create` | kernel process provider | Full command line, parent PID, the new process owner's SID, the full image path (queried from the live process, not argv[0]) and its SHA-256. The name comes from the image path (the kernel's own is cut at 14 characters); the path is kept only when it matches the kernel's name, so a PID reused by another process is never mislabeled |
 | `network.connect` | Microsoft-Windows-Kernel-Network, events 12/28 | TCP connection attempts (IPv4 and IPv6) with the process name. Loopback destinations are skipped. When the address came from a recent DNS answer, `network.domain` names it |
 | `network.connect` (`protocol: dns`) | Microsoft-Windows-DNS-Client, event 3008 | DNS queries with the process that asked, the name, the first answer as `destination_ip` and `dns_status` / `dns_query_type` attributes. Repeats of the same name by the same process are dropped while they keep arriving less than a minute apart (a sliding window, so a fast poller never becomes an artificial 60-second cadence for the beacon detector), and reverse lookups (`.arpa`) are skipped |
 | `registry.set` | Microsoft-Windows-Kernel-Registry, event 5 | Value writes to the keys detections read: Run keys, IFEO, SilentProcessExit, Winlogon, Defender, PowerShell logging policy, Terminal Server, LSA/WDigest, shell `open`/`runas` handlers, user shell folders, `AppInit_DLLs`, service `ImagePath`/`ServiceDll` and `UserInitMprLogonScript` |
@@ -327,11 +327,13 @@ afterwards; they never alert. The inventory retires hosts unseen for
 seven days.
 
 With `-store` the inventory survives restarts: it is saved to the SQLite
-file every 30 s (`fleet_hosts` table) and restored at startup. Restored
-sensors get a full grace period from the restart before they can be
-declared silent, so an engine upgrade does not raise a wave of
-"sensor sin señal" alerts, and an outage already reported before the
-restart is not reported again. Without `-store` the inventory starts
+file every 30 s (`fleet_hosts` table) and restored at startup. Sensors
+that were healthy when the engine stopped get a full grace period from
+the restart before they can be declared silent, so an engine upgrade
+does not raise a wave of "sensor sin señal" alerts. A sensor already
+reported silent before the restart shows as silent at once and is not
+reported again until it comes back and goes quiet anew. Hosts without
+heartbeats show their own state (no grace: they never alert). Without `-store` the inventory starts
 empty on every run.
 
 On Windows the launcher opens the ingest to the network
@@ -929,8 +931,14 @@ A sequence can also follow one **account across several hosts**
 (lateral movement): `scope: user` keys the chain by the event's user
 instead of the host, and `min_hosts: N` (2..16) requires the steps to
 have been seen on at least N different machines inside the window.
-Service accounts (SYSTEM, LOCAL SERVICE, NETWORK SERVICE, anonymous
-logon and machine accounts ending in `$`) are never tracked this way.
+Identities that exist with the same name on every machine are never
+tracked this way, since they would stitch unrelated hosts together:
+SYSTEM, LOCAL SERVICE, NETWORK SERVICE and anonymous logon (also under
+their localized names, e.g. `AUTORIDAD NT\Servicio de red`), virtual
+service accounts (`NT SERVICE\…`, `IIS APPPOOL\…`, `DWM-n`, `UMFD-n`),
+machine accounts ending in `$` and, for sensors that report SIDs (the
+ETW sensor), every well-known SID: only user SIDs (`S-1-5-21-…`, Entra
+ID `S-1-12-1-…`) are followed.
 Any step can list alternatives (`rules: [A, B, C]` instead of
 `rule: A`, up to 16): any one of them completes the step. A single-step
 sequence is allowed only with `min_hosts` above 1 ("the same remote

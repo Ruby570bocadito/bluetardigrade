@@ -128,3 +128,29 @@ func TestScopeValidation(t *testing.T) {
 		t.Fatal("trackedAccount")
 	}
 }
+
+func TestTrackedAccountSkipsIdentitiesSharedByEveryMachine(t *testing.T) {
+	follow := map[string]string{
+		`CORP\ana`:         `corp\ana`,
+		"ana@corp.example": "ana@corp.example",
+		"S-1-5-21-1004336348-1177238915-682003330-1105": "s-1-5-21-1004336348-1177238915-682003330-1105",
+		"S-1-12-1-1234-5678-91011-1213":                 "s-1-12-1-1234-5678-91011-1213",
+		`CORP\dwm-admin`:                                `corp\dwm-admin`,
+	}
+	for in, want := range follow {
+		if got := trackedAccount(in); got != want {
+			t.Fatalf("%q -> %q, want %q", in, got, want)
+		}
+	}
+	for _, skip := range []string{
+		"S-1-5-18", "S-1-5-19", "S-1-5-20", "S-1-5-7",
+		"S-1-5-90-0-1", "S-1-5-96-0-0", "S-1-5-80-3139157870-2983391045-3678747466-658725712-1809340420",
+		`NT AUTHORITY\SYSTEM`, `AUTORIDAD NT\Servicio de red`, `AUTORITE NT\Système`, `NT-AUTORITÄT\SYSTEM`,
+		`NT AUTHORITY\IUSR`, `NT SERVICE\TrustedInstaller`, `IIS APPPOOL\DefaultAppPool`,
+		`Window Manager\DWM-1`, `Font Driver Host\UMFD-0`, `UMFD-3`, `SISTEMA`, `CORP\SRV-FILES$`,
+	} {
+		if got := trackedAccount(skip); got != "" {
+			t.Fatalf("%q must not be followed, got %q", skip, got)
+		}
+	}
+}

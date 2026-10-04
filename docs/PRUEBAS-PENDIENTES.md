@@ -95,6 +95,8 @@ administrador; **[otro equipo]** = el equipo remoto. Pega los comandos de uno en
 
   En Flujo en vivo, el `process.create` de `whoami.exe` debe tener
   `image = C:\Windows\System32\whoami.exe` y `hashes.sha256` igual al valor del comando.
+- [ ] Nombres largos: busca en Flujo en vivo un `RuntimeBroker.exe` o `SearchProtocolHost.exe`.
+  El nombre debe salir completo, no cortado a 14 letras (`RuntimeBroker.`).
 - [ ] Con el sensor en marcha, el Administrador de tareas no debe mostrar más de un
   par de % de CPU para `security-sensor.exe` en reposo.
 - [ ] **[normal]** Registro (inofensivo). Debe saltar «Persistencia en clave Run via registro»:

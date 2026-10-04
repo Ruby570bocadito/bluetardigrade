@@ -41,3 +41,26 @@ func TestNoveltyAlertIsLowAndExplainsTheBaseline(t *testing.T) {
 		t.Fatalf("summary: %s", a.Summary)
 	}
 }
+
+func TestIntelAlertOnDNSNamesTheQuestionAndTheAnswer(t *testing.T) {
+	ev := &model.Event{ID: "e3", Host: "PC-01", Type: "network.connect", Process: &model.Process{Name: "chrome.exe"},
+		Network: &model.Network{Protocol: "dns", Domain: "cdn.mal.example.com", DestinationIP: "203.0.113.7"}}
+	if a := intelAlert(ev, intel.Hit{List: "l", Kind: intel.KindIP, Value: "203.0.113.7", Field: "network.destination_ip"}, time.Now()); !strings.Contains(a.Summary, "(respuesta DNS, chrome.exe)") {
+		t.Fatalf("answer: %s", a.Summary)
+	}
+	if a := intelAlert(ev, intel.Hit{List: "l", Kind: intel.KindDomain, Value: "mal.example.com", Field: "network.domain"}, time.Now()); !strings.Contains(a.Summary, "(consulta DNS, chrome.exe)") {
+		t.Fatalf("question: %s", a.Summary)
+	}
+}
+
+func TestNoveltyAlertCarriesTheImageHash(t *testing.T) {
+	ev := &model.Event{ID: "e4", Host: "PC", Type: model.TypeProcessCreate, Enrichment: map[string]string{"image_dir": `C:\Temp`},
+		Process: &model.Process{Name: "x.exe", Hashes: model.Hashes{"sha256": strings.Repeat("AB", 32)}}}
+	a := noveltyAlert(ev, &baseline.Novelty{Host: "PC", Kind: baseline.KindProcess, Value: "x.exe"}, time.Now())
+	if a.Enrich["image_sha256"] != strings.Repeat("ab", 32) || a.Enrich["image_dir"] != `C:\Temp` {
+		t.Fatalf("enrichment: %v", a.Enrich)
+	}
+	if _, shared := ev.Enrichment["image_sha256"]; shared {
+		t.Fatal("the event's own enrichment map must not change")
+	}
+}

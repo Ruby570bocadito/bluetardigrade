@@ -90,6 +90,23 @@ fn basename(path: &str) -> &str {
     path.rsplit(['\\', '/']).next().unwrap_or(path)
 }
 
+/// The process name from a full image path, when the path really is the
+/// image of the process the kernel reported: the image is queried from
+/// the live PID after the event, and a process that already exited may
+/// have had its PID reused. The kernel's (possibly truncated) name must
+/// be a prefix of the image's file name, case-insensitively.
+pub fn name_from_image(kernel_name: &str, image: &str) -> Option<String> {
+    let file = basename(image.trim());
+    if file.is_empty() {
+        return None;
+    }
+    let short = kernel_name.trim_matches(char::from(0)).trim();
+    if !short.is_empty() && !file.to_ascii_lowercase().starts_with(&short.to_ascii_lowercase()) {
+        return None;
+    }
+    Some(file.to_string())
+}
+
 /// Decodes a WBEM SID property (TOKEN_USER header, then the SID) into
 /// its string form, e.g. "S-1-5-18". The header is two pointers wide;
 /// both 64-bit and 32-bit layouts are tried.
@@ -157,6 +174,23 @@ mod tests {
         // missing kernel name: fall back to argv[0]
         assert_eq!(process_name("", r#""C:\x\tool.exe" a"#), "tool.exe");
         assert_eq!(process_name("\0", ""), "");
+    }
+
+    #[test]
+    fn image_names_the_process_only_when_it_matches_the_kernel_name() {
+        // truncated kernel name, full name from the image
+        assert_eq!(
+            name_from_image("SecurityHealth", r"C:\Windows\System32\SecurityHealthHost.exe").as_deref(),
+            Some("SecurityHealthHost.exe")
+        );
+        assert_eq!(name_from_image("powershell.exe", r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe").as_deref(), Some("powershell.exe"));
+        // case differences are fine
+        assert_eq!(name_from_image("CMD.EXE", r"C:\Windows\System32\cmd.exe").as_deref(), Some("cmd.exe"));
+        // a reused PID now runs something else: the image is not this process
+        assert_eq!(name_from_image("rclone.exe", r"C:\Windows\System32\svchost.exe"), None);
+        // no kernel name to compare with: trust the image
+        assert_eq!(name_from_image("", r"C:\x\tool.exe").as_deref(), Some("tool.exe"));
+        assert_eq!(name_from_image("a.exe", ""), None);
     }
 
     #[test]

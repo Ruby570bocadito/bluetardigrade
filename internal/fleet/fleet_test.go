@@ -167,40 +167,50 @@ func TestFieldsAreBounded(t *testing.T) {
 
 func TestExportRestoreGivesReconnectingSensorsAFullGrace(t *testing.T) {
 	tr := New()
-	tr.Observe(heartbeat("PC-01", 60), "10.0.0.21", t0)
-	tr.Observe(heartbeat("PC-02", 60), "10.0.0.22", t0)
-	tr.Check(t0.Add(4 * time.Minute)) // both silent and reported
-	docs := tr.Export(true, t0.Add(4*time.Minute))
-	if len(docs) != 2 {
+	tr.Observe(heartbeat("PC-OFF", 60), "10.0.0.21", t0)
+	tr.Observe(ev("IDS-01", "network.alert", "suricata"), "", t0)
+	tr.Check(t0.Add(4 * time.Minute)) // PC-OFF silent and reported
+	shutdown := t0.Add(4 * time.Minute)
+	tr.Observe(heartbeat("PC-ON", 60), "10.0.0.22", shutdown)
+	tr.Observe(heartbeat("PC-LOST", 60), "10.0.0.23", shutdown)
+	docs := tr.Export(true, shutdown)
+	if len(docs) != 4 {
 		t.Fatalf("export: %d", len(docs))
 	}
-	if len(tr.Export(false, t0.Add(5*time.Minute))) != 0 {
+	if len(tr.Export(false, shutdown.Add(time.Minute))) != 0 {
 		t.Fatal("nothing changed since the last export")
 	}
 
 	// engine restarts an hour later
 	restart := t0.Add(time.Hour)
 	again := New()
-	if n := again.Restore(docs, restart); n != 2 {
+	if n := again.Restore(docs, restart); n != 4 {
 		t.Fatalf("restored %d", n)
 	}
-	h := find(t, again.Snapshot(restart.Add(time.Minute)), "PC-01")
-	if h.Status != StatusOnline || h.Sensor == nil || h.Peers[0] != "10.0.0.21" {
-		t.Fatalf("within the restart grace a restored sensor is online: %+v", h)
+	snap := again.Snapshot(restart.Add(time.Minute))
+	if h := find(t, snap, "PC-OFF"); h.Status != StatusSilent || h.SilentSince == nil {
+		t.Fatalf("a silence reported before the restart is shown at once: %+v", h)
+	}
+	if h := find(t, snap, "PC-ON"); h.Status != StatusOnline || h.Sensor == nil || h.Peers[0] != "10.0.0.22" {
+		t.Fatalf("a sensor healthy at shutdown is online within the grace: %+v", h)
+	}
+	if h := find(t, snap, "IDS-01"); h.Status != StatusIdle {
+		t.Fatalf("a host without heartbeats shows its own state, no grace: %+v", h)
 	}
 	if got := again.Check(restart.Add(2 * time.Minute)); len(got) != 0 {
-		t.Fatalf("no alert inside the grace: %+v", got)
+		t.Fatalf("no alert inside the grace, none again for PC-OFF: %+v", got)
 	}
-	again.Observe(heartbeat("PC-02", 60), "10.0.0.22", restart.Add(2*time.Minute))
+	again.Observe(heartbeat("PC-ON", 60), "10.0.0.22", restart.Add(2*time.Minute))
 	got := again.Check(restart.Add(4 * time.Minute))
-	if len(got) != 0 {
-		t.Fatalf("PC-01's silence was already reported before the restart; got %+v", got)
+	if len(got) != 1 || got[0].Host.Host != "PC-LOST" {
+		t.Fatalf("only the sensor that never came back alerts after the grace: %+v", got)
 	}
-	if find(t, again.Snapshot(restart.Add(4*time.Minute)), "PC-01").Status != StatusSilent {
-		t.Fatal("a sensor that never came back is silent after the grace")
-	}
-	if find(t, again.Snapshot(restart.Add(4*time.Minute)), "PC-02").Status != StatusOnline {
+	if find(t, again.Snapshot(restart.Add(4*time.Minute)), "PC-ON").Status != StatusOnline {
 		t.Fatal("a sensor that reconnected is online")
+	}
+	again.Observe(heartbeat("PC-OFF", 60), "10.0.0.21", restart.Add(5*time.Minute))
+	if h := find(t, again.Snapshot(restart.Add(5*time.Minute)), "PC-OFF"); h.Status != StatusOnline || h.SilentSince != nil {
+		t.Fatalf("PC-OFF back online: %+v", h)
 	}
 }
 

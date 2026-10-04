@@ -12,6 +12,30 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Second review round (2026-10-04)
+
+- Fixes:
+  - Cross-host chains followed built-in identities that exist on every
+    machine: the ETW sensor reports SIDs (`S-1-5-18` is SYSTEM, which
+    remote-execution tools run as), and localized or virtual accounts
+    (`AUTORIDAD NT\Servicio de red`, `NT SERVICE\…`, `DWM-1`) slipped
+    through, so routine remote administration could raise "Cuenta
+    saltando entre equipos". Only user accounts and user SIDs are
+    followed now.
+  - Fleet restore: a sensor already reported silent before the restart
+    showed as online for the grace period, and hosts without heartbeats
+    briefly showed as online; the grace now only covers sensors that
+    were healthy at shutdown.
+  - Header drop-downs: keyboard focus moves into the panel when it
+    opens, Tab past its last control returns to the chip.
+- ETW sensor: the process name comes from the image path when it matches
+  the kernel's name (the kernel cuts names at 14 characters; a reused
+  PID is never mislabeled), also for the start-up rundown that names the
+  processes of network and registry events.
+- Intel hits on DNS events say "consulta DNS" / "respuesta DNS" instead
+  of the raw field, and "proceso nuevo" alerts carry the image SHA-256
+  in their enrichment (`image_sha256`).
+
 ### Review round: fixes, observability and the host baseline (2026-10-04)
 
 - Fixes:

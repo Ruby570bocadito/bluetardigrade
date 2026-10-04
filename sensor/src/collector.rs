@@ -557,7 +557,21 @@ fn handle_process(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &Sh
     }
     let short_name = parser.try_parse::<String>("ImageFileName").unwrap_or_default();
     let command_line = parser.try_parse::<String>("CommandLine").ok().filter(|c| !c.is_empty());
-    let name = procinfo::process_name(&short_name, command_line.as_deref().unwrap_or(""));
+    // The kernel event has no full image path and argv[0] is
+    // caller-controlled: the path comes from the live process, for starts
+    // and for the start-up rundown (those processes are running). It is
+    // kept only when it matches the kernel's name (a process that already
+    // exited may have had its PID reused), and then names the process
+    // exactly: the kernel's name is cut at 14 characters.
+    let verified = if matches!(opcode, OPCODE_PROCESS_START | OPCODE_PROCESS_DC_START) {
+        image_path(pid).and_then(|path| procinfo::name_from_image(&short_name, &path).map(|name| (path, name)))
+    } else {
+        None
+    };
+    let (image, name) = match verified {
+        Some((path, name)) => (Some(path), name),
+        None => (None, procinfo::process_name(&short_name, command_line.as_deref().unwrap_or(""))),
+    };
     if let Ok(mut table) = ctx.processes.lock() {
         table.insert(pid, name.clone());
     }
@@ -568,9 +582,6 @@ fn handle_process(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &Sh
     // owner of the NEW process (the kernel's WBEM SID), not the account
     // that runs the sensor
     let user = parser.try_parse::<Vec<u8>>("UserSID").ok().and_then(|b| procinfo::sid_from_wbem(&b));
-    // the kernel event has no full image path and argv[0] is
-    // caller-controlled: the path comes from the live process
-    let image = image_path(pid);
     let event = EventJson {
         id: normalize::new_uuid(),
         timestamp: record_time(record),

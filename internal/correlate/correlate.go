@@ -515,26 +515,58 @@ func contains(list []string, v string) bool {
 	return false
 }
 
-// trackedAccount normalizes the account a user-scoped chain follows.
-// Built-in service accounts run on every machine, so following them
-// would stitch unrelated hosts together: they are not tracked.
+// trackedAccount normalizes the account a user-scoped chain follows, or
+// returns "" for accounts that are the same name on every machine and
+// would stitch unrelated hosts together: built-in service identities
+// (SYSTEM, LOCAL SERVICE, NETWORK SERVICE, anonymous logon, in any
+// Windows language), virtual service accounts (NT SERVICE\x, IIS
+// APPPOOL\x, DWM-n, UMFD-n), machine accounts (NAME$) and, for sensors
+// that report SIDs (the ETW sensor), every well-known SID: only user
+// SIDs (S-1-5-21-..., Entra ID S-1-12-1-...) are followed.
 func trackedAccount(user string) string {
 	u := strings.ToLower(strings.TrimSpace(user))
 	if u == "" || u == "-" {
 		return ""
 	}
-	name := u
+	if strings.HasPrefix(u, "s-1-") {
+		if strings.HasPrefix(u, "s-1-5-21-") || strings.HasPrefix(u, "s-1-12-1-") {
+			return u
+		}
+		return ""
+	}
+	domain, name := "", u
 	if i := strings.LastIndexAny(u, `\/`); i >= 0 {
-		name = u[i+1:]
+		domain, name = u[:i], u[i+1:]
+	}
+	if builtinAuthority(domain) {
+		return ""
 	}
 	switch name {
-	case "system", "local service", "network service", "localservice", "networkservice", "anonymous logon", "":
+	case "", "system", "sistema", "système", "systeme", "local service", "network service", "localservice", "networkservice",
+		"servicio local", "servicio de red", "anonymous logon", "inicio de sesión anónimo", "inicio de sesion anonimo":
 		return ""
 	}
 	if strings.HasSuffix(name, "$") {
 		return "" // machine accounts
 	}
+	for _, prefix := range []string{"dwm-", "umfd-"} {
+		if rest, ok := strings.CutPrefix(name, prefix); ok && rest != "" && strings.Trim(rest, "0123456789") == "" {
+			return "" // Window Manager / Font Driver Host session accounts
+		}
+	}
 	return u
+}
+
+// builtinAuthority reports whether a domain part names Windows itself
+// rather than a directory: NT AUTHORITY (localized: AUTORIDAD NT,
+// AUTORITE NT, NT-AUTORITÄT...), NT SERVICE, IIS APPPOOL, Window Manager,
+// Font Driver Host, NT VIRTUAL MACHINE.
+func builtinAuthority(domain string) bool {
+	switch domain {
+	case "nt service", "iis apppool", "window manager", "font driver host", "nt virtual machine":
+		return true
+	}
+	return strings.Contains(domain, "nt") && (strings.Contains(domain, "author") || strings.Contains(domain, "autor"))
 }
 
 // stepLabel is the display form of a step: its rule, or its alternatives.
