@@ -243,7 +243,7 @@ same-origin proxy, so the API token never reaches the browser.
 | **Flujo en vivo** | Live telemetry with pause, search, type filters and JSONL/CSV export |
 | **Alertas** | Live queue or paged history with severity/lifecycle filters. Select several alerts to triage them together, add them to an incident, suppress the rule on that host or export them. The detail adds a per-alert graph, the forensic bundle with its process tree, reputation lookups, containment and reports |
 | **Incidentes** | Cases that group alerts: status, severity, owner, summary, affected hosts, an incident graph and a timeline of every change and note |
-| **Equipos** | One page per host: risk, live process tree, entity graph, timeline and network destinations |
+| **Equipos** | Fleet of remote machines: online / silent / idle status from sensor heartbeats, OS, sensor version, connection IP and identity, plus a guided enrollment of new machines. Each host page adds risk, live process tree, entity graph, timeline and destinations |
 | **Detección** | Rules with ATT&CK coverage, kill chains drawn as flows with per-step alerts, suppressions, and a rule tester that dry-runs an event against the live rules |
 | **Respuesta activa** | Arming state and the forensic response audit |
 | **Analista IA** | Optional triage assistant with your own model |
@@ -371,6 +371,8 @@ docs/                guides, architecture and API reference
 | [SOC integrations and reports](docs/SOC-INTEGRACIONES-E-INFORMES.md) | Collector formats, investigation workflow, reports |
 | [Email phishing](docs/PHISHING.md) | Explainable indicators in imported EML |
 | [Windows Server](docs/WINDOWS-SERVER.md) | Boot tasks and persisted credentials |
+| [Remote fleet (Spanish)](docs/FLOTA-REMOTA.md) | Enrolling remote machines: per-sensor identities, TLS, firewall, boot task, silent-sensor alerts |
+| [Pending tests (Spanish)](docs/PRUEBAS-PENDIENTES.md) | Checklist of what still needs a real Windows host |
 | [Smart App Control](docs/SMART-APP-CONTROL.md) | Execution blocks and signing |
 | [OpenAPI](docs/api/openapi.yaml) | API integration |
 | [Roadmap](docs/ROADMAP.md) | What's next, with acceptance criteria |

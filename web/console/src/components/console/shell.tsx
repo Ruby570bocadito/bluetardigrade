@@ -22,6 +22,7 @@ import { DetectionHub } from './detection-hub'
 import { IncidentsView } from './incidents-view'
 import { HostsView } from './hosts-view'
 import { useIncidents } from './incidents-provider'
+import { useFleet } from './fleet-provider'
 import { RespondView } from './respond-view'
 import { AnalystPanel } from './analyst-panel'
 import { ShortcutsHelp, type ShortcutHelpRow } from './shortcuts-help'
@@ -73,6 +74,8 @@ export function ConsoleShell() {
   const { status: analystStatus } = useAnalystChannel()
   const { incidents } = useIncidents()
   const openIncidents = incidents.filter((i) => i.status !== 'closed').length
+  const { fleet } = useFleet()
+  const silentHosts = fleet?.silent ?? 0
   const [view, setViewState] = useState<ConsoleView>('panel')
   const [helpOpen, setHelpOpen] = useState(false)
   const [nocOpen, setNocOpen] = useState(false)
@@ -268,6 +271,11 @@ export function ConsoleShell() {
                           }`}
                         >
                           {openAlerts.length}
+                        </span>
+                      )}
+                      {item.id === 'equipos' && silentHosts > 0 && (
+                        <span title={`${silentHosts} equipos sin señal de su sensor`} className="relative ml-auto rounded-md bg-red-500/15 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-red-300">
+                          {silentHosts}
                         </span>
                       )}
                       {item.id === 'incidentes' && openIncidents > 0 && (

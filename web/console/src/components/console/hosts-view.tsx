@@ -11,6 +11,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowSquareOut, Desktop, FolderPlus, Gear, Globe, Lightning, MagnifyingGlass, TreeStructure, UserCircle } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { useIncidents } from './incidents-provider'
+import { useFleet } from './fleet-provider'
+import { EnrollDialog, FleetStatusPill, FleetSummary, SensorCard } from './fleet-parts'
+import type { FleetHost, FleetStatus } from '@/lib/fleet'
 import { EmptyState, SeverityBadge, StatTile } from './ui-bits'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
 import { ChartCard } from '@/components/charts/chart-frame'
@@ -25,7 +28,7 @@ import { alertKey } from '@/lib/engine-client'
 import { eventDetail, formatTime, type Severity, type SfAlert, type SfEvent } from '@/lib/console-types'
 import { currentSearch, readLensState, replaceOperatorState, writeHostToSearch } from '@/lib/url-state'
 
-type HostRow = { host: string; score: number; alerts: number; critical: number; events: number; lastSeen: string }
+type HostRow = { host: string; score: number; alerts: number; critical: number; events: number; lastSeen: string; fleet?: FleetHost }
 
 const RANK: Record<Severity, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 }
 
@@ -39,6 +42,7 @@ export function riskLevel(score: number) {
 
 function useHostIndex(): HostRow[] {
   const { alerts, events, stats } = useEngine()
+  const { fleet } = useFleet()
   return useMemo(() => {
     const rows = new Map<string, HostRow>()
     const row = (host: string) => {
@@ -68,8 +72,16 @@ function useHostIndex(): HostRow[] {
       r.score = h.score
       if (h.last_seen > r.lastSeen) r.lastSeen = h.last_seen
     }
-    return [...rows.values()].sort((a, b) => b.score - a.score || b.alerts - a.alerts || a.host.localeCompare(b.host))
-  }, [alerts, events, stats])
+    // machines the engine's inventory knows, even with nothing in the
+    // console buffers (a silent sensor is exactly that case)
+    for (const f of fleet?.hosts ?? []) {
+      const r = row(f.host)
+      r.fleet = f
+      if (f.last_seen > r.lastSeen) r.lastSeen = f.last_seen
+    }
+    const silentFirst = (r: HostRow) => (r.fleet?.status === 'silent' ? 0 : 1)
+    return [...rows.values()].sort((a, b) => silentFirst(a) - silentFirst(b) || b.score - a.score || b.alerts - a.alerts || a.host.localeCompare(b.host))
+  }, [alerts, events, stats, fleet])
 }
 
 export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
@@ -81,6 +93,8 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
   const { status } = useEngine()
   const [selected, setSelectedState] = useState('')
   const [query, setQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | FleetStatus>('all')
+  const [enrolling, setEnrolling] = useState(false)
 
   useEffect(() => {
     const apply = () => setSelectedState(readLensState(currentSearch()).host)
@@ -93,7 +107,7 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
     replaceOperatorState((search) => writeHostToSearch(search, host))
   }
 
-  const visible = rows.filter((r) => r.host.toLowerCase().includes(query.trim().toLowerCase()))
+  const visible = rows.filter((r) => r.host.toLowerCase().includes(query.trim().toLowerCase()) && (statusFilter === 'all' || r.fleet?.status === statusFilter))
   // Without a ?host= lens the riskiest host opens (the index is sorted by
   // risk), so the page is never an empty frame; the URL stays untouched
   // until the analyst picks a host.
@@ -101,6 +115,9 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
   const maxScore = Math.max(1, ...rows.map((r) => r.score))
 
   return (
+    <div className="space-y-4">
+    <FleetSummary onEnroll={() => setEnrolling(true)} />
+    {enrolling && <EnrollDialog onClose={() => setEnrolling(false)} />}
     <section aria-label="Equipos" className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
       <div className="panel flex min-w-0 flex-col overflow-hidden">
         <div className="panel-head justify-between">
@@ -113,6 +130,14 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
             <input value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Buscar equipo" placeholder="buscar equipo"
               className="h-8 w-40 rounded-md border border-zinc-800 bg-zinc-900 pl-7 pr-2 text-xs text-zinc-200 placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
           </div>
+        </div>
+        <div role="group" aria-label="Filtrar equipos por estado" className="flex gap-1 border-b border-white/[0.05] px-3 py-2">
+          {([['all', 'Todos'], ['online', 'En línea'], ['silent', 'Sin señal'], ['idle', 'Inactivos']] as const).map(([value, label]) => (
+            <button key={value} type="button" aria-pressed={statusFilter === value} onClick={() => setStatusFilter(value)}
+              className={`rounded-md px-2.5 py-1 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${statusFilter === value ? 'bg-blue-500/15 text-blue-200' : 'text-zinc-400 hover:text-zinc-100'}`}>
+              {label}
+            </button>
+          ))}
         </div>
         {visible.length === 0 ? (
           <EmptyState icon={Desktop} title={status === 'down' ? 'Motor sin conexión' : 'Ningún equipo todavía'} hint="Los equipos aparecen con su primera telemetría o alerta." />
@@ -129,6 +154,7 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
                       <span className="flex items-center gap-2">
                         <Desktop size={15} aria-hidden className="text-blue-400" />
                         <span className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-100">{r.host}</span>
+                        <FleetStatusPill host={r.fleet} />
                         {r.score > 0 && (
                           <span className="flex items-center gap-1 text-[11px] text-zinc-400">
                             <SeverityIcon severity={lv.severity} size={11} />
@@ -157,6 +183,7 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
         </div>
       )}
     </section>
+    </div>
   )
 }
 
@@ -231,6 +258,8 @@ function HostPage({ row, onHunt, onOpenAlert, onOpenIncident }: {
           <span className="text-sm font-semibold tabular-nums text-zinc-50">{row.score.toFixed(1)}</span>
         </div>
       </header>
+
+      <SensorCard host={row.fleet} />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <StatTile icon={Lightning} label="Alertas en la ventana" value={hostAlerts.length} hint={worst ? `la más grave: ${SEVERITY_LABEL[worst].toLowerCase()}` : 'ninguna'} warn={worst === 'critical'} />

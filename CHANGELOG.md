@@ -12,6 +12,40 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Remote fleet: machine inventory, sensor heartbeats and silent-sensor alerts (2026-10-04)
+
+- `internal/fleet` keeps one record per reporting host: first and last
+  seen, recent rate, sources, connection addresses, ingest identity and
+  the sensor's last health report. Bounded, in memory, retires hosts
+  after seven days.
+- Sensors send `sensor.heartbeat` every 60 s: the Rust sensor (with the
+  Windows version) and `sf-sensor`. The ingest consumes it into the
+  inventory and never forwards it to rules, rings or storage.
+- A sensor that stops its heartbeats past 3 x its interval (at least
+  3 min) raises one `fleet-sensor-silent` alert per outage (high,
+  T1562.001), through the suppression gate.
+- `GET /api/fleet` (OpenAPI documented).
+- **Equipos** becomes the fleet manager:
+  - status counters and an online / silent / idle filter;
+  - a status pill per machine;
+  - a sensor card on the host page (sensor, OS, capture, last heartbeat,
+    uptime, IPs, identity, spool/drops) with a warning when silent;
+  - a sidebar badge counting silent sensors;
+  - an enrollment assistant that writes the commands for a new machine.
+  
+  The console never connects to the machines.
+- Windows launcher: the ingest listens beyond loopback only when
+  `tools\config\ingest-identities.yaml` exists, with ingest TLS when a
+  certificate pair sits next to it.
+- `sf-sensor` (Sysmon) fix: its live loop called
+  `EventLogWatcher.WaitForNextEvent()`, which .NET does not have, so every
+  pass threw and reconnected. It now reads new records by EventRecordID
+  every second.
+- New docs:
+  - `docs/FLOTA-REMOTA.md`: enrollment, identities, TLS certificate,
+    firewall, boot task, maintenance;
+  - `docs/PRUEBAS-PENDIENTES.md`: checklist for the real Windows host.
+
 ### Rust sensor: network connections and registry writes (2026-10-04)
 
 - A second real-time ETW session adds two event types:

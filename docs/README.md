@@ -19,6 +19,8 @@ conserva la trazabilidad completa.
 | [DOCTOR.md](DOCTOR.md) | Diagnóstico de reglas, autenticación, persistencia, sensores y consola, con salida JSON |
 | [PHISHING.md](PHISHING.md) | Señales observables en correo EML y límites de la detección offline |
 | [WINDOWS-SERVER.md](WINDOWS-SERVER.md) | Despliegue persistente sin sesión gráfica y configuración del servidor |
+| [FLOTA-REMOTA.md](FLOTA-REMOTA.md) | Vigilar varios equipos desde un servidor: alta de equipos, identidades, TLS, cortafuegos, tarea de arranque y alerta de sensor sin señal |
+| [PRUEBAS-PENDIENTES.md](PRUEBAS-PENDIENTES.md) | Lista de pruebas que necesitan un Windows real (sensor, Sysmon, flota remota) |
 | [SMART-APP-CONTROL.md](SMART-APP-CONTROL.md) | Diagnóstico de bloqueos de ejecución y distribución con firmas Authenticode |
 | [PALETA-Y-PRUEBAS-NAVEGADOR.md](PALETA-Y-PRUEBAS-NAVEGADOR.md) | Paleta de comandos de la consola: foco modal, proteccion de atajos y pruebas Chromium de escritorio/movil |
 | [OPERATIONS.md](OPERATIONS.md) | Guía de operación (inglés): instalación (Windows, Docker, fuente), referencia de flags y variables de entorno, API HTTP, Prometheus, almacenamiento, auth de ingest con rotación, sinks SIEM, notificaciones, supresiones, triaje, riesgo, beaconing, respuesta activa, contenido de detección, CLI y CI/bench |
