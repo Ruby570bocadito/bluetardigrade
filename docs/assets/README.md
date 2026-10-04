@@ -14,6 +14,10 @@ remains regenerable.
 | `console-flujo.png`         | output  | live telemetry: ingest rate, event-type mix and the feed table |
 | `console-alertas.png`       | output  | alert queue with the severity strip and a selected alert's detail |
 | `console-reglas.png`        | output  | rule catalogue with ATT&CK, severity and event-type coverage |
+| `console-seleccion.png`     | output  | alert queue with several alerts selected and the bulk action bar |
+| `console-incidentes.png`    | output  | incident detail: status, owner, alerts, incident graph and timeline |
+| `console-equipos.png`       | output  | host page: risk, live process tree, entity graph, timeline, destinations |
+| `console-noc.png`           | output  | NOC mode on the investigation graph screen |
 | `console-cadenas.png`       | output  | kill-chain sequences with per-step alerts and completed campaigns |
 | `console-supresiones.png`   | output  | operator suppressions: scope, reason and expiry |
 | `console-respuesta-activa.png` | output | active response: armed surface, audit decisions, denial codes and attempts |

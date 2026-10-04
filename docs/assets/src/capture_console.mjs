@@ -16,7 +16,8 @@
 //      and a few POST /api/respond/kill attempts (executed and denied);
 //   4. cd web/console && bun run build && ENGINE_API_URL=http://127.0.0.1:17778
 //      SF_API_TOKEN=<t> bun run start
-//   5. node docs/assets/src/capture_console.mjs
+//   5. create at least one incident from the alert queue (select alerts,
+//      "Añadir a incidente"), then run node docs/assets/src/capture_console.mjs
 //
 // Scenario events carry source=simulate, so the console labels the window
 // as demo in the header: the captures keep that label on purpose.
@@ -39,10 +40,14 @@ const SHOTS = [
   { file: 'console-panel.png', query: '', height: 1500 },
   { file: 'console-flujo.png', query: '?view=flujo', height: 1000 },
   { file: 'console-alertas.png', query: '?view=alertas', height: 1000, selectFirst: true },
+  { file: 'console-seleccion.png', query: '?view=alertas', height: 900, pickRows: 3 },
+  { file: 'console-incidentes.png', query: '?view=incidentes', height: 1300 },
+  { file: 'console-equipos.png', query: '?view=equipos', height: 1500 },
   { file: 'console-reglas.png', query: '?view=reglas', height: 1000 },
   { file: 'console-cadenas.png', query: '?view=cadenas', height: 1000 },
   { file: 'console-supresiones.png', query: '?view=supresiones', height: 700 },
   { file: 'console-respuesta-activa.png', query: '?view=respuesta', height: 1100 },
+  { file: 'console-noc.png', query: '', height: 900, nocSlide: 1 },
 ]
 
 const browser = await chromium.launch({ headless: true })
@@ -57,6 +62,18 @@ try {
       await page.locator('table tbody tr button').first().click()
       await page.getByRole('complementary', { name: 'Detalle de la alerta seleccionada' }).waitFor()
       await page.waitForTimeout(500)
+    }
+    if (shot.pickRows) {
+      const boxes = page.getByRole('checkbox', { name: /^Seleccionar .+\(/ })
+      for (let i = 0; i < shot.pickRows; i++) await boxes.nth(i).check()
+      await page.getByRole('region', { name: 'Acciones sobre la selección' }).waitFor()
+    }
+    if (shot.nocSlide !== undefined) {
+      await page.getByRole('button', { name: 'Abrir modo NOC' }).click()
+      const noc = page.getByRole('dialog', { name: 'Modo NOC' })
+      await noc.waitFor()
+      for (let i = 0; i < shot.nocSlide; i++) await noc.getByRole('button', { name: 'Pantalla siguiente' }).click()
+      await page.waitForTimeout(2500)
     }
     await page.screenshot({ path: path.join(ASSETS, shot.file) })
     console.log('shot: ' + shot.file)

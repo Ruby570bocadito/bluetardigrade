@@ -267,10 +267,14 @@ Navigation and keyboard support:
 
 | | |
 |---|---|
-| ![Alertas](docs/assets/console-alertas.png) | ![Flujo en vivo](docs/assets/console-flujo.png) |
-| Alert triage queue | Live telemetry feed |
+| ![Incidentes](docs/assets/console-incidentes.png) | ![Equipos](docs/assets/console-equipos.png) |
+| Incident with its alerts, graph and timeline | Host page with the live process tree |
+| ![Alertas](docs/assets/console-alertas.png) | ![Selección de alertas](docs/assets/console-seleccion.png) |
+| Alert detail with quick actions | Bulk actions on selected alerts |
+| ![Modo NOC](docs/assets/console-noc.png) | ![Flujo en vivo](docs/assets/console-flujo.png) |
+| NOC mode: investigation graph | Live telemetry feed |
 | ![Reglas](docs/assets/console-reglas.png) | ![Cadenas](docs/assets/console-cadenas.png) |
-| Rules with ATT&CK mapping | Kill-chain correlations |
+| Rules with ATT&CK coverage | Kill chains drawn as flows |
 | ![Respuesta activa](docs/assets/console-respuesta-activa.png) | ![Supresiones](docs/assets/console-supresiones.png) |
 | Active response audit | Operator suppressions |
 

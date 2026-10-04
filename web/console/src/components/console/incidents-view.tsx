@@ -77,7 +77,11 @@ export function IncidentsView({ onHost, onOpenAlert }: { onHost: (host: string) 
     return out
   }, [incidents])
   const visible = incidents.filter((i) => (filter === 'all' ? true : filter === 'closed' ? i.status === 'closed' : i.status !== 'closed'))
-  const current = incidents.find((i) => i.id === selected) ?? null
+  // Without a ?incidente= lens the first case of the list opens, so the
+  // page is never an empty frame while cases exist; the URL stays untouched
+  // until the analyst picks one.
+  const current = incidents.find((i) => i.id === selected) ?? (selected ? null : visible[0] ?? null)
+  const openId = current?.id ?? ''
 
   if (loaded && !available) {
     return (
@@ -161,9 +165,9 @@ export function IncidentsView({ onHost, onOpenAlert }: { onHost: (host: string) 
                     <button
                       type="button"
                       onClick={() => select(inc.id === selected ? '' : inc.id)}
-                      aria-current={inc.id === selected ? 'true' : undefined}
+                      aria-current={inc.id === openId ? 'true' : undefined}
                       className={`block w-full px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
-                        inc.id === selected ? 'bg-blue-500/[0.08]' : 'hover:bg-white/[0.03]'
+                        inc.id === openId ? 'bg-blue-500/[0.08]' : 'hover:bg-white/[0.03]'
                       }`}
                     >
                       <span className="flex flex-wrap items-center gap-2">
