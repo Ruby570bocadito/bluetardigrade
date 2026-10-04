@@ -137,6 +137,9 @@ lectura por número de registro, y ahora también envía latido.
   - Los eventos salen al momento.
   - **No** debe repetirse «stream interrupted» cada 5 segundos.
 - [ ] En Equipos, tu equipo muestra también la fuente `sysmon`.
+- [ ] **[normal]** Con `sf-sensor` en marcha, `Resolve-DnsName example.org`. En Flujo en vivo,
+  el `network.connect` con protocolo `dns` debe llevar también una IP de destino (antes
+  salía vacía).
 
 ## 4. Flota remota (con un segundo equipo)
 
