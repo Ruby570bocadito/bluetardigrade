@@ -10,6 +10,12 @@
 //   security-sensor --addr 127.0.0.1:7777 [--token <shared-token>]
 //                   [--tls-ca <ca.pem>] [--queue <events>]
 //                   [--spool <file>] [--spool-max-mb <MiB>]
+//                   [--no-network] [--no-registry] [--registry-all]
+//
+// Besides process creation the sensor captures TCP connection attempts
+// (network.connect) and writes to the registry keys detections read
+// (registry.set); --no-network / --no-registry turn either off and
+// --registry-all forwards every registry value write (noisy).
 //
 // Delivery never runs on the ETW thread: events wait in a bounded
 // in-memory queue (--queue, default 50000) while the engine is
@@ -40,6 +46,8 @@ mod collector;
 // platform-independent so their tests run on any host; outside Windows
 // they are only compiled for those tests.
 #[cfg(any(target_os = "windows", test))]
+mod netreg;
+#[cfg(any(target_os = "windows", test))]
 mod procinfo;
 #[cfg(any(target_os = "windows", test))]
 mod queue;
@@ -56,6 +64,9 @@ fn main() -> Result<()> {
     let mut queue_cap: usize = 50_000;
     let mut spool: Option<PathBuf> = None;
     let mut spool_max_mb: u64 = 256;
+    let mut network = true;
+    let mut registry = true;
+    let mut registry_all = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -86,13 +97,16 @@ fn main() -> Result<()> {
                     std::process::exit(2);
                 })));
             }
+            "--no-network" => network = false,
+            "--no-registry" => registry = false,
+            "--registry-all" => registry_all = true,
             "--spool-max-mb" => {
                 spool_max_mb = parse_number(args.next(), "--spool-max-mb");
             }
             other => {
                 eprintln!("unknown argument: {other}");
                 eprintln!(
-                    "usage: security-sensor --addr <ip:port> [--token <shared-token>] [--tls-ca <ca.pem>] [--queue <events>] [--spool <file>] [--spool-max-mb <MiB>]"
+                    "usage: security-sensor --addr <ip:port> [--token <shared-token>] [--tls-ca <ca.pem>] [--queue <events>] [--spool <file>] [--spool-max-mb <MiB>] [--no-network] [--no-registry] [--registry-all]"
                 );
                 std::process::exit(2);
             }
@@ -114,7 +128,13 @@ fn main() -> Result<()> {
             .map(PathBuf::from);
     }
 
-    eprintln!("[SENSOR] addr={addr} auth={} tls={} queue={queue_cap} spool={}",
+    let captured = [(true, "process"), (network, "network"), (registry, if registry_all { "registry-all" } else { "registry" })]
+        .iter()
+        .filter(|(on, _)| *on)
+        .map(|(_, name)| *name)
+        .collect::<Vec<_>>()
+        .join("+");
+    eprintln!("[SENSOR] addr={addr} auth={} tls={} queue={queue_cap} spool={} capture={captured}",
         if token.is_some() { "token" } else { "none" },
         if tls_ca.is_some() { "verified-ca" } else { "off" },
         spool
@@ -136,7 +156,8 @@ fn main() -> Result<()> {
             spool,
             spool_max_bytes: spool_max_mb.saturating_mul(1 << 20),
         };
-        collector::run(&addr, token.as_deref(), tls_ca.as_deref(), delivery)
+        let capture = collector::Capture { network, registry, registry_all };
+        collector::run(&addr, token.as_deref(), tls_ca.as_deref(), delivery, capture)
     }
     #[cfg(not(target_os = "windows"))]
     {

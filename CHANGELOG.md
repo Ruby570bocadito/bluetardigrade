@@ -12,6 +12,24 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Rust sensor: network connections and registry writes (2026-10-04)
+
+- A second real-time ETW session adds two event types:
+  - `network.connect` from Microsoft-Windows-Kernel-Network: TCP
+    connection attempts, IPv4 and IPv6, with ports decoded from network
+    byte order. Loopback is skipped.
+  - `registry.set` from Microsoft-Windows-Kernel-Registry: value writes
+    to the keys detections read.
+- Event ids are filtered in the kernel and registry keys by a curated
+  list. Paths and values follow Sysmon's format, so the existing rules
+  fire on either sensor. This was verified with the rule tester on Run,
+  ms-settings UAC bypass, RDP, IFEO and C2-port events.
+- A PID -> name table, fed by process starts and the start-up rundown,
+  names the process behind network and registry events.
+- New flags: `--no-network`, `--no-registry`, `--registry-all`. When the
+  extra session cannot start the sensor warns and keeps process events.
+  Ctrl+C stops both sessions.
+
 ### Console: incidents, hosts, alert actions and NOC mode (2026-10-04)
 
 - **Detección:** one section with tabs for Reglas, Cadenas, Supresiones

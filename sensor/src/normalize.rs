@@ -24,8 +24,7 @@ pub struct ProcessJson {
     pub hashes: Option<HashesJson>,
 }
 
-// phase 1: consumed by the Kernel-Network provider
-#[allow(dead_code)]
+// Filled from Microsoft-Windows-Kernel-Network (collector.rs).
 #[derive(Serialize, Clone, Debug)]
 pub struct NetworkJson {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -39,6 +38,18 @@ pub struct NetworkJson {
     pub destination_port: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub domain: Option<String>,
+}
+
+// Filled from Microsoft-Windows-Kernel-Registry (collector.rs); same
+// shape as model.Registry and the Sysmon sensor's registry events.
+#[derive(Serialize, Clone, Debug)]
+pub struct RegistryJson {
+    pub key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    pub operation: String,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -59,6 +70,8 @@ pub struct EventJson {
     pub process: Option<ProcessJson>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network: Option<NetworkJson>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub registry: Option<RegistryJson>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
 }
@@ -67,9 +80,8 @@ pub const TYPE_PROCESS_CREATE: &str = "process.create";
 // phase 1: emitted by the ProcessStop callback of the collector
 #[allow(dead_code)]
 pub const TYPE_PROCESS_TERMINATE: &str = "process.terminate";
-// phase 1: emitted by the Kernel-Network provider
-#[allow(dead_code)]
 pub const TYPE_NETWORK_CONNECT: &str = "network.connect";
+pub const TYPE_REGISTRY_SET: &str = "registry.set";
 
 pub fn now_rfc3339() -> String {
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();

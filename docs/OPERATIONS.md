@@ -111,6 +111,22 @@ make build-sensor-windows
 
 The sensor has no simulated mode: it runs only where real telemetry exists (Windows ETW) and refuses to start anywhere else.
 
+What it captures, in two real-time ETW sessions:
+
+| Event | Source | Notes |
+|---|---|---|
+| `process.create` | kernel process provider | Full command line, parent PID and the new process owner's SID |
+| `network.connect` | Microsoft-Windows-Kernel-Network, events 12/28 | TCP connection attempts (IPv4 and IPv6) with the process name. Loopback destinations are skipped |
+| `registry.set` | Microsoft-Windows-Kernel-Registry, event 5 | Value writes to the keys detections read: Run keys, IFEO, SilentProcessExit, Winlogon, Defender, PowerShell logging policy, Terminal Server, LSA/WDigest, shell `open`/`runas` handlers, user shell folders, `AppInit_DLLs`, service `ImagePath`/`ServiceDll` and `UserInitMprLogonScript` |
+
+- Event ids are filtered inside the kernel, and registry writes are then limited to that key list, because SetValueKey fires thousands of times per second on a busy host.
+- Registry paths use the Sysmon hive names (`HKLM\...`, `HKU\<SID>\...`, with the per-user classes hive shown as `HKU\<SID>\Software\Classes\...`), and values use Sysmon's rendering (`DWORD (0x00000001)`). The same rules therefore match both sensors.
+- Network and registry events carry only a PID; the sensor names it from the process starts and the start-up rundown it has seen.
+- Flags:
+  - `--no-network` and `--no-registry` turn either capture off.
+  - `--registry-all` forwards every value write (noisy, for lab work).
+- If the network/registry session cannot start, the sensor logs a warning and keeps streaming process events.
+
 Delivery never runs on the ETW thread. Events wait in a bounded in-memory queue (`--queue`, default 50000) while the engine is unreachable, so an engine restart or a network cut no longer stalls the trace consumer (which made Windows discard events from the real-time buffers). For outages longer than the queue, `--spool <file>` (or `SF_SENSOR_SPOOL`) adds an on-disk overflow capped by `--spool-max-mb` (default 256); it survives a sensor restart and is replayed in order once the engine is back. Replays can repeat events already delivered, which the engine absorbs (stored evidence is first-write-wins by event id). Past both limits events are dropped and the count is reported on stderr. Put the spool in a directory only the sensor's account can read: it holds command lines.
 
 With `--tls-ca` the engine's certificate must chain to that bundle and nothing else: the system trust store is disabled, so a certificate issued for the engine's name by a public or enterprise CA is refused.

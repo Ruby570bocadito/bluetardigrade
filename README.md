@@ -228,7 +228,7 @@ docker run --rm -p 127.0.0.1:7777:7777 -p 127.0.0.1:7778:7778 \
 
 | Source | What it collects | Notes |
 |---|---|---|
-| **Rust ETW sensor** (`sensor/`) | Process creation with full command line, parent and owner SID, read from the kernel process provider | Bounded queue plus an on-disk spool (`--spool`): an engine restart loses no events |
+| **Rust ETW sensor** (`sensor/`) | Process creation (full command line, parent, owner SID), TCP connection attempts and writes to the registry keys detections read (Run, IFEO, Defender, LSA, services...) | Bounded queue plus an on-disk spool (`--spool`): an engine restart loses no events |
 | **Sysmon** (`sf-sensor`) | Process, network, registry, file and image-load events | Ships a tuned config; `sf-sensor -SetupSysmon` installs it |
 | **Collector** (`sf-collector`) | Suricata EVE, Zeek conn, osquery differential, Cowrie, Windows firewall logs, EML mail | Offline import; never runs provider commands or visits mail URLs |
 
