@@ -35,10 +35,15 @@ export async function engineCall<T>(
       parsed = null
     }
     if (!res.ok) {
+      // the console's own refusals (role, credentials) carry a sentence
+      // for the operator in "hint"; engine errors name the problem
+      const body = parsed && typeof parsed === 'object' ? (parsed as { error?: unknown; hint?: unknown }) : null
       const message =
-        parsed && typeof parsed === 'object' && 'error' in parsed
-          ? String((parsed as { error: unknown }).error)
-          : text.trim() || `el motor respondió ${res.status}`
+        body && (body.error === 'role_forbidden' || body.error === 'console_auth_required') && typeof body.hint === 'string'
+          ? body.hint
+          : body && 'error' in body
+            ? String(body.error)
+            : text.trim() || `el motor respondió ${res.status}`
       return { ok: false, status: res.status, error: message }
     }
     return { ok: true, data: parsed as T }
@@ -193,6 +198,18 @@ export function reputationProviders() {
 
 export function lookupReputation(kind: 'ip' | 'hash', value: string) {
   return engineCall<ReputationReport>('GET', `/api/reputation?${kind}=${encodeURIComponent(value)}`)
+}
+
+/** SHA-256 digests an event carries (process image, written file), lowercase and deduplicated. */
+export function eventSha256(ev: Pick<SfEvent, 'process' | 'file'> | undefined): string[] {
+  const out = new Set<string>()
+  for (const hashes of [ev?.process?.hashes, ev?.file?.hashes]) {
+    for (const [algo, value] of Object.entries(hashes ?? {})) {
+      const v = String(value).trim().toLowerCase()
+      if (algo.toLowerCase() === 'sha256' && /^[0-9a-f]{64}$/.test(v)) out.add(v)
+    }
+  }
+  return [...out]
 }
 
 /** A public IPv4 worth sending to a reputation service (private ranges never are). */

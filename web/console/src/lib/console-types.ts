@@ -21,6 +21,8 @@ export type SfEvent = {
     name: string
     command_line?: string
     image?: string
+    // algorithm -> hex digest (the ETW sensor fills sha256 of the image)
+    hashes?: Record<string, string>
   }
   // Target of process.access (Sysmon event ID 10).
   target?: {
@@ -37,6 +39,7 @@ export type SfEvent = {
     path: string
     extension?: string
     size_bytes?: number
+    hashes?: Record<string, string>
   }
   network?: {
     protocol?: string
@@ -153,6 +156,12 @@ export type SfSequence = {
   window_seconds: number
   tags: string[]
   steps: string[]
+  // alternatives per step (any one completes it); absent on engines
+  // older than cross-host chains, where each step is its single rule
+  step_rules?: string[][]
+  // host: all steps on one machine; user: one account across min_hosts machines
+  scope?: 'host' | 'user'
+  min_hosts?: number
 }
 
 // Active response surface state (engine GET /api/respond/state). Only

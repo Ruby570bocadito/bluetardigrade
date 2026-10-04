@@ -38,6 +38,7 @@ describe('viewFromParam', () => {
       'alertas',
       'reglas',
       'cadenas',
+      'inteligencia',
       'supresiones',
       'respuesta',
       'analista',

@@ -10,6 +10,11 @@
 // forwarded and whether anything was forwarded at all.
 
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { pbkdf2Sync } from 'node:crypto'
+import { resetUsersCache } from '@/lib/users'
 
 type Captured = { url: string; init: RequestInit }
 
@@ -43,6 +48,8 @@ const ENV_KEYS = [
   'ENGINE_API_URL',
   'CONSOLE_ACCESS_TOKEN',
   'CONSOLE_ALLOW_UNAUTHENTICATED',
+  'CONSOLE_USERS_FILE',
+  'CONSOLE_AUDIT_FILE',
 ] as const
 
 const basic = (password: string, user = 'ana') => 'Basic ' + btoa(`${user}:${password}`)
@@ -314,5 +321,72 @@ describe('engine proxy boundary', () => {
     const body = (await res.json()) as { error: string }
     expect(body.error).toBe('read_only')
     expect(captured).toHaveLength(0)
+  })
+})
+
+describe('engine proxy with analyst accounts', () => {
+  const SALT = Buffer.from('fedcba9876543210')
+  const account = (user: string, role: string) => ({
+    user,
+    role,
+    password: `pbkdf2-sha256$100000$${SALT.toString('base64url')}$${pbkdf2Sync(`clave-de-${user}`, SALT, 100_000, 32, 'sha256').toString('base64url')}`,
+  })
+  const as = (user: string) => ({ authorization: basic(`clave-de-${user}`, user), 'content-type': 'application/json' })
+  const base = 'http://127.0.0.1:3000/api/engine'
+  let audit = ''
+
+  beforeEach(() => {
+    captured = []
+    for (const k of ENV_KEYS) {
+      savedEnv[k] = process.env[k]
+      delete process.env[k]
+    }
+    const dir = mkdtempSync(join(tmpdir(), 'sf-route-users-'))
+    const users = join(dir, 'users.json')
+    writeFileSync(users, JSON.stringify({ users: [account('ana', 'analyst'), account('luis', 'viewer'), account('jefa', 'admin')] }))
+    audit = join(dir, 'audit.jsonl')
+    process.env.CONSOLE_USERS_FILE = users
+    process.env.CONSOLE_AUDIT_FILE = audit
+    resetUsersCache()
+    stubFetch()
+  })
+  afterEach(() => {
+    globalThis.fetch = realFetch
+    for (const k of ENV_KEYS) {
+      if (savedEnv[k] === undefined) delete process.env[k]
+      else process.env[k] = savedEnv[k]
+    }
+  })
+
+  test('reads need an account', async () => {
+    const { GET } = await loadRoute()
+    expect((await GET(new Request(base + '/api/stats'))).status).toBe(401)
+    expect((await GET(new Request(base + '/api/stats', { headers: as('luis') }))).status).toBe(200)
+    expect(captured).toHaveLength(1)
+  })
+
+  test('the account name replaces "by" on attributed writes', async () => {
+    const { POST } = await loadRoute()
+    const res = await POST(new Request(base + '/api/alerts/0123456789abcdef/status', { method: 'POST', headers: as('ana'), body: JSON.stringify({ status: 'closed', by: 'consola' }) }))
+    expect(res.status).toBe(200)
+    expect(JSON.parse(String(captured[0].init.body))).toEqual({ status: 'closed', by: 'ana' })
+    await POST(new Request(base + '/api/incidents/0123456789abcdef/notes', { method: 'POST', headers: as('ana'), body: JSON.stringify({ text: 'revisado', by: 'otra persona' }) }))
+    expect(JSON.parse(String(captured[1].init.body)).by).toBe('ana')
+  })
+
+  test('a viewer cannot triage, an analyst cannot kill, and both are audited', async () => {
+    const { POST, DELETE } = await loadRoute()
+    const denied = await POST(new Request(base + '/api/alerts/0123456789abcdef/status', { method: 'POST', headers: as('luis'), body: '{"status":"closed"}' }))
+    expect(denied.status).toBe(403)
+    expect(((await denied.json()) as { error: string }).error).toBe('role_forbidden')
+    expect((await DELETE(new Request(base + '/api/suppressions?rule_id=r', { method: 'DELETE', headers: as('luis') }))).status).toBe(403)
+    expect((await POST(new Request(base + '/api/respond/kill', { method: 'POST', headers: as('ana'), body: '{}' }))).status).toBe(403)
+    expect(captured).toHaveLength(0)
+    // a viewer may still dry-run a rule: it changes nothing
+    expect((await POST(new Request(base + '/api/rules/test', { method: 'POST', headers: as('luis'), body: '{}' }))).status).toBe(200)
+    expect((await POST(new Request(base + '/api/respond/kill', { method: 'POST', headers: as('jefa'), body: '{}' }))).status).toBe(200)
+    const lines = readFileSync(audit, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+    expect(lines.map((l) => `${l.user}:${l.outcome}`)).toEqual(['luis:denied', 'luis:denied', 'ana:denied', 'luis:ok', 'jefa:ok'])
+    expect(lines[4]).toMatchObject({ method: 'POST', path: '/api/respond/kill', role: 'admin', status: 200 })
   })
 })

@@ -108,6 +108,12 @@ export type SfSequence = {
   window_seconds: number
   tags: string[]
   steps: string[]
+  // alternatives per step (any one completes it); absent on engines
+  // older than cross-host chains, where each step is its single rule
+  step_rules?: string[][]
+  // host: all steps on one machine; user: one account across min_hosts machines
+  scope?: 'host' | 'user'
+  min_hosts?: number
 }
 
 // The hub has exactly two modes: forwarding the real engine, or having

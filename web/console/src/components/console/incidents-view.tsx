@@ -12,6 +12,8 @@ import {
   CheckCircle,
   ClockCounterClockwise,
   Desktop,
+  FileHtml,
+  FileText,
   FolderOpen,
   Lightning,
   NotePencil,
@@ -27,6 +29,7 @@ import { EmptyState, SeverityBadge, StatTile } from './ui-bits'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
 import { EntityGraphView, GraphLegend } from '@/components/charts/entity-graph'
 import { buildEntityGraph } from '@/lib/entity-graph'
+import { buildIncidentHtml, buildIncidentMarkdown, reportFilename } from '@/lib/incident-report'
 import {
   addIncidentNote,
   createIncident,
@@ -252,6 +255,20 @@ const KIND_ICON: Record<IncidentEntry['kind'], React.ElementType> = {
   note: NotePencil,
 }
 
+function downloadFile(filename: string, contents: string, mime: string) {
+  const url = URL.createObjectURL(new Blob([contents], { type: mime }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+const exportCls =
+  'inline-flex h-7 items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900 px-2 text-[11px] text-zinc-300 transition-colors hover:border-zinc-700 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+
 function IncidentDetail({
   incident,
   onChange,
@@ -273,7 +290,11 @@ function IncidentDetail({
   const ids = new Set(incident.alert_ids)
   const caseAlerts = alerts.filter((a) => a.id && ids.has(a.id))
   const outside = incident.alert_ids.length - caseAlerts.length
-  const graph = useMemo(() => buildEntityGraph(caseAlerts, events), [caseAlerts, events])
+  // only the case hosts' own connections: the event buffer holds every
+  // host's traffic, which would draw unrelated machines into the case
+  const caseHosts = new Set(incident.hosts.map((h) => h.toLowerCase()))
+  const caseEvents = events.filter((e) => caseHosts.has((e.host || '').toLowerCase()))
+  const graph = useMemo(() => buildEntityGraph(caseAlerts, caseEvents), [caseAlerts, caseEvents])
 
   async function patch(p: Parameters<typeof updateIncident>[1]) {
     setBusy(true)
@@ -291,6 +312,24 @@ function IncidentDetail({
           <SeverityBadge severity={incident.severity} />
           <StatusChip status={incident.status} />
           <span className="font-mono text-[11px] text-zinc-600">{incident.id}</span>
+          <div role="group" aria-label="Exportar informe del incidente" className="ml-auto flex items-center gap-1.5">
+            <button
+              type="button"
+              className={exportCls}
+              title="Descargar el informe en Markdown (para un ticket o una wiki)"
+              onClick={() => downloadFile(reportFilename(incident, 'md'), buildIncidentMarkdown({ incident, alerts: caseAlerts, graph }), 'text/markdown;charset=utf-8')}
+            >
+              <FileText size={13} aria-hidden /> Informe .md
+            </button>
+            <button
+              type="button"
+              className={exportCls}
+              title="Descargar el informe como página imprimible, con el grafo (ábrela y usa Imprimir para obtener un PDF)"
+              onClick={() => downloadFile(reportFilename(incident, 'html'), buildIncidentHtml({ incident, alerts: caseAlerts, graph }), 'text/html;charset=utf-8')}
+            >
+              <FileHtml size={13} aria-hidden /> Informe imprimible
+            </button>
+          </div>
         </div>
         <h2 className="mt-2 text-lg font-semibold tracking-tight text-zinc-50">{incident.title}</h2>
         <p className="mt-0.5 text-xs text-zinc-500">

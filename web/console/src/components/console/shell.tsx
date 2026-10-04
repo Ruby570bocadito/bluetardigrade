@@ -8,7 +8,7 @@ import { describeTelemetrySources } from '@/lib/telemetry-source'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { ActivityIcon, Broadcast, Desktop, Flask, FolderOpen, Gauge, Lightning, Prohibit, ShieldCheck, SquaresFour, Warning, ChatsCircle, FlowArrow, Keyboard, MagnifyingGlass, Monitor } from '@phosphor-icons/react'
+import { ActivityIcon, Broadcast, Desktop, Flask, FolderOpen, Gauge, Lightning, Prohibit, ShieldCheck, SquaresFour, Warning, ChatsCircle, FlowArrow, Keyboard, ListMagnifyingGlass, MagnifyingGlass, Monitor } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { BlurText } from '@/components/reactbits/blur-text'
 import { ShinyText } from '@/components/reactbits/shiny-text'
@@ -29,6 +29,7 @@ import { ShortcutsHelp, type ShortcutHelpRow } from './shortcuts-help'
 import { CommandPalette } from './command-palette'
 import { NotifyMenu } from './critical-notifier'
 import { NocMode } from './noc-mode'
+import { ReadOnlyBanner, UserChip } from './user-session'
 import { CONSOLE_DESTINATIONS, type ConsoleCommand } from '@/lib/console-commands'
 import { formatUptime, type EngineStats, type SfAlert } from '@/lib/console-types'
 import { currentSearch, isDetectionView, pushOperatorState, readOperatorState, writeAlertLens, writeHostToSearch, writeIncidentToSearch, writeRulesToSearch, writeViewToSearch } from '@/lib/url-state'
@@ -48,7 +49,7 @@ import { writeTriageDestination, type TriageTarget } from '@/lib/operations'
 
 const NAV_ICONS: Record<ConsoleView, React.ElementType> = {
   panel: SquaresFour, flujo: ActivityIcon, alertas: Warning, incidentes: FolderOpen, equipos: Desktop,
-  reglas: ShieldCheck, cadenas: FlowArrow, supresiones: Prohibit, probador: Flask,
+  reglas: ShieldCheck, cadenas: FlowArrow, inteligencia: ListMagnifyingGlass, supresiones: Prohibit, probador: Flask,
   respuesta: Lightning, analista: ChatsCircle,
 }
 const NAV = CONSOLE_DESTINATIONS.map((item) => ({ ...item, icon: NAV_ICONS[item.id] }))
@@ -377,6 +378,7 @@ export function ConsoleShell() {
                   </span>
                   {telemetry.hasDemo && <span className="rounded bg-amber-400/10 px-1 text-[11px] text-amber-300" aria-label="La ventana recibida contiene datos de demostración">demo</span>}
                 </div>
+                <UserChip />
                 <NotifyMenu />
                 <button
                   type="button"
@@ -394,6 +396,7 @@ export function ConsoleShell() {
                 <UtcClock />
               </div>
             </div>
+            <ReadOnlyBanner />
           </header>
 
           {/* Mobile nav: explicit collapse of the sidebar */}
@@ -483,6 +486,8 @@ function titleFor(view: ConsoleView): string {
       return 'Reglas de detección'
     case 'cadenas':
       return 'Cadenas de kill chain'
+    case 'inteligencia':
+      return 'Inteligencia de amenazas'
     case 'supresiones':
       return 'Supresiones del operador'
     case 'respuesta':

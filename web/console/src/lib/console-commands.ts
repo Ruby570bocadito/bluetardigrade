@@ -11,6 +11,7 @@ export const CONSOLE_DESTINATIONS: {
   { id: 'equipos', label: 'Equipos', group: 'Operación', description: 'Ficha de cada equipo: riesgo, alertas, procesos y conexiones', keywords: 'hosts host maquinas endpoints ficha' },
   { id: 'reglas', label: 'Reglas', group: 'Detección', description: 'Catálogo de reglas y condiciones cargadas', keywords: 'rules yaml mitre detecciones' },
   { id: 'cadenas', label: 'Cadenas', group: 'Detección', description: 'Secuencias y etapas de correlación', keywords: 'kill chain sequences correlador' },
+  { id: 'inteligencia', label: 'Inteligencia', group: 'Detección', description: 'Listas de indicadores locales y línea base de procesos por equipo', keywords: 'intel ioc indicadores listas hash dominio ip baseline nuevo proceso amenazas' },
   { id: 'supresiones', label: 'Supresiones', group: 'Detección', description: 'Excepciones del operador y expiraciones', keywords: 'allowlist ruido falsos positivos' },
   { id: 'probador', label: 'Probador', group: 'Detección', description: 'Comprobar qué detecta un evento, sin generar alertas', keywords: 'test tester probar evento simular' },
   { id: 'respuesta', label: 'Respuesta activa', group: 'Respuesta', description: 'Consultar estado y auditoría de respuesta', keywords: 'respond c3 audit kill proceso' },

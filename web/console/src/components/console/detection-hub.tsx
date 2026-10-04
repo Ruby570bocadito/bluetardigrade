@@ -1,20 +1,23 @@
 'use client'
 
 // Detección: the detection content in one place. Rules, kill chains,
-// suppressions and the rule tester are tabs of one section (each tab
-// keeps its own deep link: ?view=reglas|cadenas|supresiones|probador).
+// threat intel, suppressions and the rule tester are tabs of one section
+// (each tab keeps its own deep link:
+// ?view=reglas|cadenas|inteligencia|supresiones|probador).
 
-import { FlowArrow, Flask, Prohibit, ShieldCheck } from '@phosphor-icons/react'
+import { FlowArrow, Flask, ListMagnifyingGlass, Prohibit, ShieldCheck } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { RulesView } from './rules-view'
 import { SequencesView } from './sequences-view'
 import { SuppressionsView } from './suppressions-view'
 import { RuleTester } from './rule-tester'
+import { IntelView } from './intel-view'
 import type { DetectionView } from '@/lib/url-state'
 
 const TABS: { id: DetectionView; label: string; icon: React.ElementType }[] = [
   { id: 'reglas', label: 'Reglas', icon: ShieldCheck },
   { id: 'cadenas', label: 'Cadenas', icon: FlowArrow },
+  { id: 'inteligencia', label: 'Inteligencia', icon: ListMagnifyingGlass },
   { id: 'supresiones', label: 'Supresiones', icon: Prohibit },
   { id: 'probador', label: 'Probador', icon: Flask },
 ]
@@ -48,6 +51,7 @@ export function DetectionHub({ tab, onTab, onOpenRule }: { tab: DetectionView; o
       <div role="tabpanel" aria-label={TABS.find((t) => t.id === tab)?.label}>
         {tab === 'reglas' && <RulesView />}
         {tab === 'cadenas' && <SequencesView />}
+        {tab === 'inteligencia' && <IntelView />}
         {tab === 'supresiones' && <SuppressionsView />}
         {tab === 'probador' && <RuleTester onOpenRule={onOpenRule} />}
       </div>

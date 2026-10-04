@@ -37,6 +37,7 @@ import {
   INCIDENT_STATUS_LABEL,
   isPublicIPv4,
   killProcess,
+  eventSha256,
   lookupReputation,
   reputationProviders,
   type ReputationReport,
@@ -460,26 +461,33 @@ function ReputationPanel({ alert }: { alert: SfAlert }) {
   const enabled = Object.values(providers).some(Boolean)
   const ev = events.find((e) => e.id === alert.event_id)
   const ips = [...new Set([alert.network?.destination_ip, alert.network?.source_ip, ev?.network?.destination_ip].filter(isPublicIPv4))]
+  // file hashes go to VirusTotal only (AbuseIPDB knows addresses)
+  const hashes = providers.virustotal ? eventSha256(ev) : []
+  const indicators: { kind: 'ip' | 'hash'; value: string }[] = [
+    ...ips.map((value) => ({ kind: 'ip' as const, value })),
+    ...hashes.map((value) => ({ kind: 'hash' as const, value })),
+  ]
   const [reports, setReports] = useState<Record<string, ReputationReport | string>>({})
-  if (!enabled || ips.length === 0) return null
+  if (!enabled || indicators.length === 0) return null
 
-  async function lookup(ip: string) {
-    setReports((r) => ({ ...r, [ip]: 'consultando…' }))
-    const res = await lookupReputation('ip', ip)
-    setReports((r) => ({ ...r, [ip]: res.ok ? res.data : res.error }))
+  async function lookup(kind: 'ip' | 'hash', value: string) {
+    setReports((r) => ({ ...r, [value]: 'consultando…' }))
+    const res = await lookupReputation(kind, value)
+    setReports((r) => ({ ...r, [value]: res.ok ? res.data : res.error }))
   }
 
   return (
     <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
       <p className="flex items-center gap-1.5 text-[11px] font-medium text-zinc-300"><Globe size={13} aria-hidden className="text-blue-400" /> Reputación (consulta bajo demanda)</p>
       <ul className="mt-2 space-y-2">
-        {ips.map((ip) => {
-          const r = reports[ip]
+        {indicators.map(({ kind, value }) => {
+          const r = reports[value]
           return (
-            <li key={ip}>
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs text-zinc-200">{ip}</span>
-                {!r && <button type="button" className={btn + ' ml-auto py-1'} onClick={() => void lookup(ip)}>Consultar</button>}
+            <li key={value}>
+              <div className="flex min-w-0 items-center gap-2">
+                {kind === 'hash' && <span className="shrink-0 rounded bg-white/[0.06] px-1 text-[10px] text-zinc-400">SHA-256</span>}
+                <span className="min-w-0 truncate font-mono text-xs text-zinc-200" title={value}>{value}</span>
+                {!r && <button type="button" className={btn + ' ml-auto shrink-0 py-1'} onClick={() => void lookup(kind, value)}>Consultar</button>}
                 {typeof r === 'string' && <span className="ml-auto text-[11px] text-zinc-400">{r}</span>}
               </div>
               {r && typeof r !== 'string' && (

@@ -151,6 +151,13 @@ if (-not (Test-PortLocal $ServicePort)) {
 }
 
 if (-not (Test-PortLocal $ConsolePort)) {
+    # Analyst accounts (docs/OPERATIONS.md): only when the file exists;
+    # without it the console keeps its loopback/token behavior. Console
+    # writes are always audited under data\.
+    $usersFile = Join-Path $root 'tools\config\console-users.json'
+    if (Test-Path -LiteralPath $usersFile) { $env:CONSOLE_USERS_FILE = $usersFile }
+    New-Item -ItemType Directory -Path (Join-Path $root 'data') -Force | Out-Null
+    $env:CONSOLE_AUDIT_FILE = Join-Path $root 'data\console-audit.jsonl'
     $nextBin = Join-Path $web 'console\node_modules\next\dist\bin\next'
     $app = Start-Process -FilePath $nodeExe -ArgumentList "`"$nextBin`"", 'start', '-H', '127.0.0.1', '-p', "$ConsolePort" `
         -WorkingDirectory (Join-Path $web 'console') -WindowStyle Hidden -PassThru

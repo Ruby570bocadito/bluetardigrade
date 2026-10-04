@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { createSuppression, deleteSuppression, engineCall, expiryInDays, isPublicIPv4, killProcess } from './engine-writes'
+import { createSuppression, deleteSuppression, engineCall, eventSha256, expiryInDays, isPublicIPv4, killProcess } from './engine-writes'
 
 const realFetch = globalThis.fetch
 let sent: { url: string; init: RequestInit }[] = []
@@ -57,4 +57,11 @@ describe('engine write client', () => {
     }
     for (const ip of ['185.220.101.47', '8.8.8.8', '172.32.0.1']) expect(isPublicIPv4(ip)).toBe(true)
   })
+})
+
+test('eventSha256 collects valid image and file digests once', () => {
+  const h = 'AB'.repeat(32)
+  expect(eventSha256({ process: { pid: 1, name: 'x.exe', hashes: { SHA256: h, md5: 'd41d8cd98f00b204e9800998ecf8427e' } }, file: { path: 'C:\\x', hashes: { sha256: h.toLowerCase() } } })).toEqual(['ab'.repeat(32)])
+  expect(eventSha256({ process: { pid: 1, name: 'x', hashes: { sha256: 'nope' } } })).toEqual([])
+  expect(eventSha256(undefined)).toEqual([])
 })

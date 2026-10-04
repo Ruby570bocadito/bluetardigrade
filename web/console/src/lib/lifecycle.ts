@@ -45,9 +45,10 @@ export async function postAlertStatus(action: TriageAction): Promise<LifecycleAc
       body: JSON.stringify({ status: action.status, note: action.note ?? '', by: action.by ?? 'consola' }),
       signal: AbortSignal.timeout(6000),
     })
-    const body = (await res.json().catch(() => null)) as { error?: string } | Record<string, unknown> | null
+    const body = (await res.json().catch(() => null)) as { error?: string; hint?: string } | Record<string, unknown> | null
     if (!res.ok) {
-      const hint = body && typeof body === 'object' && 'error' in body ? String(body.error) : `el motor respondio ${res.status}`
+      const refusal = body && typeof body === 'object' && body.error === 'role_forbidden' && typeof body.hint === 'string'
+      const hint = refusal ? String(body.hint) : body && typeof body === 'object' && 'error' in body ? String(body.error) : `el motor respondio ${res.status}`
       return { ok: false, error: hint }
     }
     return { ok: true, entry: body as SfAlertLifecycle }

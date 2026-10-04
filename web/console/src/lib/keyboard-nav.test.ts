@@ -53,6 +53,7 @@ describe('resolveShortcut — navigation', () => {
       a: 'alertas',
       r: 'reglas',
       c: 'cadenas',
+      l: 'inteligencia',
       s: 'supresiones',
       k: 'respuesta',
       n: 'analista',
@@ -87,13 +88,14 @@ describe('shortcutHintFor', () => {
       'alertas',
       'reglas',
       'cadenas',
+      'inteligencia',
       'supresiones',
       'respuesta',
       'analista',
     ]
     for (const view of views) {
       // Every hint is the prefix plus exactly one of the mnemonic keys.
-      expect(shortcutHintFor(view)).toMatch(/^g [pfarcskn]$/)
+      expect(shortcutHintFor(view)).toMatch(/^g [pfarclskn]$/)
     }
   })
 })

@@ -33,7 +33,7 @@ import type { SeverityFilter } from '@/lib/url-state'
 
 export type ConsoleView =
   | 'panel' | 'flujo' | 'alertas' | 'incidentes' | 'equipos'
-  | 'reglas' | 'cadenas' | 'supresiones' | 'probador'
+  | 'reglas' | 'cadenas' | 'inteligencia' | 'supresiones' | 'probador'
   | 'respuesta' | 'analista'
 export type HuntLens = { q?: string; sev?: SeverityFilter }
 

@@ -44,25 +44,30 @@
 //    something in front already authenticates
 //    (CONSOLE_ALLOW_UNAUTHENTICATED=1).
 
-import { accessToken, authorized, unauthorizedResponse } from '@/lib/access'
+import { accessToken, principalFor, unauthorizedResponse } from '@/lib/access'
+import { ROLE_LABEL, attribute, audit, roleAtLeast, type Principal, type Role } from '@/lib/users'
 
 const ENGINE_URL = process.env.ENGINE_API_URL || 'http://127.0.0.1:7778'
 
 const PASS_HEADERS = ['content-type', 'content-disposition', 'cache-control']
 
-// Writes the console performs: method, path and body cap. The caps
-// mirror the engine's own limits so oversized bodies stop here.
-type WriteRoute = { method: string; path: RegExp; limit: number; operatorToken?: boolean }
+// Writes the console performs: method, path, body cap, the least role
+// that may send it (lib/users.ts) and whether the engine records the
+// sender as "by" (overwritten with the account name when accounts are
+// configured). The caps mirror the engine's own limits so oversized
+// bodies stop here.
+type WriteRoute = { method: string; path: RegExp; limit: number; role: Role; attributed?: boolean; operatorToken?: boolean }
 const KIB = 1024
 const WRITES: WriteRoute[] = [
-  { method: 'POST', path: /^\/api\/alerts\/[0-9a-f]{16}\/status$/, limit: 8 * KIB },
-  { method: 'POST', path: /^\/api\/incidents$/, limit: 32 * KIB },
-  { method: 'PATCH', path: /^\/api\/incidents\/[0-9a-f]{16}$/, limit: 32 * KIB },
-  { method: 'POST', path: /^\/api\/incidents\/[0-9a-f]{16}\/(alerts|notes)$/, limit: 32 * KIB },
-  { method: 'POST', path: /^\/api\/rules\/test$/, limit: 32 * KIB },
-  { method: 'POST', path: /^\/api\/suppressions$/, limit: 8 * KIB },
-  { method: 'DELETE', path: /^\/api\/suppressions$/, limit: 0 },
-  { method: 'POST', path: /^\/api\/respond\/kill$/, limit: 8 * KIB, operatorToken: true },
+  { method: 'POST', path: /^\/api\/alerts\/[0-9a-f]{16}\/status$/, limit: 8 * KIB, role: 'analyst', attributed: true },
+  { method: 'POST', path: /^\/api\/incidents$/, limit: 32 * KIB, role: 'analyst', attributed: true },
+  { method: 'PATCH', path: /^\/api\/incidents\/[0-9a-f]{16}$/, limit: 32 * KIB, role: 'analyst', attributed: true },
+  { method: 'POST', path: /^\/api\/incidents\/[0-9a-f]{16}\/(alerts|notes)$/, limit: 32 * KIB, role: 'analyst', attributed: true },
+  // a dry run that changes nothing: any reader may test a rule
+  { method: 'POST', path: /^\/api\/rules\/test$/, limit: 32 * KIB, role: 'viewer' },
+  { method: 'POST', path: /^\/api\/suppressions$/, limit: 8 * KIB, role: 'analyst' },
+  { method: 'DELETE', path: /^\/api\/suppressions$/, limit: 0, role: 'analyst' },
+  { method: 'POST', path: /^\/api\/respond\/kill$/, limit: 8 * KIB, role: 'admin', operatorToken: true },
 ]
 
 function writeRoute(method: string, path: string): WriteRoute | undefined {
@@ -224,8 +229,8 @@ function reject(request: Request, error: string, hint: string): Response {
 // The boundary every forwarded request crosses: credentials and the
 // exposure check first, then host pinning (it protects reads and
 // writes alike), then the same-origin write guard.
-async function refused(request: Request): Promise<Response | null> {
-  if (!(await authorized(request))) return unauthorizedResponse()
+async function refused(request: Request, principal: Principal | null): Promise<Response | null> {
+  if (!principal) return unauthorizedResponse()
   if (exposedWithoutCredentials()) {
     return reject(
       request,
@@ -251,17 +256,39 @@ async function refused(request: Request): Promise<Response | null> {
 }
 
 export async function GET(request: Request): Promise<Response> {
-  const guard = await refused(request)
+  const guard = await refused(request, await principalFor(request))
   if (guard) return guard
   return forward(request)
 }
 
 async function write(request: Request): Promise<Response> {
-  const guard = await refused(request)
-  if (guard) return guard
+  const principal = await principalFor(request)
+  const guard = await refused(request, principal)
+  if (guard || !principal) return guard ?? unauthorizedResponse()
   const { pathname } = new URL(request.url)
   const path = pathname.replace(/^\/api\/engine/, '') || '/'
   const route = writeRoute(request.method, path)
+  const record = (status: number) =>
+    audit({
+      at: new Date().toISOString(),
+      user: principal.name,
+      role: principal.role,
+      mode: principal.mode,
+      method: request.method,
+      path,
+      status,
+      outcome: status === 403 ? 'denied' : status < 400 ? 'ok' : 'error',
+    })
+  if (route && !roleAtLeast(principal.role, route.role)) {
+    record(403)
+    return Response.json(
+      {
+        error: 'role_forbidden',
+        hint: `Tu cuenta (${principal.name}, ${ROLE_LABEL[principal.role].toLowerCase()}) no puede hacer esto: hace falta el rol ${ROLE_LABEL[route.role].toLowerCase()}.`,
+      },
+      { status: 403 },
+    )
+  }
   if (!route) {
     return Response.json(
       {
@@ -271,10 +298,16 @@ async function write(request: Request): Promise<Response> {
       { status: 405 },
     )
   }
-  if (route.limit === 0) return forward(request, undefined, route.operatorToken)
+  if (route.limit === 0) {
+    const res = await forward(request, undefined, route.operatorToken)
+    record(res.status)
+    return res
+  }
   const body = await writeBody(request, route.limit)
   if (body instanceof Response) return body
-  return forward(request, body, route.operatorToken)
+  const res = await forward(request, route.attributed ? attribute(body, principal) : body, route.operatorToken)
+  record(res.status)
+  return res
 }
 
 export async function POST(request: Request): Promise<Response> {

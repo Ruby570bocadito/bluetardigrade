@@ -9,11 +9,12 @@
 // (hot-reloaded by the engine every 15 s) - there is no write API, same
 // as suppressions.
 
-import { CheckCircle, FlowArrow, Siren, Timer } from '@phosphor-icons/react'
+import { CheckCircle, FlowArrow, Siren, Timer, UsersThree } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { EmptyState, SeverityBadge, StatTile } from './ui-bits'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
 import type { SfSequence } from '@/lib/console-types'
+import { isUserScoped, scopeText, stepStatus, unarmedSteps } from '@/lib/sequences'
 
 function formatWindow(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return 'ventana n/d'
@@ -28,7 +29,7 @@ export function SequencesView() {
   const { sequences, rules, alerts, status } = useEngine()
 
   const liveRules = new Set(rules.map((r) => r.name))
-  const armed = sequences.filter((s) => s.steps.every((step) => liveRules.has(step))).length
+  const armed = sequences.filter((s) => unarmedSteps(s, liveRules).length === 0).length
   const hits = new Map<string, number>()
   for (const a of alerts) hits.set(a.rule_name, (hits.get(a.rule_name) ?? 0) + 1)
   const campaigns = (seq: SfSequence) => alerts.filter((a) => a.rule_id === seq.id || a.rule_name === seq.name).length
@@ -50,8 +51,10 @@ export function SequencesView() {
 
       <p className="max-w-[90ch] text-xs leading-relaxed text-zinc-500">
         Cuando todos los pasos de una cadena se observan en el <span className="text-zinc-300">mismo host dentro de la ventana</span>,
-        el correlador levanta una sola alerta de campaña (el orden de los pasos no importa). Cada paso muestra las alertas
-        de su regla en la ventana recibida. Edite{' '}
+        el correlador levanta una sola alerta de campaña (el orden de los pasos no importa). Las cadenas{' '}
+        <span className="text-zinc-300">por cuenta</span> siguen a un mismo usuario por varios equipos (movimiento lateral) y
+        solo se completan cuando lo ven en el número mínimo de equipos. Un paso con alternativas se cumple con cualquiera de
+        ellas. Cada paso muestra las alertas de sus reglas en la ventana recibida. Edite{' '}
         <code className="rounded bg-white/[0.06] px-1 font-mono text-[11px] text-zinc-300">sequences/*.yaml</code>; esta vista es de solo lectura.
       </p>
 
@@ -87,11 +90,13 @@ function FlowConnector({ flowing }: { flowing: boolean }) {
 }
 
 function SequenceCard({ seq, index, live, hits, campaigns }: { seq: SfSequence; index: number; live: Set<string>; hits: Map<string, number>; campaigns: number }) {
-  const missing = seq.steps.filter((step) => !live.has(step))
-  // armed = every step has a live rule in the engine: the chain CAN
-  // complete and raise its campaign alert.
+  const steps = seq.steps.map((_, i) => stepStatus(seq, i, live, hits))
+  const missing = unarmedSteps(seq, live).map((i) => seq.steps[i])
+  // armed = every step has at least one live rule in the engine: the
+  // chain CAN complete and raise its campaign alert.
   const armed = missing.length === 0
-  const observed = seq.steps.filter((step) => (hits.get(step) ?? 0) > 0).length
+  const observed = steps.filter((st) => st.hits > 0).length
+  const userScoped = isUserScoped(seq)
   return (
     <li className="min-w-0">
       {/* AnimatedItem (React Bits): entrada escalonada en el montaje; keys estables. */}
@@ -102,6 +107,12 @@ function SequenceCard({ seq, index, live, hits, campaigns }: { seq: SfSequence; 
           </span>
           <h2 className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-100" title={seq.name}>{seq.name}</h2>
           <SeverityBadge severity={seq.severity} />
+          {userScoped && (
+            <span title="Cadena por cuenta: sigue al mismo usuario por varios equipos" className="flex items-center gap-1 rounded-md border border-zinc-700 bg-white/[0.04] px-1.5 py-0.5 text-[11px] text-zinc-300">
+              <UsersThree size={12} aria-hidden />
+              {scopeText(seq)}
+            </span>
+          )}
           <span title={`ventana: ${seq.window_seconds}s`} className="flex items-center gap-1 rounded-md border border-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-400">
             <Timer size={12} aria-hidden />
             {formatWindow(seq.window_seconds)}
@@ -121,24 +132,41 @@ function SequenceCard({ seq, index, live, hits, campaigns }: { seq: SfSequence; 
             observaron en la ventana; azul = la regla del paso disparó,
             ámbar = la regla no está cargada, neutro = cargada sin alertas. */}
         <ol aria-label={`Pasos de ${seq.name}`} className="mt-3 flex flex-1 flex-col gap-2 sm:flex-row sm:items-stretch">
-          {seq.steps.map((step, i) => {
-            const ok = live.has(step)
-            const count = hits.get(step) ?? 0
-            const next = seq.steps[i + 1]
-            const flowing = count > 0 && (next === undefined ? campaigns > 0 : (hits.get(next) ?? 0) > 0)
+          {steps.map((st, i) => {
+            const step = seq.steps[i]
+            const ok = st.loaded.length > 0
+            const count = st.hits
+            const next = steps[i + 1]
+            const flowing = count > 0 && (next === undefined ? campaigns > 0 : next.hits > 0)
+            const alternatives = st.rules.length > 1
             return (
               <li key={`${seq.id}:${i}`} className="flex min-w-0 flex-1 items-center gap-1.5">
                 <div
-                  title={ok ? 'regla cargada en el motor' : 'regla NO cargada: la cadena no puede completar con este paso'}
+                  title={
+                    alternatives
+                      ? `Cualquiera de: ${st.rules.join(', ')}${st.loaded.length < st.rules.length ? ` (cargadas ${st.loaded.length} de ${st.rules.length})` : ''}`
+                      : ok ? 'regla cargada en el motor' : 'regla NO cargada: la cadena no puede completar con este paso'
+                  }
                   className={`min-w-0 flex-1 rounded-lg border px-2.5 py-2 transition-colors ${
                     !ok ? 'border-amber-300/30 bg-amber-300/[0.06]' : count > 0 ? 'border-blue-400/40 bg-blue-500/[0.10]' : 'border-zinc-800 bg-zinc-900/60'
                   }`}
                 >
                   <span className="flex items-center gap-1.5 text-[10px] text-zinc-500">
                     <span aria-hidden className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-semibold ${count > 0 ? 'bg-blue-500 text-white' : 'bg-zinc-800 text-zinc-400'}`}>{i + 1}</span>
-                    {!ok ? 'regla no cargada' : count > 0 ? `${count} ${count === 1 ? 'alerta' : 'alertas'}` : 'sin alertas'}
+                    {!ok ? (alternatives ? 'ninguna regla cargada' : 'regla no cargada') : count > 0 ? `${count} ${count === 1 ? 'alerta' : 'alertas'}` : 'sin alertas'}
+                    {alternatives && <span className="rounded bg-white/[0.06] px-1 text-[9px] text-zinc-400">{st.rules.length} alternativas</span>}
                   </span>
-                  <span className={`mt-1 line-clamp-2 break-words text-xs leading-snug ${ok ? 'text-zinc-200' : 'text-amber-200'}`} title={step}>{step}</span>
+                  {alternatives ? (
+                    <ul className="mt-1 space-y-0.5">
+                      {st.rules.map((r) => (
+                        <li key={r} className={`truncate text-[11px] leading-snug ${live.has(r) ? ((hits.get(r) ?? 0) > 0 ? 'text-zinc-100' : 'text-zinc-300') : 'text-zinc-600 line-through'}`} title={live.has(r) ? r : `${r} (no cargada)`}>
+                          {r}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <span className={`mt-1 line-clamp-2 break-words text-xs leading-snug ${ok ? 'text-zinc-200' : 'text-amber-200'}`} title={step}>{step}</span>
+                  )}
                 </div>
                 <FlowConnector flowing={flowing} />
               </li>

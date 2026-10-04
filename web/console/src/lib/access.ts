@@ -1,6 +1,10 @@
-// Console access control (CONSOLE_ACCESS_TOKEN).
+// Console access control (CONSOLE_ACCESS_TOKEN, CONSOLE_USERS_FILE).
 //
-// The console has no accounts: whoever reaches it reaches every event
+// Per-analyst accounts are optional (lib/users.ts): with
+// CONSOLE_USERS_FILE set, only its accounts get in, each with its role,
+// and the rest of this note describes the gate without them.
+//
+// Without accounts, whoever reaches the console reaches every event
 // the engine holds, because the engine proxy injects SF_API_TOKEN on
 // their behalf. Host pinning (route.ts) only stops browsers tricked by
 // DNS rebinding: any non-browser client that can open a socket to the
@@ -16,6 +20,8 @@
 // it works through the same-origin proxy and the SSE stream. It sends
 // the token on every request, so terminate TLS in front of the console
 // when it leaves the machine.
+
+import { accountPrincipal, basicCredentials, loadAccounts, usersFile, type Principal } from './users'
 
 const encoder = new TextEncoder()
 
@@ -56,21 +62,40 @@ export function basicPassword(header: string | null): string | null {
   return sep < 0 ? null : decoded.slice(sep + 1)
 }
 
-// authorized reports whether the request may reach the console. With
-// no token configured access is governed by the bind address alone.
-export async function authorized(request: Request): Promise<boolean> {
+// principalFor resolves who sends the request, or null when it may not
+// reach the console. With accounts configured only they get in (the
+// shared token does not bypass attribution); without them the shared
+// token, or the bind address alone, decides, and the caller acts as
+// admin like before accounts existed.
+export async function principalFor(request: Request): Promise<Principal | null> {
+  const header = request.headers.get('authorization')
+  if (usersFile()) return accountPrincipal(header)
   const token = accessToken()
-  if (!token) return true
-  const supplied = basicPassword(request.headers.get('authorization'))
-  if (supplied === null) return false
-  return tokenEquals(supplied, token)
+  if (!token) return { name: 'local', role: 'admin', mode: 'open' }
+  const supplied = basicPassword(header)
+  if (supplied === null || !(await tokenEquals(supplied, token))) return null
+  const user = basicCredentials(header)?.user.trim().slice(0, 64)
+  return { name: user || 'operador', role: 'admin', mode: 'token' }
+}
+
+// authorized reports whether the request may reach the console. With
+// no token and no accounts access is governed by the bind address alone.
+export async function authorized(request: Request): Promise<boolean> {
+  return (await principalFor(request)) !== null
+}
+
+function unauthorizedHint(): string {
+  if (!usersFile()) return 'La consola exige credenciales: usa cualquier usuario y el valor de CONSOLE_ACCESS_TOKEN como contraseña.'
+  const { error } = loadAccounts()
+  if (error) return `La consola está bloqueada: ${error} (CONSOLE_USERS_FILE). Corrige el fichero; se relee solo.`
+  return 'La consola exige tu usuario y contraseña de analista.'
 }
 
 export function unauthorizedResponse(): Response {
   return new Response(
     JSON.stringify({
       error: 'console_auth_required',
-      hint: 'La consola exige credenciales: usa cualquier usuario y el valor de CONSOLE_ACCESS_TOKEN como contraseña.',
+      hint: unauthorizedHint(),
     }),
     {
       status: 401,

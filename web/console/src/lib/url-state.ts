@@ -64,6 +64,7 @@ export const CONSOLE_VIEWS = [
   'equipos',
   'reglas',
   'cadenas',
+  'inteligencia',
   'supresiones',
   'probador',
   'respuesta',
@@ -71,7 +72,7 @@ export const CONSOLE_VIEWS = [
 ] as const
 
 /** Views rendered as tabs of the single Detección section. */
-export const DETECTION_VIEWS = ['reglas', 'cadenas', 'supresiones', 'probador'] as const
+export const DETECTION_VIEWS = ['reglas', 'cadenas', 'inteligencia', 'supresiones', 'probador'] as const
 export type DetectionView = (typeof DETECTION_VIEWS)[number]
 export function isDetectionView(view: ConsoleView): view is DetectionView {
   return (DETECTION_VIEWS as readonly string[]).includes(view)

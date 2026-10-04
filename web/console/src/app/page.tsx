@@ -10,17 +10,20 @@ import { AnalystProvider } from '@/components/console/socket-provider'
 import { ConsoleShell } from '@/components/console/shell'
 import { IncidentsProvider } from '@/components/console/incidents-provider'
 import { FleetProvider } from '@/components/console/fleet-provider'
+import { ConsoleUserProvider } from '@/components/console/user-session'
 
 export default function ConsolePage() {
   return (
-    <EngineProvider>
-      <AnalystProvider>
-        <IncidentsProvider>
-          <FleetProvider>
-            <ConsoleShell />
-          </FleetProvider>
-        </IncidentsProvider>
-      </AnalystProvider>
-    </EngineProvider>
+    <ConsoleUserProvider>
+      <EngineProvider>
+        <AnalystProvider>
+          <IncidentsProvider>
+            <FleetProvider>
+              <ConsoleShell />
+            </FleetProvider>
+          </IncidentsProvider>
+        </AnalystProvider>
+      </EngineProvider>
+    </ConsoleUserProvider>
   )
 }
