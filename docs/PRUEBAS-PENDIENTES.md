@@ -15,6 +15,15 @@ En el laboratorio local, con motor real y navegador, se probó además:
 Lo de esta lista necesita **tu Windows real**: privilegios de administrador,
 Sysmon o un segundo equipo. Marca cada casilla al terminar.
 
+**Estado (4 de octubre, en tu equipo):** las secciones 2, 5 y 6 se probaron juntos y están
+marcadas `[x]`. Las casillas que siguen vacías en ellas son comprobaciones visuales de la consola.
+En la primera prueba real salieron y se corrigieron cinco fallos del sensor y del motor:
+- DNS sin respuesta;
+- procesos cortos sin ruta;
+- registro sin nombre de clave;
+- falsos «C2 beacon» por DNS y por el router;
+- reconexión silenciosa.
+
 Notación: **[normal]** = PowerShell normal; **[admin]** = PowerShell abierta como
 administrador; **[otro equipo]** = el equipo remoto. Pega los comandos de uno en uno.
 
@@ -73,21 +82,21 @@ administrador; **[otro equipo]** = el equipo remoto. Pega los comandos de uno en
 
 ## 2. Sensor ETW con red, registro y latido
 
-- [ ] **[admin]** Arranca el sensor (déjalo abierto):
+- [x] **[admin]** Arranca el sensor (déjalo abierto):
 
   ```powershell
   & "$env:LOCALAPPDATA\bluetardigrade\bin\security-sensor.exe" --addr 127.0.0.1:7777 --spool "$env:LOCALAPPDATA\bluetardigrade\spool\sensor.ndjson"
   ```
 
   La primera línea debe terminar en `capture=process+sha256+network+dns+registry`.
-- [ ] **[normal]** Red: `Test-NetConnection example.com -Port 443`. En Flujo en vivo
+- [x] **[normal]** Red: `Test-NetConnection example.com -Port 443`. En Flujo en vivo
   aparece un `network.connect` de `powershell.exe` hacia el puerto 443. **Nuevo:** en
   su detalle, `domain` debe ser `example.com`, porque el sensor recuerda la respuesta DNS.
-- [ ] **[normal]** DNS: `Resolve-DnsName example.org`. Aparece un `network.connect`
+- [x] **[normal]** DNS: `Resolve-DnsName example.org`. Aparece un `network.connect`
   con protocolo `dns`, dominio `example.org`, una IP de respuesta y `dns_status` 0.
   Si repites el comando en menos de un minuto, no sale otro: es intencionado.
   Si esperas más de un minuto sin repetirlo, la siguiente vez sí sale.
-- [ ] **[normal]** Ruta y hash del ejecutable. Ejecuta `whoami` y luego:
+- [x] **[normal]** Ruta y hash del ejecutable. Ejecuta `whoami` y luego:
 
   ```powershell
   (Get-FileHash C:\Windows\System32\whoami.exe).Hash.ToLower()
@@ -95,11 +104,11 @@ administrador; **[otro equipo]** = el equipo remoto. Pega los comandos de uno en
 
   En Flujo en vivo, el `process.create` de `whoami.exe` debe tener
   `image = C:\Windows\System32\whoami.exe` y `hashes.sha256` igual al valor del comando.
-- [ ] Nombres largos: busca en Flujo en vivo un `RuntimeBroker.exe` o `SearchProtocolHost.exe`.
+- [x] Nombres largos: busca en Flujo en vivo un `RuntimeBroker.exe` o `SearchProtocolHost.exe`.
   El nombre debe salir completo, no cortado a 14 letras (`RuntimeBroker.`).
-- [ ] Con el sensor en marcha, el Administrador de tareas no debe mostrar más de un
+- [x] Con el sensor en marcha, el Administrador de tareas no debe mostrar más de un
   par de % de CPU para `security-sensor.exe` en reposo.
-- [ ] **[normal]** Registro (inofensivo). Debe saltar «Persistencia en clave Run via registro».
+- [x] **[normal]** Registro (inofensivo). Debe saltar «Persistencia en clave Run via registro».
   Si la ventana de PowerShell ya estaba abierta antes de arrancar el sensor, la clave sale como
   `?\Software\Microsoft\Windows\CurrentVersion\Run`: el `?` indica que la raíz (HKCU) no se pudo
   resolver, y es normal.
@@ -108,25 +117,25 @@ administrador; **[otro equipo]** = el equipo remoto. Pega los comandos de uno en
   New-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'bt-prueba' -Value 'C:\Windows\notepad.exe' -PropertyType String -Force
   ```
 
-- [ ] **[normal]** Borra la prueba:
+- [x] **[normal]** Borra la prueba:
 
   ```powershell
   Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'bt-prueba'
   ```
 
-- [ ] **Latido (Equipos):**
+- [x] **Latido (Equipos):**
   - Tu equipo aparece «en línea», con el sensor `etw`, tu versión de Windows y
     «Último latido hace menos de 1 min».
-- [ ] **Sensor sin señal:**
+- [x] **Sensor sin señal:**
   - Cierra la ventana del sensor (Ctrl+C) y espera 3 o 4 minutos.
   - En Equipos tu equipo pasa a «sin señal», con un contador rojo en la barra
     lateral, y en Alertas aparece «Sensor sin señal» (alta).
   - Vuelve a arrancar el sensor: el equipo vuelve a «en línea».
-- [ ] **El inventario sobrevive a un reinicio del motor (con el sensor en marcha):**
+- [x] **El inventario sobrevive a un reinicio del motor (con el sensor en marcha):**
   - **[normal]** `sf-console -Stop; sf-console`
   - Equipos muestra tu equipo enseguida, sin esperar al siguiente latido.
   - Durante los 3 minutos siguientes **no** debe aparecer «Sensor sin señal».
-- [ ] **Tras Ctrl+C no queda ninguna sesión ETW abierta:**
+- [x] **Tras Ctrl+C no queda ninguna sesión ETW abierta:**
   - **[admin]** Ejecuta `logman query -ets`.
   - En la lista no deben aparecer `bluetardigrade-sensor` ni `bluetardigrade-sensor-netreg`.
 
@@ -183,21 +192,21 @@ equipo remoto», que genera todos los comandos.
 El motor no descarga listas: lee los ficheros que dejes en la carpeta `intel`.
 Formato en `intel\README.md`. Con el sensor ETW en marcha:
 
-- [ ] **[normal]** Crea una lista de prueba con un dominio y el hash de `charmap.exe`:
+- [x] **[normal]** Crea una lista de prueba con un dominio y el hash de `charmap.exe`:
 
   ```powershell
   Set-Content -Path "$env:LOCALAPPDATA\bluetardigrade\intel\prueba.txt" -Value @('# lista de prueba', 'example.net', (Get-FileHash C:\Windows\System32\charmap.exe).Hash)
   ```
 
 - [ ] En unos 15 s, Detección → Inteligencia muestra la lista `prueba` con «Dominios 1» y «Hashes 1».
-- [ ] **[normal]** `Resolve-DnsName www.example.net`: salta «Indicador de amenaza conocido»
+- [x] **[normal]** `Resolve-DnsName www.example.net`: salta «Indicador de amenaza conocido»
   (alta, regla `intel-match-prueba`) por el dominio, aunque la lista diga solo `example.net`.
-- [ ] **[normal]** `Start-Process charmap`: salta otra alerta, esta vez por el hash.
+- [x] **[normal]** `Start-Process charmap`: salta otra alerta, esta vez por el hash.
   Cierra el Mapa de caracteres.
 - [ ] Las coincidencias aparecen en «Últimas coincidencias y procesos nuevos».
 - [ ] **[normal]** `sf-engine doctor` muestra «Inteligencia: 2 indicadores en 1 lista».
 - [ ] El chip «detectores» de la cabecera se pone ámbar y su fila Inteligencia cuenta las coincidencias.
-- [ ] **[normal]** Borra la lista. La pestaña vuelve a «Sin listas» en unos 15 s:
+- [x] **[normal]** Borra la lista. La pestaña vuelve a «Sin listas» en unos 15 s:
 
   ```powershell
   Remove-Item "$env:LOCALAPPDATA\bluetardigrade\intel\prueba.txt"
@@ -208,14 +217,14 @@ Formato en `intel\README.md`. Con el sensor ETW en marcha:
 Por defecto aprende durante 24 horas. Para probarlo, se acorta a 3 minutos y luego
 se deja como estaba.
 
-- [ ] **[normal]** Acorta el aprendizaje y reinicia:
+- [x] **[normal]** Acorta el aprendizaje y reinicia:
 
   ```powershell
   Set-Content "$env:LOCALAPPDATA\bluetardigrade\tools\config\baseline.learn" '3m'; sf-console -Stop; sf-console
   ```
 
 - [ ] Detección → Inteligencia, tarjeta «Equipos en línea base»: dice «periodo 3 min».
-- [ ] Con el sensor en marcha, usa el equipo 3 o 4 minutos y luego ejecuta `winver`.
+- [x] Con el sensor en marcha, usa el equipo 3 o 4 minutos y luego ejecuta `winver`.
   Debe salir «Proceso nunca visto en este equipo» (baja), con la ruta
   `C:\Windows\System32\winver.exe`. Si ya habías ejecutado `winver`, prueba con `msinfo32`.
 - [ ] Ejecuta `winver` otra vez: **no** sale otra alerta (solo la primera vez).
@@ -223,9 +232,9 @@ se deja como estaba.
   - dice «Activa»;
   - lista los procesos conocidos (escribe `winver` en el filtro);
   - muestra arriba el proceso nuevo, que al pulsarlo abre su alerta.
-- [ ] **[normal]** `sf-engine doctor` muestra «Linea base: Aprendizaje de 3m0s
+- [x] **[normal]** `sf-engine doctor` muestra «Linea base: Aprendizaje de 3m0s
   (tools/config/baseline.learn)».
-- [ ] **[normal]** Vuelve a las 24 horas:
+- [x] **[normal]** Vuelve a las 24 horas:
 
   ```powershell
   Remove-Item "$env:LOCALAPPDATA\bluetardigrade\tools\config\baseline.learn"; sf-console -Stop; sf-console
