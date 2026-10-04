@@ -167,6 +167,9 @@ impl Sender {
                 Ok(stream) => {
                     *self.writer.lock().expect("transport mutex poisoned") =
                         Some(BufWriter::new(stream));
+                    // say so: after a run of failures the operator would
+                    // otherwise assume the sensor is still disconnected
+                    eprintln!("[SENSOR] reconnected to {} - delivering queued events", self.addr);
                 }
                 Err(err) => eprintln!("[SENSOR] reconnect failed: {err:#}"),
             }

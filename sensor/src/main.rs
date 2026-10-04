@@ -64,6 +64,8 @@ mod ntpath;
 mod procinfo;
 #[cfg(any(target_os = "windows", test))]
 mod queue;
+#[cfg(any(target_os = "windows", test))]
+mod regnames;
 
 use anyhow::Result;
 use std::path::PathBuf;
@@ -80,6 +82,7 @@ fn main() -> Result<()> {
     let mut network = true;
     let mut registry = true;
     let mut registry_all = false;
+    let mut debug_registry: Option<String> = None;
     let mut dns = true;
     let mut hash = true;
     let mut args = std::env::args().skip(1);
@@ -115,6 +118,12 @@ fn main() -> Result<()> {
             "--no-network" => network = false,
             "--no-registry" => registry = false,
             "--registry-all" => registry_all = true,
+            "--debug-registry" => {
+                debug_registry = Some(args.next().unwrap_or_else(|| {
+                    eprintln!("--debug-registry requires a key fragment, e.g. CurrentVersion\\Run");
+                    std::process::exit(2);
+                }));
+            }
             "--no-dns" => dns = false,
             "--no-hash" => hash = false,
             "--spool-max-mb" => {
@@ -165,6 +174,10 @@ fn main() -> Result<()> {
             .map(|p| format!("{} (max {spool_max_mb} MiB)", p.display()))
             .unwrap_or_else(|| "off".into()));
 
+    if let Some(fragment) = &debug_registry {
+        eprintln!("[SENSOR] registry diagnostics: printing how keys containing {fragment:?} are named");
+    }
+
     if !cfg!(target_os = "windows") {
         eprintln!(
             "[SENSOR] error: ETW telemetry is only available on Windows; refusing to run without real data"
@@ -179,7 +192,7 @@ fn main() -> Result<()> {
             spool,
             spool_max_bytes: spool_max_mb.saturating_mul(1 << 20),
         };
-        let capture = collector::Capture { network, registry, registry_all, dns, hash };
+        let capture = collector::Capture { network, registry, registry_all, dns, hash, debug_registry };
         collector::run(&addr, token.as_deref(), tls_ca.as_deref(), delivery, capture)
     }
     #[cfg(not(target_os = "windows"))]

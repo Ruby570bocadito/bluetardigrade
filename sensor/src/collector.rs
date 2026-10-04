@@ -12,7 +12,9 @@
 //     attempts, IPv4 and IPv6), Microsoft-Windows-DNS-Client (query
 //     completed) and Microsoft-Windows-Kernel-Registry (SetValueKey).
 //     All are filtered by event id inside the kernel; registry writes are
-//     further limited to the keys detections read (netreg.rs) and repeated
+//     named from the key open/create/close events (regnames.rs: the write
+//     event itself carries no key name), then limited to the keys
+//     detections read (netreg.rs) and repeated
 //     DNS queries are reported once a minute (dns.rs). They only carry a
 //     PID, named through the table; DNS answers also name the domain of
 //     the TCP connections that follow.
@@ -41,8 +43,10 @@ use crate::normalize::{self, EventJson, HashesJson, NetworkJson, ProcessJson, Re
 use crate::normalize::{TYPE_NETWORK_CONNECT, TYPE_PROCESS_CREATE, TYPE_REGISTRY_SET};
 use crate::procinfo;
 use crate::queue::{Pipeline, Spool};
+use crate::regnames::KeyNames;
 use crate::transport::Sender;
 use anyhow::{Context, Result};
+use std::collections::HashSet;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -51,7 +55,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use ferrisetw::parser::Parser;
+use ferrisetw::parser::{Parser, Pointer};
 use ferrisetw::provider::{kernel_providers, EventFilter, Provider};
 use ferrisetw::schema_locator::SchemaLocator;
 use ferrisetw::trace::{KernelTrace, TraceTrait, UserTrace};
@@ -76,7 +80,16 @@ const EVENT_TCP4_CONNECT: u16 = 12;
 const EVENT_TCP6_CONNECT: u16 = 28;
 
 const KERNEL_REGISTRY: &str = "70eb4f03-c1de-4f73-a051-33d13d5413bd";
+const EVENT_REG_CREATE_KEY: u16 = 1;
+const EVENT_REG_OPEN_KEY: u16 = 2;
 const EVENT_REG_SET_VALUE: u16 = 5;
+const EVENT_REG_CLOSE_KEY: u16 = 13;
+/// CloseKey | SetValueKey | CreateKey | OpenKey keywords: the write and
+/// the events that name its key.
+const KERNEL_REGISTRY_KEYWORDS: u64 = 0x1 | 0x100 | 0x1000 | 0x2000;
+/// Key handles remembered by name, and writes waiting for their key.
+const REGISTRY_NAMES_CAP: usize = 65_536;
+const REGISTRY_PARKED_CAP: usize = 4096;
 
 const DNS_CLIENT: &str = "1c95126e-7eea-49a9-a3fe-a378b03ddb4d";
 /// DNS-Client reports some queries first with this status (invalid
@@ -127,6 +140,9 @@ pub struct Capture {
     pub dns: bool,
     /// SHA-256 of the image of each process start
     pub hash: bool,
+    /// print how registry keys containing this fragment are named
+    /// (diagnostics for the key-name resolution)
+    pub debug_registry: Option<String>,
 }
 
 /// A process start waiting for its image hash.
@@ -155,6 +171,10 @@ struct Shared {
     devices: DeviceMap,
     /// the Kernel-Process provider is running (worth waiting for)
     images_live: AtomicBool,
+    /// registry key handles -> names, and writes waiting for their key
+    regkeys: Mutex<KeyNames<EventJson>>,
+    /// --debug-registry: lowercase fragment and the handles it matched
+    debug_registry: Option<(String, Mutex<HashSet<usize>>)>,
 }
 
 impl Shared {
@@ -363,6 +383,8 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
         images,
         devices: device_map(),
         images_live: AtomicBool::new(false),
+        regkeys: Mutex::new(KeyNames::new(REGISTRY_NAMES_CAP, REGISTRY_PARKED_CAP)),
+        debug_registry: capture.debug_registry.as_ref().map(|f| (f.to_ascii_lowercase(), Mutex::new(HashSet::new()))),
     });
 
     // The provider is rebuilt for each start attempt (a stale session
@@ -518,10 +540,8 @@ fn start_netreg(ctx: &Arc<Shared>, network: bool, dns: bool, registry: bool, ima
             let ctx = Arc::clone(ctx);
             builder = builder.enable(
                 Provider::by_guid(KERNEL_REGISTRY)
-                    // every keyword: the event-id filter below is what
-                    // keeps only SetValueKey, inside the kernel
-                    .any(u64::MAX)
-                    .add_filter(EventFilter::ByEventIds(vec![EVENT_REG_SET_VALUE]))
+                    .any(KERNEL_REGISTRY_KEYWORDS)
+                    .add_filter(EventFilter::ByEventIds(vec![EVENT_REG_CREATE_KEY, EVENT_REG_OPEN_KEY, EVENT_REG_SET_VALUE, EVENT_REG_CLOSE_KEY]))
                     .add_callback(move |record: &EventRecord, schema_locator: &SchemaLocator| handle_registry(record, schema_locator, &ctx))
                     .build(),
             );
@@ -862,60 +882,142 @@ fn handle_dns(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &Shared
     });
 }
 
-/// Kernel-Registry SetValueKey on a detection-relevant key -> registry.set.
+/// Kernel-Registry: OpenKey/CreateKey/CloseKey name the key handles, and
+/// SetValueKey on a detection-relevant key becomes registry.set. The
+/// write event carries no key name on current Windows: the key comes from
+/// the handle's open (or, for a handle opened before the sensor started,
+/// from its close, which the write waits for).
 fn handle_registry(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &Shared) {
-    if record.event_id() != EVENT_REG_SET_VALUE {
+    let id = record.event_id();
+    if !matches!(id, EVENT_REG_CREATE_KEY | EVENT_REG_OPEN_KEY | EVENT_REG_SET_VALUE | EVENT_REG_CLOSE_KEY) {
         return;
     }
     let Ok(schema) = schema_locator.event_schema(record) else {
         return;
     };
     let parser = Parser::create(record, &schema);
-    // only writes that succeeded changed the registry
-    if parser.try_parse::<u32>("Status").is_ok_and(|status| status != 0) {
-        return;
+    let pointer = |name: &str| parser.try_parse::<Pointer>(name).map(|p| *p).unwrap_or(0);
+    let now = Instant::now();
+    match id {
+        EVENT_REG_CREATE_KEY | EVENT_REG_OPEN_KEY => {
+            if parser.try_parse::<u32>("Status").is_ok_and(|status| status != 0) {
+                return;
+            }
+            let key_object = pointer("KeyObject");
+            let base_object = pointer("BaseObject");
+            let base_name = parser.try_parse::<String>("BaseName").unwrap_or_default();
+            let relative = parser.try_parse::<String>("RelativeName").unwrap_or_default();
+            if let Ok(mut names) = ctx.regkeys.lock() {
+                names.opened(key_object, base_object, &base_name, &relative);
+                if let Some((fragment, watched)) = &ctx.debug_registry {
+                    let named = names.name_of(key_object).unwrap_or("");
+                    if named.to_ascii_lowercase().contains(fragment.as_str()) || relative.to_ascii_lowercase().contains(fragment.as_str()) {
+                        eprintln!("[REG] {} obj={key_object:#x} base={base_object:#x} base_name=[{base_name}] relative=[{relative}] -> [{named}]", if id == EVENT_REG_OPEN_KEY { "open" } else { "create" });
+                        if let Ok(mut w) = watched.lock() {
+                            w.insert(key_object);
+                        }
+                    }
+                }
+            }
+        }
+        EVENT_REG_CLOSE_KEY => {
+            let key_object = pointer("KeyObject");
+            let key_name = parser.try_parse::<String>("KeyName").unwrap_or_default();
+            if let Some((_, watched)) = &ctx.debug_registry {
+                if watched.lock().is_ok_and(|mut w| w.remove(&key_object)) {
+                    eprintln!("[REG] close obj={key_object:#x} key_name=[{key_name}]");
+                }
+            }
+            let named = ctx.regkeys.lock().map(|mut names| names.closed(key_object, &key_name)).unwrap_or_default();
+            for (event, kernel_key) in named {
+                finish_registry(ctx, event, &kernel_key);
+            }
+        }
+        _ => {
+            // only writes that succeeded changed the registry
+            if parser.try_parse::<u32>("Status").is_ok_and(|status| status != 0) {
+                return;
+            }
+            let pid = record.process_id();
+            if pid == ctx.own_pid {
+                return;
+            }
+            let key_object = pointer("KeyObject");
+            let key_name = parser.try_parse::<String>("KeyName").unwrap_or_default();
+            let value_name = parser.try_parse::<String>("ValueName").unwrap_or_default();
+            let value = match (parser.try_parse::<u32>("Type"), parser.try_parse::<Vec<u8>>("CapturedData")) {
+                (Ok(reg_type), Ok(data)) => netreg::registry_value(reg_type, &data),
+                _ => None,
+            };
+            let known = if !key_name.trim_matches(char::from(0)).trim().is_empty() {
+                Some(key_name.clone())
+            } else {
+                ctx.regkeys.lock().ok().and_then(|names| names.name_of(key_object).map(str::to_string))
+            };
+            if let Some((fragment, watched)) = &ctx.debug_registry {
+                let hit = watched.lock().is_ok_and(|w| w.contains(&key_object))
+                    || known.as_deref().is_some_and(|k| k.to_ascii_lowercase().contains(fragment.as_str()));
+                if hit {
+                    eprintln!("[REG] set pid={pid} obj={key_object:#x} key_name=[{key_name}] resolved=[{}] value_name=[{value_name}]", known.as_deref().unwrap_or("(waits for close)"));
+                }
+            }
+            let event = EventJson {
+                id: normalize::new_uuid(),
+                timestamp: record_time(record),
+                r#type: TYPE_REGISTRY_SET.into(),
+                source: "etw".into(),
+                host: ctx.host.clone(),
+                user: None,
+                process: Some(ProcessJson {
+                    pid: pid as i32,
+                    ppid: 0,
+                    name: ctx.process_name(pid),
+                    command_line: None,
+                    image: None,
+                    hashes: None,
+                }),
+                network: None,
+                registry: Some(RegistryJson {
+                    key: String::new(), // filled once the key is named
+                    value_name: (!value_name.is_empty()).then_some(value_name),
+                    value,
+                    operation: "SetValue".into(),
+                }),
+                attributes: None,
+                tags: vec!["sensor:etw".into()],
+            };
+            match known {
+                Some(kernel_key) => finish_registry(ctx, event, &kernel_key),
+                None => {
+                    if let Ok(mut names) = ctx.regkeys.lock() {
+                        names.park(key_object, event, now);
+                    }
+                }
+            }
+        }
     }
-    let Ok(kernel_key) = parser.try_parse::<String>("KeyName") else {
+    // writes whose handle was not closed in time: without a key they
+    // cannot pass the filter; --registry-all forwards them as they are
+    let expired = ctx.regkeys.lock().map(|mut names| names.expire(now)).unwrap_or_default();
+    if ctx.registry_all {
+        for event in &expired {
+            ctx.emit(event);
+        }
+    }
+}
+
+/// Names a registry write's key (kernel path -> HKLM/HKU form) and emits
+/// it when it touches a key detections read (or with --registry-all).
+fn finish_registry(ctx: &Shared, mut event: EventJson, kernel_key: &str) {
+    let Some(registry) = event.registry.as_mut() else {
         return;
     };
-    let key = netreg::registry_path(&kernel_key);
-    let value_name = parser.try_parse::<String>("ValueName").unwrap_or_default();
-    if !ctx.registry_all && !netreg::interesting_registry(&key, &value_name) {
+    registry.key = netreg::registry_path(kernel_key);
+    let value_name = registry.value_name.clone().unwrap_or_default();
+    if !ctx.registry_all && !netreg::interesting_registry(&registry.key, &value_name) {
         return;
     }
-    let pid = record.process_id();
-    if pid == ctx.own_pid {
-        return;
-    }
-    let value = match (parser.try_parse::<u32>("Type"), parser.try_parse::<Vec<u8>>("CapturedData")) {
-        (Ok(reg_type), Ok(data)) => netreg::registry_value(reg_type, &data),
-        _ => None,
-    };
-    ctx.emit(&EventJson {
-        id: normalize::new_uuid(),
-        timestamp: record_time(record),
-        r#type: TYPE_REGISTRY_SET.into(),
-        source: "etw".into(),
-        host: ctx.host.clone(),
-        user: None,
-        process: Some(ProcessJson {
-            pid: pid as i32,
-            ppid: 0,
-            name: ctx.process_name(pid),
-            command_line: None,
-            image: None,
-            hashes: None,
-        }),
-        network: None,
-        registry: Some(RegistryJson {
-            key,
-            value_name: (!value_name.is_empty()).then_some(value_name),
-            value,
-            operation: "SetValue".into(),
-        }),
-        attributes: None,
-        tags: vec!["sensor:etw".into()],
-    });
+    ctx.emit(&event);
 }
 
 /// Stops both sessions on Ctrl+C, Ctrl+Break or console close, so
