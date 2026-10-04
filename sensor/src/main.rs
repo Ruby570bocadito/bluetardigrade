@@ -46,6 +46,8 @@ mod collector;
 // platform-independent so their tests run on any host; outside Windows
 // they are only compiled for those tests.
 #[cfg(any(target_os = "windows", test))]
+mod heartbeat;
+#[cfg(any(target_os = "windows", test))]
 mod netreg;
 #[cfg(any(target_os = "windows", test))]
 mod procinfo;

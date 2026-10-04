@@ -24,9 +24,10 @@ ferrisetw = { version = "1", features = ["time_rs"] }
 # a pure cargo check with no C toolchain on the runner.
 native-tls = "0.2"
 # SetConsoleCtrlHandler: Ctrl+C stops the kernel ETW session instead of
-# leaving it running after the process exits. Already in the dependency
-# tree (same version), so no new code is pulled in.
-windows-sys = { version = "0.61", features = ["Win32_System_Console"] }
+# leaving it running after the process exits; RegGetValueW reads the
+# Windows version for the heartbeat. Already in the dependency tree
+# (same version), so no new crate is pulled in.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console", "Win32_System_Registry"] }
 
 [profile.release]
 lto = true

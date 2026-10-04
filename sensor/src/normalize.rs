@@ -72,6 +72,9 @@ pub struct EventJson {
     pub network: Option<NetworkJson>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub registry: Option<RegistryJson>,
+    // declared observations (heartbeat health fields), model.Event attributes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attributes: Option<std::collections::BTreeMap<String, String>>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
 }

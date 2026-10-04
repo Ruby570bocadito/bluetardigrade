@@ -21,6 +21,7 @@
 
 #![cfg(target_os = "windows")]
 
+use crate::heartbeat::{self, Health};
 use crate::netreg::{self, ProcessTable};
 use crate::normalize::{self, EventJson, NetworkJson, ProcessJson, RegistryJson};
 use crate::normalize::{TYPE_NETWORK_CONNECT, TYPE_PROCESS_CREATE, TYPE_REGISTRY_SET};
@@ -30,9 +31,10 @@ use crate::transport::Sender;
 use anyhow::{Context, Result};
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use ferrisetw::parser::Parser;
 use ferrisetw::provider::{kernel_providers, EventFilter, Provider};
@@ -123,6 +125,7 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
         ),
         None => None,
     };
+    let queue_cap = delivery.queue_cap;
     // Delivery runs on its own thread: the ETW callbacks only push, so
     // an unreachable engine can no longer stall the trace consumers
     // (which made Windows drop events from the real-time buffers).
@@ -171,6 +174,16 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
     };
     eprintln!("[SENSOR] ETW sessions active - streaming {what}");
 
+    // health report for the engine's machine inventory, every minute
+    let capture_label = match (&netreg, capture.network, capture.registry) {
+        (Some(_), true, true) => "process+network+registry",
+        (Some(_), true, false) => "process+network",
+        (Some(_), false, true) => "process+registry",
+        _ => "process",
+    };
+    let heartbeat_stop = Arc::new(AtomicBool::new(false));
+    let heartbeat_thread = start_heartbeat(Arc::clone(&ctx), capture_label.to_string(), queue_cap, Arc::clone(&heartbeat_stop));
+
     // The kernel session must stay alive while events are processed;
     // dropping `trace` stops it. process_from_handle blocks on this
     // thread until the trace is stopped or ProcessTrace fails.
@@ -179,6 +192,10 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
     if let Some((netreg_trace, netreg_thread)) = netreg {
         drop(netreg_trace); // stops the session, ProcessTrace returns
         let _ = netreg_thread.join();
+    }
+    heartbeat_stop.store(true, Ordering::Relaxed);
+    if let Some(thread) = heartbeat_thread {
+        let _ = thread.join();
     }
     // hand everything still in memory to the engine or the spool
     pipeline.shutdown(delivery_thread, Duration::from_secs(10));
@@ -263,6 +280,86 @@ fn start_netreg(ctx: &Arc<Shared>, capture: &Capture) -> Option<(UserTrace, std:
     }
 }
 
+/// Sends a sensor.heartbeat now and every heartbeat::INTERVAL_SECS until
+/// `stop` is set. Heartbeats travel the same queue and spool as events.
+fn start_heartbeat(ctx: Arc<Shared>, capture: String, queue_cap: usize, stop: Arc<AtomicBool>) -> Option<JoinHandle<()>> {
+    let os = os_label();
+    let started = Instant::now();
+    std::thread::Builder::new()
+        .name("heartbeat".into())
+        .spawn(move || loop {
+            let stats = ctx.pipeline.stats();
+            let health = Health {
+                kind: "etw",
+                version: env!("CARGO_PKG_VERSION"),
+                os: os.clone(),
+                capture: capture.clone(),
+                interval_s: heartbeat::INTERVAL_SECS,
+                uptime_s: started.elapsed().as_secs(),
+                queue_cap,
+                spooled: stats.spooled,
+                dropped: stats.dropped,
+            };
+            ctx.emit(&EventJson {
+                id: normalize::new_uuid(),
+                timestamp: normalize::now_rfc3339(),
+                r#type: heartbeat::TYPE_HEARTBEAT.into(),
+                source: "etw".into(),
+                host: ctx.host.clone(),
+                user: None,
+                process: None,
+                network: None,
+                registry: None,
+                attributes: Some(heartbeat::attributes(&health)),
+                tags: vec!["sensor:etw".into()],
+            });
+            // sleep in one-second steps so shutdown stays prompt
+            for _ in 0..heartbeat::INTERVAL_SECS {
+                if stop.load(Ordering::Relaxed) {
+                    return;
+                }
+                std::thread::sleep(Duration::from_secs(1));
+            }
+        })
+        .ok()
+}
+
+/// Windows version from HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion.
+fn os_label() -> String {
+    heartbeat::os_label(
+        read_current_version("ProductName").as_deref(),
+        read_current_version("DisplayVersion").as_deref(),
+        read_current_version("CurrentBuildNumber").as_deref(),
+    )
+}
+
+fn read_current_version(value: &str) -> Option<String> {
+    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ};
+    let subkey: Vec<u16> = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\0".encode_utf16().collect();
+    let name: Vec<u16> = value.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut buf = [0u16; 256];
+    let mut len: u32 = (buf.len() * 2) as u32;
+    // SAFETY: both names are NUL-terminated UTF-16; buf is writable for
+    // `len` bytes and RegGetValueW writes at most that much.
+    let rc = unsafe {
+        RegGetValueW(
+            HKEY_LOCAL_MACHINE,
+            subkey.as_ptr(),
+            name.as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            buf.as_mut_ptr().cast(),
+            &mut len,
+        )
+    };
+    if rc != 0 {
+        return None;
+    }
+    let chars = ((len as usize) / 2).min(buf.len());
+    let text = String::from_utf16_lossy(&buf[..chars]);
+    Some(text.trim_end_matches('\0').to_string())
+}
+
 fn hostname() -> String {
     std::env::var("COMPUTERNAME").unwrap_or_else(|_| "unknown-host".into())
 }
@@ -330,6 +427,7 @@ fn handle_process(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &Sh
         }),
         network: None,
         registry: None,
+        attributes: None,
         tags: vec!["sensor:etw".into()],
     });
 }
@@ -381,6 +479,7 @@ fn handle_network(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &Sh
             domain: None,
         }),
         registry: None,
+        attributes: None,
         tags: vec!["sensor:etw".into()],
     });
 }
@@ -436,6 +535,7 @@ fn handle_registry(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &S
             value,
             operation: "SetValue".into(),
         }),
+        attributes: None,
         tags: vec!["sensor:etw".into()],
     });
 }

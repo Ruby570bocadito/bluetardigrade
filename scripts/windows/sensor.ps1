@@ -233,6 +233,47 @@ function ConvertFrom-SysmonRecord([int]$EventId, [hashtable]$Data, [datetime]$Ti
 # SelfTest: mapping fixtures shaped like real Sysmon EventData. Runs on
 # any OS with PowerShell (used by the project E2E on the dev box).
 # ======================================================================
+# ---- health report for the engine's machine inventory (GET /api/fleet).
+# sensor.heartbeat events are consumed by the engine and never reach rules
+# or storage; a sensor that stops sending them raises "Sensor sin señal".
+$HeartbeatSeconds = 60
+
+function Get-OsLabel {
+    try {
+        $cv = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction Stop
+    } catch { return '' }
+    $product = "$($cv.ProductName)".Trim()
+    $build = "$($cv.CurrentBuildNumber)".Trim()
+    # Windows 11 still reports "Windows 10" in ProductName; build 22000+ is 11
+    if ($product -like 'Windows 10*' -and ($build -as [int]) -ge 22000) { $product = $product -replace '^Windows 10', 'Windows 11' }
+    $label = $product
+    if ("$($cv.DisplayVersion)".Trim()) { $label = ($label + ' ' + "$($cv.DisplayVersion)".Trim()).Trim() }
+    if ($build) { $label = ($label + " ($build)").Trim() }
+    return $label
+}
+
+function New-HeartbeatEvent([string]$Os, [string]$Version, [datetime]$Started, [datetime]$Now, [long]$Sent) {
+    $attrs = [ordered]@{
+        sensor_kind = 'sysmon'
+        capture     = 'sysmon event ids ' + ($watchedIds -join ',')
+        interval_s  = "$HeartbeatSeconds"
+        uptime_s    = '' + [long]($Now - $Started).TotalSeconds
+        spooled     = '0'
+        dropped     = '0'
+        sent        = "$Sent"
+    }
+    if ($Version) { $attrs['sensor_version'] = $Version }
+    if ($Os) { $attrs['os'] = $Os }
+    return [ordered]@{
+        id         = [Guid]::NewGuid().ToString()
+        timestamp  = $Now.ToUniversalTime().ToString('o')
+        type       = 'sensor.heartbeat'
+        source     = 'sysmon'
+        host       = $env:COMPUTERNAME
+        attributes = $attrs
+    }
+}
+
 function Invoke-SelfTest {
     $fails = 0
     function Check([string]$name, [bool]$ok) {
@@ -310,6 +351,12 @@ function Invoke-SelfTest {
 
     $ev = ConvertFrom-SysmonRecord 255 @{ Whatever = '1' } $t
     Check 'unknown EID skipped' ($null -eq $ev)
+
+    $hb = New-HeartbeatEvent 'Windows 11 Pro 24H2 (26100)' 'abc1234' $t $t.AddSeconds(90) 42
+    Check 'heartbeat type + host' ($hb['type'] -eq 'sensor.heartbeat' -and $hb['host'] -eq $env:COMPUTERNAME)
+    Check 'heartbeat health fields' ($hb['attributes']['sensor_kind'] -eq 'sysmon' -and $hb['attributes']['interval_s'] -eq '60' -and $hb['attributes']['uptime_s'] -eq '90' -and $hb['attributes']['sent'] -eq '42')
+    $json = $hb | ConvertTo-Json -Compress -Depth 6
+    Check 'heartbeat attributes are strings' ($json -match '"uptime_s":"90"' -and $json -match '"os":"Windows 11 Pro 24H2 \(26100\)"')
 
     if ($fails -gt 0) { Write-Host "[SENSOR] self-test FAILED ($fails)" -ForegroundColor Red; exit 1 }
     Write-Host '[SENSOR] self-test OK'
@@ -455,26 +502,31 @@ if ($session.GetLogNames() -notcontains $sysmonLog) {
 
 $xpath = '<QueryList><Query Id="0" Path="' + $sysmonLog + '"><Select Path="' + $sysmonLog + '">*[System[(EventID=' + ($watchedIds -join ') or (EventID=') + ')]]</Select></Query></QueryList>'
 
-function New-SensorWatcher {
+function Get-NewestRecordId {
     try {
-        $query = New-Object System.Diagnostics.Eventing.Reader.EventLogQuery($sysmonLog, [System.Diagnostics.Eventing.Reader.PathType]::LogName, $xpath)
-        return New-Object System.Diagnostics.Eventing.Reader.EventLogWatcher($query)
+        $query = New-Object System.Diagnostics.Eventing.Reader.EventLogQuery($sysmonLog, [System.Diagnostics.Eventing.Reader.PathType]::LogName)
+        $query.ReverseDirection = $true
+        $reader = New-Object System.Diagnostics.Eventing.Reader.EventLogReader($query)
+        try {
+            $newest = $reader.ReadEvent()
+            if ($newest) { return [long]$newest.RecordId }
+        } finally { $reader.Dispose() }
     } catch [System.Security.SecurityException], [UnauthorizedAccessException] {
         Write-Host '[SENSOR] access denied reading the Sysmon log. Run this terminal as admin, or (recommended)' -ForegroundColor Red
         Write-Host '[SENSOR] add your user to the local "Event Log Readers" group and re-open the session.'
         exit 1
-    }
+    } catch { }
+    return 0
 }
+
 
 # ---- reconnection continuity -----------------------------------------
 # EventRecordID is monotonic inside one log, so remembering the last
-# processed id is a complete bookmark: after a reconnect the sensor (1)
-# arms the live watcher first (it buffers from activation), (2) drains
-# everything the log gained since the last seen id through a bounded
-# backlog query, (3) consumes the watcher skipping anything at or below
-# the drained maximum. Events emitted during a cut are RE-SENT, never
-# lost; a hard crash can re-send up to the last persisted id (duplicate
-# telemetry - the honest failure direction for a detection pipeline).
+# processed id is a complete bookmark: the live loop reads everything
+# after it on every pass, and a reconnect simply continues from it.
+# Events emitted during a cut are RE-SENT, never lost; a hard crash can
+# re-send up to the last persisted id (duplicate telemetry - the honest
+# failure direction for a detection pipeline).
 $bookmarkFile = Join-Path $root 'run\sensor-bookmark.txt'
 
 function Load-LastRecordId {
@@ -522,32 +574,30 @@ function Send-EventLine([IO.StreamWriter]$W, [Net.Sockets.TcpClient]$C, [hashtab
     $W.Flush()
 }
 
-# Convert-AndSend applies the shared mapping + shipping to one raw
-# Sysmon record and reports the record id (0 when the record maps to
-# nothing the engine cares about).
-function Convert-AndSend([object]$Rec, [IO.StreamWriter]$W) {
-    $xml = [xml]$Rec.ToXml()
-    $data = @{}
-    foreach ($d in $xml.Event.EventData.Data) {
-        if ($d.Name) { $data[$d.Name] = $d.'#text' }
-    }
-    $ev = ConvertFrom-SysmonRecord $Rec.Id $data $Rec.TimeCreated
-    $rid = 0
-    if ($xml.Event.System.EventRecordID) { $rid = [long]$xml.Event.System.EventRecordID }
-    if ($null -eq $ev) { return $rid }
-    Send-EventLine $W $null $ev
-    return $rid
-}
 
 Write-Host "[SENSOR] Sysmon subscription active ($sysmonLog) - streaming REAL activity to $Addr"
 if ($Token) { Write-Host '[SENSOR] ingest auth: ENABLED (AUTH handshake as first line)' }
 Write-Host '[SENSOR] press Ctrl+C to stop (engine keeps running)'
 
-# ---- main loop: connect -> auth -> subscribe -> backlog -> consume --
+# ---- main loop: connect -> auth -> poll by record id + heartbeat -----
+# Reading the newest record first also fails fast (with guidance) when
+# this account cannot read the Sysmon log.
+$newestRecordId = Get-NewestRecordId
 $lastRecordId = Load-LastRecordId
 if ($lastRecordId -gt 0) {
     Write-Host "[SENSOR] resuming after record id $lastRecordId (events during the cut are re-sent)"
+} else {
+    # first run: start from now, never replay the whole log
+    $lastRecordId = $newestRecordId
 }
+$sent = 0
+$sensorStarted = Get-Date
+$osLabel = Get-OsLabel
+$sensorVersion = ''
+try {
+    $git = Get-Command git -ErrorAction Stop
+    $sensorVersion = (& $git.Source -C $root rev-parse --short HEAD 2>$null | Select-Object -First 1)
+} catch { }
 while ($true) {
     $client = New-Object Net.Sockets.TcpClient
     try { $client.Connect($ip, $port) } catch {
@@ -586,62 +636,48 @@ while ($true) {
         }
     }
 
-    # Arm the live watcher FIRST: it buffers events raised while the
-    # backlog below is draining, which is what makes the reconnection
-    # gapless (see the bookmark note above the helpers).
-    $watcher = New-SensorWatcher
-    $sent = 0
+    # Live loop. Every pass sends everything the Sysmon log gained after
+    # the last processed EventRecordID (monotonic inside one log, so the
+    # id is a complete bookmark: a reconnect re-sends the cut, never
+    # loses it), then a heartbeat once a minute. An idle pass sleeps one
+    # second. (The previous EventLogWatcher path called a method .NET
+    # does not have, so every pass threw and reconnected.)
+    $lastBeat = [datetime]::MinValue
     try {
-        $watcher.Enabled = $true
-
-        # Backlog: everything the log gained since the last processed
-        # record, drained before the live wait loop starts. Skipped on
-        # the very first run (no bookmark = start from "now", never
-        # replay the whole log).
-        if ($lastRecordId -gt 0) {
-            foreach ($rec in (Read-BacklogSince $lastRecordId)) {
-                $rid = Convert-AndSend $rec $writer
-                if ($rid -gt $lastRecordId) { $lastRecordId = $rid }
-                $sent++
-            }
-            if ($sent -gt 0) { Write-Host "[SENSOR] backlog: $sent event(s) re-sent across the cut (up to record id $lastRecordId)" }
-        }
-
-        $saveCounter = 0
         while ($true) {
-            $record = $watcher.WaitForNextEvent()
-            $xml = [xml]$record.ToXml()
-            $rid = 0
-            if ($xml.Event.System.EventRecordID) { $rid = [long]$xml.Event.System.EventRecordID }
-            # the watcher can hand back events the backlog already
-            # shipped: EventRecordID is monotonic, so a single
-            # comparison is an exact dedupe
-            if ($rid -gt 0 -and $rid -le $lastRecordId) { continue }
-            $data = @{}
-            foreach ($d in $xml.Event.EventData.Data) {
-                if ($d.Name) { $data[$d.Name] = $d.'#text' }
+            $batch = 0
+            foreach ($rec in (Read-BacklogSince $lastRecordId)) {
+                $xml = [xml]$rec.ToXml()
+                $rid = 0
+                if ($xml.Event.System.EventRecordID) { $rid = [long]$xml.Event.System.EventRecordID }
+                if ($rid -gt $lastRecordId) { $lastRecordId = $rid }
+                $data = @{}
+                foreach ($d in $xml.Event.EventData.Data) {
+                    if ($d.Name) { $data[$d.Name] = $d.'#text' }
+                }
+                $ev = ConvertFrom-SysmonRecord $rec.Id $data $rec.TimeCreated
+                if ($null -eq $ev) { continue }
+                Send-EventLine $writer $client $ev
+                $sent++
+                $batch++
+                if (-not $Quiet) {
+                    $detail = '-'
+                    if ($ev.Contains('process') -and $ev['process']) { $detail = $ev['process']['name'] }
+                    elseif ($ev.Contains('file') -and $ev['file']) { $detail = $ev['file']['path'] }
+                    elseif ($ev.Contains('network') -and $ev['network']) { $detail = $ev['network']['destination_ip'] }
+                    elseif ($ev.Contains('registry') -and $ev['registry']) { $detail = $ev['registry']['key'] }
+                    Write-Host ('[SENSOR] {0,5} {1,-18} {2}' -f $sent, $ev['type'], $detail)
+                }
             }
-            $time = $record.TimeCreated
-            $ev = ConvertFrom-SysmonRecord $record.Id $data $time
-            if ($null -eq $ev) { continue }
-            Send-EventLine $writer $client $ev
-            $sent++
-            if ($rid -gt $lastRecordId) { $lastRecordId = $rid }
-            # periodic persistence: bounds how much telemetry a hard
-            # crash can duplicate on the next start
-            $saveCounter++
-            if ($saveCounter -ge 16) {
-                $saveCounter = 0
-                Save-LastRecordId $lastRecordId
+            # persistence bounds how much a hard crash can re-send
+            if ($batch -gt 0) { Save-LastRecordId $lastRecordId }
+            $now = Get-Date
+            if (($now - $lastBeat).TotalSeconds -ge $HeartbeatSeconds) {
+                # also detects a dead connection while the host is quiet
+                Send-EventLine $writer $client (New-HeartbeatEvent $osLabel $sensorVersion $sensorStarted $now $sent)
+                $lastBeat = $now
             }
-            if (-not $Quiet) {
-                $detail = '-'
-                if ($ev.Contains('process') -and $ev['process']) { $detail = $ev['process']['name'] }
-                elseif ($ev.Contains('file') -and $ev['file']) { $detail = $ev['file']['path'] }
-                elseif ($ev.Contains('network') -and $ev['network']) { $detail = $ev['network']['destination_ip'] }
-                elseif ($ev.Contains('registry') -and $ev['registry']) { $detail = $ev['registry']['key'] }
-                Write-Host ('[SENSOR] {0,5} {1,-18} {2}' -f $sent, $ev['type'], $detail)
-            }
+            if ($batch -eq 0) { Start-Sleep -Seconds 1 }
         }
     } catch [Exception] {
         Write-Host "[SENSOR] stream interrupted: $($_.Exception.Message)"
@@ -649,8 +685,6 @@ while ($true) {
     } finally {
         # persist the exact resume point before tearing down
         Save-LastRecordId $lastRecordId
-        $watcher.Enabled = $false
-        $watcher.Dispose()
         $writer.Dispose()
         $client.Close()
     }

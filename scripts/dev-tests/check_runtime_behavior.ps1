@@ -41,6 +41,16 @@ try {
     Start-SfEngine $testRoot (Join-Path $testRoot 'bin\engine.exe') 'flag-token' | Out-Null
     Assert ($script:childArguments -match '-allow-kill' -and $script:childArguments -match 'respond-audit') 'Operator allowlist did not arm active response'
     Remove-Item (Join-Path $testRoot 'tools\config\respond-operators.yaml')
+    Assert ($script:childArguments -notmatch '0\.0\.0\.0') 'Ingest listened beyond loopback without identities'
+    Set-Content (Join-Path $testRoot 'tools\config\ingest-identities.yaml') 'version: 1'
+    Start-SfEngine $testRoot (Join-Path $testRoot 'bin\engine.exe') 'flag-token' | Out-Null
+    Assert ($script:childArguments -match '-addr 0\.0\.0\.0:7777' -and $script:childArguments -match '-ingest-identities') 'Identities did not open the ingest to remote sensors'
+    Assert ($script:childArguments -notmatch '-ingest-cert') 'TLS enabled without a certificate pair'
+    Set-Content (Join-Path $testRoot 'tools\config\ingest-cert.pem') 'cert'
+    Set-Content (Join-Path $testRoot 'tools\config\ingest-key.pem') 'key'
+    Start-SfEngine $testRoot (Join-Path $testRoot 'bin\engine.exe') 'flag-token' | Out-Null
+    Assert ($script:childArguments -match '-ingest-cert' -and $script:childArguments -match '-ingest-key') 'Certificate pair did not enable ingest TLS'
+    Remove-Item (Join-Path $testRoot 'tools\config\ingest-identities.yaml'), (Join-Path $testRoot 'tools\config\ingest-cert.pem'), (Join-Path $testRoot 'tools\config\ingest-key.pem')
     Remove-Item Function:Start-Process
     $owned = [pscustomobject]@{ ExecutablePath = (Join-Path $testRoot 'bin\engine.exe'); CommandLine = ''; ProcessId = 42424 }
     $foreign = [pscustomobject]@{ ExecutablePath = ($testRoot + '-backup\bin\engine.exe'); CommandLine = ''; ProcessId = 42424 }

@@ -41,6 +41,19 @@ function Get-SfEngineArguments {
     if (Test-Path -LiteralPath $operators) {
         $arguments += " -allow-kill -respond-operators `"$operators`" -respond-audit `"$data\respond-audit.jsonl`""
     }
+    # Remote machines (docs/FLOTA-REMOTA.md): only when per-sensor
+    # identities exist does the ingest listen beyond loopback, so every
+    # remote sensor authenticates with its own token bound to its host
+    # names. A certificate pair next to it turns on TLS for the ingest.
+    $identities = Join-Path $Root 'tools\config\ingest-identities.yaml'
+    if (Test-Path -LiteralPath $identities) {
+        $arguments += " -addr 0.0.0.0:7777 -ingest-identities `"$identities`""
+        $cert = Join-Path $Root 'tools\config\ingest-cert.pem'
+        $key = Join-Path $Root 'tools\config\ingest-key.pem'
+        if ((Test-Path -LiteralPath $cert) -and (Test-Path -LiteralPath $key)) {
+            $arguments += " -ingest-cert `"$cert`" -ingest-key `"$key`""
+        }
+    }
     return $arguments
 }
 
