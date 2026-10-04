@@ -39,10 +39,10 @@ administrador; **[otro equipo]** = el equipo remoto. Pega los comandos de uno en
 - [ ] **Selección múltiple (Alertas):**
   - Marca 2 o 3 casillas: aparece la barra «N seleccionadas».
   - Prueba Reconocer con una nota: las alertas pasan a «reconocida».
-- [ ] **Añadir a incidente:**
+- [x] **Añadir a incidente:**
   - Desde la barra, crea un incidente nuevo y pulsa «Abrir incidente».
   - Se ve el caso con sus alertas, el grafo y la línea de tiempo.
-- [ ] **Incidentes:**
+- [x] **Incidentes:**
   - Cambia el estado a «Investigando» y pon responsable y resumen.
   - Añade una nota: aparece en la línea de tiempo.
   - Recarga la página: sigue igual, porque se guarda en el motor.
