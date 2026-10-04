@@ -33,10 +33,11 @@ const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
 /// The wire to the engine: plain TCP, or TLS with a verified CA when
 /// the operator configured one. TLS lives below the AUTH handshake
 /// and the NDJSON protocol — neither changes, only the transport
-/// underneath does.
+/// underneath does. The TLS state is boxed: it is far larger than a
+/// socket, and the enum is as big as its largest variant.
 enum Stream {
     Plain(TcpStream),
-    Tls(native_tls::TlsStream<TcpStream>),
+    Tls(Box<native_tls::TlsStream<TcpStream>>),
 }
 
 impl Stream {
@@ -209,7 +210,7 @@ fn dial(addr: &str, token: Option<&str>, tls_ca: Option<&Path>) -> Result<Stream
     tcp.set_write_timeout(Some(AUTH_TIMEOUT))?;
     let mut stream = match tls_ca {
         None => Stream::Plain(tcp),
-        Some(ca) => Stream::Tls(tls_connect(addr, tcp, ca)?),
+        Some(ca) => Stream::Tls(Box::new(tls_connect(addr, tcp, ca)?)),
     };
     let Some(token) = token else {
         // no AUTH: back to blocking semantics for the event stream

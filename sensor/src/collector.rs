@@ -9,10 +9,19 @@
 //     Starts, the rundown of processes already running (opcodes 3/4)
 //     and ends (opcode 2) also maintain a PID -> name table.
 //   - a user trace with Microsoft-Windows-Kernel-Network (TCP connection
-//     attempts, IPv4 and IPv6) and Microsoft-Windows-Kernel-Registry
-//     (SetValueKey). Both are filtered by event id inside the kernel;
-//     registry writes are further limited to the keys detections read
-//     (netreg.rs). They only carry a PID, named through the table.
+//     attempts, IPv4 and IPv6), Microsoft-Windows-DNS-Client (query
+//     completed) and Microsoft-Windows-Kernel-Registry (SetValueKey).
+//     All are filtered by event id inside the kernel; registry writes are
+//     further limited to the keys detections read (netreg.rs) and repeated
+//     DNS queries are reported once a minute (dns.rs). They only carry a
+//     PID, named through the table; DNS answers also name the domain of
+//     the TCP connections that follow.
+//
+// Process starts carry the full image path (queried from the live
+// process in the callback, a couple of system calls) and its SHA-256,
+// computed on a separate enrichment thread with a cache (imagehash.rs)
+// so file reads never stall the ETW consumers. When that thread falls
+// behind, events go out without the hash rather than wait.
 //
 // The network/registry session is best effort: if it cannot start, the
 // sensor says so and keeps streaming process events. On Windows 8+ both
@@ -21,9 +30,11 @@
 
 #![cfg(target_os = "windows")]
 
+use crate::dns::{self, DnsState};
 use crate::heartbeat::{self, Health};
+use crate::imagehash::HashCache;
 use crate::netreg::{self, ProcessTable};
-use crate::normalize::{self, EventJson, NetworkJson, ProcessJson, RegistryJson};
+use crate::normalize::{self, EventJson, HashesJson, NetworkJson, ProcessJson, RegistryJson};
 use crate::normalize::{TYPE_NETWORK_CONNECT, TYPE_PROCESS_CREATE, TYPE_REGISTRY_SET};
 use crate::procinfo;
 use crate::queue::{Pipeline, Spool};
@@ -32,6 +43,7 @@ use anyhow::{Context, Result};
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -63,6 +75,17 @@ const EVENT_TCP6_CONNECT: u16 = 28;
 const KERNEL_REGISTRY: &str = "70eb4f03-c1de-4f73-a051-33d13d5413bd";
 const EVENT_REG_SET_VALUE: u16 = 5;
 
+const DNS_CLIENT: &str = "1c95126e-7eea-49a9-a3fe-a378b03ddb4d";
+/// "DNS query is completed": name, status and answers, in the context
+/// of the process that asked.
+const EVENT_DNS_QUERY_COMPLETED: u16 = 3008;
+
+/// Image hashing: binaries remembered, the largest file hashed, and the
+/// process starts that may wait for the enrichment thread.
+const HASH_CACHE_CAP: usize = 4096;
+const HASH_MAX_BYTES: u64 = 100 << 20;
+const ENRICH_QUEUE: usize = 2048;
+
 /// Names kept for PID lookups (a busy host runs a few hundred processes;
 /// the table only forgets once this is exceeded).
 const PROCESS_TABLE_CAP: usize = 8192;
@@ -81,6 +104,16 @@ pub struct Capture {
     pub registry: bool,
     /// forward every SetValueKey instead of the detection-relevant keys
     pub registry_all: bool,
+    /// DNS queries (and the domain of TCP connections)
+    pub dns: bool,
+    /// SHA-256 of the image of each process start
+    pub hash: bool,
+}
+
+/// A process start waiting for its image hash.
+struct Pending {
+    event: EventJson,
+    image: String,
 }
 
 /// Shared state of the ETW callbacks.
@@ -90,6 +123,9 @@ struct Shared {
     pipeline: Arc<Pipeline>,
     processes: Mutex<ProcessTable>,
     registry_all: bool,
+    dns: Mutex<DnsState>,
+    /// hand-off to the image-hash thread (None: hashing off or stopped)
+    enrich: Mutex<Option<SyncSender<Pending>>>,
 }
 
 impl Shared {
@@ -101,11 +137,83 @@ impl Shared {
     }
 
     fn emit(&self, event: &EventJson) {
-        match serde_json::to_string(event) {
-            Ok(line) => self.pipeline.push(line),
-            Err(err) => eprintln!("[SENSOR] serialize failed: {err}"),
-        }
+        emit_to(&self.pipeline, event);
     }
+
+    /// Queues a process start for hashing, or emits it as it is when
+    /// hashing is off or the enrichment thread is behind.
+    fn emit_hashed(&self, event: EventJson, image: String) {
+        let pending = Pending { event, image };
+        let rejected = match self.enrich.lock() {
+            Ok(guard) => match guard.as_ref() {
+                Some(tx) => match tx.try_send(pending) {
+                    Ok(()) => return,
+                    Err(TrySendError::Full(p) | TrySendError::Disconnected(p)) => p,
+                },
+                None => pending,
+            },
+            Err(_) => pending,
+        };
+        self.emit(&rejected.event);
+    }
+
+    fn domain_for(&self, ip: &IpAddr) -> Option<String> {
+        self.dns.lock().ok().and_then(|st| st.domain_for(ip, Instant::now()))
+    }
+}
+
+fn emit_to(pipeline: &Pipeline, event: &EventJson) {
+    match serde_json::to_string(event) {
+        Ok(line) => pipeline.push(line),
+        Err(err) => eprintln!("[SENSOR] serialize failed: {err}"),
+    }
+}
+
+/// The enrichment thread: hashes each queued image (cached by path, size
+/// and modification time) and emits the event.
+fn start_enricher(pipeline: Arc<Pipeline>, rx: Receiver<Pending>) -> Option<JoinHandle<()>> {
+    std::thread::Builder::new()
+        .name("image-hash".into())
+        .spawn(move || {
+            let mut cache = HashCache::new(HASH_CACHE_CAP, HASH_MAX_BYTES);
+            for Pending { mut event, image } in rx {
+                if let (Some(process), Some(digest)) = (event.process.as_mut(), cache.sha256(&image)) {
+                    process.hashes = Some(HashesJson::sha256(digest));
+                }
+                emit_to(&pipeline, &event);
+            }
+        })
+        .ok()
+}
+
+/// Full Win32 path of a running process's image, from the kernel (not
+/// argv[0], which the caller controls). None when the process already
+/// exited or cannot be opened.
+fn image_path(pid: u32) -> Option<String> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    if pid <= 4 {
+        return None; // Idle and System have no image file
+    }
+    // SAFETY: OpenProcess has no pointer arguments; a null handle is
+    // checked before use and every opened handle is closed below.
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if handle.is_null() {
+        return None;
+    }
+    let mut buf = [0u16; 1024];
+    let mut len = buf.len() as u32;
+    // SAFETY: buf is writable for `len` UTF-16 units and the call writes
+    // at most that many, updating len to the characters written.
+    let ok = unsafe { QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut len) };
+    // SAFETY: handle came from OpenProcess and is closed exactly once.
+    unsafe { CloseHandle(handle) };
+    if ok == 0 || len == 0 {
+        return None;
+    }
+    Some(String::from_utf16_lossy(&buf[..(len as usize).min(buf.len())]))
 }
 
 /// Runs the blocking ETW event loop. It returns only on fatal errors.
@@ -138,12 +246,26 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
         move |line: &str| sender.send_line(line, &transport_stop),
     );
     let pipeline = Arc::new(pipeline);
+    let (enrich_tx, enricher) = if capture.hash {
+        let (tx, rx) = sync_channel(ENRICH_QUEUE);
+        match start_enricher(Arc::clone(&pipeline), rx) {
+            Some(thread) => (Some(tx), Some(thread)),
+            None => {
+                eprintln!("[SENSOR] warning: image hashing unavailable (thread could not start)");
+                (None, None)
+            }
+        }
+    } else {
+        (None, None)
+    };
     let ctx = Arc::new(Shared {
         host: hostname(),
         own_pid: std::process::id(),
         pipeline: Arc::clone(&pipeline),
         processes: Mutex::new(ProcessTable::new(PROCESS_TABLE_CAP)),
         registry_all: capture.registry_all,
+        dns: Mutex::new(DnsState::new()),
+        enrich: Mutex::new(enrich_tx),
     });
 
     // The provider is rebuilt for each start attempt (a stale session
@@ -161,26 +283,24 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
     // them running in the kernel after the process is gone.
     install_console_handler();
 
-    let netreg = if capture.network || capture.registry {
+    let netreg = if capture.network || capture.registry || capture.dns {
         start_netreg(&ctx, &capture)
     } else {
         None
     };
-    let what = match (&netreg, capture.network, capture.registry) {
-        (Some(_), true, true) => "process starts, TCP connections and registry writes",
-        (Some(_), true, false) => "process starts and TCP connections",
-        (Some(_), false, true) => "process starts and registry writes",
-        _ => "process starts",
-    };
+    let live = netreg.is_some();
+    let streams = [
+        (true, "process", "process starts"),
+        (capture.hash, "sha256", "image hashes"),
+        (live && capture.network, "network", "TCP connections"),
+        (live && capture.dns, "dns", "DNS queries"),
+        (live && capture.registry, "registry", "registry writes"),
+    ];
+    let what = streams.iter().filter(|s| s.0).map(|s| s.2).collect::<Vec<_>>().join(", ");
     eprintln!("[SENSOR] ETW sessions active - streaming {what}");
 
     // health report for the engine's machine inventory, every minute
-    let capture_label = match (&netreg, capture.network, capture.registry) {
-        (Some(_), true, true) => "process+network+registry",
-        (Some(_), true, false) => "process+network",
-        (Some(_), false, true) => "process+registry",
-        _ => "process",
-    };
+    let capture_label = streams.iter().filter(|s| s.0).map(|s| s.1).collect::<Vec<_>>().join("+");
     let heartbeat_stop = Arc::new(AtomicBool::new(false));
     let heartbeat_thread = start_heartbeat(Arc::clone(&ctx), capture_label.to_string(), queue_cap, Arc::clone(&heartbeat_stop));
 
@@ -195,6 +315,13 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
     }
     heartbeat_stop.store(true, Ordering::Relaxed);
     if let Some(thread) = heartbeat_thread {
+        let _ = thread.join();
+    }
+    // closing the hand-off lets the hash thread drain and finish
+    if let Ok(mut tx) = ctx.enrich.lock() {
+        tx.take();
+    }
+    if let Some(thread) = enricher {
         let _ = thread.join();
     }
     // hand everything still in memory to the engine or the spool
@@ -247,6 +374,16 @@ fn start_netreg(ctx: &Arc<Shared>, capture: &Capture) -> Option<(UserTrace, std:
                     .build(),
             );
         }
+        if capture.dns {
+            let ctx = Arc::clone(ctx);
+            builder = builder.enable(
+                Provider::by_guid(DNS_CLIENT)
+                    .any(u64::MAX)
+                    .add_filter(EventFilter::ByEventIds(vec![EVENT_DNS_QUERY_COMPLETED]))
+                    .add_callback(move |record: &EventRecord, schema_locator: &SchemaLocator| handle_dns(record, schema_locator, &ctx))
+                    .build(),
+            );
+        }
         if capture.registry {
             let ctx = Arc::clone(ctx);
             builder = builder.enable(
@@ -274,7 +411,7 @@ fn start_netreg(ctx: &Arc<Shared>, capture: &Capture) -> Option<(UserTrace, std:
             Some((trace, thread))
         }
         Err(err) => {
-            eprintln!("[SENSOR] warning: network and registry capture unavailable ({err}); continuing with process events only");
+            eprintln!("[SENSOR] warning: network, DNS and registry capture unavailable ({err}); continuing with process events only");
             None
         }
     }
@@ -408,7 +545,10 @@ fn handle_process(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &Sh
     // owner of the NEW process (the kernel's WBEM SID), not the account
     // that runs the sensor
     let user = parser.try_parse::<Vec<u8>>("UserSID").ok().and_then(|b| procinfo::sid_from_wbem(&b));
-    ctx.emit(&EventJson {
+    // the kernel event has no full image path and argv[0] is
+    // caller-controlled: the path comes from the live process
+    let image = image_path(pid);
+    let event = EventJson {
         id: normalize::new_uuid(),
         timestamp: record_time(record),
         r#type: TYPE_PROCESS_CREATE.into(),
@@ -420,16 +560,18 @@ fn handle_process(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &Sh
             ppid: ppid as i32,
             name,
             command_line,
-            // the kernel event has no full image path; argv[0] is
-            // caller-controlled, so it is not reported as one
-            image: None,
-            hashes: None, // phase 1: compute sha256 on image write
+            image: image.clone(),
+            hashes: None, // filled by the enrichment thread
         }),
         network: None,
         registry: None,
         attributes: None,
         tags: vec!["sensor:etw".into()],
-    });
+    };
+    match image {
+        Some(path) => ctx.emit_hashed(event, path),
+        None => ctx.emit(&event),
+    }
 }
 
 /// Kernel-Network TCP connection attempts -> network.connect.
@@ -476,10 +618,75 @@ fn handle_network(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &Sh
             source_port: sport as i32,
             destination_ip: daddr.to_string(),
             destination_port: dport as i32,
-            domain: None,
+            // the name this address was resolved from, when the lookup
+            // went through the DNS client shortly before
+            domain: ctx.domain_for(&daddr),
         }),
         registry: None,
         attributes: None,
+        tags: vec!["sensor:etw".into()],
+    });
+}
+
+/// DNS-Client "query completed" -> network.connect with protocol dns.
+fn handle_dns(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &Shared) {
+    if record.event_id() != EVENT_DNS_QUERY_COMPLETED {
+        return;
+    }
+    let pid = record.process_id();
+    if pid == ctx.own_pid {
+        return;
+    }
+    let Ok(schema) = schema_locator.event_schema(record) else {
+        return;
+    };
+    let parser = Parser::create(record, &schema);
+    let Some(name) = parser.try_parse::<String>("QueryName").ok().and_then(|raw| dns::query_name(&raw)) else {
+        return;
+    };
+    let results = parser.try_parse::<String>("QueryResults").unwrap_or_default();
+    let ips = dns::answer_ips(&results);
+    let forward = match ctx.dns.lock() {
+        Ok(mut st) => st.observe(pid, &name, &ips, Instant::now()),
+        Err(_) => true,
+    };
+    if !forward {
+        return;
+    }
+    let mut attributes = std::collections::BTreeMap::new();
+    if let Ok(qtype) = parser.try_parse::<u32>("QueryType") {
+        attributes.insert("dns_query_type".to_string(), qtype.to_string());
+    }
+    if let Ok(status) = parser.try_parse::<u32>("QueryStatus") {
+        // 0 answered, 9003 name does not exist, 1460 timeout...
+        attributes.insert("dns_status".to_string(), status.to_string());
+    }
+    ctx.emit(&EventJson {
+        id: normalize::new_uuid(),
+        timestamp: record_time(record),
+        r#type: TYPE_NETWORK_CONNECT.into(),
+        source: "etw".into(),
+        host: ctx.host.clone(),
+        user: None,
+        process: Some(ProcessJson {
+            pid: pid as i32,
+            ppid: 0,
+            name: ctx.process_name(pid),
+            command_line: None,
+            image: None,
+            hashes: None,
+        }),
+        network: Some(NetworkJson {
+            protocol: Some("dns".into()),
+            source_ip: None,
+            source_port: 0,
+            // first answer, like the Sysmon sensor's first A record
+            destination_ip: ips.first().map(|ip| ip.to_string()).unwrap_or_default(),
+            destination_port: 0,
+            domain: Some(name),
+        }),
+        registry: None,
+        attributes: (!attributes.is_empty()).then_some(attributes),
         tags: vec!["sensor:etw".into()],
     });
 }

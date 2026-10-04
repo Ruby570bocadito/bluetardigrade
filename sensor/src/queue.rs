@@ -296,7 +296,7 @@ fn drain_spool<F: FnMut(&str) -> bool>(shared: &Shared, deliver: &mut F) {
     let taken = {
         let mut s = spool.lock().unwrap_or_else(|p| p.into_inner());
         let taken = s.take();
-        if matches!(taken, Ok(_)) {
+        if taken.is_ok() {
             shared.spooling.store(false, Ordering::Release);
         }
         taken
@@ -381,13 +381,12 @@ mod tests {
         lines
     }
 
+    /// Lines the test "engine" accepted, in order.
+    type Accepted = Arc<Mutex<Vec<String>>>;
+
     /// A send function gated by a channel: the test decides when the
     /// "engine" accepts each line.
-    fn gated() -> (
-        impl FnMut(&str) -> anyhow::Result<()> + Send + 'static,
-        Arc<Mutex<Vec<String>>>,
-        SyncSender<()>,
-    ) {
+    fn gated() -> (impl FnMut(&str) -> anyhow::Result<()> + Send + 'static, Accepted, SyncSender<()>) {
         let got = Arc::new(Mutex::new(Vec::new()));
         let (gate_tx, gate_rx) = sync_channel::<()>(1024);
         let sink = Arc::clone(&got);

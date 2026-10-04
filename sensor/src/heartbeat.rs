@@ -81,6 +81,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_wire_contract_matches_the_engine() {
+        // internal/fleet: fleet.HeartbeatType, and intervals outside
+        // 1..=3600 s fall back to 60 s there
+        assert_eq!(TYPE_HEARTBEAT, "sensor.heartbeat");
+        assert!((1..=3600).contains(&INTERVAL_SECS));
+    }
+
+    #[test]
     fn attributes_carry_every_health_field() {
         let a = attributes(&Health {
             kind: "etw",

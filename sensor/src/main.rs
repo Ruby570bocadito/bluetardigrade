@@ -11,11 +11,16 @@
 //                   [--tls-ca <ca.pem>] [--queue <events>]
 //                   [--spool <file>] [--spool-max-mb <MiB>]
 //                   [--no-network] [--no-registry] [--registry-all]
+//                   [--no-dns] [--no-hash]
 //
 // Besides process creation the sensor captures TCP connection attempts
-// (network.connect) and writes to the registry keys detections read
-// (registry.set); --no-network / --no-registry turn either off and
-// --registry-all forwards every registry value write (noisy).
+// (network.connect), DNS queries (network.connect with protocol dns;
+// the answers also name the domain of the TCP connections that follow)
+// and writes to the registry keys detections read (registry.set);
+// --no-network / --no-dns / --no-registry turn each off and
+// --registry-all forwards every registry value write (noisy). Process
+// starts carry the full image path and, unless --no-hash, its SHA-256
+// (computed off the ETW threads, cached, files over 100 MiB skipped).
 //
 // Delivery never runs on the ETW thread: events wait in a bounded
 // in-memory queue (--queue, default 50000) while the engine is
@@ -46,7 +51,11 @@ mod collector;
 // platform-independent so their tests run on any host; outside Windows
 // they are only compiled for those tests.
 #[cfg(any(target_os = "windows", test))]
+mod dns;
+#[cfg(any(target_os = "windows", test))]
 mod heartbeat;
+#[cfg(any(target_os = "windows", test))]
+mod imagehash;
 #[cfg(any(target_os = "windows", test))]
 mod netreg;
 #[cfg(any(target_os = "windows", test))]
@@ -69,6 +78,8 @@ fn main() -> Result<()> {
     let mut network = true;
     let mut registry = true;
     let mut registry_all = false;
+    let mut dns = true;
+    let mut hash = true;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -102,13 +113,15 @@ fn main() -> Result<()> {
             "--no-network" => network = false,
             "--no-registry" => registry = false,
             "--registry-all" => registry_all = true,
+            "--no-dns" => dns = false,
+            "--no-hash" => hash = false,
             "--spool-max-mb" => {
                 spool_max_mb = parse_number(args.next(), "--spool-max-mb");
             }
             other => {
                 eprintln!("unknown argument: {other}");
                 eprintln!(
-                    "usage: security-sensor --addr <ip:port> [--token <shared-token>] [--tls-ca <ca.pem>] [--queue <events>] [--spool <file>] [--spool-max-mb <MiB>] [--no-network] [--no-registry] [--registry-all]"
+                    "usage: security-sensor --addr <ip:port> [--token <shared-token>] [--tls-ca <ca.pem>] [--queue <events>] [--spool <file>] [--spool-max-mb <MiB>] [--no-network] [--no-registry] [--registry-all] [--no-dns] [--no-hash]"
                 );
                 std::process::exit(2);
             }
@@ -130,7 +143,13 @@ fn main() -> Result<()> {
             .map(PathBuf::from);
     }
 
-    let captured = [(true, "process"), (network, "network"), (registry, if registry_all { "registry-all" } else { "registry" })]
+    let captured = [
+        (true, "process"),
+        (hash, "sha256"),
+        (network, "network"),
+        (dns, "dns"),
+        (registry, if registry_all { "registry-all" } else { "registry" }),
+    ]
         .iter()
         .filter(|(on, _)| *on)
         .map(|(_, name)| *name)
@@ -158,7 +177,7 @@ fn main() -> Result<()> {
             spool,
             spool_max_bytes: spool_max_mb.saturating_mul(1 << 20),
         };
-        let capture = collector::Capture { network, registry, registry_all };
+        let capture = collector::Capture { network, registry, registry_all, dns, hash };
         collector::run(&addr, token.as_deref(), tls_ca.as_deref(), delivery, capture)
     }
     #[cfg(not(target_os = "windows"))]

@@ -5,10 +5,18 @@
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-// phase 1: consumed by the image-hash enrichment of the collector
-#[allow(dead_code)]
+// algorithm -> lowercase hex digest, like model.Hashes (collector.rs
+// fills "sha256" for the image of each process start)
 #[derive(Serialize, Clone, Debug)]
 pub struct HashesJson(pub serde_json::Map<String, serde_json::Value>);
+
+impl HashesJson {
+    pub fn sha256(hex: String) -> Self {
+        let mut map = serde_json::Map::new();
+        map.insert("sha256".into(), serde_json::Value::String(hex));
+        HashesJson(map)
+    }
+}
 
 #[derive(Serialize, Clone, Debug)]
 pub struct ProcessJson {

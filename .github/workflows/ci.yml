@@ -259,7 +259,7 @@ jobs:
           if-no-files-found: ignore
 
   sensor:
-    name: Sensor (cargo check, locked)
+    name: Sensor (check, tests, clippy; locked)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -267,10 +267,16 @@ jobs:
       - name: ensure a recent stable Rust (>= 1.85; lockfile resolves
           time-core 0.1.9, which needs edition2024 — see README)
         run: |
-          rustup toolchain install --profile minimal stable
+          rustup toolchain install --profile minimal --component clippy stable
           rustup default stable
       - name: cargo check --locked
         run: cargo check --locked --manifest-path sensor/Cargo.toml
+      # the platform-independent decoders (procinfo, netreg, dns,
+      # imagehash, heartbeat, queue) carry their own unit tests
+      - name: cargo test --locked
+        run: cargo test --locked --manifest-path sensor/Cargo.toml
+      - name: cargo clippy --locked (warnings are errors)
+        run: cargo clippy --locked --all-targets --manifest-path sensor/Cargo.toml -- -D warnings
       # Windows cross-check (agent-04 delta, convergencia ronda 20h31): el
       # sensor es Windows-first (colector ETW) y este check es la única vía
       # de verificar ese código sin host Windows; coste ~1-2 min por push.
@@ -281,3 +287,4 @@ jobs:
         run: |
           rustup target add x86_64-pc-windows-msvc
           cargo check --locked --target x86_64-pc-windows-msvc --manifest-path sensor/Cargo.toml
+          cargo clippy --locked --target x86_64-pc-windows-msvc --manifest-path sensor/Cargo.toml -- -D warnings
