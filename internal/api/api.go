@@ -212,7 +212,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	mux.HandleFunc("GET /api/alerts/export", h.handleAlertsExport)
 	mux.HandleFunc("GET /api/events/export", h.handleEventsExport)
 	h.srv = &http.Server{
-		Handler:           h.auth(guardWriteOrigin(mux)),
+		Handler:           h.guardRebinding(h.auth(guardWriteOrigin(mux))),
 		ReadHeaderTimeout: 5 * time.Second,
 		// idle keep-alive connections are reclaimed instead of pinning
 		// a goroutine and a socket each for as long as a client likes;

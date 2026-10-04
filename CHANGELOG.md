@@ -12,6 +12,23 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### DNS rebinding guard for the tokenless engine API (2026-10-04)
+
+Security
+
+- A loopback engine API without `-api-token` now answers only to Host
+  `localhost` or an IP literal (421 otherwise). Before, a web page the
+  operator visited could rebind its own DNS name to 127.0.0.1 and, as a
+  same-origin client, read every event and alert and close alerts (or
+  write suppressions with `-api-write`). Engines with a token, or bound
+  beyond loopback, are unchanged; reach a tokenless engine by name only
+  after setting a token.
+
+Tests
+
+- `TestAlertStatusPersistErrorHidesPath` skips when run as root, where a
+  read-only directory is still writable (container CI runners).
+
 ### First run on a real Windows host (2026-10-04)
 
 - ETW sensor, found and verified on the first real run:

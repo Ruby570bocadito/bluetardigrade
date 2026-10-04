@@ -93,6 +93,11 @@ func TestAlertStatusPersistErrorHidesPath(t *testing.T) {
 		// below only exists on POSIX filesystems.
 		t.Skip("POSIX file permission semantics not enforceable on Windows")
 	}
+	if os.Geteuid() == 0 {
+		// root ignores directory permissions (CAP_DAC_OVERRIDE): the
+		// write into ro/ succeeds, as in a container CI runner.
+		t.Skip("running as root: a read-only directory is still writable")
+	}
 	h, addr := newTestHub(t)
 	ro := filepath.Join(t.TempDir(), "readonly")
 	if err := os.MkdirAll(ro, 0o755); err != nil {
