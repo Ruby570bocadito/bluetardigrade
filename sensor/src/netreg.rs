@@ -275,6 +275,9 @@ mod tests {
         for (key, value) in drop {
             assert!(!interesting_registry(key, value), "{key} {value}");
         }
+        // a key opened under a base the sensor never saw (regnames.rs)
+        assert!(interesting_registry(r"?\Software\Microsoft\Windows\CurrentVersion\Run", "x"));
+        assert_eq!(registry_path(r"?\Software\Microsoft\Windows\CurrentVersion\Run"), r"?\Software\Microsoft\Windows\CurrentVersion\Run");
     }
 
     #[test]

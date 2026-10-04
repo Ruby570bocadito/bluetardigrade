@@ -13,6 +13,14 @@
 //     names a write whose key was opened before the sensor started (the
 //     write is parked until the close, a few seconds at most).
 //
+// A handle opened relative to a base the sensor never saw opened (the
+// HKCU/HKLM handles a process opens at startup, before the sensor ran:
+// seen on a real host, BaseName and the CloseKey KeyName were empty too)
+// keeps the part that is known, under an unknown root: "?\Software\
+// Microsoft\Windows\CurrentVersion\Run". Detections read the end of the
+// path, so a Run-key write is still caught, and the "?" tells the analyst
+// the hive could not be resolved.
+//
 // Platform-independent so it is unit-tested on any host; the collector
 // feeds it from the ETW callbacks.
 
@@ -21,6 +29,9 @@ use std::time::{Duration, Instant};
 
 /// How long a write whose key is unknown waits for the key's CloseKey.
 pub const PARK_FOR: Duration = Duration::from_secs(5);
+
+/// Root of a path whose base handle was opened before the sensor started.
+pub const UNKNOWN_ROOT: &str = "?";
 
 pub struct KeyNames<T> {
     names: HashMap<usize, String>,
@@ -62,7 +73,13 @@ impl<T> KeyNames<T> {
             self.names.get(&base_object).cloned()
         } else {
             None
-        }?;
+        };
+        let base = match base {
+            Some(b) => b,
+            // the relative part is still worth keeping
+            None if !rel.is_empty() => UNKNOWN_ROOT.to_string(),
+            None => return None,
+        };
         if rel.is_empty() {
             return Some(base);
         }
@@ -156,9 +173,14 @@ mod tests {
         // reopen of the base itself
         k.opened(0x32, 0x30, "", "");
         assert_eq!(k.name_of(0x32), Some(r"\REGISTRY\MACHINE\SYSTEM\CurrentControlSet"));
-        // unknown base, no base name: nothing to remember
-        k.opened(0x40, 0x77, "", r"Software\x");
-        assert_eq!(k.name_of(0x40), None);
+        // a base opened before the sensor started: the known part, under "?"
+        k.opened(0x40, 0x77, "", r"Software\Microsoft\Windows\CurrentVersion\Run");
+        assert_eq!(k.name_of(0x40), Some(r"?\Software\Microsoft\Windows\CurrentVersion\Run"));
+        k.opened(0x41, 0x40, "", "Sub");
+        assert_eq!(k.name_of(0x41), Some(r"?\Software\Microsoft\Windows\CurrentVersion\Run\Sub"));
+        // nothing known at all: nothing to remember
+        k.opened(0x42, 0x77, "", "");
+        assert_eq!(k.name_of(0x42), None);
         assert_eq!(k.name_of(0), None);
     }
 
