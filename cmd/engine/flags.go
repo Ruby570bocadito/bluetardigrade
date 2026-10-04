@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"os"
 	"time"
 )
 
@@ -15,6 +16,8 @@ type options struct {
 	seqDir           string
 	beaconsFile      string
 	thresholdsFile   string
+	intelDir         string
+	baselineLearn    time.Duration
 	verbose          bool
 	reloadEvery      time.Duration
 	webhookURL       string
@@ -68,6 +71,10 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 	fs.StringVar(&o.apiAddr, "api", "127.0.0.1:7778", "local HTTP API for the console (stats/events/alerts/stream); 0 disables")
 	fs.StringVar(&o.rulesDir, "rules", "./rules", "directory with YAML rules")
 	fs.StringVar(&o.seqDir, "sequences", "./sequences", "directory with YAML kill-chain sequences (correlator)")
+	fs.StringVar(&o.intelDir, "intel", "./intel",
+		"directory of offline threat-intelligence lists (*.txt/*.list: IPs, CIDRs, domains, URLs, file hashes), re-read when it changes; empty disables")
+	fs.DurationVar(&o.baselineLearn, "baseline-learn", envDuration("SF_BASELINE_LEARN", 24*time.Hour),
+		"per-host learning period before never-seen processes raise a low alert (0 disables; falls back to SF_BASELINE_LEARN)")
 	fs.StringVar(&o.beaconsFile, "beacons", "./beacons.yaml", "YAML file with beacon detector profiles (C2 call-home detection over network.connect); empty disables")
 	fs.StringVar(&o.thresholdsFile, "thresholds", "./thresholds.yaml", "YAML file with volumetric threshold definitions (A2: brute force, mass deletion, sprays); empty disables")
 	fs.BoolVar(&o.verbose, "v", false, "print every event received")
@@ -135,4 +142,15 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 	fs.BoolVar(interactive, "i", false, "interactive panel (TUI) on top of the running engine; needs a TTY")
 	fs.BoolVar(interactive, "interactive", false, "alias of -i")
 	return fs
+}
+
+// envDuration reads a duration from the environment, or def when unset
+// or unparseable.
+func envDuration(key string, def time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d >= 0 {
+			return d
+		}
+	}
+	return def
 }

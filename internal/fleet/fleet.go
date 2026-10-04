@@ -17,6 +17,7 @@
 package fleet
 
 import (
+	"encoding/json"
 	"sort"
 	"strconv"
 	"strings"
@@ -94,6 +95,10 @@ type record struct {
 	minutes  [5]int   // events per minute, ring indexed by minute
 	minuteAt [5]int64 // unix minute each slot belongs to
 	alerted  bool     // the current silence was already reported
+	// graceFrom: restored hosts get a full grace from the engine start,
+	// so sensors reconnecting after an engine restart are not "silent"
+	graceFrom time.Time
+	dirty     bool // changed since the last Export
 }
 
 // Tracker is safe for concurrent use.
@@ -101,6 +106,7 @@ type Tracker struct {
 	mu       sync.Mutex
 	hosts    map[string]*record // key: lowercase host
 	maxHosts int
+	retired  []string // keys dropped since the last TakeRetired
 }
 
 // New returns an empty inventory.
@@ -128,6 +134,7 @@ func (t *Tracker) Observe(ev *model.Event, peer string, now time.Time) {
 	r.LastSeen = now
 	r.SilentSince = nil
 	r.alerted = false
+	r.dirty = true
 	if id := ev.Attributes[IdentityAttribute]; id != "" {
 		r.Identity = clip(id)
 	}
@@ -173,6 +180,7 @@ func (t *Tracker) Check(now time.Time) []Transition {
 		status := statusOf(r, now)
 		if (status == StatusSilent || status == StatusIdle) && now.Sub(r.LastSeen) > retireAfter {
 			delete(t.hosts, key)
+			t.retired = append(t.retired, key)
 			continue
 		}
 		if status == StatusSilent {
@@ -182,6 +190,7 @@ func (t *Tracker) Check(now time.Time) []Transition {
 			}
 			if !r.alerted {
 				r.alerted = true
+				r.dirty = true
 				out = append(out, Transition{Host: snapshot(r, now), Silent: true})
 			}
 		}
@@ -221,15 +230,83 @@ func Grace(intervalS int) time.Duration {
 
 func statusOf(r *record, now time.Time) string {
 	if r.Sensor != nil {
-		if now.Sub(r.Sensor.LastHeartbeat) > Grace(r.Sensor.IntervalS) {
+		last := r.Sensor.LastHeartbeat
+		if r.graceFrom.After(last) {
+			last = r.graceFrom
+		}
+		if now.Sub(last) > Grace(r.Sensor.IntervalS) {
 			return StatusSilent
 		}
 		return StatusOnline
 	}
-	if now.Sub(r.LastSeen) <= activeWindow {
+	last := r.LastSeen
+	if r.graceFrom.After(last) {
+		last = r.graceFrom
+	}
+	if now.Sub(last) <= activeWindow {
 		return StatusOnline
 	}
 	return StatusIdle
+}
+
+// stored is the persisted form of a record (internal/store fleet_hosts).
+type stored struct {
+	Host    Host `json:"host"`
+	Alerted bool `json:"alerted"`
+}
+
+// Export returns the JSON documents of the hosts changed since the last
+// Export (all of them when all is true), keyed by lowercase host.
+func (t *Tracker) Export(all bool, now time.Time) map[string][]byte {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := map[string][]byte{}
+	for key, r := range t.hosts {
+		if !all && !r.dirty {
+			continue
+		}
+		doc, err := json.Marshal(stored{Host: snapshot(r, now), Alerted: r.alerted})
+		if err != nil {
+			continue
+		}
+		out[key] = doc
+		r.dirty = false
+	}
+	return out
+}
+
+// TakeRetired returns (and forgets) the hosts retired since the last call.
+func (t *Tracker) TakeRetired() []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := t.retired
+	t.retired = nil
+	return out
+}
+
+// Restore loads persisted hosts at engine start. Each restored host gets
+// a full grace from now before it can be declared silent, and a silence
+// already reported before the restart is not reported again.
+func (t *Tracker) Restore(docs map[string][]byte, now time.Time) int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	n := 0
+	for key, doc := range docs {
+		var st stored
+		if err := json.Unmarshal(doc, &st); err != nil || strings.TrimSpace(st.Host.Host) == "" {
+			continue
+		}
+		if len(t.hosts) >= t.maxHosts {
+			break
+		}
+		h := st.Host
+		h.Host = clip(h.Host)
+		h.EventsLast5m = 0
+		r := &record{Host: h, graceFrom: now, alerted: st.Alerted}
+		t.hosts[strings.ToLower(key)] = r
+		n++
+	}
+	return n
 }
 
 func snapshot(r *record, now time.Time) Host {

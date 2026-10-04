@@ -15,6 +15,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/actions"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/api"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/baseline"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/beacon"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/correlate"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/enrich"
@@ -22,6 +23,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/forensic"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/incident"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/ingest"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/intel"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/lifecycle"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/notify"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/redact"
@@ -122,6 +124,23 @@ func runEngine(o *options, interactive bool) error {
 				fmt.Printf("[ENGINE] %d threshold definitions loaded from %s (volumetric detection on: %v)\n",
 					n, thrPath, thr.Names())
 			}
+		}
+	}
+
+	// offline threat-intelligence lists: a missing directory means no
+	// lists; an unreadable list is logged and retried on every reload
+	// (the operator fixes the file, the engine picks it up)
+	var intelM *intel.Matcher
+	intelErr := ""
+	if o.intelDir != "" {
+		intelPath := resolveDataDir(o.intelDir, "intel")
+		var ierr error
+		if intelM, ierr = intel.Load(intelPath); ierr != nil {
+			intelErr = ierr.Error()
+			log.Printf("[ENGINE] threat-intel lists from %s NOT loaded: %v", intelPath, ierr)
+		}
+		if n := intelM.Total(); n > 0 {
+			fmt.Printf("[ENGINE] threat intel: %d indicators in %d lists from %s\n", n, len(intelM.Lists()), intelPath)
 		}
 	}
 
@@ -295,7 +314,29 @@ func runEngine(o *options, interactive bool) error {
 	}
 	// machine inventory (internal/fleet): every accepted event and the
 	// sensors' heartbeats; read through GET /api/fleet
+	// per-host baseline of processes already seen (internal/baseline)
+	baseTracker := baseline.New(o.baselineLearn)
+	if st != nil {
+		if entries, hosts, berr := st.LoadBaseline(); berr != nil {
+			log.Printf("[BASELINE] restoring FAILED: %v", berr)
+		} else {
+			restored := make([]baseline.Entry, 0, len(entries))
+			for _, e := range entries {
+				restored = append(restored, baseline.Entry{Host: e.Host, Kind: e.Kind, Value: e.Value, FirstSeen: e.FirstSeen})
+			}
+			baseTracker.Restore(restored, hosts)
+		}
+	}
 	fleetTracker := fleet.New()
+	if st != nil {
+		// with -store the inventory survives restarts; restored hosts
+		// get a full grace before they can be declared silent
+		if docs, ferr := st.LoadFleetHosts(); ferr != nil {
+			log.Printf("[FLEET] restoring the inventory FAILED: %v", ferr)
+		} else if n := fleetTracker.Restore(docs, time.Now()); n > 0 {
+			fmt.Printf("[ENGINE] fleet: %d machines restored from the store\n", n)
+		}
+	}
 	server.SetObserver(fleetTracker)
 	go server.Serve()
 	if server.AuthEnabled() {
@@ -398,6 +439,10 @@ func runEngine(o *options, interactive bool) error {
 			hub.SetLifecycle(lifeStore)
 			hub.SetIncidents(incStore)
 			hub.SetFleet(fleetTracker)
+			if intelM != nil {
+				hub.SetIntel(intelM)
+			}
+			hub.SetBaseline(baseTracker)
 			// reputation lookups stay off unless the operator sets a
 			// provider key; keys come from the environment only (a flag
 			// would show them in the process list)
@@ -691,6 +736,22 @@ func runEngine(o *options, interactive bool) error {
 						emitAllowlisted(silentSensorAlert(tr.Host, now))
 					}
 				}
+				if st != nil {
+					learned := baseTracker.TakePending()
+					rows := make([]store.BaselineEntry, 0, len(learned))
+					for _, e := range learned {
+						rows = append(rows, store.BaselineEntry{Host: e.Host, Kind: e.Kind, Value: e.Value, FirstSeen: e.FirstSeen})
+					}
+					if err := st.AddBaseline(rows); err != nil {
+						log.Printf("[BASELINE] saving FAILED: %v", err)
+					}
+					if err := st.SaveFleetHosts(fleetTracker.Export(false, now)); err != nil {
+						log.Printf("[FLEET] saving the inventory FAILED: %v", err)
+					}
+					if err := st.DeleteFleetHosts(fleetTracker.TakeRetired()); err != nil {
+						log.Printf("[FLEET] retiring hosts FAILED: %v", err)
+					}
+				}
 			}
 		}
 	}()
@@ -792,6 +853,16 @@ func runEngine(o *options, interactive bool) error {
 					if thr != nil && fileExists(thrPath) {
 						err := thr.Reload(thrPath)
 						thrRep.report(thr.Count(), err)
+					}
+					if intelM != nil {
+						if changed, err := intelM.Reload(); err != nil {
+							if err.Error() != intelErr {
+								intelErr = err.Error()
+								log.Printf("[ENGINE] threat-intel reload FAILED, keeping previous lists: %v", err)
+							}
+						} else if intelErr = ""; changed && !tui {
+							fmt.Printf("[ENGINE] threat intel reloaded (%d indicators)\n", intelM.Total())
+						}
 					}
 					// per-sensor identities: a failed reload keeps the
 					// previous set (a half-edited file must not lock
@@ -900,6 +971,20 @@ func runEngine(o *options, interactive bool) error {
 		// within a window, orthogonal to rules and beaconing.
 		if thr != nil {
 			thr.Observe(ev, time.Now())
+		}
+		// offline threat intel: indicators in the event, one alert per
+		// indicator and host per cooldown
+		if intelM != nil {
+			now := time.Now()
+			for _, hit := range intelM.Match(ev) {
+				if intelM.Allow(hit, ev.Host, now) {
+					emitAllowlisted(intelAlert(ev, hit, now))
+				}
+			}
+		}
+		// baseline: a process this host never ran after its learning period
+		if nov := baseTracker.Observe(ev, time.Now()); nov != nil {
+			emitAllowlisted(noveltyAlert(ev, nov, time.Now()))
 		}
 		processed++
 	}

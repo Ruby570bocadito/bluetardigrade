@@ -1,0 +1,49 @@
+# Cross-host chains (scope: user): the correlator follows one account
+# across every host it touches. Built-in service accounts (SYSTEM, LOCAL
+# SERVICE, NETWORK SERVICE) and machine accounts (NAME$) are never
+# followed, so unrelated hosts are not stitched together. A step with
+# "rules:" advances on any of the listed rules.
+- name: "Credenciales y ejecucion remota en varios equipos"
+  id: "f67024c5-e409-4ca3-bc0e-ab04b860ec68"
+  description: >
+    La misma cuenta roba credenciales y ejecuta comandos en remoto, y
+    entre los dos pasos toca al menos dos equipos dentro de una hora:
+    patron clasico de movimiento lateral con credenciales robadas.
+    Aislar los equipos implicados y restablecer la cuenta.
+  severity: critical
+  window: 1h
+  scope: user
+  min_hosts: 2
+  tags: ["attack.t1003", "attack.t1021", "attack.lateral-movement", "correlacion"]
+  steps:
+    - rules:
+        - "Volcado de LSASS via comsvcs.dll"
+        - "Volcado de LSASS con procdump"
+        - "Herramienta de volcado Mimikatz"
+        - "Acceso a memoria de LSASS"
+        - "Abuso de Kerberos con Rubeus"
+    - rules:
+        - "Movimiento lateral con PsExec"
+        - "Ejecucion de procesos via WMI"
+        - "Ejecucion remota con WinRM o PowerShell Remoting"
+        - "Servicio remoto creado o arrancado con sc"
+        - "Ejecucion remota con CrackMapExec o Impacket"
+- name: "Cuenta saltando entre equipos"
+  id: "448e51d0-d4c3-441b-bbf4-82144fd71276"
+  description: >
+    Una misma cuenta dispara reglas de ejecucion remota en tres equipos
+    distintos en menos de una hora. Un administrador puede hacerlo, pero
+    tambien es la huella de un atacante recorriendo la red: confirmar
+    con el titular de la cuenta.
+  severity: high
+  window: 1h
+  scope: user
+  min_hosts: 3
+  tags: ["attack.t1021", "attack.lateral-movement", "correlacion"]
+  steps:
+    - rules:
+        - "Movimiento lateral con PsExec"
+        - "Ejecucion de procesos via WMI"
+        - "Ejecucion remota con WinRM o PowerShell Remoting"
+        - "Servicio remoto creado o arrancado con sc"
+        - "Ejecucion remota con CrackMapExec o Impacket"

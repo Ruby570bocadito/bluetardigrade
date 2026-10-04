@@ -33,10 +33,39 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Step references one contributing rule by its exact name.
+// Step references one contributing rule by its exact name, or several
+// alternatives (any of them advances the step).
 type Step struct {
-	Rule string `yaml:"rule"`
+	Rule  string   `yaml:"rule"`
+	Rules []string `yaml:"rules"`
 }
+
+// names returns the rules that advance the step (rule first, deduped).
+func (st Step) names() []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, n := range append([]string{st.Rule}, st.Rules...) {
+		if n != "" && !seen[n] {
+			seen[n] = true
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// Scopes: a chain advances per host (default) or per user account,
+// across every host the account touches (lateral movement).
+const (
+	ScopeHost = "host"
+	ScopeUser = "user"
+)
+
+// maxStepRules bounds the alternatives of one step; maxMinHosts the
+// distinct hosts a user-scoped chain may require.
+const (
+	maxStepRules = 16
+	maxMinHosts  = 16
+)
 
 // Sequence is the YAML definition of one kill chain.
 type Sequence struct {
@@ -47,11 +76,19 @@ type Sequence struct {
 	Window      string   `yaml:"window"`
 	Tags        []string `yaml:"tags"`
 	Steps       []Step   `yaml:"steps"`
+	// Scope is "host" (default) or "user": with "user" the chain follows
+	// one account across hosts; MinHosts is how many distinct hosts the
+	// completed chain must span (default 1).
+	Scope    string `yaml:"scope"`
+	MinHosts int    `yaml:"min_hosts"`
 }
 
 type compiled struct {
-	seq    Sequence
-	window time.Duration
+	seq      Sequence
+	window   time.Duration
+	scope    string
+	minHosts int
+	steps    [][]string // rule names advancing each step
 }
 
 type state struct {
@@ -65,6 +102,9 @@ type state struct {
 	// weight (last update + window). It only drives reclamation of the
 	// tracking cap; completion is decided on event times.
 	expires time.Time
+	// hosts the chain touched (lowercase, bounded by maxMinHosts):
+	// user-scoped chains complete only once they span MinHosts of them
+	hosts map[string]string
 }
 
 // span returns the spread between the oldest and newest step times.
@@ -112,7 +152,7 @@ func (m *Manager) clock() time.Time {
 // which case the sensor emitted today.
 type stateKey struct {
 	seqID string
-	host  string // lowercased
+	host  string // lowercased host, or "user:"+lowercased account for user scope
 }
 
 // maxTrackedStates bounds the per-(sequence, host) progress map. A
@@ -258,7 +298,10 @@ type SequenceInfo struct {
 	Severity      string
 	WindowSeconds int
 	Tags          []string
-	Steps         []string // rule names, in declared order (order is display-only; matching is unordered)
+	Steps         []string // step labels in declared order ("a | b" for alternatives; order is display-only)
+	StepRules     [][]string
+	Scope         string
+	MinHosts      int
 }
 
 // Snapshot returns the currently loaded sequences, sorted by ID,
@@ -269,9 +312,11 @@ func (m *Manager) Snapshot() []SequenceInfo {
 	defer m.mu.Unlock()
 	out := make([]SequenceInfo, 0, len(m.seqs))
 	for _, c := range m.seqs {
-		steps := make([]string, 0, len(c.seq.Steps))
-		for _, s := range c.seq.Steps {
-			steps = append(steps, s.Rule)
+		steps := make([]string, 0, len(c.steps))
+		stepRules := make([][]string, 0, len(c.steps))
+		for _, names := range c.steps {
+			steps = append(steps, stepLabel(names))
+			stepRules = append(stepRules, append([]string(nil), names...))
 		}
 		out = append(out, SequenceInfo{
 			ID:            c.seq.ID,
@@ -281,6 +326,9 @@ func (m *Manager) Snapshot() []SequenceInfo {
 			WindowSeconds: int(c.window / time.Second),
 			Tags:          append([]string(nil), c.seq.Tags...),
 			Steps:         steps,
+			StepRules:     stepRules,
+			Scope:         c.scope,
+			MinHosts:      c.minHosts,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
@@ -323,12 +371,14 @@ func (m *Manager) StepsWithoutRule(known map[string]bool) []string {
 	seen := map[string]bool{}
 	missing := []string{}
 	for _, c := range m.seqs {
-		for _, st := range c.seq.Steps {
-			if st.Rule == "" || known[st.Rule] || seen[st.Rule] {
-				continue
+		for _, names := range c.steps {
+			for _, name := range names {
+				if known[name] || seen[name] {
+					continue
+				}
+				seen[name] = true
+				missing = append(missing, name)
 			}
-			seen[st.Rule] = true
-			missing = append(missing, st.Rule)
 		}
 	}
 	sort.Strings(missing)
@@ -350,21 +400,34 @@ func (m *Manager) Observe(ev *model.Event, ruleName string) {
 		if !c.references(ruleName) {
 			continue
 		}
-		key := stateKey{seqID: c.seq.ID, host: strings.ToLower(ev.Host)}
+		entity := strings.ToLower(ev.Host)
+		if c.scope == ScopeUser {
+			account := trackedAccount(ev.User)
+			if account == "" {
+				continue // no user, or a service account shared by every host
+			}
+			entity = "user:" + account
+		}
+		key := stateKey{seqID: c.seq.ID, host: entity}
 		st := m.state[key]
 		if st == nil {
 			if len(m.state) >= maxTrackedStates && !m.reclaimLocked(wall, false) {
 				continue
 			}
-			st = &state{at: map[int]time.Time{}}
+			st = &state{at: map[int]time.Time{}, hosts: map[string]string{}}
+		}
+		if h := strings.ToLower(ev.Host); h != "" && len(st.hosts) < maxMinHosts {
+			if _, ok := st.hosts[h]; !ok {
+				st.hosts[h] = ev.Host
+			}
 		}
 		// Pick the step this hit advances: an unmatched step naming
 		// the rule wins; otherwise the matched one holding the OLDEST
 		// time is refreshed, but only by a newer hit (a late, older
 		// event never pushes recorded progress back in time).
 		stepIdx := -1
-		for i, s := range c.seq.Steps {
-			if s.Rule != ruleName {
+		for i := range c.seq.Steps {
+			if !contains(c.steps[i], ruleName) {
 				continue
 			}
 			prev, seen := st.at[i]
@@ -381,9 +444,9 @@ func (m *Manager) Observe(ev *model.Event, ruleName string) {
 		}
 		st.at[stepIdx] = ts
 		st.expires = wall.Add(c.window)
-		if len(st.at) == len(c.seq.Steps) {
+		if len(st.at) == len(c.seq.Steps) && len(st.hosts) >= c.minHosts {
 			if span := st.span(); span <= c.window {
-				completed = append(completed, m.fire(c, span, ev))
+				completed = append(completed, m.fire(c, span, ev, st))
 				delete(m.state, key) // re-arm
 				continue
 			}
@@ -435,24 +498,70 @@ func (m *Manager) reclaimLocked(now time.Time, force bool) bool {
 
 // references reports whether any step of the sequence names rule.
 func (c *compiled) references(rule string) bool {
-	for _, s := range c.seq.Steps {
-		if s.Rule == rule {
+	for _, names := range c.steps {
+		if contains(names, rule) {
 			return true
 		}
 	}
 	return false
 }
 
+func contains(list []string, v string) bool {
+	for _, x := range list {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+// trackedAccount normalizes the account a user-scoped chain follows.
+// Built-in service accounts run on every machine, so following them
+// would stitch unrelated hosts together: they are not tracked.
+func trackedAccount(user string) string {
+	u := strings.ToLower(strings.TrimSpace(user))
+	if u == "" || u == "-" {
+		return ""
+	}
+	name := u
+	if i := strings.LastIndexAny(u, `\/`); i >= 0 {
+		name = u[i+1:]
+	}
+	switch name {
+	case "system", "local service", "network service", "localservice", "networkservice", "anonymous logon", "":
+		return ""
+	}
+	if strings.HasSuffix(name, "$") {
+		return "" // machine accounts
+	}
+	return u
+}
+
+// stepLabel is the display form of a step: its rule, or its alternatives.
+func stepLabel(names []string) string {
+	return strings.Join(names, " | ")
+}
+
 // fire builds the sequence alert for a completed chain. Caller holds
 // mu; the returned alert is delivered by Observe AFTER mu is released —
 // the pipeline takes the hub lock and can block, and no stats read
 // should queue behind that (see Observe).
-func (m *Manager) fire(c *compiled, span time.Duration, ev *model.Event) alert.Alert {
-	steps := make([]string, 0, len(c.seq.Steps))
-	for _, s := range c.seq.Steps {
-		steps = append(steps, s.Rule)
+func (m *Manager) fire(c *compiled, span time.Duration, ev *model.Event, st *state) alert.Alert {
+	steps := make([]string, 0, len(c.steps))
+	for _, names := range c.steps {
+		steps = append(steps, stepLabel(names))
 	}
 	span = span.Round(time.Second)
+	summary := fmt.Sprintf("%s en %d pasos: %s", strings.Join(steps, " -> "), len(steps), span)
+	if c.scope == ScopeUser {
+		hosts := make([]string, 0, len(st.hosts))
+		for _, h := range st.hosts {
+			hosts = append(hosts, h)
+		}
+		sort.Strings(hosts)
+		summary = fmt.Sprintf("la cuenta %s en %d equipos (%s): %s, en %s",
+			ev.User, len(hosts), strings.Join(hosts, ", "), strings.Join(steps, " -> "), span)
+	}
 	a := alert.Alert{
 		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
 		RuleID:    c.seq.ID,
@@ -462,8 +571,7 @@ func (m *Manager) fire(c *compiled, span time.Duration, ev *model.Event) alert.A
 		User:      ev.User,
 		EventID:   ev.ID,
 		EventType: ev.Type,
-		Summary: fmt.Sprintf("%s en %d pasos: %s",
-			strings.Join(steps, " -> "), len(steps), span),
+		Summary:   summary,
 		MatchedOn: steps,
 		Tags:      c.seq.Tags,
 		Enrich:    ev.Enrichment,
@@ -569,22 +677,48 @@ func compile(s Sequence) (*compiled, error) {
 	default:
 		return nil, fmt.Errorf("invalid severity %q", s.Severity)
 	}
-	if len(s.Steps) < 2 {
+	scope := s.Scope
+	if scope == "" {
+		scope = ScopeHost
+	}
+	if scope != ScopeHost && scope != ScopeUser {
+		return nil, fmt.Errorf("invalid scope %q (host or user)", s.Scope)
+	}
+	minHosts := s.MinHosts
+	if minHosts == 0 {
+		minHosts = 1
+	}
+	if minHosts < 1 || minHosts > maxMinHosts {
+		return nil, fmt.Errorf("min_hosts %d out of range 1..%d", s.MinHosts, maxMinHosts)
+	}
+	if minHosts > 1 && scope != ScopeUser {
+		return nil, fmt.Errorf("min_hosts > 1 needs scope: user (a host-scoped chain spans one host)")
+	}
+	// one step is a chain only when it must repeat across hosts
+	if len(s.Steps) < 2 && !(len(s.Steps) == 1 && minHosts > 1) {
 		return nil, fmt.Errorf("at least 2 steps are required, got %d", len(s.Steps))
 	}
 	if len(s.Steps) > maxStepsPerSequence {
 		return nil, fmt.Errorf("%d steps is over the %d step cap", len(s.Steps), maxStepsPerSequence)
 	}
+	steps := make([][]string, 0, len(s.Steps))
 	for i, st := range s.Steps {
-		if st.Rule == "" {
+		names := st.names()
+		if len(names) == 0 {
 			return nil, fmt.Errorf("step %d: rule name is required", i)
 		}
-		if n := len([]rune(st.Rule)); n > maxIDRunes {
-			return nil, fmt.Errorf("step %d: rule name is %d runes, over the %d rune cap", i, n, maxIDRunes)
+		if len(names) > maxStepRules {
+			return nil, fmt.Errorf("step %d: %d alternative rules is over the %d cap", i, len(names), maxStepRules)
 		}
-		if r, ok := firstControlRune(st.Rule); ok {
-			return nil, fmt.Errorf("step %d: rule name contains control rune %q (U+%04X)", i, r, r)
+		for _, name := range names {
+			if n := len([]rune(name)); n > maxIDRunes {
+				return nil, fmt.Errorf("step %d: rule name is %d runes, over the %d rune cap", i, n, maxIDRunes)
+			}
+			if r, ok := firstControlRune(name); ok {
+				return nil, fmt.Errorf("step %d: rule name contains control rune %q (U+%04X)", i, r, r)
+			}
 		}
+		steps = append(steps, names)
 	}
 	w := 5 * time.Minute
 	if s.Window != "" {
@@ -602,7 +736,7 @@ func compile(s Sequence) (*compiled, error) {
 		}
 		w = d
 	}
-	return &compiled{seq: s, window: w}, nil
+	return &compiled{seq: s, window: w, scope: scope, minHosts: minHosts, steps: steps}, nil
 }
 
 // firstControlRune returns the first Unicode control rune (Cc: NUL,

@@ -358,6 +358,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Fleet'
+  /api/intel:
+    get:
+      tags: [status]
+      operationId: getIntel
+      summary: Offline threat-intel lists and per-host baseline state (read-only)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The threat-intelligence lists the engine matches events against:
+        plain-text files (`*.txt`, `*.list`) the operator places in the
+        `-intel` directory, one indicator per line (IPs, CIDR ranges,
+        domains, URLs whose host is kept, hosts-file lines, MD5/SHA-1/
+        SHA-256 hashes). The engine re-reads the directory when a file
+        changes and never downloads anything. A match raises one
+        `intel-match-<list>` alert per indicator and host every ten
+        minutes. `baseline` reports the per-host process baseline
+        (`-baseline-learn`): after its learning period a host running a
+        process it never ran before raises a low `baseline-new-process`
+        alert.
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '200':
+          description: Lists in file-name order and baseline counters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Intel'
   /api/events:
     get:
       tags: [telemetry]
@@ -2454,6 +2483,58 @@ components:
         heartbeat_grace_min_s:
           type: integer
           description: shortest silence that marks a sensor silent
+    Intel:
+      type: object
+      required: [enabled, dir, total, lists, baseline]
+      properties:
+        enabled:
+          type: boolean
+          description: false when the engine runs without an intel directory
+        dir:
+          type: string
+        total:
+          type: integer
+          description: distinct indicators across all lists
+        lists:
+          type: array
+          items:
+            $ref: '#/components/schemas/IntelList'
+        baseline:
+          type: object
+          required: [enabled, learn_s, hosts, learning]
+          properties:
+            enabled:
+              type: boolean
+            learn_s:
+              type: integer
+              description: learning period per host, in seconds (0 = disabled)
+            hosts:
+              type: integer
+            learning:
+              type: integer
+              description: hosts still inside their learning period
+    IntelList:
+      type: object
+      required: [name, file, indicators, by_kind, modified, skipped]
+      properties:
+        name:
+          type: string
+          description: file name without extension; alerts use intel-match-<name>
+        file:
+          type: string
+        indicators:
+          type: integer
+        by_kind:
+          type: object
+          description: indicators per kind (ip, cidr, domain, hash)
+          additionalProperties:
+            type: integer
+        modified:
+          type: string
+          format: date-time
+        skipped:
+          type: integer
+          description: lines that were not comments and not a usable indicator
     FleetHost:
       type: object
       required: [host, status, first_seen, last_seen, events, events_last_5m, sources, peers]
@@ -2527,7 +2608,7 @@ components:
         listed in declared order for display; matching itself is
         unordered (the correlator tracks which steps already matched
         per host, in any order, inside the window).
-      required: [id, name, description, severity, window_seconds, tags, steps]
+      required: [id, name, description, severity, window_seconds, tags, steps, step_rules, scope, min_hosts]
       properties:
         id:
           type: string
@@ -2555,7 +2636,21 @@ components:
           type: array
           items:
             type: string
-          description: contributing rule names (exact match against the live rule set)
+          description: step labels in declared order; a step with alternatives reads "rule A | rule B"
+        step_rules:
+          type: array
+          description: the rule names that advance each step (exact match against the live rule set)
+          items:
+            type: array
+            items:
+              type: string
+        scope:
+          type: string
+          enum: [host, user]
+          description: host = the chain advances per host; user = one account followed across hosts
+        min_hosts:
+          type: integer
+          description: distinct hosts a completed chain must span (1 for host scope)
     IncidentEntry:
       type: object
       required: [at, kind, text]

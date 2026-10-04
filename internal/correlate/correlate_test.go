@@ -551,8 +551,8 @@ func TestShippedSequencesStillLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("shipped sequences must load under the new caps: %v", err)
 	}
-	if m.Count() != 11 {
-		t.Fatalf("shipped sequences = %d, want 11", m.Count())
+	if m.Count() != 13 {
+		t.Fatalf("shipped sequences = %d, want 13", m.Count())
 	}
 	eng, err := rules.LoadDir(filepath.Join("..", "..", "rules"))
 	if err != nil {

@@ -37,6 +37,10 @@ function Get-SfEngineArguments {
     param([string]$Root)
     $data = Join-Path $Root 'data'
     $arguments = "-rules `"$Root\rules`" -pidfile `"$Root\run\engine.pid`" -api-write -store `"$data\sf-store.db`""
+    # Offline threat-intel lists: plain files the operator drops in
+    # intel\ (intel\README.md); the engine re-reads them and downloads
+    # nothing.
+    $arguments += " -intel `"$Root\intel`""
     $operators = Join-Path $Root 'tools\config\respond-operators.yaml'
     if (Test-Path -LiteralPath $operators) {
         $arguments += " -allow-kill -respond-operators `"$operators`" -respond-audit `"$data\respond-audit.jsonl`""
@@ -64,6 +68,7 @@ function Start-SfEngine {
         SF_API_TOKEN = Initialize-SfApiToken $Root
         SF_WEBHOOK_URL = Get-SfSetting $Root 'SF_WEBHOOK_URL' 'webhook.url'
         SF_WEBHOOK_TOKEN = Get-SfSetting $Root 'SF_WEBHOOK_TOKEN' 'webhook.token'
+        SF_BASELINE_LEARN = Get-SfSetting $Root 'SF_BASELINE_LEARN' 'baseline.learn'
     }
     $previous = @{}
     try {

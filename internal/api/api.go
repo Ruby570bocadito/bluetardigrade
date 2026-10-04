@@ -24,10 +24,12 @@ import (
 	"time"
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/baseline"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/correlate"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/fleet"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/forensic"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/incident"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/intel"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/lifecycle"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/notify"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/reputation"
@@ -91,6 +93,8 @@ type Hub struct {
 	lifecycle   *lifecycle.Store                // alert triage state (status overlay)
 	incidents   *incident.Store                 // investigation cases grouping alerts
 	fleet       *fleet.Tracker                  // machines reporting to the engine (nil = no inventory)
+	intel       *intel.Matcher                  // offline threat-intel lists (nil = none)
+	baseline    *baseline.Tracker               // per-host baseline of processes (nil = none)
 	reputation  *reputation.Client              // opt-in VirusTotal/AbuseIPDB lookups (nil = off)
 	risk        *risk.Tracker                   // per-host decayed risk score (A1)
 	beacon      func() (int, int, uint64)       // live beacon keys, cap, fired (A3)
@@ -201,6 +205,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	mux.HandleFunc("GET /api/respond/audit", h.handleRespondAudit)
 	mux.HandleFunc("GET /api/sequences", h.handleSequences)
 	mux.HandleFunc("GET /api/fleet", h.handleFleet)
+	mux.HandleFunc("GET /api/intel", h.handleIntel)
 	mux.HandleFunc("GET /api/stream", h.handleStream)
 	mux.HandleFunc("GET /api/health", h.handleHealth)
 	mux.HandleFunc("GET /api/alerts/export", h.handleAlertsExport)
@@ -1171,6 +1176,12 @@ type sequencePayload struct {
 	WindowSeconds int      `json:"window_seconds"`
 	Tags          []string `json:"tags"`
 	Steps         []string `json:"steps"`
+	// StepRules lists the rules that advance each step (alternatives).
+	StepRules [][]string `json:"step_rules"`
+	// Scope is "host" or "user" (one account followed across hosts);
+	// MinHosts is how many distinct hosts the chain must span.
+	Scope    string `json:"scope"`
+	MinHosts int    `json:"min_hosts"`
 }
 
 // handleSequences lists the kill-chain sequences as loaded right now
@@ -1189,6 +1200,7 @@ func (h *Hub) handleSequences(w http.ResponseWriter, _ *http.Request) {
 				ID: s.ID, Name: s.Name, Description: s.Description,
 				Severity: s.Severity, WindowSeconds: s.WindowSeconds,
 				Tags: s.Tags, Steps: s.Steps,
+				StepRules: s.StepRules, Scope: s.Scope, MinHosts: s.MinHosts,
 			})
 		}
 	}

@@ -164,3 +164,57 @@ func TestFieldsAreBounded(t *testing.T) {
 		t.Fatal("events without host are ignored")
 	}
 }
+
+func TestExportRestoreGivesReconnectingSensorsAFullGrace(t *testing.T) {
+	tr := New()
+	tr.Observe(heartbeat("PC-01", 60), "10.0.0.21", t0)
+	tr.Observe(heartbeat("PC-02", 60), "10.0.0.22", t0)
+	tr.Check(t0.Add(4 * time.Minute)) // both silent and reported
+	docs := tr.Export(true, t0.Add(4*time.Minute))
+	if len(docs) != 2 {
+		t.Fatalf("export: %d", len(docs))
+	}
+	if len(tr.Export(false, t0.Add(5*time.Minute))) != 0 {
+		t.Fatal("nothing changed since the last export")
+	}
+
+	// engine restarts an hour later
+	restart := t0.Add(time.Hour)
+	again := New()
+	if n := again.Restore(docs, restart); n != 2 {
+		t.Fatalf("restored %d", n)
+	}
+	h := find(t, again.Snapshot(restart.Add(time.Minute)), "PC-01")
+	if h.Status != StatusOnline || h.Sensor == nil || h.Peers[0] != "10.0.0.21" {
+		t.Fatalf("within the restart grace a restored sensor is online: %+v", h)
+	}
+	if got := again.Check(restart.Add(2 * time.Minute)); len(got) != 0 {
+		t.Fatalf("no alert inside the grace: %+v", got)
+	}
+	again.Observe(heartbeat("PC-02", 60), "10.0.0.22", restart.Add(2*time.Minute))
+	got := again.Check(restart.Add(4 * time.Minute))
+	if len(got) != 0 {
+		t.Fatalf("PC-01's silence was already reported before the restart; got %+v", got)
+	}
+	if find(t, again.Snapshot(restart.Add(4*time.Minute)), "PC-01").Status != StatusSilent {
+		t.Fatal("a sensor that never came back is silent after the grace")
+	}
+	if find(t, again.Snapshot(restart.Add(4*time.Minute)), "PC-02").Status != StatusOnline {
+		t.Fatal("a sensor that reconnected is online")
+	}
+}
+
+func TestRetiredHostsAreReportedForDeletion(t *testing.T) {
+	tr := New()
+	tr.Observe(ev("OLD", "process.create", "etw"), "", t0)
+	tr.Check(t0.Add(8 * 24 * time.Hour))
+	if got := tr.TakeRetired(); len(got) != 1 || got[0] != "old" {
+		t.Fatalf("retired: %v", got)
+	}
+	if len(tr.TakeRetired()) != 0 {
+		t.Fatal("retired keys are handed out once")
+	}
+	if tr.Restore(map[string][]byte{"x": []byte("{bad")}, t0) != 0 {
+		t.Fatal("corrupt documents are skipped")
+	}
+}
