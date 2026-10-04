@@ -86,7 +86,11 @@ func doctorConsoleUsers(root string) doctorCheck {
 		return doctorCheck{name, "error", problem + ": la consola quedaria bloqueada", "Corrige " + path + " (cada entrada se genera con web/console/scripts/console-user.mjs)"}
 	}
 	total := counts["admin"] + counts["analyst"] + counts["viewer"]
-	detail := fmt.Sprintf("%d cuentas (administradores %d, analistas %d, lectores %d)", total, counts["admin"], counts["analyst"], counts["viewer"])
+	noun := "cuentas"
+	if total == 1 {
+		noun = "cuenta"
+	}
+	detail := fmt.Sprintf("%d %s (administradores %d, analistas %d, lectores %d)", total, noun, counts["admin"], counts["analyst"], counts["viewer"])
 	if counts["admin"] == 0 {
 		return doctorCheck{name, "warn", detail + ": ningun administrador", "Sin administrador nadie ve la auditoria ni puede usar la respuesta activa"}
 	}
