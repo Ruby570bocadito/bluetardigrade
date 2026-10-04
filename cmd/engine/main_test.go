@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/Ruby570bocadito/bluetardigrade/internal/correlate"
 )
 
 // listening must detect an accepting TCP endpoint.
@@ -158,5 +160,21 @@ func TestResolveDataDirFallsBackToExeRelative(t *testing.T) {
 	got := resolveDataDir(missing, "rules")
 	if got != alt {
 		t.Fatalf("resolveDataDir(missing, rules) = %q, want exe-relative %q", got, alt)
+	}
+}
+
+func TestStepCoverageUnderstandsAlternatives(t *testing.T) {
+	seq := correlate.SequenceInfo{
+		Steps:     []string{"A", "B | C", "D | E"},
+		StepRules: [][]string{{"A"}, {"B", "C"}, {"D", "E"}},
+	}
+	dead, alts := stepCoverage(seq, map[string]bool{"A": true, "C": true})
+	if len(dead) != 1 || dead[0] != "D | E" || len(alts) != 1 || alts[0] != "B" {
+		t.Fatalf("dead %v, missing alternatives %v", dead, alts)
+	}
+	// engines without StepRules: each label is its own rule
+	dead, _ = stepCoverage(correlate.SequenceInfo{Steps: []string{"A", "Z"}}, map[string]bool{"A": true})
+	if len(dead) != 1 || dead[0] != "Z" {
+		t.Fatalf("plain steps: %v", dead)
 	}
 }

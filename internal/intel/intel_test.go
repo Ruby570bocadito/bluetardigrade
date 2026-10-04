@@ -28,6 +28,15 @@ func TestParseLineUnderstandsCommonFeedFormats(t *testing.T) {
 		strings.Repeat("A", 64):                {KindHash, strings.Repeat("a", 64)},
 		"d41d8cd98f00b204e9800998ecf8427e":     {KindHash, "d41d8cd98f00b204e9800998ecf8427e"},
 		"Evil.Example.COM.":                    {KindDomain, "evil.example.com"},
+		"203.0.113.9:443":                      {KindIP, "203.0.113.9"},
+		"[2001:db8::7]:8443":                   {KindIP, "2001:db8::7"},
+		"c2.example.net:8080":                  {KindDomain, "c2.example.net"},
+		"evil[.]example[.]com":                 {KindDomain, "evil.example.com"},
+		"hxxps://bad[.]example.org/drop.exe":   {KindDomain, "bad.example.org"},
+		"198.51.100[.]14":                      {KindIP, "198.51.100.14"},
+		"||ads.example.com^":                   {KindDomain, "ads.example.com"},
+		"||tracker.example.com^$third-party":   {KindDomain, "tracker.example.com"},
+		"*.wild.example.com":                   {KindDomain, "wild.example.com"},
 	}
 	for line, want := range cases {
 		kind, value := parseLine(line)
@@ -35,7 +44,7 @@ func TestParseLineUnderstandsCommonFeedFormats(t *testing.T) {
 			t.Fatalf("%q -> %s %s, want %v", line, kind, value, want)
 		}
 	}
-	for _, noise := range []string{"", "# comment", "; comment", "127.0.0.1", "0.0.0.0", "localhost", "not a domain", "169.254.1.1", "ff02::1"} {
+	for _, noise := range []string{"", "# comment", "; comment", "127.0.0.1", "0.0.0.0", "localhost", "not a domain", "169.254.1.1", "ff02::1", "127.0.0.1:80", "||^", "! Title: lista", "@@||allowed.example.com^"} {
 		if kind, _ := parseLine(noise); kind != "" {
 			t.Fatalf("%q must be skipped, got %s", noise, kind)
 		}

@@ -283,17 +283,34 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
     // them running in the kernel after the process is gone.
     install_console_handler();
 
+    // The DNS provider shares the session with network and registry, and
+    // ferrisetw aborts the start on the first provider that fails: if the
+    // session cannot start with DNS, network and registry are retried on
+    // their own instead of being lost with it.
+    let mut dns_live = capture.dns;
     let netreg = if capture.network || capture.registry || capture.dns {
-        start_netreg(&ctx, &capture)
+        match start_netreg(&ctx, capture.network, capture.dns, capture.registry) {
+            Some(session) => Some(session),
+            None if capture.dns && (capture.network || capture.registry) => {
+                dns_live = false;
+                eprintln!("[SENSOR] retrying network and registry capture without DNS");
+                let _ = ferrisetw::trace::stop_trace_by_name(NETREG_SESSION_NAME);
+                start_netreg(&ctx, capture.network, false, capture.registry)
+            }
+            None => None,
+        }
     } else {
         None
     };
     let live = netreg.is_some();
+    if !live && (capture.network || capture.registry || capture.dns) {
+        eprintln!("[SENSOR] warning: continuing with process events only");
+    }
     let streams = [
         (true, "process", "process starts"),
         (capture.hash, "sha256", "image hashes"),
         (live && capture.network, "network", "TCP connections"),
-        (live && capture.dns, "dns", "DNS queries"),
+        (live && dns_live, "dns", "DNS queries"),
         (live && capture.registry, "registry", "registry writes"),
     ];
     let what = streams.iter().filter(|s| s.0).map(|s| s.2).collect::<Vec<_>>().join(", ");
@@ -359,12 +376,12 @@ fn start_with_recovery<R, E: std::fmt::Debug>(name: &str, start: impl Fn() -> st
     })
 }
 
-/// Starts the network/registry session on its own thread. Best effort:
-/// a failure is reported and the sensor continues with process events.
-fn start_netreg(ctx: &Arc<Shared>, capture: &Capture) -> Option<(UserTrace, std::thread::JoinHandle<()>)> {
+/// Starts the network/DNS/registry session on its own thread. Best
+/// effort: a failure is reported and None returned.
+fn start_netreg(ctx: &Arc<Shared>, network: bool, dns: bool, registry: bool) -> Option<(UserTrace, std::thread::JoinHandle<()>)> {
     let build = || {
         let mut builder = UserTrace::new().named(String::from(NETREG_SESSION_NAME));
-        if capture.network {
+        if network {
             let ctx = Arc::clone(ctx);
             builder = builder.enable(
                 Provider::by_guid(KERNEL_NETWORK)
@@ -374,7 +391,7 @@ fn start_netreg(ctx: &Arc<Shared>, capture: &Capture) -> Option<(UserTrace, std:
                     .build(),
             );
         }
-        if capture.dns {
+        if dns {
             let ctx = Arc::clone(ctx);
             builder = builder.enable(
                 Provider::by_guid(DNS_CLIENT)
@@ -384,7 +401,7 @@ fn start_netreg(ctx: &Arc<Shared>, capture: &Capture) -> Option<(UserTrace, std:
                     .build(),
             );
         }
-        if capture.registry {
+        if registry {
             let ctx = Arc::clone(ctx);
             builder = builder.enable(
                 Provider::by_guid(KERNEL_REGISTRY)
@@ -411,7 +428,13 @@ fn start_netreg(ctx: &Arc<Shared>, capture: &Capture) -> Option<(UserTrace, std:
             Some((trace, thread))
         }
         Err(err) => {
-            eprintln!("[SENSOR] warning: network, DNS and registry capture unavailable ({err}); continuing with process events only");
+            let what = [(network, "network"), (dns, "DNS"), (registry, "registry")]
+                .iter()
+                .filter(|w| w.0)
+                .map(|w| w.1)
+                .collect::<Vec<_>>()
+                .join("+");
+            eprintln!("[SENSOR] warning: the {what} session could not start ({err})");
             None
         }
     }

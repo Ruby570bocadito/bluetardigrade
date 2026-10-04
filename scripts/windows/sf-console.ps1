@@ -154,8 +154,12 @@ if (-not (Test-PortLocal $ConsolePort)) {
     # Analyst accounts (docs/OPERATIONS.md): only when the file exists;
     # without it the console keeps its loopback/token behavior. Console
     # writes are always audited under data\.
+    # $env changes outlive this script in the operator's PowerShell, so a
+    # deleted accounts file must also clear the variable it set, or the
+    # next start would point the console at a missing file (locked).
     $usersFile = Join-Path $root 'tools\config\console-users.json'
     if (Test-Path -LiteralPath $usersFile) { $env:CONSOLE_USERS_FILE = $usersFile }
+    elseif ($env:CONSOLE_USERS_FILE -eq $usersFile) { Remove-Item Env:CONSOLE_USERS_FILE -ErrorAction SilentlyContinue }
     New-Item -ItemType Directory -Path (Join-Path $root 'data') -Force | Out-Null
     $env:CONSOLE_AUDIT_FILE = Join-Path $root 'data\console-audit.jsonl'
     $nextBin = Join-Path $web 'console\node_modules\next\dist\bin\next'

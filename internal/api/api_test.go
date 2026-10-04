@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,8 +17,10 @@ import (
 	"time"
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/baseline"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/beacon"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/correlate"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/intel"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/notify"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
 	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
@@ -733,6 +737,19 @@ func TestMetricsParityWithStats(t *testing.T) {
 	h.SetElasticStats(func() (uint64, uint64, uint64) { return 6, 3, 2 })
 	h.SetSplunkStats(func() (uint64, uint64, uint64) { return 4, 2, 1 })
 	h.SetCorrelatorStats(func() (int, int, int) { return 3, 4, 8192 })
+	intelDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(intelDir, "lab.txt"), []byte("203.0.113.9\nmal.example.com\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	im, err := intel.Load(intelDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	im.Allow(intel.Hit{List: "lab", Value: "203.0.113.9"}, "LAB-TEST", time.Now())
+	h.SetIntel(im)
+	bt := baseline.New(time.Hour)
+	bt.Observe(&model.Event{Host: "LAB-TEST", Type: model.TypeProcessCreate, Process: &model.Process{Name: "a.exe"}}, time.Now())
+	h.SetBaseline(bt)
 	h.RecordEvent(sampleEvent("ev-1"))
 	h.RecordEvent(sampleEvent("ev-2"))
 	h.RecordAlert(alert.Alert{
@@ -823,6 +840,15 @@ func TestMetricsParityWithStats(t *testing.T) {
 	wantMetric("sf_beacon_keys_tracked", "beacons_tracked")
 	wantMetric("sf_beacon_cap", "beacons_cap")
 	wantMetric("sf_beacons_fired_total", "beacons_fired")
+	wantMetric("sf_intel_indicators", "intel_indicators")
+	wantMetric("sf_intel_lists", "intel_lists")
+	wantMetric("sf_intel_hits_total", "intel_hits")
+	wantMetric("sf_baseline_hosts", "baseline_hosts")
+	wantMetric("sf_baseline_hosts_learning", "baseline_learning")
+	wantMetric("sf_baseline_novelties_total", "baseline_novelties")
+	if stats["intel_indicators"] != float64(2) || stats["intel_hits"] != float64(1) || stats["baseline_learning"] != float64(1) {
+		t.Fatalf("intel/baseline stats: %v %v %v", stats["intel_indicators"], stats["intel_hits"], stats["baseline_learning"])
+	}
 
 	// notify channels (C2): every JSON row must appear as four labeled
 	// series with identical values, in sorted (deterministic) order.

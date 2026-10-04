@@ -12,6 +12,7 @@ package baseline
 
 import (
 	"path"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -58,6 +59,7 @@ type Tracker struct {
 	learn   time.Duration
 	hosts   map[string]*hostState
 	pending []Entry
+	novel   uint64 // novelties reported since start
 }
 
 // New returns an empty baseline with the given learning period.
@@ -133,7 +135,15 @@ func (t *Tracker) Observe(ev *model.Event, now time.Time) *Novelty {
 		return nil
 	}
 	h.recent = append(h.recent, now)
+	t.novel++
 	return &Novelty{Host: ev.Host, Kind: kind, Value: value, LearnedOn: h.firstSeen}
+}
+
+// Novelties counts the novelties reported since the engine started.
+func (t *Tracker) Novelties() uint64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.novel
 }
 
 // TakePending returns (and forgets) the entries learned since the last
@@ -144,6 +154,42 @@ func (t *Tracker) TakePending() []Entry {
 	out := t.pending
 	t.pending = nil
 	return out
+}
+
+// HostView is what the baseline knows about one host.
+type HostView struct {
+	Host      string
+	FirstSeen time.Time // learning started
+	Learning  bool
+	// LearnedAt is when the learning period ends (or ended); zero when
+	// novelties are disabled.
+	LearnedAt time.Time
+	Processes []string // process names seen, sorted
+	Full      bool     // the per-host cap was reached: no longer learning
+}
+
+// Host returns the baseline of one host (case-insensitive).
+func (t *Tracker) Host(host string, now time.Time) (HostView, bool) {
+	key := strings.ToLower(strings.TrimSpace(host))
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	h := t.hosts[key]
+	if h == nil {
+		return HostView{Host: key}, false
+	}
+	v := HostView{Host: key, FirstSeen: h.firstSeen, Full: len(h.values) >= maxValues}
+	if t.learn > 0 {
+		v.LearnedAt = h.firstSeen.Add(t.learn)
+		v.Learning = now.Before(v.LearnedAt)
+	}
+	prefix := KindProcess + "\x00"
+	for k := range h.values {
+		if strings.HasPrefix(k, prefix) {
+			v.Processes = append(v.Processes, k[len(prefix):])
+		}
+	}
+	sort.Strings(v.Processes)
+	return v, true
 }
 
 // Stats reports hosts tracked and how many are still learning at now.

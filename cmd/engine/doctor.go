@@ -141,6 +141,7 @@ func runDoctor(ctx context.Context, o *doctorOptions) *doctorReport {
 	r := &doctorReport{Checks: []doctorCheck{}}
 	root := doctorRoot(o.root)
 	r.add(doctorContentChecks(root)...)
+	r.add(doctorIntelChecks(root)...)
 	if f, err := os.CreateTemp(root, ".doctor-write-"); err != nil {
 		r.add(doctorCheck{"Directorio de estado", "error", "No se puede crear estado en el directorio seleccionado", "Selecciona una instalacion escribible con -root; revisa sus permisos"})
 	} else {
@@ -208,11 +209,8 @@ func doctorContentChecks(root string) []doctorCheck {
 			}
 			missing := 0
 			for _, seq := range corr.Snapshot() {
-				for _, step := range seq.Steps {
-					if !names[step] {
-						missing++
-					}
-				}
+				dead, _ := stepCoverage(seq, names)
+				missing += len(dead)
 			}
 			if missing > 0 {
 				checks = append(checks, doctorCheck{"Pasos de correlacion", "warn", fmt.Sprintf("%d referencias no corresponden a reglas cargadas", missing), "Ejecuta engine validate para localizar los pasos que nunca podrian completarse"})

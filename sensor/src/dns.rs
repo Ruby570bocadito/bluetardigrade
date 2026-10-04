@@ -6,8 +6,13 @@
 //     "type:  5 cdn.example.net;::ffff:93.184.216.34;2606:2800::1;",
 //     where CNAME hops carry a "type:" prefix and IPv4 answers come
 //     IPv4-mapped. The addresses are extracted in order.
-//   - noise: browsers and services repeat the same query constantly; a
-//     (process, name) pair is reported once per minute.
+//   - noise: browsers and services repeat the same query constantly. A
+//     (process, name) pair is reported, then its repeats are dropped for
+//     as long as they keep arriving less than a minute apart (a sliding
+//     window). A fixed "once a minute" would turn a 5-second poller into
+//     a perfectly regular 60-second series, which the engine's beacon
+//     detector would read as an implant; this way only real gaps of over
+//     a minute produce new events, so true cadences stay visible.
 //   - IP -> domain: answers are remembered for ten minutes so the TCP
 //     connection that follows the lookup carries the domain it was for
 //     (the same field Sysmon-based rules and the intel lists read).
@@ -69,8 +74,9 @@ impl DnsState {
     }
 
     /// Records a completed query and reports whether it should be
-    /// forwarded (false for a repeat of the same process and name inside
-    /// the repeat window). Answers are remembered either way.
+    /// forwarded (false for a repeat of the same process and name less
+    /// than the repeat window after the previous one, forwarded or not).
+    /// Answers are remembered either way.
     pub fn observe(&mut self, pid: u32, name: &str, ips: &[IpAddr], now: Instant) -> bool {
         if self.answers.len() + ips.len() > MAX_ANSWERS {
             self.answers.retain(|_, (_, at)| now.duration_since(*at) < ANSWER_TTL);
@@ -82,10 +88,10 @@ impl DnsState {
             self.answers.insert(*ip, (name.to_string(), now));
         }
         let key = (pid, name.to_string());
-        if let Some(at) = self.recent.get(&key) {
-            if now.duration_since(*at) < REPEAT_WINDOW {
-                return false;
-            }
+        if let Some(at) = self.recent.get_mut(&key) {
+            let quiet = now.duration_since(*at) >= REPEAT_WINDOW;
+            *at = now; // sliding: every repeat extends the quiet period
+            return quiet;
         }
         if self.recent.len() >= MAX_RECENT {
             self.recent.retain(|_, at| now.duration_since(*at) < REPEAT_WINDOW);
@@ -138,10 +144,23 @@ mod tests {
         assert!(st.observe(100, "mal.example.com", &[ip], t0));
         assert!(!st.observe(100, "mal.example.com", &[ip], t0 + Duration::from_secs(5)), "repeat inside the window");
         assert!(st.observe(200, "mal.example.com", &[ip], t0 + Duration::from_secs(5)), "another process is reported");
-        assert!(st.observe(100, "mal.example.com", &[ip], t0 + Duration::from_secs(61)), "after the window again");
+        assert!(st.observe(100, "mal.example.com", &[ip], t0 + Duration::from_secs(66)), "after a quiet minute again");
         assert_eq!(st.domain_for(&ip, t0 + Duration::from_secs(70)).as_deref(), Some("mal.example.com"));
-        assert_eq!(st.domain_for(&ip, t0 + Duration::from_secs(61 + 601)), None, "answers expire");
+        assert_eq!(st.domain_for(&ip, t0 + Duration::from_secs(66 + 601)), None, "answers expire");
         assert_eq!(st.domain_for(&"192.0.2.1".parse().unwrap(), t0), None);
+    }
+
+    #[test]
+    fn suppression_never_invents_a_cadence() {
+        let t0 = Instant::now();
+        // a 5-second poller for ten minutes: one event, not one a minute
+        let mut st = DnsState::new();
+        let forwarded = (0..120).filter(|i| st.observe(7, "telemetry.example.com", &[], t0 + Duration::from_secs(i * 5))).count();
+        assert_eq!(forwarded, 1);
+        // a real 90-second cadence is forwarded every time
+        let mut st = DnsState::new();
+        let forwarded = (0..10).filter(|i| st.observe(7, "c2.example.com", &[], t0 + Duration::from_secs(i * 90))).count();
+        assert_eq!(forwarded, 10);
     }
 
     #[test]

@@ -302,12 +302,16 @@ func runValidation(rulesFlag, seqsFlag string) *validationReport {
 			// but the operator should know.
 			if rulesOK {
 				for _, seq := range corr.Snapshot() {
-					for _, stepRule := range seq.Steps {
-						if !ruleNames[stepRule] {
-							rep.add(checkWarn,
-								"secuencia %q: el paso %q no corresponde a ninguna regla cargada; ese paso nunca se completara",
-								seq.Name, stepRule)
-						}
+					dead, missingAlts := stepCoverage(seq, ruleNames)
+					for _, step := range dead {
+						rep.add(checkWarn,
+							"secuencia %q: el paso %q no corresponde a ninguna regla cargada; ese paso nunca se completara",
+							seq.Name, step)
+					}
+					for _, alt := range missingAlts {
+						rep.add(checkWarn,
+							"secuencia %q: la alternativa %q no corresponde a ninguna regla cargada (el paso aun puede completarse con las demas)",
+							seq.Name, alt)
 					}
 				}
 			}
@@ -400,4 +404,29 @@ func flagRows(fs *flag.FlagSet) [][2]string {
 		rows = append(rows, [2]string{left, f.Usage})
 	})
 	return rows
+}
+
+// stepCoverage splits a sequence's unloaded references: dead holds the
+// labels of steps no loaded rule can complete (the chain can never
+// fire); missingAlts the alternatives that do not exist while another
+// alternative of the same step does.
+func stepCoverage(seq correlate.SequenceInfo, loaded map[string]bool) (dead, missingAlts []string) {
+	for i, label := range seq.Steps {
+		alts := []string{label}
+		if i < len(seq.StepRules) && len(seq.StepRules[i]) > 0 {
+			alts = seq.StepRules[i]
+		}
+		var absent []string
+		for _, r := range alts {
+			if !loaded[r] {
+				absent = append(absent, r)
+			}
+		}
+		if len(absent) == len(alts) {
+			dead = append(dead, label)
+		} else {
+			missingAlts = append(missingAlts, absent...)
+		}
+	}
+	return dead, missingAlts
 }

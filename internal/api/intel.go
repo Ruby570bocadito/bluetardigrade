@@ -8,6 +8,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/baseline"
@@ -59,6 +60,54 @@ func (h *Hub) handleIntel(w http.ResponseWriter, _ *http.Request) {
 		out.Baseline.LearnS = int(b.Learning() / time.Second)
 		out.Baseline.Enabled = out.Baseline.LearnS > 0
 		out.Baseline.Hosts, out.Baseline.Learning = b.Stats(time.Now())
+	}
+	writeJSON(w, out)
+}
+
+// GET /api/baseline?host=NAME: what the per-host process baseline knows
+// about one machine (learning window and the process names it treats
+// as normal), for the host page of the console.
+
+type baselineHostPayload struct {
+	Enabled       bool       `json:"enabled"`
+	LearnS        int        `json:"learn_s"`
+	Host          string     `json:"host"`
+	Known         bool       `json:"known"`
+	FirstSeen     *time.Time `json:"first_seen,omitempty"`
+	Learning      bool       `json:"learning"`
+	LearningUntil *time.Time `json:"learning_until,omitempty"`
+	Processes     []string   `json:"processes"`
+	Full          bool       `json:"full"`
+}
+
+func (h *Hub) handleBaselineHost(w http.ResponseWriter, r *http.Request) {
+	host := strings.TrimSpace(r.URL.Query().Get("host"))
+	if host == "" || len(host) > 255 {
+		writeErr(w, http.StatusBadRequest, "host query parameter required (at most 255 bytes)")
+		return
+	}
+	h.mu.Lock()
+	b := h.baseline
+	h.mu.Unlock()
+	out := baselineHostPayload{Host: strings.ToLower(host), Processes: []string{}}
+	if b != nil {
+		out.LearnS = int(b.Learning() / time.Second)
+		out.Enabled = out.LearnS > 0
+		now := time.Now()
+		if v, ok := b.Host(host, now); ok {
+			out.Known = true
+			first := v.FirstSeen.UTC()
+			out.FirstSeen = &first
+			out.Learning = v.Learning
+			if !v.LearnedAt.IsZero() {
+				until := v.LearnedAt.UTC()
+				out.LearningUntil = &until
+			}
+			if v.Processes != nil {
+				out.Processes = v.Processes
+			}
+			out.Full = v.Full
+		}
 	}
 	writeJSON(w, out)
 }

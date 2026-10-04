@@ -13,6 +13,7 @@ import { useEngine } from './engine-provider'
 import { useIncidents } from './incidents-provider'
 import { useFleet } from './fleet-provider'
 import { EnrollDialog, FleetStatusPill, FleetSummary, SensorCard } from './fleet-parts'
+import { BaselineCard } from './baseline-card'
 import type { FleetHost, FleetStatus } from '@/lib/fleet'
 import { EmptyState, SeverityBadge, StatTile } from './ui-bits'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
@@ -315,13 +316,16 @@ function HostPage({ row, onHunt, onOpenAlert, onOpenIncident }: {
             </ol>
           )}
         </ChartCard>
-        <ChartCard title="Destinos de red" subtitle="Conexiones salientes del equipo" icon={Globe}>
-          <BarList
-            color="var(--series-4)"
-            rows={destinations.top.map((r) => ({ key: r.key, label: <span className="font-mono">{r.key}</span>, value: r.count }))}
-            empty={<EmptyState icon={Globe} title="Sin conexiones" hint="Aparecen con los eventos network.connect." />}
-          />
-        </ChartCard>
+        <div className="min-w-0 space-y-4">
+          <ChartCard title="Destinos de red" subtitle="Conexiones salientes del equipo" icon={Globe}>
+            <BarList
+              color="var(--series-4)"
+              rows={destinations.top.map((r) => ({ key: r.key, label: <span className="font-mono">{r.key}</span>, value: r.count }))}
+              empty={<EmptyState icon={Globe} title="Sin conexiones" hint="Aparecen con los eventos network.connect." />}
+            />
+          </ChartCard>
+          <BaselineCard host={row.host} alerts={hostAlerts} onOpenAlert={onOpenAlert} />
+        </div>
       </div>
     </article>
   )

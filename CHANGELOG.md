@@ -12,6 +12,43 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Review round: fixes, observability and the host baseline (2026-10-04)
+
+- Fixes:
+  - ETW sensor: DNS repeats are suppressed with a sliding window. The
+    fixed "once a minute" turned a fast poller into a perfectly regular
+    60 s series that the beacon detector would flag as an implant.
+  - ETW sensor: if the network/registry session cannot start with the
+    DNS provider (ferrisetw aborts on the first failing provider), it is
+    retried without DNS instead of losing network and registry too.
+  - Engine: baseline entries and retired fleet hosts pending persistence
+    are drained every 30 s even without `-store` (they used to grow).
+  - `engine validate` and `sf-engine doctor` no longer report the steps
+    with alternatives as missing rules; a step is dead only when none of
+    its alternatives is loaded.
+  - Console: the header drop-downs (critical-alert notifications and the
+    new detectors menu) were clipped by the scrolling chip row; they now
+    float above the page.
+  - Console accounts: login failures are tracked for real accounts only
+    (a flood of invented names could flush a real account's lockout).
+  - `scripts/console-user.mjs`: the second password prompt was hidden on
+    a terminal.
+  - Windows launcher: deleting `console-users.json` and restarting in the
+    same PowerShell left `CONSOLE_USERS_FILE` set, locking the console.
+  - Engine: an invalid `SF_BASELINE_LEARN` is reported instead of
+    silently ignored.
+- `/api/stats` and `/metrics` carry threat-intel and baseline counters
+  (OpenAPI documented, parity-tested).
+- `GET /api/baseline?host=` and a *Línea base de procesos* card on each
+  host page: learning window, known processes (filterable) and the
+  host's novelties.
+- Header: one **detectores** chip with a drop-down replaces the
+  correlator, beacon and threshold chips (the row no longer overflows).
+- Intel lists also accept `IP:port`, `domain:port`, defanged indicators
+  (`evil[.]com`, `hxxps://`), wildcards and AdBlock rules.
+- `sf-engine doctor` checks the intel folder, the `baseline.learn`
+  setting and the console accounts file.
+
 ### Threat intel, baseline, cross-host chains, analyst accounts and sensor hashes (2026-10-04)
 
 - **Offline threat intelligence** (`internal/intel`, `-intel`, default

@@ -117,7 +117,7 @@ What it captures, in two real-time ETW sessions:
 |---|---|---|
 | `process.create` | kernel process provider | Full command line, parent PID, the new process owner's SID, the full image path (queried from the live process, not argv[0]) and its SHA-256 |
 | `network.connect` | Microsoft-Windows-Kernel-Network, events 12/28 | TCP connection attempts (IPv4 and IPv6) with the process name. Loopback destinations are skipped. When the address came from a recent DNS answer, `network.domain` names it |
-| `network.connect` (`protocol: dns`) | Microsoft-Windows-DNS-Client, event 3008 | DNS queries with the process that asked, the name, the first answer as `destination_ip` and `dns_status` / `dns_query_type` attributes. A repeat of the same name by the same process within a minute is not forwarded, and reverse lookups (`.arpa`) are skipped |
+| `network.connect` (`protocol: dns`) | Microsoft-Windows-DNS-Client, event 3008 | DNS queries with the process that asked, the name, the first answer as `destination_ip` and `dns_status` / `dns_query_type` attributes. Repeats of the same name by the same process are dropped while they keep arriving less than a minute apart (a sliding window, so a fast poller never becomes an artificial 60-second cadence for the beacon detector), and reverse lookups (`.arpa`) are skipped |
 | `registry.set` | Microsoft-Windows-Kernel-Registry, event 5 | Value writes to the keys detections read: Run keys, IFEO, SilentProcessExit, Winlogon, Defender, PowerShell logging policy, Terminal Server, LSA/WDigest, shell `open`/`runas` handlers, user shell folders, `AppInit_DLLs`, service `ImagePath`/`ServiceDll` and `UserInitMprLogonScript` |
 
 - Event ids are filtered inside the kernel, and registry writes are then limited to that key list, because SetValueKey fires thousands of times per second on a busy host.
@@ -129,7 +129,7 @@ What it captures, in two real-time ETW sessions:
   - `--no-network`, `--no-dns` and `--no-registry` turn each capture off.
   - `--no-hash` skips image hashing (the path is still reported).
   - `--registry-all` forwards every value write (noisy, for lab work).
-- If the network/DNS/registry session cannot start, the sensor logs a warning and keeps streaming process events.
+- If the network/DNS/registry session cannot start with the DNS provider, it is retried without DNS (one failing provider aborts the whole session start); if it still cannot start, the sensor logs a warning and keeps streaming process events.
 
 Delivery never runs on the ETW thread. Events wait in a bounded in-memory queue (`--queue`, default 50000) while the engine is unreachable, so an engine restart or a network cut no longer stalls the trace consumer (which made Windows discard events from the real-time buffers). For outages longer than the queue, `--spool <file>` (or `SF_SENSOR_SPOOL`) adds an on-disk overflow capped by `--spool-max-mb` (default 256); it survives a sensor restart and is replayed in order once the engine is back. Replays can repeat events already delivered, which the engine absorbs (stored evidence is first-write-wins by event id). Past both limits events are dropped and the count is reported on stderr. Put the spool in a directory only the sensor's account can read: it holds command lines.
 
@@ -605,10 +605,14 @@ downloads lists or contacts a feed.
 - Files: `*.txt` and `*.list` in the folder (not subfolders). The file
   name without extension is the list name, and its hits raise
   `intel-match-<name>`, so one noisy list can be suppressed on its own.
-- One indicator per line; `#` and `;` start comments. Understood: IPv4
-  and IPv6 addresses, CIDR ranges, domains (they also match every
-  subdomain), hosts-file lines (`0.0.0.0 bad.example.com`), URLs (the
-  host is kept) and MD5 / SHA-1 / SHA-256 hashes. Loopback,
+- One indicator per line; `#` and `;` start comments, and so does a
+  leading `!` (AdBlock lists). Understood: IPv4 and IPv6 addresses
+  (also with a port), CIDR ranges, domains (they also match every
+  subdomain; also with a port), hosts-file lines
+  (`0.0.0.0 bad.example.com`), URLs (the host is kept), AdBlock rules
+  (`||bad.example.com^`), wildcards (`*.bad.example.com`), defanged
+  indicators from reports (`bad[.]example[.]com`, `hxxps://`) and MD5 /
+  SHA-1 / SHA-256 hashes. Loopback,
   unspecified, link-local and multicast addresses are skipped and
   counted per list.
 - Matched fields: destination and source IP (including ranges), the
@@ -624,7 +628,9 @@ downloads lists or contacts a feed.
   the engine keeps running and retries on the next reload. Caps: 64 MB
   per file, 2 million indicators in total.
 - `GET /api/intel` lists the loaded lists with their counts per kind,
-  skipped lines and modification time. The console shows it in
+  skipped lines and modification time; `/api/stats` and `/metrics`
+  carry `intel_indicators`, `intel_lists` and `intel_hits`
+  (`sf_intel_indicators`, `sf_intel_lists`, `sf_intel_hits_total`). The console shows it in
   **Detección -> Inteligencia**, with the latest hits.
 - The Windows launcher passes `-intel <install>\intel`; the folder ships
   with a Spanish README ([intel/README.md](../intel/README.md)) and no
@@ -651,7 +657,22 @@ one a host never ran before: the tool nobody wrote a rule for (an
 - Bounded: 4096 hosts and 4096 names per host; a full host stops
   learning instead of forgetting.
 - `GET /api/intel` also reports the baseline (`learn_s`, hosts tracked,
-  hosts still learning).
+  hosts still learning), and `GET /api/baseline?host=NAME` what it knows
+  about one machine: learning start and end, and the process names it
+  treats as normal there. The console shows it on each host page
+  (**Equipos**, card *Línea base de procesos*), next to the host's
+  novelties.
+- `/api/stats` and `/metrics`: `baseline_hosts`, `baseline_learning`,
+  `baseline_novelties` (`sf_baseline_hosts`,
+  `sf_baseline_hosts_learning`, `sf_baseline_novelties_total`).
+- An invalid `SF_BASELINE_LEARN` is reported at startup and the default
+  (24 h) is used; `sf-engine doctor` reports it too.
+
+`sf-engine doctor` checks the three operator files of these features
+before a restart: the intel lists (unreadable files, lines it would
+skip), the `baseline.learn` setting and the console accounts file (it
+validates the file with the console's own rules, since a rejected file
+locks the console, and warns when no account is an administrator).
 
 ## Host risk scoring (hot hosts)
 
@@ -665,7 +686,7 @@ The engine also ships a behavioral detector that no single-event rule can expres
 
 **Time model (beaconing, thresholds and kill chains).** Every time-window detector runs on the event's own timestamp, not on its arrival: an offline import of a day of Zeek, firewall or honeypot logs reaches the engine in seconds, and a batching sensor delivers a minute of activity at once — on arrival time the first looked like one huge burst and the second hid a beacon's cadence. Timestamps more than 5 minutes ahead of the engine clock are clamped to it. Late events are placed where they belong (beacon rings stay ordered; a threshold window counts events that are less than one window late); an event more than one window behind its key is treated as a discontinuity (clock stepped back, another capture) and restarts that key. The engine clock only decides which state is dead weight and stamps when the alert was raised.
 
-Profiles live in `beacons.yaml` (committed and loaded by default; `-beacons ""` turns the detector off; a file that exists but does not parse is FATAL at startup — the same fail-loud standard as suppressions). The shipped pack is deliberately conservative: the web profile needs 12 regular connections inside a 15-minute window with a mean interval of at least 2 s — CDNs, load balancers and NTP pools are regular too, but at sub-second cadences the `min_interval` floor keeps that chatter out by construction. Detections honor the rest of the pipeline for free: profile+host suppressions, triage lifecycle, store, webhook and console, because a beacon alert is just another alert (its `rule_id` is the profile's id). The tracker's state is bounded (8192 keys, weakest-evicted-first — a flood of one-connection fake destinations can only evict other flood entries, never wash out evidence that is building), and re-fires are throttled per key by the profile's `cooldown`. `/api/stats` exposes the live signal (`beacons_tracked` / `beacons_cap` / `beacons_fired`) and `/metrics` the same families as `sf_beacon_keys_tracked` / `sf_beacon_cap` / `sf_beacons_fired_total`. The console header carries the same signal as a `beacons N/cap` chip — red the moment the cap is reached (new destinations silently stop being tracked, which is detection loss on a flooded feed) — next to the `umbrales N · M` chip that keeps the volumetric thresholds detector (A2) visible the same way, fed by `threshold_rules` / `threshold_keys` / `threshold_fired`.
+Profiles live in `beacons.yaml` (committed and loaded by default; `-beacons ""` turns the detector off; a file that exists but does not parse is FATAL at startup — the same fail-loud standard as suppressions). The shipped pack is deliberately conservative: the web profile needs 12 regular connections inside a 15-minute window with a mean interval of at least 2 s — CDNs, load balancers and NTP pools are regular too, but at sub-second cadences the `min_interval` floor keeps that chatter out by construction. Detections honor the rest of the pipeline for free: profile+host suppressions, triage lifecycle, store, webhook and console, because a beacon alert is just another alert (its `rule_id` is the profile's id). The tracker's state is bounded (8192 keys, weakest-evicted-first — a flood of one-connection fake destinations can only evict other flood entries, never wash out evidence that is building), and re-fires are throttled per key by the profile's `cooldown`. `/api/stats` exposes the live signal (`beacons_tracked` / `beacons_cap` / `beacons_fired`) and `/metrics` the same families as `sf_beacon_keys_tracked` / `sf_beacon_cap` / `sf_beacons_fired_total`. The console header summarizes every behavioral detector in one **detectores** chip (correlator, beaconing, thresholds, threat intel and process baseline, each row hidden while its detector is off): it turns red the moment a tracker reaches its cap (new destinations or hosts silently stop being tracked, which is detection loss on a flooded feed) and amber when the intel lists matched; the drop-down shows each detector's numbers (`beacons_tracked` / `beacons_cap`, `threshold_rules` / `threshold_keys` / `threshold_fired`, ...).
 
 ## Active response (kill_process, opt-in)
 
@@ -931,7 +952,7 @@ The shipped pack (`sequences/kill-chains.yaml`) defines 4 sequences, all
 | `e2c7a9f3-3c4d-4e5f-a061-c7d8e9f0a1b2` | Apagon defensivo | critical | 5m | Manipulacion de Windows Defender + Desactivacion del firewall de Windows + Borrado de registros de eventos |
 | `f3d8ba64-4d5e-4f60-b172-d8e9f0a1b2c3` | Instalacion de persistencia | critical | 5m | Descarga con certutil o bitsadmin + Persistencia en clave Run via registro |
 
-The correlator is observable from the outside: `/api/sequences` lists the armed chains (steps, window, tags) as loaded right now, and `/api/stats` carries `correlator_states` (chains in flight, one per sequence/host pair), `correlator_sequences` (loaded sequences) and `correlator_cap` (hard tracking cap, 8192). A hostile feed inventing hostnames drives `correlator_states` toward the cap — past it, NEW hosts silently stop being tracked, so a value climbing on a small fleet is a feed problem, not popularity. The console surfaces both: the `correlador N/cap` chip in the header turns red the moment the cap is reached, and the Cadenas view renders each chain as its step sequence and flags any step whose rule is not loaded (a chain that can never complete).
+The correlator is observable from the outside: `/api/sequences` lists the armed chains (steps, window, tags) as loaded right now, and `/api/stats` carries `correlator_states` (chains in flight, one per sequence/host pair), `correlator_sequences` (loaded sequences) and `correlator_cap` (hard tracking cap, 8192). A hostile feed inventing hostnames drives `correlator_states` toward the cap — past it, NEW hosts silently stop being tracked, so a value climbing on a small fleet is a feed problem, not popularity. The console surfaces both: the correlator row of the header's **detectores** chip turns it red the moment the cap is reached, and the Cadenas view renders each chain as its step sequence and flags any step whose rule is not loaded (a chain that can never complete).
 
 ### Rule actions
 

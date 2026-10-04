@@ -165,6 +165,14 @@ export type HubStats = {
   threshold_rules?: number
   threshold_keys?: number
   threshold_fired?: number
+  // offline threat intel (indicators, lists, hits that alerted) and the
+  // per-host process baseline (hosts, still learning, novelties)
+  intel_indicators?: number
+  intel_lists?: number
+  intel_hits?: number
+  baseline_hosts?: number
+  baseline_learning?: number
+  baseline_novelties?: number
 }
 
 // One entry of the engine's hot_hosts list (package A1 of the owner's

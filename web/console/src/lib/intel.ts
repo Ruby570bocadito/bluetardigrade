@@ -66,3 +66,40 @@ export function intelAlerts(alerts: readonly SfAlert[], limit = 25): SfAlert[] {
 export function listOfAlert(alert: Pick<SfAlert, 'rule_id'>): string {
   return alert.rule_id.startsWith(INTEL_RULE_PREFIX) ? alert.rule_id.slice(INTEL_RULE_PREFIX.length) : ''
 }
+
+// ---- per-host baseline (GET /api/baseline?host=) -------------------------
+
+export type BaselineHost = {
+  enabled: boolean
+  learn_s: number
+  host: string
+  known: boolean
+  first_seen?: string
+  learning: boolean
+  learning_until?: string
+  processes: string[]
+  full: boolean
+}
+
+export function fetchBaselineHost(host: string): Promise<EngineResult<BaselineHost>> {
+  return engineCall<BaselineHost>('GET', `/api/baseline?host=${encodeURIComponent(host)}`)
+}
+
+/** One sentence on where a host stands in its baseline. */
+export function baselineStatus(b: BaselineHost, now = new Date()): string {
+  if (!b.enabled) return 'Línea base desactivada en el motor (-baseline-learn 0).'
+  if (!b.known) return 'El motor todavía no ha visto arrancar procesos en este equipo.'
+  if (b.full) return 'Límite de 4096 procesos alcanzado: el equipo ya no aprende nombres nuevos.'
+  if (b.learning && b.learning_until) {
+    const left = Math.max(0, Math.round((new Date(b.learning_until).getTime() - now.getTime()) / 1000))
+    return `Aprendiendo: avisará de procesos nuevos dentro de ${left > 0 ? learnText(left) : 'unos segundos'}.`
+  }
+  return 'Activa: un proceso que no esté en esta lista genera una alerta baja.'
+}
+
+/** Process names filtered by a case-insensitive substring, capped. */
+export function filterProcesses(names: readonly string[], query: string, limit = 400): { shown: string[]; total: number } {
+  const q = query.trim().toLowerCase()
+  const matching = q ? names.filter((n) => n.includes(q)) : [...names]
+  return { shown: matching.slice(0, limit), total: matching.length }
+}

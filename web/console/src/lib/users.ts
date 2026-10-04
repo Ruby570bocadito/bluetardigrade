@@ -180,16 +180,19 @@ export async function accountPrincipal(header: string | null, now = Date.now()):
   const hit = verified.get(digest)
   if (hit && hit.until > now) return hit.principal
   const account = accounts.find((a) => a.user.toLowerCase() === creds.user.trim().toLowerCase())
-  const failKey = creds.user.trim().toLowerCase()
-  const fails = failures.get(failKey)
+  // failures are tracked for real accounts only: invented names cannot
+  // grow the table (or flush it to reset a real account's lockout)
+  const failKey = account?.user.toLowerCase() ?? ''
+  const fails = account ? failures.get(failKey) : undefined
   if (fails && now - fails.since < FAIL_WINDOW_MS && fails.count >= FAIL_LIMIT) return null
   // unknown accounts cost the same derivation as known ones
   const probe = account ?? accounts[0]
   const derived = await pbkdf2(creds.password, probe.salt, probe.iterations)
   if (!account || !sameBytes(derived, account.hash)) {
-    const current = fails && now - fails.since < FAIL_WINDOW_MS ? fails : { count: 0, since: now }
-    failures.set(failKey, { count: current.count + 1, since: current.since })
-    if (failures.size > 4096) failures.clear()
+    if (account) {
+      const current = fails && now - fails.since < FAIL_WINDOW_MS ? fails : { count: 0, since: now }
+      failures.set(failKey, { count: current.count + 1, since: current.since })
+    }
     return null
   }
   failures.delete(failKey)

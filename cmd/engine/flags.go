@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"log"
 	"os"
 	"time"
 )
@@ -145,12 +146,13 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 }
 
 // envDuration reads a duration from the environment, or def when unset
-// or unparseable.
+// or unparseable (with a warning: a typo must not pass silently).
 func envDuration(key string, def time.Duration) time.Duration {
 	if v := os.Getenv(key); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d >= 0 {
 			return d
 		}
+		log.Printf("[ENGINE] %s=%q is not a valid duration (examples: 30m, 24h, 0); using %s", key, v, def)
 	}
 	return def
 }

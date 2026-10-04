@@ -206,6 +206,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	mux.HandleFunc("GET /api/sequences", h.handleSequences)
 	mux.HandleFunc("GET /api/fleet", h.handleFleet)
 	mux.HandleFunc("GET /api/intel", h.handleIntel)
+	mux.HandleFunc("GET /api/baseline", h.handleBaselineHost)
 	mux.HandleFunc("GET /api/stream", h.handleStream)
 	mux.HandleFunc("GET /api/health", h.handleHealth)
 	mux.HandleFunc("GET /api/alerts/export", h.handleAlertsExport)
@@ -713,6 +714,16 @@ type statsPayload struct {
 	ThresholdRules int    `json:"threshold_rules"`
 	ThresholdKeys  int    `json:"threshold_keys"`
 	ThresholdFired uint64 `json:"threshold_fired"`
+	// Offline threat intel: indicators and lists loaded, hits that
+	// raised an alert since startup (all zero without -intel).
+	IntelIndicators int    `json:"intel_indicators"`
+	IntelLists      int    `json:"intel_lists"`
+	IntelHits       uint64 `json:"intel_hits"`
+	// Per-host process baseline: hosts tracked, hosts still inside
+	// their learning period, novelties reported since startup.
+	BaselineHosts     int    `json:"baseline_hosts"`
+	BaselineLearning  int    `json:"baseline_learning"`
+	BaselineNovelties uint64 `json:"baseline_novelties"`
 	// External notifications (C2): one delivery row per configured
 	// channel (Slack, Telegram, email). Empty when the engine runs
 	// without -notify.
@@ -768,6 +779,7 @@ func (h *Hub) statsSnapshot() statsPayload {
 		rulesTypes = h.rules.Types()
 	}
 	sup := h.suppress
+	intelM, base := h.intel, h.baseline
 	h.mu.Unlock()
 	// The correlator closure is called AFTER h.mu.Unlock, never under
 	// it: the real closure enters correlate.Manager's mutex (States,
@@ -836,6 +848,18 @@ func (h *Hub) statsSnapshot() statsPayload {
 		tDefs, tKeys, tFired = tFn()
 	}
 
+	// Intel matcher and baseline tracker have their own mutexes: read
+	// after h.mu.Unlock like every other manager.
+	var intelIndicators, intelLists, baseHosts, baseLearning int
+	var intelHits, baseNovel uint64
+	if intelM != nil {
+		intelIndicators, intelLists, intelHits = intelM.Total(), len(intelM.Lists()), intelM.Hits()
+	}
+	if base != nil {
+		baseHosts, baseLearning = base.Stats(now)
+		baseNovel = base.Novelties()
+	}
+
 	// Notify channels closure (C2): same uniform rule — called after
 	// h.mu.Unlock. Stats() only reads atomics and copies a small slice,
 	// but the idiom stays uniform: no other manager's state under h.mu.
@@ -886,6 +910,12 @@ func (h *Hub) statsSnapshot() statsPayload {
 		ThresholdRules:           tDefs,
 		ThresholdKeys:            tKeys,
 		ThresholdFired:           tFired,
+		IntelIndicators:          intelIndicators,
+		IntelLists:               intelLists,
+		IntelHits:                intelHits,
+		BaselineHosts:            baseHosts,
+		BaselineLearning:         baseLearning,
+		BaselineNovelties:        baseNovel,
 		NotifyChannels:           notifyRows,
 	}
 }

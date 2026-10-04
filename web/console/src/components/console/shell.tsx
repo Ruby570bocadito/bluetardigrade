@@ -8,7 +8,7 @@ import { describeTelemetrySources } from '@/lib/telemetry-source'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { ActivityIcon, Broadcast, Desktop, Flask, FolderOpen, Gauge, Lightning, Prohibit, ShieldCheck, SquaresFour, Warning, ChatsCircle, FlowArrow, Keyboard, ListMagnifyingGlass, MagnifyingGlass, Monitor } from '@phosphor-icons/react'
+import { ActivityIcon, Desktop, Flask, FolderOpen, Lightning, Prohibit, ShieldCheck, SquaresFour, Warning, ChatsCircle, FlowArrow, Keyboard, ListMagnifyingGlass, MagnifyingGlass, Monitor } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { BlurText } from '@/components/reactbits/blur-text'
 import { ShinyText } from '@/components/reactbits/shiny-text'
@@ -29,6 +29,7 @@ import { ShortcutsHelp, type ShortcutHelpRow } from './shortcuts-help'
 import { CommandPalette } from './command-palette'
 import { NotifyMenu } from './critical-notifier'
 import { NocMode } from './noc-mode'
+import { DetectorsMenu } from './detectors-menu'
 import { ReadOnlyBanner, UserChip } from './user-session'
 import { CONSOLE_DESTINATIONS, type ConsoleCommand } from '@/lib/console-commands'
 import { formatUptime, type EngineStats, type SfAlert } from '@/lib/console-types'
@@ -390,9 +391,7 @@ export function ConsoleShell() {
                   <Monitor size={15} aria-hidden />
                 </button>
                 <WebhookChip stats={stats} />
-                <CorrelatorChip stats={stats} />
-                <BeaconChip stats={stats} />
-                <ThresholdChip stats={stats} />
+                <DetectorsMenu stats={stats} onOpen={setView} />
                 <UtcClock />
               </div>
             </div>
@@ -530,109 +529,6 @@ function WebhookChip({ stats }: { stats: EngineStats | null }) {
         webhook {sent}
         {failed > 0 && <span> / {failed} err</span>}
         {dropped > 0 && <span> / {dropped} desc</span>}
-      </span>
-    </div>
-  )
-}
-
-/**
- * Kill-chain correlator chip, fed by /api/stats (correlator_states /
- * correlator_sequences / correlator_cap). Honest by design, like the
- * webhook chip:
- * - hidden while the correlator is off (no sequences/ directory):
- *   showing zeros would suggest a feature the engine is not running;
- * - neutral while there is headroom (states below cap);
- * - red the moment states reach the cap: NEW hosts silently stop being
- *   tracked there, which is detection loss, and the operator must see it.
- */
-function CorrelatorChip({ stats }: { stats: EngineStats | null }) {
-  // mode is hub-only: direct-engine responses carry no mode, so the chip
-  // hides only when the hub explicitly reports the engine offline.
-  if (!stats || (stats.mode && stats.mode !== 'engine')) return null
-  const { correlator_states: states, correlator_sequences: seqs, correlator_cap: cap } = stats
-  if (seqs === 0) return null
-  const exhausted = cap > 0 && states >= cap
-  return (
-    <div
-      title={
-        exhausted
-          ? `Correlador al límite: ${states} cadenas en curso (cap ${cap}). Hosts NUEVOS dejan de ser correlacionados hasta que se liberen estados.`
-          : `Correlador: ${states} cadenas en curso, ${seqs} secuencias cargadas (cap ${cap})`
-      }
-      className={`chip hidden whitespace-nowrap px-2.5 py-1.5 font-mono text-[11px] 2xl:flex ${
-        exhausted ? 'border-red-400/40 bg-red-400/10 text-red-300' : 'text-zinc-400'
-      }`}
-    >
-      <span aria-hidden>{exhausted ? '✕' : '⛓'}</span>
-      <span>
-        correlador {states}
-        <span className="text-zinc-600">/{cap}</span>
-      </span>
-    </div>
-  )
-}
-
-/**
- * Beaconing detector chip (engine A3), fed by /api/stats (beacons_tracked /
- * beacons_cap / beacons_fired). Honest by design, like the correlator chip:
- * - hidden while the detector is off (no beacons.yaml or -beacons ""):
- *   an all-zero chip would suggest the engine is hunting beacons when the
- *   feature is not even loaded;
- * - neutral while there is headroom (tracked below cap);
- * - red the moment tracked reaches the cap: NEW destinations silently stop
- *   being tracked there (weakest-evicted-first), which is detection loss
- *   on a flooded feed, and the operator must see it.
- */
-function BeaconChip({ stats }: { stats: EngineStats | null }) {
-  if (!stats || (stats.mode && stats.mode !== 'engine')) return null
-  const { beacons_tracked: tracked = 0, beacons_cap: cap = 0, beacons_fired: fired = 0 } = stats
-  if (!cap && !tracked) return null
-  const exhausted = cap > 0 && tracked >= cap
-  return (
-    <div
-      title={
-        exhausted
-          ? `Detector de beaconing al límite: ${tracked} destinos seguidos (cap ${cap}). Destinos NUEVOS dejan de rastrearse hasta que se liberen claves.`
-          : `Beaconing: ${tracked} destinos seguidos de ${cap}, ${fired} disparos desde el arranque (regularidad CV por perfil, host y destino)`
-      }
-      className={`chip hidden whitespace-nowrap px-2.5 py-1.5 font-mono text-[11px] 2xl:flex ${
-        exhausted ? 'border-red-400/40 bg-red-400/10 text-red-300' : 'text-zinc-400'
-      }`}
-    >
-      <Broadcast size={12} aria-hidden />
-      <span>
-        beacons {tracked}
-        <span className="text-zinc-600">/{cap}</span>
-      </span>
-    </div>
-  )
-}
-
-/**
- * Volumetric threshold chip (engine A2), fed by /api/stats (threshold_rules /
- * threshold_keys / threshold_fired). Honest by design:
- * - hidden while the detector is off (missing -thresholds file): the engine
- *   reports an all-zero trio and showing it would imply coverage there is not;
- * - neutral always: the engine exposes no cap for the tracker keys, so this
- *   chip refuses to paint a saturation signal it cannot know about (unlike
- *   the beacon/correlator chips, whose caps come from /api/stats itself).
- * Visible numbers: definitions loaded (the detector is armed) and alerts
- * fired, middle-dot separated like the KPI subtitles; live aggregation keys
- * live in the tooltip.
- */
-function ThresholdChip({ stats }: { stats: EngineStats | null }) {
-  if (!stats || (stats.mode && stats.mode !== 'engine')) return null
-  const { threshold_rules: defs = 0, threshold_keys: keys = 0, threshold_fired: fired = 0 } = stats
-  if (!defs) return null
-  return (
-    <div
-      title={`Umbrales volumétricos: ${defs} definiciones cargadas, ${keys} claves de agregación vivas, ${fired} disparos desde el arranque`}
-      className="chip hidden whitespace-nowrap px-2.5 py-1.5 font-mono text-[11px] text-zinc-400 2xl:flex"
-    >
-      <Gauge size={12} aria-hidden />
-      <span>
-        umbrales {defs}
-        <span className="text-zinc-600"> · {fired}</span>
       </span>
     </div>
   )

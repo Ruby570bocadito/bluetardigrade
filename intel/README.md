@@ -11,8 +11,8 @@ servicio, y las listas son ficheros que tú colocas y mantienes.
 - El nombre del fichero sin la extensión es el nombre de la lista. La alerta
   se llama `intel-match-<nombre>`, de modo que una lista ruidosa se puede
   silenciar sola desde la consola.
-- Un indicador por línea. Las líneas vacías y lo que va detrás de `#` o `;` se
-  ignoran.
+- Un indicador por línea. Las líneas vacías, lo que va detrás de `#` o `;` y
+  las líneas que empiezan por `!` se ignoran.
 
 Formatos que entiende cada línea:
 
@@ -24,6 +24,9 @@ Formatos que entiende cada línea:
 | `0.0.0.0 mal.example.com` (formato fichero hosts) | dominio |
 | `https://mal.example.com/ruta` | dominio de la URL |
 | hash MD5, SHA-1 o SHA-256 en hexadecimal | hash de fichero o proceso |
+| `203.0.113.7:443` o `c2.example.net:8080` | IP o dominio, sin el puerto |
+| `evil[.]example[.]com`, `hxxps://...` (indicadores «desactivados» de informes) | se reactivan solos |
+| `*.example.com` o `\|\|example.com^` (listas de bloqueo) | dominio |
 
 Se descartan las direcciones que no sirven como indicador: loopback,
 `0.0.0.0`, link-local y multicast. La consola muestra cuántas líneas de cada

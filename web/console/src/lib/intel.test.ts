@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import type { SfAlert } from './console-types'
-import { intelAlerts, kindBreakdown, learnText, listOfAlert } from './intel'
+import { baselineStatus, filterProcesses, intelAlerts, kindBreakdown, learnText, listOfAlert } from './intel'
 
 test('kind breakdown keeps a fixed order and drops empty kinds', () => {
   expect(kindBreakdown({ by_kind: { hash: 2, ip: 10, domain: 0 } })).toEqual([
@@ -28,4 +28,21 @@ test('intel alerts are the list hits and baseline novelties, newest first', () =
   expect(got.map((x) => x.rule_id)).toEqual(['baseline-new-process', 'intel-match-bloqueo'])
   expect(listOfAlert(got[1])).toBe('bloqueo')
   expect(listOfAlert(got[0])).toBe('')
+})
+
+test('baseline status reads the host state', () => {
+  const base = { enabled: true, learn_s: 86400, host: 'pc', known: true, learning: false, processes: [], full: false }
+  const now = new Date('2026-10-04T10:00:00Z')
+  expect(baselineStatus({ ...base, enabled: false })).toContain('desactivada')
+  expect(baselineStatus({ ...base, known: false })).toContain('todavía no')
+  expect(baselineStatus({ ...base, full: true })).toContain('4096')
+  expect(baselineStatus({ ...base, learning: true, learning_until: '2026-10-04T12:30:00Z' }, now)).toBe('Aprendiendo: avisará de procesos nuevos dentro de 2 h 30 min.')
+  expect(baselineStatus({ ...base, learning: true, learning_until: '2026-10-04T09:59:59Z' }, now)).toContain('unos segundos')
+  expect(baselineStatus(base)).toContain('Activa')
+})
+
+test('process filter is a capped case-insensitive substring match', () => {
+  const names = ['excel.exe', 'explorer.exe', 'outlook.exe']
+  expect(filterProcesses(names, 'XPL')).toEqual({ shown: ['explorer.exe'], total: 1 })
+  expect(filterProcesses(names, '', 2)).toEqual({ shown: ['excel.exe', 'explorer.exe'], total: 3 })
 })

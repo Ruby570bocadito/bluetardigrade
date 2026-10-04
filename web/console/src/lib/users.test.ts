@@ -121,3 +121,14 @@ test('the audit trail appends lines and reads newest first', () => {
   expect(entries.map((e) => e.status)).toEqual([500, 403])
   expect(entries[1].outcome).toBe('denied')
 })
+
+test('invented user names never lock or unlock a real account', async () => {
+  writeUsers({ users: [entry('ana', 'analyst', 'contraseña-de-ana')] })
+  const t0 = 2_000_000
+  for (let i = 0; i < 10; i++) await accountPrincipal(basic('ana', `mala-${i}`), t0)
+  // a flood of unknown names must not reset ana's lockout
+  for (let i = 0; i < 50; i++) await accountPrincipal(basic(`nadie-${i}`, 'x'), t0)
+  expect(await accountPrincipal(basic('ana', 'contraseña-de-ana'), t0 + 1000)).toBeNull()
+  // and unknown names are never locked themselves (nothing to lock)
+  expect(await accountPrincipal(basic('nadie-1', 'x'), t0 + 2000)).toBeNull()
+})

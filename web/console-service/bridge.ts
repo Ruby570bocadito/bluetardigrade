@@ -324,6 +324,14 @@ function mapStats(st: Record<string, unknown>): HubStats {
     threshold_rules: Number(st.threshold_rules ?? 0),
     threshold_keys: Number(st.threshold_keys ?? 0),
     threshold_fired: Number(st.threshold_fired ?? 0),
+    // offline threat intel and the process baseline: zeros on engines
+    // that predate them (or run without -intel), which hide the chip
+    intel_indicators: Number(st.intel_indicators ?? 0),
+    intel_lists: Number(st.intel_lists ?? 0),
+    intel_hits: Number(st.intel_hits ?? 0),
+    baseline_hosts: Number(st.baseline_hosts ?? 0),
+    baseline_learning: Number(st.baseline_learning ?? 0),
+    baseline_novelties: Number(st.baseline_novelties ?? 0),
   }
 }
 

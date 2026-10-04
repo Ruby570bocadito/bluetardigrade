@@ -5,10 +5,11 @@
 // open critical alerts and an optional short tone. Off by default; the
 // permission prompt only appears when the operator turns it on.
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Bell, BellSlash, SpeakerHigh } from '@phosphor-icons/react'
 import { Switch } from '@/components/ui/switch'
 import { useEngine } from './engine-provider'
+import { HeaderPopover } from './header-popover'
 import { alertKey } from '@/lib/engine-client'
 import { newCriticalAlerts, notificationText, readNotifyPrefs, writeNotifyPrefs, type NotifyPrefs } from '@/lib/alert-notify'
 
@@ -50,26 +51,14 @@ export function NotifyMenu() {
   const [open, setOpen] = useState(false)
   const [storageError, setStorageError] = useState(false)
   const seenRef = useRef<Set<string> | null>(null)
-  const rootRef = useRef<HTMLDivElement>(null)
+  const anchorRef = useRef<HTMLButtonElement>(null)
+  const close = useCallback(() => setOpen(false), [])
 
   // Read after mount: the server render never knows the browser state.
   useEffect(() => {
     setPrefs(readNotifyPrefs(window.localStorage))
     setPermission(currentPermission())
   }, [])
-
-  // Close on outside click or Escape.
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: PointerEvent) => { if (!rootRef.current?.contains(e.target as Node)) setOpen(false) }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); setOpen(false) } }
-    window.addEventListener('pointerdown', onDown)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('pointerdown', onDown)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [open])
 
   // An outage restarts the baseline: reconnecting never replays alerts.
   useEffect(() => {
@@ -104,8 +93,9 @@ export function NotifyMenu() {
   const active = prefs.enabled && (permission === 'granted' || prefs.sound)
   const Icon = active ? Bell : BellSlash
   return (
-    <div ref={rootRef} className="relative shrink-0">
+    <div className="shrink-0">
       <button
+        ref={anchorRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
@@ -116,8 +106,7 @@ export function NotifyMenu() {
       >
         <Icon size={15} weight={active ? 'fill' : 'regular'} aria-hidden />
       </button>
-      {open && (
-        <div role="group" aria-label="Preferencias de avisos" className="absolute right-0 top-full z-30 mt-2 w-72 rounded-xl border border-white/10 bg-zinc-900/95 p-3 shadow-2xl backdrop-blur">
+      <HeaderPopover anchorRef={anchorRef} open={open} onClose={close} label="Preferencias de avisos" className="w-72 p-3">
           <p className="text-sm font-medium text-zinc-100">Avisos de alertas críticas</p>
           <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-500">Solo para alertas críticas nuevas y sin cerrar, mientras esta pestaña esté abierta. La preferencia se guarda en este navegador.</p>
           <label className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-200">
@@ -136,8 +125,7 @@ export function NotifyMenu() {
           <button type="button" onClick={playTone} className="mt-3 text-[11px] text-blue-300 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             Probar sonido
           </button>
-        </div>
-      )}
+      </HeaderPopover>
     </div>
   )
 }

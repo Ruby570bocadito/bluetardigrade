@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -45,5 +46,29 @@ func TestIntelEndpointListsFilesAndBaseline(t *testing.T) {
 	}
 	if !out.Baseline.Enabled || out.Baseline.LearnS != 86400 || out.Baseline.Hosts != 1 || out.Baseline.Learning != 1 {
 		t.Fatalf("baseline: %+v", out.Baseline)
+	}
+}
+
+func TestBaselineHostEndpoint(t *testing.T) {
+	h, addr := newTestHub(t)
+	res, err := http.Get(fmt.Sprintf("http://%s/api/baseline", addr))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("missing host: %d", res.StatusCode)
+	}
+	var out baselineHostPayload
+	getJSON(t, fmt.Sprintf("http://%s/api/baseline?host=PC-01", addr), &out)
+	if out.Known || out.Enabled || out.Processes == nil {
+		t.Fatalf("without a baseline: %+v", out)
+	}
+	b := baseline.New(time.Hour)
+	b.Observe(&model.Event{Host: "PC-01", Type: model.TypeProcessCreate, Process: &model.Process{Name: "excel.exe"}}, time.Now())
+	h.SetBaseline(b)
+	getJSON(t, fmt.Sprintf("http://%s/api/baseline?host=pc-01", addr), &out)
+	if !out.Known || !out.Learning || out.LearningUntil == nil || out.FirstSeen == nil || len(out.Processes) != 1 || out.Processes[0] != "excel.exe" {
+		t.Fatalf("known host: %+v", out)
 	}
 }

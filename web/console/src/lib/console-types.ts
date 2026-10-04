@@ -280,6 +280,15 @@ export type EngineStats = {
   threshold_rules?: number
   threshold_keys?: number
   threshold_fired?: number
+  // offline threat intel (indicators, lists, hits that alerted) and the
+  // per-host process baseline (hosts, still learning, novelties); zeros
+  // or undefined on engines without them
+  intel_indicators?: number
+  intel_lists?: number
+  intel_hits?: number
+  baseline_hosts?: number
+  baseline_learning?: number
+  baseline_novelties?: number
   // hub-only fields: the engine itself sends neither mode nor
   // interval_ms (mode optional so direct-engine responses type-check)
   interval_ms?: number

@@ -387,6 +387,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Intel'
+  /api/baseline:
+    get:
+      tags: [status]
+      operationId: getBaselineHost
+      summary: What the per-host process baseline knows about one machine (read-only)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The learning window of one host and the process names (basename,
+        lowercase) the baseline treats as normal there. After the learning
+        period a name outside this list raises a `baseline-new-process`
+        alert. `known` is false for a host the baseline has not seen;
+        `full` means the per-host cap (4096 names) was reached and the host
+        no longer learns.
+      parameters:
+        - name: host
+          in: query
+          required: true
+          description: host name, case-insensitive (at most 255 bytes)
+          schema:
+            type: string
+      responses:
+        '400':
+          description: The host parameter is missing or too long
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '200':
+          description: Baseline of the host
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaselineHost'
   /api/events:
     get:
       tags: [telemetry]
@@ -1592,6 +1629,12 @@ components:
         - threshold_rules
         - threshold_keys
         - threshold_fired
+        - intel_indicators
+        - intel_lists
+        - intel_hits
+        - baseline_hosts
+        - baseline_learning
+        - baseline_novelties
         - notify_channels
       properties:
         suppressions_active:
@@ -1781,6 +1824,28 @@ components:
           format: int64
           description: threshold alerts emitted since engine start (each alert
             carries the definition id as rule_id)
+        intel_indicators:
+          type: integer
+          description: distinct threat-intel indicators loaded from the -intel
+            directory (0 without lists)
+        intel_lists:
+          type: integer
+          description: threat-intel list files loaded
+        intel_hits:
+          type: integer
+          format: int64
+          description: threat-intel hits that raised an alert since engine start
+            (after the per-indicator and host cooldown)
+        baseline_hosts:
+          type: integer
+          description: hosts tracked by the per-host process baseline
+        baseline_learning:
+          type: integer
+          description: hosts still inside their learning period (-baseline-learn)
+        baseline_novelties:
+          type: integer
+          format: int64
+          description: never-seen processes reported since engine start
         notify_channels:
           type: array
           description: one delivery row per external notification channel
@@ -2483,6 +2548,35 @@ components:
         heartbeat_grace_min_s:
           type: integer
           description: shortest silence that marks a sensor silent
+    BaselineHost:
+      type: object
+      required: [enabled, learn_s, host, known, learning, processes, full]
+      properties:
+        enabled:
+          type: boolean
+          description: false when novelties are disabled (-baseline-learn 0) or there is no baseline
+        learn_s:
+          type: integer
+        host:
+          type: string
+          description: the requested host, lowercase
+        known:
+          type: boolean
+        first_seen:
+          type: string
+          format: date-time
+          description: when the host's learning started
+        learning:
+          type: boolean
+        learning_until:
+          type: string
+          format: date-time
+        processes:
+          type: array
+          items:
+            type: string
+        full:
+          type: boolean
     Intel:
       type: object
       required: [enabled, dir, total, lists, baseline]

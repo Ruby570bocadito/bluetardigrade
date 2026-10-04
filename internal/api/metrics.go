@@ -92,6 +92,14 @@ func (h *Hub) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 	writeMetric(&b, "sf_threshold_rules", "Threshold definitions currently loaded.", "gauge", float64(s.ThresholdRules))
 	writeMetric(&b, "sf_threshold_keys_tracked", "Threshold keys currently holding in-window evidence.", "gauge", float64(s.ThresholdKeys))
 	writeMetric(&b, "sf_thresholds_fired_total", "Threshold alerts emitted since engine start.", "counter", float64(s.ThresholdFired))
+	// Offline threat intel and the per-host process baseline: totals
+	// only (the list name lives in the alert's rule_id).
+	writeMetric(&b, "sf_intel_indicators", "Threat-intel indicators loaded from the intel directory.", "gauge", float64(s.IntelIndicators))
+	writeMetric(&b, "sf_intel_lists", "Threat-intel list files loaded.", "gauge", float64(s.IntelLists))
+	writeMetric(&b, "sf_intel_hits_total", "Threat-intel hits that raised an alert since engine start.", "counter", float64(s.IntelHits))
+	writeMetric(&b, "sf_baseline_hosts", "Hosts tracked by the process baseline.", "gauge", float64(s.BaselineHosts))
+	writeMetric(&b, "sf_baseline_hosts_learning", "Hosts still inside their baseline learning period.", "gauge", float64(s.BaselineLearning))
+	writeMetric(&b, "sf_baseline_novelties_total", "Never-seen processes reported since engine start.", "counter", float64(s.BaselineNovelties))
 	// Host risk (A1): the tracked gauge is a plain number; the top-5
 	// scores are the second labeled family. Hosts come from telemetry
 	// (operator-visible data /api/stats already serves), so the same

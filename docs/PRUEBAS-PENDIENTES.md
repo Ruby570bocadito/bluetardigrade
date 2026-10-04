@@ -61,6 +61,11 @@ administrador; **[otro equipo]** = el equipo remoto. Pega los comandos de uno en
   - El grafo del incidente solo muestra los equipos del caso, no los demás.
 - [ ] **Detección → Inteligencia:** la pestaña existe (también `g l` o `Ctrl+K` «inteligencia»).
   Sin listas, dice cómo añadirlas. La tarjeta «Equipos en línea base» cuenta al menos 1.
+- [ ] **Chip «detectores» (cabecera):**
+  - Al pulsarlo se abre un panel completo, no recortado, con Correlador, Beaconing, Umbrales y Línea base.
+  - Inteligencia solo aparece si hay listas cargadas.
+  - Pulsar la fila «Correlador» lleva a Detección → Cadenas.
+  - El panel de la campana de avisos también se ve entero.
 - [ ] **Detección → Cadenas:**
   - Aparecen «Credenciales y ejecucion remota en varios equipos» y «Cuenta saltando entre equipos».
   - Ambas con la etiqueta «misma cuenta en N equipos o más».
@@ -81,6 +86,7 @@ administrador; **[otro equipo]** = el equipo remoto. Pega los comandos de uno en
 - [ ] **[normal]** DNS: `Resolve-DnsName example.org`. Aparece un `network.connect`
   con protocolo `dns`, dominio `example.org`, una IP de respuesta y `dns_status` 0.
   Si repites el comando en menos de un minuto, no sale otro: es intencionado.
+  Si esperas más de un minuto sin repetirlo, la siguiente vez sí sale.
 - [ ] **[normal]** Ruta y hash del ejecutable. Ejecuta `whoami` y luego:
 
   ```powershell
@@ -178,6 +184,8 @@ Formato en `intel\README.md`. Con el sensor ETW en marcha:
 - [ ] **[normal]** `Start-Process charmap`: salta otra alerta, esta vez por el hash.
   Cierra el Mapa de caracteres.
 - [ ] Las coincidencias aparecen en «Últimas coincidencias y procesos nuevos».
+- [ ] **[normal]** `sf-engine doctor` muestra «Inteligencia: 2 indicadores en 1 lista».
+- [ ] El chip «detectores» de la cabecera se pone ámbar y su fila Inteligencia cuenta las coincidencias.
 - [ ] **[normal]** Borra la lista. La pestaña vuelve a «Sin listas» en unos 15 s:
 
   ```powershell
@@ -200,6 +208,12 @@ se deja como estaba.
   Debe salir «Proceso nunca visto en este equipo» (baja), con la ruta
   `C:\Windows\System32\winver.exe`. Si ya habías ejecutado `winver`, prueba con `msinfo32`.
 - [ ] Ejecuta `winver` otra vez: **no** sale otra alerta (solo la primera vez).
+- [ ] En Equipos, abre tu equipo. La tarjeta «Línea base de procesos»:
+  - dice «Activa»;
+  - lista los procesos conocidos (escribe `winver` en el filtro);
+  - muestra arriba el proceso nuevo, que al pulsarlo abre su alerta.
+- [ ] **[normal]** `sf-engine doctor` muestra «Linea base: Aprendizaje de 3m0s
+  (tools/config/baseline.learn)».
 - [ ] **[normal]** Vuelve a las 24 horas:
 
   ```powershell
@@ -225,7 +239,11 @@ usuario y queda registrado quién hace cada cosa.
 - [ ] **[normal]** Abre el fichero de cuentas:
   `notepad "$env:LOCALAPPDATA\bluetardigrade\tools\config\console-users.json"`.
   Escribe `{"users": [LINEA1, LINEA2]}`, cambiando LINEA1 y LINEA2 por las dos líneas
-  anteriores. Guarda el fichero y ejecuta `sf-console -Stop; sf-console`.
+  anteriores. Guarda el fichero.
+- [ ] **[normal]** `sf-engine doctor` debe decir «Cuentas de la consola: 2 cuentas
+  (administradores 1, analistas 0, lectores 1)». Si dice «la consola quedaría bloqueada»,
+  corrige lo que indique antes de seguir.
+- [ ] **[normal]** `sf-console -Stop; sf-console`
 - [ ] El navegador pide usuario y contraseña. Con una contraseña mala no entra.
 - [ ] Entra como `luis`:
   - La cabecera dice «luis · Lector» y debajo sale «Modo lectura…».
@@ -239,6 +257,9 @@ usuario y queda registrado quién hace cada cosa.
   ```powershell
   Remove-Item "$env:LOCALAPPDATA\bluetardigrade\tools\config\console-users.json"; sf-console -Stop; sf-console
   ```
+
+- [ ] En la misma ventana de PowerShell, la consola vuelve a abrir sin pedir contraseña
+  y la cabecera dice «local · Administrador».
 
 ## 8. Reputación por hash (solo si tienes clave de VirusTotal)
 

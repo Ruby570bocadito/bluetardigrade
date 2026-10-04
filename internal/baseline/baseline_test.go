@@ -92,3 +92,25 @@ func TestDisabledLearningNeverReports(t *testing.T) {
 		t.Fatal("a zero learning period disables novelties")
 	}
 }
+
+func TestHostViewListsWhatIsKnown(t *testing.T) {
+	tr := New(24 * time.Hour)
+	tr.Observe(proc("PC-CONTA", "Outlook.exe"), t0)
+	tr.Observe(proc("PC-CONTA", "excel.exe"), t0.Add(time.Minute))
+	v, ok := tr.Host("pc-conta", t0.Add(time.Hour))
+	if !ok || !v.Learning || !v.FirstSeen.Equal(t0) || !v.LearnedAt.Equal(t0.Add(24*time.Hour)) {
+		t.Fatalf("view: %+v", v)
+	}
+	if len(v.Processes) != 2 || v.Processes[0] != "excel.exe" || v.Processes[1] != "outlook.exe" {
+		t.Fatalf("processes sorted and lowercase: %v", v.Processes)
+	}
+	if v, _ := tr.Host("PC-CONTA", t0.Add(25*time.Hour)); v.Learning {
+		t.Fatal("past the period it is no longer learning")
+	}
+	if _, ok := tr.Host("NADIE", t0); ok {
+		t.Fatal("unknown host")
+	}
+	if v, _ := New(0).Host("x", t0); !v.LearnedAt.IsZero() {
+		t.Fatal("disabled baseline has no end of learning")
+	}
+}

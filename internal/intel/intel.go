@@ -73,6 +73,7 @@ type Matcher struct {
 
 	cmu      sync.Mutex
 	lastSeen map[string]time.Time // list|value|host -> last alert
+	hits     uint64               // hits allowed to alert since start (under cmu)
 }
 
 // Load reads every *.txt and *.list file of dir. A missing directory
@@ -217,7 +218,16 @@ func (m *Matcher) Allow(h Hit, host string, now time.Time) bool {
 		}
 	}
 	m.lastSeen[key] = now
+	m.hits++
 	return true
+}
+
+// Hits counts the hits allowed to raise an alert since the engine
+// started.
+func (m *Matcher) Hits() uint64 {
+	m.cmu.Lock()
+	defer m.cmu.Unlock()
+	return m.hits
 }
 
 func processHashes(ev *model.Event) model.Hashes {
@@ -322,6 +332,10 @@ func loadFile(path string, ips, domains, hashes map[string]string, nets *[]netEn
 }
 
 func stripComment(line string) string {
+	// "!" opens a comment line in AdBlock-style lists
+	if strings.HasPrefix(strings.TrimSpace(line), "!") {
+		return ""
+	}
 	if i := strings.IndexAny(line, "#;"); i >= 0 {
 		return line[:i]
 	}
@@ -339,7 +353,7 @@ func parseLine(raw string) (string, string) {
 	if len(fields) >= 2 && (token == "0.0.0.0" || token == "127.0.0.1" || token == "::") {
 		token = fields[1]
 	}
-	token = strings.Trim(token, `"'`)
+	token = normalizeToken(token)
 	lower := strings.ToLower(token)
 	if isHex(lower) && (len(lower) == 32 || len(lower) == 40 || len(lower) == 64) {
 		return KindHash, lower
@@ -371,10 +385,35 @@ func parseLine(raw string) (string, string) {
 			return KindIP, ip.String()
 		}
 	}
+	// host:port, [v6]:port
+	if host, _, err := net.SplitHostPort(lower); err == nil && host != "" {
+		if ip := net.ParseIP(host); ip != nil {
+			if !usableIP(ip) {
+				return "", ""
+			}
+			return KindIP, ip.String()
+		}
+		lower = host
+	}
 	if d := normalizeDomain(lower); d != "" {
 		return KindDomain, d
 	}
 	return "", ""
+}
+
+// refang undoes the usual defanging of indicators copied from reports.
+var refang = strings.NewReplacer("[.]", ".", "(.)", ".", "{.}", ".", "[dot]", ".", "(dot)", ".", "[:]", ":", "hxxps://", "https://", "hxxp://", "http://", "HXXPS://", "https://", "HXXP://", "http://")
+
+// normalizeToken strips quotes, refangs, and removes the wrappers of
+// blocklist formats: AdBlock "||name^" and wildcards "*.name".
+func normalizeToken(t string) string {
+	t = refang.Replace(strings.Trim(t, `"'`))
+	t = strings.TrimPrefix(t, "||")
+	if i := strings.IndexByte(t, '^'); i > 0 {
+		t = t[:i]
+	}
+	t = strings.TrimPrefix(t, "*.")
+	return t
 }
 
 // usableIP rejects addresses that would only produce noise: unspecified,

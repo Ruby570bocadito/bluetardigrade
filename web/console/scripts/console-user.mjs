@@ -18,16 +18,25 @@ if (!user || !/^[\p{L}\p{N}._@-]{1,64}$/u.test(user) || !['admin', 'analyst', 'v
 }
 
 async function readPassword() {
-  const rl = createInterface({ input: process.stdin, output: process.stderr, terminal: process.stdin.isTTY })
-  if (process.stdin.isTTY) {
-    // hide what is typed
-    rl._writeToOutput = (s) => { if (s.includes('Contraseña')) process.stderr.write(s) }
-  }
-  const ask = (q) => new Promise((resolve) => rl.question(q, resolve))
+  const tty = Boolean(process.stdin.isTTY)
+  const rl = createInterface({ input: process.stdin, output: process.stderr, terminal: tty })
+  // on a terminal, prompts are written here and the typed characters
+  // are not echoed
+  let muted = false
+  if (tty) rl._writeToOutput = (s) => { if (!muted) process.stderr.write(s) }
+  const ask = (prompt) =>
+    new Promise((resolve) => {
+      process.stderr.write(prompt)
+      muted = true
+      rl.question('', (answer) => {
+        muted = false
+        if (tty) process.stderr.write('\n')
+        resolve(answer)
+      })
+    })
   const first = await ask('Contraseña: ')
-  const second = process.stdin.isTTY ? await ask('\nRepite la contraseña: ') : first
+  const second = tty ? await ask('Repite la contraseña: ') : first
   rl.close()
-  if (process.stdin.isTTY) process.stderr.write('\n')
   if (first !== second) throw new Error('las contraseñas no coinciden')
   if (first.length < 12) throw new Error('usa al menos 12 caracteres')
   return first

@@ -736,8 +736,11 @@ func runEngine(o *options, interactive bool) error {
 						emitAllowlisted(silentSensorAlert(tr.Host, now))
 					}
 				}
+				// drained on every tick, with or without a store: without
+				// one the pending lists would only grow
+				learned := baseTracker.TakePending()
+				retired := fleetTracker.TakeRetired()
 				if st != nil {
-					learned := baseTracker.TakePending()
 					rows := make([]store.BaselineEntry, 0, len(learned))
 					for _, e := range learned {
 						rows = append(rows, store.BaselineEntry{Host: e.Host, Kind: e.Kind, Value: e.Value, FirstSeen: e.FirstSeen})
@@ -748,7 +751,7 @@ func runEngine(o *options, interactive bool) error {
 					if err := st.SaveFleetHosts(fleetTracker.Export(false, now)); err != nil {
 						log.Printf("[FLEET] saving the inventory FAILED: %v", err)
 					}
-					if err := st.DeleteFleetHosts(fleetTracker.TakeRetired()); err != nil {
+					if err := st.DeleteFleetHosts(retired); err != nil {
 						log.Printf("[FLEET] retiring hosts FAILED: %v", err)
 					}
 				}
