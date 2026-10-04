@@ -16,6 +16,16 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def shipped_rule_count():
+    """Rules in the shipped pack (one top-level "- name:" entry each): the
+    engine must load every one of them, whatever the pack grows to."""
+    return sum(
+        line.startswith("- name:")
+        for path in (ROOT / "rules").rglob("*.y*ml")
+        for line in path.read_text(encoding="utf-8").splitlines()
+    )
+
+
 def free_port():
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -110,7 +120,7 @@ def main():
                     if time.monotonic() > deadline:
                         raise RuntimeError("SOC source pipeline missed expected events/alarms")
                     time.sleep(0.05)
-                assert stats["rules_count"] == 75 and stats["dropped"] == 0
+                assert stats["rules_count"] == shipped_rule_count() and stats["dropped"] == 0
                 assert len(alerts) == len(expected) and {row["rule_id"] for row in alerts} == expected
                 events = request("/api/events?limit=100")
                 assert {row["source"] for row in events} == set(inputs)

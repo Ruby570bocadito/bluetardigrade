@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -131,7 +132,9 @@ func TestPersistenceRoundTripAndMalformedFile(t *testing.T) {
 	if err != nil || len(got.Timeline) != 2 || got.AlertIDs[0] != a1 {
 		t.Fatalf("reload lost data: %+v %v", got, err)
 	}
-	if info, _ := os.Stat(path); info.Mode().Perm() != 0o600 {
+	// NTFS does not enforce POSIX permission bits (a 0600 file reads back
+	// as 0666 there), so the mode is only checked where it means something
+	if info, _ := os.Stat(path); runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("incident file must be private, mode %v", info.Mode().Perm())
 	}
 	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
