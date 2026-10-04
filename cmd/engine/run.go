@@ -18,6 +18,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/beacon"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/correlate"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/enrich"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/fleet"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/forensic"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/incident"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/ingest"
@@ -292,6 +293,10 @@ func runEngine(o *options, interactive bool) error {
 		server.SetIdentities(ids)
 		fmt.Printf("[ENGINE] ingest identities: %d per-sensor credentials bound to their hosts (%s)\n", len(ids), identitiesPath)
 	}
+	// machine inventory (internal/fleet): every accepted event and the
+	// sensors' heartbeats; read through GET /api/fleet
+	fleetTracker := fleet.New()
+	server.SetObserver(fleetTracker)
 	go server.Serve()
 	if server.AuthEnabled() {
 		if server.Rotating() {
@@ -392,6 +397,7 @@ func runEngine(o *options, interactive bool) error {
 			hub.SetSequences(corr)
 			hub.SetLifecycle(lifeStore)
 			hub.SetIncidents(incStore)
+			hub.SetFleet(fleetTracker)
 			// reputation lookups stay off unless the operator sets a
 			// provider key; keys come from the environment only (a flag
 			// would show them in the process list)
@@ -669,6 +675,25 @@ func runEngine(o *options, interactive bool) error {
 	if bcn != nil {
 		bcn.SetEmit(emitAllowlisted)
 	}
+	// one "sensor sin señal" alert per outage of a sensor that sends
+	// heartbeats; it goes through the same suppression gate, so a
+	// planned maintenance can be silenced per host
+	go func() {
+		t := time.NewTicker(30 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case now := <-t.C:
+				for _, tr := range fleetTracker.Check(now) {
+					if tr.Silent {
+						emitAllowlisted(silentSensorAlert(tr.Host, now))
+					}
+				}
+			}
+		}
+	}()
 	if thr != nil {
 		// Threshold alerts NEVER feed the correlator (dictamen 04,
 		// Q3): one threshold alert already aggregates N events, and

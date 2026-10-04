@@ -25,6 +25,7 @@ import (
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/correlate"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/fleet"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/forensic"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/incident"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/lifecycle"
@@ -89,6 +90,7 @@ type Hub struct {
 	store       *store.Store                    // optional SQLite persistence (nil = rings only)
 	lifecycle   *lifecycle.Store                // alert triage state (status overlay)
 	incidents   *incident.Store                 // investigation cases grouping alerts
+	fleet       *fleet.Tracker                  // machines reporting to the engine (nil = no inventory)
 	reputation  *reputation.Client              // opt-in VirusTotal/AbuseIPDB lookups (nil = off)
 	risk        *risk.Tracker                   // per-host decayed risk score (A1)
 	beacon      func() (int, int, uint64)       // live beacon keys, cap, fired (A3)
@@ -198,6 +200,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	mux.HandleFunc("GET /api/respond/state", h.handleRespondState)
 	mux.HandleFunc("GET /api/respond/audit", h.handleRespondAudit)
 	mux.HandleFunc("GET /api/sequences", h.handleSequences)
+	mux.HandleFunc("GET /api/fleet", h.handleFleet)
 	mux.HandleFunc("GET /api/stream", h.handleStream)
 	mux.HandleFunc("GET /api/health", h.handleHealth)
 	mux.HandleFunc("GET /api/alerts/export", h.handleAlertsExport)

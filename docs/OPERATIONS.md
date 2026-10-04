@@ -298,6 +298,38 @@ During the window the startup banner says `rotation window OPEN` so an operator 
 
 On Windows the installer can persist the token for you (`install.ps1 -IngestToken '...'`, stored under `tools\config\ingest.token`, cleared with an empty value): the autostart entry, `sf-console` and `sf-sensor` then all start the engine with that token enforced. The installer's `-Firewall` switch **requires** a configured token — it refuses to open TCP 7777 otherwise (and removes a rule left behind by a pre-gate install), because a reachable ingest without a token is an open event-injection channel for the whole network segment.
 
+## Machine inventory and sensor heartbeats
+
+The engine keeps an inventory of every machine that reports to it
+(`GET /api/fleet`, console **Equipos**). Each record holds:
+
+- first and last seen, and events in the last five minutes;
+- telemetry sources and the addresses of the sensor connections;
+- the ingest identity used, and the sensor's last health report.
+
+Sensors send a `sensor.heartbeat` event every 60 s: the Rust sensor and
+`sf-sensor` both do. It carries the sensor kind and version, the
+Windows version, what it captures, uptime and its queue spool/drop
+counters. The ingest consumes heartbeats into the inventory and never
+forwards them to rules, rings or storage.
+
+A host whose sensor sent heartbeats and then stops for longer than
+3 x its interval (at least 3 minutes) becomes `silent`, and the engine
+raises one `fleet-sensor-silent` alert per outage (high, ATT&CK
+T1562.001). The alert goes through the suppression gate, so planned
+maintenance can be silenced per host. Hosts without heartbeats (log
+imports, older sensors) are `online` while they send data and `idle`
+afterwards; they never alert. The inventory is in memory, covers what
+the engine saw since it started, and retires hosts unseen for seven
+days.
+
+On Windows the launcher opens the ingest to the network
+(`-addr 0.0.0.0:7777`) only when `tools\config\ingest-identities.yaml`
+exists, so every remote sensor authenticates with its own identity. A
+`tools\config\ingest-cert.pem` / `ingest-key.pem` pair next to it
+enables ingest TLS. The full enrollment walkthrough, in Spanish, is in
+[FLOTA-REMOTA.md](FLOTA-REMOTA.md).
+
 ## Per-sensor ingest identities
 
 The shared token proves "some sensor of this deployment": every endpoint holds the same secret, so one compromised host can report events in the name of any other machine — fabricate alerts for it, inflate its risk score, feed its kill chains. `-ingest-identities <file>` (or `SF_INGEST_IDENTITIES`) gives each sensor its own credential, bound to the hosts it may report for:

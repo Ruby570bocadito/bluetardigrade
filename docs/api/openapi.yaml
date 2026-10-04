@@ -328,6 +328,36 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Sequence'
+  /api/fleet:
+    get:
+      tags: [status]
+      operationId: listFleet
+      summary: Inventory of the machines reporting to the engine (read-only)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        One entry per host seen since the engine started: first and last
+        event, events in the last five minutes, telemetry sources, the
+        addresses of the sensor connections, the ingest identity used and
+        the sensor's last health report. Sensors report health with a
+        `sensor.heartbeat` event that the engine consumes here and never
+        forwards to rules, rings or storage. A host whose sensor sent
+        heartbeats and then stops for longer than its grace (3 x the
+        announced interval, at least `heartbeat_grace_min_s`) is `silent`
+        and raises one `fleet-sensor-silent` alert per outage. Hosts
+        without heartbeats are `online` while they send data and `idle`
+        afterwards, never `silent`. The engine sends nothing to the
+        machines listed here.
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '200':
+          description: Inventory, silent hosts first
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Fleet'
   /api/events:
     get:
       tags: [telemetry]
@@ -2404,6 +2434,92 @@ components:
               expires:
                 type: string
                 description: RFC 3339 expiration as written in the file (empty = until removed)
+    Fleet:
+      type: object
+      required: [enabled, hosts, online, silent, idle, heartbeat_grace_min_s]
+      properties:
+        enabled:
+          type: boolean
+          description: false when the engine runs without an inventory
+        hosts:
+          type: array
+          items:
+            $ref: '#/components/schemas/FleetHost'
+        online:
+          type: integer
+        silent:
+          type: integer
+        idle:
+          type: integer
+        heartbeat_grace_min_s:
+          type: integer
+          description: shortest silence that marks a sensor silent
+    FleetHost:
+      type: object
+      required: [host, status, first_seen, last_seen, events, events_last_5m, sources, peers]
+      properties:
+        host:
+          type: string
+        status:
+          type: string
+          enum: [online, silent, idle]
+        first_seen:
+          type: string
+          format: date-time
+        last_seen:
+          type: string
+          format: date-time
+        last_event_type:
+          type: string
+        events:
+          type: integer
+          description: events received since the engine started (heartbeats excluded)
+        events_last_5m:
+          type: integer
+        sources:
+          type: array
+          items:
+            type: string
+        peers:
+          type: array
+          description: addresses of the connections that delivered the host's events (last four)
+          items:
+            type: string
+        identity:
+          type: string
+          description: per-sensor ingest identity, when identities are configured
+        sensor:
+          $ref: '#/components/schemas/FleetSensor'
+        silent_since:
+          type: string
+          format: date-time
+    FleetSensor:
+      type: object
+      required: [interval_s, uptime_s, spooled, dropped, last_heartbeat]
+      properties:
+        kind:
+          type: string
+          description: etw, sysmon...
+        version:
+          type: string
+        os:
+          type: string
+        capture:
+          type: string
+          description: what the sensor captures, e.g. process+network+registry
+        interval_s:
+          type: integer
+        uptime_s:
+          type: integer
+        queue_cap:
+          type: integer
+        spooled:
+          type: integer
+        dropped:
+          type: integer
+        last_heartbeat:
+          type: string
+          format: date-time
     Sequence:
       type: object
       description: |

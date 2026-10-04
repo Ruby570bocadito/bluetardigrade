@@ -124,6 +124,51 @@ type Server struct {
 	dropped    atomic.Uint64
 	rejected   atomic.Uint64
 	violations atomic.Uint64 // events refused: host outside the identity binding
+	heartbeats atomic.Uint64 // sensor health reports consumed (never forwarded)
+
+	// observer sees every accepted event with the sensor's address
+	// (internal/fleet); swapped atomically, nil = no inventory.
+	observer atomic.Pointer[Observer]
+}
+
+// HeartbeatType is the event type of a sensor's health report. It is
+// accepted and authenticated like any event, handed to the observer
+// and never forwarded to the pipeline: it describes the sensor, not the
+// host's activity, so rules, rings and storage never see it.
+const HeartbeatType = "sensor.heartbeat"
+
+// Observer receives every accepted event (heartbeats included) and the
+// address of the connection that delivered it.
+type Observer interface {
+	Observe(ev *model.Event, peer string, now time.Time)
+}
+
+// SetObserver installs the inventory observer (nil removes it).
+func (s *Server) SetObserver(o Observer) {
+	if o == nil {
+		s.observer.Store(nil)
+		return
+	}
+	s.observer.Store(&o)
+}
+
+// Heartbeats returns how many sensor health reports were consumed.
+func (s *Server) Heartbeats() uint64 { return s.heartbeats.Load() }
+
+// peerIP is the remote address of a connection without the port.
+func peerIP(conn net.Conn) string {
+	addr := conn.RemoteAddr()
+	if addr == nil {
+		return ""
+	}
+	if tcp, ok := addr.(*net.TCPAddr); ok {
+		return tcp.IP.String()
+	}
+	host, _, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		return addr.String()
+	}
+	return host
 }
 
 // New creates a server bound to addr, pushing parsed events into the
@@ -313,6 +358,7 @@ func (s *Server) handle(conn net.Conn) {
 	}
 
 	var who *Identity // identity the connection authenticated as (nil = shared token / no auth)
+	peer := peerIP(conn)
 	first := true
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -350,8 +396,15 @@ func (s *Server) handle(conn net.Conn) {
 			}
 			stampIdentity(ev, who)
 		}
-		s.received.Add(1)
 		conn.SetReadDeadline(time.Now().Add(idleTimeout))
+		if obs := s.observer.Load(); obs != nil {
+			(*obs).Observe(ev, peer, time.Now())
+		}
+		if ev.Type == HeartbeatType {
+			s.heartbeats.Add(1)
+			continue
+		}
+		s.received.Add(1)
 		s.events <- ev
 	}
 	if errors.Is(scanner.Err(), errAuthLineTooLong) {
