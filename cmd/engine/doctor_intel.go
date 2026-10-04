@@ -6,6 +6,7 @@ package main
 // console (accounts) — caught here before a restart instead of after.
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -44,7 +45,7 @@ func doctorIntelChecks(root string) []doctorCheck {
 	learn, source := os.Getenv("SF_BASELINE_LEARN"), "SF_BASELINE_LEARN"
 	if learn == "" {
 		if data, err := os.ReadFile(filepath.Join(root, "tools", "config", "baseline.learn")); err == nil {
-			learn, source = strings.TrimSpace(string(data)), "tools/config/baseline.learn"
+			learn, source = strings.TrimSpace(string(bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF}))), "tools/config/baseline.learn"
 		}
 	}
 	if learn != "" {
@@ -93,6 +94,8 @@ func doctorConsoleUsers(root string) doctorCheck {
 }
 
 func validateConsoleUsers(data []byte) (map[string]int, string) {
+	// Notepad and PowerShell 5 may save a UTF-8 BOM; the console strips it too
+	data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
 	var doc struct {
 		Users []struct {
 			User     string `json:"user"`

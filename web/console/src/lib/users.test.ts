@@ -47,6 +47,7 @@ test('parseUsers accepts valid accounts and rejects the whole file on any bad en
   expect(parseUsers(JSON.stringify({ users: [{ user: 'ana', role: 'viewer', password: 'plain' }] })).error).toContain('formato')
   expect(parseUsers(JSON.stringify({ users: [{ ...entry('ana', 'viewer', 'p'), password: 'pbkdf2-sha256$10$AAAAAAAAAAAAAAAAAAAAAA$' + 'A'.repeat(43) }] })).error).toContain('formato')
   expect(parseUsers(JSON.stringify({ users: [entry('a b', 'viewer', 'p')] })).error).toContain('nombre')
+  expect(parseUsers('\uFEFF' + JSON.stringify({ users: [entry('ana', 'analyst', 'x'.repeat(12))] })).accounts).toHaveLength(1)
   expect(parseUsers('{').error).toContain('JSON')
   expect(parseUsers('{"users":[]}').error).toContain('no tiene cuentas')
 })

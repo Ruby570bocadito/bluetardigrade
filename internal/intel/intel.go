@@ -8,6 +8,7 @@ package intel
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"net"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf16"
 
 	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
@@ -282,12 +284,11 @@ func loadFile(path string, ips, domains, hashes map[string]string, nets *[]netEn
 	if info.Size() > maxFileBytes {
 		return l, fmt.Errorf("intel: %s is %d bytes, over the %d byte cap", path, info.Size(), maxFileBytes)
 	}
-	f, err := os.Open(path)
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return l, fmt.Errorf("intel: %s: %w", path, err)
 	}
-	defer f.Close()
-	sc := bufio.NewScanner(f)
+	sc := bufio.NewScanner(bytes.NewReader(decodeText(raw)))
 	sc.Buffer(make([]byte, 0, maxLineBytes), maxLineBytes)
 	for sc.Scan() {
 		kind, value := parseLine(sc.Text())
@@ -329,6 +330,30 @@ func loadFile(path string, ips, domains, hashes map[string]string, nets *[]netEn
 		return l, fmt.Errorf("intel: %s: %w", path, err)
 	}
 	return l, nil
+}
+
+// decodeText returns the file as UTF-8 without a byte-order mark. Lists
+// saved on Windows often carry a UTF-8 BOM (Set-Content -Encoding UTF8
+// in PowerShell 5) or are UTF-16 (the '>' redirection of PowerShell 5);
+// read as-is, the first indicator or the whole file would be skipped.
+func decodeText(b []byte) []byte {
+	switch {
+	case bytes.HasPrefix(b, []byte{0xEF, 0xBB, 0xBF}):
+		return b[3:]
+	case bytes.HasPrefix(b, []byte{0xFF, 0xFE}), bytes.HasPrefix(b, []byte{0xFE, 0xFF}):
+		big := b[0] == 0xFE
+		b = b[2:]
+		units := make([]uint16, 0, len(b)/2)
+		for i := 0; i+1 < len(b); i += 2 {
+			if big {
+				units = append(units, uint16(b[i])<<8|uint16(b[i+1]))
+			} else {
+				units = append(units, uint16(b[i+1])<<8|uint16(b[i]))
+			}
+		}
+		return []byte(string(utf16.Decode(units)))
+	}
+	return b
 }
 
 func stripComment(line string) string {

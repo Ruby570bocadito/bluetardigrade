@@ -129,3 +129,30 @@ func TestABadListLeavesAnEmptyMatcherThatRetries(t *testing.T) {
 		t.Fatalf("the fixed list loads on the next reload: %v %v %d", changed, err, m.Total())
 	}
 }
+
+func TestWindowsEncodingsAreRead(t *testing.T) {
+	dir := t.TempDir()
+	// UTF-8 with BOM (PowerShell 5 Set-Content -Encoding UTF8)
+	writeList(t, dir, "bom.txt", "\xEF\xBB\xBF203.0.113.21\r\nmal.example.com\r\n")
+	// UTF-16 LE with BOM (PowerShell 5 '>' redirection)
+	utf16le := []byte{0xFF, 0xFE}
+	for _, r := range "203.0.113.22\r\nc2.example.net\r\n" {
+		utf16le = append(utf16le, byte(r), 0)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "utf16.txt"), utf16le, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range m.Lists() {
+		if l.Indicators != 2 || l.Skipped != 0 {
+			t.Fatalf("%s: %d indicators, %d skipped", l.File, l.Indicators, l.Skipped)
+		}
+	}
+	if len(m.Match(&model.Event{Network: &model.Network{DestinationIP: "203.0.113.21"}})) != 1 ||
+		len(m.Match(&model.Event{Network: &model.Network{Domain: "www.c2.example.net"}})) != 1 {
+		t.Fatal("indicators from BOM and UTF-16 files must match")
+	}
+}

@@ -45,6 +45,16 @@ func TestDoctorIntelAndBaselineChecks(t *testing.T) {
 	if c := findCheck(t, doctorIntelChecks(root), "Linea base"); c.Status != "warn" {
 		t.Fatalf("bad duration: %+v", c)
 	}
+	t.Setenv("SF_BASELINE_LEARN", "")
+	if err := os.MkdirAll(filepath.Join(root, "tools", "config"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "tools", "config", "baseline.learn"), []byte("\xEF\xBB\xBF3m\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c := findCheck(t, doctorIntelChecks(root), "Linea base"); c.Status != "ok" || !strings.Contains(c.Detail, "3m0s") {
+		t.Fatalf("file with a BOM: %+v", c)
+	}
 	t.Setenv("SF_BASELINE_LEARN", "30m")
 	if c := findCheck(t, doctorIntelChecks(root), "Linea base"); c.Status != "ok" || !strings.Contains(c.Detail, "30m0s") {
 		t.Fatalf("good duration: %+v", c)
@@ -72,7 +82,7 @@ func TestDoctorConsoleUsers(t *testing.T) {
 		t.Fatalf("no admin: %+v", c)
 	}
 	admin := strings.Replace(strings.Replace(sampleAccount, `"ana"`, `"jefa"`, 1), `"analyst"`, `"admin"`, 1)
-	write(`[` + sampleAccount + `,` + admin + `]`)
+	write("\xEF\xBB\xBF[" + sampleAccount + `,` + admin + `]`) // with a UTF-8 BOM
 	if c := doctorConsoleUsers(root); c.Status != "ok" || !strings.Contains(c.Detail, "2 cuentas (administradores 1, analistas 1") {
 		t.Fatalf("valid: %+v", c)
 	}

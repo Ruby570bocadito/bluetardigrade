@@ -70,7 +70,8 @@ function b64url(s: string): Uint8Array | null {
 export function parseUsers(text: string): { accounts: Account[]; error?: string } {
   let doc: unknown
   try {
-    doc = JSON.parse(text)
+    // Notepad and PowerShell 5 (Set-Content -Encoding UTF8) may save a BOM
+    doc = JSON.parse(text.replace(/^\uFEFF/, ''))
   } catch {
     return { accounts: [], error: 'el fichero de usuarios no es JSON válido' }
   }

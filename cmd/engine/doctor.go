@@ -264,7 +264,8 @@ func doctorSetting(root, envName, fileName string) (string, error) {
 		if err != nil || len(data) > 4096 {
 			return "", errors.New("credential file unreadable or oversized")
 		}
-		value = strings.TrimSpace(string(data))
+		// the launcher reads these with Get-Content, which drops a BOM
+		value = strings.TrimSpace(strings.TrimPrefix(string(data), "\uFEFF"))
 	}
 	if strings.ContainsAny(value, "\r\n\x00") {
 		return "", errors.New("invalid credential")
