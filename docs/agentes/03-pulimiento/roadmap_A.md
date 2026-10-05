@@ -29,7 +29,9 @@ moverlos.
   5. `plan: ronda 2026-10-05 12h13 (PUL-A)` — plan ronda 3.
   6. `pulimiento: complete CLI subcommand table and fix Telemetry inventory row (PUL-A)` — trabajo ronda 3.
   7. `plan: ronda 2026-10-05 12h23 (PUL-A)` — plan ronda 4.
-  8. (pendiente de commit) trabajo ronda 4.
+  8. `pulimiento: fix stale AI analyst inventory row after IMP-B streaming landed (PUL-A)` — trabajo ronda 4.
+  9. `plan: ronda 2026-10-05 12h27 (PUL-A)` — plan ronda 5.
+  10. (pendiente de commit) trabajo ronda 5.
 
 ## Rondas anteriores
 
@@ -102,6 +104,28 @@ moverlos.
     `PUL-A-analyst-streaming-inventory.md`.
   - La observación para IMP-B sobre la fila «AI analyst» se cierra
     (la actualicé yo).
+
+- **2026-10-05 12h27 (ronda 5):** pulimiento del diagrama «System
+  overview» + párrafo bajo el diagrama. Informe en
+  `ronda_2026-10-05_12h27_A.md`. Resumen:
+  - `docs/ARCHITECTURE.md` diagrama mermaid: 3 clases de deriva
+    corregidas. (1) Endpoint subgraph decía solo «Kernel-Process»;
+    ahora lista los 4 providers (Kernel-Process, Kernel-Network,
+    Kernel-Registry, DNS-Client). (2) Pipeline omitía 9 componentes
+    reales (intel/baseline/fleet en enriquecimiento;
+    forensic/lifecycle/suppress en alerta; notify/siem como sinks
+    junto al webhook; respond como sink de acción); ahora los
+    muestra. (3) Webhook node estaba mal etiquetado como «SIEM/SOAR
+    collector»; split en 3 nodos (webhook, notify, siem).
+  - `docs/ARCHITECTURE.md` párrafo bajo el diagrama: ampliado para
+    nombrar productores (Rust ETW sensor, Go SOC collector,
+    external producers) y consumidores (API, consola, sinks
+    SIEM/notificación) reales del schema unificado.
+  - 1 fragmento en `changelog.d/`:
+    `PUL-A-system-overview-diagram.md`.
+  - Verificación: script Python de coherencia de nodos del mermaid
+    (0 huérfanos); no hay validador mermaid formal en el entorno,
+    verificación manual declarada.
 
 ## Pendientes para la siguiente ronda
 

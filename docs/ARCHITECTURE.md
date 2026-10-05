@@ -10,7 +10,7 @@ The project overview and quickstart live in the [README](README.md); the day-to-
 flowchart LR
     subgraph EP["Windows endpoints"]
         direction TB
-        ETW["ETW Kernel-Process providers"] --> RS["sf-sensor · Rust"]
+        ETW["ETW providers: Kernel-Process, Kernel-Network, Kernel-Registry, DNS-Client"] --> RS["sf-sensor · Rust"]
         SYS["Sysmon"] --> RS
     end
 
@@ -19,6 +19,9 @@ flowchart LR
     subgraph ENG["sf-engine · Go, single binary"]
         direction TB
         ING["ingest · schema validation"] --> ENR["enrich"]
+        ENR -- "context" --> INT["intel · offline threat lists"]
+        ENR -- "context" --> BAS["baseline · per-host novelty"]
+        ENR -- "context" --> FLT["fleet · machine inventory + heartbeats"]
         ENR --> RUL["rules · hot-reload 15 s"]
         ENR --> BCN["beaconing tracker · C2 timing"]
         ENR --> THR["volumetric thresholds · windowed counts"]
@@ -27,13 +30,21 @@ flowchart LR
         COR --> ALR
         BCN --> ALR
         THR --> ALR
+        INT -- "intel hits" --> ALR
+        BAS -- "novelties" --> ALR
+        SUP["suppressions · operator allowlist"] -.-> ALR
         ALR --> RSK["risk tracker · per-host score"]
-        ALR --> ACT["actions · webhooks"]
+        ALR --> ACT["actions · message templates"]
+        ALR --> FOR["forensic · evidence bundles"]
+        ALR --> LIF["lifecycle · triage state"]
         ING -- "events · write-through" --> ST[("SQLite store · opt-in")]
         ALR -- "alerts" --> ST
     end
 
-    ACT --> WH["SIEM / SOAR collector"]
+    ACT --> WH["webhook · SIEM/SOAR"]
+    ACT --> NTF["notify · Slack / Telegram / email"]
+    ACT --> SIEM["SIEM sinks · Elastic / Splunk"]
+    ALR --> RSP["respond · kill_process (opt-in, audited)"]
     ENG -- "REST + SSE on :7778" --> HUB
 
     subgraph CON["Web console"]
@@ -42,7 +53,13 @@ flowchart LR
 
 ```
 
-The unified event schema (`pkg/model`) is the master contract: sensors emit it, the engine validates and enriches it, rules index it, interfaces consume it.
+The unified event schema (`pkg/model`) is the master contract: the
+Rust ETW sensor, the Go SOC collector and any external producer all
+emit it; the engine validates, enriches and indexes it; the local
+API, the web console and the SIEM/notification sinks all consume the
+alerts derived from it. Sensors and collectors never branch the
+schema — a new telemetry source is a new producer of the same
+events, not a new wire format.
 
 File detections and evidence are described in
 [DETECCION-Y-EVIDENCIA.md](DETECCION-Y-EVIDENCIA.md); saved investigations,
