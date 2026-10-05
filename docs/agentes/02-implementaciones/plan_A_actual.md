@@ -1,14 +1,22 @@
-# Plan de ronda — Implementación A (2026-10-05)
+# Plan de ronda — Implementación A (2026-10-05, ronda 2)
 
-- Tareas del TODO: **SIM-1** y **SIM-2** (Validación de detecciones, telemetría sintética e
-  inerte; ninguna otra rama las ha publicado esta ronda).
-- Ficheros: nuevo `internal/scenario` (esquema YAML, cargador, reproductor en proceso),
-  `cmd/engine` (subcomando `scenarios` + propagación de la etiqueta `simulation` en las
-  alertas: reglas, cadenas, beaconing, umbrales, intel y línea base), `internal/alert`,
-  `internal/correlate`, `internal/beacon`, `internal/threshold`; biblioteca `scenarios/`
-  (una por regla y cadena del paquete) con su test de CI que rompe si un escenario deja de
-  detectar; `scripts/dev-tests/e2e_scenarios.sh`; docs (`OPERATIONS.md`, changelog fragment).
-- Por qué: SIM-1/SIM-2 son la base de SIM-3/SIM-4 (consola) y de la cobertura de detección;
-  tocan solo mi área (motor, API, CLI, escenarios). La consola no cambia.
-- Para Implementación B: no hay rutas de API nuevas; las alertas simuladas llevarán la
-  etiqueta `simulation` en su campo `tags` (documentado en el informe).
+- Tareas del TODO: **SIM-4 parte A** (ejecución bajo demanda e historial: motor y API) y el
+  **ALTA de Seguridad B**: elevar `golang.org/x/text` de v0.3.8 a v0.39.0 en mi rama
+  (GO-2026-5970; mi rama hereda de `feat/enrollment` y aún lo lleva viejo).
+- Ficheros: nuevo `internal/scenrun` (servicio de ejecución: recarga la biblioteca por
+  ejecución, inyecta eventos en el pipeline en proceso, observa las alertas, historial en
+  SQLite con fallback en memoria), `internal/api` (rutas nuevas), `internal/store`
+  (tabla `scenario_runs`), `cmd/engine` (flag `-scenarios`, cableado), `docs/api/openapi.yaml`,
+  `go.mod`/`go.sum`, changelog fragment.
+- Por qué: mi roadmap lo tenía primero; IMP-B necesita el contrato para SIM-4/SIM-3 (su
+  informe 13h11 lo declara bloqueado por APIs de este carril) y la cobertura de la biblioteca
+  SIM-1/SIM-2 ya está cerrada y verificada.
+- Para Implementación B (contrato): `GET /api/scenarios` (biblioteca cargada),
+  `POST /api/scenarios/run` (cuerpo opcional `{"only":[...],"interval_ms":N,"timeout_ms":N}`;
+  202 con `run_id`; 409 si ya hay una ejecución; 501 si el motor no arrancó con
+  `-scenarios`), `GET /api/scenarios/runs?limit=N` (historial, más reciente primero, con
+  `pass_rate` para la gráfica de tendencia) y `GET /api/scenarios/runs/{id}` (detalle con
+  resultado por escenario: `detected|missing|catalog|error`, expectativas fallidas
+  esperada/disparada, latencia). Detalle completo en OpenAPI.
+- Fuera de alcance: SIM-4 parte B (pantalla, IMP-B), REP-1/REP-2 y la API de ruido
+  (siguiente ronda).
