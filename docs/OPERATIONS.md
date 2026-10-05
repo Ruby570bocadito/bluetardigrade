@@ -1054,6 +1054,10 @@ Windows installer installs it as `sf-engine`). Subcommands:
 | `engine rules [-rules dir]` | print the loaded rule pack as a table and exit |
 | `engine validate [-rules dir] [-sequences dir]` | validate rules and sequences, print a report; exit code 0 when everything loads, non-zero on error (CI-friendly) |
 | `engine sigma -dir dir-or-file [-out file] [-strict]` | convert a Sigma corpus to the native rule format; report lists every skipped rule with its reason; exit 0 only with at least one conversion (and, under `-strict`, zero skips) |
+| `engine doctor [-sensor sysmon] [-json] [-root path]` | diagnose rules, ports, credentials, sensor and console without starting services or sending telemetry; uses `SF_API_TOKEN` / `SF_INGEST_TOKEN` with fallback to the persisted install tokens; never prints credentials — see [DOCTOR.md](DOCTOR.md) |
+| `engine report --alert ID [--interactive \| --notes file.json] --format md\|json --out file` | look up a real alert by ID and write a human report (Markdown or JSON) with findings, actions and analyst classification; does not change alert status or run responses — see [SOC integrations and reports](SOC-INTEGRACIONES-E-INFORMES.md) |
+| `engine ingest-identity --name NAME [--host H ... \| --any-host] [--token-stdin]` | generate a per-sensor ingest identity (token + YAML entry for `-ingest-identities`); reads the token from stdin with `--token-stdin` instead of generating one — see [Per-sensor ingest identities](#per-sensor-ingest-identities) |
+| `engine operator-credential --name NAME [--token-stdin]` | generate the credential of an active-response operator (token + YAML entry for `-respond-operators` v2); reads an existing token from stdin with `--token-stdin` — see [Active response](#active-response-kill_process-opt-in) |
 | `engine version` | print the engine version and exit |
 
 ### Interactive terminal

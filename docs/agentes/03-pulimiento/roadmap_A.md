@@ -25,7 +25,9 @@ moverlos.
   1. `plan: ronda 2026-10-05 (PUL-A)` — plan ronda 1.
   2. `pulimiento: docs layout, campaigns doc, gitignore coverage (PUL-A)` — trabajo ronda 1.
   3. `plan: ronda 2026-10-05 12h08 (PUL-A)` — plan ronda 2.
-  4. (pendiente de commit) trabajo ronda 2.
+  4. `pulimiento: complete engine flags tables and document API TLS (PUL-A)` — trabajo ronda 2.
+  5. `plan: ronda 2026-10-05 12h13 (PUL-A)` — plan ronda 3.
+  6. (pendiente de commit) trabajo ronda 3.
 
 ## Rondas anteriores
 
@@ -61,6 +63,24 @@ moverlos.
   - `-api-cert`/`-api-key` eran lo más grave: no estaban en NINGÚN
     sitio de la doc, aunque `internal/api/api.go` `NewTLS` +
     `tlsutil.Reloader` los soportan.
+
+- **2026-10-05 12h13 (ronda 3):** pulimiento de tabla de
+  subcomandos CLI + fila «Telemetry» del feature inventory.
+  Informe en `ronda_2026-10-05_12h13_A.md`. Resumen:
+  - `docs/OPERATIONS.md` tabla «Engine CLI reference»: listaba 5
+    de 9 subcomandos. Añadidos `engine doctor`, `engine report`,
+    `engine ingest-identity`, `engine operator-credential` con
+    flags reales y enlaces a las secciones que ya los documentaban
+    en prosa.
+  - `docs/ARCHITECTURE.md` fila «Telemetry»: decía «Rust ETW
+    sensor (Kernel-Process)» pero el sensor colecta de 4 providers
+    desde el commit `0a4a8aa`. Actualizada a Kernel-Process +
+    Kernel-Network + Kernel-Registry + DNS-Client, más image
+    hashes en el enriquecimiento.
+  - 1 fragmento en `changelog.d/`: `PUL-A-cli-subcommands.md`.
+  - La deriva de «Telemetry» era la más grave de esta ronda: un
+    lector de ARCHITECTURE.md creía que el sensor solo colectaba
+    procesos, cuando en realidad colecta red, registro y DNS.
 
 ## Pendientes para la siguiente ronda
 
@@ -108,6 +128,15 @@ leen consistentes. Re-visitar cuando:
   oficial con `git ls-remote`),
 - la matriz de OS cambie,
 - Seguridad B añada escaneos (coordinar dónde viven).
+
+### Observación para IMP-B (cuando cierre su ronda 2)
+
+La fila «AI analyst» del feature inventory de `docs/ARCHITECTURE.md`
+dice hoy «(no provider token streaming)». El plan de la ronda 2 de
+IMP-B es precisamente añadir streaming nativo del proveedor. Cuando
+IMP-B aterrice ese cambio, la fila quedará stale. IMP-B debe
+actualizarla (es su área), o yo en una ronda posterior si lo veo
+stale y nadie lo tocó. Lo dejo anotado aquí.
 
 ### Observación para el responsable (no de mi área)
 

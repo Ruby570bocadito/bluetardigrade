@@ -56,7 +56,7 @@ no longer matched the code; its earlier revisions live in GitHub Releases.
 
 | Area | What you get today |
 |------|--------------------|
-| **Telemetry** | Rust ETW sensor (Kernel-Process) + Sysmon ingestion path; NDJSON/TCP feed with schema validation and enrichment (user, command line, network context) |
+| **Telemetry** | Rust ETW sensor (Kernel-Process for process create/start/end, Kernel-Network for TCP connects, Kernel-Registry for SetValueKey, DNS-Client for query answers) + Sysmon ingestion path; NDJSON/TCP feed with schema validation and enrichment (user, command line, network context, image hashes) |
 | **SOC imports** | Explicit Go adapter for six observed log/mail formats; TLS/auth remote ingest, bounded attributes separated from engine enrichment |
 | **Analyst reports** | CLI API lookup plus human notes and exclusive file output; browser-local report catalog, frozen snapshots and Markdown/JSON exports |
 | **Detection** | 114 enabled YAML rules with 17 operators (`eq`, `regex`, `contains_any`, …), hot-reload every 15 s, per-rule MITRE ATT&CK tags and actions; `engine sigma` imports community Sigma rules (deterministic, fail-loud, provenance preserved) |
