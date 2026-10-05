@@ -69,6 +69,24 @@ func isEnrollLine(line []byte) bool {
 	return len(line) >= 7 && string(line[:7]) == "ENROLL "
 }
 
+// parseEnrollLine splits an ENROLL first line into its enrollment
+// token and the requested host. ok is false unless the line carries
+// exactly those two fields: fewer cannot name a host, and anything
+// extra would enroll a host the sensor never sent, so both shapes are
+// refused instead of guessed at. Fields run through strings.Fields,
+// so the registry only ever sees non-empty, whitespace-free values no
+// matter how the line abused its spacing.
+func parseEnrollLine(line []byte) (token, host string, ok bool) {
+	if !isEnrollLine(line) {
+		return "", "", false
+	}
+	fields := strings.Fields(string(line[len("ENROLL "):]))
+	if len(fields) != 2 {
+		return "", "", false
+	}
+	return fields[0], fields[1], true
+}
+
 // handleEnroll serves an ENROLL first line and always ends the
 // connection: the sensor reconnects with the credential.
 func (s *Server) handleEnroll(conn net.Conn, line []byte, peer string) {
@@ -82,13 +100,13 @@ func (s *Server) handleEnroll(conn net.Conn, line []byte, peer string) {
 		writeAck(conn, errorAck("enrollment needs TLS (engine -ingest-cert, sensor --tls-ca) or a loopback connection: the credential it hands out must not cross the network in clear"))
 		return
 	}
-	fields := strings.Fields(string(line[len("ENROLL "):]))
-	if len(fields) != 2 {
+	token, host, ok := parseEnrollLine(line)
+	if !ok {
 		s.rejected.Add(1)
 		writeAck(conn, errorAck("enrollment refused: send 'ENROLL <token> <host>' as the first line"))
 		return
 	}
-	grant, err := s.enroller.Enroll(fields[0], fields[1], peer)
+	grant, err := s.enroller.Enroll(token, host, peer)
 	if err != nil {
 		s.rejected.Add(1)
 		writeAck(conn, errorAck("enrollment refused: "+err.Error()))

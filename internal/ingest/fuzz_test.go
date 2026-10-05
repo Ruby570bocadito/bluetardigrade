@@ -14,12 +14,17 @@ package ingest
 //     succeeds the identities are self-consistent (non-empty reserved-
 //     name-free names, digest lookup round-trips through
 //     matchIdentity).
+//   - the first line of a connection classifies cleanly: isAuthLine
+//     and isEnrollLine are exact prefixes and mutually exclusive, and
+//     parseEnrollLine hands the registry two non-empty, whitespace-
+//     free fields or refuses the line.
 
 import (
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 func FuzzDecode(f *testing.F) {
@@ -135,6 +140,96 @@ func FuzzLoadIdentities(f *testing.F) {
 				t.Fatalf("loaded duplicate token digest for %q", id.Name)
 			}
 			seen[id.digest] = true
+		}
+	})
+}
+
+// FuzzAuthEnrollFirstLine fuzzes the first line of a connection, the
+// one Server.handle dispatches on before a single event may flow:
+//   - isAuthLine is the exact "AUTH " prefix (never "AUTH" without the
+//     space, never "AUTH\t"); when it holds, slicing the credential off
+//     at byte 5 is in bounds, and the credential is the raw remainder,
+//     empty included ("AUTH " alone is a request with an empty token,
+//     which the constant-time compare must refuse, not panic on);
+//   - parseEnrollLine accepts exactly "ENROLL <token> <host>": both
+//     fields non-empty and whitespace-free (they reach the enrollment
+//     registry verbatim and bind a host, so a stray space inside one
+//     would forge a host the sensor never sent); a non-ENROLL line is
+//     never accepted; an ENROLL line with one or three-plus fields is
+//     refused;
+//   - no line is both an AUTH and an ENROLL request (disjoint
+//     prefixes), so the ENROLL check in Server.handle cannot shadow an
+//     AUTH request;
+//   - none of the classifiers ever panics on arbitrary bytes.
+//
+// Lines reach the dispatch stripped of their terminator (bufio
+// ScanLines drops \r\n), so the seeds are bare lines.
+func FuzzAuthEnrollFirstLine(f *testing.F) {
+	// Real first lines from the field.
+	f.Add([]byte("AUTH shared-token"))
+	f.Add([]byte("AUTH btsensor_c1"))
+	f.Add([]byte("ENROLL enroll-token-7 LAB-WKS-01"))
+	// Boundary shapes: prefix-only, wrong separators, casing, and
+	// lines that are neither AUTH nor ENROLL.
+	f.Add([]byte("AUTH "))
+	f.Add([]byte("AUTH"))
+	f.Add([]byte("AUTH\ttab-token"))
+	f.Add([]byte("auth lowercase-token"))
+	f.Add([]byte("ENROLL "))
+	f.Add([]byte("ENROLL only-token"))
+	f.Add([]byte("ENROLL a b c"))
+	f.Add([]byte("ENROLL\ttab\tseparated"))
+	f.Add([]byte("enroll lower host"))
+	f.Add([]byte(`{"id":"e1","type":"heartbeat"}`))
+	f.Add([]byte(""))
+	f.Add([]byte("\x00\x01\x02"))
+	f.Add([]byte("ENROLL tok host\u00a0x"))
+
+	f.Fuzz(func(t *testing.T, line []byte) {
+		auth := isAuthLine(line)
+		enroll := isEnrollLine(line)
+
+		// Bounds: when a classifier says yes, the prefix it matched is
+		// really there, so every slice in the handshake path is safe.
+		if auth && (len(line) < 5 || string(line[:5]) != "AUTH ") {
+			t.Fatalf("isAuthLine accepted a line without the AUTH prefix: %q", line)
+		}
+		if enroll && (len(line) < 7 || string(line[:7]) != "ENROLL ") {
+			t.Fatalf("isEnrollLine accepted a line without the ENROLL prefix: %q", line)
+		}
+		// Wrong separators must not pass as the other request type:
+		// the space is part of the wire contract the sensor speaks.
+		if len(line) >= 5 && string(line[:5]) == "AUTH\t" && auth {
+			t.Fatalf("tab after AUTH accepted as an AUTH line: %q", line)
+		}
+		// Disjoint prefixes: handle() checks ENROLL before AUTH, so a
+		// line matching both would enroll when the sensor meant to
+		// authenticate.
+		if auth && enroll {
+			t.Fatalf("line classified as both AUTH and ENROLL: %q", line)
+		}
+
+		token, host, ok := parseEnrollLine(line)
+		if !enroll {
+			if ok {
+				t.Fatalf("parseEnrollLine accepted a non-ENROLL line: %q", line)
+			}
+			return
+		}
+		fields := strings.Fields(string(line[len("ENROLL "):]))
+		if ok != (len(fields) == 2) {
+			t.Fatalf("parseEnrollLine ok=%v disagrees with %d fields: %q", ok, len(fields), line)
+		}
+		if !ok {
+			return
+		}
+		if token == "" || host == "" {
+			t.Fatalf("parseEnrollLine yielded an empty field: token=%q host=%q", token, host)
+		}
+		for i, field := range []string{token, host} {
+			if strings.IndexFunc(field, unicode.IsSpace) >= 0 {
+				t.Fatalf("field %d carries whitespace into the registry: %q", i, field)
+			}
 		}
 	})
 }
