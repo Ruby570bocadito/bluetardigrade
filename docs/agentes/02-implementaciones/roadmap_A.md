@@ -5,6 +5,21 @@ cada ronda: qué está a medias, qué sigue y por qué.
 
 ## Estado actual
 
+- Ronda 2026-10-05 21h48 cerrada (informe: `ronda_2026-10-05_21h48_A.md`). Primero se
+  publicó el cierre retenido de la ronda anterior (`2c32013..8150a37`): AD-1/AD-2/SET-3
+  quedan OFICIALES y visibles (SEG-B puede auditar `internal/ad`, IMP-B puede consumir
+  los contratos `/api/ad/*`). Después, entregado **SEC-2** al pie de la letra del
+  contrato de SEG-B (addendum 19h10): paquete `internal/secretfile` (sobre JSON
+  versionado; DPAPI con ámbito LOCAL_MACHINE en Windows vía x/sys/windows; plain con
+  0600 exigido en cada lectura en POSIX; paridad de laboratorio con texto en bruto y
+  aviso de re-guardado en Windows; `Zero` para el llamador), cableado en `internal/ad`
+  (el secreto cruza como []byte de fichero a bind, buffer a cero tras el intento, avisos
+  en `/api/ad/status`), subcomando `engine secret-write` (el secreto SOLO por stdin).
+  El checklist de SEG-B tiene un test por exigencia: la ida y vuelta DPAPI real corre en
+  el job `engine-windows` del CI; las cuatro formas JSON de `/api/ad/*` se escanean sin
+  secreto (crudo/base64/hex y longitud con frontera de dígito); higiene de logs ante
+  bind fallido. Docs: OPERATIONS.md (subsección SEC-2 + icacls), ad.example.yaml,
+  changelog.d. OpenAPI sin cambios (sin rutas nuevas; 41 verificadas).
 - Ronda 2026-10-05 12h36 cerrada (informe: `ronda_2026-10-05_12h36_A.md`). Entregado SIM-1 y
   SIM-2 completos: biblioteca `scenarios/` con 127 escenarios (114 reglas habilitadas + 13
   cadenas), etiqueta `simulation` propagada a toda alerta derivada de evidencia simulada,
@@ -55,25 +70,23 @@ cada ronda: qué está a medias, qué sigue y por qué.
 
 ## Cola de tareas del carril (orden pretendido)
 
-1. **SEC-2**: credencial del sensor cifrada con DPAPI (sensor Rust, parte Windows;
-   pendiente de esta ronda por tamaño: no cabía un DPAPI correcto y verificado junto
-   al conector AD).
-2. **Campo de decisión de triaje** (petición MEDIA de IMP-B): `decision:
+1. **Campo de decisión de triaje** (petición MEDIA de IMP-B): `decision:
    false_positive | authorized_activity | confirmed_incident` en el ciclo de vida
    (`POST /api/alerts/{id}/status` + store + OpenAPI), que desbloquea el «falso
    positivo» del flujo del triaje y convierte los porcentajes del ruido en FP% real.
-3. **v1.1 Ruido**: supresiones con condiciones (PLAN-DETALLADO §2.3), lista de software
+2. **v1.1 Ruido**: supresiones con condiciones (PLAN-DETALLADO §2.3), lista de software
    conocido por organización (§2.2, `known-software.yaml`; el botón «añadir a software
    conocido» de la pestaña de ruido de IMP-B espera esto) y agrupación de arranques
    repetidos en el sensor (§2.1, parte Rust; requiere cargo en el entorno o pruebas en
    otro sitio).
-4. **Motor**: cuotas por equipo en la memoria del motor (v1.1 «Motor y consola»).
-5. **AD-6** (API de ajustes AD: horario laboral y umbral de inactividad ya leídos por
-   el postura; falta la superficie de escritura decidida con el responsable) y **AD-3**
-   cuando WEF exista.
-6. **REP-2** informes programados (diarios/semanales en `data/reports` con retención,
+3. **Motor**: cuotas por equipo en la memoria del motor (v1.1 «Motor y consola»).
+4. **AD-6/SET-1 API de ajustes**: la primitiva de escritura segura ya existe
+   (`secretfile.Write` + `engine secret-write`); falta la superficie de ajustes decidida
+   con el responsable (qué campos, bind de prueba antes de comprometer el fichero,
+   auditoría, recarga en caliente). **AD-3** cuando WEF exista.
+5. **REP-2** informes programados (diarios/semanales en `data/reports` con retención,
    SMTP/webhook opcional): la maquinaria de datos ya existe tras REP-1 parte A.
-7. **Diseño**: purga de hosts rechazados/revocados en el registro de alta (observación
+6. **Diseño**: purga de hosts rechazados/revocados en el registro de alta (observación
    de SEG-A: hoy cuentan para siempre en `MaxHosts`).
 
 ## Decisiones y motivos (histórico vivo)
