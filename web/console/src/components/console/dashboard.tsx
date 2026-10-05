@@ -7,8 +7,8 @@
 // the real engine stream; when the engine is down every card shows its
 // own honest state instead of empty axes.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChartLineUp, Cpu, Crosshair, Flame, Graph, GridFour, ListBullets, Pulse, ShieldWarning, Stack, Waveform } from '@phosphor-icons/react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { CalendarDots, ChartLineUp, Cpu, Crosshair, Flame, Graph, GridFour, ListBullets, Pulse, ShieldWarning, Stack, Waveform } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import type { EngineStatus } from '@/hooks/use-engine-stream'
 import { KpiRow } from './kpi-row'
@@ -20,6 +20,7 @@ import { AnimatedItem } from '@/components/reactbits/animated-list'
 import { AnimatedContent } from '@/components/reactbits/animated-content'
 import { EntityGraphView, GraphLegend, NODE_KIND } from '@/components/charts/entity-graph'
 import { HostTacticHeatmap } from '@/components/charts/heatmap'
+import { WeekHourHeatmap } from '@/components/charts/week-hour-heatmap'
 import { buildEntityGraph } from '@/lib/entity-graph'
 import { ChartCard } from '@/components/charts/chart-frame'
 import { StackedColumns } from '@/components/charts/stacked-columns'
@@ -28,6 +29,8 @@ import { BarList, Meter } from '@/components/charts/bars'
 import { AttackMatrix } from '@/components/charts/attack-matrix'
 import { SEV_COLOR, SeverityIcon } from '@/components/charts/severity'
 import { eventDetail, formatTime, type EngineStats, type SfAlert, type Severity } from '@/lib/console-types'
+import { engineApiBase, readEngineJson } from '@/lib/engine-client'
+import { weekHourGrid, weekHourTableRows, weekStart, WEEK_HOUR_DAYS } from '@/lib/alert-heatmap'
 import { eventTypeMix, formatAgo, hostTacticMatrix, lifecycleTacticColumns, SEVERITIES, SEVERITY_LABEL, severityBuckets, severityCounts, tacticCoverage, topCounts, type LifecycleState } from '@/lib/soc-metrics'
 import { pushRiskSample, riskSeriesView, RISK_SLOT_MS, RISK_SLOTS, type RiskSample } from '@/lib/risk-history'
 import type { TriageTarget } from '@/lib/operations'
@@ -142,24 +145,28 @@ export function Dashboard({
         <TelemetryMixPanel down={down} />
       </AnimatedContent>
 
-      <AnimatedContent order={5} className="grid gap-5 xl:grid-cols-3">
+      <AnimatedContent order={5}>
+        <AlertHeatmapPanel down={down} />
+      </AnimatedContent>
+
+      <AnimatedContent order={6} className="grid gap-5 xl:grid-cols-3">
         <LifecycleTacticPanel alerts={alerts} down={down} />
         <RiskEvolutionPanel down={down} />
       </AnimatedContent>
 
-      <AnimatedContent order={6}>
+      <AnimatedContent order={7}>
         <AttackPanel onHunt={onHunt} />
       </AnimatedContent>
 
-      <AnimatedContent order={7}>
+      <AnimatedContent order={8}>
         <HeatmapPanel onHost={hostLens} />
       </AnimatedContent>
 
-      <AnimatedContent order={8}>
+      <AnimatedContent order={9}>
         <EngineSummary status={status} />
       </AnimatedContent>
 
-      <AnimatedContent order={9} className="grid gap-5 xl:grid-cols-2">
+      <AnimatedContent order={10} className="grid gap-5 xl:grid-cols-2">
         <div className="panel min-w-0 px-4 pb-3 pt-3.5">
           <AlertsView compact onAnalyze={onAnalyze} />
         </div>
@@ -567,6 +574,138 @@ function RiskEvolutionPanel({ down }: { down: boolean }) {
           valueLabel="riesgo"
           formatT={clock}
         />
+      )}
+    </ChartCard>
+  )
+}
+
+const HEATMAP_ALERT_LIMIT = 1000
+const HEATMAP_REFRESH_MS = 5 * 60 * 1000
+
+type AlertWindowFetch = {
+  loading: boolean
+  error: boolean
+  alerts: { timestamp: string }[]
+  fetchedAt: number | null
+  /** the reply hit the API limit: there may be more alerts than fit here */
+  truncated: boolean
+}
+
+/**
+ * VIZ-2 fetch: one bounded request for the whole heatmap window,
+ * separate from the shared live triage buffer (MAX_ALERTS is not a week
+ * of history). `since` is the exact local-midnight window the chart
+ * draws, so what leaves the engine is what lands on the grid. Slow
+ * self-refresh plus a manual reload; a failed fetch is an error state,
+ * never a fabricated empty week.
+ */
+function useAlertWindow(down: boolean): AlertWindowFetch & { reload: () => void } {
+  const [snapshot, setSnapshot] = useState<AlertWindowFetch>({ loading: true, error: false, alerts: [], fetchedAt: null, truncated: false })
+  const [tick, setTick] = useState(0)
+  const reload = useCallback(() => setTick((value) => value + 1), [])
+  useEffect(() => {
+    if (down) {
+      setSnapshot({ loading: false, error: true, alerts: [], fetchedAt: null, truncated: false })
+      return
+    }
+    let disposed = false
+    const ctrl = new AbortController()
+    const since = new Date(weekStart(Date.now(), WEEK_HOUR_DAYS)).toISOString()
+    setSnapshot((prev) => ({ ...prev, loading: true, error: false }))
+    readEngineJson<unknown>(engineApiBase(), `/api/alerts?since=${encodeURIComponent(since)}&limit=${HEATMAP_ALERT_LIMIT}`, ctrl.signal)
+      .then((raw) => {
+        if (disposed) return
+        const items = Array.isArray(raw) ? raw : []
+        const alerts = items
+          .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object' && typeof (item as { timestamp?: unknown }).timestamp === 'string')
+          .map((item) => ({ timestamp: (item as { timestamp: string }).timestamp }))
+        setSnapshot({ loading: false, error: false, alerts, fetchedAt: Date.now(), truncated: alerts.length >= HEATMAP_ALERT_LIMIT })
+      })
+      .catch(() => {
+        if (disposed || ctrl.signal.aborted) return
+        setSnapshot({ loading: false, error: true, alerts: [], fetchedAt: null, truncated: false })
+      })
+    const timer = setTimeout(() => setTick((value) => value + 1), HEATMAP_REFRESH_MS)
+    return () => {
+      disposed = true
+      clearTimeout(timer)
+      ctrl.abort()
+    }
+  }, [down, tick])
+  return { ...snapshot, reload }
+}
+
+/** Browser IANA zone for the footer declaration (defensive fallback). */
+function localTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'hora local del navegador'
+  } catch {
+    return 'hora local del navegador'
+  }
+}
+
+/**
+ * VIZ-2 — alert load on a weekday × hour grid of the last 7 local days:
+ * when the fleet squeezes, to size shifts and maintenance windows. The
+ * footer declares the exact window, the limit behaviour and the timezone;
+ * nothing is interpolated or invented.
+ */
+function AlertHeatmapPanel({ down }: { down: boolean }) {
+  const windowFetch = useAlertWindow(down)
+  const [timeZone] = useState(localTimeZone)
+  const grid = useMemo(
+    () => weekHourGrid(windowFetch.alerts, { now: windowFetch.fetchedAt ?? Date.now(), days: WEEK_HOUR_DAYS }),
+    [windowFetch.alerts, windowFetch.fetchedAt],
+  )
+  const table =
+    windowFetch.fetchedAt && grid.total > 0
+      ? {
+          caption: 'Alertas por día y franja de 6 horas (hora local)',
+          columns: ['Día', '00-05', '06-11', '12-17', '18-23', 'Total'],
+          rows: weekHourTableRows(grid),
+        }
+      : undefined
+  const fetchedClock = windowFetch.fetchedAt
+    ? new Date(windowFetch.fetchedAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false })
+    : null
+  return (
+    <ChartCard
+      title="Carga de alertas por hora y día"
+      subtitle="Rejilla de los últimos 7 días en tu hora local: cuándo aprieta la flota, para dimensionar turnos y ventanas de mantenimiento"
+      icon={CalendarDots}
+      actions={
+        <button
+          type="button"
+          onClick={windowFetch.reload}
+          disabled={windowFetch.loading}
+          className="chip px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+        >
+          Actualizar
+        </button>
+      }
+      table={table}
+      footer={
+        <span className="flex flex-wrap gap-x-4">
+          <span>ventana de {WEEK_HOUR_DAYS} días · zona {timeZone}</span>
+          <span><span className="font-medium tabular-nums text-zinc-300">{grid.total}</span> alertas en la rejilla</span>
+          {windowFetch.truncated && <span className="text-zinc-400">respuesta en el tope de {HEATMAP_ALERT_LIMIT} alertas: puede haber más de las que caben aquí</span>}
+          {grid.unreadable > 0 && <span>{grid.unreadable} alertas con fecha ilegible quedan fuera</span>}
+          {fetchedClock && <span>consulta a las {fetchedClock}</span>}
+        </span>
+      }
+    >
+      {down || windowFetch.error ? (
+        <Unavailable />
+      ) : windowFetch.loading && !windowFetch.fetchedAt ? (
+        <SkeletonRows rows={4} />
+      ) : grid.total === 0 ? (
+        <EmptyState
+          icon={CalendarDots}
+          title="Sin alertas en la ventana"
+          hint="El motor no devolvió alertas para los últimos 7 días; en cuanto las haya, la rejilla se dibuja sola."
+        />
+      ) : (
+        <WeekHourHeatmap grid={grid} />
       )}
     </ChartCard>
   )
