@@ -1,48 +1,78 @@
 # Roadmap B — carril Pulimiento B (archivo vivo)
 
-Última actualización: 2026-10-05, ronda 1 de este carril sobre la rama
+Última actualización: 2026-10-05, ronda 2 de este carril sobre la rama
 `carril/pulimiento-b` (creada desde `origin/main` `5e168ba`).
 
 ## Hecho (rondas cerradas)
 
-- **2026-10-05 — Tema claro/oscuro de la consola (THEME-1/2/3):**
+- **2026-10-05 — Tema claro/oscuro de la consola (THEME-1/2/3 ronda 1):**
   paleta clara completa en `globals.css` (remap de rampa zinc bajo
   `html.light`, reversa de hairlines blanco-alfa, tokens viz/severidad/
   estados claros), script de arranque sin destello en `layout.tsx`,
   `lib/theme.ts` + tests, `ThemeToggle` en la cabecera con persistencia
   y sincronía de pestañas, `dot-grid` y `entity-graph` leyendo vars por
   tema, botones primarios a `blue-600` (AA 5.2:1), checker
-  `scripts/dev-tests/check_console_theme.py` (71 checks OK en ambos
-  temas), CSS duplicado de scrollbar/`::selection` eliminado y README de
-  la consola corregido (deriva «emerald»/«dark-mode locked») y
+  `scripts/dev-tests/check_console_theme.py`, CSS duplicado de
+  scrollbar/`::selection` eliminado y README de la consola corregido y
   documentado. Verificación: 255/255 bun tests, tsc OK, build OK,
   34/34 DOM. Informe: `ronda_2026-10-05_12h37_B.md`.
+- **2026-10-05 — Familia de tokens de acento + cierre THEME (ronda 2):**
+  71 utilidades `blue-*` de 21 ficheros migradas a la familia
+  `--primary*` (base/link/soft/tint/strong) con continuidad exacta de
+  color en ambos temas; NOC siempre oscuro bajo tema claro (levanta
+  `light` de `<html>` mientras está montado, re-resuelve al salir);
+  selector de 3 estados sistema/claro/oscuro con seguimiento vivo del
+  SO; popovers de cabecera como `role="dialog"` no modal (POL-8);
+  baseline de bundle en el README (POL-9); checker a 87 checks. 256/256
+  tests, tsc OK, build OK, 34/34 DOM. Informe:
+  `ronda_2026-10-05_13h35_B.md`.
 
 ## A medias
 
-- Nada a medias: la ronda se cerró completa. La paleta clara está
-  validada por máquina pero **no vista en Chromium real** (este entorno
-  no arranca Chromium; limitación ya documentada en el repo).
+- **THEME-2, dos usos crudos restantes:** los `text-blue-100` de
+  `alert-actions` y `detection-hub` y los 2 `blue-*` de `dashboard.tsx`
+  viven bajo el shim del remap claro. Los de `dashboard.tsx` se migran
+  cuando IMP-B fusione su ronda 4 (su rama toca ese fichero); los
+  `blue-100` requieren decidir si el rol merece token propio.
+- **POL-8/9:** axe en el CI del navegador, aria de gráficas (fichero de
+  IMP-B) y Lighthouse penden de host con Chromium (limitación del
+  entorno, declarada en el repo).
 
 ## Siguiente (orden propuesto)
 
-1. Capturas del tour y pase visual del tema claro en un host con
-   Chromium (`make console-browser` + arnés de capturas de la casa);
-   ajustar `.ambient-glow`, sombras y `.star-border` si algo flojea.
-2. Coordinar con Implementación B antes de tocar: unificación de las
-   ~109 clases `blue-*` al token `--primary` (kit de botones) y una
-   pasada de foco visible/foco atrapado en los popovers de cabecera.
-3. Proponer a Pulimiento A el enganche de `check_console_theme.py` en
+1. **Ronda 3: pipeline de nonce para la CSP de la consola** (asignación
+   de SEG-B, BAJA, diseño en §7 de su modelo de amenazas): tocará
+   `next.config.ts`/headers con verificación de que el bootstrap de
+   Next no rompe. Ronda entera dedicada.
+2. Tras la fusión de IMP-B ronda 4: migrar los 2 `blue-*` de
+   `dashboard.tsx` y retirar el shim `--color-blue-*` de `html.light`.
+3. Capturas del tour y pase visual del tema claro (incluido el NOC en
+   claro) en un host con Chromium; ajustar `.ambient-glow`, sombras y
+   `.star-border` si algo flojea.
+4. Kit de botones compartido (POL-7): exige coordinar ventanas con
+   IMP-B (sus vistas) — proponérselo en su roadmap antes de cogerlo.
+5. Proponer a Pulimiento A el enganche de `check_console_theme.py` en
    `ci.yml` (paso de 3 s, stdlib puro).
-4. Ampliar `check_console_theme.py` con los pares de los chips rojos/
-   verdes del topbar (estados condicionales) si las clases siguen fuera
-   de tokens.
-5. Documentar la paleta clara en `docs/PALETA-Y-PRUEBAS-NAVEGADOR.md`
+6. Ampliar el checker con los chips rojos/verdes del topbar si siguen
+   fuera de tokens.
+7. Documentar la paleta clara en `docs/PALETA-Y-PRUEBAS-NAVEGADOR.md`
    tras las capturas reales (esa doc narra rondas, no la toco a ciegas).
-6. Cuando los demás carriles publiquen ramas: leer sus 2-3 últimos
-   informes al inicio de cada ronda; prioridad ALTA antes que nada.
 
 ## Coordinación (apéndice de la ronda 2026-10-05, post-fetch)
+
+### Ronda 2 (13h35)
+
+- **IMP-B ronda 4 cerrada (13h11):** heatmap hora×día y exportación
+  CSV/SVG/PNG en `chart-frame.tsx`, `dashboard.tsx` y libs nuevas.
+  Solape con mi ronda 2: **cero** (verificado con `comm`). Su nota «si
+  tocas `.chip` o `--seq-*`, mis piezas se adaptan solas»: esta ronda
+  no toca ninguna de las dos. Mi migración deja el shim `blue-*` de
+  claro para sus 2 usos de `dashboard.tsx`.
+- **SEG-B (12h33) asigna a este carril el pipeline de nonce CSP**
+  (BAJA, §7 de su modelo): aceptado, ronda 3 entera para ello.
+- **PUL-A / SEG-A:** sin solape ni ALTA para este carril.
+
+### Ronda 1 (post-fetch)
 
 Al terminar la ronda aparecieron en `origin` `carril/implementacion-b`
 (rondas 1-3) y `carril/pulimiento-a` (rondas 1-6). Lectura de planes e
