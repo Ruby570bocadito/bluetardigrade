@@ -26,6 +26,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/baseline"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/correlate"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/enroll"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/fleet"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/forensic"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/incident"
@@ -122,6 +123,10 @@ type Hub struct {
 	// disabled (-forensic=false); the route then answers 501 so the
 	// console can render "feature off" instead of a misleading 404.
 	forensic *forensic.Recorder
+
+	// sensor enrollment (enroll.go): nil = off; GET /api/enroll then
+	// says how to turn it on.
+	enroll *enroll.Registry
 }
 
 // New binds a plain-text API listener. Use addr ":0" in tests to pick
@@ -205,6 +210,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	mux.HandleFunc("GET /api/respond/audit", h.handleRespondAudit)
 	mux.HandleFunc("GET /api/sequences", h.handleSequences)
 	mux.HandleFunc("GET /api/fleet", h.handleFleet)
+	h.registerEnroll(mux)
 	mux.HandleFunc("GET /api/intel", h.handleIntel)
 	mux.HandleFunc("GET /api/baseline", h.handleBaselineHost)
 	mux.HandleFunc("GET /api/stream", h.handleStream)

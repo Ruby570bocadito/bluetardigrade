@@ -62,6 +62,9 @@ type Identity struct {
 	Name   string
 	digest [sha256.Size]byte
 	hosts  map[string]struct{} // lowercased; nil = AnyHost
+	// enrolled marks an identity from the enrollment registry: its
+	// open connections are closed when it is revoked.
+	enrolled bool
 }
 
 // AllowsHost reports whether the identity may report events for host.

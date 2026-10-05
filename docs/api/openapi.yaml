@@ -358,6 +358,212 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Fleet'
+  /api/enroll:
+    get:
+      tags: [status]
+      operationId: getEnrollment
+      summary: Sensor enrollment state - tokens and enrolled hosts (read-only)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Sensor enrollment (`-enroll <file>`). A new sensor opens its first
+        ingest connection with `ENROLL <token> <host>` and receives a
+        credential of its own, bound to that host; from then on it connects
+        with `AUTH <credential>`. A host starts `pending`: the engine takes
+        none of its events (the sensor keeps them in its spool) until an
+        administrator approves it. ENROLL is only accepted over TLS or from
+        loopback. Tokens are listed without their secrets; hosts without
+        their credentials. With enrollment off, `enabled` is false and
+        `hint` says how to turn it on.
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '200':
+          description: Enrollment state, pending hosts first
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollState'
+  /api/enroll/tokens:
+    post:
+      tags: [status]
+      operationId: createEnrollToken
+      summary: Create an enrollment token (the secret is returned once)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Mints an enrollment token: single use by default, up to 10000 uses
+        for a domain rollout, valid between 1 hour and 30 days (24 hours by
+        default). `auto_approve` is an optional hostname pattern (`*` and
+        `?`, case-insensitive): matching hosts are approved without a human
+        unless another identity already reports as the same host. The
+        engine keeps only the SHA-256 of the secret. Needs an API token
+        even on loopback.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollTokenRequest'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '201':
+          description: 'The token and its secret, shown once (Cache-Control: no-store)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollTokenCreated'
+        '400':
+          description: Invalid JSON body or field (uses, lifetime, label, pattern)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: |
+            The API has no token (enrollment writes need one), or a native
+            write from a foreign browser Origin / Sec-Fetch-Site cross-site.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Enrollment is off (the engine runs without `-enroll`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The registry is full (1000 tokens kept)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413':
+          description: Request body over 4 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/enroll/tokens/{id}/revoke:
+    post:
+      tags: [status]
+      operationId: revokeEnrollToken
+      summary: Stop a token from enrolling more hosts
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Hosts already enrolled with the token are not affected. Revoking a
+        revoked token returns it unchanged.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: token id (the `id` field of the token)
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollBy'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '200':
+          description: The token, now revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollToken'
+        '400':
+          description: Invalid JSON body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The API has no token, or a cross-site browser write
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Enrollment is off, or no token has this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/enroll/hosts/{name}/{action}:
+    post:
+      tags: [status]
+      operationId: decideEnrolledHost
+      summary: Approve, reject or revoke an enrolled host
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        `approve` and `reject` apply to a pending host; `revoke` to a
+        pending or active one. Rejecting or revoking closes the open ingest
+        connections of the host's credential at once. The decision is
+        recorded with `by` (the console sets it to the account name).
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: identity name of the host (the `name` field, `enr-<host>-<suffix>`)
+          schema:
+            type: string
+        - name: action
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [approve, reject, revoke]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollBy'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '200':
+          description: The host after the decision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrolledHost'
+        '400':
+          description: Unknown action or invalid JSON body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The API has no token, or a cross-site browser write
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Enrollment is off, or no host has this name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The decision does not apply to the host's state (approving an active host)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/intel:
     get:
       tags: [status]
@@ -2989,3 +3195,132 @@ components:
         at:
           type: string
           format: date-time
+    EnrollState:
+      type: object
+      required: [enabled, pending, active, usable_tokens, writes, tokens, hosts]
+      properties:
+        enabled:
+          type: boolean
+        hint:
+          type: string
+          description: how to turn enrollment on (only when it is off)
+        pending:
+          type: integer
+        active:
+          type: integer
+        usable_tokens:
+          type: integer
+        writes:
+          type: boolean
+          description: whether the API has a token, which the enrollment writes need
+        tokens:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnrollToken'
+        hosts:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnrolledHost'
+    EnrollToken:
+      type: object
+      required: [id, label, max_uses, uses, created_at, expires_at, status]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        max_uses:
+          type: integer
+        uses:
+          type: integer
+        auto_approve:
+          type: string
+          description: hostname pattern approved without a human
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        created_by:
+          type: string
+        revoked:
+          type: boolean
+        revoked_by:
+          type: string
+        status:
+          type: string
+          enum: [active, expired, used_up, revoked]
+    EnrollTokenRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        label:
+          type: string
+          maxLength: 64
+        max_uses:
+          type: integer
+          minimum: 1
+          maximum: 10000
+          description: 1 when omitted
+        ttl_hours:
+          type: integer
+          minimum: 1
+          maximum: 720
+          description: 24 when omitted
+        auto_approve:
+          type: string
+          maxLength: 64
+          example: pc-conta-*
+        by:
+          type: string
+          description: who creates it (the console sets the account name)
+    EnrollTokenCreated:
+      type: object
+      required: [token, secret]
+      properties:
+        token:
+          $ref: '#/components/schemas/EnrollToken'
+        secret:
+          type: string
+          description: the enrollment token itself (`btenroll_` + 64 hex); never shown again
+    EnrollBy:
+      type: object
+      additionalProperties: false
+      properties:
+        by:
+          type: string
+    EnrolledHost:
+      type: object
+      required: [name, host, state, token_id, enrolled_at]
+      properties:
+        name:
+          type: string
+          description: ingest identity stamped on the host's events
+        host:
+          type: string
+        state:
+          type: string
+          enum: [pending, active, rejected, revoked]
+        token_id:
+          type: string
+        peer:
+          type: string
+          description: address the host enrolled from
+        enrolled_at:
+          type: string
+          format: date-time
+        decided_at:
+          type: string
+          format: date-time
+        decided_by:
+          type: string
+        auto_approved:
+          type: boolean
+        conflict:
+          type: string
+          description: why the host needs a human although its token would approve it
+        last_attempt:
+          type: string
+          format: date-time
+          description: last connection of a pending host

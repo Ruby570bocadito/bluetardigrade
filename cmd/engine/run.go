@@ -19,6 +19,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/beacon"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/correlate"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/enrich"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/enroll"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/fleet"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/forensic"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/incident"
@@ -312,6 +313,31 @@ func runEngine(o *options, interactive bool) error {
 		server.SetIdentities(ids)
 		fmt.Printf("[ENGINE] ingest identities: %d per-sensor credentials bound to their hosts (%s)\n", len(ids), identitiesPath)
 	}
+	// sensor enrollment (internal/enroll): tokens from the console,
+	// approval by an administrator, credentials bound to their host
+	enrollPath := o.enrollFile
+	if enrollPath == "" {
+		enrollPath = os.Getenv("SF_ENROLL")
+	}
+	var enrollReg *enroll.Registry
+	if enrollPath != "" {
+		enrollReg, err = enroll.Open(enrollPath)
+		if err != nil {
+			log.Fatalf("[ENGINE] %v", err)
+		}
+		enrollReg.SetBoundElsewhere(server.BoundIdentity)
+		enrollReg.SetOnWithdraw(func(name string) {
+			if n := server.DropIdentity(name); n > 0 {
+				log.Printf("[ENROLL] %s withdrawn: closed %d open connection(s)", name, n)
+			}
+		})
+		server.SetEnroller(enroll.Gate{Registry: enrollReg, Logf: log.Printf})
+		pending, active, usable := enrollReg.Counts()
+		fmt.Printf("[ENGINE] enrollment: ON (%s): %d active, %d pending, %d usable tokens\n", enrollPath, active, pending, usable)
+		if o.ingestCert == "" && !isLoopback(o.addr) {
+			fmt.Println("[ENGINE] enrollment: the ingest is plain TCP beyond loopback, so ENROLL is only accepted from this machine until -ingest-cert/-ingest-key are set (the credential must not cross the network in clear)")
+		}
+	}
 	// machine inventory (internal/fleet): every accepted event and the
 	// sensors' heartbeats; read through GET /api/fleet
 	// per-host baseline of processes already seen (internal/baseline)
@@ -439,6 +465,9 @@ func runEngine(o *options, interactive bool) error {
 			hub.SetLifecycle(lifeStore)
 			hub.SetIncidents(incStore)
 			hub.SetFleet(fleetTracker)
+			if enrollReg != nil {
+				hub.SetEnrollment(enrollReg)
+			}
 			if intelM != nil {
 				hub.SetIntel(intelM)
 			}

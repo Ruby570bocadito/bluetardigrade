@@ -126,6 +126,12 @@ type Server struct {
 	violations atomic.Uint64 // events refused: host outside the identity binding
 	heartbeats atomic.Uint64 // sensor health reports consumed (never forwarded)
 
+	// enrollment (enroll.go): set before Serve, nil = off.
+	enroller   Enroller
+	byIdentity map[string]map[net.Conn]struct{} // open conns of enrolled identities, under mu
+	enrolledN  atomic.Uint64
+	pendingN   atomic.Uint64
+
 	// observer sees every accepted event with the sensor's address
 	// (internal/fleet); swapped atomically, nil = no inventory.
 	observer atomic.Pointer[Observer]
@@ -228,7 +234,13 @@ func (s *Server) IdentityViolations() uint64 { return s.violations.Load() }
 func (s *Server) identitiesActive() bool { return s.Identities() > 0 }
 
 // authRequired reports whether connections must open with AUTH.
-func (s *Server) authRequired() bool { return s.token != "" || s.identitiesActive() }
+func (s *Server) authRequired() bool {
+	return s.token != "" || s.identitiesActive() || s.enroller != nil
+}
+
+// bindingActive reports whether events are checked against the host
+// binding of their identity and stamped with it.
+func (s *Server) bindingActive() bool { return s.identitiesActive() || s.enroller != nil }
 
 // Rotating reports whether a previous token is still being accepted.
 func (s *Server) Rotating() bool { return s.prevToken != "" }
@@ -367,12 +379,19 @@ func (s *Server) handle(conn net.Conn) {
 		}
 		if first {
 			first = false
+			if isEnrollLine(line) {
+				s.handleEnroll(conn, line, peer)
+				return
+			}
 			if authPending || isAuthLine(line) {
 				id, ok := s.checkAuth(conn, line)
 				if !ok {
 					return
 				}
 				who = id
+				if who != nil && who.enrolled {
+					defer s.trackIdentity(who.Name, conn)()
+				}
 				authPending = false
 				conn.SetReadDeadline(time.Now().Add(idleTimeout))
 				continue // AUTH consumed; events come next
@@ -386,7 +405,7 @@ func (s *Server) handle(conn net.Conn) {
 			}
 			continue
 		}
-		if s.identitiesActive() {
+		if s.bindingActive() {
 			if !who.AllowsHost(ev.Host) {
 				s.violations.Add(1)
 				if !writeAck(conn, errorAck(fmt.Sprintf("host %q is outside the binding of ingest identity %q", ev.Host, who.Name))) {
@@ -455,6 +474,13 @@ func (s *Server) checkAuth(conn net.Conn, line []byte) (*Identity, bool) {
 		who = matchIdentity(*ids, supplied)
 	}
 	shared := s.token != "" && s.tokenMatches(supplied)
+	if who == nil && !shared {
+		enrolled, known := s.authEnrolled(conn, string(supplied))
+		if known && enrolled == nil {
+			return nil, false // pending, rejected or revoked: already answered
+		}
+		who = enrolled
+	}
 	if who == nil && !shared {
 		s.rejected.Add(1)
 		writeAck(conn, `{"ack":"error","error":"auth failed: send 'AUTH <token>' as the first line"}`)

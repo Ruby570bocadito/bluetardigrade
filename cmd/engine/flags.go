@@ -35,6 +35,7 @@ type options struct {
 	token            string
 	prevToken        string
 	ingestIdentities string
+	enrollFile       string
 	ingestCert       string
 	ingestKey        string
 	suppressionsFile string
@@ -119,6 +120,8 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 		"previous ingest token, still accepted during a rotation window (falls back to SF_INGEST_TOKEN_PREVIOUS); requires -token")
 	fs.StringVar(&o.ingestIdentities, "ingest-identities", "",
 		"YAML file of per-sensor ingest identities (own token as sha256 + bound hosts; see 'engine ingest-identity'); events for hosts outside a sensor's binding are refused; hot-reloaded; falls back to SF_INGEST_IDENTITIES; empty disables")
+	fs.StringVar(&o.enrollFile, "enroll", "",
+		"JSON state file of sensor enrollment: sensors join with a token from the console ('ENROLL <token> <host>'), wait for approval and then connect with a credential of their own; only accepted over TLS or from loopback; every connection must then authenticate; falls back to SF_ENROLL; empty disables")
 	fs.StringVar(&o.ingestCert, "ingest-cert", "",
 		"TLS certificate (PEM) for the ingest listener; requires -ingest-key; empty keeps plain TCP")
 	fs.StringVar(&o.ingestKey, "ingest-key", "",
