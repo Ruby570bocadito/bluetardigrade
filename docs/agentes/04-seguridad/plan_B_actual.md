@@ -1,21 +1,20 @@
-# Plan de ronda — Seguridad B (ronda 3, 2026-10-05)
+# Plan de ronda — Seguridad B (ronda 4, 2026-10-05)
 
 Identificadores del TODO que cogo (seguridad B):
 
-1. **Superficies nuevas de la ronda 1** (prioridad del TODO para SEG-A/B):
-   - `/api/scenarios` y `POST /api/scenarios/run` (`internal/scenario`, `internal/scenrun`,
-     flags del motor): ¿activación accidental en producción?, ¿quién puede arrancar una
-     ejecución?, límites de recursos y de ejecuciones simultáneas.
-   - `/api/reports` y `/api/noise` (`internal/report` + handlers de API): exposición de datos
-     por rol, inyección de fórmulas en CSV, tamaño de las respuestas.
-   - Análisis de incidentes del analista IA: los eventos como entrada no confiable dentro del
-     prompt; política, límites y streaming (consola + servicio de la consola).
-2. **PR #18 de Dependabot** (`dependabot/go_modules/go-minor-and-patch-3997018e1a`):
-   revisión del diff dependencia a dependencia y decisión razonada.
-3. **SEC-6 (resto):** re-auditoría de los componentes de terceros copiados en
-   `web/console/src/components/reactbits`.
+1. **SEC-4/SEC-3 (console-service, tarea viable de mi ronda tras el
+   informe de la ronda 3):** unificar la validación de la petición
+   `analyst:ask` (alerta única) con la misma disciplina campo a campo
+   que ya tiene `validateIncidentPayload`: hoy el fallback a la copia
+   del cliente solo exige `rule_id` (`web/console-service/hub.ts`),
+   sin recortes ni limpieza de tipos. Ficheros: `analyst.ts`
+   (extraer validación de alerta individual), `hub.ts` (usarla) y sus
+   tests. Console-service no está en el plan de ningún otro carril
+   esta ronda.
+2. **AD-1 y SEC-2:** siguen sin código en `main` ni en la rama de
+   IMP-A (solo plan); se re-verifica al cerrar la ronda y, si
+   aparece, pasa a primera prioridad.
 
-Ficheros que espero tocar: `internal/api/`, `internal/scenario*/`, `internal/report/`,
-`web/console/` (analista y reactbits), `changelog.d/`, `docs/agentes/04-seguridad/`.
-El conector AD (AD-1) aún no existe en ninguna rama publicada: se vigila y queda para la
-siguiente ronda. SEC-2 (DPAPI): propuesta de diseño en el informe para Implementación A.
+Ficheros que espero tocar: `web/console-service/analyst.ts`,
+`web/console-service/hub.ts`, `web/console-service/analyst.test.ts`
+y/o `hub.test.ts`, `docs/agentes/04-seguridad/`, `changelog.d/`.
