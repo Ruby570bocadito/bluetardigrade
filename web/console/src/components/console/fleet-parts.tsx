@@ -45,7 +45,7 @@ export function FleetSummary({ onEnroll }: { onEnroll: () => void }) {
       <button
         type="button"
         onClick={onEnroll}
-        className="panel flex items-center justify-center gap-2 px-5 py-3 text-sm font-medium text-blue-200 transition-colors hover:border-blue-400/40 hover:bg-blue-500/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="panel flex items-center justify-center gap-2 px-5 py-3 text-sm font-medium text-primary-soft transition-colors hover:border-primary/40 hover:bg-primary-tint/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Plus size={16} aria-hidden /> Añadir equipo remoto
       </button>
@@ -184,7 +184,7 @@ export function EnrollDialog({ onClose }: { onClose: () => void }) {
             {steps.map((step, i) => (
               <li key={i} className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
                 <p className="flex items-center gap-2 text-[11px] font-medium text-zinc-400">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500/20 text-[10px] text-blue-200">{i + 1}</span>
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-tint/20 text-[10px] text-primary-soft">{i + 1}</span>
                   {WHERE_LABEL[step.where]}
                 </p>
                 <p className="mt-1.5 text-xs leading-relaxed text-zinc-300">{step.text}</p>

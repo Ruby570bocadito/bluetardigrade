@@ -69,7 +69,10 @@ export function HeaderPopover({ anchorRef, open, onClose, label, className = 'w-
   return createPortal(
     <div
       ref={panelRef}
-      role="group"
+      // Non-modal dialog: the popover keeps the page behind interactive,
+      // but assistive tech announces it as a named dialog with a boundary
+      // instead of an anonymous group (POL-8).
+      role="dialog"
       aria-label={label}
       onKeyDown={(e) => {
         // Tab past the last control (or Shift+Tab before the first) leaves

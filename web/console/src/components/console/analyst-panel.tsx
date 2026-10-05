@@ -155,7 +155,7 @@ export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfA
     <section aria-label="Analista IA" className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
       <div className="panel flex min-w-0 flex-col overflow-hidden">
         <div className="panel-head">
-          <Tray size={15} aria-hidden className="text-blue-400" />
+          <Tray size={15} aria-hidden className="text-primary" />
           <h2 className="text-sm font-medium text-zinc-100">Elige una alerta</h2>
           <span className="ml-auto text-xs tabular-nums text-zinc-500">{alerts.length}</span>
         </div>
@@ -171,7 +171,7 @@ export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfA
                   }}
                   disabled={running || !channelLive}
                   className={`w-full px-4 py-2.5 text-left transition-colors hover:bg-zinc-800/40 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
-                    pickerId === `${al.event_id}:${al.rule_id}` ? 'bg-blue-500/[0.08]' : ''
+                    pickerId === `${al.event_id}:${al.rule_id}` ? 'bg-primary-tint/[0.08]' : ''
                   }`}
                 >
                   <span className="flex items-center gap-2">
@@ -226,7 +226,7 @@ export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfA
               <ul className="space-y-5">
                 {messages.map((m) =>
                   m.role === 'user' ? (
-                    <li key={m.id} className="ml-auto w-fit max-w-[85%] rounded-xl rounded-br-sm border border-blue-400/20 bg-blue-500/[0.08] px-3 py-2 text-xs">
+                    <li key={m.id} className="ml-auto w-fit max-w-[85%] rounded-xl rounded-br-sm border border-primary/20 bg-primary-tint/[0.08] px-3 py-2 text-xs">
                       <span className="text-zinc-400">Analizar </span>
                       <span className="font-medium text-zinc-100">{m.alertName}</span>
                       {m.question && <span className="mt-0.5 block text-zinc-300">{m.question}</span>}
@@ -243,7 +243,7 @@ export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfA
                           {m.steps.map((s) => (
                             <li key={s.label} className="flex items-center gap-2 text-xs">
                               {s.state === 'run' ? (
-                                <CircleNotch size={14} className="animate-spin text-blue-400" aria-hidden />
+                                <CircleNotch size={14} className="animate-spin text-primary" aria-hidden />
                               ) : (
                                 <CheckCircle size={14} className="text-emerald-500" aria-hidden />
                               )}

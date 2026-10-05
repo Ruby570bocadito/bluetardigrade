@@ -76,7 +76,7 @@ export function RuleTester({ onOpenRule }: { onOpenRule: (id: string) => void })
     <section aria-label="Probador de reglas" className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <div className="panel flex min-w-0 flex-col">
         <div className="panel-head">
-          <Flask size={15} aria-hidden className="text-blue-400" />
+          <Flask size={15} aria-hidden className="text-primary" />
           <h2 className="text-sm font-medium text-zinc-100">Evento de prueba</h2>
           <span className="ml-auto text-[11px] text-zinc-500">formato de ingesta (NDJSON)</span>
         </div>
@@ -85,7 +85,7 @@ export function RuleTester({ onOpenRule }: { onOpenRule: (id: string) => void })
           <div className="flex flex-wrap gap-1.5">
             {EXAMPLES.map((ex) => (
               <button key={ex.label} type="button" onClick={() => { setText(pretty(ex.event)); setResult(null); setError('') }}
-                className="rounded-md border border-white/10 px-2 py-1 text-[11px] text-zinc-300 hover:border-blue-400/40 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                className="rounded-md border border-white/10 px-2 py-1 text-[11px] text-zinc-300 hover:border-primary/40 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 {ex.label}
               </button>
             ))}
@@ -103,7 +103,7 @@ export function RuleTester({ onOpenRule }: { onOpenRule: (id: string) => void })
           />
           <div className="mt-3 flex items-center gap-2">
             <button type="button" onClick={() => void run()} disabled={busy}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary-strong px-3.5 py-2 text-xs font-medium text-white hover:bg-primary-tint disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               <Play size={13} weight="fill" aria-hidden /> {busy ? 'Probando…' : 'Probar contra las reglas'}
             </button>
             <span className="text-[11px] text-zinc-500">No genera alertas ni guarda nada.</span>
@@ -114,7 +114,7 @@ export function RuleTester({ onOpenRule }: { onOpenRule: (id: string) => void })
 
       <div className="panel min-w-0">
         <div className="panel-head">
-          <ShieldCheck size={15} aria-hidden className="text-blue-400" />
+          <ShieldCheck size={15} aria-hidden className="text-primary" />
           <h2 className="text-sm font-medium text-zinc-100">Resultado</h2>
           {result && (
             <span className="ml-auto text-[11px] text-zinc-500">
@@ -133,10 +133,10 @@ export function RuleTester({ onOpenRule }: { onOpenRule: (id: string) => void })
                 <div className="flex flex-wrap items-center gap-2">
                   <SeverityBadge severity={m.severity} />
                   <span className="text-[13px] font-medium text-zinc-100">{m.name}</span>
-                  {m.mitre && <MonoTag className="border-blue-400/20 text-blue-200">{m.mitre}</MonoTag>}
+                  {m.mitre && <MonoTag className="border-primary/20 text-primary-soft">{m.mitre}</MonoTag>}
                   {m.tactic && <span className="text-[11px] text-zinc-500">{m.tactic}</span>}
                   <button type="button" onClick={() => onOpenRule(m.id)}
-                    className="ml-auto rounded-sm text-[11px] text-blue-300 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    className="ml-auto rounded-sm text-[11px] text-primary-link underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                     Ver regla
                   </button>
                 </div>

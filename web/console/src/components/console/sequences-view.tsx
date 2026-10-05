@@ -148,11 +148,11 @@ function SequenceCard({ seq, index, live, hits, campaigns }: { seq: SfSequence; 
                       : ok ? 'regla cargada en el motor' : 'regla NO cargada: la cadena no puede completar con este paso'
                   }
                   className={`min-w-0 flex-1 rounded-lg border px-2.5 py-2 transition-colors ${
-                    !ok ? 'border-amber-300/30 bg-amber-300/[0.06]' : count > 0 ? 'border-blue-400/40 bg-blue-500/[0.10]' : 'border-zinc-800 bg-zinc-900/60'
+                    !ok ? 'border-amber-300/30 bg-amber-300/[0.06]' : count > 0 ? 'border-primary/40 bg-primary-tint/[0.10]' : 'border-zinc-800 bg-zinc-900/60'
                   }`}
                 >
                   <span className="flex items-center gap-1.5 text-[10px] text-zinc-500">
-                    <span aria-hidden className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-semibold ${count > 0 ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-400'}`}>{i + 1}</span>
+                    <span aria-hidden className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-semibold ${count > 0 ? 'bg-primary-strong text-white' : 'bg-zinc-800 text-zinc-400'}`}>{i + 1}</span>
                     {!ok ? (alternatives ? 'ninguna regla cargada' : 'regla no cargada') : count > 0 ? `${count} ${count === 1 ? 'alerta' : 'alertas'}` : 'sin alertas'}
                     {alternatives && <span className="rounded bg-white/[0.06] px-1 text-[9px] text-zinc-400">{st.rules.length} alternativas</span>}
                   </span>

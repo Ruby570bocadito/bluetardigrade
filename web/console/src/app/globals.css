@@ -33,6 +33,10 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-strong);
+  --color-primary-tint: var(--primary-tint);
+  --color-primary-link: var(--primary-link);
+  --color-primary-soft: var(--primary-soft);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -44,9 +48,10 @@
 }
 
 /* bluetardigrade SOC console: dual-theme product UI, dark by default.
-   Neutral zinc structure, one interaction accent (blue-400 on dark,
-   blue-600 on light) and two validated data palettes (see the viz
-   tokens): severity is an ordered status scale, categorical series never
+   Neutral zinc structure, one interaction accent carried by the
+   --primary* token family (--primary on dark, --primary-strong on
+   light) and two validated data palettes (see the viz tokens):
+   severity is an ordered status scale, categorical series never
    reuse its hues. The light theme lives in the html.light block at the
    end of this file; scripts/dev-tests/check_console_theme.py validates
    both. */
@@ -60,6 +65,12 @@
   --popover-foreground: #f4f4f5;
   --primary: #60a5fa; /* blue-400 */
   --primary-foreground: #172554; /* blue-950: AA on the accent */
+  /* accent roles: single source for the blue interaction family; views
+     must use these (THEME-2) instead of raw blue-N utilities */
+  --primary-strong: #2563eb; /* blue-600: solid fills, white label AA 5.2:1 */
+  --primary-tint: #3b82f6; /* blue-500: tint fills and the solid-button hover */
+  --primary-link: #93c5fd; /* blue-300: links and hints */
+  --primary-soft: #bfdbfe; /* blue-200: soft labels on tint chips */
   --secondary: #27272a; /* zinc-800 */
   --secondary-foreground: #f4f4f5;
   --muted: #18181b;
@@ -523,6 +534,10 @@ html.light {
   --popover-foreground: #18181b;
   --primary: #2563eb; /* blue-600: AA with white text (5.2:1) */
   --primary-foreground: #ffffff;
+  --primary-strong: #2563eb;
+  --primary-tint: #2563eb;
+  --primary-link: #1d4ed8;
+  --primary-soft: #1e40af;
   --secondary: #e4e4e7;
   --secondary-foreground: #27272a;
   --muted: #f4f4f5;
@@ -597,9 +612,9 @@ html.light {
   --color-zinc-900: #fafafa;
   --color-zinc-950: #f4f4f5;
 
-  /* interaction accent: blue-400 icons/rings/borders turn blue-600 so they
-     read on white; text-on-tint steps (100/200/300) become dark blues;
-     solid blue-500 fills turn blue-600 for AA with the white label */
+  /* legacy shim: raw blue-* utilities that have not migrated to the
+     --primary* tokens yet (dashboard.tsx stays until IMP-B's round-4
+     branch merges; the shim keeps them readable on white meanwhile) */
   --color-blue-100: #1e3a8a;
   --color-blue-200: #1e40af;
   --color-blue-300: #1d4ed8;

@@ -42,7 +42,7 @@ export function HostTacticHeatmap({ matrix, onHost }: { matrix: HostTacticMatrix
                     type="button"
                     onClick={() => onHost(host)}
                     aria-label={`Ver alertas de ${host}`}
-                    className="max-w-full truncate rounded-sm text-left hover:text-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="max-w-full truncate rounded-sm text-left hover:text-primary-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     {host}
                   </button>

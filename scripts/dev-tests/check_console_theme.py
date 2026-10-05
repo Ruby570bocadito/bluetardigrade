@@ -200,6 +200,14 @@ def main() -> int:
             ("secondary-foreground / secondary", tok["--secondary-foreground"], tok["--secondary"], 4.5),
             ("accent-foreground / accent", tok["--accent-foreground"], tok["--accent"], 4.5),
             ("popover-foreground / popover", tok["--popover-foreground"], tok["--popover"], 4.5),
+            # accent family roles (THEME-2): link/soft are text on the two
+            # surfaces; strong carries the white solid-button label; tint is
+            # a fill, judged as non-text below.
+            ("primary-link / background", tok["--primary-link"], tok["--background"], 4.5),
+            ("primary-link / card", tok["--primary-link"], tok["--card"], 4.5),
+            ("primary-soft / background", tok["--primary-soft"], tok["--background"], 4.5),
+            ("primary-soft / card", tok["--primary-soft"], tok["--card"], 4.5),
+            ("white / primary-strong", "#ffffff", tok["--primary-strong"], 4.5),
         ]
         for label, fk, bk, floor in pairs:
             try:
@@ -210,6 +218,9 @@ def main() -> int:
         print(f"[{theme}] focus / non-text pairs")
         check("ring / background", contrast(parse_hex(tok["--ring"]), surface), 3.0, "ui")
         check("destructive / background", contrast(parse_hex(tok["--destructive"]), surface), 3.0, "ui")
+        check("primary / background", contrast(parse_hex(tok["--primary"]), surface), 3.0, "ui")
+        check("primary-tint / background", contrast(parse_hex(tok["--primary-tint"]), surface), 3.0, "ui")
+        check("primary-tint / card", contrast(parse_hex(tok["--primary-tint"]), card), 3.0, "ui")
 
         print(f"[{theme}] data ink on --viz-surface (>= 3:1 non-text)")
         viz = parse_hex(tok["--viz-surface"])

@@ -38,10 +38,10 @@ export function DetectionHub({ tab, onTab, onOpenRule }: { tab: DetectionView; o
               aria-selected={active}
               onClick={() => onTab(id)}
               className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                active ? 'bg-blue-500/15 text-blue-100 shadow-[inset_0_0_0_1px_rgba(96,165,250,0.25)]' : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-100'
+                active ? 'bg-primary-tint/15 text-blue-100 ring-1 ring-inset ring-primary/25' : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-100'
               }`}
             >
-              <Icon size={14} weight={active ? 'fill' : 'regular'} aria-hidden className={active ? 'text-blue-400' : ''} />
+              <Icon size={14} weight={active ? 'fill' : 'regular'} aria-hidden className={active ? 'text-primary' : ''} />
               {label}
               {counts[id] !== undefined && <span className="rounded bg-white/[0.06] px-1.5 text-[10px] tabular-nums text-zinc-400">{counts[id]}</span>}
             </button>

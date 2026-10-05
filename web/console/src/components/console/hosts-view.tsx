@@ -135,7 +135,7 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
         <div role="group" aria-label="Filtrar equipos por estado" className="flex gap-1 border-b border-white/[0.05] px-3 py-2">
           {([['all', 'Todos'], ['online', 'En línea'], ['silent', 'Sin señal'], ['idle', 'Inactivos']] as const).map(([value, label]) => (
             <button key={value} type="button" aria-pressed={statusFilter === value} onClick={() => setStatusFilter(value)}
-              className={`rounded-md px-2.5 py-1 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${statusFilter === value ? 'bg-blue-500/15 text-blue-200' : 'text-zinc-400 hover:text-zinc-100'}`}>
+              className={`rounded-md px-2.5 py-1 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${statusFilter === value ? 'bg-primary-tint/15 text-primary-soft' : 'text-zinc-400 hover:text-zinc-100'}`}>
               {label}
             </button>
           ))}
@@ -151,9 +151,9 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
                 <li key={r.host}>
                   <AnimatedItem index={i}>
                     <button type="button" onClick={() => select(r.host)} aria-current={active ? 'true' : undefined}
-                      className={`block w-full px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${active ? 'bg-blue-500/[0.08]' : 'hover:bg-white/[0.03]'}`}>
+                      className={`block w-full px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${active ? 'bg-primary-tint/[0.08]' : 'hover:bg-white/[0.03]'}`}>
                       <span className="flex items-center gap-2">
-                        <Desktop size={15} aria-hidden className="text-blue-400" />
+                        <Desktop size={15} aria-hidden className="text-primary" />
                         <span className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-100">{r.host}</span>
                         <FleetStatusPill host={r.fleet} />
                         {r.score > 0 && (
@@ -243,7 +243,7 @@ function HostPage({ row, onHunt, onOpenAlert, onOpenIncident }: {
           </div>
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => onHunt(row.host)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-blue-400/30 bg-blue-500/10 px-3 py-1.5 text-xs font-medium text-blue-200 hover:bg-blue-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary-tint/10 px-3 py-1.5 text-xs font-medium text-primary-soft hover:bg-primary-tint/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               <ArrowSquareOut size={13} aria-hidden /> Ver alertas del equipo
             </button>
             <button type="button" onClick={() => void openIncident()} disabled={hostAlerts.length === 0}
@@ -308,7 +308,7 @@ function HostPage({ row, onHunt, onOpenAlert, onOpenIncident }: {
                 ) : (
                   <li key={'e' + item.event.id} className="grid grid-cols-[64px_120px_minmax(0,1fr)] items-center gap-2 px-2 py-1">
                     <span className="font-mono text-[11px] tabular-nums text-zinc-600">{formatTime(item.at)}</span>
-                    <span className="truncate font-mono text-[11px] text-blue-300/80">{item.event.type}</span>
+                    <span className="truncate font-mono text-[11px] text-primary-link/80">{item.event.type}</span>
                     <span className="truncate font-mono text-[11px] text-zinc-400" title={eventDetail(item.event)}>{eventDetail(item.event)}</span>
                   </li>
                 ),

@@ -177,7 +177,7 @@ export function EntityGraphView({
             {activeNode.kind === 'rule' && ` · ${activeNode.weight} alertas`}
             {activeNode.severity && ` · ${SEVERITY_STYLE[activeNode.severity].label}`}
           </p>
-          {onSelect && <p className="mt-1 text-[11px] text-blue-300">{selectHint}</p>}
+          {onSelect && <p className="mt-1 text-[11px] text-primary-link">{selectHint}</p>}
         </div>
       )}
     </div>

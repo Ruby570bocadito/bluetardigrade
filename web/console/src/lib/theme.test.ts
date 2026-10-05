@@ -9,6 +9,11 @@ describe('theme boot decision', () => {
     expect(resolveTheme('dark', false)).toBe('dark')
   })
 
+  test('the explicit system choice falls through to the OS preference', () => {
+    expect(resolveTheme('system', true)).toBe('light')
+    expect(resolveTheme('system', false)).toBe('dark')
+  })
+
   test('an unknown stored value falls through to the OS preference', () => {
     expect(resolveTheme('night', true)).toBe('light')
     expect(resolveTheme('night', false)).toBe('dark')
