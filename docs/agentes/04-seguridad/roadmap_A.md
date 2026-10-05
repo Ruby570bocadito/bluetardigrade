@@ -155,16 +155,17 @@ ronda 9, cierre (18:52 reloj de sesión, Europe/Madrid).
 2. **Verificar que IMP-B incorpora los dos hallazgos de la ronda 5** en
    su rama antes de la fusión (su REP-4 de la ronda 6 no los tocó; su
    IDEA-3 de la ronda 8 tampoco).
-3. **Resolver DOS conflictos append-append al fusionar** (ronda 7):
+3. **Resolver DOS conflictos append-append al fusionar** (ronda 7,
+   re-verificado en la ronda 9 contra la punta de mi carril):
    `internal/ingest/fuzz_test.go` con PUL-A — conservar
-   `FuzzEnrollLine` y `FuzzAuthEnrollFirstLine` — y el NUEVO
+   `FuzzEnrollLine` (mío) y `FuzzAuthEnrollFirstLine` (suyo) — y
    `internal/scenrun/scenrun_test.go` con SEG-B — conservar
    `TestRunIDsMatchWireContract` (suyo) y
    `TestStartUnknownScenarioWrapsSentinel` (mío); `scenrun.go` y
-   `api/scenarios.go` se auto-fusionan limpios. NOTA ronda 9: contra
-   `main` de HOY `merge-tree` ya sale limpio en ambas puntas; el
-   conflicto solo reaparecería si esas ramas se fusionan entre sí
-   primero.
+   `api/scenarios.go` se auto-fusionan limpios. Contra `main` de hoy
+   ambas puntas fusionan limpias: el conflicto solo vive entre mi
+   carril y los suyos (ambos lados añadieron tests al mismo fichero
+   desde la misma base).
 4. **`min_count: 2` en beacons** — decisión del responsable pendiente
    desde la ronda 1 (¿validación en carga `>= 3` o documentar?).
 5. **SET-3 lado motor** — depende de IMP-A; auditar cuando suba.
