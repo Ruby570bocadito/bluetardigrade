@@ -8,7 +8,7 @@
 // own honest state instead of empty axes.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarDots, ChartLineUp, Cpu, Crosshair, Flame, Graph, GridFour, ListBullets, Pulse, ShieldWarning, Stack, Waveform } from '@phosphor-icons/react'
+import { CalendarDots, ChartLineUp, ChartPie, Cpu, Crosshair, Desktop, FlowArrow, Flame, Graph, GridFour, ListBullets, Pulse, ShieldWarning, Stack, Waveform } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import type { EngineStatus } from '@/hooks/use-engine-stream'
 import { KpiRow } from './kpi-row'
@@ -25,13 +25,18 @@ import { buildEntityGraph } from '@/lib/entity-graph'
 import { ChartCard } from '@/components/charts/chart-frame'
 import { StackedColumns } from '@/components/charts/stacked-columns'
 import { LineChart, type LineSlot } from '@/components/charts/line-chart'
+import { DonutChart } from '@/components/charts/donut'
+import { TriageFlowChart } from '@/components/charts/triage-flow'
+import { buildDonut, isOtherSlice } from '@/lib/donut'
+import { buildTriageFlow } from '@/lib/triage-flow'
+import { useFleet } from './fleet-provider'
 import { BarList, Meter } from '@/components/charts/bars'
 import { AttackMatrix } from '@/components/charts/attack-matrix'
 import { SEV_COLOR, SeverityIcon } from '@/components/charts/severity'
 import { eventDetail, formatTime, type EngineStats, type SfAlert, type Severity } from '@/lib/console-types'
 import { engineApiBase, readEngineJson } from '@/lib/engine-client'
 import { weekHourGrid, weekHourTableRows, weekStart, WEEK_HOUR_DAYS } from '@/lib/alert-heatmap'
-import { eventTypeMix, formatAgo, hostTacticMatrix, lifecycleTacticColumns, SEVERITIES, SEVERITY_LABEL, severityBuckets, severityCounts, tacticCoverage, topCounts, type LifecycleState } from '@/lib/soc-metrics'
+import { eventTypeMix, formatAgo, hostTacticMatrix, lifecycleTacticColumns, SEVERITIES, SEVERITY_LABEL, severityBuckets, severityCounts, tacticCoverage, topCounts, alertTactic, ATTACK_TACTICS, type LifecycleState } from '@/lib/soc-metrics'
 import { pushRiskSample, riskSeriesView, RISK_SLOT_MS, RISK_SLOTS, type RiskSample } from '@/lib/risk-history'
 import type { TriageTarget } from '@/lib/operations'
 import type { SeverityFilter } from '@/lib/url-state'
@@ -56,6 +61,9 @@ const LIFECYCLE_SERIES: { key: LifecycleState; label: string; color: string }[] 
 
 // Categorical palette order for the risk lines (capped at 4 series).
 const RISK_SERIES_COLORS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)']
+
+// VIZ-1 — the validated categorical palette: four named slices plus the
+// muted «Otros». More named hues would need new tokens (Pulimiento B).
 
 /** Same thresholds the engine publishes for hot hosts (A1 weights). */
 function riskLevelLabel(score: number) {
@@ -145,28 +153,38 @@ export function Dashboard({
         <TelemetryMixPanel down={down} />
       </AnimatedContent>
 
-      <AnimatedContent order={5}>
+      <AnimatedContent order={5} className="grid gap-5 xl:grid-cols-3">
+        <TacticDonutPanel alerts={alerts} down={down} />
+        <SourceDonutPanel alerts={alerts} down={down} />
+        <FleetDonutPanel />
+      </AnimatedContent>
+
+      <AnimatedContent order={6}>
         <AlertHeatmapPanel down={down} />
       </AnimatedContent>
 
-      <AnimatedContent order={6} className="grid gap-5 xl:grid-cols-3">
+      <AnimatedContent order={7} className="grid gap-5 xl:grid-cols-3">
         <LifecycleTacticPanel alerts={alerts} down={down} />
         <RiskEvolutionPanel down={down} />
       </AnimatedContent>
 
-      <AnimatedContent order={7}>
-        <AttackPanel onHunt={onHunt} />
-      </AnimatedContent>
-
       <AnimatedContent order={8}>
-        <HeatmapPanel onHost={hostLens} />
+        <TriageFlowPanel alerts={alerts} down={down} />
       </AnimatedContent>
 
       <AnimatedContent order={9}>
+        <AttackPanel onHunt={onHunt} />
+      </AnimatedContent>
+
+      <AnimatedContent order={10}>
+        <HeatmapPanel onHost={hostLens} />
+      </AnimatedContent>
+
+      <AnimatedContent order={11}>
         <EngineSummary status={status} />
       </AnimatedContent>
 
-      <AnimatedContent order={10} className="grid gap-5 xl:grid-cols-2">
+      <AnimatedContent order={12} className="grid gap-5 xl:grid-cols-2">
         <div className="panel min-w-0 px-4 pb-3 pt-3.5">
           <AlertsView compact onAnalyze={onAnalyze} />
         </div>
@@ -271,6 +289,162 @@ function SeverityPanel({ alerts, down, onHunt }: { alerts: SfAlert[]; down: bool
             selectLabel: `Ver ${counts[s]} alertas de severidad ${SEVERITY_LABEL[s].toLowerCase()}`,
           }))}
         />
+      )}
+    </ChartCard>
+  )
+}
+
+/** VIZ-1 — palette handed to the donuts: named slices take the four
+ * validated categorical hues in order, the folded «Otros» takes the
+ * muted token. */
+function donutColors(model: ReturnType<typeof buildDonut>): Record<string, string> {
+  const out: Record<string, string> = {}
+  let named = 0
+  for (const slice of model.slices) {
+    out[slice.key] = isOtherSlice(slice) ? 'var(--series-other)' : RISK_SERIES_COLORS[named++ % RISK_SERIES_COLORS.length]
+  }
+  return out
+}
+
+function donutLegend(model: ReturnType<typeof buildDonut>, colors: Record<string, string>) {
+  return model.slices.map((s) => ({ key: s.key, label: s.label, color: colors[s.key], value: s.value }))
+}
+
+function donutTable(model: ReturnType<typeof buildDonut>, caption: string, kind: string) {
+  return {
+    caption,
+    columns: [kind, 'Alertas', '% de la ventana'],
+    rows: model.entries.map((e) => [e.label, e.value, model.total ? Math.round((e.value / model.total) * 100) + ' %' : '—']),
+  }
+}
+
+/** VIZ-1 — donut of the received window per ATT&CK tactic (≤ 4 named
+ * slices + «Otros»; the exact unfolded breakdown lives in the table). */
+function TacticDonutPanel({ alerts, down }: { alerts: SfAlert[]; down: boolean }) {
+  const model = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const alert of alerts) {
+      const slug = alertTactic(alert)
+      const key = slug ?? '__sin-tactica'
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+    return buildDonut([...counts.entries()].map(([key, value]) => {
+      const tactic = ATTACK_TACTICS.find((t) => t.slug === key)
+      return { key, label: tactic ? tactic.short : 'Sin táctica', value }
+    }))
+  }, [alerts])
+  const colors = donutColors(model)
+  return (
+    <ChartCard
+      title="Alertas por táctica"
+      subtitle={`Composición de la ventana de ${alerts.length} alertas recibidas`}
+      icon={ChartPie}
+      legend={donutLegend(model, colors)}
+      table={donutTable(model, 'Alertas por táctica ATT&CK (desglose completo)', 'Táctica')}
+      footer={model.fold ? `«Otros» agrupa ${model.fold.count} tácticas con ${model.fold.value} alertas; el desglose exacto está en la tabla.` : undefined}
+    >
+      {down ? <Unavailable /> : model.total === 0 ? (
+        <EmptyState icon={ChartPie} title="Sin alertas en la ventana" hint="El donut se pinta en cuanto la consola recibe detecciones." />
+      ) : (
+        <DonutChart model={model} colors={colors} unit="alertas" ariaLabel={`Alertas por táctica: ${model.total} alertas en ${model.entries.length} tácticas`} />
+      )}
+    </ChartCard>
+  )
+}
+
+/** VIZ-1 — donut of the received window per declared source. */
+function SourceDonutPanel({ alerts, down }: { alerts: SfAlert[]; down: boolean }) {
+  const model = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const alert of alerts) {
+      const key = alert.source?.trim() || '__sin-fuente'
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+    return buildDonut([...counts.entries()].map(([key, value]) => ({ key, label: key === '__sin-fuente' ? 'Sin fuente' : key, value })))
+  }, [alerts])
+  const colors = donutColors(model)
+  return (
+    <ChartCard
+      title="Alertas por fuente"
+      subtitle={`Origen declarado en la ventana de ${alerts.length} alertas`}
+      icon={ChartPie}
+      legend={donutLegend(model, colors)}
+      table={donutTable(model, 'Alertas por fuente declarada (desglose completo)', 'Fuente')}
+      footer={model.fold ? `«Otros» agrupa ${model.fold.count} fuentes con ${model.fold.value} alertas; el desglose exacto está en la tabla.` : 'La fuente la declara el sensor; «Sin fuente» son alertas sin origen declarado.'}
+    >
+      {down ? <Unavailable /> : model.total === 0 ? (
+        <EmptyState icon={ChartPie} title="Sin alertas en la ventana" hint="El donut se pinta en cuanto la consola recibe detecciones." />
+      ) : (
+        <DonutChart model={model} colors={colors} unit="alertas" ariaLabel={`Alertas por fuente: ${model.total} alertas en ${model.entries.length} fuentes`} />
+      )}
+    </ChartCard>
+  )
+}
+
+/** VIZ-1 — donut of the machine inventory by connection state, from
+ * the engine fleet endpoint the Equipos view already polls. */
+function FleetDonutPanel() {
+  const { fleet, available, loaded } = useFleet()
+  const model = useMemo(() => fleet
+    ? buildDonut([
+      { key: 'online', label: 'En línea', value: fleet.online },
+      { key: 'silent', label: 'Sin señal', value: fleet.silent },
+      { key: 'idle', label: 'Inactivos', value: fleet.idle },
+    ])
+    : null, [fleet])
+  const colors: Record<string, string> = { online: 'var(--series-2)', silent: 'var(--sev-critical)', idle: 'var(--series-other)' }
+  return (
+    <ChartCard
+      title="Flota por estado"
+      subtitle={fleet ? `${fleet.hosts.length} equipos en el inventario del motor` : 'Inventario del motor (GET /api/fleet)'}
+      icon={Desktop}
+      legend={model ? donutLegend(model, colors) : undefined}
+      table={model ? {
+        caption: 'Equipos por estado de inventario',
+        columns: ['Estado', 'Equipos', '% de la flota'],
+        rows: model.entries.map((e) => [e.label, e.value, model.total ? Math.round((e.value / model.total) * 100) + ' %' : '—']),
+      } : undefined}
+      footer="«Sin señal» significa que el sensor dejó de enviar latido; «Inactivos», sin latido ni datos en 10 min."
+    >
+      {!loaded ? (
+        <SkeletonRows rows={3} />
+      ) : !available || !model || model.total === 0 ? (
+        <EmptyState icon={Desktop} title="Inventario no disponible" hint="Este motor no publica la flota (GET /api/fleet) o todavía no tiene equipos; el donut aparece en cuanto haya inventario." />
+      ) : (
+        <DonutChart model={model} colors={colors} unit="equipos" ariaLabel={`Flota por estado: ${model.total} equipos en el inventario`} />
+      )}
+    </ChartCard>
+  )
+}
+
+/** VIZ-3 — triage flow: declared source → ATT&CK tactic → triage state,
+ * over the alert window the console already received. The engine only
+ * publishes three lifecycle states, so no false-positive band is drawn;
+ * the footer says so instead of inventing data. */
+function TriageFlowPanel({ alerts, down }: { alerts: SfAlert[]; down: boolean }) {
+  const model = useMemo(() => buildTriageFlow(alerts), [alerts])
+  return (
+    <ChartCard
+      title="Flujo del triaje"
+      subtitle="Origen declarado → táctica ATT&CK → estado de triaje, en la ventana recibida"
+      icon={FlowArrow}
+      legend={LIFECYCLE_SERIES.map((s) => ({ key: s.key, label: s.label, color: s.color, shape: 'rect' as const }))}
+      table={{
+        caption: 'Flujo del triaje: combinaciones exactas de origen, táctica y estado',
+        columns: ['Fuente', 'Táctica', 'Estado', 'Alertas'],
+        rows: model.triples.map((t) => [t.source, t.tactic, t.state, t.value]),
+      }}
+      footer={
+        <span className="flex flex-wrap gap-x-4">
+          <span>Muestra del búfer del cliente ({model.total} alertas recibidas{model.foldedSources ? ` · ${model.foldedSources} fuentes en «Otras fuentes»` : ''}{model.foldedTactics ? ` · ${model.foldedTactics} tácticas en «Otras tácticas»` : ''})</span>
+          <span>El motor solo publica tres estados (nueva, reconocida, cerrada); el falso positivo llegará cuando la API exponga la decisión de triaje.</span>
+        </span>
+      }
+    >
+      {down ? <Unavailable /> : model.total === 0 ? (
+        <EmptyState icon={FlowArrow} title="Sin alertas en la ventana" hint="El flujo se dibuja en cuanto la consola recibe detecciones." />
+      ) : (
+        <TriageFlowChart model={model} unit="alertas" ariaLabel={`Flujo del triaje: ${model.total} alertas desde ${model.sources.length} fuentes hacia ${model.tactics.length} tácticas y ${model.states.filter((s) => s.value > 0).length} estados`} />
       )}
     </ChartCard>
   )
