@@ -286,7 +286,11 @@ func (m *Manager) Kill(req Request) Result {
 	res := Result{ActionID: newActionID(), HTTPStatus: 200}
 
 	// cheapest denial first: a repeated idempotency key is a client
-	// retry, never a fresh action (409, design §3).
+	// retry, never a fresh action (409, design §3). This pre-check
+	// runs OUTSIDE the single-flight span, so it cannot see a key
+	// another request is committing right now — the authoritative
+	// re-check happens at commit, inside the span, where the
+	// check-then-record sequence is serialized.
 	if !m.idempotencyFresh(req.IdempotencyKey) {
 		return m.deny(res, req, now, CodeIdempotencyRepeated, "", "")
 	}
@@ -333,7 +337,14 @@ func (m *Manager) Kill(req Request) Result {
 
 	// ---- commit: budgets are recorded here (denials above never
 	// consume), the idempotency key is remembered from this point on.
-	m.recordCommit(req, now)
+	// The commit re-check closes the check-then-act window of the
+	// pre-check: two requests carrying the same key can both pass it
+	// while the first is still in flight, and the per-(host,pid)
+	// cooldown only covers the SAME target — without the re-check one
+	// key could authorize two kills on different pids.
+	if !m.recordCommit(req, now) {
+		return m.deny(res, req, now, CodeIdempotencyRepeated, "", "")
+	}
 
 	// ---- layer 5: audit BEFORE the signal. If it fails, the action
 	// does not happen (audit_unavailable) — the client's own retry
@@ -477,27 +488,34 @@ func (m *Manager) guardProcess(req Request) (string, string) {
 
 // recordCommit persists the idempotency key (R4 bounded, oldest-first
 // eviction), the rate windows and the cooldown marker. It runs inside
-// the single-flight span.
-func (m *Manager) recordCommit(req Request, now time.Time) {
+// the single-flight span and returns false when the key was already
+// committed by another request: the pre-check in Kill runs outside the
+// span, so the authoritative re-check happens here. A false return
+// means the caller must deny with CodeIdempotencyRepeated before
+// anything executes — the key already proves this is a client retry.
+func (m *Manager) recordCommit(req Request, now time.Time) bool {
 	if req.IdempotencyKey != "" {
 		m.mu.Lock()
-		if _, seen := m.keys[req.IdempotencyKey]; !seen {
-			if len(m.keyOrder) >= MaxIdempotencyKeys {
-				// R4 eviction: the oldest key degrades to
-				// "idempotency not remembered"; the cooldown
-				// still covers the immediate retry.
-				oldest := m.keyOrder[0]
-				delete(m.keys, oldest)
-				m.keyOrder = m.keyOrder[1:]
-			}
-			m.keys[req.IdempotencyKey] = struct{}{}
-			m.keyOrder = append(m.keyOrder, req.IdempotencyKey)
+		if _, seen := m.keys[req.IdempotencyKey]; seen {
+			m.mu.Unlock()
+			return false
 		}
+		if len(m.keyOrder) >= MaxIdempotencyKeys {
+			// R4 eviction: the oldest key degrades to
+			// "idempotency not remembered"; the cooldown
+			// still covers the immediate retry.
+			oldest := m.keyOrder[0]
+			delete(m.keys, oldest)
+			m.keyOrder = m.keyOrder[1:]
+		}
+		m.keys[req.IdempotencyKey] = struct{}{}
+		m.keyOrder = append(m.keyOrder, req.IdempotencyKey)
 		m.mu.Unlock()
 	}
 	m.globalTimes = append(m.globalTimes, now)
 	m.opTimes[req.Operator] = append(m.opTimes[req.Operator], now)
 	m.cooldown[coKey{req.Host, req.PID}] = now
+	return true
 }
 
 // auditRecord builds the base record of one attempt (R5a schema):

@@ -1,8 +1,10 @@
 package siem
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -465,5 +467,37 @@ func TestSplunkDrainSingleAttempt(t *testing.T) {
 	sent, f, d := s.Stats()
 	if sent != 2 || f != 0 || d != 0 {
 		t.Fatalf("after drain: sent %d failed %d dropped %d, want 2/0/0", sent, f, d)
+	}
+}
+
+func TestSplunkLogNamesActualAttempts(t *testing.T) {
+	// A permanent rejection stops after ONE post: the log line must
+	// name the attempts that actually ran, never the full retry budget
+	// (same honest-wording contract the webhook connector documents —
+	// an operator debugging the collector pays for a lying log).
+	c := &capture{response: func() (int, string) { return http.StatusBadRequest, `{"text":"Bad request","code":6}` }}
+	srv := newServer(t, c)
+
+	s, _ := NewSplunk(srv.URL)
+	s.SetToken("hec-token-1")
+	s.backoff = time.Millisecond
+
+	var buf bytes.Buffer
+	old := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(old) })
+
+	s.deliver(context.Background(), sampleAlert())
+
+	sent, failed, _ := s.Stats()
+	if sent != 0 || failed != 1 {
+		t.Fatalf("stats = sent %d failed %d, want 0/1 (permanent 4xx)", sent, failed)
+	}
+	if n := c.count(); n != 1 {
+		t.Fatalf("POSTs = %d, want 1 (a permanent 4xx is never retried)", n)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "failed after 1 attempt(s)") {
+		t.Fatalf("log must name the single attempt that ran, got %q", out)
 	}
 }

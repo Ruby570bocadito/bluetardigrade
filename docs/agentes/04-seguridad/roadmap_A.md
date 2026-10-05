@@ -1,9 +1,42 @@
 # Roadmap — Seguridad A (carril/seguridad-a)
 
 Archivo vivo: continuidad del carril. Última actualización: 2026-10-05,
-ronda 8, cierre (20:10 Europe/Madrid).
+ronda 9, cierre (18:52 reloj de sesión, Europe/Madrid).
 
-## Estado tras el cierre de la ronda 8 (2026-10-05)
+## Estado tras el cierre de la ronda 9 (2026-10-05)
+
+- **Auditoría profunda de los 9 paquetes del motor que quedaban
+  (informe `ronda_2026-10-05_18h52_A.md`): 2 bugs funcionales
+  corregidos con test** en código ya fusionado en main.
+  1. **MEDIA** — `respond`: la pre-comprobación de idempotencia
+     quedaba fuera del tramo single-flight; dos peticiones con la
+     misma clave y PID distinto podían ejecutar DOS kills reales
+     (el cooldown solo cubre el mismo `(host,pid)`). Fix:
+     `recordCommit` devuelve `false` si la clave ya estaba y `Kill`
+     deniega 409 dentro del tramo. Test determinista que sostiene
+     `execMu`, comete la gemela y exige 409 + objetivo vivo
+     (fail-before con stash: segunda kill ejecutada de verdad).
+  2. **BAJA** — `siem`: el log de Splunk reclamaba «after 3
+     attempts» tras un 400 permanente en el primer intento (1 POST
+     real). Fix: contador `attempts` como el de `webhook`.
+     Fail-before con stash en el log capturado.
+- **Limpio sin hallazgos**: notify, webhook, enrich, actions,
+  reputation, collector, redact y los caminos de `cmd/engine`
+  (apagado cancel→Wait correcto, resolución credencial flag→entorno
+  uniforme, banners honestos).
+- **Obligatorio de ronda**: las cinco puntas ajenas exactamente donde
+  las verificaron las rondas 5-8 (rev-parse + diff Go vacío en
+  IMP-A/IMP-B); por tocar código propio con goroutines,
+  `-race -count=5` extra en respond (4.8 s) y siem (16.3 s), verde.
+- Checklist CI completo verde tras el último cambio: gofmt vacío,
+  vet, build nativo y GOOS=windows, staticcheck, `-race -count=1
+  ./...` (37 paquetes), openapi self-test, inventario (114),
+  workflows, tema, consola 371 tests + tsc + build, console-service
+  104 tests + tsc, sensor 36 tests + clippy -D warnings.
+
+## Historial reciente
+
+### Ronda 8 (20h05) — revisión de IDEA-3 de IMP-B y auditoría fleet/baseline/lifecycle (informe `ronda_2026-10-05_20h05_A.md`)
 
 - **IDEA-3 de IMP-B (`9f35615`) revisado, sin bug que anotar** (informe
   `ronda_2026-10-05_20h05_A.md`): validación NFKC/bidi y topes por
@@ -23,8 +56,6 @@ ronda 8, cierre (20:10 Europe/Madrid).
 - **Obligatorio de ronda**: carriles ajenos sin código nuevo (IMP-B
   consola-only; resto docs-only); evidencia `-race` de rondas 6-7
   vigente. Sin cambios de código propio.
-
-## Historial reciente
 
 ### Ronda 7 (19h45) — auditoría store/api/risk/correlate/incident (informe `ronda_2026-10-05_19h45_A.md`)
 
@@ -119,27 +150,31 @@ ronda 8, cierre (20:10 Europe/Madrid).
 
 1. **Auditar `internal/ad` (AD-1/AD-2/SEC-2)** — sigue bloqueado: IMP-A
    tiene solo plan (16h05); su plan reserva la auditoría para cuando se
-   fusione. Prioridad real al reabrir.
-2. **Ronda 9: paquetes del motor aún sin auditoría profunda** —
-   `notify`, `webhook`, `siem` (elastic/splunk), `actions`/`respond`
-   (motor), `enrich`/`redact`, `reputation` (solo su fuzz),
-   `collector` y los caminos de `cmd/engine` (fleet, baseline y
-   lifecycle quedaron cubiertos en la ronda 8).
-3. **Verificar que IMP-B incorpora los dos hallazgos de la ronda 5** en
-   su rama antes de la fusión (su REP-4 de la ronda 6 no los tocó).
-4. **Resolver DOS conflictos append-append al fusionar** (ronda 7):
+   fusione. Prioridad real al reabrir. SEG-B dejó lista su propuesta
+   de diseño SEC-2 (credenciales en reposo) en su informe 19h10.
+2. **Verificar que IMP-B incorpora los dos hallazgos de la ronda 5** en
+   su rama antes de la fusión (su REP-4 de la ronda 6 no los tocó; su
+   IDEA-3 de la ronda 8 tampoco).
+3. **Resolver DOS conflictos append-append al fusionar** (ronda 7):
    `internal/ingest/fuzz_test.go` con PUL-A — conservar
    `FuzzEnrollLine` y `FuzzAuthEnrollFirstLine` — y el NUEVO
    `internal/scenrun/scenrun_test.go` con SEG-B — conservar
    `TestRunIDsMatchWireContract` (suyo) y
    `TestStartUnknownScenarioWrapsSentinel` (mío); `scenrun.go` y
-   `api/scenarios.go` se auto-fusionan limpios.
-5. **`min_count: 2` en beacons** — decisión del responsable pendiente desde
-   la ronda 1 (¿validación en carga `>= 3` o documentar?).
-6. **SET-3 lado motor** — depende de IMP-A; auditar cuando suba.
-7. **PowerShell con `pwsh`** — el entorno no lo tiene; scripts revisados
+   `api/scenarios.go` se auto-fusionan limpios. NOTA ronda 9: contra
+   `main` de HOY `merge-tree` ya sale limpio en ambas puntas; el
+   conflicto solo reaparecería si esas ramas se fusionan entre sí
+   primero.
+4. **`min_count: 2` en beacons** — decisión del responsable pendiente
+   desde la ronda 1 (¿validación en carga `>= 3` o documentar?).
+5. **SET-3 lado motor** — depende de IMP-A; auditar cuando suba.
+6. **PowerShell con `pwsh`** — el entorno no lo tiene; scripts revisados
    en lectura sin hallazgos.
-8. **PR #18 de Dependabot** — reclamado por Seguridad B (su carril).
+7. **PR #18 de Dependabot** — fusionado en `main` (5 de octubre,
+   go.mod/go.sum); reclamación de Seguridad B resuelta.
+8. **Motor auditado en profundidad (ronda 9)**: queda `internal/ad`
+   cuando IMP-A publique; re-auditar solo diffs NUEVOS de otros
+   carriles a partir de aquí.
 
 ## Notas de contexto que no deben perderse
 

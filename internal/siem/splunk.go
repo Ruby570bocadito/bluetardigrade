@@ -113,7 +113,13 @@ func (s *Splunk) deliver(ctx context.Context, a alert.Alert) {
 		return
 	}
 	var lastErr error
+	// attempts counts what ACTUALLY ran: a permanent 4xx (or a build
+	// failure) stops after one post, and a log claiming the full retry
+	// budget is a lie an operator debugging the collector pays for
+	// (same honest-wording contract the webhook connector documents).
+	attempts := 0
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		attempts = attempt
 		retryable, perr := s.post(payload)
 		if perr == nil {
 			s.sent.Add(1)
@@ -129,7 +135,7 @@ func (s *Splunk) deliver(ctx context.Context, a alert.Alert) {
 		}
 	}
 	s.failed.Add(1)
-	log.Printf("[SPLUNK] delivery to %s failed after %d attempts: %v", redact.EndpointLabel(s.url), maxAttempts, redact.URLErr(lastErr, "sink endpoint"))
+	log.Printf("[SPLUNK] delivery to %s failed after %d attempt(s): %v", redact.EndpointLabel(s.url), attempts, redact.URLErr(lastErr, "sink endpoint"))
 }
 
 // hecEvent is the wire shape of one HEC event. The alert travels as
