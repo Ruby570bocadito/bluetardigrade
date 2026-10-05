@@ -7,7 +7,7 @@
 // the real engine stream; when the engine is down every card shows its
 // own honest state instead of empty axes.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChartLineUp, Cpu, Crosshair, Flame, Graph, GridFour, ListBullets, Pulse, ShieldWarning, Stack, Waveform } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import type { EngineStatus } from '@/hooks/use-engine-stream'
@@ -23,11 +23,13 @@ import { HostTacticHeatmap } from '@/components/charts/heatmap'
 import { buildEntityGraph } from '@/lib/entity-graph'
 import { ChartCard } from '@/components/charts/chart-frame'
 import { StackedColumns } from '@/components/charts/stacked-columns'
+import { LineChart, type LineSlot } from '@/components/charts/line-chart'
 import { BarList, Meter } from '@/components/charts/bars'
 import { AttackMatrix } from '@/components/charts/attack-matrix'
 import { SEV_COLOR, SeverityIcon } from '@/components/charts/severity'
-import { eventDetail, formatTime, type SfAlert, type Severity } from '@/lib/console-types'
-import { eventTypeMix, formatAgo, hostTacticMatrix, SEVERITIES, SEVERITY_LABEL, severityBuckets, severityCounts, tacticCoverage, topCounts } from '@/lib/soc-metrics'
+import { eventDetail, formatTime, type EngineStats, type SfAlert, type Severity } from '@/lib/console-types'
+import { eventTypeMix, formatAgo, hostTacticMatrix, lifecycleTacticColumns, SEVERITIES, SEVERITY_LABEL, severityBuckets, severityCounts, tacticCoverage, topCounts, type LifecycleState } from '@/lib/soc-metrics'
+import { pushRiskSample, riskSeriesView, RISK_SLOT_MS, RISK_SLOTS, type RiskSample } from '@/lib/risk-history'
 import type { TriageTarget } from '@/lib/operations'
 import type { SeverityFilter } from '@/lib/url-state'
 
@@ -39,6 +41,23 @@ export type HuntLens = { q?: string; sev?: SeverityFilter }
 
 const TIMELINE_WINDOW_MS = 60 * 60 * 1000
 const TIMELINE_BUCKET_MS = 5 * 60 * 1000
+
+// Triage lifecycle series in workflow order; categorical hues from the
+// validated palette (no severity colors: lifecycle is a workflow state,
+// not a magnitude).
+const LIFECYCLE_SERIES: { key: LifecycleState; label: string; color: string }[] = [
+  { key: 'nuevas', label: 'Nuevas', color: 'var(--series-1)' },
+  { key: 'reconocidas', label: 'Reconocidas', color: 'var(--series-3)' },
+  { key: 'cerradas', label: 'Cerradas', color: 'var(--series-2)' },
+]
+
+// Categorical palette order for the risk lines (capped at 4 series).
+const RISK_SERIES_COLORS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)']
+
+/** Same thresholds the engine publishes for hot hosts (A1 weights). */
+function riskLevelLabel(score: number) {
+  return score >= 20 ? 'crítico' : score >= 5 ? 'elevado' : 'bajo'
+}
 
 export function Dashboard({
   onAnalyze,
@@ -123,19 +142,24 @@ export function Dashboard({
         <TelemetryMixPanel down={down} />
       </AnimatedContent>
 
-      <AnimatedContent order={5}>
-        <AttackPanel onHunt={onHunt} />
+      <AnimatedContent order={5} className="grid gap-5 xl:grid-cols-3">
+        <LifecycleTacticPanel alerts={alerts} down={down} />
+        <RiskEvolutionPanel down={down} />
       </AnimatedContent>
 
       <AnimatedContent order={6}>
-        <HeatmapPanel onHost={hostLens} />
+        <AttackPanel onHunt={onHunt} />
       </AnimatedContent>
 
       <AnimatedContent order={7}>
+        <HeatmapPanel onHost={hostLens} />
+      </AnimatedContent>
+
+      <AnimatedContent order={8}>
         <EngineSummary status={status} />
       </AnimatedContent>
 
-      <AnimatedContent order={8} className="grid gap-5 xl:grid-cols-2">
+      <AnimatedContent order={9} className="grid gap-5 xl:grid-cols-2">
         <div className="panel min-w-0 px-4 pb-3 pt-3.5">
           <AlertsView compact onAnalyze={onAnalyze} />
         </div>
@@ -429,6 +453,119 @@ function TelemetryMixPanel({ down }: { down: boolean }) {
           color="var(--series-2)"
           rows={mix.top.map((r) => ({ key: r.key, label: <span className="font-mono">{r.key}</span>, value: r.count }))}
           empty={<EmptyState icon={Waveform} title="Sin eventos todavía" hint="Conecta un sensor para ver qué tipos de telemetría llegan." />}
+        />
+      )}
+    </ChartCard>
+  )
+}
+
+/**
+ * Triage lifecycle per ATT&CK tactic: where unhandled work piles up in
+ * the kill chain. Read with the heatmap above it (hosts x tactic) and
+ * the timeline (when): this one answers "what is still open".
+ */
+function LifecycleTacticPanel({ alerts, down }: { alerts: SfAlert[]; down: boolean }) {
+  const { columns, total } = useMemo(() => lifecycleTacticColumns(alerts), [alerts])
+  const byState = (s: LifecycleState) => columns.reduce((sum, c) => sum + c.values[s], 0)
+  const counts = LIFECYCLE_SERIES.map((s) => byState(s.key))
+  return (
+    <ChartCard
+      className="xl:col-span-2"
+      title="Ciclo de vida por táctica"
+      subtitle="Estado de triage de las alertas de la ventana, agrupadas por táctica ATT&CK"
+      icon={ListBullets}
+      legend={LIFECYCLE_SERIES.map((s, i) => ({ key: s.key, label: s.label, color: s.color, value: counts[i] }))}
+      table={{
+        caption: 'Alertas por táctica ATT&CK y estado de triage',
+        columns: ['Táctica', 'Nuevas', 'Reconocidas', 'Cerradas', 'Total'],
+        rows: columns.map((c) => [c.label, c.values.nuevas, c.values.reconocidas, c.values.cerradas, c.total]),
+      }}
+      footer={`${counts[0]} alertas nuevas esperan operador. Las alertas sin etiqueta de táctica aparecen como «Sin táctica»; las cerradas salen de la cola pero siguen contadas aquí.`}
+    >
+      {down ? <Unavailable /> : total === 0 ? (
+        <EmptyState icon={ListBullets} title="Sin alertas en la ventana" hint="En cuanto una regla dispare, sus alertas se apilan aquí por táctica y estado de triage." />
+      ) : (
+        <StackedColumns
+          buckets={columns.map((c) => ({ key: c.key, label: c.short, detail: c.label, values: c.values }))}
+          series={LIFECYCLE_SERIES.map((s) => ({ key: s.key, label: s.label, color: s.color }))}
+          ariaLabel={`Ciclo de vida por táctica: ${total} alertas de la ventana repartidas en ${columns.length} tácticas`}
+          unit="alertas en total"
+        />
+      )}
+    </ChartCard>
+  )
+}
+
+/**
+ * Sample the engine's hot-hosts list on a fixed 10 s grid (stats poll
+ * every 2 s; one sample per slot). `down` records gaps instead of
+ * pinning the last reading: no invented continuity.
+ */
+function useRiskHistory(stats: EngineStats | null, down: boolean): RiskSample[] {
+  const [history, setHistory] = useState<RiskSample[]>([])
+  const lastApplied = useRef(0)
+  useEffect(() => {
+    const now = Date.now()
+    if (lastApplied.current && now - lastApplied.current < RISK_SLOT_MS) return
+    lastApplied.current = now
+    const hot = stats && !down ? stats.hot_hosts ?? [] : []
+    setHistory((prev) => pushRiskSample(prev, hot, now))
+  }, [stats, down])
+  return history
+}
+
+/**
+ * Per-host decayed risk over the last 10 minutes, drawn from real
+ * engine snapshots (top-5 in /api/stats). Lines break when the engine
+ * is down or a host leaves the top-5: not observed is not cold.
+ */
+function RiskEvolutionPanel({ down }: { down: boolean }) {
+  const { stats, status } = useEngine()
+  const history = useRiskHistory(stats, status === 'down')
+  const view = useMemo(() => riskSeriesView(history), [history])
+  const series = view.series.map((s, i) => ({ key: s.host, label: s.host, color: RISK_SERIES_COLORS[i] }))
+  const slots: LineSlot[] = useMemo(
+    () =>
+      history.map((s) => ({
+        t: s.t,
+        values: Object.fromEntries(view.series.map((h) => [h.host, s.ok ? s.values[h.host] ?? null : null])),
+      })),
+    [history, view.series],
+  )
+  const clock = (t: number) => new Date(t).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false })
+  const tableRows = [...view.series, ...view.folded].map((h) => [h.host, h.last.toFixed(2), riskLevelLabel(h.last), h.samples])
+  return (
+    <ChartCard
+      title="Evolución del riesgo por equipo"
+      subtitle={`Riesgo decaído del motor, muestra cada ${RISK_SLOT_MS / 1000} s · ventana de ${(RISK_SLOTS * RISK_SLOT_MS) / 60000} min`}
+      icon={ChartLineUp}
+      legend={series.map((s) => ({ key: s.key, label: s.label, color: s.color, shape: 'line' as const }))}
+      table={
+        tableRows.length
+          ? { caption: 'Riesgo decaído por equipo (última muestra observada)', columns: ['Equipo', 'Último riesgo', 'Nivel', 'Muestras'], rows: tableRows }
+          : undefined
+      }
+      footer={
+        (view.folded.length ? `${view.folded.length} equipos más observados quedan fuera del gráfico y están en la tabla. ` : '') +
+        'La línea se corta si el motor no publica o el equipo sale del top-5: no se interpola. Muestreo desde la apertura de la consola.'
+      }
+    >
+      {down ? (
+        <Unavailable />
+      ) : view.series.length === 0 ? (
+        <EmptyState
+          icon={ChartLineUp}
+          title="Sin riesgo observado aún"
+          hint="El motor publica el top-5 de riesgo decaído en /api/stats; cuando un equipo entre en la lista, su línea empieza aquí."
+        />
+      ) : (
+        <LineChart
+          series={series}
+          slots={slots}
+          height={196}
+          ariaLabel={`Evolución del riesgo por equipo: ${view.series.map((s) => s.host).join(', ')} en ${view.observed} muestras`}
+          valueLabel="riesgo"
+          formatT={clock}
         />
       )}
     </ChartCard>

@@ -99,6 +99,53 @@ export function hostTacticMatrix(alerts: readonly Pick<SfAlert, 'host' | 'tags'>
   return { hosts, tactics: ATTACK_TACTICS.filter((t) => seen.has(t.slug)), cells, max }
 }
 
+// Triage lifecycle (engine r6) crossed with the ATT&CK tactic of each
+// alert: which kill-chain phases still hold untriaged work. `status`
+// undefined means the lifecycle overlay has not touched the alert yet,
+// i.e. new.
+
+export const LIFECYCLE_STATES = ['nuevas', 'reconocidas', 'cerradas'] as const
+export type LifecycleState = (typeof LIFECYCLE_STATES)[number]
+
+export type TacticLifecycleColumn = {
+  /** tactic slug, or 'sin-tactica' for alerts without a tactic tag */
+  key: string
+  /** short label for the axis, full name for the tooltip */
+  short: string
+  label: string
+  values: Record<LifecycleState, number>
+  total: number
+}
+
+/**
+ * Alerts per ATT&CK tactic split by triage state, heaviest tactic
+ * first. Alerts without a tactic tag land in their own "Sin táctica"
+ * column instead of being dropped: they are real work for an operator.
+ */
+export function lifecycleTacticColumns(alerts: readonly Pick<SfAlert, 'tags' | 'status'>[]): { columns: TacticLifecycleColumn[]; total: number } {
+  const byKey = new Map<string, TacticLifecycleColumn>()
+  const column = (key: string, short: string, label: string) => {
+    let c = byKey.get(key)
+    if (!c) {
+      c = { key, short, label, values: { nuevas: 0, reconocidas: 0, cerradas: 0 }, total: 0 }
+      byKey.set(key, c)
+    }
+    return c
+  }
+  let total = 0
+  for (const alert of alerts) {
+    const state: LifecycleState = alert.status === 'acknowledged' ? 'reconocidas' : alert.status === 'closed' ? 'cerradas' : 'nuevas'
+    const slug = alertTactic(alert)
+    const tactic = slug ? ATTACK_TACTICS.find((t) => t.slug === slug) : undefined
+    const col = tactic ? column(tactic.slug, tactic.short, tactic.label) : column('sin-tactica', 'Sin táctica', 'Sin táctica')
+    col.values[state]++
+    col.total++
+    total++
+  }
+  const columns = [...byKey.values()].sort((a, b) => b.total - a.total || a.label.localeCompare(b.label))
+  return { columns, total }
+}
+
 export function severityCounts(alerts: readonly Pick<SfAlert, 'severity'>[]): Record<Severity, number> {
   const out: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
   for (const alert of alerts) if (alert.severity in out) out[alert.severity]++
