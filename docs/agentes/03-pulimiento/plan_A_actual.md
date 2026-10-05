@@ -1,78 +1,78 @@
-# Plan de ronda — Pulimiento A (2026-10-05 13h42 Madrid, ajustado)
+# Plan de ronda — Pulimiento A (2026-10-05 14h10 Madrid)
 
-La ronda 6 se publicó a las 12h36 con un único punto (POL-A-docs-14) y no
-llegó a ejecutarse. Esta instancia retoma esa ronda, la ajusta tras leer
-los planes de los otros cinco carriles (ahora los seis existen) y la
-ejecuta completa.
+Séptima ronda del carril. Continuidad en `roadmap_A.md` (ronda 6 cerrada
+a las 14h05 con commit `1422427`).
 
 ## Sincronización previa
 
-- `git fetch origin --prune`: las seis ramas de carril existen. Novedades
-  desde mi último plan: `carril/implementacion-a` (ronda cerrada, SIM-1/SIM-2;
-  su rama va adelantada hasta `feat/enrollment`, donde vive el `TODO.md`
-  real), `carril/seguridad-a` (plan ronda 2: fuzzers), `carril/seguridad-b`
-  (ronda cerrada), `carril/pulimiento-b` (ronda cerrada, THEME-1/2/3).
-- `git pull --ff-only` + `git merge origin/main`: already up to date
-  (main sigue en `5e168ba`).
-- **Discord:** no se envió notificación (`DISCORD_WEBHOOK_URL` no definida;
-  ya declarado en rondas anteriores).
+- `git fetch origin --prune`: `main` sigue en `5e168ba` (el responsable
+  no ha fusionado carriles todavía). Mi rama al día con su remoto.
+- Novedades leídas: IMP-A cerró su ronda 2 (SIM-4 parte A + x/text;
+  tocó `internal/api`, `cmd/engine`, `openapi.yaml`, `go.mod` y añadió
+  su sección de scenarios en `docs/OPERATIONS.md`); IMP-B cerró VIZ-1/3
+  y planificó SET-3 (solo consola); SEG-B está EN RONDA activa
+  (`deps-audit.yml` nuevo + `check_workflows.py` + Makefile + website;
+  su parte (a) del CI rojo la lleva el PR #16, la (b) es de SEG-A);
+  SEG-A y PUL-B sin cambios (PUL-B sin ALTA para este carril).
 
-## Coordinación leída (sin colisiones)
+## Coordinación (sin colisiones)
 
-- IMP-A: ronda cerrada; su siguiente tarea (SIM-4) tocará
-  `internal/api/api.go` + `docs/api/openapi.yaml` (paths). Yo solo toco el
-  bloque de metadatos de `openapi.yaml` (info/comentario/ejemplo) — hunks
-  distintos; lo anoto en el informe.
-- IMP-B: solo `web/console` (VIZ-1/VIZ-3); excluye explícitamente mis
-  ficheros. Sin solape.
-- PUL-B: ronda cerrada; su punto 3 propone a MI carril enganchar su
-  `check_console_theme.py` en `ci.yml`. Lo atiendo esta ronda llevándome el
-  script byte a byte de su rama (SHA-256 `41e7f5da…`) para que las dos
-  ramas lo añadan idéntico y la fusión sea trivial.
-- SEG-A: fuzzers en `internal/collector`, `internal/reputation`,
-  `internal/api/filters.go` (tests). No toco esos paquetes. Sin solape.
-- SEG-B: su diff de `ci.yml` contra `main` está vacío; sin colisión en CI.
+- **`internal/api` sigue caliente:** la cola de IMP-A (REP-1, API de
+  ruido) vuelve a tocar `internal/api` y `openapi.yaml`. El candidato
+  POL-1 de esta ronda es `internal/correlate/correlate.go`, que no
+  aparece en ningún plan publicado de ningún carril.
+- **`-scenarios` en las tablas de flags:** el flag nuevo de IMP-A no
+  está en la tabla «full surface» de `docs/OPERATIONS.md`. NO lo
+  documento yo esta ronda: en `main` ese flag no existe todavía y
+  documentarlo sería drift inverso (prometer flags que el código de
+  main no tiene). Nota para IMP-A en el informe; en mi roadmap queda
+  como pendiente por si hay que hacerlo tras su fusión (patrón ronda 4).
+- **Enganches de CI diferidos** (checker de tema PUL-B, objetivos de
+  fuzz SEG-A): siguen bloqueados porque `main` no se ha movido. Nada
+  que hacer esta ronda en `ci.yml`; SEG-B además está en ronda activa
+  en workflows (su `deps-audit.yml`, fichero nuevo, sin colisión).
 
 ## Identificadores del TODO trabajados
 
-(El `TODO.md` real vive en `feat/enrollment`; leo mis tareas POL de ahí.)
-
-- **POL-A-docs-14** (publicado a las 12h36): completar las familias
-  `sf_*` de la sección «Prometheus metrics» de `docs/OPERATIONS.md`
-  contra `internal/api/metrics.go`.
-- **POL-4** (alcance nombrado por el TODO): restos del nombre antiguo —
-  banner `SECURITY-FRAMEWORK ENGINE` (`cmd/engine/render.go`), título TUI
-  (`cmd/engine/interactive.go`), metadatos y ejemplo de
-  `docs/api/openapi.yaml`, y rutas del `Dockerfile`. El resto de hits se
-  clasifican en el informe (contratos SIEM/email congelados por tests,
-  crate Rust real, legacy handling, territorio de otros carriles).
-- **POL-A-ci-2**: enganche de `check_console_theme.py` en el job
-  `console` de `ci.yml` (petición de PUL-B; CI es mi área).
-- **Verificación con toolchain real**: Go 1.26.0 instalado esta ronda en
-  el entorno (`/home/z/my-project/tools/go`); primera pasada completa de
-  la suite Go del carril (gofmt, build, vet, GOOS=windows, staticcheck si
-  se puede instalar, test -race, guards de OpenAPI e inventario).
-- **Fijos de ronda**: revisión rápida de `.gitignore` y ficheros
-  temporales (ya limpia en ronda 1; re-verificar).
+- **POL-1 (parte correlate):** dividir
+  `internal/correlate/correlate.go` (789 líneas) por responsabilidad
+  dentro del mismo paquete, sin cambiar comportamiento: cargar/recargar,
+  seguimiento de estados, disparo, poda. Los tests del paquete
+  (`correlate_test.go`, `scope_test.go`) no se tocan, solo se verifican.
+- **POL-5 (parte procesos):** `CONTRIBUTING.md` + plantillas de issue
+  (bug/feature) y de PR en `.github/` — no existen y son de este carril
+  según el TODO. En inglés, como el resto de la documentación para
+  contribuidores; referencias a los guards reales del CI
+  (`check_openapi.py`, `check_rule_inventory.py`, `check_workflows.py`
+  de SEG-B cuando exista en main — no lo referencio hasta que esté).
+- **Fijos de ronda:** `.gitignore` y ficheros temporales.
 
 ## Ficheros que voy a tocar y por qué
 
-- `docs/OPERATIONS.md` — sección Prometheus (mi área, doc técnica).
-- `cmd/engine/render.go`, `cmd/engine/interactive.go` — POL-4 banner y
-  título TUI (cadenas de presentación, sin cambio de comportamiento).
-- `docs/api/openapi.yaml` — POL-4 metadatos/ejemplo (no toca paths ni
-  contratos; el CI lo valida con `check_openapi.py`).
-- `Dockerfile` — POL-4 rutas internas coherentes (auto-contenidas).
-- `.github/workflows/ci.yml` — paso nuevo en el job `console` (mi área).
-- `scripts/dev-tests/check_console_theme.py` — copia byte a byte de
-  `origin/carril/pulimiento-b` (autoría PUL-B; yo solo lo hago llegar a
-  CI).
-- `changelog.d/`, `docs/agentes/03-pulimiento/` — fragmentos, informe y
-  roadmap.
+- `internal/correlate/correlate.go` → dividido en ficheros por
+  responsabilidad del mismo paquete (nuevos ficheros + el original
+  reducido). POL-1, mi área; nadie más lo toca.
+- `CONTRIBUTING.md` (nuevo), `.github/PULL_REQUEST_TEMPLATE.md` (nuevo),
+  `.github/ISSUE_TEMPLATE/bug_report.md` + `.github/ISSUE_TEMPLATE/feature_request.md`
+  + `config.yml` (nuevos). POL-5, mi área.
+- `changelog.d/` (2 fragmentos), `docs/agentes/03-pulimiento/` (informe
+  + roadmap). `docs/api/openapi.yaml` NO se toca (la API no cambia).
+
+## Por qué este alcance
+
+POL-1 es la única tarea del TODO que requiere el toolchain Go que esta
+ronda anterior quedó instalado; `correlate.go` es el candidato con
+menos riesgo de colisión (los otros dos están calientes: `api.go` por
+la cola de IMP-A, `run.go` recién tocado por SIM-4 y con cuotas de
+motor en cola). POL-5 (procesos de contribución) es autocontenido y
+llevaba cero avance; el repo ya tiene `SECURITY.md` pero nada de cómo
+contribuir, y es exactamente el tipo de documentación que un repo open
+source necesita antes de crecer en contribuidores.
 
 ## Verificación prevista
 
-Suite Go completa con el toolchain nuevo + `check_openapi.py` (+ self-test)
-+ `check_rule_inventory.py` + el checker de tema nuevo. Sin `cargo` ni
-`pwsh`: no toco sensor ni PowerShell esta ronda (nada que verificar en
-ellos).
+Suite Go completa sobre el paquete tocado y el árbol entero:
+`gofmt -l .`, `go build ./...`, `go vet ./...`, `GOOS=windows go build ./...`,
+staticcheck doble pasada, `go test -race -count=1 ./...`, y los guards
+de Python (`check_openapi.py` + self-test, `check_rule_inventory.py`).
+Sin `cargo` ni `pwsh`: no toco sensor ni PowerShell.
