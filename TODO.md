@@ -7,6 +7,9 @@ Lista de trabajo práctica. La dirección a largo plazo está en
 
 Marca `[x]` al terminar y deja una línea con el commit o la prueba que lo cierra.
 
+**Diseño detallado** de cada punto (cómo funciona por dentro, cuándo está hecho, de qué depende, el
+esfuerzo y los riesgos) y orden de los hitos v1.0 → v2.x: [docs/PLAN-DETALLADO.md](docs/PLAN-DETALLADO.md).
+
 ---
 
 ## Etapa 0 — cerrar la v1.0
@@ -50,6 +53,8 @@ El ETW del kernel exige administrador, pero solo una vez, al instalar.
 
 ### 2. Alta de equipos con token de un solo uso y aprobación
 
+Diseño: [PLAN-DETALLADO §1.2](docs/PLAN-DETALLADO.md)
+
 - [ ] El servidor emite tokens de alta de un solo uso, con caducidad. Se crean desde la consola
   (asistente «Añadir equipo»).
 - [ ] El sensor nuevo canjea el token por una identidad propia, ligada a su nombre de equipo.
@@ -58,6 +63,8 @@ El ETW del kernel exige administrador, pero solo una vez, al instalar.
 - [ ] Revocar un equipo: su identidad deja de valer al momento.
 
 ### 3. Paquete instalador desde la consola
+
+Diseño: [PLAN-DETALLADO §1.3](docs/PLAN-DETALLADO.md)
 
 - [ ] El asistente genera un instalador (MSI o EXE) con la dirección del servidor, el certificado
   de la CA y un token de alta ya incluidos.
@@ -69,6 +76,8 @@ El ETW del kernel exige administrador, pero solo una vez, al instalar.
   software llega por los canales del dominio (GPO, Intune o alguien con administrador).
 
 ### 4. Ver el dominio: Windows Event Forwarding y detecciones de AD
+
+Diseño: [PLAN-DETALLADO §1.4](docs/PLAN-DETALLADO.md)
 
 - [ ] El motor recibe el registro de Seguridad reenviado por los controladores de dominio y los
   servidores (WEF), sin instalarles nada.
@@ -82,6 +91,8 @@ El ETW del kernel exige administrador, pero solo una vez, al instalar.
 
 ### 5. Servidor central como servicios
 
+Diseño: [PLAN-DETALLADO §1.5](docs/PLAN-DETALLADO.md)
+
 - [ ] Motor, hub y consola como servicios en Windows Server.
 - [ ] HTTPS en la consola, para que los analistas entren desde su equipo con sus cuentas.
 
@@ -93,6 +104,8 @@ Sale de las pruebas en un equipo real (4 y 5 de octubre). Datos de la prueba de 
 - recursos: sensor 15 MB, motor 33 MB, consola 196 MB.
 
 ### Ruido: que lo normal no ahogue lo importante
+
+Diseño: [PLAN-DETALLADO §2.1–2.4](docs/PLAN-DETALLADO.md)
 
 El caso real es Lenovo Vantage: lanza sus 4 complementos cada minuto, que son el 43 % de los
 arranques de proceso de un portátil en reposo. Un SOC no puede guardar ni mirar eso en cada equipo.
@@ -160,6 +173,8 @@ arranques de proceso de un portátil en reposo. Un SOC no puede guardar ni mirar
 
 ## Escala SOC: miles de equipos
 
+Diseño: [PLAN-DETALLADO §4](docs/PLAN-DETALLADO.md)
+
 Hoy hay un motor con SQLite y una consola. Funciona para un equipo, un laboratorio o unas decenas
 de equipos. Para un SOC con miles de equipos y varios analistas hace falta lo siguiente, por fases.
 Las cifras se miden con un simulador, no se suponen.
@@ -222,6 +237,8 @@ Las cifras se miden con un simulador, no se suponen.
 
 ## Forense: vista propia en la consola
 
+Diseño: [PLAN-DETALLADO §5](docs/PLAN-DETALLADO.md)
+
 Hoy el forense existe, pero escondido. El motor congela un paquete de evidencia (la alerta y la
 línea de tiempo del equipo de los 5 minutos anteriores) en cada alerta alta o crítica, y la consola
 solo lo enseña dentro del detalle de esa alerta («Evidencia forense», exportable a JSON o JSONL).
@@ -243,6 +260,8 @@ solo lo enseña dentro del detalle de esa alerta («Evidencia forense», exporta
 - [ ] **Retención configurable** (`-forensic-retention`) en lugar del tope fijo de 256 paquetes.
 
 ## Prevención y respuesta en los equipos
+
+Diseño: [PLAN-DETALLADO §6](docs/PLAN-DETALLADO.md)
 
 Hoy los equipos solo envían datos. La única respuesta, `kill_process`, actúa en el propio servidor
 del motor, con credencial por operador y auditoría. Actuar sobre los equipos de la flota cambia la
@@ -324,6 +343,8 @@ Por orden de riesgo, de menor a mayor:
   cada orden y protección frente a repeticiones.
 
 ## Varios tardígrados: nodos que se comunican
+
+Diseño: [PLAN-DETALLADO §7](docs/PLAN-DETALLADO.md)
 
 Si se levantan varios motores (sedes, redes separadas o capacidad), que formen nodos que se conocen
 y comparten trabajo, en lugar de islas.
