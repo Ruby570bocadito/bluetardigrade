@@ -84,6 +84,15 @@ inventario) y no reintroducirse un número hardcodeado.
 2. Cuando el responsable fusione mi ronda 1 a main, confirmar que el
 job `deps-audit` corre en main y en cada push de rama (ahora sin
 filtro), y responder a sus hallazgos si los hay.
+
+**Resultado del primer ciclo (ronda 2):** el push de la ronda disparó
+el job por primera vez; mi guard pasó en CI real y `govulncheck`
+encontró 5 vulnerabilidades de stdlib de go1.26.0 alcanzadas por el
+motor (GO-2026-5856/5972/6089/6090/6218 — crypto/tls, net/http,
+net/url, encoding/asn1). Fix aplicado en la misma ronda: directiva
+`go 1.26.6` en go.mod. Pendiente: confirmar el segundo ciclo en verde
+(y el primer arranque real de osv-scanner y cargo audit, que ahora sí
+tocan ejecutarse).
 3. SEC-1: extender el modelo a las superficies de prevención §6.1–6.3
 cuando el responsable las desbloquee; y §1.3 instalador (Authenticode,
 GPO/Intune) cuando Implementación A lo publique.
