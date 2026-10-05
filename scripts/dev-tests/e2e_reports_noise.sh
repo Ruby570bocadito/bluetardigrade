@@ -113,6 +113,7 @@ start_engine() { # start_engine <flags extra...>
   ( exec "$ENGINE" -addr "$EADDR" -api "127.0.0.1:$API_PORT" \
       -rules "$TMPDIR_E2E/rules" -sequences "$TMPDIR_E2E/sequences" \
       -store "$TMPDIR_E2E/store.db" -store-retention 720h \
+      -incidents "$TMPDIR_E2E/incidents.json" \
       -lifecycle "$TMPDIR_E2E/lifecycle.json" "$@" ) >>"$LOG" 2>&1 &
   EPID=$!
 }
