@@ -1,16 +1,21 @@
-# Plan de ronda — Implementación A (2026-10-05 16h05)
+# Plan de ronda 2026-10-06 — Implementación A
 
-1. **AD-1** conector LDAP de solo lectura (`internal/ad`, tablas AD en `internal/store`,
-   flag `-ad`, API `GET /api/ad/*` en `internal/api/ad.go`, OpenAPI, tests con fixture
-   LDAP en loopback): LDAPS/StartTLS obligatorio, cuenta sin privilegios, contraseña en
-   fichero aparte, paginación RFC 2696, tope de objetos, escape RFC 4515.
-2. **AD-2** postura del dominio (`internal/ad/posture.go`, `GET /api/ad/posture`):
-   hallazgos del TODO con severidad, objetos y remediación + puntuación 0-100.
-3. **SET-3 lado motor** (campos de `/api/stats` que la vista de IMP-B declara ausentes):
-   latencia ingesta→alerta, tamaño del almacén, versión del motor y caducidad de
-   certificados API/ingesta. Añadida la fila `-scenarios` en `docs/OPERATIONS.md`
-   (petición registrada por Pulimiento A).
-
-Sin solape: IMP-B (pantallas), PUL-A (fuzzing nocturno, POL-1 api.go tras mi fusión),
-PUL-B (tema), SEG-A/B (auditan este conector cuando se fusione; dependencia nueva
-justificada en el informe).
+1. **SEC-2 (secretos en reposo, lado motor)** — nuevo `internal/secretfile`
+   con el contrato del addendum de SEG-B (informe 19h10): sobre JSON
+   `version/created_at/scheme/ciphertext`; `plain` con 0600 POSIX real
+   exigido, `dpapi` Windows con CRYPTPROTECT_LOCAL_MACHINE vía
+   x/sys/windows; escritura temp+rename+Sync; la lectura acepta también
+   el fichero en crudo (paridad de laboratorio) con aviso en Windows.
+   Cableado en `internal/ad`: secreto como []byte desde el fichero hasta
+   el bind, puesta a cero del buffer, avisos visibles en
+   `/api/ad/status`. Flag `-write-secret <fichero>` (el secreto entra
+   por stdin, jamás por argv). Tests del checklist de SEG-B: ida y
+   vuelta (la de DPAPI se ejecutará en el job Windows del CI),
+   permisos, higiene de logs ante bind fallido, ausencia del secreto y
+   de su longitud en las respuestas de `/api/ad/*`. Docs:
+   OPERATIONS.md (formato, ACL icacls, migración) + changelog.d.
+   Motivo: tarea del responsable pendiente desde la ronda 2 y contrato
+   explícito de SEG-B que desbloquea su auditoría y la pantalla de
+   ajustes AD-6/SET-1 de IMP-B.
+2. Fuera de alcance: AD-6/SET-1 (API de ajustes: ronda siguiente),
+   REP-1 parte B (consola de IMP-B), sensor Rust (sin cargo aquí).
