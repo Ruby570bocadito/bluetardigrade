@@ -1,28 +1,28 @@
-# Plan de ronda — Implementación B (2026-10-05)
+# Plan de ronda — Implementación B (2026-10-05, ronda 2)
 
-Nota: `TODO.md` aún no existe en el repositorio; esta ronda toma las tareas de
-`docs/ROADMAP.md` (fuente disponible) y las prioridades marcadas allí.
+Nota: `TODO.md` sigue sin existir en el repositorio; las tareas se toman de
+`docs/ROADMAP.md`. Sin ramas `carril/*` ajenas publicadas en origin al hacer
+fetch al inicio de la ronda: nada que reconciliar con otros carriles.
 
-## Tareas cogidas (identificadores de ROADMAP)
+## Tarea cogida (identificador de ROADMAP)
 
-1. **H5 «Análisis de incidente»** (principal): agrupar alertas por host+ventana y
-   ofrecer «analizar incidente» al hub IA con el bundle forense como contexto.
-   Cierre del roadmap: prompt multi-alerta con el bundle adjunto y respuesta que
-   cite eventos del timeline.
-   - `web/console/src/lib/incident-analysis.ts` (nuevo): agrupación host+ventana,
-     constructor de payload acotado (máx. 8 alertas, resumen del bundle) + tests.
-   - `web/console/src/components/console/analyst-panel.tsx`: modo incidente
-     (burbuja propia, emite `analyst:ask-incident`).
-   - `web/console/src/components/console/incidents-view.tsx`: botón «Analizar con IA»
-     en el detalle del caso.
-   - `web/console/src/components/console/alert-actions.tsx` + `shell.tsx`: handoff
-     de la selección múltiple («Analizar la selección»).
-   - `web/console-service/analyst.ts` + `hub.ts`: prompt multi-alerta delimitado y
-     truncado, validación y mismos límites de tarifa/concurrencia, evento
-     `analyst:ask-incident`; tests en `analyst.test.ts` y `hub.test.ts`.
-   - Docs: sección en `docs/INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md` y fragmento
-     `changelog.d/IMP-B-analisis-incidente.md`.
+1. **H5 «Progreso honesto del analista»: streaming nativo del proveedor**
+   (única tarea de la ronda, como reservó `roadmap_B.md` para no mezclar
+   contratos): el hub pide al proveedor `stream: true` (API compatible con
+   OpenAI) y reenvía cada fragmento real como `analyst:delta` en vivo.
+   - Contrato de socket sin cambios (`analyst:step/delta/done/error`); el panel
+     ya acumula fragmentos.
+   - Si el proveedor ignora el streaming y responde JSON, el texto se reenvía
+     completo como hasta ahora (compatibilidad Ollama/LM Studio).
+   - Guardas de tiempo: primer byte, inactividad entre fragmentos y tope total;
+     mensajes de error en español listos para el operador.
+   - Pruebas: SSE y casos límite en `analyst.test.ts` y
+     `analyst-progress.test.ts`; E2E de socket con deltas múltiples en
+     `hub.test.ts`.
+   - Docs: sección del analista en `docs/INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md`
+     y fragmento `changelog.d/IMP-B-streaming-analista.md`.
 
-Fuera de alcance esta ronda: streaming nativo del proveedor (H5, requiere otra
-ronda), vista de árbol global (necesita endpoint Go de A), árbol del bundle
-(ya entregado en main).
+Fuera de alcance esta ronda: vista de árbol global (pende del endpoint Go
+`GET /api/hosts/{h}/tree` de Implementación A) y gráficas nuevas (el dashboard
+ya cubre distribución por táctica y severidad; candidatos quedan en backlog
+para cuando el responsable pida más visualización).
