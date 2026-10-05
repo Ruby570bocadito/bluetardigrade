@@ -17,6 +17,13 @@
 #
 # The actual logic lives in scripts/dev-tests/bench_nightly.sh so the
 # same commands run locally and in CI (the ci.yml philosophy).
+#
+# Second job (fuzz, added by the PUL-A quality lane): nightly Go fuzzing,
+# also advisory. One step per fuzz target, -fuzztime 5m each, so a new
+# target is one line; targets from the SEC-A fuzzing round (collector
+# mail parser, reputation indicators, API query filters) land here as
+# those branches merge. Like the bench, this workflow never runs on
+# push or pull_request — a fuzzing crash informs, it cannot gate.
 name: bench-nightly
 
 on:
@@ -49,3 +56,23 @@ jobs:
           go-version-file: go.mod
       - name: nightly bench (real engine over loopback, advisory)
         run: bash scripts/dev-tests/bench_nightly.sh
+
+  fuzz:
+    name: Go fuzzing (advisory, per target)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Actions fijadas por SHA: mismos pines verificados que el job bench
+      # y que ci.yml; un tag mutable no es una referencia de confianza
+      # para un repo de seguridad.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # -fuzz matches exactly one target per invocation, so each target
+      # gets its own step; -run '^$' skips the unit battery so the fuzz
+      # round owns the whole time budget. A failing input is written to
+      # the package's testdata/fuzz/ corpus, which turns the run red and
+      # preserves the reproducer for the fixing lane.
+      - name: FuzzFieldMapParity (pkg/model)
+        run: go test -run '^$' -fuzz '^FuzzFieldMapParity$' -fuzztime 5m ./pkg/model

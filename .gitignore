@@ -7,6 +7,13 @@ bin/
 *.out
 vendor/
 .cache/
+# Coverage and profiling artifacts from `go test -coverprofile` /
+# -cpuprofile / -memprofile: never part of the source tree.
+coverage.txt
+coverage.html
+*.cover
+*.prof
+*.pprof
 
 # Release build output (make dist; the release workflow rebuilds it
 # fresh on the runner — never committed)
