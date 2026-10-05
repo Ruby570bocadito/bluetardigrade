@@ -72,6 +72,10 @@ type Sensor struct {
 	Spooled       uint64    `json:"spooled"`
 	Dropped       uint64    `json:"dropped"`
 	LastHeartbeat time.Time `json:"last_heartbeat"`
+	// RunMode is how the sensor runs: "service" (Windows service manager,
+	// starts with the machine) or "console" (started by hand); empty for
+	// sensors that do not say.
+	RunMode string `json:"run_mode,omitempty"`
 }
 
 // Host is one machine of the inventory.
@@ -374,6 +378,9 @@ func sensorFrom(attrs map[string]string, now time.Time) *Sensor {
 		Spooled:       uint64(parseInt(attrs["spooled"], 0)),
 		Dropped:       uint64(parseInt(attrs["dropped"], 0)),
 		LastHeartbeat: now,
+	}
+	if mode := attrs["run_mode"]; mode == "service" || mode == "console" {
+		s.RunMode = mode
 	}
 	if s.IntervalS <= 0 || s.IntervalS > 3600 {
 		s.IntervalS = 60

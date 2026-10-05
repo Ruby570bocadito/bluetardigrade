@@ -17,6 +17,7 @@ export type FleetSensor = {
   spooled: number
   dropped: number
   last_heartbeat: string
+  run_mode?: 'service' | 'console'
 }
 
 export type FleetHost = {
@@ -51,6 +52,13 @@ export const FLEET_STATUS_LABEL: Record<FleetStatus, string> = {
   online: 'en línea',
   silent: 'sin señal',
   idle: 'inactivo',
+}
+
+/** How the sensor runs, for the host page. */
+export function runModeText(mode: FleetSensor['run_mode']): string {
+  if (mode === 'service') return 'Servicio de Windows (arranca con el equipo)'
+  if (mode === 'console') return 'Iniciado a mano en una ventana (sf-etw -Install lo deja como servicio)'
+  return '—'
 }
 
 /** 59 -> "59 s", 3600 -> "1 h", 90061 -> "1 d 1 h". */

@@ -111,6 +111,26 @@ make build-sensor-windows
 
 The sensor has no simulated mode: it runs only where real telemetry exists (Windows ETW) and refuses to start anywhere else.
 
+**As a Windows service (recommended).** Kernel ETW needs administrator rights, but only once:
+
+```powershell
+sf-etw -Install        # one UAC prompt; then it starts with Windows
+sf-etw                 # status: service state and what the engine sees
+sf-etw -Stop | -Start | -Restart
+sf-etw -Uninstall      # -Purge also removes its data
+```
+
+- The service is `bluetardigrade-sensor`. It runs as SYSTEM, starts automatically, and Windows restarts it if it fails (after 5 s, 10 s, then every minute).
+- `-Install` copies the binary to `Program Files\bluetardigrade\sensor`: a SYSTEM service must not run a file the user can replace, and the per-user install under `%LOCALAPPDATA%` is user-writable.
+- Its data lives in `ProgramData\bluetardigrade\sensor`, readable only by SYSTEM and Administrators: the spool, the log (`sensor.log`, rotated past 8 MiB) and the ingest token, read with `--token-file` so it never shows in the service's command line.
+- `-Install` again updates the binary and the settings. `-Addr`, `-Token` and `-TlsCa` point it at a remote engine.
+- A sensor started by hand refuses to run while the service is up, because both would use the same ETW sessions.
+- The heartbeat reports `run_mode` (`service` or `console`), and **Equipos** shows it on the host page.
+- `sf-update` rebuilds `bin\security-sensor.exe`; when the service exists it says so, and `sf-etw -Install` puts the new build in place.
+- The uninstaller refuses to run while the service is installed, so it is never left pointing at a deleted file. Remove it first with `sf-etw -Uninstall`.
+
+The binary itself takes `--service` (only for the service manager), `--log <file>` and `--token-file <file>`.
+
 What it captures, in two real-time ETW sessions:
 
 | Event | Source | Notes |

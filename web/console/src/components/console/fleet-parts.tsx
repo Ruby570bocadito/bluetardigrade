@@ -6,11 +6,11 @@
 // the engine inventory (GET /api/fleet); nothing is sent to a machine.
 
 import { useEffect, useId, useRef, useState } from 'react'
-import { Broadcast, CheckCircle, Copy, Cpu, Desktop, Fingerprint, HardDrives, PlugsConnected, Plus, ShieldCheck, Timer, WarningCircle, WifiSlash } from '@phosphor-icons/react'
+import { Broadcast, CheckCircle, Copy, Cpu, Desktop, Fingerprint, HardDrives, PlugsConnected, Plus, Power, ShieldCheck, Timer, WarningCircle, WifiSlash } from '@phosphor-icons/react'
 import { ConsoleDialog } from './console-dialog'
 import { StatTile } from './ui-bits'
 import { useFleet } from './fleet-provider'
-import { enrollmentPlan, FLEET_STATUS_LABEL, formatDuration, isValidHostName, secondsSince, type FleetHost, type FleetStatus } from '@/lib/fleet'
+import { enrollmentPlan, FLEET_STATUS_LABEL, formatDuration, isValidHostName, runModeText, secondsSince, type FleetHost, type FleetStatus } from '@/lib/fleet'
 import { formatDateTime } from '@/lib/console-types'
 
 const STATUS_STYLE: Record<FleetStatus, { dot: string; text: string; ring: string }> = {
@@ -74,6 +74,7 @@ export function SensorCard({ host }: { host?: FleetHost }) {
     { icon: Cpu, label: 'Sensor', value: s ? `${s.kind ?? 'desconocido'}${s.version ? ` · ${s.version}` : ''}` : 'sin latido (sensor antiguo o importación)' },
     { icon: HardDrives, label: 'Sistema', value: s?.os || '—' },
     { icon: ShieldCheck, label: 'Captura', value: s?.capture || host.sources.join(', ') || '—' },
+    { icon: Power, label: 'Modo', value: runModeText(s?.run_mode) },
     { icon: Broadcast, label: 'Último latido', value: beatAgo === null ? '—' : `hace ${formatDuration(beatAgo)} (cada ${s?.interval_s ?? 60} s)` },
     { icon: Timer, label: 'Sensor activo desde hace', value: s ? formatDuration(s.uptime_s) : '—' },
     { icon: PlugsConnected, label: 'Conexión desde', value: host.peers.length ? host.peers.join(', ') : '—' },

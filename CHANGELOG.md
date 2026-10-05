@@ -12,6 +12,30 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### ETW sensor as a Windows service (2026-10-05)
+
+- `sf-etw -Install` registers the `bluetardigrade-sensor` service:
+  - one UAC prompt, from a normal PowerShell;
+  - it runs as SYSTEM, starts with Windows and restarts itself if it fails;
+  - no elevated window is needed afterwards;
+  - `sf-etw` shows the status (what the engine sees, and the log for
+    administrators); `-Start`, `-Stop`, `-Restart`, `-Uninstall [-Purge]`.
+- Install layout: the binary is copied to `Program Files` (a SYSTEM
+  service must not run a user-writable file); spool, log and ingest token
+  live in `ProgramData` with SYSTEM/Administrators-only permissions.
+- The sensor gains `--service`, `--log <file>` (output to a rotated
+  file) and `--token-file <file>` (the token stays out of the service's
+  command line).
+- A manual sensor refuses to start while the service runs (both would
+  use the same ETW sessions).
+- Heartbeats report `run_mode` (service or console). The engine and
+  `/api/fleet` carry it, and the host page in Equipos shows it.
+- The installer adds `sf-etw` and says when the service runs an older
+  build after `sf-update`. The uninstaller refuses to delete files while
+  the service is installed.
+- The engine no longer reports "sensor sin señal" after it was itself
+  suspended (a laptop with the lid closed): sensors get a fresh grace.
+
 ### DNS rebinding guard for the tokenless engine API (2026-10-04)
 
 Security

@@ -2679,6 +2679,10 @@ components:
           type: string
         os:
           type: string
+        run_mode:
+          type: string
+          enum: [service, console]
+          description: how the sensor runs - "service" (Windows service manager, starts with the machine) or "console" (started by hand); absent for sensors that do not say
         capture:
           type: string
           description: what the sensor captures, e.g. process+network+registry

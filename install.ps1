@@ -508,7 +508,11 @@ function Build-Sensor {
     if (Test-Path $exe) {
         try {
             Copy-Item $exe (Join-Path $Root 'bin\security-sensor.exe') -Force
-            Write-Ok "bin\security-sensor.exe (run it from an Administrator prompt: security-sensor.exe --addr 127.0.0.1:7777)"
+            Write-Ok "bin\security-sensor.exe (install it once as a Windows service: sf-etw -Install)"
+            if (Get-Service 'bluetardigrade-sensor' -ErrorAction SilentlyContinue) {
+                # the service runs its own copy under Program Files
+                Write-Info "  the sensor service runs the previous build: sf-etw -Install updates it (one UAC prompt)"
+            }
         } catch {
             # the sensor runs elevated, so Stop-SfProcesses cannot stop it
             Write-Warn2 "bin\security-sensor.exe is in use (a sensor is running, usually from an Administrator window)."
@@ -524,6 +528,7 @@ function Copy-RuntimeScripts {
     New-Item -ItemType Directory -Path $scripts -Force | Out-Null
     Copy-Item (Join-Path $Root 'scripts\windows\sf-console.ps1') (Join-Path $scripts 'sf-console.ps1') -Force
     Copy-Item (Join-Path $Root 'scripts\windows\sensor.ps1') (Join-Path $scripts 'sensor.ps1') -Force
+    Copy-Item (Join-Path $Root 'scripts\windows\sensor-service.ps1') (Join-Path $scripts 'sensor-service.ps1') -Force
     Copy-Item (Join-Path $Root 'scripts\windows\runtime.ps1') (Join-Path $scripts 'runtime.ps1') -Force
     Copy-Item (Join-Path $Root 'scripts\windows\start-engine.ps1') (Join-Path $scripts 'start-engine.ps1') -Force
     Copy-Item (Join-Path $Root 'scripts\windows\server.ps1') (Join-Path $scripts 'server.ps1') -Force
@@ -545,6 +550,7 @@ function Write-Shims {
     try { $enc = [Text.Encoding]::GetEncoding(0) } catch { $enc = [Text.Encoding]::ASCII }
     $consolePs1   = Join-Path $scripts 'sf-console.ps1'
     $sensorPs1    = Join-Path $scripts 'sensor.ps1'
+    $etwPs1       = Join-Path $scripts 'sensor-service.ps1'
     $installPs1   = Join-Path $scripts 'install.ps1'
     $uninstallPs1 = Join-Path $scripts 'uninstall.ps1'
     $updateArgs = "-Update -InstallDir `"$Root`" -Repo `"$RepoId`" -Branch `"$Ref`""
@@ -585,6 +591,7 @@ function Write-Shims {
     $shims = [ordered]@{
         'sf-console.cmd' = "@echo off$nl powershell -NoProfile -ExecutionPolicy Bypass -File `"$consolePs1`" %*$nl"
         'sf-sensor.cmd' = "@echo off$nl powershell -NoProfile -ExecutionPolicy Bypass -File `"$sensorPs1`" %*$nl"
+        'sf-etw.cmd' = "@echo off$nl powershell -NoProfile -ExecutionPolicy Bypass -File `"$etwPs1`" %*$nl"
         'sf-update.cmd' = (@(
             '@echo off'
             'if "%~1"=="-run" goto :run'
@@ -606,7 +613,7 @@ function Write-Shims {
     foreach ($k in $shims.Keys) {
         [IO.File]::WriteAllText((Join-Path $bin $k), $shims[$k], $enc)
     }
-    Write-Ok "sf-engine / sf-collector / sf-sensor / sf-console / sf-update / sf-uninstall"
+    Write-Ok "sf-engine / sf-collector / sf-sensor / sf-etw / sf-console / sf-update / sf-uninstall"
 }
 
 # Whatever still comes before this install on the effective PATH after
@@ -1137,6 +1144,7 @@ if ($MyInvocation.InvocationName -ne '.') {
     Write-Host ' commands  :'
     Write-Host '   sf-engine      detection engine, prints alerts live'
     Write-Host '   sf-sensor      REAL telemetry via Sysmon (setup: sf-sensor -SetupSysmon)'
+    Write-Host '   sf-etw         ETW sensor as a Windows service (sf-etw -Install, once, UAC)'
     Write-Host '   sf-collector   import observed IDS/NDR/osquery/honeypot/firewall/EML logs'
     if ($consoleReady) { Write-Host '   sf-console     web console + browser (engine + hub + UI)' }
     else { Write-Host '   console        not built in this run; re-run without -NoConsole to enable it' }

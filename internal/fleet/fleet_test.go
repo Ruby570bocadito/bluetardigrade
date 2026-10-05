@@ -247,3 +247,17 @@ func TestResumeAfterTheEngineWasSuspended(t *testing.T) {
 		t.Fatalf("a real silence after the grace is reported: %+v", got)
 	}
 }
+
+func TestHeartbeatRunMode(t *testing.T) {
+	tr := New()
+	hb := heartbeat("PC-SVC", 60)
+	hb.Attributes["run_mode"] = "service"
+	tr.Observe(hb, "", t0)
+	odd := heartbeat("PC-ODD", 60)
+	odd.Attributes["run_mode"] = "<script>"
+	tr.Observe(odd, "", t0)
+	snap := tr.Snapshot(t0)
+	if find(t, snap, "PC-SVC").Sensor.RunMode != "service" || find(t, snap, "PC-ODD").Sensor.RunMode != "" {
+		t.Fatalf("run modes: %+v / %+v", find(t, snap, "PC-SVC").Sensor, find(t, snap, "PC-ODD").Sensor)
+	}
+}

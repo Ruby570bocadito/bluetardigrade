@@ -12,6 +12,15 @@
 //                   [--spool <file>] [--spool-max-mb <MiB>]
 //                   [--no-network] [--no-registry] [--registry-all]
 //                   [--no-dns] [--no-hash] [--debug-registry <fragment>]
+//                   [--service] [--log <file>] [--token-file <file>]
+//
+// --service runs the sensor under the Windows service manager (installed
+// once with 'sf-etw -Install', which asks for administrator rights; after
+// that it starts with Windows, no elevated window needed). --log sends
+// the output to a file (a service has no console) and --token-file reads
+// the ingest token from a file, so it never appears in the service's
+// command line. A manual sensor refuses to start while the service runs:
+// both would use the same ETW sessions.
 //
 // Besides process creation the sensor captures TCP connection attempts
 // (network.connect), DNS queries (network.connect with protocol dns;
@@ -46,6 +55,8 @@ mod transport;
 
 #[cfg(target_os = "windows")]
 mod collector;
+#[cfg(target_os = "windows")]
+mod service;
 
 // The delivery queue and the kernel event decoders are
 // platform-independent so their tests run on any host; outside Windows
@@ -83,6 +94,9 @@ fn main() -> Result<()> {
     let mut registry = true;
     let mut registry_all = false;
     let mut debug_registry: Option<String> = None;
+    let mut service_mode = false;
+    let mut log: Option<PathBuf> = None;
+    let mut token_file: Option<PathBuf> = None;
     let mut dns = true;
     let mut hash = true;
     let mut args = std::env::args().skip(1);
@@ -124,6 +138,19 @@ fn main() -> Result<()> {
                     std::process::exit(2);
                 }));
             }
+            "--service" => service_mode = true,
+            "--log" => {
+                log = Some(PathBuf::from(args.next().unwrap_or_else(|| {
+                    eprintln!("--log requires a file path");
+                    std::process::exit(2);
+                })));
+            }
+            "--token-file" => {
+                token_file = Some(PathBuf::from(args.next().unwrap_or_else(|| {
+                    eprintln!("--token-file requires a file path");
+                    std::process::exit(2);
+                })));
+            }
             "--no-dns" => dns = false,
             "--no-hash" => hash = false,
             "--spool-max-mb" => {
@@ -132,9 +159,31 @@ fn main() -> Result<()> {
             other => {
                 eprintln!("unknown argument: {other}");
                 eprintln!(
-                    "usage: security-sensor --addr <ip:port> [--token <shared-token>] [--tls-ca <ca.pem>] [--queue <events>] [--spool <file>] [--spool-max-mb <MiB>] [--no-network] [--no-registry] [--registry-all] [--no-dns] [--no-hash] [--debug-registry <fragment>]"
+                    "usage: security-sensor --addr <ip:port> [--token <shared-token>] [--tls-ca <ca.pem>] [--queue <events>] [--spool <file>] [--spool-max-mb <MiB>] [--no-network] [--no-registry] [--registry-all] [--no-dns] [--no-hash] [--debug-registry <fragment>] [--service] [--log <file>] [--token-file <file>]"
                 );
                 std::process::exit(2);
+            }
+        }
+    }
+    // a service has no console: everything below goes to the log file
+    #[cfg(target_os = "windows")]
+    if let Some(path) = &log {
+        if let Err(err) = service::log_to_file(path) {
+            eprintln!("--log {}: {err}", path.display());
+            std::process::exit(2);
+        }
+        eprintln!("[SENSOR] started {} (pid {}){}", normalize::now_rfc3339(), std::process::id(), if service_mode { " as a Windows service" } else { "" });
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = (&log, service_mode);
+    if token.is_none() {
+        if let Some(path) = &token_file {
+            match std::fs::read_to_string(path) {
+                Ok(text) => token = text.trim_start_matches('\u{feff}').lines().next().map(|l| l.trim().to_string()).filter(|t| !t.is_empty()),
+                Err(err) => {
+                    eprintln!("--token-file {}: {err}", path.display());
+                    std::process::exit(2);
+                }
             }
         }
     }
@@ -187,12 +236,24 @@ fn main() -> Result<()> {
 
     #[cfg(target_os = "windows")]
     {
+        // the service and a manual sensor would share the ETW sessions: the
+        // second one would stop the first one's sessions to start its own
+        if !service_mode && service::service_running() {
+            eprintln!("[SENSOR] the sensor already runs as a Windows service ({}); see 'sf-etw -Status', or stop it with 'sf-etw -Stop' before starting one by hand", service::SERVICE_NAME);
+            std::process::exit(1);
+        }
         let delivery = collector::Delivery {
             queue_cap,
             spool,
             spool_max_bytes: spool_max_mb.saturating_mul(1 << 20),
         };
-        let capture = collector::Capture { network, registry, registry_all, dns, hash, debug_registry };
+        let capture = collector::Capture { network, registry, registry_all, dns, hash, debug_registry, as_service: service_mode };
+        if service_mode {
+            return service::run(
+                Box::new(move || collector::run(&addr, token.as_deref(), tls_ca.as_deref(), delivery, capture)),
+                collector::stop_sessions,
+            );
+        }
         collector::run(&addr, token.as_deref(), tls_ca.as_deref(), delivery, capture)
     }
     #[cfg(not(target_os = "windows"))]

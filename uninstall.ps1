@@ -71,6 +71,22 @@ function Remove-SfServerBootTasks {
     }
 }
 
+# The ETW sensor service runs a copy under Program Files as SYSTEM: it
+# must go before the install directory, and removing it needs elevation.
+function Remove-SfSensorService {
+    $svc = Get-Service 'bluetardigrade-sensor' -ErrorAction SilentlyContinue
+    if (-not $svc) { return }
+    $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        throw 'The ETW sensor runs as a Windows service: remove it first with "sf-etw -Uninstall" (it asks for administrator), then run sf-uninstall again.'
+    }
+    if ($svc.Status -ne 'Stopped') { Stop-Service 'bluetardigrade-sensor' -Force -ErrorAction SilentlyContinue }
+    & sc.exe delete 'bluetardigrade-sensor' | Out-Null
+    $program = Join-Path $env:ProgramFiles 'bluetardigrade\sensor'
+    if (Test-Path -LiteralPath $program) { Remove-Item -LiteralPath $program -Recurse -Force -ErrorAction SilentlyContinue }
+    Write-Ok 'removed the ETW sensor service (its data stays in ProgramData\bluetardigrade\sensor)'
+}
+
 function Remove-LogonEntries {
     foreach ($v in @('security-framework-engine', 'security-framework-console')) {
         try {
@@ -181,6 +197,8 @@ if ($MyInvocation.InvocationName -ne '.') {
     if (Test-Path -LiteralPath $root) { Assert-SfRemovalTree $root }
     # Never delete privileged task code while SYSTEM entries remain. This
     # also removes owned tasks when the install directory is already absent.
+    try { Remove-SfSensorService }
+    catch { throw "The sensor service could not be removed; installation was kept: $($_.Exception.Message)" }
     try { Remove-SfServerBootTasks $root }
     catch { throw "Server boot tasks could not be removed; installation was kept: $($_.Exception.Message)" }
 

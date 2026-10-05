@@ -286,6 +286,24 @@ usuario y queda registrado quién hace cada cosa.
 - [ ] Con `SF_VT_API_KEY` configurada, abre una alerta de un proceso del sensor ETW.
   En «Reputación» aparece una fila «SHA-256» con el hash y su botón «Consultar».
 
+## 10. Sensor como servicio de Windows (sin ventana de administrador)
+
+Desde una PowerShell **normal**. Windows pedirá permiso (UAC) una sola vez. Si el sensor está
+abierto en la ventana de administrador, ciérralo antes con Ctrl+C.
+
+- [ ] **[normal]** `sf-etw -Install`. Acepta el UAC. Debe decir «service bluetardigrade-sensor running».
+- [ ] **[normal]** `sf-etw`. Debe mostrar el servicio en «Running» y la línea «engine sees … online,
+  … mode service».
+- [ ] En Equipos, la ficha de tu equipo dice «Modo: Servicio de Windows (arranca con el equipo)».
+- [ ] **[admin]** Lanza el sensor a mano como antes: debe negarse con «the sensor already runs as a
+  Windows service».
+- [ ] Reinicia Windows **sin abrir ninguna ventana de administrador**. Tras iniciar sesión, ejecuta
+  `sf-console` (normal): en 1–2 minutos tu equipo vuelve a «en línea».
+- [ ] **[normal]** `sf-etw -Stop`. A los 3–4 minutos salta «Sensor sin señal» (es lo esperado:
+  alguien paró el sensor). Después, `sf-etw -Start` y vuelve a «en línea».
+- [ ] **[normal]** `sf-etw -Uninstall`. Desaparece de `services.msc`. Para volver a tenerlo:
+  `sf-etw -Install`.
+
 ## 9. Al terminar
 
 - [ ] Si algo falla, copia lo que muestre la ventana del sensor o la consola y pégamelo.
