@@ -42,6 +42,31 @@
 6. Cuando los demás carriles publiquen ramas: leer sus 2-3 últimos
    informes al inicio de cada ronda; prioridad ALTA antes que nada.
 
+## Coordinación (apéndice de la ronda 2026-10-05, post-fetch)
+
+Al terminar la ronda aparecieron en `origin` `carril/implementacion-b`
+(rondas 1-3) y `carril/pulimiento-a` (rondas 1-6). Lectura de planes e
+informes:
+
+- **Sin solape de ficheros** con IMP-B ronda 3 (`lib/soc-metrics.ts`,
+  `components/charts/line-chart.tsx` nuevo, `lib/risk-history.ts`
+  nuevo, `dashboard.tsx`) ni con PUL-A ronda 6 (backend/CI/docs
+  técnicos). Mis conjuntos son disjuntos: fusión limpia.
+- **Nota de IMP-B (ronda 11h55, punto 5, para este carril):** el botón
+  nuevo del panel de analista hereda `exportCls`; «si se repasa el
+  contraste del tema claro, esos botones entran en el mismo pase».
+  Cubierto por diseño esta ronda: heredan utilidades zinc/blue que el
+  remap de `html.light` ya invierte y el checker valida los pares de
+  token, no componente a componente. Confirmar en el pase visual con
+  Chromium (pendiente general).
+- **IMP-B deja constancia** de que el cambio de paleta a zinc puro es
+  de este carril y que no tocó paleta. Coincide con el pendiente 2 de
+  abajo (unificación `blue-*` → `--primary`): sigue en mi lista,
+  coordinando ventanas para no pisar sus vistas.
+- **PUL-A** no marca prioridades ALTA para este carril en sus informes
+  revisados; el enganche de `check_console_theme.py` a `ci.yml` sigue
+  siendo propuesta para su área.
+
 ## Decisiones de ronda que conviene recordar
 
 - El tema viaja por **una clase** en `<html>` (`html.dark`/`html.light`)
