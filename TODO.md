@@ -14,24 +14,26 @@ esfuerzo y los riesgos) y orden de los hitos v1.0 → v2.x: [docs/PLAN-DETALLADO
 
 ## Etapa 0 — cerrar la v1.0
 
-- [ ] Abrir el PR de `fix/ci-and-host-guard` contra `main` y fusionarlo con el CI en verde. La rama ya
-  está subida y pasa en local todos los pasos del CI de Linux. Lleva:
+- [x] Fusionar `fix/ci-and-host-guard` con el CI en verde: entró en `main` dentro del PR #19
+  (5 de octubre), junto con el sensor como servicio, el alta de equipos y la ronda 1. Lleva:
   - los arreglos del CI del PR #15;
   - el filtro anti DNS rebinding;
   - la suspensión del portátil;
   - la preparación de la `v1.0.0-rc1`.
-- [x] Limpiar ramas ya integradas: en GitHub solo quedan `main`, las dos ramas de trabajo y la de
-  Dependabot; en local se borraron las tres fusionadas (5 de octubre).
+- [x] Limpiar ramas ya integradas: tras el PR #19 en GitHub solo quedan `main` y la de Dependabot;
+  en local, solo `main` (5 de octubre).
 - [ ] Activar en GitHub (Settings → General → Pull Requests) «Automatically delete head branches».
 - [x] Unificar versiones: motor, sensor, consola, servicio de la consola y API en `1.0.0`
   (commit `af75c91`).
 - [x] Notas de la candidata con las limitaciones conocidas: entrada `[v1.0.0-rc1]` del CHANGELOG.
   Las etiquetas con sufijo (`-rc1`) se publican como pre-release, no como «Latest».
-- [ ] Etiquetar `v1.0.0-rc1` en `main` después de fusionar el PR. La etiqueta lanza la release:
-  binarios del motor y del colector, sumas de verificación y procedencia firmada.
-- [ ] Prueba de uso real de 24–48 horas con el sensor en marcha. En curso desde el 5 de octubre,
-  en clase; a las 10:09, unos 1.000 eventos desde las 9:00, 1 alerta conocida y sin huecos. Al
-  terminar: analizar alertas, ruido, memoria, eventos perdidos y reconexiones.
+- [x] Etiquetar `v1.0.0-rc1`: puesta sobre la fusión del PR #19. La release se publicó como
+  pre-release con binarios del motor y del colector, sumas de verificación y procedencia firmada.
+- [ ] Prueba de uso real de 24–48 horas con el sensor en marcha.
+  - Primer día (5 de octubre, en clase): más de 18.400 eventos, 0 perdidos y 0 descartados.
+  - El riesgo del portátil quedó entre 5 y 11 todo el día por tres falsos positivos, ya corregidos
+    (commit `2c9d273`): el DNS de Windows, WhatsApp y los hashes hex tomados por DGA.
+  - Falta repetirla 24 horas con el sensor como servicio y analizar memoria y reconexiones.
 - [ ] Secciones pendientes de la hoja de pruebas: 7 (cuentas) y 4 (segundo equipo).
 - [ ] `v1.0.0`:
   - entrada `[v1.0.0]` del CHANGELOG con lo que salga de la prueba de uso y de las secciones 7 y 4;
@@ -149,7 +151,12 @@ arranques de proceso de un portátil en reposo. Un SOC no puede guardar ni mirar
   exacta o ruta. Caso real: la regla del portapapeles saltó por un asistente de desarrollo
   (`powershell -NonInteractive -Command "... Get-Clipboard -Raw"`). Se debe poder suprimir ese uso
   concreto sin apagar la regla.
-- [ ] **Informe de ruido** en la consola: procesos, dominios y reglas que más eventos o alertas
+- [x] **Falsos positivos de un día real** (5 de octubre, commit `2c9d273`):
+  - el detector de beacons ya no cuenta el DNS de Windows con su resolvedor;
+  - `exclude_domains` por perfil, con WhatsApp excluido;
+  - la regla DGA ya no salta con hashes hexadecimales.
+- [ ] **Informe de ruido** en la consola. La API ya existe (`GET /api/noise`, ronda 1); falta la
+  pantalla (Implementación B): procesos, dominios y reglas que más eventos o alertas
   generan, por equipo y en toda la flota, para saber qué ajustar.
 - [ ] **Separar la actividad de herramientas de administración** en los análisis (en las pruebas,
   mis compilaciones y comprobaciones se mezclaron con el uso real). Etiquetar por árbol de procesos.
@@ -427,6 +434,45 @@ Límites del proyecto que ningún carril cruza:
 - La validación de detecciones usa telemetría sintética e inerte.
 - No se descargan feeds ni herramientas de terceros de forma automática.
 
+### Estado tras la ronda 1 (5 de octubre)
+
+Fusionada en `main` con el PR #19. La revisión encontró y corrigió:
+- una condición de carrera en la batería bajo demanda (SIM-4);
+- 5 conflictos entre ramas;
+- la identidad de los commits.
+
+Todo el CI está en verde. Los informes de cada carril están en `docs/agentes/`.
+
+| Tarea | Estado | Qué falta |
+|---|---|---|
+| SIM-1, SIM-2 | Hecho | 127 escenarios inertes. El CI falla si una regla deja de detectarse o se queda sin escenario |
+| SIM-4 | Motor hecho (`/api/scenarios`) | La pantalla de la consola (B) |
+| SIM-3 | Pendiente | Matriz ATT&CK (B) |
+| REP-1 | Parte A hecha (`/api/reports`, JSON y CSV) | Pantalla e impresión a PDF (B) |
+| Informe de ruido (v1.1) | API hecha (`/api/noise`) | Pantalla (B) |
+| VIZ-1, VIZ-2, VIZ-3, VIZ-6 | Hecho | VIZ-2 con inicios de sesión cuando exista AD-3. VIZ-3 sin «falso positivo», porque la API no lo publica |
+| VIZ-4 | Parcial | Hay ciclo de vida por táctica y riesgo por equipo; falta la comparación con el periodo anterior |
+| SET-3 | Vista hecha | El motor debe publicar latencias, tamaño del almacén, versión y certificados (A) |
+| THEME-1, THEME-3 | Hecho | Tema claro, selector sistema/claro/oscuro, NOC siempre oscuro, paleta validada |
+| THEME-2 | Casi | El acento sigue azul: pasarlo a **zinc**, y quedan 6 clases azules fijas (B de pulimiento) |
+| Analista IA sobre un incidente completo | Hecho | Estaba en «Más adelante», v1.3 |
+| POL-1 | Parcial | `correlate.go` dividido; faltan `api.go`, `run.go` y `collector.rs` |
+| POL-4 | Hecho | Fuera los restos de «security-framework» |
+| POL-5 | Parcial | Hechos CONTRIBUTING, SECURITY y plantillas; falta dividir OPERATIONS y la referencia de la API |
+| SEC-1, SEC-5, SEC-7, SEC-8 | Hecho | Modelo de amenazas, auditoría de dependencias en el CI, 20 objetivos de fuzzing, bugs del banner, de inteligencia y de doble extensión, unicidad de identidades del alta |
+| SEC-7 en el CI nocturno | Pendiente | El job nocturno solo ejecuta 1 de los 20 objetivos (A de pulimiento) |
+| SEC-2 | Pendiente | Credencial del sensor cifrada con DPAPI (A) |
+
+Prioridades de la ronda 2:
+
+| Carril | Prioridad |
+|---|---|
+| Pulimiento B | Acento zinc y las 6 clases azules restantes |
+| Implementación B | Pantallas de SIM-4, REP-1 e informe de ruido; después REP-3/REP-4 y SET-1 |
+| Implementación A | REP-1 parte B, los campos que pide SET-3, AD-1 y SEC-2 |
+| Pulimiento A | Los 20 objetivos de fuzzing en el job nocturno (en varios jobs) y POL-1 (`api.go`) |
+| Seguridad A y B | Revisar el código nuevo de la ronda 1 (`internal/scenario`, `internal/scenrun`, `internal/report`, vistas nuevas) y decidir el PR #18 de Dependabot |
+
 ### Active Directory (solo lectura)
 
 - [ ] **AD-1 Conector LDAP de solo lectura** — Implementación A
@@ -511,13 +557,13 @@ Límites del proyecto que ningún carril cruza:
 
 ### Validación de detecciones (simulación de adversario segura)
 
-- [ ] **SIM-1 Escenarios de telemetría sintética** — Implementación A
+- [x] **SIM-1 Escenarios de telemetría sintética** — Implementación A
   - Ficheros YAML que describen secuencias de eventos inertes (los mismos campos que envía el
     sensor), cada una con su técnica ATT&CK y las alertas que se esperan.
   - Un reproductor las envía a un motor de laboratorio con la etiqueta `simulation`, para que
     nunca se mezclen con alertas reales.
   - **No se ejecuta nada en ningún equipo.**
-- [ ] **SIM-2 Biblioteca de escenarios** — Implementación A. Uno por cada regla o cadena del paquete,
+- [x] **SIM-2 Biblioteca de escenarios** — Implementación A. Uno por cada regla o cadena del paquete,
   partiendo de los fixtures que ya existen. En CI, un escenario que deja de detectarse rompe el
   build: así se cazan regresiones de detección.
 - [ ] **SIM-3 Matriz ATT&CK en la consola** — Implementación B
@@ -537,23 +583,23 @@ Límites del proyecto que ningún carril cruza:
 Hay que seguir las reglas de visualización (paleta validada, leyenda, vista en tabla, tooltips)
 en los dos temas.
 
-- [ ] **VIZ-1 Donuts («gráfica de queso»)** — Implementación B
+- [x] **VIZ-1 Donuts («gráfica de queso»)** — Implementación B
   - Alertas por severidad, por táctica y por fuente.
   - Flota por estado; hallazgos de AD por severidad.
   - Como mucho 6 porciones más «Otros», con etiqueta, leyenda y total en el centro.
-- [ ] **VIZ-2 Mapa de calor hora × día** — Implementación B (alertas, inicios de sesión, eventos por
+- [x] **VIZ-2 Mapa de calor hora × día** — Implementación B (alertas, inicios de sesión, eventos por
   equipo).
-- [ ] **VIZ-3 Flujo del triaje** — Implementación B. Fuente → táctica → estado (nuevo, en
+- [x] **VIZ-3 Flujo del triaje** — Implementación B. Fuente → táctica → estado (nuevo, en
   investigación, cerrado, falso positivo).
 - [ ] **VIZ-4 Tendencias** — Implementación B. Comparación con el periodo anterior y minigráficas en
   las tarjetas de KPI.
 - [ ] **VIZ-5 Mapa de la flota** — Implementación B. Grafo de equipos por sede u OU con su estado;
   al hacer clic, la ficha.
-- [ ] **VIZ-6 Exportar cualquier gráfica** — Implementación B (PNG, SVG o los datos en CSV).
+- [x] **VIZ-6 Exportar cualquier gráfica** — Implementación B (PNG, SVG o los datos en CSV).
 
 ### Tema claro y oscuro
 
-- [ ] **THEME-1 Tokens de diseño** — Pulimiento B
+- [x] **THEME-1 Tokens de diseño** — Pulimiento B
   - Colores definidos como variables en `:root`, con versión clara y oscura (base zinc).
   - Selector en la cabecera: sistema, claro u oscuro. Se recuerda por usuario.
   - Respeta `prefers-color-scheme`. El modo NOC sigue oscuro.
@@ -561,7 +607,7 @@ en los dos temas.
   - Hoy muchas clases suponen fondo oscuro (`text-zinc-100`, `bg-white/[0.03]`); deben pasar a
     los tokens.
   - Contraste AA comprobado en los dos temas.
-- [ ] **THEME-3 Paletas de gráficas por tema** — Pulimiento B. Validadas con la herramienta de
+- [x] **THEME-3 Paletas de gráficas por tema** — Pulimiento B. Validadas con la herramienta de
   paletas, sin repintar las series al cambiar de tema.
 
 ### Gestión del equipo SOC
@@ -650,7 +696,7 @@ Backend: Pulimiento A.
   - lotes del almacén.
 
   Los resultados van al benchmark nocturno.
-- [ ] **POL-4 Restos del nombre antiguo:** `SECURITY-FRAMEWORK ENGINE` en el banner y
+- [x] **POL-4 Restos del nombre antiguo:** `SECURITY-FRAMEWORK ENGINE` en el banner y
   `security-framework local API` en OpenAPI pasan a bluetardigrade.
 - [ ] **POL-5 Documentación:**
   - OPERATIONS dividido por capítulos;
@@ -680,7 +726,7 @@ Consola: Pulimiento B.
 
 ### Seguridad y bugs
 
-- [ ] **SEC-1 Modelo de amenazas** de las superficies nuevas: alta de equipos, conector de AD,
+- [x] **SEC-1 Modelo de amenazas** de las superficies nuevas: alta de equipos, conector de AD,
   inicio de sesión, informes, ajustes y descargas. STRIDE en `docs/`. — Seguridad B
 - [ ] **SEC-2 Secretos en reposo:**
   - credenciales de AD, SMTP y webhooks en ficheros con ACL;
@@ -702,18 +748,18 @@ Consola: Pulimiento B.
   - cabeceras (CSP, `frame-ancestors`, HSTS detrás de HTTPS).
 
   — Seguridad B
-- [ ] **SEC-5 Dependencias** en el CI: `govulncheck`, `cargo audit` y `osv-scanner` para bun, con
+- [x] **SEC-5 Dependencias** en el CI: `govulncheck`, `cargo audit` y `osv-scanner` para bun, con
   una política para las alertas. Decidir el PR #8 de Dependabot. — Seguridad B
 - [ ] **SEC-6 Cadena de suministro** — Seguridad B
   - Auditar los componentes de terceros copiados en la consola (React Bits) y cualquier skill o
     paquete que instalen los carriles de diseño.
   - Sin scripts `postinstall` nuevos.
-- [ ] **SEC-7 Fuzzing** (Go) de las superficies de entrada — Seguridad A:
+- [x] **SEC-7 Fuzzing** (Go) de las superficies de entrada — Seguridad A:
   - decodificador de la ingesta;
   - líneas `ENROLL` y `AUTH`;
   - cargadores YAML;
   - parser de los ficheros de inteligencia.
-- [ ] **SEC-8 Bugs conocidos** — Seguridad A:
+- [x] **SEC-8 Bugs conocidos** — Seguridad A:
   - el mensaje «ingest auth: ENABLED (… -token/SF_INGEST_TOKEN)» confunde cuando la
     autenticación la activa el alta de equipos;
   - casos borde del alta (equipo renombrado, reloj desfasado, registro lleno);
