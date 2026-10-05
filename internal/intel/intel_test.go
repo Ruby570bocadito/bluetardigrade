@@ -156,3 +156,44 @@ func TestWindowsEncodingsAreRead(t *testing.T) {
 		t.Fatal("indicators from BOM and UTF-16 files must match")
 	}
 }
+
+// Regression (SEC-7 fuzz round 2026-10-05): a lone trailing dot was
+// stripped with TrimSuffix, so malformed input like "000.." normalized
+// to the degenerate domain "000." — non-idempotent, and a list entry
+// "abc.." became a loadable indicator that a hostile event domain
+// "x.abc.." (same normalization hole) could reach through the suffix
+// walk in Match and forge an intel hit. Normalization now strips every
+// trailing dot on BOTH sides (list lines and event domains), so parsing
+// is idempotent and consistent: legitimate root-dot FQDNs load, dot-only
+// junk is rejected.
+func TestNormalizeDomainStripsEveryTrailingDot(t *testing.T) {
+	if d := normalizeDomain("evil.example.com."); d != "evil.example.com" {
+		t.Fatalf("root-dot FQDN must normalize to itself without the dot, got %q", d)
+	}
+	// Idempotence: normalizing twice changes nothing.
+	for _, in := range []string{"evil.example.com.", "x.abc..", "000..", "...."} {
+		once := normalizeDomain(in)
+		if once != "" && normalizeDomain(once) != once {
+			t.Fatalf("normalizeDomain(%q) = %q is not idempotent", in, once)
+		}
+	}
+	for _, junk := range []string{"000..", "abc..", "...."} {
+		if kind, value := parseLine(junk); kind != "" {
+			t.Fatalf("parseLine(%q) = (%q, %q): degenerate dot-only input must not load", junk, kind, value)
+		}
+	}
+	// End to end: the junk list entry must not be loadable, so no
+	// hostile event domain can walk its suffixes onto it.
+	dir := t.TempDir()
+	writeList(t, dir, "junk.txt", "abc..\n")
+	m, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Total() != 0 {
+		t.Fatalf("junk domain entry loaded as an indicator (total %d)", m.Total())
+	}
+	if hits := m.Match(&model.Event{Network: &model.Network{Domain: "x.abc.."}}); len(hits) != 0 {
+		t.Fatalf("hostile event domain forged an intel hit: %+v", hits)
+	}
+}
