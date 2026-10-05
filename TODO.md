@@ -220,6 +220,86 @@ Las cifras se miden con un simulador, no se suponen.
 - [ ] **Métricas del SOC:** tiempo hasta el triaje y el cierre, falsos positivos por regla y carga
   por analista.
 
+## Forense: vista propia en la consola
+
+Hoy el forense existe, pero escondido. El motor congela un paquete de evidencia (la alerta y la
+línea de tiempo del equipo de los 5 minutos anteriores) en cada alerta alta o crítica, y la consola
+solo lo enseña dentro del detalle de esa alerta («Evidencia forense», exportable a JSON o JSONL).
+
+- [ ] **Vista «Forense»** en la barra lateral:
+  - todos los paquetes con su equipo, regla, severidad y fecha;
+  - búsqueda y filtros;
+  - enlace a la alerta y al incidente.
+- [ ] **Árbol de procesos del paquete** (ROADMAP H2): ya lleva PID y PPID, así que se puede pintar
+  con el mismo componente de árbol de Equipos.
+- [ ] **Paquetes dentro del incidente:** las evidencias de sus alertas, en el informe imprimible.
+- [ ] **Cadena de custodia:** hash SHA-256 de cada paquete al congelarlo, registrado aparte, y
+  comprobación al exportar (que nadie lo haya cambiado).
+- [ ] **Más contexto en el paquete:**
+  - hashes y firmante de los ejecutables;
+  - conexiones del proceso y sus dominios;
+  - claves de registro tocadas;
+  - ventana configurable (no solo 5 minutos).
+- [ ] **Retención configurable** (`-forensic-retention`) en lugar del tope fijo de 256 paquetes.
+
+## Prevención y respuesta en los equipos
+
+Hoy los equipos solo envían datos. La única respuesta, `kill_process`, actúa en el propio servidor
+del motor, con credencial por operador y auditoría. Actuar sobre los equipos de la flota cambia la
+línea que trazamos («el dashboard observa»), así que se hace como una decisión explícita y con estos
+límites de diseño:
+- un conjunto **cerrado** de acciones predefinidas, nunca «ejecutar un comando» ni subir programas;
+- cada orden **firmada** por el servidor y comprobada por el sensor;
+- autorizada por un operador con credencial propia (opcionalmente por dos personas);
+- auditada en el servidor y en el equipo;
+- desactivable por grupo o por equipo, con una lista de procesos y equipos protegidos.
+
+Por orden de riesgo, de menor a mayor:
+
+- [ ] **Postura de seguridad (solo lectura, sin cambiar nada).** El sensor informa en el latido de:
+  - si Defender está activo y sus firmas, al día;
+  - cortafuegos, BitLocker y actualizaciones pendientes;
+  - protección de LSA (RunAsPPL), SMBv1, RDP con NLA y administradores locales.
+
+  Equipos lo muestra con una puntuación y recomendaciones, y hay alertas cuando algo se desactiva
+  (por ejemplo, alguien apaga Defender).
+- [ ] **Políticas recomendadas para el dominio:** la consola genera la configuración lista para
+  aplicar por GPO o Intune (reglas ASR de Defender, WDAC o AppLocker en modo auditoría, cortafuegos).
+  La aplica el dominio, no nosotros.
+- [ ] **Prevención local por política.** El sensor termina al instante un proceso cuyo hash está en
+  una lista de bloqueo de la organización (las mismas listas de `intel/`, marcadas como «bloquear»).
+  - Empieza en modo «solo avisar», con registro de lo que habría parado.
+  - Límite real: desde modo usuario solo se puede parar un proceso ya arrancado, no impedir que
+    arranque. Bloquear antes de la ejecución es trabajo de WDAC, AppLocker o un driver.
+- [ ] **Acciones de respuesta remotas,** cada una con su confirmación:
+  - aislar el equipo de la red, dejando solo la conexión con el servidor, y liberarlo;
+  - terminar un proceso por PID y hash;
+  - poner un fichero en cuarentena por ruta y hash;
+  - recoger un paquete forense del equipo bajo demanda.
+
+  Necesitan un canal del servidor al sensor que hoy no existe: se diseña con firma, caducidad de
+  cada orden y protección frente a repeticiones.
+
+## Varios tardígrados: nodos que se comunican
+
+Si se levantan varios motores (sedes, redes separadas o capacidad), que formen nodos que se conocen
+y comparten trabajo, en lugar de islas.
+
+- [ ] **Identidad de nodo y alta de nodos:** como los sensores, cada nodo tiene una identidad propia y
+  se une con un token de un solo uso. Comunicación con TLS mutuo entre nodos.
+- [ ] **Federación por sedes (primero):** cada sede tiene su tardígrado con sus sensores, y los nodos
+  de sede reenvían alertas, inventario y salud a un nodo central. Así:
+  - la consola central ve toda la organización y puede consultar el detalle en el nodo de cada sede;
+  - si el enlace se corta, la sede sigue detectando sola y reenvía al volver.
+- [ ] **Compartir configuración entre nodos:** listas de inteligencia, software conocido,
+  supresiones, reglas y cuentas, versionadas y firmadas desde el nodo central.
+- [ ] **Correlación entre nodos:** cadenas por cuenta que cruzan sedes (la misma cuenta en equipos de
+  dos sedes).
+- [ ] **Clúster en una misma red (después):** varios nodos se reparten los equipos (fase B de escala:
+  hash por equipo). Pertenencia por gossip o un registro central, y si cae un nodo, sus equipos
+  pasan a otro.
+- [ ] **Salud de los nodos en la consola:** mapa de nodos, latencia, cola de reenvío y versión.
+
 ## Más adelante (ver ROADMAP)
 
 - v1.2, detección: carga de DLL y drivers (`image.load`), firma de binarios, inyección real,
