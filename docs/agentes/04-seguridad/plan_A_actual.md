@@ -1,36 +1,34 @@
-# Plan de ronda — Seguridad A (2026-10-05, ronda 7, ~19h20 Madrid)
+# Plan de ronda — Seguridad A (2026-10-05, ronda 8, ~19h45 Madrid)
 
-Base: `46317ef` (mi ronda 6). Estado de los carriles al abrir: ninguna
-punta ha cambiado desde el cierre de la ronda 6 (IMP-A sigue en su plan
-`2c32013`, `internal/ad` no existe; SEG-B solo añadió el diseño SEC-2
-docs-only `b0eaa60`, dirigido a IMP-A; PUL-B y PUL-A sin código nuevo
-desde lo ya revisado). Sin encargos ALTA para este carril en los
-informes nuevos de SEG-B (ronda 4) y PUL-B (16h40).
-
-Con los carriles ajenos congelados, la ronda vuelve a mi pendiente de
-más prioridad propia: los paquetes del motor que ninguna ronda anterior
-auditó a fondo (rondas 1-4 cubrieron ingest/intel/rules/threshold/
-beacon-load/suppress/sigma/enroll/scenario/scenrun/report/sensor).
-Quedan sin lectura profunda la persistencia y las capas de decisión.
+Base: `1d98208` (mi ronda 7). Novedad al abrir: IMP-B publicó
+`9f35615` (IDEA-3, playbooks de respuesta a incidentes, ~1.1k líneas de
+consola: incident-playbook.ts/tsx, incident-report.ts, incidents-view).
+El resto de carriles sin cambios (IMP-A `2c32013` solo plan, PUL-A
+`10d7364`, PUL-B `173ac11` y SEG-B `b0eaa60` docs-only).
 
 Tareas:
 
-1. **Auditoría funcional de `internal/store`** (SQLite: esquema,
-   migraciones, transacciones, reloj/retención, límites de consultas,
-   cierre limpio) y **`internal/api`** (rutas REST: autenticación,
-   validación de entrada, concurrencia del hub, bordes de paginación,
-   writers de CSV/descargas). Bugs funcionales → corregir con test que
-   falle antes y pase después.
-2. **Auditoría funcional de `internal/correlate` + `internal/risk` +
-   `internal/incident`** (lógica de detección: ventanas, bordes de
-   recuento, uniones de reglas en cadena, estados de incidente) — si el
-   tiempo de ronda lo permite; lo no cubierto pasa a la ronda 8.
-3. **Obligatorio de ronda**: `-race -count=5` en los paquetes con
-   goroutines que toque el código propio corregido; las ramas ajenas no
-   cambian desde la ronda 6 (su barrido `-race` de esa ronda sigue
-   vigente y se cita como evidencia, no se repite).
+1. **Revisión funcional de IDEA-3 de IMP-B** (rama ajena sin fusionar —
+   anotar, no editar): `incident-playbook.ts` (estado local validado:
+   límites 40/40/80, expulsión LRU, NFKC, bidi, revalidación),
+   `incident-playbook.tsx` (flujo de aplicación de plantilla, nota al
+   motor no bloqueante, casillas con hora, cronología
+   `datetime-local`), `incident-report.ts` (export .md/imprimible con
+   plan; byte a byte igual sin plan), cambios en `incidents-view.tsx`
+   y `console-commands.ts` («reglas» → «detectores»).
+2. **Re-verificar mis dos hallazgos de la ronda 5** en la nueva punta
+   de IMP-B (noise-view supresión flota-completa MEDIA; reports-view
+   generate sin guardia BAJA) — su diff no toca esos ficheros, pero se
+   comprueba contra su punta.
+3. **Auditoría propia si el tiempo lo permite** (continuación del
+   pendiente 2 del roadmap): `internal/fleet`, `internal/baseline`,
+   `internal/lifecycle` (gestores de estado con persistencia).
+4. **Obligatorio de ronda**: batería de consola en la punta de IMP-B
+   (bun test/tsc/build); `-race` en paquetes Go solo si el árbol Go de
+   alguna rama ajena cambia (IDEA-3 es consola-only: verificar diff Go
+   vacío y documentarlo) o si corrijo código propio.
 
-Ficheros que espero tocar: `internal/store/**`, `internal/api/**`,
-`internal/{correlate,risk,incident}/**` (si toca corregir), sus tests,
-`docs/agentes/04-seguridad/` y `changelog.d/` si corrijo algo ya
-fusionado en main.
+Ficheros que espero tocar: `docs/agentes/04-seguridad/`,
+`changelog.d/` si algún hallazgo cayera en código ya en main, y
+`internal/{fleet,baseline,lifecycle}/**` si la auditoría propia
+encuentra algo que corregir.
