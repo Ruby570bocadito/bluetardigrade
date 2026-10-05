@@ -1,98 +1,78 @@
-# Plan de ronda — Pulimiento A (2026-10-05 12h36 Madrid)
+# Plan de ronda — Pulimiento A (2026-10-05 13h42 Madrid, ajustado)
 
-Sexta ronda de Pulimiento A en la rama `carril/pulimiento-a`.
-Continuidad de las rondas 1-5 (ver `roadmap_A.md`).
+La ronda 6 se publicó a las 12h36 con un único punto (POL-A-docs-14) y no
+llegó a ejecutarse. Esta instancia retoma esa ronda, la ajusta tras leer
+los planes de los otros cinco carriles (ahora los seis existen) y la
+ejecuta completa.
 
 ## Sincronización previa
 
-- `git fetch origin --prune`: `origin/carril/implementacion-b` avanzó
-  un commit (`4257127..1e0d035`: plan de la ronda 3 de IMP-B,
-  «graficas de ciclo de vida y riesgo»). Las otras cuatro ramas de
-  carril siguen sin existir.
-- `git pull --ff-only origin carril/pulimiento-a`: already up to date.
-- `git merge origin/main`: already up to date.
-- **Discord:** no se envió notificación de inicio
-  (`DISCORD_WEBHOOK_URL` no definida; ya declarado).
+- `git fetch origin --prune`: las seis ramas de carril existen. Novedades
+  desde mi último plan: `carril/implementacion-a` (ronda cerrada, SIM-1/SIM-2;
+  su rama va adelantada hasta `feat/enrollment`, donde vive el `TODO.md`
+  real), `carril/seguridad-a` (plan ronda 2: fuzzers), `carril/seguridad-b`
+  (ronda cerrada), `carril/pulimiento-b` (ronda cerrada, THEME-1/2/3).
+- `git pull --ff-only` + `git merge origin/main`: already up to date
+  (main sigue en `5e168ba`).
+- **Discord:** no se envió notificación (`DISCORD_WEBHOOK_URL` no definida;
+  ya declarado en rondas anteriores).
 
-## Coordinación con IMP-B — conflicto inminente detectado
+## Coordinación leída (sin colisiones)
 
-El plan de IMP-B ronda 3 (commit `1e0d035`, timestamp 10:29:56 UTC)
-dice en su punto 3: «Deuda docs (encargo de PUL-A): la fila "Console"
-del inventario de `docs/ARCHITECTURE.md` dice "(no provider token
-streaming)" — stale desde mi ronda 2; la actualizo a streaming nativo
-con guardas de tiempo.»
-
-**Mi commit `bac6b02` (timestamp 10:24:51 UTC, ~5 min ANTES del plan
-de IMP-B)** ya actualizó esa fila a «(native provider streaming: the
-answer renders as the model writes it; providers without streaming
-deliver it in one piece)». IMP-B publicó su plan 5 min después de mi
-commit, pero aparentemente no re-fetch-eó mi rama antes de escribir
-su plan.
-
-Según las reglas del carril: «Gana el carril dueño del área (tabla de
-carriles) y, entre iguales, el plan que se publicó primero.» El
-feature inventory de `docs/ARCHITECTURE.md` es mi área (Pulimiento A:
-documentación técnica), y mi commit fue primero. Así que yo gano, y
-IMP-B no debería tocar la fila.
-
-Acciones:
-1. No toco la fila esta ronda (ya está corregida en mi rama).
-2. Dejo anotado en mi `roadmap_A.md` y en el informe que IMP-B tiene
-   planeado tocar la fila «Console» y que yo ya la corregí, para que
-   el responsable lo sepa al fusionar. Si IMP-B aterriza su cambio,
-   habrá un conflicto de fusión en `docs/ARCHITECTURE.md` que se
-   resuelve conservando mi edición (la versión correcta ya está en
-   origin/carril/pulimiento-a).
-3. No abro PR ni fusiono (lo hace el responsable).
+- IMP-A: ronda cerrada; su siguiente tarea (SIM-4) tocará
+  `internal/api/api.go` + `docs/api/openapi.yaml` (paths). Yo solo toco el
+  bloque de metadatos de `openapi.yaml` (info/comentario/ejemplo) — hunks
+  distintos; lo anoto en el informe.
+- IMP-B: solo `web/console` (VIZ-1/VIZ-3); excluye explícitamente mis
+  ficheros. Sin solape.
+- PUL-B: ronda cerrada; su punto 3 propone a MI carril enganchar su
+  `check_console_theme.py` en `ci.yml`. Lo atiendo esta ronda llevándome el
+  script byte a byte de su rama (SHA-256 `41e7f5da…`) para que las dos
+  ramas lo añadan idéntico y la fusión sea trivial.
+- SEG-A: fuzzers en `internal/collector`, `internal/reputation`,
+  `internal/api/filters.go` (tests). No toco esos paquetes. Sin solape.
+- SEG-B: su diff de `ci.yml` contra `main` está vacío; sin colisión en CI.
 
 ## Identificadores del TODO trabajados
 
-El repo sigue sin `TODO.md`. Continúo numerando mis hallazgos
-`POL-A-<tema>`. Esta ronda:
+(El `TODO.md` real vive en `feat/enrollment`; leo mis tareas POL de ahí.)
 
-- **POL-A-docs-14** — `docs/OPERATIONS.md` sección «Prometheus
-  metrics»: la lista de familias `sf_*` que documenta está
-  incompleta. Compara el listado de la doc contra
-  `internal/api/metrics.go` (46 familias en código): la doc nombra
-  explícitamente ~20 familias y usa wildcards (`sf_store_*`,
-  `sf_correlator_*`, `sf_webhook_*_total`, `sf_elastic_*_total`,
-  `sf_splunk_*_total`, `sf_notify_*_total`) para otras, pero omite
-  completamente las familias de `baseline`, `beacon`, `threshold`,
-  `intel`, `events_buffered`, `events_per_minute`,
-  `ingest_identities`, `rules`, `uptime_seconds`. Las añado con
-  wildcards donde proceda (ej. `sf_baseline_*`, `sf_beacon_*`,
-  `sf_threshold_*`, `sf_intel_*`) y mención explícita para las
-  restantes.
+- **POL-A-docs-14** (publicado a las 12h36): completar las familias
+  `sf_*` de la sección «Prometheus metrics» de `docs/OPERATIONS.md`
+  contra `internal/api/metrics.go`.
+- **POL-4** (alcance nombrado por el TODO): restos del nombre antiguo —
+  banner `SECURITY-FRAMEWORK ENGINE` (`cmd/engine/render.go`), título TUI
+  (`cmd/engine/interactive.go`), metadatos y ejemplo de
+  `docs/api/openapi.yaml`, y rutas del `Dockerfile`. El resto de hits se
+  clasifican en el informe (contratos SIEM/email congelados por tests,
+  crate Rust real, legacy handling, territorio de otros carriles).
+- **POL-A-ci-2**: enganche de `check_console_theme.py` en el job
+  `console` de `ci.yml` (petición de PUL-B; CI es mi área).
+- **Verificación con toolchain real**: Go 1.26.0 instalado esta ronda en
+  el entorno (`/home/z/my-project/tools/go`); primera pasada completa de
+  la suite Go del carril (gofmt, build, vet, GOOS=windows, staticcheck si
+  se puede instalar, test -race, guards de OpenAPI e inventario).
+- **Fijos de ronda**: revisión rápida de `.gitignore` y ficheros
+  temporales (ya limpia en ronda 1; re-verificar).
 
-## Ficheros que voy a tocar
+## Ficheros que voy a tocar y por qué
 
-- `docs/OPERATIONS.md` (sección «Prometheus metrics», 1 párrafo)
-- `changelog.d/PUL-A-prometheus-metrics-complete.md` (fragmento)
-- `docs/agentes/03-pulimiento/ronda_2026-10-05_12h36_A.md` (informe)
-- `docs/agentes/03-pulimiento/roadmap_A.md` (continuidad + nota de
-  coordinación con IMP-B)
-
-## Por qué
-
-`docs/OPERATIONS.md` es mi área. La sección de Prometheus metrics
-es la referencia que un operador usa para configurar sus alertas
-y dashboards. Si omite 20 familias que existen en el código
-(`sf_baseline_*`, `sf_beacon_*`, `sf_threshold_*`, `sf_intel_*`,
-`sf_events_buffered`, `sf_events_per_minute`, `sf_ingest_identities`,
-`sf_rules`, `sf_uptime_seconds`), el operador no sabe que puede
-alertar sobre ellas ni que existen. La deriva es factual y de
-alto valor operativo.
+- `docs/OPERATIONS.md` — sección Prometheus (mi área, doc técnica).
+- `cmd/engine/render.go`, `cmd/engine/interactive.go` — POL-4 banner y
+  título TUI (cadenas de presentación, sin cambio de comportamiento).
+- `docs/api/openapi.yaml` — POL-4 metadatos/ejemplo (no toca paths ni
+  contratos; el CI lo valida con `check_openapi.py`).
+- `Dockerfile` — POL-4 rutas internas coherentes (auto-contenidas).
+- `.github/workflows/ci.yml` — paso nuevo en el job `console` (mi área).
+- `scripts/dev-tests/check_console_theme.py` — copia byte a byte de
+  `origin/carril/pulimiento-b` (autoría PUL-B; yo solo lo hago llegar a
+  CI).
+- `changelog.d/`, `docs/agentes/03-pulimiento/` — fragmentos, informe y
+  roadmap.
 
 ## Verificación prevista
 
-Mis cambios son texto en `docs/OPERATIONS.md` (1 párrafo). Verifico:
-
-- `python3 scripts/dev-tests/check_rule_inventory.py` (no toca
-  reglas ni la tabla auto-generada; confirmo marcadores).
-- `python3 scripts/dev-tests/check_openapi.py` (no toco la API).
-- Script Python: comparar las familias `sf_*` mencionadas en la
-  sección actualizada vs las que emite `internal/api/metrics.go`;
-  la lista debe cuadrar (con wildcards expandidos).
-
-Sigo sin tener `go`/`cargo`/`pwsh`/`staticcheck` en el entorno; los
-cambios de esta ronda no tocan ese código.
+Suite Go completa con el toolchain nuevo + `check_openapi.py` (+ self-test)
++ `check_rule_inventory.py` + el checker de tema nuevo. Sin `cargo` ni
+`pwsh`: no toco sensor ni PowerShell esta ronda (nada que verificar en
+ellos).
