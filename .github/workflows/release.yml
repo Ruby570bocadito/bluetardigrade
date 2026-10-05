@@ -97,7 +97,11 @@ jobs:
           VER: ${{ steps.ver.outputs.version }}
           GH_TOKEN: ${{ github.token }}
         run: |
+          # a tag with a suffix (v1.0.0-rc1) is a candidate: published as a
+          # pre-release, so it never becomes the "Latest" release
+          PRE=""
+          case "$VER" in *-*) PRE="--prerelease" ;; esac
           gh release create "$VER" dist/* \
             --verify-tag \
             --title "$VER" \
-            --generate-notes
+            --generate-notes $PRE

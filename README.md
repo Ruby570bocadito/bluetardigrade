@@ -10,7 +10,7 @@ Named after the most resilient animal on Earth: a static Go engine with
 no runtime dependencies, collectors and an operator console.
 
 [![CI](https://github.com/Ruby570bocadito/bluetardigrade/actions/workflows/ci.yml/badge.svg)](https://github.com/Ruby570bocadito/bluetardigrade/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/badge/release-v0.2.0-2f74f0)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v1.0.0--rc1-2f74f0)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-Apache--2.0-2f74f0.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/engine-Go%201.26-00ADD8?logo=go&logoColor=white)](go.mod)
 [![Rust](https://img.shields.io/badge/sensor-Rust%20%2B%20ETW-DEA584?logo=rust&logoColor=white)](sensor/)

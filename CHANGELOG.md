@@ -4,9 +4,9 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
-while the project is pre-1.0, minor versions may carry breaking changes to the
-event schema or the HTTP API (the schema contract itself is documented in the
-OpenAPI spec and guarded in CI). The version reported by `engine version` is
+from 1.0 on, breaking changes to the event schema or the HTTP API come only in a
+major version (the schema contract itself is documented in the OpenAPI spec and
+guarded in CI). The version reported by `engine version` is
 injected at link time from the release tag — see `.github/workflows/release.yml`
 and the `make dist` target.
 
@@ -33,8 +33,74 @@ and the `make dist` target.
 - The installer adds `sf-etw` and says when the service runs an older
   build after `sf-update`. The uninstaller refuses to delete files while
   the service is installed.
+
+## [v1.0.0-rc1] — 2026-10-05 — first release candidate
+
+The first candidate for 1.0. The Windows ETW sensor is verified on a real
+laptop (Windows 11 25H2):
+- process starts with image path and SHA-256;
+- DNS queries with their answers;
+- TCP connections with their domain;
+- registry writes, with the alerts they raise.
+
+The engine brings:
+- 114 enabled rules;
+- cross-host correlation chains, beaconing, thresholds, local threat intel
+  and the per-host baseline;
+- fleet heartbeats with silent-sensor alerts;
+- forensic bundles and incidents.
+
+The console adds per-analyst accounts and an audit trail.
+
+All components report the same version now: engine `v1.0.0` (release
+binaries report their tag), ETW sensor `1.0.0`, console and console service
+`1.0.0`, API spec `1.0.0`.
+
+Before `v1.0.0`:
+- a 24–48 hour real-use run;
+- test sheet sections 7 (accounts) and 4 (a second machine), in
+  `docs/PRUEBAS-PENDIENTES.md`.
+
+### Known limitations
+
+- **Sensor:**
+  - The ETW sensor is Windows-only and runs from an Administrator window
+    (kernel ETW needs it). It runs as a Windows service from 1.1.
+  - Endpoints are enrolled by hand (`ingest-identities.yaml`).
+    Single-use enrollment tokens and an installer package are planned.
+  - A registry key opened relative to a handle that predates the sensor
+    shows an unknown root (`?\Software\...\Run`). The data written to a
+    value is not captured.
+  - About 10% of DNS events carry no answer (cached or failed lookups).
+    A TCP connection carries its domain only when the sensor saw the
+    lookup.
+  - ETW lost events are not reported in the heartbeat yet.
+- **Noise:**
+  - Routine vendor software is not aggregated. On the test laptop, Lenovo
+    Vantage starts four add-ins every minute: 43% of process starts at
+    idle. Aggregation, a known-software list and conditional suppressions
+    are planned for 1.1.
+  - "Lectura del portapapeles desde la línea de comandos" also fires on
+    legitimate tools that read the clipboard through PowerShell, such as
+    developer assistants. Suppress it per host until conditional
+    suppressions land.
+- **Scale and deployment:**
+  - One engine node on SQLite, measured on one real host and in the lab.
+    There are no large-fleet measurements yet.
+  - The console listens on loopback over HTTP. For analysts on other
+    machines, put it behind an HTTPS reverse proxy.
+  - Release assets are the engine and collector binaries. `install.ps1`
+    builds the ETW sensor and the console from source (Rust and Bun).
+- **By design:**
+  - Threat intel comes only from local files; nothing is downloaded.
+  - The console runs no actions on endpoints.
+
+### Fleet after a laptop suspension (2026-10-05)
+
 - The engine no longer reports "sensor sin señal" after it was itself
-  suspended (a laptop with the lid closed): sensors get a fresh grace.
+  suspended (a laptop with the lid closed): when its fleet check sees a
+  wall-clock gap of more than three intervals, every sensor gets a fresh
+  grace period.
 
 ### DNS rebinding guard for the tokenless engine API (2026-10-04)
 
