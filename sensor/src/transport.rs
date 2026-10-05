@@ -114,6 +114,10 @@ impl Sender {
                 );
                 None
             }
+            Err(err) if err.downcast_ref::<PendingApproval>().is_some() => {
+                eprintln!("[SENSOR] {err}");
+                None
+            }
             Err(err) => return Err(err),
         };
         Ok(Self {
@@ -198,23 +202,86 @@ impl std::error::Error for EngineUnreachable {
     }
 }
 
-/// Dial and, when a CA bundle is configured, upgrade to TLS; then,
-/// when a token is configured, run the AUTH handshake on top. An auth
-/// rejection is fatal (misconfiguration, not a transient fault): the
-/// engine answered and said no.
-fn dial(addr: &str, token: Option<&str>, tls_ca: Option<&Path>) -> Result<Stream> {
+/// The engine knows this sensor's credential but an administrator has
+/// not approved it yet (enrollment). Transient like an unreachable
+/// engine: events wait in the queue/spool and the sensor keeps asking.
+#[derive(Debug)]
+pub struct PendingApproval {
+    addr: String,
+}
+
+impl std::fmt::Display for PendingApproval {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "engine {} has this sensor waiting for approval in the console (Equipos); events wait in the queue/spool until then",
+            self.addr
+        )
+    }
+}
+
+impl std::error::Error for PendingApproval {}
+
+/// Whether an error only means "not yet": the engine is unreachable or
+/// the sensor still waits for approval. Anything else is final.
+pub fn is_transient(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<EngineUnreachable>().is_some() || err.downcast_ref::<PendingApproval>().is_some()
+}
+
+/// Dial and, when a CA bundle is configured, upgrade to TLS, with the
+/// handshake-phase timeouts set on the raw socket so the TLS handshake
+/// and the first exchange are bounded by the same deadline.
+fn open(addr: &str, tls_ca: Option<&Path>) -> Result<Stream> {
     let tcp = TcpStream::connect(addr).map_err(|source| EngineUnreachable {
         addr: addr.to_string(),
         source,
     })?;
-    // Handshake-phase timeouts go on the raw socket so both the TLS
-    // handshake and the AUTH exchange are bounded by the same deadline.
     tcp.set_read_timeout(Some(AUTH_TIMEOUT))?;
     tcp.set_write_timeout(Some(AUTH_TIMEOUT))?;
-    let mut stream = match tls_ca {
+    Ok(match tls_ca {
         None => Stream::Plain(tcp),
         Some(ca) => Stream::Tls(Box::new(tls_connect(addr, tcp, ca)?)),
-    };
+    })
+}
+
+/// What the engine answers to ENROLL.
+#[derive(Debug, serde::Deserialize)]
+pub struct Enrollment {
+    #[serde(default)]
+    pub ack: String,
+    #[serde(default)]
+    pub identity: String,
+    #[serde(default)]
+    pub credential: String,
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub error: String,
+}
+
+/// Exchanges an enrollment token for a credential of this sensor's own
+/// ("ENROLL <token> <host>"). The engine closes the connection after
+/// answering; the sensor then connects with AUTH <credential>.
+pub fn enroll(addr: &str, token: &str, host: &str, tls_ca: Option<&Path>) -> Result<Enrollment> {
+    let mut stream = open(addr, tls_ca)?;
+    stream
+        .write_all(format!("ENROLL {token} {host}\n").as_bytes())
+        .with_context(|| format!("ENROLL handshake to {addr}"))?;
+    let line = read_line_capped(&mut stream, 1024).with_context(|| format!("reading the ENROLL answer from {addr}"))?;
+    let answer: Enrollment =
+        serde_json::from_str(&line).with_context(|| format!("engine {addr} answered ENROLL with something unexpected: {line}"))?;
+    if answer.ack != "enrolled" || answer.credential.is_empty() {
+        bail!("engine {addr} refused the enrollment: {}", if answer.error.is_empty() { &line } else { &answer.error });
+    }
+    Ok(answer)
+}
+
+/// Dial and, when a CA bundle is configured, upgrade to TLS; then,
+/// when a token is configured, run the AUTH handshake on top. An auth
+/// rejection is fatal (misconfiguration, not a transient fault): the
+/// engine answered and said no. A host waiting for approval is not.
+fn dial(addr: &str, token: Option<&str>, tls_ca: Option<&Path>) -> Result<Stream> {
+    let mut stream = open(addr, tls_ca)?;
     let Some(token) = token else {
         // no AUTH: back to blocking semantics for the event stream
         stream.set_timeouts(None)?;
@@ -225,6 +292,9 @@ fn dial(addr: &str, token: Option<&str>, tls_ca: Option<&Path>) -> Result<Stream
         .with_context(|| format!("AUTH handshake to {addr}"))?;
     let ack = read_ack_line(&mut stream)
         .with_context(|| format!("reading AUTH ack from {addr}"))?;
+    if ack.contains("\"ack\":\"pending\"") {
+        return Err(PendingApproval { addr: addr.to_string() }.into());
+    }
     if !ack.contains("\"ack\":\"ok\"") {
         bail!("engine {addr} rejected the ingest token: {ack}");
     }
@@ -326,9 +396,13 @@ fn server_name(addr: &str) -> Result<String> {
 /// Read one newline-terminated ack line (bounded) without pulling a
 /// BufReader into the connection's ownership.
 fn read_ack_line(stream: &mut Stream) -> Result<String> {
+    read_line_capped(stream, 256)
+}
+
+fn read_line_capped(stream: &mut Stream, cap: usize) -> Result<String> {
     let mut buf = Vec::with_capacity(64);
     let mut byte = [0u8; 1];
-    while buf.len() < 256 {
+    while buf.len() < cap {
         let n = stream.read(&mut byte)?;
         if n == 0 {
             bail!("connection closed before an ack arrived");
@@ -338,5 +412,5 @@ fn read_ack_line(stream: &mut Stream) -> Result<String> {
         }
         buf.push(byte[0]);
     }
-    bail!("ack line exceeded 256 bytes")
+    bail!("ack line exceeded {cap} bytes")
 }

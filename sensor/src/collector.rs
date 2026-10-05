@@ -661,7 +661,11 @@ fn read_current_version(value: &str) -> Option<String> {
     Some(text.trim_end_matches('\0').to_string())
 }
 
-fn hostname() -> String {
+/// Set by stop_sessions: a stop asked for before the sessions exist
+/// (the first-start enrollment) is seen too.
+pub static STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+pub fn hostname() -> String {
     std::env::var("COMPUTERNAME").unwrap_or_else(|_| "unknown-host".into())
 }
 
@@ -1032,6 +1036,7 @@ fn finish_registry(ctx: &Shared, mut event: EventJson, kernel_key: &str) {
 /// through its normal path (queue drained, counters reported). Used by
 /// the Ctrl+C handler and by the service's Stop control.
 pub fn stop_sessions() {
+    STOP_REQUESTED.store(true, Ordering::Release);
     let _ = ferrisetw::trace::stop_trace_by_name(NETREG_SESSION_NAME);
     let _ = ferrisetw::trace::stop_trace_by_name(SESSION_NAME);
 }

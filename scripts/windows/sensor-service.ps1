@@ -2,6 +2,7 @@
 #
 #   sf-etw                      status (same as -Status)
 #   sf-etw -Install [-Addr host:port] [-Token <t>] [-TlsCa <ca.pem>]
+#   sf-etw -Install -Addr host:port -EnrollToken <btenroll_...> [-TlsCa <ca.pem>]
 #   sf-etw -Start | -Stop | -Restart
 #   sf-etw -Uninstall [-Purge]
 #
@@ -18,6 +19,13 @@
 # Administrators. The token is read from a file there, so it never shows
 # in the service's command line. -Install again updates the binary and
 # the settings in place.
+#
+# -EnrollToken joins the fleet with a token from the console (Equipos >
+# Anadir equipos) instead of a shared token: on its first start the
+# service trades it for a credential of its own (kept in ingest.token)
+# and deletes it; the host then waits in the console until an
+# administrator approves it. Updating later without -EnrollToken keeps
+# that credential.
 
 [CmdletBinding()]
 param(
@@ -32,6 +40,8 @@ param(
     [string]$Token = '',
     [string]$TokenFile = '',
     [string]$TlsCa = '',
+    [string]$EnrollToken = '',
+    [string]$EnrollTokenFile = '',
     # set by the relaunch: keep the elevated window open on a failure
     [switch]$Elevated
 )
@@ -64,6 +74,11 @@ function Invoke-SfElevated {
         [IO.File]::WriteAllText($tmp, $Token, [Text.Encoding]::ASCII)
         $argList += @('-TokenFile', "`"$tmp`"")
     }
+    if ($EnrollToken) {
+        $tmpEnroll = Join-Path $env:TEMP ('sf-etw-enroll-' + [Guid]::NewGuid().ToString('N') + '.txt')
+        [IO.File]::WriteAllText($tmpEnroll, $EnrollToken, [Text.Encoding]::ASCII)
+        $argList += @('-EnrollTokenFile', "`"$tmpEnroll`"")
+    }
     Write-Host '  Windows will ask for administrator permission (UAC) for this step.'
     try {
         $p = Start-Process -FilePath 'powershell.exe' -ArgumentList $argList -Verb RunAs -Wait -PassThru
@@ -71,6 +86,7 @@ function Invoke-SfElevated {
         throw 'Administrator permission was not granted; nothing was changed.'
     } finally {
         if ($tmp -and (Test-Path -LiteralPath $tmp)) { Remove-Item -LiteralPath $tmp -Force }
+        if ($tmpEnroll -and (Test-Path -LiteralPath $tmpEnroll)) { Remove-Item -LiteralPath $tmpEnroll -Force }
     }
     if ($p.ExitCode -ne 0) { throw "the elevated step failed (exit $($p.ExitCode)); its window showed the reason" }
 }
@@ -122,22 +138,45 @@ function Install-SfSensorService {
     & icacls.exe $DataDir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "could not restrict the permissions of $DataDir" }
 
+    $tokenPath = Join-Path $DataDir 'ingest.token'
+    $enrollPath = Join-Path $DataDir 'enroll.token'
     $value = $Token
     if (-not $value -and $TokenFile) {
         $value = ([string](Get-Content -LiteralPath $TokenFile -First 1)).Trim()
     }
-    if (-not $value) { $value = Get-SfSetting $root 'SF_INGEST_TOKEN' 'ingest.token' }
-    $tokenPath = Join-Path $DataDir 'ingest.token'
-    if ($value) {
-        [IO.File]::WriteAllText($tokenPath, $value, [Text.Encoding]::ASCII)
-    } elseif (Test-Path -LiteralPath $tokenPath) {
-        Remove-Item -LiteralPath $tokenPath -Force
+    $enrollValue = $EnrollToken
+    if (-not $enrollValue -and $EnrollTokenFile) {
+        $enrollValue = ([string](Get-Content -LiteralPath $EnrollTokenFile -First 1)).Trim()
     }
+    $current = ''
+    if (Test-Path -LiteralPath $tokenPath) { $current = ([string](Get-Content -LiteralPath $tokenPath -First 1)).Trim() }
+    if ($enrollValue) {
+        if (-not $enrollValue.StartsWith('btenroll_')) {
+            throw 'an enrollment token starts with btenroll_: copy it from the console (Equipos > Anadir equipos)'
+        }
+        # enrolling (again): the service obtains a new credential on its first start
+        if (Test-Path -LiteralPath $tokenPath) { Remove-Item -LiteralPath $tokenPath -Force }
+        [IO.File]::WriteAllText($enrollPath, $enrollValue, [Text.Encoding]::ASCII)
+    } elseif ($value) {
+        [IO.File]::WriteAllText($tokenPath, $value, [Text.Encoding]::ASCII)
+        if (Test-Path -LiteralPath $enrollPath) { Remove-Item -LiteralPath $enrollPath -Force }
+    } elseif ($current.StartsWith('btsensor_') -or (Test-Path -LiteralPath $enrollPath)) {
+        # an enrolled sensor keeps its own credential (or its pending enrollment) across updates
+    } else {
+        $value = Get-SfSetting $root 'SF_INGEST_TOKEN' 'ingest.token'
+        if ($value) {
+            [IO.File]::WriteAllText($tokenPath, $value, [Text.Encoding]::ASCII)
+        } elseif (Test-Path -LiteralPath $tokenPath) {
+            Remove-Item -LiteralPath $tokenPath -Force
+        }
+    }
+    $enrolling = Test-Path -LiteralPath $enrollPath
     $caPath = Join-Path $DataDir 'ingest-ca.pem'
     if ($TlsCa) { Copy-Item -LiteralPath $TlsCa -Destination $caPath -Force }
 
     $arguments = "--service --addr $Addr --spool `"$DataDir\spool.ndjson`" --log `"$DataDir\sensor.log`""
-    if (Test-Path -LiteralPath $tokenPath) { $arguments += " --token-file `"$tokenPath`"" }
+    if ($enrolling -or (Test-Path -LiteralPath $tokenPath)) { $arguments += " --token-file `"$tokenPath`"" }
+    if ($enrolling) { $arguments += " --enroll-token-file `"$enrollPath`"" }
     if (Test-Path -LiteralPath $caPath) { $arguments += " --tls-ca `"$caPath`"" }
     $binPath = "`"$SensorExe`" $arguments"
 
@@ -155,7 +194,15 @@ function Install-SfSensorService {
     Start-Service $ServiceName
     if (-not (Wait-SfServiceState 'Running' 20)) { throw 'the service did not reach Running; see the log below' }
     Write-Host "  [ok] service $ServiceName running (starts with Windows, restarts if it fails)"
-    Write-Host "  engine: $Addr   token: $(if (Test-Path -LiteralPath $tokenPath) { 'from ' + $tokenPath } else { 'none' })   TLS: $(if (Test-Path -LiteralPath $caPath) { 'verified with ' + $caPath } else { 'off' })"
+    $auth = 'none'
+    if ($enrolling) {
+        $auth = 'enrolling (the host then waits for approval in Equipos)'
+    } elseif ($current.StartsWith('btsensor_') -and -not $value) {
+        $auth = 'its own credential (enrolled)'
+    } elseif (Test-Path -LiteralPath $tokenPath) {
+        $auth = 'from ' + $tokenPath
+    }
+    Write-Host "  engine: $Addr   auth: $auth   TLS: $(if (Test-Path -LiteralPath $caPath) { 'verified with ' + $caPath } else { 'off' })"
 }
 
 function Uninstall-SfSensorService {
@@ -238,7 +285,9 @@ try {
     if ($Elevated) { [void](Read-Host '  Press Enter to close') }
     exit 1
 } finally {
-    if ($TokenFile -and $TokenFile.StartsWith($env:TEMP, [StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $TokenFile)) {
-        Remove-Item -LiteralPath $TokenFile -Force
+    foreach ($f in @($TokenFile, $EnrollTokenFile)) {
+        if ($f -and $f.StartsWith($env:TEMP, [StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $f)) {
+            Remove-Item -LiteralPath $f -Force
+        }
     }
 }
