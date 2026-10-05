@@ -18,12 +18,14 @@ moverlos.
 
 - **Rama:** `carril/pulimiento-a`, creada desde `origin/main` el
   2026-10-05.
-- **Commits locales (sin push, el entorno no tiene credenciales):**
-  1. `plan: ronda 2026-10-05 (PUL-A)` — solo el plan.
-  2. (pendiente de commit) trabajo de la ronda 1.
-- **Remoto:** `origin/carril/pulimiento-a` aún no existe (el push
-  falla por falta de credenciales). Cuando el responsable o el
-  entorno lo permitan, `git push -u origin carril/pulimiento-a`.
+- **Remoto:** `origin/carril/pulimiento-a` existe desde el cierre de
+  la ronda 1 (push con token efímero en la URL, no guardado en
+  config ni en ficheros).
+- **Commits publicados:**
+  1. `plan: ronda 2026-10-05 (PUL-A)` — plan ronda 1.
+  2. `pulimiento: docs layout, campaigns doc, gitignore coverage (PUL-A)` — trabajo ronda 1.
+  3. `plan: ronda 2026-10-05 12h08 (PUL-A)` — plan ronda 2.
+  4. (pendiente de commit) trabajo ronda 2.
 
 ## Rondas anteriores
 
@@ -41,21 +43,39 @@ moverlos.
   - 2 fragmentos en `changelog.d/`: `PUL-A-docs-accuracy.md`,
     `PUL-A-gitignore-coverage.md`.
 
+- **2026-10-05 12h08 (ronda 2):** pulimiento de tablas de flags en
+  `docs/OPERATIONS.md`. Informe en
+  `ronda_2026-10-05_12h08_A.md`. Resumen:
+  - Tabla «Configuration reference»: 6 flags faltantes añadidos
+    (`-intel`, `-baseline-learn`, `-thresholds`, `-notify`,
+    `-api-cert`/`-api-key`, `-incidents`). La afirmación «full
+    surface — no other knobs» era falsa; ahora cierta.
+  - Tabla «`engine run` flags»: 7 flags faltantes añadidos
+    (`-notify`, `-api-cert`/`-api-key`, `-ingest-cert`/`-ingest-key`,
+    `-lifecycle`, `-incidents`). Ambas tablas ahora listan las 40
+    entradas de `cmd/engine/flags.go`.
+  - Sección «Local HTTP API»: añadido párrafo documentando
+    `-api-cert`/`-api-key` (TLS del API listener) junto al de
+    `-api-token`. Antes la sección documentaba auth pero no cifrado.
+  - 1 fragmento en `changelog.d/`: `PUL-A-cli-flags-complete.md`.
+  - `-api-cert`/`-api-key` eran lo más grave: no estaban en NINGÚN
+    sitio de la doc, aunque `internal/api/api.go` `NewTLS` +
+    `tlsutil.Reloader` los soportan.
+
 ## Pendientes para la siguiente ronda
 
-### Verificación (bloqueante para cualquier cambio de código)
+### Verificación (parcialmente resuelto)
 
-El entorno actual no tiene `go`, `cargo`, `pwsh` ni `staticcheck`.
-Antes de tocar código Go/Rust/PowerShell hay que:
-
-1. Confirmar con el responsable si el entorno debe tener estas
-   herramientas, o si la verificación la hace el CI al fusionar.
-2. Si se instalan, ejecutar `make ci` (o los comandos del CI uno a
-   uno) sobre `carril/pulimiento-a` para certificar que los cambios
-   de documentación de la ronda 1 no rompieron nada (no deberían,
-   pero la regla es no afirmar sin ejecutar).
-3. Subir la rama (`git push -u origin carril/pulimiento-a`) cuando
-   haya credenciales.
+- **Push a origin:** resuelto desde el cierre de la ronda 1 (token
+  efímero en la URL del push, no guardado en config ni en ficheros).
+- **Suite Go/Cargo/pwsh:** el entorno sigue sin `go`, `cargo`, `pwsh`
+  ni `staticcheck`. Los cambios de las rondas 1 y 2 son solo
+  documentación, así que la falta no impide verificar lo que toqué
+  (los guards de Python que sí puedo correr — `check_rule_inventory.py`
+  y `check_openapi.py` — pasan limpios). Antes de tocar código
+  Go/Rust/PowerShell hay que confirmar con el responsable si el
+  entorno debe tener estas herramientas, o si la verificación la hace
+  el CI al fusionar.
 
 ### POL-A-code-1 — refactor del backend Go (cuando haya Go)
 

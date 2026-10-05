@@ -151,12 +151,17 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `-rules` | `./rules` | YAML rules directory (hot-reload aware) |
 | `-sequences` | `./sequences` | kill-chain sequences directory (correlator) |
 | `-beacons` | `./beacons.yaml` | beacon detector profiles (C2 call-home over `network.connect`; empty disables) |
+| `-thresholds` | `./thresholds.yaml` | volumetric threshold definitions (A2: brute force, mass deletion, sprays); empty disables |
+| `-intel` | `./intel` | offline threat-intel lists (`*.txt`/`*.list`: IPs, CIDRs, domains, URLs, hashes) matched against every event and re-read on change; nothing is downloaded; empty disables |
+| `-baseline-learn` | `24h` | per-host learning period before a never-seen process raises a low alert (falls back to `SF_BASELINE_LEARN`); `0` disables |
 | `-suppressions` | `./suppressions.yaml` | operator allowlist (hot-reload aware) |
 | `-lifecycle` | `./alert-lifecycle.json` | alert triage state file (acknowledged/closed + notes; empty keeps statuses in memory only) |
+| `-incidents` | `./incidents.json` | incidents file (cases grouping alerts, with status, owner and timeline; empty keeps them in memory only) |
 | `-reload-every` | `15s` | hot-reload cadence for rules/sequences/suppressions (`0` disables) |
 | `-token` / `-token-previous` | — | ingest shared token / previous token during a rotation window |
 | `-ingest-identities` | — | per-sensor ingest identities (own token + bound hosts); see [Per-sensor ingest identities](#per-sensor-ingest-identities) |
 | `-ingest-cert` / `-ingest-key` | — | TLS certificate (PEM) / private key for the ingest listener (both or neither; min TLS 1.2; sensors connect with `-tls -ca`) |
+| `-api-cert` / `-api-key` | — | TLS certificate (PEM) / private key for the HTTP API listener (both or neither; hot-rotated on file mtime change; empty keeps plain HTTP) — see [Local HTTP API](#local-http-api) |
 | `-api-token` | — | Bearer required on every `/api/*` route and on `/metrics` (`/api/health` stays open) |
 | `-api-write` | off | arm `POST`/`DELETE /api/suppressions` (writes land on the `-suppressions` file; refused beyond loopback without `-api-token`) |
 | `-allow-kill` | off | arm `POST /api/respond/kill` (active response, SIGKILL fixed; REQUIRES `-api-token` even on loopback + open `-respond-audit`; falls back to `SF_ALLOW_KILL=1`) |
@@ -164,6 +169,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `-respond-protected` | — | optional extra protected process names merged with the platform defaults (hot-reloaded) |
 | `-respond-audit` | `./respond-audit.jsonl` | append-only JSONL audit, one line per attempt, fsync per line, 64 MiB ceiling |
 | `-webhook` / `-webhook-token` | — | SIEM/SOAR connector URL / outbound Bearer token |
+| `-notify` | — | YAML config with external notification channels (slack, telegram, email); loaded fail-loud at startup; empty disables — see [External notifications](#external-notifications-slack-telegram-email) |
 | `-elastic` / `-elastic-index` / `-elastic-api-key` | — / `sf-alerts` / — | Elasticsearch bulk indexing (daily `-YYYY.MM.DD` index, deterministic `_id`) / index prefix / API key (falls back to `SF_ELASTIC_API_KEY`) |
 | `-splunk` / `-splunk-token` | — | Splunk HEC collector base URL (events POSTed to `/services/collector/event`) / HEC token (falls back to `SF_SPLUNK_TOKEN`) |
 | `-store` / `-store-retention` | off / `72h` | SQLite persistence / pruning window (`0` keeps everything) |
@@ -226,6 +232,8 @@ All four telemetry endpoints (`/api/events`, `/api/alerts` and both `/export` va
 Exports are for SIEM import, offline analysis and the forensic store: JSONL round-trips the full records, CSV flattens them to stable columns and neutralizes spreadsheet formula injection on attacker-controlled fields. When `-webhook` is set, `/api/stats` additionally reports `webhook_sent` / `webhook_failed` / `webhook_dropped` so the delivery pipeline can be sized from the outside; the same delivery triple is reported per SIEM platform when its sink is configured (`elastic_*` via `-elastic`, `splunk_*` via `-splunk`, semantics in [SIEM sinks](#siem-sinks-elasticsearch--splunk)); when `-notify` is set, one `notify_channels` row per configured channel reports the same four-state accounting (sent / failed / dropped / filtered) with the channel name and type; with ingest auth active (`-token`), `ingest_rejected` counts connections rejected by the shared-token handshake; when a `sequences/` directory is loaded, `correlator_states` / `correlator_sequences` / `correlator_cap` expose the kill-chain correlator's in-flight (sequence, host) chains against its hard cap (what the numbers mean and how the console surfaces them in [Kill-chain correlation](#kill-chain-correlation)); and with `-store` attached, `store_enabled` / `store_events` / `store_alerts` report the persisted history size (semantics in [Persistent storage](#persistent-storage-sqlite-opt-in)); `risk_hosts_tracked` / `hot_hosts` always report the per-host risk surface (semantics in [Host risk scoring](#host-risk-scoring-hot-hosts)), and `beacons_tracked` / `beacons_cap` / `beacons_fired` the beaconing detector's live signal (semantics in [Beaconing detection](#beaconing-detection-c2-call-home)). The machine-readable contract for the whole surface lives in OpenAPI 3.0 at [`api/openapi.yaml`](api/openapi.yaml).
 
 The API can demand a bearer token: start the engine with `-api-token '...'` (or `SF_API_TOKEN`) and every `/api/*` route — stats, events, alerts, rules, sequences, suppressions, stream, exports — answers `401` without a valid `Authorization: Bearer <token>` header, with a loud log line per rejected request. `/metrics` is gated by the same credential, and `/api/health` stays open on purpose: it is the liveness probe the engine, the console bridge and uptime checks rely on, and it reveals nothing but `{"mode":"engine","status":"ok"}`. The console-service bridge honors the same `SF_API_TOKEN` variable, so a token-protected console stack needs exactly one extra environment entry. This follows the same standard as the ingest auth: loopback stays friction-free by default, but a listener reachable beyond loopback must never serve telemetry without an explicit credential.
+
+For an encrypted API listener — the same posture the ingest listener has had since the beginning — pass `-api-cert` and `-api-key` (PEM pair, both or neither): the listener is wrapped in TLS and the pair is hot-rotated on file mtime change, mirroring `-ingest-cert`/`-ingest-key` (see [Ingest TLS](#ingest-tls-encryption-in-transit)). A wrong path or a mismatched pair fails loudly at startup so a half-encrypted API never serves traffic. Typical deployment: `sf-engine -api 0.0.0.0:7778 -api-cert c.pem -api-key k.pem -api-token ...` so the bearer token, the telemetry the read routes hand out and the kill_process request body all travel encrypted. When TLS termination happens elsewhere (reverse proxy), document it — otherwise the bearer token crosses the network in clear text.
 
 Native API writes also reject foreign or malformed browser `Origin` headers and `Sec-Fetch-Site: cross-site` with `403`, including when a bearer token is valid. CLI clients without these browser headers remain supported. Reverse proxies must preserve a consistent public Host/scheme or route console writes through the existing console proxy; forwarded headers are not used to relax this boundary.
 
@@ -1081,12 +1089,15 @@ path (no subcommand) and on `engine run`.
 | `-reload-every dur` | `15s` | hot-reload interval for rules, sequences and suppressions; `0` disables |
 | `-webhook url` | empty | POST every alert as JSON to this URL (SIEM/SOAR connector) |
 | `-webhook-token t` | empty | Bearer token on every webhook delivery (falls back to `SF_WEBHOOK_TOKEN`) |
+| `-notify file` | empty | YAML config with external notification channels (slack, telegram, email); loaded fail-loud at startup; empty disables — see [External notifications](#external-notifications-slack-telegram-email) |
 | `-elastic url` | empty | Elasticsearch base URL; alerts bulk-indexed into `<index>-YYYY.MM.DD` with the alert ID as deterministic `_id` — see [SIEM sinks](#siem-sinks-elasticsearch--splunk) |
 | `-elastic-index prefix` | `sf-alerts` | index name prefix used with `-elastic` |
 | `-elastic-api-key k` | empty | Elasticsearch API key sent as `Authorization: ApiKey` (falls back to `SF_ELASTIC_API_KEY`); empty disables the header |
 | `-splunk url` | empty | Splunk HEC collector base URL; alerts POSTed to `/services/collector/event` — see [SIEM sinks](#siem-sinks-elasticsearch--splunk) |
 | `-splunk-token t` | empty | Splunk HEC token sent as `Authorization: Splunk` (falls back to `SF_SPLUNK_TOKEN`); empty disables the header |
 | `-api-token t` | empty | bearer token the local API requires on `/api/*` and `/metrics` (falls back to `SF_API_TOKEN`); `/api/health` stays open |
+| `-api-cert file` | empty | TLS certificate (PEM) for the HTTP API listener; requires `-api-key`; hot-rotated on file mtime change; empty keeps plain HTTP — see [Local HTTP API](#local-http-api) |
+| `-api-key file` | empty | TLS private key (PEM) for the HTTP API listener; requires `-api-cert`; empty keeps plain HTTP |
 | `-api-write` | off | arm `POST`/`DELETE /api/suppressions` (falls back to `SF_API_WRITE=1`); writes go to the `-suppressions` file, which stays the source of truth; refused at startup when the API has no token beyond loopback |
 | `-allow-kill` | off | arm `POST /api/respond/kill` (falls back to `SF_ALLOW_KILL=1`): active response, kill_process, SIGKILL fixed; REQUIRES `-api-token`/`SF_API_TOKEN` even on loopback and an openable `-respond-audit` (otherwise the surface stays disabled, loud); the name check protects against killing the wrong PID, not against malware disguising its identity |
 | `-respond-operators file` | `./respond-operators.yaml` | YAML allowlist (`{version: 1, names: [ana, beto]}`, or version 2 with per-operator credentials, see [Active response](#active-response-kill_process-opt-in)) of operators allowed to run active response; missing file = empty allowlist = every action denied; malformed file is fatal; hot-reloaded on the `-reload-every` ticker |
@@ -1095,7 +1106,11 @@ path (no subcommand) and on `engine run`.
 | `-token t` | empty | shared ingest token (falls back to `SF_INGEST_TOKEN`); empty disables auth |
 | `-token-previous t` | empty | previous ingest token, still accepted during a rotation window (falls back to `SF_INGEST_TOKEN_PREVIOUS`) |
 | `-ingest-identities f` | empty | YAML file of per-sensor ingest identities (falls back to `SF_INGEST_IDENTITIES`); events for hosts outside a sensor's binding are refused; hot-reloaded |
+| `-ingest-cert file` | empty | TLS certificate (PEM) for the ingest listener; requires `-ingest-key`; empty keeps plain TCP — see [Ingest TLS](#ingest-tls-encryption-in-transit) |
+| `-ingest-key file` | empty | TLS private key (PEM) for the ingest listener; requires `-ingest-cert`; empty keeps plain TCP |
 | `-suppressions file` | `./suppressions.yaml` | operator allowlist YAML silencing rule/host pairs (expirations supported); empty disables |
+| `-lifecycle file` | `./alert-lifecycle.json` | JSON file persisting alert triage status (acknowledged/closed + notes); empty keeps statuses in memory only — see [Alert triage](#alert-triage-lifecycle) |
+| `-incidents file` | `./incidents.json` | JSON file persisting incidents (cases grouping alerts, with status, owner and timeline); empty keeps them in memory only — see [Incidents](#incidents-cases) |
 | `-store path` | empty | SQLite file persisting events and alerts beyond the in-memory rings (e.g. `./sf-store.db`); empty disables — see [Persistent storage](#persistent-storage-sqlite-opt-in) |
 | `-store-retention dur` | `72h` | delete stored events/alerts older than this on a 5-minute ticker; `0` keeps everything |
 | `-forensic` | `true` | freeze evidence bundles (alert + 5-minute host timeline) for high/critical alerts; `-forensic=false` disables capture and the API answers `501` |
