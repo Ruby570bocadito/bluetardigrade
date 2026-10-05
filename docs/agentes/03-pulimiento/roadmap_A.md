@@ -34,7 +34,9 @@ moverlos.
   10. `pulimiento: align system overview diagram with the real engine pipeline (PUL-A)` — trabajo ronda 5.
   11. `plan: ronda 2026-10-05 12h36 (PUL-A)` — plan ronda 6 (publicado por la instancia anterior; no llegó a ejecutarse).
   12. `plan: ronda 2026-10-05 13h42 ajustada (PUL-A)` — plan ronda 6 ajustado tras leer los seis planes.
-  13. (esta ronda) trabajo ronda 6: Prometheus completo, POL-4 alcance nombrado, job fuzz nocturno, informe.
+  13. `pulimiento: complete Prometheus families, POL-4 branding, nightly fuzz job (PUL-A)` — trabajo ronda 6.
+  14. `plan: ronda 2026-10-05 14h10 (PUL-A)` — plan ronda 7.
+  15. (esta ronda) trabajo ronda 7: split de correlate.go, CONTRIBUTING + plantillas, informe.
 
 ## Rondas anteriores
 
@@ -158,6 +160,25 @@ moverlos.
     `-race`, staticcheck doble pasada, guards de OpenAPI e inventario).
   - 3 fragmentos en `changelog.d/`: `PUL-A-prometheus-metrics-complete.md`,
     `PUL-A-old-name-remnants.md`, `PUL-A-nightly-fuzz.md`.
+
+- **2026-10-05 14h10 (ronda 7, esta instancia):** POL-1 (parte
+  correlate) + POL-5 (parte procesos). Informe en
+  `ronda_2026-10-05_14h10_A.md`. Resumen:
+  - `internal/correlate/correlate.go` (790 líneas) dividido en 5
+    ficheros por responsabilidad (`sequence`/`state`/`observe`/
+    `inspect`/Manager), movimiento verbatim, mismo paquete. Equivalencia
+    verificada con `go doc -all` (idéntica salvo el párrafo de layout
+    añadido) + suite completa verde.
+  - `CONTRIBUTING.md` + plantillas de issue/PR en `.github/` (no
+    existían); issues en blanco desactivados con enlace al advisory
+    privado de SECURITY.md.
+  - Toolchain corregido: staticcheck 2025.1.1 → **2026.2.1** (la que el
+    Makefile/CI declara); doble pasada re-ejecutada verde.
+  - Coordinación: fila `-scenarios` de la tabla «Engine flags»
+    pendiente de la fusión de IMP-A (documentar antes sería drift
+    inverso); nota dejada en el informe.
+  - 2 fragmentos en `changelog.d/`: `PUL-A-correlate-split.md`,
+    `PUL-A-contribution-process.md`.
 
 ## Pendientes para la siguiente ronda
 
