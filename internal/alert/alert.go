@@ -24,6 +24,43 @@ const (
 	dedupHardMax = 65536 // hard cap: beyond this, alerts skip dedup
 )
 
+// SimulationTag marks synthetic, inert detection-validation telemetry
+// (the scenario library, SIM-1). Every alert derived from an event
+// carrying this tag — a rule hit, a kill-chain completion, a beacon,
+// a threshold, an intel match or a baseline novelty — is tagged in
+// turn, so a validation replay can never be mistaken for real
+// evidence on any surface that shows alerts (console, API, webhook).
+const SimulationTag = "simulation"
+
+// EventIsSimulated reports whether the event carries SimulationTag.
+func EventIsSimulated(ev *model.Event) bool {
+	if ev == nil {
+		return false
+	}
+	for _, t := range ev.Tags {
+		if t == SimulationTag {
+			return true
+		}
+	}
+	return false
+}
+
+// MarkSimulated appends SimulationTag to the alert unless it is
+// already there. The incoming slice is never grown in place: rule and
+// sequence Tags are shared, loaded-once slices owned by the catalog,
+// so appending to them could corrupt every later alert built from the
+// same rule.
+func MarkSimulated(a *Alert) {
+	for _, t := range a.Tags {
+		if t == SimulationTag {
+			return
+		}
+	}
+	tags := make([]string, 0, len(a.Tags)+1)
+	tags = append(tags, a.Tags...)
+	a.Tags = append(tags, SimulationTag)
+}
+
 // ANSI colors (disabled automatically when stdout is not a terminal).
 const (
 	cReset = "\033[0m"
@@ -223,7 +260,7 @@ func buildAlert(ev *model.Event, hit rules.Hit) Alert {
 	for _, ac := range hit.Rule.Actions {
 		actions = append(actions, ac.Type)
 	}
-	return Alert{
+	a := Alert{
 		Timestamp:  time.Now().UTC().Format(time.RFC3339Nano),
 		RuleID:     hit.Rule.ID,
 		RuleName:   hit.Rule.Name,
@@ -241,6 +278,10 @@ func buildAlert(ev *model.Event, hit rules.Hit) Alert {
 		Actions:    actions,
 		Enrich:     ev.Enrichment,
 	}
+	if EventIsSimulated(ev) {
+		MarkSimulated(&a)
+	}
+	return a
 }
 
 func (m *Manager) writeConsole(a Alert) {

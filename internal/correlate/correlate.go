@@ -105,6 +105,11 @@ type state struct {
 	// hosts the chain touched (lowercase, bounded by maxMinHosts):
 	// user-scoped chains complete only once they span MinHosts of them
 	hosts map[string]string
+	// simulated is set as soon as any contributing event carries the
+	// simulation tag (detection validation, SIM-1): the completed
+	// chain alert is tagged in turn, so a replay on a lab engine can
+	// never be mistaken for real evidence.
+	simulated bool
 }
 
 // span returns the spread between the oldest and newest step times.
@@ -421,6 +426,11 @@ func (m *Manager) Observe(ev *model.Event, ruleName string) {
 				st.hosts[h] = ev.Host
 			}
 		}
+		// Any contributing event marked as simulated flags the whole
+		// chain: the alert fired on completion carries the same tag.
+		if alert.EventIsSimulated(ev) {
+			st.simulated = true
+		}
 		// Pick the step this hit advances: an unmatched step naming
 		// the rule wins; otherwise the matched one holding the OLDEST
 		// time is refreshed, but only by a newer hit (a late, older
@@ -607,6 +617,9 @@ func (m *Manager) fire(c *compiled, span time.Duration, ev *model.Event, st *sta
 		MatchedOn: steps,
 		Tags:      c.seq.Tags,
 		Enrich:    ev.Enrichment,
+	}
+	if st.simulated {
+		alert.MarkSimulated(&a)
 	}
 	return a
 }

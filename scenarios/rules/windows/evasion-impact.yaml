@@ -1,0 +1,148 @@
+# Escenarios de validacion de deteccion (SIM-1/SIM-2).
+# Telemetria sintetica e inerte: el mismo esquema de eventos que
+# envia el sensor, sin ejecutar nada en ningun equipo. Cada escenario
+# declara las alertas que el motor DEBE disparar (shipped rule/sequence
+# id); el test de CI falla si una deja de detectarse.
+
+- name: Bypass de AMSI en PowerShell (sintetico)
+  id: sim-amsi-bypass
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: bypass de AMSI
+    en PowerShell. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1562.001
+  host: LAB-SIM-AMSI-BYPASS
+  user: CORP\sim
+  expected:
+  - rule: 4c877f28-95f0-4c8d-b4ad-e4e904274d56
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4150
+      name: powershell.exe
+      command_line: powershell.exe -c "[Ref].Assembly.GetType('System.Management.Automation.AmsiUtils')"
+- name: Suscripcion permanente de eventos WMI (sintetico)
+  id: sim-wmi-subscription
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: suscripcion
+    permanente de eventos WMI. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1546.003
+  host: LAB-SIM-WMI-SUBSCRIPTION
+  user: CORP\sim
+  expected:
+  - rule: 87f5f6c7-1ce0-4d07-b2f9-c1732e3e7163
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4151
+      name: powershell.exe
+      command_line: powershell.exe -c New-CimInstance -ClassName __EventFilter; Register-CimIndicationEvent -ConsumerName
+        CommandLineEventConsumer
+- name: Borrado del historial de PowerShell (sintetico)
+  id: sim-ps-history-clear
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: borrado del
+    historial de PowerShell. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1070.003
+  host: LAB-SIM-PS-HISTORY-CLEAR
+  user: CORP\sim
+  expected:
+  - rule: 2a01df90-a2e0-4a97-a01e-55f2a2c6360c
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4152
+      name: powershell.exe
+      command_line: powershell.exe -c Remove-Item (Get-PSReadlineOption).HistorySavePath
+- name: Registro de bloques de PowerShell desactivado (sintetico)
+  id: sim-ps-scriptblock-off
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: registro de
+    bloques de PowerShell desactivado. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1562.002
+  host: LAB-SIM-PS-SCRIPTBLOCK-OFF
+  user: CORP\sim
+  expected:
+  - rule: f000c873-4dbe-485e-8328-120a9e3e8339
+  events:
+  - type: registry.set
+    user: CORP\sim
+    process:
+      pid: 4153
+      name: explorer.exe
+    registry:
+      key: HKLM\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging
+      operation: SetValue
+      value_name: EnableScriptBlockLogging
+      value: '0'
+- name: Busqueda de contrasenas en ficheros (sintetico)
+  id: sim-findstr-passwords
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: busqueda de
+    contrasenas en ficheros con findstr. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1552.001
+  host: LAB-SIM-FINDSTR-PASSWORDS
+  user: CORP\sim
+  expected:
+  - rule: f6cd9a23-7e15-4721-83e3-d8115583e6e4
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4154
+      name: findstr.exe
+      command_line: findstr.exe /si password C:\Users\sim\Documents\*.txt
+- name: Detencion de servicios de copia de seguridad o de seguridad (sintetico)
+  id: sim-net-stop-backup
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: detencion del
+    servicio de copia de seguridad. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1489
+  host: LAB-SIM-NET-STOP-BACKUP
+  user: CORP\sim
+  expected:
+  - rule: 321f9cec-40b5-4f60-90ac-800775b351d4
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4155
+      name: net.exe
+      command_line: net.exe stop "Veeam Backup Service"
+- name: Borrado seguro del espacio libre con cipher (sintetico)
+  id: sim-cipher-wipe
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: borrado seguro
+    del espacio libre con cipher. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1485
+  host: LAB-SIM-CIPHER-WIPE
+  user: CORP\sim
+  expected:
+  - rule: d61a77f2-80db-491c-856b-a05f76d468f8
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4156
+      name: cipher.exe
+      command_line: cipher.exe /w:C:\Users\Public
+- name: Nota de rescate escrita en disco (sintetico)
+  id: sim-ransom-note
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: nota de rescate
+    escrita en disco. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1486
+  host: LAB-SIM-RANSOM-NOTE
+  user: CORP\sim
+  expected:
+  - rule: b9531063-662b-4159-9b37-21bc52655ba1
+  events:
+  - type: file.write
+    user: CORP\sim
+    process:
+      pid: 4157
+      name: notepad.exe
+    file:
+      path: C:\Users\sim\Documents\HOW_TO_DECRYPT_FILES.html

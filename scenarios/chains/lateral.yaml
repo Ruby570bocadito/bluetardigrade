@@ -1,0 +1,62 @@
+# Escenarios de validacion de deteccion (SIM-1/SIM-2).
+# Telemetria sintetica e inerte: el mismo esquema de eventos que
+# envia el sensor, sin ejecutar nada en ningun equipo. Cada escenario
+# declara las alertas que el motor DEBE disparar (shipped rule/sequence
+# id); el test de CI falla si una deja de detectarse.
+
+- name: Credenciales y ejecucion remota en varios equipos (sintetico)
+  id: sim-chain-24c5-e409
+  description: 'Secuencia sintetica que completa la cadena: credenciales robadas y ejecucion remota en dos equipos.
+    Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1003
+  - t1021
+  host: LAB-SIM-LAT1
+  user: CORP\simlat
+  expected:
+  - rule: f67024c5-e409-4ca3-bc0e-ab04b860ec68
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4410
+      name: powershell.exe
+      command_line: powershell.exe -c Invoke-Mimikatz -DumpCreds
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4411
+      name: psexec.exe
+      command_line: psexec.exe \\LAB-SIM-LAT2 -accepteula -c C:\Users\Public\p.exe
+    host: LAB-SIM-LAT2
+- name: Cuenta saltando entre equipos (sintetico)
+  id: sim-chain-51d0-d4c3
+  description: 'Secuencia sintetica que completa la cadena: ejecucion remota de una misma cuenta en tres equipos.
+    Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1021
+  host: LAB-SIM-LAT3
+  user: CORP\simlat
+  expected:
+  - rule: 448e51d0-d4c3-441b-bbf4-82144fd71276
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4420
+      name: psexec.exe
+      command_line: psexec.exe \\LAB-SIM-LAT3 -accepteula -c C:\Users\Public\p.exe
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4421
+      name: wmic.exe
+      command_line: wmic.exe /node:LAB-SIM-LAT4 process call create "cmd.exe"
+    host: LAB-SIM-LAT4
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4422
+      name: winrs.exe
+      command_line: winrs.exe -r:LAB-SIM-LAT5 whoami
+    host: LAB-SIM-LAT5

@@ -1,0 +1,166 @@
+# Escenarios de validacion de deteccion (SIM-1/SIM-2).
+# Telemetria sintetica e inerte: el mismo esquema de eventos que
+# envia el sensor, sin ejecutar nada en ningun equipo. Cada escenario
+# declara las alertas que el motor DEBE disparar (shipped rule/sequence
+# id); el test de CI falla si una deja de detectarse.
+
+- name: Persistencia en clave Run via registro (sintetico)
+  id: sim-run-key-registry
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: persistencia
+    en clave Run via registro. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1547.001
+  host: LAB-SIM-RUN-KEY-REGISTRY
+  user: CORP\sim
+  expected:
+  - rule: 7d1e2f40-5a6b-4c7d-9e8f-0a1b2c3d4e5f
+  events:
+  - type: registry.set
+    user: CORP\sim
+    process:
+      pid: 4210
+      name: explorer.exe
+    registry:
+      key: HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+      operation: SetValue
+      value_name: OneDriveSync
+      value: C:\Users\Public\payload.exe
+- name: Defensa antivirus desactivada via registro (sintetico)
+  id: sim-defender-registry-off
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: defensa antivirus
+    desactivada via registro. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1562.001
+  host: LAB-SIM-DEFENDER-REGISTRY-
+  user: CORP\sim
+  expected:
+  - rule: 8e2f3a51-6b7c-4d8e-af90-1b2c3d4e5f60
+  events:
+  - type: registry.set
+    user: CORP\sim
+    process:
+      pid: 4211
+      name: explorer.exe
+    registry:
+      key: HKLM\Software\Microsoft\Windows Defender
+      operation: SetValue
+      value_name: DisableAntiSpyware
+      value: '1'
+- name: Exclusiones de Defender anadidas via registro (sintetico)
+  id: sim-defender-exclusions
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: exclusiones
+    de Defender anadidas via registro. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1562.001
+  host: LAB-SIM-DEFENDER-EXCLUSION
+  user: CORP\sim
+  expected:
+  - rule: 9f3a4b62-7c8d-4e9f-b0a1-2c3d4e5f6a70
+  events:
+  - type: registry.set
+    user: CORP\sim
+    process:
+      pid: 4212
+      name: explorer.exe
+    registry:
+      key: HKLM\Software\Microsoft\Windows Defender\Exclusions\Paths
+      operation: CreateKey
+      value_name: C:\Users\Public
+      value: ''
+- name: Ejecutable soltado en carpeta de inicio (sintetico)
+  id: sim-startup-drop
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: ejecutable soltado
+    en carpeta de inicio. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1547.001
+  host: LAB-SIM-STARTUP-DROP
+  user: CORP\sim
+  expected:
+  - rule: a04b5c73-8d9e-4fa0-c1b2-3d4e5f6a7b80
+  events:
+  - type: file.write
+    user: CORP\sim
+    process:
+      pid: 4213
+      name: explorer.exe
+    file:
+      path: C:\Users\sim\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\upd.exe
+- name: Ejecutable disfrazado de documento (sintetico)
+  id: sim-disguised-doc
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: ejecutable disfrazado
+    de documento. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1036.007
+  host: LAB-SIM-DISGUISED-DOC
+  user: CORP\sim
+  expected:
+  - rule: b15c6d84-9eaf-40b1-d2c3-4e5f6a7b8c90
+  events:
+  - type: file.write
+    user: CORP\sim
+    process:
+      pid: 4214
+      name: explorer.exe
+    file:
+      path: C:\Users\sim\Documents\factura.pdf.exe
+- name: Acceso a memoria de LSASS (sintetico)
+  id: sim-lsass-access
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: acceso a memoria
+    de LSASS con permisos de volcado. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1003.001
+  host: LAB-SIM-LSASS-ACCESS
+  user: CORP\sim
+  expected:
+  - rule: d37e8fa6-b0cf-42d3-f4e5-6a7b8c9dae10
+  events:
+  - type: process.access
+    user: CORP\sim
+    process:
+      pid: 4215
+      name: powershell.exe
+    target:
+      pid: 720
+      name: lsass.exe
+    access:
+      granted_access: '0x1010'
+- name: Consulta DNS a dominio generado (posible DGA) (sintetico)
+  id: sim-dga-dns
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: consulta DNS
+    a dominio generado (posible DGA). Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1568.002
+  host: LAB-SIM-DGA-DNS
+  user: CORP\sim
+  expected:
+  - rule: e48f9ab7-c1d0-43e4-a5f6-7b8c9daebf21
+  events:
+  - type: network.connect
+    user: CORP\sim
+    process:
+      pid: 4216
+      name: svchost.exe
+    network:
+      protocol: dns
+      destination_ip: 203.0.113.10
+      destination_port: null
+      domain: xnf2bdp3qrcsldjfw0ieigje9vqw.tk
+- name: DLL cargada desde ruta de usuario (sintetico)
+  id: sim-user-path-dll
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: DLL cargada
+    desde ruta de usuario. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1574.001
+  - t1574.002
+  host: LAB-SIM-USER-PATH-DLL
+  user: CORP\sim
+  expected:
+  - rule: c26d7e95-afbe-41c2-e3d4-5f6a7b8c9da0
+  events:
+  - type: image.load
+    user: CORP\sim
+    process:
+      pid: 4217
+      name: excel.exe
+    file:
+      path: C:\Users\sim\AppData\Local\Temp\winmm.dll

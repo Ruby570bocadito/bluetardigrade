@@ -1,0 +1,23 @@
+# Escenarios de validacion de deteccion (SIM-1/SIM-2).
+# Telemetria sintetica e inerte: el mismo esquema de eventos que
+# envia el sensor, sin ejecutar nada en ningun equipo. Cada escenario
+# declara las alertas que el motor DEBE disparar (shipped rule/sequence
+# id); el test de CI falla si una deja de detectarse.
+
+- name: Volcado de LSASS via comsvcs.dll (sintetico)
+  id: sim-lsass-comsvcs
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: volcado de LSASS
+    via comsvcs.dll. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1003.001
+  host: LAB-SIM-LSASS-COMSVCS
+  user: CORP\sim
+  expected:
+  - rule: 5b7e1f38-2c94-4d0a-b6e7-19a8c3d54f02
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4192
+      name: rundll32.exe
+      command_line: rundll32.exe C:\Windows\System32\comsvcs.dll, MiniDump 744 C:\Windows\Temp\lsass.dmp full

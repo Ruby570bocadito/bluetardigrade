@@ -1,0 +1,39 @@
+# Escenarios de validacion de deteccion (SIM-1/SIM-2).
+# Telemetria sintetica e inerte: el mismo esquema de eventos que
+# envia el sensor, sin ejecutar nada en ningun equipo. Cada escenario
+# declara las alertas que el motor DEBE disparar (shipped rule/sequence
+# id); el test de CI falla si una deja de detectarse.
+
+- name: 'IDS: escaneo activo de red (sintetico)'
+  id: sim-ids-active-scan
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: el IDS reporta
+    un escaneo activo de red. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1595
+  host: LAB-SIM-IDS-ACTIVE-SCAN
+  user: CORP\sim
+  expected:
+  - rule: soc-ids-active-scan
+  events:
+  - type: network.alert
+    source: suricata
+    attributes:
+      ids_signature: ET SCAN Nmap OS Detection Probe
+      ids_priority: '2'
+      ids_action: alert
+- name: 'Cowrie: reconocimiento del sistema en el honeypot (sintetico)'
+  id: sim-cowrie-recon
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: el honeypot
+    registra reconocimiento del sistema. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1592
+  host: LAB-SIM-COWRIE-RECON
+  user: CORP\sim
+  expected:
+  - rule: soc-cowrie-recon
+  events:
+  - type: honeypot.command
+    source: cowrie
+    attributes:
+      honeypot_input: uname -a
+      honeypot_input_kind: command

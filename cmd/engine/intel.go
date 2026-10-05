@@ -57,7 +57,7 @@ func intelAlert(ev *model.Event, hit intel.Hit, now time.Time) alert.Alert {
 			where = "consulta DNS"
 		}
 	}
-	return alert.Alert{
+	a := alert.Alert{
 		Timestamp:  now.UTC().Format(time.RFC3339Nano),
 		RuleID:     intelRulePrefix + hit.List,
 		RuleName:   "Indicador de amenaza conocido",
@@ -75,6 +75,10 @@ func intelAlert(ev *model.Event, hit intel.Hit, now time.Time) alert.Alert {
 		Tags:      tags,
 		Enrich:    ev.Enrichment,
 	}
+	if alert.EventIsSimulated(ev) {
+		alert.MarkSimulated(&a)
+	}
+	return a
 }
 
 // noveltyAlert describes a process a host never ran during or since its
@@ -95,7 +99,7 @@ func noveltyAlert(ev *model.Event, n *baseline.Novelty, now time.Time) alert.Ale
 			enrich["image_sha256"] = strings.ToLower(sum)
 		}
 	}
-	return alert.Alert{
+	a := alert.Alert{
 		Timestamp:  now.UTC().Format(time.RFC3339Nano),
 		RuleID:     noveltyRuleID,
 		RuleName:   "Proceso nunca visto en este equipo",
@@ -112,4 +116,8 @@ func noveltyAlert(ev *model.Event, n *baseline.Novelty, now time.Time) alert.Ale
 		Tags:      []string{"attack.execution", "baseline"},
 		Enrich:    enrich,
 	}
+	if alert.EventIsSimulated(ev) {
+		alert.MarkSimulated(&a)
+	}
+	return a
 }
