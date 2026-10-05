@@ -1,0 +1,142 @@
+# Escenarios de validacion de deteccion (SIM-1/SIM-2).
+# Telemetria sintetica e inerte: el mismo esquema de eventos que
+# envia el sensor, sin ejecutar nada en ningun equipo. Cada escenario
+# declara las alertas que el motor DEBE disparar (shipped rule/sequence
+# id); el test de CI falla si una deja de detectarse.
+
+- name: Borrado del registro de eventos con PowerShell (sintetico)
+  id: sim-ps-clear-eventlog
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: borrado del
+    registro de eventos con PowerShell. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1070.001
+  host: LAB-SIM-PS-CLEAR-EVENTLOG
+  user: CORP\sim
+  expected:
+  - rule: c3d4e5f6-0001-4c01-9e01-010101010101
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4100
+      name: powershell.exe
+      command_line: powershell.exe -c Clear-EventLog -LogName Security
+- name: Borrado de instantaneas VSS con wmic (sintetico)
+  id: sim-wmic-shadowcopy-delete
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: borrado de instantaneas
+    VSS con wmic. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1490
+  host: LAB-SIM-WMIC-SHADOWCOPY-DE
+  user: CORP\sim
+  expected:
+  - rule: c3d4e5f6-0002-4c02-9e02-020202020202
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4101
+      name: wmic.exe
+      command_line: wmic.exe shadowcopy delete
+- name: Reduccion de almacenamiento VSS con vssadmin o PowerShell (sintetico)
+  id: sim-vssadmin-resize
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: reduccion del
+    almacen de instantaneas con vssadmin. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1490
+  host: LAB-SIM-VSSADMIN-RESIZE
+  user: CORP\sim
+  expected:
+  - rule: c3d4e5f6-0003-4c03-9e03-030303030303
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4102
+      name: vssadmin.exe
+      command_line: 'vssadmin.exe resize shadowstorage /for=C: /on=C: /maxsize=500MB'
+- name: Sabotaje de recuperacion de arranque con bcdedit (sintetico)
+  id: sim-bcdedit-recovery
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: sabotaje de
+    la recuperacion de arranque con bcdedit. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1490
+  host: LAB-SIM-BCDEDIT-RECOVERY
+  user: CORP\sim
+  expected:
+  - rule: c3d4e5f6-0004-4c04-9e04-040404040404
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4103
+      name: bcdedit.exe
+      command_line: bcdedit.exe /set recoveryenabled no
+- name: Borrado del diario USN con fsutil (sintetico)
+  id: sim-fsutil-usn-delete
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: borrado del
+    diario USN con fsutil. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1070.005
+  host: LAB-SIM-FSUTIL-USN-DELETE
+  user: CORP\sim
+  expected:
+  - rule: c3d4e5f6-0005-4c05-9e05-050505050505
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4104
+      name: fsutil.exe
+      command_line: 'fsutil.exe usn deletejournal /d C:'
+- name: Volcado de ntds.dit con ntdsutil (sintetico)
+  id: sim-ntdsutil-ifm
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: volcado de ntds.dit
+    con ntdsutil. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1003.003
+  host: LAB-SIM-NTDSUTIL-IFM
+  user: CORP\sim
+  expected:
+  - rule: c3d4e5f6-0006-4c06-9e06-060606060606
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4105
+      name: ntdsutil.exe
+      command_line: ntdsutil.exe "ac i ntds" ifm "create full C:\Users\Public\dump"
+- name: Falsificacion de marcas de tiempo de ficheros (sintetico)
+  id: sim-timestomp-powershell
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: falsificacion
+    de marcas de tiempo con PowerShell. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1070.006
+  host: LAB-SIM-TIMESTOMP-POWERSHE
+  user: CORP\sim
+  expected:
+  - rule: c3d4e5f6-0007-4c07-9e07-070707070707
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4106
+      name: powershell.exe
+      command_line: powershell.exe -c "$(Get-Item C:\Users\Public\payload.exe).CreationTime = '01/01/2020'"
+- name: Borrado dirigido de artefactos forenses de Windows (sintetico)
+  id: sim-del-prefetch
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: borrado dirigido
+    de artefactos forenses. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1070.004
+  host: LAB-SIM-DEL-PREFETCH
+  user: CORP\sim
+  expected:
+  - rule: c3d4e5f6-0008-4c08-9e08-080808080808
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4107
+      name: cmd.exe
+      command_line: cmd.exe /c del C:\Windows\Prefetch\PAYLOAD.EXE-4A2B1C.pf

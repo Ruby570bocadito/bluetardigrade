@@ -1,0 +1,93 @@
+# Escenarios de validacion de deteccion (SIM-1/SIM-2).
+# Telemetria sintetica e inerte: el mismo esquema de eventos que
+# envia el sensor, sin ejecutar nada en ningun equipo. Cada escenario
+# declara las alertas que el motor DEBE disparar (shipped rule/sequence
+# id); el test de CI falla si una deja de detectarse.
+
+- name: Proceso hijo de un servidor web o de base de datos (sintetico)
+  id: sim-webshell-child
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: cmd.exe lanzado
+    por el servidor web w3wp.exe. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1505.003
+  - t1190
+  host: LAB-SIM-WEBSHELL-CHILD
+  user: CORP\sim
+  expected:
+  - rule: ca55c08b-ae3e-4e55-a2b0-32bc8c383187
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 800
+      name: w3wp.exe
+      command_line: w3wp.exe -ap "Sitio Web"
+      image: C:\Apps\w3wp.exe
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4180
+      name: cmd.exe
+      ppid: 800
+      command_line: cmd.exe /c whoami
+- name: Ejecutable lanzado desde un adjunto o un archivo comprimido (sintetico)
+  id: sim-attachment-exec
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: ejecutable lanzado
+    desde un adjunto comprimido. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1566.001
+  - t1204.002
+  host: LAB-SIM-ATTACHMENT-EXEC
+  user: CORP\sim
+  expected:
+  - rule: a18ae438-82b6-478f-8e8d-b33d61996057
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4181
+      name: factura.exe
+      image: C:\Users\sim\AppData\Local\Temp\Temp1_factura.zip\factura.exe
+- name: Exploit de Office via Equation Editor (sintetico)
+  id: sim-equation-editor-exploit
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: cmd.exe lanzado
+    por eqnedt32.exe. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1203
+  host: LAB-SIM-EQUATION-EDITOR-EX
+  user: CORP\sim
+  expected:
+  - rule: f518432f-f5f4-403b-8e13-d4f40f183dd3
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 800
+      name: eqnedt32.exe
+      command_line: eqnedt32.exe formula.doc
+      image: C:\Apps\eqnedt32.exe
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4182
+      name: cmd.exe
+      ppid: 800
+      command_line: cmd.exe /c C:\Users\Public\payload.exe
+- name: Formato ejecutable inusual lanzado desde Descargas (sintetico)
+  id: sim-downloads-scr
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: ejecutable disfrazado
+    lanzado desde Descargas. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1204.002
+  - t1566.002
+  host: LAB-SIM-DOWNLOADS-SCR
+  user: CORP\sim
+  expected:
+  - rule: 046007e6-8ed6-49e4-87dd-e03963d9c269
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4183
+      name: factura.scr
+      image: C:\Users\sim\Downloads\factura.scr

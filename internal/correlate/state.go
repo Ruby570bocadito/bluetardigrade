@@ -19,6 +19,11 @@ type state struct {
 	// hosts the chain touched (lowercase, bounded by maxMinHosts):
 	// user-scoped chains complete only once they span MinHosts of them
 	hosts map[string]string
+	// simulated is set as soon as any contributing event carries the
+	// simulation tag (detection validation, SIM-1): the completed
+	// chain alert is tagged in turn, so a replay on a lab engine can
+	// never be mistaken for real evidence.
+	simulated bool
 }
 
 // span returns the spread between the oldest and newest step times.

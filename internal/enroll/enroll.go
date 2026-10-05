@@ -478,6 +478,21 @@ func (r *Registry) Enroll(token, host, peer string) (Enrolled, error) {
 		return Enrolled{}, failure(ErrFull, "%d hosts are already waiting for approval", MaxPending)
 	}
 
+	// SEC-A-1 (Seguridad A, ronda 2026-10-05 13h34): the 6-hex suffix
+	// has a 16.7M space and host records are never purged, so across
+	// enough re-enrollments of the same host name a birthday collision
+	// becomes possible. Open() refuses a file with duplicate identity
+	// names ("malformed or duplicated"), so one collision would save
+	// without error and then the engine would refuse to start at the
+	// next restart. Re-roll the suffix while the name exists, inside
+	// the same lock that appends the record; Open()'s check stays as
+	// the last line of defense.
+	name, err := uniqueIdentityName(host, suffix, r.nameTakenLocked, randomHex)
+	if err != nil {
+		r.mu.Unlock()
+		return Enrolled{}, failure(ErrFull, "cannot derive an unused identity name for %q: %v", host, err)
+	}
+
 	conflict := r.conflictLocked(host)
 	state := Pending
 	auto := false
@@ -488,7 +503,7 @@ func (r *Registry) Enroll(token, host, peer string) (Enrolled, error) {
 	}
 	rec := &hostRecord{
 		Host: Host{
-			Name:         identityName(host, suffix),
+			Name:         name,
 			Host:         host,
 			State:        state,
 			TokenID:      tok.ID,
@@ -714,6 +729,42 @@ func identityName(host, suffix string) string {
 		h = h[:48]
 	}
 	return "enr-" + h + "-" + suffix
+}
+
+// maxNameRolls bounds the extra suffix draws after the initial one.
+// Five more 48-bit picks make a residual collision impossible in
+// practice, and a bounded loop cannot spin forever against a
+// pathological registry (a file that pre-seeds every near name).
+const maxNameRolls = 5
+
+// uniqueIdentityName returns an identity name for host whose suffix no
+// live record uses: the first pick, re-rolled (bounded) while it
+// collides. taken and roll are injected so the retry logic is testable
+// without guessing crypto/rand output.
+func uniqueIdentityName(host, first string, taken func(string) bool, roll func(int) (string, error)) (string, error) {
+	name := identityName(host, first)
+	for try := 0; taken(name); try++ {
+		if try > maxNameRolls {
+			return "", fmt.Errorf("no unused identity suffix after %d draws", maxNameRolls+1)
+		}
+		s, err := roll(3)
+		if err != nil {
+			return "", err
+		}
+		name = identityName(host, s)
+	}
+	return name, nil
+}
+
+// nameTakenLocked reports whether an identity name is already in the
+// registry. Caller holds r.mu.
+func (r *Registry) nameTakenLocked(name string) bool {
+	for _, h := range r.hosts {
+		if h.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func digest(s string) string {

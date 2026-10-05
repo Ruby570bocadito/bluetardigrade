@@ -31,6 +31,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/reputation"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/respond"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/scenrun"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/siem"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/store"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/suppress"
@@ -502,6 +503,32 @@ func runEngine(o *options, interactive bool) error {
 			default:
 				hub.EnableSuppressionsWrite(supPath)
 				fmt.Printf("[ENGINE] api write: ENABLED (POST/DELETE /api/suppressions -> %s)\n", supPath)
+			}
+			// detection-validation battery (SIM-4): armed only
+			// with -scenarios. The battery replays the inert
+			// library against the LIVE rule set through the
+			// isolated in-process runner (internal/scenario —
+			// the same machinery the CI regression net uses),
+			// so a validation run never touches the real
+			// rings, store, webhook or stream. Meant for a
+			// laboratory engine; the surface stays off unless
+			// the operator asks for it.
+			if o.scenariosDir != "" {
+				var sink scenrun.RunSink
+				if st != nil {
+					sink = st
+				}
+				hub.SetScenarios(scenrun.New(o.scenariosDir, seqPath, scenrun.Deps{
+					Rules: func() *rules.Engine { return engine },
+					Sink:  sink,
+					Logf:  log.Printf,
+				}))
+				history := "in memory"
+				if st != nil {
+					history = "in the store"
+				}
+				fmt.Printf("[ENGINE] scenarios: detection validation armed from %s (POST /api/scenarios/run; history %s)\n",
+					o.scenariosDir, history)
 			}
 			go func() {
 				if err := hub.Run(); err != nil {

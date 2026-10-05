@@ -1,0 +1,108 @@
+# Escenarios de validacion de deteccion (SIM-1/SIM-2).
+# Telemetria sintetica e inerte: el mismo esquema de eventos que
+# envia el sensor, sin ejecutar nada en ningun equipo. Cada escenario
+# declara las alertas que el motor DEBE disparar (shipped rule/sequence
+# id); el test de CI falla si una deja de detectarse.
+
+- name: 'Phishing: enlace HTML muestra otro host (sintetico)'
+  id: sim-phishing-html-mismatch
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: el enlace HTML
+    anuncia un host y apunta a otro. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1566.002
+  host: LAB-SIM-PHISHING-HTML-MISM
+  user: CORP\sim
+  expected:
+  - rule: soc-mail-html-link-mismatch
+  events:
+  - type: email.message
+    source: eml
+    attributes:
+      mail_html_link_host_mismatch: 'true'
+      mail_subject: Factura pendiente
+      mail_from: billing@ejemplo-corp.tk
+- name: 'Phishing: URL contiene credenciales antes del host (sintetico)'
+  id: sim-phishing-url-credentials
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: la URL lleva
+    usuario y contrasena antes del host. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1566.002
+  host: LAB-SIM-PHISHING-URL-CREDE
+  user: CORP\sim
+  expected:
+  - rule: soc-mail-url-credentials
+  events:
+  - type: email.message
+    source: eml
+    attributes:
+      mail_url_credentials: 'true'
+      mail_subject: Verifique su cuenta
+      mail_from: soporte@banco-seguro.tk
+- name: 'Phishing: enlace con hostname internacionalizado (sintetico)'
+  id: sim-phishing-url-punycode
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: el enlace usa
+    un hostname internacionalizado (punycode). Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1566.002
+  host: LAB-SIM-PHISHING-URL-PUNYC
+  user: CORP\sim
+  expected:
+  - rule: soc-mail-url-punycode
+  events:
+  - type: email.message
+    source: eml
+    attributes:
+      mail_url_punycode: 'true'
+      mail_subject: Actualice su navegador
+      mail_from: noreply@xn--banc-qqa.tk
+- name: 'Phishing: adjunto Office compatible con macros (sintetico)'
+  id: sim-phishing-macro-attachment
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: el adjunto es
+    un documento Office compatible con macros. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1566.001
+  host: LAB-SIM-PHISHING-MACRO-ATT
+  user: CORP\sim
+  expected:
+  - rule: soc-mail-macro-attachment
+  events:
+  - type: email.message
+    source: eml
+    attributes:
+      mail_macro_capable_attachment: 'true'
+      mail_subject: Presupuesto 4T
+      mail_from: ventas@proveedor-corp.tk
+- name: 'Phishing: doble extension de documento y ejecutable (sintetico)'
+  id: sim-phishing-double-extension
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: el adjunto combina
+    extension de documento y ejecutable. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1566.001
+  host: LAB-SIM-PHISHING-DOUBLE-EX
+  user: CORP\sim
+  expected:
+  - rule: soc-mail-double-extension
+  events:
+  - type: email.message
+    source: eml
+    attributes:
+      mail_attachment_double_extension: 'true'
+      mail_subject: Pedido 1182
+      mail_from: compras@cliente-corp.tk
+- name: 'Phishing: nombre de adjunto invierte texto Unicode (sintetico)'
+  id: sim-phishing-bidi-filename
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: el nombre del
+    adjunto invierte el texto con marcas Unicode. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1566.001
+  host: LAB-SIM-PHISHING-BIDI-FILE
+  user: CORP\sim
+  expected:
+  - rule: soc-mail-bidi-filename
+  events:
+  - type: email.message
+    source: eml
+    attributes:
+      mail_attachment_name_bidi: 'true'
+      mail_subject: Escaneo del contrato
+      mail_from: rrhh@empresa-corp.tk

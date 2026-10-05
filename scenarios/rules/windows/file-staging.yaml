@@ -1,0 +1,114 @@
+# Escenarios de validacion de deteccion (SIM-1/SIM-2).
+# Telemetria sintetica e inerte: el mismo esquema de eventos que
+# envia el sensor, sin ejecutar nada en ningun equipo. Cada escenario
+# declara las alertas que el motor DEBE disparar (shipped rule/sequence
+# id); el test de CI falla si una deja de detectarse.
+
+- name: Office escribe un payload en una ruta de usuario (sintetico)
+  id: sim-office-payload-drop
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: Office escribe
+    un payload en una ruta de usuario. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1204.002
+  host: LAB-SIM-OFFICE-PAYLOAD-DRO
+  user: CORP\sim
+  expected:
+  - rule: d4e5f607-1001-4a00-8000-000000000001
+  events:
+  - type: file.write
+    user: CORP\sim
+    process:
+      pid: 4160
+      name: winword.exe
+    file:
+      path: C:\Users\Public\payload.exe
+- name: Interprete escribe una DLL en una ruta temporal (sintetico)
+  id: sim-ps-dll-staging
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: PowerShell escribe
+    una DLL en ruta temporal. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1574.001
+  host: LAB-SIM-PS-DLL-STAGING
+  user: CORP\sim
+  expected:
+  - rule: d4e5f607-1002-4a00-8000-000000000002
+  events:
+  - type: file.write
+    user: CORP\sim
+    process:
+      pid: 4161
+      name: powershell.exe
+    file:
+      path: C:\Users\sim\AppData\Local\Temp\loader.dll
+- name: DLL candidata a carga lateral descargada o extraida (sintetico)
+  id: sim-side-load-dll-drop
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: DLL candidata
+    a carga lateral extraida. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1574.001
+  host: LAB-SIM-SIDE-LOAD-DLL-DROP
+  user: CORP\sim
+  expected:
+  - rule: d4e5f607-1003-4a00-8000-000000000003
+  events:
+  - type: file.write
+    user: CORP\sim
+    process:
+      pid: 4162
+      name: 7z.exe
+    file:
+      path: C:\Users\Public\out\version.dll
+- name: Modificacion de un perfil de PowerShell (sintetico)
+  id: sim-ps-profile-touch
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: modificacion
+    de un perfil de PowerShell. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1546.013
+  host: LAB-SIM-PS-PROFILE-TOUCH
+  user: CORP\sim
+  expected:
+  - rule: d4e5f607-1004-4a00-8000-000000000004
+  events:
+  - type: file.write
+    user: CORP\sim
+    process:
+      pid: 4163
+      name: notepad.exe
+    file:
+      path: C:\Users\sim\Documents\WindowsPowerShell\profile.ps1
+- name: Contenido activo en el inicio automatico de Office (sintetico)
+  id: sim-office-startup-active
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: contenido activo
+    en el inicio automatico de Office. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1137
+  host: LAB-SIM-OFFICE-STARTUP-ACT
+  user: CORP\sim
+  expected:
+  - rule: d4e5f607-1005-4a00-8000-000000000005
+  events:
+  - type: file.write
+    user: CORP\sim
+    process:
+      pid: 4164
+      name: excel.exe
+    file:
+      path: C:\Users\sim\AppData\Roaming\Microsoft\Word\STARTUP\evil.dotm
+- name: Artefacto de volcado de LSASS escrito en disco (sintetico)
+  id: sim-lsass-dmp-write
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: artefacto de
+    volcado de LSASS en disco. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1003.001
+  host: LAB-SIM-LSASS-DMP-WRITE
+  user: CORP\sim
+  expected:
+  - rule: d4e5f607-1006-4a00-8000-000000000006
+  events:
+  - type: file.write
+    user: CORP\sim
+    process:
+      pid: 4165
+      name: procdump.exe
+    file:
+      path: C:\Windows\Temp\lsass.dmp

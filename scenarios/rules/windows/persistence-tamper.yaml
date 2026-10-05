@@ -1,0 +1,74 @@
+# Escenarios de validacion de deteccion (SIM-1/SIM-2).
+# Telemetria sintetica e inerte: el mismo esquema de eventos que
+# envia el sensor, sin ejecutar nada en ningun equipo. Cada escenario
+# declara las alertas que el motor DEBE disparar (shipped rule/sequence
+# id); el test de CI falla si una deja de detectarse.
+
+- name: Creacion de tarea programada (sintetico)
+  id: sim-schtasks-create
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: creacion de
+    tarea programada. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1053.005
+  host: LAB-SIM-SCHTASKS-CREATE
+  user: CORP\sim
+  expected:
+  - rule: e8a1c72d-4b6f-4f39-9a52-0d3b7c5f1a11
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4193
+      name: schtasks.exe
+      command_line: schtasks.exe /create /tn "MicrosoftEdgeUpdaterCore" /sc onlogon /ru SYSTEM /tr C:\Users\Public\payload.exe
+- name: Ejecucion de procesos via WMI (sintetico)
+  id: sim-wmic-process-create
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: ejecucion de
+    procesos via WMI. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1047
+  host: LAB-SIM-WMIC-PROCESS-CREAT
+  user: CORP\sim
+  expected:
+  - rule: f3b2d98e-7c15-4a58-8e0a-2c4d6e8f0b22
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4194
+      name: wmic.exe
+      command_line: wmic.exe /node:LAB-SIM-TARGET process call create "cmd.exe /c C:\Users\Public\payload.exe"
+- name: Manipulacion de Windows Defender (sintetico)
+  id: sim-defender-tamper
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: manipulacion
+    de Windows Defender. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1562.001
+  host: LAB-SIM-DEFENDER-TAMPER
+  user: CORP\sim
+  expected:
+  - rule: a7c4e5f1-9d28-4b36-8f47-1e5a9c3d6b33
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4195
+      name: powershell.exe
+      command_line: powershell.exe -c Set-MpPreference -DisableRealtimeMonitoring $true
+- name: Borrado de instantaneas VSS (sintetico)
+  id: sim-vssadmin-delete
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: borrado de instantaneas
+    VSS. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1490
+  host: LAB-SIM-VSSADMIN-DELETE
+  user: CORP\sim
+  expected:
+  - rule: b8d5f6e2-0e39-4c47-9a58-2f6b0d4e7c44
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4196
+      name: vssadmin.exe
+      command_line: vssadmin.exe delete shadows /all /quiet

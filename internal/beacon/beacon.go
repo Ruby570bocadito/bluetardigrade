@@ -156,6 +156,10 @@ type keyState struct {
 	times     []time.Time // connection event times, oldest first
 	lastFired time.Time   // event time of the last fire; zero until the key fired once
 	seen      time.Time   // wall clock of the last observation (staleness only)
+	// simulated is set as soon as any connection of the key carries
+	// the simulation tag (detection validation, SIM-1): the beacon
+	// alert is tagged in turn so a lab replay is never real evidence.
+	simulated bool
 }
 
 // insertSorted adds t to times keeping them in ascending order (the
@@ -351,6 +355,9 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 			m.state[key] = st
 		}
 		st.seen = now
+		if alert.EventIsSimulated(ev) {
+			st.simulated = true
+		}
 		// a sample more than one window older than the newest one is
 		// a discontinuity, not a late arrival: restart the ring
 		if n := len(st.times); n > 0 && st.times[n-1].Sub(t) > c.window {
@@ -385,7 +392,7 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 		}
 		st.lastFired = newest
 		m.fired++
-		fired = append(fired, m.fire(c, ev, dest, port, len(st.times), mean, cv))
+		fired = append(fired, m.fire(c, ev, dest, port, len(st.times), mean, cv, st.simulated))
 	}
 	m.mu.Unlock()
 	// Deliver OUTSIDE mu (the accumulated O1, acta 22h46 §1.4): the
@@ -500,14 +507,16 @@ func regularity(times []time.Time) (mean time.Duration, cv float64, ok bool) {
 	return mean, sd / m, true
 }
 
-// fire builds the beacon alert for one detection. Caller holds mu; the
-// returned alert is delivered by Observe AFTER mu is released — the
-// pipeline (RecordAlert) takes the hub lock and can block on SQLite,
-// webhook and risk, and no stats read should queue behind that. With
-// delivery outside mu there is no nested locking at all: the old
-// "documented lock order" (detector.mu before hub.mu) is gone because
-// the two locks are never held together.
-func (m *Manager) fire(c *compiled, ev *model.Event, dest string, port, count int, mean time.Duration, cv float64) alert.Alert {
+// fire builds the beacon alert for one detection. simulated carries
+// the key's simulated flag (any contributing connection tagged as
+// detection validation): the alert is tagged in turn. Caller holds mu;
+// the returned alert is delivered by Observe AFTER mu is released —
+// the pipeline (RecordAlert) takes the hub lock and can block on
+// SQLite, webhook and risk, and no stats read should queue behind
+// that. With delivery outside mu there is no nested locking at all:
+// the old "documented lock order" (detector.mu before hub.mu) is gone
+// because the two locks are never held together.
+func (m *Manager) fire(c *compiled, ev *model.Event, dest string, port, count int, mean time.Duration, cv float64, simulated bool) alert.Alert {
 	a := alert.Alert{
 		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
 		RuleID:    c.p.ID,
@@ -522,6 +531,9 @@ func (m *Manager) fire(c *compiled, ev *model.Event, dest string, port, count in
 		MatchedOn: []string{"destination", "interval", "jitter"},
 		Tags:      c.p.Tags,
 		Enrich:    ev.Enrichment,
+	}
+	if simulated {
+		alert.MarkSimulated(&a)
 	}
 	return a
 }

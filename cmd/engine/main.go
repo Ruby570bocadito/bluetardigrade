@@ -30,7 +30,7 @@ func main() {
 // treat as a positional) keeps the pre-CLI behavior unchanged.
 func isRoutedSubcommand(arg string) bool {
 	switch arg {
-	case "run", "rules", "validate", "doctor", "version", "sigma", "report", "ingest-identity", "operator-credential",
+	case "run", "rules", "validate", "doctor", "version", "sigma", "scenarios", "report", "ingest-identity", "operator-credential",
 		"help", "completion", "__complete", "__completeNoDesc",
 		"-h", "--help":
 		return true

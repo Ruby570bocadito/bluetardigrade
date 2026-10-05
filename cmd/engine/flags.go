@@ -13,6 +13,7 @@ import (
 type options struct {
 	addr             string
 	apiAddr          string
+	scenariosDir     string
 	rulesDir         string
 	seqDir           string
 	beaconsFile      string
@@ -71,6 +72,8 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 	// combined with the installer's -Firewall switch.
 	fs.StringVar(&o.addr, "addr", "127.0.0.1:7777", "TCP listen address for sensor streams (use 0.0.0.0:7777 to accept remote sensors)")
 	fs.StringVar(&o.apiAddr, "api", "127.0.0.1:7778", "local HTTP API for the console (stats/events/alerts/stream); 0 disables")
+	fs.StringVar(&o.scenariosDir, "scenarios", "",
+		"directory with the detection-validation scenarios (SIM-4: arms GET/POST /api/scenarios* to replay the inert library against the live rules and keep the run history); empty disables")
 	fs.StringVar(&o.rulesDir, "rules", "./rules", "directory with YAML rules")
 	fs.StringVar(&o.seqDir, "sequences", "./sequences", "directory with YAML kill-chain sequences (correlator)")
 	fs.StringVar(&o.intelDir, "intel", "./intel",
