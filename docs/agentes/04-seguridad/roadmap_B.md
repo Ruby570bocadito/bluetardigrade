@@ -109,7 +109,31 @@ la ronda 1.
   validación de `analyst:ask` con la de incidentes (candidato para mi
   siguiente ronda si nadie lo coge).
 
-## Siguientes rondas (orden propuesto, tras la ronda 3)
+## Estado tras la ronda 2026-10-05 (ronda 4)
+
+- **`analyst:ask` (alerta única) endurecido:** la copia de reserva del
+  cliente pasa hoy por la misma limpieza campo a campo que el flujo de
+  incidentes (`cleanAlertObject` compartido; campos desconocidos fuera
+  del prompt, cadenas clampeadas). La copia del motor sigue siendo
+  autoritativa mientras el id esté en el anillo; mensajes y
+  presupuestos sin cambios. Tests unitarios + de integración; el test
+  de integración demostrado en rojo contra el código previo.
+  console-service: 108 pass / 0 fail, tsc limpio.
+- **AD-1/SEC-2 siguen sin publicarse** (IMP-A en su commit de plan al
+  abrir y al cerrar la ronda): nada que auditar todavía.
+
+**Nota de parada (protocolo, condición «bloqueado»):** tras la ronda 4
+no queda ninguna tarea de mi carril ejecutable sin trabajo ajeno:
+- AD-1 y SEC-2 dependen de IMP-A (ni `main` ni su rama tienen código);
+- SEC-9 (ficha de usuario, auditoría de consulta) depende de AD-3/AD-4
+  y WEF, también IMP-A;
+- prevención §6.2-6.4 exige decisión explícita del responsable;
+- `deps-audit` y los guards solo corren en `main` cuando el responsable
+  fusione las rondas pendientes.
+Al publicarse AD-1, esa auditoría es la primera tarea de la ronda
+siguiente (checklist en la ronda 3 de este roadmap y modelo §3).
+
+## Siguientes rondas (orden propuesto, tras la ronda 4)
 
 1. **AD-1 en cuanto IMP-A la publique:** LDAPS obligatorio y
    validación de certificado, credencial fuera de API y logs, escape
