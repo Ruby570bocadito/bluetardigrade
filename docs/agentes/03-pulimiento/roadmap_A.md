@@ -36,7 +36,13 @@ moverlos.
   12. `plan: ronda 2026-10-05 13h42 ajustada (PUL-A)` — plan ronda 6 ajustado tras leer los seis planes.
   13. `pulimiento: complete Prometheus families, POL-4 branding, nightly fuzz job (PUL-A)` — trabajo ronda 6.
   14. `plan: ronda 2026-10-05 14h10 (PUL-A)` — plan ronda 7.
-  15. (esta ronda) trabajo ronda 7: split de correlate.go, CONTRIBUTING + plantillas, informe.
+  15. `pulimiento: split correlate by responsibility, add contribution process (PUL-A)` — trabajo ronda 7 (fusionado en `main` con la integración de la ronda 1).
+  16. `plan: ronda 2026-10-05 16h00 (PUL-A)` — plan ronda 8 (esta instancia).
+  17. `plan: ronda 2026-10-05 16h00 ajustada tras leer los seis planes (PUL-A)`.
+  18. `nightly fuzzing: discovery matrix runs every target; AUTH/ENROLL first-line target` — trabajo ronda 8.
+  19. `ci: console theme gate in the console job; nightly fuzzing documented`.
+  20. `comments: provenance becomes technical rationale`.
+  21. Informe + roadmap + changelog.d (commit de cierre de la ronda 8).
 
 ## Rondas anteriores
 
@@ -180,6 +186,30 @@ moverlos.
   - 2 fragmentos en `changelog.d/`: `PUL-A-correlate-split.md`,
     `PUL-A-contribution-process.md`.
 
+- **2026-10-05 16h00-16h41 UTC (ronda 8, esta instancia):** SEC-7
+  nocturno completo + objetivo AUTH/ENROLL + POL-12 + enganche del
+  checker de tema. Informe en `ronda_2026-10-05_16h41_A.md`. Resumen:
+  - `bench-nightly.yml`: job `fuzz` convertido en **matriz generada
+    por descubrimiento** (`git grep '^func Fuzz'` → JSON →
+    `matrix.include`), 5 min por objetivo, `max-parallel: 10`, guard
+    contra matriz vacía, crasher como artefacto. 21/21 objetivos
+    verificados con el comando exacto de la matriz en local.
+  - `FuzzAuthEnrollFirstLine` nuevo en `internal/ingest`:
+    clasificación AUTH/ENROLL + `parseEnrollLine` (extraído verbatim
+    de `handleEnroll`); 531.590 execs/45 s sin fallos.
+  - POL-12: ~90 comentarios (workflows, Go, scripts) de procedencia
+    (ronda/carril/agente/Director/acta) a porqué técnico; IDs de
+    requisitos de diseño y hashes de commit se conservan. Exceptuados
+    `internal/enroll/` (IMP-A caliente).
+  - `check_console_theme.py` enganchado a `ci.yml` (job console) y a
+    `make ci`; verificado verde sobre `main` antes de enganchar.
+  - POL-1 (`api.go`) DIFERIDO: IMP-A tiene `internal/api` en su plan.
+  - Bug hallazgo para SEG-A: `decodeText` no elimina doble BOM
+    (repro en el informe); la primera noche de la matriz lo
+    reencontrará y el job advisory se pondrá rojo — pre-anotado.
+  - 2 fragmentos en `changelog.d/`: `PUL-A-nightly-fuzz-matrix.md`,
+    `PUL-A-console-theme-ci.md`.
+
 ## Pendientes para la siguiente ronda
 
 ### Verificación
@@ -197,43 +227,45 @@ moverlos.
   `PATH=/home/z/my-project/tools/go/bin:/home/z/my-project/gopath/bin:$PATH`
   y `GOPATH=/home/z/my-project/gopath`.
 
-### POL-A-code-1 — refactor del backend Go (desbloqueado, con cola)
+### POL-A-code-1 — refactor del backend Go (cola actualizada)
 
-La herramienta ya existe (ronda 6); lo que manda ahora es el orden de
-los carriles:
+- **`internal/api/api.go` (1367 líneas): PRIMERO de la cola.** Esta
+  ronda se difirió por la condición del responsable: IMP-A lleva
+  `internal/api/reports.go` + `noise.go` en su plan (REP-1). Cuando su
+  ronda se fusione y enfríe el paquete: split del Hub por dominio
+  (stats, events, alerts, suppressions, respond, forensics, sse) en el
+  mismo paquete, verificación con `go doc -all` antes/después como en
+  correlate.
+- **`cmd/engine/run.go` (1091 líneas):** posible extracción de bloques
+  de wiring a helpers; evaluar coste/beneficio. Su sección de escenarios
+  la tocó la integración de la ronda 1 (SIM-4); verificar con
+  merge-tree y planes antes de mover nada.
+- **`sensor/src/collector.rs`:** requiere `cargo` (no disponible en el
+  entorno).
 
-- `internal/api/api.go` (1367 líneas): el `Hub` struct tiene ~30
-  campos, los handlers están todos en un fichero. Posible split por
-  dominio (stats, events, alerts, suppressions, respond, forensics,
-  sse). Solo si ningún otro carril tiene estos ficheros en su plan.
-- `cmd/engine/run.go` (1091 líneas): `runEngine` hace el wiring
-  completo. Posible extracción de bloques (rules/sequences/beacons/
-  thresholds loading, store wiring, sink wiring) a helpers o a un
-  paquete `internal/engine`. Evaluar si merece la pena vs. el coste
-  de mover imports.
-- `internal/correlate/correlate.go` (789 líneas): posible split del
-  manager (load/reload/track/fire/prune).
+### POL-A-ci-2 — enganches de CI
 
-**Estado tras la ronda 6:** `go test -race ./...` ya es ejecutable y
-pasó verde (33 paquetes). El candidato `internal/api/api.go` sigue
-bloqueado por plan ajeno: la ronda 2 de IMP-A (plan 14h00) toca
-`internal/api` (rutas SIM-4) y `cmd/engine` (flag/cableado); revaluar
-cuando IMP-A cierre su ronda y se fusione. `correlate.go` y los
-helpers de `run.go` no aparecen en ningún plan publicado — candidatos
-limpios para la siguiente ronda de este carril.
+- **Checker de tema: HECHO (ronda 8)** — `check_console_theme.py` en
+  el job `console` de `ci.yml` y en `make ci`.
+- **Objetivos de fuzz de SEG-A: CUBIERTOS POR DISEÑO (ronda 8)** — la
+  matriz descubre cada `func Fuzz*` del árbol; los fuzzers futuros de
+  SEG-A entran solos, sin editar el workflow.
+- **Idea evaluada y diferida:** caché del corpus de fuzzing entre
+  noches (`actions/cache` sobre el dir de corpus por objetivo,
+  clave por fecha con restore-prefix). Ganancia real de profundidad;
+  coste: 20 entradas de caché/noche y ruido de revisión. Decidir con
+  el responsable si el nocturno se queda estable.
 
-### POL-A-ci-2 — enganches de CI pendientes de fusiones ajenas
+### POL-12 — resto
 
-- **Checker de tema (petición de PUL-B, ronda 6):** cuando
-  `carril/pulimiento-b` esté fusionado en `main`, añadir al job
-  `console` de `ci.yml`, tras el paso de build:
-  `python3 scripts/dev-tests/check_console_theme.py` (3 s, stdlib
-  puro, sin actions nuevas). Hoy falla contra `main` porque
-  `globals.css` aún no tiene el bloque `html.light`.
-- **Objetivos de fuzz de SEG-A (ronda 6):** cuando la ronda de
-  fuzzers de SEG-A se fusione, añadir una línea por objetivo al job
-  `fuzz` de `bench-nightly.yml`
-  (`go test -run '^$' -fuzz '^Nombre$' -fuzztime 5m ./paquete`).
+- `internal/enroll/enroll.go:481` y `internal/enroll/enroll_test.go:302`:
+  2 comentarios con «Seguridad A, ronda 2026-10-05 13h34». IMP-A lleva
+  el fix SEC-A-1 en esos ficheros esta ronda; reescribir tras su
+  fusión.
+- Decisión editorial para el responsable (no bloqueante): los IDs
+  «dictamen Qx/Ox» de `internal/respond` y scripts son referencias a
+  requisitos de decisión sin ronda/carril/agente; se conservaron.
+  Si quiere renombrarlos a «design req Qx», es un pase propio.
 
 ### POL-A-ci-1 — revisión de CI (cuando haya motivo)
 
