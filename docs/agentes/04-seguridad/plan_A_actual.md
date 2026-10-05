@@ -1,34 +1,33 @@
-# Plan de ronda — Seguridad A (2026-10-05, ronda 8, ~19h45 Madrid)
+# Plan de ronda — Seguridad A (2026-10-05, ronda 9, ~20h30 Madrid)
 
-Base: `1d98208` (mi ronda 7). Novedad al abrir: IMP-B publicó
-`9f35615` (IDEA-3, playbooks de respuesta a incidentes, ~1.1k líneas de
-consola: incident-playbook.ts/tsx, incident-report.ts, incidents-view).
-El resto de carriles sin cambios (IMP-A `2c32013` solo plan, PUL-A
-`10d7364`, PUL-B `173ac11` y SEG-B `b0eaa60` docs-only).
+Base: `2da7cf2` (mi ronda 8 + merge de `origin/main`: PR #18 de
+Dependabot, solo go.mod/go.sum). Novedad al abrir: ningún carril ha
+publicado código nuevo desde mi cierre (IMP-A `2c32013` solo plan,
+IMP-B `9f35615`, PUL-A `10d7364`, PUL-B `173ac11`, SEG-B `b0eaa60`).
+Los conflictos append-append previstos en la ronda 7 ya no existen
+contra `main` (`merge-tree` limpio en ambas puntas).
 
-Tareas:
+Tareas (continuación del pendiente 2 del roadmap: paquetes del motor
+aún sin auditoría profunda):
 
-1. **Revisión funcional de IDEA-3 de IMP-B** (rama ajena sin fusionar —
-   anotar, no editar): `incident-playbook.ts` (estado local validado:
-   límites 40/40/80, expulsión LRU, NFKC, bidi, revalidación),
-   `incident-playbook.tsx` (flujo de aplicación de plantilla, nota al
-   motor no bloqueante, casillas con hora, cronología
-   `datetime-local`), `incident-report.ts` (export .md/imprimible con
-   plan; byte a byte igual sin plan), cambios en `incidents-view.tsx`
-   y `console-commands.ts` («reglas» → «detectores»).
-2. **Re-verificar mis dos hallazgos de la ronda 5** en la nueva punta
-   de IMP-B (noise-view supresión flota-completa MEDIA; reports-view
-   generate sin guardia BAJA) — su diff no toca esos ficheros, pero se
-   comprueba contra su punta.
-3. **Auditoría propia si el tiempo lo permite** (continuación del
-   pendiente 2 del roadmap): `internal/fleet`, `internal/baseline`,
-   `internal/lifecycle` (gestores de estado con persistencia).
-4. **Obligatorio de ronda**: batería de consola en la punta de IMP-B
-   (bun test/tsc/build); `-race` en paquetes Go solo si el árbol Go de
-   alguna rama ajena cambia (IDEA-3 es consola-only: verificar diff Go
-   vacío y documentarlo) o si corrijo código propio.
+1. **`internal/notify`** (2077 líneas, 3 ficheros con goroutines) —
+   ciclo de vida de canales, colas y apagado.
+2. **`internal/webhook`** (582 líneas) y **`internal/enrich`**
+   (685 líneas) — clientes salientes y cadenas de enriquecimiento.
+3. **`internal/siem`** (elastic/splunk, 1293 líneas) e
+   **`internal/actions`** (577) — búferes, reintentos y ejecución.
+4. **`internal/respond`** (2733 líneas, 4 ficheros con goroutines) e
+   **`internal/reputation`** (514, solo su fuzz hasta ahora) — la
+   pieza más grande de la ronda.
+5. **`internal/collector`** (1911), **`internal/redact`** (163) y los
+   caminos de `cmd/engine` que los enchufan.
+6. **Obligatorio de ronda**: evidencia `-race` — las puntas ajenas no
+   se han movido desde los barridos de las rondas 5-8 (verificado
+   arriba con `rev-parse` + diff Go); se re-ejecuta `-race -count=5`
+   solo si toco código propio con goroutines o si alguna punta
+   cambia; `-race -count=3` en cualquier paquete que yo corrija.
 
 Ficheros que espero tocar: `docs/agentes/04-seguridad/`,
-`changelog.d/` si algún hallazgo cayera en código ya en main, y
-`internal/{fleet,baseline,lifecycle}/**` si la auditoría propia
-encuentra algo que corregir.
+`changelog.d/SEG-A-*.md` si corrijo algo ya en main, y
+`internal/{notify,webhook,siem,actions,respond,enrich,redact,
+reputation,collector}/**` según lo que encuentre.
