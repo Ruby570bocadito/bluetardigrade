@@ -1,26 +1,35 @@
-# Plan de ronda — Pulimiento B (2026-10-05)
+# Plan de ronda — Pulimiento B (2026-10-05, ronda 2, 13h18 Madrid)
 
-- **THEME-1/2/3** — tema claro/oscuro de la consola: script de arranque sin
-  destello (`layout.tsx`), selector en la cabecera (`theme-toggle.tsx`, nuevo)
-  con persistencia en `localStorage`, preferencia del sistema y `color-scheme`;
-  paleta clara de superficies y de datos en `globals.css` (remap de la rampa
-  zinc y de los acentos de estado bajo `html.light`, overrides del sistema de
-  superficies y de los tokens viz/severidad/series/estados), adaptación al tema
-  de `dot-grid.tsx` y `entity-graph.tsx` (colores fijos de oscuro a tokens).
-- **Limpieza** — `globals.css` tiene los bloques de scrollbar y `::selection`
-  duplicados (dos definiciones que compiten en cascada): se dejan una sola.
-- **README** — `web/console/README.md` documenta «one emerald interaction
-  accent» y «dark-mode locked»: deriva respecto al código (acento azul desde el
-  rediseño neutro). Se corrige y se documenta el tema dual y el selector.
-- **Validación** — nuevo `scripts/dev-tests/check_console_theme.py`: contraste
-  WCAG de los pares clave de ambos temas y separación de la escala de
-  severidad/series (CIEDE2000 con simulación CVD), para que la paleta clara
-  esté validada igual que la oscura.
-- Ficheros: `globals.css`, `layout.tsx`, `shell.tsx`, `theme-toggle.tsx` (nuevo),
-  `dot-grid.tsx`, `entity-graph.tsx`, `web/console/README.md`,
-  `scripts/dev-tests/check_console_theme.py` (nuevo), `changelog.d/`.
+Base: `5e168ba` (main sin mover). Mi ronda 1 publicada en `4eba2f8`.
 
-Nota: `TODO.md` y los planes del resto de carriles no existen todavía en
-`origin` (ningún carril ha publicado rama ni `docs/agentes/`); las tareas se
-derivan del rol asignado a este carril. Los informes de Pulimiento A y del
-resto no están disponibles; se consultará en la próxima ronda.
+## Tareas cogidas (identificadores de TODO.md en `origin/feat/enrollment`)
+
+1. **THEME-1 (cierre)**: el modo NOC debe seguir oscuro con tema claro
+   activo (hoy el remap de `html.light` invierte sus superficies zinc y las
+   paletas viz de sus 5 gráficas embebidas). Fuerza oscura mientras el NOC
+   está montado + repaint de capas canvas al cerrar. Además el selector de
+   la cabecera pasa a 3 estados (sistema/claro/oscuro, THEME-1 lo pide)
+   con seguimiento vivo de `prefers-color-scheme` en «sistema».
+   Ficheros: `noc-mode.tsx`, `theme-toggle.tsx`, `lib/theme.ts`,
+   `lib/theme.test.ts`, `layout.tsx` (script espejo).
+2. **THEME-2 (cierre)**: migrar las clases fijas `blue-*` (71 en 22
+   ficheros) a los tokens del kit (`--primary` / `--primary-strong` nuevo
+   para botones sólidos). Los blues de datos (viz) se quedan. **Excluyo
+   `dashboard.tsx`: IMP-B trabaja ahí esta ronda (VIZ-2/VIZ-6).**
+   Ficheros: los 21 restantes con `blue-*` + `globals.css` (@theme) +
+   `check_console_theme.py` (par nuevo).
+3. **POL-8 (parcial)**: foco visible y teclado en los popovers de
+   cabecera (NotifyMenu, paleta de comandos, export, sesión, detectores,
+   atajos): anillo `focus-visible` donde falte, cierre con Escape y
+   retorno de foco.
+4. **POL-9 (parcial)**: baseline de tamaño de bundle de `bun run build`
+   documentada en `web/console/README.md` (área de este carril). El
+   informe de Lighthouse y axe en CI quedan para host con navegador.
+
+Limpieza de ronda: imports sin uso, restos temporales, `.gitignore`.
+
+## Coordinación
+
+IMP-B (ronda 4, plan `652953d`): VIZ-2 heatmap y VIZ-6 exportación
+tocan `dashboard.tsx`, `chart-frame.tsx` y libs nuevas — no piso ninguno.
+SEG-A/SEG-B/PUL-A: sin solape (verificado contra sus planes publicados).
