@@ -628,6 +628,57 @@ rules and the fields they matched on. Nothing is ingested, stored,
 alerted, correlated or forwarded: it is a dry run for writing and tuning
 rules. The console exposes it in **Detección -> Probador**.
 
+## Detection validation (synthetic scenarios)
+
+The `scenarios/` directory ships a detection-validation library (one
+inert, synthetic scenario per shipped rule and per kill-chain, 127
+total). A scenario is a YAML file listing events in the exact schema
+the sensors send (the same JSON field names), the ATT&CK techniques it
+exercises and the alerts the engine MUST raise. Nothing in a scenario
+can execute anywhere: it is pure data, replayed over the wire into a
+LABORATORY engine.
+
+Every scenario event is tagged `simulation` by the loader and pinned to
+a `LAB-SIM-*` host, and the engine propagates the tag to every alert
+derived from simulated evidence — rule hits, kill-chain completions,
+beacons, thresholds, intel matches and baseline novelties — so a
+validation replay can never be mistaken for real telemetry on any
+surface (console, API, webhook, SIEM).
+
+```bash
+# list the library
+bin/engine scenarios list -dir ./scenarios
+
+# replay it against a LABORATORY engine on loopback and check the alerts
+bin/engine scenarios replay \
+  -ingest 127.0.0.1:17777 -api http://127.0.0.1:17778
+
+# a representative subset instead of the full battery
+bin/engine scenarios replay -only sim-lsass-comsvcs,sim-chain-cf86-be62 \
+  -ingest 127.0.0.1:17777 -api http://127.0.0.1:17778
+```
+
+Replay behavior and guardrails:
+
+- the replay only accepts literal loopback addresses (ingest and API):
+  pointing it at a production engine is a configuration error, not a
+  warning;
+- expectations are validated against the lab engine's own rules and
+  sequences catalog first (`FALTA-CATALOGO` instead of false negatives
+  after a rule rename);
+- the synthetic host gets a per-run suffix so repeated replays stay
+  clear of the engine's 60 s alert dedup (`-host-suffix none` keeps the
+  exact YAML host for single replays);
+- the report prints one line per scenario and exits non-zero when any
+  expectation does not fire (`[FALTA]`) or the engine did not tag its
+  alerts (`[AVISO]`).
+
+CI runs the same battery in-process (`go test ./internal/scenario/`):
+every expectation must fire against the shipped pack, every shipped
+rule and chain must keep its scenario, and every raised alert must
+carry the `simulation` tag. A scenario that stops detecting breaks the
+build, so detection regressions cannot land silently.
+
 ## Reputation lookups (opt-in)
 
 Set `SF_VT_API_KEY` (VirusTotal) and/or `SF_ABUSEIPDB_API_KEY`
@@ -1073,6 +1124,8 @@ Windows installer installs it as `sf-engine`). Subcommands:
 | `engine rules [-rules dir]` | print the loaded rule pack as a table and exit |
 | `engine validate [-rules dir] [-sequences dir]` | validate rules and sequences, print a report; exit code 0 when everything loads, non-zero on error (CI-friendly) |
 | `engine sigma -dir dir-or-file [-out file] [-strict]` | convert a Sigma corpus to the native rule format; report lists every skipped rule with its reason; exit 0 only with at least one conversion (and, under `-strict`, zero skips) |
+| `engine scenarios list [-dir dir] [-only ids]` | print the detection-validation scenario library as a table (id, ATT&CK techniques, events, expectations, synthetic host) |
+| `engine scenarios replay [-dir dir] [-ingest addr] [-api url] [-only ids] [-token t] [-tls] [-ca file] [-interval d] [-timeout d] [-host-suffix s]` | replay the library against a LABORATORY engine (loopback literal only) and verify every expected alert fires; exit 0 only when all expectations fire |
 | `engine version` | print the engine version and exit |
 
 ### Interactive terminal

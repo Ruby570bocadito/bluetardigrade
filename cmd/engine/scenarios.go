@@ -13,6 +13,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -67,53 +69,70 @@ func newScenariosCmd() *cobra.Command {
 }
 
 func newScenariosListCmd() *cobra.Command {
-	var dir, only string
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:     "list",
 		Short:   "Tabla de los escenarios cargados (id, tecnica ATT&CK, eventos, esperado)",
 		Example: scenariosListExample,
-		Args:    cobra.NoArgs,
+		// Same muscle-memory contract as run/rules/validate: single-dash
+		// flags parsed manually with stdlib flag.
+		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runScenariosList(cmd.OutOrStdout(), dir, only)
+			fs := flag.NewFlagSet("engine scenarios list", flag.ContinueOnError)
+			fs.SetOutput(io.Discard)
+			dir := fs.String("dir", "./scenarios", "directorio con los escenarios (.yml/.yaml)")
+			only := fs.String("only", "", "ids de escenario separados por comas (filtra la lista)")
+			if err := fs.Parse(args); err != nil {
+				if errors.Is(err, flag.ErrHelp) {
+					return cmd.Help()
+				}
+				return fmt.Errorf("banderas invalidas para 'scenarios list': %v", err)
+			}
+			if fs.NArg() > 0 {
+				return fmt.Errorf("argumentos inesperados para 'scenarios list': %s; usa 'engine scenarios list -h'", strings.Join(fs.Args(), " "))
+			}
+			return runScenariosList(cmd.OutOrStdout(), *dir, *only)
 		},
 	}
-	cmd.Flags().StringVar(&dir, "dir", "./scenarios", "directorio con los escenarios (.yml/.yaml)")
-	cmd.Flags().StringVar(&only, "only", "", "ids de escenario separados por comas (filtra la lista)")
-	return cmd
 }
 
 func newScenariosReplayCmd() *cobra.Command {
-	var dir, ingest, api, token, caFile, hostSuffix, apiToken string
-	var only string
-	var tlsConn bool
-	var interval, timeout time.Duration
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:     "replay",
 		Short:   "Reproduce los escenarios contra un motor de laboratorio y comprueba las alertas",
 		Example: scenariosReplayExample,
-		Args:    cobra.NoArgs,
+		// Single-dash flags, same manual stdlib parsing as 'list'.
+		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts := replayOptions{
-				dir: dir, ingest: ingest, api: api, only: only,
-				token: token, caFile: caFile, hostSuffix: hostSuffix,
-				apiToken: apiToken, tlsConn: tlsConn,
-				interval: interval, timeout: timeout,
+			fs := flag.NewFlagSet("engine scenarios replay", flag.ContinueOnError)
+			fs.SetOutput(io.Discard)
+			dir := fs.String("dir", "./scenarios", "directorio con los escenarios (.yml/.yaml)")
+			ingest := fs.String("ingest", "127.0.0.1:17777", "ingesta NDJSON del motor de laboratorio (IP loopback literal)")
+			api := fs.String("api", "http://127.0.0.1:17778", "URL de la API del motor de laboratorio (host loopback literal)")
+			only := fs.String("only", "", "ids de escenario separados por comas (vacio = todos)")
+			token := fs.String("token", "", "token de ingesta ('AUTH <token>'; por defecto SF_INGEST_TOKEN)")
+			apiToken := fs.String("api-token", "", "credencial Bearer de la API si el motor la pide (por defecto SF_API_TOKEN)")
+			tlsConn := fs.Bool("tls", false, "conectar la ingesta por TLS (motor arrancado con -ingest-cert/-ingest-key)")
+			caFile := fs.String("ca", "", "CA (PEM) que firma el certificado de ingesta del motor; requiere -tls")
+			interval := fs.Duration("interval", 10*time.Millisecond, "pausa entre eventos del mismo escenario")
+			timeout := fs.Duration("timeout", 15*time.Second, "espera maxima por escenario a que se disparen las alertas")
+			hostSuffix := fs.String("host-suffix", "", "sufijo del host sintetico por ejecucion ('none' = host exacto del YAML; vacio = -<segundos epoch>)")
+			if err := fs.Parse(args); err != nil {
+				if errors.Is(err, flag.ErrHelp) {
+					return cmd.Help()
+				}
+				return fmt.Errorf("banderas invalidas para 'scenarios replay': %v", err)
 			}
-			return runScenariosReplay(cmd.OutOrStdout(), opts)
+			if fs.NArg() > 0 {
+				return fmt.Errorf("argumentos inesperados para 'scenarios replay': %s; usa 'engine scenarios replay -h'", strings.Join(fs.Args(), " "))
+			}
+			return runScenariosReplay(cmd.OutOrStdout(), replayOptions{
+				dir: *dir, ingest: *ingest, api: *api, only: *only,
+				token: *token, caFile: *caFile, hostSuffix: *hostSuffix,
+				apiToken: *apiToken, tlsConn: *tlsConn,
+				interval: *interval, timeout: *timeout,
+			})
 		},
 	}
-	cmd.Flags().StringVar(&dir, "dir", "./scenarios", "directorio con los escenarios (.yml/.yaml)")
-	cmd.Flags().StringVar(&ingest, "ingest", "127.0.0.1:17777", "ingesta NDJSON del motor de laboratorio (IP loopback literal)")
-	cmd.Flags().StringVar(&api, "api", "http://127.0.0.1:17778", "URL de la API del motor de laboratorio (host loopback literal)")
-	cmd.Flags().StringVar(&only, "only", "", "ids de escenario separados por comas (vacio = todos)")
-	cmd.Flags().StringVar(&token, "token", "", "token de ingesta ('AUTH <token>'; por defecto SF_INGEST_TOKEN)")
-	cmd.Flags().StringVar(&apiToken, "api-token", "", "credencial Bearer de la API si el motor la pide (por defecto SF_API_TOKEN)")
-	cmd.Flags().BoolVar(&tlsConn, "tls", false, "conectar la ingesta por TLS (motor arrancado con -ingest-cert/-ingest-key)")
-	cmd.Flags().StringVar(&caFile, "ca", "", "CA (PEM) que firma el certificado de ingesta del motor; requiere -tls")
-	cmd.Flags().DurationVar(&interval, "interval", 10*time.Millisecond, "pausa entre eventos del mismo escenario")
-	cmd.Flags().DurationVar(&timeout, "timeout", 15*time.Second, "espera maxima por escenario a que se disparen las alertas")
-	cmd.Flags().StringVar(&hostSuffix, "host-suffix", "", "sufijo del host sintetico por ejecucion ('none' = host exacto del YAML; vacio = -<segundos epoch>)")
-	return cmd
 }
 
 // replayOptions is the parsed -replay invocation.
