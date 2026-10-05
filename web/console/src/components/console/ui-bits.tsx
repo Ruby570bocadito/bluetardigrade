@@ -26,7 +26,7 @@ export function StatTile({ icon: Icon, label, value, hint, warn = false }: { ico
   return (
     <div className="panel px-4 py-3.5">
       <p className="flex items-center gap-2 text-xs text-zinc-400">
-        <Icon size={15} aria-hidden className="text-blue-400" />
+        <Icon size={15} aria-hidden className="text-primary" />
         {label}
       </p>
       <p className="mt-2 text-[26px] font-semibold leading-none text-zinc-50">{value}</p>

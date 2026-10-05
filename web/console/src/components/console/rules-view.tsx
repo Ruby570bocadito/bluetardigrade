@@ -158,7 +158,7 @@ export function RulesView() {
                       <span className="block truncate font-mono text-[11px] text-zinc-500">{r.tactic || 'sin táctica'}</span>
                     </span>
                     {r.mitre ? (
-                      <span className="hidden rounded-md border border-blue-400/20 bg-blue-500/[0.08] px-1.5 py-0.5 font-mono text-[10px] text-blue-200 sm:inline">
+                      <span className="hidden rounded-md border border-primary/20 bg-primary-tint/[0.08] px-1.5 py-0.5 font-mono text-[10px] text-primary-soft sm:inline">
                         {r.mitre}
                       </span>
                     ) : (

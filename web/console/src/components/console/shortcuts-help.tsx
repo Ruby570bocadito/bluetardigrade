@@ -23,7 +23,7 @@ export function ShortcutsHelp({ open, rows, onClose }: {
       <div className="p-5">
         <div className="flex items-center justify-between gap-3">
           <h2 id={`${id}-title`} className="flex items-center gap-2 text-sm font-medium">
-            <Keyboard size={16} aria-hidden className="text-blue-400" />
+            <Keyboard size={16} aria-hidden className="text-primary" />
             Atajos de teclado
           </h2>
           <button type="button" onClick={onClose} aria-label="Cerrar la hoja de atajos" className="rounded-md p-1.5 text-zinc-400 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -71,7 +71,7 @@ export function ShortcutsHelp({ open, rows, onClose }: {
 }
 
 export function Kbd({ children }: { children: ReactNode }) {
-  return <kbd className="inline-flex min-w-[1.75rem] items-center justify-center rounded-md border border-zinc-700/80 bg-zinc-900 px-1.5 py-1 font-mono text-[11px] font-medium leading-none text-zinc-200 shadow-[inset_0_-1px_0_0_rgba(0,0,0,0.5)]">{children}</kbd>
+  return <kbd className="inline-flex min-w-[1.75rem] items-center justify-center rounded-md border border-zinc-700/80 bg-zinc-900 px-1.5 py-1 font-mono text-[11px] font-medium leading-none text-zinc-200 shadow-[inset_0_-1px_0_0_var(--kbd-edge)]">{children}</kbd>
 }
 
 function KbdPair({ keys }: { keys: string[] }) {

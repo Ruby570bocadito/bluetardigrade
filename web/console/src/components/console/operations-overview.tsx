@@ -54,7 +54,7 @@ export function OperationsOverview({ onNavigate, onTriage }: {
           </span>
           <button
             type="button" onClick={refresh} disabled={refreshing} aria-busy={refreshing}
-            className="chip px-2.5 py-1.5 text-xs text-zinc-300 transition-colors hover:text-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
+            className="chip px-2.5 py-1.5 text-xs text-zinc-300 transition-colors hover:text-primary-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
           >
             <ArrowClockwise size={13} aria-hidden className={refreshing ? 'animate-spin motion-reduce:animate-none' : ''} />
             {refreshing ? 'Actualizando' : 'Actualizar'}
@@ -99,7 +99,7 @@ export function OperationsOverview({ onNavigate, onTriage }: {
                   <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ background: swatch }} />
                   {label}
                 </span>
-                <span className="mt-0.5 block text-xl font-semibold text-zinc-100 group-hover:text-blue-200">
+                <span className="mt-0.5 block text-xl font-semibold text-zinc-100 group-hover:text-primary-soft">
                   {available ? counts[target] : '—'}
                 </span>
               </button>
@@ -113,7 +113,7 @@ export function OperationsOverview({ onNavigate, onTriage }: {
             Ver críticas sin cerrar <ArrowRight size={14} aria-hidden />
           </button>
           <button type="button" onClick={() => onNavigate('alertas')}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-400/30 bg-blue-500/10 px-3.5 py-2 text-xs font-medium text-blue-200 transition-colors hover:bg-blue-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-primary/30 bg-primary-tint/10 px-3.5 py-2 text-xs font-medium text-primary-soft transition-colors hover:bg-primary-tint/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             Abrir cola de alertas <ArrowRight size={14} aria-hidden />
           </button>
           <button type="button" onClick={() => onNavigate('flujo')}

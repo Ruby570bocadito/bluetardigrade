@@ -353,9 +353,9 @@ export const SEVERITY_STYLE: Record<Severity, { label: string; text: string; bg:
   },
   low: {
     label: 'baja',
-    text: 'text-blue-300',
-    bg: 'bg-blue-500/10',
-    border: 'border-blue-400/30',
+    text: 'text-primary-link',
+    bg: 'bg-primary-tint/10',
+    border: 'border-primary/30',
     bar: 'bg-[var(--sev-low)]',
     dot: 'bg-[var(--sev-low)]',
   },

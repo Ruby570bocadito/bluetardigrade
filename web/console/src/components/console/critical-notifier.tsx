@@ -102,7 +102,7 @@ export function NotifyMenu() {
         aria-haspopup="true"
         aria-label="Avisos de alertas críticas"
         title={active ? 'Avisos de alertas críticas activados' : 'Avisos de alertas críticas desactivados'}
-        className={`chip px-2 py-1.5 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? 'text-blue-300' : 'text-zinc-500'}`}
+        className={`chip px-2 py-1.5 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? 'text-primary-link' : 'text-zinc-500'}`}
       >
         <Icon size={15} weight={active ? 'fill' : 'regular'} aria-hidden />
       </button>
@@ -122,7 +122,7 @@ export function NotifyMenu() {
           )}
           {permission === 'unsupported' && <p className="mt-2.5 text-[11px] text-zinc-500">Este navegador no admite notificaciones; el sonido sí funciona.</p>}
           {storageError && <p role="alert" className="mt-2.5 text-[11px] text-amber-300">No se pudo guardar la preferencia en este navegador; dura hasta recargar.</p>}
-          <button type="button" onClick={playTone} className="mt-3 text-[11px] text-blue-300 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <button type="button" onClick={playTone} className="mt-3 text-[11px] text-primary-link underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             Probar sonido
           </button>
       </HeaderPopover>

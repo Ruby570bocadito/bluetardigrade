@@ -48,7 +48,7 @@ export function FleetSummary({ onEnroll }: { onEnroll: () => void }) {
       <button
         type="button"
         onClick={onEnroll}
-        className="panel flex items-center justify-center gap-2 px-5 py-3 text-sm font-medium text-zinc-100 transition-colors hover:border-white/20 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="panel flex items-center justify-center gap-2 px-5 py-3 text-sm font-medium text-primary-soft transition-colors hover:border-primary/40 hover:bg-primary-tint/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Plus size={16} aria-hidden /> Añadir equipos
       </button>
@@ -217,13 +217,13 @@ function ManualEnrollment() {
             {steps.map((step, i) => (
               <li key={i} className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
                 <p className="flex items-center gap-2 text-[11px] font-medium text-zinc-400">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/[0.08] text-[10px] text-zinc-200">{i + 1}</span>
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-tint/20 text-[10px] text-primary-soft">{i + 1}</span>
                   {WHERE_LABEL[step.where]}
                 </p>
                 <p className="mt-1.5 text-xs leading-relaxed text-zinc-300">{step.text}</p>
                 {step.cmd && (
                   <div className="mt-2 flex items-start gap-2">
-                    <code className="min-w-0 flex-1 overflow-x-auto whitespace-pre rounded-md bg-black/40 px-2.5 py-2 font-mono text-[11px] text-zinc-200">{step.cmd}</code>
+                    <code className="min-w-0 flex-1 overflow-x-auto whitespace-pre rounded-md bg-zinc-950/60 px-2.5 py-2 font-mono text-[11px] text-zinc-200">{step.cmd}</code>
                     <button type="button" onClick={() => void copy(step.cmd!, i)} aria-label={`Copiar el comando del paso ${i + 1}`}
                       className="shrink-0 rounded-md border border-white/10 p-1.5 text-zinc-400 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                       {copied === i ? <CheckCircle size={14} weight="fill" aria-hidden className="text-emerald-400" /> : <Copy size={14} aria-hidden />}

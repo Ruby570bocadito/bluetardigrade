@@ -20,6 +20,7 @@ import { HostTacticHeatmap } from '@/components/charts/heatmap'
 import { BarList, Meter } from '@/components/charts/bars'
 import { SEV_COLOR, SeverityIcon } from '@/components/charts/severity'
 import { buildEntityGraph } from '@/lib/entity-graph'
+import { resolveTheme, THEME_EVENT, THEME_STORAGE_KEY } from '@/lib/theme'
 import { hostTacticMatrix, SEVERITIES, SEVERITY_LABEL, severityCounts, tacticCoverage, topCounts } from '@/lib/soc-metrics'
 import { triageSummary } from '@/lib/operations'
 import { formatTime } from '@/lib/console-types'
@@ -64,6 +65,33 @@ export function NocMode({ onClose }: { onClose: () => void }) {
     }
   }, [onClose])
 
+  // THEME-1: the NOC wall stays dark whatever the operator's theme is.
+  // While mounted, the light class is lifted from <html> — the wall is
+  // opaque and covers the viewport, so nothing else is visible — and on
+  // exit the operator's stored choice is re-resolved (it may have changed
+  // in another tab meanwhile) and the canvas layers repaint for both
+  // transitions.
+  useEffect(() => {
+    const root = document.documentElement
+    const wasLight = root.classList.contains('light')
+    if (!wasLight) return
+    root.classList.remove('light')
+    root.classList.add('dark')
+    window.dispatchEvent(new CustomEvent(THEME_EVENT, { detail: 'dark' }))
+    return () => {
+      root.classList.remove('dark')
+      let stored: string | null = null
+      try {
+        stored = localStorage.getItem(THEME_STORAGE_KEY)
+      } catch {
+        // Storage blocked: fall back to the OS preference, like the boot.
+      }
+      const light = resolveTheme(stored, window.matchMedia('(prefers-color-scheme: light)').matches) === 'light'
+      root.classList.toggle('light', light)
+      window.dispatchEvent(new CustomEvent(THEME_EVENT, { detail: light ? 'light' : 'dark' }))
+    }
+  }, [])
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose() }
@@ -92,7 +120,7 @@ export function NocMode({ onClose }: { onClose: () => void }) {
               aria-selected={i === slide}
               aria-label={name}
               onClick={() => { setSlide(i); setCycle((c) => c + 1) }}
-              className={`h-1.5 rounded-full transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${i === slide ? 'w-8 bg-blue-400' : 'w-3 bg-zinc-700 hover:bg-zinc-500'}`}
+              className={`h-1.5 rounded-full transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${i === slide ? 'w-8 bg-primary' : 'w-3 bg-zinc-700 hover:bg-zinc-500'}`}
             />
           ))}
         </div>
@@ -114,7 +142,7 @@ export function NocMode({ onClose }: { onClose: () => void }) {
       </header>
       {/* progress of the current slide; restarts on every switch */}
       <div aria-hidden className="h-0.5 bg-white/[0.04]">
-        {!paused && <div key={`${slide}:${cycle}`} className="noc-progress h-full bg-blue-400/70" style={{ animationDuration: `${SLIDE_MS}ms` }} />}
+        {!paused && <div key={`${slide}:${cycle}`} className="noc-progress h-full bg-primary/70" style={{ animationDuration: `${SLIDE_MS}ms` }} />}
       </div>
 
       <main className="min-h-0 flex-1 overflow-hidden p-6">

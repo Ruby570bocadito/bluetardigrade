@@ -4,9 +4,9 @@ Browser console for the framework: live telemetry feed, KPI dashboard,
 severity triage with a detail panel, the YAML rule pack, kill-chain
 chains, operator suppressions, a read-only active-response view with
 its forensic audit trail, and an optional AI analyst using the configured
-provider to assist alert triage. Dark-mode locked product UI (zinc
-structure, one emerald interaction accent, severity colors that encode
-data semantics).
+provider to assist alert triage. Dual-theme product UI, dark by default
+(zinc structure, one blue interaction accent, severity colors that
+encode data semantics, both palettes machine-validated).
 
 ## Data flow and demo boundaries
 
@@ -116,13 +116,51 @@ in parallel produced real drift (the two files resolved different
 time with `npm install --package-lock-only` if they need one locally,
 but it is not committed.
 
+## Theme (dark default, light available, system follow)
+
+The console ships dark as the default and as the no-JS outcome; a
+three-way control in the header (`ThemeToggle`: system / light / dark)
+picks the palette. The choice persists in `localStorage` under `bt-theme`
+and syncs across open tabs. **System** follows the OS
+`prefers-color-scheme` live (a `matchMedia` listener applies changes
+without a reload); **light**/**dark** pin the theme until the next pick.
+When nothing (or `system`) is stored, the boot follows the OS. An inline
+boot script in `layout.tsx` resolves the theme before the first paint, so
+reloading never flashes the wrong palette; the decision it implements is
+mirrored in `src/lib/theme.ts` (`resolveTheme`, unit-tested).
+
+The NOC wall (`noc-mode.tsx`) is a dark surface by design (THEME-1):
+while it is mounted the light class is lifted from `<html>` — the wall
+is opaque and covers the viewport — and on exit the operator's stored
+choice is re-resolved (it may have changed in another tab meanwhile);
+the canvas layers repaint on both transitions.
+
+Both palettes are token sets in `globals.css`: the dark tokens live on
+`:root` and the light ones on `html.light`, which also remaps the zinc
+ramp and the white-alpha hairline utilities the components are built
+with, so a theme switch is one class swap with no per-component
+variants. Layers that paint outside CSS (the dot-grid canvas, the
+entity-graph SVG) read theme-aware custom properties and repaint on the
+theme-change event. `scripts/dev-tests/check_console_theme.py`
+validates both palettes (WCAG pairs including the accent family,
+severity/status and sequential ramps on the viz surface, CVD separation
+via CIEDE2000 with Machado simulations — 87 checks, both themes) — run
+it whenever a token changes.
+
 ## Design tokens
 
-- Structure: Tailwind zinc (`zinc-950` background, `zinc-100`/`zinc-400` text) with `white/[0.06]` hairlines on surfaces and `zinc-800` for inner detail.
+- Structure: Tailwind zinc (`zinc-950` background, `zinc-100`/`zinc-400` text) with `white/[0.06]` hairlines on surfaces and `zinc-800` for inner detail. The light theme remaps the same ramp (see above).
 - Surfaces are defined once in `src/app/globals.css` and reused by every view: `.panel` (hairline border, vertical gradient fill, inner top highlight, ambient shadow), `.panel-hover` (lift on hover, frozen under `prefers-reduced-motion`), `.chip`, `.icon-tile`, `.glass` (sidebar and topbar backdrop blur) and the three-radial `ambient-glow` background. Views compose these classes instead of re-declaring card styles inline.
-- One interaction accent: `emerald-500`.
+- One interaction accent: the `--primary*` token family in `globals.css`
+  (`primary` base, `link`, `soft`, `tint` for fills and the solid-button
+  hover, `strong` for solid fills). Dark uses blue-400/500/600 shades;
+  light re-anchors every role to AA on white (blue-600 base). Views must
+  use the token utilities, not raw `blue-N` classes (the light remap for
+  `blue-*` remains only as a shim for the two raw uses left in
+  `dashboard.tsx` until IMP-B's open branch merges).
 - Severity semantics (data, not decoration): `critical` red-500/600,
-  `high` orange-500, `medium` amber-400, `low` sky-400.
+  `high` orange-500, `medium` amber-400, `low` blue (`--sev-low`,
+  `#3987e5` on dark / `#2563eb` on light).
 - Type: Geist Sans for UI, Geist Mono for ids, timestamps, IPs and
   every number (tabular).
 - Radius: single 8px scale (`--radius: 0.5rem`).
@@ -145,6 +183,16 @@ the layer adds zero runtime dependencies beyond `motion`:
 | `shiny-text` | shine sweep over text (`background-clip: text`, pure CSS) | shell hint/loading states |
 | `spotlight-card` | radial halo following the pointer via CSS custom properties | dashboard cards, KPI stat cards |
 | `star-border` | 1px border with a moving gradient (padding trick + animated background) | AI analyst panel while it is working |
+
+## Bundle baseline (POL-9)
+
+Measured on the production build (`bun run build`, Next 16.3.6 /
+Turbopack, 2026-10-05): client JS ≈ 1.52 MB total across
+`.next/static/chunks` — one ≈ 1.0 MB vendor chunk (chart + motion
+libraries), then ≈ 223 / 174 / 109 KB app chunks — plus ≈ 98 KB of CSS.
+Re-measure after adding a client dependency: any new dependency must
+justify its bytes here. A Lighthouse run and the axe pass still need a
+host with a real browser (this environment cannot start Chromium).
 
 ## Configuration
 

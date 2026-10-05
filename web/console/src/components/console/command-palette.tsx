@@ -37,7 +37,7 @@ export function CommandPalette({ open, refreshing, onClose, onExecute }: {
         </button>
       </div>
       <div className="flex items-center gap-3 border-b border-white/[0.06] px-4 py-3">
-        <MagnifyingGlass size={20} aria-hidden className="shrink-0 text-blue-400" />
+        <MagnifyingGlass size={20} aria-hidden className="shrink-0 text-primary" />
         <input
           ref={inputRef}
           role="combobox"
@@ -77,7 +77,7 @@ export function CommandPalette({ open, refreshing, onClose, onExecute }: {
             onPointerMove={() => setActive(index)}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => execute(command)}
-            className={`flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 ${disabled(command) ? 'cursor-wait opacity-50' : selected?.id === command.id ? 'bg-blue-500/15 ring-1 ring-inset ring-blue-400/30' : 'hover:bg-white/[0.04]'}`}
+            className={`flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 ${disabled(command) ? 'cursor-wait opacity-50' : selected?.id === command.id ? 'bg-primary-tint/15 ring-1 ring-inset ring-primary/30' : 'hover:bg-white/[0.04]'}`}
           >
             {command.kind === 'refresh' ? <ArrowClockwise size={18} aria-hidden className={refreshing ? 'animate-spin motion-reduce:animate-none' : 'text-zinc-400'} /> : command.kind === 'help' ? <Keyboard size={18} aria-hidden className="text-zinc-400" /> : command.kind === 'noc' ? <Monitor size={18} aria-hidden className="text-zinc-400" /> : <ArrowElbowDownLeft size={18} aria-hidden className="text-zinc-400" />}
             <span className="min-w-0 flex-1">

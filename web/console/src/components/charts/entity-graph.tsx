@@ -115,7 +115,7 @@ export function EntityGraphView({
               const w = 1 + (e.weight / maxEdge) * 2.2
               return (
                 <g key={e.source + '|' + e.target} opacity={on ? 1 : 0.12} style={{ transition: 'opacity 0.2s' }}>
-                  <path d={d} fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth={w} strokeLinecap="round" />
+                  <path d={d} fill="none" style={{ stroke: 'var(--viz-edge)' }} strokeWidth={w} strokeLinecap="round" />
                   {e.hot && (
                     <path d={d} fill="none" stroke={e.source.startsWith('destination') || e.target.startsWith('destination') ? 'var(--series-4)' : 'var(--sev-critical)'} strokeOpacity={0.75} strokeWidth={Math.max(1.4, w * 0.7)} strokeLinecap="round" className="edge-flow" />
                   )}
@@ -151,16 +151,16 @@ export function EntityGraphView({
                 style={{ cursor: onSelect ? 'pointer' : 'default', outline: 'none' }}
               >
                 {critical && <circle r={r} fill="none" stroke="var(--sev-critical)" strokeWidth={2} className="node-pulse" />}
-                {node.focus && <circle r={r + 6} fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth={1} />}
+                {node.focus && <circle r={r + 6} fill="none" style={{ stroke: 'var(--viz-edge-strong)' }} strokeWidth={1} />}
                 {active === node.id && <circle r={r + 4} fill="none" stroke="var(--ring)" strokeWidth={2} />}
                 {path ? (
-                  <path d={path} fill="#18181b" stroke={color} strokeWidth={2} />
+                  <path d={path} style={{ fill: 'var(--viz-raised)' }} stroke={color} strokeWidth={2} />
                 ) : (
-                  <circle r={r} fill="#18181b" stroke={color} strokeWidth={2} />
+                  <circle r={r} style={{ fill: 'var(--viz-raised)' }} stroke={color} strokeWidth={2} />
                 )}
                 {path ? <path d={path} fill={color} fillOpacity={0.16} /> : <circle r={r} fill={color} fillOpacity={0.16} />}
-                <KindIcon x={-7} y={-7} size={14} weight="bold" color="#f4f4f5" aria-hidden />
-                <text y={node.focus ? -(r + 9) : r + 13} textAnchor="middle" className="fill-zinc-300 text-[10px]" style={{ paintOrder: 'stroke', stroke: '#09090b', strokeWidth: 3 }}>
+                <KindIcon x={-7} y={-7} size={14} weight="bold" color="var(--viz-ink)" aria-hidden />
+                <text y={node.focus ? -(r + 9) : r + 13} textAnchor="middle" className="fill-zinc-300 text-[10px]" style={{ paintOrder: 'stroke', stroke: 'var(--background)', strokeWidth: 3 }}>
                   {labelText}
                 </text>
               </motion.g>
@@ -177,7 +177,7 @@ export function EntityGraphView({
             {activeNode.kind === 'rule' && ` · ${activeNode.weight} alertas`}
             {activeNode.severity && ` · ${SEVERITY_STYLE[activeNode.severity].label}`}
           </p>
-          {onSelect && <p className="mt-1 text-[11px] text-blue-300">{selectHint}</p>}
+          {onSelect && <p className="mt-1 text-[11px] text-primary-link">{selectHint}</p>}
         </div>
       )}
     </div>

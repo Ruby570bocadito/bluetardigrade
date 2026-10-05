@@ -19,6 +19,13 @@ export const metadata: Metadata = {
   keywords: ["EDR", "detección de amenazas", "SOC", "MITRE ATT&CK", "telemetría"],
 };
 
+// THEME boot: resolves the theme before the first paint so the console
+// never flashes the wrong one. Stored choice wins; without one, the OS
+// preference decides. Dark stays the server-rendered default (and the
+// no-JS outcome); the same key is what ThemeToggle writes. Inline because
+// it must run before any paint (CSP allows it: script-src 'unsafe-inline').
+const themeBoot = `(function(){try{var s=localStorage.getItem('bt-theme');var t=s==='light'||s==='dark'?s:(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');var r=document.documentElement;r.classList.toggle('dark',t==='dark');r.classList.toggle('light',t==='light');}catch(e){}})()`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -29,6 +36,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
+        <script dangerouslySetInnerHTML={{ __html: themeBoot }} />
         {children}
       </body>
     </html>
