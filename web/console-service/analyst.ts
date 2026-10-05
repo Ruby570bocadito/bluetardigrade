@@ -197,61 +197,212 @@ export function analystUserPrompt(alert: SfAlert, rule: RuleMeta | undefined, ev
   return parts.join('\n')
 }
 
+/** Maps a non-2xx provider response to an operator-ready Spanish error. */
+async function throwProviderHttpError(res: Response, cfg: AnalystConfig): Promise<never> {
+  const detail = await errorMessage(res)
+  switch (res.status) {
+    case 401:
+    case 403:
+      throw new Error(`el proveedor rechazo las credenciales (HTTP ${res.status}): revisa ANALYST_API_KEY${detail ? `. Detalle: ${detail}` : ''}`)
+    case 404:
+      throw new Error(`endpoint o modelo no encontrado (HTTP 404): revisa ANALYST_BASE_URL (${cfg.baseUrl}) y ANALYST_MODEL (${cfg.model})${detail ? `. Detalle: ${detail}` : ''}`)
+    case 429:
+      throw new Error(`el proveedor esta limitando las peticiones (HTTP 429): reintenta en unos segundos${detail ? `. Detalle: ${detail}` : ''}`)
+    default:
+      throw new Error(`el proveedor del analista devolvio HTTP ${res.status}${detail ? `: ${detail}` : ''}`)
+  }
+}
+
+export type AnalystStreamOptions = {
+  /** Hard deadline for the whole streamed answer. Default 120 s. */
+  totalMs?: number
+  /** Deadline for the provider's first byte. Default 60 s: the same
+   * budget the whole non-streaming request had before. */
+  firstChunkMs?: number
+  /** Quiet period between chunks that aborts a stalled stream. Default 30 s. */
+  idleChunkMs?: number
+}
+
+const STREAM_DEFAULTS: Required<AnalystStreamOptions> = { totalMs: 120_000, firstChunkMs: 60_000, idleChunkMs: 30_000 }
+
+function aborted(err: unknown, ctrl: AbortController): boolean {
+  return ctrl.signal.aborted || (err instanceof Error && err.name === 'AbortError')
+}
+
 /**
- * Single chat completion against an OpenAI-compatible endpoint. Minimal
- * request body for maximum provider compatibility; bounded by a hard
- * timeout so a stuck provider can never hang the hub. Throws Errors
- * with operator-ready Spanish messages; the hub forwards them to the
- * panel unchanged.
+ * Chat completion against an OpenAI-compatible endpoint, streaming the
+ * provider's answer: the request carries "stream: true" and every
+ * content delta of the SSE reply is forwarded to onDelta the moment it
+ * arrives, so the panel renders real provider tokens (no pacing, no
+ * replay). Minimal request body for maximum provider compatibility.
+ *
+ * Providers that ignore "stream: true" and answer a JSON body are
+ * handled too: the complete text is forwarded as a single delta, which
+ * keeps local servers (Ollama, LM Studio, vLLM) usable.
+ *
+ * Bounded by three timers (first byte, idle between chunks, whole
+ * answer) so a stuck provider can never hang the hub; a stalled stream
+ * already partial keeps what arrived on screen and fails with a clear
+ * message. Throws Errors with operator-ready Spanish messages; the hub
+ * forwards them to the panel unchanged.
  */
-export async function chatCompletion(cfg: AnalystConfig, messages: AnalystMessage[], timeoutMs = 60_000): Promise<string> {
+export async function chatCompletionStream(
+  cfg: AnalystConfig,
+  messages: AnalystMessage[],
+  onDelta: (text: string) => void,
+  opts: AnalystStreamOptions = {},
+): Promise<string> {
+  const { totalMs, firstChunkMs, idleChunkMs } = { ...STREAM_DEFAULTS, ...opts }
   const url = `${cfg.baseUrl.replace(/\/+$/, '')}/chat/completions`
-  let res: Response
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${cfg.apiKey}`,
-      },
-      body: JSON.stringify({ model: cfg.model, messages }),
-      signal: abortSignal(timeoutMs),
-    })
-  } catch (err) {
-    const cause = err instanceof Error ? err.message : String(err)
-    throw new Error(`no se pudo contactar con el proveedor del analista en ${url}: ${cause}`)
+  const ctrl = new AbortController()
+  const timers: ReturnType<typeof setTimeout>[] = []
+  const arm = (ms: number): ReturnType<typeof setTimeout> => {
+    const t = setTimeout(() => ctrl.abort(), ms)
+    // A pending guard must never keep the hub process alive by itself.
+    t.unref?.()
+    timers.push(t)
+    return t
+  }
+  const clearTimers = (): void => {
+    for (const t of timers) clearTimeout(t)
+    timers.length = 0
   }
 
-  if (!res.ok) {
-    const detail = await errorMessage(res)
-    switch (res.status) {
-      case 401:
-      case 403:
-        throw new Error(`el proveedor rechazo las credenciales (HTTP ${res.status}): revisa ANALYST_API_KEY${detail ? `. Detalle: ${detail}` : ''}`)
-      case 404:
-        throw new Error(`endpoint o modelo no encontrado (HTTP 404): revisa ANALYST_BASE_URL (${cfg.baseUrl}) y ANALYST_MODEL (${cfg.model})${detail ? `. Detalle: ${detail}` : ''}`)
-      case 429:
-        throw new Error(`el proveedor esta limitando las peticiones (HTTP 429): reintenta en unos segundos${detail ? `. Detalle: ${detail}` : ''}`)
-      default:
-        throw new Error(`el proveedor del analista devolvio HTTP ${res.status}${detail ? `: ${detail}` : ''}`)
+  arm(totalMs)
+  const firstByteTimer = arm(firstChunkMs)
+  let idleTimer: ReturnType<typeof setTimeout> | null = null
+  const refreshIdle = (): void => {
+    if (idleTimer) clearTimeout(idleTimer)
+    idleTimer = setTimeout(() => ctrl.abort(), idleChunkMs)
+    idleTimer.unref?.()
+  }
+
+  try {
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${cfg.apiKey}`,
+        },
+        body: JSON.stringify({ model: cfg.model, messages, stream: true }),
+        signal: ctrl.signal,
+      })
+    } catch (err) {
+      if (aborted(err, ctrl)) throw new Error('el proveedor del analista no respondio a tiempo (timeout del analista)')
+      const cause = err instanceof Error ? err.message : String(err)
+      throw new Error(`no se pudo contactar con el proveedor del analista en ${url}: ${cause}`)
     }
-  }
 
-  let data: { choices?: Array<{ message?: { content?: string | null } }> }
-  try {
-    data = (await res.json()) as typeof data
-  } catch {
-    throw new Error('el proveedor del analista devolvio una respuesta que no es JSON valido')
+    if (!res.ok) await throwProviderHttpError(res, cfg)
+
+    const contentType = res.headers.get('content-type') ?? ''
+    if (!contentType.includes('text/event-stream')) {
+      // The provider answered a plain JSON body (it ignored stream or
+      // does not support it): one delta with the complete text, the same
+      // surface a non-streaming provider always had on the panel.
+      let data: { choices?: Array<{ message?: { content?: string | null } }> }
+      try {
+        data = (await res.json()) as typeof data
+      } catch (err) {
+        if (aborted(err, ctrl)) throw new Error('el proveedor del analista no respondio a tiempo (timeout del analista)')
+        throw new Error('el proveedor del analista devolvio una respuesta que no es JSON valido')
+      }
+      const text = data.choices?.[0]?.message?.content?.trim() ?? ''
+      if (!text) throw new Error('respuesta vacia del modelo')
+      onDelta(text)
+      return text
+    }
+
+    const reader = res.body?.getReader()
+    if (!reader) throw new Error('el proveedor del analista no devolvio cuerpo para el streaming')
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let full = ''
+    let finished = false
+
+    /** Processes one SSE line; returns true when the stream is done. */
+    const handleLine = (line: string): boolean => {
+      const trimmed = line.trim()
+      if (trimmed === '' || trimmed.startsWith(':')) return false // blank line or comment/heartbeat
+      if (!trimmed.startsWith('data:')) return false // event:/id:/retry: fields the console does not need
+      const payload = trimmed.slice(5).trim()
+      if (payload === '[DONE]') return true
+      let obj: {
+        choices?: Array<{ delta?: { content?: string | null } }>
+        error?: { message?: string } | string
+      }
+      try {
+        obj = JSON.parse(payload)
+      } catch {
+        throw new Error('el proveedor del analista envio una linea de streaming que no es JSON valida')
+      }
+      if (obj.error !== undefined) {
+        const message = typeof obj.error === 'string' ? obj.error : obj.error.message
+        throw new Error(`el proveedor del analista devolvio un error durante el streaming${message ? `: ${message}` : ''}`)
+      }
+      const chunk = obj.choices?.[0]?.delta?.content
+      if (typeof chunk === 'string' && chunk !== '') {
+        full += chunk
+        onDelta(chunk)
+      }
+      return false
+    }
+
+    try {
+      let firstByteSeen = false
+      while (!finished) {
+        const { value, done } = await reader.read()
+        if (done) break
+        if (!firstByteSeen) {
+          // The provider answered: the first-byte guard is spent.
+          firstByteSeen = true
+          clearTimeout(firstByteTimer)
+        }
+        refreshIdle()
+        buffer += decoder.decode(value, { stream: true })
+        let nl: number
+        while ((nl = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, nl)
+          buffer = buffer.slice(nl + 1)
+          if (handleLine(line)) {
+            finished = true
+            break
+          }
+        }
+      }
+      if (!finished && buffer.trim() !== '') handleLine(buffer)
+    } catch (err) {
+      if (aborted(err, ctrl)) {
+        throw new Error(
+          full === ''
+            ? 'el proveedor del analista no respondio a tiempo (timeout del analista)'
+            : 'el proveedor del analista interrumpio la respuesta a mitad del analisis (timeout del analista)',
+        )
+      }
+      throw err
+    } finally {
+      try {
+        await reader.cancel()
+      } catch {
+        // the stream was already closed or errored; nothing to release
+      }
+    }
+
+    const text = full.trim()
+    if (!text) throw new Error('respuesta vacia del modelo')
+    return text
+  } finally {
+    if (idleTimer) clearTimeout(idleTimer)
+    clearTimers()
   }
-  const text = data.choices?.[0]?.message?.content?.trim() ?? ''
-  if (!text) throw new Error('respuesta vacia del modelo')
-  return text
 }
 
 /**
  * Runs triage against the configured provider. Steps describe actual
- * local preparation and the provider request. The complete response is
- * emitted when it arrives; this is not provider token streaming.
+ * local preparation and the provider request; the provider's answer
+ * streams as real deltas while it is generated.
  */
 export async function runAnalysis(alert: SfAlert, rule: RuleMeta | undefined, ev: SfEvent | undefined, emit: Emit, question?: string): Promise<string> {
   // Fail fast: without a complete configuration no step is shown and the
@@ -271,15 +422,14 @@ export async function runAnalysis(alert: SfAlert, rule: RuleMeta | undefined, ev
   emit.step({ label: 'Consultando proveedor de IA', state: 'run' })
   const contextNote = note ? `Nota de contexto interno para tu analisis: ${note}` : ''
 
-  const text = await chatCompletion(cfg, [
+  const text = await chatCompletionStream(cfg, [
     { role: 'system', content: analystSystemPrompt() },
     {
       role: 'user',
       content: [prompt, contextNote].filter(Boolean).join('\n'),
     },
-  ])
+  ], (chunk) => emit.delta(chunk))
 
-  emit.delta(text)
   emit.step({ label: 'Consultando proveedor de IA', state: 'done' })
   return text
 }
@@ -583,15 +733,14 @@ export async function runIncidentAnalysis(p: IncidentPayload, rules: RuleMeta[],
   emit.step({ label: 'Consultando proveedor de IA', state: 'run' })
   const contextNote = notes.length > 0 ? `Nota de contexto interno para tu análisis: ${notes.join(' ')}` : ''
 
-  const text = await chatCompletion(cfg, [
+  const text = await chatCompletionStream(cfg, [
     { role: 'system', content: incidentSystemPrompt() },
     {
       role: 'user',
       content: [prompt, contextNote].filter(Boolean).join('\n'),
     },
-  ])
+  ], (chunk) => emit.delta(chunk))
 
-  emit.delta(text)
   emit.step({ label: 'Consultando proveedor de IA', state: 'done' })
   return text
 }
@@ -609,11 +758,4 @@ async function errorMessage(res: Response): Promise<string> {
   return ''
 }
 
-// AbortSignal.timeout is missing in some runtimes; fall back manually
-// (same approach as the engine bridge).
-function abortSignal(ms: number): AbortSignal {
-  if (typeof AbortSignal.timeout === 'function') return AbortSignal.timeout(ms)
-  const ctrl = new AbortController()
-  setTimeout(() => ctrl.abort(), ms)
-  return ctrl.signal
-}
+

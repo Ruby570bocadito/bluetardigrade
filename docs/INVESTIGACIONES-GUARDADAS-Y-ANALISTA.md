@@ -73,10 +73,12 @@ Se eliminaron las esperas cosméticas de 450/500 ms y la reproducción
 artificial de palabras cada 24 ms. Los pasos actuales corresponden a
 preparar el prompt, consultar notas ATT&CK locales y esperar al proveedor.
 Las notas son un pequeño diccionario de contexto, no un segundo motor de
-correlación. El texto se muestra completo cuando llega la respuesta: el
-contrato socket conserva `analyst:delta`, pero **no hay streaming de tokens
-del proveedor**. Un error del proveedor no completa ese paso ni produce texto.
-Sin configuración, no se inicia ninguna petición ni secuencia de progreso.
+correlación. La respuesta del proveedor llega por streaming nativo: el hub
+pide `stream: true` a la API compatible con OpenAI y reenvía cada fragmento
+real como `analyst:delta` en cuanto se genera, sin demoras ni reproducción
+artificial (detalle y guardas más abajo). Un error del proveedor no completa
+ese paso ni produce texto. Sin configuración, no se inicia ninguna petición
+ni secuencia de progreso.
 
 Toda la alerta, evento y regla se serializan dentro de bloques delimitados,
 con estos límites antes del indicador de truncado:
@@ -94,6 +96,35 @@ instrucciones de un atacante. La serialización escapa los saltos de línea
 de los campos. Las delimitaciones y la política del prompt ayudan a tratar
 la telemetría como evidencia no confiable; no garantizan inmunidad del modelo
 a instrucciones maliciosas. La pregunta humana permanece separada.
+
+## Streaming del proveedor y límites de tiempo
+
+El hub pide la respuesta en streaming (`stream: true`, API compatible con
+OpenAI) y cada fragmento real del modelo se reenvía a la consola como
+`analyst:delta` en cuanto llega: el panel muestra el texto mientras se
+genera, sin pausas ni reproducción artificial. El contrato de socket no
+cambia (`analyst:step/delta/done/error`) y la respuesta completa viaja en
+`analyst:done` para el historial y la repetición, igual que antes.
+
+Compatibilidad: si el proveedor ignora el streaming y responde un cuerpo
+JSON, el texto llega completo en un único delta, el mismo comportamiento que
+ya tenía el panel; los servidores locales (Ollama, LM Studio, vLLM) siguen
+siendo válidos sin configuración adicional.
+
+Tres guardas de tiempo impiden que un proveedor atascado deje el análisis
+(colgado) para siempre:
+
+| Guarda | Valor por defecto | Efecto |
+|--------|-------------------|--------|
+| Primer byte | 60 s | aborta si el proveedor tarda en empezar a responder |
+| Inactividad entre fragmentos | 30 s | aborta si el streaming se queda parado a medias |
+| Total de la respuesta | 120 s | tope duro de todo el análisis |
+
+Si un streaming se corta a medias, el texto ya recibido permanece en el
+panel junto al mensaje de error; el paso del proveedor no se marca como
+completado y no se inventa ningún cierre. Un fragmento emitido antes de un
+fallo (por ejemplo un error del proveedor dentro del propio flujo) se
+mantiene en pantalla como evidencia parcial, acompañado del error.
 
 ## Análisis de un incidente (multi-alerta)
 

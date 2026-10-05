@@ -1,11 +1,13 @@
 'use client'
 
 // AI triage analyst. Agent-style interaction: steps report what stage the
-// analysis is in; the provider's complete response arrives over the socket.
-// These steps do not simulate correlation or provider token streaming. Context
-// comes from an alert selected in the Alerts view (or picked here).
-// The transcript travels over the console-service socket; if that
-// service is down the view says so and everything else stays usable.
+// analysis is in; the provider's answer arrives over the socket and renders
+// as it is generated (native streaming from the hub; providers without
+// streaming deliver it in one piece). These steps do not simulate
+// correlation. Context comes from an alert selected in the Alerts view
+// (or picked here). The transcript travels over the console-service
+// socket; if that service is down the view says so and everything else
+// stays usable.
 
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'

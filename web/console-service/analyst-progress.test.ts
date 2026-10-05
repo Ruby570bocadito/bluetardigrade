@@ -21,6 +21,48 @@ afterEach(() => {
 const alert: SfAlert = { id: '0123456789abcdef', timestamp: '2026-10-01T10:00:00Z', rule_id: 'fixture', rule_name: 'Fixture detection', severity: 'high', host: 'LAB', event_id: 'fixture-event', event_type: 'process.create', summary: 'Inert fixture', matched_on: ['process.command_line'], tags: [] }
 
 describe('analyst work and evidence boundaries', () => {
+  test('streams provider deltas to the panel while the answer is being generated', async () => {
+    const encoder = new TextEncoder()
+    let enqueue!: (frame: string) => void
+    globalThis.fetch = (async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            enqueue = (frame) => controller.enqueue(encoder.encode(frame))
+          },
+        }),
+        { headers: { 'content-type': 'text/event-stream' } },
+      )) as unknown as typeof fetch
+    const line = (content: string) => `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`
+
+    const steps: string[] = []
+    const output: string[] = []
+    let settled = false
+    const pending = runAnalysis(alert, undefined, undefined, { step: (s) => steps.push(`${s.label}:${s.state}`), delta: (t) => output.push(t) })
+    pending.then(() => { settled = true })
+
+    // the provider step is already running while the answer is not there
+    await new Promise((r) => setTimeout(r, 5))
+    expect(settled).toBe(false)
+    expect(steps.at(-1)).toBe('Consultando proveedor de IA:run')
+    expect(output).toEqual([])
+
+    // each provider chunk reaches the panel the moment it arrives
+    enqueue(line('primera '))
+    await new Promise((r) => setTimeout(r, 5))
+    expect(output).toEqual(['primera '])
+    expect(settled).toBe(false)
+
+    enqueue(line('parte'))
+    enqueue('data: [DONE]\n\n')
+    const result = await pending
+    expect(settled).toBe(true)
+    expect(output).toEqual(['primera ', 'parte'])
+    expect(result).toBe('primera parte')
+    expect(steps.at(-1)).toBe('Consultando proveedor de IA:done')
+    expect(steps.some((step) => step.includes('Correlacionando'))).toBe(false)
+  })
+
   test('starts the provider without cosmetic waits and emits its full reply only after completion', async () => {
     let calls = 0
     let release!: () => void

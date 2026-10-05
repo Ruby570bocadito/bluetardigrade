@@ -63,6 +63,38 @@ const validAlert: SfAlert = {
 
 let llmCalls = 0
 let llmLastPrompt = ''
+
+/** Streams the fixed answer as three OpenAI-compatible SSE chunks with a
+ * small gap, so the hub forwards several analyst:delta frames per call. */
+function sseAnswer(chunks: string[]): Response {
+  const encoder = new TextEncoder()
+  const frames = [
+    ...chunks.map((c) => `data: ${JSON.stringify({ choices: [{ delta: { content: c } }] })}\n\n`),
+    'data: [DONE]\n\n',
+  ]
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      frames.forEach((frame, i) => {
+        setTimeout(() => {
+          try {
+            controller.enqueue(encoder.encode(frame))
+          } catch {
+            // client aborted; nothing else to deliver
+          }
+        }, i * 15)
+      })
+      setTimeout(() => {
+        try {
+          controller.close()
+        } catch {
+          // already closed
+        }
+      }, frames.length * 15)
+    },
+  })
+  return new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } })
+}
+
 const llmMock = Bun.serve({
   port: 0,
   // Bun buffers stream headers until the first byte and closes idle
@@ -80,7 +112,7 @@ const llmMock = Bun.serve({
     } catch {
       llmLastPrompt = ''
     }
-    return Response.json({ choices: [{ message: { content: 'analisis de prueba' } }] })
+    return sseAnswer(['analisis ', 'de ', 'prueba'])
   },
 })
 
@@ -315,6 +347,18 @@ describe('hub HTTP surface (engine down)', () => {
     const done = await waitEvent<{ text: string }>(socket, 'analyst:done', 8000)
     expect(done.text).toBe('analisis de prueba')
     expect(steps).toContain('Consultando proveedor de IA')
+    socket.disconnect()
+  }, 10000)
+
+  test('provider deltas reach the socket as they are generated, not once at the end', async () => {
+    const socket = connect(base)
+    await waitEvent(socket, 'connect')
+    const deltas: string[] = []
+    socket.on('analyst:delta', ({ text }: { text: string }) => deltas.push(text))
+    socket.emit('analyst:ask', { alert: validAlert })
+    const done = await waitEvent<{ text: string }>(socket, 'analyst:done', 8000)
+    expect(deltas.length).toBeGreaterThanOrEqual(2)
+    expect(deltas.join('')).toBe(done.text)
     socket.disconnect()
   }, 10000)
 

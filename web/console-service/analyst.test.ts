@@ -1,7 +1,8 @@
 // Unit tests for the analyst LLM client: env configuration with
-// graceful degradation, request shape against a local OpenAI-compatible
-// mock, and provider error mapping. No external network: the mock runs
-// on Bun.serve in-process.
+// graceful degradation, streaming request shape against a local
+// OpenAI-compatible mock (SSE), the JSON fallback for providers that
+// ignore stream:true, and provider error mapping. No external network:
+// the mock runs on Bun.serve in-process.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import {
@@ -9,7 +10,7 @@ import {
   analystConfigFromEnv,
   analystSystemPrompt,
   analystUserPrompt,
-  chatCompletion,
+  chatCompletionStream,
   incidentSystemPrompt,
   incidentUserPrompt,
   MAX_INCIDENT_ALERTS,
@@ -46,8 +47,55 @@ const testEvent: SfEvent = {
   process: { pid: 4242, name: 'mimikatz.exe' },
 }
 
-type Captured = { auth: string | null; path: string; body: { model?: string; messages?: Array<{ role: string; content: string }> } }
+type Captured = { auth: string | null; path: string; body: { model?: string; messages?: Array<{ role: string; content: string }>; stream?: boolean } }
 let captured: Captured | null = null
+
+// One OpenAI-compatible SSE chunk (an empty delta object models the
+// role-only first frame real providers send).
+const dataLine = (content: string | null) =>
+  `data: ${JSON.stringify(content === null ? { choices: [{ delta: {} }] } : { choices: [{ delta: { content } }] })}\n\n`
+
+/** SSE response that enqueues its frames with a small gap so the reader
+ * sees them as separate chunks, then closes. */
+function sseResponse(frames: string[], gapMs = 5): Response {
+  const encoder = new TextEncoder()
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      frames.forEach((frame, i) => {
+        setTimeout(() => {
+          try {
+            controller.enqueue(encoder.encode(frame))
+          } catch {
+            // client already gone (aborted timeout); nothing to deliver
+          }
+        }, i * gapMs)
+      })
+      setTimeout(() => {
+        try {
+          controller.close()
+        } catch {
+          // already closed
+        }
+      }, frames.length * gapMs)
+    },
+  })
+  return new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } })
+}
+
+/** SSE response that sends `frames` and then stalls open forever (the
+ * client timeout is the only way out; the test passes tiny guards). */
+function stalledResponse(frames: string[]): Response {
+  const encoder = new TextEncoder()
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const frame of frames) controller.enqueue(encoder.encode(frame))
+      // never closes: idle/total guard territory
+    },
+  })
+  return new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } })
+}
+
+const DEFAULT_SSE = [dataLine(null), dataLine('analisis '), dataLine('de '), dataLine('prueba'), 'data: [DONE]\n\n']
 
 const server = Bun.serve({
   port: 0,
@@ -59,10 +107,27 @@ const server = Bun.serve({
     if (captured.auth !== 'Bearer sk-test') {
       return Response.json({ error: { message: 'invalid api key' } }, { status: 401 })
     }
-    if (captured.body.messages?.[0]?.content === 'force-empty') {
-      return Response.json({ choices: [{ message: { content: '' } }] })
+    switch (captured.body.messages?.[0]?.content) {
+      case 'force-empty':
+        return sseResponse([dataLine(null), 'data: [DONE]\n\n'])
+      case 'force-json':
+        // provider that ignores stream:true and answers a JSON body
+        return Response.json({ choices: [{ message: { content: 'analisis de prueba' } }] })
+      case 'force-sse-malformed':
+        return sseResponse(['data: {no-es-json\n\n'])
+      case 'force-sse-error':
+        return sseResponse([dataLine('empezo'), `data: ${JSON.stringify({ error: { message: 'cuota agotada' } })}\n\n`, 'data: [DONE]\n\n'])
+      case 'force-sse-no-done':
+        // stream ends without the [DONE] sentinel: tolerate and assemble
+        return sseResponse([dataLine('parcial '), dataLine('respuesta')])
+      case 'force-sse-silent':
+        return stalledResponse([])
+      case 'force-sse-stall':
+        return stalledResponse([dataLine('la mitad ')
+        ])
+      default:
+        return sseResponse(DEFAULT_SSE)
     }
-    return Response.json({ choices: [{ message: { content: 'analisis de prueba' } }] })
   },
 })
 
@@ -99,36 +164,85 @@ describe('analystConfigFromEnv', () => {
   })
 })
 
-describe('chatCompletion', () => {
-  test('posts the OpenAI-compatible request and returns the content', async () => {
-    const text = await chatCompletion(cfgFor(), [
+describe('chatCompletionStream', () => {
+  test('posts a streaming OpenAI-compatible request and assembles the content', async () => {
+    const deltas: string[] = []
+    const text = await chatCompletionStream(cfgFor(), [
       { role: 'system', content: analystSystemPrompt() },
       { role: 'user', content: 'analiza esto' },
-    ])
+    ], (chunk) => deltas.push(chunk))
     expect(text).toBe('analisis de prueba')
+    expect(deltas).toEqual(['analisis ', 'de ', 'prueba'])
     expect(captured?.path).toBe('/v1/chat/completions')
     expect(captured?.auth).toBe('Bearer sk-test')
     expect(captured?.body.model).toBe('test-model')
+    expect(captured?.body.stream).toBe(true)
     expect(captured?.body.messages?.[0]?.role).toBe('system')
     expect(captured?.body.messages?.[1]?.content).toBe('analiza esto')
   })
 
   test('maps 401 to an operator-ready credentials message', async () => {
-    expect(chatCompletion(cfgFor(undefined, { apiKey: 'wrong' }), [{ role: 'user', content: 'x' }])).rejects.toThrow(/ANALYST_API_KEY/)
+    expect(
+      chatCompletionStream(cfgFor(undefined, { apiKey: 'wrong' }), [{ role: 'user', content: 'x' }], () => {}),
+    ).rejects.toThrow(/ANALYST_API_KEY/)
   })
 
   test('maps 404 to a base URL / model message', async () => {
     const wrongPath = cfgFor(`${server.url.origin}/nope`)
-    expect(chatCompletion(wrongPath, [{ role: 'user', content: 'x' }])).rejects.toThrow(/ANALYST_BASE_URL/)
+    expect(chatCompletionStream(wrongPath, [{ role: 'user', content: 'x' }], () => {})).rejects.toThrow(/ANALYST_BASE_URL/)
   })
 
   test('maps an unreachable provider to a contact error', async () => {
     const dead = cfgFor('http://127.0.0.1:9/v1')
-    expect(chatCompletion(dead, [{ role: 'user', content: 'x' }])).rejects.toThrow(/no se pudo contactar/)
+    expect(chatCompletionStream(dead, [{ role: 'user', content: 'x' }], () => {})).rejects.toThrow(/no se pudo contactar/)
   })
 
-  test('rejects an empty completion', async () => {
-    expect(chatCompletion(cfgFor(), [{ role: 'user', content: 'force-empty' }])).rejects.toThrow(/respuesta vacia/)
+  test('rejects a stream that never carries content', async () => {
+    expect(chatCompletionStream(cfgFor(), [{ role: 'user', content: 'force-empty' }], () => {})).rejects.toThrow(/respuesta vacia/)
+  })
+
+  test('forwards the whole text as one delta when the provider answers JSON', async () => {
+    const deltas: string[] = []
+    const text = await chatCompletionStream(cfgFor(), [{ role: 'user', content: 'force-json' }], (chunk) => deltas.push(chunk))
+    expect(text).toBe('analisis de prueba')
+    expect(deltas).toEqual(['analisis de prueba'])
+  })
+
+  test('fails on a malformed SSE line instead of losing content silently', async () => {
+    expect(
+      chatCompletionStream(cfgFor(), [{ role: 'user', content: 'force-sse-malformed' }], () => {}),
+    ).rejects.toThrow(/no es JSON valida/)
+  })
+
+  test('surfaces an error frame sent inside the stream', async () => {
+    const deltas: string[] = []
+    expect(
+      chatCompletionStream(cfgFor(), [{ role: 'user', content: 'force-sse-error' }], (c) => deltas.push(c)),
+    ).rejects.toThrow(/cuota agotada/)
+    // the delta emitted before the failure stays on screen (the panel
+    // keeps it and shows the error next to it)
+    expect(deltas).toEqual(['empezo'])
+  })
+
+  test('assembles a stream that ends without the [DONE] sentinel', async () => {
+    const deltas: string[] = []
+    const text = await chatCompletionStream(cfgFor(), [{ role: 'user', content: 'force-sse-no-done' }], (c) => deltas.push(c))
+    expect(text).toBe('parcial respuesta')
+    expect(deltas).toEqual(['parcial ', 'respuesta'])
+  })
+
+  test('aborts a stream that never sends a byte (first-byte guard)', async () => {
+    expect(
+      chatCompletionStream(cfgFor(), [{ role: 'user', content: 'force-sse-silent' }], () => {}, { firstChunkMs: 60, totalMs: 5_000, idleChunkMs: 5_000 }),
+    ).rejects.toThrow(/no respondio a tiempo/)
+  })
+
+  test('aborts a stalled stream and keeps the partial text message honest (idle guard)', async () => {
+    const deltas: string[] = []
+    expect(
+      chatCompletionStream(cfgFor(), [{ role: 'user', content: 'force-sse-stall' }], (c) => deltas.push(c), { firstChunkMs: 5_000, totalMs: 5_000, idleChunkMs: 60 }),
+    ).rejects.toThrow(/interrumpio la respuesta a mitad/)
+    expect(deltas).toEqual(['la mitad '])
   })
 })
 
@@ -343,7 +457,7 @@ describe('runIncidentAnalysis', () => {
     process.env.ANALYST_MODEL = savedEnv.ANALYST_MODEL
   })
 
-  test('emits honest steps and returns the provider text', async () => {
+  test('emits honest steps and streams the provider text as deltas', async () => {
     const steps: { label: string; state: string }[] = []
     const deltas: string[] = []
     const text = await runIncidentAnalysis(
@@ -352,7 +466,7 @@ describe('runIncidentAnalysis', () => {
       { step: (s) => steps.push(s), delta: (t) => deltas.push(t) },
     )
     expect(text).toBe('analisis de prueba')
-    expect(deltas).toEqual(['analisis de prueba'])
+    expect(deltas).toEqual(['analisis ', 'de ', 'prueba'])
     expect(steps.map((s) => s.state)).toEqual(['run', 'done', 'run', 'done', 'run', 'done'])
   })
 
