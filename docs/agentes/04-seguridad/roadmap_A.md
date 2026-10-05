@@ -1,9 +1,32 @@
 # Roadmap — Seguridad A (carril/seguridad-a)
 
 Archivo vivo: continuidad del carril. Última actualización: 2026-10-05,
-ronda 7, cierre (19:50 Europe/Madrid).
+ronda 8, cierre (20:10 Europe/Madrid).
 
-## Estado tras el cierre de la ronda 7 (2026-10-05)
+## Estado tras el cierre de la ronda 8 (2026-10-05)
+
+- **IDEA-3 de IMP-B (`9f35615`) revisado, sin bug que anotar** (informe
+  `ronda_2026-10-05_20h05_A.md`): validación NFKC/bidi y topes por
+  ambos lados (lectura y escritura), evicción LRU correcta, sin bucle
+  de re-render (el efecto depende de `setPlan`, estable), nota al
+  motor no bloqueante, export con escape triple y recuento honesto de
+  alertas fuera de ventana. `bun test` 403 pass, tsc y build limpios
+  en su punta. Su árbol Go sigue idéntico a main (solo un fixture TSX
+  de su check de DOM): `-race` no aplica a su carril esta ronda.
+- **Mis dos hallazgos de la ronda 5 siguen vigentes en `9f35615`**
+  (re-verificados línea en mano): supresión flota-completa desde Ruido
+  acotado (MEDIA) y `generate` sin guardia de vigencia (BAJA).
+- **Auditoría propia `fleet`/`baseline`/`lifecycle`: sin bug que
+  corregir** (Check nunca desreferencia Sensor nulo, expulsión sin
+  clave vacía, gracia de restauración correcta, baseline deja de
+  aprender sin expulsar historia, lifecycle FIFO antes de persistir).
+- **Obligatorio de ronda**: carriles ajenos sin código nuevo (IMP-B
+  consola-only; resto docs-only); evidencia `-race` de rondas 6-7
+  vigente. Sin cambios de código propio.
+
+## Historial reciente
+
+### Ronda 7 (19h45) — auditoría store/api/risk/correlate/incident (informe `ronda_2026-10-05_19h45_A.md`)
 
 - **Auditoría de los paquetes sin lectura profunda (store, api, risk,
   correlate, incident) completada: 3 bugs funcionales corregidos con
@@ -38,8 +61,6 @@ ronda 7, cierre (19:50 Europe/Madrid).
   `-race -count=1 ./...`, openapi self-test, inventario (114 reglas),
   consola 371 tests + tsc + build, sensor 36 tests + clippy -D
   warnings.
-
-## Historial reciente
 
 ### Ronda 6 (17h35) — cambios Go de SEG-B y REP-4 de IMP-B (informe `ronda_2026-10-05_17h35_A.md`)
 
@@ -99,10 +120,11 @@ ronda 7, cierre (19:50 Europe/Madrid).
 1. **Auditar `internal/ad` (AD-1/AD-2/SEC-2)** — sigue bloqueado: IMP-A
    tiene solo plan (16h05); su plan reserva la auditoría para cuando se
    fusione. Prioridad real al reabrir.
-2. **Ronda 8: paquetes del motor aún sin auditoría profunda** —
-   `fleet`, `baseline`, `notify`, `webhook`, `siem` (elastic/splunk),
-   `actions`/`respond` (motor), `lifecycle`, `enrich`/`redact`,
-   `reputation` (solo su fuzz) y los caminos de `cmd/engine`.
+2. **Ronda 9: paquetes del motor aún sin auditoría profunda** —
+   `notify`, `webhook`, `siem` (elastic/splunk), `actions`/`respond`
+   (motor), `enrich`/`redact`, `reputation` (solo su fuzz),
+   `collector` y los caminos de `cmd/engine` (fleet, baseline y
+   lifecycle quedaron cubiertos en la ronda 8).
 3. **Verificar que IMP-B incorpora los dos hallazgos de la ronda 5** en
    su rama antes de la fusión (su REP-4 de la ronda 6 no los tocó).
 4. **Resolver DOS conflictos append-append al fusionar** (ronda 7):
