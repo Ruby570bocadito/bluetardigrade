@@ -254,6 +254,49 @@ límites de diseño:
 - auditada en el servidor y en el equipo;
 - desactivable por grupo o por equipo, con una lista de procesos y equipos protegidos.
 
+### Política de protección: la decide el equipo SOC
+
+Cada SOC elige hasta dónde llega la herramienta, por grupo de equipos. Unos solo quieren observar
+y otros quieren respuesta automática. Nada de lo de abajo se activa sin que la política lo diga.
+
+- [ ] **Niveles de protección por grupo** (un grupo puede ser la sede, el departamento, la unidad
+  organizativa de AD o servidores frente a puestos):
+
+  | Nivel | Qué hace |
+  |---|---|
+  | 0. Observar | Telemetría y postura, sin cambiar nada. Es el valor por defecto. |
+  | 1. Recomendar | Además, genera políticas para GPO o Intune y alerta si la postura empeora. |
+  | 2. Prevenir en auditoría | El sensor registra lo que habría bloqueado, sin bloquear. |
+  | 3. Prevenir | El sensor para los procesos con hash en la lista de bloqueo. |
+  | 4. Responder | Activa las acciones remotas (aislar, matar, cuarentena, recoger evidencia). |
+
+- [ ] **Quién aprueba cada acción:** por política, una persona o dos (cuatro ojos), y qué roles
+  pueden pedirla y aprobarla (enlaza con las cuentas de analista).
+- [ ] **Respuesta automática** (playbooks) solo donde el SOC la active. Cada playbook es:
+  - un disparador: regla, cadena o severidad, más la confianza mínima;
+  - una acción;
+  - el alcance (qué grupos);
+  - límites: como mucho N acciones por hora, para que un falso positivo no aísle media empresa.
+
+  Ejemplo: «cadena de ransomware → aislar el equipo, sin esperar a nadie, solo en puestos de
+  trabajo».
+- [ ] **Equipos protegidos y excepciones:** controladores de dominio y servidores críticos nunca se
+  aíslan solos, aunque la política del grupo lo permita. Software o equipos exentos.
+- [ ] **Ventanas de mantenimiento:** en horario de parches o despliegues, la prevención pasa a modo
+  auditoría.
+- [ ] **Interruptor general:** un botón que devuelve toda la flota a «Observar» al momento, para
+  emergencias o falsos positivos masivos.
+- [ ] **Simulación antes de activar:** «qué habría pasado con esta política en los últimos 30
+  días»: cuántos aislamientos y bloqueos y en qué equipos, con las alertas reales guardadas.
+- [ ] **La política es un fichero versionado** (YAML, revisable en Git) y la consola tiene un editor.
+  - Cada cambio queda en la auditoría: quién, cuándo y la diferencia.
+  - Se distribuye a los sensores firmada.
+  - Los sensores solo aceptan ajustes declarativos: niveles, listas y límites, nunca código.
+- [ ] **Panel de la política en la consola:** nivel de cada grupo, acciones pendientes de aprobar,
+  acciones hechas y deshechas, y el contador de los límites.
+
+### Escalones técnicos
+
 Por orden de riesgo, de menor a mayor:
 
 - [ ] **Postura de seguridad (solo lectura, sin cambiar nada).** El sensor informa en el latido de:
