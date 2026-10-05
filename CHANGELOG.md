@@ -12,6 +12,98 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Detection validation, reports and the noise report (2026-10-05)
+
+- **Detection validation with inert synthetic scenarios (`scenarios/`):**
+  - 127 scenarios, one per shipped rule and kill chain, each with its
+    ATT&CK techniques and the alerts it must raise.
+  - `engine scenarios list|replay` replays them against a laboratory engine
+    on loopback only.
+  - Every event is tagged `simulation` and pinned to a `LAB-SIM-*` host, and
+    every alert derived from simulated evidence carries the tag.
+  - CI fails when a scenario stops detecting, when a detection loses its
+    scenario, or when a simulated alert goes out untagged.
+- **On-demand battery** on a lab engine started with `-scenarios <dir>`:
+  - `GET /api/scenarios`, `POST /api/scenarios/run` (202, or 409 while a run
+    is in flight), `GET /api/scenarios/runs` and `GET /api/scenarios/runs/{id}`.
+  - Nothing a run raises reaches the live engine.
+  - Run history persists with the store (last 200 runs) or in memory
+    (last 50).
+  - The start of a run is answered with a snapshot: answering with the
+    record the run goroutine is writing was a data race under `-race`.
+- **Reports and noise:**
+  - `GET /api/reports` and `GET /api/reports/{kind}` generate an executive
+    summary, an incident bundle, fleet coverage or SOC activity, as JSON or
+    CSV, over 24h/7d/30d windows.
+  - Reports say when they come from the in-memory rings or hit the scan cap.
+  - `GET /api/noise?window=24h` ranks the processes, domains and rules that
+    make the most events or alerts.
+  - Reports only read: they never change alert lifecycle and never touch a
+    host.
+- **Enrollment:** identity names are unique by construction. A collision
+  across re-enrollments used to save fine and then stop the engine at the
+  next restart.
+
+### Console: charts, platform status, incident analysis and the light theme (2026-10-05)
+
+- **Dashboard charts:**
+  - weekday × hour alert heatmap;
+  - donuts for alerts by tactic and by source, and fleet by status;
+  - triage flow (source → tactic → status);
+  - lifecycle per tactic and per-host risk evolution, which records outages
+    as gaps.
+  - Every chart exports its data as CSV and itself as SVG or PNG.
+- **«Estado de la plataforma»** (`g h`): the engine's runtime counters in six
+  panels. What the API does not publish is shown as «no publicado», never as
+  zero.
+- **AI analyst:**
+  - analyzes a whole incident or a multi-alert selection, with the case
+    timeline and the forensic bundle as evidence;
+  - streams the provider's answer as it is written;
+  - providers without streaming still answer in one piece.
+- **Light theme** next to the dark one:
+  - system/light/dark selector;
+  - the NOC wall stays dark;
+  - the accent is a token family (`--primary*`);
+  - palettes are validated for contrast and color blindness by
+    `check_console_theme.py`.
+
+### Quality, security and documentation (2026-10-05)
+
+- **Security:**
+  - `deps-audit` workflow: `govulncheck`, `osv-scanner` and `cargo audit` on
+    every push, pull request and weekly;
+  - a guard against package lifecycle scripts, and another one for workflow
+    triggers;
+  - Go 1.26.6 or later, which fixes five standard-library vulnerabilities
+    reached by the engine (`net/url`, `net/http`, `crypto/tls`,
+    `encoding/asn1`), and `golang.org/x/text` v0.39.0;
+  - 83 advisories cleared from the website's dependency tree;
+  - STRIDE threat model (`docs/MODELO-DE-AMENAZAS.md`) and a line-by-line
+    audit of the enrollment protocol;
+  - the console-service status page builds its pill from DOM nodes instead
+    of `innerHTML`.
+- **Fuzzing and bug fixes:**
+  - 20 native Go fuzz targets over every input surface (ingest, identities,
+    intel, rule and detector loaders, Sigma, mail, reputation indicators,
+    API query filters);
+  - three bugs they found or that were reported, now fixed:
+    - a malformed intel domain could forge an intel hit;
+    - a blank before the extension evaded the double-extension check;
+    - the ingest auth banner named the wrong credential;
+  - an advisory nightly fuzz job.
+- **Code and naming:**
+  - the correlator is split into five files by responsibility, with no
+    behavior change;
+  - the remaining old name («security-framework») is gone from the banner,
+    OpenAPI and the Docker paths.
+- **Documentation:**
+  - complete flag, CLI and Prometheus-metric references;
+  - the architecture diagram matches the pipeline;
+  - `CONTRIBUTING.md`, issue and PR templates;
+  - change notes travel as `changelog.d/` fragments until they are
+    consolidated here.
+
 ### Fewer false alarms from a day in class (2026-10-05)
 
 The laptop's risk score sat at 5–11 all day from three false alarms, all
