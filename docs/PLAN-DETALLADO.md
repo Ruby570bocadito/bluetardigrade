@@ -571,7 +571,7 @@ El sensor (en modo servicio, como SYSTEM) comprueba cada hora:
        firma es válida;
      - en conflicto gana la central, y lo local queda solo como excepción explícita.
   5. **Correlación entre sedes:** la central recibe los aciertos de reglas de las sedes (para las
-     cadenas por cuenta en varios equipos, §cadenas) y las alertas de campaña salen en la central.
+     cadenas por cuenta en varios equipos) y las alertas de campaña salen en la central.
   6. **Salud de nodos en la consola:** mapa o lista de nodos con su versión, latencia, tamaño de la
      bandeja, último contacto y equipos.
 - **Hecho cuando:** en el laboratorio, con dos motores de sede y uno central:
