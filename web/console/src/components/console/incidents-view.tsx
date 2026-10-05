@@ -14,6 +14,7 @@ import {
   Desktop,
   FileHtml,
   FileText,
+  Files,
   FolderOpen,
   Lightning,
   NotePencil,
@@ -59,7 +60,7 @@ export function StatusChip({ status }: { status: IncidentStatus }) {
   return <span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${STATUS_STYLE[status]}`}>{INCIDENT_STATUS_LABEL[status]}</span>
 }
 
-export function IncidentsView({ onHost, onOpenAlert, onAnalyze }: { onHost: (host: string) => void; onOpenAlert: (alertId: string) => void; onAnalyze?: (pending: PendingIncidentAnalysis) => void }) {
+export function IncidentsView({ onHost, onOpenAlert, onAnalyze, onOpenEngineReport }: { onHost: (host: string) => void; onOpenAlert: (alertId: string) => void; onAnalyze?: (pending: PendingIncidentAnalysis) => void; onOpenEngineReport?: (incidentId: string) => void }) {
   const { incidents, persistent, available, loaded, upsert } = useIncidents()
   const [filter, setFilter] = useState<Filter>('active')
   const [selected, setSelectedState] = useState<string>('')
@@ -193,7 +194,7 @@ export function IncidentsView({ onHost, onOpenAlert, onAnalyze }: { onHost: (hos
         </div>
 
         {current ? (
-          <IncidentDetail key={current.id} incident={current} onChange={upsert} onHost={onHost} onOpenAlert={onOpenAlert} onAnalyze={onAnalyze} />
+          <IncidentDetail key={current.id} incident={current} onChange={upsert} onHost={onHost} onOpenAlert={onOpenAlert} onAnalyze={onAnalyze} onOpenEngineReport={onOpenEngineReport} />
         ) : (
           <div className="panel">
             <EmptyState icon={Stack} title="Selecciona un incidente" hint="Verás sus alertas, los equipos afectados, el grafo de entidades y la línea de tiempo." />
@@ -277,12 +278,14 @@ function IncidentDetail({
   onHost,
   onOpenAlert,
   onAnalyze,
+  onOpenEngineReport,
 }: {
   incident: Incident
   onChange: (incident: Incident) => void
   onHost: (host: string) => void
   onOpenAlert: (alertId: string) => void
   onAnalyze?: (pending: PendingIncidentAnalysis) => void
+  onOpenEngineReport?: (incidentId: string) => void
 }) {
   const { alerts, events } = useEngine()
   const [owner, setOwner] = useState(incident.owner ?? '')
@@ -360,6 +363,16 @@ function IncidentDetail({
             >
               <FileHtml size={13} aria-hidden /> Informe imprimible
             </button>
+            {onOpenEngineReport && (
+              <button
+                type="button"
+                className={exportCls}
+                title="Abrir el informe de incidente del motor (REP-1): descarga CSV/JSON y vista imprimible"
+                onClick={() => onOpenEngineReport(incident.id)}
+              >
+                <Files size={13} aria-hidden /> Informe del motor
+              </button>
+            )}
           </div>
         </div>
         <h2 className="mt-2 text-lg font-semibold tracking-tight text-zinc-50">{incident.title}</h2>

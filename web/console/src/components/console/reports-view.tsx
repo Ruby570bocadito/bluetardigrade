@@ -9,9 +9,16 @@
 // dedicated printable sheet.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { DownloadSimple, Files, Printer, X } from '@phosphor-icons/react'
+import { DownloadSimple, Files, ListBullets, Printer, X, ChartPie, Desktop, Pulse } from '@phosphor-icons/react'
 import { useIncidents } from './incidents-provider'
 import { EmptyState, SkeletonRows, SeverityBadge } from './ui-bits'
+import { ChartCard } from '@/components/charts/chart-frame'
+import { DonutChart } from '@/components/charts/donut'
+import { BarList } from '@/components/charts/bars'
+import { StackedColumns } from '@/components/charts/stacked-columns'
+import { buildDonut, isOtherSlice } from '@/lib/donut'
+import { SEV_COLOR } from '@/components/charts/severity'
+import { SEVERITIES, SEVERITY_LABEL } from '@/lib/soc-metrics'
 import { INCIDENT_STATUS_LABEL } from '@/lib/engine-writes'
 import {
   downloadReport,
@@ -233,13 +240,194 @@ export function ReportsView() {
       )}
 
       {!loading && report && (
-        <div className={`${styles.printRoot} panel px-4 pb-4 pt-4`}>
-          <ReportSheet report={report} onClose={() => { setReport(null); setNotice('') }} />
-        </div>
+        <>
+          {/* REP-4: the console's own charts over the report data, with the
+              shared export menu (PNG/SVG/CSV). Ink-free print: the PDF
+              sheet below stays text-only. */}
+          <div className={`space-y-5 ${styles.noPrint}`}>
+            <ReportCharts report={report} />
+          </div>
+          <div className={`${styles.printRoot} panel px-4 pb-4 pt-4`}>
+            <ReportSheet report={report} onClose={() => { setReport(null); setNotice('') }} />
+          </div>
+        </>
       )}
     </section>
   )
 }
+
+// ---- REP-4 charts -----------------------------------------------------------
+
+/** VIZ-1 palette hand-off: named slices take the four validated
+ * categorical hues in order, the folded «Otros» the muted token — the
+ * same assignment the dashboard donuts use. */
+function donutColors(model: ReturnType<typeof buildDonut>): Record<string, string> {
+  const hues = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)']
+  const out: Record<string, string> = {}
+  let named = 0
+  for (const slice of model.slices) {
+    out[slice.key] = isOtherSlice(slice) ? 'var(--series-other)' : hues[named++ % hues.length]
+  }
+  return out
+}
+
+function donutLegend(model: ReturnType<typeof buildDonut>, colors: Record<string, string>) {
+  return model.slices.map((s) => ({ key: s.key, label: s.label, color: colors[s.key], value: s.value }))
+}
+
+function donutTable(model: ReturnType<typeof buildDonut>, caption: string, kind: string) {
+  return {
+    caption,
+    columns: [kind, 'Alertas', '% del informe'],
+    rows: model.entries.map((e) => [e.label, e.value, model.total ? Math.round((e.value / model.total) * 100) + ' %' : '—']),
+  }
+}
+
+/** Charts over the report data — the same chart components the console
+ * uses, so legends, table twins and the VIZ-6 export menu come for
+ * free. Kinds whose data is already tabular (incident) get no chart
+ * instead of an invented one. */
+function ReportCharts({ report }: { report: ReportData }) {
+  if (report.kind === 'executive') return <ExecutiveCharts report={report} />
+  if (report.kind === 'fleet') return <FleetCharts report={report} />
+  if (report.kind === 'soc') return <SocCharts report={report} />
+  return null
+}
+
+function ExecutiveCharts({ report }: { report: ExecutiveReport }) {
+  const severityModel = useMemo(
+    () => buildDonut(SEVERITIES.map((s) => ({ key: s, label: SEVERITY_LABEL[s], value: report.by_severity[s] ?? 0 }))),
+    [report.by_severity],
+  )
+  const severityColors: Record<string, string> = {}
+  for (const s of SEVERITIES) severityColors[s] = SEV_COLOR[s]
+  const tacticModel = useMemo(
+    () => buildDonut(Object.entries(report.by_tactic).map(([key, value]) => ({ key, label: key, value }))),
+    [report.by_tactic],
+  )
+  const tacticColors = donutColors(tacticModel)
+  return (
+    <>
+      <div className="grid gap-5 xl:grid-cols-3">
+        <ChartCard
+          title="Alertas por severidad"
+          subtitle={`Composición del informe: ${report.alerts_total.toLocaleString('es-ES')} alertas en la ventana`}
+          icon={ChartPie}
+          legend={severityModel.total ? donutLegend(severityModel, severityColors) : undefined}
+          table={donutTable(severityModel, 'Alertas por severidad (desglose completo)', 'Severidad')}
+        >
+          {severityModel.total === 0 ? (
+            <EmptyState icon={ChartPie} title="Sin alertas en la ventana" hint="El donut aparece en cuanto el informe cubre alertas." />
+          ) : (
+            <DonutChart model={severityModel} colors={severityColors} unit="alertas" ariaLabel={`Alertas por severidad: ${severityModel.total} en ${severityModel.entries.length} niveles`} />
+          )}
+        </ChartCard>
+        <ChartCard
+          title="Alertas por táctica"
+          subtitle="Composición del informe por táctica ATT&CK declarada por las reglas"
+          icon={ChartPie}
+          legend={tacticModel.total ? donutLegend(tacticModel, tacticColors) : undefined}
+          table={donutTable(tacticModel, 'Alertas por táctica ATT&CK (desglose completo)', 'Táctica')}
+        >
+          {tacticModel.total === 0 ? (
+            <EmptyState icon={ChartPie} title="Sin tácticas en la ventana" hint="Las alertas del informe llenan este donut." />
+          ) : (
+            <DonutChart model={tacticModel} colors={tacticColors} unit="alertas" ariaLabel={`Alertas por táctica: ${tacticModel.total} en ${tacticModel.entries.length} tácticas`} />
+          )}
+        </ChartCard>
+        <ChartCard
+          title="Reglas más activas"
+          subtitle="Top 5 del informe por alertas en la ventana"
+          icon={ListBullets}
+          table={{ caption: 'Reglas más activas del informe', columns: ['Regla', 'Alertas'], rows: report.top_rules.map((r) => [r.rule_name, r.count]) }}
+        >
+          {report.top_rules.length === 0 ? (
+            <EmptyState icon={ListBullets} title="Sin reglas destacadas" hint="El top aparece cuando el informe cubre alertas."
+            />
+          ) : (
+            <BarList rows={report.top_rules.map((r) => ({ key: r.rule_id, label: r.rule_name, title: r.rule_name, value: r.count }))} />
+          )}
+        </ChartCard>
+      </div>
+    </>
+  )
+}
+
+function FleetCharts({ report }: { report: FleetCoverageReport }) {
+  if (!report.enabled) {
+    return (
+      <div className="panel px-4 py-5">
+        <EmptyState icon={Desktop} title="Gráficas de cobertura no disponibles" hint="El motor corre sin el rastreador de equipos: no hay inventario del que dibujar y no se pintan ceros." />
+      </div>
+    )
+  }
+  const model = useMemo(
+    () => buildDonut([
+      { key: 'online', label: 'En línea', value: report.summary.online },
+      { key: 'silent', label: 'Sin señal', value: report.summary.silent },
+      { key: 'idle', label: 'Inactivos', value: report.summary.idle },
+    ]),
+    [report.summary],
+  )
+  const colors: Record<string, string> = { online: 'var(--series-2)', silent: 'var(--sev-critical)', idle: 'var(--series-other)' }
+  return (
+    <ChartCard
+      title="Flota por estado"
+      subtitle={`${report.summary.total} equipos en el inventario al generar el informe`}
+      icon={Desktop}
+      legend={donutLegend(model, colors)}
+      table={{
+        caption: 'Equipos por estado en el informe',
+        columns: ['Estado', 'Equipos', '% de la flota'],
+        rows: model.entries.map((e) => [e.label, e.value, model.total ? Math.round((e.value / model.total) * 100) + ' %' : '—']),
+      }}
+    >
+      {model.total === 0 ? (
+        <EmptyState icon={Desktop} title="Inventario vacío" hint="El informe cubre una ventana sin inventario; en cuanto el rastreador vea equipos, el donut aparece."
+        />
+      ) : (
+        <DonutChart model={model} colors={colors} unit="equipos" ariaLabel={`Flota por estado: ${model.total} equipos`} />
+      )}
+    </ChartCard>
+  )
+}
+
+function SocCharts({ report }: { report: SocActivityReport }) {
+  const series = [
+    { key: 'created', label: 'Creadas', color: 'var(--series-1)' },
+    { key: 'acknowledged', label: 'Reconocidas', color: 'var(--series-3)' },
+    { key: 'closed', label: 'Cerradas', color: 'var(--series-2)' },
+  ]
+  const total = report.days.reduce((sum, d) => sum + d.created + d.acknowledged + d.closed, 0)
+  return (
+    <ChartCard
+      title="Actividad de triaje por día"
+      subtitle="Alertas creadas y acciones de triaje por día UTC en la ventana del informe"
+      icon={Pulse}
+      legend={series.map((s, i) => ({ key: s.key, label: s.label, color: s.color, value: report.days.reduce((sum, d) => sum + (d[['created', 'acknowledged', 'closed'][i]] as number), 0) }))}
+      table={{
+        caption: 'Alertas creadas y acciones de triaje por día UTC',
+        columns: ['Día', 'Creadas', 'Reconocidas', 'Cerradas'],
+        rows: report.days.map((d) => [d.day, d.created, d.acknowledged, d.closed]),
+      }}
+      footer={`${total} sucesos en ${report.days.length} días. Las acciones cuentan la última de cada alerta; las medias MTTA/MTTC están en la hoja del informe.`}
+    >
+      {report.days.length === 0 ? (
+        <EmptyState icon={Pulse} title="Sin días en la ventana" hint="El informe SOC dibuja esta pila en cuanto haya actividad diaria."
+        />
+      ) : (
+        <StackedColumns
+          buckets={report.days.map((d) => ({ key: d.day, label: d.day.slice(8), detail: d.day, values: { created: d.created, acknowledged: d.acknowledged, closed: d.closed } }))}
+          series={series}
+          ariaLabel={`Actividad de triaje por día: ${total} sucesos en ${report.days.length} días`}
+          unit="sucesos en total"
+        />
+      )}
+    </ChartCard>
+  )
+}
+
+// ---- printable sheet --------------------------------------------------------
 
 /** The printable sheet: kind-specific honest rendering, engine envelope
  * declared at the top. Unknown kinds fall back to their JSON. */

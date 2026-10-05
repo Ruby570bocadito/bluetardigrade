@@ -2,33 +2,23 @@
 
 Archivo vivo: qué tengo a medias, qué sigue y por qué. Se actualiza cada ronda.
 
-## Estado actual (ronda 2 del nuevo ciclo, 2026-10-05)
+## Estado actual (ronda 3 del nuevo ciclo, 2026-10-05)
 
 - Rama `carril/implementacion-b` recreada desde `origin/main` (`a1bca4f`, cierre de la
   ronda 1 consolidado) y publicada; la ronda 1 de este nuevo ciclo la cerró otra
   instancia con SET-3 ya en `main`.
 - **Ronda 2 ENTREGADA: el panel está en pestañas** (Resumen / Detección / Equipos y
-  actividad, `?pestana=`), corrección directa del feedback de la ronda 1 (todo apilado,
-  accionable al final): cola en vivo y salud del motor al principio; los cinco paneles
-  de táctica ATT&CK quedan en una sola pestaña Detección, cada uno con una decisión
-  distinta (cobertura/validación, composición, cronología, ciclo de vida, flujo).
-- **SIM-4 pantalla**: pestaña «Validación» en Detección — lanzar la batería (completa,
-  por táctica del clic de la matriz, o selección manual), progreso en vivo con sondeo
-  cada 2 s, historial con detalle por escenario y tendencia de la tasa de éxito. Un
-  motor sin `-scenarios` responde 501 y la vista declara «Batería no armada» con el
-  hint del motor: nunca una batería falsa.
-- **REP-1 pantalla**: vista «Informes» — selector renderizado desde el catálogo del
-  motor (sin kinds hardcodeados), generación JSON, descarga CSV/JSON con los bytes del
-  motor y hoja imprimible (CSS module propio, sin tocar `globals.css`).
-- **Informe de ruido**: pestaña «Ruido» en Detección — procesos, dominios y reglas con
-  honestidad de origen (store/anillos, tope de examen), «crear supresión» reutilizando
-  el diálogo de alert-actions (ahora exportado) y «software conocido» deshabilitado con
-  tooltip hasta la v1.1 del motor.
-- **SIM-3**: la matriz ATT&CK existente gana «N escenarios válidos» por táctica
-  (mapeo: reglas esperadas → tactic; pasos de cadenas; subtécnicas por prefijo) y el
-  clic en una táctica validada abre Validación filtrado (`?sc=slug`).
-- Proxy `/api/engine`: `POST /api/scenarios/run` añadido a la lista cerrada de
-  escrituras (rol analista); el hint de «solo lectura» actualizado.
+  actividad, `?pestana=`), **SIM-4 pantalla** (pestaña Validación: batería, progreso
+  en vivo, historial, tendencia; 501 = «no armada»), **REP-1 pantalla** (vista
+  Informes: catálogo del motor, descargas CSV/JSON con los bytes del motor, hoja
+  imprimible), **informe de ruido** (con «crear supresión»), **SIM-3** (matriz ATT&CK
+  validada por escenario con clic a la batería filtrada) y `POST /api/scenarios/run`
+  en la lista cerrada del proxy. Conflicto con la ronda zinc de PUL-B resuelto
+  fusionando su rama: kit `ui-tabs` adoptado en mis dos tablists y tokens zinc.
+- **Ronda 3 ENTREGADA: REP-4** — gráficas de los informes con los componentes de la
+  consola (`ChartCard` + donut/barras/columnas apiladas) y exportación PNG/SVG/CSV de
+  VIZ-6, fuera de la hoja imprimible; y el enlace «Informe del motor» en la ficha de
+  incidente (`?view=informes&informe=incident&caso=<id>`).
 - Ronda 1 (instancia anterior, ya en main): VIZ-1/2/3/6, SET-3, análisis de incidentes
   y streaming del analista.
 
@@ -42,46 +32,62 @@ Archivo vivo: qué tengo a medias, qué sigue y por qué. Se actualiza cada rond
   renderiza desde `GET /api/reports`; un kind futuro sin renderer propio muestra su
   JSON honesto en vez de romper.
 - **Pestañas, no pilas** (ronda 2): cada gráfica nueva va a la pestaña que le toca y
-  ninguna duplica la decisión de otra; el clic de la matriz lleva a los escenarios
-  (Validación), no a otra gráfica.
+  ninguna duplica la decisión de otra; el clic de la matriz lleva a los escenarios.
+- **REP-4 reutiliza `ChartCard`** (ronda 3): leyenda, tabla gemela y exportación
+  vienen del marco común; las gráficas no entran en la hoja de impresión (PDF solo
+  texto). El informe de incidente no recibe gráficas inventadas.
 - **CSS de impresión en módulo propio** (ronda 2): `reports-print.module.css` para no
   cruzarme con el tema de PUL-B en `globals.css`.
-- **Exportaciones generadas en cliente** (ronda 4, vigente): las descargas de REP-1
-  son las excepción deliberada — el motor ya produce el CSV escapado y el JSON
-  completo; la consola no re-serializa informes.
+- **Descargas de REP-1 con los bytes del motor** (ronda 2): excepción deliberada a
+  «exportar en cliente» (ronda 4) — el CSV ya lleva el escapado del motor.
 - **Paleta categórica cerrada** (ronda 6): cuatro tonos + «Otros»; la matriz de
-  validación usa marcas de texto, no colores nuevos (ampliar la paleta es de PUL-B).
+  validación usa marcas de texto, no colores nuevos.
 - Sin kill-switch de streaming (ronda 2, vigente): el fallback JSON ya degrada con
   proveedores sin streaming.
 
 ## Siguientes (por qué)
 
-1. **AD-5/AD-6 (pantallas de Active Directory)**: bloqueadas por la API de AD-1 —
-   ni en `main` ni en la rama de IMP-A (su roadmap la tiene en la cola, detrás del
-   campo de decisión y v1.1 Ruido). No se inventa ningún dato de AD. En cuanto
-   aterrice: Resumen con puntuación y donut, usuarios, árbol de grupos privilegiados
-   y equipos del dominio frente a sensores (AD-5); formulario con «probar conexión» y
-   contraseña que se escribe pero nunca se muestra (AD-6).
-2. **SET-3 cierre sin «parcial»**: espera los campos de IMP-A (latencias, tamaño del
-   almacén, versión, certificados, último informe programado); el pie de la vista ya
-   declara la ausencia.
-3. **REP-3 (Descargas)**: necesita las superficies del sensor firmado (exe/MSI con
-   SHA-256) y del certificado de ingesta; hoy no hay rutas que las sirvan.
-4. **SET-1 (Ajustes)**: pantalla única General/Ingesta/AD/Integraciones/Notificaciones/
+1. **AD-5/AD-6 (pantallas de Active Directory)**: primera prioridad en cuanto IMP-A
+   publique su ronda (AD-1/AD-2 en curso según su plan 16h05): fusionar su rama en
+   la mía y construir Resumen con puntuación y donut de hallazgos, usuarios, árbol de
+   grupos privilegiados y equipos del dominio frente a sensores (AD-5); formulario
+   con «probar conexión» y contraseña que se escribe pero nunca se muestra (AD-6).
+   No se inventa ningún dato de AD.
+2. **SET-3 cierre sin «parcial»**: IMP-A promete en el mismo plan latencias, tamaño
+   del almacén, versión y certificados; el pie de la vista declara los huecos y los
+   llenará cuando la API los publique.
+3. **Campo de decisión de triaje** (petición MEDIA repetida a IMP-A): desbloquea el
+   «falso positivo» real del flujo de triaje y los porcentajes FP del ruido.
+4. **REP-3 (Descargas)**: superficies del sensor firmado (exe/MSI con SHA-256),
+   certificado de ingesta y guías; hoy sin rutas que las sirvan (IMP-A).
+5. **SET-1 (Ajustes)**: pantalla única General/Ingesta/AD/Integraciones/Notificaciones/
    Cuentas/Apariencia, pendiente de la API y persistencia de IMP-A.
-5. **Campo de decisión de triaje** (petición MEDIA repetida a IMP-A): desbloquea el
-   «falso positivo» real del flujo y los porcentajes FP del ruido.
-6. **VIZ-5 mapa de la flota**: pende de grupos/sedes (fase C de escala).
-7. **VIZ-4 tendencias reales**: el «periodo anterior» necesita series históricas del
-   almacén (IMP-A); las sparklines de KPI ya cubren la ventana en memoria.
+6. **Ideas sin bloquear, detrás de las anteriores**: IDEA-3 (plantillas de
+   incidente), IDEA-11 (asistente de primer arranque), IDEA-10 (idiomas).
+7. **VIZ-4 tendencias reales / VIZ-5 mapa de flota**: series históricas y
+   grupos/sedes de IMP-A (fase C).
+
+## Parado (2026-10-05, cierre de la ronda 3)
+
+Motivo: **bloqueo de la cola principal**. Lo que queda de la cola de este carril
+(AD-5/AD-6, cierre de SET-3, REP-3, SET-1, FP del flujo de triaje) depende de la
+ronda en curso de IMP-A (AD-1/AD-2, campos de estado, campo de decisión) o de
+superficies que no existen todavía: en su rama solo hay plan publicado, nada de
+código que fusionar. Las tareas de mi carril que no dependían de nada (las cuatro
+pantallas, SIM-3, REP-4 y el enlace del caso) están entregadas y verificadas en
+`carril/implementacion-b`. Las ideas sin bloqueo restantes (IDEA-3, IDEA-11) quedan
+anotadas en «Siguientes», detrás de las prioridades bloqueadas: empezarlas con el
+presupuesto restante de la sesión arriesgaría una entrega a medias, y la regla del
+carril es piezas completas o nada.
 
 ## Coordinación vigente
 
+- La ronda zinc de PUL-B está fusionada en mi rama (`95138ae`): el kit `ui-tabs` es
+  la base común; su PR quedará en no-op para los ficheros compartidos.
 - `globals.css`/`layout.tsx`/`entity-graph.tsx` siguen siendo de PUL-B; mis vistas
-  consumen tokens. En esta ronda retiré de `detection-hub.tsx` el `text-blue-100` que
-  PUL-B tenía en su lista (su shim queda obsoleto para ese fichero).
-- `dashboard.tsx` reorganizado por mí: los 2 `blue-*` que PUL-B dejaba para después de
-  fusionar mi rama siguen ahí intactos (RecentTelemetry).
-- El relé del hub no se tocó: las tres superficies nuevas son GET (reenviados tal
-  cual) y la única escritura nueva (`POST /api/scenarios/run`) viaja por el proxy de
-  la consola, no por el hub.
+  consumen tokens.
+- El relé del hub no se tocó: las superficies nuevas son GET (reenviados tal cual) y
+  la única escritura nueva (`POST /api/scenarios/run`) viaja por el proxy de la
+  consola, no por el hub.
+- SEG-B declaró analista/reactbits para su ronda 3; mis ficheros de esta sesión no
+  se solapan con ello.

@@ -37,7 +37,7 @@ import { ReportsView } from './reports-view'
 import { CONSOLE_DESTINATIONS, type ConsoleCommand } from '@/lib/console-commands'
 import { formatUptime, type EngineStats, type SfAlert } from '@/lib/console-types'
 import { buildIncidentAnalysis, type PendingIncidentAnalysis } from '@/lib/incident-analysis'
-import { writeScenarioLensToSearch, currentSearch, isDetectionView, pushOperatorState, readOperatorState, writeAlertLens, writeHostToSearch, writeIncidentToSearch, writeRulesToSearch, writeViewToSearch } from '@/lib/url-state'
+import { writeScenarioLensToSearch, writeReportLensToSearch, currentSearch, isDetectionView, pushOperatorState, readOperatorState, writeAlertLens, writeHostToSearch, writeIncidentToSearch, writeRulesToSearch, writeViewToSearch } from '@/lib/url-state'
 import {
   SHORTCUT_ARM_MS,
   SHORTCUT_PREFIX,
@@ -135,6 +135,8 @@ export function ConsoleShell() {
   const openRule = (id: string) => jump((search) => writeRulesToSearch(search, '', id), 'reglas')
   // SIM-3 click-through: a validated tactic cell opens the battery filtered by tactic
   const openScenarioTactic = (slug: string) => jump((search) => writeScenarioLensToSearch(search, slug), 'simulacion')
+  // REP-4 hand-off: the case's own report in the engine catalog
+  const openIncidentReport = (id: string) => jump((search) => writeReportLensToSearch(search, 'incident', '', id), 'informes')
   const hintTitle = (id: ConsoleView): string | undefined => {
     const hint = shortcutHintFor(id)
     return hint ? `Atajo: ${hint}` : undefined
@@ -449,7 +451,7 @@ export function ConsoleShell() {
                 {view === 'estado' && <PlatformStatusView />}
                 {view === 'flujo' && <LiveFeed />}
                 {view === 'alertas' && <AlertsView onAnalyze={openInAnalyst} onAnalyzeGroup={openSelectionInAnalyst} onHost={openHost} onOpenIncident={openIncident} />}
-                {view === 'incidentes' && <IncidentsView onHost={openHost} onOpenAlert={openAlert} onAnalyze={openIncidentInAnalyst} />}
+                {view === 'incidentes' && <IncidentsView onHost={openHost} onOpenAlert={openAlert} onAnalyze={openIncidentInAnalyst} onOpenEngineReport={openIncidentReport} />}
                 {view === 'equipos' && <HostsView onHunt={(q) => openHunt({ q })} onOpenAlert={openAlert} onOpenIncident={openIncident} />}
                 {view === 'informes' && <ReportsView />}
                 {isDetectionView(view) && <DetectionHub tab={view} onTab={setView} onOpenRule={openRule} />}
