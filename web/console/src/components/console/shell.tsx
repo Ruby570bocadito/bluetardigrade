@@ -8,7 +8,7 @@ import { describeTelemetrySources } from '@/lib/telemetry-source'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { ActivityIcon, Desktop, Flask, FolderOpen, Lightning, Prohibit, ShieldCheck, SquaresFour, Warning, ChatsCircle, FlowArrow, Keyboard, ListMagnifyingGlass, MagnifyingGlass, Monitor } from '@phosphor-icons/react'
+import { ActivityIcon, Desktop, Flask, FolderOpen, Gauge, Lightning, Prohibit, ShieldCheck, SquaresFour, Warning, ChatsCircle, FlowArrow, Keyboard, ListMagnifyingGlass, MagnifyingGlass, Monitor } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { BlurText } from '@/components/reactbits/blur-text'
 import { ShinyText } from '@/components/reactbits/shiny-text'
@@ -24,6 +24,7 @@ import { HostsView } from './hosts-view'
 import { useIncidents } from './incidents-provider'
 import { useFleet } from './fleet-provider'
 import { RespondView } from './respond-view'
+import { PlatformStatusView } from './platform-status'
 import { AnalystPanel } from './analyst-panel'
 import { ShortcutsHelp, type ShortcutHelpRow } from './shortcuts-help'
 import { CommandPalette } from './command-palette'
@@ -31,8 +32,10 @@ import { NotifyMenu } from './critical-notifier'
 import { NocMode } from './noc-mode'
 import { DetectorsMenu } from './detectors-menu'
 import { ReadOnlyBanner, UserChip } from './user-session'
+import { ThemeToggle } from './theme-toggle'
 import { CONSOLE_DESTINATIONS, type ConsoleCommand } from '@/lib/console-commands'
 import { formatUptime, type EngineStats, type SfAlert } from '@/lib/console-types'
+import { buildIncidentAnalysis, type PendingIncidentAnalysis } from '@/lib/incident-analysis'
 import { currentSearch, isDetectionView, pushOperatorState, readOperatorState, writeAlertLens, writeHostToSearch, writeIncidentToSearch, writeRulesToSearch, writeViewToSearch } from '@/lib/url-state'
 import {
   SHORTCUT_ARM_MS,
@@ -49,7 +52,7 @@ import { useAnalystChannel } from './socket-provider'
 import { writeTriageDestination, type TriageTarget } from '@/lib/operations'
 
 const NAV_ICONS: Record<ConsoleView, React.ElementType> = {
-  panel: SquaresFour, flujo: ActivityIcon, alertas: Warning, incidentes: FolderOpen, equipos: Desktop,
+  panel: SquaresFour, estado: Gauge, flujo: ActivityIcon, alertas: Warning, incidentes: FolderOpen, equipos: Desktop,
   reglas: ShieldCheck, cadenas: FlowArrow, inteligencia: ListMagnifyingGlass, supresiones: Prohibit, probador: Flask,
   respuesta: Lightning, analista: ChatsCircle,
 }
@@ -209,9 +212,26 @@ export function ConsoleShell() {
   const telemetry = describeTelemetrySources(events)
 
   const [pendingAlert, setPendingAlert] = useState<SfAlert | null>(null)
+  const [pendingIncident, setPendingIncident] = useState<PendingIncidentAnalysis | null>(null)
 
   const openInAnalyst = (al: SfAlert) => {
     setPendingAlert(al)
+    setView('analista')
+  }
+
+  // Multi-alert hand-offs: the payload is built here from real case or
+  // selection data (capped by the lib); the panel attaches the frozen
+  // bundle of the most severe alert right before emitting.
+  const openIncidentInAnalyst = (pending: PendingIncidentAnalysis) => {
+    setPendingIncident(pending)
+    setView('analista')
+  }
+
+  const openSelectionInAnalyst = (alerts: SfAlert[]) => {
+    setPendingIncident({
+      payload: buildIncidentAnalysis({ source: 'selection', alerts }),
+      label: 'Selección de la cola',
+    })
     setView('analista')
   }
 
@@ -223,7 +243,7 @@ export function ConsoleShell() {
 
   return (
     <div className="relative min-h-[100dvh] bg-zinc-950 text-zinc-100">
-      <a href="#console-main" className="sr-only z-50 rounded-md bg-blue-300 px-4 py-2 text-sm text-zinc-950 focus:not-sr-only focus:fixed focus:left-4 focus:top-4">
+      <a href="#console-main" className="sr-only z-50 rounded-md bg-primary-link px-4 py-2 text-sm text-zinc-950 focus:not-sr-only focus:fixed focus:left-4 focus:top-4">
         Ir al contenido
       </a>
       {/* DotGrid (React Bits): fondo de toda la consola, reactivo al puntero
@@ -256,14 +276,14 @@ export function ConsoleShell() {
                       {current && (
                         <motion.span
                           layoutId="nav-pill"
-                          className="pointer-events-none absolute inset-0 rounded-lg border border-blue-400/25 bg-gradient-to-r from-blue-500/[0.16] via-blue-500/[0.07] to-transparent shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]"
+                          className="pointer-events-none absolute inset-0 rounded-lg border border-primary/25 bg-gradient-to-r from-primary-tint/[0.16] via-primary-tint/[0.07] to-transparent shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]"
                           transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 380, damping: 32 }}
                         />
                       )}
                       {current && (
-                        <span aria-hidden className="pointer-events-none absolute -left-3 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-blue-400" />
+                        <span aria-hidden className="pointer-events-none absolute -left-3 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />
                       )}
-                      <item.icon size={17} weight={current ? 'fill' : 'regular'} aria-hidden className={`relative ${current ? 'text-blue-400' : ''}`} />
+                      <item.icon size={17} weight={current ? 'fill' : 'regular'} aria-hidden className={`relative ${current ? 'text-primary' : ''}`} />
                       <span className="relative">{item.label}</span>
                       {item.id === 'alertas' && openAlerts.length > 0 && (
                         <span
@@ -359,7 +379,7 @@ export function ConsoleShell() {
                   aria-haspopup="dialog"
                   aria-keyshortcuts="Control+k Meta+k"
                   title="Comandos (Ctrl+K / ⌘K)"
-                  className="chip shrink-0 gap-2 px-2.5 py-1.5 text-zinc-400 transition-colors hover:border-blue-400/40 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-w-[200px]"
+                  className="chip shrink-0 gap-2 px-2.5 py-1.5 text-zinc-400 transition-colors hover:border-primary/40 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-w-[200px]"
                 >
                   <MagnifyingGlass size={15} aria-hidden />
                   <span className="hidden text-xs sm:inline">Buscar vistas y comandos</span>
@@ -381,6 +401,7 @@ export function ConsoleShell() {
                 </div>
                 <UserChip />
                 <NotifyMenu />
+                <ThemeToggle />
                 <button
                   type="button"
                   onClick={() => setNocOpen(true)}
@@ -408,10 +429,10 @@ export function ConsoleShell() {
                 aria-current={isCurrent(item.id, view) ? 'page' : undefined}
                 title={hintTitle(item.id)}
                 className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  isCurrent(item.id, view) ? 'border-blue-400/30 bg-blue-500/[0.14] text-zinc-100' : 'border-transparent text-zinc-400'
+                  isCurrent(item.id, view) ? 'border-primary/30 bg-primary-tint/[0.14] text-zinc-100' : 'border-transparent text-zinc-400'
                 }`}
               >
-                <item.icon size={14} aria-hidden className={isCurrent(item.id, view) ? 'text-blue-400' : ''} />
+                <item.icon size={14} aria-hidden className={isCurrent(item.id, view) ? 'text-primary' : ''} />
                 {item.label}
               </button>
             ))}
@@ -421,14 +442,20 @@ export function ConsoleShell() {
             <div className="mx-auto w-full max-w-[1560px]">
               <AnimatedView viewKey={view}>
                 {view === 'panel' && <Dashboard onAnalyze={openInAnalyst} onNavigate={setView} onTriage={openTriage} onHunt={openHunt} onHost={openHost} />}
+                {view === 'estado' && <PlatformStatusView />}
                 {view === 'flujo' && <LiveFeed />}
-                {view === 'alertas' && <AlertsView onAnalyze={openInAnalyst} onHost={openHost} onOpenIncident={openIncident} />}
-                {view === 'incidentes' && <IncidentsView onHost={openHost} onOpenAlert={openAlert} />}
+                {view === 'alertas' && <AlertsView onAnalyze={openInAnalyst} onAnalyzeGroup={openSelectionInAnalyst} onHost={openHost} onOpenIncident={openIncident} />}
+                {view === 'incidentes' && <IncidentsView onHost={openHost} onOpenAlert={openAlert} onAnalyze={openIncidentInAnalyst} />}
                 {view === 'equipos' && <HostsView onHunt={(q) => openHunt({ q })} onOpenAlert={openAlert} onOpenIncident={openIncident} />}
                 {isDetectionView(view) && <DetectionHub tab={view} onTab={setView} onOpenRule={openRule} />}
                 {view === 'respuesta' && <RespondView />}
                 {view === 'analista' && (
-                  <AnalystPanel pendingAlert={pendingAlert} clearPending={() => setPendingAlert(null)} />
+                  <AnalystPanel
+                    pendingAlert={pendingAlert}
+                    clearPending={() => setPendingAlert(null)}
+                    pendingIncident={pendingIncident}
+                    clearPendingIncident={() => setPendingIncident(null)}
+                  />
                 )}
               </AnimatedView>
             </div>
@@ -471,6 +498,8 @@ function titleFor(view: ConsoleView): string {
   switch (view) {
     case 'panel':
       return 'Panel de operaciones'
+    case 'estado':
+      return 'Estado de la plataforma'
     case 'flujo':
       return 'Flujo en vivo'
     case 'alertas':
@@ -546,7 +575,7 @@ function BrandBlock({ live }: { live: boolean }) {
           <DecryptedText text="Security Operations Center" className="block text-[11px] text-zinc-500" />
         </span>
       </div>
-      <div aria-hidden className="mt-4 h-px bg-gradient-to-r from-blue-400/35 via-white/10 to-transparent" />
+      <div aria-hidden className="mt-4 h-px bg-gradient-to-r from-primary/35 via-white/10 to-transparent" />
     </div>
   )
 }

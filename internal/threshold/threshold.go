@@ -136,6 +136,10 @@ type keyState struct {
 	windowStart time.Time // event time
 	lastFired   time.Time // event time
 	seen        time.Time // wall clock of the last observation (expiry only)
+	// simulated is set as soon as any event of the key carries the
+	// simulation tag (detection validation, SIM-1): the volumetric
+	// alert is tagged in turn so a lab replay is never real evidence.
+	simulated bool
 }
 
 // Detector holds the compiled definitions and the bounded key table.
@@ -353,6 +357,9 @@ func (d *Detector) Observe(ev *model.Event, now time.Time) {
 			continue
 		}
 		st.seen = now
+		if alert.EventIsSimulated(ev) {
+			st.simulated = true
+		}
 		switch {
 		case t.Sub(st.windowStart) >= c.window:
 			// fixed-window rollover: a window older than the period
@@ -522,6 +529,9 @@ func (d *Detector) fireLocked(c *compiled, ev *model.Event, group string, st *ke
 		MatchedOn:  matched,
 		Tags:       c.def.Tags,
 		Enrich:     ev.Enrichment,
+	}
+	if st.simulated {
+		alert.MarkSimulated(&a)
 	}
 	return a
 }

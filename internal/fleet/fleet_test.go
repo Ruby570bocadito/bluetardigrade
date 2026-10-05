@@ -228,3 +228,36 @@ func TestRetiredHostsAreReportedForDeletion(t *testing.T) {
 		t.Fatal("corrupt documents are skipped")
 	}
 }
+
+func TestResumeAfterTheEngineWasSuspended(t *testing.T) {
+	tr := New()
+	tr.Observe(heartbeat("PORTATIL", 60), "127.0.0.1", t0)
+	// the laptop sleeps 40 minutes with engine and sensor on it
+	wake := t0.Add(40 * time.Minute)
+	tr.Resume(wake)
+	if got := tr.Check(wake.Add(time.Second)); len(got) != 0 {
+		t.Fatalf("waking up must not report the sensor silent: %+v", got)
+	}
+	tr.Observe(heartbeat("PORTATIL", 60), "127.0.0.1", wake.Add(30*time.Second))
+	if find(t, tr.Snapshot(wake.Add(time.Minute)), "PORTATIL").Status != StatusOnline {
+		t.Fatal("the sensor is online again after its first heartbeat")
+	}
+	// a sensor that really stays quiet after the wake is still reported
+	if got := tr.Check(wake.Add(30*time.Second + 4*time.Minute)); len(got) != 1 {
+		t.Fatalf("a real silence after the grace is reported: %+v", got)
+	}
+}
+
+func TestHeartbeatRunMode(t *testing.T) {
+	tr := New()
+	hb := heartbeat("PC-SVC", 60)
+	hb.Attributes["run_mode"] = "service"
+	tr.Observe(hb, "", t0)
+	odd := heartbeat("PC-ODD", 60)
+	odd.Attributes["run_mode"] = "<script>"
+	tr.Observe(odd, "", t0)
+	snap := tr.Snapshot(t0)
+	if find(t, snap, "PC-SVC").Sensor.RunMode != "service" || find(t, snap, "PC-ODD").Sensor.RunMode != "" {
+		t.Fatalf("run modes: %+v / %+v", find(t, snap, "PC-SVC").Sensor, find(t, snap, "PC-ODD").Sensor)
+	}
+}

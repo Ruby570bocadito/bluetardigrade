@@ -7,10 +7,11 @@
 // Surface policy: everything the engine serves as GET is forwarded as
 // is. Writes go through a closed allowlist (WRITES below): alert triage,
 // incidents, the rule tester dry run, suppressions (the engine refuses
-// them unless started with -api-write) and kill_process (armed only by
-// -allow-kill, and it still demands the operator's own credential, the
-// one header forwarded on that path alone). Any other method or path is
-// rejected here, before the engine sees it.
+// them unless started with -api-write), sensor enrollment (tokens and the
+// approval of new machines, administrators only) and kill_process (armed
+// only by -allow-kill, and it still demands the operator's own
+// credential, the one header forwarded on that path alone). Any other
+// method or path is rejected here, before the engine sees it.
 //
 // Boundary posture (mirrors the engine's own: loopback friction-free,
 // beyond loopback loud): this route is the one listener that bridges a
@@ -67,6 +68,10 @@ const WRITES: WriteRoute[] = [
   { method: 'POST', path: /^\/api\/rules\/test$/, limit: 32 * KIB, role: 'viewer' },
   { method: 'POST', path: /^\/api\/suppressions$/, limit: 8 * KIB, role: 'analyst' },
   { method: 'DELETE', path: /^\/api\/suppressions$/, limit: 0, role: 'analyst' },
+  // sensor enrollment: who may feed the engine is an administrator's call
+  { method: 'POST', path: /^\/api\/enroll\/tokens$/, limit: 4 * KIB, role: 'admin', attributed: true },
+  { method: 'POST', path: /^\/api\/enroll\/tokens\/[0-9a-f]{8}\/revoke$/, limit: 4 * KIB, role: 'admin', attributed: true },
+  { method: 'POST', path: /^\/api\/enroll\/hosts\/enr-[a-z0-9._-]{1,48}-[0-9a-f]{6}\/(approve|reject|revoke)$/, limit: 4 * KIB, role: 'admin', attributed: true },
   { method: 'POST', path: /^\/api\/respond\/kill$/, limit: 8 * KIB, role: 'admin', operatorToken: true },
 ]
 
@@ -293,7 +298,7 @@ async function write(request: Request): Promise<Response> {
     return Response.json(
       {
         error: 'read_only',
-        hint: 'La consola solo reenvía al motor el triaje, los incidentes, el probador de reglas, las supresiones y la respuesta activa.',
+        hint: 'La consola solo reenvía al motor el triaje, los incidentes, el probador de reglas, las supresiones, el alta de equipos y la respuesta activa.',
       },
       { status: 405 },
     )

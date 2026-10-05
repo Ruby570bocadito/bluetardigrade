@@ -25,6 +25,8 @@ conserva la trazabilidad completa.
 | [SMART-APP-CONTROL.md](SMART-APP-CONTROL.md) | Diagnóstico de bloqueos de ejecución y distribución con firmas Authenticode |
 | [PALETA-Y-PRUEBAS-NAVEGADOR.md](PALETA-Y-PRUEBAS-NAVEGADOR.md) | Paleta de comandos de la consola: foco modal, proteccion de atajos y pruebas Chromium de escritorio/movil |
 | [OPERATIONS.md](OPERATIONS.md) | Guía de operación (inglés): instalación (Windows, Docker, fuente), referencia de flags y variables de entorno, API HTTP, Prometheus, almacenamiento, auth de ingest con rotación, sinks SIEM, notificaciones, supresiones, triaje, riesgo, beaconing, respuesta activa, inteligencia offline, línea base de procesos, cuentas de la consola, contenido de detección, CLI y CI/bench |
+| [PLAN-DETALLADO.md](PLAN-DETALLADO.md) | Diseño de cada punto del TODO (despliegue, ruido, escala SOC, forense, prevención y respuesta, nodos) con criterios de cierre, dependencias, esfuerzo e hitos v1.0 → v2.x |
+| [../TODO.md](../TODO.md) | Lista de trabajo con casillas |
 | [ROADMAP.md](ROADMAP.md) | Direccion del producto: entregas proximas por horizontal (deteccion, forense, sensor, consola) |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Arquitectura del sistema (inglés): diagrama, contrato del esquema de eventos, inventario de características y árbol del repositorio |
 | [false-positive-control.md](false-positive-control.md) | Guía de control de ruido: dedup, supresiones, correlación, filtrado en el receptor y límites anti-abuso |

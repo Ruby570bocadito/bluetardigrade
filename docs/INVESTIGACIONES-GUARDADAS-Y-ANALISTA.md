@@ -73,10 +73,12 @@ Se eliminaron las esperas cosméticas de 450/500 ms y la reproducción
 artificial de palabras cada 24 ms. Los pasos actuales corresponden a
 preparar el prompt, consultar notas ATT&CK locales y esperar al proveedor.
 Las notas son un pequeño diccionario de contexto, no un segundo motor de
-correlación. El texto se muestra completo cuando llega la respuesta: el
-contrato socket conserva `analyst:delta`, pero **no hay streaming de tokens
-del proveedor**. Un error del proveedor no completa ese paso ni produce texto.
-Sin configuración, no se inicia ninguna petición ni secuencia de progreso.
+correlación. La respuesta del proveedor llega por streaming nativo: el hub
+pide `stream: true` a la API compatible con OpenAI y reenvía cada fragmento
+real como `analyst:delta` en cuanto se genera, sin demoras ni reproducción
+artificial (detalle y guardas más abajo). Un error del proveedor no completa
+ese paso ni produce texto. Sin configuración, no se inicia ninguna petición
+ni secuencia de progreso.
 
 Toda la alerta, evento y regla se serializan dentro de bloques delimitados,
 con estos límites antes del indicador de truncado:
@@ -94,6 +96,73 @@ instrucciones de un atacante. La serialización escapa los saltos de línea
 de los campos. Las delimitaciones y la política del prompt ayudan a tratar
 la telemetría como evidencia no confiable; no garantizan inmunidad del modelo
 a instrucciones maliciosas. La pregunta humana permanece separada.
+
+## Streaming del proveedor y límites de tiempo
+
+El hub pide la respuesta en streaming (`stream: true`, API compatible con
+OpenAI) y cada fragmento real del modelo se reenvía a la consola como
+`analyst:delta` en cuanto llega: el panel muestra el texto mientras se
+genera, sin pausas ni reproducción artificial. El contrato de socket no
+cambia (`analyst:step/delta/done/error`) y la respuesta completa viaja en
+`analyst:done` para el historial y la repetición, igual que antes.
+
+Compatibilidad: si el proveedor ignora el streaming y responde un cuerpo
+JSON, el texto llega completo en un único delta, el mismo comportamiento que
+ya tenía el panel; los servidores locales (Ollama, LM Studio, vLLM) siguen
+siendo válidos sin configuración adicional.
+
+Tres guardas de tiempo impiden que un proveedor atascado deje el análisis
+(colgado) para siempre:
+
+| Guarda | Valor por defecto | Efecto |
+|--------|-------------------|--------|
+| Primer byte | 60 s | aborta si el proveedor tarda en empezar a responder |
+| Inactividad entre fragmentos | 30 s | aborta si el streaming se queda parado a medias |
+| Total de la respuesta | 120 s | tope duro de todo el análisis |
+
+Si un streaming se corta a medias, el texto ya recibido permanece en el
+panel junto al mensaje de error; el paso del proveedor no se marca como
+completado y no se inventa ningún cierre. Un fragmento emitido antes de un
+fallo (por ejemplo un error del proveedor dentro del propio flujo) se
+mantiene en pantalla como evidencia parcial, acompañado del error.
+
+## Análisis de un incidente (multi-alerta)
+
+Desde la ficha de un caso (Incidentes) o desde la barra de selección de la
+cola de Alertas, el operador puede pedir al analista IA que estudie varias
+alertas como conjunto. La consola agrupa las alertas disponibles por
+equipo y ventana de 30 minutos, toma como mucho **8 alertas** (las más
+graves primero) y envía el resultado por el evento de socket
+`analyst:ask-incident` del hub, que valida cada campo de nuevo con los
+mismos límites de tarifa y concurrencia que el análisis de una alerta.
+
+El prompt multi-alerta lleva, todo delimitado y truncado:
+
+| Entrada | Límite |
+|---------|--------|
+| Metadatos del caso (título, severidad, estado, equipos, resumen) | 2.048 caracteres |
+| Agrupación por equipo y ventana | 2.048 caracteres |
+| Cada alerta JSON | 4.096 caracteres |
+| Línea de tiempo del caso (incidentes) | 20 entradas, 1.000 caracteres por texto |
+| Bundle forense de la alerta más grave | 40 eventos, 768 caracteres por evento |
+| Pregunta del operador | 2.000 caracteres |
+
+El bundle forense lo adjunta la consola leyendo
+`GET /api/alerts/{id}/forensics` de la alerta más grave que tenga
+identificador. Si el motor no devuelve bundle (404, captura desactivada o
+error), el análisis sigue sin él: el prompt no declara evidencia que no
+existe. Si el caso tiene más alertas que el tope, el número omitido viaja
+en el payload y el modelo lo ve escrito.
+
+El sistema pide una narrativa de cadena que cite eventos concretos (tipo,
+hora, host, proceso o destino) como prueba de cada paso, y prohíbe
+inventar datos: lo no deducible se nombra como incógnita abierta. La
+política de dato no confiable es la misma del análisis de una alerta.
+Las supresiones activas que afecten a reglas del caso se muestran en la
+burbuja del operador, igual que en el análisis individual. Los pasos que
+muestra el panel corresponden a trabajo real: preparar la evidencia,
+consultar las notas locales ATT&CK de las reglas implicadas (máximo tres)
+y esperar al proveedor.
 
 ## Qué es real y qué es simulado
 

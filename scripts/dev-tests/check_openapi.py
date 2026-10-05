@@ -176,7 +176,12 @@ def run_checks(spec: dict, go_src: str) -> tuple[list[str], dict]:
     # ---- security: bearer middleware in api.go vs securitySchemes/security
     # Native writes also have an Origin guard inside authentication. Anchor
     # on the actual server Handler, not an unrelated call to h.auth elsewhere.
-    has_mw = bool(re.search(r"\bHandler:\s*h\.auth\(\s*(?:mux\s*|guardWriteOrigin\(\s*mux\s*\))\s*\)", go_src))
+    # the bearer middleware, optionally inside the DNS-rebinding guard
+    # (h.guardRebinding: Host check for the tokenless loopback API)
+    has_mw = bool(re.search(
+        r"\bHandler:\s*(?:h\.guardRebinding\(\s*)?h\.auth\(\s*(?:mux\s*|guardWriteOrigin\(\s*mux\s*\))\s*\)",
+        go_src,
+    ))
     exempt: set[str] = set()
     m_auth = re.search(r"func \(h \*Hub\) auth\(.*?(?=\nfunc |\Z)", go_src, re.S)
     if m_auth:
@@ -540,6 +545,11 @@ def self_test() -> int:
     if findings:
         print(f"self-test: Origin-guarded authenticated handler produced findings: {findings}", file=sys.stderr)
         return 1
+    rebinding = GO_FIXTURE.replace('Handler: h.auth(mux)', 'Handler: h.guardRebinding(h.auth(guardWriteOrigin(mux)))')
+    findings, _ = run_checks(good_spec(), rebinding)
+    if findings:
+        print(f"self-test: rebinding-guarded authenticated handler produced findings: {findings}", file=sys.stderr)
+        return 1
     unguarded = GO_FIXTURE.replace('Handler: h.auth(mux)', 'Handler: mux')
     findings, _ = run_checks(good_spec(), unguarded)
     if not any('no auth middleware' in finding for finding in findings):
@@ -644,7 +654,7 @@ def self_test() -> int:
             return 1
 
     print(
-        f"self-test: OK — 2 positive fixtures + {len(variants) + 1} negative variants, "
+        f"self-test: OK — 3 positive fixtures + {len(variants) + 1} negative variants, "
         "the guard catches its own class of drift"
     )
     return 0

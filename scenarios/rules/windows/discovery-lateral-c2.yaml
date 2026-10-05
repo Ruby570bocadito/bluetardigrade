@@ -1,0 +1,194 @@
+# Escenarios de validacion de deteccion (SIM-1/SIM-2).
+# Telemetria sintetica e inerte: el mismo esquema de eventos que
+# envia el sensor, sin ejecutar nada en ningun equipo. Cada escenario
+# declara las alertas que el motor DEBE disparar (shipped rule/sequence
+# id); el test de CI falla si una deja de detectarse.
+
+- name: Reconocimiento lanzado desde un proceso sospechoso (sintetico)
+  id: sim-office-spawns-recon
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: reconocimiento
+    lanzado desde winword.exe. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1082
+  - t1033
+  host: LAB-SIM-OFFICE-SPAWNS-RECO
+  user: CORP\sim
+  expected:
+  - rule: 6a6b145f-34d4-440e-8041-238dde766981
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 800
+      name: winword.exe
+      command_line: winword.exe /x informe.docm
+      image: C:\Apps\winword.exe
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4140
+      name: whoami.exe
+      ppid: 800
+      command_line: whoami.exe /priv
+- name: Inventario del antivirus instalado (sintetico)
+  id: sim-av-inventory
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: inventario del
+    antivirus con SecurityCenter2. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1518.001
+  host: LAB-SIM-AV-INVENTORY
+  user: CORP\sim
+  expected:
+  - rule: ae73b409-f020-4596-b490-b1aad8bd6a59
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4141
+      name: powershell.exe
+      command_line: powershell.exe -c Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct
+- name: Enumeracion de SPN con setspn (sintetico)
+  id: sim-setspn-enum
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: enumeracion
+    de SPN con setspn -q. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1087.002
+  - t1558.003
+  host: LAB-SIM-SETSPN-ENUM
+  user: CORP\sim
+  expected:
+  - rule: edfb0e26-5df2-4c41-a759-6252a7257be0
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4142
+      name: setspn.exe
+      command_line: setspn.exe -q host/LAB-SIM.corp
+- name: Escaner de red o de puertos en el equipo (sintetico)
+  id: sim-nmap-local
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: escaner de red
+    en el equipo. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1046
+  host: LAB-SIM-NMAP-LOCAL
+  user: CORP\sim
+  expected:
+  - rule: f3497a36-89e6-4b5e-b49c-b17ff3105a4f
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4143
+      name: nmap.exe
+      command_line: nmap.exe -sT 10.10.0.0/24
+- name: Servicio remoto creado o arrancado con sc (sintetico)
+  id: sim-sc-remote-create
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: servicio remoto
+    creado con sc. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1021.002
+  - t1569.002
+  host: LAB-SIM-SC-REMOTE-CREATE
+  user: CORP\sim
+  expected:
+  - rule: 4160fe22-e519-486c-91f2-779c5b814869
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4144
+      name: sc.exe
+      command_line: sc.exe \\LAB-SIM-TARGET create updsrv binpath= C:\Users\Public\payload.exe
+- name: Ejecucion remota con WinRM o PowerShell Remoting (sintetico)
+  id: sim-winrs-remote
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: ejecucion remota
+    con WinRM. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1021.006
+  host: LAB-SIM-WINRS-REMOTE
+  user: CORP\sim
+  expected:
+  - rule: 94e4f915-b57c-43ef-90d1-6692d89d64a9
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4145
+      name: winrs.exe
+      command_line: winrs.exe -r:LAB-SIM-TARGET whoami
+- name: Escritorio remoto habilitado por registro (sintetico)
+  id: sim-rdp-registry-enable
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: escritorio remoto
+    habilitado por registro. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1021.001
+  host: LAB-SIM-RDP-REGISTRY-ENABL
+  user: CORP\sim
+  expected:
+  - rule: 5e1cbafb-d9a2-4bbf-8f42-7bb9a6760d95
+  events:
+  - type: registry.set
+    user: CORP\sim
+    process:
+      pid: 4146
+      name: explorer.exe
+    registry:
+      key: HKLM\System\CurrentControlSet\Control\Terminal Server
+      operation: SetValue
+      value_name: fDenyTSConnections
+      value: '0'
+- name: Tunel o proxy inverso hacia el exterior (sintetico)
+  id: sim-chisel-tunnel
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: tunel inverso
+    con chisel. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1572
+  host: LAB-SIM-CHISEL-TUNNEL
+  user: CORP\sim
+  expected:
+  - rule: b360548f-35ee-4a5a-be3c-26b4ad06181b
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4147
+      name: chisel.exe
+      command_line: chisel.exe client 203.0.113.14:4444
+- name: Interprete conectando a un puerto tipico de C2 (sintetico)
+  id: sim-interpreter-c2-port
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: PowerShell conectando
+    a un puerto tipico de C2. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1571
+  host: LAB-SIM-INTERPRETER-C2-POR
+  user: CORP\sim
+  expected:
+  - rule: f92d7cee-8ce6-4bf2-bd9a-dec05bcf0b54
+  events:
+  - type: network.connect
+    user: CORP\sim
+    process:
+      pid: 4148
+      name: powershell.exe
+    network:
+      protocol: tcp
+      destination_ip: 203.0.113.10
+      destination_port: 4444
+- name: Herramienta de acceso remoto en el equipo (sintetico)
+  id: sim-teamviewer-host
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: herramienta
+    de acceso remoto instalada. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1219
+  host: LAB-SIM-TEAMVIEWER-HOST
+  user: CORP\sim
+  expected:
+  - rule: 2033a3e6-2c86-4588-99e2-0c7a2bf2cf55
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4149
+      name: teamviewer.exe
+      command_line: teamviewer.exe --installation

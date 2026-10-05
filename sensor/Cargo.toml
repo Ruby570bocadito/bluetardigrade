@@ -1,6 +1,6 @@
 [package]
 name = "security-sensor"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 license = "Apache-2.0"
 description = "ETW sensor for the bluetardigrade detection engine"
@@ -27,7 +27,7 @@ native-tls = "0.2"
 # leaving it running after the process exits; RegGetValueW reads the
 # Windows version for the heartbeat. Already in the dependency tree
 # (same version), so no new crate is pulled in.
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console", "Win32_System_Registry", "Win32_System_Threading", "Win32_Storage_FileSystem"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console", "Win32_System_Registry", "Win32_System_Threading", "Win32_Storage_FileSystem", "Win32_System_Services"] }
 
 [profile.release]
 lto = true

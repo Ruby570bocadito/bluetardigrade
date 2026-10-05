@@ -1,4 +1,4 @@
-# OpenAPI specification for the security-framework local engine API.
+# OpenAPI specification for the bluetardigrade local engine API.
 #
 # Source of truth: internal/api/api.go + internal/api/export.go (handlers
 # and payloads), pkg/model (Event) and internal/alert (Alert). When the
@@ -9,8 +9,8 @@
 #   npx @redocly/cli lint docs/api/openapi.yaml
 openapi: 3.0.3
 info:
-  title: security-framework local API
-  version: 0.1.0
+  title: bluetardigrade local API
+  version: 1.0.0
   description: |
     Read-only-plus-triage HTTP API served by the Go detection engine
     (default `127.0.0.1:7778`, loopback-only; start with `-api 0` to
@@ -74,6 +74,22 @@ tags:
       active response (C3, opt-in): operator-invoked kill_process over a
       verified local process; armed only with -allow-kill + bearer token
       + an open audit file
+  - name: scenarios
+    description: >
+      detection-validation battery (SIM-4, opt-in): the inert synthetic
+      scenario library replayed on demand against the live rules;
+      armed only with -scenarios <dir> (a laboratory engine, never
+      production evidence)
+  - name: reports
+    description: >
+      REP-1 report catalog and data: read-only aggregations of the
+      records the engine already serves (executive summary, incident
+      bundle, fleet coverage, SOC activity), JSON or CSV
+  - name: noise
+    description: >
+      noise report (PLAN-DETALLADO §2.4): the processes, DNS domains
+      and rules that most events or alerts generate, fleet-wide or per
+      host, to know what to tune
 paths:
   /api/health:
     get:
@@ -152,7 +168,7 @@ paths:
         Scrape config hint (token-protected engine):
 
             scrape_configs:
-              - job_name: security-framework
+              - job_name: bluetardigrade
                 metrics_path: /metrics
                 authorization:
                   credentials: <SF_API_TOKEN>
@@ -358,6 +374,212 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Fleet'
+  /api/enroll:
+    get:
+      tags: [status]
+      operationId: getEnrollment
+      summary: Sensor enrollment state - tokens and enrolled hosts (read-only)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Sensor enrollment (`-enroll <file>`). A new sensor opens its first
+        ingest connection with `ENROLL <token> <host>` and receives a
+        credential of its own, bound to that host; from then on it connects
+        with `AUTH <credential>`. A host starts `pending`: the engine takes
+        none of its events (the sensor keeps them in its spool) until an
+        administrator approves it. ENROLL is only accepted over TLS or from
+        loopback. Tokens are listed without their secrets; hosts without
+        their credentials. With enrollment off, `enabled` is false and
+        `hint` says how to turn it on.
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '200':
+          description: Enrollment state, pending hosts first
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollState'
+  /api/enroll/tokens:
+    post:
+      tags: [status]
+      operationId: createEnrollToken
+      summary: Create an enrollment token (the secret is returned once)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Mints an enrollment token: single use by default, up to 10000 uses
+        for a domain rollout, valid between 1 hour and 30 days (24 hours by
+        default). `auto_approve` is an optional hostname pattern (`*` and
+        `?`, case-insensitive): matching hosts are approved without a human
+        unless another identity already reports as the same host. The
+        engine keeps only the SHA-256 of the secret. Needs an API token
+        even on loopback.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollTokenRequest'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '201':
+          description: 'The token and its secret, shown once (Cache-Control: no-store)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollTokenCreated'
+        '400':
+          description: Invalid JSON body or field (uses, lifetime, label, pattern)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: |
+            The API has no token (enrollment writes need one), or a native
+            write from a foreign browser Origin / Sec-Fetch-Site cross-site.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Enrollment is off (the engine runs without `-enroll`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The registry is full (1000 tokens kept)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413':
+          description: Request body over 4 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/enroll/tokens/{id}/revoke:
+    post:
+      tags: [status]
+      operationId: revokeEnrollToken
+      summary: Stop a token from enrolling more hosts
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Hosts already enrolled with the token are not affected. Revoking a
+        revoked token returns it unchanged.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: token id (the `id` field of the token)
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollBy'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '200':
+          description: The token, now revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollToken'
+        '400':
+          description: Invalid JSON body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The API has no token, or a cross-site browser write
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Enrollment is off, or no token has this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/enroll/hosts/{name}/{action}:
+    post:
+      tags: [status]
+      operationId: decideEnrolledHost
+      summary: Approve, reject or revoke an enrolled host
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        `approve` and `reject` apply to a pending host; `revoke` to a
+        pending or active one. Rejecting or revoking closes the open ingest
+        connections of the host's credential at once. The decision is
+        recorded with `by` (the console sets it to the account name).
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: identity name of the host (the `name` field, `enr-<host>-<suffix>`)
+          schema:
+            type: string
+        - name: action
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [approve, reject, revoke]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollBy'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '200':
+          description: The host after the decision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrolledHost'
+        '400':
+          description: Unknown action or invalid JSON body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: The API has no token, or a cross-site browser write
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Enrollment is off, or no host has this name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The decision does not apply to the host's state (approving an active host)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/intel:
     get:
       tags: [status]
@@ -708,6 +930,205 @@ paths:
                 properties:
                   error:
                     type: string
+  /api/scenarios:
+    get:
+      tags: [scenarios]
+      operationId: listScenarios
+      summary: Loaded detection-validation scenario library (SIM-4)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The inert scenario library the engine serves for the
+        detection-validation battery (SIM-1/SIM-2 scenarios, one per
+        shipped rule or kill chain). Armed only when the engine starts
+        with `-scenarios <dir>`: without it the routes answer `501`
+        with an arming `hint` instead of a misleading 404. The library
+        is reloaded from disk on every call, so an edited scenario
+        takes effect without a restart; a malformed file surfaces here
+        as a `500` naming the file.
+
+        Every scenario is inert synthetic telemetry on `LAB-SIM-*`
+        hosts: replaying it executes nothing on any machine and the
+        battery runs isolated from the live pipeline (nothing a run
+        raises reaches the real rings, store, webhook or stream).
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          description: The scenario library failed to load (the error names the file)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: The loaded library, sorted by id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScenarioLibrary'
+  /api/scenarios/run:
+    post:
+      tags: [scenarios]
+      operationId: runScenarios
+      summary: Launch the detection-validation battery (202, asynchronous)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Starts one battery run in the background and answers `202` with
+        the run record as it stands at launch; poll
+        `GET /api/scenarios/runs/{id}` for live progress and
+        `GET /api/scenarios/runs` for the history (the pass-rate trend
+        the console graphs). ONE run at a time: a second launch answers
+        `409` naming the current run id in `hint`.
+
+        The battery replays every selected scenario through the
+        isolated in-process runner against the engine's LIVE rule set
+        (enrichment, rules, kill-chain correlator, production order).
+        It is meant for a laboratory engine; the surface is armed only
+        with `-scenarios <dir>` (`501` otherwise). The body is
+        optional: an empty body launches the whole library.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScenarioRunStart'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Native API writes reject a foreign or malformed browser Origin
+            and Sec-Fetch-Site cross-site. Originless CLI clients remain supported.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '400':
+          description: Invalid JSON body, or the `only` filter names an unknown scenario id
+            (the error lists the unknown ids).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: A scenario run is already in progress (hint carries its run_id).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: The scenario library failed to load (the error names the file).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '501':
+          description: Scenario validation is not armed (start the engine with -scenarios).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '202':
+          description: The run was accepted and is replaying in the background
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScenarioRun'
+  /api/scenarios/runs:
+    get:
+      tags: [scenarios]
+      operationId: listScenarioRuns
+      summary: Run history, newest first (trend source for the console)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Completed battery runs, newest first, summaries only (the
+        per-scenario detail lives in
+        `GET /api/scenarios/runs/{id}`). The in-flight run (if any)
+        leads the list with status `running`. With `-store` the
+        history is persisted in SQLite (retained for the last 200
+        runs) and outlives restarts; without it the last 50 runs live
+        in memory. `pass_rate` (0..1) is the series the trend graph
+        plots.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: maximum entries returned (default 20, capped at 100)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          description: Malformed limit parameter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Run summaries, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  runs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ScenarioRun'
+                required: [runs]
+  /api/scenarios/runs/{id}:
+    get:
+      tags: [scenarios]
+      operationId: getScenarioRun
+      summary: One battery run with its per-scenario results
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The full detail of one run: every scenario's outcome
+        (`detected`, `missing`, `catalog` - an expectation names a
+        detection the engine does not have - or `error`), the
+        expectations that did not reach their minimum (expected vs
+        fired) and the per-scenario replay latency. The in-flight run
+        reflects live progress (results appear as each scenario
+        finishes).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: run id, as returned by POST /api/scenarios/run
+          schema:
+            type: string
+            pattern: '^run-[0-9a-f]{16}$'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No run with that id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '400':
+          description: Malformed run id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: The run detail (results included)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScenarioRun'
   /api/rules:
     get:
       tags: [rules]
@@ -1425,6 +1846,172 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /api/reports:
+    get:
+      tags: [reports]
+      operationId: listReports
+      summary: REP-1 report catalog (kinds, parameters, formats)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The report kinds this engine can compute today (REP-1 part A:
+        executive, incident, fleet coverage, SOC activity). The catalog
+        is static per engine version: a console renders the picker from
+        it without hard-coding kinds, and kinds that need data the
+        engine does not have yet (AD posture, logon audit) appear only
+        when the engine can actually compute them.
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '200':
+          description: The catalog, stable order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportCatalog'
+  /api/reports/{kind}:
+    get:
+      tags: [reports]
+      operationId: getReport
+      summary: One report of the catalog (JSON or CSV)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Generates one report on demand. Reports are read-only
+        aggregations of records the engine already holds: with the
+        SQLite store attached they read the full retention window,
+        without it the in-memory rings (last 1000 events / 256 alerts)
+        and the report carries `source: "ring"` plus `oldest_record`
+        so a consumer can see whether the window is actually covered.
+        A scan capped at 10000 records flags `truncated`.
+
+        The `incident` kind takes `?id=` (16 hex) instead of a window:
+        a case bundle is point in time, and alert ids the engine can no
+        longer resolve stay listed with `found: false`. CSV answers
+        reuse the export endpoints' spreadsheet formula escaping.
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          description: report kind from the catalog
+          schema:
+            type: string
+            enum: [executive, incident, fleet, soc]
+        - name: window
+          in: query
+          required: false
+          description: |
+            range to aggregate: 24h, 7d, 30d or any positive duration
+            within the kind's bounds (executive/fleet/soc: 1h to 30d,
+            default 7d). Not accepted for the incident kind.
+          schema:
+            type: string
+        - name: id
+          in: query
+          required: false
+          description: incident id (16 hex), required for the incident kind
+          schema:
+            type: string
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [json, csv]
+            default: json
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          description: Unknown window for the kind, invalid format, missing/malformed incident id, or a window on the incident kind
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Unknown kind (the error names the valid ones) or unknown incident id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: The generated report; the schema depends on the kind
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ExecutiveReport'
+                  - $ref: '#/components/schemas/FleetCoverageReport'
+                  - $ref: '#/components/schemas/SocActivityReport'
+                  - $ref: '#/components/schemas/IncidentReport'
+            text/csv:
+              schema:
+                type: string
+  /api/noise:
+    get:
+      tags: [noise]
+      operationId: getNoise
+      summary: Processes, DNS domains and rules that most generate events or alerts (§2.4)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The noise report, fleet-wide by default; with `host` it narrows
+        to one machine. Processes group by executable image
+        (case-insensitive), DNS lookups by the queried name and rules
+        by rule id, each with its triage overlay percentages — today
+        `closed_pct`/`acknowledged_pct` over the rule's alerts (the
+        honest proxy until a triage decision field exists; the JSON
+        names exactly what it measures).
+
+        Records come from the same source as the reports (store with
+        full retention, rings otherwise) with a 10000-record scan cap
+        flagged in `scanned.truncated`. JSON only: the console renders
+        it and adds the tuning buttons (known software, suppressions).
+      parameters:
+        - name: window
+          in: query
+          required: false
+          description: range to aggregate (default 24h, 15m to 30d)
+          schema:
+            type: string
+        - name: host
+          in: query
+          required: false
+          description: narrow every aggregate to one machine (exact name, case-insensitive)
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: entries per top list (default 10, max 50)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          description: Invalid window (out of the kind's bounds or not a duration)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Store query failed (the engine log carries the detail)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: The noise report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoiseReport'
 components:
   securitySchemes:
     bearerAuth:
@@ -2330,6 +2917,159 @@ components:
         error:
           type: string
           description: actionable one-line reason (client-side problems name the fix; server-side problems point to the engine log)
+    ScenarioLibrary:
+      type: object
+      required: [armed, dir, count, scenarios]
+      properties:
+        armed:
+          type: boolean
+          description: always true when the route answers 200 (an unarmed engine answers 501)
+        dir:
+          type: string
+          description: the -scenarios directory the library was loaded from
+        count:
+          type: integer
+          description: number of loaded scenarios
+        scenarios:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScenarioView'
+    ScenarioView:
+      type: object
+      required: [id, name, description, attack, host, events, expected, origin]
+      properties:
+        id:
+          type: string
+          description: stable scenario identifier (sim-...)
+        name:
+          type: string
+        description:
+          type: string
+        attack:
+          type: array
+          description: ATT&CK techniques the sequence exercises (e.g. T1003.001)
+          items:
+            type: string
+        host:
+          type: string
+          description: synthetic host of the events (LAB-SIM- prefix)
+        events:
+          type: integer
+          description: how many inert events the replay sends
+        expected:
+          type: array
+          description: alerts that MUST fire for the scenario to pass
+          items:
+            $ref: '#/components/schemas/ScenarioExpected'
+        origin:
+          type: string
+          description: file the scenario was loaded from
+    ScenarioExpected:
+      type: object
+      required: [rule, min]
+      properties:
+        rule:
+          type: string
+          description: shipped rule id or kill-chain sequence id
+        min:
+          type: integer
+          description: minimum alerts required (below 1 loads as 1)
+    ScenarioRunStart:
+      type: object
+      properties:
+        only:
+          type: array
+          description: restrict the battery to these scenario ids (empty or absent = the whole library)
+          items:
+            type: string
+        timeout_ms:
+          type: integer
+          description: per-scenario wait before an expectation is declared missing (clamped to 1000..30000; default 10000)
+    ScenarioRun:
+      type: object
+      required: [run_id, started_at, status, total, detected, missing, catalog_errors, errors, duration_ms, pass_rate]
+      properties:
+        run_id:
+          type: string
+          description: run identifier (run- + 16 hex characters)
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+          description: absent while the run is in flight
+        status:
+          type: string
+          enum: [running, completed]
+        total:
+          type: integer
+          description: scenarios selected for the run
+        detected:
+          type: integer
+        missing:
+          type: integer
+        catalog_errors:
+          type: integer
+          description: scenarios whose expectations name detections the engine does not have (authoring bug, not a detection failure)
+        errors:
+          type: integer
+        duration_ms:
+          type: integer
+          description: wall-clock duration of the whole battery (0 while running)
+        pass_rate:
+          type: number
+          format: float
+          description: detected / total in 0..1 (the trend-graph series)
+        results:
+          type: array
+          description: per-scenario outcomes; the history list omits them, the detail endpoint serves them
+          items:
+            $ref: '#/components/schemas/ScenarioResult'
+    ScenarioResult:
+      type: object
+      required: [scenario_id, name, attack, status, host, events_sent, duration_ms]
+      properties:
+        scenario_id:
+          type: string
+        name:
+          type: string
+        attack:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [detected, missing, catalog, error]
+        host:
+          type: string
+          description: the scenario's synthetic host (LAB-SIM-...)
+        events_sent:
+          type: integer
+        duration_ms:
+          type: integer
+          description: replay latency of this scenario
+        missing:
+          type: array
+          description: expectations that did not reach their minimum (status missing)
+          items:
+            $ref: '#/components/schemas/ScenarioMissingExpectation'
+        untagged:
+          type: integer
+          description: alerts raised without the simulation tag (an anomaly; always 0 in a healthy pipeline)
+        detail:
+          type: string
+          description: human-readable reason for catalog/error outcomes
+    ScenarioMissingExpectation:
+      type: object
+      required: [rule, expected, fired]
+      properties:
+        rule:
+          type: string
+        expected:
+          type: integer
+        fired:
+          type: integer
     RespondKillRequest:
       type: object
       required: [host, pid, process_name, operator, reason]
@@ -2679,6 +3419,10 @@ components:
           type: string
         os:
           type: string
+        run_mode:
+          type: string
+          enum: [service, console]
+          description: how the sensor runs - "service" (Windows service manager, starts with the machine) or "console" (started by hand); absent for sensors that do not say
         capture:
           type: string
           description: what the sensor captures, e.g. process+network+registry
@@ -2985,3 +3729,586 @@ components:
         at:
           type: string
           format: date-time
+    EnrollState:
+      type: object
+      required: [enabled, pending, active, usable_tokens, writes, tokens, hosts]
+      properties:
+        enabled:
+          type: boolean
+        hint:
+          type: string
+          description: how to turn enrollment on (only when it is off)
+        pending:
+          type: integer
+        active:
+          type: integer
+        usable_tokens:
+          type: integer
+        writes:
+          type: boolean
+          description: whether the API has a token, which the enrollment writes need
+        tokens:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnrollToken'
+        hosts:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnrolledHost'
+    EnrollToken:
+      type: object
+      required: [id, label, max_uses, uses, created_at, expires_at, status]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        max_uses:
+          type: integer
+        uses:
+          type: integer
+        auto_approve:
+          type: string
+          description: hostname pattern approved without a human
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        created_by:
+          type: string
+        revoked:
+          type: boolean
+        revoked_by:
+          type: string
+        status:
+          type: string
+          enum: [active, expired, used_up, revoked]
+    EnrollTokenRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        label:
+          type: string
+          maxLength: 64
+        max_uses:
+          type: integer
+          minimum: 1
+          maximum: 10000
+          description: 1 when omitted
+        ttl_hours:
+          type: integer
+          minimum: 1
+          maximum: 720
+          description: 24 when omitted
+        auto_approve:
+          type: string
+          maxLength: 64
+          example: pc-conta-*
+        by:
+          type: string
+          description: who creates it (the console sets the account name)
+    EnrollTokenCreated:
+      type: object
+      required: [token, secret]
+      properties:
+        token:
+          $ref: '#/components/schemas/EnrollToken'
+        secret:
+          type: string
+          description: the enrollment token itself (`btenroll_` + 64 hex); never shown again
+    EnrollBy:
+      type: object
+      additionalProperties: false
+      properties:
+        by:
+          type: string
+    EnrolledHost:
+      type: object
+      required: [name, host, state, token_id, enrolled_at]
+      properties:
+        name:
+          type: string
+          description: ingest identity stamped on the host's events
+        host:
+          type: string
+        state:
+          type: string
+          enum: [pending, active, rejected, revoked]
+        token_id:
+          type: string
+        peer:
+          type: string
+          description: address the host enrolled from
+        enrolled_at:
+          type: string
+          format: date-time
+        decided_at:
+          type: string
+          format: date-time
+        decided_by:
+          type: string
+        auto_approved:
+          type: boolean
+        conflict:
+          type: string
+          description: why the host needs a human although its token would approve it
+        last_attempt:
+          type: string
+          format: date-time
+          description: last connection of a pending host
+    ReportCatalog:
+      type: object
+      required: [reports]
+      properties:
+        reports:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportCatalogEntry'
+    ReportCatalogEntry:
+      type: object
+      required: [kind, title, description, params, formats]
+      properties:
+        kind:
+          type: string
+          enum: [executive, incident, fleet, soc]
+        title:
+          type: string
+        description:
+          type: string
+        params:
+          type: object
+          description: accepted query parameters and their accepted values
+          additionalProperties:
+            type: string
+        formats:
+          type: array
+          items:
+            type: string
+            enum: [json, csv]
+    ExecutiveReport:
+      type: object
+      required: [kind, generated_at, window, source, truncated, alerts_total, by_severity, by_status, by_tactic, hosts_affected, top_rules, incidents, fleet]
+      properties:
+        kind:
+          type: string
+          enum: [executive]
+        generated_at:
+          type: string
+          format: date-time
+        window:
+          $ref: '#/components/schemas/ReportWindow'
+        source:
+          type: string
+          enum: [store, ring]
+        truncated:
+          type: boolean
+        oldest_record:
+          type: string
+          format: date-time
+          description: oldest alert the ring still holds (ring mode only; empty with a store)
+        alerts_total:
+          type: integer
+        by_severity:
+          type: object
+          description: info/low/medium/high/critical counts (only non-zero keys)
+          additionalProperties:
+            type: integer
+        by_status:
+          type: object
+          description: new/acknowledged/closed counts (only non-zero keys)
+          additionalProperties:
+            type: integer
+        by_tactic:
+          type: object
+          description: ATT&CK tactic label counts (only non-zero keys)
+          additionalProperties:
+            type: integer
+        hosts_affected:
+          type: integer
+          description: distinct hosts that raised an alert in the window
+        top_rules:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/ReportRuleCount'
+        incidents:
+          $ref: '#/components/schemas/ReportIncidentTotals'
+        fleet:
+          $ref: '#/components/schemas/ReportFleetTotals'
+    ReportWindow:
+      type: object
+      required: [preset, from, until]
+      properties:
+        preset:
+          type: string
+          description: the requested value (e.g. 24h, 7d, 30d)
+        from:
+          type: string
+          format: date-time
+        until:
+          type: string
+          format: date-time
+    ReportRuleCount:
+      type: object
+      required: [rule_id, rule_name, count]
+      properties:
+        rule_id:
+          type: string
+        rule_name:
+          type: string
+        count:
+          type: integer
+    ReportIncidentTotals:
+      type: object
+      required: [opened_in_window, closed_in_window, open, persistent]
+      properties:
+        opened_in_window:
+          type: integer
+        closed_in_window:
+          type: integer
+        open:
+          type: integer
+          description: open cases right now
+        persistent:
+          type: boolean
+          description: whether the incident store writes to disk
+    ReportFleetTotals:
+      type: object
+      required: [enabled, total, online, silent, idle]
+      properties:
+        enabled:
+          type: boolean
+          description: false when the engine runs without a fleet tracker (do not render coverage from the zeros)
+        total:
+          type: integer
+        online:
+          type: integer
+        silent:
+          type: integer
+        idle:
+          type: integer
+    FleetCoverageReport:
+      type: object
+      required: [kind, generated_at, window, source, truncated, enabled, summary, hosts]
+      properties:
+        kind:
+          type: string
+          enum: [fleet]
+        generated_at:
+          type: string
+          format: date-time
+        window:
+          $ref: '#/components/schemas/ReportWindow'
+        source:
+          type: string
+          enum: [store, ring]
+        truncated:
+          type: boolean
+        enabled:
+          type: boolean
+        summary:
+          type: object
+          required: [total, online, silent, idle, no_signal_in_window]
+          properties:
+            total:
+              type: integer
+            online:
+              type: integer
+            silent:
+              type: integer
+            idle:
+              type: integer
+            no_signal_in_window:
+              type: integer
+              description: hosts whose events_in_window is 0 (sensor down, machine off or gone)
+        hosts:
+          type: array
+          items:
+            $ref: '#/components/schemas/FleetCoverageHost'
+    FleetCoverageHost:
+      type: object
+      required: [host, status, first_seen, last_seen, events, events_in_window]
+      properties:
+        host:
+          type: string
+        status:
+          type: string
+          enum: [online, silent, idle]
+        first_seen:
+          type: string
+          format: date-time
+        last_seen:
+          type: string
+          format: date-time
+        last_event_type:
+          type: string
+        events:
+          type: integer
+          format: int64
+          description: lifetime events the tracker has seen from this host
+        events_in_window:
+          type: integer
+        sensor_version:
+          type: string
+        identity:
+          type: string
+          description: enrollment identity stamped on the host's events
+    SocActivityReport:
+      type: object
+      required: [kind, generated_at, window, source, truncated, created, backlog, mean_time_to_ack_seconds, mean_time_to_close_seconds, days, by_operator]
+      properties:
+        kind:
+          type: string
+          enum: [soc]
+        generated_at:
+          type: string
+          format: date-time
+        window:
+          $ref: '#/components/schemas/ReportWindow'
+        source:
+          type: string
+          enum: [store, ring]
+        truncated:
+          type: boolean
+        created:
+          type: integer
+          description: alerts raised inside the window
+        backlog:
+          type: object
+          required: [new, acknowledged, closed]
+          description: current triage state of the window's alerts
+          properties:
+            new:
+              type: integer
+            acknowledged:
+              type: integer
+            closed:
+              type: integer
+        mean_time_to_ack_seconds:
+          type: number
+          description: over the window's alerts whose latest status is acknowledged (0 = none)
+        mean_time_to_close_seconds:
+          type: number
+          description: over the window's alerts whose latest status is closed (0 = none)
+        days:
+          type: array
+          items:
+            type: object
+            required: [day, created, acknowledged, closed]
+            properties:
+              day:
+                type: string
+                description: UTC day (YYYY-MM-DD)
+              created:
+                type: integer
+              acknowledged:
+                type: integer
+                description: triage actions that happened this day
+              closed:
+                type: integer
+                description: triage actions that happened this day
+        by_operator:
+          type: object
+          description: status_by -> latest triage actions inside the window
+          additionalProperties:
+            type: integer
+    IncidentReport:
+      type: object
+      required: [kind, generated_at, incident, alerts, timeline]
+      properties:
+        kind:
+          type: string
+          enum: [incident]
+        generated_at:
+          type: string
+          format: date-time
+        incident:
+          $ref: '#/components/schemas/IncidentCaseSummary'
+        alerts:
+          type: array
+          items:
+            $ref: '#/components/schemas/IncidentReportAlert'
+        timeline:
+          type: array
+          items:
+            $ref: '#/components/schemas/IncidentReportEntry'
+    IncidentCaseSummary:
+      type: object
+      required: [id, title, severity, status, hosts, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        severity:
+          type: string
+          enum: [info, low, medium, high, critical]
+        status:
+          type: string
+          enum: [open, investigating, contained, closed]
+        owner:
+          type: string
+        hosts:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+        updated_at:
+          type: string
+        closed_at:
+          type: string
+    IncidentReportAlert:
+      type: object
+      required: [id, status, found]
+      description: an alert of the case with its triage overlay; found false means the engine can no longer resolve its content
+      properties:
+        id:
+          type: string
+        rule_id:
+          type: string
+        rule_name:
+          type: string
+        severity:
+          type: string
+        host:
+          type: string
+        event_type:
+          type: string
+        timestamp:
+          type: string
+        summary:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [new, acknowledged, closed]
+        status_at:
+          type: string
+        status_by:
+          type: string
+        found:
+          type: boolean
+    IncidentReportEntry:
+      type: object
+      required: [at, kind, text]
+      properties:
+        at:
+          type: string
+        by:
+          type: string
+        kind:
+          type: string
+        text:
+          type: string
+    NoiseReport:
+      type: object
+      required: [kind, generated_at, window, host, source, scanned, processes, domains, rules]
+      properties:
+        kind:
+          type: string
+          enum: [noise]
+        generated_at:
+          type: string
+          format: date-time
+        window:
+          $ref: '#/components/schemas/ReportWindow'
+        host:
+          type: string
+          description: empty for the whole fleet
+        source:
+          type: string
+          enum: [store, ring]
+        scanned:
+          type: object
+          required: [events, alerts, truncated]
+          properties:
+            events:
+              type: integer
+            alerts:
+              type: integer
+            truncated:
+              type: boolean
+              description: the scan hit its 10000-record cap (it then sees the newest slice of the window)
+        processes:
+          type: array
+          items:
+            $ref: '#/components/schemas/NoiseProcess'
+        domains:
+          type: array
+          items:
+            $ref: '#/components/schemas/NoiseDomain'
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/NoiseRule'
+    NoiseProcess:
+      type: object
+      required: [image, count, distinct_hosts, first_seen, last_seen]
+      properties:
+        image:
+          type: string
+          description: group key, lowercased executable path (or name when the sensor cannot provide one)
+        count:
+          type: integer
+        distinct_hosts:
+          type: integer
+        first_seen:
+          type: string
+        last_seen:
+          type: string
+        parent:
+          type: string
+          description: parent process name of the newest sample, when the engine's enricher resolved it
+        command_line:
+          type: string
+          description: newest sample, truncated to 200 characters
+        sha256:
+          type: string
+          description: newest sample carrying one
+    NoiseDomain:
+      type: object
+      required: [domain, count, distinct_hosts, first_seen, last_seen]
+      properties:
+        domain:
+          type: string
+          description: queried name, lowercased
+        count:
+          type: integer
+        distinct_hosts:
+          type: integer
+        first_seen:
+          type: string
+        last_seen:
+          type: string
+    NoiseRule:
+      type: object
+      required: [rule_id, rule_name, count, distinct_hosts, acknowledged_pct, closed_pct]
+      properties:
+        rule_id:
+          type: string
+        rule_name:
+          type: string
+        count:
+          type: integer
+        by_severity:
+          type: object
+          additionalProperties:
+            type: integer
+        distinct_hosts:
+          type: integer
+        acknowledged_pct:
+          type: number
+          format: float
+          description: share of the rule's alerts whose CURRENT status is acknowledged (triage proxy until a decision field exists)
+        closed_pct:
+          type: number
+          format: float
+          description: share of the rule's alerts whose CURRENT status is closed (triage proxy until a decision field exists)

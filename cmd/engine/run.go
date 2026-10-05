@@ -19,6 +19,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/beacon"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/correlate"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/enrich"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/enroll"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/fleet"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/forensic"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/incident"
@@ -30,6 +31,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/reputation"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/respond"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/scenrun"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/siem"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/store"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/suppress"
@@ -312,6 +314,31 @@ func runEngine(o *options, interactive bool) error {
 		server.SetIdentities(ids)
 		fmt.Printf("[ENGINE] ingest identities: %d per-sensor credentials bound to their hosts (%s)\n", len(ids), identitiesPath)
 	}
+	// sensor enrollment (internal/enroll): tokens from the console,
+	// approval by an administrator, credentials bound to their host
+	enrollPath := o.enrollFile
+	if enrollPath == "" {
+		enrollPath = os.Getenv("SF_ENROLL")
+	}
+	var enrollReg *enroll.Registry
+	if enrollPath != "" {
+		enrollReg, err = enroll.Open(enrollPath)
+		if err != nil {
+			log.Fatalf("[ENGINE] %v", err)
+		}
+		enrollReg.SetBoundElsewhere(server.BoundIdentity)
+		enrollReg.SetOnWithdraw(func(name string) {
+			if n := server.DropIdentity(name); n > 0 {
+				log.Printf("[ENROLL] %s withdrawn: closed %d open connection(s)", name, n)
+			}
+		})
+		server.SetEnroller(enroll.Gate{Registry: enrollReg, Logf: log.Printf})
+		pending, active, usable := enrollReg.Counts()
+		fmt.Printf("[ENGINE] enrollment: ON (%s): %d active, %d pending, %d usable tokens\n", enrollPath, active, pending, usable)
+		if o.ingestCert == "" && !isLoopback(o.addr) {
+			fmt.Println("[ENGINE] enrollment: the ingest is plain TCP beyond loopback, so ENROLL is only accepted from this machine until -ingest-cert/-ingest-key are set (the credential must not cross the network in clear)")
+		}
+	}
 	// machine inventory (internal/fleet): every accepted event and the
 	// sensors' heartbeats; read through GET /api/fleet
 	// per-host baseline of processes already seen (internal/baseline)
@@ -340,11 +367,7 @@ func runEngine(o *options, interactive bool) error {
 	server.SetObserver(fleetTracker)
 	go server.Serve()
 	if server.AuthEnabled() {
-		if server.Rotating() {
-			fmt.Println("[ENGINE] ingest auth: ENABLED, rotation window OPEN (current and previous token both accepted; redeploy sensors, then restart without -token-previous)")
-		} else {
-			fmt.Println("[ENGINE] ingest auth: ENABLED (sensors must send 'AUTH <token>' first, or -token/SF_INGEST_TOKEN)")
-		}
+		fmt.Println(ingestAuthBanner(server.Rotating(), ingestToken, server.Identities()))
 	} else if strings.HasPrefix(server.Addr(), "127.0.0.1:") || strings.HasPrefix(server.Addr(), "[::1]:") {
 		fmt.Println("[ENGINE] ingest auth: disabled (loopback bind only - fine for local demos)")
 	} else {
@@ -439,6 +462,9 @@ func runEngine(o *options, interactive bool) error {
 			hub.SetLifecycle(lifeStore)
 			hub.SetIncidents(incStore)
 			hub.SetFleet(fleetTracker)
+			if enrollReg != nil {
+				hub.SetEnrollment(enrollReg)
+			}
 			if intelM != nil {
 				hub.SetIntel(intelM)
 			}
@@ -477,6 +503,32 @@ func runEngine(o *options, interactive bool) error {
 			default:
 				hub.EnableSuppressionsWrite(supPath)
 				fmt.Printf("[ENGINE] api write: ENABLED (POST/DELETE /api/suppressions -> %s)\n", supPath)
+			}
+			// detection-validation battery (SIM-4): armed only
+			// with -scenarios. The battery replays the inert
+			// library against the LIVE rule set through the
+			// isolated in-process runner (internal/scenario —
+			// the same machinery the CI regression net uses),
+			// so a validation run never touches the real
+			// rings, store, webhook or stream. Meant for a
+			// laboratory engine; the surface stays off unless
+			// the operator asks for it.
+			if o.scenariosDir != "" {
+				var sink scenrun.RunSink
+				if st != nil {
+					sink = st
+				}
+				hub.SetScenarios(scenrun.New(o.scenariosDir, seqPath, scenrun.Deps{
+					Rules: func() *rules.Engine { return engine },
+					Sink:  sink,
+					Logf:  log.Printf,
+				}))
+				history := "in memory"
+				if st != nil {
+					history = "in the store"
+				}
+				fmt.Printf("[ENGINE] scenarios: detection validation armed from %s (POST /api/scenarios/run; history %s)\n",
+					o.scenariosDir, history)
 			}
 			go func() {
 				if err := hub.Run(); err != nil {
@@ -724,13 +776,23 @@ func runEngine(o *options, interactive bool) error {
 	// heartbeats; it goes through the same suppression gate, so a
 	// planned maintenance can be silenced per host
 	go func() {
-		t := time.NewTicker(30 * time.Second)
+		const every = 30 * time.Second
+		t := time.NewTicker(every)
 		defer t.Stop()
+		last := time.Now()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case now := <-t.C:
+				// wall clock (Round(0) drops the monotonic reading, which may
+				// not count a system sleep): a gap far beyond the tick means
+				// the engine itself was suspended, and its sensors with it
+				if gap := now.Round(0).Sub(last.Round(0)); gap > 3*every {
+					fleetTracker.Resume(now)
+					log.Printf("[FLEET] engine was suspended for %s: sensors get a fresh grace", gap.Round(time.Second))
+				}
+				last = now
 				for _, tr := range fleetTracker.Check(now) {
 					if tr.Silent {
 						emitAllowlisted(silentSensorAlert(tr.Host, now))
@@ -1088,4 +1150,23 @@ func runEngine(o *options, interactive bool) error {
 		processed, time.Since(start).Round(time.Millisecond),
 		server.Received(), server.Dropped())
 	return nil
+}
+
+// ingestAuthBanner renders the startup auth line the operator sees.
+// The message must name HOW sensors are expected to authenticate: an
+// identities-only deployment (no shared token) previously printed the
+// -token/SF_INGEST_TOKEN hint, which sent the operator arming a
+// credential the engine does not use (SEC-8, TODO list item on the
+// known confusing banner).
+func ingestAuthBanner(rotating bool, token string, identities int) string {
+	switch {
+	case rotating:
+		return "[ENGINE] ingest auth: ENABLED, rotation window OPEN (current and previous token both accepted; redeploy sensors, then restart without -token-previous)"
+	case identities > 0 && token != "":
+		return "[ENGINE] ingest auth: ENABLED (sensors must send 'AUTH <token>' first: their per-sensor identity token or the shared -token/SF_INGEST_TOKEN)"
+	case identities > 0:
+		return "[ENGINE] ingest auth: ENABLED (sensors must send 'AUTH <token>' first with their per-sensor identity token; no shared token is configured)"
+	default:
+		return "[ENGINE] ingest auth: ENABLED (sensors must send 'AUTH <token>' first, or -token/SF_INGEST_TOKEN)"
+	}
 }

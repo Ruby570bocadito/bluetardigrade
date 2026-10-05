@@ -12,9 +12,13 @@
 // - El puntero se escucha en window y la capa es pointer-events:none:
 //   la interacción no roba eventos a la UI.
 // - Sin rAF mientras no hay energía ni con la pestaña oculta; bajo
-//   prefers-reduced-motion queda la rejilla estática, sin listeners.
+//   prefers-reduced-motion queda la rejilla estática (solo escucha resize y
+//   el cambio de tema, para repintar la tinta en reposo).
+// - La tinta en reposo la marca el tema (--dot-grid-ink) y un cambio de
+//   tema dispara un repintado; los halos activos son azules en ambos.
 
 import { useEffect, useRef } from 'react'
+import { THEME_EVENT } from '@/lib/theme'
 
 type DotGridProps = {
   /** separación entre puntos en px */
@@ -24,9 +28,18 @@ type DotGridProps = {
   className?: string
 }
 
-const BASE_ALPHA = 0.05
 const BASE_RADIUS = 1
 const ENERGY_DECAY = 2.6 // por segundo, exponencial
+
+// Tinta base en reposo, por tema: el canvas no puede heredar color de la
+// CSS, así que la lee de --dot-grid-ink (globals.css la define por tema)
+// y el evento de tema dispara un repintado de la capa base.
+const FALLBACK_INK = 'rgba(255, 255, 255, 0.05)'
+
+function readInk(): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--dot-grid-ink').trim()
+  return v || FALLBACK_INK
+}
 
 export function DotGridLayer({ gap = 22, radius = 150, className = '' }: DotGridProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -43,6 +56,7 @@ export function DotGridLayer({ gap = 22, radius = 150, className = '' }: DotGrid
     let dots = new Float32Array(0) // [x, y, energía] * n
     let count = 0
     let last = 0
+    let ink = FALLBACK_INK
     const pointer = { x: -1e4, y: -1e4 }
     let pointerInside = false
     const base = document.createElement('canvas')
@@ -78,7 +92,7 @@ export function DotGridLayer({ gap = 22, radius = 150, className = '' }: DotGrid
       if (!bctx) return
       bctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       bctx.clearRect(0, 0, w, h)
-      bctx.fillStyle = `rgba(255, 255, 255, ${BASE_ALPHA})`
+      bctx.fillStyle = ink
       for (let d = 0; d < count; d++) {
         bctx.beginPath()
         bctx.arc(dots[d * 3], dots[d * 3 + 1], BASE_RADIUS, 0, Math.PI * 2)
@@ -137,12 +151,13 @@ export function DotGridLayer({ gap = 22, radius = 150, className = '' }: DotGrid
           if (e === 0) continue
           const x = dots[d * 3]
           const y = dots[d * 3 + 1]
-          // halo azul + punto central: dos arcs por punto activo
+          // halo azul + punto central: dos arcs por punto activo. El halo
+          // hereda el azul de acento, válido en los dos temas.
           ctx.fillStyle = `rgba(96, 165, 250, ${(e * 0.22).toFixed(3)})`
           ctx.beginPath()
           ctx.arc(x, y, BASE_RADIUS + e * 4.2, 0, Math.PI * 2)
           ctx.fill()
-          ctx.fillStyle = `rgba(147, 197, 253, ${(BASE_ALPHA + e * 0.5).toFixed(3)})`
+          ctx.fillStyle = activeDotInk(e)
           ctx.beginPath()
           ctx.arc(x, y, BASE_RADIUS + e * 0.9, 0, Math.PI * 2)
           ctx.fill()
@@ -167,6 +182,16 @@ export function DotGridLayer({ gap = 22, radius = 150, className = '' }: DotGrid
       }
     }
 
+    // punto central activo: el mismo tono que el halo, algo más firme
+    function activeDotInk(e: number): string {
+      return `rgba(147, 197, 253, ${(0.08 + e * 0.5).toFixed(3)})`
+    }
+
+    const onThemeChange = () => {
+      ink = readInk()
+      buildGrid()
+    }
+
     const onVisibility = () => {
       if (document.hidden && running) {
         cancelAnimationFrame(raf)
@@ -177,10 +202,18 @@ export function DotGridLayer({ gap = 22, radius = 150, className = '' }: DotGrid
       }
     }
 
+    ink = readInk()
     buildGrid()
-    if (reduce) return () => window.removeEventListener('resize', onResize)
-
     window.addEventListener('resize', onResize)
+    window.addEventListener(THEME_EVENT, onThemeChange)
+    if (reduce) {
+      // static grid under reduced motion: no pointer, no loop, but a theme
+      // change must still repaint the resting ink (registered + cleaned below)
+      return () => {
+        window.removeEventListener('resize', onResize)
+        window.removeEventListener(THEME_EVENT, onThemeChange)
+      }
+    }
     window.addEventListener('pointermove', onMove, { passive: true })
     window.addEventListener('pointerleave', onLeave)
     document.addEventListener('visibilitychange', onVisibility)
@@ -197,6 +230,7 @@ export function DotGridLayer({ gap = 22, radius = 150, className = '' }: DotGrid
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerleave', onLeave)
       document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener(THEME_EVENT, onThemeChange)
     }
   }, [gap, radius])
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { enrollmentPlan, formatDuration, identityName, isValidHostName, secondsSince } from './fleet'
+import { enrollmentPlan, formatDuration, identityName, isValidHostName, secondsSince, runModeText } from './fleet'
 
 describe('fleet formatting', () => {
   test('durations read naturally at every scale', () => {
@@ -45,4 +45,10 @@ describe('enrollment', () => {
     expect(plan.some((step) => step.where === 'server-admin' && step.cmd?.includes('LocalPort 7777'))).toBe(true)
     expect(enrollmentPlan('PC-01', '10.0.0.5', false).at(-1)!.cmd).not.toContain('--tls-ca')
   })
+})
+
+test('run mode reads as the operator would say it', () => {
+  expect(runModeText('service')).toContain('Servicio de Windows')
+  expect(runModeText('console')).toContain('sf-etw -Install')
+  expect(runModeText(undefined)).toBe('—')
 })

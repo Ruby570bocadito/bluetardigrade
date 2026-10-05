@@ -241,6 +241,19 @@ export type EngineStats = {
   webhook_sent: number
   webhook_failed: number
   webhook_dropped: number
+  // SIEM sink delivery triples (engine -elastic bulk indexing, -splunk
+  // HEC), required by the OpenAPI Stats schema; forwarded by the hub
+  // since r7 (SET-3). Same reading as webhook: all zero = disabled or
+  // nothing delivered yet.
+  elastic_sent?: number
+  elastic_failed?: number
+  elastic_dropped?: number
+  splunk_sent?: number
+  splunk_failed?: number
+  splunk_dropped?: number
+  // outbound notify channels of the engine (slack, telegram, email)
+  // with their own delivery counters; forwarded by the hub since r7.
+  notify_channels?: { name: string; type: string; sent: number; failed: number; dropped: number; filtered: number }[]
   // non-expired operator suppression entries, forwarded since r4
   suppressions_active: number
   // kill-chain correlator observability, forwarded since r5: in-flight
@@ -314,10 +327,15 @@ export type AnalystMessage = {
   id: string
   role: 'user' | 'analyst'
   alertName?: string
+  // multi-alert analysis (incident case or selection of the queue)
+  incidentTitle?: string
+  incidentMeta?: string
   question?: string
   // operator-suppression context captured when the analysis started
   // (active suppressions.yaml entries matching this rule)
   suppressionNote?: string
+  // kept on the user message so «Repetir» can re-emit the same analysis
+  incidentPayload?: import('./incident-analysis').IncidentAnalysisPayload
   steps?: AnalystStep[]
   text?: string
   error?: string
@@ -353,9 +371,9 @@ export const SEVERITY_STYLE: Record<Severity, { label: string; text: string; bg:
   },
   low: {
     label: 'baja',
-    text: 'text-blue-300',
-    bg: 'bg-blue-500/10',
-    border: 'border-blue-400/30',
+    text: 'text-primary-link',
+    bg: 'bg-primary-tint/10',
+    border: 'border-primary/30',
     bar: 'bg-[var(--sev-low)]',
     dot: 'bg-[var(--sev-low)]',
   },

@@ -26,6 +26,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/baseline"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/correlate"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/enroll"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/fleet"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/forensic"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/incident"
@@ -36,6 +37,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/respond"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/risk"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/scenrun"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/store"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/suppress"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/tlsutil"
@@ -122,6 +124,15 @@ type Hub struct {
 	// disabled (-forensic=false); the route then answers 501 so the
 	// console can render "feature off" instead of a misleading 404.
 	forensic *forensic.Recorder
+
+	// sensor enrollment (enroll.go): nil = off; GET /api/enroll then
+	// says how to turn it on.
+	enroll *enroll.Registry
+
+	// detection-validation battery (scenarios.go): nil = disarmed,
+	// the routes answer 501 with the arming hint instead of a
+	// misleading 404.
+	scenarios *scenrun.Service
 }
 
 // New binds a plain-text API listener. Use addr ":0" in tests to pick
@@ -205,6 +216,10 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	mux.HandleFunc("GET /api/respond/audit", h.handleRespondAudit)
 	mux.HandleFunc("GET /api/sequences", h.handleSequences)
 	mux.HandleFunc("GET /api/fleet", h.handleFleet)
+	h.registerEnroll(mux)
+	h.registerScenarios(mux)
+	h.registerReports(mux)
+	h.registerNoise(mux)
 	mux.HandleFunc("GET /api/intel", h.handleIntel)
 	mux.HandleFunc("GET /api/baseline", h.handleBaselineHost)
 	mux.HandleFunc("GET /api/stream", h.handleStream)
@@ -212,7 +227,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	mux.HandleFunc("GET /api/alerts/export", h.handleAlertsExport)
 	mux.HandleFunc("GET /api/events/export", h.handleEventsExport)
 	h.srv = &http.Server{
-		Handler:           h.auth(guardWriteOrigin(mux)),
+		Handler:           h.guardRebinding(h.auth(guardWriteOrigin(mux))),
 		ReadHeaderTimeout: 5 * time.Second,
 		// idle keep-alive connections are reclaimed instead of pinning
 		// a goroutine and a socket each for as long as a client likes;

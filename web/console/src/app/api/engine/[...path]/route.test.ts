@@ -389,4 +389,23 @@ describe('engine proxy with analyst accounts', () => {
     expect(lines.map((l) => `${l.user}:${l.outcome}`)).toEqual(['luis:denied', 'luis:denied', 'ana:denied', 'luis:ok', 'jefa:ok'])
     expect(lines[4]).toMatchObject({ method: 'POST', path: '/api/respond/kill', role: 'admin', status: 200 })
   })
+
+  test('only an administrator enrolls machines, under their own name', async () => {
+    const { POST } = await loadRoute()
+    const approve = base + '/api/enroll/hosts/enr-pc-aula3-01-a1b2c3/approve'
+    expect((await POST(new Request(base + '/api/enroll/tokens', { method: 'POST', headers: as('ana'), body: '{}' }))).status).toBe(403)
+    expect((await POST(new Request(approve, { method: 'POST', headers: as('ana'), body: '{}' }))).status).toBe(403)
+    expect(captured).toHaveLength(0)
+    expect((await POST(new Request(base + '/api/enroll/tokens', { method: 'POST', headers: as('jefa'), body: JSON.stringify({ label: 'aula 3', by: 'otra' }) }))).status).toBe(200)
+    expect(JSON.parse(String(captured[0].init.body))).toEqual({ label: 'aula 3', by: 'jefa' })
+    expect((await POST(new Request(approve, { method: 'POST', headers: as('jefa'), body: '{}' }))).status).toBe(200)
+    expect((await POST(new Request(base + '/api/enroll/tokens/0a1b2c3d/revoke', { method: 'POST', headers: as('jefa'), body: '{}' }))).status).toBe(200)
+    // any other shape never reaches the engine
+    for (const path of ['/api/enroll/hosts/enr-pc-1-a1b2c3/delete', '/api/enroll/hosts/../tokens/approve', '/api/enroll/tokens/xyz/revoke']) {
+      expect((await POST(new Request(base + path, { method: 'POST', headers: as('jefa'), body: '{}' }))).status).toBe(405)
+    }
+    expect(captured).toHaveLength(3)
+    const lines = readFileSync(audit, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+    expect(lines.map((l) => `${l.user}:${l.outcome}`)).toEqual(['ana:denied', 'ana:denied', 'jefa:ok', 'jefa:ok', 'jefa:ok'])
+  })
 })

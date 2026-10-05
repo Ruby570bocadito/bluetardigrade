@@ -1,0 +1,121 @@
+# Escenarios de validacion de deteccion (SIM-1/SIM-2).
+# Telemetria sintetica e inerte: el mismo esquema de eventos que
+# envia el sensor, sin ejecutar nada en ningun equipo. Cada escenario
+# declara las alertas que el motor DEBE disparar (shipped rule/sequence
+# id); el test de CI falla si una deja de detectarse.
+
+- name: Bypass de UAC con fodhelper o computerdefaults (sintetico)
+  id: sim-fodhelper-uac
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: bypass de UAC
+    con la clase ms-settings. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1548.002
+  host: LAB-SIM-FODHELPER-UAC
+  user: CORP\sim
+  expected:
+  - rule: 1039ed0d-bec2-47ce-a651-9395cb069219
+  events:
+  - type: registry.set
+    user: CORP\sim
+    process:
+      pid: 4200
+      name: explorer.exe
+    registry:
+      key: HKCU\Software\Classes\ms-settings\shell\open\command
+      operation: SetValue
+      value_name: (predeterminado)
+      value: cmd.exe /c C:\Users\Public\payload.exe
+- name: Bypass de UAC con eventvwr, sdclt o la clase Folder (sintetico)
+  id: sim-mscfile-uac
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: bypass de UAC
+    con la clase mscfile. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1548.002
+  host: LAB-SIM-MSCFILE-UAC
+  user: CORP\sim
+  expected:
+  - rule: 42bdb9ee-3c00-4f9f-a62c-095c9b07fd14
+  events:
+  - type: registry.set
+    user: CORP\sim
+    process:
+      pid: 4201
+      name: explorer.exe
+    registry:
+      key: HKCU\Software\Classes\mscfile\shell\open\command
+      operation: SetValue
+      value_name: (predeterminado)
+      value: cmd.exe /c C:\Users\Public\payload.exe
+- name: Depurador en Image File Execution Options (sintetico)
+  id: sim-ifeo-debugger
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: depurador en
+    Image File Execution Options. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1546.012
+  host: LAB-SIM-IFEO-DEBUGGER
+  user: CORP\sim
+  expected:
+  - rule: 49c01324-6def-4587-bc30-dce3d7ce5b6c
+  events:
+  - type: registry.set
+    user: CORP\sim
+    process:
+      pid: 4202
+      name: explorer.exe
+    registry:
+      key: HKLM\Software\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\osk.exe
+      operation: SetValue
+      value_name: Debugger
+      value: C:\Users\Public\payload.exe
+- name: Sustitucion de binarios de accesibilidad (sintetico)
+  id: sim-sethc-replace
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: sustitucion
+    de binarios de accesibilidad. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1546.008
+  host: LAB-SIM-SETHC-REPLACE
+  user: CORP\sim
+  expected:
+  - rule: 97da41f5-351c-4aa2-8e63-f47bd144a6f5
+  events:
+  - type: file.write
+    user: CORP\sim
+    process:
+      pid: 4203
+      name: cmd.exe
+    file:
+      path: C:\Windows\System32\sethc.exe
+- name: Escalada por suplantacion de token (Potato, PrintSpoofer) (sintetico)
+  id: sim-godpotato
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: escalada por
+    suplantacion de token con GodPotato. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1134.001
+  host: LAB-SIM-GODPOTATO
+  user: CORP\sim
+  expected:
+  - rule: 75793606-cc2c-4eab-92d5-c9f0c6806290
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4204
+      name: GodPotato.exe
+      command_line: GodPotato.exe -cmd "cmd.exe /c whoami"
+- name: Servicio nuevo con binario en ruta de usuario (sintetico)
+  id: sim-svc-user-path
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: servicio nuevo
+    con binario en ruta de usuario. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1543.003
+  host: LAB-SIM-SVC-USER-PATH
+  user: CORP\sim
+  expected:
+  - rule: b75edbba-b156-4c8b-9619-323fdb019781
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4205
+      name: sc.exe
+      command_line: sc.exe create updsrv binpath= C:\Users\Public\payload.exe start= auto

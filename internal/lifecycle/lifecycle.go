@@ -199,6 +199,22 @@ func (s *Store) Count() int {
 	return len(s.entries)
 }
 
+// List returns every entry oldest-first (insertion order). Read-only
+// reporting view (REP-1 SOC activity): triage actions are human-paced,
+// so a full copy per report request costs nothing and keeps the
+// report builders free of store internals.
+func (s *Store) List() []Entry {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]Entry, 0, len(s.order))
+	for _, id := range s.order {
+		if e, ok := s.entries[id]; ok {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // persistLocked writes the file atomically: temp file in the same
 // directory + rename, so a crash mid-write leaves either the old file
 // or the new one, never a truncated mix. Memory-only stores skip it.

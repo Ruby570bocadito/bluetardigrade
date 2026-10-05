@@ -70,7 +70,7 @@ function Hero() {
         <Reveal>
           <span className="mb-7 inline-flex items-center gap-2 rounded-full border border-blu/30 bg-card/70 px-4 py-1.5 text-xs text-muted-foreground backdrop-blur">
             <span className="h-2 w-2 animate-pulse rounded-full bg-blu" />
-            v0.2.0 · open source · Apache-2.0
+            v1.0.0-rc1 · open source · Apache-2.0
           </span>
         </Reveal>
 

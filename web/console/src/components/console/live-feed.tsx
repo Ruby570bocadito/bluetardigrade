@@ -183,7 +183,7 @@ export function LiveFeed() {
             <span className="flex flex-wrap gap-x-4">
               <span>pico <span className="font-medium tabular-nums text-zinc-300">{activity.peak}</span> por intervalo</span>
               <span>total <span className="font-medium tabular-nums text-zinc-300">{activity.total}</span> en 4 min</span>
-              {paused && <span className="text-blue-300">vista pausada: el gráfico sigue en vivo</span>}
+              {paused && <span className="text-primary-link">vista pausada: el gráfico sigue en vivo</span>}
             </span>
           }
         >
@@ -238,7 +238,7 @@ export function LiveFeed() {
           <div className="flex min-w-0 items-baseline gap-2">
             <h2 className="text-sm font-medium text-zinc-100">Flujo de telemetría</h2>
             <span className="text-xs tabular-nums text-zinc-500">{visible.length}</span>
-            {paused && <span className="rounded bg-blue-500/10 px-1.5 text-[11px] text-blue-300">pausado para inspección</span>}
+            {paused && <span className="rounded bg-primary-tint/10 px-1.5 text-[11px] text-primary-link">pausado para inspección</span>}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
@@ -260,7 +260,7 @@ export function LiveFeed() {
               />
             </div>
             <label className="chip px-2.5 py-1.5 text-xs text-zinc-400">
-              {paused ? <Play size={13} aria-hidden className="text-blue-400" /> : <Pause size={13} aria-hidden />}
+              {paused ? <Play size={13} aria-hidden className="text-primary" /> : <Pause size={13} aria-hidden />}
               <span className="hidden sm:inline">{paused ? 'Reanudar' : 'Pausar'}</span>
               <Switch checked={paused} onCheckedChange={togglePause} aria-label="Pausar flujo en vivo" />
             </label>
@@ -330,7 +330,7 @@ export function LiveFeed() {
                       {formatTime(ev.timestamp)}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2">
-                      <span className="rounded border border-blue-400/20 bg-blue-500/[0.08] px-1.5 py-0.5 font-mono text-[11px] text-blue-200">{ev.type}</span>
+                      <span className="rounded border border-primary/20 bg-primary-tint/[0.08] px-1.5 py-0.5 font-mono text-[11px] text-primary-soft">{ev.type}</span>
                     </td>
                     <td className="max-w-0 px-3 py-2">
                       <span className="block truncate font-mono text-xs text-zinc-300" title={eventDetail(ev)}>

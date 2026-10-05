@@ -391,7 +391,7 @@ func (m *tuiModel) clampDetailOffset() {
 func (m *tuiModel) View() string {
 	w, h := m.dimensions()
 	if w < 32 || h < 12 {
-		return fitTerminal(titleStyle.Render("SECURITY-FRAMEWORK")+"\n"+
+		return fitTerminal(titleStyle.Render("BLUETARDIGRADE")+"\n"+
 			fmt.Sprintf("%d eventos · %d alertas\n", m.snap.events, m.snap.alerts)+
 			"Amplía el terminal (mín. 32×12)\nq salir · ctrl+c salir", w, h)
 	}

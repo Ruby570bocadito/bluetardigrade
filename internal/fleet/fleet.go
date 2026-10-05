@@ -72,6 +72,10 @@ type Sensor struct {
 	Spooled       uint64    `json:"spooled"`
 	Dropped       uint64    `json:"dropped"`
 	LastHeartbeat time.Time `json:"last_heartbeat"`
+	// RunMode is how the sensor runs: "service" (Windows service manager,
+	// starts with the machine) or "console" (started by hand); empty for
+	// sensors that do not say.
+	RunMode string `json:"run_mode,omitempty"`
 }
 
 // Host is one machine of the inventory.
@@ -273,6 +277,20 @@ func (t *Tracker) Export(all bool, now time.Time) map[string][]byte {
 	return out
 }
 
+// Resume gives every sensor not already reported silent a full grace
+// from now. The engine calls it after it was itself suspended (a laptop
+// closed with engine and sensor on it): it could not receive heartbeats
+// either, so the gap is not the sensors' silence.
+func (t *Tracker) Resume(now time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, r := range t.hosts {
+		if r.Sensor != nil && !r.alerted {
+			r.graceFrom = now
+		}
+	}
+}
+
 // TakeRetired returns (and forgets) the hosts retired since the last call.
 func (t *Tracker) TakeRetired() []string {
 	t.mu.Lock()
@@ -360,6 +378,9 @@ func sensorFrom(attrs map[string]string, now time.Time) *Sensor {
 		Spooled:       uint64(parseInt(attrs["spooled"], 0)),
 		Dropped:       uint64(parseInt(attrs["dropped"], 0)),
 		LastHeartbeat: now,
+	}
+	if mode := attrs["run_mode"]; mode == "service" || mode == "console" {
+		s.RunMode = mode
 	}
 	if s.IntervalS <= 0 || s.IntervalS > 3600 {
 		s.IntervalS = 60

@@ -34,7 +34,7 @@ function Tile({
     <GlareHover className="rounded-[0.875rem]">
     <SpotlightCard className="panel panel-hover min-w-0 px-4 py-3.5">
       <p className="flex items-center gap-2 text-xs text-zinc-400">
-        <Icon size={15} aria-hidden className="text-blue-400" />
+        <Icon size={15} aria-hidden className="text-primary" />
         {label}
       </p>
       <div className="mt-2 flex items-end justify-between gap-2">

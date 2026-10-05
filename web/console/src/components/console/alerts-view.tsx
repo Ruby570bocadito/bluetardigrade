@@ -68,11 +68,12 @@ import { AlertActionBar, AlertQuickActions, useAlertSelection } from './alert-ac
 type Props = {
   compact?: boolean
   onAnalyze?: (alert: SfAlert) => void
+  onAnalyzeGroup?: (alerts: SfAlert[]) => void
   onHost?: (host: string) => void
   onOpenIncident?: (id: string) => void
 }
 
-export function AlertsView({ compact = false, onAnalyze, onHost, onOpenIncident }: Props) {
+export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost, onOpenIncident }: Props) {
   const { alerts, status, lifecycleUpdates } = useEngine()
   const reduce = useReducedMotion()
   const [sevFilter, setSevFilterState] = useState<SeverityFilter>('all')
@@ -390,7 +391,7 @@ export function AlertsView({ compact = false, onAnalyze, onHost, onOpenIncident 
         <div role="group" aria-label="Origen de alertas" className="flex gap-1 rounded-lg bg-zinc-950/60 p-0.5">
           {([['live', 'En vivo'], ['history', 'Histórico']] as const).map(([id, label]) => (
             <button key={id} type="button" aria-pressed={scope === id} onClick={() => changeScope(id)}
-              className={'rounded-md px-3 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ' + (scope === id ? 'bg-blue-500/15 text-blue-200 shadow-[inset_0_0_0_1px_rgba(96,165,250,0.25)]' : 'text-zinc-400 hover:text-zinc-100')}>
+              className={'rounded-md px-3 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ' + (scope === id ? 'bg-primary-tint/15 text-primary-soft ring-1 ring-inset ring-primary/25' : 'text-zinc-400 hover:text-zinc-100')}>
               {label}
             </button>
           ))}
@@ -459,7 +460,7 @@ export function AlertsView({ compact = false, onAnalyze, onHost, onOpenIncident 
       ) : (
         <>
         {pickedAlerts.length > 0 && (
-          <AlertActionBar alerts={pickedAlerts} onClear={selection.clear} onAnalyze={onAnalyze} onOpenIncident={onOpenIncident} />
+          <AlertActionBar alerts={pickedAlerts} onClear={selection.clear} onAnalyze={onAnalyze} onAnalyzeGroup={onAnalyzeGroup} onOpenIncident={onOpenIncident} />
         )}
         <div className={selected ? 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_400px]' : ''}>
           <div className="panel min-w-0 overflow-hidden">
@@ -477,7 +478,7 @@ export function AlertsView({ compact = false, onAnalyze, onHost, onOpenIncident 
                         ref={(el) => { if (el) el.indeterminate = pickedAlerts.length > 0 && !selection.allPicked }}
                         onChange={selection.toggleAll}
                         aria-label="Seleccionar todas las alertas visibles"
-                        className="h-3.5 w-3.5 accent-blue-500"
+                        className="h-3.5 w-3.5 accent-primary-tint"
                       />
                     </th>
                     <th scope="col" className="w-[124px] border-b border-zinc-800 py-2 pl-2 pr-3 text-[11px] font-medium uppercase tracking-wider text-zinc-500 sm:w-[136px]">Sev</th>
@@ -500,7 +501,7 @@ export function AlertsView({ compact = false, onAnalyze, onHost, onOpenIncident 
                         aria-selected={isSelected}
                         onClick={() => selectAlert(isSelected ? null : key)}
                         className={`group cursor-pointer align-middle transition-colors focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring ${
-                          isSelected ? 'bg-zinc-800/60' : picked ? 'bg-blue-500/[0.06]' : 'hover:bg-zinc-800/40'
+                          isSelected ? 'bg-zinc-800/60' : picked ? 'bg-primary-tint/[0.06]' : 'hover:bg-zinc-800/40'
                         }`}
                       >
                         <td className="py-2.5 pl-4 align-middle" onClick={(e) => e.stopPropagation()}>
@@ -509,7 +510,7 @@ export function AlertsView({ compact = false, onAnalyze, onHost, onOpenIncident 
                             checked={picked}
                             onChange={() => selection.toggle(key)}
                             aria-label={`Seleccionar ${al.rule_name} (${formatTime(al.timestamp)})`}
-                            className="h-3.5 w-3.5 accent-blue-500"
+                            className="h-3.5 w-3.5 accent-primary-tint"
                           />
                         </td>
                         <td className="py-2.5 pl-2 pr-3 align-middle">
@@ -539,7 +540,7 @@ export function AlertsView({ compact = false, onAnalyze, onHost, onOpenIncident 
                         </td>
                         <td className="hidden px-3 py-2.5 align-middle md:table-cell">
                           {mitre ? (
-                            <span className="inline-flex rounded-md border border-blue-400/20 bg-blue-500/[0.08] px-1.5 py-0.5 font-mono text-[10px] text-blue-200">
+                            <span className="inline-flex rounded-md border border-primary/20 bg-primary-tint/[0.08] px-1.5 py-0.5 font-mono text-[10px] text-primary-soft">
                               {mitre.replace('attack.', '').toUpperCase()}
                             </span>
                           ) : (
@@ -606,7 +607,7 @@ function SeverityStrip({ alerts, active, onToggle }: { alerts: SfAlert[]; active
             onClick={() => onToggle(sev)}
             title={pressed ? 'Quitar el filtro de severidad' : 'Filtrar la cola por esta severidad'}
             className={`panel min-w-0 px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-              pressed ? 'border-blue-400/50 bg-blue-500/[0.08]' : 'hover:border-zinc-700'
+              pressed ? 'border-primary/50 bg-primary-tint/[0.08]' : 'hover:border-zinc-700'
             }`}
           >
             <span className="flex items-center gap-1.5 text-xs text-zinc-400">

@@ -12,6 +12,24 @@
 //                   [--spool <file>] [--spool-max-mb <MiB>]
 //                   [--no-network] [--no-registry] [--registry-all]
 //                   [--no-dns] [--no-hash] [--debug-registry <fragment>]
+//                   [--service] [--log <file>] [--token-file <file>]
+//                   [--enroll-token <token> | --enroll-token-file <file>]
+//
+// --service runs the sensor under the Windows service manager (installed
+// once with 'sf-etw -Install', which asks for administrator rights; after
+// that it starts with Windows, no elevated window needed). --log sends
+// the output to a file (a service has no console) and --token-file reads
+// the ingest token from a file, so it never appears in the service's
+// command line. A manual sensor refuses to start while the service runs:
+// both would use the same ETW sessions.
+//
+// Enrollment: with --enroll-token (or --enroll-token-file, or the
+// SF_ENROLL_TOKEN environment variable) and an empty or missing
+// --token-file, the sensor joins the fleet on its first start: it trades
+// the enrollment token for a credential of its own, stores it in
+// --token-file and deletes the enrollment token file. Until an
+// administrator approves the host in the console the engine holds it
+// off and events wait in the queue/spool.
 //
 // Besides process creation the sensor captures TCP connection attempts
 // (network.connect), DNS queries (network.connect with protocol dns;
@@ -46,6 +64,10 @@ mod transport;
 
 #[cfg(target_os = "windows")]
 mod collector;
+#[cfg(target_os = "windows")]
+mod enrollment;
+#[cfg(target_os = "windows")]
+mod service;
 
 // The delivery queue and the kernel event decoders are
 // platform-independent so their tests run on any host; outside Windows
@@ -83,6 +105,11 @@ fn main() -> Result<()> {
     let mut registry = true;
     let mut registry_all = false;
     let mut debug_registry: Option<String> = None;
+    let mut service_mode = false;
+    let mut log: Option<PathBuf> = None;
+    let mut token_file: Option<PathBuf> = None;
+    let mut enroll_token: Option<String> = None;
+    let mut enroll_token_file: Option<PathBuf> = None;
     let mut dns = true;
     let mut hash = true;
     let mut args = std::env::args().skip(1);
@@ -124,6 +151,31 @@ fn main() -> Result<()> {
                     std::process::exit(2);
                 }));
             }
+            "--service" => service_mode = true,
+            "--log" => {
+                log = Some(PathBuf::from(args.next().unwrap_or_else(|| {
+                    eprintln!("--log requires a file path");
+                    std::process::exit(2);
+                })));
+            }
+            "--token-file" => {
+                token_file = Some(PathBuf::from(args.next().unwrap_or_else(|| {
+                    eprintln!("--token-file requires a file path");
+                    std::process::exit(2);
+                })));
+            }
+            "--enroll-token" => {
+                enroll_token = Some(args.next().unwrap_or_else(|| {
+                    eprintln!("--enroll-token requires a value");
+                    std::process::exit(2);
+                }));
+            }
+            "--enroll-token-file" => {
+                enroll_token_file = Some(PathBuf::from(args.next().unwrap_or_else(|| {
+                    eprintln!("--enroll-token-file requires a file path");
+                    std::process::exit(2);
+                })));
+            }
             "--no-dns" => dns = false,
             "--no-hash" => hash = false,
             "--spool-max-mb" => {
@@ -132,13 +184,61 @@ fn main() -> Result<()> {
             other => {
                 eprintln!("unknown argument: {other}");
                 eprintln!(
-                    "usage: security-sensor --addr <ip:port> [--token <shared-token>] [--tls-ca <ca.pem>] [--queue <events>] [--spool <file>] [--spool-max-mb <MiB>] [--no-network] [--no-registry] [--registry-all] [--no-dns] [--no-hash] [--debug-registry <fragment>]"
+                    "usage: security-sensor --addr <ip:port> [--token <shared-token>] [--tls-ca <ca.pem>] [--queue <events>] [--spool <file>] [--spool-max-mb <MiB>] [--no-network] [--no-registry] [--registry-all] [--no-dns] [--no-hash] [--debug-registry <fragment>] [--service] [--log <file>] [--token-file <file>] [--enroll-token <token> | --enroll-token-file <file>]"
                 );
                 std::process::exit(2);
             }
         }
     }
+    // a service has no console: everything below goes to the log file
+    #[cfg(target_os = "windows")]
+    if let Some(path) = &log {
+        if let Err(err) = service::log_to_file(path) {
+            eprintln!("--log {}: {err}", path.display());
+            std::process::exit(2);
+        }
+        eprintln!("[SENSOR] started {} (pid {}){}", normalize::now_rfc3339(), std::process::id(), if service_mode { " as a Windows service" } else { "" });
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = (&log, service_mode);
+    // the credential: --token, then --token-file; an enrollment token
+    // only matters while --token-file holds nothing yet
+    if enroll_token.is_none() {
+        if let Some(path) = &enroll_token_file {
+            match std::fs::read_to_string(path) {
+                Ok(text) => enroll_token = first_line(&text),
+                // already enrolled: the file is deleted after the exchange
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => {
+                    eprintln!("--enroll-token-file {}: {err}", path.display());
+                    std::process::exit(2);
+                }
+            }
+        }
+    }
+    if enroll_token.is_none() && enroll_token_file.is_none() {
+        enroll_token = std::env::var("SF_ENROLL_TOKEN").ok().filter(|t| !t.is_empty());
+    }
+    let enrolling = enroll_token.is_some();
+    if enrolling && token_file.is_none() {
+        eprintln!("--enroll-token needs --token-file: the file where the sensor keeps the credential it receives");
+        std::process::exit(2);
+    }
     if token.is_none() {
+        if let Some(path) = &token_file {
+            match std::fs::read_to_string(path) {
+                Ok(text) => token = first_line(&text),
+                // not enrolled yet: the enrollment below creates it
+                Err(err) if enrolling && err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => {
+                    eprintln!("--token-file {}: {err}", path.display());
+                    std::process::exit(2);
+                }
+            }
+        }
+    }
+    let enroll_with = if token.is_none() { enroll_token } else { None };
+    if token.is_none() && enroll_with.is_none() {
         token = std::env::var("SF_INGEST_TOKEN").ok().filter(|t| !t.is_empty());
     }
     if spool.is_none() {
@@ -167,7 +267,7 @@ fn main() -> Result<()> {
         .collect::<Vec<_>>()
         .join("+");
     eprintln!("[SENSOR] addr={addr} auth={} tls={} queue={queue_cap} spool={} capture={captured}",
-        if token.is_some() { "token" } else { "none" },
+        if token.is_some() { "token" } else if enroll_with.is_some() { "enroll" } else { "none" },
         if tls_ca.is_some() { "verified-ca" } else { "off" },
         spool
             .as_ref()
@@ -187,18 +287,49 @@ fn main() -> Result<()> {
 
     #[cfg(target_os = "windows")]
     {
+        // the service and a manual sensor would share the ETW sessions: the
+        // second one would stop the first one's sessions to start its own
+        if !service_mode && service::service_running() {
+            eprintln!("[SENSOR] the sensor already runs as a Windows service ({}); see 'sf-etw -Status', or stop it with 'sf-etw -Stop' before starting one by hand", service::SERVICE_NAME);
+            std::process::exit(1);
+        }
         let delivery = collector::Delivery {
             queue_cap,
             spool,
             spool_max_bytes: spool_max_mb.saturating_mul(1 << 20),
         };
-        let capture = collector::Capture { network, registry, registry_all, dns, hash, debug_registry };
-        collector::run(&addr, token.as_deref(), tls_ca.as_deref(), delivery, capture)
+        let capture = collector::Capture { network, registry, registry_all, dns, hash, debug_registry, as_service: service_mode };
+        let start = move || -> Result<()> {
+            let token = match (token, enroll_with, token_file) {
+                (Some(token), _, _) => Some(token),
+                (None, Some(enroll), Some(file)) => Some(enrollment::obtain_credential(
+                    &addr,
+                    &enroll,
+                    &collector::hostname(),
+                    tls_ca.as_deref(),
+                    &file,
+                    enroll_token_file.as_deref(),
+                    &collector::STOP_REQUESTED,
+                )?),
+                _ => None,
+            };
+            collector::run(&addr, token.as_deref(), tls_ca.as_deref(), delivery, capture)
+        };
+        if service_mode {
+            return service::run(Box::new(start), collector::stop_sessions);
+        }
+        start()
     }
     #[cfg(not(target_os = "windows"))]
     {
         unreachable!("guarded by cfg!(target_os) above")
     }
+}
+
+/// The first non-empty line of a token file, without a UTF-8 BOM
+/// (PowerShell 5 writes one).
+fn first_line(text: &str) -> Option<String> {
+    text.trim_start_matches('\u{feff}').lines().next().map(|l| l.trim().to_string()).filter(|t| !t.is_empty())
 }
 
 /// Parses a positive integer flag value or exits with a usage error.

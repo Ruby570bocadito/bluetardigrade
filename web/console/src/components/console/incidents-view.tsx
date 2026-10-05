@@ -19,6 +19,7 @@ import {
   NotePencil,
   Plus,
   ShieldWarning,
+  Sparkle,
   Stack,
   UserCircle,
   Warning,
@@ -29,6 +30,7 @@ import { EmptyState, SeverityBadge, StatTile } from './ui-bits'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
 import { EntityGraphView, GraphLegend } from '@/components/charts/entity-graph'
 import { buildEntityGraph } from '@/lib/entity-graph'
+import { buildIncidentAnalysis, type PendingIncidentAnalysis } from '@/lib/incident-analysis'
 import { buildIncidentHtml, buildIncidentMarkdown, reportFilename } from '@/lib/incident-report'
 import {
   addIncidentNote,
@@ -49,7 +51,7 @@ type Filter = 'active' | 'all' | 'closed'
 const STATUS_STYLE: Record<IncidentStatus, string> = {
   open: 'border-red-400/30 bg-red-500/10 text-red-200',
   investigating: 'border-amber-400/30 bg-amber-400/10 text-amber-200',
-  contained: 'border-blue-400/30 bg-blue-500/10 text-blue-200',
+  contained: 'border-primary/30 bg-primary-tint/10 text-primary-soft',
   closed: 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200',
 }
 
@@ -57,7 +59,7 @@ export function StatusChip({ status }: { status: IncidentStatus }) {
   return <span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${STATUS_STYLE[status]}`}>{INCIDENT_STATUS_LABEL[status]}</span>
 }
 
-export function IncidentsView({ onHost, onOpenAlert }: { onHost: (host: string) => void; onOpenAlert: (alertId: string) => void }) {
+export function IncidentsView({ onHost, onOpenAlert, onAnalyze }: { onHost: (host: string) => void; onOpenAlert: (alertId: string) => void; onAnalyze?: (pending: PendingIncidentAnalysis) => void }) {
   const { incidents, persistent, available, loaded, upsert } = useIncidents()
   const [filter, setFilter] = useState<Filter>('active')
   const [selected, setSelectedState] = useState<string>('')
@@ -123,7 +125,7 @@ export function IncidentsView({ onHost, onOpenAlert }: { onHost: (host: string) 
               type="button"
               onClick={() => setCreating((v) => !v)}
               aria-expanded={creating}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-blue-400/30 bg-blue-500/10 px-2.5 py-1.5 text-xs font-medium text-blue-200 hover:bg-blue-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary-tint/10 px-2.5 py-1.5 text-xs font-medium text-primary-soft hover:bg-primary-tint/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Plus size={13} aria-hidden /> Nuevo incidente
             </button>
@@ -147,7 +149,7 @@ export function IncidentsView({ onHost, onOpenAlert }: { onHost: (host: string) 
                 aria-pressed={filter === id}
                 onClick={() => setFilter(id)}
                 className={`rounded-md px-2.5 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  filter === id ? 'bg-blue-500/15 text-blue-200' : 'text-zinc-400 hover:text-zinc-100'
+                  filter === id ? 'bg-primary-tint/15 text-primary-soft' : 'text-zinc-400 hover:text-zinc-100'
                 }`}
               >
                 {label}
@@ -170,7 +172,7 @@ export function IncidentsView({ onHost, onOpenAlert }: { onHost: (host: string) 
                       onClick={() => select(inc.id === selected ? '' : inc.id)}
                       aria-current={inc.id === openId ? 'true' : undefined}
                       className={`block w-full px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
-                        inc.id === openId ? 'bg-blue-500/[0.08]' : 'hover:bg-white/[0.03]'
+                        inc.id === openId ? 'bg-primary-tint/[0.08]' : 'hover:bg-white/[0.03]'
                       }`}
                     >
                       <span className="flex flex-wrap items-center gap-2">
@@ -191,7 +193,7 @@ export function IncidentsView({ onHost, onOpenAlert }: { onHost: (host: string) 
         </div>
 
         {current ? (
-          <IncidentDetail key={current.id} incident={current} onChange={upsert} onHost={onHost} onOpenAlert={onOpenAlert} />
+          <IncidentDetail key={current.id} incident={current} onChange={upsert} onHost={onHost} onOpenAlert={onOpenAlert} onAnalyze={onAnalyze} />
         ) : (
           <div className="panel">
             <EmptyState icon={Stack} title="Selecciona un incidente" hint="Verás sus alertas, los equipos afectados, el grafo de entidades y la línea de tiempo." />
@@ -238,7 +240,7 @@ function NewIncidentForm({ onDone }: { onDone: (incident: Incident | null) => vo
       {error && <p role="alert" className="text-xs text-red-300">{error}</p>}
       <div className="flex justify-end gap-2">
         <button type="button" onClick={() => onDone(null)} className="rounded-md px-2.5 py-1.5 text-xs text-zinc-400 hover:text-zinc-100">Cancelar</button>
-        <button type="submit" disabled={busy || !title.trim()} className="rounded-md bg-blue-500 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
+        <button type="submit" disabled={busy || !title.trim()} className="rounded-md bg-primary-strong px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
           {busy ? 'Creando…' : 'Crear incidente'}
         </button>
       </div>
@@ -274,11 +276,13 @@ function IncidentDetail({
   onChange,
   onHost,
   onOpenAlert,
+  onAnalyze,
 }: {
   incident: Incident
   onChange: (incident: Incident) => void
   onHost: (host: string) => void
   onOpenAlert: (alertId: string) => void
+  onAnalyze?: (pending: PendingIncidentAnalysis) => void
 }) {
   const { alerts, events } = useEngine()
   const [owner, setOwner] = useState(incident.owner ?? '')
@@ -313,6 +317,33 @@ function IncidentDetail({
           <StatusChip status={incident.status} />
           <span className="font-mono text-[11px] text-zinc-600">{incident.id}</span>
           <div role="group" aria-label="Exportar informe del incidente" className="ml-auto flex items-center gap-1.5">
+            {onAnalyze && (
+              <button
+                type="button"
+                className={exportCls}
+                disabled={caseAlerts.length === 0}
+                title="El analista IA estudia el caso completo: agrupa las alertas por equipo y ventana, adjunta el bundle forense de la alerta más grave y cita la evidencia"
+                onClick={() =>
+                  onAnalyze({
+                    payload: buildIncidentAnalysis({
+                      source: 'incident',
+                      incident: {
+                        title: incident.title,
+                        severity: incident.severity,
+                        status: incident.status,
+                        summary: incident.summary,
+                        hosts: incident.hosts,
+                      },
+                      alerts: caseAlerts,
+                      timeline: incident.timeline,
+                    }),
+                    label: incident.title,
+                  })
+                }
+              >
+                <Sparkle size={13} weight="fill" aria-hidden /> Analizar con IA
+              </button>
+            )}
             <button
               type="button"
               className={exportCls}
@@ -391,7 +422,7 @@ function IncidentDetail({
         <div className="min-w-0 space-y-5">
           <div>
             <h3 className="mb-2 flex items-center gap-2 text-xs font-medium text-zinc-300">
-              <Desktop size={14} aria-hidden className="text-blue-400" /> Equipos afectados
+              <Desktop size={14} aria-hidden className="text-primary" /> Equipos afectados
             </h3>
             {incident.hosts.length === 0 ? (
               <p className="text-xs text-zinc-500">Sin equipos todavía: se añaden con las alertas.</p>
@@ -399,7 +430,7 @@ function IncidentDetail({
               <div className="flex flex-wrap gap-1.5">
                 {incident.hosts.map((h) => (
                   <button key={h} type="button" onClick={() => onHost(h)}
-                    className="rounded-md border border-blue-400/20 bg-blue-500/[0.08] px-2 py-1 font-mono text-[11px] text-blue-200 hover:bg-blue-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    className="rounded-md border border-primary/20 bg-primary-tint/[0.08] px-2 py-1 font-mono text-[11px] text-primary-soft hover:bg-primary-tint/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                     {h}
                   </button>
                 ))}
@@ -409,7 +440,7 @@ function IncidentDetail({
 
           <div>
             <h3 className="mb-2 flex items-center gap-2 text-xs font-medium text-zinc-300">
-              <Lightning size={14} aria-hidden className="text-blue-400" /> Alertas del caso ({incident.alert_ids.length})
+              <Lightning size={14} aria-hidden className="text-primary" /> Alertas del caso ({incident.alert_ids.length})
             </h3>
             {caseAlerts.length === 0 && outside === 0 ? (
               <p className="text-xs text-zinc-500">Sin alertas: selecciónalas en la cola y usa «Añadir a incidente».</p>
@@ -447,7 +478,7 @@ function IncidentDetail({
 
         <div className="min-w-0">
           <h3 className="mb-2 flex items-center gap-2 text-xs font-medium text-zinc-300">
-            <ClockCounterClockwise size={14} aria-hidden className="text-blue-400" /> Línea de tiempo
+            <ClockCounterClockwise size={14} aria-hidden className="text-primary" /> Línea de tiempo
           </h3>
           <form
             className="mb-3 space-y-2"
@@ -465,7 +496,7 @@ function IncidentDetail({
             <textarea id={`note-${incident.id}`} value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={4000}
               placeholder="Añade una nota: qué viste, qué hiciste, siguiente paso"
               className="block w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-            <button type="submit" disabled={busy || !note.trim()} className="rounded-md bg-blue-500 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
+            <button type="submit" disabled={busy || !note.trim()} className="rounded-md bg-primary-strong px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
               Añadir nota
             </button>
           </form>

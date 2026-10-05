@@ -29,7 +29,12 @@ func (s *mailScan) inspectAttachmentName(filename string) {
 	case ".exe", ".scr", ".com", ".bat", ".cmd", ".ps1", ".js", ".jse", ".vbs", ".vbe", ".wsf", ".hta", ".lnk", ".msi", ".dll":
 		// A familiar document/image suffix immediately before an active
 		// extension is explainable filename deception; no content is executed.
-		switch filepath.Ext(strings.TrimSuffix(name, suffix)) {
+		// The intermediate name is trimmed of trailing blanks too: without
+		// it, "invoice.pdf .exe" (a space before the active extension)
+		// produced an Ext of ".pdf " and the deception indicator never
+		// fired, while Windows still renders the file as "invoice.pdf"
+		// (known extensions hidden). Found in the SEC-8 review.
+		switch filepath.Ext(strings.TrimRight(strings.TrimSuffix(name, suffix), " .\t")) {
 		case ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".rtf", ".csv", ".jpg", ".jpeg", ".png", ".gif", ".bmp":
 			s.doubleExt = true
 		}

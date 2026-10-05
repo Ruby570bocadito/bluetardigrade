@@ -90,7 +90,7 @@ func newRootCmd() *cobra.Command {
 	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		fmt.Fprint(cmd.OutOrStdout(), buildHelp(cmd))
 	})
-	root.AddCommand(newRunCmd(), newRulesCmd(), newValidateCmd(), newDoctorCmd(), newSigmaCmd(), newReportCmd(), newIngestIdentityCmd(), newOperatorCredentialCmd(), newVersionCmd())
+	root.AddCommand(newRunCmd(), newRulesCmd(), newValidateCmd(), newDoctorCmd(), newSigmaCmd(), newScenariosCmd(), newReportCmd(), newIngestIdentityCmd(), newOperatorCredentialCmd(), newVersionCmd())
 	return root
 }
 

@@ -1,0 +1,23 @@
+# Escenarios de validacion de deteccion (SIM-1/SIM-2).
+# Telemetria sintetica e inerte: el mismo esquema de eventos que
+# envia el sensor, sin ejecutar nada en ningun equipo. Cada escenario
+# declara las alertas que el motor DEBE disparar (shipped rule/sequence
+# id); el test de CI falla si una deja de detectarse.
+
+- name: PowerShell con comando codificado (sintetico)
+  id: sim-ps-encoded
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: PowerShell con
+    comando codificado. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1059.001
+  host: LAB-SIM-PS-ENCODED
+  user: CORP\sim
+  expected:
+  - rule: 9f31c2a4-5d7b-4e18-8a02-3b9c6d1e7f40
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4197
+      name: powershell.exe
+      command_line: powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAcwA

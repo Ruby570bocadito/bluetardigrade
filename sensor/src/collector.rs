@@ -143,6 +143,9 @@ pub struct Capture {
     /// print how registry keys containing this fragment are named
     /// (diagnostics for the key-name resolution)
     pub debug_registry: Option<String>,
+    /// running under the Windows service manager (no console: no Ctrl+C
+    /// handler; the heartbeat reports it)
+    pub as_service: bool,
 }
 
 /// A process start waiting for its image hash.
@@ -399,8 +402,11 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
         KernelTrace::new().named(String::from(SESSION_NAME)).enable(process_provider()).start()
     })?;
     // Ctrl+C / closing the console stops the sessions instead of leaving
-    // them running in the kernel after the process is gone.
-    install_console_handler();
+    // them running in the kernel after the process is gone; a service is
+    // stopped through the service manager instead (service.rs).
+    if !capture.as_service {
+        install_console_handler();
+    }
 
     // Network, DNS, registry and the Kernel-Process image provider share
     // one session, and ferrisetw aborts the start on the first provider
@@ -444,7 +450,8 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
     // health report for the engine's machine inventory, every minute
     let capture_label = streams.iter().filter(|s| s.0).map(|s| s.1).collect::<Vec<_>>().join("+");
     let heartbeat_stop = Arc::new(AtomicBool::new(false));
-    let heartbeat_thread = start_heartbeat(Arc::clone(&ctx), capture_label.to_string(), queue_cap, Arc::clone(&heartbeat_stop));
+    let run_mode = if capture.as_service { "service" } else { "console" };
+    let heartbeat_thread = start_heartbeat(Arc::clone(&ctx), capture_label.to_string(), run_mode, queue_cap, Arc::clone(&heartbeat_stop));
 
     // The kernel session must stay alive while events are processed;
     // dropping `trace` stops it. process_from_handle blocks on this
@@ -575,7 +582,7 @@ fn start_netreg(ctx: &Arc<Shared>, network: bool, dns: bool, registry: bool, ima
 
 /// Sends a sensor.heartbeat now and every heartbeat::INTERVAL_SECS until
 /// `stop` is set. Heartbeats travel the same queue and spool as events.
-fn start_heartbeat(ctx: Arc<Shared>, capture: String, queue_cap: usize, stop: Arc<AtomicBool>) -> Option<JoinHandle<()>> {
+fn start_heartbeat(ctx: Arc<Shared>, capture: String, run_mode: &'static str, queue_cap: usize, stop: Arc<AtomicBool>) -> Option<JoinHandle<()>> {
     let os = os_label();
     let started = Instant::now();
     std::thread::Builder::new()
@@ -592,6 +599,7 @@ fn start_heartbeat(ctx: Arc<Shared>, capture: String, queue_cap: usize, stop: Ar
                 queue_cap,
                 spooled: stats.spooled,
                 dropped: stats.dropped,
+                run_mode,
             };
             ctx.emit(&EventJson {
                 id: normalize::new_uuid(),
@@ -653,7 +661,11 @@ fn read_current_version(value: &str) -> Option<String> {
     Some(text.trim_end_matches('\0').to_string())
 }
 
-fn hostname() -> String {
+/// Set by stop_sessions: a stop asked for before the sessions exist
+/// (the first-start enrollment) is seen too.
+pub static STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+pub fn hostname() -> String {
     std::env::var("COMPUTERNAME").unwrap_or_else(|_| "unknown-host".into())
 }
 
@@ -1020,14 +1032,22 @@ fn finish_registry(ctx: &Shared, mut event: EventJson, kernel_key: &str) {
     ctx.emit(&event);
 }
 
+/// Stops both ETW sessions: ProcessTrace returns and run() finishes
+/// through its normal path (queue drained, counters reported). Used by
+/// the Ctrl+C handler and by the service's Stop control.
+pub fn stop_sessions() {
+    STOP_REQUESTED.store(true, Ordering::Release);
+    let _ = ferrisetw::trace::stop_trace_by_name(NETREG_SESSION_NAME);
+    let _ = ferrisetw::trace::stop_trace_by_name(SESSION_NAME);
+}
+
 /// Stops both sessions on Ctrl+C, Ctrl+Break or console close, so
 /// ProcessTrace returns and the sensor exits through its normal path
 /// (session ended, counters reported) without leaving a session running
 /// in the kernel.
 fn install_console_handler() {
     unsafe extern "system" fn on_console_event(_ctrl_type: u32) -> windows_sys::core::BOOL {
-        let _ = ferrisetw::trace::stop_trace_by_name(NETREG_SESSION_NAME);
-        let _ = ferrisetw::trace::stop_trace_by_name(SESSION_NAME);
+        stop_sessions();
         1 // handled: the main thread finishes once ProcessTrace returns
     }
     // SAFETY: registers a plain function with the documented signature;

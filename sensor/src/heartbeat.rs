@@ -24,6 +24,8 @@ pub struct Health {
     pub queue_cap: usize,
     pub spooled: u64,
     pub dropped: u64,
+    /// "service" (Windows service manager) or "console" (started by hand)
+    pub run_mode: &'static str,
 }
 
 /// Event attributes of a heartbeat (all strings, as model.Event wants).
@@ -40,6 +42,7 @@ pub fn attributes(h: &Health) -> BTreeMap<String, String> {
     out.insert("queue_cap".into(), h.queue_cap.to_string());
     out.insert("spooled".into(), h.spooled.to_string());
     out.insert("dropped".into(), h.dropped.to_string());
+    out.insert("run_mode".into(), h.run_mode.into());
     out
 }
 
@@ -92,7 +95,7 @@ mod tests {
     fn attributes_carry_every_health_field() {
         let a = attributes(&Health {
             kind: "etw",
-            version: "0.1.0",
+            version: "1.0.0",
             os: "Windows 11 Pro 24H2 (26100)".into(),
             capture: "process+network+registry".into(),
             interval_s: 60,
@@ -100,18 +103,20 @@ mod tests {
             queue_cap: 50_000,
             spooled: 3,
             dropped: 0,
+            run_mode: "service",
         });
         assert_eq!(a["sensor_kind"], "etw");
         assert_eq!(a["interval_s"], "60");
         assert_eq!(a["queue_cap"], "50000");
         assert_eq!(a["spooled"], "3");
         assert_eq!(a["os"], "Windows 11 Pro 24H2 (26100)");
-        assert_eq!(a.len(), 9);
+        assert_eq!(a["run_mode"], "service");
+        assert_eq!(a.len(), 10);
     }
 
     #[test]
     fn empty_os_is_omitted() {
-        let a = attributes(&Health { kind: "etw", version: "x", os: String::new(), capture: "process".into(), interval_s: 60, uptime_s: 0, queue_cap: 1, spooled: 0, dropped: 0 });
+        let a = attributes(&Health { kind: "etw", version: "x", os: String::new(), capture: "process".into(), interval_s: 60, uptime_s: 0, queue_cap: 1, spooled: 0, dropped: 0, run_mode: "console" });
         assert!(!a.contains_key("os"));
     }
 

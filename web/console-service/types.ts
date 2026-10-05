@@ -173,6 +173,27 @@ export type HubStats = {
   baseline_hosts?: number
   baseline_learning?: number
   baseline_novelties?: number
+  // SIEM sink delivery triples (engine -elastic / -splunk), required by
+  // the OpenAPI Stats schema; forwarded since the SET-3 console round.
+  // Same reading as webhook: all zero = sink disabled or nothing sent.
+  elastic_sent?: number
+  elastic_failed?: number
+  elastic_dropped?: number
+  splunk_sent?: number
+  splunk_failed?: number
+  splunk_dropped?: number
+  // outbound notify channels (slack, telegram, email) with their own
+  // delivery counters; sanitized by the bridge (malformed rows dropped)
+  notify_channels?: HubNotifyChannel[]
+}
+
+export type HubNotifyChannel = {
+  name: string
+  type: string
+  sent: number
+  failed: number
+  dropped: number
+  filtered: number
 }
 
 // One entry of the engine's hot_hosts list (package A1 of the owner's

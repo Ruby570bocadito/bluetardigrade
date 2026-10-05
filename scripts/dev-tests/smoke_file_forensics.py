@@ -16,6 +16,16 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def shipped_rule_count():
+    """Rules in the shipped pack (one top-level "- name:" entry each): the
+    engine must load every one of them, whatever the pack grows to."""
+    return sum(
+        line.startswith("- name:")
+        for path in (ROOT / "rules").rglob("*.y*ml")
+        for line in path.read_text(encoding="utf-8").splitlines()
+    )
+
+
 def free_port():
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -112,7 +122,7 @@ def main():
                         raise AssertionError(("fixture alarms did not finish", set(expected) - set(actual)))
                     time.sleep(0.05)
                 assert set(actual) == set(expected), ("unexpected/missing alarms", set(actual) ^ set(expected))
-                assert len(alerts) == len(expected) and stats["rules_count"] == 75 and stats["dropped"] == 0
+                assert len(alerts) == len(expected) and stats["rules_count"] == shipped_rule_count() and stats["dropped"] == 0
                 print("PASS: six file alarms + Startup + Office-parent alarm, no benign-document alarm")
                 captured = 0
                 for rule_id, alert in actual.items():

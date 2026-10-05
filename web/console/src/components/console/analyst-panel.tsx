@@ -1,22 +1,26 @@
 'use client'
 
 // AI triage analyst. Agent-style interaction: steps report what stage the
-// analysis is in; the provider's complete response arrives over the socket.
-// These steps do not simulate correlation or provider token streaming. Context
-// comes from an alert selected in the Alerts view (or picked here).
-// The transcript travels over the console-service socket; if that
-// service is down the view says so and everything else stays usable.
+// analysis is in; the provider's answer arrives over the socket and renders
+// as it is generated (native streaming from the hub; providers without
+// streaming deliver it in one piece). These steps do not simulate
+// correlation. Context comes from an alert selected in the Alerts view
+// (or picked here). The transcript travels over the console-service
+// socket; if that service is down the view says so and everything else
+// stays usable.
 
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { motion, useReducedMotion } from 'motion/react'
-import { ArrowsClockwise, CheckCircle, CircleNotch, Sparkle, Tray, Warning } from '@phosphor-icons/react'
+import { ArrowsClockwise, CheckCircle, CircleNotch, Sparkle, Stack, Tray, Warning } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAnalystChannel } from './socket-provider'
 import { useEngine } from './engine-provider'
 import { EmptyState, OfflineNotice, SeverityBadge } from './ui-bits'
 import { StarBorder } from '@/components/reactbits/star-border'
+import { digestBundle, pickBundleAlert, type BundleDigest, type PendingIncidentAnalysis } from '@/lib/incident-analysis'
+import { readForensicBundle } from '@/lib/forensic'
 import { formatTime, type AnalystMessage, type SfAlert, type SfSuppression } from '@/lib/console-types'
 
 type AskPayload = { alert: SfAlert; question?: string }
@@ -41,7 +45,33 @@ function suppressionNote(alert: SfAlert, entries: SfSuppression[]): string | und
   return `Supresiones activas para esta regla: ${parts.join('; ')}.`
 }
 
-export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfAlert | null; clearPending: () => void }) {
+// Same context for a multi-alert analysis: every suppression entry that
+// mutes any rule involved in the case, so a thin queue is explained.
+function incidentSuppressionNote(alerts: readonly SfAlert[], entries: SfSuppression[]): string | undefined {
+  const ruleIds = new Set(alerts.map((a) => a.rule_id))
+  const matches = entries.filter((s) => ruleIds.has(s.rule_id))
+  if (matches.length === 0) return undefined
+  const parts = matches.slice(0, 5).map((s) => {
+    const scope = !s.host ? 'todos los hosts' : `el host ${s.host}`
+    const until = s.expires ? `, hasta ${s.expires}` : ''
+    const why = s.reason ? ` — ${s.reason}` : ''
+    return `${s.rule_id} (${scope}${until}${why})`
+  })
+  const extra = matches.length > 5 ? ` y ${matches.length - 5} más` : ''
+  return `Supresiones activas para reglas del caso: ${parts.join('; ')}${extra}.`
+}
+
+export function AnalystPanel({
+  pendingAlert,
+  clearPending,
+  pendingIncident,
+  clearPendingIncident,
+}: {
+  pendingAlert: SfAlert | null
+  clearPending: () => void
+  pendingIncident?: PendingIncidentAnalysis | null
+  clearPendingIncident?: () => void
+}) {
   const { alerts, suppressions } = useEngine()
   const { status: channelStatus, getSocket } = useAnalystChannel()
   const reduce = useReducedMotion()
@@ -136,6 +166,49 @@ export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfA
     socket.emit('analyst:ask', payload)
   }
 
+  // Multi-alert analysis (incident case or queue selection): the payload
+  // was assembled by the shell from real case data; here the frozen
+  // bundle of the most severe alert is fetched and attached when the
+  // engine answers. Without a bundle the payload travels without one
+  // (the hub never pretends there was evidence).
+  async function analyzeIncident(pending: PendingIncidentAnalysis, q?: string) {
+    const socket = getSocket()
+    if (!socket || running || !channelLive) return
+    setRunning(true)
+    setPickerId(null)
+    const p = pending.payload
+    const hosts = new Set(p.alerts.map((a) => a.host || '(sin equipo)')).size
+    const meta = [
+      `${p.alerts.length} ${p.alerts.length === 1 ? 'alerta' : 'alertas'}`,
+      p.omitted_alerts ? `+${p.omitted_alerts} no incluidas` : null,
+      `${hosts} ${hosts === 1 ? 'equipo' : 'equipos'}`,
+      `${p.groups.length} ${p.groups.length === 1 ? 'ventana' : 'ventanas'}`,
+    ].filter(Boolean).join(' · ')
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        role: 'user',
+        incidentTitle: pending.label,
+        incidentMeta: meta,
+        question: q,
+        suppressionNote: incidentSuppressionNote(p.alerts, suppressions),
+        incidentPayload: p,
+      },
+      { id: crypto.randomUUID(), role: 'analyst', steps: [], text: '' },
+    ])
+    let bundle: BundleDigest | undefined
+    const top = pickBundleAlert(p.alerts)
+    if (top?.id) {
+      const res = await readForensicBundle(top.id)
+      if (res.kind === 'bundle') bundle = digestBundle(res.bundle)
+    }
+    const payload: Record<string, unknown> = { ...p }
+    if (bundle) payload.bundle = bundle
+    if (q && q.trim()) payload.question = q.trim()
+    socket.emit('analyst:ask-incident', payload)
+  }
+
   // Hand-off from the alerts view: open a fresh analysis immediately.
   // The zero-delay timeout defers the state updates out of the effect body.
   useEffect(() => {
@@ -148,14 +221,26 @@ export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfA
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingAlert])
 
+  // Hand-off from the incidents view (or the selection bar): same
+  // deferred pattern, the bundle fetch happens inside analyzeIncident.
+  useEffect(() => {
+    if (!pendingIncident) return
+    const id = setTimeout(() => {
+      void analyzeIncident(pendingIncident, undefined)
+      clearPendingIncident?.()
+    }, 0)
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingIncident])
+
   const lastUser = [...messages].reverse().find((m) => m.role === 'user')
-  const canRetry = lastUser?.alertName && !running && channelLive
+  const canRetry = Boolean(lastUser?.alertName || lastUser?.incidentPayload) && !running && channelLive
 
   return (
     <section aria-label="Analista IA" className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
       <div className="panel flex min-w-0 flex-col overflow-hidden">
         <div className="panel-head">
-          <Tray size={15} aria-hidden className="text-blue-400" />
+          <Tray size={15} aria-hidden className="text-primary" />
           <h2 className="text-sm font-medium text-zinc-100">Elige una alerta</h2>
           <span className="ml-auto text-xs tabular-nums text-zinc-500">{alerts.length}</span>
         </div>
@@ -171,7 +256,7 @@ export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfA
                   }}
                   disabled={running || !channelLive}
                   className={`w-full px-4 py-2.5 text-left transition-colors hover:bg-zinc-800/40 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
-                    pickerId === `${al.event_id}:${al.rule_id}` ? 'bg-blue-500/[0.08]' : ''
+                    pickerId === `${al.event_id}:${al.rule_id}` ? 'bg-primary-tint/[0.08]' : ''
                   }`}
                 >
                   <span className="flex items-center gap-2">
@@ -226,9 +311,21 @@ export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfA
               <ul className="space-y-5">
                 {messages.map((m) =>
                   m.role === 'user' ? (
-                    <li key={m.id} className="ml-auto w-fit max-w-[85%] rounded-xl rounded-br-sm border border-blue-400/20 bg-blue-500/[0.08] px-3 py-2 text-xs">
-                      <span className="text-zinc-400">Analizar </span>
-                      <span className="font-medium text-zinc-100">{m.alertName}</span>
+                    <li key={m.id} className="ml-auto w-fit max-w-[85%] rounded-xl rounded-br-sm border border-primary/20 bg-primary-tint/[0.08] px-3 py-2 text-xs">
+                      {m.alertName && (
+                        <span>
+                          <span className="text-zinc-400">Analizar </span>
+                          <span className="font-medium text-zinc-100">{m.alertName}</span>
+                        </span>
+                      )}
+                      {m.incidentTitle && (
+                        <span className="flex items-center gap-1.5">
+                          <Stack size={12} aria-hidden className="shrink-0 text-primary-link" />
+                          <span className="text-zinc-400">Analizar incidente </span>
+                          <span className="font-medium text-zinc-100">{m.incidentTitle}</span>
+                        </span>
+                      )}
+                      {m.incidentMeta && <span className="mt-0.5 block font-mono text-[10px] text-zinc-500">{m.incidentMeta}</span>}
                       {m.question && <span className="mt-0.5 block text-zinc-300">{m.question}</span>}
                       {m.suppressionNote && (
                         <p className="mt-1.5 max-w-[70ch] rounded border border-amber-300/30 bg-amber-300/10 px-2 py-1.5 text-[11px] leading-relaxed text-amber-200">
@@ -243,7 +340,7 @@ export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfA
                           {m.steps.map((s) => (
                             <li key={s.label} className="flex items-center gap-2 text-xs">
                               {s.state === 'run' ? (
-                                <CircleNotch size={14} className="animate-spin text-blue-400" aria-hidden />
+                                <CircleNotch size={14} className="animate-spin text-primary" aria-hidden />
                               ) : (
                                 <CheckCircle size={14} className="text-emerald-500" aria-hidden />
                               )}
@@ -318,6 +415,10 @@ export function AnalystPanel({ pendingAlert, clearPending }: { pendingAlert: SfA
               className="gap-1.5 rounded-md text-zinc-400 hover:text-zinc-100"
               aria-label="Repetir el último análisis"
               onClick={() => {
+                if (lastUser?.incidentPayload) {
+                  void analyzeIncident({ payload: lastUser.incidentPayload, label: lastUser.incidentTitle ?? 'Análisis anterior' }, lastUser?.question)
+                  return
+                }
                 const al = alerts.find((a) => a.rule_name === lastUser?.alertName) ?? alerts[0]
                 if (al) analyze(al, lastUser?.question)
               }}

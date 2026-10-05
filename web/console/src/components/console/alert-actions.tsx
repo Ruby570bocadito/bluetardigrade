@@ -51,7 +51,7 @@ const btn =
 const field =
   'mt-1 block w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 const primary =
-  'inline-flex items-center gap-1.5 rounded-lg bg-blue-500 px-3.5 py-2 text-xs font-medium text-white hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+  'inline-flex items-center gap-1.5 rounded-lg bg-primary-strong px-3.5 py-2 text-xs font-medium text-white hover:bg-primary-tint disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
 function worstOf(alerts: SfAlert[]): Severity {
   return alerts.reduce<Severity>((w, a) => (RANK[a.severity] > RANK[w] ? a.severity : w), 'info')
@@ -77,10 +77,11 @@ function csvCell(value: unknown): string {
 
 // ---- bulk action bar ------------------------------------------------------
 
-export function AlertActionBar({ alerts, onClear, onAnalyze, onOpenIncident }: {
+export function AlertActionBar({ alerts, onClear, onAnalyze, onAnalyzeGroup, onOpenIncident }: {
   alerts: SfAlert[]
   onClear: () => void
   onAnalyze?: (alert: SfAlert) => void
+  onAnalyzeGroup?: (alerts: SfAlert[]) => void
   onOpenIncident?: (id: string) => void
 }) {
   const { applyTriage } = useEngine()
@@ -121,7 +122,7 @@ export function AlertActionBar({ alerts, onClear, onAnalyze, onOpenIncident }: {
   const top = [...alerts].sort((a, b) => RANK[b.severity] - RANK[a.severity])[0]
 
   return (
-    <div role="region" aria-label="Acciones sobre la selección" className="sticky top-16 z-10 mb-3 rounded-xl border border-blue-400/25 bg-zinc-900/95 px-3 py-2.5 shadow-lg backdrop-blur">
+    <div role="region" aria-label="Acciones sobre la selección" className="sticky top-16 z-10 mb-3 rounded-xl border border-primary/25 bg-zinc-900/95 px-3 py-2.5 shadow-lg backdrop-blur">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs font-medium text-blue-100">{alerts.length} seleccionadas</span>
         <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} aria-label="Nota común para el triaje" placeholder="nota común (opcional)"
@@ -151,6 +152,16 @@ export function AlertActionBar({ alerts, onClear, onAnalyze, onOpenIncident }: {
         {onAnalyze && top && (
           <button type="button" className={btn} onClick={() => onAnalyze(top)} title="El analista estudia la alerta más grave de la selección">
             <Sparkle size={13} weight="fill" aria-hidden /> Analizar la más grave
+          </button>
+        )}
+        {onAnalyzeGroup && (
+          <button
+            type="button"
+            className={btn}
+            onClick={() => onAnalyzeGroup(alerts)}
+            title="El analista estudia la selección como conjunto: agrupa por equipo y ventana y adjunta el bundle forense de la alerta más grave"
+          >
+            <Sparkle size={13} weight="fill" aria-hidden /> Analizar la selección ({Math.min(alerts.length, 8)})
           </button>
         )}
         <button type="button" onClick={onClear} aria-label="Quitar la selección" className="ml-auto rounded-md p-1.5 text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -478,7 +489,7 @@ function ReputationPanel({ alert }: { alert: SfAlert }) {
 
   return (
     <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-      <p className="flex items-center gap-1.5 text-[11px] font-medium text-zinc-300"><Globe size={13} aria-hidden className="text-blue-400" /> Reputación (consulta bajo demanda)</p>
+      <p className="flex items-center gap-1.5 text-[11px] font-medium text-zinc-300"><Globe size={13} aria-hidden className="text-primary" /> Reputación (consulta bajo demanda)</p>
       <ul className="mt-2 space-y-2">
         {indicators.map(({ kind, value }) => {
           const r = reports[value]
@@ -505,7 +516,7 @@ function ReputationPanel({ alert }: { alert: SfAlert }) {
                       ) : (
                         <span> · <span className={res.malicious ? 'text-red-300' : 'text-zinc-200'}>{res.malicious ?? 0} motores lo marcan malicioso</span> de {(res.malicious ?? 0) + (res.suspicious ?? 0) + (res.harmless ?? 0) + (res.undetected ?? 0)}{res.owner ? ` · ${res.owner}` : ''}</span>
                       )}
-                      {res.link && <a href={res.link} target="_blank" rel="noreferrer noopener" className="ml-1 text-blue-300 underline-offset-4 hover:underline">ver</a>}
+                      {res.link && <a href={res.link} target="_blank" rel="noreferrer noopener" className="ml-1 text-primary-link underline-offset-4 hover:underline">ver</a>}
                     </li>
                   ))}
                   {r.cached && <li className="text-[10px] text-zinc-600">respuesta en caché del motor</li>}

@@ -58,6 +58,7 @@ function isAuditKind(raw: string): raw is AuditKindFilter {
 // exactly this vocabulary, no more and no less.
 export const CONSOLE_VIEWS = [
   'panel',
+  'estado',
   'flujo',
   'alertas',
   'incidentes',
