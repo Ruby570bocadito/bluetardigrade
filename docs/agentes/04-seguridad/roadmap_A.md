@@ -1,40 +1,52 @@
 # Roadmap — Seguridad A (carril/seguridad-a)
 
-Archivo vivo: continuidad del carril. Última actualización: 2026-10-05, ronda 1.
+Archivo vivo: continuidad del carril. Última actualización: 2026-10-05, ronda 2.
 
-## Estado tras la ronda 1 (2026-10-05)
+## Estado tras la ronda 2 (2026-10-05)
 
-- SEC-7 cubierto en `main`: 10 fuzz targets (ingesta NDJSON, identidades, `AUTH`,
-  inteligencia, reglas, umbrales, beacons, supresiones, Sigma). Un bug real corregido
-  (`normalizeDomain` no idempotente → hits de inteligencia espuria).
-- SEC-8: banner «ingest auth: ENABLED» corregido (modo solo-identidades ya no anuncia el
-  token compartido) y elusión del indicador de doble extensión corregida (`invoice.pdf .exe`).
-- Infra pendiente: **sin credenciales de push** en el entorno (commits locales), **sin
-  `DISCORD_WEBHOOK_URL`** (sin notificaciones). Reportado al responsable.
+- Push de la ronda 1 completado con el token aportado por el responsable
+  (credencial efímera del comando, nunca en ficheros del repo). La rama
+  `carril/seguridad-a` está en origin y al día.
+- SEC-7 ampliado: 20 fuzz targets en total (los 12 de la ronda 1 más 8 de
+  esta: correo/EML, atributos HTML de correo, nombres de adjuntos,
+  validadores de reputación, filtros de consulta de la API). ~1,9 M de
+  ejecuciones sin bug de producto; tres contraejemas fueron defectos de
+  oráculo, corregidos y fijados como semillas.
+- SEC-8 revisado sobre `feat/enrollment` (solo lectura): hallazgo SEC-A-1
+  (colisión de nombres de identidad sin chequeo en `Enroll`; `Open()` la
+  rechaza al reiniciar) y verificados sin bug renombrado/reloj/registro
+  lleno, handshake, binding y lado sensor Rust.
+- Revisión de carriles: hallazgo SEC-A-2 en la rama de SEG-B (trigger de
+  push roto en `deps-audit.yml`); IMP-B verificada entera en worktree
+  (283+102 tests, tsc) sin bugs funcionales.
 
 ## Pendientes para la próxima ronda (orden previsto)
 
-1. **Fuzzing del alta cuando `feat/enrollment` se fusione:** líneas `ENROLL` (SEC-7),
-   casos borde del alta que el TODO asigna a este carril en SEC-8 (equipo renombrado, reloj
-   desfasado, registro lleno). De momento viven en la rama de Implementación A: no se tocan.
-2. **`min_count: 2` en beacons:** decidir con el responsable (¿validación en carga `≥ 3` o
-   documentar el comportamiento actual?). Detectado en ronda 1, asignado a Implementación A
-   o a este carril.
-3. **Más superficies de fuzzing:** `internal/reputation`, `internal/api/filters.go`
-   (`parseTimeParam`, `splitCSV` — ya cubiertos por tests unitarios, el fuzzing añade
-   trayectorias), `internal/collector` (parser de correo: `htmlAttribute` y el
-   decodificador MIME, superficie grande y aún sin fuzzer).
-4. **Sesiones de fuzzing más largas en CI:** proponer a Pulimiento A un paso nocturno con
-   `-fuzztime=5m` por objetivo usando el corpus que ya queda fijado en `testdata/`.
-5. **PowerShell:** cuando haya entorno con `pwsh`, pasar `check_powershell_syntax.ps1` a los
-   scripts; revisión de lectura de `install.ps1`/`sf-console.ps1` de la ronda 1 no encontró
-   bugs funcionales (quoting de autostart y pid files correctos).
+1. **SEC-A-1**: aplicar el parche de unicidad de `identityName` cuando el
+   responsable decida el dueño (fichero de Implementación A en
+   `feat/enrollment`); el chequeo de `Open()` es la última línea de defensa
+   y ya existe.
+2. **SEC-A-2**: confirmar que SEG-B corrige `branches: [main]` en
+   `deps-audit.yml` (o proponerlo en su rama si reabre ronda).
+3. **Fuzzing nocturno en CI**: proponer a Pulimiento A un paso con
+   `-fuzztime=5m` por objetivo y el corpus ya fijado en `testdata/`.
+4. **Fuzzing del alta cuando `feat/enrollment` se fusione a main**: líneas
+   `ENROLL` (validación de host/patrón) y el fichero de registro
+   (`Open` contra ficheros manipulados: digests duplicados de tokens, hoy
+   permitidos — segundo hallazgo menor de la revisión).
+5. **`min_count: 2` en beacons**: decisión del responsable pendiente desde
+   la ronda 1 (¿validación en carga `>= 3` o documentar el comportamiento?).
+6. **PowerShell**: cuando haya `pwsh`, pasar `check_powershell_syntax.ps1`;
+   los scripts siguen revisados en lectura sin hallazgos.
 
 ## Notas de contexto que no deben perderse
 
-- `TODO.md` y `docs/PLAN-DETALLADO.md` no están en `main`: leerlos desde
-  `origin/feat/enrollment` hasta que el responsable los fusioné.
-- La hoja de pruebas pendiente (`docs/PRUEBAS-PENDIENTES.md`) exige Windows real: fuera del
-  alcance de este entorno; solo repaso de código.
-- Límites respetados: sin tocar `TODO.md`, `PLAN-DETALLADO.md`, `CHANGELOG.md` (se usó
-  `changelog.d/`), `openapi.yaml` ni `README.md`; sin cruzar a ramas de otros carriles.
+- El canal de salida de este entorno se come la secuencia literal `[h` en
+  los resultados de comandos; al revisar código con corchetes, verificar
+  con recuentos grep o booleanos, no con la salida cruda (diagnosticado
+  esta ronda; el código de IMP-B está bien).
+- `TODO.md` y `docs/PLAN-DETALLADO.md` siguen solo en `origin/feat/enrollment`
+  (nada en `main`); los otros carriles también leen de ahí.
+- Límites respetados: sin tocar `TODO.md`, `PLAN-DETALLADO.md`, `CHANGELOG.md`
+  (se usa `changelog.d/`), `openapi.yaml` ni `README.md`; sin cruzar a ramas
+  de otros carriles (las ramas ajenas se verifican en worktrees desechables).
