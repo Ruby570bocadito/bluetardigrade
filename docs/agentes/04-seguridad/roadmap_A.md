@@ -1,14 +1,33 @@
 # Roadmap — Seguridad A (carril/seguridad-a)
 
 Archivo vivo: continuidad del carril. Última actualización: 2026-10-05,
-ronda 5, cierre (17:10 Europe/Madrid).
+ronda 6, cierre (17:40 Europe/Madrid).
 
-## Estado tras el cierre de la ronda 5 (2026-10-05)
+## Estado tras el cierre de la ronda 6 (2026-10-05)
 
-- **Pendiente 2 ejecutado**: revisión funcional del código de consola de la
-  ronda 2 de IMP-B en su rama (`d84a9a5`, sin fusionar). Dos hallazgos
-  anotados en el informe `ronda_2026-10-05_17h06_A.md` (no corrijo en su
-  carril):
+- **Cambios Go de SEG-B revisados, sin bug que corregir**: el fallback de
+  run-id de scenrun conserva la forma del wire (`run-%016x`, test nuevo
+  que lo clava), las cabeceras `nosniff`/`no-referrer` van en el wrapper
+  más externo del Hub (cubre 401/403; Cache-Control no forzado a
+  propósito), el self-test de openapi admite el envoltorio nuevo y el
+  blindaje del analista está acotado bloque a bloque (`clampBlock`) —
+  el `rule_id` sin tope de longitud no puede inflar el prompt. Informe:
+  `ronda_2026-10-05_17h35_A.md`.
+- **REP-4 de IMP-B revisado, sin bug que corregir**: gráficas de informes
+  honestas (sin donuts inventados, división por cero guardada, formato de
+  día del motor verificado en `internal/report/soc.go:152`) y el enlace
+  informe-del-caso aplica la lente al remontar. `bun test` 391 ok y tsc
+  limpio en su punta. **Mis dos hallazgos de la ronda 5 siguen vigentes**
+  (REP-4 no tocó `generate` ni `noise-view`).
+- **Obligatorio de ronda**: `-race -count=5` verde en `internal/api` e
+  `internal/scenrun` en la rama de SEG-B (scenrun es el paquete de la
+  carrera de la ronda 1); IMP-B sigue sin tocar Go.
+
+## Historial reciente
+
+### Ronda 5 (17h06) — código de consola de IMP-B ronda 2 (informe `ronda_2026-10-05_17h06_A.md`)
+
+- Dos hallazgos en su rama sin fusionar (no corrijo en su carril):
   1. **MEDIA** — `noise-view.tsx` l.282: la supresión desde Ruido sale para
      toda la flota (`host: ''` → `undefined`) aunque el informe esté
      acotado a un equipo; el comentario del componente promete lo
@@ -19,6 +38,9 @@ ronda 5, cierre (17:10 Europe/Madrid).
   El resto de las ~2.6k líneas (reports/noise/simulation/url-state,
   ui-tabs, batería, matriz ATT&CK, shell/atajos) revisado sin más
   hallazgos; `bun test` 391 ok y `tsc` limpio en su worktree.
+
+### Ronda 5 — PUL-A y corrección de mi addendum de ronda 4
+
 - **PUL-A revisado, sin bug funcional**: sus cambios de motor son solo
   comentarios; `parseEnrollLine` es extracción verbatim; su
   `FuzzAuthEnrollFirstLine` complementa a mi `FuzzEnrollLine`; el workflow
@@ -42,9 +64,8 @@ ronda 5, cierre (17:10 Europe/Madrid).
 1. **Auditar `internal/ad` (AD-1/AD-2/SEC-2)** — sigue bloqueado: IMP-A
    tiene solo plan (16h05); su plan reserva la auditoría para cuando se
    fusione. Prioridad real al reabrir.
-2. **Verificar que IMP-B incorpora los dos hallazgos de esta ronda** en su
-   rama antes de la fusión (y re-revisar su ronda 3 REP-4 cuando suba
-   código: gráficas en informes + enlace informe del caso).
+2. **Verificar que IMP-B incorpora los dos hallazgos de la ronda 5** en
+   su rama antes de la fusión (su REP-4 de la ronda 6 no los tocó).
 3. **Resolver el conflicto de `internal/ingest/fuzz_test.go`** en la
    fusión (mía o de PUL-A): conservar `FuzzEnrollLine` y
    `FuzzAuthEnrollFirstLine`.
