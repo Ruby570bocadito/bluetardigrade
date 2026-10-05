@@ -340,11 +340,7 @@ func runEngine(o *options, interactive bool) error {
 	server.SetObserver(fleetTracker)
 	go server.Serve()
 	if server.AuthEnabled() {
-		if server.Rotating() {
-			fmt.Println("[ENGINE] ingest auth: ENABLED, rotation window OPEN (current and previous token both accepted; redeploy sensors, then restart without -token-previous)")
-		} else {
-			fmt.Println("[ENGINE] ingest auth: ENABLED (sensors must send 'AUTH <token>' first, or -token/SF_INGEST_TOKEN)")
-		}
+		fmt.Println(ingestAuthBanner(server.Rotating(), ingestToken, server.Identities()))
 	} else if strings.HasPrefix(server.Addr(), "127.0.0.1:") || strings.HasPrefix(server.Addr(), "[::1]:") {
 		fmt.Println("[ENGINE] ingest auth: disabled (loopback bind only - fine for local demos)")
 	} else {
@@ -1088,4 +1084,23 @@ func runEngine(o *options, interactive bool) error {
 		processed, time.Since(start).Round(time.Millisecond),
 		server.Received(), server.Dropped())
 	return nil
+}
+
+// ingestAuthBanner renders the startup auth line the operator sees.
+// The message must name HOW sensors are expected to authenticate: an
+// identities-only deployment (no shared token) previously printed the
+// -token/SF_INGEST_TOKEN hint, which sent the operator arming a
+// credential the engine does not use (SEC-8, TODO list item on the
+// known confusing banner).
+func ingestAuthBanner(rotating bool, token string, identities int) string {
+	switch {
+	case rotating:
+		return "[ENGINE] ingest auth: ENABLED, rotation window OPEN (current and previous token both accepted; redeploy sensors, then restart without -token-previous)"
+	case identities > 0 && token != "":
+		return "[ENGINE] ingest auth: ENABLED (sensors must send 'AUTH <token>' first: their per-sensor identity token or the shared -token/SF_INGEST_TOKEN)"
+	case identities > 0:
+		return "[ENGINE] ingest auth: ENABLED (sensors must send 'AUTH <token>' first with their per-sensor identity token; no shared token is configured)"
+	default:
+		return "[ENGINE] ingest auth: ENABLED (sensors must send 'AUTH <token>' first, or -token/SF_INGEST_TOKEN)"
+	}
 }

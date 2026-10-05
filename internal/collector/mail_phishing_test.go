@@ -91,6 +91,15 @@ func TestMailAttachmentNameIndicatorsAreObservedWithoutPayload(t *testing.T) {
 		key  string
 	}{
 		{"invoice.pdf.exe ", "mail_attachment_double_extension"},
+		// Deception edge (SEC-8 round 2026-10-05): a space before the
+		// active extension ("invoice.pdf .exe") used to defeat the
+		// double-extension signal because the intermediate name was not
+		// trimmed before the document-suffix check. Windows hides known
+		// extensions, so the file still renders as "invoice.pdf" to the
+		// victim — the indicator must fire.
+		{"invoice.pdf .exe", "mail_attachment_double_extension"},
+		{"report.docx\t.exe", "mail_attachment_double_extension"},
+		{"invoice.xlsx .exe", "mail_attachment_double_extension"},
 		{"agenda.DOCM", "mail_macro_capable_attachment"},
 		{"budget.xlsb", "mail_macro_capable_attachment"},
 		{"invoice\u202egnp.exe", "mail_attachment_name_bidi"},

@@ -457,8 +457,14 @@ func isHex(s string) bool {
 }
 
 // normalizeDomain lowercases and validates a domain name; "" if invalid.
+// Every trailing dot is stripped: FQDNs legitimately end in the root dot
+// ("example.com."), but malformed input like "000.." must not survive
+// with a degenerate trailing dot — a single TrimSuffix turned "000.."
+// into the "valid" domain "000.", which is not idempotent and let list
+// junk ("abc..") pair with a hostile event domain ("x.abc..") to forge
+// an intel hit (found by FuzzParseLine, SEC-7).
 func normalizeDomain(s string) string {
-	d := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(s)), ".")
+	d := strings.TrimRight(strings.ToLower(strings.TrimSpace(s)), ".")
 	if len(d) < 4 || len(d) > 253 || !strings.Contains(d, ".") || d == "localhost" {
 		return ""
 	}
