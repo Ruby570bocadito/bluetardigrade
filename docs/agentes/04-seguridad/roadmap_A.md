@@ -21,7 +21,11 @@ ronda** (ver «Estado de la sesión» al final).
 - Coordinación: PUL-A tiene la línea AUTH/ENROLL de `internal/ingest` en su
   plan (16h20, antes de mi push de `FuzzEnrollLine` de 16h30): su matriz
   nocturna por descubrimiento encuentra mis targets sin editar el workflow.
-  Ningún carril ajeno había subido código al cerrar la ronda 4.
+  Al cerrar la ronda 4 su rama sustituyó mi `FuzzEnrollLine` por su
+  `FuzzAuthEnrollFirstLine` en `internal/ingest/fuzz_test.go` (conflicto
+  anotado en el addendum del informe de esta ronda con la resolución
+  recomendada: conservar ambos targets, son complementarios). Ningún carril
+  ajeno más había subido código al cerrar.
 
 ## Estado de la sesión (por qué se para)
 
