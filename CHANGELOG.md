@@ -73,6 +73,13 @@ Before `v1.0.0`:
   - Threat intel comes only from local files; nothing is downloaded.
   - The console runs no actions on endpoints.
 
+### Fleet after a laptop suspension (2026-10-05)
+
+- The engine no longer reports "sensor sin señal" after it was itself
+  suspended (a laptop with the lid closed): when its fleet check sees a
+  wall-clock gap of more than three intervals, every sensor gets a fresh
+  grace period.
+
 ### DNS rebinding guard for the tokenless engine API (2026-10-04)
 
 Security
