@@ -478,7 +478,7 @@ func (r *Registry) Enroll(token, host, peer string) (Enrolled, error) {
 		return Enrolled{}, failure(ErrFull, "%d hosts are already waiting for approval", MaxPending)
 	}
 
-	// SEC-A-1 (Seguridad A, ronda 2026-10-05 13h34): the 6-hex suffix
+	// SEC-A-1: the 6-hex suffix
 	// has a 16.7M space and host records are never purged, so across
 	// enough re-enrollments of the same host name a birthday collision
 	// becomes possible. Open() refuses a file with duplicate identity
