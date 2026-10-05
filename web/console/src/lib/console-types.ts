@@ -241,6 +241,19 @@ export type EngineStats = {
   webhook_sent: number
   webhook_failed: number
   webhook_dropped: number
+  // SIEM sink delivery triples (engine -elastic bulk indexing, -splunk
+  // HEC), required by the OpenAPI Stats schema; forwarded by the hub
+  // since r7 (SET-3). Same reading as webhook: all zero = disabled or
+  // nothing delivered yet.
+  elastic_sent?: number
+  elastic_failed?: number
+  elastic_dropped?: number
+  splunk_sent?: number
+  splunk_failed?: number
+  splunk_dropped?: number
+  // outbound notify channels of the engine (slack, telegram, email)
+  // with their own delivery counters; forwarded by the hub since r7.
+  notify_channels?: { name: string; type: string; sent: number; failed: number; dropped: number; filtered: number }[]
   // non-expired operator suppression entries, forwarded since r4
   suppressions_active: number
   // kill-chain correlator observability, forwarded since r5: in-flight

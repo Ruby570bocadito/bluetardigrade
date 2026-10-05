@@ -42,7 +42,7 @@ import type { TriageTarget } from '@/lib/operations'
 import type { SeverityFilter } from '@/lib/url-state'
 
 export type ConsoleView =
-  | 'panel' | 'flujo' | 'alertas' | 'incidentes' | 'equipos'
+  | 'panel' | 'estado' | 'flujo' | 'alertas' | 'incidentes' | 'equipos'
   | 'reglas' | 'cadenas' | 'inteligencia' | 'supresiones' | 'probador'
   | 'respuesta' | 'analista'
 export type HuntLens = { q?: string; sev?: SeverityFilter }

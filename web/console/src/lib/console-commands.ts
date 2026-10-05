@@ -5,6 +5,7 @@ export const CONSOLE_DESTINATIONS: {
   id: ConsoleView; label: string; group: string; description: string; keywords: string
 }[] = [
   { id: 'panel', label: 'Panel', group: 'Operación', description: 'Triaje pendiente, actividad y salud del motor', keywords: 'dashboard inicio métricas riesgo' },
+  { id: 'estado', label: 'Estado', group: 'Operación', description: 'Motor, ingesta, colas, almacén y entrega externa en un vistazo', keywords: 'salud health plataforma estado motor ingesta cola almacen version sink siem' },
   { id: 'flujo', label: 'Flujo en vivo', group: 'Operación', description: 'Buscar telemetría y examinar eventos', keywords: 'eventos sensor procesos live feed' },
   { id: 'alertas', label: 'Alertas', group: 'Operación', description: 'Investigar, reconocer y cerrar detecciones', keywords: 'histórico historial triage triaje cola evidencia' },
   { id: 'incidentes', label: 'Incidentes', group: 'Operación', description: 'Casos que agrupan alertas, con estado, responsable y línea de tiempo', keywords: 'casos case incident investigacion' },
