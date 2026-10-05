@@ -252,6 +252,16 @@ func TestRealtimeBenignRegistryAndFilesDoNotFire(t *testing.T) {
 			Type: model.TypeNetworkConnect, Source: "sysmon", Host: "H",
 			Network: &model.Network{Protocol: "dns", Domain: "www.google.com"},
 		},
+		{ // hash labels seen on a real host: Microsoft network measurements
+			ID: "b7", Timestamp: time.Now().UTC(),
+			Type: model.TypeNetworkConnect, Source: "etw", Host: "H",
+			Network: &model.Network{Protocol: "dns", Domain: "61e4bd6b2397d7f130fc1b23cc9b383e.azr.footprintdns.com"},
+		},
+		{ // and ad frames
+			ID: "b8", Timestamp: time.Now().UTC(),
+			Type: model.TypeNetworkConnect, Source: "etw", Host: "H",
+			Network: &model.Network{Protocol: "dns", Domain: "e811ebfe031f0f015474d37c06923b37.safeframe.googlesyndication.com"},
+		},
 	}
 	for _, ev := range cases {
 		if hits := e.Evaluate(ev); len(hits) != 0 {

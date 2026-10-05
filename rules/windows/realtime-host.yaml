@@ -203,6 +203,13 @@
     - field: network.domain
       operator: regex
       value: '(?i)^[a-z0-9]{28,}\.'
+    # a long label made only of hex digits is a hash, not a generated
+    # name: Microsoft network measurements (<md5>.azr.footprintdns.com),
+    # ad frames (<md5>.safeframe.googlesyndication.com) and CDNs use
+    # them; domain generators draw from the whole alphabet
+    - field: network.domain
+      operator: regex
+      value: '(?i)^[a-z0-9]*[g-z][a-z0-9]*\.'
   actions:
     - type: alert
       config:

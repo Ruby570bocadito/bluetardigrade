@@ -200,8 +200,13 @@ func TestDropIdentityClosesOpenConnections(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	expectClosed(t, conn)
-	if n := srv.DropIdentity(a.Identity); n != 0 {
-		t.Fatalf("a closed connection is still tracked (%d)", n)
+	// the handler forgets the connection when it returns, which happens
+	// asynchronously after the close
+	for srv.DropIdentity(a.Identity) != 0 {
+		if time.Now().After(deadline.Add(2 * time.Second)) {
+			t.Fatal("a closed connection is still tracked")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

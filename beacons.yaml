@@ -36,6 +36,12 @@
   min_interval: 2s
   cooldown: 1h
   tags: [ttp:T1071.001, beacon]
+  # Servicios cuyo latido es regular por diseño: la app de WhatsApp
+  # (y WhatsApp Web) mantiene viva su conexión cada ~60 s contra
+  # web.whatsapp.com:443/5222. Cada entrada cubre también sus
+  # subdominios. Añade aquí otros servicios legítimos de tu red;
+  # las conexiones conocidas solo por IP nunca se excluyen.
+  exclude_domains: [whatsapp.com, whatsapp.net]
 
   # ---------- malla rápida: malware ruidoso y DNS-based ----------
 - name: C2 beacon rapido
@@ -53,3 +59,4 @@
   cooldown: 30m
   ports: [53, 80, 443, 8080]
   tags: [ttp:T1071.001, beacon]
+  exclude_domains: [whatsapp.com, whatsapp.net]

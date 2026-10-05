@@ -12,6 +12,30 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Fewer false alarms from a day in class (2026-10-05)
+
+The laptop's risk score sat at 5–11 all day from three false alarms, all
+legitimate and all confirmed in the engine's store.
+
+- **Beaconing:** the Windows DNS Client (`svchost.exe`) talks to the
+  configured resolver over TCP port 53 every ~64 s (135 connections in a
+  morning). Its traffic to ports 53/853 no longer feeds the detector. DNS
+  tunnels show in the query events, and any other process talking to
+  port 53 is still tracked.
+- **Beaconing:** profiles accept `exclude_domains`, for services whose
+  keep-alives are regular by design. An entry covers the domain and its
+  subdomains, never look-alikes, and IP-only connections are never
+  excluded. The shipped profiles exclude WhatsApp, whose app polls
+  `web.whatsapp.com` on 443 and 5222 every ~60 s.
+- **«Consulta DNS a dominio generado (posible DGA)»:** a long label made
+  only of hex digits is a hash, not a generated name. Examples are
+  Microsoft network measurements (`<md5>.azr.footprintdns.com` from
+  Edge/WebView2) and ad frames (`<md5>.safeframe.googlesyndication.com`).
+  The rule now needs a letter beyond `a-f` in that label.
+- A test loads the shipped `beacons.yaml` (a malformed one is fatal at
+  startup). The enrollment test that checked a closed connection was
+  forgotten now waits for its handler to return.
+
 ### Sensor enrollment with tokens and approval (2026-10-05)
 
 - **Engine (`-enroll <file>`):** a new sensor joins with a token from the

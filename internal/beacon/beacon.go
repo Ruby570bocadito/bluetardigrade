@@ -117,7 +117,16 @@ type Profile struct {
 	Ports       []int    `yaml:"ports"`        // optional destination-port allowlist; empty = any
 	Cooldown    string   `yaml:"cooldown"`     // per-key re-fire silence; empty = window
 	Tags        []string `yaml:"tags"`
+	// ExcludeDomains lists services whose keep-alives are regular by
+	// design (a messaging app polling its server every minute). A
+	// destination domain equal to an entry or under it is not tracked
+	// by this profile. Connections known only by IP are never excluded.
+	ExcludeDomains []string `yaml:"exclude_domains"`
 }
+
+// maxExcludeDomains bounds the exclusion list of one profile: it is
+// walked for every connection.
+const maxExcludeDomains = 256
 
 type compiled struct {
 	p           Profile
@@ -125,6 +134,18 @@ type compiled struct {
 	minInterval time.Duration
 	cooldown    time.Duration
 	ports       map[int]bool
+	excluded    []string // lowercased domains, without "*." or a trailing dot
+}
+
+// excludes reports whether domain is one of the profile's excluded
+// services or a subdomain of one.
+func (c *compiled) excludes(domain string) bool {
+	for _, d := range c.excluded {
+		if domain == d || strings.HasSuffix(domain, "."+d) {
+			return true
+		}
+	}
+	return false
 }
 
 // keyState is the per-(profile, host, destination) evidence ring.
@@ -281,6 +302,14 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 	if strings.EqualFold(n.Protocol, "dns") {
 		return
 	}
+	// The Windows DNS Client service (svchost.exe) resolves names for
+	// every process and talks to the configured resolver on 53/853 at
+	// a steady pace (TCP retries, keep-alives): the host's own DNS
+	// plumbing. DNS tunnels show in the DNS query events instead, and a
+	// process that talks to port 53 itself is still tracked.
+	if (n.DestinationPort == 53 || n.DestinationPort == 853) && ev.Process != nil && strings.EqualFold(ev.Process.Name, "svchost.exe") {
+		return
+	}
 	dest := strings.ToLower(n.Domain)
 	if dest == "" {
 		ip := net.ParseIP(strings.TrimSpace(n.DestinationIP))
@@ -303,6 +332,9 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 	var fired []alert.Alert
 	for _, c := range m.profs {
 		if len(c.ports) > 0 && !c.ports[port] {
+			continue
+		}
+		if n.Domain != "" && c.excludes(dest) {
 			continue
 		}
 		key := beaconKey{profileID: c.p.ID, host: host, dest: dest, port: port}
@@ -586,11 +618,43 @@ func compileProfile(p *Profile) (*compiled, error) {
 		}
 		ports[pt] = true
 	}
+	if len(p.ExcludeDomains) > maxExcludeDomains {
+		return nil, fmt.Errorf("exclude_domains: %d dominios superan el maximo de %d", len(p.ExcludeDomains), maxExcludeDomains)
+	}
+	excluded := make([]string, 0, len(p.ExcludeDomains))
+	for _, d := range p.ExcludeDomains {
+		norm := strings.TrimSuffix(strings.TrimPrefix(strings.ToLower(strings.TrimSpace(d)), "*."), ".")
+		if !validDomain(norm) {
+			return nil, fmt.Errorf("exclude_domains: %q no es un dominio (ejemplo: whatsapp.com, que cubre tambien sus subdominios)", d)
+		}
+		excluded = append(excluded, norm)
+	}
 	return &compiled{
 		p:           *p,
 		window:      window,
 		minInterval: minInterval,
 		cooldown:    cooldown,
 		ports:       ports,
+		excluded:    excluded,
 	}, nil
+}
+
+// validDomain accepts a DNS name with at least two labels: letters,
+// digits and hyphens, no empty label. A bare TLD ("com") would exclude
+// half the internet and is refused.
+func validDomain(d string) bool {
+	if len(d) == 0 || len(d) > 253 || !strings.Contains(d, ".") {
+		return false
+	}
+	for _, label := range strings.Split(d, ".") {
+		if label == "" || len(label) > 63 {
+			return false
+		}
+		for _, r := range label {
+			if !(r == '-' || (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z')) {
+				return false
+			}
+		}
+	}
+	return true
 }

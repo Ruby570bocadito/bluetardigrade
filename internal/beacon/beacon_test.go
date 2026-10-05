@@ -687,3 +687,76 @@ func TestDNSQueriesAndLocalPlumbingNeverBeacon(t *testing.T) {
 		t.Fatalf("a real beacon must still fire, got %d", len(got))
 	}
 }
+
+func TestResolverTrafficOfTheDNSClientNeverBeacons(t *testing.T) {
+	m, err := LoadFile(writeProfiles(t, strictProfile), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	var got []alert.Alert
+	m.SetEmit(func(a alert.Alert) { got = append(got, a) })
+	// seen on a real host: svchost.exe (DNS Client) to the Wi-Fi's DNS
+	// server over TCP every ~64 s
+	for i := 0; i < 12; i++ {
+		ev := netEv("PC", "10.135.6.93", "", 53)
+		ev.Process = &model.Process{Name: "svchost.exe"}
+		m.Observe(ev, base.Add(time.Duration(i)*time.Second))
+	}
+	if len(got) != 0 {
+		t.Fatalf("the DNS Client's resolver traffic fired: %+v", got)
+	}
+	// any other process talking to port 53 on a cadence is still judged
+	for i := 0; i < 12; i++ {
+		ev := netEv("PC", "203.0.113.53", "", 53)
+		ev.Process = &model.Process{Name: "updater.exe"}
+		m.Observe(ev, base.Add(time.Hour+time.Duration(i)*time.Second))
+	}
+	if len(got) != 1 {
+		t.Fatalf("a process beaconing to port 53 must still fire, got %d", len(got))
+	}
+}
+
+func TestExcludedDomainsAndTheirSubdomains(t *testing.T) {
+	m, err := LoadFile(writeProfiles(t, strictProfile+"  exclude_domains: [whatsapp.com, '*.Example.NET.']\n"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	var got []alert.Alert
+	m.SetEmit(func(a alert.Alert) { got = append(got, a) })
+	feedRegular(m, 12, time.Second, "PC", "157.240.0.53", "web.whatsapp.com", 5222, base)
+	feedRegular(m, 12, time.Second, "PC", "157.240.0.54", "whatsapp.com", 443, base)
+	feedRegular(m, 12, time.Second, "PC", "198.51.100.7", "cdn.example.net", 443, base)
+	if len(got) != 0 {
+		t.Fatalf("excluded services fired: %+v", got)
+	}
+	// a look-alike that only ends with the same letters is not excluded
+	feedRegular(m, 12, time.Second, "PC", "203.0.113.9", "evilwhatsapp.com", 443, base.Add(time.Hour))
+	// and the same IP without a domain is judged as usual
+	feedRegular(m, 12, time.Second, "PC", "157.240.0.55", "", 443, base.Add(2*time.Hour))
+	if len(got) != 2 {
+		t.Fatalf("look-alike and IP-only destinations must fire, got %d", len(got))
+	}
+}
+
+func TestExcludeDomainsValidation(t *testing.T) {
+	for _, bad := range []string{"com", "", "what sapp.com", "a..b", "*"} {
+		y := strictProfile + "  exclude_domains: ['" + bad + "']\n"
+		if _, err := LoadFile(writeProfiles(t, y), nil); err == nil {
+			t.Errorf("exclude_domains %q was accepted", bad)
+		}
+	}
+}
+
+// The profiles shipped with the engine must load: a malformed file is
+// fatal at startup.
+func TestShippedProfilesLoad(t *testing.T) {
+	m, err := LoadFile(filepath.Join("..", "..", "beacons.yaml"), nil)
+	if err != nil {
+		t.Fatalf("beacons.yaml: %v", err)
+	}
+	if m.Count() == 0 {
+		t.Fatal("beacons.yaml loaded no profile")
+	}
+}
