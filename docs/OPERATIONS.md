@@ -382,6 +382,32 @@ Each sensor sends its own token in the usual `AUTH <token>` handshake. The engin
 
 While the handshake is pending the first line is capped at 4 KiB: an unauthenticated connection can no longer make the engine buffer up to 1 MiB before presenting a credential.
 
+## Sensor enrollment (tokens and approval)
+
+`-enroll <file>` (or `SF_ENROLL`) lets a new sensor join without a hand-made identity. The Windows launcher turns it on together with ingest TLS, when `tools\config\ingest-cert.pem` and `ingest-key.pem` exist; the state goes to `data\enrollment.json`.
+
+1. **Token.** An administrator creates an enrollment token in the console (Equipos → Añadir equipos), or with `POST /api/enroll/tokens`:
+   - single use by default, up to 10,000 uses;
+   - valid from 1 hour to 30 days;
+   - optionally a hostname pattern that is approved without a human.
+2. **Credential.** On its first start, the sensor (`--enroll-token` or `--enroll-token-file`, plus `--token-file`) sends `ENROLL <token> <host>` instead of `AUTH`. The engine answers with a credential of the sensor's own, bound to that host, and closes the connection:
+
+   ```
+   {"ack":"enrolled","identity":"enr-<host>-<id>","credential":"btsensor_…","state":"pending"}
+   ```
+
+   The sensor stores the credential in `--token-file` and deletes the enrollment token file.
+3. **Pending.** From then on the sensor connects with `AUTH <credential>`. While the host waits for approval, the engine answers `{"ack":"pending"}` and closes before any event. The sensor treats that like an engine that is not reachable yet: capture runs, events wait in its queue and spool, and it keeps retrying.
+4. **Decision.** An administrator approves or rejects the host (`POST /api/enroll/hosts/{name}/approve|reject`). Revoking it later (`…/revoke`) withdraws the credential and closes its open connections at once.
+
+Rules:
+- **Transport.** `ENROLL` is only accepted over TLS or from loopback: the credential it returns must not cross the network in clear.
+- **Authentication.** With enrollment on, every ingest connection must authenticate (shared token, identities file or enrolled credential).
+- **Approval.** A host that another live identity already reports as (enrolled, or in the identities file) is never approved by a token pattern: that is a reinstall or impersonation, and the console flags it.
+- **Storage.** The engine keeps only SHA-256 digests of tokens and credentials, in a JSON file written atomically on every change. A malformed file stops the engine at startup.
+- **Caps.** 1,000 tokens, 10,000 hosts, 1,000 hosts pending at once.
+- **API.** `GET /api/enroll` returns tokens (never their secret) and hosts. The write routes need an API token even on loopback. Every write is logged as `[API] WRITE enroll …` with the `by` the console attributes, and enrollments as `[ENROLL] …`.
+
 ## Ingest TLS (encryption in transit)
 
 The shared token authenticates the sender but does not encrypt the channel: with `-addr 0.0.0.0:7777` the feed travels in clear text and carries sensitive host data (users, command lines). For remote-sensor deployments the ingest speaks native TLS — standard library only, no extra dependencies:

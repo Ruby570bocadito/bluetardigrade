@@ -24,14 +24,69 @@ se conecta a los equipos ni ejecuta nada en ellos.
 
 | Capa | Qué hace |
 |---|---|
-| Identidad por sensor | Cada equipo tiene su propio token, atado a su nombre. Un sensor que intente enviar eventos de otro equipo es rechazado y contado como posible compromiso |
-| Escucha en red solo con identidades | El lanzador solo abre el motor a la red (`0.0.0.0:7777`) cuando existe `tools\config\ingest-identities.yaml`; sin él, solo escucha en `127.0.0.1` |
-| TLS opcional | Con `tools\config\ingest-cert.pem` e `ingest-key.pem`, el canal va cifrado y el sensor solo confía en ese certificado |
+| Identidad por sensor | Cada equipo tiene su propia credencial, atada a su nombre. Un sensor que intente enviar eventos de otro equipo es rechazado y contado como posible compromiso |
+| Aprobación | Un equipo que se da de alta con un token queda **pendiente**: el motor no acepta sus eventos hasta que un administrador lo aprueba en la consola (el sensor los guarda en su disco mientras tanto) |
+| Escucha en red solo con autenticación | El lanzador solo abre el motor a la red (`0.0.0.0:7777`) cuando existe el certificado de ingesta o `tools\config\ingest-identities.yaml`; sin ellos, solo escucha en `127.0.0.1` |
+| TLS | Con `tools\config\ingest-cert.pem` e `ingest-key.pem` el canal va cifrado, el sensor solo confía en ese certificado y se activa el alta por token. El alta solo se acepta por TLS (o desde el propio servidor): la credencial que entrega no viaja en claro |
 | Cortafuegos | Abre el puerto 7777 solo a los perfiles de dominio y privado |
 
-## Alta de un equipo, paso a paso
+## Alta por token (recomendado)
 
-En la consola, **Equipos → Añadir equipo remoto** genera estos comandos ya
+Sin crear identidades a mano ni copiar YAML:
+
+1. **Una vez, en el servidor:**
+   - crea el certificado de ingesta ([más abajo](#certificado-tls-del-servidor));
+   - reinicia con `sf-console -Stop; sf-console`.
+
+   El motor escucha en la red con TLS y con el alta por token activada.
+2. **En la consola**, ve a **Equipos → Añadir equipos → Con token de alta**:
+   - pon para qué es (por ejemplo «Aula 3»);
+   - indica cuántos equipos pueden usarlo: uno por defecto, o varios para un despliegue;
+   - elige cuánto dura: 24 horas, 7 días o 30 días;
+   - opcionalmente, un patrón de nombres que entran sin aprobación, como `PC-CONTA-*`.
+
+   El token se muestra **una sola vez**, con los comandos ya preparados.
+3. **En el equipo nuevo**, en un PowerShell de administrador:
+   - copia `security-sensor.exe` e `ingest-cert.pem`;
+   - crea la carpeta de datos, solo para SYSTEM y Administradores;
+   - arranca el sensor con `--enroll-token`.
+
+   Si el equipo tiene bluetardigrade instalado, basta con:
+
+   ```powershell
+   sf-etw -Install -Addr 192.168.1.10:7777 -EnrollToken <token> -TlsCa <ruta>\ingest-cert.pem
+   ```
+
+   Así queda como servicio de Windows.
+4. **Primer arranque del sensor:**
+   - cambia el token por una credencial propia;
+   - la guarda en `C:\ProgramData\bluetardigrade\sensor\ingest.token`;
+   - borra el token de su disco.
+
+   El equipo aparece en **Equipos → Pendientes de aprobación** con su IP y la
+   hora del último intento.
+5. **Aprueba o rechaza.** Al aprobarlo, el sensor entrega lo que tenía guardado
+   y empieza a enviar en directo.
+
+Detalles:
+
+- Un token de un solo uso no sirve para un segundo equipo. Un token caducado,
+  agotado o revocado se rechaza y el sensor dice por qué.
+- Si ya hay otro sensor informando con el mismo nombre de equipo, el alta nunca
+  se aprueba sola, aunque el patrón coincida: es una reinstalación o alguien
+  haciéndose pasar por ese equipo. La consola lo avisa.
+- **Revocar** un equipo, desde su ficha en Equipos, deja de aceptar su
+  credencial al momento y corta su conexión abierta.
+- **El sensor del propio servidor** también necesita credencial cuando el motor
+  escucha en la red. Dalo de alta igual, con un token y
+  `sf-etw -Install -EnrollToken <token>`; en el propio servidor no hace falta
+  `-TlsCa`.
+- Solo un **administrador** de la consola crea tokens y aprueba equipos. Cada
+  acción queda en la auditoría de la consola y en el log del motor.
+
+## Alta manual con identidad en fichero
+
+En la consola, **Equipos → Añadir equipos → Manual** genera estos comandos ya
 rellenados con el nombre del equipo y la IP del servidor.
 
 ### En el servidor (PowerShell normal)
@@ -130,9 +185,12 @@ servidor):
 
 ```powershell
 $cfg = "$env:LOCALAPPDATA\bluetardigrade\tools\config"
-& "C:\Program Files\Git\usr\bin\openssl.exe" req -x509 -newkey rsa:3072 -sha256 -days 825 -nodes -keyout "$cfg\ingest-key.pem" -out "$cfg\ingest-cert.pem" -subj "/CN=bluetardigrade-ingest" -addext "subjectAltName=IP:192.168.1.10" -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,digitalSignature,keyEncipherment,keyCertSign" -addext "extendedKeyUsage=serverAuth"
+& "C:\Program Files\Git\usr\bin\openssl.exe" req -x509 -newkey rsa:3072 -sha256 -days 825 -nodes -keyout "$cfg\ingest-key.pem" -out "$cfg\ingest-cert.pem" -subj "/CN=bluetardigrade-ingest" -addext "subjectAltName=IP:192.168.1.10,IP:127.0.0.1" -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,digitalSignature,keyEncipherment,keyCertSign" -addext "extendedKeyUsage=serverAuth"
 ```
 
+- `IP:127.0.0.1` deja que el sensor del propio servidor conecte también por TLS:
+  con el certificado puesto, el motor ya no acepta conexiones sin cifrar.
+  `sf-etw -Install` en el servidor confía en ese certificado sin más.
 - Reinicia el motor (`sf-console -Stop; sf-console`) para que use TLS.
 - Copia **solo** `ingest-cert.pem` a los equipos; la clave (`ingest-key.pem`) no
   sale nunca del servidor.
@@ -140,6 +198,8 @@ $cfg = "$env:LOCALAPPDATA\bluetardigrade\tools\config"
 
 ## Mantenimiento
 
+- **Dar de baja un equipo dado de alta por token**: en su ficha de Equipos,
+  «Revocar identidad». Para volver a darlo de alta hace falta un token nuevo.
 - **Dar de baja un equipo**: borra su entrada del fichero de identidades (se aplica
   sola) y detén su tarea. El inventario lo olvida a los 7 días sin noticias o al
   reiniciar el motor.
@@ -152,5 +212,10 @@ $cfg = "$env:LOCALAPPDATA\bluetardigrade\tools\config"
 ## API
 
 `GET /api/fleet` devuelve el inventario (equipos, estado, último latido, sensor,
-IPs de conexión e identidad). Los latidos (`sensor.heartbeat`) los consume el
+IPs de conexión e identidad). Para el alta por token:
+- `GET /api/enroll` da los tokens (sin su secreto) y los equipos dados de alta,
+  con su estado;
+- las escrituras son `POST /api/enroll/tokens`, `POST /api/enroll/tokens/{id}/revoke`
+  y `POST /api/enroll/hosts/{nombre}/approve|reject|revoke`. Exigen el token de la
+  API. Los latidos (`sensor.heartbeat`) los consume el
 motor y no llegan a las reglas, a los búferes ni al almacenamiento.

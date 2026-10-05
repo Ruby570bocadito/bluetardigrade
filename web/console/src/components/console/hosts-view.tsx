@@ -14,6 +14,7 @@ import { useIncidents } from './incidents-provider'
 import { useFleet } from './fleet-provider'
 import { EnrollDialog, FleetStatusPill, FleetSummary, SensorCard } from './fleet-parts'
 import { BaselineCard } from './baseline-card'
+import { PendingHosts } from './enroll-parts'
 import type { FleetHost, FleetStatus } from '@/lib/fleet'
 import { EmptyState, SeverityBadge, StatTile } from './ui-bits'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
@@ -118,6 +119,7 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
   return (
     <div className="space-y-4">
     <FleetSummary onEnroll={() => setEnrolling(true)} />
+    <PendingHosts />
     {enrolling && <EnrollDialog onClose={() => setEnrolling(false)} />}
     <section aria-label="Equipos" className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
       <div className="panel flex min-w-0 flex-col overflow-hidden">

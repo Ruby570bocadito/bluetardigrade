@@ -12,6 +12,45 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Sensor enrollment with tokens and approval (2026-10-05)
+
+- **Engine (`-enroll <file>`):** a new sensor joins with a token from the
+  console instead of a hand-made identity.
+  - It opens with `ENROLL <token> <host>` and receives a credential of its
+    own, bound to that host; later connections use `AUTH`.
+  - The host stays pending until an administrator approves it. The engine
+    holds its connections off with `{"ack":"pending"}` before any event, and
+    the sensor keeps its events in its spool meanwhile.
+  - Tokens are single use by default, expire (1 hour to 30 days) and can
+    auto-approve a hostname pattern.
+  - A host that another identity already reports as is never approved
+    automatically.
+  - Rejecting or revoking a host closes its open connections at once.
+  - `ENROLL` is only accepted over TLS or from loopback.
+  - Only SHA-256 digests are kept, in a JSON file written atomically.
+  - New API routes: `GET /api/enroll`, `POST /api/enroll/tokens`,
+    `POST /api/enroll/tokens/{id}/revoke` and
+    `POST /api/enroll/hosts/{name}/{action}`. The writes need an API token.
+- **Sensor:** `--enroll-token` / `--enroll-token-file` / `SF_ENROLL_TOKEN`
+  with `--token-file`.
+  - It stores the credential and deletes the enrollment token file.
+  - It retries an engine that is not reachable yet.
+  - A pending host is waited for like an unreachable engine, so no events
+    are lost.
+  - `sf-etw -Install -EnrollToken <token>` does the same for the Windows
+    service and keeps the credential across updates.
+- **Console:**
+  - Equipos → «Añadir equipos» has a token wizard. The token is shown once,
+    next to the commands for the new machine.
+  - A «Pendientes de aprobación» panel lets administrators approve or reject
+    hosts, and shows name conflicts.
+  - The host page shows how a machine joined and can revoke it.
+  - The console proxy lets these writes through for administrators only,
+    with the account name recorded and audited.
+- **Windows launcher:** an ingest certificate pair opens the ingest to the
+  network with TLS and enrollment. Without one, nothing changes: loopback
+  only.
+
 ### ETW sensor as a Windows service (2026-10-05)
 
 - `sf-etw -Install` registers the `bluetardigrade-sensor` service:

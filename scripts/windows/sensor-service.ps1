@@ -172,6 +172,12 @@ function Install-SfSensorService {
     }
     $enrolling = Test-Path -LiteralPath $enrollPath
     $caPath = Join-Path $DataDir 'ingest-ca.pem'
+    if (-not $TlsCa -and $Addr -match '^(127\.0\.0\.1|localhost|\[::1\]):') {
+        # with its certificate in place the engine of this install speaks
+        # only TLS: the local sensor trusts exactly that certificate
+        $localCert = Join-Path $root 'tools\config\ingest-cert.pem'
+        if (Test-Path -LiteralPath $localCert) { $TlsCa = $localCert }
+    }
     if ($TlsCa) { Copy-Item -LiteralPath $TlsCa -Destination $caPath -Force }
 
     $arguments = "--service --addr $Addr --spool `"$DataDir\spool.ndjson`" --log `"$DataDir\sensor.log`""

@@ -1,15 +1,18 @@
 'use client'
 
 // Fleet pieces of the Equipos view: the summary strip, the status pill of
-// each machine, the sensor health card of the host page and the
-// enrollment assistant for a new remote machine. Everything is read from
-// the engine inventory (GET /api/fleet); nothing is sent to a machine.
+// each machine, the sensor health card of the host page and the "Añadir
+// equipos" dialog (enrollment by token, or the manual identity file).
+// Everything is read from the engine inventory (GET /api/fleet) and the
+// enrollment state (GET /api/enroll); nothing is sent to a machine.
 
 import { useEffect, useId, useRef, useState } from 'react'
 import { Broadcast, CheckCircle, Copy, Cpu, Desktop, Fingerprint, HardDrives, PlugsConnected, Plus, Power, ShieldCheck, Timer, WarningCircle, WifiSlash } from '@phosphor-icons/react'
 import { ConsoleDialog } from './console-dialog'
 import { StatTile } from './ui-bits'
 import { useFleet } from './fleet-provider'
+import { EnrollmentRow, TokenEnrollment } from './enroll-parts'
+import { enrolledFor } from '@/lib/enroll'
 import { enrollmentPlan, FLEET_STATUS_LABEL, formatDuration, isValidHostName, runModeText, secondsSince, type FleetHost, type FleetStatus } from '@/lib/fleet'
 import { formatDateTime } from '@/lib/console-types'
 
@@ -45,9 +48,9 @@ export function FleetSummary({ onEnroll }: { onEnroll: () => void }) {
       <button
         type="button"
         onClick={onEnroll}
-        className="panel flex items-center justify-center gap-2 px-5 py-3 text-sm font-medium text-blue-200 transition-colors hover:border-blue-400/40 hover:bg-blue-500/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="panel flex items-center justify-center gap-2 px-5 py-3 text-sm font-medium text-zinc-100 transition-colors hover:border-white/20 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <Plus size={16} aria-hidden /> Añadir equipo remoto
+        <Plus size={16} aria-hidden /> Añadir equipos
       </button>
     </div>
   )
@@ -55,6 +58,7 @@ export function FleetSummary({ onEnroll }: { onEnroll: () => void }) {
 
 /** Health of the sensor on one host. */
 export function SensorCard({ host }: { host?: FleetHost }) {
+  const { enroll } = useFleet()
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 5000)
@@ -119,6 +123,10 @@ export function SensorCard({ host }: { host?: FleetHost }) {
           </div>
         ))}
       </div>
+      {(() => {
+        const record = enrolledFor(enroll, host.host, host.identity)
+        return record ? <EnrollmentRow record={record} /> : null
+      })()}
     </section>
   )
 }
@@ -129,10 +137,38 @@ const WHERE_LABEL = {
   'remote-admin': 'En el equipo remoto · PowerShell de administrador',
 } as const
 
-/** Step-by-step enrollment of a remote Windows machine you administer. */
+/** The "Añadir equipos" dialog: enrollment by token, or the manual identity file. */
 export function EnrollDialog({ onClose }: { onClose: () => void }) {
   const id = useId()
-  const first = useRef<HTMLInputElement>(null)
+  const first = useRef<HTMLButtonElement>(null)
+  const [tab, setTab] = useState<'token' | 'manual'>('token')
+  const tabClass = (on: boolean) =>
+    `rounded-md px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${on ? 'bg-white/[0.08] text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`
+  return (
+    <ConsoleDialog open onClose={onClose} titleId={`${id}-t`} initialFocus={first} className="sm:max-w-3xl">
+      <div className="border-b border-zinc-800 px-5 py-4">
+        <h2 id={`${id}-t`} className="text-sm font-semibold text-zinc-100">Añadir equipos</h2>
+        <p className="mt-0.5 text-xs leading-relaxed text-zinc-500">
+          Cada equipo envía su telemetría a este servidor con una identidad propia, atada a su nombre, y un latido cada minuto.
+          La consola no se conecta a los equipos ni ejecuta nada en ellos. Guía completa: docs/FLOTA-REMOTA.md.
+        </p>
+        <div role="tablist" aria-label="Método de alta" className="mt-3 flex gap-1">
+          <button ref={first} type="button" role="tab" aria-selected={tab === 'token'} onClick={() => setTab('token')} className={tabClass(tab === 'token')}>Con token de alta (recomendado)</button>
+          <button type="button" role="tab" aria-selected={tab === 'manual'} onClick={() => setTab('manual')} className={tabClass(tab === 'manual')}>Manual: identidad en fichero</button>
+        </div>
+      </div>
+      <div className="max-h-[60vh] overflow-y-auto px-5 py-4" role="tabpanel">
+        {tab === 'token' ? <TokenEnrollment /> : <ManualEnrollment />}
+      </div>
+      <div className="flex justify-end border-t border-zinc-800 px-5 py-3">
+        <button type="button" onClick={onClose} className="rounded-md px-3 py-2 text-xs text-zinc-300 hover:text-zinc-100">Cerrar</button>
+      </div>
+    </ConsoleDialog>
+  )
+}
+
+/** Step-by-step manual enrollment: an identity in the identities file. */
+function ManualEnrollment() {
   const [host, setHost] = useState('')
   const [server, setServer] = useState('')
   const [tls, setTls] = useState(true)
@@ -152,18 +188,14 @@ export function EnrollDialog({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <ConsoleDialog open onClose={onClose} titleId={`${id}-t`} initialFocus={first} className="sm:max-w-3xl">
-      <div className="border-b border-zinc-800 px-5 py-4">
-        <h2 id={`${id}-t`} className="text-sm font-semibold text-zinc-100">Añadir un equipo remoto</h2>
-        <p className="mt-0.5 text-xs leading-relaxed text-zinc-500">
-          El equipo envía su telemetría a este servidor con su propia identidad (un token atado a su nombre) y un latido cada minuto.
-          La consola no se conecta al equipo ni ejecuta nada en él. Guía completa: docs/FLOTA-REMOTA.md.
-        </p>
-      </div>
-      <div className="grid gap-3 px-5 py-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+    <div>
+      <p className="mb-3 text-xs leading-relaxed text-zinc-500">
+        Sin alta por token: creas a mano la identidad del equipo en el fichero de identidades y le pasas su token.
+      </p>
+      <div className="grid gap-3 pb-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
         <label className="text-xs text-zinc-400">
           Nombre del equipo remoto
-          <input ref={first} value={host} onChange={(e) => setHost(e.target.value)} placeholder="PC-CONTA-01" maxLength={15}
+          <input value={host} onChange={(e) => setHost(e.target.value)} placeholder="PC-CONTA-01" maxLength={15}
             className="mt-1 block w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 font-mono text-xs text-zinc-100 placeholder:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
         </label>
         <label className="text-xs text-zinc-400">
@@ -176,8 +208,8 @@ export function EnrollDialog({ onClose }: { onClose: () => void }) {
           Cifrar con TLS (recomendado)
         </label>
       </div>
-      {host && !hostOk && <p className="px-5 text-[11px] text-amber-300">El nombre de un equipo Windows tiene hasta 15 letras, números o guiones.</p>}
-      <div className="max-h-[50vh] overflow-y-auto px-5 pb-4">
+      {host && !hostOk && <p className="pb-2 text-[11px] text-amber-300">El nombre de un equipo Windows tiene hasta 15 letras, números o guiones.</p>}
+      <div>
         {steps.length === 0 ? (
           <p className="rounded-lg border border-dashed border-zinc-800 px-4 py-6 text-center text-xs text-zinc-500">Escribe el nombre del equipo y la dirección del servidor para ver los pasos con los comandos ya preparados.</p>
         ) : (
@@ -185,7 +217,7 @@ export function EnrollDialog({ onClose }: { onClose: () => void }) {
             {steps.map((step, i) => (
               <li key={i} className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
                 <p className="flex items-center gap-2 text-[11px] font-medium text-zinc-400">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500/20 text-[10px] text-blue-200">{i + 1}</span>
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/[0.08] text-[10px] text-zinc-200">{i + 1}</span>
                   {WHERE_LABEL[step.where]}
                 </p>
                 <p className="mt-1.5 text-xs leading-relaxed text-zinc-300">{step.text}</p>
@@ -208,9 +240,6 @@ export function EnrollDialog({ onClose }: { onClose: () => void }) {
           </p>
         )}
       </div>
-      <div className="flex justify-end border-t border-zinc-800 px-5 py-3">
-        <button type="button" onClick={onClose} className="rounded-md px-3 py-2 text-xs text-zinc-300 hover:text-zinc-100">Cerrar</button>
-      </div>
-    </ConsoleDialog>
+    </div>
   )
 }

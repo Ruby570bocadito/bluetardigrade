@@ -64,16 +64,26 @@ El ETW del kernel exige administrador, pero solo una vez, al instalar.
 - [ ] Prueba real en el portátil: sección 10 de la hoja de pruebas. Se hace al terminar la prueba de la
   jornada.
 
-### 2. Alta de equipos con token de un solo uso y aprobación
+### 2. Alta de equipos con token de un solo uso y aprobación — hecho, falta la prueba real
 
-Diseño: [PLAN-DETALLADO §1.2](docs/PLAN-DETALLADO.md)
+Diseño: [PLAN-DETALLADO §1.2](docs/PLAN-DETALLADO.md). Rama `feat/enrollment`.
 
-- [ ] El servidor emite tokens de alta de un solo uso, con caducidad. Se crean desde la consola
-  (asistente «Añadir equipo»).
-- [ ] El sensor nuevo canjea el token por una identidad propia, ligada a su nombre de equipo.
-- [ ] En Equipos aparece como «pendiente» hasta que un administrador lo aprueba o lo rechaza.
-  Las aprobaciones quedan en la auditoría.
-- [ ] Revocar un equipo: su identidad deja de valer al momento.
+- [x] El servidor emite tokens de alta (un uso por defecto, hasta 10.000), con caducidad y patrón
+  opcional de aprobación automática. Se crean desde la consola (Equipos → «Añadir equipos»).
+- [x] El sensor nuevo canjea el token por una identidad propia, ligada a su nombre de equipo
+  (`ENROLL <token> <equipo>`). Solo por TLS o desde el propio servidor.
+- [x] En Equipos aparece como «pendiente» hasta que un administrador lo aprueba o lo rechaza. Sus
+  eventos esperan en el disco del equipo. Las aprobaciones quedan en la auditoría.
+- [x] Revocar un equipo: su identidad deja de valer al momento y se corta su conexión abierta.
+- [x] Un equipo cuyo nombre ya usa otro sensor nunca entra solo: es una reinstalación o una
+  suplantación.
+- [x] `sf-etw -Install -EnrollToken`. El lanzador de Windows activa el alta junto con TLS.
+- [x] Probado de punta a punta en el laboratorio, con la consola y el motor reales:
+  - token creado desde el asistente;
+  - el equipo queda pendiente y un segundo uso del token se rechaza;
+  - se aprueba y entrega eventos;
+  - al revocarlo se corta su conexión.
+- [ ] Prueba real en el portátil: sección 11 de la hoja de pruebas, junto con la 10.
 
 ### 3. Paquete instalador desde la consola
 

@@ -45,18 +45,23 @@ function Get-SfEngineArguments {
     if (Test-Path -LiteralPath $operators) {
         $arguments += " -allow-kill -respond-operators `"$operators`" -respond-audit `"$data\respond-audit.jsonl`""
     }
-    # Remote machines (docs/FLOTA-REMOTA.md): only when per-sensor
-    # identities exist does the ingest listen beyond loopback, so every
-    # remote sensor authenticates with its own token bound to its host
-    # names. A certificate pair next to it turns on TLS for the ingest.
+    # Remote machines (docs/FLOTA-REMOTA.md): the ingest listens beyond
+    # loopback only when every sensor must authenticate. Per-sensor
+    # identities (a token bound to its host names) do that; so does an
+    # ingest certificate pair, which turns on TLS and enrollment by token
+    # from the console (the credential it hands out travels only inside
+    # TLS; machines wait for approval in Equipos). On that path the
+    # sensor of this machine needs a credential too: enroll it from the
+    # console, or give it the shared ingest token.
     $identities = Join-Path $Root 'tools\config\ingest-identities.yaml'
-    if (Test-Path -LiteralPath $identities) {
-        $arguments += " -addr 0.0.0.0:7777 -ingest-identities `"$identities`""
-        $cert = Join-Path $Root 'tools\config\ingest-cert.pem'
-        $key = Join-Path $Root 'tools\config\ingest-key.pem'
-        if ((Test-Path -LiteralPath $cert) -and (Test-Path -LiteralPath $key)) {
-            $arguments += " -ingest-cert `"$cert`" -ingest-key `"$key`""
-        }
+    $cert = Join-Path $Root 'tools\config\ingest-cert.pem'
+    $key = Join-Path $Root 'tools\config\ingest-key.pem'
+    $hasIdentities = Test-Path -LiteralPath $identities
+    $hasCert = (Test-Path -LiteralPath $cert) -and (Test-Path -LiteralPath $key)
+    if ($hasIdentities -or $hasCert) {
+        $arguments += " -addr 0.0.0.0:7777"
+        if ($hasIdentities) { $arguments += " -ingest-identities `"$identities`"" }
+        if ($hasCert) { $arguments += " -ingest-cert `"$cert`" -ingest-key `"$key`" -enroll `"$data\enrollment.json`"" }
     }
     return $arguments
 }

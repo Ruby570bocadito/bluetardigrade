@@ -162,6 +162,20 @@ var (
 	ErrFull     = errors.New("registry is full")
 )
 
+// requestError carries one of the errors above for errors.Is while its
+// text is only the message: it goes back to a sensor or an operator as is.
+type requestError struct {
+	kind error
+	msg  string
+}
+
+func (e *requestError) Error() string { return e.msg }
+func (e *requestError) Unwrap() error { return e.kind }
+
+func failure(kind error, format string, args ...any) error {
+	return &requestError{kind: kind, msg: fmt.Sprintf(format, args...)}
+}
+
 // Open loads the registry at file, or starts an empty one when the file
 // does not exist yet (it is created on the first change).
 func Open(file string) (*Registry, error) {
@@ -274,27 +288,27 @@ func (r *Registry) CreateToken(req TokenRequest) (secret string, tok Token, err 
 		label = "alta de equipos"
 	}
 	if len([]rune(label)) > maxLabelRunes || hasControl(label) {
-		return "", Token{}, fmt.Errorf("%w: label must be at most %d characters, without control characters", ErrInvalid, maxLabelRunes)
+		return "", Token{}, failure(ErrInvalid, "label must be at most %d characters, without control characters", maxLabelRunes)
 	}
 	if req.MaxUses == 0 {
 		req.MaxUses = 1
 	}
 	if req.MaxUses < 1 || req.MaxUses > MaxUses {
-		return "", Token{}, fmt.Errorf("%w: max_uses must be between 1 and %d", ErrInvalid, MaxUses)
+		return "", Token{}, failure(ErrInvalid, "max_uses must be between 1 and %d", MaxUses)
 	}
 	if req.TTL == 0 {
 		req.TTL = DefaultTTL
 	}
 	if req.TTL < MinTTL || req.TTL > MaxTTL {
-		return "", Token{}, fmt.Errorf("%w: the token must last between 1 hour and 30 days", ErrInvalid)
+		return "", Token{}, failure(ErrInvalid, "the token must last between 1 hour and 30 days")
 	}
 	pattern := strings.ToLower(strings.TrimSpace(req.AutoApprove))
 	if pattern != "" {
 		if len([]rune(pattern)) > maxPatternRunes || hasControl(pattern) {
-			return "", Token{}, fmt.Errorf("%w: auto_approve must be at most %d characters", ErrInvalid, maxPatternRunes)
+			return "", Token{}, failure(ErrInvalid, "auto_approve must be at most %d characters", maxPatternRunes)
 		}
 		if _, err := path.Match(pattern, ""); err != nil {
-			return "", Token{}, fmt.Errorf("%w: auto_approve is not a valid pattern (use * and ?, e.g. pc-conta-*)", ErrInvalid)
+			return "", Token{}, failure(ErrInvalid, "auto_approve is not a valid pattern (use * and ?, e.g. pc-conta-*)")
 		}
 	}
 	secret, err = randomSecret(TokenPrefix)
@@ -311,7 +325,7 @@ func (r *Registry) CreateToken(req TokenRequest) (secret string, tok Token, err 
 	if len(r.tokens) >= MaxTokens {
 		r.pruneTokens()
 		if len(r.tokens) >= MaxTokens {
-			return "", Token{}, fmt.Errorf("%w: %d tokens kept; revoke unused ones first", ErrFull, MaxTokens)
+			return "", Token{}, failure(ErrFull, "the engine keeps at most %d enrollment tokens; revoke unused ones first", MaxTokens)
 		}
 	}
 	now := r.now().UTC()
@@ -372,7 +386,7 @@ func (r *Registry) RevokeToken(id, by string) (Token, error) {
 		}
 		return r.tokenView(t, r.now()), nil
 	}
-	return Token{}, fmt.Errorf("%w: token %q", ErrNotFound, id)
+	return Token{}, failure(ErrNotFound, "no enrollment token %q", id)
 }
 
 // Tokens lists the tokens, newest first.
@@ -417,10 +431,10 @@ type Enrolled struct {
 func (r *Registry) Enroll(token, host, peer string) (Enrolled, error) {
 	host = strings.TrimSpace(host)
 	if !ValidHost(host) {
-		return Enrolled{}, fmt.Errorf("%w: invalid host name %q", ErrInvalid, host)
+		return Enrolled{}, failure(ErrInvalid, "invalid host name %q", host)
 	}
 	if strings.HasPrefix(token, CredentialPrefix) {
-		return Enrolled{}, fmt.Errorf("%w: that is a sensor credential, not an enrollment token: connect with AUTH", ErrInvalid)
+		return Enrolled{}, failure(ErrInvalid, "that is a sensor credential, not an enrollment token: connect with AUTH")
 	}
 	credential, err := randomSecret(CredentialPrefix)
 	if err != nil {
@@ -436,22 +450,22 @@ func (r *Registry) Enroll(token, host, peer string) (Enrolled, error) {
 	now := r.now().UTC()
 	if tok == nil {
 		r.mu.Unlock()
-		return Enrolled{}, fmt.Errorf("%w: unknown enrollment token", ErrInvalid)
+		return Enrolled{}, failure(ErrInvalid, "unknown enrollment token")
 	}
 	switch tokenStatus(&tok.Token, now) {
 	case "revoked":
 		r.mu.Unlock()
-		return Enrolled{}, fmt.Errorf("%w: the enrollment token was revoked", ErrInvalid)
+		return Enrolled{}, failure(ErrInvalid, "the enrollment token was revoked")
 	case "expired":
 		r.mu.Unlock()
-		return Enrolled{}, fmt.Errorf("%w: the enrollment token expired at %s", ErrInvalid, tok.ExpiresAt.Format(time.RFC3339))
+		return Enrolled{}, failure(ErrInvalid, "the enrollment token expired at %s", tok.ExpiresAt.Format(time.RFC3339))
 	case "used_up":
 		r.mu.Unlock()
-		return Enrolled{}, fmt.Errorf("%w: the enrollment token has no uses left (%d of %d)", ErrInvalid, tok.Uses, tok.MaxUses)
+		return Enrolled{}, failure(ErrInvalid, "the enrollment token has no uses left (%d of %d)", tok.Uses, tok.MaxUses)
 	}
 	if len(r.hosts) >= MaxHosts {
 		r.mu.Unlock()
-		return Enrolled{}, fmt.Errorf("%w: %d hosts enrolled", ErrFull, MaxHosts)
+		return Enrolled{}, failure(ErrFull, "the engine already has %d enrolled hosts", MaxHosts)
 	}
 	pending := 0
 	for _, h := range r.hosts {
@@ -461,7 +475,7 @@ func (r *Registry) Enroll(token, host, peer string) (Enrolled, error) {
 	}
 	if pending >= MaxPending {
 		r.mu.Unlock()
-		return Enrolled{}, fmt.Errorf("%w: %d hosts are already waiting for approval", ErrFull, MaxPending)
+		return Enrolled{}, failure(ErrFull, "%d hosts are already waiting for approval", MaxPending)
 	}
 
 	conflict := r.conflictLocked(host)
@@ -581,31 +595,31 @@ func (r *Registry) Decide(name string, action Action, by string) (Host, error) {
 	}
 	if h == nil {
 		r.mu.Unlock()
-		return Host{}, fmt.Errorf("%w: host identity %q", ErrNotFound, name)
+		return Host{}, failure(ErrNotFound, "no enrolled host %q", name)
 	}
 	var next State
 	switch action {
 	case Approve:
 		if h.State != Pending {
 			r.mu.Unlock()
-			return Host{}, fmt.Errorf("%w: only a pending host can be approved (it is %s)", ErrConflict, h.State)
+			return Host{}, failure(ErrConflict, "only a pending host can be approved (it is %s)", h.State)
 		}
 		next = Active
 	case Reject:
 		if h.State != Pending {
 			r.mu.Unlock()
-			return Host{}, fmt.Errorf("%w: only a pending host can be rejected (it is %s); revoke an active one", ErrConflict, h.State)
+			return Host{}, failure(ErrConflict, "only a pending host can be rejected (it is %s); revoke an active one", h.State)
 		}
 		next = Rejected
 	case Revoke:
 		if h.State != Pending && h.State != Active {
 			r.mu.Unlock()
-			return Host{}, fmt.Errorf("%w: the host is already %s", ErrConflict, h.State)
+			return Host{}, failure(ErrConflict, "the host is already %s", h.State)
 		}
 		next = Revoked
 	default:
 		r.mu.Unlock()
-		return Host{}, fmt.Errorf("%w: unknown action %q (approve, reject or revoke)", ErrInvalid, action)
+		return Host{}, failure(ErrInvalid, "unknown action %q (approve, reject or revoke)", action)
 	}
 	prev, prevAt, prevBy := h.State, h.DecidedAt, h.DecidedBy
 	now := r.now().UTC()

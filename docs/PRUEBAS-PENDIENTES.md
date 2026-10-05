@@ -156,7 +156,9 @@ lectura por número de registro, y ahora también envía latido.
 ## 4. Flota remota (con un segundo equipo)
 
 Guía completa: [FLOTA-REMOTA.md](FLOTA-REMOTA.md). En la consola: Equipos → «Añadir
-equipo remoto», que genera todos los comandos.
+equipos», que genera todos los comandos. Lo recomendado ahora es el **alta por token**
+(sección 11): hazla primero en este equipo y repítela en el segundo con la IP del
+portátil y TLS. Lo que sigue es el método manual, con identidad en fichero.
 
 - [ ] **[normal]** Identidad: `sf-engine ingest-identity --name pc-prueba --host <NOMBRE-DEL-OTRO-EQUIPO>`.
   Guarda el token.
@@ -303,6 +305,40 @@ abierto en la ventana de administrador, ciérralo antes con Ctrl+C.
   alguien paró el sensor). Después, `sf-etw -Start` y vuelve a «en línea».
 - [ ] **[normal]** `sf-etw -Uninstall`. Desaparece de `services.msc`. Para volver a tenerlo:
   `sf-etw -Install`.
+
+## 11. Alta de equipos con token (con la sección 10)
+
+Se hace en este portátil: su propio sensor se da de alta como si fuera un equipo nuevo. El
+token y la aprobación son los mismos para un segundo equipo.
+
+- [ ] **[normal]** Activa el modo red. Crea el certificado de ingesta (comando en
+  FLOTA-REMOTA.md, «Certificado TLS del servidor», con la IP del portátil) y reinicia:
+  `sf-console -Stop; sf-console`.
+- [ ] En la consola, Equipos → **Añadir equipos** → «Con token de alta»:
+  - la pestaña ya no dice que el alta está apagada;
+  - crea un token con «Para qué es: prueba», servidor `127.0.0.1` y un equipo;
+  - el token sale una sola vez, con sus comandos.
+- [ ] **[normal]** Deja el sensor como servicio con ese token. Si el sensor manual sigue abierto,
+  ciérralo antes con Ctrl+C. Acepta el UAC.
+
+  ```powershell
+  sf-etw -Install -EnrollToken <token>
+  ```
+
+  Debe terminar con «auth: enrolling».
+- [ ] En Equipos aparece **«Pendientes de aprobación»** con tu equipo: IP 127.0.0.1, token
+  «prueba» y «último intento hace …».
+- [ ] **Aprobar**. En 1–2 minutos tu equipo está «en línea». En su ficha sale «Alta por token:
+  aprobado» y, en «Identidad de ingesta», `enr-<tu-equipo>-…`. Lo que guardó mientras esperaba
+  llega: «En cola de disco» baja a 0.
+- [ ] Equipos → Añadir equipos: en «Tokens en uso» ya no está el de prueba (estaba agotado).
+- [ ] **Revocar**: en la ficha, «Revocar identidad» → «Revocar». El sensor deja de entregar
+  (`sf-etw` lo muestra) y a los 3–4 minutos salta «Sensor sin señal».
+- [ ] Vuelve a darlo de alta: crea un token nuevo y ejecuta otra vez `sf-etw -Install -EnrollToken
+  <nuevo>`. Aparece pendiente, apruébalo y vuelve a «en línea».
+- [ ] **Segundo equipo (sección 4):** el mismo token sirve con la IP del portátil y TLS. La consola
+  da los comandos: copiar `security-sensor.exe` e `ingest-cert.pem`, y arrancar con
+  `--enroll-token`. Sin TLS, el motor rechaza el alta desde la red.
 
 ## 9. Al terminar
 
