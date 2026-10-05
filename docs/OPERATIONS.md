@@ -168,6 +168,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 |------|---------|---------|
 | `-addr` | `127.0.0.1:7777` | NDJSON ingest listener (loopback unless you decide otherwise) |
 | `-api` | `127.0.0.1:7778` | local API — read endpoints + the alert triage write (`0` disables it) |
+| `-ad` | — | YAML config for the read-only Active Directory connector (LDAPS or explicit StartTLS with a configured CA, a least-privilege service account whose password lives in its own file, RFC 2696 paging and an object cap; requires `-store`); empty disables — see [Active Directory connector](#active-directory-connector-read-only) |
 | `-rules` | `./rules` | YAML rules directory (hot-reload aware) |
 | `-sequences` | `./sequences` | kill-chain sequences directory (correlator) |
 | `-beacons` | `./beacons.yaml` | beacon detector profiles (C2 call-home over `network.connect`; empty disables) |
@@ -194,6 +195,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `-splunk` / `-splunk-token` | — | Splunk HEC collector base URL (events POSTed to `/services/collector/event`) / HEC token (falls back to `SF_SPLUNK_TOKEN`) |
 | `-store` / `-store-retention` | off / `72h` | SQLite persistence / pruning window (`0` keeps everything) |
 | `-forensic` / `-forensic-dir` | on / `<forensics>` next to rules | freeze an evidence bundle (alert + 5m host timeline) for every high/critical alert, served at `GET /api/alerts/{id}/forensics`; directory capped at 256 bundles, oldest-first eviction |
+| `-scenarios` | — | directory with the detection-validation scenario library (arms `GET`/`POST /api/scenarios*` to replay the inert pack against the live rules and keep the run history; replayed hosts are tagged `simulation`); empty disables — see [Detection validation](#detection-validation-synthetic-scenarios) |
 | `-v` | off | print every event received |
 | `-pidfile` | — | write the engine PID to a file |
 | `-i`, `--interactive` | off | interactive TUI over the running engine (degrades to the classic flat run without a TTY) — see [Engine CLI reference](#engine-cli-reference) |
@@ -233,7 +235,7 @@ The engine serves a small read-only API used by the web console and handy for SI
 |----------|---------|
 | `GET /api/health` | liveness + mode |
 | `GET /metrics` | the same counters as `/api/stats` in the Prometheus text exposition format (`sf_*` families, `text/plain; version=0.0.4`) — scrapers read the credential from their `authorization` config; see [Prometheus](#prometheus-metrics) |
-| `GET /api/stats` | uptime, counters, per-severity totals, rule count, ingest auth rejections, webhook delivery counters, per-platform SIEM sink counters (`elastic_*` / `splunk_*`), per-channel external notification counters (`notify_channels`), active suppressions, kill-chain correlator observability (`correlator_states` / `correlator_sequences` / `correlator_cap`), store counters (`store_enabled` / `store_events` / `store_alerts`) |
+| `GET /api/stats` | uptime, counters, per-severity totals, rule count, ingest auth rejections, webhook delivery counters, per-platform SIEM sink counters (`elastic_*` / `splunk_*`), per-channel external notification counters (`notify_channels`), active suppressions, kill-chain correlator observability (`correlator_states` / `correlator_sequences` / `correlator_cap`), store counters (`store_enabled` / `store_events` / `store_alerts`), platform status (`version`, `alert_latency` p50/p95/max, `store_size_bytes`, `certificates` expiry of both listeners) |
 | `GET /api/events?limit=200` | recent events, newest first |
 | `GET /api/alerts?limit=100` | recent alerts, newest first |
 | `GET /api/suppressions` | operator allowlist currently active; `POST`/`DELETE` (only with `-api-write`) edit the same file atomically — see [Alert suppressions](#alert-suppressions-operator-allowlist) |
@@ -245,6 +247,10 @@ The engine serves a small read-only API used by the web console and handy for SI
 | `GET /api/alerts/export?format=ndjson\|csv&limit=256` | downloadable alert feed for SIEM/SOAR handoff, chronological order |
 | `GET /api/alerts/{id}/forensics` | frozen alert + host timeline; `404` missing, `501` capture disabled, `500` unreadable evidence; protected by the API bearer gate |
 | `GET /api/rules` | live rule set (hot-reload aware) |
+| `GET /api/ad/status` | read-only Active Directory connector state (last sync, next sync, object counts, truncation and warnings); `501` with an arming hint while the engine runs without `-ad` — see [Active Directory connector](#active-directory-connector-read-only) |
+| `GET /api/ad/objects/{kind}?q=&limit=&offset=` | one page of the local directory snapshot (`kind` = `user`/`group`/`computer`/`ou`); the free-text `q` runs against the SQLite snapshot, never against LDAP |
+| `GET /api/ad/posture` | domain posture analysis (AD-2): severity-sorted findings with affected objects and remediation, plus the 0-100 score; `ready=false` until the first sync completes |
+| `GET /api/ad/posture/history?limit=` | past posture scores, one point per completed sync (oldest first) |
 | `GET /api/stream` | Server-Sent Events with live events + alerts |
 
 All four telemetry endpoints (`/api/events`, `/api/alerts` and both `/export` variants) accept the same filter parameters, applied BEFORE `limit`: `host=<name>` (exact, case-insensitive), `since=`/`until=` (RFC 3339 timestamp or positive duration like `90m`/`24h`), `q=<free text>` (case-insensitive across ids, summaries, tags and context), plus `severity=a,b` and `rule_id=` on the alert endpoints and `type=` on the event ones. Invalid values answer 400 with an actionable message. When `-store` is attached, all four read the full stored history — not just the in-memory rings — subject to the configured retention (what that mode changes in [Persistent storage](#persistent-storage-sqlite-opt-in)). Examples: `/api/alerts/export?host=lab-wks-01&since=24h` for "that box, today", `/api/events?type=network.connect&q=suspicious.tld` to chase one domain.
@@ -686,6 +692,59 @@ every expectation must fire against the shipped pack, every shipped
 rule and chain must keep its scenario, and every raised alert must
 carry the `simulation` tag. A scenario that stops detecting breaks the
 build, so detection regressions cannot land silently.
+
+## Active Directory connector (read-only)
+
+Start the engine with `-ad <config.yaml>` (and `-store`, which holds
+the snapshot — see the example file [`ad.example.yaml`](../ad.example.yaml))
+and the engine periodically reads the directory over LDAPS (or plain
+LDAP explicitly upgraded with StartTLS) and installs a snapshot into
+SQLite:
+
+- the transport always validates the domain controller's certificate
+  against the CA file in the config: no CA file, no connector; plain
+  LDAP without StartTLS does not exist in this connector;
+- the bind is always the configured service account (a plain domain
+  user is enough). Anonymous binds are refused by construction, and the
+  account's password lives in its own file (`password_file`), read at
+  every sync so a rotation needs no restart — it is never logged,
+  returned by the API or interpolated into errors;
+- users, groups, computers and OUs are read with product-literal LDAP
+  filters (no operator input ever composes a filter), paged per
+  RFC 2696 with a hard object cap (`max_objects`; a capped sync
+  reports `truncated` on `/api/ad/status`), and the security-relevant
+  attributes land as typed columns: `userAccountControl`, `pwdLastSet`,
+  `lastLogonTimestamp`, `adminCount`, SPNs, supported encryption types
+  and the OS;
+- include/exclude OU filters prune the subtree, and every sync replaces
+  the snapshot inside one transaction: readers see either the old or
+  the new directory, never a half-synced mixture.
+
+The console reads the snapshot through `GET /api/ad/status`,
+`GET /api/ad/objects/{kind}` (user/group/computer/ou), and the domain
+posture analysis through `GET /api/ad/posture` and
+`GET /api/ad/posture/history`:
+
+- the posture (recomputed after every completed sync) reports the
+  classical defensive-audit findings — effective members of the
+  privileged groups (nested membership walked through the group edges),
+  stale `krbtgt` password age, unconstrained delegation, accounts
+  without Kerberos pre-authentication, user accounts with an SPN and
+  RC4 still allowed, past-end-of-support operating systems, inactive
+  accounts, passwords that never expire, domain computers without a
+  sensor (compared against the engine's own fleet) and orphaned
+  `adminCount` — each with severity, affected objects and remediation
+  in plain language, plus a 0-100 score with one history point per
+  sync;
+- the connector also watches itself: if the service account it binds
+  with turns out to be an effective member of a privileged group, that
+  is surfaced as a warning on `/api/ad/status` (a reader credential
+  that powerful is one more secret worth protecting).
+
+The `GET /api/ad/*` routes sit behind the same bearer gate as every
+other `/api` route and answer `501` with an arming hint while the
+engine runs without `-ad`. The machine-readable contract lives in
+OpenAPI 3.0 at [`api/openapi.yaml`](api/openapi.yaml).
 
 ## Reputation lookups (opt-in)
 

@@ -2012,6 +2012,196 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NoiseReport'
+  /api/ad/status:
+    get:
+      tags: [ad]
+      operationId: getADStatus
+      summary: Read-only Active Directory connector state (AD-1)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        State of the directory snapshot the connector maintains: when the
+        last sync attempt/completion happened, when the next one is due,
+        the per-kind object counts of the last completed snapshot and any
+        connector-level warnings (for example, the service account turning
+        out to be a member of a privileged group).
+
+        The routes under `/api/ad` answer 501 with an arming hint while the
+        engine runs without `-ad` (and `-store`, which keeps the snapshot):
+        the feature exists but is off, distinguishable from a 404. Reads
+        only — the connector never writes to the domain.
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '501':
+          description: The connector is not armed (no -ad config at startup)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Connector status (a value snapshot, never live memory)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ADStatus'
+
+  /api/ad/objects/{kind}:
+    get:
+      tags: [ad]
+      operationId: listADObjects
+      summary: One page of the directory snapshot (users, groups, computers or OUs)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Serves the LOCAL SQLite snapshot, paged and filtered — a console
+        query never composes an LDAP filter (the connector's own filters
+        are product literals, so there is no injection surface here).
+        `q` is a case-insensitive substring over the object name, DN and
+        operating system; wildcards are escaped.
+
+        Users carry the security attributes the posture analysis reads
+        (userAccountControl, pwdLastSet, lastLogonTimestamp, adminCount,
+        SPN count, Kerberos encryption types); groups carry their direct
+        member count; computers carry their OS and DNS host name.
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          description: object kind to list
+          schema:
+            type: string
+            enum: [user, group, computer, ou]
+        - name: q
+          in: query
+          required: false
+          description: substring filter over name, DN and OS (case-insensitive)
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: page size (default 50, max 500)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+        - name: offset
+          in: query
+          required: false
+          description: page start (default 0)
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          description: Unknown object kind
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '501':
+          description: The connector is not armed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: One filtered page plus the total that matches
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ADObjectsPage'
+
+  /api/ad/posture:
+    get:
+      tags: [ad]
+      operationId: getADPosture
+      summary: Domain posture analysis with the 0-100 score (AD-2)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The classical defensive-audit findings computed over the last
+        completed snapshot: effective members of privileged groups
+        (nested membership included), krbtgt password age, unconstrained
+        delegation, accounts without Kerberos pre-authentication, user
+        accounts with SPN and RC4-capable encryption, end-of-support
+        operating systems, inactive accounts, passwords that never
+        expire, orphaned adminCount and domain computers without a
+        sensor. Every finding carries severity, affected objects (the
+        list is capped at 50 entries; `count` is the true total) and a
+        plain-language remediation.
+
+        The score starts at 100 and deducts per finding (critical 10,
+        high 6, medium 3, low 1, each over a small per-finding cap), so
+        one noisy class cannot drown a targeted one. `ready` is false
+        and `score` null until the first sync completes — absence is
+        never rendered as a perfect score.
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '501':
+          description: The connector is not armed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: The stored posture document is unreadable (engine log has the detail)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: The posture document frozen by the last completed sync
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ADPosture'
+
+  /api/ad/posture/history:
+    get:
+      tags: [ad]
+      operationId: getADPostureHistory
+      summary: Past posture scores, one point per completed sync (AD-2 trend)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        One score point per completed sync, oldest first, so the console
+        renders the trend instead of a single number. The history keeps
+        the most recent 500 points (over a day of worst-case 5-minute
+        syncs, a year at the default 15-minute interval).
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: maximum points returned (default 500, max 500)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '501':
+          description: The connector is not armed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Score history (oldest first)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ADPostureHistory'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2223,6 +2413,10 @@ components:
         - baseline_learning
         - baseline_novelties
         - notify_channels
+        - version
+        - alert_latency
+        - store_size_bytes
+        - certificates
       properties:
         suppressions_active:
           type: integer
@@ -2443,6 +2637,275 @@ components:
             silence, reported as data).
           items:
             $ref: '#/components/schemas/NotifyChannelStats'
+        version:
+          type: string
+          description: engine version the running binary was built with
+            (the same string `engine version` prints); "" when unset
+        alert_latency:
+          type: object
+          description: ingest-to-alert latency (SET-3), measured from the
+            event's own sensor-side timestamp to the moment its alert was
+            raised by the engine, in milliseconds. count is the number of
+            raised alerts observed since start (0 means no alerts yet, not
+            zero latency); p50_ms/p95_ms/max_ms summarize the last 1024
+            observations. Sensor clocks far ahead of the engine are skipped,
+            never clamped into flattering zeros.
+          properties:
+            count:
+              type: integer
+              format: int64
+              description: raised alerts observed since engine start
+            p50_ms:
+              type: number
+              format: double
+              description: median ingest-to-alert latency (ms)
+            p95_ms:
+              type: number
+              format: double
+              description: 95th percentile ingest-to-alert latency (ms)
+            max_ms:
+              type: number
+              format: double
+              description: worst ingest-to-alert latency in the window (ms)
+        store_size_bytes:
+          type: integer
+          format: int64
+          description: durable on-disk size of the SQLite store as SQLite
+            accounts it (page_count x page_size; transient -wal/-shm siblings
+            excluded). 0 while store_enabled is false.
+        certificates:
+          type: object
+          description: expiry of both TLS listeners (SET-3). present=false and
+            empty strings when that listener runs without TLS; not_after is
+            RFC 3339 UTC. The console warns before a pair lapses instead of
+            discovering it on the day sensors fail to reconnect.
+          properties:
+            api:
+              $ref: '#/components/schemas/ADCertExpiry'
+            ingest:
+              $ref: '#/components/schemas/ADCertExpiry'
+    ADCertExpiry:
+      type: object
+      required: [present, not_after, path]
+      properties:
+        present:
+          type: boolean
+          description: whether the listener runs with TLS
+        not_after:
+          type: string
+          description: certificate expiry, RFC 3339 UTC ("" while absent)
+        path:
+          type: string
+          description: configured certificate file ("" while absent)
+    ADStatus:
+      type: object
+      required: [connected, last_sync_at, last_success_at, next_sync_at,
+        last_error, truncated, syncs, objects, warnings]
+      properties:
+        connected:
+          type: boolean
+          description: the last sync attempt reached the server and bound
+        last_sync_at:
+          type: string
+          nullable: true
+          description: RFC 3339 instant of the last sync attempt (null until one)
+        last_success_at:
+          type: string
+          nullable: true
+          description: RFC 3339 instant of the last completed snapshot
+        next_sync_at:
+          type: string
+          nullable: true
+          description: RFC 3339 instant of the next scheduled sync (null while stopped)
+        last_error:
+          type: string
+          description: the last failed attempt's reason, credential-free
+            (server and result code only — the password is never logged
+            nor interpolated)
+        truncated:
+          type: boolean
+          description: the object cap stopped the last sync; the snapshot is partial
+        syncs:
+          type: integer
+          format: int64
+          description: sync attempts since engine start
+        objects:
+          type: object
+          description: per-kind counts of the last completed snapshot
+          properties:
+            users:
+              type: integer
+              format: int64
+            groups:
+              type: integer
+              format: int64
+            computers:
+              type: integer
+              format: int64
+            ous:
+              type: integer
+              format: int64
+        warnings:
+          type: array
+          description: connector-level observations (e.g. the service account
+            being effectively privileged — it must be a plain domain user)
+          items:
+            type: string
+    ADObject:
+      type: object
+      required: [dn, kind, name, user_account_control, admin_count,
+        pwd_last_set_unix, last_logon_unix, spn_count, enc_types,
+        when_changed_unix]
+      properties:
+        dn:
+          type: string
+          description: distinguished name of the directory object
+        kind:
+          type: string
+          enum: [user, group, computer, ou]
+        name:
+          type: string
+          description: sAMAccountName (or the OU's name)
+        sid:
+          type: string
+          description: canonical SID (S-1-...) when the object has one
+        user_account_control:
+          type: integer
+          format: int64
+          description: raw userAccountControl flags (bit 0x2 = disabled)
+        admin_count:
+          type: integer
+          format: int64
+        pwd_last_set_unix:
+          type: integer
+          format: int64
+          description: unix seconds of pwdLastSet (0 = never/unknown)
+        last_logon_unix:
+          type: integer
+          format: int64
+          description: unix seconds of lastLogonTimestamp (0 = never/unknown)
+        spn_count:
+          type: integer
+          description: number of servicePrincipalName values
+        enc_types:
+          type: integer
+          format: int64
+          description: msDS-SupportedEncryptionTypes (0 = unset, RC4 fallback)
+        os:
+          type: string
+          description: operatingSystem + version (computers)
+        when_changed_unix:
+          type: integer
+          format: int64
+          description: unix seconds of whenChanged (0 = unknown)
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
+          description: the remaining security-relevant attributes verbatim
+            (UPN, mail, dNSHostName, description, SPN list, member count)
+    ADObjectsPage:
+      type: object
+      required: [total, offset, objects]
+      properties:
+        total:
+          type: integer
+          description: rows matching the filter (for the pager)
+        offset:
+          type: integer
+          description: page start
+        objects:
+          type: array
+          items:
+            $ref: '#/components/schemas/ADObject'
+    ADPosture:
+      type: object
+      required: [ready, generated_at, score, summary, findings,
+        objects_checked, inactive_days, krbtgt_max_age_days]
+      properties:
+        ready:
+          type: boolean
+          description: false while the connector is armed but no sync has
+            completed yet (absence is never a fabricated zero score)
+        generated_at:
+          type: string
+          description: RFC 3339 instant the analysis was computed ("" while not ready)
+        score:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 100
+          description: the 0-100 posture score (null while not ready)
+        summary:
+          type: object
+          additionalProperties:
+            type: integer
+          description: number of FINDING CLASSES per severity (critical/high/medium/low)
+        findings:
+          type: array
+          items:
+            type: object
+            required: [id, title, severity, description, remediation, count,
+              objects, objects_truncated]
+            properties:
+              id:
+                type: string
+                description: stable finding identifier (e.g. krbtgt_password_age)
+              title:
+                type: string
+              severity:
+                type: string
+                enum: [critical, high, medium, low]
+              description:
+                type: string
+                description: what the finding means, in plain language
+              remediation:
+                type: string
+                description: what to do about it, in plain language
+              count:
+                type: integer
+                description: affected objects (the true total, list is capped)
+              objects:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    dn:
+                      type: string
+                    name:
+                      type: string
+                    detail:
+                      type: string
+              objects_truncated:
+                type: boolean
+                description: more objects are affected than the 50 listed
+        objects_checked:
+          type: integer
+          description: users + groups + computers the analysis walked
+        inactive_days:
+          type: integer
+          description: the configured stale-account threshold the findings used
+        krbtgt_max_age_days:
+          type: integer
+          description: the configured krbtgt password-age threshold
+    ADPostureHistory:
+      type: object
+      required: [points]
+      properties:
+        points:
+          type: array
+          description: one score point per completed sync, oldest first
+          items:
+            type: object
+            required: [at, score]
+            properties:
+              at:
+                type: integer
+                format: int64
+                description: unix seconds of the sync
+              score:
+                type: integer
+                description: the 0-100 score that sync computed
     NotifyChannelStats:
       type: object
       description: |

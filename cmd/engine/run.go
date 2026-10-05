@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/actions"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/ad"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/api"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/baseline"
@@ -390,6 +391,9 @@ func runEngine(o *options, interactive bool) error {
 	// resolved once here so the active-response arming below can
 	// apply its token layer without duplicating the flag>env order
 	apiTok := ""
+	// SET-3: ingest→alert latency ring (the API closure reads it; the
+	// observer is attached to the alert manager once it exists).
+	latTracker := newAlertLatencyTracker(1024)
 	if o.apiAddr != "0" {
 		// API TLS: symmetric with the ingest listener — the pair
 		// is validated up front (cert without key or vice versa
@@ -529,6 +533,55 @@ func runEngine(o *options, interactive bool) error {
 				}
 				fmt.Printf("[ENGINE] scenarios: detection validation armed from %s (POST /api/scenarios/run; history %s)\n",
 					o.scenariosDir, history)
+			}
+
+			// SET-3 platform status: engine version, ingest→alert
+			// latency and both listeners' certificate expiry. The
+			// console's view used to mark these "not published";
+			// the engine publishes them from now on.
+			hub.SetVersion(engineVersion)
+			hub.SetAlertLatency(latTracker.snapshot)
+			hub.SetIngestCertExpiry(server.CertExpiry)
+
+			// Read-only Active Directory connector (AD-1/AD-2):
+			// armed only with -ad AND a store (the snapshot is
+			// persisted, never memory-only). The connector is
+			// read-only by construction (bind + search only),
+			// speaks LDAPS/StartTLS with the configured CA and a
+			// least-privilege account, and pages with an object
+			// cap. The posture analysis (AD-2) recomputes with
+			// every completed sync.
+			if o.adConfig != "" {
+				if st == nil {
+					log.Fatalf("[ENGINE] -ad requires -store: the directory snapshot is persisted to SQLite, never held in memory only")
+				}
+				adCfg, aerr := ad.Load(o.adConfig)
+				if aerr != nil {
+					log.Fatalf("[ENGINE] %v", aerr)
+				}
+				adConn, aerr := ad.New(adCfg, st, log.New(os.Stderr, "[AD] ", log.LstdFlags),
+					func() []string {
+						hosts := fleetTracker.Snapshot(time.Now())
+						names := make([]string, 0, len(hosts))
+						for _, fh := range hosts {
+							names = append(names, fh.Host)
+						}
+						return names
+					})
+				if aerr != nil {
+					log.Fatalf("[ENGINE] %v", aerr)
+				}
+				if aerr := adConn.Run(ctx); aerr != nil {
+					log.Printf("[ENGINE] active directory: %v", aerr)
+				}
+				defer adConn.Stop()
+				hub.SetAD(adConn)
+				mode := "LDAPS"
+				if adCfg.StartTLS {
+					mode = "StartTLS"
+				}
+				fmt.Printf("[ENGINE] active directory: read-only connector armed (%s://%s:%d, interval %s; GET /api/ad/*)\n",
+					mode, redact.EndpointLabel(adCfg.Server), adCfg.Port, adCfg.Interval)
 			}
 			go func() {
 				if err := hub.Run(); err != nil {
@@ -750,6 +803,8 @@ func runEngine(o *options, interactive bool) error {
 	// webhook deliveries run in the background and never stall intake
 	dispatcher := actions.New(log.New(os.Stderr, "[ACTIONS] ", 0))
 	alerts.SetPreparer(dispatcher.Prepare)
+	// SET-3: every raised alert measures the ingest→alert latency.
+	alerts.SetLatencyObserver(latTracker.Observe)
 
 	// emitAllowlisted is the ONE suppression gate every secondary
 	// emitter shares: a host with a suppressed rule is in an accepted
