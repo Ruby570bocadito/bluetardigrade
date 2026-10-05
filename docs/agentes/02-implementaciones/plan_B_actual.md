@@ -1,22 +1,28 @@
-# Plan de ronda — Implementación B (2026-10-05 18h37, ronda 5)
+# Plan de ronda — Implementación B (2026-10-05 ~19h30, ronda 6)
 
-- Tarea del TODO: **IDEA-11 Asistente de primer arranque** — acceso de la consola
-  (y la nota honesta de que las cuentas por usuario son TEAM-2, aún sin API),
-  certificado TLS de ingesta (estado real `enroll.enabled` + aviso del propio
-  motor), primer token de alta (reutiliza `TokenEnrollment`) y comprobación del
-  sensor local (pendientes/aprobados con `PendingHosts`).
-- Ficheros: nuevo `web/console/src/lib/onboarding.ts` (+ test: decisión de
-  auto-apertura y estado de pasos, todo derivado de datos del motor), nuevo
-  `onboarding-wizard.tsx` (diálogo), y cables en `shell.tsx`,
-  `console-commands.ts` (comando de paleta) y `command-palette.tsx` (icono).
-- Por qué: AD-5/AD-6, SET-3, REP-3 y SET-1 siguen bloqueados (IMP-A solo ha
-  publicado plan de AD-1/AD-2/SET-3, sin código que fusionar, verificado con
-  fetch al empezar la ronda); IDEA-11 es la siguiente desbloqueada del roadmap
-  y es 100 % consola.
-- Diseño: nada inventado — el asistente se abre solo solo cuando el motor
-  responde y declara instalación nueva (inventario y hosts activos a cero,
-  cargados de `/api/fleet` y `/api/enroll`); la marca «no volver a abrir» vive
-  en localStorage con el patrón validado de las búsquedas guardadas; se puede
-  reabrir desde la barra lateral y la paleta. Los pasos que la consola no puede
-  cerrar hoy (cuentas, descarga del certificado REP-3) se declaran como
-  información, nunca como hechos.
+- Tarea del TODO: **IDEA-10 Idiomas (fase 1: «el armazón bilingüe»)** —
+  infraestructura i18n (diccionarios ES/EN con paridad tipada, provider con
+  persistencia validada en localStorage y sync multipestaña, `lang` de
+  `<html>` antes del primer pintado) y migración del armazón: navegación,
+  paleta, hoja de atajos, alternador de tema/idioma y asistente de primer
+  arranque. Las vistas de datos siguen en español; la receta de migración
+  queda documentada en el roadmap para las siguientes rondas.
+- Ficheros: nuevos `web/console/src/lib/i18n/` (núcleo + dict-es + dict-en +
+  test de paridad), `i18n-provider.tsx`, `language-toggle.tsx`; cambios en
+  `console-commands.ts` (catálogo construido desde el diccionario, búsqueda
+  parametrizable), `shell.tsx`, `command-palette.tsx`, `shortcuts-help.tsx`,
+  `theme-toggle.tsx`, `onboarding-wizard.tsx`, `layout.tsx` (boot del `lang`)
+  y `page.tsx` (provider).
+- Por qué: AD-5/AD-6, SET-3, REP-3, SET-1 y la vista «Forense» siguen
+  bloqueadas por código de IMP-A (verificado con fetch: IMP-A solo publica
+  plan `2c32013`); IDEA-5 (Sigma en consola) necesita API de escritura de
+  reglas que no existe. IDEA-10 es la única desbloqueada del roadmap; el
+  riesgo de solape con SEG-B se re-verificó: su ronda 4 toca solo
+  `web/console-service` (hub/analyst), no `web/console/src`.
+- Diseño: el ES es la fuente de la verdad y reproduce byte a byte los textos
+  actuales que las baterías fijan (`Puesta en marcha`, `Comandos de la
+  consola`, `Atajos de teclado`, `Buscar comandos`); el EN tipado como
+  `Dict` garantiza paridad en compilación y un test la re-verifica. Los
+  textos que vienen del motor (hints, nombres de regla, `enroll.hint`) no se
+  traducen nunca. Sin datos inventados: el idioma es preferencia del
+  navegador, no dato del motor.
