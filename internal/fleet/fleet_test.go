@@ -228,3 +228,22 @@ func TestRetiredHostsAreReportedForDeletion(t *testing.T) {
 		t.Fatal("corrupt documents are skipped")
 	}
 }
+
+func TestResumeAfterTheEngineWasSuspended(t *testing.T) {
+	tr := New()
+	tr.Observe(heartbeat("PORTATIL", 60), "127.0.0.1", t0)
+	// the laptop sleeps 40 minutes with engine and sensor on it
+	wake := t0.Add(40 * time.Minute)
+	tr.Resume(wake)
+	if got := tr.Check(wake.Add(time.Second)); len(got) != 0 {
+		t.Fatalf("waking up must not report the sensor silent: %+v", got)
+	}
+	tr.Observe(heartbeat("PORTATIL", 60), "127.0.0.1", wake.Add(30*time.Second))
+	if find(t, tr.Snapshot(wake.Add(time.Minute)), "PORTATIL").Status != StatusOnline {
+		t.Fatal("the sensor is online again after its first heartbeat")
+	}
+	// a sensor that really stays quiet after the wake is still reported
+	if got := tr.Check(wake.Add(30*time.Second + 4*time.Minute)); len(got) != 1 {
+		t.Fatalf("a real silence after the grace is reported: %+v", got)
+	}
+}

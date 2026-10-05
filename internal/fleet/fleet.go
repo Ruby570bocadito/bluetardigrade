@@ -273,6 +273,20 @@ func (t *Tracker) Export(all bool, now time.Time) map[string][]byte {
 	return out
 }
 
+// Resume gives every sensor not already reported silent a full grace
+// from now. The engine calls it after it was itself suspended (a laptop
+// closed with engine and sensor on it): it could not receive heartbeats
+// either, so the gap is not the sensors' silence.
+func (t *Tracker) Resume(now time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, r := range t.hosts {
+		if r.Sensor != nil && !r.alerted {
+			r.graceFrom = now
+		}
+	}
+}
+
 // TakeRetired returns (and forgets) the hosts retired since the last call.
 func (t *Tracker) TakeRetired() []string {
 	t.mu.Lock()

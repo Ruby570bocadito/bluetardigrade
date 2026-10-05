@@ -724,13 +724,23 @@ func runEngine(o *options, interactive bool) error {
 	// heartbeats; it goes through the same suppression gate, so a
 	// planned maintenance can be silenced per host
 	go func() {
-		t := time.NewTicker(30 * time.Second)
+		const every = 30 * time.Second
+		t := time.NewTicker(every)
 		defer t.Stop()
+		last := time.Now()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case now := <-t.C:
+				// wall clock (Round(0) drops the monotonic reading, which may
+				// not count a system sleep): a gap far beyond the tick means
+				// the engine itself was suspended, and its sensors with it
+				if gap := now.Round(0).Sub(last.Round(0)); gap > 3*every {
+					fleetTracker.Resume(now)
+					log.Printf("[FLEET] engine was suspended for %s: sensors get a fresh grace", gap.Round(time.Second))
+				}
+				last = now
 				for _, tr := range fleetTracker.Check(now) {
 					if tr.Silent {
 						emitAllowlisted(silentSensorAlert(tr.Host, now))
