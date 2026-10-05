@@ -8,7 +8,7 @@ import { describeTelemetrySources } from '@/lib/telemetry-source'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { ActivityIcon, BatteryCharging, Desktop, Files, Flask, FolderOpen, Gauge, Lightning, Prohibit, ShieldCheck, SpeakerHigh, SquaresFour, Warning, ChatsCircle, FlowArrow, Keyboard, ListMagnifyingGlass, MagnifyingGlass, Monitor } from '@phosphor-icons/react'
+import { ActivityIcon, BatteryCharging, Desktop, Files, Flask, FolderOpen, Gauge, Lightning, Prohibit, RocketLaunch, ShieldCheck, SpeakerHigh, SquaresFour, Warning, ChatsCircle, FlowArrow, Keyboard, ListMagnifyingGlass, MagnifyingGlass, Monitor } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { BlurText } from '@/components/reactbits/blur-text'
 import { ShinyText } from '@/components/reactbits/shiny-text'
@@ -32,6 +32,8 @@ import { NotifyMenu } from './critical-notifier'
 import { NocMode } from './noc-mode'
 import { DetectorsMenu } from './detectors-menu'
 import { ReadOnlyBanner, UserChip } from './user-session'
+import { OnboardingWizard } from './onboarding-wizard'
+import { readDismissed, shouldAutoOpen } from '@/lib/onboarding'
 import { ThemeToggle } from './theme-toggle'
 import { ReportsView } from './reports-view'
 import { CONSOLE_DESTINATIONS, type ConsoleCommand } from '@/lib/console-commands'
@@ -81,13 +83,14 @@ export function ConsoleShell() {
   const { status: analystStatus } = useAnalystChannel()
   const { incidents } = useIncidents()
   const openIncidents = incidents.filter((i) => i.status !== 'closed').length
-  const { fleet } = useFleet()
+  const { fleet, enroll, loaded: fleetLoaded } = useFleet()
   const silentHosts = fleet?.silent ?? 0
   const [view, setViewState] = useState<ConsoleView>('panel')
   const [helpOpen, setHelpOpen] = useState(false)
   const [nocOpen, setNocOpen] = useState(false)
   const closeNoc = useCallback(() => setNocOpen(false), [])
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [onboardingOpen, setOnboardingOpen] = useState(false)
   const helpOpenRef = useRef(false)
   const paletteOpenRef = useRef(false)
   helpOpenRef.current = helpOpen
@@ -113,6 +116,31 @@ export function ConsoleShell() {
       pushOperatorState((search) => writeViewToSearch(search, next))
     }
   }
+
+  // IDEA-11: offer the first-run assistant once, only on a genuinely
+  // fresh install as the engine reports it (fleet and enrollment loaded,
+  // no inventory hosts, none active) and while this browser has not
+  // recorded a dismissal. The effect runs once that state is first
+  // observable; it never re-opens on later data changes.
+  const offeredRef = useRef(false)
+  useEffect(() => {
+    if (offeredRef.current || status !== 'live' || !fleetLoaded) return
+    offeredRef.current = true
+    const facts = {
+      engineLive: true,
+      loaded: fleetLoaded,
+      enroll: enroll
+        ? {
+            enabled: enroll.enabled,
+            usableTokens: enroll.tokens.filter((t) => t.status === 'active').length,
+            pendingHosts: enroll.hosts.filter((h) => h.state === 'pending').length,
+            activeHosts: enroll.hosts.filter((h) => h.state === 'active').length,
+          }
+        : null,
+      inventoryHosts: fleet ? fleet.hosts.length : null,
+    }
+    if (shouldAutoOpen(facts, readDismissed(window.localStorage))) setOnboardingOpen(true)
+  }, [status, fleetLoaded, enroll, fleet])
   const openTriage = (target: TriageTarget) => {
     pushOperatorState((search) => writeTriageDestination(search, target))
     setViewState('alertas')
@@ -209,6 +237,7 @@ export function ConsoleShell() {
     if (command.kind === 'help') setHelpOpen(true)
     else if (command.kind === 'refresh') refresh()
     else if (command.kind === 'noc') setNocOpen(true)
+    else if (command.kind === 'onboarding') setOnboardingOpen(true)
     else {
       setView(command.view)
       requestAnimationFrame(() => document.getElementById('console-main')?.focus({ preventScroll: true }))
@@ -357,6 +386,14 @@ export function ConsoleShell() {
               <Keyboard size={12} aria-hidden />
               Atajos: <span className="font-mono">{SHORTCUT_PREFIX}·vista</span> · <span className="font-mono">?</span>
             </button>
+            <button
+              type="button"
+              onClick={() => setOnboardingOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded text-[11px] text-zinc-500 transition-colors hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <RocketLaunch size={12} aria-hidden />
+              Puesta en marcha
+            </button>
           </div>
         </aside>
 
@@ -480,6 +517,7 @@ export function ConsoleShell() {
       <ShortcutsHelp open={helpOpen} rows={HELP_ROWS} onClose={() => setHelpOpen(false)} />
       {paletteOpen && <CommandPalette open refreshing={refreshing} onClose={() => setPaletteOpen(false)} onExecute={executeCommand} />}
       {nocOpen && <NocMode onClose={closeNoc} />}
+      <OnboardingWizard open={onboardingOpen} onClose={() => setOnboardingOpen(false)} />
     </div>
   )
 }

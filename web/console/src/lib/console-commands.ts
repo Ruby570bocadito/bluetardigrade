@@ -28,6 +28,7 @@ export type ConsoleCommand = CommandText & (
   | { kind: 'refresh' }
   | { kind: 'help' }
   | { kind: 'noc' }
+  | { kind: 'onboarding' }
 )
 
 export const CONSOLE_COMMANDS: ConsoleCommand[] = [
@@ -37,6 +38,7 @@ export const CONSOLE_COMMANDS: ConsoleCommand[] = [
   })),
   { id: 'refresh', kind: 'refresh', label: 'Actualizar datos del motor', group: 'Acciones', description: 'Volver a consultar el estado y los búferes actuales', keywords: 'refresh recargar reconectar sincronizar recuperar' },
   { id: 'noc', kind: 'noc', label: 'Modo NOC', group: 'Acciones', description: 'Pantalla completa rotativa para un monitor de sala', keywords: 'pantalla completa sala monitor wall pared' },
+  { id: 'onboarding', kind: 'onboarding', label: 'Asistente de puesta en marcha', group: 'Acciones', description: 'Acceso, certificado de ingesta, primer token de alta y comprobación del sensor', keywords: 'asistente wizard primera vez instalar puesta en marcha token alta certificado tls sensor administrador' },
   { id: 'help', kind: 'help', label: 'Ayuda de teclado', group: 'Acciones', description: 'Consultar los atajos de la consola', keywords: 'atajos shortcuts ayuda teclas', shortcut: '?' },
 ]
 

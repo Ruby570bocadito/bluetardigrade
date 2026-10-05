@@ -521,6 +521,51 @@ try {
     await page.getByText('Informes guardados (0/10)', { exact: true }).waitFor()
     assert.deepEqual(await page.evaluate((key) => JSON.parse(localStorage.getItem(key)).items, reportKey), [])
   })
+  await check('first-run assistant opens on a fresh engine, records its dismissal and offers itself again from the sidebar', async () => {
+    // A separate context: the shared fixture leaves enrollment unanswered
+    // (404), which must keep the assistant closed; here the engine answers
+    // a genuinely fresh install so the offer path is exercised for real.
+    const freshContext = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce', colorScheme: 'dark' })
+    const freshPage = await freshContext.newPage()
+    const freshErrors = []
+    freshPage.on('pageerror', (error) => freshErrors.push(String(error)))
+    await engineFixture(freshPage)
+    await freshPage.route('**/api/engine/api/enroll', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ enabled: true, hint: '', pending: 0, active: 0, usable_tokens: 0, writes: true, tokens: [], hosts: [] }) }))
+    await freshPage.route('**/api/engine/api/fleet', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ enabled: true, hosts: [], online: 0, silent: 0, idle: 0, heartbeat_grace_min_s: 10 }) }))
+    const wizard = freshPage.getByRole('dialog', { name: 'Puesta en marcha', exact: true })
+    try {
+      await freshPage.goto(base + '/')
+      await wizard.waitFor({ timeout: 10000 })
+      await freshPage.screenshot({ path: join(captures, 'onboarding-wizard.png'), fullPage: false })
+      for (const step of ['Acceso a la consola y administrador', 'Certificado TLS de ingesta', 'Primer token de alta', 'Comprobar el sensor']) {
+        assert.ok(await wizard.getByText(step, { exact: true }).isVisible(), `missing step: ${step}`)
+      }
+      assert.ok(await wizard.getByRole('checkbox', { name: 'No volver a proponerlo al abrir la consola' }).isVisible())
+      // The token step offers the real form; the sensor step waits on the operator.
+      assert.ok(await wizard.getByRole('button', { name: 'Crear token de alta' }).isVisible())
+      assert.ok(await wizard.getByText('Crea el token en el paso anterior', { exact: false }).isVisible())
+      await wizard.getByRole('checkbox', { name: 'No volver a proponerlo al abrir la consola' }).check()
+      const record = await freshPage.evaluate(() => localStorage.getItem('bluetardigrade.onboarding.v1'))
+      assert.ok(record && JSON.parse(record).dismissed_at, 'dismissal not recorded')
+      await wizard.getByRole('button', { name: 'Cerrar el asistente' }).click()
+      await freshPage.goto(base + '/')
+      await freshPage.getByRole('button', { name: 'Abrir comandos', exact: true }).waitFor()
+      let reopened = false
+      for (let waited = 0; waited < 2000 && !reopened; waited += 100) {
+        reopened = await wizard.isVisible().catch(() => false)
+        if (!reopened) await freshPage.waitForTimeout(100)
+      }
+      assert.equal(reopened, false, 'assistant reopened after a recorded dismissal')
+      await freshPage.getByRole('button', { name: 'Puesta en marcha', exact: true }).click()
+      await wizard.waitFor()
+      await wizard.getByRole('button', { name: 'Cerrar el asistente' }).click()
+      assert.deepEqual(freshErrors, [], 'Unexpected runtime errors in the assistant')
+    } finally {
+      await freshContext.close()
+    }
+  })
   assert.deepEqual(errors, [], 'Unexpected browser runtime errors')
   console.log(`Browser checks: ${passed}/${passed} passed; engine/SSE data are test fixtures.`)
 } catch (error) {

@@ -37,7 +37,8 @@ const WHERE = {
   'remote-admin': 'En el equipo nuevo · PowerShell de administrador',
 } as const
 
-function CopyBox({ text, label }: { text: string; label: string }) {
+/** Command or secret with a copy button; shared with the first-run assistant. */
+export function CopyBox({ text, label }: { text: string; label: string }) {
   const [done, setDone] = useState(false)
   async function copy() {
     try {
