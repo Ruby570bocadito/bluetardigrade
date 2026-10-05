@@ -8,7 +8,7 @@ import { describeTelemetrySources } from '@/lib/telemetry-source'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { ActivityIcon, Desktop, Flask, FolderOpen, Gauge, Lightning, Prohibit, ShieldCheck, SquaresFour, Warning, ChatsCircle, FlowArrow, Keyboard, ListMagnifyingGlass, MagnifyingGlass, Monitor } from '@phosphor-icons/react'
+import { ActivityIcon, BatteryCharging, Desktop, Files, Flask, FolderOpen, Gauge, Lightning, Prohibit, ShieldCheck, SpeakerHigh, SquaresFour, Warning, ChatsCircle, FlowArrow, Keyboard, ListMagnifyingGlass, MagnifyingGlass, Monitor } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { BlurText } from '@/components/reactbits/blur-text'
 import { ShinyText } from '@/components/reactbits/shiny-text'
@@ -33,10 +33,11 @@ import { NocMode } from './noc-mode'
 import { DetectorsMenu } from './detectors-menu'
 import { ReadOnlyBanner, UserChip } from './user-session'
 import { ThemeToggle } from './theme-toggle'
+import { ReportsView } from './reports-view'
 import { CONSOLE_DESTINATIONS, type ConsoleCommand } from '@/lib/console-commands'
 import { formatUptime, type EngineStats, type SfAlert } from '@/lib/console-types'
 import { buildIncidentAnalysis, type PendingIncidentAnalysis } from '@/lib/incident-analysis'
-import { currentSearch, isDetectionView, pushOperatorState, readOperatorState, writeAlertLens, writeHostToSearch, writeIncidentToSearch, writeRulesToSearch, writeViewToSearch } from '@/lib/url-state'
+import { writeScenarioLensToSearch, currentSearch, isDetectionView, pushOperatorState, readOperatorState, writeAlertLens, writeHostToSearch, writeIncidentToSearch, writeRulesToSearch, writeViewToSearch } from '@/lib/url-state'
 import {
   SHORTCUT_ARM_MS,
   SHORTCUT_PREFIX,
@@ -52,8 +53,9 @@ import { useAnalystChannel } from './socket-provider'
 import { writeTriageDestination, type TriageTarget } from '@/lib/operations'
 
 const NAV_ICONS: Record<ConsoleView, React.ElementType> = {
-  panel: SquaresFour, estado: Gauge, flujo: ActivityIcon, alertas: Warning, incidentes: FolderOpen, equipos: Desktop,
+  panel: SquaresFour, estado: Gauge, flujo: ActivityIcon, alertas: Warning, incidentes: FolderOpen, equipos: Desktop, informes: Files,
   reglas: ShieldCheck, cadenas: FlowArrow, inteligencia: ListMagnifyingGlass, supresiones: Prohibit, probador: Flask,
+  ruido: SpeakerHigh, simulacion: BatteryCharging,
   respuesta: Lightning, analista: ChatsCircle,
 }
 const NAV = CONSOLE_DESTINATIONS.map((item) => ({ ...item, icon: NAV_ICONS[item.id] }))
@@ -131,6 +133,8 @@ export function ConsoleShell() {
   const openIncident = (id: string) => jump((search) => writeIncidentToSearch(search, id), 'incidentes')
   const openAlert = (id: string) => jump((search) => writeAlertLens(search, 'all', '', 'all', 'live', id), 'alertas')
   const openRule = (id: string) => jump((search) => writeRulesToSearch(search, '', id), 'reglas')
+  // SIM-3 click-through: a validated tactic cell opens the battery filtered by tactic
+  const openScenarioTactic = (slug: string) => jump((search) => writeScenarioLensToSearch(search, slug), 'simulacion')
   const hintTitle = (id: ConsoleView): string | undefined => {
     const hint = shortcutHintFor(id)
     return hint ? `Atajo: ${hint}` : undefined
@@ -441,12 +445,13 @@ export function ConsoleShell() {
           <main id="console-main" tabIndex={-1} className="flex-1 px-4 py-5 outline-none lg:px-8 lg:py-6">
             <div className="mx-auto w-full max-w-[1560px]">
               <AnimatedView viewKey={view}>
-                {view === 'panel' && <Dashboard onAnalyze={openInAnalyst} onNavigate={setView} onTriage={openTriage} onHunt={openHunt} onHost={openHost} />}
+                {view === 'panel' && <Dashboard onAnalyze={openInAnalyst} onNavigate={setView} onTriage={openTriage} onHunt={openHunt} onHost={openHost} onScenarioTactic={openScenarioTactic} />}
                 {view === 'estado' && <PlatformStatusView />}
                 {view === 'flujo' && <LiveFeed />}
                 {view === 'alertas' && <AlertsView onAnalyze={openInAnalyst} onAnalyzeGroup={openSelectionInAnalyst} onHost={openHost} onOpenIncident={openIncident} />}
                 {view === 'incidentes' && <IncidentsView onHost={openHost} onOpenAlert={openAlert} onAnalyze={openIncidentInAnalyst} />}
                 {view === 'equipos' && <HostsView onHunt={(q) => openHunt({ q })} onOpenAlert={openAlert} onOpenIncident={openIncident} />}
+                {view === 'informes' && <ReportsView />}
                 {isDetectionView(view) && <DetectionHub tab={view} onTab={setView} onOpenRule={openRule} />}
                 {view === 'respuesta' && <RespondView />}
                 {view === 'analista' && (
@@ -508,8 +513,14 @@ function titleFor(view: ConsoleView): string {
       return 'Incidentes'
     case 'equipos':
       return 'Equipos'
+    case 'informes':
+      return 'Informes'
     case 'probador':
       return 'Probador de reglas'
+    case 'ruido':
+      return 'Informe de ruido'
+    case 'simulacion':
+      return 'Validación de detecciones'
     case 'reglas':
       return 'Reglas de detección'
     case 'cadenas':

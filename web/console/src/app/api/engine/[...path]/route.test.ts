@@ -264,6 +264,7 @@ describe('engine proxy boundary', () => {
       [POST, 'POST', '/api/rules/test'],
       [POST, 'POST', '/api/suppressions'],
       [DELETE, 'DELETE', '/api/suppressions?rule_id=r&host=lab'],
+      [POST, 'POST', '/api/scenarios/run'],
     ]
     for (const [handler, method, path] of calls) {
       const res = await handler(new Request(base + path, {
@@ -277,6 +278,7 @@ describe('engine proxy boundary', () => {
       calls.map(([, method, path]) => `${method} ${path.split('?')[0]}`),
     )
     expect(captured[6].url).toContain('?rule_id=r&host=lab')
+    expect(captured[7].url).toBe('http://127.0.0.1:7778/api/scenarios/run')
   })
 
   test('the operator credential is forwarded on the kill route only', async () => {
@@ -380,14 +382,15 @@ describe('engine proxy with analyst accounts', () => {
     expect(denied.status).toBe(403)
     expect(((await denied.json()) as { error: string }).error).toBe('role_forbidden')
     expect((await DELETE(new Request(base + '/api/suppressions?rule_id=r', { method: 'DELETE', headers: as('luis') }))).status).toBe(403)
+    expect((await POST(new Request(base + '/api/scenarios/run', { method: 'POST', headers: as('luis'), body: '{}' }))).status).toBe(403)
     expect((await POST(new Request(base + '/api/respond/kill', { method: 'POST', headers: as('ana'), body: '{}' }))).status).toBe(403)
     expect(captured).toHaveLength(0)
     // a viewer may still dry-run a rule: it changes nothing
     expect((await POST(new Request(base + '/api/rules/test', { method: 'POST', headers: as('luis'), body: '{}' }))).status).toBe(200)
     expect((await POST(new Request(base + '/api/respond/kill', { method: 'POST', headers: as('jefa'), body: '{}' }))).status).toBe(200)
     const lines = readFileSync(audit, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
-    expect(lines.map((l) => `${l.user}:${l.outcome}`)).toEqual(['luis:denied', 'luis:denied', 'ana:denied', 'luis:ok', 'jefa:ok'])
-    expect(lines[4]).toMatchObject({ method: 'POST', path: '/api/respond/kill', role: 'admin', status: 200 })
+    expect(lines.map((l) => `${l.user}:${l.outcome}`)).toEqual(['luis:denied', 'luis:denied', 'luis:denied', 'ana:denied', 'luis:ok', 'jefa:ok'])
+    expect(lines[5]).toMatchObject({ method: 'POST', path: '/api/respond/kill', role: 'admin', status: 200 })
   })
 
   test('only an administrator enrolls machines, under their own name', async () => {

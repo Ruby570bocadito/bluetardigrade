@@ -12,6 +12,8 @@
 //   ?view=respuesta&clase=denied        (audit queue lens)
 //   ?view=flujo&tipo=FileCreate&fq=mimikatz
 //   ?view=reglas&rq=lateral&regla=R-042 (expanded row, stable rule id)
+//   ?view=informes&informe=executive&ventana=7d&caso=<id> (REP-1 lens)
+//   ?view=simulacion&sc=credential-access (battery filtered by tactic)
 //   ?view=alertas&historial=1&estado=open&sev=critical&q=lsass&alert=<id>
 //   historial: 1 uses engine history, else live buffer
 //   estado: all/open/new/acknowledged/closed, else all
@@ -63,17 +65,20 @@ export const CONSOLE_VIEWS = [
   'alertas',
   'incidentes',
   'equipos',
+  'informes',
   'reglas',
   'cadenas',
   'inteligencia',
   'supresiones',
   'probador',
+  'ruido',
+  'simulacion',
   'respuesta',
   'analista',
 ] as const
 
 /** Views rendered as tabs of the single Detección section. */
-export const DETECTION_VIEWS = ['reglas', 'cadenas', 'inteligencia', 'supresiones', 'probador'] as const
+export const DETECTION_VIEWS = ['reglas', 'cadenas', 'inteligencia', 'supresiones', 'probador', 'ruido', 'simulacion'] as const
 export type DetectionView = (typeof DETECTION_VIEWS)[number]
 export function isDetectionView(view: ConsoleView): view is DetectionView {
   return (DETECTION_VIEWS as readonly string[]).includes(view)
@@ -122,6 +127,14 @@ export type LensState = {
   host: string
   /** incident opened by the Incidentes view ('' = list) */
   incidente: string
+  /** report kind shown by the Informes view (sanitized, validated against the engine catalog by the view) */
+  informe: string
+  /** window preset of the Informes view (whitelisted: 24h/7d/30d, else '') */
+  ventana: string
+  /** incident id of the Informes view (16 hex, '' = none) */
+  caso: string
+  /** ATT&CK tactic slug filtering the Validación view ('' = all) */
+  sc: string
 }
 
 function isView(raw: string): raw is ConsoleView {
@@ -130,6 +143,13 @@ function isView(raw: string): raw is ConsoleView {
 
 function isSeverityFilter(raw: string): raw is SeverityFilter {
   return (SEVERITY_FILTERS as readonly string[]).includes(raw)
+}
+
+/** Tabs of the Panel view (Resumen / Detección / Equipos y actividad). */
+export const DASHBOARD_TABS = ['resumen', 'deteccion', 'actividad'] as const
+export type DashboardTab = (typeof DASHBOARD_TABS)[number]
+export function dashboardTabFromParam(raw: string | null): DashboardTab {
+  return (DASHBOARD_TABS as readonly string[]).includes(raw ?? '') ? (raw as DashboardTab) : 'resumen'
 }
 
 /** Whitelist fallback: anything unknown degrades to the default view. */
@@ -184,8 +204,9 @@ export function readAlertLens(search: string): { state: AlertStateFilter; scope:
 
 /**
  * Parse the per-view lens keys (audit class, feed type+query, rules
- * query+expanded id). Views read what they own; the shared query string
- * keeps the other lenses intact for when the operator navigates back.
+ * query+expanded id, report lens, scenario tactic). Views read what they
+ * own; the shared query string keeps the other lenses intact for when
+ * the operator navigates back.
  */
 export function readLensState(search: string): LensState {
   const params = new URLSearchParams(search)
@@ -197,7 +218,32 @@ export function readLensState(search: string): LensState {
     regla: queryFromParam(params.get('regla')),
     host: queryFromParam(params.get('host')),
     incidente: /^[0-9a-f]{16}$/.test(params.get('incidente') ?? '') ? (params.get('incidente') as string) : '',
+    informe: reportKindFromParam(params.get('informe')),
+    ventana: reportWindowFromParam(params.get('ventana')),
+    caso: /^[0-9a-f]{16}$/.test(params.get('caso') ?? '') ? (params.get('caso') as string) : '',
+    sc: tacticSlugParam(params.get('sc')),
   }
+}
+
+/** Report kind lens: capped free text — the engine catalog is the
+ * whitelist and the view degrades honestly to the first kind. */
+export const MAX_REPORT_KIND_CHARS = 40
+function reportKindFromParam(raw: string | null): string {
+  if (raw === null) return ''
+  const trimmed = raw.trim()
+  return trimmed.length > MAX_REPORT_KIND_CHARS ? trimmed.slice(0, MAX_REPORT_KIND_CHARS) : trimmed
+}
+
+/** Window lens: only the engine's documented presets survive the URL. */
+function reportWindowFromParam(raw: string | null): string {
+  return raw === '24h' || raw === '7d' || raw === '30d' ? raw : ''
+}
+
+/** Tactic lens: normalized through the same slug table the matrix uses. */
+function tacticSlugParam(raw: string | null): string {
+  if (raw === null) return ''
+  const slug = raw.trim().toLowerCase()
+  return /^[a-z-]{3,30}$/.test(slug) ? slug : ''
 }
 
 /** Query string with the host page lens applied ('' = host list). */
@@ -208,6 +254,25 @@ export function writeHostToSearch(search: string, host: string): string {
 /** Query string with the open incident applied ('' = incident list). */
 export function writeIncidentToSearch(search: string, id: string): string {
   return writeKeys(search, { incidente: /^[0-9a-f]{16}$/.test(id) ? id : null })
+}
+
+/** Query string with the Informes lens applied ('' values are defaults). */
+export function writeReportLensToSearch(search: string, informe: string, ventana: string, caso: string): string {
+  return writeKeys(search, {
+    informe: reportKindFromParam(informe) || null,
+    ventana: reportWindowFromParam(ventana) || null,
+    caso: /^[0-9a-f]{16}$/.test(caso) ? caso : null,
+  })
+}
+
+/** Query string with the Validación tactic filter applied ('' = all). */
+export function writeScenarioLensToSearch(search: string, sc: string): string {
+  return writeKeys(search, { sc: tacticSlugParam(sc) || null })
+}
+
+/** Query string with the Panel tab applied ('resumen' is the default). */
+export function writeDashboardTabToSearch(search: string, tab: DashboardTab): string {
+  return writeKeys(search, { pestana: tab === 'resumen' ? null : tab })
 }
 
 // Internal: clone the current params, apply the writer's own keys and

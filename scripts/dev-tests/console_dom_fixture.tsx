@@ -133,8 +133,13 @@ async function main() {
   await until(()=>state!.rules[0]?.name===ruleName)
   console.log('PASS: polled catalogue follows hot reload')
 
+  // the activity chart lives in the 'Equipos y actividad' tab of the panel
+  const tabButton=(label:string)=>[...document.querySelectorAll('[role="tab"]')].find(b=>b.textContent?.trim()===label)!
+  tabButton('Equipos y actividad').click()
   await until(()=>document.querySelector('[role="img"]')?.getAttribute('aria-label')?.includes('0 eventos del búfer') ?? false)
   console.log('PASS: activity ages out without incoming events')
+  tabButton('Resumen').click()
+  await delay(30)
 
   const queueButton=[...document.querySelectorAll('button')].find(button=>button.textContent?.includes('Abrir cola'))
   queueButton!.click()
@@ -189,9 +194,13 @@ async function main() {
   assert.equal(state!.rules.length,0)
   assert.equal(state!.stats,null)
   assert.equal(document.querySelectorAll('[aria-label="Sin datos"]').length,6)
-  assert.ok(document.body.textContent!.includes('Telemetría no disponible'))
   assert.equal((document.querySelector('[aria-label^="Ver alertas nuevas:"]') as HTMLButtonElement).disabled,true)
   assert.equal([...document.querySelectorAll('button')].find(b=>b.textContent?.trim()==='Ver críticas sin cerrar')!.disabled,true)
+  tabButton('Equipos y actividad').click()
+  await delay(30)
+  assert.ok(document.body.textContent!.includes('Telemetría no disponible'))
+  tabButton('Resumen').click()
+  await delay(30)
   console.log('PASS: outage clears stale telemetry and renders unavailable KPIs')
 
   engineUp=true

@@ -24,7 +24,9 @@ import {
   writeFilterToSearch,
   writeHostToSearch,
   writeIncidentToSearch,
+  writeReportLensToSearch,
   writeRulesToSearch,
+  writeScenarioLensToSearch,
   writeViewToSearch,
   type LensState,
   type SeverityFilter,
@@ -227,6 +229,10 @@ describe('readLensState — per-lens keys never contaminate each other', () => {
       regla: 'R-042',
       host: '',
       incidente: '',
+      informe: '',
+      ventana: '',
+      caso: '',
+      sc: '',
     })
   })
 })
@@ -279,17 +285,40 @@ describe('writeRulesToSearch', () => {
 })
 
 describe('round-trip write → read (lenses)', () => {
+  // lens defaults: the newer keys collapse to '' so existing searches stay intact
+  const noLens = { informe: '', ventana: '', caso: '', sc: '' }
   test('every written lens state reads back identical', () => {
     const cases: { search: string; expect: LensState }[] = [
-      { search: writeAuditKindToSearch('', 'denied'), expect: { clase: 'denied', tipo: 'all', fq: '', rq: '', regla: '', host: '', incidente: '' } },
-      { search: writeFeedToSearch('', 'FileCreate', 'mimikatz'), expect: { clase: 'all', tipo: 'FileCreate', fq: 'mimikatz', rq: '', regla: '', host: '', incidente: '' } },
-      { search: writeRulesToSearch('', 'lateral', 'R-042'), expect: { clase: 'all', tipo: 'all', fq: '', rq: 'lateral', regla: 'R-042', host: '', incidente: '' } },
-      { search: writeHostToSearch('', 'LAB-WKS-01'), expect: { clase: 'all', tipo: 'all', fq: '', rq: '', regla: '', host: 'LAB-WKS-01', incidente: '' } },
-      { search: writeIncidentToSearch('', '0123456789abcdef'), expect: { clase: 'all', tipo: 'all', fq: '', rq: '', regla: '', host: '', incidente: '0123456789abcdef' } },
+      { search: writeAuditKindToSearch('', 'denied'), expect: { clase: 'denied', tipo: 'all', fq: '', rq: '', regla: '', host: '', incidente: '', ...noLens } },
+      { search: writeFeedToSearch('', 'FileCreate', 'mimikatz'), expect: { clase: 'all', tipo: 'FileCreate', fq: 'mimikatz', rq: '', regla: '', host: '', incidente: '', ...noLens } },
+      { search: writeRulesToSearch('', 'lateral', 'R-042'), expect: { clase: 'all', tipo: 'all', fq: '', rq: 'lateral', regla: 'R-042', host: '', incidente: '', ...noLens } },
+      { search: writeHostToSearch('', 'LAB-WKS-01'), expect: { clase: 'all', tipo: 'all', fq: '', rq: '', regla: '', host: 'LAB-WKS-01', incidente: '', ...noLens } },
+      { search: writeIncidentToSearch('', '0123456789abcdef'), expect: { clase: 'all', tipo: 'all', fq: '', rq: '', regla: '', host: '', incidente: '0123456789abcdef', ...noLens } },
     ]
     for (const c of cases) {
       expect(readLensState(c.search)).toEqual(c.expect)
     }
+  })
+
+  test('the Informes lens keeps the kind, the whitelisted window and the 16-hex case', () => {
+    expect(readLensState(writeReportLensToSearch('', 'executive', '30d', ''))).toEqual({
+      clase: 'all', tipo: 'all', fq: '', rq: '', regla: '', host: '', incidente: '',
+      informe: 'executive', ventana: '30d', caso: '', sc: '',
+    })
+    // only documented window presets survive the URL; hand-typed junk degrades
+    expect(readLensState('?informe=executive&ventana=99d').ventana).toBe('')
+    // a wrong case id is absent, never a ghost filter
+    expect(readLensState(writeReportLensToSearch('', 'incident', '7d', 'nope')).caso).toBe('')
+    expect(readLensState(writeReportLensToSearch('', 'incident', '7d', '0123456789abcdef')).caso).toBe('0123456789abcdef')
+    // defaults are omitted from the URL entirely
+    expect(writeReportLensToSearch('', '', '', '')).toBe('')
+  })
+
+  test('the Validación tactic lens survives only as a slug-shaped value', () => {
+    expect(readLensState(writeScenarioLensToSearch('', 'credential-access')).sc).toBe('credential-access')
+    expect(readLensState('?sc=T1003%20;rm').sc).toBe('')
+    expect(readLensState('?sc=credential-access').sc).toBe('credential-access')
+    expect(writeScenarioLensToSearch('?x=1', '')).toBe('?x=1')
   })
 })
 
