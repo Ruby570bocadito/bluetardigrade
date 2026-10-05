@@ -19,6 +19,7 @@ import { EmptyState, OfflineNotice, SkeletonRows, MonoTag } from './ui-bits'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
 import { AnimatedContent } from '@/components/reactbits/animated-content'
 import { EntityGraphView, GraphLegend, NODE_KIND } from '@/components/charts/entity-graph'
+import { ConsoleTablist } from './ui-tabs'
 import { HostTacticHeatmap } from '@/components/charts/heatmap'
 import { WeekHourHeatmap } from '@/components/charts/week-hour-heatmap'
 import { buildEntityGraph } from '@/lib/entity-graph'
@@ -133,7 +134,10 @@ export function Dashboard({
           <AnimatedContent order={1}>
             <KpiRow stats={stats} />
           </AnimatedContent>
-          <AnimatedContent order={2} className="grid gap-5 xl:grid-cols-2">
+          {/* items-start: each panel hugs its content. Without it the
+              grid stretches the shorter panel and leaves a dead area
+              inside the card (Pulimiento B, ronda del acento zinc). */}
+          <AnimatedContent order={2} className="grid items-start gap-5 xl:grid-cols-2">
             <div className="panel min-w-0 px-4 pb-3 pt-3.5">
               <AlertsView compact onAnalyze={onAnalyze} />
             </div>
@@ -199,31 +203,12 @@ export function Dashboard({
   )
 }
 
-/** Section tabs of the Panel: one reading per tab, nothing stacked. */
+/** Section tabs of the Panel: one reading per tab, nothing stacked.
+ * Uses the shared tab kit (Pulimiento B, POL-7): same look and the same
+ * roving-tabindex keyboard pattern as the Detección tablist. */
 function DashboardTabs({ tab, onTab }: { tab: DashboardTab; onTab: (tab: DashboardTab) => void }) {
-  return (
-    <div role="tablist" aria-label="Secciones del panel" className="flex flex-wrap gap-1 rounded-xl border border-white/[0.06] bg-white/[0.02] p-1">
-      {DASHBOARD_TABS.map((id) => {
-        const Icon = TAB_ICONS[id]
-        const active = tab === id
-        return (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => onTab(id)}
-            className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-              active ? 'bg-primary-tint/15 text-zinc-100 ring-1 ring-inset ring-primary/25' : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-100'
-            }`}
-          >
-            <Icon size={14} weight={active ? 'fill' : 'regular'} aria-hidden className={active ? 'text-primary' : ''} />
-            {TAB_LABELS[id]}
-          </button>
-        )
-      })}
-    </div>
-  )
+  const tabs = DASHBOARD_TABS.map((id) => ({ id, label: TAB_LABELS[id], icon: TAB_ICONS[id] }))
+  return <ConsoleTablist idPrefix="panel" ariaLabel="Secciones del panel" tabs={tabs} value={tab} onSelect={onTab} />
 }
 
 /** Sensor activity of the received window (full-width card of the
@@ -1005,7 +990,7 @@ function RecentTelemetry({ onNavigate }: { onNavigate: (view: ConsoleView) => vo
         <button
           type="button"
           onClick={() => onNavigate('flujo')}
-          className="rounded-sm text-xs text-blue-400 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="rounded-sm text-xs text-primary-link underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           Ver flujo completo
         </button>
@@ -1026,7 +1011,7 @@ function RecentTelemetry({ onNavigate }: { onNavigate: (view: ConsoleView) => vo
                   inicial; las keys estables evitan re-animar filas visibles. */}
               <AnimatedItem index={i} className="grid grid-cols-[64px_120px_minmax(0,1fr)] items-center gap-3 px-1 py-2 md:grid-cols-[72px_150px_minmax(0,1fr)]">
                 <span className="font-mono text-xs tabular-nums text-zinc-500">{formatTime(ev.timestamp)}</span>
-                <span className="truncate font-mono text-xs text-blue-300">{ev.type}</span>
+                <span className="truncate font-mono text-xs text-primary-link">{ev.type}</span>
                 <span className="truncate font-mono text-xs text-zinc-400" title={eventDetail(ev)}>{eventDetail(ev)}</span>
               </AnimatedItem>
             </li>

@@ -10,7 +10,7 @@ enlaces de alerta que ya estaban en la rama principal.
 
 La cabecera de la consola incluye **Comandos**, accesible en escritorio y
 móvil. **Ctrl+K / ⌘K** abre o cierra la paleta fuera de campos de edición.
-El catálogo reúne las ocho vistas, la actualización de datos del motor y la
+El catálogo reúne las vistas de la consola, la actualización de datos del motor y la
 ayuda de teclado. No modifica configuración, reglas ni respuesta activa.
 
 La búsqueda trabaja solo sobre el catálogo local: reconoce mayúsculas,
@@ -93,6 +93,9 @@ proceso termina con `SIGTRAP` al arrancar aquí. No se declara una ejecución
 local correcta de navegador ni del bundle. La CI ejecuta el runner tras
 el build de producción, instala Chromium y conserva las capturas durante
 siete días. Su resultado remoto debe comprobarse sobre el commit publicado.
+(Actualización posterior: en entornos con Chromium operativo el runner y
+las capturas del README sí corren localmente — receta y modo de fixtures
+en [`docs/assets/README.md`](assets/README.md).)
 
 Para reproducir: [`scripts/dev-tests/README.md`](../scripts/dev-tests/README.md#chromium-console-regression)
 y `make console-browser`, después de compilar la consola. Playwright 1.63.0

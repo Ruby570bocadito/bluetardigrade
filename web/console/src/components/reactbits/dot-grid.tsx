@@ -15,7 +15,8 @@
 //   prefers-reduced-motion queda la rejilla estática (solo escucha resize y
 //   el cambio de tema, para repintar la tinta en reposo).
 // - La tinta en reposo la marca el tema (--dot-grid-ink) y un cambio de
-//   tema dispara un repintado; los halos activos son azules en ambos.
+//   tema dispara un repintado; los halos activos leen el acento del tema
+//   (--dot-grid-pulse-rgb) y también repintan al cambiar.
 
 import { useEffect, useRef } from 'react'
 import { THEME_EVENT } from '@/lib/theme'
@@ -35,10 +36,18 @@ const ENERGY_DECAY = 2.6 // por segundo, exponencial
 // CSS, así que la lee de --dot-grid-ink (globals.css la define por tema)
 // y el evento de tema dispara un repintado de la capa base.
 const FALLBACK_INK = 'rgba(255, 255, 255, 0.05)'
+// Acento del pulso activo, por tema, como triplete rgb para componer
+// alfas por frame (globals.css lo define por tema).
+const FALLBACK_PULSE = '212, 212, 216'
 
 function readInk(): string {
   const v = getComputedStyle(document.documentElement).getPropertyValue('--dot-grid-ink').trim()
   return v || FALLBACK_INK
+}
+
+function readPulse(): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--dot-grid-pulse-rgb').trim()
+  return v || FALLBACK_PULSE
 }
 
 export function DotGridLayer({ gap = 22, radius = 150, className = '' }: DotGridProps) {
@@ -57,6 +66,7 @@ export function DotGridLayer({ gap = 22, radius = 150, className = '' }: DotGrid
     let count = 0
     let last = 0
     let ink = FALLBACK_INK
+    let pulse = FALLBACK_PULSE
     const pointer = { x: -1e4, y: -1e4 }
     let pointerInside = false
     const base = document.createElement('canvas')
@@ -151,9 +161,9 @@ export function DotGridLayer({ gap = 22, radius = 150, className = '' }: DotGrid
           if (e === 0) continue
           const x = dots[d * 3]
           const y = dots[d * 3 + 1]
-          // halo azul + punto central: dos arcs por punto activo. El halo
-          // hereda el azul de acento, válido en los dos temas.
-          ctx.fillStyle = `rgba(96, 165, 250, ${(e * 0.22).toFixed(3)})`
+          // halo de acento + punto central: dos arcs por punto activo. El
+          // halo hereda el acento del tema (--dot-grid-pulse-rgb).
+          ctx.fillStyle = `rgba(${pulse}, ${(e * 0.22).toFixed(3)})`
           ctx.beginPath()
           ctx.arc(x, y, BASE_RADIUS + e * 4.2, 0, Math.PI * 2)
           ctx.fill()
@@ -184,11 +194,12 @@ export function DotGridLayer({ gap = 22, radius = 150, className = '' }: DotGrid
 
     // punto central activo: el mismo tono que el halo, algo más firme
     function activeDotInk(e: number): string {
-      return `rgba(147, 197, 253, ${(0.08 + e * 0.5).toFixed(3)})`
+      return `rgba(${pulse}, ${(0.08 + e * 0.5).toFixed(3)})`
     }
 
     const onThemeChange = () => {
       ink = readInk()
+      pulse = readPulse()
       buildGrid()
     }
 
@@ -203,6 +214,7 @@ export function DotGridLayer({ gap = 22, radius = 150, className = '' }: DotGrid
     }
 
     ink = readInk()
+    pulse = readPulse()
     buildGrid()
     window.addEventListener('resize', onResize)
     window.addEventListener(THEME_EVENT, onThemeChange)

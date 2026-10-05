@@ -28,6 +28,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { useEngine } from './engine-provider'
 import { EmptyState, LiveAnnouncer, SectionHeader, SeverityBadge, SkeletonRows } from './ui-bits'
+import { TABLIST_CLASS, tabButtonClass } from './ui-tabs'
 import { ExportButtons } from './export-menu'
 import { ForensicPanel } from './forensic-panel'
 import { ReportPanel } from './report-panel'
@@ -388,10 +389,10 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
       <ReportLibrary />
       <SavedSearches kind="alerts" getLens={() => alertSearchLens(filterRef.current.sev, filterRef.current.state, filterRef.current.scope, filterRef.current.q)} onApply={applySaved} />
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 px-3 py-2.5">
-        <div role="group" aria-label="Origen de alertas" className="flex gap-1 rounded-lg bg-zinc-950/60 p-0.5">
+        <div role="group" aria-label="Origen de alertas" className={TABLIST_CLASS}>
           {([['live', 'En vivo'], ['history', 'Histórico']] as const).map(([id, label]) => (
             <button key={id} type="button" aria-pressed={scope === id} onClick={() => changeScope(id)}
-              className={'rounded-md px-3 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ' + (scope === id ? 'bg-primary-tint/15 text-primary-soft ring-1 ring-inset ring-primary/25' : 'text-zinc-400 hover:text-zinc-100')}>
+              className={tabButtonClass(scope === id)}>
               {label}
             </button>
           ))}

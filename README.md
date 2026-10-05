@@ -26,7 +26,8 @@ that detects, correlates and scores it. Analysts then triage, investigate and
 respond from a live web console.
 
 <p align="center">
-  <img src="docs/assets/console-panel.png" alt="SOC console operations panel with live KPIs, activity and severity charts" width="92%" />
+  <img src="docs/assets/console-panel.png" alt="SOC console operations panel with live KPIs, activity and severity charts (dark theme)" width="92%" />
+  <img src="docs/assets/console-panel-light.png" alt="The same operations panel in the light theme" width="92%" />
 </p>
 
 > [!NOTE]
@@ -72,7 +73,7 @@ respond from a live web console.
 <td width="50%" valign="top">
 
 ### Investigate
-- Live SOC console with **eight views**, command palette and deep links.
+- Live SOC console with **nine views**, command palette and deep links.
 - **Forensic bundles** (alert + 5 min host timeline) with JSON/JSONL export.
 - Paged engine **history** backed by SQLite.
 - Alert lifecycle, operator notes and saved searches.
@@ -247,6 +248,7 @@ same-origin proxy, so the API token never reaches the browser.
 | View | What the analyst does there |
 |---|---|
 | **Panel** | Triage backlog, KPIs, activity and severity trends, an investigation graph (hosts, users, processes, detections, destinations), MITRE coverage and a host x tactic heatmap |
+| **Estado** | Platform health at a glance: engine runtime counters, ingest, queues, store and external delivery |
 | **Flujo en vivo** | Live telemetry with pause, search, type filters and JSONL/CSV export |
 | **Alertas** | Live queue or paged history with severity/lifecycle filters. Select several alerts to triage them together, add them to an incident, suppress the rule on that host or export them. The detail adds a per-alert graph, the forensic bundle with its process tree, reputation lookups, containment and reports |
 | **Incidentes** | Cases that group alerts: status, severity, owner, summary, affected hosts, an incident graph and a timeline of every change and note |
@@ -278,10 +280,12 @@ Navigation and keyboard support:
 | Incident with its alerts, graph and timeline | Host page with the live process tree |
 | ![Alertas](docs/assets/console-alertas.png) | ![Selección de alertas](docs/assets/console-seleccion.png) |
 | Alert detail with quick actions | Bulk actions on selected alerts |
-| ![Modo NOC](docs/assets/console-noc.png) | ![Flujo en vivo](docs/assets/console-flujo.png) |
-| NOC mode: investigation graph | Live telemetry feed |
-| ![Reglas](docs/assets/console-reglas.png) | ![Cadenas](docs/assets/console-cadenas.png) |
-| Rules with ATT&CK coverage | Kill chains drawn as flows |
+| ![Reglas](docs/assets/console-reglas.png) | ![Reglas en claro](docs/assets/console-reglas-light.png) |
+| Detection tabs, dark theme | Detection tabs, light theme |
+| ![Estado](docs/assets/console-estado.png) | ![Modo NOC](docs/assets/console-noc.png) |
+| Platform health at a glance | NOC wall for a shared monitor |
+| ![Flujo en vivo](docs/assets/console-flujo.png) | ![Cadenas](docs/assets/console-cadenas.png) |
+| Live telemetry feed | Kill chains drawn as flows |
 | ![Respuesta activa](docs/assets/console-respuesta-activa.png) | ![Supresiones](docs/assets/console-supresiones.png) |
 | Active response audit | Operator suppressions |
 
@@ -359,6 +363,8 @@ web/console/         Next.js SOC console
 web/console-service/ Bun + socket.io AI analyst hub
 website/             project landing page
 scripts/             Windows tooling, dev tests and verification harnesses
+tools/               local browser-test tooling for the console
+changelog.d/         one changelog fragment per change, consolidated on release
 docs/                guides, architecture and API reference
 ```
 

@@ -1,35 +1,34 @@
-# Plan de ronda — Pulimiento B (2026-10-05, ronda 2, 13h18 Madrid)
+# Plan de ronda — Pulimiento B (2026-10-05, ronda 4, ~16h45 Madrid)
 
-Base: `5e168ba` (main sin mover). Mi ronda 1 publicada en `4eba2f8`.
+Base: mi propia ronda 3 (`d28950e`, sin fusionar todavía); `origin/main`
+sigue en `a1bca4f`. Sin `git merge origin/main` necesario (no ha cambiado).
 
-## Tareas cogidas (identificadores de TODO.md en `origin/feat/enrollment`)
+## Tareas cogidas (POL-8 y POL-9, ahora desbloqueadas)
 
-1. **THEME-1 (cierre)**: el modo NOC debe seguir oscuro con tema claro
-   activo (hoy el remap de `html.light` invierte sus superficies zinc y las
-   paletas viz de sus 5 gráficas embebidas). Fuerza oscura mientras el NOC
-   está montado + repaint de capas canvas al cerrar. Además el selector de
-   la cabecera pasa a 3 estados (sistema/claro/oscuro, THEME-1 lo pide)
-   con seguimiento vivo de `prefers-color-scheme` en «sistema».
-   Ficheros: `noc-mode.tsx`, `theme-toggle.tsx`, `lib/theme.ts`,
-   `lib/theme.test.ts`, `layout.tsx` (script espejo).
-2. **THEME-2 (cierre)**: migrar las clases fijas `blue-*` (71 en 22
-   ficheros) a los tokens del kit (`--primary` / `--primary-strong` nuevo
-   para botones sólidos). Los blues de datos (viz) se quedan. **Excluyo
-   `dashboard.tsx`: IMP-B trabaja ahí esta ronda (VIZ-2/VIZ-6).**
-   Ficheros: los 21 restantes con `blue-*` + `globals.css` (@theme) +
-   `check_console_theme.py` (par nuevo).
-3. **POL-8 (parcial)**: foco visible y teclado en los popovers de
-   cabecera (NotifyMenu, paleta de comandos, export, sesión, detectores,
-   atajos): anillo `focus-visible` donde falte, cierre con Escape y
-   retorno de foco.
-4. **POL-9 (parcial)**: baseline de tamaño de bundle de `bun run build`
-   documentada en `web/console/README.md` (área de este carril). El
-   informe de Lighthouse y axe en CI quedan para host con navegador.
+1. **POL-8 (avance real): auditoría axe** de las vistas de la consola en
+   los dos temas con `axe-core` sobre el build de producción (mismo
+   arnés de fixtures que la regresión de navegador). Hallazgos: los de
+   componentes del área de este carril se corrigen aquí; los que caigan
+   en ficheros de IMP-B (gráficas) se documentan para su carril en el
+   informe. `axe-core` entra como dependencia de prueba en
+   `tools/console-tests` (fuera del grafo de la aplicación, sin
+   postinstall; SEC-6 respetado) para que el pase sea reproducible por
+   CI más adelante.
+2. **POL-9 (avance): informe Lighthouse** sobre el build de producción
+   si la instalación de la herramienta en tooling de pruebas es viable;
+   resultado documentado en `web/console/README.md` junto a la baseline
+   de bundle. Si la instalación no es razonable en este entorno, se
+   declara igual que antes y se entrega solo axe.
 
-Limpieza de ronda: imports sin uso, restos temporales, `.gitignore`.
+No toca: ficheros de IMP-B (`charts/*`), pipeline de nonce CSP (queda en
+cola como ronda propia), SECURITY.md (ya al día).
 
 ## Coordinación
 
-IMP-B (ronda 4, plan `652953d`): VIZ-2 heatmap y VIZ-6 exportación
-tocan `dashboard.tsx`, `chart-frame.tsx` y libs nuevas — no piso ninguno.
-SEG-A/SEG-B/PUL-A: sin solape (verificado contra sus planes publicados).
+- SEG-B (ronda 3 publicada): re-auditoría SEC-6 de reactbits y revisión
+  del analista — su rama solo publica plan; vigilancia anotada en mi
+  informe de la ronda 3. Esta ronda NO toca reactbits (solo lee axe) ni
+  el panel del analista: cero choque con su declaración de ficheros.
+- SEG-A (ronda 2 cerrada, `c126679`): Go (`internal/api`, `internal/report`,
+  fuzz). Solape: cero.
+- IMP-A/IMP-B/PUL-A: sin plan publicado.

@@ -208,6 +208,9 @@ def main() -> int:
             ("primary-soft / background", tok["--primary-soft"], tok["--background"], 4.5),
             ("primary-soft / card", tok["--primary-soft"], tok["--card"], 4.5),
             ("white / primary-strong", "#ffffff", tok["--primary-strong"], 4.5),
+            # the solid button hovers onto --primary-tint keeping its white
+            # label, so the hover state must hold AA in both themes too
+            ("white / primary-tint", "#ffffff", tok["--primary-tint"], 4.5),
         ]
         for label, fk, bk, floor in pairs:
             try:

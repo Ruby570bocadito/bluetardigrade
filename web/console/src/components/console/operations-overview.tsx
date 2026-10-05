@@ -54,7 +54,7 @@ export function OperationsOverview({ onNavigate, onTriage }: {
           </span>
           <button
             type="button" onClick={() => onNavigate('estado')}
-            className="chip px-2.5 py-1.5 text-xs text-zinc-300 transition-colors hover:text-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="chip px-2.5 py-1.5 text-xs text-zinc-300 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             title="Contadores de runtime del motor: ingesta, colas, almacén y entrega"
           >
             Estado

@@ -22,7 +22,10 @@ type StarBorderProps = {
 export function StarBorder({
   children,
   active = false,
-  color = 'rgba(96, 165, 250, 0.55)',
+  // El haz por defecto es el acento del tema (--sb-accent en globals.css;
+  // un literal fijo no sirve: el indicador "trabajo en curso" tiene que
+  // verse en claro y en oscuro).
+  color = 'var(--sb-accent, rgba(212, 212, 216, 0.55))',
   speed = 6,
   className = '',
 }: StarBorderProps) {
