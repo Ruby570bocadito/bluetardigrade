@@ -68,11 +68,12 @@ import { AlertActionBar, AlertQuickActions, useAlertSelection } from './alert-ac
 type Props = {
   compact?: boolean
   onAnalyze?: (alert: SfAlert) => void
+  onAnalyzeGroup?: (alerts: SfAlert[]) => void
   onHost?: (host: string) => void
   onOpenIncident?: (id: string) => void
 }
 
-export function AlertsView({ compact = false, onAnalyze, onHost, onOpenIncident }: Props) {
+export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost, onOpenIncident }: Props) {
   const { alerts, status, lifecycleUpdates } = useEngine()
   const reduce = useReducedMotion()
   const [sevFilter, setSevFilterState] = useState<SeverityFilter>('all')
@@ -459,7 +460,7 @@ export function AlertsView({ compact = false, onAnalyze, onHost, onOpenIncident 
       ) : (
         <>
         {pickedAlerts.length > 0 && (
-          <AlertActionBar alerts={pickedAlerts} onClear={selection.clear} onAnalyze={onAnalyze} onOpenIncident={onOpenIncident} />
+          <AlertActionBar alerts={pickedAlerts} onClear={selection.clear} onAnalyze={onAnalyze} onAnalyzeGroup={onAnalyzeGroup} onOpenIncident={onOpenIncident} />
         )}
         <div className={selected ? 'grid gap-4 xl:grid-cols-[minmax(0,1fr)_400px]' : ''}>
           <div className="panel min-w-0 overflow-hidden">

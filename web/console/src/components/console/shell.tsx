@@ -33,6 +33,7 @@ import { DetectorsMenu } from './detectors-menu'
 import { ReadOnlyBanner, UserChip } from './user-session'
 import { CONSOLE_DESTINATIONS, type ConsoleCommand } from '@/lib/console-commands'
 import { formatUptime, type EngineStats, type SfAlert } from '@/lib/console-types'
+import { buildIncidentAnalysis, type PendingIncidentAnalysis } from '@/lib/incident-analysis'
 import { currentSearch, isDetectionView, pushOperatorState, readOperatorState, writeAlertLens, writeHostToSearch, writeIncidentToSearch, writeRulesToSearch, writeViewToSearch } from '@/lib/url-state'
 import {
   SHORTCUT_ARM_MS,
@@ -209,9 +210,26 @@ export function ConsoleShell() {
   const telemetry = describeTelemetrySources(events)
 
   const [pendingAlert, setPendingAlert] = useState<SfAlert | null>(null)
+  const [pendingIncident, setPendingIncident] = useState<PendingIncidentAnalysis | null>(null)
 
   const openInAnalyst = (al: SfAlert) => {
     setPendingAlert(al)
+    setView('analista')
+  }
+
+  // Multi-alert hand-offs: the payload is built here from real case or
+  // selection data (capped by the lib); the panel attaches the frozen
+  // bundle of the most severe alert right before emitting.
+  const openIncidentInAnalyst = (pending: PendingIncidentAnalysis) => {
+    setPendingIncident(pending)
+    setView('analista')
+  }
+
+  const openSelectionInAnalyst = (alerts: SfAlert[]) => {
+    setPendingIncident({
+      payload: buildIncidentAnalysis({ source: 'selection', alerts }),
+      label: 'Selección de la cola',
+    })
     setView('analista')
   }
 
@@ -422,13 +440,18 @@ export function ConsoleShell() {
               <AnimatedView viewKey={view}>
                 {view === 'panel' && <Dashboard onAnalyze={openInAnalyst} onNavigate={setView} onTriage={openTriage} onHunt={openHunt} onHost={openHost} />}
                 {view === 'flujo' && <LiveFeed />}
-                {view === 'alertas' && <AlertsView onAnalyze={openInAnalyst} onHost={openHost} onOpenIncident={openIncident} />}
-                {view === 'incidentes' && <IncidentsView onHost={openHost} onOpenAlert={openAlert} />}
+                {view === 'alertas' && <AlertsView onAnalyze={openInAnalyst} onAnalyzeGroup={openSelectionInAnalyst} onHost={openHost} onOpenIncident={openIncident} />}
+                {view === 'incidentes' && <IncidentsView onHost={openHost} onOpenAlert={openAlert} onAnalyze={openIncidentInAnalyst} />}
                 {view === 'equipos' && <HostsView onHunt={(q) => openHunt({ q })} onOpenAlert={openAlert} onOpenIncident={openIncident} />}
                 {isDetectionView(view) && <DetectionHub tab={view} onTab={setView} onOpenRule={openRule} />}
                 {view === 'respuesta' && <RespondView />}
                 {view === 'analista' && (
-                  <AnalystPanel pendingAlert={pendingAlert} clearPending={() => setPendingAlert(null)} />
+                  <AnalystPanel
+                    pendingAlert={pendingAlert}
+                    clearPending={() => setPendingAlert(null)}
+                    pendingIncident={pendingIncident}
+                    clearPendingIncident={() => setPendingIncident(null)}
+                  />
                 )}
               </AnimatedView>
             </div>

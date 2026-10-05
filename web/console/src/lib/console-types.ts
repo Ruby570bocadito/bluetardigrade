@@ -314,10 +314,15 @@ export type AnalystMessage = {
   id: string
   role: 'user' | 'analyst'
   alertName?: string
+  // multi-alert analysis (incident case or selection of the queue)
+  incidentTitle?: string
+  incidentMeta?: string
   question?: string
   // operator-suppression context captured when the analysis started
   // (active suppressions.yaml entries matching this rule)
   suppressionNote?: string
+  // kept on the user message so «Repetir» can re-emit the same analysis
+  incidentPayload?: import('./incident-analysis').IncidentAnalysisPayload
   steps?: AnalystStep[]
   text?: string
   error?: string

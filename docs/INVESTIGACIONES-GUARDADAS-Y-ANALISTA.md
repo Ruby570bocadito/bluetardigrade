@@ -95,6 +95,44 @@ de los campos. Las delimitaciones y la política del prompt ayudan a tratar
 la telemetría como evidencia no confiable; no garantizan inmunidad del modelo
 a instrucciones maliciosas. La pregunta humana permanece separada.
 
+## Análisis de un incidente (multi-alerta)
+
+Desde la ficha de un caso (Incidentes) o desde la barra de selección de la
+cola de Alertas, el operador puede pedir al analista IA que estudie varias
+alertas como conjunto. La consola agrupa las alertas disponibles por
+equipo y ventana de 30 minutos, toma como mucho **8 alertas** (las más
+graves primero) y envía el resultado por el evento de socket
+`analyst:ask-incident` del hub, que valida cada campo de nuevo con los
+mismos límites de tarifa y concurrencia que el análisis de una alerta.
+
+El prompt multi-alerta lleva, todo delimitado y truncado:
+
+| Entrada | Límite |
+|---------|--------|
+| Metadatos del caso (título, severidad, estado, equipos, resumen) | 2.048 caracteres |
+| Agrupación por equipo y ventana | 2.048 caracteres |
+| Cada alerta JSON | 4.096 caracteres |
+| Línea de tiempo del caso (incidentes) | 20 entradas, 1.000 caracteres por texto |
+| Bundle forense de la alerta más grave | 40 eventos, 768 caracteres por evento |
+| Pregunta del operador | 2.000 caracteres |
+
+El bundle forense lo adjunta la consola leyendo
+`GET /api/alerts/{id}/forensics` de la alerta más grave que tenga
+identificador. Si el motor no devuelve bundle (404, captura desactivada o
+error), el análisis sigue sin él: el prompt no declara evidencia que no
+existe. Si el caso tiene más alertas que el tope, el número omitido viaja
+en el payload y el modelo lo ve escrito.
+
+El sistema pide una narrativa de cadena que cite eventos concretos (tipo,
+hora, host, proceso o destino) como prueba de cada paso, y prohíbe
+inventar datos: lo no deducible se nombra como incógnita abierta. La
+política de dato no confiable es la misma del análisis de una alerta.
+Las supresiones activas que afecten a reglas del caso se muestran en la
+burbuja del operador, igual que en el análisis individual. Los pasos que
+muestra el panel corresponden a trabajo real: preparar la evidencia,
+consultar las notas locales ATT&CK de las reglas implicadas (máximo tres)
+y esperar al proveedor.
+
 ## Qué es real y qué es simulado
 
 | Componente | Implementación y límite de esta verificación |
