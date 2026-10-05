@@ -26,6 +26,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"sync"
 	"time"
@@ -572,7 +573,29 @@ func newRunID() string {
 		// The battery cannot mint an id only when the OS entropy
 		// source is broken; fall back to a timestamp-derived id
 		// rather than refusing to run.
-		return fmt.Sprintf("run-%d", time.Now().UnixNano())
+		return fallbackRunID(time.Now().UnixNano())
 	}
 	return "run-" + hex.EncodeToString(b[:])
+}
+
+// runIDPattern is the shape of every run identifier the battery
+// mints: "run-" followed by 16 lowercase hex characters. It is a wire
+// contract, not a convention: GET /api/scenarios/runs/{id} rejects
+// anything else, so the entropy fallback must emit the same shape.
+var runIDPattern = regexp.MustCompile(`^run-[0-9a-f]{16}$`)
+
+// validRunID reports whether id matches the run-id wire shape.
+func validRunID(id string) bool { return runIDPattern.MatchString(id) }
+
+// ValidRunID reports whether id is a well-formed run identifier. The
+// API layer guards its detail route with it, so the contract lives in
+// exactly one place.
+func ValidRunID(id string) bool { return validRunID(id) }
+
+// fallbackRunID derives a pattern-conforming id from the wall clock:
+// UnixNano formatted as exactly 16 lowercase hex digits (a non-negative
+// int64 always is), keeping the id queryable through the detail route
+// even while the entropy source is down.
+func fallbackRunID(n int64) string {
+	return fmt.Sprintf("run-%016x", n)
 }
