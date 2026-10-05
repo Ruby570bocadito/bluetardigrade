@@ -127,9 +127,11 @@ func (h *Hub) handleScenarioRun(w http.ResponseWriter, r *http.Request) {
 		// Library load errors and unknown scenario ids are the
 		// caller's information: name them verbatim (400 when the
 		// request picked the scenarios, 500 when the library itself
-		// is broken).
+		// is broken). Classified with the sentinel, never with the
+		// message text: error wording must not decide status codes
+		// (the same contract handleAlertStatus documents).
 		code := http.StatusInternalServerError
-		if strings.Contains(err.Error(), "desconocido") {
+		if errors.Is(err, scenrun.ErrUnknownScenario) {
 			code = http.StatusBadRequest
 		}
 		writeErr(w, code, err.Error())

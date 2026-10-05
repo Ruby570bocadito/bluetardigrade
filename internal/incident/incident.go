@@ -390,11 +390,20 @@ func (s *Store) AddAlerts(id string, alertIDs, hosts []string, severity, by stri
 	added := 0
 	for _, a := range alerts {
 		if !contains(inc.AlertIDs, a) {
-			if len(inc.AlertIDs) >= MaxAlerts {
-				return Incident{}, fmt.Errorf("incident: an incident holds at most %d alerts", MaxAlerts)
-			}
-			inc.AlertIDs = append(inc.AlertIDs, a)
 			added++
+		}
+	}
+	// The cap is checked BEFORE any mutation: a mid-loop error used
+	// to leave the ids that still fit appended in memory with no
+	// timeline entry and no persist - the client saw the 400 while
+	// the case had silently grown, and the growth only reached the
+	// file on the next successful mutation.
+	if len(inc.AlertIDs)+added > MaxAlerts {
+		return Incident{}, fmt.Errorf("incident: an incident holds at most %d alerts", MaxAlerts)
+	}
+	for _, a := range alerts {
+		if !contains(inc.AlertIDs, a) {
+			inc.AlertIDs = append(inc.AlertIDs, a)
 		}
 	}
 	for _, h := range cleanH {

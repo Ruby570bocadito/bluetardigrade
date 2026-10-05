@@ -344,3 +344,15 @@ func (f *fakeSink) LoadScenarioRun(id string) (*Run, error) {
 	}
 	return nil, nil
 }
+
+// The API layer classifies unknown scenario ids with errors.Is against
+// the sentinel (400), never with the message text: a wording change
+// must not silently turn the client error into a 500.
+func TestStartUnknownScenarioWrapsSentinel(t *testing.T) {
+	dir := writeLibrary(t, map[string]string{"ok.yaml": okScenario})
+	s := New(dir, "", Deps{Rules: loadShippedRules(t)})
+	_, err := s.Start(StartOptions{Only: []string{"sim-nope"}})
+	if !errors.Is(err, ErrUnknownScenario) {
+		t.Fatalf("unknown scenario must wrap ErrUnknownScenario: %v", err)
+	}
+}

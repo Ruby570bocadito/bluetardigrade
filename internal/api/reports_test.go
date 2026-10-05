@@ -412,3 +412,45 @@ func TestNoiseHostFilterKeepsScanTruncationHonest(t *testing.T) {
 		t.Fatalf("unfiltered scan: %+v, want %d events and truncated", all.Scanned, reportScanLimit)
 	}
 }
+
+// The alert scan carries its own truncation flag: a window holding more
+// alerts than one scan reads must say so even when the EVENT scan fits
+// under the cap. Regression: handleNoise used to keep only the events
+// scan's flag, so a store-backed window with plenty of alerts and few
+// events presented partial top lists as complete.
+func TestNoiseAlertScanTruncationIsReported(t *testing.T) {
+	h, addr := newTestHub(t)
+	st, err := store.Open(t.TempDir() + "/noise-alert-trunc.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	h.SetStore(st)
+
+	base := time.Now().UTC().Add(-time.Hour)
+	for i := 0; i < reportScanLimit+1; i++ { // one alert beyond the scan cap
+		a := alert.Alert{
+			ID:        fmt.Sprintf("%016x", i),
+			Timestamp: base.Add(time.Duration(i) * time.Millisecond).UTC().Format(time.RFC3339Nano),
+			RuleID:    "noise-rule",
+			Severity:  "low",
+			Host:      "pc-a",
+			Summary:   "alert-scan-truncation",
+		}
+		if err := st.InsertAlert(a); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	code, body, _ := get(t, "http://"+addr+"/api/noise?window=24h")
+	if code != http.StatusOK {
+		t.Fatalf("noise = %d: %s", code, body)
+	}
+	var rep report.Noise
+	if err := json.Unmarshal([]byte(body), &rep); err != nil {
+		t.Fatal(err)
+	}
+	if rep.Scanned.Alerts != reportScanLimit || !rep.Scanned.Truncated {
+		t.Fatalf("an alert scan capped by its own budget must be truncated: %+v", rep.Scanned)
+	}
+}

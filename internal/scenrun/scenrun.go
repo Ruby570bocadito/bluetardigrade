@@ -75,6 +75,13 @@ var ErrRunning = errors.New("a scenario run is already in progress")
 // ErrNotArmed is answered as 501 by the API layer.
 var ErrNotArmed = errors.New("scenario validation is not armed")
 
+// ErrUnknownScenario marks a Start request that picked scenario ids the
+// loaded library does not have. It is answered as 400 by the API layer
+// (a client error), so it is a sentinel classified with errors.Is —
+// never by matching the message text, which is a wording change away
+// from silently turning the 400 into a 500.
+var ErrUnknownScenario = errors.New("escenario(s) desconocido(s)")
+
 // ExpectedView is the wire shape of one library expectation.
 type ExpectedView struct {
 	Rule string `json:"rule"`
@@ -332,7 +339,7 @@ func (s *Service) Start(opts StartOptions) (*Run, error) {
 		}
 		if len(unknown) > 0 {
 			sort.Strings(unknown)
-			return nil, fmt.Errorf("escenario(s) desconocido(s): %v", unknown)
+			return nil, fmt.Errorf("%w: %v", ErrUnknownScenario, unknown)
 		}
 		list = filtered
 	}
