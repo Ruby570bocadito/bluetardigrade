@@ -108,6 +108,21 @@ describe('renderStatusPage', () => {
     expect(html).toContain('&lt;script&gt;')
     expect(html).not.toContain('<script>alert(1)</script>')
   })
+
+  test('live script never parses strings into HTML', () => {
+    // The inline script runs in the operator's browser on a page that
+    // renders engine-supplied values. String-to-HTML sinks turn a
+    // future constant-slip into stored XSS, so the whole script is
+    // held to the DOM-building API (textContent / replaceChildren).
+    // Regression guard: setPill used to assign innerHTML.
+    const html = renderStatusPage(buildStatusData(upState(), ctx))
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? ''
+    expect(script).not.toBe('')
+    expect(script).not.toContain('innerHTML')
+    expect(script).not.toContain('insertAdjacentHTML')
+    expect(script).not.toContain('document.write')
+    expect(script).not.toContain('eval(')
+  })
 })
 
 describe('renderNotFound', () => {
