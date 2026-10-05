@@ -43,10 +43,13 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-/* bluetardigrade SOC console: dark-mode locked product UI.
-   Neutral zinc structure, one interaction accent (blue-400) and two
-   validated data palettes (see the viz tokens): severity is an ordered
-   status scale, categorical series never reuse its hues. */
+/* bluetardigrade SOC console: dual-theme product UI, dark by default.
+   Neutral zinc structure, one interaction accent (blue-400 on dark,
+   blue-600 on light) and two validated data palettes (see the viz
+   tokens): severity is an ordered status scale, categorical series never
+   reuse its hues. The light theme lives in the html.light block at the
+   end of this file; scripts/dev-tests/check_console_theme.py validates
+   both. */
 :root {
   --radius: 0.5rem;
   --background: #09090b; /* zinc-950 */
@@ -116,6 +119,13 @@
   --status-serious: #ec835a;
   --status-critical: #d03b3b;
   color-scheme: dark;
+
+  /* Theme-aware paints used by JS/SVG layers (dot-grid canvas, entity
+     graph SVG, kbd keycaps). html.light restates every one below. */
+  --dot-grid-ink: rgba(255, 255, 255, 0.05);
+  --viz-edge: rgba(255, 255, 255, 0.14);
+  --viz-edge-strong: rgba(255, 255, 255, 0.25);
+  --kbd-edge: rgba(0, 0, 0, 0.5);
 }
 
 @layer base {
@@ -125,25 +135,9 @@
   body {
     @apply bg-background text-foreground;
   }
-  ::selection {
-    background: rgba(96, 165, 250, 0.28);
-  }
-  /* dense product UI: slim dark scrollbars everywhere */
-  * {
-    scrollbar-width: thin;
-    scrollbar-color: #3f3f46 transparent;
-  }
-  *::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-  *::-webkit-scrollbar-thumb {
-    background: #3f3f46;
-    border-radius: 8px;
-  }
-  *::-webkit-scrollbar-track {
-    background: transparent;
-  }
+  /* Selection and scrollbars live once, unlayered, further down
+     ("Pulido de cabina"): the duplicates that used to sit here lost the
+     cascade silently and only made the file lie about which rule wins. */
   /* MOTION 3: only state transitions; honour the OS preference globally */
   @media (prefers-reduced-motion: reduce) {
     *,
@@ -498,4 +492,213 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .noc-progress { animation: none; width: 100%; opacity: 0.4; }
+}
+
+/* ---------------------------------------------------------------------------
+   THEME: light theme (html.light; dark stays the default above).
+   The UI is built from three ink systems, and each gets one scoped flip:
+   1. Tailwind zinc utilities reference var(--color-zinc-*) at the point of
+      use, so remapping the ramp under html.light converts every component
+      at once — elevation inverts (950 → page, 900 → raised), text steps
+      down the ramp for AA on white (100/200/300 → dark inks, 400/500 keep
+      their muted roles, 600/700 → faint structure).
+   2. The white-alpha utilities (border/bg/divide-white/…) always mean
+      "faint light ink over a dark surface"; under light they become faint
+      dark ink over white.
+   3. Data-viz tokens (sev/series/seq/status) get light values validated by
+      scripts/dev-tests/check_console_theme.py with the same rules as the
+      dark set: severity/status ≥ 3:1 on the viz surface, sequential steps
+      ≥ 2:1, adjacent severity and categorical series CVD-separated.
+   The surface system (.panel/.chip/…) and the chrome restates its dark
+   values in light form right after.
+   --------------------------------------------------------------------------- */
+html.light {
+  color-scheme: light;
+
+  --background: #f4f4f5; /* zinc-100: page, so white panels separate */
+  --foreground: #18181b;
+  --card: #ffffff;
+  --card-foreground: #18181b;
+  --popover: #ffffff;
+  --popover-foreground: #18181b;
+  --primary: #2563eb; /* blue-600: AA with white text (5.2:1) */
+  --primary-foreground: #ffffff;
+  --secondary: #e4e4e7;
+  --secondary-foreground: #27272a;
+  --muted: #f4f4f5;
+  --muted-foreground: #6b6b74; /* zinc-500 flipped: >= 4.5:1 on #f4f4f5 and white */
+  --accent: #e4e4e7;
+  --accent-foreground: #27272a;
+  --destructive: #dc2626;
+  --border: #e4e4e7;
+  --input: #d4d4d8;
+  --ring: #2563eb;
+  --chart-1: #2563eb;
+  --chart-2: #047857;
+  --chart-3: #7c3aed;
+  --chart-4: #be185d;
+  --chart-5: #a1a1aa;
+  --sidebar: #fafafa;
+  --sidebar-foreground: #18181b;
+  --sidebar-primary: #2563eb;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e4e4e7;
+  --sidebar-accent-foreground: #27272a;
+  --sidebar-border: #e4e4e7;
+  --sidebar-ring: #2563eb;
+
+  /* Data-viz tokens, light surface (--viz-surface #ffffff):
+     severity critical/high/medium/low/info >= 3:1 on white, adjacent CVD
+     dE >= 10 (luminance-stepped red -> orange -> gold under deutan);
+     categorical fixed order, worst adjacent CVD dE >= 10; sequential one
+     hue, ordinal steps >= 2:1 on the surface. */
+  --viz-surface: #ffffff;
+  --viz-raised: #fafafa;
+  --viz-grid: #e4e4e7;
+  --viz-axis: #d4d4d8;
+  --viz-ink: #18181b;
+  --viz-ink-2: #27272a;
+  --viz-muted: #6b6b74;
+  --sev-critical: #991b1b;
+  --sev-high: #c2410c;
+  --sev-medium: #a08c28;
+  --sev-low: #2563eb;
+  --sev-info: #52525b;
+  --series-1: #2563eb;
+  --series-2: #047857;
+  --series-3: #7c3aed;
+  --series-4: #be185d;
+  --series-other: #71717a;
+  --seq-1: #1e3a8a;
+  --seq-2: #2352b8;
+  --seq-3: #2a6bd6;
+  --seq-4: #4489e6;
+  --seq-5: #60a5fa;
+  --status-good: #15803d;
+  --status-warning: #a16207;
+  --status-serious: #c2410c;
+  --status-critical: #991b1b;
+
+  --dot-grid-ink: rgba(9, 9, 11, 0.06);
+  --viz-edge: rgba(9, 9, 11, 0.16);
+  --viz-edge-strong: rgba(9, 9, 11, 0.3);
+  --kbd-edge: rgba(9, 9, 11, 0.16);
+
+  /* zinc ramp flip: elevation inverts, text steps keep their roles */
+  --color-zinc-50: #09090b;
+  --color-zinc-100: #18181b;
+  --color-zinc-200: #27272a;
+  --color-zinc-300: #3f3f46;
+  --color-zinc-400: #52525b;
+  --color-zinc-500: #6b6b74;
+  --color-zinc-600: #a1a1aa;
+  --color-zinc-700: #d4d4d8;
+  --color-zinc-800: #e4e4e7;
+  --color-zinc-900: #fafafa;
+  --color-zinc-950: #f4f4f5;
+
+  /* interaction accent: blue-400 icons/rings/borders turn blue-600 so they
+     read on white; text-on-tint steps (100/200/300) become dark blues;
+     solid blue-500 fills turn blue-600 for AA with the white label */
+  --color-blue-100: #1e3a8a;
+  --color-blue-200: #1e40af;
+  --color-blue-300: #1d4ed8;
+  --color-blue-400: #2563eb;
+  --color-blue-500: #2563eb;
+
+  /* status hues: text steps (200/300) become their readable-on-white
+     counterparts, solid fills (400) deepen one step; 500 keeps working */
+  --color-emerald-200: #065f46;
+  --color-emerald-300: #047857;
+  --color-emerald-400: #059669;
+  --color-amber-200: #92400e;
+  --color-amber-300: #b45309;
+  --color-amber-400: #d97706;
+  --color-red-200: #991b1b;
+  --color-red-300: #b91c1c;
+  --color-red-400: #dc2626;
+  --color-orange-200: #9a3412;
+  --color-orange-300: #c2410c;
+  --color-sky-300: #0369a1;
+  --color-sky-400: #0284c7;
+  --color-violet-300: #6d28d9;
+}
+
+/* Faint light ink over dark surfaces flips to faint dark ink over white.
+   Attribute-substring scope, one tier: every shade in use sits in the same
+   0.02–0.08 band. Property-scoped (border/background/divide) so data-ink
+   classes such as text-white/… on heatmap fills are never touched. */
+html.light [class*="border-white/"] { border-color: rgba(9, 9, 11, 0.1); }
+html.light [class*="bg-white/"] { background-color: rgba(9, 9, 11, 0.035); }
+html.light [class*="divide-white/"] > :not([hidden]) ~ :not([hidden]) { border-color: rgba(9, 9, 11, 0.08); }
+
+/* Surface system, restated for light (same shapes, reversed light). */
+html.light .panel {
+  border-color: rgba(9, 9, 11, 0.08);
+  background: linear-gradient(180deg, #ffffff, #fbfbfc);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.8),
+    0 12px 32px -18px rgba(9, 9, 11, 0.18);
+}
+html.light .panel-hover:hover,
+html.light .panel-hover:focus-within {
+  border-color: rgba(9, 9, 11, 0.16);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.8),
+    0 18px 44px -20px rgba(9, 9, 11, 0.24);
+}
+html.light .panel-head { border-bottom-color: rgba(9, 9, 11, 0.07); }
+html.light .chip {
+  border-color: rgba(9, 9, 11, 0.1);
+  background: rgba(9, 9, 11, 0.03);
+  box-shadow: none;
+}
+html.light .icon-tile {
+  border-color: rgba(37, 99, 235, 0.22);
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.1), rgba(37, 99, 235, 0.04));
+  color: #1d4ed8;
+  box-shadow: none;
+}
+html.light .glass {
+  background: rgba(244, 244, 245, 0.8);
+}
+html.light .viz-tooltip {
+  border-color: rgba(9, 9, 11, 0.1);
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 12px 32px -12px rgba(9, 9, 11, 0.2);
+}
+html.light .ambient-glow::before {
+  background:
+    radial-gradient(700px 190px at 15% -12%, rgba(37, 99, 235, 0.05), transparent 70%),
+    radial-gradient(560px 170px at 88% -18%, rgba(59, 130, 246, 0.03), transparent 70%),
+    radial-gradient(1100px 480px at 50% 118%, rgba(37, 99, 235, 0.02), transparent 72%);
+}
+html.light .star-border { border-color: rgba(9, 9, 11, 0.1); }
+html.light .star-border--active {
+  background:
+    radial-gradient(120% 120% at 50% 50%, #ffffff 0%, #ffffff 100%) padding-box,
+    linear-gradient(
+        var(--sb-angle, 120deg),
+        rgba(255, 255, 255, 0) 20%,
+        var(--sb-color, rgba(37, 99, 235, 0.55)) 45%,
+        rgba(255, 255, 255, 0) 70%
+      )
+      border-box;
+}
+html.light .shiny-text { color: #047857; }
+html.light .kicker { color: #6b6b74; }
+
+/* Cabin polish: one scrollbar and one selection per theme. */
+html.light * {
+  scrollbar-color: rgba(9, 9, 11, 0.22) transparent;
+}
+html.light *::-webkit-scrollbar-thumb {
+  background: rgba(9, 9, 11, 0.18);
+}
+html.light *::-webkit-scrollbar-thumb:hover {
+  background: rgba(9, 9, 11, 0.3);
+}
+html.light ::selection {
+  background: rgba(37, 99, 235, 0.2);
+  color: #09090b;
 }

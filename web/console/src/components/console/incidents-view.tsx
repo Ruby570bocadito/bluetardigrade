@@ -238,7 +238,7 @@ function NewIncidentForm({ onDone }: { onDone: (incident: Incident | null) => vo
       {error && <p role="alert" className="text-xs text-red-300">{error}</p>}
       <div className="flex justify-end gap-2">
         <button type="button" onClick={() => onDone(null)} className="rounded-md px-2.5 py-1.5 text-xs text-zinc-400 hover:text-zinc-100">Cancelar</button>
-        <button type="submit" disabled={busy || !title.trim()} className="rounded-md bg-blue-500 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
+        <button type="submit" disabled={busy || !title.trim()} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
           {busy ? 'Creando…' : 'Crear incidente'}
         </button>
       </div>
@@ -465,7 +465,7 @@ function IncidentDetail({
             <textarea id={`note-${incident.id}`} value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={4000}
               placeholder="Añade una nota: qué viste, qué hiciste, siguiente paso"
               className="block w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-            <button type="submit" disabled={busy || !note.trim()} className="rounded-md bg-blue-500 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
+            <button type="submit" disabled={busy || !note.trim()} className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
               Añadir nota
             </button>
           </form>

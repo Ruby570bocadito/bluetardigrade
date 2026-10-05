@@ -190,7 +190,7 @@ export function EnrollDialog({ onClose }: { onClose: () => void }) {
                 <p className="mt-1.5 text-xs leading-relaxed text-zinc-300">{step.text}</p>
                 {step.cmd && (
                   <div className="mt-2 flex items-start gap-2">
-                    <code className="min-w-0 flex-1 overflow-x-auto whitespace-pre rounded-md bg-black/40 px-2.5 py-2 font-mono text-[11px] text-zinc-200">{step.cmd}</code>
+                    <code className="min-w-0 flex-1 overflow-x-auto whitespace-pre rounded-md bg-zinc-950/60 px-2.5 py-2 font-mono text-[11px] text-zinc-200">{step.cmd}</code>
                     <button type="button" onClick={() => void copy(step.cmd!, i)} aria-label={`Copiar el comando del paso ${i + 1}`}
                       className="shrink-0 rounded-md border border-white/10 p-1.5 text-zinc-400 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                       {copied === i ? <CheckCircle size={14} weight="fill" aria-hidden className="text-emerald-400" /> : <Copy size={14} aria-hidden />}

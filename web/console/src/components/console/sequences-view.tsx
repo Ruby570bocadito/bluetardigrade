@@ -152,7 +152,7 @@ function SequenceCard({ seq, index, live, hits, campaigns }: { seq: SfSequence; 
                   }`}
                 >
                   <span className="flex items-center gap-1.5 text-[10px] text-zinc-500">
-                    <span aria-hidden className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-semibold ${count > 0 ? 'bg-blue-500 text-white' : 'bg-zinc-800 text-zinc-400'}`}>{i + 1}</span>
+                    <span aria-hidden className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-semibold ${count > 0 ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-400'}`}>{i + 1}</span>
                     {!ok ? (alternatives ? 'ninguna regla cargada' : 'regla no cargada') : count > 0 ? `${count} ${count === 1 ? 'alerta' : 'alertas'}` : 'sin alertas'}
                     {alternatives && <span className="rounded bg-white/[0.06] px-1 text-[9px] text-zinc-400">{st.rules.length} alternativas</span>}
                   </span>

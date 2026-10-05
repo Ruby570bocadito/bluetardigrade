@@ -103,7 +103,7 @@ export function RuleTester({ onOpenRule }: { onOpenRule: (id: string) => void })
           />
           <div className="mt-3 flex items-center gap-2">
             <button type="button" onClick={() => void run()} disabled={busy}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-500 px-3.5 py-2 text-xs font-medium text-white hover:bg-blue-400 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               <Play size={13} weight="fill" aria-hidden /> {busy ? 'Probando…' : 'Probar contra las reglas'}
             </button>
             <span className="text-[11px] text-zinc-500">No genera alertas ni guarda nada.</span>

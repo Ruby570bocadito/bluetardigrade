@@ -71,7 +71,7 @@ export function ShortcutsHelp({ open, rows, onClose }: {
 }
 
 export function Kbd({ children }: { children: ReactNode }) {
-  return <kbd className="inline-flex min-w-[1.75rem] items-center justify-center rounded-md border border-zinc-700/80 bg-zinc-900 px-1.5 py-1 font-mono text-[11px] font-medium leading-none text-zinc-200 shadow-[inset_0_-1px_0_0_rgba(0,0,0,0.5)]">{children}</kbd>
+  return <kbd className="inline-flex min-w-[1.75rem] items-center justify-center rounded-md border border-zinc-700/80 bg-zinc-900 px-1.5 py-1 font-mono text-[11px] font-medium leading-none text-zinc-200 shadow-[inset_0_-1px_0_0_var(--kbd-edge)]">{children}</kbd>
 }
 
 function KbdPair({ keys }: { keys: string[] }) {

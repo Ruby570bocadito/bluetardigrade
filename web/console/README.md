@@ -4,9 +4,9 @@ Browser console for the framework: live telemetry feed, KPI dashboard,
 severity triage with a detail panel, the YAML rule pack, kill-chain
 chains, operator suppressions, a read-only active-response view with
 its forensic audit trail, and an optional AI analyst using the configured
-provider to assist alert triage. Dark-mode locked product UI (zinc
-structure, one emerald interaction accent, severity colors that encode
-data semantics).
+provider to assist alert triage. Dual-theme product UI, dark by default
+(zinc structure, one blue interaction accent, severity colors that
+encode data semantics, both palettes machine-validated).
 
 ## Data flow and demo boundaries
 
@@ -116,11 +116,33 @@ in parallel produced real drift (the two files resolved different
 time with `npm install --package-lock-only` if they need one locally,
 but it is not committed.
 
+## Theme (dark default, light available)
+
+The console ships dark as the default and as the no-JS outcome; a toggle
+in the header (sun/moon, `ThemeToggle`) swaps to the light palette and
+back. The choice persists in `localStorage` under `bt-theme`, syncs
+across open tabs and, when nothing is stored, follows the OS
+`prefers-color-scheme`. An inline boot script in `layout.tsx` resolves
+the theme before the first paint, so reloading never flashes the wrong
+palette; the decision it implements is mirrored in
+`src/lib/theme.ts` (`resolveTheme`, unit-tested).
+
+Both palettes are token sets in `globals.css`: the dark tokens live on
+`:root` and the light ones on `html.light`, which also remaps the zinc
+ramp and the white-alpha hairline utilities the components are built
+with, so a theme switch is one class swap with no per-component
+variants. Layers that paint outside CSS (the dot-grid canvas, the
+entity-graph SVG) read theme-aware custom properties and repaint on the
+theme-change event. `scripts/dev-tests/check_console_theme.py`
+validates both palettes (WCAG pairs, severity/status and sequential
+ramps on the viz surface, CVD separation via CIEDE2000 with Machado
+simulations) — run it whenever a token changes.
+
 ## Design tokens
 
-- Structure: Tailwind zinc (`zinc-950` background, `zinc-100`/`zinc-400` text) with `white/[0.06]` hairlines on surfaces and `zinc-800` for inner detail.
+- Structure: Tailwind zinc (`zinc-950` background, `zinc-100`/`zinc-400` text) with `white/[0.06]` hairlines on surfaces and `zinc-800` for inner detail. The light theme remaps the same ramp (see above).
 - Surfaces are defined once in `src/app/globals.css` and reused by every view: `.panel` (hairline border, vertical gradient fill, inner top highlight, ambient shadow), `.panel-hover` (lift on hover, frozen under `prefers-reduced-motion`), `.chip`, `.icon-tile`, `.glass` (sidebar and topbar backdrop blur) and the three-radial `ambient-glow` background. Views compose these classes instead of re-declaring card styles inline.
-- One interaction accent: `emerald-500`.
+- One interaction accent: blue (400 on dark, 600 on light, AA with the white label on solid fills).
 - Severity semantics (data, not decoration): `critical` red-500/600,
   `high` orange-500, `medium` amber-400, `low` sky-400.
 - Type: Geist Sans for UI, Geist Mono for ids, timestamps, IPs and

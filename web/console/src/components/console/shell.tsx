@@ -31,6 +31,7 @@ import { NotifyMenu } from './critical-notifier'
 import { NocMode } from './noc-mode'
 import { DetectorsMenu } from './detectors-menu'
 import { ReadOnlyBanner, UserChip } from './user-session'
+import { ThemeToggle } from './theme-toggle'
 import { CONSOLE_DESTINATIONS, type ConsoleCommand } from '@/lib/console-commands'
 import { formatUptime, type EngineStats, type SfAlert } from '@/lib/console-types'
 import { currentSearch, isDetectionView, pushOperatorState, readOperatorState, writeAlertLens, writeHostToSearch, writeIncidentToSearch, writeRulesToSearch, writeViewToSearch } from '@/lib/url-state'
@@ -381,6 +382,7 @@ export function ConsoleShell() {
                 </div>
                 <UserChip />
                 <NotifyMenu />
+                <ThemeToggle />
                 <button
                   type="button"
                   onClick={() => setNocOpen(true)}
