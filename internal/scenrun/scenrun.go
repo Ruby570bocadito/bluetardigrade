@@ -361,11 +361,15 @@ func (s *Service) Start(opts StartOptions) (*Run, error) {
 		return nil, ErrRunning
 	}
 	s.current = run
+	// the caller gets a copy taken before the run starts: the goroutine
+	// below keeps writing the record (progress, summary) while the API
+	// is still encoding its answer
+	launched := *run
 	s.mu.Unlock()
 
 	go s.execute(run, list, timeout)
-	s.logf("[SCENRUN] run %s started: %d escenario(s) contra las reglas vivas del motor", run.ID, run.Total)
-	return run, nil
+	s.logf("[SCENRUN] run %s started: %d escenario(s) contra las reglas vivas del motor", launched.ID, launched.Total)
+	return &launched, nil
 }
 
 // execute replays the selected scenarios one by one, recording each
