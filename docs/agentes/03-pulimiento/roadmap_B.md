@@ -66,6 +66,15 @@ informes:
 - **PUL-A** no marca prioridades ALTA para este carril en sus informes
   revisados; el enganche de `check_console_theme.py` a `ci.yml` sigue
   siendo propuesta para su área.
+- **SEG-B (ronda 2026-10-05, 12h33)** publicó `carril/seguridad-b` al
+  cierre de esta ronda: auditoría CI de dependencias, modelo STRIDE
+  (`docs/MODELO-DE-AMENAZAS.md`), subida de `golang.org/x/text` y un
+  arreglo en `web/console-service` (status pill sin `innerHTML`).
+  **Solape de ficheros con mi ronda: cero** (verificado con `comm` sobre
+  los dos diffs contra `origin/main`). Sus docs viven en
+  `docs/agentes/04-seguridad/`. Su arreglo del status-pill de
+  `console-service` añade tests propios; sin implicaciones para la
+  consola ni para el tema.
 
 ## Decisiones de ronda que conviene recordar
 
