@@ -1,24 +1,32 @@
-# Plan de ronda — Implementación B (2026-10-05, ronda 3)
+# Plan de ronda — Implementación B (2026-10-05, ronda 4)
 
-Nota: `TODO.md` sigue sin existir; tareas de `docs/ROADMAP.md` (candidatos de
-gráficas del backlog de `roadmap_B.md`) más la deuda de docs que Pulimiento A
-me asignó en su ronda 12h13. origin/main sin cambios (base `5e168ba`); la
-única rama ajena es `carril/pulimiento-a` (docs de CLI, sin solape).
+Novedad: `TODO.md` y `docs/PLAN-DETALLADO.md` sí existen en
+`origin/feat/enrollment` (localizado por Seguridad B en su informe 12h33);
+los leo de allí. `origin/main` sigue en `5e168ba` (merge «already up to
+date»). Ramas ajenas en origin: `carril/pulimiento-a` (solo docs) y
+`carril/seguridad-b` (CI, go.mod, http-ui del hub); ninguna toca
+visualización de la consola. Reconozco la resolución de PUL-A sobre la fila
+«Console» de `ARCHITECTURE.md` (su commit bac6b02 es anterior a mi plan de
+ronda 3): no vuelvo a tocar ese fichero.
 
-## Tareas cogidas (identificadores de ROADMAP / encargos)
+## Tareas cogidas (identificadores de TODO.md, carril Implementación B)
 
-1. **H5 gráficas — «Ciclo de vida por táctica»**: columnas apiladas en el
-   dashboard (táctica ATT&CK × estado de triage nuevas/reconocidas/cerradas)
-   con gemelo de tabla; función pura en `lib/soc-metrics.ts` + pruebas.
-2. **H5 gráficas — «Evolución del riesgo por equipo»**: nueva gráfica de
-   líneas multiserie (`components/charts/line-chart.tsx`, huecos honestos
-   cuando no hay motor o el host sale del top-5) alimentada por muestreo
-   real de `stats.hot_hosts` cada 10 s (10 min de ventana); lib
-   `lib/risk-history.ts` + pruebas; paleta categórica con tope de 4 series.
-3. **Deuda docs (encargo de PUL-A)**: la fila «Console» del inventario de
-   `docs/ARCHITECTURE.md` dice «(no provider token streaming)» — stale desde
-   mi ronda 2; la actualizo a streaming nativo con guardas de tiempo.
+1. **VIZ-2 Mapa de calor hora × día (alertas)**: rejilla día de la semana ×
+   hora (0-23) de la carga de alertas, en el dashboard. Lib pura
+   `lib/alert-heatmap.ts` (ventana real declarada, tope honesto cuando la
+   respuesta llega al límite de 1000 de la API, hora local del navegador
+   con zona explícita) + componente `charts/week-hour-heatmap.tsx`
+   (rampa secuencial, recuento en celda, gemelo de tabla) + pruebas.
+   Inicios de sesión (AD-3) y eventos por equipo quedan fuera: no hay
+   endpoint aún; se anota en el informe.
+2. **VIZ-6 Exportar cualquier gráfica**: menú «Exportar» en el marco común
+   `charts/chart-frame.tsx`: datos en CSV (desde el gemelo de tabla),
+   gráfica en SVG (serialización con estilos computados incrustados) y PNG
+   (rasterización 2x con degradado honesto si el navegador no lo permite).
+   De fondo, lib pura `lib/chart-export.ts` + pruebas. Todos los paneles
+   que usan `ChartCard` obtienen la opción sin tocar cada gráfica.
 
-Fuera de alcance: vista de árbol global (pende del endpoint Go de
-Implementación A, sin rama publicada) y verificación con proveedor/host real
-(sin laboratorio en este entorno).
+Fuera de alcance esta ronda: informe de ruido §2.4 (pende de
+`GET /api/noise`, Implementación A), VIZ-3/4/5, AD-5/AD-6 (penden de la API
+de AD de Implementación A) y SET-3 (los certificados/retención que pide su
+diseño no están publicados aún por la API; lo declaro en el informe).
