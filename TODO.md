@@ -146,7 +146,7 @@ arranques de proceso de un portátil en reposo. Un SOC no puede guardar ni mirar
     poca confianza, y la consola los atenúa.
   - Recarga en caliente, como las supresiones, con validación y auditoría.
 - [ ] **Supresiones con condiciones**, no solo regla y equipo: proceso padre, línea de comandos
-  exacta o ruta. Caso real: la regla del portapapeles saltó por la integración de Claude Code
+  exacta o ruta. Caso real: la regla del portapapeles saltó por un asistente de desarrollo
   (`powershell -NonInteractive -Command "... Get-Clipboard -Raw"`). Se debe poder suprimir ese uso
   concreto sin apagar la regla.
 - [ ] **Informe de ruido** en la consola: procesos, dominios y reglas que más eventos o alertas
@@ -386,6 +386,342 @@ y comparten trabajo, en lugar de islas.
   hash por equipo). Pertenencia por gossip o un registro central, y si cae un nodo, sus equipos
   pasan a otro.
 - [ ] **Salud de los nodos en la consola:** mapa de nodos, latencia, cola de reenvío y versión.
+
+## Plan de trabajo por carriles
+
+A partir de aquí el trabajo se reparte en seis carriles. Cada uno trabaja en su propia rama y
+el responsable del repositorio fusiona por PR.
+
+| Carril | Rama | Se ocupa de |
+|---|---|---|
+| Implementación A | `carril/implementacion-a` | Motor y backend: Go, API, conectores, informes, sensor Rust |
+| Implementación B | `carril/implementacion-b` | Consola: vistas, gráficas, flujos, ajustes |
+| Pulimiento A | `carril/pulimiento-a` | Calidad del backend: refactor, rendimiento, CI, documentación técnica |
+| Pulimiento B | `carril/pulimiento-b` | Calidad de la consola: diseño, tema claro/oscuro, accesibilidad, README |
+| Seguridad A | `carril/seguridad-a` | Bugs funcionales en todo el proyecto |
+| Seguridad B | `carril/seguridad-b` | Vulnerabilidades, dependencias, secretos, cadena de suministro |
+
+Cada tarea lleva un identificador (`AD-1`, `VIZ-2`…) y el carril que la hace. Un carril anuncia
+en su plan de ronda los identificadores que coge. Así nadie los repite.
+
+Las secciones de arriba también tienen dueño:
+
+| Sección | Carril |
+|---|---|
+| Despliegue 3 (instalador MSI) | Implementación A. La firma necesita el certificado del responsable: el carril deja el paso preparado |
+| Despliegue 4 (WEF y detecciones de AD) y 5 (servidor como servicios, HTTPS) | Implementación A |
+| v1.1 Ruido: agrupación en el sensor, software conocido, supresiones con condiciones | Implementación A |
+| v1.1 Ruido: informe de ruido en la consola | Implementación B |
+| v1.1 Sensor, Motor y consola, Detecciones nuevas | Implementación A (B en lo visible) |
+| Escala SOC, fase A (simulador de flota, límites por sensor) | Implementación A; las mediciones, Pulimiento A |
+| Forense: vista propia | Implementación B (vista); Implementación A (índice, cadena de custodia, retención) |
+| Prevención §6.2 (postura de solo lectura), §6.1 y §6.3 (política, recomendar, simular) | Implementación A y B |
+| Prevención §6.4 (canal de respuesta y acciones) | Nadie, hasta que el responsable lo decida |
+| Varios tardígrados (nodos) | Después de la v1.2 |
+
+Límites del proyecto que ningún carril cruza:
+- La consola **observa**: no ejecuta nada en los equipos ni en el dominio.
+- Las acciones de respuesta (§6.4, niveles 3–4) necesitan una decisión explícita del
+  responsable antes de empezar.
+- Active Directory se lee, no se administra.
+- La validación de detecciones usa telemetría sintética e inerte.
+- No se descargan feeds ni herramientas de terceros de forma automática.
+
+### Active Directory (solo lectura)
+
+- [ ] **AD-1 Conector LDAP de solo lectura** — Implementación A
+  - Conexión LDAPS obligatoria (o StartTLS), con la CA configurable y una cuenta de servicio
+    **sin privilegios**: basta un usuario del dominio.
+  - Sincroniza cada N minutos a SQLite:
+    - usuarios, grupos, equipos y OUs;
+    - membresías anidadas;
+    - los atributos de seguridad: `userAccountControl`, `pwdLastSet`, `lastLogonTimestamp`,
+      `adminCount`, presencia de SPN, tipos de cifrado admitidos y SO del equipo.
+  - Paginación (RFC 2696) y límite de objetos.
+  - La contraseña de la cuenta va en un fichero solo para el servicio y nunca se devuelve por
+    la API.
+  - Tests contra un servidor LDAP de pruebas (fixture en CI, sin dominio real).
+- [ ] **AD-2 Postura del dominio** — Implementación A (cálculo), Implementación B (vista)
+  - Hallazgos clásicos de auditoría defensiva:
+    - miembros efectivos de los grupos privilegiados (Domain/Enterprise/Schema Admins,
+      Administrators, Account/Backup/Server/Print Operators);
+    - cuentas inactivas más de N días y cuentas habilitadas sin uso;
+    - contraseñas que no caducan;
+    - cuentas sin preautenticación Kerberos;
+    - cuentas de usuario con SPN y RC4 permitido;
+    - delegación sin restricciones;
+    - `krbtgt` con contraseña antigua;
+    - `adminCount` huérfano;
+    - equipos con un SO sin soporte;
+    - equipos del dominio **sin sensor** (cobertura).
+  - Cada hallazgo lleva su severidad, los objetos afectados y la remediación en lenguaje
+    claro. Puntuación de 0 a 100 con historial.
+- [ ] **AD-3 Auditoría de inicios de sesión** — Implementación A. Depende de WEF (§4 de despliegue).
+  - Inicios de sesión correctos y fallidos por usuario y equipo, bloqueos (4740) y RDP (tipo 10).
+  - Fuera del horario laboral configurable.
+  - Cuentas privilegiadas que inician sesión en puestos normales.
+  - Primer inicio de sesión de un usuario en un equipo.
+  - Es para seguridad, no para medir la productividad de nadie:
+    - la retención se puede configurar;
+    - solo ven los datos los roles autorizados;
+    - la documentación recuerda informar a la plantilla (RGPD).
+- [ ] **AD-4 Auditoría de cambios** — Implementación A
+  - Altas y bajas de cuentas (4720/4726), cambios de grupo (4728/4732/4756), cambios de cuenta
+    (4738), restablecimientos de contraseña por un administrador (4724), desbloqueos (4767) y
+    cambios en objetos del directorio y en GPO (5136).
+  - Alerta cuando el cambio toca un grupo privilegiado.
+- [ ] **AD-5 Sección «Active Directory» en la consola** — Implementación B. Pestañas:
+  - **Resumen:** donut de hallazgos por severidad, puntuación con tendencia y cobertura de
+    sensores.
+  - **Usuarios:** tabla con búsqueda. La ficha de usuario muestra grupos, equipos donde inicia
+    sesión, alertas y línea de tiempo.
+  - **Grupos privilegiados:** **árbol** de membresía anidada.
+  - **Equipos:** dominio frente a inventario de sensores.
+  - **Inicios de sesión:** mapa de calor hora × día, fallos por usuario y bloqueos.
+  - **Cambios:** lista filtrable con enlace a la alerta.
+- [ ] **AD-6 Ajustes de Active Directory** — Implementación B (pantalla) y A (API)
+  - Servidor, puerto, base DN, CA, cuenta de servicio, intervalo de sincronización, OUs
+    incluidas y excluidas, horario laboral y umbral de inactividad.
+  - Botón «Probar conexión», que muestra qué se puede leer.
+  - Solo administradores y con auditoría. La contraseña se escribe pero nunca se muestra.
+- [ ] **AD-7 Inicio de sesión en la consola con cuentas del dominio** — Implementación A y B
+  - Bind LDAPS con las credenciales del usuario.
+  - Grupos de AD que dan cada rol (por ejemplo, `GG-SOC-Admins` → administrador).
+  - Las cuentas locales siguen funcionando como respaldo.
+
+### Informes y descargas
+
+- [ ] **REP-1 Catálogo de informes** — Implementación A (datos y API), Implementación B (pantalla)
+  - Resumen ejecutivo (semanal o mensual), incidente, postura de AD, inicios de sesión,
+    cobertura de la flota, ruido y actividad del equipo SOC.
+  - Cada uno descargable en PDF, para imprimir o guardar desde el navegador con estilos de
+    impresión, y en CSV y JSON.
+- [ ] **REP-2 Informes programados** — Implementación A
+  - Diarios, semanales o mensuales, guardados en `data/reports` con retención.
+  - Lista y descarga en la consola.
+  - Envío opcional por correo (SMTP) o webhook, con el destino configurado por un
+    administrador.
+- [ ] **REP-3 Página «Descargas»** — Implementación B
+  - El sensor firmado (exe y, cuando exista, MSI) con su SHA-256.
+  - El certificado de ingesta para el alta por token.
+  - Las guías.
+  - Los equipos **descargan**; la consola nunca empuja nada.
+- [ ] **REP-4 Gráficas en los informes** — Implementación B. Las mismas gráficas de la consola,
+  exportables a PNG o SVG.
+
+### Validación de detecciones (simulación de adversario segura)
+
+- [ ] **SIM-1 Escenarios de telemetría sintética** — Implementación A
+  - Ficheros YAML que describen secuencias de eventos inertes (los mismos campos que envía el
+    sensor), cada una con su técnica ATT&CK y las alertas que se esperan.
+  - Un reproductor las envía a un motor de laboratorio con la etiqueta `simulation`, para que
+    nunca se mezclen con alertas reales.
+  - **No se ejecuta nada en ningún equipo.**
+- [ ] **SIM-2 Biblioteca de escenarios** — Implementación A. Uno por cada regla o cadena del paquete,
+  partiendo de los fixtures que ya existen. En CI, un escenario que deja de detectarse rompe el
+  build: así se cazan regresiones de detección.
+- [ ] **SIM-3 Matriz ATT&CK en la consola** — Implementación B
+  - Tácticas × técnicas, coloreadas según la técnica tenga regla, esté validada por un
+    escenario o haya saltado en los últimos 30 días.
+  - Al hacer clic se ven las reglas y los escenarios de cada técnica.
+- [ ] **SIM-4 Ejecución bajo demanda y su historial** — Implementación A y B
+  - Desde la consola se lanza la batería contra el motor de laboratorio (nunca el de producción).
+  - Se guarda el resultado: detectado o no y latencia.
+  - Una gráfica muestra la tendencia.
+- Las pruebas con herramientas de emulación sobre equipos reales (purple team) se hacen en un
+  laboratorio aislado y autorizado, fuera del proyecto. El proyecto no incluye ni descarga
+  herramientas ofensivas.
+
+### Gráficas y visualización
+
+Hay que seguir las reglas de visualización (paleta validada, leyenda, vista en tabla, tooltips)
+en los dos temas.
+
+- [ ] **VIZ-1 Donuts («gráfica de queso»)** — Implementación B
+  - Alertas por severidad, por táctica y por fuente.
+  - Flota por estado; hallazgos de AD por severidad.
+  - Como mucho 6 porciones más «Otros», con etiqueta, leyenda y total en el centro.
+- [ ] **VIZ-2 Mapa de calor hora × día** — Implementación B (alertas, inicios de sesión, eventos por
+  equipo).
+- [ ] **VIZ-3 Flujo del triaje** — Implementación B. Fuente → táctica → estado (nuevo, en
+  investigación, cerrado, falso positivo).
+- [ ] **VIZ-4 Tendencias** — Implementación B. Comparación con el periodo anterior y minigráficas en
+  las tarjetas de KPI.
+- [ ] **VIZ-5 Mapa de la flota** — Implementación B. Grafo de equipos por sede u OU con su estado;
+  al hacer clic, la ficha.
+- [ ] **VIZ-6 Exportar cualquier gráfica** — Implementación B (PNG, SVG o los datos en CSV).
+
+### Tema claro y oscuro
+
+- [ ] **THEME-1 Tokens de diseño** — Pulimiento B
+  - Colores definidos como variables en `:root`, con versión clara y oscura (base zinc).
+  - Selector en la cabecera: sistema, claro u oscuro. Se recuerda por usuario.
+  - Respeta `prefers-color-scheme`. El modo NOC sigue oscuro.
+- [ ] **THEME-2 Migrar los colores fijos** — Pulimiento B
+  - Hoy muchas clases suponen fondo oscuro (`text-zinc-100`, `bg-white/[0.03]`); deben pasar a
+    los tokens.
+  - Contraste AA comprobado en los dos temas.
+- [ ] **THEME-3 Paletas de gráficas por tema** — Pulimiento B. Validadas con la herramienta de
+  paletas, sin repintar las series al cambiar de tema.
+
+### Gestión del equipo SOC
+
+- [ ] **TEAM-1 Página de inicio de sesión propia** — Implementación A (sesiones) y B (pantalla)
+  - Sustituye el diálogo Basic del navegador.
+  - Sesión con cookie `HttpOnly`, `Secure` y `SameSite=Strict`, caducidad por inactividad y
+    cierre de sesión.
+  - Bloqueo temporal tras varios fallos.
+  - Segundo factor TOTP opcional.
+- [ ] **TEAM-2 Cuentas desde la consola** — Implementación A y B
+  - Alta, baja, rol, deshabilitar y restablecer contraseña de las cuentas **de la consola**
+    (no del dominio). Cambio obligatorio en el primer acceso.
+  - Solo administradores y auditado. Hoy se edita a mano `CONSOLE_USERS_FILE`.
+- [ ] **TEAM-3 Asignación** — Implementación A y B
+  - Alertas e incidentes con responsable, una vista «Mis alertas», la cola sin asignar y la
+    reasignación.
+- [ ] **TEAM-4 Quién está trabajando** — Implementación B
+  - Sesiones activas («en línea ahora») y qué alerta o incidente tiene abierto cada analista.
+  - Turno de guardia y traspaso de turno con notas.
+- [ ] **TEAM-5 Actividad del equipo** — Implementación B. Feed de quién hizo qué, sacado de la
+  auditoría, con enlaces y filtros por persona y acción.
+- [ ] **TEAM-6 Métricas del SOC** — Implementación A (cálculo) y B (gráficas)
+  - Tiempo hasta el triaje y hasta el cierre, carga por analista y falsos positivos por regla.
+  - Son métricas del servicio, visibles para administradores, no un control de productividad.
+
+### Ajustes
+
+- [ ] **SET-1 Sección «Ajustes»** — Implementación B (pantalla), Implementación A (API y
+  persistencia con recarga en caliente). Una sola página con:
+  - **General:** organización, zona horaria e idioma.
+  - **Ingesta:** TLS, alta de equipos y tokens.
+  - **Active Directory:** AD-6.
+  - **Integraciones:** webhook, SMTP, Teams y Slack, Elastic y Splunk.
+  - **Notificaciones**, **Cuentas** (TEAM-2) y **Apariencia** (tema).
+  - Cada cambio se valida, queda auditado y solo lo hacen administradores.
+- [ ] **SET-2 Copia de seguridad y restauración** — Implementación A. `data/` y la configuración
+  con un comando y desde Ajustes. Se verifica la integridad al restaurar.
+- [ ] **SET-3 Página «Estado de la plataforma»** — Implementación B
+  - Motor, ingesta, colas, latencias, tamaño del almacén y versión.
+  - Certificados que caducan y último informe programado.
+
+### Más ideas relevantes
+
+- [ ] **IDEA-1 Notificaciones con reglas de enrutado** — Implementación A. Por severidad, grupo u
+  hora; correo, Teams o Slack; con silencios temporales.
+- [ ] **IDEA-2 SLA de triaje y escalado** — Implementación A y B. Temporizador por severidad,
+  aviso al vencer y escalado al responsable de turno.
+- [ ] **IDEA-3 Plantillas de incidente** — Implementación B. Ransomware, phishing, cuenta
+  comprometida: listas de comprobación manuales, evidencias, cronología y exportación.
+- [ ] **IDEA-4 Lenguaje de búsqueda** — Implementación A y B
+  - `campo:valor`, `AND`/`OR`/`NOT`, rangos y comodines.
+  - Búsquedas guardadas compartidas y «cacerías» programadas que crean alertas.
+- [ ] **IDEA-5 Editor de reglas en la consola** — Implementación B
+  - Validación, el probador (ya existe) e historial de versiones.
+  - Importar Sigma desde la consola (hoy solo por CLI).
+- [ ] **IDEA-6 Criticidad y propietario de cada equipo** — Implementación A y B. Pesan en el riesgo
+  y en la cola de triaje (va con los grupos de la escala SOC, fase C).
+- [ ] **IDEA-7 Software instalado y parches** — Implementación A. Lectura de las claves
+  `Uninstall` y del último parche, solo lectura, con un hallazgo cuando hay software sin
+  soporte (va con la postura §6.2).
+- [ ] **IDEA-8 Línea base por usuario** — Implementación A. Horas y equipos habituales; alerta de
+  baja severidad ante lo nunca visto.
+- [ ] **IDEA-9 Claves de API por integración** — Implementación A. Con alcance (lectura, escritura
+  de triaje), caducidad y auditoría, en lugar de un único token.
+- [ ] **IDEA-10 Idiomas** — Implementación B. Español e inglés en la consola.
+- [ ] **IDEA-11 Asistente de primer arranque** — Implementación B. Crear el administrador, el
+  certificado de ingesta, el primer token de alta y comprobar el sensor local.
+- [ ] **IDEA-12 Tablas grandes** — Implementación B. Paginación en el servidor y listas
+  virtualizadas para miles de equipos o alertas.
+
+### Pulimiento
+
+Backend: Pulimiento A.
+
+- [ ] **POL-1 Ficheros demasiado grandes:**
+  - `internal/api/api.go` (más de 1.300 líneas);
+  - `cmd/engine/run.go`;
+  - `sensor/src/collector.rs` (más de 1.000 líneas).
+
+  Se dividen por responsabilidad, sin cambiar su comportamiento.
+- [ ] **POL-2 Logs** estructurados (`log/slog`) con niveles y campos coherentes en el motor.
+- [ ] **POL-3 Rendimiento:**
+  - perfiles `pprof` del camino caliente;
+  - asignaciones de memoria en la ingesta y en las reglas;
+  - lotes del almacén.
+
+  Los resultados van al benchmark nocturno.
+- [ ] **POL-4 Restos del nombre antiguo:** `SECURITY-FRAMEWORK ENGINE` en el banner y
+  `security-framework local API` en OpenAPI pasan a bluetardigrade.
+- [ ] **POL-5 Documentación:**
+  - OPERATIONS dividido por capítulos;
+  - referencia de la API generada desde OpenAPI;
+  - `CONTRIBUTING.md`, `SECURITY.md`, plantillas de issue y PR.
+- [ ] **POL-6 Release:**
+  - SBOM (CycloneDX) en cada release;
+  - el sensor compilado y firmado entre los artefactos;
+  - un fragmento de changelog por cambio (`changelog.d/`) para evitar conflictos.
+
+Consola: Pulimiento B.
+
+- [ ] **POL-7 Kit de componentes compartidos:** botón, campo, tabla, pestañas, insignia y diálogo,
+  con sus variantes. Las vistas pasan a usarlo.
+- [ ] **POL-8 Accesibilidad WCAG 2.2 AA:**
+  - foco visible y teclado completo;
+  - gráficas con `aria` y vista en tabla;
+  - comprobación axe en el CI del navegador.
+- [ ] **POL-9 Rendimiento de la consola:** tamaño del bundle, memoización de las vistas pesadas e
+  informe de Lighthouse.
+- [ ] **POL-10 README y capturas:**
+  - capturas nuevas en los dos temas;
+  - árbol de carpetas actualizado;
+  - se mantienen el logo y la cabecera originales.
+- [ ] **POL-11 Microinteracciones con React Bits y Motion,** sutiles y con
+  `prefers-reduced-motion` respetado.
+
+### Seguridad y bugs
+
+- [ ] **SEC-1 Modelo de amenazas** de las superficies nuevas: alta de equipos, conector de AD,
+  inicio de sesión, informes, ajustes y descargas. STRIDE en `docs/`. — Seguridad B
+- [ ] **SEC-2 Secretos en reposo:**
+  - credenciales de AD, SMTP y webhooks en ficheros con ACL;
+  - en Windows, cifrados con DPAPI;
+  - nunca devueltos por la API ni escritos en logs.
+
+  — Seguridad B
+- [ ] **SEC-3 Entradas** — Seguridad B:
+  - filtros LDAP escapados (RFC 4515);
+  - rutas de descarga sin traversal;
+  - exportaciones CSV sin inyección de fórmulas (`=`, `+`, `-`, `@`);
+  - URLs de integraciones validadas;
+  - ningún `dangerouslySetInnerHTML` con datos de eventos.
+- [ ] **SEC-4 Sesiones de la consola:**
+  - CSRF;
+  - fijación de sesión;
+  - caducidad;
+  - bloqueo por fallos;
+  - cabeceras (CSP, `frame-ancestors`, HSTS detrás de HTTPS).
+
+  — Seguridad B
+- [ ] **SEC-5 Dependencias** en el CI: `govulncheck`, `cargo audit` y `osv-scanner` para bun, con
+  una política para las alertas. Decidir el PR #8 de Dependabot. — Seguridad B
+- [ ] **SEC-6 Cadena de suministro** — Seguridad B
+  - Auditar los componentes de terceros copiados en la consola (React Bits) y cualquier skill o
+    paquete que instalen los carriles de diseño.
+  - Sin scripts `postinstall` nuevos.
+- [ ] **SEC-7 Fuzzing** (Go) de las superficies de entrada — Seguridad A:
+  - decodificador de la ingesta;
+  - líneas `ENROLL` y `AUTH`;
+  - cargadores YAML;
+  - parser de los ficheros de inteligencia.
+- [ ] **SEC-8 Bugs conocidos** — Seguridad A:
+  - el mensaje «ingest auth: ENABLED (… -token/SF_INGEST_TOKEN)» confunde cuando la
+    autenticación la activa el alta de equipos;
+  - casos borde del alta (equipo renombrado, reloj desfasado, registro lleno);
+  - repasar lo marcado como pendiente en la hoja de pruebas.
+- [ ] **SEC-9 Privacidad** — Seguridad B
+  - Minimizar datos personales en los inicios de sesión y en las líneas de tiempo de usuario.
+  - Retención configurable.
+  - Acceso por rol y auditoría de quién consulta la ficha de un usuario.
 
 ## Más adelante (ver ROADMAP)
 

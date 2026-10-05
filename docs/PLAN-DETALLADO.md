@@ -243,7 +243,7 @@ Implementado en la rama `feat/sensor-service`: `--service`, `--log`, `--token-fi
       - field: process.command_line
         operator: eq
         value: 'powershell.exe -NoProfile -NonInteractive -Command "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-Clipboard -Raw"'
-    reason: integración de portapapeles de Claude Code
+    reason: asistente de desarrollo que lee el portapapeles
     expires: 2026-12-31
   ```
 
