@@ -1,0 +1,8 @@
+# Advisories ignored on purpose, each with a reason and an expiry, per
+# the policy stated in .github/workflows/deps-audit.yml: never silence a
+# scanner without a written reason, and an unused ignore fails the scan.
+
+[[IgnoredVulns]]
+id = "GHSA-vfj7-8cjw-p6xm"
+ignoreUntil = 2026-11-05T00:00:00Z
+reason = "CVE-2026-93687: stack exhaustion in braces through 3.0.3 via deeply nested brace patterns; no upstream fix exists yet (3.0.3 is the latest release). The website consumes braces only at build time, globbing repository paths, never attacker-controlled patterns. Revisit for a patched braces release or an upstream statement."
