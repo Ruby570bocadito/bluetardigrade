@@ -13,6 +13,10 @@
 #   D. Guardias: destino no loopback rechazado antes de tocar nada;
 #      -only con id inexistente falla; una expectativa que el motor no
 #      conoce (FALTA-CATALOGO) falla sin esperar timeouts.
+#   E. SIM-4 parte A: el motor rearranca armado con -scenarios y la
+#      bateria se lanza por la API (GET /api/scenarios, POST
+#      /api/scenarios/run, historial y errores de contrato); se
+#      comprueba que la ejecucion aislada no anade alertas al motor.
 #
 # Uso:
 #   bash scripts/dev-tests/e2e_scenarios.sh
@@ -177,6 +181,110 @@ EOF
 check "expectativa desconocida por el motor falla" "$([ $? -ne 0 ] && echo 1 || echo 0)"
 rg -q 'FALTA-CATALOGO' "$TMPDIR_E2E/broken.txt" \
   && ok "informe FALTA-CATALOGO sin esperar timeouts" || bad "sin FALTA-CATALOGO en el informe"
+
+# --------------------------------------------------------------------- fase E
+# La superficie API de SIM-4 (parte A): el motor rearranca armado con
+# -scenarios y la bateria se lanza por HTTP. La ejecucion es el runner
+# aislado en proceso (internal/scenario): nada de lo que eleva llega a
+# los anillos reales del motor, y esa insolacion se comprueba aqui con
+# el conteo de alertas etiquetadas antes y despues.
+echo "Fase E: bateria bajo demanda por la API (motor armado con -scenarios)"
+kill "$EPID" 2>/dev/null; wait "$EPID" 2>/dev/null
+"$ENGINE" -addr "$EADDR" -api "127.0.0.1:$API_PORT" \
+  -rules "$REPO/rules" -sequences "$REPO/sequences" \
+  -scenarios "$REPO/scenarios" \
+  >>"$LOG" 2>&1 &
+EPID=$!
+for i in $(seq 1 50); do
+  curl -s "$BASE/api/health" | rg -q '"ok"' && break
+  sleep 0.2
+done
+curl -s "$BASE/api/health" | rg -q '"ok"' \
+  || { echo "FALLO: el motor armado no levanta (log: $LOG)"; exit 1; }
+
+# El anillo de alertas arranca VACIO tras el rearranque: el conteo
+# "antes" es la linea base contra la que se prueba la insolacion.
+BEFORE=$(curl -s "$BASE/api/alerts?limit=500" | python3 -c '
+import json,sys
+rows = json.load(sys.stdin)
+print(len([r for r in rows if "simulation" in (r.get("tags") or [])]))
+')
+echo "  (linea base de alertas etiquetadas tras el rearranque: $BEFORE)"
+
+# Desarmado no existe aqui (este motor va armado); el 501 lo cubren los
+# tests de unidad. Biblioteca por la API:
+LIB=$(curl -s "$BASE/api/scenarios")
+echo "$LIB" | python3 -c '
+import json,sys
+lib = json.load(sys.stdin)
+assert lib["armed"] is True, lib
+assert lib["count"] == 127, lib["count"]
+assert len(lib["scenarios"]) == 127
+ids = [s["id"] for s in lib["scenarios"]]
+assert ids == sorted(ids)
+assert any(s["id"] == "sim-lsass-comsvcs" for s in lib["scenarios"])
+' && ok "GET /api/scenarios sirve la biblioteca (127, ordenada)" \
+  || bad "GET /api/scenarios: biblioteca incorrecta"
+
+# Lanzo la bateria (subconjunto o completa) y espero el resultado.
+if [ "${SF_E2E_FULL:-0}" = "1" ]; then
+  RUN_BODY=""
+  N_EXPECT=127
+else
+  RUN_BODY='{"only":["sim-lsass-comsvcs","sim-run-key-registry","sim-office-payload-drop","sim-dga-dns","sim-ids-priority-high","sim-chain-cf86-be62"],"timeout_ms":15000}'
+  N_EXPECT=6
+fi
+RUN=$(curl -s -X POST "$BASE/api/scenarios/run" -d "$RUN_BODY")
+RUN_ID=$(echo "$RUN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["run_id"])' 2>/dev/null)
+check "POST /api/scenarios/run acepta la bateria (202)" \
+  "$([ -n "${RUN_ID:-}" ] && echo 1 || echo 0)"
+
+DONE=""
+for i in $(seq 1 600); do
+  DONE=$(curl -s "$BASE/api/scenarios/runs/$RUN_ID")
+  echo "$DONE" | rg -q '"status":"completed"' && break
+  sleep 0.1
+done
+echo "$DONE" | python3 -c "
+import json,sys
+run = json.load(sys.stdin)
+assert run['status'] == 'completed', run['status']
+assert run['total'] == $N_EXPECT, run['total']
+assert run['detected'] == $N_EXPECT, run
+assert run['pass_rate'] == 1.0, run['pass_rate']
+assert len(run['results']) == $N_EXPECT
+for r in run['results']:
+    assert r['status'] == 'detected', r
+    assert r['duration_ms'] >= 0
+" && ok "la bateria por API detecta todo el subconjunto ($N_EXPECT/$N_EXPECT)" \
+  || bad "la bateria por API no completa como se espera"
+
+# Insolacion: el conteo de alertas etiquetadas del motor NO cambia por
+# la bateria (el runner aislado no publica en el motor real).
+AFTER=$(curl -s "$BASE/api/alerts?limit=500" | python3 -c '
+import json,sys
+rows = json.load(sys.stdin)
+print(len([r for r in rows if "simulation" in (r.get("tags") or [])]))
+')
+check "la bateria por API no anade alertas al motor (aislamiento)" \
+  "$([ "${BEFORE:-0}" -eq "${AFTER:--1}" ] && echo 1 || echo 0)"
+
+# Historial: el listado incluye la ejecucion, sin resultados.
+curl -s "$BASE/api/scenarios/runs?limit=10" | python3 -c "
+import json,sys
+hist = json.load(sys.stdin)['runs']
+assert any(r['run_id'] == '$RUN_ID' for r in hist), hist
+assert all(r.get('results') is None for r in hist), hist
+assert hist[0]['run_id'] == '$RUN_ID'
+" && ok "GET /api/scenarios/runs lista la ejecucion (sin resultados)" \
+  || bad "historial incorrecto"
+
+# Errores de contrato:
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/scenarios/run" \
+  -d '{"only":["sim-no-existe"]}')
+check "POST con id desconocido responde 400" "$([ "$CODE" = "400" ] && echo 1 || echo 0)"
+CODE=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/scenarios/runs/run-0123456789abcdef")
+check "detalle de run inexistente responde 404" "$([ "$CODE" = "404" ] && echo 1 || echo 0)"
 
 # -------------------------------------------------------------------- resumen
 echo

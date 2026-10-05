@@ -37,6 +37,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/respond"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/risk"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/scenrun"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/store"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/suppress"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/tlsutil"
@@ -127,6 +128,11 @@ type Hub struct {
 	// sensor enrollment (enroll.go): nil = off; GET /api/enroll then
 	// says how to turn it on.
 	enroll *enroll.Registry
+
+	// detection-validation battery (scenarios.go): nil = disarmed,
+	// the routes answer 501 with the arming hint instead of a
+	// misleading 404.
+	scenarios *scenrun.Service
 }
 
 // New binds a plain-text API listener. Use addr ":0" in tests to pick
@@ -211,6 +217,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	mux.HandleFunc("GET /api/sequences", h.handleSequences)
 	mux.HandleFunc("GET /api/fleet", h.handleFleet)
 	h.registerEnroll(mux)
+	h.registerScenarios(mux)
 	mux.HandleFunc("GET /api/intel", h.handleIntel)
 	mux.HandleFunc("GET /api/baseline", h.handleBaselineHost)
 	mux.HandleFunc("GET /api/stream", h.handleStream)
