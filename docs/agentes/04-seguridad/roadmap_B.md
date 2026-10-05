@@ -51,16 +51,43 @@ Tareas del TODO de mi carril (SEC-1 a SEC-6, SEC-9):
   usuario llegan con AD-3/AD-4: requisitos ya escritos en el modelo de
   amenazas §3 (auditoría de consulta de ficha, rol mínimo, RGPD).
 
-## Siguientes rondas (orden propuesto)
+## Estado tras la ronda 2026-10-05 (ronda 2)
 
-1. Vigilar el primer ciclo del job `deps-audit` en CI real (si algo del
-   entorno del runner falla — p. ej. la acción de RustSec — es lo
-   primero que toca ajustar).
-2. Cuando Implementación A publique el alta de equipos: auditar el
-   protocolo `ENROLL` real (fuerza bruta, canje repetido, fuga del
-   secreto en respuestas y logs) contra el modelo §2 y cerrar las
-   mitigaciones que dependan del código.
+- **SEC-5:** verificado el ciclo real del job `deps-audit`: aún no ha
+corrido porque el workflow solo existe en mi rama (GitHub no lo ejecuta
+para pushes a main hasta que el merge lo lleve allí). De paso: push sin
+filtro (cada rama escaneada al empujar) y guard estático de triggers
+`check_workflows.py` en `make ci` y en el propio workflow. Nota de
+entorno para las siguientes rondas: las vistas de texto del entorno
+corrompen secuencias con corchetes («[main]» se ve como «ain]»); todo
+contenido crítico se verifica por bytes (el falso positivo me costó una
+tarde de depuración — el trigger siempre fue válido).
+- **SEC-1/2/4:** auditoría completa del protocolo ENROLL publicado en
+`feat/enrollment` (5908107) — veredictos por fila en el modelo §2, sin
+hallazgos accionables nuevos; residuo DPAPI/ACL ya asignado a
+Implementación A.
+- **CI en main (5e168ba) rojo, diagnosticado:** (a) `smoke_file_forensics.py`
+con el count de reglas stale tras el pack de 39 reglas (7c2b7e8) — fix
+ya reclamado por el PR #16 (toca el fichero); (b) 12 tests de
+`internal/respond`/persistencia caen en el runner Windows con patrón
+de ~3 s (esperas que expiran) — evidencia en el informe de ronda, para
+el carril de motor. Nada de esto es mío: no toco smoke ni respond.
+- **PRs:** #16 y #17 revisados por listado de ficheros (sin superficie
+nueva de seguridad para mi carril); #8 de Dependabot: mantener, como en
+la ronda 1.
+
+## Siguientes rondas (orden propuesto, tras la ronda 2)
+
+1. Verificar el fix del PR #16 cuando aterrice: el smoke debe pasar con
+el count real (114 reglas tras el pack o el valor que fije el guard de
+inventario) y no reintroducirse un número hardcodeado.
+2. Cuando el responsable fusione mi ronda 1 a main, confirmar que el
+job `deps-audit` corre en main y en cada push de rama (ahora sin
+filtro), y responder a sus hallazgos si los hay.
 3. SEC-1: extender el modelo a las superficies de prevención §6.1–6.3
-   cuando el responsable las desbloquee.
+cuando el responsable las desbloquee; y §1.3 instalador (Authenticode,
+GPO/Intune) cuando Implementación A lo publique.
 4. Revisar los PRs de Dependabot que vengan (mantener la política:
-   bump + CI verde; los de seguridad, urgentes).
+bump + CI verde; los de seguridad, urgentes).
+5. Conector AD (AD-1): cuando exista código, el escape RFC 4515 y el
+LDAPS obligatorio del modelo §3 pasan de requisito a verificación.
