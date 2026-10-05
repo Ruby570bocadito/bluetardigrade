@@ -103,6 +103,8 @@ ci:
 	python3 scripts/dev-tests/check_openapi.py
 	python3 scripts/dev-tests/check_openapi.py --self-test
 	python3 scripts/dev-tests/check_rule_inventory.py
+	python3 scripts/dev-tests/check_package_lifecycle.py --self-test
+	python3 scripts/dev-tests/check_package_lifecycle.py
 	@if command -v pwsh >/dev/null 2>&1; then pwsh -NoProfile -File scripts/dev-tests/check_powershell_syntax.ps1; else echo "powershell syntax guard SKIPPED (no pwsh on PATH; CI runs it on ubuntu and windows runners)"; fi
 	python3 scripts/dev-tests/check_installer_native_stderr.py
 	cd web/console-service && $(BUN) install --frozen-lockfile && $(BUN) test && bunx tsc --noEmit
