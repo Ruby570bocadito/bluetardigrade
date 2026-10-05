@@ -1,22 +1,28 @@
-# Plan de ronda — Implementación A (2026-10-05, ronda 2)
+# Plan de ronda — Implementación A (2026-10-05, ronda 3)
 
-- Tareas del TODO: **SIM-4 parte A** (ejecución bajo demanda e historial: motor y API) y el
-  **ALTA de Seguridad B**: elevar `golang.org/x/text` de v0.3.8 a v0.39.0 en mi rama
-  (GO-2026-5970; mi rama hereda de `feat/enrollment` y aún lo lleva viejo).
-- Ficheros: nuevo `internal/scenrun` (servicio de ejecución: recarga la biblioteca por
-  ejecución, inyecta eventos en el pipeline en proceso, observa las alertas, historial en
-  SQLite con fallback en memoria), `internal/api` (rutas nuevas), `internal/store`
-  (tabla `scenario_runs`), `cmd/engine` (flag `-scenarios`, cableado), `docs/api/openapi.yaml`,
-  `go.mod`/`go.sum`, changelog fragment.
-- Por qué: mi roadmap lo tenía primero; IMP-B necesita el contrato para SIM-4/SIM-3 (su
-  informe 13h11 lo declara bloqueado por APIs de este carril) y la cobertura de la biblioteca
-  SIM-1/SIM-2 ya está cerrada y verificada.
-- Para Implementación B (contrato): `GET /api/scenarios` (biblioteca cargada),
-  `POST /api/scenarios/run` (cuerpo opcional `{"only":[...],"interval_ms":N,"timeout_ms":N}`;
-  202 con `run_id`; 409 si ya hay una ejecución; 501 si el motor no arrancó con
-  `-scenarios`), `GET /api/scenarios/runs?limit=N` (historial, más reciente primero, con
-  `pass_rate` para la gráfica de tendencia) y `GET /api/scenarios/runs/{id}` (detalle con
-  resultado por escenario: `detected|missing|catalog|error`, expectativas fallidas
-  esperada/disparada, latencia). Detalle completo en OpenAPI.
-- Fuera de alcance: SIM-4 parte B (pantalla, IMP-B), REP-1/REP-2 y la API de ruido
-  (siguiente ronda).
+- Tareas del TODO: **REP-1 parte A** (catálogo de informes, datos y API: resumen ejecutivo,
+  incidente, cobertura de flota y actividad del SOC; postura AD/inicios de sesión/ruido
+  siguen bloqueados por AD-1/AD-3 y la sección de ruido) y la **API de ruido** (§2.4:
+  `GET /api/noise?window=24h`, top de procesos, dominios y reglas, por equipo y flota).
+  Además el **hallazgo SEC-A-1 de Seguridad A** (bug real en mi carril: el nombre de
+  identidad del alta no comprueba unicidad; re-lanzar el sufijo dentro del cerrojo).
+- Ficheros: nuevo `internal/report` (agregaciones puras y CSV, probado sin HTTP),
+  `internal/api/reports.go` + `internal/api/noise.go` (2 rutas nuevas
+  `/api/reports`, `/api/reports/{kind}` y 1 ruta `/api/noise`), `docs/api/openapi.yaml`
+  (34 → 37 rutas), `internal/enroll/enroll.go` (fix SEC-A-1), changelog fragment,
+  e2e nueva `scripts/dev-tests/e2e_reports_noise.sh`, informe/roadmap.
+- Por qué este orden: IMP-B declara REP-3/REP-4 bloqueadas hasta publicar REP-1 y su
+  informe de ruido §2.4 espera la API; SEC-A-1 es un parche pequeño con alto impacto
+  (el motor se niega a arrancar tras una colisión) que Seguridad A dejó asignado a este
+  carril. El campo de decisión de triaje que IMP-B pide (MEDIA) queda fuera: cambia el
+  contrato del ciclo de vida y merece ronda propia; la API de ruido reporta hoy
+  `closed_pct` honesto y cambiará a FP% cuando exista el campo.
+- Para Implementación B (contrato): `GET /api/reports` (catálogo: kinds, parámetros y
+  formatos) y `GET /api/reports/{kind}?window=24h|7d|30d&format=json|csv` (json por
+  defecto; csv `text/csv` con el mismo escapado de fórmulas que los export existentes).
+  `GET /api/noise?window=24h&host=X&limit=10` (top procesos por imagen, dominios DNS,
+  reglas con recuento y % cerrado; `host` vacío = flota completa). Detalle y schemas en
+  OpenAPI al cerrar la ronda.
+- Fuera de alcance: pantalla de informes y pestaña de ruido (IMP-B), REP-2 (programados),
+  v1.1 Ruido (software conocido y supresiones con condiciones), AD-1, el campo `decision`
+  del triaje.
