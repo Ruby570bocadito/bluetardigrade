@@ -1,62 +1,68 @@
-# Plan de ronda — Pulimiento A (2026-10-05 16h00 UTC, ajustado 16h20)
+# Plan de ronda — Pulimiento A (2026-10-05 18h33 UTC, re-ejecución de la ronda 9)
 
-Ronda de fondo única de esta instancia. **Ajustada tras leer los seis
-planes publicados** (todos los carriles ya tienen rama esta ronda).
+- **Contexto:** la instancia anterior de esta ronda (autorizada por el
+  responsable con «continua» más allá de RONDAS_MAXIMAS=8) completó 4
+  commits locales (plan, adopción fuzz, POL-12, informe) que NUNCA
+  llegaron a `origin`: el sandbox se reinició y se los llevó. Este plan
+  re-ejecuta la MISMA ronda autorizada sobre el mismo punto de partida
+  (`carril/pulimiento-a` en `10d7364`), re-verificada contra el estado
+  REMOTO ACTUAL (los demás carriles avanzaron mientras tanto).
 
-## Identificadores del TODO trabajados
+## Identificadores del TODO trabajados (mismo alcance que la ronda perdida)
 
-- **SEC-7 nocturno (prioridad ronda 2):** el job `fuzz` de
-  `bench-nightly.yml` ejecuta solo `FuzzFieldMapParity` de los 20
-  objetivos en `main`. Lo paso a una **matriz generada por
-  descubrimiento** (`git grep '^func Fuzz'` → JSON → `matrix.include`):
-  un job por objetivo, `-fuzztime 5m`, `max-parallel`, guard contra
-  matriz vacía y crasher como artefacto. El descubrimiento automático
-  cubrirá también los objetivos futuros de SEG-A sin editar el
-  workflow. Añado un objetivo para la **primera línea de la ingesta
-  (AUTH/ENROLL)** en `internal/ingest`: extracción de
-  `parseEnrollLine` desde `handleEnroll` (sin cambio de conducta) +
-  `FuzzAuthEnrollFirstLine`.
-- **POL-12:** comentarios que nombran rondas, carriles o agentes en
-  workflows, Go y scripts pasan a explicar el porqué técnico. Solo
-  comentarios, cero cambio de conducta.
-- **POL-A-ci-2 (desbloqueado):** PUL-B está fusionado y
-  `check_console_theme.py` pasa verde en `main` (ejecutado); lo
-  engancho al job `console` de `ci.yml` tras el build.
+- **SEC-7 (adopción):** los 2 objetivos de fuzz que SEG-A escribió para
+  la ingesta (`fuzzEnrollRegistry` + `FuzzEnrollLine`, 107 líneas) se
+  adoptan VERBATIM en `internal/ingest/fuzz_test.go`, junto a los 5
+  imports que necesitan (`encoding/json`, `errors`, `io`, `net`,
+  `time`). Sus dos objetivos y los míos conviven y se complementan: el
+  suyo ejercita el handshake completo ENROLL sobre `net.Pipe` (ack
+  único JSON, contadores coherentes, cierre del enroller); el mío
+  (`FuzzAuthEnrollFirstLine`) cubre la clasificación AUTH/ENROLL y el
+  parseo de campos. El addendum de SEG-A (`783b5a8`) anotaba esta
+  colisión como append-append: al adoptar yo su código, la fusión de su
+  rama queda reducida al bloque de imports.
+- **POL-12 (cierre):** los 2 comentarios de `internal/enroll`
+  (`enroll.go:481`, `enroll_test.go:302`) pierden la procedencia
+  «(Seguridad A, ronda 2026-10-05 13h34)» y conservan el ID `SEC-A-1`
+  con su porqué técnico. Solo comentarios, cero cambio de conducta.
+  DESBLOQUEADO: el fix SEC-A-1 ya está en `main` (`6b4e108`) y el plan
+  nuevo de IMP-A (16h05, `2c32013`) ya NO lista `internal/enroll`.
 
-## Ajuste de coordinación (16h20, tras leer los seis planes)
+## Coordinación re-verificada a 18h33 contra las puntas remotas
 
-- **POL-1 (`api.go`) SE DIFIERE:** la condición del responsable era
-  «solo si IMP-A no tiene `internal/api` en su plan». IMP-A sí lo
-  tiene (extiende `internal/api/reports.go` y `noise.go` para REP-1).
-  Aunque `api.go` en sí no está en su lista, el paquete está caliente:
-  se aplaza a una ronda con IMP-A frío. Queda en el roadmap.
-- **POL-12 esquiva `internal/enroll/`** (`enroll.go` y `enroll_test.go`
-  llevan el fix SEC-A-1 de IMP-A esta ronda): esas dos reescrituras se
-  dejan para cuando su rama se fusione. Anotado en el informe.
-- Sin más colisiones: IMP-B y PUL-B tocan solo consola; SEG-A toca
-  fuzzers de collector/reputation/api-filters (paquetes que no toco;
-  su plan es previo a la fusión de la ronda 1, donde ya aterrizaron);
-  SEG-B revisa `internal/api` y `internal/report` (mis edits allí son
-  solo de comentarios; merge-tree lo verificará antes del push).
+- **main `35cd866`:** solo dependabot (cellbuf v0.0.15 + 2 bumps en
+  `go.mod`/`go.sum`). Mis commits de ronda 8 NO están aún en main.
+- **IMP-A `2c32013`:** plan 16h05 — AD-1/AD-2 (`internal/ad` nuevo,
+  `internal/api/ad.go`, flag `-ad`) y SET-3 (`/api/stats`). Dice
+  explícitamente «POL-1 api.go tras mi fusión»: **POL-1 sigue
+  diferido** (tercera ronda consecutiva con el paquete caliente). Su
+  plan no toca `internal/ingest` ni `internal/enroll`: las dos tareas
+  de arriba están limpias.
+- **SEG-A `9c217bf`:** rondas 4-8 (noise/incident/scenrun). Su
+  `internal/ingest/fuzz_test.go` NO cambió desde `1977444` (verificado
+  con diff): la adopción verbatim extrae de su punta actual y queda
+  idéntica. Su addendum nuevo (`1d98208`) es un conflicto SEG-A↔SEG-B
+  en `internal/scenrun/scenrun_test.go`: no es mío.
+- **IMP-B `9f35615`, PUL-B `173ac11`, SEG-B `b0eaa60`:** consola y
+  analyst; sin solape con lo de esta ronda. `merge-tree` contra las
+  cinco ramas antes y después de tocar nada.
 
 ## Ficheros que voy a tocar y por qué
 
-- `.github/workflows/bench-nightly.yml`, `ci.yml` (CI, mi área;
-  SEG-B opera en `deps-audit.yml`, fichero distinto).
-- `internal/ingest/enroll.go` + `fuzz_test.go` (nadie más en el
-  handshake).
-- Comentarios POL-12 en `internal/{actions,api,ingest,respond,report,rules,sigma}`,
-  `scripts/` y los dos workflows (excepto lo indicado arriba).
-- `changelog.d/` (fragmentos), `docs/agentes/03-pulimiento/` (informe
-  y roadmap). `TODO.md`, `PLAN-DETALLADO.md`, `CHANGELOG.md` y
-  `openapi.yaml` no se tocan.
+- `internal/ingest/fuzz_test.go` (adopción verbatim + imports).
+- `internal/enroll/enroll.go`, `internal/enroll/enroll_test.go` (2
+  comentarios POL-12).
+- `changelog.d/PUL-A-nightly-fuzz-matrix.md` (entrada de adopción),
+  `docs/agentes/03-pulimiento/` (este plan, informe, roadmap).
+- `TODO.md`, `PLAN-DETALLADO.md`, `CHANGELOG.md`, `openapi.yaml`,
+  workflows: no se tocan.
 
 ## Verificación prevista
 
-Suite Go completa tras el último cambio: `gofmt -l .`,
-`go build/vet ./...`, `GOOS=windows go build ./...`, staticcheck doble
-pasada (2026.2.1), `go test -race -count=1 ./...` y `-count=3` en
-paquetes tocados, `check_openapi.py` (+ self-test),
-`check_rule_inventory.py`, `check_workflows.py`, parseo YAML y
-`merge-tree` contra las cinco ramas. Sin `cargo` ni `pwsh` (sensor y
-PowerShell intactos).
+`gofmt -l .` (con verificación de que el bloque adoptado queda
+byte-a-byte idéntico al de SEG-A), `go build/vet ./...`,
+`GOOS=windows go build ./...`, staticcheck 2026.2.1 doble pasada,
+`go test -race -count=1 ./...` y `-count=3` en `ingest`+`enroll`,
+fuzzing real de los 3 objetivos de `ingest` (pasada corta), matriz
+nocturna verificada por descubrimiento (`go test -list` por paquete),
+`merge-tree --write-tree` contra las 5 ramas abiertas antes y después.
