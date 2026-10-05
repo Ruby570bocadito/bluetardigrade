@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Console theme palette checker (Pulimiento B, THEME round 2026-10-05).
+"""Console theme palette checker (THEME).
 
 Parses web/console/src/app/globals.css, extracts the dark (:root) and the
 light (html.light) token sets, and validates both against the same rules

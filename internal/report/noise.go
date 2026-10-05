@@ -17,8 +17,8 @@ import (
 // work (and the suppression write surface already exists).
 //
 // The FP percentage the TODO asks for rides on the triage decision
-// field the lifecycle store does not have yet (Implementation B's
-// request to IMP-A, tracked for its own round): today the report
+// field the lifecycle store does not have yet (a pending engine-side
+// request): today the report
 // ships the honest proxy — the share of each rule's alerts whose
 // CURRENT status is closed/acknowledged — named exactly that
 // (closed_pct, acknowledged_pct).

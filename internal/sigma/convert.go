@@ -111,7 +111,7 @@ var supportedModifiers = map[string]bool{
 // Unicode): letters are exactly the characters whose case can vary
 // between the Sigma corpus (conventionally lowercase) and the real
 // telemetry, so string comparisons over them must be case-insensitive
-// (house finding F1, round over da6382c).
+// (house finding F1, over da6382c).
 func hasLetters(s string) bool {
 	return strings.ToLower(s) != strings.ToUpper(s)
 }
@@ -232,7 +232,7 @@ func translateString(v any, modifier string) (string, any, error) {
 func wildcardRegex(pattern, modifier string) (string, any, error) {
 	var b strings.Builder
 	// Wildcard matching in Sigma is case-insensitive by corpus
-	// convention (house finding F1, round over da6382c).
+	// convention (house finding F1, over da6382c).
 	b.WriteString("(?i)")
 	switch modifier {
 	case "contains", "endswith":

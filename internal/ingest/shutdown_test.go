@@ -7,8 +7,7 @@ package ingest
 // between Shutdown flipping closing and the accept loop noticing used
 // to be Added to the WaitGroup with the counter at (or heading to)
 // zero while Wait ran — a sync.WaitGroup contract violation that -race
-// reported as the flaky ingest warning (informe 03-A 21h59 §8.1,
-// assigned to carril 04).
+// reported as the flaky ingest warning.
 
 import (
 	"net"

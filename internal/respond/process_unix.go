@@ -1,7 +1,6 @@
 //go:build !windows
 
-// Linux/Unix process resolution and verified kill (R1/R2, dictamen
-// 04-B 16h11):
+// Linux/Unix process resolution and verified kill (R1/R2):
 //
 //   - pidfd path: pidfd_open pins the PROCESS OBJECT (the recycling
 //     window cannot redirect the signal to a different object) and
@@ -118,7 +117,7 @@ func nameInSet(resolved string, set map[string]struct{}) bool {
 // made pidfd_open fail (pidfdErrName) — the degradation must be loud
 // AND diagnosable: enosys is a kernel without pidfd (permanent),
 // emfile/enfile is fd exhaustion of a mechanism that was alive
-// (transient, worth watching) — 04-B ronda 18h00.
+// (transient, worth watching).
 //
 // Package var for the same reason pidfdOpen is one: the unit tests
 // force the post-commit failure branch of Kill deterministically

@@ -11,7 +11,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
-// Regression (04-A, ronda 2026-10-01): handleEvents and handleAlerts
+// Regression: handleEvents and handleAlerts
 // read the h.events / h.alerts rings WITHOUT h.mu while
 // RecordEvent / RecordAlert append and trim under it from the engine
 // loop goroutine — a data race on the slice header on two endpoints

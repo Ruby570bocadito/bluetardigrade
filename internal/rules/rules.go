@@ -59,9 +59,9 @@ type Rule struct {
 // IsEnabled returns true unless the rule is explicitly disabled.
 func (r *Rule) IsEnabled() bool { return r.Enabled == nil || *r.Enabled }
 
-// Load caps (F2, round 12h40): the rule directory is operator
+// Load caps (F2): the rule directory is operator
 // config, but every other loader in the house bounds its input
-// (correlator since 21h29, threshold, beacon, sigma converter) —
+// (correlator, threshold, beacon, sigma converter) —
 // this was the last config surface read without a cap, and load
 // runs at startup AND at every hot-reload tick.
 const (
@@ -262,8 +262,8 @@ func matchCondition(c Condition, val any, re *regexp.Regexp) bool {
 //
 // strings.EqualFold and RE2's (?i) both apply simple Unicode case
 // folding, while a plain strings.ToLower comparison does not (U+017F
-// LONG S folds to "s" but lowercases to itself; house finding F1,
-// round 12h40 over the A4 i* family). A matcher where ieq accepted
+// LONG S folds to "s" but lowercases to itself; house finding F1 over
+// the A4 i* family). A matcher where ieq accepted
 // "ſervice" == "SERVICE" while icontains rejected the same pair was a
 // homoglyph bypass waiting for a payload, so every i* operator now
 // folds. The ASCII fast path keeps the hot path byte-for-byte as

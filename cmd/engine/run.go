@@ -489,7 +489,7 @@ func runEngine(o *options, interactive bool) error {
 			} else if !isLoopback(hub.Addr()) {
 				fmt.Println("[ENGINE] WARNING: API bound beyond loopback WITHOUT a token: anything that reaches this port can read every event and alert. Set -api-token or SF_API_TOKEN.")
 			}
-			// suppression writes (Director decision 6.1): the write
+			// suppression writes (design §6.1): the write
 			// surface is opt-in and inherits the bearer gate; a
 			// non-loopback bind without a token refuses it at startup
 			// because unauthenticated writes could silence detections.
@@ -544,9 +544,10 @@ func runEngine(o *options, interactive bool) error {
 	// opt-in by layers — flag AND bearer token AND an open audit
 	// file — and its state is announced at startup, never guessed.
 	// The token layer is stricter than the suppression writes it
-	// replicates: kill requires a token EVEN on loopback (dictamen
-	// 04-B: kill ≠ suppress). An audit open failure disables the
-	// surface loudly and keeps detection alive (R5b: NOT fatal —
+	// replicates: kill requires a token EVEN on loopback (kill ≠
+	// suppress: separate surfaces, separate credentials). An audit
+	// open failure disables the surface loudly and keeps detection
+	// alive (R5b: NOT fatal —
 	// taking down the whole engine over a respond misconfig would
 	// be the expensive failure direction).
 	var respMgr *respond.Manager
@@ -821,8 +822,8 @@ func runEngine(o *options, interactive bool) error {
 		}
 	}()
 	if thr != nil {
-		// Threshold alerts NEVER feed the correlator (dictamen 04,
-		// Q3): one threshold alert already aggregates N events, and
+		// Threshold alerts NEVER feed the correlator (Q3): one
+		// threshold alert already aggregates N events, and
 		// chaining it would break the "steps = atomic rules"
 		// semantics of the sequencer. The suppression gate itself is
 		// the shared one above.

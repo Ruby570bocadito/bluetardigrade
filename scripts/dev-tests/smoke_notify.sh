@@ -191,7 +191,7 @@ say "-- scenario 6: broken config fails loud at startup"
 # Alternate ports: the engine binds ingest+api BEFORE loading the notify
 # config (same placement as the webhook connector), so the broken run
 # needs free ports to reach the fail-loud path instead of exiting 0 via
-# the ingest-conflict branch (bind semantics mapped by agent-04, 13h30).
+# the ingest-conflict branch (bind semantics confirmed live).
 BROKEN_API=$((API+90)); BROKEN_INGEST=$((INGEST+90))
 "$ENGINE" -api "127.0.0.1:${BROKEN_API}" -addr "127.0.0.1:${BROKEN_INGEST}" \
   -rules "$ROOT/rules" -notify "$WORK/notify-broken.yaml" \

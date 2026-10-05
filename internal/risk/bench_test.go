@@ -6,12 +6,11 @@ import (
 	"time"
 )
 
-// Benchmarks for the accumulated O1 package (04's O1 of acta 09h50,
-// taken into the Director's performance review plan 15h46 §8): with the
+// Benchmarks for the accumulated O1 package: with the
 // table at MaxHosts, every alert from a NEW host walks the whole map to
 // pick the coldest eviction victim — O(N) per admission by design,
 // accepted for phase 1. These benchmarks put the measurement behind
-// that acceptance: if a future round revisits it (heap, sampled scan),
+// that acceptance: if a future change revisits it (heap, sampled scan),
 // this is the baseline it has to beat, and the warm path below is the
 // contrast that shows what the scan costs.
 

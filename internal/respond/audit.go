@@ -1,6 +1,6 @@
 // Audit writer for active response (C3, layer 5): append-only JSONL,
 // one line per attempt, fsync per line, 64 MiB ceiling with
-// audit_unavailable semantics (dictamen Q4: "sin respuesta > respuesta
+// audit_unavailable semantics (Q4: "sin respuesta > respuesta
 // sin auditoría"). The file is the proof surface of a destructive
 // mechanism, so it is never truncated or rewritten — rotation is an
 // operator task, exactly like the lifecycle file; when the ceiling is
@@ -19,7 +19,7 @@ import (
 	"sync"
 )
 
-// MaxAuditBytes is the file-size ceiling (dictamen Q4): attempts
+// MaxAuditBytes is the file-size ceiling (Q4): attempts
 // beyond it deny with audit_unavailable until the operator rotates
 // the file. 64 MiB of one-line JSON records is ~100k attempts — far
 // beyond any honest operator pace, given the 20/min global ceiling.
@@ -54,8 +54,8 @@ type Record struct {
 	// enosys means the kernel predates pidfd (permanent, expected);
 	// emfile/enfile mean fd-table exhaustion of a LIVE mechanism —
 	// operationally different, sometimes an alarm. Without this field
-	// a fallback line cannot tell those apart (04-B, ronda 18h00:
-	// requisito forward de la degradación pidfd->fallback).
+	// a fallback line cannot tell those apart (forward requirement of
+	// the pidfd->fallback degradation).
 	FallbackReason string `json:"fallback_reason,omitempty"`
 	Source         string `json:"source"`             // client RemoteAddr (R5a)
 	Followup       bool   `json:"followup,omitempty"` // second line of a committed send that failed

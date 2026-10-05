@@ -1,5 +1,5 @@
-// Suppression write surface (Director decision 6.1, round report
-// 2026-09-29 22h01): POST/DELETE /api/suppressions let an operator
+// Suppression write surface (design §6.1): POST/DELETE
+// /api/suppressions let an operator
 // silence or unsilence a rule/host pair without editing
 // suppressions.yaml on the engine host. The surface is opt-in: the
 // engine only arms it when started with -api-write (or SF_API_WRITE=1);

@@ -383,7 +383,7 @@ func TestBearerAuth(t *testing.T) {
 	}
 }
 
-// Delta de convergencia (ronda 20h10): tres garantías que el test
+// Delta de convergencia: tres garantías que el test
 // anterior no cubre — el challenge WWW-Authenticate en cada 401, la
 // aceptación del esquema en cualquier combinación de mayúsculas
 // (RFC 7235) y el stream SSE autenticado entregando su primer frame.

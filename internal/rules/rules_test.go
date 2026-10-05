@@ -314,7 +314,7 @@ func TestOperators(t *testing.T) {
 	}
 }
 
-// F1 (ronda 12h40): la familia i* entera comparte UNA semantica de
+// F1: la familia i* entera comparte UNA semantica de
 // folding — strings.EqualFold y RE2 (?i) aplican simple case folding,
 // mientras que un ToLower plano no pliega caracteres fold-exoticos
 // (U+017F LONG S pliega a "s" pero minusculiza a si mismo). La tabla
@@ -366,8 +366,8 @@ func TestFoldFamilyUnicodeConsistency(t *testing.T) {
 	}
 }
 
-// F2 (ronda 12h40): el directorio de reglas era la ultima superficie
-// de config sin los caps de la casa (correlator 21h29, threshold,
+// F2: el directorio de reglas era la ultima superficie
+// de config sin los caps de la casa (correlator, threshold,
 // beacon, sigma). Los tres limites fallan LOUD en carga; el hot-reload
 // los hereda gratis (error -> se conserva el set anterior y el fallo
 // sale en el log del engine).
@@ -518,7 +518,7 @@ func TestMatcherDefensiveCopyOfSliceValues(t *testing.T) {
 
 // Un operador que el engine no evalúa debe RECHAZARSE en carga:
 // evalCondition responde false por defecto, así que aceptarlo sería
-// cargar una regla muda (ronda 04 sobre da6382c).
+// cargar una regla muda (over da6382c).
 func TestCompileRejectsUnknownOperator(t *testing.T) {
 	r := &Rule{
 		Name:       "regla con operador desconocido",

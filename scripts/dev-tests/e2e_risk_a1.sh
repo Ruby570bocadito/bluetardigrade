@@ -6,9 +6,9 @@
 #      (high/medium/low) que matchean exactamente 1 evento canónico del
 #      devsensor cada una → 3 alertas en un solo host → score exacto
 #      5+2+1 = 8.0, alerts=3, risk_hosts_tracked=1. Hermético a propósito:
-#      el E2E original (ronda 09h30, score 129.79 con el pack del repo)
+#      el E2E original (score 129.79 con el pack del repo)
 #      murió con cada regla añadida al pack — la lección de
-#      reproducibilidad del acta del Director 21h36 §5 es que un smoke no
+#      reproducibilidad es que un smoke no
 #      puede depender de un pack que evoluciona. El replay del devsensor
 #      (mismos PIDs) además NO duplica: el dedup rule|host|pid del motor
 #      impide que la segunda pasada toque el score.
