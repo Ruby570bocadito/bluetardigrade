@@ -78,26 +78,48 @@ alta puede relajar el enlace de host ni el trato del token como secreto.
 
 ## 2. Alta de equipos con token (diseño PLAN-DETALLADO §1.2, rama feat/enrollment)
 
+**Auditoría de Seguridad B (ronda 2, 2026-10-05):** el código publicado
+en `feat/enrollment` (commit 5908107) se ha revisado línea a línea
+contra esta tabla: `internal/enroll` (registro, canje, decisiones),
+`internal/ingest/enroll.go` (handshake), `internal/api/enroll.go`
+(superficie HTTP), `sensor/src/enrollment.rs` y el lanzador
+`sensor-service.ps1`. Sin hallazgos accionables nuevos; los veredictos
+quedan por fila. Recordatorio de entorno: los corchetes de «[main]» se
+muestran corruptos en algunas vistas del entorno de trabajo; toda
+verificación crítica de este alta se hizo comparando bytes.
+
 **Activos nuevos:** tokens de alta (único o múltiple, caducidad), el
 secreto de 256 bits que recibe el sensor, la cola de eventos retenidos
 de los equipos pendientes.
 
 | Amenaza | Escenario | Mitigación exigida | Estado |
 |---|---|---|---|
-| **S** Colar un equipo | Un atacante con acceso al token de alta (por GPO, llega a muchos equipos) planta un equipo propio | Aprobación manual por defecto; patrón de aprobación automática opcional y explícito; el equipo queda visible como pendiente con su nombre y versión antes de recibir nada | Exigida a Implementación A (§1.2) |
-| **S** Suplantación de nombre | Un equipo declara el nombre de otro activo | Conflicto de nombre → nunca se aprueba solo, aviso de «posible suplantación o reinstalación» (el diseño ya lo fija) | Exigida, con test propio |
-| **I** Fuga del token de alta | Aparece en logs, en la URL del asistente o en el fichero del sensor legible por usuarios | Guardar solo hash (igual que identidades); el secreto del sensor vive en `ProgramData` con permisos SYSTEM/Administradores (§1.1); los logs de alta registran el resultado, jamás el token | Exigida a Implementación A y B |
-| **I** Fuga del secreto en la respuesta | `ENROLL` contesta el secreto por un enlace sin TLS | Alta solo por TLS o desde el propio servidor (el diseño ya lo fija) | Exigida, con test |
-| **T** Reuso de token agotado | Segunda canje de un token único | Caducidad + límite de usos verificados en el canje; segundo uso rechazado con test | Exigida, con test |
-| **R** Alta sin responsable | Nadie sabe quién aprobó | Auditoría de aprobar/rechazar/revocar con la cuenta de la consola que lo hizo | Exigida a Implementación A |
-| **D** Fuerza bruta de tokens | Barrido de `ENROLL` contra la ingesta pública | Mismo presupuesto de fallos y límite de conexiones que `AUTH` hoy (el diseño ya lo fija) | Exigida, con test |
-| **E** Pendiente como trampolín | Eventos retenidos procesados sin aprobación | Los eventos pendientes no tocan reglas, alertas ni almacén (tope pequeño y contadores); solo el latido se procesa | Exigida, con test |
-| **D** Cola de retención como fuga de memoria | Miles de pendientes reteniendo eventos | Tope de 10.000 eventos retenidos y contador de descarte visible | Exigida a Implementación A |
+| **S** Colar un equipo | Un atacante con acceso al token de alta (por GPO, llega a muchos equipos) planta un equipo propio | Aprobación manual por defecto; patrón de aprobación automática opcional y explícito; el equipo queda visible como pendiente con su nombre y versión antes de recibir nada | **Verificada (5908107)**: pendiente por defecto, patrón glob opcional con tope de 64 runas vía path.Match; nada del pendiente toca reglas ni almacén |
+| **S** Suplantación de nombre | Un equipo declara el nombre de otro activo | Conflicto de nombre → nunca se aprueba solo, aviso de «posible suplantación o reinstalación» (el diseño ya lo fija) | **Verificada (5908107)**: conflicto contra identidades activas/pendientes y contra el fichero de identidades → requiere humano; identidad única con sufijo aleatorio; tests propios del carril |
+| **I** Fuga del token de alta | Aparece en logs, en la URL del asistente o en el fichero del sensor legible por usuarios | Guardar solo hash (igual que identidades); el secreto del sensor vive en `ProgramData` con permisos SYSTEM/Administradores (§1.1); los logs de alta registran el resultado, jamás el token | **Verificada (5908107)**: solo digest SHA-256 en el registro; el sensor recibe el token por fichero (nunca por argv) y lo borra tras el canje; el registro a disco es temp+rename con Sync y 0600. Pendiente la capa DPAPI/ACL fina: SEC-2 con Implementación A |
+| **I** Fuga del secreto en la respuesta | `ENROLL` contesta el secreto por un enlace sin TLS | Alta solo por TLS o desde el propio servidor (el diseño ya lo fija) | **Verificada (5908107)**: el handshake rechaza ENROLL sin TLS salvo desde loopback (net.ParseIP + IsLoopback, sin cabeceras falsificables), con test; la credencial solo cruza ese canal y la API la devuelve una vez |
+| **T** Reuso de token agotado | Segunda canje de un token único | Caducidad + límite de usos verificados en el canje; segundo uso rechazado con test | **Verificada (5908107)**: usos atómicos bajo el mutex del registro con rollback si falla el guardado; estados revoked/expired/used_up rechazados con mensajes accionables; test del carril |
+| **R** Alta sin responsable | Nadie sabe quién aprobó | Auditoría de aprobar/rechazar/revocar con la cuenta de la consola que lo hizo | **Verificada (5908107)**: DecidedBy/RevokedBy y fecha en cada decisión; auto-aprobaciones firmadas como auto:token-id; el rechazo y la revocación se registran en el log del motor con peer |
+| **D** Fuerza bruta de tokens | Barrido de `ENROLL` contra la ingesta pública | Mismo presupuesto de fallos y límite de conexiones que `AUTH` hoy (el diseño ya lo fija) | **Verificada con matiz (5908107)**: tokens y credenciales de 256 bits (crypto/rand) y digest comparado en tiempo constante hacen inviable el barrido; el fallo cierra la conexión. No hay presupuesto de fallos diferenciado para AUTH ni para ENROLL en la ingesta: no hace falta con 256 bits, pero si algún día se acortan los secretos hace falta un limitador — requisito vivo para el carril propietario |
+| **E** Pendiente como trampolín | Eventos retenidos procesados sin aprobación | Los eventos pendientes no tocan reglas, alertas ni almacén (tope pequeño y contadores); solo el latido se procesa | **Verificada (5908107)**: al pendiente se le responde ack y se cierra la conexión antes de cualquier evento; la retención vive en el spool del sensor, no en el motor |
+| **D** Cola de retención como fuga de memoria | Miles de pendientes reteniendo eventos | Tope de 10.000 eventos retenidos y contador de descarte visible | **Rediseñada (5908107)**: el motor ya no retiene eventos de pendientes (el spool es del sensor); el techo equivalente del motor es MaxPending 1000 y MaxHosts 10.000, con contadores PendingRefused/Enrolled expuestos |
 
 **Verificación de cierre** (la declara el diseño, PLAN-DETALLADO §1.2):
 segunda canje rechazada, caducado rechazado, revocación corta la
 conexión en menos de 2 segundos, y casos borde de nombre duplicado
 probados en ingesta.
+
+**Resultados de la auditoría (ronda 2, sobre 5908107):** los tests del
+carril propietario cubren la verificación de cierre declarada
+(enroll_test 300 líneas, gate_test 105, api 152, ingest 236, consola 65).
+Puntos fuertes observados: borrado del token de alta en el sensor tras
+canje; guardia de confusión btenroll/btsensor en ambos sentidos;
+arranque del motor fallido si el fichero de registro está corrupto
+(fail-closed); techos anti inundación (1.000 tokens, 10.000 hosts,
+1.000 pendientes, 10.000 usos, fichero de 16 MiB). Residuo asignado:
+DPAPI/ACL fina de la credencial en reposo (SEC-2, Implementación A);
+fichero temporal del token durante la instalación en TEMP (breve, por
+usuario, borrado por el lanzador y por el sensor) — aceptable.
 
 ## 3. Conector AD de solo lectura (diseño TODO AD-1…AD-4)
 
