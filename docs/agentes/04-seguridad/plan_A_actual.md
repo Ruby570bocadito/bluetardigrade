@@ -1,29 +1,30 @@
-# Plan de ronda — Seguridad A (2026-10-05, ronda 2, 13h00 Madrid)
+# Plan de ronda — Seguridad A (2026-10-05, ronda 2, 16h05 UTC)
 
-Base: `5e168ba` (main sin cambios). Ramas ajenas nuevas desde mi ronda 1:
-`carril/implementacion-b` (3 rondas: triage IA, streaming, gráficas) y
-`carril/seguridad-b` (x/text, CI audit, status pill). Rama del dependabot
-(`x/ansi`) en revisión de lectura.
+Base: `a1bca4f` (main tras el cierre de la ronda 1). Rama `carril/seguridad-a`
+recreada desde `origin/main` (la de la ronda 1 se fusionó y se borró).
 
-## Tareas
+Prioridad del TODO para SEG-A/B: revisar el código nuevo de la ronda 1
+(`internal/scenario`, `internal/scenrun`, `internal/report`, vistas nuevas).
+SEG-B ya publicó plan (16h, «ronda 3» en su cuenta) y se lleva las superficies
+por el lado de vulnerabilidades y el PR #18 de Dependabot; yo voy por el lado
+de bugs funcionales. No pisa mis ficheros.
 
-- **SEC-7 (continuación)**: fuzzers para las superficies que quedaron sin
-  cubrir en la ronda 1: parser de correo de `internal/collector`
-  (`htmlAttribute`, decodificador MIME), `internal/reputation` y
-  `internal/api/filters.go`. Ficheros: los `_test.go`/`testdata` de esos
-  paquetes + bug que el fuzzing saque a la luz.
-- **SEC-8 (continuación)**: casos borde del alta en `origin/feat/enrollment`
-  (equipo renombrado, reloj desfasado, registro lleno): revisión de lectura y
-  hallazgos al informe (código de Implementación A, no toco su rama). Repaso
-  de lo pendiente en la hoja de pruebas.
-- **Revisión de código nuevo de otros carriles**: diffs de IMP-B
-  (`web/console`, console-service) y SEG-B (`.github/workflows/ci.yml`,
-  guard de ciclo de paquete, status pill). Bugs funcionales: hallazgo
-  preciso con parche propuesto al informe si el código vive solo en su rama;
-  corrección en mi rama solo si el código está en `main`.
-- Verificación paridad CI de lo que toque + suite completa Go.
+Tareas (identificadores del TODO: SEC-7, SEC-8; prioridad ronda 2 SEG-A/B):
 
-## Fuera de alcance
+1. **Revisión del código de la ronda 1 en `main`**: `internal/scenrun`
+   (concurrencia, más casos como el de `Start`), `internal/scenario` +
+   `internal/scenrun` (cargador YAML), `internal/report` (ventanas, límites,
+   CSV, truncado) y las vistas nuevas de la consola (historial de riesgo,
+   pestañas del dashboard). Hallazgos en ramas ajenas: solo informar.
+2. **SEC-7**: fuzz de la primera línea de ingesta
+   (`ENROLL <token> <host>` → `handleEnroll` + `Registry.Enroll`) y del
+   cargador YAML de escenarios (`scenario.LoadFile`). Ninguno de los 20
+   targets existentes cubre estas dos superficies.
+3. **Mejora obligatoria**: `go test -race -count=5` sobre los paquetes con
+   goroutines de las ramas de los demás ya fusionadas (scenrun, ingest,
+   alert, api, fleet, lifecycle, incident, collector, enroll).
 
-- `min_count: 2` de beacons: requiere decisión del responsable (anoto en el
-  informe); el dependabot `x/ansi` es de dependencias (SEG-B/propietario).
+Ficheros que espero tocar: `internal/report/` (arreglos + tests),
+`internal/ingest/fuzz_test.go` o fichero nuevo de fuzz, `internal/scenario/`
+(fuzz), `docs/agentes/04-seguridad/`, `changelog.d/`. Si un arreglo toca la
+API documentada, dejo nota para Implementación A (openapi.yaml es suyo).
