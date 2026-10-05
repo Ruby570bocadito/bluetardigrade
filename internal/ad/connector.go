@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Ruby570bocadito/bluetardigrade/internal/secretfile"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/store"
 )
 
@@ -155,15 +156,22 @@ func (c *Connector) SyncOnce(ctx context.Context) error {
 	now := time.Now()
 	c.setStatus(func(s *Status) { s.Syncs++; s.LastSyncAt = &now; s.LastError = "" })
 
-	// The password is re-read every sync: rotating the credential file
-	// does not require an engine restart. It lives in a local variable
-	// that never leaves the call stack.
-	password, err := c.cfg.Password()
+	// The credential is re-read every sync: rotating the credential
+	// file does not require an engine restart. It comes back as an
+	// owned []byte (SEC-2 envelope or legacy raw text) that never
+	// leaves the call stack; the buffer is zeroed as soon as the bind
+	// attempt returns.
+	secret, credWarnings, err := c.cfg.Secret()
 	if err != nil {
 		c.failSync(err)
 		return err
 	}
-	conn, err := c.connect(password)
+	// go-ldap's simple bind takes the password as an immutable string:
+	// that copy is a documented limit of the library API, it lives only
+	// inside the TLS-protected bind call and it is never logged. The
+	// buffer WE own is wiped right after the attempt either way.
+	conn, err := c.connect(string(secret))
+	secretfile.Zero(secret)
 	if err != nil {
 		c.failSync(err)
 		return err
@@ -189,6 +197,7 @@ func (c *Connector) SyncOnce(ctx context.Context) error {
 		return err
 	}
 	warnings := c.privilegedAccountWarnings(res)
+	warnings = append(warnings, credWarnings...)
 	c.setStatus(func(s *Status) {
 		s.Connected = true
 		s.Truncated = truncated

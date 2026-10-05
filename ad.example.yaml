@@ -30,9 +30,13 @@ ca_file: /etc/bluetardigrade/ad-ca.pem
 # Least-privilege read-only service account.
 bind_dn: CN=soc-reader,OU=Service Accounts,DC=corp,DC=example,DC=com
 
-# ONLY the password lives here (UTF-8, trailing newline tolerated).
-# Own the file to the engine user, mode 0600; rotate without restart.
-password_file: /etc/bluetardigrade/ad-password
+# ONLY the credential lives here. Two formats:
+#   - a SEC-2 envelope written by "engine secret-write <fichero> < pw.txt"
+#     (DPAPI-encrypted on Windows, mode-0600 plain envelope elsewhere);
+#   - the legacy raw text (UTF-8, trailing newline tolerated) for labs.
+# Windows warns on /api/ad/status while the file is not DPAPI-encrypted.
+# Rotate without restart: the file is re-read at every sync.
+password_file: /etc/bluetardigrade/ad-bind.secret
 
 # Sync cadence. Minimum 5m: every cycle reads the whole subtree.
 interval: 15m

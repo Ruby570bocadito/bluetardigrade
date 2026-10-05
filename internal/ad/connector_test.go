@@ -2,9 +2,14 @@ package ad
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -227,8 +232,14 @@ func TestSyncAgainstFixture(t *testing.T) {
 	if status.Objects != want {
 		t.Errorf("objects = %+v, want %+v", status.Objects, want)
 	}
-	if len(status.Warnings) != 0 {
-		t.Errorf("warnings = %v, want none (the bind account is not privileged)", status.Warnings)
+	if runtime.GOOS == "windows" {
+		// SEC-2: the fixture password file is legacy raw text, so on
+		// Windows the credential read yields exactly one re-save hint.
+		if len(status.Warnings) != 1 || !strings.Contains(status.Warnings[0], "secret-write") {
+			t.Errorf("warnings = %v, want exactly one re-save hint for a raw credential file on Windows", status.Warnings)
+		}
+	} else if len(status.Warnings) != 0 {
+		t.Errorf("warnings = %v, want none (the bind account is not privileged and POSIX adds no credential warning)", status.Warnings)
 	}
 
 	// The only bind ever sent is the authenticated service account: an
@@ -337,6 +348,15 @@ func TestSyncFailsWithWrongPassword(t *testing.T) {
 	if status.LastError == "" {
 		t.Error("LastError must carry the failure (credential-free)")
 	}
+	// SEC-B checklist, log hygiene: the failure surfaced to the status
+	// (and from there to the API) names server and result code, never
+	// the credential that was refused.
+	if strings.Contains(status.LastError, "totally-wrong-password") {
+		t.Errorf("LastError leaks the refused password: %q", status.LastError)
+	}
+	if strings.Contains(err.Error(), "totally-wrong-password") {
+		t.Errorf("the sync error leaks the refused password: %q", err)
+	}
 	// the wrong password reached the fixture, the correct one never did
 	attempts := s.bindAttempts()
 	found := false
@@ -347,6 +367,88 @@ func TestSyncFailsWithWrongPassword(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("the refused attempt is not in the fixture log: %v", attempts)
+	}
+}
+
+// SEG-B checklist: "las respuestas de API no contienen el secreto ni su
+// longitud". The canary password is deliberately 137 characters so its
+// decimal length cannot collide with any plausible count or score in
+// the documents. Every JSON shape behind the four /api/ad/* routes is
+// serialized exactly the way the handlers serialize it and scanned for
+// the secret in raw, base64 and hex form, plus its length.
+func TestADAPIShapesNeverContainSecret(t *testing.T) {
+	s, caPath, _ := newFixtureServer(t, testEntries(t), true)
+	defer s.close()
+	canary := "canary-" + strings.Repeat("z", 130)
+	s.bindMu.Lock()
+	s.password = canary
+	s.bindMu.Unlock()
+	c, _ := newTestConnector(t, s, caPath, func(cfg *Config) {
+		cfg.PasswordFile = passwordPath(t, canary)
+	})
+
+	if err := c.SyncOnce(context.Background()); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	type shape struct {
+		name string
+		blob []byte
+	}
+	var shapes []shape
+	b, err := json.Marshal(c.Snapshot())
+	if err != nil {
+		t.Fatalf("marshal status: %v", err)
+	}
+	shapes = append(shapes, shape{"status", b})
+	for _, kind := range []string{store.ADKindUser, store.ADKindGroup, store.ADKindComputer, store.ADKindOU} {
+		page, perr := c.Objects(kind, "", 500, 0)
+		if perr != nil {
+			t.Fatalf("objects %s: %v", kind, perr)
+		}
+		b, err := json.Marshal(page)
+		if err != nil {
+			t.Fatalf("marshal objects %s: %v", kind, err)
+		}
+		shapes = append(shapes, shape{"objects/" + kind, b})
+	}
+	_, _, posture, err := c.Posture()
+	if err != nil || posture == nil {
+		t.Fatalf("posture: %v", err)
+	}
+	b, err = json.Marshal(posture)
+	if err != nil {
+		t.Fatalf("marshal posture: %v", err)
+	}
+	shapes = append(shapes, shape{"posture", b})
+	hist, err := c.PostureHistory(10)
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	b, err = json.Marshal(hist)
+	if err != nil {
+		t.Fatalf("marshal history: %v", err)
+	}
+	shapes = append(shapes, shape{"posture/history", b})
+
+	forbidden := []string{
+		canary,
+		base64.StdEncoding.EncodeToString([]byte(canary)),
+		hex.EncodeToString([]byte(canary)),
+	}
+	// The length is scanned as a STANDALONE JSON number only: a bare
+	// substring scan would false-positive inside unix timestamps and
+	// day counts ("1791379200" contains "137"), which is not a leak.
+	lengthRe := regexp.MustCompile(`(?:^|[^0-9])` + regexp.QuoteMeta(strconv.Itoa(len(canary))) + `(?:[^0-9]|$)`)
+	for _, sh := range shapes {
+		for _, f := range forbidden {
+			if strings.Contains(string(sh.blob), f) {
+				t.Errorf("%s: response shape contains %s", sh.name, f)
+			}
+		}
+		if lengthRe.Match(sh.blob) {
+			t.Errorf("%s: response shape reveals the secret length", sh.name)
+		}
 	}
 }
 

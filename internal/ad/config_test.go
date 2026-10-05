@@ -4,9 +4,12 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Ruby570bocadito/bluetardigrade/internal/secretfile"
 )
 
 // validConfig is a minimal configuration every test mutates.
@@ -97,25 +100,53 @@ func TestConfigDefaultsAndNormalized(t *testing.T) {
 	}
 }
 
-func TestConfigPasswordRead(t *testing.T) {
+func TestConfigSecretRead(t *testing.T) {
 	c := validConfig(t)
-	pw, err := c.Password()
+	secret, warnings, err := c.Secret()
 	if err != nil {
-		t.Fatalf("password: %v", err)
+		t.Fatalf("secret: %v", err)
 	}
-	if pw != "secret" {
-		t.Errorf("password = %q, want trailing newline trimmed to %q", pw, "secret")
+	if string(secret) != "secret" {
+		t.Errorf("secret = %q, want trailing newline trimmed to %q", secret, "secret")
 	}
+	if runtime.GOOS != "windows" && len(warnings) != 0 {
+		t.Errorf("a raw POSIX credential file must carry no warnings, got %v", warnings)
+	}
+	secretfile.Zero(secret)
+
 	c.PasswordFile = filepath.Join(t.TempDir(), "missing")
-	if _, err := c.Password(); err == nil {
+	if _, _, err := c.Secret(); err == nil {
 		t.Error("missing password file must fail")
 	}
 	empty := filepath.Join(t.TempDir(), "empty")
 	os.WriteFile(empty, []byte("\n"), 0o600)
 	c.PasswordFile = empty
-	if _, err := c.Password(); err == nil || !strings.Contains(err.Error(), "empty") {
+	if _, _, err := c.Secret(); err == nil || !strings.Contains(err.Error(), "empty") {
 		t.Errorf("empty password file must fail loudly, got %v", err)
 	}
+}
+
+// SEC-2: the same config accepts an envelope written by
+// "engine secret-write" (secretfile.Write) without any flag change,
+// and the warnings advisory (Windows re-save hint) flows through.
+func TestConfigSecretReadsEnvelope(t *testing.T) {
+	c := validConfig(t)
+	path := filepath.Join(t.TempDir(), "ad-bind.secret")
+	if err := secretfile.Write(path, []byte("secret")); err != nil {
+		t.Fatalf("secretfile.Write: %v", err)
+	}
+	c.PasswordFile = path
+	secret, warnings, err := c.Secret()
+	if err != nil {
+		t.Fatalf("secret: %v", err)
+	}
+	if string(secret) != "secret" {
+		t.Errorf("envelope secret = %q, want %q", secret, "secret")
+	}
+	if runtime.GOOS != "windows" && len(warnings) != 0 {
+		t.Errorf("a plain POSIX envelope must carry no warnings, got %v", warnings)
+	}
+	secretfile.Zero(secret)
 }
 
 func TestSIDString(t *testing.T) {

@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Ruby570bocadito/bluetardigrade/internal/secretfile"
 	"gopkg.in/yaml.v3"
 )
 
@@ -46,10 +47,11 @@ type Config struct {
 	// BindDN is the read-only service account
 	// ("CN=soc-reader,OU=Service,DC=...").
 	BindDN string `yaml:"bind_dn"`
-	// PasswordFile holds ONLY the service account password (UTF-8,
-	// trailing newline tolerated). Kept out of the YAML so the two
-	// secrets never share a file and the password can carry its own
-	// filesystem ACL.
+	// PasswordFile holds ONLY the service-account credential: a SEC-2
+	// envelope ("engine secret-write"; DPAPI on Windows, permission-
+	// guarded plain elsewhere) or the legacy raw text (UTF-8, trailing
+	// newline tolerated). Kept out of the YAML so the two secrets never
+	// share a file and the credential can carry its own filesystem ACL.
 	PasswordFile string `yaml:"password_file"`
 	// StartTLS upgrades an ldap:// connection (port 389) with TLS
 	// before any credential crosses the wire. false (default) means
@@ -193,20 +195,16 @@ func (c *Config) normalized() *Config {
 	return &n
 }
 
-// Password reads the service-account password from its dedicated
-// file. The caller is responsible for never logging or serializing the
-// result; this function exists so the ONLY code that touches the
-// secret is the bind step.
-func (c *Config) Password() (string, error) {
-	raw, err := os.ReadFile(c.PasswordFile)
-	if err != nil {
-		return "", fmt.Errorf("ad: read password file: %w", err)
-	}
-	pw := strings.Trim(string(raw), "\r\n")
-	if pw == "" {
-		return "", fmt.Errorf("ad: password file %s is empty", c.PasswordFile)
-	}
-	return pw, nil
+// Secret reads the service-account credential from its dedicated
+// file through internal/secretfile (SEC-2): a DPAPI envelope on
+// Windows, a permission-guarded plain envelope or the legacy raw text
+// elsewhere. Advisory warnings (never the secret, never its length)
+// come back so the connector can surface them in /api/ad/status. The
+// caller owns the returned buffer and must zero it after the bind
+// attempt (secretfile.Zero); this function exists so the ONLY code
+// that touches the secret is the bind step.
+func (c *Config) Secret() ([]byte, []string, error) {
+	return secretfile.Read(c.PasswordFile)
 }
 
 // validDN is a deliberately light structural check (attribute=value

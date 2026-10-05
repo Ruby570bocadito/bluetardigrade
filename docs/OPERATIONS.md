@@ -706,7 +706,8 @@ SQLite:
   LDAP without StartTLS does not exist in this connector;
 - the bind is always the configured service account (a plain domain
   user is enough). Anonymous binds are refused by construction, and the
-  account's password lives in its own file (`password_file`), read at
+  account's password lives in its own file (`password_file`, a SEC-2
+  envelope or legacy raw text — see below), read at
   every sync so a rotation needs no restart — it is never logged,
   returned by the API or interpolated into errors;
 - users, groups, computers and OUs are read with product-literal LDAP
@@ -745,6 +746,39 @@ The `GET /api/ad/*` routes sit behind the same bearer gate as every
 other `/api` route and answer `501` with an arming hint while the
 engine runs without `-ad`. The machine-readable contract lives in
 OpenAPI 3.0 at [`api/openapi.yaml`](api/openapi.yaml).
+
+### The service-account credential (SEC-2)
+
+`password_file` accepts two formats:
+
+- a **SEC-2 envelope** (recommended): one secret per file, a versioned
+  JSON document `{"version":1,"created_at":"...","scheme":"...","ciphertext":"..."}`
+  written by `engine secret-write <file> < pw.txt`. The secret itself
+  arrives on **stdin**, never on the command line or the environment.
+  On **Windows** the envelope is encrypted with DPAPI in the
+  LOCAL_MACHINE scope (the engine runs as a service; a user-scope blob
+  would break the sync the day the service account changes) — the blob
+  only decrypts on the machine that produced it. On **Linux/macOS**
+  (laboratory engines) the envelope is `scheme:"plain"` and the file is
+  installed atomically (temp + rename + fsync) with mode `0600`; a
+  plain envelope read with group/other bits set is a hard, actionable
+  error, because a made-up cipher with no honest key source would be a
+  worse trade than ownership enforced by the filesystem;
+- the **legacy raw text** (UTF-8, trailing newline tolerated), still
+  accepted for lab parity. On Windows a non-encrypted credential file
+  surfaces a one-line warning on `GET /api/ad/status` suggesting
+  `engine secret-write` — nothing is ever rewritten behind the
+  operator's back.
+
+On Windows the filesystem ACL is the other half of the barrier (DPAPI
+binds the blob to the machine, the ACL decides which local accounts may
+read it): restrict the file to SYSTEM, Administrators and the engine's
+service account, e.g. `icacls ad-bind.secret /inheritance:r /grant "SYSTEM:F" /grant "Administrators:F" /grant "NT SERVICE\bluetardigrade:F"`
+(adjust the last principal to your service account). The secret is
+never logged, never returned by the API (tests assert the absence of
+the secret, its base64/hex forms and its length from every `/api/ad/*`
+response) and is zeroed from memory right after each bind attempt; a
+failed bind reports server and result code, never the credential.
 
 ## Reputation lookups (opt-in)
 
