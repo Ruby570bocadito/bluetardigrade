@@ -14,16 +14,29 @@ esfuerzo y los riesgos) y orden de los hitos v1.0 → v2.x: [docs/PLAN-DETALLADO
 
 ## Etapa 0 — cerrar la v1.0
 
-- [ ] Subir la rama `fix/ci-and-host-guard`, abrir el PR y fusionarlo con CI en verde.
-  Lleva los arreglos del CI del PR #15, el filtro anti DNS rebinding y la suspensión del portátil.
-- [ ] Limpiar ramas ya integradas (comandos en la conversación del 5 de octubre) y activar en GitHub
-  «Automatically delete head branches».
-- [ ] Etiquetar `v1.0.0-rc1`.
+- [ ] Abrir el PR de `fix/ci-and-host-guard` contra `main` y fusionarlo con el CI en verde. La rama ya
+  está subida y pasa en local todos los pasos del CI de Linux. Lleva:
+  - los arreglos del CI del PR #15;
+  - el filtro anti DNS rebinding;
+  - la suspensión del portátil;
+  - la preparación de la `v1.0.0-rc1`.
+- [x] Limpiar ramas ya integradas: en GitHub solo quedan `main`, las dos ramas de trabajo y la de
+  Dependabot; en local se borraron las tres fusionadas (5 de octubre).
+- [ ] Activar en GitHub (Settings → General → Pull Requests) «Automatically delete head branches».
+- [x] Unificar versiones: motor, sensor, consola, servicio de la consola y API en `1.0.0`
+  (commit `af75c91`).
+- [x] Notas de la candidata con las limitaciones conocidas: entrada `[v1.0.0-rc1]` del CHANGELOG.
+  Las etiquetas con sufijo (`-rc1`) se publican como pre-release, no como «Latest».
+- [ ] Etiquetar `v1.0.0-rc1` en `main` después de fusionar el PR. La etiqueta lanza la release:
+  binarios del motor y del colector, sumas de verificación y procedencia firmada.
 - [ ] Prueba de uso real de 24–48 horas con el sensor en marcha. En curso desde el 5 de octubre,
-  en clase. Al terminar: analizar alertas, ruido, memoria, eventos perdidos y reconexiones.
+  en clase; a las 10:09, unos 1.000 eventos desde las 9:00, 1 alerta conocida y sin huecos. Al
+  terminar: analizar alertas, ruido, memoria, eventos perdidos y reconexiones.
 - [ ] Secciones pendientes de la hoja de pruebas: 7 (cuentas) y 4 (segundo equipo).
-- [ ] Unificar versiones: motor `0.2.0` y sensor `0.1.0` → `1.0.0`.
-- [ ] Notas de la versión con las limitaciones conocidas, y etiqueta `v1.0.0`.
+- [ ] `v1.0.0`:
+  - entrada `[v1.0.0]` del CHANGELOG con lo que salga de la prueba de uso y de las secciones 7 y 4;
+  - insignia del README;
+  - etiqueta.
 
 ## Mejoras de despliegue (en curso)
 
