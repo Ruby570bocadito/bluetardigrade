@@ -1,33 +1,43 @@
-# Plan de ronda — Seguridad A (2026-10-05, ronda 9, ~20h30 Madrid)
+# Plan de ronda — Seguridad A (2026-10-05, ronda 10, ~21h30 Madrid)
 
-Base: `2da7cf2` (mi ronda 8 + merge de `origin/main`: PR #18 de
-Dependabot, solo go.mod/go.sum). Novedad al abrir: ningún carril ha
-publicado código nuevo desde mi cierre (IMP-A `2c32013` solo plan,
-IMP-B `9f35615`, PUL-A `10d7364`, PUL-B `173ac11`, SEG-B `b0eaa60`).
-Los conflictos append-append previstos en la ronda 7 ya no existen
-contra `main` (`merge-tree` limpio en ambas puntas).
+Base: `7a0a059` (mi ronda 9, sin cambios en `origin/main` desde el
+merge de la ronda 9). Novedad al abrir:
 
-Tareas (continuación del pendiente 2 del roadmap: paquetes del motor
-aún sin auditoría profunda):
+- **PUL-A `829f7f0`** (4 commits nuevos): adopta mi `FuzzEnrollLine`
+  verbatim en `internal/ingest/fuzz_test.go` (SEC-7) y quita la
+  procedencia de carril de 2 comentarios de `internal/enroll`
+  (POL-12). El diff Go declarado es test-only + comentarios; verifico
+  ambas afirmaciones línea en mano y ejecuto su suite.
+- **IMP-B `d6f2285`** (2 commits): asistente de primer arranque
+  (IDEA-11), consola-only, 0 ficheros Go. Revisión funcional completa
+  (`onboarding.ts`, wizard, integración en `shell.tsx`, paleta) y
+  re-verificación de MIS dos hallazgos de la ronda 5
+  (`noise-view.tsx` supresión flota-completa MEDIA;
+  `reports-view.tsx` `generate` sin guardia de vigencia BAJA).
+- IMP-A `2c32013`, PUL-B `173ac11`, SEG-B `b0eaa60`: sin movimiento;
+  `internal/ad` sigue bloqueado por IMP-A.
 
-1. **`internal/notify`** (2077 líneas, 3 ficheros con goroutines) —
-   ciclo de vida de canales, colas y apagado.
-2. **`internal/webhook`** (582 líneas) y **`internal/enrich`**
-   (685 líneas) — clientes salientes y cadenas de enriquecimiento.
-3. **`internal/siem`** (elastic/splunk, 1293 líneas) e
-   **`internal/actions`** (577) — búferes, reintentos y ejecución.
-4. **`internal/respond`** (2733 líneas, 4 ficheros con goroutines) e
-   **`internal/reputation`** (514, solo su fuzz hasta ahora) — la
-   pieza más grande de la ronda.
-5. **`internal/collector`** (1911), **`internal/redact`** (163) y los
-   caminos de `cmd/engine` que los enchufan.
-6. **Obligatorio de ronda**: evidencia `-race` — las puntas ajenas no
-   se han movido desde los barridos de las rondas 5-8 (verificado
-   arriba con `rev-parse` + diff Go); se re-ejecuta `-race -count=5`
-   solo si toco código propio con goroutines o si alguna punta
-   cambia; `-race -count=3` en cualquier paquete que yo corrija.
+Tareas:
 
-Ficheros que espero tocar: `docs/agentes/04-seguridad/`,
-`changelog.d/SEG-A-*.md` si corrijo algo ya en main, y
-`internal/{notify,webhook,siem,actions,respond,enrich,redact,
-reputation,collector}/**` según lo que encuentre.
+1. **Revisión de PUL-A**: diff de `internal/enroll` (¿solo
+   comentarios?), verbatim byte a byte del bloque adoptado, suite de
+   `internal/ingest` + `internal/enroll` en su punta (worktree
+   desprendido), y su resolución del conflicto append-append de
+   `fuzz_test.go` contra mi carril (`merge-tree` de nuevo).
+2. **Revisión de IMP-B IDEA-11**: lógica de auto-apertura
+   (`shouldAutoOpen` + efecto de `shell.tsx` con `offeredRef`),
+   semántica de `loaded` en `fleet-provider` (¿carrera
+   fleet-vs-enroll?), registro de descarte tolerante, cálculo del
+   «token que caduca antes» (¿qué pasa con `expires_at` vacío?),
+   acople en paleta. Estado de mis dos hallazgos de la ronda 5.
+3. **Obligatorio de ronda**: única punta ajena movida con Go = PUL-A
+   (delta test-only): `go test -race -count=5` en los paquetes que
+   toca (`internal/ingest`, `internal/enroll`). IMP-B sigue sin tocar
+   Go (evidencia de rondas 5-8 vigente).
+4. **Fuzzing vivo corto** (si el tiempo acompaña): sesiones `-fuzz`
+   breves sobre los objetivos de entrada más densos de mi carril
+   (`FuzzEnrollLine`, carga YAML de escenarios, límites de report),
+   buscando crashes reales más allá de los corpora de semilla.
+
+Cierre: checklist CI completo, informe, roadmap, changelog solo si hay
+fix que anunciar; push tras `merge-tree` contra las cinco puntas.
