@@ -20,28 +20,46 @@ cada ronda: qué está a medias, qué sigue y por qué.
   (34 rutas) y E2E ampliada con la fase E (19 comprobaciones; 21 en modo completo, batería
   127/127 por API). También el ALTA de Seguridad B: `x/text` v0.3.8 → v0.39.0
   (GO-2026-5970) en esta rama (hereda de `feat/enrollment`).
+- Ronda 2026-10-05 14h55 cerrada (informe: `ronda_2026-10-05_14h55_A.md`). Entregado
+  **REP-1 parte A** (catálogo `GET /api/reports` + `GET /api/reports/{kind}`:
+  executive, incident, fleet, soc; JSON y CSV; honestidad de origen store/ring y tope de
+  escaneo declarado), la **API de ruido** §2.4 (`GET /api/noise`: procesos por imagen,
+  dominios DNS, reglas con overlay de triage; por host y flota) y el fix **SEC-A-1**
+  (unicidad del nombre de identidad en el alta). OpenAPI 34 → 37 rutas. E2E nueva
+  `e2e_reports_noise.sh` (33 comprobaciones). Flake determinista corregido en
+  `TestScenarioEndpointsRoundTrip` (código propio de la ronda SIM-4). El entorno se
+  reinició entre rondas: Go re-instalado (1.26.0) y GOPROXY alternativo documentado en
+  el informe.
 
 ## A medias
 
-- Nada a medias: las dos tareas de la ronda quedaron completas y verificadas.
+- Nada a medias: las tres tareas de la ronda quedaron completas y verificadas.
 - SIM-4 queda a la espera de su parte B (pantalla de la consola, IMP-B): el contrato está
-  publicado en OpenAPI y en el informe de ronda.
+  publicado en OpenAPI y en el informe de ronda. REP-1 igual: la pantalla es de IMP-B y
+  el contrato (catálogo + JSON/CSV + schemas) está publicado.
+- El informe de ruido sirve hoy `closed_pct`/`acknowledged_pct` (estado actual del
+  triage). Cuando el campo de decisión de triaje exista (petición MEDIA de IMP-B, ronda
+  propia de este carril), migrará a `false_positive_pct`.
 
 ## Cola de tareas del carril (orden pretendido)
 
-1. **REP-1 (parte A, datos y API)**: catálogo de informes con los datos ya disponibles hoy
-   (resumen ejecutivo, incidente, cobertura de flota, actividad del SOC); AD postura,
-   inicios de sesión y ruido dependen de AD-1/AD-3 y de la sección de ruido. IMP-B declara
-   bloqueadas REP-3/REP-4 hasta publicar esto.
-2. **API de ruido** (`GET /api/noise?window=24h`): el informe de ruido §2.4 de IMP-B la
-   espera; requiere decidir el cálculo de ruido del motor (eventos ingestados vs alertas,
-   top de fuentes/reglas) — v1.1 Ruido es de este carril.
-3. **v1.1 Ruido**: supresiones con condiciones (PLAN-DETALLADO §2.3), lista de software
-   conocido por organización (§2.2) y agrupación de arranques repetidos en el sensor (§2.1,
-   parte Rust; requiere cargo en el entorno o pruebas en otro sitio).
-4. **Motor**: cuotas por equipo en la memoria del motor (v1.1 «Motor y consola»).
-5. **AD-1** conector LDAP de solo lectura (necesita fixture LDAP de pruebas en CI); tras él,
-   AD-2 (cálculo de postura) y AD-6 (API de ajustes).
+1. **Campo de decisión de triaje** (petición MEDIA de IMP-B): `decision:
+   false_positive | authorized_activity | confirmed_incident` en el ciclo de vida
+   (`POST /api/alerts/{id}/status` + store + OpenAPI), que desbloquea el «falso
+   positivo» del flujo del triaje y convierte los porcentajes del ruido en FP% real.
+2. **v1.1 Ruido**: supresiones con condiciones (PLAN-DETALLADO §2.3), lista de software
+   conocido por organización (§2.2, `known-software.yaml`; el botón «añadir a software
+   conocido» de la pestaña de ruido de IMP-B espera esto) y agrupación de arranques
+   repetidos en el sensor (§2.1, parte Rust; requiere cargo en el entorno o pruebas en
+   otro sitio).
+3. **Motor**: cuotas por equipo en la memoria del motor (v1.1 «Motor y consola»).
+4. **AD-1** conector LDAP de solo lectura (necesita fixture LDAP de pruebas en CI); tras
+   él, AD-2 (cálculo de postura: el informe ejecutivo ganará la sección de postura y
+   el catálogo crecerá) y AD-6 (API de ajustes).
+5. **REP-2** informes programados (diarios/semanales en `data/reports` con retención,
+   SMTP/webhook opcional): la maquinaria de datos ya existe tras REP-1 parte A.
+6. **Diseño**: purga de hosts rechazados/revocados en el registro de alta (observación
+   de SEG-A: hoy cuentan para siempre en `MaxHosts`).
 
 ## Decisiones y motivos (histórico vivo)
 
