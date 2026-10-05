@@ -1,44 +1,50 @@
 # Roadmap — Seguridad A (carril/seguridad-a)
 
 Archivo vivo: continuidad del carril. Última actualización: 2026-10-05,
-ronda 3, cierre (18:37 Europe/Madrid).
+ronda 4, cierre (18:45 Europe/Madrid). **La instancia se detiene tras esta
+ronda** (ver «Estado de la sesión» al final).
 
-## Estado tras el cierre de la ronda 3 (2026-10-05)
+## Estado tras el cierre de la ronda 4 (2026-10-05)
 
-- Ronda compacta y completa: **`Open` del registro del alta ya rechaza
-  ficheros con digests de token duplicados** (segundo hallazgo menor de la
-  ronda 1, cerrado). Antes cargaban y la credencial resolvía «gana el
-  último»: un revocado en consola podía dejar el sensor vivo. Test
-  `TestOpenRefusesDuplicateTokenDigests` (falla antes, pasa después).
-- **SEC-7 ampliado a 24 targets**: `FuzzOpenRegistry` (fichero del alta
-  contra bytes manipulados: o error sonoro o registro autoconsistente, y lo
-  aceptado sobrevive a un ciclo de escritura real). 60 s, 3.469 execs con
-  E/S real, sin contraejemas.
-- **Coordinación:** PUL-A tiene la línea AUTH/ENROLL de `internal/ingest`
-  en su plan (16h20, antes de mi push de `FuzzEnrollLine` de 16h30): yo no
-  toco `internal/ingest`; su matriz nocturna descubre mis targets solos.
-  IMP-A/B, PUL-A/B y SEG-B seguían sin código subido al cerrar.
-- Ronda 2 (mismo día): dos bugs funcionales del código de la ronda 1
-  (presets `7d`/`30d` de `ParseWindow` y bandera `truncated` tras filtro de
-  host) + `FuzzEnrollLine`/`FuzzEnrollHost`/`FuzzLoadScenarioFile`;
+- **Sensor Rust revisado a fondo y sin bug que corregir** (SEC-8): modo
+  servicio (`service.rs`), cola y spool (`queue.rs`, invariantes de orden y
+  apagado), transporte con reconexión/TLS (`transport.rs`), latido
+  (`heartbeat.rs`) y cableado de parada en `main.rs`/`collector.rs`. La
+  verificación del sensor se ejecutó (cargo 1.99 instalado en el entorno):
+  36 tests ok y clippy `-D warnings` limpio sobre `main` sin cambios.
+- Ronda 3: `Open` del registro del alta rechaza digests de token
+  duplicados (hallazgo menor de la ronda 1, cerrado) + `FuzzOpenRegistry`.
+- Ronda 2: dos bugs funcionales del código de la ronda 1 (presets
+  `7d`/`30d` de `ParseWindow` y bandera `truncated` tras filtro de host) +
+  `FuzzEnrollLine`/`FuzzEnrollHost`/`FuzzLoadScenarioFile`;
   `-race -count=5` verde en los 9 paquetes con goroutines.
+- Coordinación: PUL-A tiene la línea AUTH/ENROLL de `internal/ingest` en su
+  plan (16h20, antes de mi push de `FuzzEnrollLine` de 16h30): su matriz
+  nocturna por descubrimiento encuentra mis targets sin editar el workflow.
+  Ningún carril ajeno había subido código al cerrar la ronda 4.
 
-## Pendientes para la próxima ronda (orden previsto)
+## Estado de la sesión (por qué se para)
 
-1. **Auditar `internal/ad` (AD-1/AD-2) cuando Implementación A suba
-   código**: concurrencia del sincronizador, límites de paginación, casos
-   borde del cálculo de postura y de la puntuación 0-100. **Bloqueado**
-   hasta que la rama tenga código.
-2. **Revisar las pantallas nuevas de IMP-B** (SIM-4, REP-1, ruido, SIM-3)
-   cuando suban: consumo de las API que corregí en la ronda 2 (`window`
-   presets y `truncated`), reglas de despliegue de los donuts y del
-   heatmap. **Bloqueado** igualmente.
-3. **`min_count: 2` en beacons**: decisión del responsable pendiente desde
+Tareas ejecutables de mi carril: completadas (SEC-7 con 24 targets, SEC-8
+sobre alta, informes, escenarios, consola, scenrun y sensor; los tres
+puntos de «TU TRABAJO PENDIENTE» de esta sesión). Lo restante está
+bloqueado:
+
+1. **Auditar `internal/ad` (AD-1/AD-2)** — depende de que Implementación A
+   suba código a su rama (al cerrar la ronda 4 solo tenía plan).
+2. **Revisar las pantallas nuevas de IMP-B** (SIM-4, REP-1, ruido, SIM-3) —
+   igualmente sin código subido.
+3. **`min_count: 2` en beacons** — decisión del responsable pendiente desde
    la ronda 1 (¿validación en carga `>= 3` o documentar el
    comportamiento?).
-4. **SET-3 lado motor** cuando IMP-A lo suba: revisar unidades y ceros
-   honestos de las nuevas métricas de `/api/stats`.
-5. **PowerShell**: cuando haya `pwsh`, pasar `check_powershell_syntax.ps1`.
+4. **SET-3 lado motor** — depende de Implementación A.
+5. **PowerShell con `pwsh`** — el entorno no lo tiene; los scripts siguen
+   revisados en lectura sin hallazgos.
+6. **PR #18 de Dependabot** — reclamado por Seguridad B en su plan (su
+   carril).
+
+Si el responsable reabre una ronda con las ramas de los demás ya con
+código, el orden es el de esta lista (1 y 2 son las prioridades reales).
 
 ## Notas de contexto que no deben perderse
 
