@@ -1,40 +1,59 @@
 # Roadmap — Seguridad A (carril/seguridad-a)
 
 Archivo vivo: continuidad del carril. Última actualización: 2026-10-05,
-ronda 9, cierre (18:52 reloj de sesión, Europe/Madrid).
+ronda 10, cierre (19:39 UTC, Europe/Madrid).
 
-## Estado tras el cierre de la ronda 9 (2026-10-05)
+## Estado tras el cierre de la ronda 10 (2026-10-05)
 
-- **Auditoría profunda de los 9 paquetes del motor que quedaban
-  (informe `ronda_2026-10-05_18h52_A.md`): 2 bugs funcionales
-  corregidos con test** en código ya fusionado en main.
-  1. **MEDIA** — `respond`: la pre-comprobación de idempotencia
-     quedaba fuera del tramo single-flight; dos peticiones con la
-     misma clave y PID distinto podían ejecutar DOS kills reales
-     (el cooldown solo cubre el mismo `(host,pid)`). Fix:
-     `recordCommit` devuelve `false` si la clave ya estaba y `Kill`
-     deniega 409 dentro del tramo. Test determinista que sostiene
-     `execMu`, comete la gemela y exige 409 + objetivo vivo
-     (fail-before con stash: segunda kill ejecutada de verdad).
-  2. **BAJA** — `siem`: el log de Splunk reclamaba «after 3
-     attempts» tras un 400 permanente en el primer intento (1 POST
-     real). Fix: contador `attempts` como el de `webhook`.
-     Fail-before con stash en el log capturado.
-- **Limpio sin hallazgos**: notify, webhook, enrich, actions,
-  reputation, collector, redact y los caminos de `cmd/engine`
-  (apagado cancel→Wait correcto, resolución credencial flag→entorno
-  uniforme, banners honestos).
-- **Obligatorio de ronda**: las cinco puntas ajenas exactamente donde
-  las verificaron las rondas 5-8 (rev-parse + diff Go vacío en
-  IMP-A/IMP-B); por tocar código propio con goroutines,
-  `-race -count=5` extra en respond (4.8 s) y siem (16.3 s), verde.
-- Checklist CI completo verde tras el último cambio: gofmt vacío,
-  vet, build nativo y GOOS=windows, staticcheck, `-race -count=1
-  ./...` (37 paquetes), openapi self-test, inventario (114),
-  workflows, tema, consola 371 tests + tsc + build, console-service
-  104 tests + tsc, sensor 36 tests + clippy -D warnings.
+- **Ronda de revisión y verificación, 0 fixes que anunciar** (informe
+  `ronda_2026-10-05_19h39_A.md`): las dos puntas nuevas ajenas se
+  revisaron a fondo sin hallar bug funcional nuevo.
+- **PUL-A (`829f7f0`) verificado línea en mano**: su diff de
+  `internal/enroll` son 2 líneas de comentario (POL-12, mi ID
+  SEC-A-1 y su porqué intactos); su adopción de mi `FuzzEnrollLine`
+  es verbatim real (4 102 bytes desde `fuzzEnrollRegistry` a EOF
+  idénticos a mi árbol); su punta pasa `-race -count=5` en
+  ingest (14,5 s) y enroll (1,2 s) en worktree desprendido.
+- **El conflicto con PUL-A se encogió**: `merge-tree` contra mi punta
+  deja UN hunk de 2 líneas en `internal/ingest/fuzz_test.go`
+  (conservar `"unicode"`, suyo); el bloque EOF que motivó el addendum
+  de la ronda 4 hoy se auto-fusiona. El de SEG-B en
+  `internal/scenrun/scenrun_test.go` sigue igual.
+- **IMP-B IDEA-11 (`d6f2285`) revisado sin bug**: la carrera que
+  busqué en la auto-apertura (effect con `offeredRef` vs `enroll`
+  sin responder) no existe — `fleet-provider` hace
+  `Promise.all` y setea `enroll`+`loaded` en el mismo lote de React;
+  el «token que caduca antes» es honesto (TTL validado 1 h–30 días,
+  `active` exige `now < ExpiresAt`, todo activo lleva RFC3339
+  futuro; orden lexicográfico = cronológico). Lectura de descarte
+  tolerante verificada.
+- **Mis dos hallazgos de la ronda 5 siguen vigentes en `d6f2285`**
+  (re-verificados; quinto aviso): supresión flota-completa desde
+  Ruido acotado (MEDIA) y `generate` sin guardia de vigencia (BAJA).
+- **Fuzzing vivo: ~2,0 M ejecuciones, 0 crashes** — primera ronda con
+  sesiones `-fuzz` reales: FuzzEnrollLine 521 182, FuzzParseLine
+  1 168 130, FuzzSplitCSV 160 934, FuzzLoadScenarioFile 98 355,
+  FuzzLoadBeacon 13 371. Sin contaminar `testdata`.
+- Checklist: Go completo re-ejecutado verde (gofmt vacío, build
+  nativo y GOOS=windows, vet, staticcheck, `-race -count=1 ./...` 37
+  paquetes); consola/sensor sin cambios desde la ronda 9 (solo docs
+  en mi diff), evidencia de esa ronda válida para el árbol idéntico.
 
 ## Historial reciente
+
+### Ronda 10 (19h39 UTC) — revisión PUL-A re-ejecutada + IMP-B IDEA-11 + fuzzing vivo (informe `ronda_2026-10-05_19h39_A.md`)
+
+- **PUL-A**: POL-12 verificado comment-only; adopción SEC-7 verbatim
+  verificada byte a byte; `-race -count=5` ingest+enroll verde en su
+  punta; conflicto `fuzz_test.go` reducido a un hunk de 2 líneas
+  (`"unicode"`).
+- **IMP-B IDEA-11**: sin bug que anotar (auto-apertura sin carrera,
+  expiración de token honesta, descarte tolerante); mis dos hallazgos
+  de la ronda 5 re-verificados vigentes en `d6f2285`.
+- **Fuzzing vivo**: 5 objetivos, ~2,0 M ejecuciones, 0 crashes.
+- **Obligatorio**: única punta ajena movida con Go = PUL-A
+  (test-only), `-race -count=5` en su punta; IMP-B sin Go (diff
+  verificado); resto sin movimiento, evidencia de rondas 5-8 vigente.
 
 ### Ronda 8 (20h05) — revisión de IDEA-3 de IMP-B y auditoría fleet/baseline/lifecycle (informe `ronda_2026-10-05_20h05_A.md`)
 
@@ -155,10 +174,12 @@ ronda 9, cierre (18:52 reloj de sesión, Europe/Madrid).
 2. **Verificar que IMP-B incorpora los dos hallazgos de la ronda 5** en
    su rama antes de la fusión (su REP-4 de la ronda 6 no los tocó; su
    IDEA-3 de la ronda 8 tampoco).
-3. **Resolver DOS conflictos append-append al fusionar** (ronda 7,
-   re-verificado en la ronda 9 contra la punta de mi carril):
-   `internal/ingest/fuzz_test.go` con PUL-A — conservar
-   `FuzzEnrollLine` (mío) y `FuzzAuthEnrollFirstLine` (suyo) — y
+3. **Resolver DOS conflictos al fusionar** (re-verificado en la
+   ronda 10 contra la punta de mi carril):
+   `internal/ingest/fuzz_test.go` con PUL-A quedó reducido a UN hunk
+   de 2 líneas en el bloque de imports — conservar `"unicode"` (de
+   su `FuzzAuthEnrollFirstLine`) junto a mi bloque; el bloque EOF
+   adoptado verbatim se auto-fusiona. Y
    `internal/scenrun/scenrun_test.go` con SEG-B — conservar
    `TestRunIDsMatchWireContract` (suyo) y
    `TestStartUnknownScenarioWrapsSentinel` (mío); `scenrun.go` y
@@ -175,7 +196,11 @@ ronda 9, cierre (18:52 reloj de sesión, Europe/Madrid).
    go.mod/go.sum); reclamación de Seguridad B resuelta.
 8. **Motor auditado en profundidad (ronda 9)**: queda `internal/ad`
    cuando IMP-A publique; re-auditar solo diffs NUEVOS de otros
-   carriles a partir de aquí.
+   carriles a partir de aquí (ronda 10: puntas de PUL-A e IMP-B
+   revisadas sin hallazgos nuevos).
+9. **Fuzzing vivo, segunda tanda (ronda 11+)**: `FuzzLoadIntelFile`,
+   `FuzzLoadSuppress`, `FuzzConvertSigma`, `FuzzDecodeMail` (45-60 s
+   cada uno); los cinco de la ronda 10 quedaron limpios.
 
 ## Notas de contexto que no deben perderse
 
