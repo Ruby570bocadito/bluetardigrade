@@ -140,10 +140,12 @@ siguiente (checklist en la ronda 3 de este roadmap y modelo §3).
    RFC 4515, paginación y tope de objetos, cero operaciones de
    escritura, auditoría de la dependencia LDAP nueva. Es la prioridad
    del responsable y mi verificación pasa de requisito a código.
-2. **SEC-2 con IMP-A:** DPAPI para la credencial (diseño ya pedido en
-   el informe; revisar el aterrizaje y los tests).
-3. Unificar la validación de `analyst:ask` con
-   `validateIncidentPayload` si sigue libre.
+2. **SEC-2 con IMP-A:** DPAPI para la credencial (diseño completo
+   entregado como addendum del informe de la ronda 4: sobre
+   `dpapi|plain`, ACL, escritura con bind de prueba y `[]byte` en
+   memoria; sus tests son mi checklist de auditoría).
+3. ~~Unificar la validación de `analyst:ask` con
+   `validateIncidentPayload`~~ — hecho en la ronda 4 (`6597e27`).
 4. Verificar el fix del smoke del PR #16 si llega antes del merge, y
    el ciclo real de `deps-audit` en `main` tras el merge de la ronda 1
    (el job ya corre verde en mi rama).
