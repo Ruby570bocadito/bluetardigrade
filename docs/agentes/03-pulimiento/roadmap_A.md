@@ -27,7 +27,9 @@ moverlos.
   3. `plan: ronda 2026-10-05 12h08 (PUL-A)` — plan ronda 2.
   4. `pulimiento: complete engine flags tables and document API TLS (PUL-A)` — trabajo ronda 2.
   5. `plan: ronda 2026-10-05 12h13 (PUL-A)` — plan ronda 3.
-  6. (pendiente de commit) trabajo ronda 3.
+  6. `pulimiento: complete CLI subcommand table and fix Telemetry inventory row (PUL-A)` — trabajo ronda 3.
+  7. `plan: ronda 2026-10-05 12h23 (PUL-A)` — plan ronda 4.
+  8. (pendiente de commit) trabajo ronda 4.
 
 ## Rondas anteriores
 
@@ -78,9 +80,28 @@ moverlos.
     Kernel-Network + Kernel-Registry + DNS-Client, más image
     hashes en el enriquecimiento.
   - 1 fragmento en `changelog.d/`: `PUL-A-cli-subcommands.md`.
-  - La deriva de «Telemetry» era la más grave de esta ronda: un
+  - La deriva de «Telemetry» era la más grave de esa ronda: un
     lector de ARCHITECTURE.md creía que el sensor solo colectaba
     procesos, cuando en realidad colecta red, registro y DNS.
+
+- **2026-10-05 12h23 (ronda 4):** pulimiento de la fila «Console»
+  del feature inventory + cierre de la auditoría fila por fila.
+  Informe en `ronda_2026-10-05_12h23_A.md`. Resumen:
+  - `docs/ARCHITECTURE.md` fila «Console»: el paréntesis «(no
+    provider token streaming)» era stale tras el commit `4257127`
+    de IMP-B (streaming nativo del analista). IMP-B no tocó
+    ARCHITECTURE.md (es mi área); lo corregí yo. Actualizado a
+    «(native provider streaming: the answer renders as the model
+    writes it; providers without streaming deliver it in one
+    piece)».
+  - Auditoría de las 3 filas restantes (Storage, Auth, Ops)
+    contra el código: las tres verifican correctamente, sin
+    deriva. La auditoría fila por fila del feature inventory
+    (13 filas) queda cerrada.
+  - 1 fragmento en `changelog.d/`:
+    `PUL-A-analyst-streaming-inventory.md`.
+  - La observación para IMP-B sobre la fila «AI analyst» se cierra
+    (la actualicé yo).
 
 ## Pendientes para la siguiente ronda
 
@@ -129,14 +150,19 @@ leen consistentes. Re-visitar cuando:
 - la matriz de OS cambie,
 - Seguridad B añada escaneos (coordinar dónde viven).
 
-### Observación para IMP-B (cuando cierre su ronda 2)
+### Observación para IMP-B (cuando cierre su ronda 2) — CERRADA
 
 La fila «AI analyst» del feature inventory de `docs/ARCHITECTURE.md`
-dice hoy «(no provider token streaming)». El plan de la ronda 2 de
+decía hoy «(no provider token streaming)». El plan de la ronda 2 de
 IMP-B es precisamente añadir streaming nativo del proveedor. Cuando
 IMP-B aterrice ese cambio, la fila quedará stale. IMP-B debe
 actualizarla (es su área), o yo en una ronda posterior si lo veo
 stale y nadie lo tocó. Lo dejo anotado aquí.
+
+**Cierre (ronda 4, 12h23):** IMP-B aterrizó el streaming nativo
+(commit `4257127`, ronda 2 de IMP-B a las 12h15) y NO tocó
+`docs/ARCHITECTURE.md` (verificado con `git diff`). La fila quedó
+stale y la corregí yo en la ronda 4. Observación cerrada.
 
 ### Observación para el responsable (no de mi área)
 
