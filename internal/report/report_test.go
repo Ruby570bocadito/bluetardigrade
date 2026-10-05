@@ -55,6 +55,40 @@ func TestParseWindowDefaultsAndAcceptsPresets(t *testing.T) {
 	}
 }
 
+// The documented presets of the report catalog ("24h | 7d | 30d") must
+// parse: the API catalog, openapi.yaml and the invalid-window error
+// message itself advertise them. time.ParseDuration has no day unit,
+// so the parser rewrites "<n>d" to hours before parsing; the window
+// echoes the requested preset verbatim.
+func TestParseWindowAcceptsDocumentedDayPresets(t *testing.T) {
+	for _, tc := range []struct {
+		kind string
+		in   string
+		want time.Duration
+	}{
+		{KindExecutive, "7d", 168 * time.Hour},
+		{KindExecutive, "30d", 30 * 24 * time.Hour},
+		{KindNoise, "2d", 48 * time.Hour},
+		{KindFleet, "1.5d", 36 * time.Hour},
+	} {
+		w, err := ParseWindow(tc.kind, tc.in)
+		if err != nil {
+			t.Fatalf("%s window %q: %v", tc.kind, tc.in, err)
+		}
+		if w.Preset != tc.in {
+			t.Fatalf("preset must echo the request verbatim: got %q, want %q", w.Preset, tc.in)
+		}
+		if d := w.Until.Sub(w.From); d != tc.want {
+			t.Fatalf("%q resolved to %s, want %s", tc.in, d, tc.want)
+		}
+	}
+	for _, bad := range []string{"31d", "0d", "-7d", "7dd", "d7", "7 d", "d"} {
+		if _, err := ParseWindow(KindExecutive, bad); err == nil {
+			t.Fatalf("window %q must be rejected", bad)
+		}
+	}
+}
+
 // ------------------------------------------------------------- tactic
 
 func TestTacticOf(t *testing.T) {

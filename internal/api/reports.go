@@ -161,6 +161,11 @@ func (h *Hub) windowedEvents(w http.ResponseWriter, window report.Window, host s
 		h.storeQueryError(w, err)
 		return nil, false, "", false
 	}
+	// The truncated flag belongs to the SCAN, not to the filtered
+	// set: narrowing by host first would report truncated=false when
+	// the host's records simply fell beyond the cap — a report that
+	// silently undercounts while claiming the whole window.
+	truncated = len(got) >= reportScanLimit
 	if host != "" {
 		filtered := make([]*model.Event, 0, len(got))
 		for _, ev := range got {
@@ -170,7 +175,7 @@ func (h *Hub) windowedEvents(w http.ResponseWriter, window report.Window, host s
 		}
 		got = filtered
 	}
-	return got, len(got) >= reportScanLimit, report.SourceStore, true
+	return got, truncated, report.SourceStore, true
 }
 
 // alertInput flattens one alert plus its lifecycle overlay.

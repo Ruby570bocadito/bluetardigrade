@@ -20,6 +20,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/incident"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/lifecycle"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/report"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/store"
 	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
@@ -339,5 +340,75 @@ func TestNoiseWindowValidation(t *testing.T) {
 	code, _, _ = get(t, "http://"+addr+"/api/noise")
 	if code != http.StatusOK {
 		t.Fatalf("default window = %d", code)
+	}
+}
+
+// The truncated flag belongs to the store SCAN, not to the filtered
+// set: when the window holds more events than one scan may read, a
+// host-filtered report must still say so, or it silently undercounts
+// while claiming the whole window (found by Seguridad A reviewing the
+// round-1 report code).
+func TestNoiseHostFilterKeepsScanTruncationHonest(t *testing.T) {
+	h, addr := newTestHub(t)
+	st, err := store.Open(t.TempDir() + "/noise-trunc.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	h.SetStore(st)
+
+	base := time.Now().UTC().Add(-time.Hour)
+	total := reportScanLimit + 1 // one event beyond what a scan may read
+	batch := make([]*model.Event, 0, 500)
+	for i := 0; i < total; i++ {
+		host := "pc-a"
+		if i == total-1 { // the NEWEST event: a filtered host must survive the cap
+			host = "pc-b"
+		}
+		ev := &model.Event{
+			ID:        fmt.Sprintf("trunc-%06d", i),
+			Timestamp: base.Add(time.Duration(i) * time.Millisecond).UTC(),
+			Type:      model.TypeProcessCreate,
+			Source:    "test",
+			Host:      host,
+			Process:   &model.Process{PID: i + 1, Name: "a.exe", Image: `C:\a.exe`},
+		}
+		batch = append(batch, ev)
+		if len(batch) == 500 || i == total-1 {
+			if res := st.InsertEvents(batch); len(res.Failed) > 0 || len(res.Conflicts) > 0 {
+				t.Fatalf("seed insert: failed=%v conflicts=%v", res.Failed, res.Conflicts)
+			}
+			batch = batch[:0]
+		}
+	}
+
+	// Host pc-b has exactly one event and it is inside the scan, but the
+	// window holds more events than one scan reads: truncated must stay
+	// true even though the filtered set is tiny.
+	code, body, _ := get(t, "http://"+addr+"/api/noise?window=24h&host=pc-b")
+	if code != http.StatusOK {
+		t.Fatalf("noise host filter = %d: %s", code, body)
+	}
+	var rep report.Noise
+	if err := json.Unmarshal([]byte(body), &rep); err != nil {
+		t.Fatal(err)
+	}
+	if rep.Scanned.Events != 1 || len(rep.Processes) != 1 {
+		t.Fatalf("host filter aggregates: %+v", rep.Scanned)
+	}
+	if !rep.Scanned.Truncated {
+		t.Fatalf("a capped scan filtered to one host must stay truncated: %+v", rep.Scanned)
+	}
+	// The unfiltered view of the same window agrees.
+	code, body, _ = get(t, "http://"+addr+"/api/noise?window=24h")
+	if code != http.StatusOK {
+		t.Fatalf("noise = %d: %s", code, body)
+	}
+	var all report.Noise
+	if err := json.Unmarshal([]byte(body), &all); err != nil {
+		t.Fatal(err)
+	}
+	if all.Scanned.Events != reportScanLimit || !all.Scanned.Truncated {
+		t.Fatalf("unfiltered scan: %+v, want %d events and truncated", all.Scanned, reportScanLimit)
 	}
 }

@@ -15,6 +15,8 @@ package report
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -66,6 +68,14 @@ var windowBounds = map[string]struct {
 	KindNoise:     {def: 24 * time.Hour, min: 15 * time.Minute, max: 30 * 24 * time.Hour},
 }
 
+// dayPresetRe matches the documented day presets ("7d", "30d",
+// "1.5d"). time.ParseDuration has no day unit, but the report catalog,
+// openapi.yaml and the invalid-window error below all advertise
+// "7d"/"30d" as accepted values, so the parser rewrites "<n>d" to
+// "<n*24>h" before parsing instead of letting the documented presets
+// answer 400.
+var dayPresetRe = regexp.MustCompile(`^(\d+(?:\.\d+)?)d$`)
+
 // ParseWindow resolves the ?window= parameter for a report kind:
 // presets are ordinary Go durations ("24h", "7d", "30d"), the kind's
 // default applies when empty, and values outside the kind's bounds are
@@ -82,7 +92,15 @@ func ParseWindow(kind, s string) (Window, error) {
 	if s == "" {
 		s = b.def.String()
 	}
-	d, err := time.ParseDuration(s)
+	// Day presets parse from a rewritten string but the window keeps
+	// echoing (and error messages keep naming) the requested value.
+	parsed := s
+	if m := dayPresetRe.FindStringSubmatch(s); m != nil {
+		if days, err := strconv.ParseFloat(m[1], 64); err == nil {
+			parsed = strconv.FormatFloat(days*24, 'f', -1, 64) + "h"
+		}
+	}
+	d, err := time.ParseDuration(parsed)
 	if err != nil || d <= 0 {
 		return Window{}, fmt.Errorf("invalid window %q: use a positive duration (e.g. 24h, 7d, 30d)", s)
 	}
