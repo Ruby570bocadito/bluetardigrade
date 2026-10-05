@@ -8,7 +8,7 @@ import { describeTelemetrySources } from '@/lib/telemetry-source'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { ActivityIcon, Desktop, Flask, FolderOpen, Lightning, Prohibit, ShieldCheck, SquaresFour, Warning, ChatsCircle, FlowArrow, Keyboard, ListMagnifyingGlass, MagnifyingGlass, Monitor } from '@phosphor-icons/react'
+import { ActivityIcon, Desktop, Flask, FolderOpen, Gauge, Lightning, Prohibit, ShieldCheck, SquaresFour, Warning, ChatsCircle, FlowArrow, Keyboard, ListMagnifyingGlass, MagnifyingGlass, Monitor } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { BlurText } from '@/components/reactbits/blur-text'
 import { ShinyText } from '@/components/reactbits/shiny-text'
@@ -24,6 +24,7 @@ import { HostsView } from './hosts-view'
 import { useIncidents } from './incidents-provider'
 import { useFleet } from './fleet-provider'
 import { RespondView } from './respond-view'
+import { PlatformStatusView } from './platform-status'
 import { AnalystPanel } from './analyst-panel'
 import { ShortcutsHelp, type ShortcutHelpRow } from './shortcuts-help'
 import { CommandPalette } from './command-palette'
@@ -34,6 +35,7 @@ import { ReadOnlyBanner, UserChip } from './user-session'
 import { ThemeToggle } from './theme-toggle'
 import { CONSOLE_DESTINATIONS, type ConsoleCommand } from '@/lib/console-commands'
 import { formatUptime, type EngineStats, type SfAlert } from '@/lib/console-types'
+import { buildIncidentAnalysis, type PendingIncidentAnalysis } from '@/lib/incident-analysis'
 import { currentSearch, isDetectionView, pushOperatorState, readOperatorState, writeAlertLens, writeHostToSearch, writeIncidentToSearch, writeRulesToSearch, writeViewToSearch } from '@/lib/url-state'
 import {
   SHORTCUT_ARM_MS,
@@ -50,7 +52,7 @@ import { useAnalystChannel } from './socket-provider'
 import { writeTriageDestination, type TriageTarget } from '@/lib/operations'
 
 const NAV_ICONS: Record<ConsoleView, React.ElementType> = {
-  panel: SquaresFour, flujo: ActivityIcon, alertas: Warning, incidentes: FolderOpen, equipos: Desktop,
+  panel: SquaresFour, estado: Gauge, flujo: ActivityIcon, alertas: Warning, incidentes: FolderOpen, equipos: Desktop,
   reglas: ShieldCheck, cadenas: FlowArrow, inteligencia: ListMagnifyingGlass, supresiones: Prohibit, probador: Flask,
   respuesta: Lightning, analista: ChatsCircle,
 }
@@ -210,9 +212,26 @@ export function ConsoleShell() {
   const telemetry = describeTelemetrySources(events)
 
   const [pendingAlert, setPendingAlert] = useState<SfAlert | null>(null)
+  const [pendingIncident, setPendingIncident] = useState<PendingIncidentAnalysis | null>(null)
 
   const openInAnalyst = (al: SfAlert) => {
     setPendingAlert(al)
+    setView('analista')
+  }
+
+  // Multi-alert hand-offs: the payload is built here from real case or
+  // selection data (capped by the lib); the panel attaches the frozen
+  // bundle of the most severe alert right before emitting.
+  const openIncidentInAnalyst = (pending: PendingIncidentAnalysis) => {
+    setPendingIncident(pending)
+    setView('analista')
+  }
+
+  const openSelectionInAnalyst = (alerts: SfAlert[]) => {
+    setPendingIncident({
+      payload: buildIncidentAnalysis({ source: 'selection', alerts }),
+      label: 'Selección de la cola',
+    })
     setView('analista')
   }
 
@@ -423,14 +442,20 @@ export function ConsoleShell() {
             <div className="mx-auto w-full max-w-[1560px]">
               <AnimatedView viewKey={view}>
                 {view === 'panel' && <Dashboard onAnalyze={openInAnalyst} onNavigate={setView} onTriage={openTriage} onHunt={openHunt} onHost={openHost} />}
+                {view === 'estado' && <PlatformStatusView />}
                 {view === 'flujo' && <LiveFeed />}
-                {view === 'alertas' && <AlertsView onAnalyze={openInAnalyst} onHost={openHost} onOpenIncident={openIncident} />}
-                {view === 'incidentes' && <IncidentsView onHost={openHost} onOpenAlert={openAlert} />}
+                {view === 'alertas' && <AlertsView onAnalyze={openInAnalyst} onAnalyzeGroup={openSelectionInAnalyst} onHost={openHost} onOpenIncident={openIncident} />}
+                {view === 'incidentes' && <IncidentsView onHost={openHost} onOpenAlert={openAlert} onAnalyze={openIncidentInAnalyst} />}
                 {view === 'equipos' && <HostsView onHunt={(q) => openHunt({ q })} onOpenAlert={openAlert} onOpenIncident={openIncident} />}
                 {isDetectionView(view) && <DetectionHub tab={view} onTab={setView} onOpenRule={openRule} />}
                 {view === 'respuesta' && <RespondView />}
                 {view === 'analista' && (
-                  <AnalystPanel pendingAlert={pendingAlert} clearPending={() => setPendingAlert(null)} />
+                  <AnalystPanel
+                    pendingAlert={pendingAlert}
+                    clearPending={() => setPendingAlert(null)}
+                    pendingIncident={pendingIncident}
+                    clearPendingIncident={() => setPendingIncident(null)}
+                  />
                 )}
               </AnimatedView>
             </div>
@@ -473,6 +498,8 @@ function titleFor(view: ConsoleView): string {
   switch (view) {
     case 'panel':
       return 'Panel de operaciones'
+    case 'estado':
+      return 'Estado de la plataforma'
     case 'flujo':
       return 'Flujo en vivo'
     case 'alertas':

@@ -6,9 +6,18 @@
 // ResizeObserver; colors come from the validated --sev-* / --series-*
 // tokens in globals.css and text always wears the ink tokens.
 
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { ChartBar, Table } from '@phosphor-icons/react'
+import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { ChartBar, DownloadSimple, Table } from '@phosphor-icons/react'
 import { cn } from '@/lib/utils'
+import {
+  chartToPngDataUrl,
+  downloadDataUrl,
+  downloadText,
+  fileStamp,
+  serializeChartSvg,
+  slugFileName,
+  tableToCsv,
+} from '@/lib/chart-export'
 
 /** Width of an element, tracked with ResizeObserver (fallback for jsdom/SSR). */
 export function useElementWidth<T extends HTMLElement>(fallback = 640) {
@@ -85,8 +94,10 @@ export function ChartCard({
 }) {
   const [tableView, setTableView] = useState(false)
   const headingId = useId()
+  const sectionRef = useRef<HTMLElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
   return (
-    <section aria-labelledby={label ? undefined : headingId} aria-label={label} className={cn('panel flex min-w-0 flex-col', className)}>
+    <section ref={sectionRef} aria-labelledby={label ? undefined : headingId} aria-label={label} className={cn('panel flex min-w-0 flex-col', className)}>
       <div className="flex items-start justify-between gap-3 px-4 pt-3.5">
         <div className="flex min-w-0 flex-1 items-start gap-2.5">
           {Icon && (
@@ -101,6 +112,7 @@ export function ChartCard({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {actions}
+          <ChartExportMenu title={title} table={table} sectionRef={sectionRef} bodyRef={bodyRef} />
           {table && (
             <button
               type="button"
@@ -116,7 +128,7 @@ export function ChartCard({
         </div>
       </div>
       {legend && legend.length > 0 && !tableView && <Legend items={legend} className="px-4 pt-3" />}
-      <div className={cn('min-w-0 flex-1 px-4 pb-4 pt-3', bodyClassName)}>
+      <div ref={bodyRef} className={cn('min-w-0 flex-1 px-4 pb-4 pt-3', bodyClassName)}>
         {tableView && table ? <DataTable table={table} /> : children}
       </div>
       {footer && <div className="border-t border-white/[0.06] px-4 py-2.5 text-[11px] leading-relaxed text-zinc-500">{footer}</div>}
@@ -157,6 +169,158 @@ export function DataTable({ table }: { table: TableTwin }) {
 }
 
 export type TooltipRow = { key: string; color: string; value: ReactNode; label: string; shape?: 'line' | 'dot' }
+
+/** Fallback ink when the panel background cannot be read (alpha 0). */
+const EXPORT_FALLBACK_BG = '#0c0c0e'
+
+function panelBackground(section: HTMLElement | null): string {
+  if (typeof getComputedStyle !== 'function' || !section) return EXPORT_FALLBACK_BG
+  const color = getComputedStyle(section).backgroundColor
+  if (!color || color === 'transparent' || /,\s*0\)$/.test(color)) return EXPORT_FALLBACK_BG
+  return color
+}
+
+/**
+ * VIZ-6 — the export menu shared by every ChartCard: the data behind
+ * the chart as CSV (from the table twin), the chart itself as SVG or
+ * PNG. Reads the live DOM at open time, so panels whose body has no
+ * <svg> (tables, empty states) simply hide the image options.
+ */
+function ChartExportMenu({
+  title,
+  table,
+  sectionRef,
+  bodyRef,
+}: {
+  title: string
+  table?: TableTwin
+  sectionRef: RefObject<HTMLElement | null>
+  bodyRef: RefObject<HTMLDivElement | null>
+}) {
+  const [open, setOpen] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onPointerDown(event: PointerEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (open) menuRef.current?.focus()
+  }, [open])
+
+  const svg = open ? (bodyRef.current?.querySelector('svg') ?? null) : null
+  const fileBase = `${slugFileName(title)}-${fileStamp()}`
+
+  function close() {
+    setOpen(false)
+    triggerRef.current?.focus()
+  }
+
+  function exportCsv() {
+    if (!table) return
+    try {
+      // BOM first: the CSV has to survive Excel's default encoding.
+      downloadText('\uFEFF' + tableToCsv(table.columns, table.rows), `${fileBase}.csv`, 'text/csv')
+      setError(null)
+      close()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No se pudo exportar el CSV.')
+    }
+  }
+
+  function exportSvg() {
+    if (!svg) return
+    try {
+      const text = serializeChartSvg(svg, getComputedStyle, panelBackground(sectionRef.current))
+      downloadText(text, `${fileBase}.svg`, 'image/svg+xml')
+      setError(null)
+      close()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No se pudo exportar el SVG.')
+    }
+  }
+
+  async function exportPng() {
+    if (!svg) return
+    try {
+      const url = await chartToPngDataUrl(svg, getComputedStyle, panelBackground(sectionRef.current))
+      downloadDataUrl(url, `${fileBase}.png`)
+      setError(null)
+      close()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'No se pudo exportar el PNG.')
+    }
+  }
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => {
+          setError(null)
+          setOpen((value) => !value)
+        }}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Exportar la gráfica o sus datos"
+        className="chip flex items-center gap-1 px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <DownloadSimple size={13} aria-hidden />
+        <span>Exportar</span>
+      </button>
+      {open && (
+        <div
+          ref={menuRef}
+          role="menu"
+          aria-label={`Exportar ${title}`}
+          tabIndex={-1}
+          className="absolute right-0 top-full z-30 mt-1.5 min-w-44 rounded-lg border border-zinc-800 bg-zinc-900 p-1 shadow-xl focus:outline-none"
+        >
+          {table && (
+            <button role="menuitem" type="button" onClick={exportCsv} className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs text-zinc-200 hover:bg-zinc-800 focus-visible:bg-zinc-800 focus-visible:outline-none">
+              Datos en CSV
+            </button>
+          )}
+          {svg && (
+            <button role="menuitem" type="button" onClick={exportSvg} className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs text-zinc-200 hover:bg-zinc-800 focus-visible:bg-zinc-800 focus-visible:outline-none">
+              Gráfica en SVG
+            </button>
+          )}
+          {svg && (
+            <button role="menuitem" type="button" onClick={() => void exportPng()} className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs text-zinc-200 hover:bg-zinc-800 focus-visible:bg-zinc-800 focus-visible:outline-none">
+              Gráfica en PNG
+            </button>
+          )}
+          {!table && !svg && (
+            <p className="px-2.5 py-2 text-[11px] leading-relaxed text-zinc-500">Este panel todavía no tiene gráfica ni tabla que exportar.</p>
+          )}
+          {error && (
+            <p role="alert" className="px-2.5 py-2 text-[11px] leading-relaxed text-red-300">{error}</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 /** Hover readout: values lead, labels follow, short line keys. */
 export function ChartTooltip({ x, y, width, title, rows }: { x: number; y: number; width: number; title: ReactNode; rows: TooltipRow[] }) {

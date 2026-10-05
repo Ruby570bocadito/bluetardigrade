@@ -63,6 +63,38 @@ const validAlert: SfAlert = {
 
 let llmCalls = 0
 let llmLastPrompt = ''
+
+/** Streams the fixed answer as three OpenAI-compatible SSE chunks with a
+ * small gap, so the hub forwards several analyst:delta frames per call. */
+function sseAnswer(chunks: string[]): Response {
+  const encoder = new TextEncoder()
+  const frames = [
+    ...chunks.map((c) => `data: ${JSON.stringify({ choices: [{ delta: { content: c } }] })}\n\n`),
+    'data: [DONE]\n\n',
+  ]
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      frames.forEach((frame, i) => {
+        setTimeout(() => {
+          try {
+            controller.enqueue(encoder.encode(frame))
+          } catch {
+            // client aborted; nothing else to deliver
+          }
+        }, i * 15)
+      })
+      setTimeout(() => {
+        try {
+          controller.close()
+        } catch {
+          // already closed
+        }
+      }, frames.length * 15)
+    },
+  })
+  return new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } })
+}
+
 const llmMock = Bun.serve({
   port: 0,
   // Bun buffers stream headers until the first byte and closes idle
@@ -80,7 +112,7 @@ const llmMock = Bun.serve({
     } catch {
       llmLastPrompt = ''
     }
-    return Response.json({ choices: [{ message: { content: 'analisis de prueba' } }] })
+    return sseAnswer(['analisis ', 'de ', 'prueba'])
   },
 })
 
@@ -318,6 +350,18 @@ describe('hub HTTP surface (engine down)', () => {
     socket.disconnect()
   }, 10000)
 
+  test('provider deltas reach the socket as they are generated, not once at the end', async () => {
+    const socket = connect(base)
+    await waitEvent(socket, 'connect')
+    const deltas: string[] = []
+    socket.on('analyst:delta', ({ text }: { text: string }) => deltas.push(text))
+    socket.emit('analyst:ask', { alert: validAlert })
+    const done = await waitEvent<{ text: string }>(socket, 'analyst:done', 8000)
+    expect(deltas.length).toBeGreaterThanOrEqual(2)
+    expect(deltas.join('')).toBe(done.text)
+    socket.disconnect()
+  }, 10000)
+
   test('analyst:ask analyzes the hub copy of a known alert, not the client payload', async () => {
     hub.state.recordAlert({ ...validAlert, id: 'known-1', rule_name: 'COPIA DEL MOTOR', summary: 'resumen del motor' })
     const socket = connect(base)
@@ -343,6 +387,99 @@ describe('hub HTTP surface (engine down)', () => {
     expect(errors[0]).toContain('en curso')
     socket.disconnect()
   }, 12000)
+
+  test('analyst:ask-incident validates the payload before doing any work', async () => {
+    const socket = connect(base)
+    await waitEvent(socket, 'connect')
+
+    const p1 = waitEvent<{ message: string }>(socket, 'analyst:error')
+    socket.emit('analyst:ask-incident', 'no-soy-un-objeto')
+    expect((await p1).message).toContain('Peticion invalida')
+
+    const p2 = waitEvent<{ message: string }>(socket, 'analyst:error')
+    socket.emit('analyst:ask-incident', { incident: { title: 'sin alertas' } })
+    expect((await p2).message).toContain('sin alertas')
+
+    const p3 = waitEvent<{ message: string }>(socket, 'analyst:error')
+    socket.emit('analyst:ask-incident', { alerts: [{ id: 'a', rule_name: 'sin regla' }] })
+    expect((await p3).message).toContain('rule_id')
+
+    const p4 = waitEvent<{ message: string }>(socket, 'analyst:error')
+    socket.emit('analyst:ask-incident', { alerts: Array.from({ length: 9 }, (_, i) => ({ id: `a${i}`, rule_id: 'r' })) })
+    expect((await p4).message).toContain('maximo 8')
+
+    const p5 = waitEvent<{ message: string }>(socket, 'analyst:error')
+    socket.emit('analyst:ask-incident', { alerts: [validAlert], question: 'x'.repeat(2001) })
+    expect((await p5).message).toContain('2000')
+
+    // no provider call may have happened for any rejected payload
+    const callsBefore = llmCalls
+    expect(llmCalls).toBe(callsBefore)
+
+    socket.disconnect()
+  })
+
+  test('analyst:ask-incident runs end to end and cites the case evidence in the prompt', async () => {
+    const socket = connect(base)
+    await waitEvent(socket, 'connect')
+    const steps: string[] = []
+    socket.on('analyst:step', (s: { label: string }) => steps.push(s.label))
+    socket.emit('analyst:ask-incident', {
+      source: 'incident',
+      incident: { title: 'Cadena de credenciales', severity: 'critical', hosts: ['LAB-WKS-01'] },
+      alerts: [validAlert, { ...validAlert, id: 'a2', rule_id: 'r-lateral', rule_name: 'movimiento lateral', severity: 'high' }],
+      groups: [{ host: 'LAB-WKS-01', from: '2026-09-30T10:00:00Z', to: '2026-09-30T10:05:00Z', count: 2 }],
+      timeline: [{ at: '2026-09-30T10:00:30Z', kind: 'note', text: 'el operador aisló el equipo' }],
+      bundle: { alert_id: 'a1', host: 'LAB-WKS-01', window: '5m', events: [{ id: 'ev-1', type: 'process.create' }] },
+      question: 'cadenas parecidas la semana pasada?',
+    })
+    const done = await waitEvent<{ text: string }>(socket, 'analyst:done', 8000)
+    expect(done.text).toBe('analisis de prueba')
+    // every step reports run and done, in order, nothing else
+    expect(steps).toEqual([
+      'Preparando evidencia del incidente',
+      'Preparando evidencia del incidente',
+      'Consultando contexto local ATT&CK',
+      'Consultando contexto local ATT&CK',
+      'Consultando proveedor de IA',
+      'Consultando proveedor de IA',
+    ])
+    // the multi-alert prompt carries every delimited block, the case
+    // metadata, both alerts, the timeline note and the operator question
+    expect(llmLastPrompt).toContain('<<<INCIDENTE')
+    expect(llmLastPrompt).toContain('Cadena de credenciales')
+    expect(llmLastPrompt).toContain('<<<ALERTA 1')
+    expect(llmLastPrompt).toContain('<<<ALERTA 2')
+    expect(llmLastPrompt).toContain('movimiento lateral')
+    expect(llmLastPrompt).toContain('aisló el equipo')
+    expect(llmLastPrompt).toContain('<<<BUNDLE')
+    expect(llmLastPrompt).toContain('cadenas parecidas')
+    socket.disconnect()
+  }, 10000)
+
+  test('analyst:ask-incident prefers the hub copy of known alerts and clamps inflated fields', async () => {
+    hub.state.recordAlert({ ...validAlert, id: 'known-2', rule_name: 'COPIA DEL MOTOR' })
+    const socket = connect(base)
+    await waitEvent(socket, 'connect')
+    // validation caps each attribute at 512 chars; eight of them still
+    // push the alert JSON over the 4096 prompt clamp, which must mark it
+    const inflated: Record<string, string> = {}
+    for (let i = 1; i <= 8; i++) inflated[`attr_${i}`] = 'z'.repeat(600)
+    socket.emit('analyst:ask-incident', {
+      source: 'selection',
+      alerts: [
+        { ...validAlert, id: 'known-2', rule_name: 'FORJADA POR EL CLIENTE' },
+        { ...validAlert, id: 'inflada', rule_id: 'r-x', attributes: inflated },
+      ],
+    })
+    await waitEvent(socket, 'analyst:done', 8000)
+    expect(llmLastPrompt).toContain('COPIA DEL MOTOR')
+    expect(llmLastPrompt).not.toContain('FORJADA POR EL CLIENTE')
+    // the inflated attributes are truncated by the per-alert clamp
+    expect(llmLastPrompt).toContain('truncado')
+    expect(llmLastPrompt.length).toBeLessThan(20_000)
+    socket.disconnect()
+  }, 10000)
 })
 
 // ------------------------------------------------- hub B: engine bridge

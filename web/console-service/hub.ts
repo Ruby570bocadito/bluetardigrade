@@ -11,7 +11,7 @@ import http from 'http'
 import { Server } from 'socket.io'
 import pkg from './package.json'
 import { EngineBridge } from './bridge'
-import { runAnalysis } from './analyst'
+import { runAnalysis, runIncidentAnalysis, validateIncidentPayload } from './analyst'
 import { HubState, MAX_EVENTS, MAX_ALERTS } from './hub-state'
 import { buildStatusData, renderNotFound, renderStatusPage, esc } from './http-ui'
 import { createRateLimiter, createSlotLimiter } from './limiter'
@@ -186,9 +186,40 @@ export function createHub(opts: HubOptions = {}): HubHandle {
 
     // One limiter set per connection: the analyst panel cannot open
     // parallel LLM calls beyond the cap (slots) nor exceed the rolling
-    // request budget (rate) from a single socket.
+    // request budget (rate) from a single socket. Both the single-alert
+    // and the incident pipeline share this budget.
     const limiter = createSlotLimiter(MAX_ANALYST_CONCURRENT)
     const analystRate = createRateLimiter(MAX_ANALYST_PER_MINUTE, 60_000)
+
+    // Acquires the four gates in the same order the error messages
+    // promise them; releases everything it took on any failure so a
+    // rejected request never leaks budget.
+    const acquireAnalystBudget = (socket: { emit: (event: string, data: unknown) => void }): boolean => {
+      if (!analystRate.tryTake()) {
+        socket.emit('analyst:error', {
+          message: `Limite de ${MAX_ANALYST_PER_MINUTE} analisis por minuto en esta conexion; espera unos segundos antes de reintentar`,
+        })
+        return false
+      }
+      if (!limiter.tryAcquire()) {
+        socket.emit('analyst:error', {
+          message: `Ya hay ${MAX_ANALYST_CONCURRENT} analisis en curso en esta conexion; espera a que terminen`,
+        })
+        return false
+      }
+      if (!globalSlots.tryAcquire()) {
+        limiter.release()
+        socket.emit('analyst:error', { message: 'El hub ya tiene dos analisis en curso; espera a que terminen' })
+        return false
+      }
+      if (!globalRate.tryTake()) {
+        globalSlots.release()
+        limiter.release()
+        socket.emit('analyst:error', { message: 'Limite global de diez analisis por minuto; espera antes de reintentar' })
+        return false
+      }
+      return true
+    }
 
     socket.on('analyst:ask', async (payload: unknown) => {
       state.analystAsks += 1
@@ -213,29 +244,7 @@ export function createHub(opts: HubOptions = {}): HubHandle {
         socket.emit('analyst:error', { message: `Pregunta invalida: maximo ${MAX_QUESTION_LENGTH} caracteres` })
         return
       }
-      if (!analystRate.tryTake()) {
-        socket.emit('analyst:error', {
-          message: `Limite de ${MAX_ANALYST_PER_MINUTE} analisis por minuto en esta conexion; espera unos segundos antes de reintentar`,
-        })
-        return
-      }
-      if (!limiter.tryAcquire()) {
-        socket.emit('analyst:error', {
-          message: `Ya hay ${MAX_ANALYST_CONCURRENT} analisis en curso en esta conexion; espera a que terminen`,
-        })
-        return
-      }
-      if (!globalSlots.tryAcquire()) {
-        limiter.release()
-        socket.emit('analyst:error', { message: 'El hub ya tiene dos analisis en curso; espera a que terminen' })
-        return
-      }
-      if (!globalRate.tryTake()) {
-        globalSlots.release()
-        limiter.release()
-        socket.emit('analyst:error', { message: 'Limite global de diez analisis por minuto; espera antes de reintentar' })
-        return
-      }
+      if (!acquireAnalystBudget(socket)) return
 
       const rule = state.rules.find((r) => r.id === alert.rule_id)
       const ev = state.events.find((e) => e.id === alert.event_id)
@@ -249,6 +258,42 @@ export function createHub(opts: HubOptions = {}): HubHandle {
       } catch (err) {
         const message = err instanceof Error ? err.message : 'error desconocido del analista'
         logError(`analyst error (${socket.id}): ${message}`)
+        socket.emit('analyst:error', { message })
+      } finally {
+        globalSlots.release()
+        limiter.release()
+      }
+    })
+
+    socket.on('analyst:ask-incident', async (payload: unknown) => {
+      state.analystAsks += 1
+
+      const validated = validateIncidentPayload(payload)
+      if (!validated.ok) {
+        socket.emit('analyst:error', { message: validated.error })
+        return
+      }
+      // The hub's own copy wins per alert (same policy as analyst:ask):
+      // the panel names which alerts to analyze; the engine-fed ring
+      // supplies the authoritative fields when they are still buffered.
+      const incidentAlerts = validated.value.alerts.map((a) => {
+        const known = typeof a.id === 'string' && a.id ? state.alerts.find((x) => x.id === a.id) : undefined
+        return known ?? a
+      })
+      if (!acquireAnalystBudget(socket)) return
+
+      const ruleIds = new Set(incidentAlerts.map((a) => a.rule_id))
+      const rules = state.rules.filter((r) => ruleIds.has(r.id))
+      const emit = {
+        step: (s: { label: string; state: 'run' | 'done' }) => socket.emit('analyst:step', s),
+        delta: (text: string) => socket.emit('analyst:delta', { text }),
+      }
+      try {
+        const text = await runIncidentAnalysis({ ...validated.value, alerts: incidentAlerts }, rules, emit)
+        socket.emit('analyst:done', { text })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'error desconocido del analista'
+        logError(`analyst incident error (${socket.id}): ${message}`)
         socket.emit('analyst:error', { message })
       } finally {
         globalSlots.release()

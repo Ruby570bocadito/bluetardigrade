@@ -7,8 +7,8 @@
 //
 // The map is mnemonic and collision-free across the shell's nav ids:
 //   p panel · f flujo · a alertas · i incidentes · e equipos
-//   r reglas · c cadenas · l inteligencia (listas) · s supresiones
-//   t probador (test)
+//   h estado (health) · r reglas · c cadenas · l inteligencia (listas)
+//   s supresiones · t probador (test)
 //   k respuesta (the view's own action: kill) · n analista
 // The help sheet (?) lists this map through shortcutRows(): keys come
 // from HERE, labels/groups from the shell's NAV — neither side can
@@ -24,6 +24,7 @@ export const SHORTCUT_ARM_MS = 1200
 
 const KEY_TO_VIEW: Record<string, ConsoleView> = {
   p: 'panel',
+  h: 'estado',
   f: 'flujo',
   a: 'alertas',
   i: 'incidentes',

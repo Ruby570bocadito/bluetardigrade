@@ -77,10 +77,11 @@ function csvCell(value: unknown): string {
 
 // ---- bulk action bar ------------------------------------------------------
 
-export function AlertActionBar({ alerts, onClear, onAnalyze, onOpenIncident }: {
+export function AlertActionBar({ alerts, onClear, onAnalyze, onAnalyzeGroup, onOpenIncident }: {
   alerts: SfAlert[]
   onClear: () => void
   onAnalyze?: (alert: SfAlert) => void
+  onAnalyzeGroup?: (alerts: SfAlert[]) => void
   onOpenIncident?: (id: string) => void
 }) {
   const { applyTriage } = useEngine()
@@ -151,6 +152,16 @@ export function AlertActionBar({ alerts, onClear, onAnalyze, onOpenIncident }: {
         {onAnalyze && top && (
           <button type="button" className={btn} onClick={() => onAnalyze(top)} title="El analista estudia la alerta más grave de la selección">
             <Sparkle size={13} weight="fill" aria-hidden /> Analizar la más grave
+          </button>
+        )}
+        {onAnalyzeGroup && (
+          <button
+            type="button"
+            className={btn}
+            onClick={() => onAnalyzeGroup(alerts)}
+            title="El analista estudia la selección como conjunto: agrupa por equipo y ventana y adjunta el bundle forense de la alerta más grave"
+          >
+            <Sparkle size={13} weight="fill" aria-hidden /> Analizar la selección ({Math.min(alerts.length, 8)})
           </button>
         )}
         <button type="button" onClick={onClear} aria-label="Quitar la selección" className="ml-auto rounded-md p-1.5 text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">

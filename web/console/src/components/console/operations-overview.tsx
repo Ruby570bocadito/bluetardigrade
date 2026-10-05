@@ -53,6 +53,13 @@ export function OperationsOverview({ onNavigate, onTriage }: {
             {lastSyncAt ? 'Última lectura ' + formatTime(new Date(lastSyncAt).toISOString()) : 'Esperando primera lectura'}
           </span>
           <button
+            type="button" onClick={() => onNavigate('estado')}
+            className="chip px-2.5 py-1.5 text-xs text-zinc-300 transition-colors hover:text-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            title="Contadores de runtime del motor: ingesta, colas, almacén y entrega"
+          >
+            Estado
+          </button>
+          <button
             type="button" onClick={refresh} disabled={refreshing} aria-busy={refreshing}
             className="chip px-2.5 py-1.5 text-xs text-zinc-300 transition-colors hover:text-primary-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
           >

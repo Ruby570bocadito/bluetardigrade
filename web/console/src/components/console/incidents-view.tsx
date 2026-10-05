@@ -19,6 +19,7 @@ import {
   NotePencil,
   Plus,
   ShieldWarning,
+  Sparkle,
   Stack,
   UserCircle,
   Warning,
@@ -29,6 +30,7 @@ import { EmptyState, SeverityBadge, StatTile } from './ui-bits'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
 import { EntityGraphView, GraphLegend } from '@/components/charts/entity-graph'
 import { buildEntityGraph } from '@/lib/entity-graph'
+import { buildIncidentAnalysis, type PendingIncidentAnalysis } from '@/lib/incident-analysis'
 import { buildIncidentHtml, buildIncidentMarkdown, reportFilename } from '@/lib/incident-report'
 import {
   addIncidentNote,
@@ -57,7 +59,7 @@ export function StatusChip({ status }: { status: IncidentStatus }) {
   return <span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${STATUS_STYLE[status]}`}>{INCIDENT_STATUS_LABEL[status]}</span>
 }
 
-export function IncidentsView({ onHost, onOpenAlert }: { onHost: (host: string) => void; onOpenAlert: (alertId: string) => void }) {
+export function IncidentsView({ onHost, onOpenAlert, onAnalyze }: { onHost: (host: string) => void; onOpenAlert: (alertId: string) => void; onAnalyze?: (pending: PendingIncidentAnalysis) => void }) {
   const { incidents, persistent, available, loaded, upsert } = useIncidents()
   const [filter, setFilter] = useState<Filter>('active')
   const [selected, setSelectedState] = useState<string>('')
@@ -191,7 +193,7 @@ export function IncidentsView({ onHost, onOpenAlert }: { onHost: (host: string) 
         </div>
 
         {current ? (
-          <IncidentDetail key={current.id} incident={current} onChange={upsert} onHost={onHost} onOpenAlert={onOpenAlert} />
+          <IncidentDetail key={current.id} incident={current} onChange={upsert} onHost={onHost} onOpenAlert={onOpenAlert} onAnalyze={onAnalyze} />
         ) : (
           <div className="panel">
             <EmptyState icon={Stack} title="Selecciona un incidente" hint="Verás sus alertas, los equipos afectados, el grafo de entidades y la línea de tiempo." />
@@ -274,11 +276,13 @@ function IncidentDetail({
   onChange,
   onHost,
   onOpenAlert,
+  onAnalyze,
 }: {
   incident: Incident
   onChange: (incident: Incident) => void
   onHost: (host: string) => void
   onOpenAlert: (alertId: string) => void
+  onAnalyze?: (pending: PendingIncidentAnalysis) => void
 }) {
   const { alerts, events } = useEngine()
   const [owner, setOwner] = useState(incident.owner ?? '')
@@ -313,6 +317,33 @@ function IncidentDetail({
           <StatusChip status={incident.status} />
           <span className="font-mono text-[11px] text-zinc-600">{incident.id}</span>
           <div role="group" aria-label="Exportar informe del incidente" className="ml-auto flex items-center gap-1.5">
+            {onAnalyze && (
+              <button
+                type="button"
+                className={exportCls}
+                disabled={caseAlerts.length === 0}
+                title="El analista IA estudia el caso completo: agrupa las alertas por equipo y ventana, adjunta el bundle forense de la alerta más grave y cita la evidencia"
+                onClick={() =>
+                  onAnalyze({
+                    payload: buildIncidentAnalysis({
+                      source: 'incident',
+                      incident: {
+                        title: incident.title,
+                        severity: incident.severity,
+                        status: incident.status,
+                        summary: incident.summary,
+                        hosts: incident.hosts,
+                      },
+                      alerts: caseAlerts,
+                      timeline: incident.timeline,
+                    }),
+                    label: incident.title,
+                  })
+                }
+              >
+                <Sparkle size={13} weight="fill" aria-hidden /> Analizar con IA
+              </button>
+            )}
             <button
               type="button"
               className={exportCls}

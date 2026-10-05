@@ -5,6 +5,7 @@ import {
   hostTacticMatrix,
   formatAgo,
   formatCompact,
+  lifecycleTacticColumns,
   niceTicks,
   pushSample,
   sampleOf,
@@ -140,5 +141,47 @@ describe('formatting', () => {
     expect(formatAgo(35_000)).toBe('hace 35 s')
     expect(formatAgo(240_000)).toBe('hace 4 min')
     expect(formatAgo(7_200_000)).toBe('hace 2 h')
+  })
+})
+
+describe('lifecycle x tactic columns', () => {
+  const al = (tags: string[] | undefined, status?: 'new' | 'acknowledged' | 'closed') => ({ tags, status })
+
+  test('maps the lifecycle overlay states, undefined counts as new', () => {
+    const { columns, total } = lifecycleTacticColumns([
+      al(['attack.execution']),
+      al(['attack.execution'], 'new'),
+      al(['attack.execution'], 'acknowledged'),
+      al(['attack.execution'], 'closed'),
+    ])
+    expect(total).toBe(4)
+    expect(columns).toHaveLength(1)
+    expect(columns[0]).toMatchObject({ key: 'execution', short: 'Ejecución', label: 'Ejecución', total: 4 })
+    expect(columns[0].values).toEqual({ nuevas: 2, reconocidas: 1, cerradas: 1 })
+  })
+
+  test('alerts without a tactic tag land in their own column', () => {
+    const { columns } = lifecycleTacticColumns([al(['windows']), al(undefined, 'closed'), al(['attack.t1003'])])
+    expect(columns).toHaveLength(1)
+    expect(columns[0]).toMatchObject({ key: 'sin-tactica', label: 'Sin táctica', total: 3 })
+    expect(columns[0].values).toEqual({ nuevas: 2, reconocidas: 0, cerradas: 1 })
+  })
+
+  test('columns sort by total first and every tactic keeps its workflow split', () => {
+    const alerts = [
+      ...Array.from({ length: 5 }, () => al(['attack.command-and-control'])),
+      ...Array.from({ length: 3 }, () => al(['attack.persistence'])),
+      ...Array.from({ length: 3 }, () => al(['attack.persistence'], 'closed')),
+      al(['attack.exfiltration'], 'acknowledged'),
+    ]
+    const { columns, total } = lifecycleTacticColumns(alerts)
+    expect(total).toBe(12)
+    expect(columns.map((c) => c.key)).toEqual(['persistence', 'command-and-control', 'exfiltration'])
+    expect(columns[0].values).toEqual({ nuevas: 3, reconocidas: 0, cerradas: 3 })
+    expect(columns[1].values).toEqual({ nuevas: 5, reconocidas: 0, cerradas: 0 })
+  })
+
+  test('empty window stays empty', () => {
+    expect(lifecycleTacticColumns([])).toEqual({ columns: [], total: 0 })
   })
 })
