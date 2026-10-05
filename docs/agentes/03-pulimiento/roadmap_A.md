@@ -31,7 +31,10 @@ moverlos.
   7. `plan: ronda 2026-10-05 12h23 (PUL-A)` — plan ronda 4.
   8. `pulimiento: fix stale AI analyst inventory row after IMP-B streaming landed (PUL-A)` — trabajo ronda 4.
   9. `plan: ronda 2026-10-05 12h27 (PUL-A)` — plan ronda 5.
-  10. (pendiente de commit) trabajo ronda 5.
+  10. `pulimiento: align system overview diagram with the real engine pipeline (PUL-A)` — trabajo ronda 5.
+  11. `plan: ronda 2026-10-05 12h36 (PUL-A)` — plan ronda 6 (publicado por la instancia anterior; no llegó a ejecutarse).
+  12. `plan: ronda 2026-10-05 13h42 ajustada (PUL-A)` — plan ronda 6 ajustado tras leer los seis planes.
+  13. (esta ronda) trabajo ronda 6: Prometheus completo, POL-4 alcance nombrado, job fuzz nocturno, informe.
 
 ## Rondas anteriores
 
@@ -127,24 +130,56 @@ moverlos.
     (0 huérfanos); no hay validador mermaid formal en el entorno,
     verificación manual declarada.
 
+- **2026-10-05 13h42 (ronda 6, esta instancia):** POL-A-docs-14 +
+  POL-4 alcance nombrado + job de fuzzing nocturno + primera
+  verificación Go completa del carril. Informe en
+  `ronda_2026-10-05_13h42_A.md`. Resumen:
+  - `docs/OPERATIONS.md` «Prometheus metrics»: las 47 familias `sf_*`
+    de `internal/api/metrics.go` enumeradas y agrupadas, con emisión
+    condicional documentada y la advertencia del plural
+    `sf_thresholds_fired_total`; señal de alarma nueva
+    (`sf_store_write_failures_total`). Verificado con cruce mecánico
+    47/47.
+  - POL-4 (alcance nombrado por el TODO): banner «BLUETARDIGRADE
+    ENGINE» (`render.go`), marco TUI «BLUETARDIGRADE»
+    (`interactive.go`), metadatos + `job_name` de `openapi.yaml`, y
+    rutas del `Dockerfile` a `/opt/bluetardigrade` +
+    `/var/lib/bluetardigrade`. El resto de restos del nombre antiguo
+    quedó clasificado en el informe (contratos congelados por tests,
+    crate Rust real, legacy, histórico, territorio ajeno).
+  - `bench-nightly.yml`: job asesor `fuzz` (un paso por objetivo,
+    `-fuzztime 5m`), hoy con `FuzzFieldMapParity` (pkg/model); petición
+    de SEG-A. Smoke local: 24k execs PASS.
+  - Enganche de `check_console_theme.py` (petición de PUL-B) DIFERIDO
+    con causa: su checker falla contra `main` (`html.light` aún sin
+    fusionar); se engancha cuando su rama se fusione.
+  - **Hito:** Go 1.26.0 + staticcheck 2025.1.1 instalados en el
+    entorno; suite completa verde por primera vez (33 paquetes con
+    `-race`, staticcheck doble pasada, guards de OpenAPI e inventario).
+  - 3 fragmentos en `changelog.d/`: `PUL-A-prometheus-metrics-complete.md`,
+    `PUL-A-old-name-remnants.md`, `PUL-A-nightly-fuzz.md`.
+
 ## Pendientes para la siguiente ronda
 
-### Verificación (parcialmente resuelto)
+### Verificación
 
+- **RESUELTO (ronda 6):** el entorno tiene Go 1.26.0
+  (`/home/z/my-project/tools/go`) y staticcheck 2025.1.1
+  (`/home/z/my-project/gopath/bin`); la suite completa del carril
+  pasó verde por primera vez. Persisten fuera del entorno: `cargo`
+  (sensor Rust), `pwsh` (guards de PowerShell) y la suite de consola
+  (`bun` está disponible; no se ha montado el árbol de deps de la
+  consola en este entorno).
 - **Push a origin:** resuelto desde el cierre de la ronda 1 (token
   efímero en la URL del push, no guardado en config ni en ficheros).
-- **Suite Go/Cargo/pwsh:** el entorno sigue sin `go`, `cargo`, `pwsh`
-  ni `staticcheck`. Los cambios de las rondas 1 y 2 son solo
-  documentación, así que la falta no impide verificar lo que toqué
-  (los guards de Python que sí puedo correr — `check_rule_inventory.py`
-  y `check_openapi.py` — pasan limpios). Antes de tocar código
-  Go/Rust/PowerShell hay que confirmar con el responsable si el
-  entorno debe tener estas herramientas, o si la verificación la hace
-  el CI al fusionar.
+- **Recordatorio de paridad:** la suite Go corre con
+  `PATH=/home/z/my-project/tools/go/bin:/home/z/my-project/gopath/bin:$PATH`
+  y `GOPATH=/home/z/my-project/gopath`.
 
-### POL-A-code-1 — refactor del backend Go (cuando haya Go)
+### POL-A-code-1 — refactor del backend Go (desbloqueado, con cola)
 
-Candidatos identificados para leer a fondo y partir si procede:
+La herramienta ya existe (ronda 6); lo que manda ahora es el orden de
+los carriles:
 
 - `internal/api/api.go` (1367 líneas): el `Hub` struct tiene ~30
   campos, los handlers están todos en un fichero. Posible split por
@@ -158,9 +193,26 @@ Candidatos identificados para leer a fondo y partir si procede:
 - `internal/correlate/correlate.go` (789 líneas): posible split del
   manager (load/reload/track/fire/prune).
 
-Sin ejecutar `go test -race ./...` no me parece prudente tocarlos. La
-regla del carril es «los tests existentes deben seguir pasando sin
-tocarlos, salvo para moverlos» — sin poder ejecutarlos, no lo garantizo.
+**Estado tras la ronda 6:** `go test -race ./...` ya es ejecutable y
+pasó verde (33 paquetes). El candidato `internal/api/api.go` sigue
+bloqueado por plan ajeno: la ronda 2 de IMP-A (plan 14h00) toca
+`internal/api` (rutas SIM-4) y `cmd/engine` (flag/cableado); revaluar
+cuando IMP-A cierre su ronda y se fusione. `correlate.go` y los
+helpers de `run.go` no aparecen en ningún plan publicado — candidatos
+limpios para la siguiente ronda de este carril.
+
+### POL-A-ci-2 — enganches de CI pendientes de fusiones ajenas
+
+- **Checker de tema (petición de PUL-B, ronda 6):** cuando
+  `carril/pulimiento-b` esté fusionado en `main`, añadir al job
+  `console` de `ci.yml`, tras el paso de build:
+  `python3 scripts/dev-tests/check_console_theme.py` (3 s, stdlib
+  puro, sin actions nuevas). Hoy falla contra `main` porque
+  `globals.css` aún no tiene el bloque `html.light`.
+- **Objetivos de fuzz de SEG-A (ronda 6):** cuando la ronda de
+  fuzzers de SEG-A se fusione, añadir una línea por objetivo al job
+  `fuzz` de `bench-nightly.yml`
+  (`go test -run '^$' -fuzz '^Nombre$' -fuzztime 5m ./paquete`).
 
 ### POL-A-ci-1 — revisión de CI (cuando haya motivo)
 

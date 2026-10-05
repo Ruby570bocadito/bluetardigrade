@@ -9,15 +9,15 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/engine ./cmd/engi
 FROM alpine:3.24
 RUN adduser -D -H -g "bluetardigrade engine" sensor
 COPY --from=builder /out/engine /usr/local/bin/engine
-COPY rules/ /opt/security-framework/rules/
-COPY sequences/ /opt/security-framework/sequences/
-COPY beacons.yaml thresholds.yaml /opt/security-framework/
+COPY rules/ /opt/bluetardigrade/rules/
+COPY sequences/ /opt/bluetardigrade/sequences/
+COPY beacons.yaml thresholds.yaml /opt/bluetardigrade/
 # Writable state home: the engine's relative default paths (./respond-audit.jsonl,
 # ./alert-lifecycle.json, ./respond-operators.yaml, ./suppressions.yaml) resolve
 # against the CWD — with the default / they would land in a root the non-root
 # USER cannot write and the triage/audit surfaces would degrade silently.
-RUN mkdir -p /var/lib/security-framework && chown sensor:sensor /var/lib/security-framework
-WORKDIR /var/lib/security-framework
+RUN mkdir -p /var/lib/bluetardigrade && chown sensor:sensor /var/lib/bluetardigrade
+WORKDIR /var/lib/bluetardigrade
 USER sensor
 EXPOSE 7777 7778
 # Liveness against the engine's own probe route (the same one CI smoke uses).
@@ -32,4 +32,4 @@ ENTRYPOINT ["/usr/local/bin/engine"]
 # A container started without SF_API_TOKEN still binds its API to
 # 0.0.0.0 (container isolation gates exposure) exactly like before;
 # publishing the port to the host without a token is on the operator.
-CMD ["-addr", ":7777", "-rules", "/opt/security-framework/rules", "-sequences", "/opt/security-framework/sequences", "-beacons", "/opt/security-framework/beacons.yaml", "-thresholds", "/opt/security-framework/thresholds.yaml", "-api", "0.0.0.0:7778", "-respond-audit", "/var/lib/security-framework/respond-audit.jsonl", "-lifecycle", "/var/lib/security-framework/alert-lifecycle.json"]
+CMD ["-addr", ":7777", "-rules", "/opt/bluetardigrade/rules", "-sequences", "/opt/bluetardigrade/sequences", "-beacons", "/opt/bluetardigrade/beacons.yaml", "-thresholds", "/opt/bluetardigrade/thresholds.yaml", "-api", "0.0.0.0:7778", "-respond-audit", "/var/lib/bluetardigrade/respond-audit.jsonl", "-lifecycle", "/var/lib/bluetardigrade/alert-lifecycle.json"]

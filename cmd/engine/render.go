@@ -174,7 +174,7 @@ func renderBanner(meta tuiMeta, rulesCount int) string {
 	if api == "" {
 		api = "off"
 	}
-	head := titleStyle.Render("SECURITY-FRAMEWORK ENGINE") + dimStyle.Render("  "+engineVersion)
+	head := titleStyle.Render("BLUETARDIGRADE ENGINE") + dimStyle.Render("  "+engineVersion)
 	l1 := "reglas " + fmt.Sprintf("%d", rulesCount) + dimStyle.Render("  "+redact.TerminalText(meta.rulesPath))
 	l2 := "ingest " + redact.TerminalText(meta.ingestAddr) + "   api " + redact.TerminalText(api) + "   webhook " + dimStyle.Render(redact.TerminalText(wh))
 	if meta.seqCount > 0 {

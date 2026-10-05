@@ -1,4 +1,4 @@
-# OpenAPI specification for the security-framework local engine API.
+# OpenAPI specification for the bluetardigrade local engine API.
 #
 # Source of truth: internal/api/api.go + internal/api/export.go (handlers
 # and payloads), pkg/model (Event) and internal/alert (Alert). When the
@@ -9,7 +9,7 @@
 #   npx @redocly/cli lint docs/api/openapi.yaml
 openapi: 3.0.3
 info:
-  title: security-framework local API
+  title: bluetardigrade local API
   version: 0.1.0
   description: |
     Read-only-plus-triage HTTP API served by the Go detection engine
@@ -152,7 +152,7 @@ paths:
         Scrape config hint (token-protected engine):
 
             scrape_configs:
-              - job_name: security-framework
+              - job_name: bluetardigrade
                 metrics_path: /metrics
                 authorization:
                   credentials: <SF_API_TOKEN>
