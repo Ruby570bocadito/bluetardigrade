@@ -1,0 +1,88 @@
+# Dependency vulnerability auditing (SEC-5 of the lane plan): one job,
+# three ecosystems. Runs on every push and pull request next to ci, and
+# on a weekly schedule so a new advisory against an UNCHANGED
+# dependency still surfaces — a push-triggered scanner only notices the
+# world getting worse when somebody edits a lockfile.
+#
+# Alert policy (what a red run means and what to do):
+#   - govulncheck fails only when a vulnerable Go symbol is REACHED from
+#     the engine's call graph: the actionable class. Fix by bumping the
+#     dependency (a graph-level raise is usually enough).
+#   - osv-scanner fails on any known advisory in the Bun lockfiles of
+#     the console, the hub and the website: the conservative,
+#     graph-level class. Same remedy: bump the direct dependency.
+#   - cargo audit fails on RUSTSEC advisories affecting the sensor.
+#   - If NO fixed version exists, report it to the repository owner and
+#     add a documented, expiring ignore (osv-scanner.toml next to the
+#     lockfile, audit.toml ignore list for cargo audit) stating the
+#     reason and the revisit date. Never silence a scanner without a
+#     written reason; an unjustified ignore is treated as a red run.
+#
+# Tool versions are pinned to exact releases (the same rationale as the
+# staticcheck pin in ci.yml): a floating @latest is a mutable
+# reference, the class this repo rejects for CI supply chain. The
+# versions were verified against their official distribution points at
+# pin time (proxy.golang.org, crates.io via rustsec/audit-check v2.0.0,
+# github.com/google/osv-scanner releases).
+name: deps-audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Mondays 03:17 UTC (04:17/05:17 Madrid, nocturnal): GitHub
+    # schedules are best-effort and may drift, which is acceptable for
+    # a scanning cadence.
+    - cron: "17 3 * * 1"
+  workflow_dispatch: {}
+
+concurrency:
+  group: deps-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: govulncheck, osv-scanner, cargo audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # Actions fijadas por SHA (ronda 20h40, agente 04): mismos pines
+      # verificados que ci.yml; un tag mutable no es una referencia de
+      # confianza para un repo de seguridad.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: govulncheck (Go, call-graph aware)
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+          govulncheck ./...
+      - name: "osv-scanner (Bun lockfiles: console, hub, website)"
+        run: |
+          go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.6.0
+          osv-scanner scan source \
+            --lockfile web/console/bun.lock \
+            --lockfile web/console-service/bun.lock \
+            --lockfile website/bun.lock
+      - name: package lifecycle guard (no install-time scripts, SEC-6)
+        # Supply chain, the other half of the lane task: the JS tree
+        # declares no lifecycle scripts and no trustedDependencies, and
+        # the lockfiles record no hasInstallScript markers. A new one
+        # is a reviewed decision, never a side effect of adding a
+        # dependency.
+        run: |
+          python3 scripts/dev-tests/check_package_lifecycle.py --self-test
+          python3 scripts/dev-tests/check_package_lifecycle.py
+      - name: cargo audit (RustSec advisory database, sensor)
+        # rustsec/audit-check runs cargo audit against the RUSTSEC
+        # advisory DB with a prebuilt binary (no source build in CI).
+        # SHA from git ls-remote of the v2.0.0 tag (lightweight tag,
+        # commit == tag object). sensor/ is the only Cargo tree.
+        uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          working-directory: sensor
