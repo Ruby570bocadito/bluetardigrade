@@ -192,8 +192,17 @@ Turbopack, 2026-10-05): client JS ≈ 1.52 MB total across
 `.next/static/chunks` — one ≈ 1.0 MB vendor chunk (chart + motion
 libraries), then ≈ 223 / 174 / 109 KB app chunks — plus ≈ 98 KB of CSS.
 Re-measure after adding a client dependency: any new dependency must
-justify its bytes here. A Lighthouse run and the axe pass still need a
-host with a real browser (this environment cannot start Chromium).
+justify its bytes here.
+
+Lighthouse (desktop preset, production build, Chromium, 2026-10-05):
+Panel scores **95 performance / 100 accessibility / 96 best-practices /
+100 SEO** (FCP 0.4 s, LCP 1.5 s, TBT 20 ms, CLS 0.02, SI 0.8 s) and the
+alerts view **100 / 100**. Reproduce with `make console-lighthouse`
+(`CHROME_PATH` pointing at a Chromium binary) or directly:
+`lighthouse http://127.0.0.1:3100 --preset=desktop --output=json`
+against `bun run start`. The axe pass runs in CI-shaped form as
+`scripts/dev-tests/check_console_a11y.mjs` (WCAG 2.x over every view,
+dark and light themes) — `make console-a11y`.
 
 ## Configuration
 

@@ -519,7 +519,7 @@ function ReputationPanel({ alert }: { alert: SfAlert }) {
                       {res.link && <a href={res.link} target="_blank" rel="noreferrer noopener" className="ml-1 text-primary-link underline-offset-4 hover:underline">ver</a>}
                     </li>
                   ))}
-                  {r.cached && <li className="text-[10px] text-zinc-600">respuesta en caché del motor</li>}
+                  {r.cached && <li className="text-[10px] text-zinc-500">respuesta en caché del motor</li>}
                 </ul>
               )}
             </li>

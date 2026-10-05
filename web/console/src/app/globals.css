@@ -81,6 +81,11 @@
   --destructive: #ef4444; /* red-500 */
   --border: #27272a; /* zinc-800 */
   --input: #27272a;
+  /* zinc-500 is the muted-hint tier on dark surfaces; Tailwind's raw
+     #71717a sits at 4.12:1 on the page — below AA for the small hint
+     text it carries. This brightening keeps the tier visibly dimmer
+     than zinc-400 while clearing 4.5:1 on page, card and viz surface. */
+  --color-zinc-500: #93939a;
   --ring: #d4d4d8; /* opaque focus indicator on dark surfaces */
   --chart-1: #3987e5;
   --chart-2: #199e70;

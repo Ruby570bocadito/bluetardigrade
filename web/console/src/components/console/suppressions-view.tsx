@@ -120,7 +120,7 @@ function SuppressionRow({ entry, ruleName, now }: { entry: SfSuppression; ruleNa
           {entry.host ? entry.host : 'todos los hosts'}
         </span>
       </td>
-      <td className="min-w-[220px] px-4 py-3 text-xs leading-relaxed text-zinc-400">{entry.reason || <span className="text-zinc-600">sin motivo declarado</span>}</td>
+      <td className="min-w-[220px] px-4 py-3 text-xs leading-relaxed text-zinc-400">{entry.reason || <span className="text-zinc-500">sin motivo declarado</span>}</td>
       <td className="whitespace-nowrap px-4 py-3">
         {left ? (
           <span

@@ -57,9 +57,11 @@ export function DecryptedText({
   }, [text, glyphs, speed, step])
 
   return (
-    <span className={className} aria-label={text}>
-      {/* aria-hidden: el lector escucha la etiqueta completa, no el ruido
-          de glifos; el span interno solo existe para el efecto visual */}
+    <span className={className}>
+      {/* screen readers get the real text once; the animated span is
+          decoration. aria-label needs a role, so the label lives as a
+          visually-hidden text node instead (axe: aria-prohibited-attr) */}
+      <span className="sr-only">{text}</span>
       <span aria-hidden>{display}</span>
     </span>
   )

@@ -883,7 +883,7 @@ function TriagePanel({ alert }: { alert: SfAlert }) {
               Reabrir
             </Button>
           )}
-          {status === 'new' && <span className="text-[10px] text-zinc-600">sin decisiones registradas</span>}
+          {status === 'new' && <span className="text-[10px] text-zinc-500">sin decisiones registradas</span>}
         </div>
       )}
       {error && (

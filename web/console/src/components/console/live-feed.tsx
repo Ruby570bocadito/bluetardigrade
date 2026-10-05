@@ -289,7 +289,7 @@ export function LiveFeed() {
         <div className="px-4 pt-3 [&>div]:mb-3">
           <SavedSearches kind="events" getLens={() => eventSearchLens(lensRef.current.tipo, lensRef.current.fq)} onApply={applySaved} />
         </div>
-        <div className="max-h-[64vh] overflow-y-auto">
+        <div className="max-h-[64vh] overflow-y-auto" tabIndex={0} aria-label="Resultados del flujo en vivo">
           {status !== 'live' && source.length === 0 ? (
             <div className="px-4 py-8">
               <SkeletonRows rows={8} />
