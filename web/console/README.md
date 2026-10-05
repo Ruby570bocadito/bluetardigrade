@@ -5,7 +5,7 @@ severity triage with a detail panel, the YAML rule pack, kill-chain
 chains, operator suppressions, a read-only active-response view with
 its forensic audit trail, and an optional AI analyst using the configured
 provider to assist alert triage. Dual-theme product UI, dark by default
-(zinc structure, one blue interaction accent, severity colors that
+(zinc structure, one zinc interaction accent, severity colors that
 encode data semantics, both palettes machine-validated).
 
 ## Data flow and demo boundaries
@@ -144,7 +144,7 @@ entity-graph SVG) read theme-aware custom properties and repaint on the
 theme-change event. `scripts/dev-tests/check_console_theme.py`
 validates both palettes (WCAG pairs including the accent family,
 severity/status and sequential ramps on the viz surface, CVD separation
-via CIEDE2000 with Machado simulations — 87 checks, both themes) — run
+via CIEDE2000 with Machado simulations — 89 checks, both themes) — run
 it whenever a token changes.
 
 ## Design tokens
@@ -153,11 +153,12 @@ it whenever a token changes.
 - Surfaces are defined once in `src/app/globals.css` and reused by every view: `.panel` (hairline border, vertical gradient fill, inner top highlight, ambient shadow), `.panel-hover` (lift on hover, frozen under `prefers-reduced-motion`), `.chip`, `.icon-tile`, `.glass` (sidebar and topbar backdrop blur) and the three-radial `ambient-glow` background. Views compose these classes instead of re-declaring card styles inline.
 - One interaction accent: the `--primary*` token family in `globals.css`
   (`primary` base, `link`, `soft`, `tint` for fills and the solid-button
-  hover, `strong` for solid fills). Dark uses blue-400/500/600 shades;
-  light re-anchors every role to AA on white (blue-600 base). Views must
-  use the token utilities, not raw `blue-N` classes (the light remap for
-  `blue-*` remains only as a shim for the two raw uses left in
-  `dashboard.tsx` until IMP-B's open branch merges).
+  hover, `strong` for solid fills). The accent is zinc ink, not hue:
+  dark uses `zinc-300`/`zinc-600` (accent reads as brighter ink, the
+  solid button keeps a white label at AA), light re-anchors every role
+  to AA on white (`zinc-800` base). Views must use the token utilities,
+  not hand-picked color classes — a hue accent (the old blue) is gone
+  on purpose: same family name, no colored UI chrome.
 - Severity semantics (data, not decoration): `critical` red-500/600,
   `high` orange-500, `medium` amber-400, `low` blue (`--sev-low`,
   `#3987e5` on dark / `#2563eb` on light).
