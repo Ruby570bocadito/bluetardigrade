@@ -1,79 +1,80 @@
-# Plan de ronda — Pulimiento A (2026-10-05 12h08 Madrid)
+# Plan de ronda — Pulimiento A (2026-10-05 12h13 Madrid)
 
-Segunda ronda de Pulimiento A en la rama `carril/pulimiento-a`.
-Continuidad de la ronda 1 (ver `roadmap_A.md` y
-`ronda_2026-10-05_11h42_A.md`).
+Tercera ronda de Pulimiento A en la rama `carril/pulimiento-a`.
+Continuidad de las rondas 1 y 2 (ver `roadmap_A.md`).
 
 ## Sincronización previa
 
-- `git fetch origin --prune`: detectada `origin/carril/implementacion-b`
-  (Implementación B ya hizo su ronda 1 a las 11h55). Las otras cuatro
-  ramas de carril no existen todavía.
+- `git fetch origin --prune`: `origin/carril/implementacion-b` avanzó
+  un commit (`6bd462a..31b39ae`: plan de la ronda 2 de IMP-B,
+  streaming del analista — console-only, sin solapamiento con mi
+  área). Las otras cuatro ramas de carril siguen sin existir.
 - `git pull --ff-only origin carril/pulimiento-a`: already up to date.
-- `git merge origin/main`: already up to date (mi rama está sobre el
-  mismo `5e168ba` que `main`).
-- Leído el plan y el informe de Implementación B: trabajaron en la
-  consola (`web/console`, `web/console-service`) y en
+- `git merge origin/main`: already up to date.
+- Leído el plan de IMP-B ronda 2: trabaja en `web/console-service`
+  (streaming del proveedor del analista IA) y en
   `docs/INVESTIGACIONES-GUARDADAS-Y-ANALISTA.md`. **Cero
-  solapamiento** con mi área (backend Go/Rust/PowerShell, CI,
-  `docs/OPERATIONS.md`, `docs/ARCHITECTURE.md`). Ninguna prioridad
-  ALTA para mí en su informe.
+  solapamiento** con mi área. Nota: cuando IMP-B cierre su ronda 2,
+  la fila «AI analyst» del feature inventory de ARCHITECTURE.md
+  dirá «(no provider token streaming)» que será stale — pero eso
+  es IMP-B quien lo debe actualizar al aterrizar su cambio, o yo en
+  una ronda posterior si lo veo stale. No lo toco ahora.
 
 ## Identificadores del TODO trabajados
 
 El repo sigue sin `TODO.md`. Continúo numerando mis hallazgos
 `POL-A-<tema>`. Esta ronda:
 
-- **POL-A-docs-4** — `docs/OPERATIONS.md` configuration reference
-  (línea 147): la tabla dice «This is the full surface — there are no
-  other knobs» pero faltan 6 flags reales de `cmd/engine/flags.go`:
-  `-intel`, `-baseline-learn`, `-thresholds`, `-notify`, `-api-cert` /
-  `-api-key` (estos dos NO están documentados en NINGÚN sitio), y
-  `-incidents`. Es deriva factual: un operador que lea la tabla
-  cree que no hay más knobs, y `-api-cert`/`-api-key` (TLS del API
-  listener, implementado en `internal/api/api.go` `NewTLS`) son
-  críticos para desplegar el API más allá de loopback con cifrado.
-- **POL-A-docs-5** — `docs/OPERATIONS.md` CLI reference table (línea
-  1070): faltan 5 flags que sí están en la tabla de configuración
-  pero no en la de CLI (`-notify`, `-ingest-cert`/`-ingest-key`,
-  `-lifecycle`, `-incidents`) más `-api-cert`/`-api-key` que no
-  están en ninguna. Alineo las dos tablas para que digan lo mismo.
-- **POL-A-docs-6** — `docs/OPERATIONS.md` sección «Local HTTP API»:
-  añadir una mención de `-api-cert`/`-api-key` (TLS del API listener)
-  junto a la mención existente de `-api-token`. Hoy la sección
-  documenta el bearer pero no el cifrado.
+- **POL-A-docs-7** — `docs/OPERATIONS.md` CLI subcommand table
+  (línea ~1051): lista 5 de los 9 subcomandos reales de
+  `cmd/engine/cli.go`. Faltan `engine doctor`, `engine report`,
+  `engine ingest-identity`, `engine operator-credential`. Los 4
+  existen con help, flags y tests propios. Deriva factual: un
+  operador que lea la tabla no se entera de que `engine doctor`
+  existe (y es la herramienta de diagnóstico principal, referenciada
+  desde `docs/DOCTOR.md`).
+- **POL-A-docs-8** — `docs/OPERATIONS.md` sección «Engine CLI
+  reference»: la tabla de subcomandos no enlaza a `docs/DOCTOR.md`
+  (que sí existe y está referenciado desde otros sitios). Aprovecho
+  el añadido de `engine doctor` para enlazarlo.
+- **POL-A-docs-9** — `docs/ARCHITECTURE.md` feature inventory,
+  fila «Telemetry»: dice «Rust ETW sensor (Kernel-Process) +
+  Sysmon ingestion path». Verifico que la afirmación sigue siendo
+  cierta (el sensor Rust colecta Kernel-Process y el motor acepta
+  Sysmon). Si hay deriva, la corrijo; si no, lo dejo. Solo texto.
 
 ## Ficheros que voy a tocar
 
-- `docs/OPERATIONS.md` (dos tablas de flags + una sección)
-- `changelog.d/PUL-A-cli-flags-complete.md` (fragmento)
-- `docs/agentes/03-pulimiento/ronda_2026-10-05_12h08_A.md` (informe)
+- `docs/OPERATIONS.md` (tabla de subcomandos + enlace a DOCTOR.md)
+- `changelog.d/PUL-A-cli-subcommands.md` (fragmento)
+- `docs/agentes/03-pulimiento/ronda_2026-10-05_12h13_A.md` (informe)
 - `docs/agentes/03-pulimiento/roadmap_A.md` (continuidad)
 
 ## Por qué
 
-`docs/OPERATIONS.md` es mi área. La deriva de la tabla de
-configuración es el hallazgo de mayor valor y menor riesgo: es
-texto, no cambia comportamiento, y la afirmación «full surface — no
-other knobs» es hoy falsa. Los flags `-api-cert`/`-api-key` son lo
-más grave: un operador que quiera cifrar el API no encuentra cómo en
-la documentación, aunque el código lo soporta desde hace tiempo
-(`internal/api/api.go` `NewTLS` + `tlsutil.Reloader`).
+`docs/OPERATIONS.md` es mi área. La tabla de subcomandos incompleta
+es deriva factual de alto valor: `engine doctor` es la herramienta
+de diagnóstico que el propio `docs/OPERATIONS.md` referencia en su
+sección de instalación («Diagnose an existing deployment with
+`sf-engine doctor`: [checks, JSON, credentials and
+TLS](DOCTOR.md)»), pero NO aparece en la tabla de subcomandos. Lo
+mismo con `engine report` (referenciado desde
+`docs/SOC-INTEGRACIONES-E-INFORMES.md`), `engine ingest-identity`
+(referenciado desde la sección «Per-sensor ingest identities») y
+`engine operator-credential` (referenciado desde la sección
+«Active response»).
 
 ## Verificación prevista
 
 Mis cambios son solo texto en `docs/OPERATIONS.md`. Verifico:
 
 - `python3 scripts/dev-tests/check_rule_inventory.py` (la tabla que
-  toco NO es la auto-generada por este script, pero lo corro para
-  confirmar que no rompí los marcadores `<!-- BEGIN/END RULE
-  INVENTORY -->`).
-- `python3 scripts/dev-tests/check_openapi.py` (no toco la API, pero
-  lo corro por costumbre).
-- `git diff` visual: las filas añadidas a las tablas deben tener el
-  formato `| -flag | default | meaning |` consistente con las
-  existentes.
+  toco NO es la auto-generada, pero confirmo que los marcadores
+  `<!-- BEGIN/END RULE INVENTORY -->` siguen intactos).
+- `python3 scripts/dev-tests/check_openapi.py` (no toco la API).
+- `git diff` visual: las filas añadidas a la tabla de subcomandos
+  deben tener el formato `| \`engine <cmd>\` | <descripción> |`
+  consistente con las existentes.
 
 Sigo sin tener `go`/`cargo`/`pwsh`/`staticcheck` en el entorno; los
-cambios de esta ronda no tocan ese código, así que la falta no
-impide verificar lo que toqué.
+cambios de esta ronda no tocan ese código.
