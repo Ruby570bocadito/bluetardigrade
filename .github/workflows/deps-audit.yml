@@ -69,7 +69,7 @@ jobs:
           govulncheck ./...
       - name: "osv-scanner (Bun lockfiles: console, hub, website)"
         run: |
-          go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.6.0
+          go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.5.0
           osv-scanner scan source \
             --lockfile web/console/bun.lock \
             --lockfile web/console-service/bun.lock \
