@@ -4,12 +4,38 @@
 // download click) is thin wiring kept for tsc and the browser, and
 // degrades with an honest Spanish error when the platform cannot do it.
 
-// ---------- CSV (RFC 4180: quote what needs quoting, CRLF rows) ----------
+// ---------- CSV (RFC 4180 plus the engine's formula-injection rule) ----------
 
-export function csvCell(value: string | number): string {
-  const text = String(value)
-  if (/[",\r\n]/.test(text)) return '"' + text.replaceAll('"', '""') + '"'
+/** Characters a spreadsheet may interpret as the start of a formula when
+ * they open a cell. Same set as the engine export (SafeCell in
+ * internal/report/report.go): ASCII = + - @, their fullwidth forms and
+ * tab/CR/LF. */
+const FORMULA_STARTERS = new Set(['=', '+', '-', '@', '＝', '＋', '－', '＠', '\t', '\r', '\n'])
+
+/** Engine rule: decide on the first non-space character and, if it starts
+ * a formula, prefix the whole original cell with an apostrophe. */
+function formulaGuard(text: string): string {
+  for (const ch of text) {
+    if (FORMULA_STARTERS.has(ch)) return "'" + text
+    if (!/[\s\u0085]/.test(ch)) break
+  }
   return text
+}
+
+/**
+ * One CSV cell, safe to open in a spreadsheet. RFC 4180 quoting first
+ * (commas, quotes, line breaks), then the engine's formula rule so a
+ * hostile label (hostname, identity, timeline text) cannot turn the
+ * table twin into a formula. A finite number is exempt: its string form
+ * (digits, sign, dot, exponent) can only be a value, never a formula.
+ * Nullish collapses to the empty cell — the contract the alert-selection
+ * export already relied on.
+ */
+export function csvCell(value: unknown): string {
+  const text = value === undefined || value === null ? '' : String(value)
+  const safe = typeof value === 'number' && Number.isFinite(value) ? text : formulaGuard(text)
+  if (/[",\r\n]/.test(safe)) return '"' + safe.replaceAll('"', '""') + '"'
+  return safe
 }
 
 export function tableToCsv(columns: readonly string[], rows: readonly (readonly (string | number)[])[]): string {

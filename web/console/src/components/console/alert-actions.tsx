@@ -29,6 +29,7 @@ import { SeverityBadge } from './ui-bits'
 import { Meter } from '@/components/charts/bars'
 import { postAlertStatus } from '@/lib/lifecycle'
 import { alertKey } from '@/lib/engine-client'
+import { csvCell } from '@/lib/chart-export'
 import {
   addIncidentAlerts,
   createIncident,
@@ -68,12 +69,8 @@ function download(name: string, text: string, mime: string) {
   URL.revokeObjectURL(url)
 }
 
-function csvCell(value: unknown): string {
-  const text = value === undefined || value === null ? '' : String(value)
-  // spreadsheet formula injection guard (same rule as the engine export)
-  const safe = /^[=+\-@\t\r]/.test(text) ? "'" + text : text
-  return /[",\n\r]/.test(safe) ? '"' + safe.replace(/"/g, '""') + '"' : safe
-}
+// csvCell comes from lib/chart-export: the same guarded cell the table
+// twins use (engine formula rule + RFC 4180 quoting). One definition.
 
 // ---- bulk action bar ------------------------------------------------------
 
