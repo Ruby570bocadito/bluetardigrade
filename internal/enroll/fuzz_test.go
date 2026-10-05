@@ -14,6 +14,8 @@ package enroll
 //     re-enrolling the same host name keeps every identity name unique.
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -35,6 +37,132 @@ func fuzzRegistry(t *testing.T, maxUses int) (*Registry, string) {
 		t.Fatalf("CreateToken: %v", err)
 	}
 	return r, secret
+}
+
+// TestOpenRefusesDuplicateTokenDigests pins the trust-boundary rule the
+// fuzz target explores: a hosts file where two token records share one
+// digest must not load. The digest is what findTokenLocked matches, last
+// match wins, so an ambiguous file makes a revoke target whichever
+// record the operator sees while the credential keeps resolving to the
+// other one — the console would show the token dead and the sensor would
+// still authenticate.
+func TestOpenRefusesDuplicateTokenDigests(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hosts.json")
+	d := digest("btsensor_shared")
+	content := fmt.Sprintf(`{"version":1,"tokens":[
+  {"id":"tok-a","label":"one","max_uses":1,"uses":0,"created_at":"2026-10-05T10:00:00Z","expires_at":"2026-10-06T10:00:00Z","sha256":%q},
+  {"id":"tok-b","label":"two","max_uses":1,"uses":0,"created_at":"2026-10-05T10:00:00Z","expires_at":"2026-10-06T10:00:00Z","sha256":%q}],
+  "hosts":[]}`, d, d)
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(path); err == nil {
+		t.Fatal("Open accepted a file where two tokens share one digest: the credential resolves to whichever record is last, so a revoke can leave it alive while the console shows it dead")
+	}
+}
+
+// registrySeed builds one saved, fully valid registry file to seed the
+// fuzz corpus with the shape the writer really produces.
+func registrySeed() []byte {
+	dir, err := os.MkdirTemp("", "enroll-seed")
+	if err != nil {
+		return []byte(`{"version":1,"tokens":[],"hosts":[]}`)
+	}
+	defer os.RemoveAll(dir)
+	r, err := Open(filepath.Join(dir, "hosts.json"))
+	if err != nil {
+		return nil
+	}
+	secret, _, err := r.CreateToken(TokenRequest{Label: "seed", MaxUses: 2})
+	if err != nil {
+		return nil
+	}
+	if _, err := r.Enroll(secret, "PC-01", "127.0.0.1"); err != nil {
+		return nil
+	}
+	data, err := os.ReadFile(r.Path())
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
+// FuzzOpenRegistry drives the registry file parser with manipulated
+// bytes: the engine trusts this file at every restart, so Open must
+// either fail loud or hand back a self-consistent registry — record
+// caps, well-formed digests, the closed set of states, unique token
+// ids and digests, unique identity names and host digests — and what
+// it accepts must survive a write cycle and re-open clean.
+func FuzzOpenRegistry(f *testing.F) {
+	f.Add([]byte(`{"version":1,"tokens":[],"hosts":[]}`))
+	f.Add(registrySeed())
+	f.Add([]byte(`{"version":2}`))
+	f.Add([]byte(`{"version":1}`))
+	f.Add([]byte(`{"version":1,"tokens":[{"id":"a"}],"hosts":[]}`))
+	f.Add([]byte(`not json`))
+	f.Add([]byte(`{}`))
+	f.Add([]byte(`[]`))
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		if len(data) > maxFileBytes {
+			return
+		}
+		dir := t.TempDir()
+		path := filepath.Join(dir, "hosts.json")
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		r, err := Open(path)
+		if err != nil {
+			return // failing loud is always acceptable
+		}
+		tokenIDs, tokenDigests := map[string]bool{}, map[string]bool{}
+		for _, tok := range r.tokens {
+			if tok == nil || tok.ID == "" || tokenIDs[tok.ID] {
+				t.Fatalf("Open accepted a file with a malformed or duplicated token id %q", tok.ID)
+			}
+			tokenIDs[tok.ID] = true
+			if !validDigest(tok.Digest) || tokenDigests[tok.Digest] {
+				t.Fatalf("Open accepted a file with a malformed or duplicated token digest (%q)", tok.ID)
+			}
+			tokenDigests[tok.Digest] = true
+		}
+		names, digests := map[string]bool{}, map[string]bool{}
+		pending, active := 0, 0
+		for _, h := range r.hosts {
+			if h == nil || h.Name == "" || names[h.Name] {
+				t.Fatalf("Open accepted a file with a malformed or duplicated identity name %q", h.Name)
+			}
+			names[h.Name] = true
+			if !validDigest(h.Digest) || digests[h.Digest] {
+				t.Fatalf("Open accepted a file with a malformed or duplicated credential digest (host %q)", h.Name)
+			}
+			digests[h.Digest] = true
+			switch h.State {
+			case Pending:
+				pending++
+			case Active:
+				active++
+			case Rejected, Revoked:
+			default:
+				t.Fatalf("Open accepted a file with unknown state %q (host %q)", h.State, h.Name)
+			}
+		}
+		if p, a, _ := r.Counts(); p != pending || a != active {
+			t.Fatalf("Counts() = %d pending / %d active, want %d / %d", p, a, pending, active)
+		}
+		// What Open accepts must survive the real write cycle: a token
+		// creation saves the file (or refuses at the caps) and the saved
+		// bytes re-open clean.
+		_, _, cerr := r.CreateToken(TokenRequest{Label: "fuzz"})
+		if cerr != nil && !strings.Contains(cerr.Error(), "tokens") {
+			t.Fatalf("CreateToken on an accepted registry failed for a non-cap reason: %v", cerr)
+		}
+		if _, err := Open(path); err != nil {
+			t.Fatalf("the file Open accepted and the writer saved does not re-open: %v", err)
+		}
+	})
 }
 
 func FuzzEnrollHost(f *testing.F) {

@@ -206,12 +206,13 @@ func Open(file string) (*Registry, error) {
 	if len(f.Tokens) > MaxTokens || len(f.Hosts) > MaxHosts {
 		return nil, fmt.Errorf("enroll: %s: %d tokens / %d hosts exceed the caps (%d / %d)", file, len(f.Tokens), len(f.Hosts), MaxTokens, MaxHosts)
 	}
-	ids := map[string]bool{}
+	ids, digests := map[string]bool{}, map[string]bool{}
 	for i, t := range f.Tokens {
-		if t == nil || !validDigest(t.Digest) || t.ID == "" || ids[t.ID] {
+		if t == nil || !validDigest(t.Digest) || t.ID == "" || ids[t.ID] || digests[t.Digest] {
 			return nil, fmt.Errorf("enroll: %s: token #%d is malformed or duplicated", file, i+1)
 		}
 		ids[t.ID] = true
+		digests[t.Digest] = true
 	}
 	names := map[string]bool{}
 	for i, h := range f.Hosts {
