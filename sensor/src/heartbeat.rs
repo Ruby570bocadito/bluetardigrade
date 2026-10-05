@@ -92,7 +92,7 @@ mod tests {
     fn attributes_carry_every_health_field() {
         let a = attributes(&Health {
             kind: "etw",
-            version: "0.1.0",
+            version: "1.0.0",
             os: "Windows 11 Pro 24H2 (26100)".into(),
             capture: "process+network+registry".into(),
             interval_s: 60,

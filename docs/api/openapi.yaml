@@ -10,7 +10,7 @@
 openapi: 3.0.3
 info:
   title: security-framework local API
-  version: 0.1.0
+  version: 1.0.0
   description: |
     Read-only-plus-triage HTTP API served by the Go detection engine
     (default `127.0.0.1:7778`, loopback-only; start with `-api 0` to
