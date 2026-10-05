@@ -335,7 +335,12 @@ footer .links span{margin-right:14px}
   var fmtAge = function (s) { return s === null || s === undefined ? 'nunca' : 'hace ' + fmtUp(s) }
   var setPill = function (el, cls, text) {
     el.className = 'pill ' + cls
-    el.innerHTML = '<span class="dot"></span>' + text
+    // Build the pill from DOM nodes, never from a markup string: text
+    // stays text even if a future call site forwards live data here
+    // (the status page renders engine-supplied values).
+    var dot = document.createElement('span')
+    dot.className = 'dot'
+    el.replaceChildren(dot, document.createTextNode(text))
   }
   function clock() { return new Date().toISOString().slice(11, 19) + ' UTC' }
   async function tick() {
