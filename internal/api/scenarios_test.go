@@ -158,11 +158,21 @@ func TestScenarioEndpointsRoundTrip(t *testing.T) {
 	}
 
 	// second launch while in flight -> 409 naming the run (racy: the
-	// battery may finish first, so only assert when it is still 202
-	// territory; the deterministic guard lives in internal/scenrun)
+	// battery may finish first, in which case the launch is ACCEPTED
+	// and starts a second run; both outcomes are valid, and the rest
+	// of the test waits out whichever happened — the deterministic
+	// 409 guard lives in internal/scenrun)
 	code, body = callJSON(t, "POST", base+"/api/scenarios/run", "")
-	if code == http.StatusConflict && !strings.Contains(body, launched.ID) {
-		t.Fatalf("409 body must name the current run: %q", body)
+	secondRace := false
+	switch code {
+	case http.StatusConflict:
+		if !strings.Contains(body, launched.ID) {
+			t.Fatalf("409 body must name the current run: %q", body)
+		}
+	case http.StatusAccepted:
+		secondRace = true // battery won the race; a second run is in flight
+	default:
+		t.Fatalf("second launch: status %d body %s", code, body)
 	}
 
 	// wait for completion through the detail endpoint
@@ -196,19 +206,64 @@ func TestScenarioEndpointsRoundTrip(t *testing.T) {
 		t.Fatalf("statuses: %+v", statuses)
 	}
 
-	// history lists the run, newest first, summaries only
-	code, body = callJSON(t, "GET", base+"/api/scenarios/runs?limit=10", "")
-	if code != http.StatusOK {
-		t.Fatalf("history: status %d body %s", code, body)
+	// history lists the runs, newest first, summaries only. When the
+	// race above went the other way there are exactly two runs: the
+	// second launch was accepted, so wait it out and expect both.
+	wantRuns := 1
+	if secondRace {
+		wantRuns = 2
 	}
+	histDeadline := time.Now().Add(10 * time.Second)
 	var hist struct {
 		Runs []scenrun.Run `json:"runs"`
 	}
-	if err := json.Unmarshal([]byte(body), &hist); err != nil {
-		t.Fatalf("history decode: %v", err)
+	for {
+		code, body = callJSON(t, "GET", base+"/api/scenarios/runs?limit=10", "")
+		if code != http.StatusOK {
+			t.Fatalf("history: status %d body %s", code, body)
+		}
+		hist.Runs = nil
+		if err := json.Unmarshal([]byte(body), &hist); err != nil {
+			t.Fatalf("history decode: %v", err)
+		}
+		if len(hist.Runs) == wantRuns {
+			break
+		}
+		if time.Now().After(histDeadline) {
+			t.Fatalf("history: want %d runs, got %+v", wantRuns, hist.Runs)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
-	if len(hist.Runs) != 1 || hist.Runs[0].ID != launched.ID || hist.Runs[0].Results != nil {
-		t.Fatalf("history: %+v", hist.Runs)
+	if hist.Runs[0].Results != nil {
+		t.Fatalf("history: summaries only, no per-scenario results: %+v", hist.Runs)
+	}
+	if !secondRace && hist.Runs[0].ID != launched.ID {
+		t.Fatalf("history: the only run must be the launched one: %+v", hist.Runs)
+	}
+	if secondRace && hist.Runs[0].ID == launched.ID {
+		t.Fatalf("history: newest must be the second launch: %+v", hist.Runs)
+	}
+	// When the race produced a second run it must be COMPLETED before
+	// the next launch, or the filtered POST below would legitimately
+	// answer 409 (one run at a time is the contract).
+	if secondRace {
+		for {
+			code, body = callJSON(t, "GET", base+"/api/scenarios/runs/"+hist.Runs[0].ID, "")
+			if code != http.StatusOK {
+				t.Fatalf("second run detail: status %d body %s", code, body)
+			}
+			var second scenrun.Run
+			if err := json.Unmarshal([]byte(body), &second); err != nil {
+				t.Fatalf("second run decode: %v", err)
+			}
+			if second.Status == scenrun.StatusCompleted {
+				break
+			}
+			if time.Now().After(histDeadline) {
+				t.Fatalf("second run did not complete in time: %+v", second)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
 	}
 
 	// filter: only the passing scenario

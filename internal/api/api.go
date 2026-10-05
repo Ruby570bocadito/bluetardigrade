@@ -218,6 +218,8 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	mux.HandleFunc("GET /api/fleet", h.handleFleet)
 	h.registerEnroll(mux)
 	h.registerScenarios(mux)
+	h.registerReports(mux)
+	h.registerNoise(mux)
 	mux.HandleFunc("GET /api/intel", h.handleIntel)
 	mux.HandleFunc("GET /api/baseline", h.handleBaselineHost)
 	mux.HandleFunc("GET /api/stream", h.handleStream)

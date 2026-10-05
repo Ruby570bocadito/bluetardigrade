@@ -298,3 +298,68 @@ func TestFailedWriteLeavesStateUnchanged(t *testing.T) {
 		t.Fatalf("memory diverged from disk after a failed write: hosts %v tokens %+v", r.Hosts(), r.Tokens())
 	}
 }
+
+// SEC-A-1 (Seguridad A, ronda 2026-10-05 13h34): the identity suffix is
+// only 6 hex digits and host records are never purged, so across enough
+// re-enrollments of the same host a birthday collision is possible; one
+// duplicate name would save fine and then Open() (and the engine with
+// it) would refuse to start at the next restart.
+
+func TestUniqueIdentityNameRerollsOnCollision(t *testing.T) {
+	takenNames := map[string]bool{"enr-pc-a-ffffff": true, "enr-pc-a-000000": true}
+	taken := func(name string) bool { return takenNames[name] }
+	rolls := []string{"ffffff", "000000", "123456"}
+	i := 0
+	roll := func(int) (string, error) {
+		if i >= len(rolls) {
+			t.Fatalf("unexpected extra suffix draw #%d", i+1)
+		}
+		s := rolls[i]
+		i++
+		return s, nil
+	}
+	name, err := uniqueIdentityName("PC-A", "ffffff", taken, roll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name != "enr-pc-a-123456" {
+		t.Fatalf("name = %q, want the first unused suffix enr-pc-a-123456", name)
+	}
+	if i != 3 {
+		t.Fatalf("draws = %d, want 3 (two collisions, one hit)", i)
+	}
+}
+
+func TestUniqueIdentityNameExhaustionIsAnError(t *testing.T) {
+	taken := func(string) bool { return true } // pathological registry
+	roll := func(int) (string, error) { return "abcdef", nil }
+	if _, err := uniqueIdentityName("PC-A", "abcdef", taken, roll); err == nil {
+		t.Fatal("an exhausted suffix space must return an error, not a duplicate name")
+	}
+	rollErr := errors.New("entropy drained")
+	if _, err := uniqueIdentityName("PC-A", "abcdef", taken, func(int) (string, error) { return "", rollErr }); !errors.Is(err, rollErr) {
+		t.Fatalf("err = %v, want the roll error wrapped", err)
+	}
+}
+
+func TestEnrollProducesUniqueNamesAcrossReEnrollments(t *testing.T) {
+	r, _ := newRegistry(t)
+	secret, _ := mustToken(t, r, TokenRequest{Label: "lab", By: "ana", MaxUses: 50})
+	seen := map[string]bool{}
+	for i := 0; i < 25; i++ {
+		got, err := r.Enroll(secret, "PC-AULA", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if seen[got.Name] {
+			t.Fatalf("enrollment #%d reused identity name %q", i+1, got.Name)
+		}
+		seen[got.Name] = true
+	}
+	// The persisted file must reload without the duplicate-name
+	// rejection: that is exactly how a collision used to brick the
+	// engine at restart.
+	if _, err := Open(r.Path()); err != nil {
+		t.Fatalf("the registry file with %d same-host identities must reload: %v", len(seen), err)
+	}
+}

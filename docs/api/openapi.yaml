@@ -80,6 +80,16 @@ tags:
       scenario library replayed on demand against the live rules;
       armed only with -scenarios <dir> (a laboratory engine, never
       production evidence)
+  - name: reports
+    description: >
+      REP-1 report catalog and data: read-only aggregations of the
+      records the engine already serves (executive summary, incident
+      bundle, fleet coverage, SOC activity), JSON or CSV
+  - name: noise
+    description: >
+      noise report (PLAN-DETALLADO §2.4): the processes, DNS domains
+      and rules that most events or alerts generate, fleet-wide or per
+      host, to know what to tune
 paths:
   /api/health:
     get:
@@ -1836,6 +1846,172 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /api/reports:
+    get:
+      tags: [reports]
+      operationId: listReports
+      summary: REP-1 report catalog (kinds, parameters, formats)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The report kinds this engine can compute today (REP-1 part A:
+        executive, incident, fleet coverage, SOC activity). The catalog
+        is static per engine version: a console renders the picker from
+        it without hard-coding kinds, and kinds that need data the
+        engine does not have yet (AD posture, logon audit) appear only
+        when the engine can actually compute them.
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '200':
+          description: The catalog, stable order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportCatalog'
+  /api/reports/{kind}:
+    get:
+      tags: [reports]
+      operationId: getReport
+      summary: One report of the catalog (JSON or CSV)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Generates one report on demand. Reports are read-only
+        aggregations of records the engine already holds: with the
+        SQLite store attached they read the full retention window,
+        without it the in-memory rings (last 1000 events / 256 alerts)
+        and the report carries `source: "ring"` plus `oldest_record`
+        so a consumer can see whether the window is actually covered.
+        A scan capped at 10000 records flags `truncated`.
+
+        The `incident` kind takes `?id=` (16 hex) instead of a window:
+        a case bundle is point in time, and alert ids the engine can no
+        longer resolve stay listed with `found: false`. CSV answers
+        reuse the export endpoints' spreadsheet formula escaping.
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          description: report kind from the catalog
+          schema:
+            type: string
+            enum: [executive, incident, fleet, soc]
+        - name: window
+          in: query
+          required: false
+          description: |
+            range to aggregate: 24h, 7d, 30d or any positive duration
+            within the kind's bounds (executive/fleet/soc: 1h to 30d,
+            default 7d). Not accepted for the incident kind.
+          schema:
+            type: string
+        - name: id
+          in: query
+          required: false
+          description: incident id (16 hex), required for the incident kind
+          schema:
+            type: string
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [json, csv]
+            default: json
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          description: Unknown window for the kind, invalid format, missing/malformed incident id, or a window on the incident kind
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Unknown kind (the error names the valid ones) or unknown incident id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: The generated report; the schema depends on the kind
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ExecutiveReport'
+                  - $ref: '#/components/schemas/FleetCoverageReport'
+                  - $ref: '#/components/schemas/SocActivityReport'
+                  - $ref: '#/components/schemas/IncidentReport'
+            text/csv:
+              schema:
+                type: string
+  /api/noise:
+    get:
+      tags: [noise]
+      operationId: getNoise
+      summary: Processes, DNS domains and rules that most generate events or alerts (§2.4)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The noise report, fleet-wide by default; with `host` it narrows
+        to one machine. Processes group by executable image
+        (case-insensitive), DNS lookups by the queried name and rules
+        by rule id, each with its triage overlay percentages — today
+        `closed_pct`/`acknowledged_pct` over the rule's alerts (the
+        honest proxy until a triage decision field exists; the JSON
+        names exactly what it measures).
+
+        Records come from the same source as the reports (store with
+        full retention, rings otherwise) with a 10000-record scan cap
+        flagged in `scanned.truncated`. JSON only: the console renders
+        it and adds the tuning buttons (known software, suppressions).
+      parameters:
+        - name: window
+          in: query
+          required: false
+          description: range to aggregate (default 24h, 15m to 30d)
+          schema:
+            type: string
+        - name: host
+          in: query
+          required: false
+          description: narrow every aggregate to one machine (exact name, case-insensitive)
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: entries per top list (default 10, max 50)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          description: Invalid window (out of the kind's bounds or not a duration)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Store query failed (the engine log carries the detail)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: The noise report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoiseReport'
 components:
   securitySchemes:
     bearerAuth:
@@ -3682,3 +3858,457 @@ components:
           type: string
           format: date-time
           description: last connection of a pending host
+    ReportCatalog:
+      type: object
+      required: [reports]
+      properties:
+        reports:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportCatalogEntry'
+    ReportCatalogEntry:
+      type: object
+      required: [kind, title, description, params, formats]
+      properties:
+        kind:
+          type: string
+          enum: [executive, incident, fleet, soc]
+        title:
+          type: string
+        description:
+          type: string
+        params:
+          type: object
+          description: accepted query parameters and their accepted values
+          additionalProperties:
+            type: string
+        formats:
+          type: array
+          items:
+            type: string
+            enum: [json, csv]
+    ExecutiveReport:
+      type: object
+      required: [kind, generated_at, window, source, truncated, alerts_total, by_severity, by_status, by_tactic, hosts_affected, top_rules, incidents, fleet]
+      properties:
+        kind:
+          type: string
+          enum: [executive]
+        generated_at:
+          type: string
+          format: date-time
+        window:
+          $ref: '#/components/schemas/ReportWindow'
+        source:
+          type: string
+          enum: [store, ring]
+        truncated:
+          type: boolean
+        oldest_record:
+          type: string
+          format: date-time
+          description: oldest alert the ring still holds (ring mode only; empty with a store)
+        alerts_total:
+          type: integer
+        by_severity:
+          type: object
+          description: info/low/medium/high/critical counts (only non-zero keys)
+          additionalProperties:
+            type: integer
+        by_status:
+          type: object
+          description: new/acknowledged/closed counts (only non-zero keys)
+          additionalProperties:
+            type: integer
+        by_tactic:
+          type: object
+          description: ATT&CK tactic label counts (only non-zero keys)
+          additionalProperties:
+            type: integer
+        hosts_affected:
+          type: integer
+          description: distinct hosts that raised an alert in the window
+        top_rules:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/ReportRuleCount'
+        incidents:
+          $ref: '#/components/schemas/ReportIncidentTotals'
+        fleet:
+          $ref: '#/components/schemas/ReportFleetTotals'
+    ReportWindow:
+      type: object
+      required: [preset, from, until]
+      properties:
+        preset:
+          type: string
+          description: the requested value (e.g. 24h, 7d, 30d)
+        from:
+          type: string
+          format: date-time
+        until:
+          type: string
+          format: date-time
+    ReportRuleCount:
+      type: object
+      required: [rule_id, rule_name, count]
+      properties:
+        rule_id:
+          type: string
+        rule_name:
+          type: string
+        count:
+          type: integer
+    ReportIncidentTotals:
+      type: object
+      required: [opened_in_window, closed_in_window, open, persistent]
+      properties:
+        opened_in_window:
+          type: integer
+        closed_in_window:
+          type: integer
+        open:
+          type: integer
+          description: open cases right now
+        persistent:
+          type: boolean
+          description: whether the incident store writes to disk
+    ReportFleetTotals:
+      type: object
+      required: [enabled, total, online, silent, idle]
+      properties:
+        enabled:
+          type: boolean
+          description: false when the engine runs without a fleet tracker (do not render coverage from the zeros)
+        total:
+          type: integer
+        online:
+          type: integer
+        silent:
+          type: integer
+        idle:
+          type: integer
+    FleetCoverageReport:
+      type: object
+      required: [kind, generated_at, window, source, truncated, enabled, summary, hosts]
+      properties:
+        kind:
+          type: string
+          enum: [fleet]
+        generated_at:
+          type: string
+          format: date-time
+        window:
+          $ref: '#/components/schemas/ReportWindow'
+        source:
+          type: string
+          enum: [store, ring]
+        truncated:
+          type: boolean
+        enabled:
+          type: boolean
+        summary:
+          type: object
+          required: [total, online, silent, idle, no_signal_in_window]
+          properties:
+            total:
+              type: integer
+            online:
+              type: integer
+            silent:
+              type: integer
+            idle:
+              type: integer
+            no_signal_in_window:
+              type: integer
+              description: hosts whose events_in_window is 0 (sensor down, machine off or gone)
+        hosts:
+          type: array
+          items:
+            $ref: '#/components/schemas/FleetCoverageHost'
+    FleetCoverageHost:
+      type: object
+      required: [host, status, first_seen, last_seen, events, events_in_window]
+      properties:
+        host:
+          type: string
+        status:
+          type: string
+          enum: [online, silent, idle]
+        first_seen:
+          type: string
+          format: date-time
+        last_seen:
+          type: string
+          format: date-time
+        last_event_type:
+          type: string
+        events:
+          type: integer
+          format: int64
+          description: lifetime events the tracker has seen from this host
+        events_in_window:
+          type: integer
+        sensor_version:
+          type: string
+        identity:
+          type: string
+          description: enrollment identity stamped on the host's events
+    SocActivityReport:
+      type: object
+      required: [kind, generated_at, window, source, truncated, created, backlog, mean_time_to_ack_seconds, mean_time_to_close_seconds, days, by_operator]
+      properties:
+        kind:
+          type: string
+          enum: [soc]
+        generated_at:
+          type: string
+          format: date-time
+        window:
+          $ref: '#/components/schemas/ReportWindow'
+        source:
+          type: string
+          enum: [store, ring]
+        truncated:
+          type: boolean
+        created:
+          type: integer
+          description: alerts raised inside the window
+        backlog:
+          type: object
+          required: [new, acknowledged, closed]
+          description: current triage state of the window's alerts
+          properties:
+            new:
+              type: integer
+            acknowledged:
+              type: integer
+            closed:
+              type: integer
+        mean_time_to_ack_seconds:
+          type: number
+          description: over the window's alerts whose latest status is acknowledged (0 = none)
+        mean_time_to_close_seconds:
+          type: number
+          description: over the window's alerts whose latest status is closed (0 = none)
+        days:
+          type: array
+          items:
+            type: object
+            required: [day, created, acknowledged, closed]
+            properties:
+              day:
+                type: string
+                description: UTC day (YYYY-MM-DD)
+              created:
+                type: integer
+              acknowledged:
+                type: integer
+                description: triage actions that happened this day
+              closed:
+                type: integer
+                description: triage actions that happened this day
+        by_operator:
+          type: object
+          description: status_by -> latest triage actions inside the window
+          additionalProperties:
+            type: integer
+    IncidentReport:
+      type: object
+      required: [kind, generated_at, incident, alerts, timeline]
+      properties:
+        kind:
+          type: string
+          enum: [incident]
+        generated_at:
+          type: string
+          format: date-time
+        incident:
+          $ref: '#/components/schemas/IncidentCaseSummary'
+        alerts:
+          type: array
+          items:
+            $ref: '#/components/schemas/IncidentReportAlert'
+        timeline:
+          type: array
+          items:
+            $ref: '#/components/schemas/IncidentReportEntry'
+    IncidentCaseSummary:
+      type: object
+      required: [id, title, severity, status, hosts, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        severity:
+          type: string
+          enum: [info, low, medium, high, critical]
+        status:
+          type: string
+          enum: [open, investigating, contained, closed]
+        owner:
+          type: string
+        hosts:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+        updated_at:
+          type: string
+        closed_at:
+          type: string
+    IncidentReportAlert:
+      type: object
+      required: [id, status, found]
+      description: an alert of the case with its triage overlay; found false means the engine can no longer resolve its content
+      properties:
+        id:
+          type: string
+        rule_id:
+          type: string
+        rule_name:
+          type: string
+        severity:
+          type: string
+        host:
+          type: string
+        event_type:
+          type: string
+        timestamp:
+          type: string
+        summary:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [new, acknowledged, closed]
+        status_at:
+          type: string
+        status_by:
+          type: string
+        found:
+          type: boolean
+    IncidentReportEntry:
+      type: object
+      required: [at, kind, text]
+      properties:
+        at:
+          type: string
+        by:
+          type: string
+        kind:
+          type: string
+        text:
+          type: string
+    NoiseReport:
+      type: object
+      required: [kind, generated_at, window, host, source, scanned, processes, domains, rules]
+      properties:
+        kind:
+          type: string
+          enum: [noise]
+        generated_at:
+          type: string
+          format: date-time
+        window:
+          $ref: '#/components/schemas/ReportWindow'
+        host:
+          type: string
+          description: empty for the whole fleet
+        source:
+          type: string
+          enum: [store, ring]
+        scanned:
+          type: object
+          required: [events, alerts, truncated]
+          properties:
+            events:
+              type: integer
+            alerts:
+              type: integer
+            truncated:
+              type: boolean
+              description: the scan hit its 10000-record cap (it then sees the newest slice of the window)
+        processes:
+          type: array
+          items:
+            $ref: '#/components/schemas/NoiseProcess'
+        domains:
+          type: array
+          items:
+            $ref: '#/components/schemas/NoiseDomain'
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/NoiseRule'
+    NoiseProcess:
+      type: object
+      required: [image, count, distinct_hosts, first_seen, last_seen]
+      properties:
+        image:
+          type: string
+          description: group key, lowercased executable path (or name when the sensor cannot provide one)
+        count:
+          type: integer
+        distinct_hosts:
+          type: integer
+        first_seen:
+          type: string
+        last_seen:
+          type: string
+        parent:
+          type: string
+          description: parent process name of the newest sample, when the engine's enricher resolved it
+        command_line:
+          type: string
+          description: newest sample, truncated to 200 characters
+        sha256:
+          type: string
+          description: newest sample carrying one
+    NoiseDomain:
+      type: object
+      required: [domain, count, distinct_hosts, first_seen, last_seen]
+      properties:
+        domain:
+          type: string
+          description: queried name, lowercased
+        count:
+          type: integer
+        distinct_hosts:
+          type: integer
+        first_seen:
+          type: string
+        last_seen:
+          type: string
+    NoiseRule:
+      type: object
+      required: [rule_id, rule_name, count, distinct_hosts, acknowledged_pct, closed_pct]
+      properties:
+        rule_id:
+          type: string
+        rule_name:
+          type: string
+        count:
+          type: integer
+        by_severity:
+          type: object
+          additionalProperties:
+            type: integer
+        distinct_hosts:
+          type: integer
+        acknowledged_pct:
+          type: number
+          format: float
+          description: share of the rule's alerts whose CURRENT status is acknowledged (triage proxy until a decision field exists)
+        closed_pct:
+          type: number
+          format: float
+          description: share of the rule's alerts whose CURRENT status is closed (triage proxy until a decision field exists)
