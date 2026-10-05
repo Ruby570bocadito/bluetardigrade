@@ -11,6 +11,7 @@
 import type { Severity, SfAlert } from './console-types'
 import { layoutGraph, type EntityGraph, type NodeKind } from './entity-graph'
 import { INCIDENT_STATUS_LABEL, type Incident } from './engine-writes'
+import { EVIDENCE_KIND_LABEL, playbookTemplate, progressOf, type IncidentPlaybookState } from './incident-playbook'
 
 const SEVERITY_TEXT: Record<Severity, string> = { critical: 'Crítica', high: 'Alta', medium: 'Media', low: 'Baja', info: 'Info' }
 const KIND_TEXT: Record<NodeKind, string> = { host: 'Equipo', user: 'Usuario', rule: 'Regla', process: 'Proceso', destination: 'Destino' }
@@ -54,7 +55,47 @@ export type IncidentReportInput = {
   /** case alerts still in the console's window */
   alerts: readonly SfAlert[]
   graph?: EntityGraph
+  /** analyst's response playbook (IDEA-3), when the case carries one */
+  playbook?: IncidentPlaybookState
   now?: Date
+}
+
+// The playbook section carries exactly what the analyst registered: the
+// checklist against the product template, the collected evidence and
+// the reconstructed chronology. A playbook without a resolvable
+// template cannot come from the UI, so it renders nothing.
+function playbookMarkdown(playbook: IncidentPlaybookState): string[] {
+  const template = playbookTemplate(playbook.templateId)
+  if (!template) return []
+  const { done, total } = progressOf(playbook, template)
+  const lines: string[] = []
+  lines.push(`## Plan de respuesta: ${mdText(template.name)}`, '')
+  lines.push(`_${done} de ${total} pasos completados · plan aplicado ${utc(playbook.appliedAt)}._`, '')
+  lines.push('| # | Paso | ATT&CK | Estado |', '| --- | --- | --- | --- |')
+  template.items.forEach((item, i) => {
+    lines.push(`| ${i + 1} | ${mdCell(item.text)} | ${item.attack ?? '—'} | ${playbook.checks[item.id]?.done ? 'Hecho' : 'Pendiente'} |`)
+  })
+  lines.push('')
+  lines.push('### Evidencias', '')
+  if (playbook.evidence.length) {
+    lines.push('| Tipo | Evidencia | Detalle | Recogida |', '| --- | --- | --- | --- |')
+    for (const e of playbook.evidence) {
+      lines.push(`| ${mdCell(EVIDENCE_KIND_LABEL[e.kind])} | ${mdCell(e.label)} | ${e.detail ? mdCell(e.detail) : '—'} | ${utc(e.at)} |`)
+    }
+    lines.push('')
+  } else {
+    lines.push('_Sin evidencias registradas._', '')
+  }
+  lines.push('### Cronología del analista', '')
+  const chrono = [...playbook.chronology].sort((a, b) => a.at.localeCompare(b.at))
+  if (chrono.length) {
+    for (const c of chrono) lines.push(`- **${utc(c.at)}**: ${mdText(c.text)}`)
+    lines.push('')
+  } else {
+    lines.push('_Sin hitos registrados._', '')
+  }
+  lines.push('_El plan de respuesta vive en la consola del analista (este navegador), no en el motor._', '')
+  return lines
 }
 
 function caseAlerts(input: IncidentReportInput): SfAlert[] {
@@ -108,6 +149,7 @@ export function buildIncidentMarkdown(input: IncidentReportInput): string {
   }
   if (!incident.timeline.length) lines.push('_Sin entradas._')
   lines.push('')
+  if (input.playbook) lines.push(...playbookMarkdown(input.playbook))
   if (input.graph && input.graph.nodes.length > 1) {
     lines.push('## Entidades relacionadas', '')
     const byKind = new Map<NodeKind, string[]>()
@@ -152,6 +194,35 @@ export function graphSvg(graph: EntityGraph, width = 720, maxHeight = 380): stri
     .map((k, i) => `<g transform="translate(${12 + i * 96},${height - 14})"><circle r="5" cx="5" cy="-4" fill="${NODE_COLOR[k]}"/><text x="14" y="0" font-size="10" fill="#52525b">${KIND_TEXT[k]}</text></g>`)
     .join('')
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" role="img" aria-label="Grafo del incidente: ${graph.nodes.length} entidades">${parts.join('')}${legend}</svg>`
+}
+
+function playbookHtml(playbook: IncidentPlaybookState): string {
+  const template = playbookTemplate(playbook.templateId)
+  if (!template) return ''
+  const { done, total } = progressOf(playbook, template)
+  const steps = template.items
+    .map((item, i) => {
+      const isDone = Boolean(playbook.checks[item.id]?.done)
+      return `<tr><td class="num">${i + 1}</td><td>${esc(item.text)}</td><td>${item.attack ? `<code>${item.attack}</code>` : '<span class="muted">—</span>'}</td><td>${isDone ? '<span class="ok">Hecho</span>' : '<span class="muted">Pendiente</span>'}</td></tr>`
+    })
+    .join('')
+  const evidence = playbook.evidence.length
+    ? `<table><thead><tr><th>Tipo</th><th>Evidencia</th><th>Detalle</th><th>Recogida</th></tr></thead><tbody>${playbook.evidence
+        .map((e) => `<tr><td>${esc(EVIDENCE_KIND_LABEL[e.kind])}</td><td>${esc(e.label)}</td><td>${e.detail ? esc(e.detail).replace(/\r?\n/g, '<br>') : '<span class="muted">—</span>'}</td><td class="nowrap">${utc(e.at)}</td></tr>`)
+        .join('')}</tbody></table>`
+    : '<p class="muted">Sin evidencias registradas.</p>'
+  const chrono = [...playbook.chronology].sort((a, b) => a.at.localeCompare(b.at))
+  const chronology = chrono.length
+    ? `<ol class="timeline">${chrono.map((c) => `<li><span class="when">${utc(c.at)}</span><span>${esc(c.text)}</span></li>`).join('')}</ol>`
+    : '<p class="muted">Sin hitos registrados.</p>'
+  return `<h2>Plan de respuesta: ${esc(template.name)}</h2>
+<p class="muted">${done} de ${total} pasos completados · plan aplicado el ${utc(playbook.appliedAt)}</p>
+<table class="checklist"><thead><tr><th class="num">#</th><th>Paso</th><th>ATT&amp;CK</th><th>Estado</th></tr></thead><tbody>${steps}</tbody></table>
+<h3>Evidencias</h3>
+${evidence}
+<h3>Cronología del analista</h3>
+${chronology}
+<p class="muted plan-note">El plan de respuesta vive en la consola del analista (este navegador), no en el motor.</p>`
 }
 
 export function buildIncidentHtml(input: IncidentReportInput): string {
@@ -212,6 +283,10 @@ export function buildIncidentHtml(input: IncidentReportInput): string {
   ol.timeline .note { white-space: pre-wrap; }
   .graph { border: 1px solid #e4e4e7; border-radius: 8px; padding: 8px; }
   .muted { color: #71717a; }
+  table.checklist td.num, table.checklist th.num { width: 2em; color: #71717a; }
+  .ok { color: #166534; font-weight: 600; }
+  h3 { font-size: 13px; margin: 18px 0 6px; }
+  .plan-note { font-size: 11px; }
   footer { margin-top: 36px; color: #a1a1aa; font-size: 11px; }
   .print { position: fixed; top: 16px; right: 16px; font: inherit; padding: 6px 12px; border: 1px solid #d4d4d8; border-radius: 6px; background: #fafafa; cursor: pointer; }
   @media (max-width: 640px) { table.cases { display: block; overflow-x: auto; } .print { position: static; margin-bottom: 12px; } }
@@ -234,6 +309,7 @@ ${!alerts.length && missing === 0 ? '<p class="muted">Sin alertas asociadas.</p>
 ${svg ? `<h2>Grafo del incidente</h2><div class="graph">${svg}</div>` : ''}
 <h2>Línea de tiempo</h2>
 ${timeline ? `<ol class="timeline">${timeline}</ol>` : '<p class="muted">Sin entradas.</p>'}
+${input.playbook ? playbookHtml(input.playbook) : ''}
 <footer>Generado por la consola de bluetardigrade. El informe no cambia el incidente ni ejecuta ninguna respuesta.</footer>
 </main>
 </body>

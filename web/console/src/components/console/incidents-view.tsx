@@ -27,6 +27,7 @@ import {
 } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { useIncidents } from './incidents-provider'
+import { IncidentPlaybook } from './incident-playbook'
 import { EmptyState, SeverityBadge, StatTile } from './ui-bits'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
 import { EntityGraphView, GraphLegend } from '@/components/charts/entity-graph'
@@ -42,6 +43,7 @@ import {
   type IncidentEntry,
   type IncidentStatus,
 } from '@/lib/engine-writes'
+import type { IncidentPlaybookState } from '@/lib/incident-playbook'
 import { alertKey } from '@/lib/engine-client'
 import { formatDateTime, formatTime, type Severity } from '@/lib/console-types'
 import { currentSearch, readLensState, replaceOperatorState, writeIncidentToSearch } from '@/lib/url-state'
@@ -293,6 +295,14 @@ function IncidentDetail({
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  // the response plan (IDEA-3) lives in this browser; the header keeps
+  // the current one so the export buttons carry it into the report
+  const [plan, setPlan] = useState<IncidentPlaybookState | null>(null)
+  const applyPlanNote = (text: string) => {
+    void addIncidentNote(incident.id, text).then((res) => {
+      if (res.ok) onChange(res.data)
+    })
+  }
 
   const ids = new Set(incident.alert_ids)
   const caseAlerts = alerts.filter((a) => a.id && ids.has(a.id))
@@ -351,7 +361,7 @@ function IncidentDetail({
               type="button"
               className={exportCls}
               title="Descargar el informe en Markdown (para un ticket o una wiki)"
-              onClick={() => downloadFile(reportFilename(incident, 'md'), buildIncidentMarkdown({ incident, alerts: caseAlerts, graph }), 'text/markdown;charset=utf-8')}
+              onClick={() => downloadFile(reportFilename(incident, 'md'), buildIncidentMarkdown({ incident, alerts: caseAlerts, graph, playbook: plan ?? undefined }), 'text/markdown;charset=utf-8')}
             >
               <FileText size={13} aria-hidden /> Informe .md
             </button>
@@ -359,7 +369,7 @@ function IncidentDetail({
               type="button"
               className={exportCls}
               title="Descargar el informe como página imprimible, con el grafo (ábrela y usa Imprimir para obtener un PDF)"
-              onClick={() => downloadFile(reportFilename(incident, 'html'), buildIncidentHtml({ incident, alerts: caseAlerts, graph }), 'text/html;charset=utf-8')}
+              onClick={() => downloadFile(reportFilename(incident, 'html'), buildIncidentHtml({ incident, alerts: caseAlerts, graph, playbook: plan ?? undefined }), 'text/html;charset=utf-8')}
             >
               <FileHtml size={13} aria-hidden /> Informe imprimible
             </button>
@@ -528,6 +538,10 @@ function IncidentDetail({
             })}
           </ol>
         </div>
+      </div>
+
+      <div className="border-t border-white/[0.06] px-5 py-4">
+        <IncidentPlaybook incidentId={incident.id} onPlanChange={setPlan} onApplyNote={applyPlanNote} />
       </div>
     </article>
   )

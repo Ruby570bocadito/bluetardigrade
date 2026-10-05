@@ -16,7 +16,7 @@ export const CONSOLE_DESTINATIONS: {
   { id: 'inteligencia', label: 'Inteligencia', group: 'Detección', description: 'Listas de indicadores locales y línea base de procesos por equipo', keywords: 'intel ioc indicadores listas hash dominio ip baseline nuevo proceso amenazas' },
   { id: 'supresiones', label: 'Supresiones', group: 'Detección', description: 'Excepciones del operador y expiraciones', keywords: 'allowlist ruido falsos positivos' },
   { id: 'probador', label: 'Probador', group: 'Detección', description: 'Comprobar qué detecta un evento, sin generar alertas', keywords: 'test tester probar evento simular' },
-  { id: 'ruido', label: 'Ruido', group: 'Detección', description: 'Procesos, dominios y reglas que más generan eventos o alertas', keywords: 'noise ruido procesos dns dominios top suprimir software conocido volumen' },
+  { id: 'ruido', label: 'Ruido', group: 'Detección', description: 'Procesos, dominios y detectores que más generan eventos o alertas', keywords: 'noise ruido procesos dns dominios top suprimir software conocido volumen' },
   { id: 'simulacion', label: 'Validación', group: 'Detección', description: 'Batería de validación de detecciones: escenarios, ejecución, historial y tendencia', keywords: 'simulacion scenarios validacion bateria laboratorio ataque matriz pass rate tendencia' },
   { id: 'respuesta', label: 'Respuesta activa', group: 'Respuesta', description: 'Consultar estado y auditoría de respuesta', keywords: 'respond c3 audit kill proceso' },
   { id: 'analista', label: 'Analista IA', group: 'Asistencia', description: 'Asistencia para explicar e investigar alertas', keywords: 'ai chat modelo inteligencia' },
