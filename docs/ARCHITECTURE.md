@@ -77,10 +77,15 @@ no longer matched the code; its earlier revisions live in GitHub Releases.
 cmd/engine/       detection engine binary (Go)
 scripts/dev-tests/ loopback-only scenario/bench tools and isolated test fixtures
 internal/ingest/  NDJSON TCP listener + schema validation
+internal/tlsutil/ hot-rotating TLS cert loader shared by ingest and the API
 internal/enrich/  enrichment pipeline (context, not evidence mutation)
+internal/baseline/ per-host process baseline: learns what is normal, alerts on novelties
 internal/rules/   YAML parser, rule index and evaluator
+internal/yamlcheck/ resource-bomb guard for operator-supplied YAML (billion-laughs)
 internal/beacon/  C2 beaconing detector (timing analysis over network.connect)
 internal/collector/ source normalization, offline MIME and ingest transport
+internal/intel/   offline threat-intel matcher (local lists: IP/CIDR/domain/hash)
+internal/reputation/ opt-in VirusTotal/AbuseIPDB lookups (analyst-driven, cached)
 internal/socreport/ human report validation, rendering and exclusive output
 cmd/collector/     explicit SOC import command
 internal/threshold/ volumetric detector (windowed per-rule/per-host counts)
@@ -90,11 +95,14 @@ internal/alert/   alert rendering, dedup, structured JSON
 internal/actions/ rule action executor (message templates, webhooks)
 internal/redact/  URL credential redaction shared by outbound delivery paths (webhook/notify error reporting)
 internal/api/     local HTTP API (read + alert triage write) + SSE stream + JSONL/CSV export
+internal/fleet/   inventory of reporting hosts: first/last seen, sensor health, silence detection
 internal/risk/    per-host decayed risk score from recent alerts (served via /api/stats)
 internal/store/   optional SQLite persistence (events/alerts history,
                   retention pruner; pure-Go driver, WAL)
+internal/forensic/ per-host flight recorder + atomic evidence bundles on high-signal alerts
 internal/suppress/  operator allowlist: rule/host suppressions with expiry
 internal/lifecycle/ alert triage state (acknowledged/closed + notes, JSON-persisted)
+internal/incident/ investigation cases grouping alerts (title, status, notes, timeline)
 internal/webhook/ alert webhook delivery (bounded queue, retries)
 internal/notify/  external notifications (Slack/Telegram/email channels, bounded queues)
 internal/siem/    native SIEM sinks (Elasticsearch Bulk API + Splunk HEC, bounded spools)

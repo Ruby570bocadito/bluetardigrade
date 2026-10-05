@@ -930,7 +930,7 @@ como viven en los YAML del repositorio; no se traducen en la doc.
 
 ### Kill-chain correlation
 
-Beyond per-event rules, the engine ships a sequence correlator: `sequences/*.yaml` lists named steps (exact rule names) that, when all observed on the same host inside a `window` (e.g. `5m`), raise a single high-signal alert describing the campaign. Each step remembers the event time of its latest hit on that host; the chain fires when every step is present and the spread between the oldest and the newest fits in the window, so a stale early hit cannot anchor the window and an out-of-order event cannot stitch steps days apart. Chains whose window elapses without progress are reclaimed on the maintenance cadence. The shipped pack models credential-dump campaigns, full intrusion chains, defensive shutdown and registry-based persistence. Sequences hot-reload together with the rules. Load-time caps keep the config surface bounded (4 MiB/file, nesting depth 512, 512 sequences, 64 steps/chain, window ≤ 7 days, id/name/tag length caps, no control runes in strings that reach logs or alerts): an oversized or hostile file fails the load loudly instead of degrading a running engine. Steps naming rules that do not exist are reported as a WARNING at startup and on every reload, because a chain waiting on a ghost rule can never complete. Note: suppressing a rule also removes it from every chain it feeds on that host (accepted-state semantics — see [docs/false-positive-control.md](false-positive-control.md)).
+Beyond per-event rules, the engine ships a sequence correlator: `sequences/*.yaml` lists named steps (exact rule names) that, when all observed on the same host inside a `window` (e.g. `5m`), raise a single high-signal alert describing the campaign. Each step remembers the event time of its latest hit on that host; the chain fires when every step is present and the spread between the oldest and the newest fits in the window, so a stale early hit cannot anchor the window and an out-of-order event cannot stitch steps days apart. Chains whose window elapses without progress are reclaimed on the maintenance cadence. The shipped packs model credential-dump campaigns, full intrusion chains, defensive shutdown and registry-based persistence (`kill-chains.yaml`), broader adversary playbooks like data exfiltration, ransomware preparation, webshell reconnaissance and credential-to-lateral movement (`campaigns.yaml`), and account-scoped lateral movement across hosts (`lateral.yaml`). Sequences hot-reload together with the rules. Load-time caps keep the config surface bounded (4 MiB/file, nesting depth 512, 512 sequences, 64 steps/chain, window ≤ 7 days, id/name/tag length caps, no control runes in strings that reach logs or alerts): an oversized or hostile file fails the load loudly instead of degrading a running engine. Steps naming rules that do not exist are reported as a WARNING at startup and on every reload, because a chain waiting on a ghost rule can never complete. Note: suppressing a rule also removes it from every chain it feeds on that host (accepted-state semantics — see [docs/false-positive-control.md](false-positive-control.md)).
 
 A sequence can also follow one **account across several hosts**
 (lateral movement): `scope: user` keys the chain by the event's user
@@ -954,6 +954,25 @@ credential access then remote execution, 2 hosts) and *Cuenta saltando
 entre equipos* (high, 1 h, remote execution on 3 hosts). `/api/sequences`
 reports `step_rules`, `scope` and `min_hosts`, and the Cadenas view
 shows the alternatives and the scope.
+
+The shipped pack (`sequences/campaigns.yaml`) defines 7 campaign
+sequences, all `critical`, that model complete adversary playbooks
+beyond the kill-chain quartet: data exfiltration (archive + upload,
+archive + cloud sync), ransomware preparation (backup shutdown + VSS
+deletion + ransom note), webshell reconnaissance, credential theft
+followed by lateral movement, privilege escalation to credential
+dumping, and malicious document delivery. Windows are `10m` or `30m`
+to fit realistic execution spread:
+
+| ID | Sequence | Severity | Window | Steps (rules, unordered) |
+|----|----------|----------|--------|--------------------------|
+| `5e0c7a31-6f1d-4b8e-9a52-1c3d4e5f6a70` | Robo de datos: compresion y subida | critical | 30m | Compresion de datos protegida con contrasena + Subida de ficheros con curl o PowerShell |
+| `6f1d8b42-7a2e-4c9f-8b63-2d4e5f6a7b81` | Robo de datos hacia la nube | critical | 30m | Compresion de datos protegida con contrasena + Exfiltracion con rclone |
+| `7a2e9c53-8b3f-4da0-9c74-3e5f6a7b8c92` | Preparacion de ransomware | critical | 30m | Detencion de servicios de copia de seguridad o de seguridad + Borrado de instantaneas VSS + Nota de rescate escrita en disco |
+| `8b3fad64-9c40-4eb1-8d85-4f6a7b8c9da3` | Webshell con reconocimiento interno | critical | 30m | Proceso hijo de un servidor web o de base de datos + Reconocimiento de dominio con comandos net/nltest |
+| `9c40be75-ad51-4fc2-9e96-5a7b8c9daeb4` | Credenciales robadas y movimiento lateral | critical | 30m | Herramienta de volcado Mimikatz + Movimiento lateral con PsExec |
+| `ad51cf86-be62-40d3-8fa7-6b8c9daebfc5` | Escalada y volcado de credenciales | critical | 10m | Bypass de UAC con fodhelper o computerdefaults + Volcado de LSASS via comsvcs.dll |
+| `be62d097-cf73-41e4-90b8-7c9daebfc0d6` | Documento malicioso con descarga | critical | 10m | Editor de Office lanzando un interprete + Descarga con certutil o bitsadmin |
 
 The shipped pack (`sequences/kill-chains.yaml`) defines 4 sequences, all
 `critical`, window `5m`:
