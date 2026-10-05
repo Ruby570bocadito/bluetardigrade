@@ -129,7 +129,10 @@ const search = () => palette().getByRole('combobox', { name: 'Buscar comandos' }
 try {
   await startServer()
   browser = await chromium.launch({ headless: true, executablePath: process.env.CONSOLE_CHROMIUM_PATH || process.env.BROWSER_EXE })
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' })
+  // The battery pins the Spanish product: the console resolves its default
+  // language from the browser preference (IDEA-10), so an explicit locale
+  // keeps these ES assertions deterministic on any machine.
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce', locale: 'es-ES' })
   page = await context.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(String(error)))
@@ -525,7 +528,7 @@ try {
     // A separate context: the shared fixture leaves enrollment unanswered
     // (404), which must keep the assistant closed; here the engine answers
     // a genuinely fresh install so the offer path is exercised for real.
-    const freshContext = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce', colorScheme: 'dark' })
+    const freshContext = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce', colorScheme: 'dark', locale: 'es-ES' })
     const freshPage = await freshContext.newPage()
     const freshErrors = []
     freshPage.on('pageerror', (error) => freshErrors.push(String(error)))
@@ -565,6 +568,18 @@ try {
     } finally {
       await freshContext.close()
     }
+  })
+  await check('language toggle flips the chrome to English and back to Spanish (IDEA-10)', async () => {
+    // The accessible name is the active dictionary's own wording, so it
+    // changes with the language; <html lang> follows for assistive tech.
+    await page.getByRole('button', { name: 'Cambiar la consola a inglés', exact: true }).click()
+    await page.waitForFunction(() => document.documentElement.lang === 'en')
+    await page.locator('aside').getByText('Dashboard', { exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Switch the console to Spanish', exact: true }).click()
+    await page.waitForFunction(() => document.documentElement.lang === 'es')
+    await page.locator('aside').getByText('Panel', { exact: true }).waitFor()
+    // The choice persists for the whole context (localStorage key bt-lang).
+    assert.equal(await page.evaluate(() => localStorage.getItem('bt-lang')), 'es')
   })
   assert.deepEqual(errors, [], 'Unexpected browser runtime errors')
   console.log(`Browser checks: ${passed}/${passed} passed; engine/SSE data are test fixtures.`)

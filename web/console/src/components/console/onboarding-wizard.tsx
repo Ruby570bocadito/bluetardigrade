@@ -27,6 +27,7 @@ import {
   type StepStatus,
 } from '@/lib/onboarding'
 import { formatDateTime } from '@/lib/console-types'
+import { useI18n } from './i18n-provider'
 
 const PILL: Record<StepStatus, string> = {
   hecho: 'bg-emerald-400/15 text-emerald-300',
@@ -34,34 +35,28 @@ const PILL: Record<StepStatus, string> = {
   info: 'bg-white/[0.06] text-zinc-400',
   pendiente: 'bg-white/[0.06] text-zinc-500',
 }
-const PILL_LABEL: Record<StepStatus, string> = { hecho: 'Hecho', aviso: 'Atención', info: 'Información', pendiente: 'Pendiente' }
 const PILL_ICON: Record<StepStatus, typeof Info> = { hecho: CheckCircle, aviso: WarningCircle, info: Info, pendiente: CircleDashed }
 const STEP_ICON: Record<StepId, typeof Info> = { acceso: UserCirclePlus, certificado: ShieldWarning, token: Key, sensor: RocketLaunch }
 
 function StepPill({ status }: { status: StepStatus }) {
+  const { dict } = useI18n()
   const Icon = PILL_ICON[status]
   return (
     <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${PILL[status]}`}>
       <Icon size={11} weight={status === 'hecho' ? 'fill' : 'regular'} aria-hidden />
-      {PILL_LABEL[status]}
+      {dict.onboarding.pills[status]}
     </span>
   )
 }
 
-const TITLES: Record<StepId, string> = {
-  acceso: 'Acceso a la consola y administrador',
-  certificado: 'Certificado TLS de ingesta',
-  token: 'Primer token de alta',
-  sensor: 'Comprobar el sensor',
-}
-
 function Step({ id, status, children }: { id: StepId; status: StepStatus; children: React.ReactNode }) {
+  const { dict } = useI18n()
   const Icon = STEP_ICON[id]
   return (
     <li className="rounded-lg border border-white/[0.06] p-3">
       <p className="flex flex-wrap items-center gap-2">
         <Icon size={15} aria-hidden className="text-zinc-300" />
-        <span className="text-sm font-medium text-zinc-100">{TITLES[id]}</span>
+        <span className="text-sm font-medium text-zinc-100">{dict.onboarding.steps[id]}</span>
         <span className="ml-auto"><StepPill status={status} /></span>
       </p>
       <div className="mt-2 space-y-2 text-xs leading-relaxed text-zinc-400">{children}</div>
@@ -73,6 +68,7 @@ export function OnboardingWizard({ open, onClose }: { open: boolean; onClose: ()
   const { enroll, fleet, loaded } = useFleet()
   const me = useConsoleUser()
   const { status: engineStatus } = useEngine()
+  const { dict } = useI18n()
   const [stayClosed, setStayClosed] = useState(false)
   const closeRef = useRef<HTMLButtonElement>(null)
 
@@ -119,18 +115,16 @@ export function OnboardingWizard({ open, onClose }: { open: boolean; onClose: ()
         <div className="flex items-start gap-2">
           <RocketLaunch size={18} aria-hidden className="mt-0.5 text-zinc-300" />
           <div className="min-w-0">
-            <h2 id="onboarding-title" className="text-sm font-semibold text-zinc-50">Puesta en marcha</h2>
+            <h2 id="onboarding-title" className="text-sm font-semibold text-zinc-50">{dict.onboarding.title}</h2>
             <p id="onboarding-desc" className="mt-0.5 text-xs leading-relaxed text-zinc-500">
-              Lo que una instalación nueva necesita, en cuatro pasos, con el estado que declara el motor. Nada se
-              ejecuta en ningún equipo: el asistente solo lee el motor y usa las dos acciones de alta que ya ofrecía
-              Equipos (crear un token y aprobar una máquina).
+              {dict.onboarding.desc}
             </p>
           </div>
           <button
             type="button"
             ref={closeRef}
             onClick={onClose}
-            aria-label="Cerrar el asistente"
+            aria-label={dict.onboarding.close}
             className="ml-auto shrink-0 rounded-md p-1 text-zinc-500 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <X size={16} aria-hidden />
@@ -140,65 +134,67 @@ export function OnboardingWizard({ open, onClose }: { open: boolean; onClose: ()
         <ol className="mt-4 space-y-2.5">
           <Step id="acceso" status={statuses.acceso}>
             <p>
-              <span className="font-medium text-zinc-300">Cómo entra quien usa esta consola ahora:</span> {modeText(me)}.
-              Rol efectivo: {me.role === 'admin' ? 'Administrador' : me.role === 'analyst' ? 'Analista' : 'Lector'}.
+              <span className="font-medium text-zinc-300">{dict.onboarding.acceso.howNow}</span> {modeText(me)}.
+              {dict.onboarding.acceso.effectiveRole} {me.role === 'admin' ? dict.onboarding.acceso.roles.admin : me.role === 'analyst' ? dict.onboarding.acceso.roles.analyst : dict.onboarding.acceso.roles.viewer}.
             </p>
             {me.mode !== 'users' && (
               <p>
-                Para cuentas por persona (quién hizo cada cambio y con qué rol) crea una entrada con{' '}
-                <code className="rounded bg-black/40 px-1 font-mono text-[11px] text-zinc-200">bun scripts/console-user.mjs &lt;usuario&gt; admin</code>{' '}
-                desde <code className="rounded bg-black/40 px-1 font-mono text-[11px] text-zinc-200">web/console</code>, pégala en el fichero
-                «users» de <code className="rounded bg-black/40 px-1 font-mono text-[11px] text-zinc-200">CONSOLE_USERS_FILE</code> y rearranca la
-                consola. La contraseña solo se guarda como hash PBKDF2.
+                {dict.onboarding.acceso.usersProseA}
+                <code className="rounded bg-black/40 px-1 font-mono text-[11px] text-zinc-200">bun scripts/console-user.mjs &lt;usuario&gt; admin</code>
+                {dict.onboarding.acceso.usersProseB}
+                <code className="rounded bg-black/40 px-1 font-mono text-[11px] text-zinc-200">web/console</code>
+                {dict.onboarding.acceso.usersProseC}
+                <code className="rounded bg-black/40 px-1 font-mono text-[11px] text-zinc-200">CONSOLE_USERS_FILE</code>
+                {dict.onboarding.acceso.usersProseD}
               </p>
             )}
             <p className="text-[11px] text-zinc-500">
-              Las cuentas viven en el servicio de la consola, no en el motor; este paso queda como información hasta que
-              exista una pantalla de ajustes (SET-1).
+              {dict.onboarding.acceso.infoProse}
             </p>
           </Step>
 
           <Step id="certificado" status={statuses.certificado}>
-            {!enroll && <p>El motor todavía no ha contestado al estado del alta de equipos; en cuanto responda, este paso muestra su señal real.</p>}
+            {!enroll && <p>{dict.onboarding.certificado.pending}</p>}
             {enroll?.enabled && (
               <p>
-                El motor sirve el alta de equipos: su certificado de ingesta está en marcha. Para que un sensor remoto
-                cifre la conexión, cópiale el certificado público del servidor y arranca el sensor con{' '}
-                <code className="rounded bg-black/40 px-1 font-mono text-[11px] text-zinc-200">-TlsCa</code> (la ruta exacta la
-                prepara el paso del token). Detalle: docs/FLOTA-REMOTA.md, «Certificado TLS del servidor».
+                {dict.onboarding.certificado.enabledA}
+                <code className="rounded bg-black/40 px-1 font-mono text-[11px] text-zinc-200">-TlsCa</code>
+                {dict.onboarding.certificado.enabledB}
               </p>
             )}
             {enroll && !enroll.enabled && (
               <>
                 <p className="flex items-start gap-2 text-amber-200">
                   <WarningCircle size={14} aria-hidden className="mt-0.5 shrink-0" />
-                  <span>{enroll.hint || 'El alta de equipos está apagada en el motor.'}</span>
+                  <span>{enroll.hint || dict.onboarding.certificado.disabledHint}</span>
                 </p>
                 <p>
-                  Es la señal del propio motor, copiada tal cual. En la instalación de Windows el certificado de ingesta
-                  se crea solo; a mano está guiado en docs/FLOTA-REMOTA.md, «Certificado TLS del servidor».
+                  {dict.onboarding.certificado.disabledProse}
                 </p>
               </>
             )}
             <p className="text-[11px] text-zinc-500">
-              La consola todavía no sirve ficheros para descargar (REP-3): el certificado se copia desde el servidor, y
-              aquí no se declara hecho por encima de lo que el motor dice.
+              {dict.onboarding.certificado.infoProse}
             </p>
           </Step>
 
           <Step id="token" status={statuses.token}>
-            {!enroll && <p>El motor no ha respondido al estado del alta; sin respuesta, este paso no ofrece el formulario.</p>}
+            {!enroll && <p>{dict.onboarding.token.pending}</p>}
             {enroll && statuses.token === 'hecho' && (
               <p className="flex items-start gap-2 text-emerald-200">
                 <SealCheck size={14} aria-hidden className="mt-0.5 shrink-0" />
                 <span>
-                  Hay {facts.enroll?.usableTokens} token{facts.enroll?.usableTokens === 1 ? '' : 's'} de alta en uso
-                  {enroll.tokens.some((t) => t.status === 'active' && t.expires_at) && `; el más próximo caduca ${formatDateTime(
-                    enroll.tokens
-                      .filter((t) => t.status === 'active')
-                      .map((t) => t.expires_at)
-                      .sort()[0],
-                  )}`}. Si pierdes el secreto de uno, crea otro: el motor solo guarda su huella.
+                  {dict.onboarding.token.done(
+                    facts.enroll?.usableTokens ?? 0,
+                    enroll.tokens.some((t) => t.status === 'active' && t.expires_at)
+                      ? formatDateTime(
+                        enroll.tokens
+                          .filter((t) => t.status === 'active')
+                          .map((t) => t.expires_at)
+                          .sort()[0],
+                      )
+                      : null,
+                  )}
                 </span>
               </p>
             )}
@@ -210,39 +206,36 @@ export function OnboardingWizard({ open, onClose }: { open: boolean; onClose: ()
               <p className="flex items-start gap-2 text-emerald-200">
                 <SealCheck size={14} aria-hidden className="mt-0.5 shrink-0" />
                 <span>
-                  {facts.enroll?.activeHosts} equipo{facts.enroll?.activeHosts === 1 ? '' : 's'} con sensor activo en el alta. La
-                  ficha de cada máquina (vista Equipos) muestra su riesgo, procesos y conexiones en vivo.
+                  {dict.onboarding.sensor.done(facts.enroll?.activeHosts ?? 0)}
                 </span>
               </p>
             )}
             {statuses.sensor === 'aviso' && (
               <>
-                <p>El sensor arrancó y espera aprobación. Sus eventos están en el disco del equipo hasta que lo apruebes; nada se pierde.</p>
+                <p>{dict.onboarding.sensor.avisoProse}</p>
                 <PendingHosts />
               </>
             )}
             {statuses.sensor === 'pendiente' && (
               <p>
-                Crea el token en el paso anterior y ejecuta sus comandos en el equipo (o la instalación completa con
-                install.ps1 -WithSensor en este servidor). En cuanto el sensor arranque, el equipo aparece como
-                pendiente aquí y en Equipos, y este paso lo confirma.
+                {dict.onboarding.sensor.pendienteProse}
               </p>
             )}
-            {!enroll && <p>El motor no ha respondido al alta de equipos: este paso no puede confirmar nada sin su respuesta.</p>}
+            {!enroll && <p>{dict.onboarding.sensor.noEnroll}</p>}
           </Step>
         </ol>
 
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-white/[0.06] pt-3">
           <label className="flex items-center gap-2 text-xs text-zinc-400">
             <input type="checkbox" checked={stayClosed} onChange={(e) => setStayClosedAndStore(e.target.checked)} />
-            No volver a proponerlo al abrir la consola
+            {dict.onboarding.footer.dontRepeat}
           </label>
           <button
             type="button"
             onClick={onClose}
             className="rounded-md border border-white/10 px-3 py-1.5 text-xs text-zinc-300 hover:border-white/20 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            Cerrar
+            {dict.onboarding.footer.close}
           </button>
           {done && (
             <button
@@ -251,7 +244,7 @@ export function OnboardingWizard({ open, onClose }: { open: boolean; onClose: ()
               className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-zinc-100 px-3 py-1.5 text-xs font-medium text-zinc-900 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <CheckCircle size={13} weight="fill" aria-hidden />
-              Terminar la puesta en marcha
+              {dict.onboarding.footer.finish}
             </button>
           )}
         </div>

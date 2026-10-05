@@ -12,14 +12,9 @@
 import { useEffect, useState } from 'react'
 import { Monitor, Moon, Sun } from '@phosphor-icons/react'
 import { applyTheme, resolveTheme, THEME_STORAGE_KEY, type ThemeChoice } from '@/lib/theme'
+import { useI18n } from './i18n-provider'
 
 const CYCLE: readonly ThemeChoice[] = ['system', 'light', 'dark']
-
-const NEXT_LABEL: Record<ThemeChoice, string> = {
-  system: 'seguir el sistema',
-  light: 'tema claro',
-  dark: 'tema oscuro',
-}
 
 function storedChoice(): ThemeChoice {
   try {
@@ -36,6 +31,7 @@ function prefersLight(): boolean {
 }
 
 export function ThemeToggle() {
+  const { dict } = useI18n()
   // null until the mounted state aligns with the stored choice, so the
   // follow-the-OS effect cannot fight the boot decision on first paint.
   const [choice, setChoice] = useState<ThemeChoice | null>(null)
@@ -64,7 +60,7 @@ export function ThemeToggle() {
 
   const shown: ThemeChoice = choice ?? 'system'
   const next = CYCLE[(CYCLE.indexOf(shown) + 1) % CYCLE.length]
-  const label = `Cambiar a ${NEXT_LABEL[next]}`
+  const label = dict.theme.next[next]
 
   return (
     <button
