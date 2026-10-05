@@ -105,9 +105,13 @@ ronda 7, cierre (19:50 Europe/Madrid).
    `reputation` (solo su fuzz) y los caminos de `cmd/engine`.
 3. **Verificar que IMP-B incorpora los dos hallazgos de la ronda 5** en
    su rama antes de la fusión (su REP-4 de la ronda 6 no los tocó).
-4. **Resolver el conflicto de `internal/ingest/fuzz_test.go`** en la
-   fusión (mía o de PUL-A): conservar `FuzzEnrollLine` y
-   `FuzzAuthEnrollFirstLine`.
+4. **Resolver DOS conflictos append-append al fusionar** (ronda 7):
+   `internal/ingest/fuzz_test.go` con PUL-A — conservar
+   `FuzzEnrollLine` y `FuzzAuthEnrollFirstLine` — y el NUEVO
+   `internal/scenrun/scenrun_test.go` con SEG-B — conservar
+   `TestRunIDsMatchWireContract` (suyo) y
+   `TestStartUnknownScenarioWrapsSentinel` (mío); `scenrun.go` y
+   `api/scenarios.go` se auto-fusionan limpios.
 5. **`min_count: 2` en beacons** — decisión del responsable pendiente desde
    la ronda 1 (¿validación en carga `>= 3` o documentar?).
 6. **SET-3 lado motor** — depende de IMP-A; auditar cuando suba.
