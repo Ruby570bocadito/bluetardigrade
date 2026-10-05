@@ -90,9 +90,13 @@ el job por primera vez; mi guard pasó en CI real y `govulncheck`
 encontró 5 vulnerabilidades de stdlib de go1.26.0 alcanzadas por el
 motor (GO-2026-5856/5972/6089/6090/6218 — crypto/tls, net/http,
 net/url, encoding/asn1). Fix aplicado en la misma ronda: directiva
-`go 1.26.6` en go.mod. Pendiente: confirmar el segundo ciclo en verde
-(y el primer arranque real de osv-scanner y cargo audit, que ahora sí
-tocan ejecutarse).
+`go 1.26.6` en go.mod. Confirmado en la misma ronda: tras fijar osv-scanner v2.5.0 (la más
+reciente que compila con go 1.26.6), remediar 83 advisories del
+website (next 16.3.3 limpia los dos Criticals; 1 ignore documentado y
+caducante para braces CVE-2026-93687, sin parche upstream) y un
+último ciclo, deps-audit está VERDE de punta a punta: guard,
+govulncheck, osv-scanner, lifecycle guard y cargo audit (primer run
+contra RUSTSEC, sin hallazgos).
 3. SEC-1: extender el modelo a las superficies de prevención §6.1–6.3
 cuando el responsable las desbloquee; y §1.3 instalador (Authenticode,
 GPO/Intune) cuando Implementación A lo publique.
