@@ -43,6 +43,16 @@ moverlos.
   19. `ci: console theme gate in the console job; nightly fuzzing documented`.
   20. `comments: provenance becomes technical rationale`.
   21. Informe + roadmap + changelog.d (commit de cierre de la ronda 8).
+  22. `plan: ronda 2026-10-05 18h33 re-ejecutada (PUL-A)` — plan ronda 9.
+      La primera instancia de esta ronda (autorizada por el responsable
+      con «continua») completó 4 commits locales que se PERDIERON con el
+      reinicio del sandbox sin llegar a pushear; esta ronda re-ejecuta
+      el mismo alcance re-verificado contra las puntas remotas actuales.
+  23. `ingest: adopt SEG-A's FuzzEnrollLine target verbatim (PUL-A)` —
+      trabajo ronda 9.
+  24. `comments: SEC-A-1 notes lose lane provenance, keep the design
+      rationale (PUL-A)` — cierre de POL-12.
+  25. Informe + roadmap + changelog.d (commit de cierre de la ronda 9).
 
 ## Rondas anteriores
 
@@ -210,21 +220,61 @@ moverlos.
   - 2 fragmentos en `changelog.d/`: `PUL-A-nightly-fuzz-matrix.md`,
     `PUL-A-console-theme-ci.md`.
 
+- **2026-10-05 18h33 UTC (ronda 9, re-ejecución de esta instancia):**
+  adopción de los objetivos de fuzz de SEG-A + cierre de POL-12.
+  Informe en `ronda_2026-10-05_18h33_A.md`. Resumen:
+  - La primera instancia de la ronda (17h20) se perdió con el reinicio
+    del sandbox: 4 commits locales nunca pusheados. Re-ejecución
+    autorizada por el responsable («continua» más allá de
+    RONDAS_MAXIMAS=8 se mantiene).
+  - `FuzzEnrollLine` + `fuzzEnrollRegistry` de SEG-A (107 líneas)
+    adoptados VERBATIM en `internal/ingest/fuzz_test.go` (verificación
+    byte a byte contra su rama; 4.105 bytes idénticos) + sus 5 imports
+    (`encoding/json`, `errors`, `io`, `net`, `time`) al bloque común.
+    Sus objetivos y los míos conviven: el suyo ejercita el handshake
+    ENROLL completo sobre `net.Pipe`; el mío, la clasificación
+    AUTH/ENROLL y el parseo de campos. Pasada real: 291.345 execs
+    en 30 s, PASS.
+  - POL-12 CERRADO: los 2 comentarios de `internal/enroll` pierden
+    «(Seguridad A, ronda 2026-10-05 13h34)» y conservan el ID
+    `SEC-A-1`. Desbloqueado por: fix SEC-A-1 ya en `main` (`6b4e108`)
+    y el plan nuevo de IMP-A (16h05) ya no lista `internal/enroll`.
+  - Coordinación: main avanza a `35cd866` (solo dependabot); el plan
+    nuevo de IMP-A reconfirma «POL-1 api.go tras mi fusión».
+  - 1 entrada añadida al fragmento `PUL-A-nightly-fuzz-matrix.md`.
+
+## Respuesta al addendum de SEG-A (conflicto sobre fuzz_test.go)
+
+El addendum de SEG-A (`783b5a8`) anotaba un conflicto append-append
+con esta rama sobre `internal/ingest/fuzz_test.go`. Esta ronda lo
+resuelve en la fuente: SU código está adoptado aquí verbatim, así que
+al fusionar su rama el bloque EOF coincide en ambos lados y se
+auto-fusiona; el único conflicto que queda es el bloque de imports
+(una región de ~6 líneas): conservar las líneas `"time"` y
+`"unicode"` además de las que aporta su lado, todo en un solo grupo
+std ordenado. `gofmt` ya deja el bloque resultante en su forma final.
+Verificado con `git merge-tree --write-tree` a 18h33: las otras
+4 ramas abiertas limpias; con `carril/seguridad-a`, conflicto solo en
+ese fichero.
+
 ## Pendientes para la siguiente ronda
 
 ### Verificación
 
-- **RESUELTO (ronda 6):** el entorno tiene Go 1.26.0
-  (`/home/z/my-project/tools/go`) y staticcheck 2025.1.1
+- **RESUELTO (ronda 6, RE-RESUELTO en la ronda 9 tras el reinicio del
+  sandbox):** el entorno tiene Go 1.26.6
+  (`/home/z/my-project/tools_go`) y staticcheck 2026.2.1
   (`/home/z/my-project/gopath/bin`); la suite completa del carril
-  pasó verde por primera vez. Persisten fuera del entorno: `cargo`
-  (sensor Rust), `pwsh` (guards de PowerShell) y la suite de consola
-  (`bun` está disponible; no se ha montado el árbol de deps de la
-  consola en este entorno).
+  pasó verde tras la re-ejecución. El reinicio también borró el
+  worklog del entorno (reconstruido) y no trajo tokens: el push
+  vuelve a requerir un token efímero del responsable. Persisten
+  fuera del entorno: `cargo` (sensor Rust), `pwsh` (guards de
+  PowerShell) y la suite de consola (`bun` está disponible; no se ha
+  montado el árbol de deps de la consola en este entorno).
 - **Push a origin:** resuelto desde el cierre de la ronda 1 (token
   efímero en la URL del push, no guardado en config ni en ficheros).
 - **Recordatorio de paridad:** la suite Go corre con
-  `PATH=/home/z/my-project/tools/go/bin:/home/z/my-project/gopath/bin:$PATH`
+  `PATH=/home/z/my-project/tools_go/bin:/home/z/my-project/gopath/bin:$PATH`
   y `GOPATH=/home/z/my-project/gopath`.
 
 ### POL-A-code-1 — refactor del backend Go (cola actualizada)
@@ -256,12 +306,13 @@ moverlos.
   coste: 20 entradas de caché/noche y ruido de revisión. Decidir con
   el responsable si el nocturno se queda estable.
 
-### POL-12 — resto
+### POL-12 — resto: CERRADO (ronda 9)
 
-- `internal/enroll/enroll.go:481` y `internal/enroll/enroll_test.go:302`:
-  2 comentarios con «Seguridad A, ronda 2026-10-05 13h34». IMP-A lleva
-  el fix SEC-A-1 en esos ficheros esta ronda; reescribir tras su
-  fusión.
+- Los 2 comentarios de `internal/enroll/enroll.go:481` y
+  `internal/enroll/enroll_test.go:302` perdieron la procedencia
+  «(Seguridad A, ronda 2026-10-05 13h34)» y conservan el ID `SEC-A-1`
+  con el porqué técnico completo (ronda 9). Solo comentarios; la
+  suite pasa sin tocar tests.
 - Decisión editorial para el responsable (no bloqueante): los IDs
   «dictamen Qx/Ox» de `internal/respond` y scripts son referencias a
   requisitos de decisión sin ronda/carril/agente; se conservaron.
