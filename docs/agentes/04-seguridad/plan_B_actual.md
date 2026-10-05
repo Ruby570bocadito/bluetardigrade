@@ -1,20 +1,24 @@
-# Plan de ronda — Seguridad B (ronda 4, 2026-10-05)
+# Plan de ronda — Seguridad B (ronda 7, 2026-10-05)
 
 Identificadores del TODO que cogo (seguridad B):
 
-1. **SEC-4/SEC-3 (console-service, tarea viable de mi ronda tras el
-   informe de la ronda 3):** unificar la validación de la petición
-   `analyst:ask` (alerta única) con la misma disciplina campo a campo
-   que ya tiene `validateIncidentPayload`: hoy el fallback a la copia
-   del cliente solo exige `rule_id` (`web/console-service/hub.ts`),
-   sin recortes ni limpieza de tipos. Ficheros: `analyst.ts`
-   (extraer validación de alerta individual), `hub.ts` (usarla) y sus
-   tests. Console-service no está en el plan de ningún otro carril
-   esta ronda.
-2. **AD-1 y SEC-2:** siguen sin código en `main` ni en la rama de
-   IMP-A (solo plan); se re-verifica al cerrar la ronda y, si
-   aparece, pasa a primera prioridad.
+1. **Recuperación de rondas 5-6 (SEC-3):** el entorno se reinició y se
+   perdió el clon con los commits no publicados de las rondas 5-6
+   (guardia CSV de la consola con tests, informes, roadmap). La rama se
+   reconstruye desde `origin/carril/seguridad-b` (`b0eaa60`, que ya
+   está en remoto y conserva las rondas 3-4) fusionando `origin/main`
+   (PR #18 con la cadena de dependencias coherente); el fix se
+   re-aplica con el mismo contenido y método TDD y se re-verifica.
+2. **SEC-5, verificación del estado fusionado:** el PR #18 entró en
+   `main` **con** el bump de `x/cellbuf` v0.0.15 que lo hacía
+   compilar (la coordinación que mi ronda 6 documentó). Batería Go
+   completa + govulncheck + revisión de cadena de suministro de las
+   indirectas nuevas (`clipperhouse/displaywidth`,
+   `clipperhouse/uax29/v2`).
+3. **Observación (sin código):** playbooks de respuesta de IMP-B
+   (`9f35615`, en su rama) — veredicto a nivel de commit; re-auditoría
+   profunda al fusionar.
 
-Ficheros que espero tocar: `web/console-service/analyst.ts`,
-`web/console-service/hub.ts`, `web/console-service/analyst.test.ts`
-y/o `hub.test.ts`, `docs/agentes/04-seguridad/`, `changelog.d/`.
+Ficheros que espero tocar: `web/console/src/lib/chart-export.ts` +
+test, `web/console/src/components/console/alert-actions.tsx`,
+`changelog.d/`, `docs/agentes/04-seguridad/`.
