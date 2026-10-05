@@ -6,7 +6,7 @@ import { stringMap, observedNetwork } from './observations'
 // no simulation). SSE frames are parsed by hand so the same code runs
 // on bun and node.
 
-import type { SfEvent, SfAlert, HubStats, RuleMeta, SfSuppression, SfSequence, SfAlertLifecycle, HotHost } from './types'
+import type { SfEvent, SfAlert, HubStats, HubNotifyChannel, RuleMeta, SfSuppression, SfSequence, SfAlertLifecycle, HotHost } from './types'
 
 export type EngineBridgeCallbacks = {
   onEvent: (ev: SfEvent) => void
@@ -332,7 +332,35 @@ function mapStats(st: Record<string, unknown>): HubStats {
     baseline_hosts: Number(st.baseline_hosts ?? 0),
     baseline_learning: Number(st.baseline_learning ?? 0),
     baseline_novelties: Number(st.baseline_novelties ?? 0),
+    // SIEM sinks and notify channels (SET-3 console round): required by
+    // the OpenAPI Stats schema, sanitized like every counter above —
+    // malformed rows are dropped, never forwarded
+    elastic_sent: Number(st.elastic_sent ?? 0),
+    elastic_failed: Number(st.elastic_failed ?? 0),
+    elastic_dropped: Number(st.elastic_dropped ?? 0),
+    splunk_sent: Number(st.splunk_sent ?? 0),
+    splunk_failed: Number(st.splunk_failed ?? 0),
+    splunk_dropped: Number(st.splunk_dropped ?? 0),
+    notify_channels: mapNotifyChannels(st.notify_channels),
   }
+}
+
+function mapNotifyChannels(raw: unknown): HubNotifyChannel[] {
+  if (!Array.isArray(raw)) return []
+  const out: HubNotifyChannel[] = []
+  for (const e of raw) {
+    const c = e as Record<string, unknown>
+    // a channel without a usable name is unusable downstream too
+    if (typeof c.name !== 'string' || c.name === '') continue
+    if (typeof c.type !== 'string' || c.type === '') continue
+    const sent = Number(c.sent)
+    const failed = Number(c.failed)
+    const dropped = Number(c.dropped)
+    const filtered = Number(c.filtered)
+    if (![sent, failed, dropped, filtered].every(Number.isFinite)) continue
+    out.push({ name: c.name, type: c.type, sent, failed, dropped, filtered })
+  }
+  return out
 }
 
 function mapHotHosts(raw: unknown): HotHost[] {

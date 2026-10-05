@@ -43,6 +43,20 @@ const STATS: Record<string, unknown> = {
   threshold_rules: 2,
   threshold_keys: 5,
   threshold_fired: 1,
+  // SET-3 console round: SIEM sinks + outbound notify channels (both
+  // required by the OpenAPI Stats schema). One malformed channel row
+  // rides along: the bridge must drop it, never forward it.
+  elastic_sent: 90,
+  elastic_failed: 1,
+  elastic_dropped: 0,
+  splunk_sent: 80,
+  splunk_failed: 0,
+  splunk_dropped: 2,
+  notify_channels: [
+    { name: 'soc-slack', type: 'slack', sent: 5, failed: 0, dropped: 0, filtered: 2 },
+    { name: '', type: 'telegram', sent: 1, failed: 0, dropped: 0, filtered: 0 }, // no name: unusable
+    { name: 'guardia', type: 'email', sent: 'many', failed: 0, dropped: 0, filtered: 0 }, // non-finite counter
+  ],
 }
 
 type Recorder = {
@@ -199,6 +213,17 @@ describe('EngineBridge (agent-04 hardening)', () => {
     expect(rec.stats[0].threshold_rules).toBe(2)
     expect(rec.stats[0].threshold_keys).toBe(5)
     expect(rec.stats[0].threshold_fired).toBe(1)
+    // SET-3: SIEM sink triples and sanitized notify channels reach the
+    // console so the Estado view can mirror delivery health
+    expect(rec.stats[0].elastic_sent).toBe(90)
+    expect(rec.stats[0].elastic_failed).toBe(1)
+    expect(rec.stats[0].elastic_dropped).toBe(0)
+    expect(rec.stats[0].splunk_sent).toBe(80)
+    expect(rec.stats[0].splunk_failed).toBe(0)
+    expect(rec.stats[0].splunk_dropped).toBe(2)
+    expect(rec.stats[0].notify_channels).toEqual([
+      { name: 'soc-slack', type: 'slack', sent: 5, failed: 0, dropped: 0, filtered: 2 },
+    ]) // the unnamed and the non-finite rows are dropped, never forwarded
 
     // engine flap: the SSE stream closes, the bridge reports down and
     // reconnects to an engine whose payloads did NOT change
@@ -238,6 +263,35 @@ describe('EngineBridge (agent-04 hardening)', () => {
     expect(rec.stats[0].threshold_rules).toBe(0)
     expect(rec.stats[0].threshold_keys).toBe(0)
     expect(rec.stats[0].threshold_fired).toBe(0)
+
+    streams[streams.length - 1].close()
+    bridge.stop()
+    await Promise.race([running, new Promise((r) => setTimeout(r, 500))])
+  }, 15000)
+
+  test('degrades the SET-3 sink triples to zeros and an empty channel list for legacy payloads', async () => {
+    const rec = recorder()
+    const streams: ReadableStreamDefaultController<Uint8Array>[] = []
+    // legacy stats payload: no elastic_*/splunk_*/notify_channels at all
+    const legacy = { ...STATS }
+    for (const k of ['elastic_sent', 'elastic_failed', 'elastic_dropped', 'splunk_sent', 'splunk_failed', 'splunk_dropped', 'notify_channels']) {
+      delete legacy[k]
+    }
+    globalThis.fetch = stubEngine({ sequences: [], suppressions: { entries: [] }, stats: legacy, streams })
+
+    const bridge = new EngineBridge(rec.cb, { retryMs: 25 })
+    const running = bridge.start()
+
+    await until(() => rec.stats.length >= 1, 2000, 'first stats')
+    // zeros and [], never undefined: the Estado view reads required
+    // counters with the same "all zero = disabled" contract as webhook
+    expect(rec.stats[0].elastic_sent).toBe(0)
+    expect(rec.stats[0].elastic_failed).toBe(0)
+    expect(rec.stats[0].elastic_dropped).toBe(0)
+    expect(rec.stats[0].splunk_sent).toBe(0)
+    expect(rec.stats[0].splunk_failed).toBe(0)
+    expect(rec.stats[0].splunk_dropped).toBe(0)
+    expect(rec.stats[0].notify_channels).toEqual([])
 
     streams[streams.length - 1].close()
     bridge.stop()
