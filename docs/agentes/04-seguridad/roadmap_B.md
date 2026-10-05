@@ -133,6 +133,54 @@ no queda ninguna tarea de mi carril ejecutable sin trabajo ajeno:
 Al publicarse AD-1, esa auditoría es la primera tarea de la ronda
 siguiente (checklist en la ronda 3 de este roadmap y modelo §3).
 
+## Estado tras las rondas 2026-10-05 (rondas 5-7)
+
+- **SEC-3, exportaciones CSV de la consola: guardia de fórmulas
+  unificada.** Los «table twins» de las gráficas (`chart-frame`) y la
+  exportación de la selección de alertas son los mismos datos que el
+  motor ya escapa en su CSV de `/api/reports` (hostnames, identidades,
+  texto de timeline), pero la consola los serializaba ella misma:
+  `csvCell` de `chart-export.ts` no aplicaba regla alguna y
+  `alert-actions.tsx` llevaba una copia local más débil que la del
+  motor (sin fullwidth ＝＋－＠, sin saltar espacios iniciales, sin
+  `\n`). Ahora hay una sola definición con la semántica exacta de
+  `SafeCell` (`internal/report/report.go`), el contrato nullish que la
+  exportación de alertas ya usaba y exención para números finitos.
+  Tests que fallaron antes del fix. **Historia:** el fix original se
+  perdió con un reinicio del entorno antes de publicarse (sin
+  credenciales git); la ronda 7 lo re-aplicó íntegro y lo
+  re-verificó: consola 376 pass / 0 fail + tsc + build, y el árbol
+  fusionado completo (console-service 108 pass incluido).
+- **SEC-5, PR #18 de Dependabot: fusionado por el responsable, con el
+  fix de compatibilidad que mi ronda 6 pedía.** No entró «tal cual»:
+  el merge incluye `x/cellbuf` v0.0.13→v0.0.15, compatible con
+  `x/ansi` v0.11.8. Batería Go completa del estado fusionado en
+  verde: gofmt, build Linux/Windows, vet, 37 paquetes con `-race`,
+  govulncheck limpio, staticcheck limpio. Revisión de las indirectas
+  nuevas del grafo TUI (`clipperhouse/displaywidth` v0.11.0,
+  `clipperhouse/uax29/v2` v2.7.0): MIT, procesamiento local de texto
+  (segmentación Unicode TR29), sin red ni exec — cadena limpia.
+- **Ronda 6 (revisiones sin código):** workflow de fuzzing nocturno
+  de PUL-A limpio desde la seguridad CI; higiene de `SECURITY.md` de
+  PUL-B sin debilitar la política; deep-links de REP-4 de IMP-B
+  correctos (16-hex, whitelist, catálogo como whitelist); reactbits
+  (`blur-text`, `decrypted-text`) tras la ronda a11y, limpios; tooling
+  a11y limpio (fuera del grafo de la app, versiones fijadas,
+  loopback-only; observación a PUL-B: comprometer lockfile del
+  tooling).
+- **Playbooks de respuesta de IMP-B (`9f35615`, en su rama):
+  veredicto positivo a nivel de commit** — validación campo a campo
+  con topes (200/1000/64), rechazo de caracteres de control y BIDI
+  (anti-spoofing en exports), almacenamiento con tope y expulsión,
+  sin HTML crudo; re-auditoría profunda al fusionar.
+- **AD-1/SEC-2 siguen sin publicarse** (IMP-A en su commit de plan):
+  la auditoría del conector sigue siendo la primera tarea al
+  desbloquearse (checklist en la ronda 3 y §3 del modelo de amenazas).
+- **Lección de entorno:** el reinicio perdió el clon y los commits no
+  publicados; solo sobrevivió lo fusionado en remoto. Publicar pronto
+  (y no acumular trabajo local sin push) es parte del control de
+  riesgo.
+
 ## Siguientes rondas (orden propuesto, tras la ronda 4)
 
 1. **AD-1 en cuanto IMP-A la publique:** LDAPS obligatorio y
