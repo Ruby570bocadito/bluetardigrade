@@ -1,0 +1,2 @@
+- The engine API now answers with `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer` on every response, including 401/403 rejections.
+- Scenario runs stay pollable when the engine's entropy source is broken: fallback run ids keep the documented `run-` + 16-hex shape, and the run-id contract now lives in one place (`scenrun.ValidRunID`).

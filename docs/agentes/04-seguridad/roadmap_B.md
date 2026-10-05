@@ -76,31 +76,53 @@ el carril de motor. Nada de esto es mío: no toco smoke ni respond.
 nueva de seguridad para mi carril); #8 de Dependabot: mantener, como en
 la ronda 1.
 
-## Siguientes rondas (orden propuesto, tras la ronda 2)
+## Estado tras la ronda 2026-10-05 (ronda 3)
 
-1. Verificar el fix del PR #16 cuando aterrice: el smoke debe pasar con
-el count real (114 reglas tras el pack o el valor que fije el guard de
-inventario) y no reintroducirse un número hardcodeado.
-2. Cuando el responsable fusione mi ronda 1 a main, confirmar que el
-job `deps-audit` corre en main y en cada push de rama (ahora sin
-filtro), y responder a sus hallazgos si los hay.
+- **Superficies nuevas auditadas y en verde:** `/api/scenarios*`
+  (armado solo por flag y anunciado, replay aislado, POST con token +
+  same-origin + una ejecución en vuelo + 8 KiB + timeouts clampeados),
+  `/api/reports` y `/api/noise` (solo GET, escaneos y top lists
+  acotados, CSV por `SafeCell`, filename cerrado) y el analista IA de
+  incidentes (payload acotado consola→hub, validación campo a campo,
+  prompt con fences y truncados, presupuesto doble, token fuera de
+  loopback). Sin hallazgos accionables; veredictos completos en el
+  informe de ronda.
+- **Dos correcciones propias:** (1) el motor ahora envía
+  `X-Content-Type-Options: nosniff` y `Referrer-Policy: no-referrer`
+  en toda la API (middleware exterior; el guard `check_openapi.py`
+  aprende el patrón con fixture nuevo); (2) el fallback de
+  `newRunID` ya respeta la forma `run-` + 16 hex del contrato de
+  `/api/scenarios/runs/{id}`, y el patrón vive en
+  `scenrun.ValidRunID` (una sola definición).
+- **PR #18 de Dependabot: roto, no fusionar tal cual.** El bump de
+  `x/ansi` v0.11.8 no compila contra `x/cellbuf` v0.0.13 (pseudo-versión
+  de bubbletea; la API de `ansi.Style` cambió). La parte de
+  `modernc.org/sqlite` v1.60.1 sola está verificada en verde (build
+  Linux/Windows, vet, 37 paquetes con `-race`, govulncheck limpio).
+  Receta y evidencia en el informe. Las `clipperhouse/*` nuevas del
+  grafo TUI se revisan cuando la cadena sea coherente.
+- **SEC-6 re-auditoría reactbits: sin hallazgos nuevos** (11 ficheros,
+  642 líneas, solo presentación; PUL-B toca colores en cuatro esta
+  ronda, sin superficie nueva).
+- **Observaciones asignadas:** IMP-B — rol `analyst` y cap 8 KiB para
+  `POST /api/scenarios/run` en el proxy; console-service — unificar la
+  validación de `analyst:ask` con la de incidentes (candidato para mi
+  siguiente ronda si nadie lo coge).
 
-**Resultado del primer ciclo (ronda 2):** el push de la ronda disparó
-el job por primera vez; mi guard pasó en CI real y `govulncheck`
-encontró 5 vulnerabilidades de stdlib de go1.26.0 alcanzadas por el
-motor (GO-2026-5856/5972/6089/6090/6218 — crypto/tls, net/http,
-net/url, encoding/asn1). Fix aplicado en la misma ronda: directiva
-`go 1.26.6` en go.mod. Confirmado en la misma ronda: tras fijar osv-scanner v2.5.0 (la más
-reciente que compila con go 1.26.6), remediar 83 advisories del
-website (next 16.3.3 limpia los dos Criticals; 1 ignore documentado y
-caducante para braces CVE-2026-93687, sin parche upstream) y un
-último ciclo, deps-audit está VERDE de punta a punta: guard,
-govulncheck, osv-scanner, lifecycle guard y cargo audit (primer run
-contra RUSTSEC, sin hallazgos).
-3. SEC-1: extender el modelo a las superficies de prevención §6.1–6.3
-cuando el responsable las desbloquee; y §1.3 instalador (Authenticode,
-GPO/Intune) cuando Implementación A lo publique.
-4. Revisar los PRs de Dependabot que vengan (mantener la política:
-bump + CI verde; los de seguridad, urgentes).
-5. Conector AD (AD-1): cuando exista código, el escape RFC 4515 y el
-LDAPS obligatorio del modelo §3 pasan de requisito a verificación.
+## Siguientes rondas (orden propuesto, tras la ronda 3)
+
+1. **AD-1 en cuanto IMP-A la publique:** LDAPS obligatorio y
+   validación de certificado, credencial fuera de API y logs, escape
+   RFC 4515, paginación y tope de objetos, cero operaciones de
+   escritura, auditoría de la dependencia LDAP nueva. Es la prioridad
+   del responsable y mi verificación pasa de requisito a código.
+2. **SEC-2 con IMP-A:** DPAPI para la credencial (diseño ya pedido en
+   el informe; revisar el aterrizaje y los tests).
+3. Unificar la validación de `analyst:ask` con
+   `validateIncidentPayload` si sigue libre.
+4. Verificar el fix del smoke del PR #16 si llega antes del merge, y
+   el ciclo real de `deps-audit` en `main` tras el merge de la ronda 1
+   (el job ya corre verde en mi rama).
+5. Revisar los próximos PRs de Dependabot con la misma disciplina
+   (bump + CI verde local antes de recomendar; los de seguridad,
+   urgentes).
