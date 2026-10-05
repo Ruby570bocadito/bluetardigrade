@@ -1,25 +1,20 @@
-# Plan de ronda — Implementación B (2026-10-05, ronda 2 del nuevo ciclo)
+# Plan de ronda — Implementación B (2026-10-05, ronda 3)
 
-- Tareas del TODO (prioridades de la ronda 2 para este carril): **SIM-4** (pantalla de
-  validación: batería, ejecución en curso, historial y tendencia; 501 = «no armada»),
-  **REP-1** (pantalla del catálogo `/api/reports`, descarga CSV/JSON y vista imprimible),
-  **informe de ruido** (`/api/noise` con acceso directo a «crear supresión») y **SIM-3**
-  (colorear la matriz ATT&CK existente según validación por escenario). Además la
-  reorganización del panel en **pestañas Resumen / Detección / Equipos y actividad**,
-  corrección directa del feedback de la ronda 1 (todo apilado, ATT&CK repetido, accionable
-  al final).
-- Ficheros: nuevos `web/console/src/lib/simulation.ts`, `reports.ts`, `noise.ts` (+tests),
-  `web/console/src/components/console/scenario-view.tsx`, `noise-view.tsx`,
-  `reports-view.tsx` (+CSS module de impresión), `web/console/src/app/api/engine/[...path]/route.ts`
-  (añadir `POST /api/scenarios/run` a la lista cerrada de escrituras), `dashboard.tsx`
-  (pestañas + SIM-3), `attack-matrix.tsx`, `detection-hub.tsx`, `url-state.ts`,
-  `console-commands.ts`, `keyboard-nav.ts`, `shell.tsx` y sus tests.
-- Por qué: los tres endpoints que bloqueaban estas pantallas ya están en `main`
-  (`/api/scenarios*` de la ronda SIM-4 parte A, `/api/reports*` y `/api/noise` de la ronda
-  REP-1 parte A + API de ruido de IMP-A); la pantalla era la parte B pendiente. AD-5/AD-6
-  siguen bloqueadas (AD-1 no está ni en `main` ni en la rama de IMP-A) y SET-3/REP-3/SET-1
-  esperan campos y rutas de IMP-A: no se tocan esta ronda.
-- Sin solape previsto: PUL-B excluyó `dashboard.tsx` de su barrido de blues; IMP-A solo
-  toca Go/OpenAPI; PUL-A metadatos del spec; SEG-A/B revisión. Los ficheros compartidos
-  (`TODO.md`, `PLAN-DETALLADO.md`, `CHANGELOG.md`, `openapi.yaml`) no se editan: fragmento
-  en `changelog.d/IMP-B-*.md`.
+- Tarea del TODO: **REP-4** (gráficas en los informes: las mismas gráficas de la
+  consola, exportables a PNG o SVG) sobre la vista «Informes» de la ronda 2, más el
+  apunte pequeño del backlog: enlace «Informe del caso» desde la ficha de incidente
+  al informe de incidente (`?view=informes&informe=incident&caso=<id>`).
+- Ficheros: `web/console/src/components/console/reports-view.tsx` (sección de
+  gráficas por kind, fuera de la hoja de impresión), `incidents-view.tsx` +
+  `shell.tsx` (enlace al informe del caso), informe/roadmap.
+- Por qué: es la única tarea de mi cola sin bloquear — AD-5/AD-6 y el cierre de
+  SET-3 esperan la ronda en curso de IMP-A (plan 16h05: AD-1, AD-2 y campos de
+  estado), REP-3 espera rutas de descargas y SET-1 la API de ajustes. REP-4 usa
+  datos que el motor ya sirve desde REP-1 parte A.
+- Diseño: las gráficas se renderizan con los mismos componentes de la consola
+  (`ChartCard` + donut/barras/columnas apiladas), que ya traen leyenda, tabla gemela
+  y el menú de exportación PNG/SVG/CSV de VIZ-6; quedan fuera de la hoja imprimible
+  (tinta honesta en papel). El informe de incidente no inventa gráficas: su contenido
+  es la cronología y las alertas. Sin solape: SEG-B declaró analista/reactbits;
+  PUL-A motor; PUL-B plan 4a (axe/Lighthouse) no toca mi área; la fusión con la
+  ronda zinc de PUL-B ya está resuelta y publicada en mi rama.
