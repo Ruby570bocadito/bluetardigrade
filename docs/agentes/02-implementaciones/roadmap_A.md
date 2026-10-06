@@ -5,6 +5,28 @@ cada ronda: qué está a medias, qué sigue y por qué.
 
 ## Estado actual
 
+- Ronda 2026-10-06 07h58 cerrada (informe: `ronda_2026-10-06_07h58_A.md`). Primero,
+  **los DOS hallazgos de SEG-A ronda 11 en mi rama, corregidos con su sonda**:
+  `/api/ad/posture` ya sirve el score almacenado (MEDIA; prueba nueva con store
+  temporal + conector sin red, exigía 87) y las lecturas de `h.ad`/`h.alertLatency`/
+  `h.ingestCert`/`h.version` (y `h.risk`/`h.threshold`/`h.reloader`) van bajo cerrojo
+  (BAJA; accesorio `adConnector()` + capturas pre-Unlock en `statsSnapshot`). Después,
+  **§2.3 supresiones con condiciones**: `when` (field/operator/value) en
+  `internal/suppress`, compilado con `rules.NewMatcher` (mismos operadores, una sola
+  fuente de verdad — exporté `rules.IsValidOperator`); evaluado donde existe el evento
+  (reglas, intel, línea base) y NUNCA sobre agregados (fallo hacia alertar); API de
+  escritura, OpenAPI y OPERATIONS.md actualizados. Y **§2.2 software conocido**: paquete
+  `internal/known` (`-known-software`, `known-software.example.yaml`), match por glob
+  de imagen (insensible a mayúsculas, backslash-normalizado, `*` no cruza directorio)
+  y/o sha256; etiqueta `enrichment.known_software` de clave de MOTOR (no falsificable),
+  el evento nunca se borra; la línea base aprende pero no reporta novedad, el ruido lo
+  excluye con contador de honestidad (`scanned.known_software_events`), las reglas
+  pueden excluirse con `exclude_known_software: true` (opt-in); `/api/stats` gana
+  `known_software_active`. §2.1 (Rust) sigue bloqueada sin `cargo`. Verificación: 40
+  paquetes ok, race x5 (api 47,7 s / engine / suppress / enrich) y x3 (report/rules/
+  known), staticcheck 0, guards OK (41 rutas, 114 reglas), e2e reports_noise 33/33 +
+  smoke_lifecycle 12/12 + beacon 14/14 + threshold 12/12. Retenida en local de nuevo
+  (sin credencial de push ni webhook; declarado en el informe).
 - Ronda 2026-10-06 09h01 cerrada (informe: `ronda_2026-10-06_09h01_A.md`).
   Entregado el **campo de decisión de triaje** (petición MEDIA de IMP-B,
   cola #1): `Decision` en `internal/lifecycle` (`false_positive`,
@@ -80,6 +102,8 @@ cada ronda: qué está a medias, qué sigue y por qué.
   completos y verificados.
 - AD-1/AD-2 quedan a la espera de su parte de consola (AD-5/AD-6, IMP-B): los contratos
   JSON están publicados en OpenAPI y en el informe de esta ronda.
+- El botón «añadir a software conocido» de la pestaña de ruido de IMP-B YA TIENE backend:
+  `known-software.yaml` (§2.2) existe con recarga en caliente; falta su parte de consola.
 - SIM-4 sigue a la espera de su parte B (pantalla de la consola, IMP-B); REP-1 igual.
 - El informe de ruido sirve `false_positive_pct` (decisiones registradas, real) DESDE
   la ronda 2026-10-06 junto a los proxies `closed_pct`/`acknowledged_pct`; la pestaña
@@ -88,12 +112,12 @@ cada ronda: qué está a medias, qué sigue y por qué.
 
 ## Cola de tareas del carril (orden pretendido)
 
-1. **v1.1 Ruido**: supresiones con condiciones (PLAN-DETALLADO §2.3), lista de software
-   conocido por organización (§2.2, `known-software.yaml`; el botón «añadir a software
-   conocido» de la pestaña de ruido de IMP-B espera esto) y agrupación de arranques
-   repetidos en el sensor (§2.1, parte Rust; requiere cargo en el entorno o pruebas en
-   otro sitio).
-2. **Motor**: cuotas por equipo en la memoria del motor (v1.1 «Motor y consola»).
+1. **Publicar la retención** (8 commits de hoy) en cuanto la sesión traiga la
+   credencial de push: PRIMERO, sin tocar nada más.
+2. **v1.1 Ruido residual**: `sf-engine doctor` valida `known-software.yaml` con el
+   cargador real (paridad con `ingest-identities`) y §2.1 agrupación de arranques en
+   el sensor (parte Rust; requiere `cargo` en el entorno o pruebas en otro sitio).
+3. **Motor**: cuotas por equipo en la memoria del motor (v1.1 «Motor y consola»).
 3. **AD-6/SET-1 API de ajustes**: la primitiva de escritura segura ya existe
    (`secretfile.Write` + `engine secret-write`); falta la superficie de ajustes decidida
    con el responsable (qué campos, bind de prueba antes de comprometer el fichero,
