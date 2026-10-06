@@ -454,7 +454,7 @@ Todo el CI está en verde. Los informes de cada carril están en `docs/agentes/`
 | VIZ-4 | Parcial | Hay ciclo de vida por táctica y riesgo por equipo; falta la comparación con el periodo anterior |
 | SET-3 | Vista hecha | El motor debe publicar latencias, tamaño del almacén, versión y certificados (A) |
 | THEME-1, THEME-3 | Hecho | Tema claro, selector sistema/claro/oscuro, NOC siempre oscuro, paleta validada |
-| THEME-2 | Casi | El acento sigue azul: pasarlo a **zinc**, y quedan 6 clases azules fijas (B de pulimiento) |
+| THEME-2 | Hecho | Acento zinc en los dos temas y las 6 clases azules fijas a roles de token (ronda 3 de PUL-B). Solo quedan azules en tokens de DATO (`--chart-1`, `--sev-low`, `--series-1`, `--seq-5`), que no son acento |
 | Analista IA sobre un incidente completo | Hecho | Estaba en «Más adelante», v1.3 |
 | POL-1 | Parcial | `correlate.go` dividido; faltan `api.go`, `run.go` y `collector.rs` |
 | POL-4 | Hecho | Fuera los restos de «security-framework» |
@@ -467,7 +467,7 @@ Prioridades de la ronda 2:
 
 | Carril | Prioridad |
 |---|---|
-| Pulimiento B | Acento zinc y las 6 clases azules restantes |
+| Pulimiento B | ~~Acento zinc y las 6 clases azules restantes~~ Hecho (ronda 3; guardias de ronda en el carril PUL-B) |
 | Implementación B | Pantallas de SIM-4, REP-1 e informe de ruido; después REP-3/REP-4 y SET-1 |
 | Implementación A | REP-1 parte B, los campos que pide SET-3, AD-1 y SEC-2 |
 | Pulimiento A | Los 20 objetivos de fuzzing en el job nocturno (en varios jobs) y POL-1 (`api.go`) |
@@ -603,9 +603,10 @@ en los dos temas.
   - Colores definidos como variables en `:root`, con versión clara y oscura (base zinc).
   - Selector en la cabecera: sistema, claro u oscuro. Se recuerda por usuario.
   - Respeta `prefers-color-scheme`. El modo NOC sigue oscuro.
-- [ ] **THEME-2 Migrar los colores fijos** — Pulimiento B
-  - Hoy muchas clases suponen fondo oscuro (`text-zinc-100`, `bg-white/[0.03]`); deben pasar a
-    los tokens.
+- [x] **THEME-2 Migrar los colores fijos** — Pulimiento B (cerrado en la ronda 3, guardia en
+    las rondas 5 y 9)
+  - La familia de acento `--primary*` es zinc en los dos temas (AA validado por el checker
+    de tema, 93 pares) y no queda ninguna clase `blue-*` ni azul de acento en `web/console/src`.
   - Contraste AA comprobado en los dos temas.
 - [x] **THEME-3 Paletas de gráficas por tema** — Pulimiento B. Validadas con la herramienta de
   paletas, sin repintar las series al cambiar de tema.

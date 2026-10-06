@@ -50,11 +50,12 @@
 /* bluetardigrade SOC console: dual-theme product UI, dark by default.
    Neutral zinc structure, one interaction accent carried by the
    --primary* token family (--primary on dark, --primary-strong on
-   light) and two validated data palettes (see the viz tokens):
-   severity is an ordered status scale, categorical series never
-   reuse its hues. The light theme lives in the html.light block at the
-   end of this file; scripts/dev-tests/check_console_theme.py validates
-   both. */
+   light; zinc ink, not hue — the accent brightens/darkens like the
+   canonical zinc theme, never colors) and two validated data palettes
+   (see the viz tokens): severity is an ordered status scale, categorical
+   series never reuse its hues. The light theme lives in the html.light
+   block at the end of this file; scripts/dev-tests/check_console_theme.py
+   validates both. */
 :root {
   --radius: 0.5rem;
   --background: #09090b; /* zinc-950 */
@@ -63,14 +64,14 @@
   --card-foreground: #f4f4f5;
   --popover: #18181b;
   --popover-foreground: #f4f4f5;
-  --primary: #60a5fa; /* blue-400 */
-  --primary-foreground: #172554; /* blue-950: AA on the accent */
-  /* accent roles: single source for the blue interaction family; views
-     must use these (THEME-2) instead of raw blue-N utilities */
-  --primary-strong: #2563eb; /* blue-600: solid fills, white label AA 5.2:1 */
-  --primary-tint: #3b82f6; /* blue-500: tint fills and the solid-button hover */
-  --primary-link: #93c5fd; /* blue-300: links and hints */
-  --primary-soft: #bfdbfe; /* blue-200: soft labels on tint chips */
+  --primary: #d4d4d8; /* zinc-300: accent ink, AA 12.6:1 on the page */
+  --primary-foreground: #09090b; /* zinc-950: AA on the accent fill */
+  /* accent roles: single source for the zinc interaction family; views
+     must use these (THEME-2) instead of hand-picked utilities */
+  --primary-strong: #52525b; /* zinc-600: solid fills, white label AA 7.1:1 */
+  --primary-tint: #71717a; /* zinc-500: tint fills and the solid-button hover */
+  --primary-link: #d4d4d8; /* zinc-300: links and hints */
+  --primary-soft: #e4e4e7; /* zinc-200: soft labels on tint chips */
   --secondary: #27272a; /* zinc-800 */
   --secondary-foreground: #f4f4f5;
   --muted: #18181b;
@@ -80,7 +81,12 @@
   --destructive: #ef4444; /* red-500 */
   --border: #27272a; /* zinc-800 */
   --input: #27272a;
-  --ring: #60a5fa; /* opaque focus indicator on dark surfaces */
+  /* zinc-500 is the muted-hint tier on dark surfaces; Tailwind's raw
+     #71717a sits at 4.12:1 on the page — below AA for the small hint
+     text it carries. This brightening keeps the tier visibly dimmer
+     than zinc-400 while clearing 4.5:1 on page, card and viz surface. */
+  --color-zinc-500: #93939a;
+  --ring: #d4d4d8; /* opaque focus indicator on dark surfaces */
   --chart-1: #3987e5;
   --chart-2: #199e70;
   --chart-3: #9085e9;
@@ -88,12 +94,12 @@
   --chart-5: #52525b;
   --sidebar: #09090b;
   --sidebar-foreground: #f4f4f5;
-  --sidebar-primary: #60a5fa;
-  --sidebar-primary-foreground: #172554;
+  --sidebar-primary: #d4d4d8;
+  --sidebar-primary-foreground: #09090b;
   --sidebar-accent: #27272a;
   --sidebar-accent-foreground: #f4f4f5;
   --sidebar-border: #27272a;
-  --sidebar-ring: #60a5fa;
+  --sidebar-ring: #d4d4d8;
 
   /* Data-viz tokens. Validated with the dataviz six-checks script against
      --viz-surface (#101012, the panel fill over zinc-950, dark mode):
@@ -132,8 +138,12 @@
   color-scheme: dark;
 
   /* Theme-aware paints used by JS/SVG layers (dot-grid canvas, entity
-     graph SVG, kbd keycaps). html.light restates every one below. */
+     graph SVG, spotlight/star-border halos, kbd keycaps). html.light
+     restates every one below. */
   --dot-grid-ink: rgba(255, 255, 255, 0.05);
+  --dot-grid-pulse-rgb: 212, 212, 216;
+  --accent-halo: rgba(212, 212, 216, 0.1);
+  --sb-accent: rgba(212, 212, 216, 0.55);
   --viz-edge: rgba(255, 255, 255, 0.14);
   --viz-edge-strong: rgba(255, 255, 255, 0.25);
   --kbd-edge: rgba(0, 0, 0, 0.5);
@@ -324,9 +334,9 @@
   align-items: center;
   justify-content: center;
   border-radius: 0.5rem;
-  border: 1px solid rgba(96, 165, 250, 0.25);
-  background: linear-gradient(180deg, rgba(96, 165, 250, 0.16), rgba(96, 165, 250, 0.06));
-  color: #93c5fd;
+  border: 1px solid rgba(212, 212, 216, 0.25);
+  background: linear-gradient(180deg, rgba(212, 212, 216, 0.16), rgba(212, 212, 216, 0.06));
+  color: #d4d4d8;
   box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
 }
 .glass {
@@ -408,7 +418,7 @@
   .node-pulse { opacity: 0; }
 }
 
-/* Fondo ambiental de la shell: resplandor azul muy tenue en la
+/* Fondo ambiental de la shell: resplandor neutro muy tenue en la
    cabecera + vignette superior. La rejilla de puntos ahora la pinta el
    canvas DotGrid (React Bits) y reacciona al puntero; debajo del contenido
    siempre. isolation + z-index -1: el halo queda SIEMPRE detrás del contenido. */
@@ -422,9 +432,9 @@
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(700px 190px at 15% -12%, rgba(96, 165, 250, 0.09), transparent 70%),
-    radial-gradient(560px 170px at 88% -18%, rgba(59, 130, 246, 0.05), transparent 70%),
-    radial-gradient(1100px 480px at 50% 118%, rgba(96, 165, 250, 0.03), transparent 72%);
+    radial-gradient(700px 190px at 15% -12%, rgba(255, 255, 255, 0.07), transparent 70%),
+    radial-gradient(560px 170px at 88% -18%, rgba(255, 255, 255, 0.04), transparent 70%),
+    radial-gradient(1100px 480px at 50% 118%, rgba(255, 255, 255, 0.025), transparent 72%);
 }
 
 /* StarBorder: borde de 1px con degradado en movimiento. En reposo es el
@@ -442,7 +452,7 @@
     linear-gradient(
         var(--sb-angle, 120deg),
         rgba(16, 20, 26, 0) 20%,
-        var(--sb-color, rgba(96, 165, 250, 0.55)) 45%,
+        var(--sb-color, var(--sb-accent, rgba(212, 212, 216, 0.55))) 45%,
         rgba(16, 20, 26, 0) 70%
       )
       border-box;
@@ -463,12 +473,12 @@
 @media (prefers-reduced-motion: reduce) {
   .star-border--active {
     animation: none;
-    /* estático: el borde azul fijo sigue marcando el estado activo */
+    /* estático: el borde de acento fijo sigue marcando el estado activo */
   }
 }
 
 /* Pulido de cabina: scrollbar fina y discreta (la consola vive con listas
-   largas) y selección azul coherente con el acento. */
+   largas) y selección coherente con el acento. */
 * {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
@@ -485,10 +495,10 @@
   border-radius: 4px;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(96, 165, 250, 0.35);
+  background: rgba(212, 212, 216, 0.35);
 }
 ::selection {
-  background: rgba(96, 165, 250, 0.28);
+  background: rgba(212, 212, 216, 0.28);
   color: #e7eaed;
 }
 
@@ -532,12 +542,12 @@ html.light {
   --card-foreground: #18181b;
   --popover: #ffffff;
   --popover-foreground: #18181b;
-  --primary: #2563eb; /* blue-600: AA with white text (5.2:1) */
+  --primary: #27272a; /* zinc-800: AA 13.5:1 with the white label */
   --primary-foreground: #ffffff;
-  --primary-strong: #2563eb;
-  --primary-tint: #2563eb;
-  --primary-link: #1d4ed8;
-  --primary-soft: #1e40af;
+  --primary-strong: #27272a;
+  --primary-tint: #52525b;
+  --primary-link: #3f3f46;
+  --primary-soft: #18181b;
   --secondary: #e4e4e7;
   --secondary-foreground: #27272a;
   --muted: #f4f4f5;
@@ -547,7 +557,7 @@ html.light {
   --destructive: #dc2626;
   --border: #e4e4e7;
   --input: #d4d4d8;
-  --ring: #2563eb;
+  --ring: #18181b;
   --chart-1: #2563eb;
   --chart-2: #047857;
   --chart-3: #7c3aed;
@@ -555,12 +565,12 @@ html.light {
   --chart-5: #a1a1aa;
   --sidebar: #fafafa;
   --sidebar-foreground: #18181b;
-  --sidebar-primary: #2563eb;
+  --sidebar-primary: #27272a;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #e4e4e7;
   --sidebar-accent-foreground: #27272a;
   --sidebar-border: #e4e4e7;
-  --sidebar-ring: #2563eb;
+  --sidebar-ring: #18181b;
 
   /* Data-viz tokens, light surface (--viz-surface #ffffff):
      severity critical/high/medium/low/info >= 3:1 on white, adjacent CVD
@@ -595,6 +605,9 @@ html.light {
   --status-critical: #991b1b;
 
   --dot-grid-ink: rgba(9, 9, 11, 0.06);
+  --dot-grid-pulse-rgb: 9, 9, 11;
+  --accent-halo: rgba(9, 9, 11, 0.06);
+  --sb-accent: rgba(39, 39, 42, 0.55);
   --viz-edge: rgba(9, 9, 11, 0.16);
   --viz-edge-strong: rgba(9, 9, 11, 0.3);
   --kbd-edge: rgba(9, 9, 11, 0.16);
@@ -611,15 +624,6 @@ html.light {
   --color-zinc-800: #e4e4e7;
   --color-zinc-900: #fafafa;
   --color-zinc-950: #f4f4f5;
-
-  /* legacy shim: raw blue-* utilities that have not migrated to the
-     --primary* tokens yet (dashboard.tsx stays until IMP-B's round-4
-     branch merges; the shim keeps them readable on white meanwhile) */
-  --color-blue-100: #1e3a8a;
-  --color-blue-200: #1e40af;
-  --color-blue-300: #1d4ed8;
-  --color-blue-400: #2563eb;
-  --color-blue-500: #2563eb;
 
   /* status hues: text steps (200/300) become their readable-on-white
      counterparts, solid fills (400) deepen one step; 500 keeps working */
@@ -669,9 +673,9 @@ html.light .chip {
   box-shadow: none;
 }
 html.light .icon-tile {
-  border-color: rgba(37, 99, 235, 0.22);
-  background: linear-gradient(180deg, rgba(37, 99, 235, 0.1), rgba(37, 99, 235, 0.04));
-  color: #1d4ed8;
+  border-color: rgba(39, 39, 42, 0.22);
+  background: linear-gradient(180deg, rgba(39, 39, 42, 0.1), rgba(39, 39, 42, 0.04));
+  color: #3f3f46;
   box-shadow: none;
 }
 html.light .glass {
@@ -684,9 +688,9 @@ html.light .viz-tooltip {
 }
 html.light .ambient-glow::before {
   background:
-    radial-gradient(700px 190px at 15% -12%, rgba(37, 99, 235, 0.05), transparent 70%),
-    radial-gradient(560px 170px at 88% -18%, rgba(59, 130, 246, 0.03), transparent 70%),
-    radial-gradient(1100px 480px at 50% 118%, rgba(37, 99, 235, 0.02), transparent 72%);
+    radial-gradient(700px 190px at 15% -12%, rgba(9, 9, 11, 0.04), transparent 70%),
+    radial-gradient(560px 170px at 88% -18%, rgba(9, 9, 11, 0.03), transparent 70%),
+    radial-gradient(1100px 480px at 50% 118%, rgba(9, 9, 11, 0.02), transparent 72%);
 }
 html.light .star-border { border-color: rgba(9, 9, 11, 0.1); }
 html.light .star-border--active {
@@ -695,7 +699,7 @@ html.light .star-border--active {
     linear-gradient(
         var(--sb-angle, 120deg),
         rgba(255, 255, 255, 0) 20%,
-        var(--sb-color, rgba(37, 99, 235, 0.55)) 45%,
+        var(--sb-color, var(--sb-accent, rgba(39, 39, 42, 0.55))) 45%,
         rgba(255, 255, 255, 0) 70%
       )
       border-box;
@@ -714,6 +718,6 @@ html.light *::-webkit-scrollbar-thumb:hover {
   background: rgba(9, 9, 11, 0.3);
 }
 html.light ::selection {
-  background: rgba(37, 99, 235, 0.2);
+  background: rgba(9, 9, 11, 0.15);
   color: #09090b;
 }

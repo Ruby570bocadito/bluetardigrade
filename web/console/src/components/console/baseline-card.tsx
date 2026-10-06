@@ -101,7 +101,7 @@ export function BaselineCard({ host, alerts, onOpenAlert }: { host: string; aler
                   <li key={name} className="rounded border border-zinc-800 bg-zinc-900/60 px-1.5 py-0.5 font-mono text-[10px] text-zinc-400">{name}</li>
                 ))}
               </ul>
-              {total > shown.length && <p className="mt-1 text-[10px] text-zinc-600">Se muestran {shown.length} de {total}; filtra para ver el resto.</p>}
+              {total > shown.length && <p className="mt-1 text-[10px] text-zinc-500">Se muestran {shown.length} de {total}; filtra para ver el resto.</p>}
               {total === 0 && <p className="mt-1 text-[11px] text-zinc-500">Ningún proceso conocido coincide con «{query}».</p>}
             </div>
           ) : (

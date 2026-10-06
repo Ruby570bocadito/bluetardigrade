@@ -121,7 +121,7 @@ export function AlertActionBar({ alerts, onClear, onAnalyze, onAnalyzeGroup, onO
   return (
     <div role="region" aria-label="Acciones sobre la selección" className="sticky top-16 z-10 mb-3 rounded-xl border border-primary/25 bg-zinc-900/95 px-3 py-2.5 shadow-lg backdrop-blur">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium text-blue-100">{alerts.length} seleccionadas</span>
+        <span className="text-xs font-medium text-primary-soft">{alerts.length} seleccionadas</span>
         <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} aria-label="Nota común para el triaje" placeholder="nota común (opcional)"
           className="h-8 w-44 rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-100 placeholder:text-zinc-600" />
         <button type="button" className={btn} disabled={busy || withId.length === 0} onClick={() => void triage('acknowledged')}>
@@ -516,7 +516,7 @@ function ReputationPanel({ alert }: { alert: SfAlert }) {
                       {res.link && <a href={res.link} target="_blank" rel="noreferrer noopener" className="ml-1 text-primary-link underline-offset-4 hover:underline">ver</a>}
                     </li>
                   ))}
-                  {r.cached && <li className="text-[10px] text-zinc-600">respuesta en caché del motor</li>}
+                  {r.cached && <li className="text-[10px] text-zinc-500">respuesta en caché del motor</li>}
                 </ul>
               )}
             </li>

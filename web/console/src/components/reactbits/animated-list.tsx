@@ -21,7 +21,10 @@ export function AnimatedItem({ index, children, className = '' }: AnimatedItemPr
     <motion.div
       initial={reduce ? false : { opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.32, delay, ease: [0.16, 1, 0.3, 1] }}
+      // Con initial=false no hay animación que cortar; el duration:0
+      // explícito cierra el caso raro de la preferencia llegando a mitad
+      // de la entrada escalonada (MOTION 3: reactiva, no solo al montar).
+      transition={reduce ? { duration: 0 } : { duration: 0.32, delay, ease: [0.16, 1, 0.3, 1] }}
       className={className}
     >
       {children}

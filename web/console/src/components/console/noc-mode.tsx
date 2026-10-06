@@ -173,7 +173,7 @@ function NocClock() {
   if (!now) return null
   return (
     <span className="rounded-lg border border-white/[0.08] px-2.5 py-1.5 font-mono text-xs tabular-nums text-zinc-300">
-      <span className="text-zinc-600">UTC </span>{now.toISOString().slice(11, 19)}
+      <span className="text-zinc-500">UTC </span>{now.toISOString().slice(11, 19)}
     </span>
   )
 }

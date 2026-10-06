@@ -196,6 +196,11 @@ def main() -> int:
             ("foreground / card", tok["--foreground"], tok["--card"], 4.5),
             ("muted-foreground / background", tok["--muted-foreground"], tok["--background"], 4.5),
             ("muted-foreground / card", tok["--muted-foreground"], tok["--card"], 4.5),
+            # the zinc-500 hint tier is theme-remapped for AA (dark #93939a,
+            # light #6b6b74); validate the tier itself, not one component
+            ("zinc-500 / background", tok["--color-zinc-500"], tok["--background"], 4.5),
+            ("zinc-500 / card", tok["--color-zinc-500"], tok["--card"], 4.5),
+            ("zinc-500 / viz-surface", tok["--color-zinc-500"], tok["--viz-surface"], 4.5),
             ("primary-foreground / primary", tok["--primary-foreground"], tok["--primary"], 4.5),
             ("secondary-foreground / secondary", tok["--secondary-foreground"], tok["--secondary"], 4.5),
             ("accent-foreground / accent", tok["--accent-foreground"], tok["--accent"], 4.5),
@@ -208,6 +213,9 @@ def main() -> int:
             ("primary-soft / background", tok["--primary-soft"], tok["--background"], 4.5),
             ("primary-soft / card", tok["--primary-soft"], tok["--card"], 4.5),
             ("white / primary-strong", "#ffffff", tok["--primary-strong"], 4.5),
+            # the solid button hovers onto --primary-tint keeping its white
+            # label, so the hover state must hold AA in both themes too
+            ("white / primary-tint", "#ffffff", tok["--primary-tint"], 4.5),
         ]
         for label, fk, bk, floor in pairs:
             try:

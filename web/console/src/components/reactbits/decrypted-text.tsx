@@ -5,12 +5,14 @@
 // aleatorios y se asientan de izquierda a derecha. En una consola de
 // detección el gesto es temático (telemetría que se descodifica), y se
 // usa con moderación: la etiqueta de marca del sidebar, una sola vez al
-// montar. Respeta prefers-reduced-motion (texto plano).
+// montar. Respeta prefers-reduced-motion (texto plano), de forma reactiva:
+// activar la preferencia con la sesión abierta corta el ciclo al instante.
 //
 // Hidratación: el primer render (servidor Y cliente) es el texto plano —
 // coinciden y Next no warning-a; el efecto arranca el ciclo justo después.
 
 import { useEffect, useState } from 'react'
+import { useReducedMotion } from 'motion/react'
 
 type DecryptedTextProps = {
   text: string
@@ -33,9 +35,12 @@ export function DecryptedText({
   className = '',
 }: DecryptedTextProps) {
   const [display, setDisplay] = useState(text)
+  // Reactiva: el matchMedia crudo solo valía al montar y cejaba los
+  // cambios de preferencia en caliente (patrón de la casa: useReducedMotion).
+  const reduce = useReducedMotion()
 
   useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (reduce) {
       setDisplay(text)
       return
     }
@@ -54,12 +59,14 @@ export function DecryptedText({
       setDisplay(out)
     }, speed)
     return () => window.clearInterval(id)
-  }, [text, glyphs, speed, step])
+  }, [text, glyphs, speed, step, reduce])
 
   return (
-    <span className={className} aria-label={text}>
-      {/* aria-hidden: el lector escucha la etiqueta completa, no el ruido
-          de glifos; el span interno solo existe para el efecto visual */}
+    <span className={className}>
+      {/* screen readers get the real text once; the animated span is
+          decoration. aria-label needs a role, so the label lives as a
+          visually-hidden text node instead (axe: aria-prohibited-attr) */}
+      <span className="sr-only">{text}</span>
       <span aria-hidden>{display}</span>
     </span>
   )

@@ -20,7 +20,7 @@ BUN     ?= bun
 BIN_DIR ?= bin
 MODULE  := github.com/Ruby570bocadito/bluetardigrade
 
-.PHONY: all run-engine build test tidy fmt vet build-sensor build-sensor-windows docker-build console-install console-service console console-dom console-browser ci dist clean
+.PHONY: all run-engine build test tidy fmt vet build-sensor build-sensor-windows docker-build console-install console-service console console-dom console-browser console-a11y console-lighthouse ci dist clean
 
 all: build
 
@@ -79,6 +79,21 @@ console-browser:
 	npm install --prefix tools/console-tests --no-audit --no-fund --ignore-scripts --no-save --no-package-lock playwright@1.63.0
 	node tools/console-tests/node_modules/playwright/cli.js install chromium
 	node scripts/dev-tests/check_console_browser.mjs
+
+# axe-core (WCAG 2.x) over every console view, dark and light themes, on
+# the production build with the same fixture approach. POL-8.
+console-a11y:
+	npm install --prefix tools/console-tests --no-audit --no-fund --ignore-scripts --no-save --no-package-lock playwright@1.63.0 axe-core@4.10.2
+	node tools/console-tests/node_modules/playwright/cli.js install chromium
+	node scripts/dev-tests/check_console_a11y.mjs
+
+# Lighthouse desktop report of the production console (POL-9). CHROME_PATH
+# selects the Chromium binary; results go to the console README baseline.
+console-lighthouse:
+	npm install --prefix tools/console-tests --no-audit --no-fund --ignore-scripts --no-save --no-package-lock lighthouse@12.8.2
+	cd web/console && $(BUN) run build && node node_modules/next/dist/bin/next start -H 127.0.0.1 -p 3100 &
+	sleep 4
+	CHROME_PATH="$${CHROME_PATH:?set CHROME_PATH to a Chromium binary}" node tools/console-tests/node_modules/lighthouse/cli/index.js http://127.0.0.1:3100 --preset=desktop --only-categories=performance,accessibility,best-practices,seo --output=json --output-path=/tmp/lighthouse-console.json --chrome-flags="--headless=new --no-sandbox --disable-dev-shm-usage" --quiet
 
 # Same suite the GitHub Actions workflow (.github/workflows/ci.yml)
 # runs on every push. Needs: Go 1.26+, staticcheck 2026.2.1

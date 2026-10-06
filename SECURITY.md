@@ -9,7 +9,7 @@ bluetardigrade es un producto de seguridad de producción: la misma exigencia qu
 | main (HEAD) | Sí — única línea de desarrollo; las correcciones aterrizan en main |
 | tags / releases anteriores | No — se asume que los despliegues siguen main o builds etiquetados recientes |
 
-El proyecto todavía no publica releases versionadas (brecha G12 del análisis de brechas, en cola). Mientras tanto, reporta siempre contra el commit exacto (`git rev-parse HEAD`) del build afectado.
+El proyecto todavía no publica releases versionadas. Mientras tanto, reporta siempre contra el commit exacto (`git rev-parse HEAD`) del build afectado.
 
 ## Cómo reportar una vulnerabilidad
 
@@ -34,7 +34,7 @@ El proyecto todavía no publica releases versionadas (brecha G12 del análisis d
 ## Divulgación coordinada
 
 1. Reporte privado por el canal de arriba.
-2. Triage y confirmación por el carril de seguridad (con réplica al reportante).
+2. Triage y confirmación por los mantenedores (con réplica al reportante).
 3. Fix en main con test de regresión falsable (el estándar del repo), sin mención del detalle de explotación en el mensaje de commit.
 4. Publicación del advisory (con CVE si procede) una vez el fix esté aterrizado y verificado por CI.
 

@@ -93,8 +93,8 @@ export function EntityGraphView({
         <svg width={width} height={height} className="block">
           <defs>
             <radialGradient id="graph-halo" cx="50%" cy="50%" r="50%">
-              <stop offset="0" stopColor="rgba(96,165,250,0.10)" />
-              <stop offset="1" stopColor="rgba(96,165,250,0)" />
+              <stop offset="0" style={{ stopColor: 'var(--accent-halo, rgba(212, 212, 216, 0.1))' }} />
+              <stop offset="1" stopColor="transparent" />
             </radialGradient>
           </defs>
           <rect x={0} y={0} width={width} height={height} fill="url(#graph-halo)" aria-hidden />

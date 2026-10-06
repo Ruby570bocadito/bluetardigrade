@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { headers } from "next/headers";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -23,20 +24,24 @@ export const metadata: Metadata = {
 // never flashes the wrong one. Stored choice wins; without one, the OS
 // preference decides. Dark stays the server-rendered default (and the
 // no-JS outcome); the same key is what ThemeToggle writes. Inline because
-// it must run before any paint (CSP allows it: script-src 'unsafe-inline').
+// it must run before any paint; the access proxy's per-request nonce
+// (src/proxy.ts) is what makes that legal under the production CSP.
 const themeBoot = `(function(){try{var s=localStorage.getItem('bt-theme');var t=s==='light'||s==='dark'?s:(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');var r=document.documentElement;r.classList.toggle('dark',t==='dark');r.classList.toggle('light',t==='light');}catch(e){}})()`;
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Minted per request by the access proxy; the CSP nonce signs the
+  // inline theme boot (the only hand-written script in the tree).
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
   return (
     <html lang="es" className="dark" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
-        <script dangerouslySetInnerHTML={{ __html: themeBoot }} />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: themeBoot }} />
         {children}
       </body>
     </html>

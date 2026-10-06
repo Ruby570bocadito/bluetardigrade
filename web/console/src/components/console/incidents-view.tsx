@@ -315,7 +315,7 @@ function IncidentDetail({
         <div className="flex flex-wrap items-center gap-2">
           <SeverityBadge severity={incident.severity} />
           <StatusChip status={incident.status} />
-          <span className="font-mono text-[11px] text-zinc-600">{incident.id}</span>
+          <span className="font-mono text-[11px] text-zinc-500">{incident.id}</span>
           <div role="group" aria-label="Exportar informe del incidente" className="ml-auto flex items-center gap-1.5">
             {onAnalyze && (
               <button
@@ -454,7 +454,7 @@ function IncidentDetail({
                       <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{a.rule_name}</span>
                       <span className="font-mono text-[11px] text-zinc-500">{a.host}</span>
                       <span className="text-[11px] tabular-nums text-zinc-500">{formatTime(a.timestamp)}</span>
-                      <ArrowSquareOut size={12} aria-hidden className="text-zinc-600" />
+                      <ArrowSquareOut size={12} aria-hidden className="text-zinc-500" />
                     </button>
                   </li>
                 ))}
@@ -509,7 +509,7 @@ function IncidentDetail({
                     <Icon size={9} weight="bold" />
                   </span>
                   <p className={`text-xs leading-relaxed ${entry.kind === 'note' ? 'text-zinc-200' : 'text-zinc-400'}`}>{entry.text}</p>
-                  <p className="mt-0.5 text-[10px] text-zinc-600">{formatDateTime(entry.at)}{entry.by ? ` · ${entry.by}` : ''}</p>
+                  <p className="mt-0.5 text-[10px] text-zinc-500">{formatDateTime(entry.at)}{entry.by ? ` · ${entry.by}` : ''}</p>
                 </li>
               )
             })}

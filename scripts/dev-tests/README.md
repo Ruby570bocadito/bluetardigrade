@@ -205,12 +205,57 @@ node tools/console-tests/node_modules/playwright/cli.js install --with-deps chro
 and `CONSOLE_CHROMIUM_PATH` selects an existing Chromium executable. External
 HTTP hosts are rejected. Browser checks require Node.js 20+.
 
+## Console accessibility (axe)
+
+`check_console_a11y.mjs` runs axe-core with the WCAG 2.0/2.1 A+AA ruleset
+over the built console in Chromium: every view, and the panel, Estado,
+alerts, fleet and detection views also in the light theme (18 page loads).
+The engine responses are the same contract-true fixtures the browser
+regression uses, so both themes render real UI (severity strips, tables,
+charts, badges) instead of empty states. The run fails on any violation;
+`CONSOLE_A11Y_STRICT=1` also fails on needs-review results and
+`CONSOLE_A11Y_DUMP=<file>` writes the full violation JSON for triage.
+
+From the repository root, after installing and building `web/console`:
+
+```bash
+make console-a11y
+```
+
+or directly:
+
+```bash
+npm install --prefix tools/console-tests --no-audit --no-fund playwright@1.63.0 axe-core@4.10.2
+node tools/console-tests/node_modules/playwright/cli.js install chromium
+node scripts/dev-tests/check_console_a11y.mjs
+```
+
+It starts its own production server on loopback port 3100 (or use
+`CONSOLE_BROWSER_URL`); `CONSOLE_A11Y_TAGS` narrows the enforced tags.
+No axe findings at the time of writing does not certify full WCAG 2.2 AA
+compliance: axe automates the automatable checks only, and the contrast
+floor of every theme token pair is additionally enforced by
+`check_console_theme.py`.
+
 The same runner is part of `make ci` and the console job after the production
 build. CI retains labelled fixture captures, including a failure screenshot,
 as the `console-browser-regression` artifact for seven days. The checks
 verify browser behavior; they do not certify a live ETW capture, the engine
 transport or every UI flow. Cross-browser and additional mobile interaction
 coverage remain follow-up work.
+
+## Reduced motion (consola)
+
+`check_console_motion.mjs` carga la consola construida con
+`prefers-reduced-motion: reduce` emulado y exige que ninguna animación
+no-spinner esté en marcha (`document.getAnimations()`; los spinners se
+permiten: comunican actividad). Después repite la carga sin la
+preferencia y exige que la sonda (`.blur-text-word`) lleve sus
+keyframes: control positivo que prueba que la puerta está cableada y
+que el pase no pasa en vacío por un selector roto. El arranque del
+servidor sigue el patrón del arnés de navegador (solo loopback;
+`CONSOLE_BROWSER_URL` reutiliza una consola en marcha). Requiere el
+build de producción de `web/console` y Chromium.
 
 ## Incremento SOC
 

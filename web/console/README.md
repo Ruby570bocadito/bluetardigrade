@@ -5,7 +5,7 @@ severity triage with a detail panel, the YAML rule pack, kill-chain
 chains, operator suppressions, a read-only active-response view with
 its forensic audit trail, and an optional AI analyst using the configured
 provider to assist alert triage. Dual-theme product UI, dark by default
-(zinc structure, one blue interaction accent, severity colors that
+(zinc structure, one zinc interaction accent, severity colors that
 encode data semantics, both palettes machine-validated).
 
 ## Data flow and demo boundaries
@@ -109,12 +109,30 @@ validates browser origins for polling and WebSocket handshakes; extend
 `CONSOLE_CORS_ORIGIN` when serving the console at another origin. Analyst
 concurrency and the request budget also apply across all hub connections.
 
+## Content security policy
+
+The CSP is minted per request by the access proxy (`src/proxy.ts`): in
+production `script-src` is `self` + a fresh `nonce` + `strict-dynamic` —
+never `unsafe-inline`. The proxy publishes the policy on the request
+headers so Next.js signs its own bootstrap scripts with the same nonce,
+and `app/layout.tsx` reads `x-nonce` to sign the inline theme boot (the
+only hand-written script in the tree). Dev keeps the inline/eval
+allowances the React refresh runtime needs. `style-src` stays
+`unsafe-inline` (Tailwind, component inline styles and reactbits
+keyframes). Because two CSP headers intersect, the policy lives only in
+the proxy — `next.config.ts` keeps the static headers (frame options,
+nosniff, referrer, permissions). `scripts/dev-tests/check_console_csp.mjs`
+regresses the whole pipeline against the production build: nonce present,
+rotating per request, every script tag signed, no inline fallback.
+
 `bun.lock` is the only lockfile in this package: bun is the toolchain
 the docs and the installer rely on, and keeping a second `package-lock.json`
 in parallel produced real drift (the two files resolved different
 `@types/node` versions). npm users can reproduce a resolution at any
 time with `npm install --package-lock-only` if they need one locally,
-but it is not committed.
+but it is not committed. The optional browser-test tooling outside this
+package (`tools/console-tests`) follows the same policy: exact versions
+and a committed `bun.lock`, `node_modules` local only.
 
 ## Theme (dark default, light available, system follow)
 
@@ -144,7 +162,7 @@ entity-graph SVG) read theme-aware custom properties and repaint on the
 theme-change event. `scripts/dev-tests/check_console_theme.py`
 validates both palettes (WCAG pairs including the accent family,
 severity/status and sequential ramps on the viz surface, CVD separation
-via CIEDE2000 with Machado simulations — 87 checks, both themes) — run
+via CIEDE2000 with Machado simulations — 89 checks, both themes) — run
 it whenever a token changes.
 
 ## Design tokens
@@ -153,11 +171,12 @@ it whenever a token changes.
 - Surfaces are defined once in `src/app/globals.css` and reused by every view: `.panel` (hairline border, vertical gradient fill, inner top highlight, ambient shadow), `.panel-hover` (lift on hover, frozen under `prefers-reduced-motion`), `.chip`, `.icon-tile`, `.glass` (sidebar and topbar backdrop blur) and the three-radial `ambient-glow` background. Views compose these classes instead of re-declaring card styles inline.
 - One interaction accent: the `--primary*` token family in `globals.css`
   (`primary` base, `link`, `soft`, `tint` for fills and the solid-button
-  hover, `strong` for solid fills). Dark uses blue-400/500/600 shades;
-  light re-anchors every role to AA on white (blue-600 base). Views must
-  use the token utilities, not raw `blue-N` classes (the light remap for
-  `blue-*` remains only as a shim for the two raw uses left in
-  `dashboard.tsx` until IMP-B's open branch merges).
+  hover, `strong` for solid fills). The accent is zinc ink, not hue:
+  dark uses `zinc-300`/`zinc-600` (accent reads as brighter ink, the
+  solid button keeps a white label at AA), light re-anchors every role
+  to AA on white (`zinc-800` base). Views must use the token utilities,
+  not hand-picked color classes — a hue accent (the old blue) is gone
+  on purpose: same family name, no colored UI chrome.
 - Severity semantics (data, not decoration): `critical` red-500/600,
   `high` orange-500, `medium` amber-400, `low` blue (`--sev-low`,
   `#3987e5` on dark / `#2563eb` on light).
@@ -166,23 +185,74 @@ it whenever a token changes.
 - Radius: single 8px scale (`--radius: 0.5rem`).
 - Motion: state transitions only, `prefers-reduced-motion` honoured.
 
+### Shared components (POL-7)
+
+The console kit lives in `src/components/ui/` and `ui-tabs.tsx`: button,
+input, select and switch (variants on the token utilities), the tab kit
+(`ConsoleTablist` — a WAI-ARIA tablist with roving tabindex and arrow
+keys, plus the `TABLIST_CLASS`/`tabButtonClass` pair for segmented
+groups that are not content tabs) and `Badge` (`ui/badge.tsx`), the one
+pill shape every badge and chip shares. `Badge` has exactly two
+tokenized color variants (`neutral`, `accent` — the `--primary*`
+family); DATA colors such as severity ride on `className` from their
+own token maps (`SEVERITY_STYLE`), never as variants, so the component
+cannot reintroduce a hue accent by accident. `SeverityBadge` and
+`MonoTag` render it with unchanged visuals. `Table` (`ui/table.tsx`) is
+the shared surface for the six semantic tables: `Table` + sr-only
+`TableCaption`, `TableHeader` (optional `sticky` pin), `TableHeadRow`,
+`TableHead` (uppercase data style, `compact` density, `sort` publishes
+aria-sort), `TableBody` (hairline rows), `TableRow` (`interactive`
+hover, `selected` takes the `--primary*` tint), `TableCell` and a
+full-width `TableEmpty` row. Like `Badge`, it bakes in no DATA color —
+cell accents ride on `className`; the API was extracted verbatim from
+the markup the views already ship, so the phase-B migration is
+mechanical. New views consume the kit
+instead of restyling pills inline; anything missing goes through POL-7
+coordination before growing the kit.
+
 ## Motion components
 
-The eight motion primitives live in `src/components/reactbits/`, adapted from
+The motion primitives live in `src/components/reactbits/`, adapted from
 [React Bits](https://reactbits.dev) to the console theme (each header documents
 its origin). Every one communicates a state change — none is decoration — and
 the layer adds zero runtime dependencies beyond `motion`:
 
 | Component | What it does | Where it lives |
 |-----------|--------------|----------------|
+| `animated-content` | block rises into place on mount (cascaded by order) | dashboard panels, NOC slides |
 | `animated-list` | rows enter staggered (fade + short rise, delay per index) | alert queue, suppressions, chains, respond audit, dashboard lists |
 | `blur-text` | view titles reveal word by word (rise + blur) on section change | shell view headers |
+| `count-up` | KPI figures spring from their previous value | KPI row, NOC |
+| `counter` | digit columns roll to their value on a spring | KPI row, platform status, respond, dashboard |
 | `decrypted-text` | text enters as a decode cycle (unrevealed chars cycle glyphs once on load) | shell brand tagline |
 | `dot-grid` | pointer-reactive dot grid canvas behind the shell | shell ambient background |
-| `gradient-text` | animated gradient on text (`background-clip: text`, pure CSS) | KPI row (critical counter) |
+| `glare-hover` | diagonal shine crossing a card on hover/focus (pure CSS) | KPI cards |
 | `shiny-text` | shine sweep over text (`background-clip: text`, pure CSS) | shell hint/loading states |
 | `spotlight-card` | radial halo following the pointer via CSS custom properties | dashboard cards, KPI stat cards |
 | `star-border` | 1px border with a moving gradient (padding trick + animated background) | AI analyst panel while it is working |
+
+### Reduced motion (POL-11)
+
+`prefers-reduced-motion: reduce` stills the console in three layers:
+the global CSS gate in `globals.css` (animation/transition duration
+0.01 ms, `scroll-behavior: auto`), per-effect static end-states
+(`blur-text` only opts in under `no-preference`; `shiny-text`,
+`glare-hover`, `star-border`, `panel-hover`, `edge-flow`, `node-pulse`,
+`bt-breathe` and the NOC progress bar freeze or hide) and
+`useReducedMotion()` in every `motion/react` consumer (entrances skip
+their initial state; spinners keep running — they communicate
+activity, they do not decorate). The canvas dot grid paints its
+resting grid and ignores the pointer. Every gate is reactive: toggling
+the OS preference mid-session takes effect without a reload
+(dot-grid unmounts its loop, decrypted-text cuts its cycle, count-up
+snaps its spring to the target).
+
+Regression: `scripts/dev-tests/check_console_motion.mjs` loads the
+built console with the preference emulated and asserts that no
+non-spinner animation runs (via `document.getAnimations()`), then
+re-loads without the preference and requires the probe element to
+carry its keyframes — a positive control proving the gate is wired
+rather than passing vacuously on a broken selector.
 
 ## Bundle baseline (POL-9)
 
@@ -190,9 +260,37 @@ Measured on the production build (`bun run build`, Next 16.3.6 /
 Turbopack, 2026-10-05): client JS ≈ 1.52 MB total across
 `.next/static/chunks` — one ≈ 1.0 MB vendor chunk (chart + motion
 libraries), then ≈ 223 / 174 / 109 KB app chunks — plus ≈ 98 KB of CSS.
-Re-measure after adding a client dependency: any new dependency must
-justify its bytes here. A Lighthouse run and the axe pass still need a
-host with a real browser (this environment cannot start Chromium).
+Since 2026-10-06 the build also emits browser source maps
+(`productionBrowserSourceMaps`): separate `.map` files fetched only
+when DevTools opens, so traces arrive symbolized — they are never
+executed and do not change the executed bundle. Re-measure after adding
+a client dependency: any new dependency must justify its bytes here.
+
+Lighthouse (desktop preset, production build, Chromium). The nonce CSP
+turned `/` into a dynamic route, so the baseline was re-measured on
+2026-10-06 under the same lab conditions (engine and console-service
+offline — their refused fetches are the only console noise in the
+trace). Panel **97 performance / 100 accessibility / 96
+best-practices / 100 SEO** (FCP 0.3 s, LCP 1.2 s, TBT 30 ms, CLS
+0.019, SI 0.8 s) and the alerts view **100 / 100 / 96 / 100**: the
+per-request nonce costs nothing measurable (baseline 2026-10-05,
+prerendered `/`: 95 / 100 / 96 / 100 with FCP 0.4 s, LCP 1.5 s, TBT
+20 ms, CLS 0.02). On best-practices: `valid-source-maps` was fixed on
+2026-10-06 by emitting browser source maps; the remaining item,
+`errors-in-console`, is binary and feeds on the measurement lab itself
+(the engine and console-service are deliberately offline, so their
+refused fetches and socket always fail — twelve 502s and two
+WebSocket errors on every trace). With a live backend that item clears
+by construction; the 96 in this lab is its ceiling. `/favicon.ico` is
+a non-issue: Next injects `<link rel="icon" href="/icon.svg">`, so
+browsers never request the .ico. Reproduce with `make console-lighthouse`
+(`CHROME_PATH` pointing at a Chromium binary) or directly:
+`lighthouse http://127.0.0.1:3100 --preset=desktop --output=json`
+against `bun run start` — kill any stale `next-server` first (a server
+left over from a previous session answers on 3100 with an old chunk
+manifest and silently skews the run). The axe pass runs in CI-shaped
+form as `scripts/dev-tests/check_console_a11y.mjs` (WCAG 2.x over every
+view, dark and light themes) — `make console-a11y`.
 
 ## Configuration
 

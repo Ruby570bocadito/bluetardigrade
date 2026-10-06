@@ -184,7 +184,10 @@ export function Dashboard({
         <EngineSummary status={status} />
       </AnimatedContent>
 
-      <AnimatedContent order={12} className="grid gap-5 xl:grid-cols-2">
+      {/* items-start: each panel hugs its content. Without it the grid
+          stretches the shorter «Alertas recientes» panel to the telemetry
+          height and leaves a dead area inside the card. */}
+      <AnimatedContent order={12} className="grid items-start gap-5 xl:grid-cols-2">
         <div className="panel min-w-0 px-4 pb-3 pt-3.5">
           <AlertsView compact onAnalyze={onAnalyze} />
         </div>
@@ -897,7 +900,7 @@ function RecentTelemetry({ onNavigate }: { onNavigate: (view: ConsoleView) => vo
         <button
           type="button"
           onClick={() => onNavigate('flujo')}
-          className="rounded-sm text-xs text-blue-400 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="rounded-sm text-xs text-primary-link underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           Ver flujo completo
         </button>
@@ -918,7 +921,7 @@ function RecentTelemetry({ onNavigate }: { onNavigate: (view: ConsoleView) => vo
                   inicial; las keys estables evitan re-animar filas visibles. */}
               <AnimatedItem index={i} className="grid grid-cols-[64px_120px_minmax(0,1fr)] items-center gap-3 px-1 py-2 md:grid-cols-[72px_150px_minmax(0,1fr)]">
                 <span className="font-mono text-xs tabular-nums text-zinc-500">{formatTime(ev.timestamp)}</span>
-                <span className="truncate font-mono text-xs text-blue-300">{ev.type}</span>
+                <span className="truncate font-mono text-xs text-primary-link">{ev.type}</span>
                 <span className="truncate font-mono text-xs text-zinc-400" title={eventDetail(ev)}>{eventDetail(ev)}</span>
               </AnimatedItem>
             </li>

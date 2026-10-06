@@ -1,0 +1,2 @@
+- The console enforces a nonce-based content security policy in production: inline scripts are signed per request and `script-src` no longer allows `unsafe-inline`, so even a successful injection of attacker-controlled telemetry text cannot load or run script content the console did not ship.
+- The browser-test tooling used to verify the console (playwright, axe-core, esbuild, jsdom) now ships a committed dependency manifest with pinned versions, so local runs and CI resolve the same bits.
