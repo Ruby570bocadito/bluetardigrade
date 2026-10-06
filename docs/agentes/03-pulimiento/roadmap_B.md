@@ -1,10 +1,31 @@
 # Roadmap B — carril Pulimiento B (archivo vivo)
 
-Última actualización: 2026-10-06, ronda 14 de este carril sobre la
-rama `carril/pulimiento-b` (base `363ff4c`, plan de ronda 14; push
+Última actualización: 2026-10-06, ronda 15 de este carril sobre la
+rama `carril/pulimiento-b` (base `32aafb4`, plan de ronda 15; push
 pendiente de `GH_TOKEN` en el entorno).
 
 ## Hecho (rondas cerradas)
+
+- **2026-10-06 — Reparación del Makefile en mi carril: TABs +
+  --ignore-scripts (ronda 15):** confirmado el fail-before que
+  publicó SEG-A (r17): `63fa077` dejó `make` roto en solitario
+  (`missing separator` :31; 69 líneas de receta aplanadas a 8
+  espacios, las 7 mías de console-a11y/lighthouse incluidas).
+  Restaurados los TAB (contenido intacto; pass-after: los 20 targets
+  `make -n` limpio y `make console-dom` verde end-to-end) y
+  adoptado `--ignore-scripts` en las 6 líneas `npm install` de
+  consola (decisión convergida PUL-A/SEG-B/SEG-A). Mi Makefile queda
+  como superconjunto aditivo (a11y + lighthouse) y el conflicto
+  residual de «7 recetas con espacios» que SEG-A anotó para PUL-B
+  desaparece. merge-tree ×6: main/IMP-A/IMP-B limpio; PUL-A (5
+  hunks), SEG-A (1 hunk = solo mis targets extra) y SEG-B (3 hunks)
+  conflictúan SOLO en Makefile, resolución de convergencia (tomar el
+  superconjunto + sanity `make -n`). Nota de laboratorio: el editor
+  re-aplanó los TAB al guardar — la reparación se hizo con `sed`, no
+  con el editor. Hallazgos de SEG-A sobre SET-1 (2 BAJA: trim de
+  contraseña mutado; presupuesto de sonda 30 s cliente vs 45 s
+  motor) añadidos al checklist de guardia para la próxima entrega de
+  IMP-B. Informe: `ronda_2026-10-06_13h45_B.md`.
 
 - **2026-10-06 — Guardia de vista nueva: pantalla de ajustes AD
   (ronda 13):** guardia completa sobre el árbol de IMP-B en `2c47271`
@@ -253,9 +274,20 @@ esbuild de SEG-B (`3046716`).
 
 ## Siguiente (orden propuesto para la próxima ventana)
 
+0. **Checklist de guardia para la próxima entrega de IMP-B** (acumulado
+   de guardias y avisos de otros carriles): el `role="status"` del
+   probe (r13, línea 624 de su fichero); los 2 BAJA de SEG-A r17 —
+   contraseña recortada en cliente vs verbatim en motor, y aborto de
+   sonda a 30 s en cliente vs presupuesto de 45 s en motor (`50 s`
+   propuesto); y los 2 persistentes de SEG-A desde su r5 — supresión
+   con `host: ''` desde noise-view (silencia en toda la flota) y
+   `generate` de reports-view sin guardia de vigencia.
 1. Integración de mis rondas 6-8 en la línea de IMP-B: pendiente y
    limpia (merge-tree 0 conflictos); tras integrar, la batería de
    motion es candidata a correr en su línea (necesita Chromium).
+   Desde la ronda 15 el Makefile de mi carril ya convergido (tabs +
+   ignore-scripts): la integración arrastra el arreglo de `make` a
+   la línea que toque main.
 2. POL-7 kit de componentes restante (botón, campo, tabla, insignia y
    diálogo con variantes) — exige coordinar ventanas con IMP-B (sus
    vistas, ahora desbloqueadas por el push de IMP-A: AD-5/AD-6, SET-3,
