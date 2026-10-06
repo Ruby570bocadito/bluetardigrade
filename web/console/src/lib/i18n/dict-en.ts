@@ -13,6 +13,7 @@ export const dictEn: Dict = {
     alertas: { title: 'Alert queue' },
     incidentes: { title: 'Incidents' },
     equipos: { title: 'Hosts' },
+    directorio: { title: 'Active Directory' },
     informes: { title: 'Reports' },
     probador: { title: 'Rule tester' },
     ruido: { title: 'Noise report' },
@@ -115,6 +116,12 @@ export const dictEn: Dict = {
       group: 'Response',
       description: 'Query response status and audit trail',
       keywords: 'respond audit kill process respuesta',
+    },
+    directorio: {
+      label: 'Directory',
+      group: 'Operations',
+      description: 'Active Directory snapshot and domain posture: findings, sensor coverage and objects',
+      keywords: 'ad active directory domain ldap posture findings coverage users groups computers',
     },
     analista: {
       label: 'AI analyst',

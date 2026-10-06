@@ -8,7 +8,11 @@ import { describeTelemetrySources } from '@/lib/telemetry-source'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { ActivityIcon, BatteryCharging, Desktop, Files, Flask, FolderOpen, Gauge, Lightning, Prohibit, RocketLaunch, ShieldCheck, SpeakerHigh, SquaresFour, Warning, ChatsCircle, FlowArrow, Keyboard, ListMagnifyingGlass, MagnifyingGlass, Monitor } from '@phosphor-icons/react'
+import {
+  ActivityIcon, BatteryCharging, ChatsCircle, Desktop, Files, Flask, FlowArrow, FolderOpen, Gauge, Keyboard, Lightning,
+  ListMagnifyingGlass, MagnifyingGlass, Monitor, Prohibit, RocketLaunch, ShieldCheck, SpeakerHigh, SquaresFour,
+  TreeStructure, Warning,
+} from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { BlurText } from '@/components/reactbits/blur-text'
 import { ShinyText } from '@/components/reactbits/shiny-text'
@@ -36,6 +40,7 @@ import { OnboardingWizard } from './onboarding-wizard'
 import { readDismissed, shouldAutoOpen } from '@/lib/onboarding'
 import { ThemeToggle } from './theme-toggle'
 import { ReportsView } from './reports-view'
+import { DirectoryView } from './directory-view'
 import { buildConsoleCommands, buildDestinations, type ConsoleCommand } from '@/lib/console-commands'
 import { useI18n } from './i18n-provider'
 import { LanguageToggle } from './language-toggle'
@@ -60,6 +65,7 @@ const NAV_ICONS: Record<ConsoleView, React.ElementType> = {
   panel: SquaresFour, estado: Gauge, flujo: ActivityIcon, alertas: Warning, incidentes: FolderOpen, equipos: Desktop, informes: Files,
   reglas: ShieldCheck, cadenas: FlowArrow, inteligencia: ListMagnifyingGlass, supresiones: Prohibit, probador: Flask,
   ruido: SpeakerHigh, simulacion: BatteryCharging,
+  directorio: TreeStructure,
   respuesta: Lightning, analista: ChatsCircle,
 }
 const isCurrent = (id: ConsoleView, view: ConsoleView) => (id === 'reglas' ? isDetectionView(view) : id === view)
@@ -503,6 +509,7 @@ export function ConsoleShell() {
                 {view === 'alertas' && <AlertsView onAnalyze={openInAnalyst} onAnalyzeGroup={openSelectionInAnalyst} onHost={openHost} onOpenIncident={openIncident} />}
                 {view === 'incidentes' && <IncidentsView onHost={openHost} onOpenAlert={openAlert} onAnalyze={openIncidentInAnalyst} onOpenEngineReport={openIncidentReport} />}
                 {view === 'equipos' && <HostsView onHunt={(q) => openHunt({ q })} onOpenAlert={openAlert} onOpenIncident={openIncident} />}
+                {view === 'directorio' && <DirectoryView />}
                 {view === 'informes' && <ReportsView />}
                 {isDetectionView(view) && <DetectionHub tab={view} onTab={setView} onOpenRule={openRule} />}
                 {view === 'respuesta' && <RespondView />}

@@ -302,10 +302,38 @@ export type EngineStats = {
   baseline_hosts?: number
   baseline_learning?: number
   baseline_novelties?: number
+  // SET-3 (platform status), published by the merged AD/SEC-2 engine
+  // (f8853eb): version string, ingest→alert latency summary, durable
+  // store size and both TLS listeners' certificate expiry. Optional so
+  // older engines keep decoding; absence never means zero.
+  version?: string
+  alert_latency?: AlertLatency
+  store_size_bytes?: number
+  certificates?: EngineCertificates
   // hub-only fields: the engine itself sends neither mode nor
   // interval_ms (mode optional so direct-engine responses type-check)
   interval_ms?: number
   mode?: 'engine' | 'sin-motor'
+}
+
+/** SET-3: ingest→alert latency summary (count 0 = no alerts yet, not "no latency"). */
+export type AlertLatency = {
+  count: number
+  p50_ms: number
+  p95_ms: number
+  max_ms: number
+}
+
+/** SET-3: one listener's certificate visibility; present=false without TLS. */
+export type CertExpiry = {
+  present: boolean
+  not_after: string
+  path: string
+}
+
+export type EngineCertificates = {
+  api: CertExpiry
+  ingest: CertExpiry
 }
 
 // hub-forwarded alias: same wire shape as EngineStats

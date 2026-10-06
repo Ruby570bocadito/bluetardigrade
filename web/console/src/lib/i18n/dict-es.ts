@@ -20,6 +20,7 @@ export const dictEs = {
     alertas: { title: 'Cola de alertas' },
     incidentes: { title: 'Incidentes' },
     equipos: { title: 'Equipos' },
+    directorio: { title: 'Directorio activo' },
     informes: { title: 'Informes' },
     probador: { title: 'Probador de reglas' },
     ruido: { title: 'Informe de ruido' },
@@ -125,6 +126,12 @@ export const dictEs = {
       group: 'Respuesta',
       description: 'Consultar estado y auditoría de respuesta',
       keywords: 'respond c3 audit kill proceso',
+    },
+    directorio: {
+      label: 'Directorio',
+      group: 'Operación',
+      description: 'Snapshot de Active Directory y postura del dominio: hallazgos, cobertura de sensores y objetos',
+      keywords: 'ad active directory dominio ldap postura hallazgos cobertura sensores usuarios grupos equipos ad',
     },
     analista: {
       label: 'Analista IA',

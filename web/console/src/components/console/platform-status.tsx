@@ -13,6 +13,7 @@ import {
   Broadcast,
   Database,
   Gauge,
+  SealCheck,
   ShieldCheck,
   Stack,
   UploadSimple,
@@ -29,6 +30,7 @@ const SECTION_ICONS: Record<string, React.ElementType> = {
   colas: Stack,
   almacen: Database,
   entrega: UploadSimple,
+  certificados: SealCheck,
   deteccion: ShieldCheck,
 }
 

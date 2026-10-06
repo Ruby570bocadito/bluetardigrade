@@ -8,11 +8,38 @@
 // engine does not publish is rendered as ABSENT («no publicado»), never
 // as 0 and never skipped silently. The TODO asks for latencies, the
 // store size in bytes, the engine version, expiring certificates and
-// the last scheduled report — the engine publishes none of them today,
-// so `unavailable` carries them for the view's footnote instead of
-// inventing placeholders.
+// the last scheduled report — the merged engine (f8853eb) publishes the
+// first four in /api/stats and this report renders them in their own
+// rows; only the last scheduled report stays in `unavailable` (and each
+// row still degrades to «no publicado» against older engines).
 
 import { formatUptime, type EngineStats, type HotHost } from './console-types'
+
+/** Byte size in operator units (KiB/MiB/GiB); pure so tests pin it. */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '—'
+  if (bytes < 1024) return `${fmt(bytes)} B`
+  const units = ['KiB', 'MiB', 'GiB', 'TiB']
+  let value = bytes
+  let unit = 'B'
+  for (const u of units) {
+    value /= 1024
+    unit = u
+    if (value < 1024) break
+  }
+  return `${value.toLocaleString('es-ES', { maximumFractionDigits: 1 })} ${unit}`
+}
+
+/** Certificate expiry tone: operational thresholds chosen here (the
+ * engine publishes the date; it sets no policy): warn under 30 days,
+ * bad under 7. Both need a published date — no invented urgency. */
+export function certTone(notAfter: string, now = new Date()): StatusTone {
+  if (!notAfter) return 'neutral'
+  const t = Date.parse(notAfter)
+  if (Number.isNaN(t)) return 'neutral'
+  const days = (t - now.getTime()) / 86_400_000
+  return days < 7 ? 'bad' : days < 30 ? 'warn' : 'ok'
+}
 
 export type StatusTone = 'neutral' | 'ok' | 'warn' | 'bad'
 
@@ -139,6 +166,14 @@ export function platformStatus(stats: EngineStats | null): PlatformStatusReport 
         countRow('rules', 'Reglas cargadas', stats.rules_count, {
           hint: stats.rules_types.length ? 'tipos: ' + stats.rules_types.join(', ') : undefined,
         }),
+        {
+          key: 'version',
+          label: 'Versión del motor',
+          display: stats.version ?? NOT_PUBLISHED,
+          absent: stats.version === undefined,
+          hint: 'la que reporta el propio proceso del motor',
+          tone: 'neutral',
+        },
       ],
     },
     {
@@ -151,6 +186,7 @@ export function platformStatus(stats: EngineStats | null): PlatformStatusReport 
         countRow('rejected', 'Conexiones sin credencial', stats.ingest_rejected, { attention: 'warn', hint: 'señal de sondeos del puerto de ingesta cuando hay -token' }),
         countRow('identities', 'Identidades de ingesta', stats.ingest_identities, { hint: 'vinculación host–sensor del alta (cuando está armada)' }),
         countRow('violations', 'Violaciones de identidad', stats.ingest_identity_violations, { attention: 'bad', hint: 'eventos que reclaman un host fuera de su vinculación' }),
+        latencyRows(stats.alert_latency),
       ],
     },
     {
@@ -207,6 +243,7 @@ export function platformStatus(stats: EngineStats | null): PlatformStatusReport 
         countRow('store-alerts', 'Alertas almacenadas', stats.store_alerts),
         countRow('store-failures', 'Fallos de escritura', stats.store_write_failures, { attention: 'bad', hint: 'escrituras de eventos o alertas fallidas desde el arranque de la API' }),
         countRow('store-conflicts', 'Conflictos de id', stats.store_id_conflicts, { attention: 'warn', hint: 'eventos reenviados con otra carga útil; se conserva la copia almacenada' }),
+        storeSizeRow(stats),
       ],
     },
     {
@@ -218,6 +255,15 @@ export function platformStatus(stats: EngineStats | null): PlatformStatusReport 
         deliveryRow('elastic', 'Elastic', pickTriple(stats, 'elastic'), 'indexado por lotes (-elastic)'),
         deliveryRow('splunk', 'Splunk', pickTriple(stats, 'splunk'), 'eventos HEC (-splunk)'),
         ...channels.rows,
+      ],
+    },
+    {
+      key: 'certificados',
+      title: 'Certificados',
+      hint: 'caducidad de los dos escuchas TLS del motor',
+      rows: [
+        certRow('cert-api', 'Certificado de la API', stats.certificates?.api),
+        certRow('cert-ingest', 'Certificado de ingesta', stats.certificates?.ingest),
       ],
     },
     {
@@ -239,10 +285,6 @@ export function platformStatus(stats: EngineStats | null): PlatformStatusReport 
   ]
 
   const unavailable = [
-    'latencias de ingesta y consulta',
-    'tamaño del almacén en bytes',
-    'versión del motor',
-    'certificados por caducar',
     'último informe programado',
   ]
 
@@ -262,6 +304,62 @@ function pickTriple(stats: EngineStats, sink: 'webhook' | 'elastic' | 'splunk'):
     dropped: typeof dropped === 'number' ? dropped : 0,
   }
 }
+
+/** SET-3: ingest→alert latency, one expandable triple. Tone stays
+ * neutral: the engine publishes no SLA threshold and none is invented. */
+function latencyRows(lat: EngineStats['alert_latency']): StatusRow {
+  if (!lat) {
+    return { key: 'alert-latency', label: 'Latencia ingesta→alerta', display: NOT_PUBLISHED, absent: true, hint: 'motor anterior a f8853eb', tone: 'neutral' }
+  }
+  const fmtMs = (v: number) => (v >= 1000 ? `${(v / 1000).toLocaleString('es-ES', { maximumFractionDigits: 2 })} s` : `${v.toLocaleString('es-ES', { maximumFractionDigits: 1 })} ms`)
+  return {
+    key: 'alert-latency',
+    label: 'Latencia ingesta→alerta (p50 · p95 · máx)',
+    display: lat.count === 0
+      ? 'sin alertas aún desde el arranque'
+      : `${fmtMs(lat.p50_ms)} · ${fmtMs(lat.p95_ms)} · ${fmtMs(lat.max_ms)}`,
+    hint: `medido sobre ${fmt(lat.count)} alertas; de la marca temporal del sensor al disparo (transporte + cola + detección)`,
+    tone: 'neutral',
+  }
+}
+
+/** SET-3: the durable store's on-disk size, human-readable. */
+function storeSizeRow(stats: EngineStats): StatusRow {
+  if (stats.store_size_bytes === undefined) {
+    return { key: 'store-size', label: 'Tamaño en disco', display: NOT_PUBLISHED, absent: true, hint: 'motor anterior a f8853eb', tone: 'neutral' }
+  }
+  if (stats.store_enabled === false) {
+    return { key: 'store-size', label: 'Tamaño en disco', display: 'sin almacén', hint: 'el motor corre sin -store', tone: 'neutral' }
+  }
+  return {
+    key: 'store-size',
+    label: 'Tamaño en disco',
+    display: formatBytes(stats.store_size_bytes),
+    hint: 'fichero SQLite del almacén (-store)',
+    tone: 'neutral',
+  }
+}
+
+/** SET-3: one TLS listener's certificate row. */
+function certRow(key: string, label: string, cert: EngineCertificatesLike | undefined): StatusRow {
+  if (!cert) {
+    return { key, label, display: NOT_PUBLISHED, absent: true, hint: 'motor anterior a f8853eb', tone: 'neutral' }
+  }
+  if (!cert.present) {
+    return { key, label, display: 'sin TLS (texto en claro)', hint: 'el escucha corre sin -tls: sin certificado que caduque', tone: 'neutral' }
+  }
+  const tone = certTone(cert.not_after)
+  const when = cert.not_after ? new Date(cert.not_after).toLocaleString('es-ES', { hour12: false }) : '—'
+  return {
+    key,
+    label,
+    display: when,
+    hint: `${cert.path || 'certificado configurado'} · caduca ${when}`,
+    tone,
+  }
+}
+
+type EngineCertificatesLike = { present: boolean; not_after: string; path: string }
 
 /** Hot hosts reuse for the view: top score line, already decayed by the engine. */
 export function topHostLine(hot: HotHost[] | undefined): string | undefined {

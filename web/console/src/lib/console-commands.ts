@@ -10,7 +10,7 @@ import { DICTS, type Dict } from './i18n'
 // localized catalogues are built per render with buildConsoleCommands().
 
 const DESTINATION_IDS: ConsoleView[] = [
-  'panel', 'estado', 'flujo', 'alertas', 'incidentes', 'equipos', 'informes',
+  'panel', 'estado', 'flujo', 'alertas', 'incidentes', 'equipos', 'directorio', 'informes',
   'reglas', 'cadenas', 'inteligencia', 'supresiones', 'probador',
   'ruido', 'simulacion',
   'respuesta', 'analista',

@@ -34,6 +34,8 @@ function baseStats(overrides: Partial<EngineStats> = {}): EngineStats {
   }
 }
 
+const sectionOf = (report: NonNullable<ReturnType<typeof platformStatus>>) => report.sections
+
 const section = (report: NonNullable<ReturnType<typeof platformStatus>>, key: string) => {
   const found = report.sections.find((s) => s.key === key)
   expect(found).toBeDefined()
@@ -51,10 +53,10 @@ describe('platformStatus', () => {
     expect(platformStatus(null)).toBeNull()
   })
 
-  test('the six TODO sections are always present in order', () => {
+  test('the seven TODO sections are always present in order', () => {
     const report = platformStatus(baseStats())!
     expect(report.sections.map((s) => s.key)).toEqual([
-      'motor', 'ingesta', 'colas', 'almacen', 'entrega', 'deteccion',
+      'motor', 'ingesta', 'colas', 'almacen', 'entrega', 'certificados', 'deteccion',
     ])
   })
 
@@ -192,13 +194,53 @@ describe('platformStatus', () => {
     expect(notify.display).toBe('no publicado')
   })
 
-  test('the footnote always carries the metrics the TODO asks for', () => {
+  test('the footnote carries what the API still does not publish', () => {
     const report = platformStatus(baseStats())!
-    expect(report.unavailable).toContain('latencias de ingesta y consulta')
-    expect(report.unavailable).toContain('tamaño del almacén en bytes')
-    expect(report.unavailable).toContain('versión del motor')
-    expect(report.unavailable).toContain('certificados por caducar')
-    expect(report.unavailable).toContain('último informe programado')
+    // version, latencies, store size and certificates moved to real rows
+    // when the engine started publishing them (f8853eb); only the last
+    // scheduled report has no field yet.
+    expect(report.unavailable).toEqual(['último informe programado'])
+  })
+
+  test('SET-3: version, latency, store size and certificates render as rows when published', () => {
+    const report = platformStatus(baseStats({
+      version: '1.0.0',
+      alert_latency: { count: 42, p50_ms: 3.5, p95_ms: 180.2, max_ms: 2400 },
+      store_size_bytes: 1024 * 1024 * 5,
+      store_enabled: true,
+      certificates: {
+        api: { present: true, not_after: new Date(Date.now() + 90 * 86_400_000).toISOString(), path: 'certs/api.pem' },
+        ingest: { present: false, not_after: '', path: '' },
+      },
+    }))!
+    expect(row(report, 'version').display).toBe('1.0.0')
+    const lat = row(report, 'alert-latency')
+    expect(lat.absent).toBeUndefined()
+    expect(lat.display).toContain('3,5 ms')
+    expect(lat.display).toContain('2,4 s')
+    expect(row(report, 'store-size').display).toBe('5 MiB')
+    expect(row(report, 'cert-api').tone).toBe('ok')
+    expect(row(report, 'cert-ingest').display).toBe('sin TLS (texto en claro)')
+    expect(sectionOf(report)!.some((s) => s.key === 'certificados')).toBe(true)
+  })
+
+  test('SET-3: an expiring certificate turns warn and a near-expiry turns bad', () => {
+    const report = platformStatus(baseStats({
+      certificates: {
+        api: { present: true, not_after: new Date(Date.now() + 20 * 86_400_000).toISOString(), path: 'certs/api.pem' },
+        ingest: { present: true, not_after: new Date(Date.now() + 2 * 86_400_000).toISOString(), path: 'certs/ingest.pem' },
+      },
+    }))!
+    expect(row(report, 'cert-api').tone).toBe('warn')
+    expect(row(report, 'cert-ingest').tone).toBe('bad')
+  })
+
+  test('SET-3: absent fields degrade to «no publicado» against older engines', () => {
+    const report = platformStatus(baseStats())!
+    expect(row(report, 'version').absent).toBe(true)
+    expect(row(report, 'alert-latency').absent).toBe(true)
+    expect(row(report, 'store-size').absent).toBe(true)
+    expect(row(report, 'cert-api').absent).toBe(true)
   })
 
   test('sin-motor mode names the local view instead of the engine', () => {

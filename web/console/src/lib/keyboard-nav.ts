@@ -7,7 +7,7 @@
 //
 // The map is mnemonic and collision-free across the shell's nav ids:
 //   p panel · f flujo · a alertas · i incidentes · e equipos
-//   o informes · h estado (health) · r reglas · c cadenas
+//   d directorio (AD) · o informes · h estado (health) · r reglas · c cadenas
 //   l inteligencia (listas) · s supresiones · t probador (test)
 //   u ruido · v validación (simulación)
 //   k respuesta (the view's own action: kill) · n analista
@@ -30,6 +30,7 @@ const KEY_TO_VIEW: Record<string, ConsoleView> = {
   a: 'alertas',
   i: 'incidentes',
   e: 'equipos',
+  d: 'directorio',
   o: 'informes',
   r: 'reglas',
   c: 'cadenas',
