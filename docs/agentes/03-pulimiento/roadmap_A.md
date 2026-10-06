@@ -323,6 +323,28 @@ moverlos.
   - 1 fragmento en `changelog.d/`:
     `PUL-A-ignore-scripts-harness.md`.
 
+- **2026-10-06 08h12 UTC (ronda 13, esta instancia):** pre-flight de
+  fusión — guardia ejecutada SOBRE los árboles fusionados simulados
+  de los 5 carriles. Informe en `ronda_2026-10-06_08h12_A.md`.
+  Resumen:
+  - Método nuevo: `merge-tree --write-tree` + `git show <árbol>:Makefile`
+    + guardia sobre el resultado. Detecta lo que `--name-only` no ve:
+    el contenido de las fusiones limpias.
+  - SEG-A/SEG-B/IMP-A: guardia OK en el Makefile fusionado; ci.yml
+    fusionado idéntico al mío en los 5 carriles (mi
+    `--ignore-scripts` sobrevive en todos los futuros).
+  - **Cierro con corrección mi observación a SEG-B** (ronda 12): era
+    errónea — sus líneas con espacios son del merge-base
+    (`63fa077`), no suyas; el Makefile fusionado con su carril es
+    idéntico al mío. Su «sin acción requerida» era correcto.
+  - **Confirmo y preciso mi observación a PUL-B** (ronda 11): 7
+    líneas de receta con espacios (console-a11y 86-88,
+    console-lighthouse 93-96 del fusionado) + nota de que sus
+    `npm install` de esos targets carecen de `--ignore-scripts`.
+  - **Observación NUEVA para IMP-B** (el fusilador probable: su rama
+    absorbió IMP-A y PUL-B): remedio en su rama antes de fusionar.
+  - Sin fragmento de changelog (ronda docs-only).
+
 ## Respuesta al addendum de SEG-A (conflicto sobre fuzz_test.go)
 
 El addendum de SEG-A (`783b5a8`) anotaba un conflicto append-append
@@ -420,17 +442,23 @@ de fuzz) y el Makefile roto por `63fa077` se reparó con guardia nueva
 - la matriz de OS cambie,
 - Seguridad B añada escaneos (coordinar dónde viven).
 
-### Observación para SEG-B (recetas nuevas del Makefile) — ABIERTA
+### Observación para SEG-B (recetas nuevas del Makefile) — CERRADA (ronda 13: era errónea)
 
-Sus recetas `check_package_lifecycle` (`Makefile:106-107` en SU
-rama) están sangradas con 8 espacios: heredan la corrupción de
-`63fa077` que mi ronda 11 reconvirtió a tabuladores en TODO el
-fichero. Cuando las ramas converjan: conflicto en esa zona o, si
-entran tal cual, guardia roja de `check_makefile_tabs`. Reindentar a
-TAB antes del merge (`make -n ci` debe parsear). Si las corrijo yo en
-una ronda posterior, lo registro aquí.
+(Abierta en ronda 12) Sus recetas `check_package_lifecycle`
+(`Makefile:106-107` en SU rama) estaban sangradas con 8 espacios y
+predije conflicto o guardia roja al converger.
 
-### Observación para PUL-B (targets nuevos del Makefile) — ABIERTA
+**Cierre con corrección (ronda 13):** el pre-flight (guardia sobre
+el Makefile fusionado simulado) demuestra que el Makefile fusionado
+con su carril es IDÉNTICO al mío. Esas líneas son contenido del
+merge-base (las introdujo `63fa077` en main y las heredaron ambos);
+su lado no editó el Makefile desde la base de fusión, así que el
+3-way toma mi versión reparada al completo. Su «sin acción
+requerida» era correcto; mi error fue mirar su fichero sin distinguir
+qué era suyo y qué del merge-base. Registrado como error de método,
+no como defecto suyo.
+
+### Observación para PUL-B (targets nuevos del Makefile) — CONFIRMADA (ronda 13, con líneas exactas)
 
 Sus targets `console-a11y` y `console-lighthouse` (ronda 5, sin
 fusionar) traen las recetas indentadas con 8 espacios — la corrupción
@@ -439,6 +467,15 @@ que `63fa077` introdujo en el resto del fichero. La guardia nueva
 cuanto su rama se fusione. Reindentar a tabuladores antes del merge;
 `make -n console-a11y console-lighthouse` debe parsear. Si los
 corrijo yo, lo registro aquí.
+
+**Confirmación (ronda 13):** el pre-flight ejecuta la guardia sobre
+el Makefile FUSIONADO simulado (`merge-tree --write-tree`) y sale
+ROJA: fusión limpia (sin conflicto) con 7 líneas de receta con
+espacios dentro del resultado (86-88 y 93-96: las recetas de esos
+dos targets). Extra: esos dos targets instalan con npm SIN
+`--ignore-scripts` (playwright+axe-core, lighthouse@12.8.2) — mismo
+patrón de cadena de suministro que cerré en ci.yml (ronda 12);
+recomendado añadirlo al reindentar.
 
 ### Observación para IMP-B (cuando cierre su ronda 2) — CERRADA
 
@@ -453,6 +490,17 @@ stale y nadie lo tocó. Lo dejo anotado aquí.
 (commit `4257127`, ronda 2 de IMP-B a las 12h15) y NO tocó
 `docs/ARCHITECTURE.md` (verificado con `git diff`). La fila quedó
 stale y la corregí yo en la ronda 4. Observación cerrada.
+
+### Observación para IMP-B (fusilador probable hacia main) — ABIERTA (ronda 13)
+
+Su rama `b5e26d7` absorbió la de PUL-B y hereda las 7 recetas con
+espacios de `console-a11y`/`console-lighthouse`. Cuando su rama
+converja con la mía: fusión limpia pero guardia roja y `make` roto.
+Remedio en SU rama (30 s): reindentar esas 7 líneas a TAB y —
+opcional pero recomendado — `--ignore-scripts` en los dos
+`npm install` de esos targets; verificación: `python3
+scripts/dev-tests/check_makefile_tabs.py` en su árbol. Si aterriza
+tal cual, yo lo reparo en la ronda siguiente y lo registro aquí.
 
 ### Observación para el responsable (no de mi área)
 
