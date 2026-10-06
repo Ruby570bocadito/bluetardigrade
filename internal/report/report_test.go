@@ -431,3 +431,38 @@ func TestExecutiveCSVMetricRowsAreDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// false_positive_pct is the REAL false-positive rate (the recorded
+// decision); acknowledged/closed stay as the workflow-progress proxies.
+func TestBuildNoiseFalsePositivePct(t *testing.T) {
+	w := testWindow()
+	alerts := []AlertInput{
+		alert("a1", "R1", "low", "PC-1", at("2026-10-05T10:00:00Z"), "closed"),
+		alert("a2", "R1", "low", "PC-1", at("2026-10-05T10:05:00Z"), "closed"),
+		alert("a3", "R1", "medium", "PC-2", at("2026-10-05T10:06:00Z"), "acknowledged"),
+		alert("a4", "R1", "high", "PC-2", at("2026-10-05T10:07:00Z"), "new"),
+		alert("a5", "R2", "medium", "PC-1", at("2026-10-05T10:08:00Z"), "closed"),
+	}
+	// 2 of the 4 R1 alerts carry the false_positive verdict; R2 has a
+	// verdict but it is NOT a false positive; a3 is an authorized
+	// activity, which must not inflate the FP rate either.
+	alerts[1].Decision = "false_positive"
+	alerts[2].Decision = "authorized_activity"
+	alerts[4].Decision = "confirmed_incident"
+	n := BuildNoise(NoiseInputs{Source: SourceStore, Alerts: alerts}, w, w.Until)
+	if len(n.Rules) != 2 {
+		t.Fatalf("rules = %+v", n.Rules)
+	}
+	r1 := n.Rules[0]
+	if r1.RuleID != "R1" || r1.FalsePositivePct != 25.0 {
+		t.Fatalf("R1 false_positive_pct = %v, want 25.0 (2 of 4)", r1.FalsePositivePct)
+	}
+	r2 := n.Rules[1]
+	if r2.RuleID != "R2" || r2.FalsePositivePct != 0 {
+		t.Fatalf("R2 false_positive_pct = %v, want 0 (verdict is confirmed_incident)", r2.FalsePositivePct)
+	}
+	// proxies unaffected
+	if r1.ClosedPct != 50.0 || r1.AcknowledgedPct != 25.0 {
+		t.Fatalf("R1 proxies = closed %v ack %v", r1.ClosedPct, r1.AcknowledgedPct)
+	}
+}

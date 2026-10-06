@@ -1,12 +1,9 @@
 package ad
 
 import (
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/binary"
 	"fmt"
 	"math"
-	"os"
 	"strings"
 
 	"github.com/go-asn1-ber/asn1-ber"
@@ -124,58 +121,9 @@ func searchPaged(conn *ldap.Conn, req *ldap.SearchRequest, pageSize, objectCap i
 
 // connect opens the TLS-protected connection and performs the
 // authenticated bind. It returns a live connection the caller closes.
-// Every failure path closes the connection before returning.
-func (c *Connector) connect(password string) (*ldap.Conn, error) {
-	pool := x509.NewCertPool()
-	pem, err := os.ReadFile(c.cfg.CAFile)
-	if err != nil {
-		return nil, fmt.Errorf("ad: read CA file: %w", err)
-	}
-	if !pool.AppendCertsFromPEM(pem) {
-		return nil, fmt.Errorf("ad: CA file %s holds no usable PEM certificate", c.cfg.CAFile)
-	}
-	// ServerName pins BOTH the handshake and the name the CA cert was
-	// issued for: an impostor DC must not pass by IP or by a second
-	// SAN the config never mentioned.
-	tlsCfg := &tls.Config{
-		RootCAs:    pool,
-		ServerName: c.cfg.Server,
-		MinVersion: tls.VersionTLS12,
-	}
-	scheme := "ldaps"
-	if c.cfg.StartTLS {
-		scheme = "ldap"
-	}
-	addr := fmt.Sprintf("%s://%s:%d", scheme, c.cfg.Server, c.cfg.Port)
-	var conn *ldap.Conn
-	if c.cfg.StartTLS {
-		plain, err := ldap.DialURL(addr)
-		if err != nil {
-			return nil, fmt.Errorf("ad: dial %s: %w", addr, err)
-		}
-		conn = plain
-		if err := conn.StartTLS(tlsCfg); err != nil {
-			conn.Close()
-			return nil, fmt.Errorf("ad: start TLS on %s: %w", addr, err)
-		}
-	} else {
-		conn, err = ldap.DialURL(addr, ldap.DialWithTLSConfig(tlsCfg))
-		if err != nil {
-			return nil, fmt.Errorf("ad: dial %s: %w", addr, err)
-		}
-	}
-	// The bind DN comes from the validated config, the password from
-	// its file: neither is ever interpolated into an error message
-	// (the ldap library's bind errors carry result codes, not
-	// credentials, but the connector does not rely on that for its own
-	// messages either).
-	if err := conn.Bind(c.cfg.BindDN, password); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("ad: bind as the configured service account failed: %w", err)
-	}
-	return conn, nil
-}
-
+// Every failure path closes the connection before returning. The
+// transport (CA pool, pinned ServerName, StartTLS upgrade, bind) is
+// shared with the AD-6 probe: openLDAP in settings.go.
 // syncRequest builds a paged, attributes-limited search over the base
 // DN. Scope is always WholeSubtree and the filters are literals.
 func syncRequest(base, filter string, attrs []string, pageSize int) *ldap.SearchRequest {

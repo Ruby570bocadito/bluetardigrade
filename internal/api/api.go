@@ -8,6 +8,7 @@
 package api
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -32,6 +33,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/forensic"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/incident"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/intel"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/known"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/lifecycle"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/notify"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/reputation"
@@ -113,6 +115,20 @@ type Hub struct {
 	writeEnabled bool
 	suppressPath string
 
+	// AD-6 settings surface (ad_settings.go): armed only with -ad,
+	// handlers additionally demand -api-write. adWriteMu serializes
+	// the config-file read-merge-write (and with it the engine's
+	// reconfigure callback); adTestMu allows one DC probe at a time.
+	// The reload bookkeeping is atomic: GET never blocks on (or
+	// races) a PUT's asynchronous connector swap.
+	adSettingsPath  string
+	adReconfigure   func(*ad.Config) error
+	adConfigSum     [sha256.Size]byte
+	adWriteMu       sync.Mutex
+	adTestMu        sync.Mutex
+	adReloadPending atomic.Bool
+	adReloadRecord  atomic.Pointer[adReloadRecord]
+
 	// active response (C3, armed only with -allow-kill + token + an
 	// open audit file; see respond_write.go). nil = the route answers
 	// a real 404: the surface does not exist for probing clients.
@@ -140,6 +156,10 @@ type Hub struct {
 	// hint. All connector accessors return copies — the sync goroutine
 	// never shares live memory with handlers.
 	ad *ad.Connector
+
+	// known-software list (§2.2, read-only count in /api/stats): nil =
+	// off (no -known-software file or an empty one).
+	known *known.Manager
 
 	// SET-3 (platform status): the engine's own version string (set at
 	// startup), the ingest→alert latency tracker and the ingest
@@ -310,6 +330,15 @@ func (h *Hub) SetRules(re *rules.Engine) {
 func (h *Hub) SetSuppressions(m *suppress.Manager) {
 	h.mu.Lock()
 	h.suppress = m
+	h.mu.Unlock()
+}
+
+// SetKnownSoftware exposes the §2.2 known-software list's live entry
+// count in /api/stats. Read-only: the list is an operator config file,
+// not API-editable state.
+func (h *Hub) SetKnownSoftware(m *known.Manager) {
+	h.mu.Lock()
+	h.known = m
 	h.mu.Unlock()
 }
 
@@ -756,6 +785,7 @@ type statsPayload struct {
 	SplunkFailed       uint64 `json:"splunk_failed"`
 	SplunkDropped      uint64 `json:"splunk_dropped"`
 	Suppressions       int    `json:"suppressions_active"`
+	KnownSoftware      int    `json:"known_software_active"`
 	StoreEnabled       bool   `json:"store_enabled"`
 	StoreWriteFailures uint64 `json:"store_write_failures"`
 	StoreEvents        int64  `json:"store_events"`
@@ -877,12 +907,25 @@ func (h *Hub) statsSnapshot() statsPayload {
 	notifyFn := h.notify
 	bFn := h.beacon
 	st := h.store
+	// Every remaining hub field statsSnapshot reads is captured HERE,
+	// under the lock (SEG-A ronda 11): the setters write these under
+	// h.mu, so a raw read after Unlock is a data race the moment any
+	// of them is ever re-armed hot. The captured closures stay UNCALLED
+	// until after Unlock — the uniform no-other-manager's-lock rule
+	// below is untouched.
+	latFn := h.alertLatency
+	ingCertFn := h.ingestCert
+	rel := h.reloader
+	riskM := h.risk
+	tFn := h.threshold
+	version := h.version
 	rulesCount, rulesTypes := 0, []string{}
 	if h.rules != nil {
 		rulesCount = h.rules.Count()
 		rulesTypes = h.rules.Types()
 	}
 	sup := h.suppress
+	knownM := h.known
 	intelM, base := h.intel, h.baseline
 	h.mu.Unlock()
 	// The correlator closure is called AFTER h.mu.Unlock, never under
@@ -920,6 +963,10 @@ func (h *Hub) statsSnapshot() statsPayload {
 	if sup != nil {
 		supActive = sup.Count(time.Now())
 	}
+	knownActive := 0
+	if knownM != nil {
+		knownActive = knownM.Count()
+	}
 
 	// Risk tracker has its own mutex: read after h.mu.Unlock, the same
 	// uniform rule as the correlator/store/suppress managers above.
@@ -927,9 +974,9 @@ func (h *Hub) statsSnapshot() statsPayload {
 	// signal (how many hosts carry non-cold risk right now).
 	now := time.Now()
 	riskHosts, hotHosts := 0, []risk.HostRisk{}
-	if h.risk != nil {
-		riskHosts = h.risk.Tracked(now)
-		hotHosts = h.risk.Snapshot(now, 5)
+	if riskM != nil {
+		riskHosts = riskM.Tracked(now)
+		hotHosts = riskM.Snapshot(now, 5)
 	}
 
 	// Beacon detector closure: same uniform rule — called after
@@ -942,13 +989,13 @@ func (h *Hub) statsSnapshot() statsPayload {
 		bTracked, bCap, bFired = bFn()
 	}
 
-	// Threshold detector closure (A2): same uniform rule — called
-	// after h.mu.Unlock (fire path runs the lock order the other way
+	// Threshold detector closure (A2): captured under the lock above,
+	// called after Unlock (fire path runs the lock order the other way
 	// round: Observe holds its mutex across fire -> RecordAlert, which
 	// takes h.mu).
 	var tDefs, tKeys int
 	var tFired uint64
-	if tFn := h.threshold; tFn != nil {
+	if tFn != nil {
 		tDefs, tKeys, tFired = tFn()
 	}
 
@@ -974,18 +1021,17 @@ func (h *Hub) statsSnapshot() statsPayload {
 		}
 	}
 
-	// SET-3 fields: version was written once at startup (plain field
-	// read under the hub lock at the top of this function would race
-	// nothing, but the uniform setter keeps the contract in one
-	// place); latency and the ingest certificate are closures called
-	// here — after h.mu.Unlock, like every other manager.
+	// SET-3 fields: version is captured under the lock at the top of
+	// this function; latency and the ingest certificate closures were
+	// captured there too and are only CALLED here — after h.mu.Unlock,
+	// like every other manager.
 	var lat latencyPayload
-	if fn := h.alertLatency; fn != nil {
-		lat.Count, lat.P50Ms, lat.P95Ms, lat.MaxMs = fn()
+	if latFn != nil {
+		lat.Count, lat.P50Ms, lat.P95Ms, lat.MaxMs = latFn()
 	}
 	ingestCert := certExpiryPayload{}
-	if fn := h.ingestCert; fn != nil {
-		if na, path, ok := fn(); ok {
+	if ingCertFn != nil {
+		if na, path, ok := ingCertFn(); ok {
 			ingestCert = certExpiryPayload{
 				Present:  true,
 				NotAfter: na.UTC().Format(time.RFC3339),
@@ -994,12 +1040,12 @@ func (h *Hub) statsSnapshot() statsPayload {
 		}
 	}
 	apiCert := certExpiryPayload{}
-	if h.reloader != nil {
-		if na, ok := h.reloader.NotAfter(); ok {
+	if rel != nil {
+		if na, ok := rel.NotAfter(); ok {
 			apiCert = certExpiryPayload{
 				Present:  true,
 				NotAfter: na.UTC().Format(time.RFC3339),
-				Path:     h.reloader.CertFile(),
+				Path:     rel.CertFile(),
 			}
 		}
 	}
@@ -1007,9 +1053,6 @@ func (h *Hub) statsSnapshot() statsPayload {
 	if st != nil {
 		storeSize, _ = st.SizeBytes() // a transient pragma failure reports 0: the store stays enabled
 	}
-	h.mu.Lock()
-	version := h.version
-	h.mu.Unlock()
 
 	return statsPayload{
 		UptimeS:                  int64(time.Since(h.started) / time.Second),
@@ -1034,6 +1077,7 @@ func (h *Hub) statsSnapshot() statsPayload {
 		SplunkFailed:             spFailed,
 		SplunkDropped:            spDropped,
 		Suppressions:             supActive,
+		KnownSoftware:            knownActive,
 		StoreEnabled:             storeEnabled,
 		StoreWriteFailures:       atomic.LoadUint64(&h.storeFails),
 		StoreEvents:              storeEvents,
@@ -1115,22 +1159,26 @@ func (h *Hub) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 // alertView is the wire form of an alert with the lifecycle overlay
 // applied. Embedding flattens the JSON, so the shape is the Alert
-// payload plus the four optional status fields — downstream consumers
-// keep parsing the same fields they already know.
+// payload plus the optional status fields — downstream consumers keep
+// parsing the same fields they already know.
 type alertView struct {
 	alert.Alert
 	Status     string `json:"status,omitempty"`      // new (implicit), acknowledged, closed
+	Decision   string `json:"decision,omitempty"`    // operator verdict: false_positive, authorized_activity, confirmed_incident
 	StatusNote string `json:"status_note,omitempty"` // operator free-text triage note
 	StatusBy   string `json:"status_by,omitempty"`   // who set it (unauthenticated free text)
 	StatusAt   string `json:"status_at,omitempty"`   // RFC 3339 when the status was set
 }
 
 // withLifecycle merges the store's entry (when any) into an alert.
+// The decision shares the entry's at/by with the status: one record
+// is one operator action, so there is no separate decision timestamp.
 func (h *Hub) withLifecycle(a alert.Alert) alertView {
 	v := alertView{Alert: a}
 	v.Status = "new" // explicit default: readers never special-case missing fields
 	if e, ok := h.lifecycle.Get(a.ID); ok {
 		v.Status = string(e.Status)
+		v.Decision = string(e.Decision)
 		v.StatusNote = e.Note
 		v.StatusBy = e.By
 		v.StatusAt = e.At
@@ -1192,11 +1240,16 @@ func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 // out of the store keys and the log lines.
 var alertIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
 
-// statusRequest is the POST /api/alerts/{id}/status body.
+// statusRequest is the POST /api/alerts/{id}/status body. Decision
+// is optional ("" = no verdict); see lifecycle.Decision for the
+// vocabulary. The body is the FULL triage record: omitting decision
+// (or note, or by) clears it — the same replace semantics the store
+// applies.
 type statusRequest struct {
-	Status string `json:"status"`
-	Note   string `json:"note"`
-	By     string `json:"by"`
+	Status   string `json:"status"`
+	Decision string `json:"decision"`
+	Note     string `json:"note"`
+	By       string `json:"by"`
 }
 
 // handleAlertStatus records the operator triage decision for one
@@ -1220,7 +1273,7 @@ func (h *Hub) handleAlertStatus(w http.ResponseWriter, r *http.Request) {
 	var req statusRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		writeErr(w, http.StatusBadRequest,
-			`invalid JSON body: want {"status":"acknowledged|closed|new","note":"...","by":"..."}`)
+			`invalid JSON body: want {"status":"acknowledged|closed|new","decision":"false_positive|authorized_activity|confirmed_incident","note":"...","by":"..."}`)
 		return
 	}
 	st := lifecycle.Status(req.Status)
@@ -1229,7 +1282,13 @@ func (h *Hub) handleAlertStatus(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("invalid status %q: valid values are new, acknowledged, closed", req.Status))
 		return
 	}
-	e, err := h.lifecycle.Set(id, st, req.Note, req.By)
+	decision := lifecycle.Decision(req.Decision)
+	if !lifecycle.DecisionValid(decision) {
+		writeErr(w, http.StatusBadRequest,
+			fmt.Sprintf("invalid decision %q: valid values are false_positive, authorized_activity, confirmed_incident (omit the field for no verdict)", req.Decision))
+		return
+	}
+	e, err := h.lifecycle.Set(id, st, decision, req.Note, req.By)
 	if err != nil {
 		// Persistence failures are the server's fault: 500 with a
 		// GENERIC body — the wrapped error names local paths that must
@@ -1246,8 +1305,15 @@ func (h *Hub) handleAlertStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// by is client-controlled free text: keep it single-line so the
-	// audit log cannot be forged with embedded newlines.
-	log.Printf("[API] alert %s -> %s (by=%s)", id, e.Status, oneLine(e.By))
+	// audit log cannot be forged with embedded newlines. The decision
+	// (when present) names the verdict in the same audit line — the
+	// «falso positivo» of the triage flow must be attributable the
+	// same way a status change is.
+	if e.Decision != "" {
+		log.Printf("[API] alert %s -> %s decision=%s (by=%s)", id, e.Status, e.Decision, oneLine(e.By))
+	} else {
+		log.Printf("[API] alert %s -> %s (by=%s)", id, e.Status, oneLine(e.By))
+	}
 	h.broadcast("alert_lifecycle", e)
 	writeJSON(w, e)
 }

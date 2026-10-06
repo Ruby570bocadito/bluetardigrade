@@ -41,6 +41,7 @@ type options struct {
 	ingestCert       string
 	ingestKey        string
 	suppressionsFile string
+	knownFile        string
 	lifecycleFile    string
 	incidentsFile    string
 	storePath        string
@@ -134,6 +135,8 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 		"TLS private key (PEM) for the ingest listener; requires -ingest-cert; empty keeps plain TCP")
 	fs.StringVar(&o.suppressionsFile, "suppressions", "./suppressions.yaml",
 		"operator allowlist YAML silencing rule/host pairs (expires supported); empty disables")
+	fs.StringVar(&o.knownFile, "known-software", "./known-software.yaml",
+		"known-software YAML (§2.2): events matching an entry carry enrichment.known_software, the baseline stops reporting them as novelties and the noise report stops counting them as noise; hot-reloaded; empty disables")
 	fs.StringVar(&o.lifecycleFile, "lifecycle", "./alert-lifecycle.json",
 		"JSON file persisting alert triage status (acknowledged/closed + notes); empty keeps statuses in memory only")
 	fs.StringVar(&o.incidentsFile, "incidents", "./incidents.json",

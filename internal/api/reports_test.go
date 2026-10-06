@@ -95,7 +95,7 @@ func TestReportExecutiveAggregatesSeededAlerts(t *testing.T) {
 	seedAlert(t, h, "0123456789abcdef", "R1", "high", "PC-1", time.Hour, "attack.credential-access")
 	seedAlert(t, h, "0123456789abcdee", "R1", "high", "PC-1", 2*time.Hour)
 	seedAlert(t, h, "0123456789abcded", "R2", "low", "PC-2", 3*time.Hour)
-	if _, err := h.lifecycle.Set("0123456789abcdef", lifecycle.StatusClosed, "", "ana"); err != nil {
+	if _, err := h.lifecycle.Set("0123456789abcdef", lifecycle.StatusClosed, "", "", "ana"); err != nil {
 		t.Fatal(err)
 	}
 	code, body, _ := get(t, "http://"+addr+"/api/reports/executive?window=24h")
@@ -197,7 +197,7 @@ func TestReportSocBucketsSeededTriage(t *testing.T) {
 	h, addr := newTestHub(t)
 	seedAlert(t, h, "0123456789abcdef", "R1", "low", "PC-1", time.Hour)
 	seedAlert(t, h, "0123456789abcdee", "R1", "low", "PC-2", 2*time.Hour)
-	if _, err := h.lifecycle.Set("0123456789abcdef", lifecycle.StatusAcknowledged, "", "ana"); err != nil {
+	if _, err := h.lifecycle.Set("0123456789abcdef", lifecycle.StatusAcknowledged, "", "", "ana"); err != nil {
 		t.Fatal(err)
 	}
 	code, body, _ := get(t, "http://"+addr+"/api/reports/soc?window=24h")
@@ -339,5 +339,46 @@ func TestNoiseWindowValidation(t *testing.T) {
 	code, _, _ = get(t, "http://"+addr+"/api/noise")
 	if code != http.StatusOK {
 		t.Fatalf("default window = %d", code)
+	}
+}
+
+// The decision recorded in the lifecycle store reaches /api/noise as
+// false_positive_pct on the wire (the integration point IMP-B's
+// screen consumes: POST /api/alerts/{id}/status with a decision, then
+// the FP rate of that rule moves).
+func TestNoiseCarriesDecisionFromLifecycle(t *testing.T) {
+	h, addr := newTestHub(t)
+	h.RecordAlert(alert.Alert{
+		Timestamp: time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano), RuleID: "R1", RuleName: "test rule",
+		Severity: "low", Host: "LAB-TEST", EventID: "ev-1",
+		EventType: "process.create", Summary: "s", MatchedOn: []string{"process.name"},
+	})
+	h.RecordAlert(alert.Alert{
+		Timestamp: time.Now().UTC().Add(-2 * time.Minute).Format(time.RFC3339Nano), RuleID: "R1", RuleName: "test rule",
+		Severity: "low", Host: "LAB-TEST", EventID: "ev-2",
+		EventType: "process.create", Summary: "s", MatchedOn: []string{"process.name"},
+	})
+	var listed []map[string]any
+	getJSON(t, fmt.Sprintf("http://%s/api/alerts", addr), &listed)
+	ids := make([]string, 0, 2)
+	for _, a := range listed {
+		ids = append(ids, a["id"].(string))
+	}
+	if _, err := h.lifecycle.Set(ids[0], lifecycle.StatusClosed, lifecycle.DecisionFalsePositive, "fp", "ana"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	code, body, _ := get(t, "http://"+addr+"/api/noise?window=1h")
+	if code != http.StatusOK {
+		t.Fatalf("noise = %d: %s", code, body)
+	}
+	if !strings.Contains(body, `"false_positive_pct":50`) {
+		t.Fatalf("wire body does not carry the 50%% FP rate: %s", body)
+	}
+	var rep report.Noise
+	if err := json.Unmarshal([]byte(body), &rep); err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Rules) != 1 || rep.Rules[0].FalsePositivePct != 50.0 {
+		t.Fatalf("rules = %+v", rep.Rules)
 	}
 }

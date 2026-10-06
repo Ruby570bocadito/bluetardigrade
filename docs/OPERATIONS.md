@@ -176,6 +176,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `-intel` | `./intel` | offline threat-intel lists (`*.txt`/`*.list`: IPs, CIDRs, domains, URLs, hashes) matched against every event and re-read on change; nothing is downloaded; empty disables |
 | `-baseline-learn` | `24h` | per-host learning period before a never-seen process raises a low alert (falls back to `SF_BASELINE_LEARN`); `0` disables |
 | `-suppressions` | `./suppressions.yaml` | operator allowlist (hot-reload aware) |
+| `-known-software` | `./known-software.yaml` | known-software list (§2.2: `enrichment.known_software`, baseline/noise effects; hot-reload aware) |
 | `-lifecycle` | `./alert-lifecycle.json` | alert triage state file (acknowledged/closed + notes; empty keeps statuses in memory only) |
 | `-incidents` | `./incidents.json` | incidents file (cases grouping alerts, with status, owner and timeline; empty keeps them in memory only) |
 | `-reload-every` | `15s` | hot-reload cadence for rules/sequences/suppressions (`0` disables) |
@@ -235,10 +236,10 @@ The engine serves a small read-only API used by the web console and handy for SI
 |----------|---------|
 | `GET /api/health` | liveness + mode |
 | `GET /metrics` | the same counters as `/api/stats` in the Prometheus text exposition format (`sf_*` families, `text/plain; version=0.0.4`) — scrapers read the credential from their `authorization` config; see [Prometheus](#prometheus-metrics) |
-| `GET /api/stats` | uptime, counters, per-severity totals, rule count, ingest auth rejections, webhook delivery counters, per-platform SIEM sink counters (`elastic_*` / `splunk_*`), per-channel external notification counters (`notify_channels`), active suppressions, kill-chain correlator observability (`correlator_states` / `correlator_sequences` / `correlator_cap`), store counters (`store_enabled` / `store_events` / `store_alerts`), platform status (`version`, `alert_latency` p50/p95/max, `store_size_bytes`, `certificates` expiry of both listeners) |
+| `GET /api/stats` | uptime, counters, per-severity totals, rule count, ingest auth rejections, webhook delivery counters, per-platform SIEM sink counters (`elastic_*` / `splunk_*`), per-channel external notification counters (`notify_channels`), active suppressions, known-software entries, kill-chain correlator observability (`correlator_states` / `correlator_sequences` / `correlator_cap`), store counters (`store_enabled` / `store_events` / `store_alerts`), platform status (`version`, `alert_latency` p50/p95/max, `store_size_bytes`, `certificates` expiry of both listeners) |
 | `GET /api/events?limit=200` | recent events, newest first |
 | `GET /api/alerts?limit=100` | recent alerts, newest first |
-| `GET /api/suppressions` | operator allowlist currently active; `POST`/`DELETE` (only with `-api-write`) edit the same file atomically — see [Alert suppressions](#alert-suppressions-operator-allowlist) |
+| `GET /api/suppressions` | operator allowlist currently active (entries with `when` conditions included); `POST`/`DELETE` (only with `-api-write`) edit the same file atomically — see [Alert suppressions](#alert-suppressions-operator-allowlist) |
 | `POST /api/respond/kill` | active response (C3, opt-in): kill one verified local process, operator-invoked; exists only with `-allow-kill` + API token + open audit (otherwise a real `404`) — see [Active response](#active-response-kill_process-opt-in) |
 | `GET /api/respond/state` | armed state of the active-response surface: live allowlist/protected counts, the paths armed at startup and the audit file size against its 64 MiB ceiling; same real-`404` contract as the kill route |
 | `GET /api/respond/audit?limit=100` | tail of the `-respond-audit` JSONL (executed AND denied attempts, newest first) with honest scan bookkeeping (`skipped`/`truncated`); hard cap 500; same real-`404` contract |
@@ -554,6 +555,19 @@ Point the engine at it with `-suppressions <path>` (default `./suppressions.yaml
 - A malformed file is FATAL at startup (a typo must not disable a control you believe is armed) and rejected — keeping the previous set — on hot reload, loudly.
 - The live set is observable at `GET /api/suppressions` and counted in `/api/stats` (`suppressions_active`).
 - **API writes are opt-in**: an engine started with `-api-write` (or `SF_API_WRITE=1`) also answers `POST /api/suppressions` (add/update one entry, keyed by the rule_id+host pair) and `DELETE /api/suppressions?rule_id=…&host=…` (exact-pair removal, `404` when nothing matched). Writes go through the same validation as the YAML loader, land on the file atomically (temp + rename, preserving its mode) and are loaded back immediately — the file stays the single source of truth, so hand edits and API edits never diverge. Without the flag both routes answer `403` naming it; beyond loopback, arming is refused at startup unless `-api-token` is set. Every write logs an audit line (`WRITE suppressions add rule=… host=… by=api`) with control characters %XX-escaped, so a hostile request cannot forge engine-log lines. Hard caps shared by the API and the YAML loader bound one hostile or careless request: fields (`rule_id` 128, `host` 253, `reason` 2000 characters), 8 KiB per request body and 1000 entries per file (hand edits of the file are not capped — you already hold the pen). Contract details: [`api/openapi.yaml`](api/openapi.yaml).
+- **Conditional entries (`when`, §2.3)** narrow a suppression to events whose fields match EVERY condition — the "suppress this exactly" case: one noisy invocation of an otherwise useful rule. Conditions use the SAME operators the rule engine evaluates (`eq`, `neq`, `contains`, `contains_any`, `startswith`, `endswith`, `regex`, `in`, `not_in`, `gt`, `lt` and the case-insensitive `i*` variants), so what a condition means is defined in exactly one place:
+
+  ```yaml
+  - rule_id: f0de8115-78c7-4ebd-add3-a1ac994d6a1c   # clipboard read
+    host: DESKTOP-1T9I3SH
+    when:
+      - field: process.command_line
+        operator: eq
+        value: 'powershell.exe -NoProfile -NonInteractive -Command "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-Clipboard -Raw"'
+    reason: asistente de desarrollo que lee el portapapeles
+  ```
+
+  A different `Get-Clipboard` command line keeps firing. Caps: 8 conditions per entry, field 128 and value 2000 characters, value lists up to 16 items; an unknown operator or a bad regex fails the load LOUDLY (the same standard as a rule). An event without the field never matches a condition on it. **Where conditions apply:** they are evaluated where the triggering event exists — rule hits, threat-intel matches and baseline novelties. Aggregated alerts (kill-chain completions, beaconing, volumetric) carry no single event, so a conditional entry never silences one; the failure direction is an alert you still see, never a lost signal. Unconditional entries keep silencing aggregates exactly as before.
 
 ## Alert triage (lifecycle)
 
@@ -567,9 +581,16 @@ curl -X POST http://127.0.0.1:7778/api/alerts/<id>/status \
   -d '{"status":"acknowledged","note":"visto, investigando","by":"ana"}'
 
 # close it, reopen it ("new"), same endpoint — statuses: new, acknowledged, closed
+
+# record the verdict with the close: WHAT the alert was
+curl -X POST http://127.0.0.1:7778/api/alerts/<id>/status \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"closed","decision":"false_positive","note":"tarea programada","by":"ana"}'
 ```
 
-`GET /api/alerts` merges the current status into every alert (`status`, `status_note`, `status_by`, `status_at`), a `alert_lifecycle` SSE frame announces each decision live, and the web console renders the status chips plus the reconocer/cerrar/reabrir actions in the alert panel (the write goes console → same-origin Next.js proxy → engine; the API token stays on the server). The API token gates the write endpoint exactly like every read endpoint.
+The `decision` field is the operator's verdict: `false_positive` (benign — the rule fired on activity it does not exist to catch), `authorized_activity` (real but sanctioned: a pentest window, a change ticket) or `confirmed_incident`. It is optional and carries no workflow coupling — it may be recorded on any status, before or with the close. The POST body is the FULL triage record, never a partial patch: omitting `decision` (or `note`, or `by`) clears it. The verdict feeds the triage flow's «falso positivo» state in the console and the `false_positive_pct` of the [noise report](#alert-noise-control) — the real per-rule false-positive rate, no longer a proxy.
+
+`GET /api/alerts` merges the current status into every alert (`status`, `decision`, `status_note`, `status_by`, `status_at`), a `alert_lifecycle` SSE frame announces each decision live, and the web console renders the status chips plus the reconocer/cerrar/reabrir actions in the alert panel (the write goes console → same-origin Next.js proxy → engine; the API token stays on the server). The API token gates the write endpoint exactly like every read endpoint.
 
 Statuses persist across engine restarts with `-lifecycle <file>` (default `./alert-lifecycle.json`, falling back to the install root; `-lifecycle ""` keeps them in memory only). The file is written atomically on every decision and is FATAL to load if malformed — the same fail-loud standard as suppressions: triage work silently resetting to "new" would be a lie. One honest note on restarts: without `-store` the alert ring is in-memory, so after a restart the file preserves the audit record while the alerts it refers to are gone. With the SQLite store attached, alerts are served from the persisted history after a restart (see [Persistent storage](#persistent-storage-sqlite-opt-in)), so alert and lifecycle persist together and the triage status stays visible end to end.
 
@@ -780,6 +801,54 @@ the secret, its base64/hex forms and its length from every `/api/ad/*`
 response) and is zeroed from memory right after each bind attempt; a
 failed bind reports server and result code, never the credential.
 
+### Settings over the API (AD-6)
+
+The settings the console's AD-6 screen edits live in three routes —
+all admin business, so the whole family answers `403` while the engine
+runs without `-api-write` (the engine's single bearer token has no
+role model; arming writes IS the admin gate), and `GET`/`PUT` answer
+`501` without `-ad` (feature off, the same contract as the rest of
+`/api/ad`):
+
+- `GET /api/settings/ad` — the effective configuration: server, port,
+  transport, base DN, the two file paths with their presence booleans
+  (contents are never served), sync interval, OU filters, safety
+  valves, posture thresholds and the work-hours window. The password
+  is NOT part of the document: `password_stored` says whether its SEC-2
+  envelope exists, nothing more.
+- `PUT /api/settings/ad` — validate, commit, hot-reload. The merged
+  configuration is validated with the SAME rules the `-ad` loader
+  applies (a rejected change never touches the disk); a password in
+  the request goes to its own SEC-2 envelope file (never into the
+  YAML, never into a log); the YAML is installed atomically
+  (temp+rename+Sync, mode 0600); the live connector is hot-swapped
+  (the next sync uses the new settings; the response reports
+  `reload_pending` and the swap result lands in `last_reload_*`).
+  Every commit leaves one audit line in the engine log listing the
+  changed field names. A `-ad` file edited by hand since the engine
+  loaded it refuses the PUT with `409` — reconcile the hand edit
+  first; the API never clobbers it.
+- `POST /api/ad/test` — the "Probar conexión" button: one bounded,
+  read-only probe (same TLS transport, authenticated bind, up to 200
+  sampled entries per object kind) of a candidate configuration. It
+  stores nothing, answers 200 with `ok: true/false` (a failed
+  CONNECTION is a successful TEST), works without `-ad` (test a full
+  configuration BEFORE restarting the engine with it), and runs one
+  probe at a time.
+
+```bash
+curl -s -X PUT "$API/api/settings/ad" \
+  -H "Authorization: Bearer $SF_API_TOKEN" \
+  -d '{"interval_seconds": 900, "inactive_days": 60}'
+curl -s -X POST "$API/api/ad/test" \
+  -H "Authorization: Bearer $SF_API_TOKEN" \
+  -d '{"server": "dc01.corp.example.com", "port": 636}'
+```
+
+The machine-readable contract (including the `ADSettingsUpdate` field
+list and the `ADTestResult` verdict shape) lives in
+[`api/openapi.yaml`](api/openapi.yaml).
+
 ## Reputation lookups (opt-in)
 
 Set `SF_VT_API_KEY` (VirusTotal) and/or `SF_ABUSEIPDB_API_KEY`
@@ -878,6 +947,26 @@ when no account is an administrator) and `ingest-identities.yaml`
 (validated with the engine's loader, since the engine refuses to start
 on a malformed one). Files saved by Windows tools with a UTF-8 BOM or as
 UTF-16 are read correctly.
+
+## Known software (§2.2, `-known-software`)
+
+`known-software.yaml` (see `known-software.example.yaml` for the annotated format) names software the whole deployment is expected to run — the Lenovo Vantage on every laptop, the corporate VPN, an internal agent pinned by hash. Events whose process matches an entry carry the enrichment `known_software: <name>`. The event is NEVER deleted, downgraded or hidden — known software is also compromised software — but three honest effects apply:
+
+- the **baseline** keeps learning the name but stops reporting it as a novelty;
+- the **noise report** (`GET /api/noise`) stops counting those boots in the process aggregate, and `scanned.known_software_events` keeps the disappearance explainable;
+- a **rule** may opt out of firing on it with `exclude_known_software: true` (intended for low/medium-confidence "unexpected software" rules; high/critical rules should never set it — the enrichment key is engine-owned, so a sensor cannot forge its way past a rule).
+
+```yaml
+version: 1
+software:
+  - name: Lenovo Vantage
+    image: 'C:\Program Files (x86)\Lenovo\VantageService\*\LenovoVantage-*.exe'
+    signer: 'Lenovo'          # metadata only: signature matching arrives in v1.2
+  - name: Inventory agent
+    sha256: ['9a1f2c3d4e5f60718293a4b5c6d7e8f900112233445566778899aabbccddeeff']
+```
+
+Matching is case-insensitive and backslash-normalized (write the path exactly like the sensor reports it); `*` does not cross a directory separator — one star per path level. An entry needs `image`, `sha256` or both. Point the engine at it with `-known-software <path>` (default `./known-software.yaml`, falling back to the install root); empty disables. The file hot-reloads on the same 15 s ticker as rules and suppressions; a malformed file is FATAL at startup and keeps the previous list on hot reload, loudly. The live count is visible at `GET /api/stats` (`known_software_active`).
 
 ## Host risk scoring (hot hosts)
 

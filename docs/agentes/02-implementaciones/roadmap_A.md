@@ -5,6 +5,61 @@ cada ronda: qué está a medias, qué sigue y por qué.
 
 ## Estado actual
 
+- Ronda 2026-10-06 10h53 cerrada (informe: `ronda_2026-10-06_10h53_A.md`). Primero,
+  **publicados los 8 commits retenidos** (`bc91c7d..9b82845`): la sesión trajo la
+  credencial de push (usada solo como variable de entorno del proceso). Después,
+  **AD-6/SET-1 parte A (motor)**: `GET/PUT /api/settings/ad` + `POST /api/ad/test`
+  («Probar conexión» del TODO): validación con las reglas del cargador `-ad` ANTES
+  de tocar disco, contraseña a su sobre SEC-2 (nunca en el YAML/logs/respuesta),
+  YAML atómico con valores efectivos, **recarga en caliente** del conector
+  (`ad.New` + `SetAD` bajo cerrojo, bucle anterior parado fuera de camino),
+  drift de fichero `-ad` → 409, auditoría por nombres de campo, horario laboral
+  (work_start/work_end/work_days, validado; consumidor: AD-3 cuando haya WEF).
+  Transporte LDAP unificado (`openLDAP`): el probe usa el MISMO handshake que la
+  sync, con `conn.Start()` explícito (su ausencia = deadlock de Bind, cazado en
+  test). Guard compartida `check_openapi.py` extendida a múltiples cuerpos 403
+  (segunda superficie de escritura); self-test 5/5. OpenAPI 41→43 paths
+  (schemas ADSettings/ADSettingsUpdate/ADTestResult). Verificación: build+windows,
+  vet, staticcheck 0, race x5 (api 50 s/ad/engine), suite completa -race 40 paquetes
+  0 fallos, guards OK, e2e reports_noise 33/33 + smoke_lifecycle 12/12.
+- Ronda 2026-10-06 07h58 cerrada (informe: `ronda_2026-10-06_07h58_A.md`). Primero,
+  **los DOS hallazgos de SEG-A ronda 11 en mi rama, corregidos con su sonda**:
+  `/api/ad/posture` ya sirve el score almacenado (MEDIA; prueba nueva con store
+  temporal + conector sin red, exigía 87) y las lecturas de `h.ad`/`h.alertLatency`/
+  `h.ingestCert`/`h.version` (y `h.risk`/`h.threshold`/`h.reloader`) van bajo cerrojo
+  (BAJA; accesorio `adConnector()` + capturas pre-Unlock en `statsSnapshot`). Después,
+  **§2.3 supresiones con condiciones**: `when` (field/operator/value) en
+  `internal/suppress`, compilado con `rules.NewMatcher` (mismos operadores, una sola
+  fuente de verdad — exporté `rules.IsValidOperator`); evaluado donde existe el evento
+  (reglas, intel, línea base) y NUNCA sobre agregados (fallo hacia alertar); API de
+  escritura, OpenAPI y OPERATIONS.md actualizados. Y **§2.2 software conocido**: paquete
+  `internal/known` (`-known-software`, `known-software.example.yaml`), match por glob
+  de imagen (insensible a mayúsculas, backslash-normalizado, `*` no cruza directorio)
+  y/o sha256; etiqueta `enrichment.known_software` de clave de MOTOR (no falsificable),
+  el evento nunca se borra; la línea base aprende pero no reporta novedad, el ruido lo
+  excluye con contador de honestidad (`scanned.known_software_events`), las reglas
+  pueden excluirse con `exclude_known_software: true` (opt-in); `/api/stats` gana
+  `known_software_active`. §2.1 (Rust) sigue bloqueada sin `cargo`. Verificación: 40
+  paquetes ok, race x5 (api 47,7 s / engine / suppress / enrich) y x3 (report/rules/
+  known), staticcheck 0, guards OK (41 rutas, 114 reglas), e2e reports_noise 33/33 +
+  smoke_lifecycle 12/12 + beacon 14/14 + threshold 12/12. Retenida en local de nuevo
+  (sin credencial de push ni webhook; declarado en el informe).
+- Ronda 2026-10-06 09h01 cerrada (informe: `ronda_2026-10-06_09h01_A.md`).
+  Entregado el **campo de decisión de triaje** (petición MEDIA de IMP-B,
+  cola #1): `Decision` en `internal/lifecycle` (`false_positive`,
+  `authorized_activity`, `confirmed_incident`; typo = error duro, fichero
+  sigue en versión 1 con compatibilidad hacia atrás probada), semántica de
+  REEMPLAZO completo (omitir `decision` la limpia, como `note`/`by`),
+  `POST /api/alerts/{id}/status` + overlay `decision` en `GET /api/alerts`
+  + CSV con la columna AÑADIDA AL FINAL + línea de auditoría con veredicto,
+  y `false_positive_pct` REAL en `/api/noise` (los proxies
+  closed/acknowledged quedan intactos). OpenAPI (4 esquemas + 4
+  descripciones), OPERATIONS.md, changelog.d. smoke_lifecycle 9 → 12.
+  Dos fallos cazados en propia casa: la herramienta de edición normalizó
+  lifecycle.go a espacios (gofmt lo cazó; restaurado) y la pegajosidad de
+  claves JSON en un test reutilizando mapas (el servidor estaba bien; nota
+  para IMP-B en el informe). Retenida en local: la sesión NO trajo
+  credencial de push (declarado en el informe; commits listos para push).
 - Ronda 2026-10-05 21h48 cerrada (informe: `ronda_2026-10-05_21h48_A.md`). Primero se
   publicó el cierre retenido de la ronda anterior (`2c32013..8150a37`): AD-1/AD-2/SET-3
   quedan OFICIALES y visibles (SEG-B puede auditar `internal/ad`, IMP-B puede consumir
@@ -60,33 +115,32 @@ cada ronda: qué está a medias, qué sigue y por qué.
 
 ## A medias
 
-- Nada a medias: AD-1, AD-2 y SET-3 lado motor quedaron completos y verificados.
+- Nada a medias: AD-1, AD-2, SET-3, SEC-2 y el campo de decisión de triaje quedaron
+  completos y verificados.
 - AD-1/AD-2 quedan a la espera de su parte de consola (AD-5/AD-6, IMP-B): los contratos
   JSON están publicados en OpenAPI y en el informe de esta ronda.
+- El botón «añadir a software conocido» de la pestaña de ruido de IMP-B YA TIENE backend:
+  `known-software.yaml` (§2.2) existe con recarga en caliente; falta su parte de consola.
 - SIM-4 sigue a la espera de su parte B (pantalla de la consola, IMP-B); REP-1 igual.
-- El informe de ruido sirve hoy `closed_pct`/`acknowledged_pct` (estado actual del
-  triage). Cuando el campo de decisión de triaje exista (petición MEDIA de IMP-B, ronda
-  propia de este carril), migrará a `false_positive_pct`.
+- El informe de ruido sirve `false_positive_pct` (decisiones registradas, real) DESDE
+  la ronda 2026-10-06 junto a los proxies `closed_pct`/`acknowledged_pct`; la pestaña
+  de ruido de IMP-B ya puede pintar el FP% por regla, y VIZ-3 puede pintar «falso
+  positivo» desde `decision` en `GET /api/alerts`.
 
 ## Cola de tareas del carril (orden pretendido)
 
-1. **Campo de decisión de triaje** (petición MEDIA de IMP-B): `decision:
-   false_positive | authorized_activity | confirmed_incident` en el ciclo de vida
-   (`POST /api/alerts/{id}/status` + store + OpenAPI), que desbloquea el «falso
-   positivo» del flujo del triaje y convierte los porcentajes del ruido en FP% real.
-2. **v1.1 Ruido**: supresiones con condiciones (PLAN-DETALLADO §2.3), lista de software
-   conocido por organización (§2.2, `known-software.yaml`; el botón «añadir a software
-   conocido» de la pestaña de ruido de IMP-B espera esto) y agrupación de arranques
-   repetidos en el sensor (§2.1, parte Rust; requiere cargo en el entorno o pruebas en
-   otro sitio).
-3. **Motor**: cuotas por equipo en la memoria del motor (v1.1 «Motor y consola»).
-4. **AD-6/SET-1 API de ajustes**: la primitiva de escritura segura ya existe
-   (`secretfile.Write` + `engine secret-write`); falta la superficie de ajustes decidida
-   con el responsable (qué campos, bind de prueba antes de comprometer el fichero,
-   auditoría, recarga en caliente). **AD-3** cuando WEF exista.
-5. **REP-2** informes programados (diarios/semanales en `data/reports` con retención,
+1. ~~Publicar la retención~~ — HECHO al abrir la ronda 10h53 (`bc91c7d..9b82845`).
+2. **v1.1 Ruido residual** (sigue como cabeza): `sf-engine doctor` valida
+   `known-software.yaml` con el cargador real (paridad con `ingest-identities`) y
+   §2.1 agrupación de arranques en el sensor (parte Rust; requiere `cargo` en el
+   entorno o pruebas en otro sitio).
+3. ~~AD-6/SET-1 parte A (API)~~ — HECHA en la ronda 10h53; queda la parte B
+   (pantalla, IMP-B). **AD-3** cuando WEF exista. **AD-7** cuando el responsable
+   decida el mapa grupos→roles.
+4. **Motor**: cuotas por equipo en la memoria del motor (v1.1 «Motor y consola»).
+4. **REP-2** informes programados (diarios/semanales en `data/reports` con retención,
    SMTP/webhook opcional): la maquinaria de datos ya existe tras REP-1 parte A.
-6. **Diseño**: purga de hosts rechazados/revocados en el registro de alta (observación
+5. **Diseño**: purga de hosts rechazados/revocados en el registro de alta (observación
    de SEG-A: hoy cuentan para siempre en `MaxHosts`).
 
 ## Decisiones y motivos (histórico vivo)

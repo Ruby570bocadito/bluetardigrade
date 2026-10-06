@@ -265,6 +265,13 @@ func (c *Connector) Objects(kind, q string, limit, offset int) (*store.ADObjects
 	return c.store.QueryADObjects(kind, q, limit, offset)
 }
 
+// Config returns a COPY of the effective (normalized) configuration
+// the connector runs with. The settings API serves it (the secret is
+// not part of Config at all — it lives in its own envelope file), so
+// the console can render the current values without reaching into
+// engine internals. Callers may mutate the copy freely.
+func (c *Connector) Config() Config { return *c.cfg }
+
 // InactiveDays is the configured AD-2 stale-account threshold (the
 // posture response serves it so the console can label the finding
 // with the actual number instead of guessing).

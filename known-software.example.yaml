@@ -1,0 +1,49 @@
+# security-framework known-software list (PLAN-DETALLADO §2.2).
+#
+# Each entry names software the whole deployment is EXPECTED to run,
+# matched by executable-image glob (image) and/or SHA-256 (sha256).
+# An event whose process matches carries the enrichment
+#   enrichment.known_software: <name>
+# The event is NEVER deleted or hidden — known software is also
+# compromised software and stays searchable in the flow — but:
+#   - the baseline stops reporting it as a novelty,
+#   - the noise report stops counting it (scanned.known_software_events
+#     keeps the disappearance explainable), and
+#   - a rule may opt out of firing on it with exclude_known_software:
+#     true (intended for low/medium-confidence "unexpected software"
+#     rules; high/critical rules should never opt out).
+#
+# Matching is case-insensitive and backslash-normalized, so write the
+# image exactly like the sensor reports it. `*` does not cross a
+# directory separator (one star per path level). sha256 entries are
+# exact hashes (64 hex characters). signer is accepted today as
+# metadata only — signature matching arrives with the sensor's signer
+# field (v1.2) — so do not rely on it for matching yet.
+#
+# The engine hot-reloads this file every -reload-every interval (15s by
+# default). A malformed file is FATAL at startup and keeps the previous
+# list on hot reload: a typo can never silently disarm the list.
+# The live entry count is visible at GET /api/stats
+# (known_software_active).
+#
+# Rename this file to known-software.yaml (next to the engine binary's
+# install root, or pass -known-software <path>) to arm it.
+version: 1
+
+software:
+  # OEM management suite that spawns helper processes every minute —
+  # the case that motivated §2.2 (43% of the boots on one laptop).
+  - name: Lenovo Vantage
+    image: 'C:\Program Files (x86)\Lenovo\VantageService\*\LenovoVantage-*.exe'
+    signer: 'Lenovo'
+
+  # The fleet's VPN client, installed in the same path everywhere.
+  - name: Corporate VPN
+    image: 'C:\Program Files\AcmeVPN\acmevpn-tray.exe'
+    signer: 'Acme Corp'
+
+  # An internal tool shipped without a stable install path: pin by hash.
+  - name: Inventory agent
+    sha256:
+      - '9a1f2c3d4e5f60718293a4b5c6d7e8f900112233445566778899aabbccddeeff'
+    signer: 'Acme Corp'

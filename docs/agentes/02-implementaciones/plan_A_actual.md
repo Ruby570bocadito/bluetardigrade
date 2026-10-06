@@ -1,21 +1,34 @@
-# Plan de ronda 2026-10-06 — Implementación A
+# Plan de ronda — Implementación A (2026-10-06, ronda siguiente a las 09h01)
 
-1. **SEC-2 (secretos en reposo, lado motor)** — nuevo `internal/secretfile`
-   con el contrato del addendum de SEG-B (informe 19h10): sobre JSON
-   `version/created_at/scheme/ciphertext`; `plain` con 0600 POSIX real
-   exigido, `dpapi` Windows con CRYPTPROTECT_LOCAL_MACHINE vía
-   x/sys/windows; escritura temp+rename+Sync; la lectura acepta también
-   el fichero en crudo (paridad de laboratorio) con aviso en Windows.
-   Cableado en `internal/ad`: secreto como []byte desde el fichero hasta
-   el bind, puesta a cero del buffer, avisos visibles en
-   `/api/ad/status`. Flag `-write-secret <fichero>` (el secreto entra
-   por stdin, jamás por argv). Tests del checklist de SEG-B: ida y
-   vuelta (la de DPAPI se ejecutará en el job Windows del CI),
-   permisos, higiene de logs ante bind fallido, ausencia del secreto y
-   de su longitud en las respuestas de `/api/ad/*`. Docs:
-   OPERATIONS.md (formato, ACL icacls, migración) + changelog.d.
-   Motivo: tarea del responsable pendiente desde la ronda 2 y contrato
-   explícito de SEG-B que desbloquea su auditoría y la pantalla de
-   ajustes AD-6/SET-1 de IMP-B.
-2. Fuera de alcance: AD-6/SET-1 (API de ajustes: ronda siguiente),
-   REP-1 parte B (consola de IMP-B), sensor Rust (sin cargo aquí).
+Base: `9b82845` — **los 8 commits retenidos de las dos rondas anteriores ya están
+publicados al abrir esta ronda** (`bc91c7d..9b82845`, primera acción, cola #1 del
+roadmap cerrada). `origin/main` sigue en `35cd866` (sin cambios; su Makefile roto es
+hallazgo con dueño: PUL-A). Leído: SEG-A r14 (09h51), SEG-B r9 (09h50), IMP-B r7
+(07h02), PUL-A r12 (07h47), PUL-B r5 (09h05). **El único ítem ALTA de otro carril
+sobre mi código (los 2 hallazgos de SEG-A r11) ya está corregido y publicado.**
+
+Tareas (en este orden):
+
+1. **AD-6/SET-1 parte A — API de ajustes de Active Directory** (desbloquea la
+   pantalla de IMP-B, que la declara bloqueada por mí): `GET /api/settings/ad`
+   (config efectiva, con la contraseña NUNCA), `PUT /api/settings/ad` (valida con
+   el cargador real, escribe el YAML atómico + la contraseña vía `secretfile.Write`
+   si viene, 409 si el fichero `-ad` cambió en disco, recarga en caliente del
+   conector: `ad.New` + `SetAD` bajo cerrojo, parada del bucle anterior fuera de
+   camino de petición) y `POST /api/ad/test` («Probar conexión» del TODO: bind +
+   muestreo por tipo de objeto, sin guardar nada). Todo detrás de la puerta
+   `-api-write` (403 ruidoso como las supresiones) + línea de auditoría por cambio.
+   Ficheros: `internal/ad/config.go` (+horario laboral del TODO: work_start/
+   work_end/work_days, validados; se declaran honestos: los consumirá AD-3),
+   `internal/ad/settings.go` (nuevo, probe), `internal/ad/connector.go`
+   (accesorio `Config()`), `internal/api/ad_settings.go` (nuevo),
+   `internal/api/api.go`, `cmd/engine/run.go`, `ad.example.yaml`,
+   `docs/api/openapi.yaml` (41→44 rutas), `docs/OPERATIONS.md`.
+2. **Si cabe: `engine doctor` valida `known-software.yaml`** con el cargador real
+   (paridad con `ingest-identities`; cola v1.1 Ruido residual).
+3. Verificación completa tras el ÚLTIMO cambio (checklist CI + `-race -count=5` en
+   `internal/api`/`internal/ad`, `-count=3` en los demás tocados), informe, roadmap,
+   `changelog.d/IMP-A-*.md`, merge-tree contra las cinco puntas, push.
+
+No toco: consola (IMP-B/PUL-B), CI/Makefile (PUL-A), sensor Rust (sin cargo),
+ficheros compartidos.

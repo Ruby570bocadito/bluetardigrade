@@ -13,6 +13,9 @@
 #   6. POST with a malformed id -> 400
 #   7. alerts CSV export carries id/status columns
 #   8. ENGINE RESTART -> the triage state survives (file persistence)
+#   9. POST an invalid decision -> 400 (a typo is never "no decision")
+#  10. POST closed+decision=false_positive -> 200 (store, ring-independent)
+#  11. lifecycle.json carries the decision record (one entry, replaced)
 #
 # Usage: scripts/dev-tests/smoke_lifecycle.sh [engine-binary]
 # The engine is built automatically when missing (go >= 1.22 in PATH).
@@ -134,6 +137,29 @@ assert data["version"]==1
 assert any(e["alert_id"]==want and e["status"]=="acknowledged"
            and e["note"]=="visto en lab, investigando" and e["by"]=="e2e"
            for e in entries), entries
+PY
+
+say "-- scenario 9-11: the triage DECISION (false_positive and friends)"
+
+# a typo must never become a silent "no decision"
+CODE=$(api_post "/api/alerts/$ALERT_ID/status" '{"status":"closed","decision":"false-positive"}')
+[ "$CODE" = "400" ] && ok "hyphen decision -> 400" || bad "hyphen decision -> $CODE"
+
+# the verdict rides the same record; the POST targets the STORE, so it
+# works even for an alert no longer in the ring (post-restart)
+CODE=$(api_post "/api/alerts/$ALERT_ID/status" '{"status":"closed","decision":"false_positive","note":"regla ruidosa","by":"e2e"}')
+[ "$CODE" = "200" ] && ok "POST closed+decision -> 200" || bad "POST closed+decision -> $CODE"
+
+python3 - "$WORK/lifecycle.json" "$ALERT_ID" <<'PY' && ok "lifecycle.json carries the decision record" || bad "file decision record wrong"
+import json,sys
+data=json.load(open(sys.argv[1]))
+want=sys.argv[2]
+entries=[e for e in data["entries"] if e["alert_id"]==want]
+# the record REPLACES: one entry for the alert, and it is the newest one
+assert len(entries)==1, entries
+e=entries[0]
+assert e["status"]=="closed" and e.get("decision")=="false_positive"
+assert e["note"]=="regla ruidosa" and e["by"]=="e2e"
 PY
 
 say "=============================="

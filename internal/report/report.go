@@ -107,7 +107,8 @@ type AlertInput struct {
 	Timestamp string   `json:"timestamp"` // RFC 3339 (Nano), as the engine stores it
 	Summary   string   `json:"summary,omitempty"`
 	Tags      []string `json:"tags,omitempty"`
-	Status    string   `json:"status"` // new | acknowledged | closed
+	Status    string   `json:"status"`             // new | acknowledged | closed
+	Decision  string   `json:"decision,omitempty"` // false_positive | authorized_activity | confirmed_incident (operator verdict)
 	StatusAt  string   `json:"status_at,omitempty"`
 	StatusBy  string   `json:"status_by,omitempty"`
 }
