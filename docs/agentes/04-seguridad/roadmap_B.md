@@ -406,3 +406,36 @@ siguiente (checklist en la ronda 3 de este roadmap y modelo §3).
   PARADA; puerta: fusiones a main (receta del Makefile silencioso
   lista), pantalla AD-6 de IMP-B, verificación SEC-5/SEC-9 que la
   fusión habilite.
+
+## Ronda 14 (2026-10-06, 09h29 UTC, verificación + corrección)
+
+- **SEG-A r16 (MEDIA, hot-swap AD-6): CONFIRMADO — CORRECCIÓN
+  PÚBLICA a mi ronda 13 §2.** Los comentarios de `adReloadAsync` y
+  `run.go` afirman serialización por `adWriteMu` y es falso: la
+  callback corre en la goroutine fuera del span del handler (defer
+  Unlock ya soltó). Verificado estructuralmente en `run.go` l.613-631
+  (`current` sin sincronizar) + repro `-race` y 7/20 lost-updates de
+  SEG-A. Consecuencias: carrera real, conector publicado ≠ fichero
+  comprometido (ángulo de seguridad: declarado≠sirvido), conector
+  huérfano que nunca recibe Stop. Fix propuesto correcto (cerrojo
+  durante la callback); dueño IMP-A. Lección reiterada: mi checklist
+  cubre exposición/credenciales; la disciplina concurrente de SEG-A
+  cubre lo demás — el cruce es parte del control.
+- **known-software anti-forja: VERIFICADO por lectura propia** —
+  `enrich.Apply` borra las claves engine-owned (incluida
+  `known_software`) del evento ANTES de aplicar las suyas; un sensor
+  no puede cegar las reglas opt-out forjando enriquecimiento.
+- **IMP-B ronda 10 (i18n incidentes): LIMPIO** (sin
+  innerHTML/dangerouslySetInnerHTML/eval en el delta; diccionarios
+  constantes). AD-6/SET-1 desbloqueada para su ronda 11: mi
+  observación informativa del botón (confirmar envío de credencial
+  almacenada si cambió server/port) + exigir fix del hot-swap de
+  IMP-A ANTES de que la pantalla estimule PUTs solapados.
+- Matriz de fusión sin cambios (precheck re-ejecutado): CLEAN vs
+  main/IMP-A/IMP-B/PUL-B; 2 conflictos con receta (PUL-A Makefile,
+  SEG-A scenrun_test.go). Tercera confirmación independiente del
+  Makefile silencioso (SEG-A r16).
+- Informe: ronda_2026-10-06_09h29_B.md. Sin changelog.
+  PARADA; puerta: fix hot-swap (IMP-A), pantalla AD-6 (IMP-B r11),
+  fusiones a main. Push SIGUE bloqueado sin credencial — 4 commits
+  locales esperan (6d0b61f, 8af7c2b, 76e9de1, docs r14).
