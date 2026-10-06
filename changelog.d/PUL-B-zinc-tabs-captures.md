@@ -1,5 +1,0 @@
-- Console accent is zinc ink end to end: the `--primary*` token family, the six leftover raw blue classes and every accent-painted surface (icon tiles, ambient glow, focus ring, selection, scrollbars, animated borders, canvas pulses) now follow the theme tokens instead of a blue hue; data palettes are unchanged and re-validated (89 theme checks, both themes).
-- The detection hub, the add-machines dialog and the alert queue's live/history switch share one tab look and one component (`ui-tabs`), with arrow-key tab navigation on the detection hub.
-- The operations panel's recent-alerts card no longer stretches into an empty area beside the telemetry feed.
-- README screenshots regenerated over the zinc console in dark and light themes, with the new platform-health view in the gallery; the capture script can now reproduce the set from contract-true fixtures without a Go toolchain.
-- SECURITY policy drops internal project references; README counts the nine console views and lists the repository layout accurately.

@@ -1,1 +1,0 @@
-- Incidents gain response playbooks: apply the ransomware, phishing or compromised-account checklist to a case, track step progress with the matching ATT&CK techniques, collect evidence and write the analyst's own chronology; the case's Markdown and printable reports include the plan, and applying a template leaves a note in the engine timeline.

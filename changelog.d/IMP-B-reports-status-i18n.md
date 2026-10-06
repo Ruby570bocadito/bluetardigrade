@@ -1,2 +1,0 @@
-The report catalog, the printable report sheets, the analyst investigation report and the saved report library now follow the console language (Spanish or English); the exported incident report carries the chosen language into its filename, page shell and labels while engine text stays verbatim.
-The platform status page shows the new per-host admission quotas (refused beacons and thresholds), the in-memory ring rotation counters and the worst-first per-host pressure rows that the engine now publishes; engines without them keep the honest "not published" row.

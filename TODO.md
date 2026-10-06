@@ -142,12 +142,12 @@ arranques de proceso de un portátil en reposo. Un SOC no puede guardar ni mirar
 
   Así no se pierde la primera aparición ni el hash, y lo repetido baja más de un 90 %. Tests con la
   secuencia real de Vantage.
-- [ ] **Lista de software conocido por organización** (`known-software.yaml`): ejecutable, ruta,
+- [x] **Lista de software conocido por organización** (`known-software.yaml`): ejecutable, ruta,
   hash o firmante.
   - No borra eventos: los marca como conocidos, los saca de la línea base y de las reglas de
     poca confianza, y la consola los atenúa.
   - Recarga en caliente, como las supresiones, con validación y auditoría.
-- [ ] **Supresiones con condiciones**, no solo regla y equipo: proceso padre, línea de comandos
+- [x] **Supresiones con condiciones**, no solo regla y equipo: proceso padre, línea de comandos
   exacta o ruta. Caso real: la regla del portapapeles saltó por un asistente de desarrollo
   (`powershell -NonInteractive -Command "... Get-Clipboard -Raw"`). Se debe poder suprimir ese uso
   concreto sin apagar la regla.
@@ -155,7 +155,7 @@ arranques de proceso de un portátil en reposo. Un SOC no puede guardar ni mirar
   - el detector de beacons ya no cuenta el DNS de Windows con su resolvedor;
   - `exclude_domains` por perfil, con WhatsApp excluido;
   - la regla DGA ya no salta con hashes hexadecimales.
-- [ ] **Informe de ruido** en la consola. La API ya existe (`GET /api/noise`, ronda 1); falta la
+- [x] **Informe de ruido** en la consola. La API ya existe (`GET /api/noise`, ronda 1); falta la
   pantalla (Implementación B): procesos, dominios y reglas que más eventos o alertas
   generan, por equipo y en toda la flota, para saber qué ajustar.
 - [ ] **Separar la actividad de herramientas de administración** en los análisis (en las pruebas,
@@ -434,6 +434,46 @@ Límites del proyecto que ningún carril cruza:
 - La validación de detecciones usa telemetría sintética e inerte.
 - No se descargan feeds ni herramientas de terceros de forma automática.
 
+### Estado tras las rondas 2 y 3 (6 de octubre)
+
+Integradas en un solo PR. La revisión:
+- verificó las seis ramas;
+- resolvió los conflictos (`Makefile` de tres carriles, tests repetidos, informe de ruido y
+  reglas);
+- puso la identidad del responsable en todos los commits;
+- corrigió un **fallo de seguridad grave** que se escapó a todos los carriles: la API de ajustes de
+  AD aceptaba rutas de fichero (`ca_file`, `password_file`), lo que permitía escribir o leer
+  ficheros del motor;
+- corrigió un fallo de staticcheck y varios problemas visibles de la consola.
+
+| Tarea | Estado | Qué falta |
+|---|---|---|
+| AD-1, AD-2, AD-5, AD-6 | Hecho | Conector LDAPS, postura con puntuación, vista «Directorio» y ajustes con «probar conexión». Las rutas de fichero solo se cambian en el servidor |
+| AD-3, AD-4 | Pendiente | Necesitan WEF (despliegue 4) |
+| SIM-3, SIM-4 | Hecho | Matriz ATT&CK validada y pestaña «Validación» con búsqueda y paginación |
+| REP-1, REP-4, informe de ruido | Hecho | Catálogo, PDF imprimible, gráficas, pestaña «Ruido» |
+| Software conocido, supresiones con condiciones, veredicto del triaje (v1.1) | Hecho | Casos reales: Lenovo Vantage y el portapapeles |
+| Cuotas por equipo (escala fase A) | Hecho | Un equipo ruidoso ya no expulsa a los demás de los detectores ni de los búferes |
+| SET-1 | Parcial | La página existe; solo la sección de AD tiene API de escritura, las demás muestran su estado real |
+| SET-3 | Hecho | Versión, latencias, almacén, certificados y cuotas |
+| IDEA-3, IDEA-11 | Hecho | Playbooks y asistente de primer arranque |
+| IDEA-10 | Parcial | Traducidos el menú, las alertas, los incidentes, los informes, el NOC y el estado. **Siguen en español** el panel, el directorio, la validación y los ajustes, así que en inglés se mezclan idiomas |
+| THEME-2, POL-8, POL-9, POL-10, POL-11 | Hecho | Acento zinc, axe limpio, Lighthouse 97/100/96/100, capturas, movimiento reducido |
+| POL-7 | Parcial | Pestañas, insignia y tabla compartidas; falta el resto del kit |
+| SEC-2 | Parcial | Falta la credencial del sensor (`ingest.token`, Rust) |
+| SEC-4 | Parcial | CSP con nonce y cabeceras hechas; faltan las sesiones (TEAM-1) |
+
+Prioridades de la ronda 4:
+
+| Carril | Prioridad |
+|---|---|
+| Implementación B | **Terminar IDEA-10:** el panel, el directorio, la validación y los ajustes en el idioma elegido, sin mezclar en ninguna pantalla. Después TEAM-1 (pantalla de inicio de sesión) |
+| Implementación A | **WEF y detecciones de AD** (despliegue 4), base de AD-3 y AD-4. Después TEAM-1 (sesiones), SEC-2 del sensor y REP-2 |
+| Pulimiento A | POL-1 (`api.go`, `run.go`), POL-2 (`slog`) y POL-5 |
+| Pulimiento B | Completar POL-7 y llevar las vistas a los componentes compartidos |
+| Seguridad A | Fixtures de corrección de la postura de AD y revisión de lo que llegue de WEF y de las sesiones |
+| Seguridad B | Auditar cada ruta de escritura buscando campos con fichero, URL, host o comando; SEC-9 (los datos de AD son personales) y SEC-4 cuando lleguen las sesiones |
+
 ### Estado tras la ronda 1 (5 de octubre)
 
 Fusionada en `main` con el PR #19. La revisión encontró y corrigió:
@@ -475,7 +515,7 @@ Prioridades de la ronda 2:
 
 ### Active Directory (solo lectura)
 
-- [ ] **AD-1 Conector LDAP de solo lectura** — Implementación A
+- [x] **AD-1 Conector LDAP de solo lectura** — Implementación A
   - Conexión LDAPS obligatoria (o StartTLS), con la CA configurable y una cuenta de servicio
     **sin privilegios**: basta un usuario del dominio.
   - Sincroniza cada N minutos a SQLite:
@@ -487,7 +527,7 @@ Prioridades de la ronda 2:
   - La contraseña de la cuenta va en un fichero solo para el servicio y nunca se devuelve por
     la API.
   - Tests contra un servidor LDAP de pruebas (fixture en CI, sin dominio real).
-- [ ] **AD-2 Postura del dominio** — Implementación A (cálculo), Implementación B (vista)
+- [x] **AD-2 Postura del dominio** — Implementación A (cálculo), Implementación B (vista)
   - Hallazgos clásicos de auditoría defensiva:
     - miembros efectivos de los grupos privilegiados (Domain/Enterprise/Schema Admins,
       Administrators, Account/Backup/Server/Print Operators);
@@ -516,7 +556,7 @@ Prioridades de la ronda 2:
     (4738), restablecimientos de contraseña por un administrador (4724), desbloqueos (4767) y
     cambios en objetos del directorio y en GPO (5136).
   - Alerta cuando el cambio toca un grupo privilegiado.
-- [ ] **AD-5 Sección «Active Directory» en la consola** — Implementación B. Pestañas:
+- [x] **AD-5 Sección «Active Directory» en la consola** — Implementación B. Pestañas:
   - **Resumen:** donut de hallazgos por severidad, puntuación con tendencia y cobertura de
     sensores.
   - **Usuarios:** tabla con búsqueda. La ficha de usuario muestra grupos, equipos donde inicia
@@ -525,7 +565,7 @@ Prioridades de la ronda 2:
   - **Equipos:** dominio frente a inventario de sensores.
   - **Inicios de sesión:** mapa de calor hora × día, fallos por usuario y bloqueos.
   - **Cambios:** lista filtrable con enlace a la alerta.
-- [ ] **AD-6 Ajustes de Active Directory** — Implementación B (pantalla) y A (API)
+- [x] **AD-6 Ajustes de Active Directory** — Implementación B (pantalla) y A (API)
   - Servidor, puerto, base DN, CA, cuenta de servicio, intervalo de sincronización, OUs
     incluidas y excluidas, horario laboral y umbral de inactividad.
   - Botón «Probar conexión», que muestra qué se puede leer.
@@ -537,7 +577,7 @@ Prioridades de la ronda 2:
 
 ### Informes y descargas
 
-- [ ] **REP-1 Catálogo de informes** — Implementación A (datos y API), Implementación B (pantalla)
+- [x] **REP-1 Catálogo de informes** — Implementación A (datos y API), Implementación B (pantalla)
   - Resumen ejecutivo (semanal o mensual), incidente, postura de AD, inicios de sesión,
     cobertura de la flota, ruido y actividad del equipo SOC.
   - Cada uno descargable en PDF, para imprimir o guardar desde el navegador con estilos de
@@ -552,7 +592,7 @@ Prioridades de la ronda 2:
   - El certificado de ingesta para el alta por token.
   - Las guías.
   - Los equipos **descargan**; la consola nunca empuja nada.
-- [ ] **REP-4 Gráficas en los informes** — Implementación B. Las mismas gráficas de la consola,
+- [x] **REP-4 Gráficas en los informes** — Implementación B. Las mismas gráficas de la consola,
   exportables a PNG o SVG.
 
 ### Validación de detecciones (simulación de adversario segura)
@@ -566,11 +606,11 @@ Prioridades de la ronda 2:
 - [x] **SIM-2 Biblioteca de escenarios** — Implementación A. Uno por cada regla o cadena del paquete,
   partiendo de los fixtures que ya existen. En CI, un escenario que deja de detectarse rompe el
   build: así se cazan regresiones de detección.
-- [ ] **SIM-3 Matriz ATT&CK en la consola** — Implementación B
+- [x] **SIM-3 Matriz ATT&CK en la consola** — Implementación B
   - Tácticas × técnicas, coloreadas según la técnica tenga regla, esté validada por un
     escenario o haya saltado en los últimos 30 días.
   - Al hacer clic se ven las reglas y los escenarios de cada técnica.
-- [ ] **SIM-4 Ejecución bajo demanda y su historial** — Implementación A y B
+- [x] **SIM-4 Ejecución bajo demanda y su historial** — Implementación A y B
   - Desde la consola se lanza la batería contra el motor de laboratorio (nunca el de producción).
   - Se guarda el resultado: detectado o no y latencia.
   - Una gráfica muestra la tendencia.
@@ -647,7 +687,7 @@ en los dos temas.
   - Cada cambio se valida, queda auditado y solo lo hacen administradores.
 - [ ] **SET-2 Copia de seguridad y restauración** — Implementación A. `data/` y la configuración
   con un comando y desde Ajustes. Se verifica la integridad al restaurar.
-- [ ] **SET-3 Página «Estado de la plataforma»** — Implementación B
+- [x] **SET-3 Página «Estado de la plataforma»** — Implementación B
   - Motor, ingesta, colas, latencias, tamaño del almacén y versión.
   - Certificados que caducan y último informe programado.
 
@@ -657,7 +697,7 @@ en los dos temas.
   hora; correo, Teams o Slack; con silencios temporales.
 - [ ] **IDEA-2 SLA de triaje y escalado** — Implementación A y B. Temporizador por severidad,
   aviso al vencer y escalado al responsable de turno.
-- [ ] **IDEA-3 Plantillas de incidente** — Implementación B. Ransomware, phishing, cuenta
+- [x] **IDEA-3 Plantillas de incidente** — Implementación B. Ransomware, phishing, cuenta
   comprometida: listas de comprobación manuales, evidencias, cronología y exportación.
 - [ ] **IDEA-4 Lenguaje de búsqueda** — Implementación A y B
   - `campo:valor`, `AND`/`OR`/`NOT`, rangos y comodines.
@@ -675,7 +715,7 @@ en los dos temas.
 - [ ] **IDEA-9 Claves de API por integración** — Implementación A. Con alcance (lectura, escritura
   de triaje), caducidad y auditoría, en lugar de un único token.
 - [ ] **IDEA-10 Idiomas** — Implementación B. Español e inglés en la consola.
-- [ ] **IDEA-11 Asistente de primer arranque** — Implementación B. Crear el administrador, el
+- [x] **IDEA-11 Asistente de primer arranque** — Implementación B. Crear el administrador, el
   certificado de ingesta, el primer token de alta y comprobar el sensor local.
 - [ ] **IDEA-12 Tablas grandes** — Implementación B. Paginación en el servidor y listas
   virtualizadas para miles de equipos o alertas.
@@ -712,17 +752,17 @@ Consola: Pulimiento B.
 
 - [ ] **POL-7 Kit de componentes compartidos:** botón, campo, tabla, pestañas, insignia y diálogo,
   con sus variantes. Las vistas pasan a usarlo.
-- [ ] **POL-8 Accesibilidad WCAG 2.2 AA:**
+- [x] **POL-8 Accesibilidad WCAG 2.2 AA:**
   - foco visible y teclado completo;
   - gráficas con `aria` y vista en tabla;
   - comprobación axe en el CI del navegador.
-- [ ] **POL-9 Rendimiento de la consola:** tamaño del bundle, memoización de las vistas pesadas e
+- [x] **POL-9 Rendimiento de la consola:** tamaño del bundle, memoización de las vistas pesadas e
   informe de Lighthouse.
-- [ ] **POL-10 README y capturas:**
+- [x] **POL-10 README y capturas:**
   - capturas nuevas en los dos temas;
   - árbol de carpetas actualizado;
   - se mantienen el logo y la cabecera originales.
-- [ ] **POL-11 Microinteracciones con React Bits y Motion,** sutiles y con
+- [x] **POL-11 Microinteracciones con React Bits y Motion,** sutiles y con
   `prefers-reduced-motion` respetado.
 
 ### Seguridad y bugs

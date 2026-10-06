@@ -1,1 +1,0 @@
-- The console palette is checked in CI on every push: WCAG contrast pairs, the sequential ramp and color-vision-deficiency separation are validated in both the dark and the light themes, so a token change that breaks readability fails visibly instead of shipping.
