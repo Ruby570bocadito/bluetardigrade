@@ -1,21 +1,18 @@
 # Plan de ronda 2026-10-06 — Implementación A
 
-1. **SEC-2 (secretos en reposo, lado motor)** — nuevo `internal/secretfile`
-   con el contrato del addendum de SEG-B (informe 19h10): sobre JSON
-   `version/created_at/scheme/ciphertext`; `plain` con 0600 POSIX real
-   exigido, `dpapi` Windows con CRYPTPROTECT_LOCAL_MACHINE vía
-   x/sys/windows; escritura temp+rename+Sync; la lectura acepta también
-   el fichero en crudo (paridad de laboratorio) con aviso en Windows.
-   Cableado en `internal/ad`: secreto como []byte desde el fichero hasta
-   el bind, puesta a cero del buffer, avisos visibles en
-   `/api/ad/status`. Flag `-write-secret <fichero>` (el secreto entra
-   por stdin, jamás por argv). Tests del checklist de SEG-B: ida y
-   vuelta (la de DPAPI se ejecutará en el job Windows del CI),
-   permisos, higiene de logs ante bind fallido, ausencia del secreto y
-   de su longitud en las respuestas de `/api/ad/*`. Docs:
-   OPERATIONS.md (formato, ACL icacls, migración) + changelog.d.
-   Motivo: tarea del responsable pendiente desde la ronda 2 y contrato
-   explícito de SEG-B que desbloquea su auditoría y la pantalla de
-   ajustes AD-6/SET-1 de IMP-B.
-2. Fuera de alcance: AD-6/SET-1 (API de ajustes: ronda siguiente),
-   REP-1 parte B (consola de IMP-B), sensor Rust (sin cargo aquí).
+1. **Campo de decisión de triaje** (petición MEDIA de IMP-B, primera de la cola del
+   roadmap): `decision: false_positive | authorized_activity | confirmed_incident` en
+   el ciclo de vida. `internal/lifecycle`: campo opcional del `Entry`, validado con el
+   mismo estándar que el estado; el registro es el estado COMPLETO del triaje — cada
+   `Set` lo sustituye, así que omitir `decision` lo limpia (igual que `note` y `by`
+   hoy). Cableado en `internal/api`: `POST /api/alerts/{id}/status` lo acepta y
+   valida, el overlay de `GET /api/alerts` lo expone como `decision`, la línea de
+   auditoría lo nombra. `internal/report/noise.go` añade `false_positive_pct` real
+   junto a los proxies actuales (`closed_pct`/`acknowledged_pct` no se tocan). OpenAPI
+   (`AlertStatusUpdate`, `Alert`, `RuleNoise`), OPERATIONS.md, changelog.d. Por qué:
+   desbloquea el «falso positivo» del flujo de triaje (VIZ-3) y el FP% por regla de
+   la pestaña de ruido que IMP-B no puede construir hoy.
+2. Fuera de alcance: known-software/supresiones con condiciones (v1.1, ronda
+   siguiente), AD-6/SET-1 (espera decisiones de producto del responsable), AD-7
+   (mapeo de grupos), REP-2. Sin tocar: `internal/ingest` (conflicto pre-documentado
+   SEG-A↔PUL-A), consola (IMP-B), sensor Rust (sin `cargo` en el entorno).
