@@ -351,3 +351,58 @@ siguiente (checklist en la ronda 3 de este roadmap y modelo §3).
   final; el fusionador decide si el Makefile/guard merecen entrada
   al converger). PARADA; puerta: fusiones a main (recetas listas),
   AD-6, AD-3/AD-4 (SEC-9), observaciones CSP no-bug de PUL-B.
+
+## Ronda 13 (2026-10-06, 09h18 UTC, verificación)
+
+- **IMP-A `4a445aa`: mis 2 hallazgos confirmados, CIERRE VERIFICADO**
+  (diff + test, no el informe): score de postura servido
+  (`out.Score = &score`; test guarda 87 y exige 87 en el wire, sin
+  red) y lecturas bajo cerrojo (`adConnector()` en los 4 handlers +
+  captura pre-Unlock de los 6 campos restantes en `statsSnapshot`).
+  SEG-A puede retirar su «novena espera» — su fix aterrizó tras su
+  ronda 15.
+- **AD-6/SET-1 (`877dff5`): auditoría LIMPIO.** SEC-2 completo
+  (GET sin secreto, buffer a cero, auditoría por nombres de campo,
+  `redact.EndpointLabel`), transporte LDAP único (`openLDAP`: solo CA
+  de la organización, ServerName fijado, TLS 1.2 de suelo, sin
+  InsecureSkipVerify), validación del cargador antes de disco, commit
+  atómico 0600, drift 409 por sha256 con re-baseline propio, hot-swap
+  async con registro inmutable, decode estricto (DisallowUnknownFields,
+  8 KiB). **INFORMATIVA para IMP-B (pantalla del botón):** el test sin
+  password en el cuerpo envía la credencial ALMACENADA al servidor que
+  el cuerpo nombre (diseño correcto para migrar de DC; pedir
+  confirmación en la UI si el operador cambió server/port). Horario
+  laboral validado pero sin consumidor hoy — **SEC-9 sigue BLOQUEADA**
+  (AD-3/AD-4 esperan WEF).
+- **Supresiones condicionales + known-software: LIMPIO.** Operador
+  cerrado del motor (desconocido = carga ruidosa), aggregates jamás
+  silenciados por entradas condicionales (fallo hacia VISIBILIDAD),
+  caps de filete; eventos enriquecidos NUNCA se borran (solo
+  degradaciones honestas + contador), YAML malformado = FATAL al
+  arranque. Recomendación: sha256 en las entradas sensibles de
+  known-software.
+- **Pre-flight ronda 13 (método PUL-A adoptado) contra las 5 tips:**
+  IMP-A limpio + guardia OK + ci.yml idéntico; **IMP-B y PUL-B:
+  fusión LIMPIA pero Makefile fusionado ROJO (7 recetas con espacios,
+  l. 86-88/93-96, y sin --ignore-scripts)** — el caso silencioso: el
+  merge-base (main) y mi fichero no contienen los targets
+  console-a11y/lighthouse, el 3-way toma el bloque con espacios tal
+  cual. Receta para quien fusione IMP-B/PUL-B: guardia sobre el
+  Makefile FUSIONADO obligatoria + tomar el bloque reparado + 2 flags
+  npm. PUL-A retira su observación sobre mi carril (su §2a: las líneas
+  con espacios eran del merge-base; mi análisis de ronda 10-12
+  quedaba validado). Conflicto con PUL-A = los mismos 3 hunks npm de
+  mi ronda 12 (receta vigente, re-verificada hunk a hunk); conflicto
+  con SEG-A = el `scenrun_test.go` conocido (su ronda 15 no tocó el
+  fichero; receta «conservar ambos» vigente).
+- **PUL-B source maps en producción: LIMPIO** — mismo origen tras la
+  puerta de credencial del proxy (matcher `/:path*` verificado por mí
+  en ronda 9), solo DevTools los descarga, el bundle no cambia.
+- **IMP-B i18n: LIMPIO** (sin innerHTML/dangerouslySetInnerHTML/eval
+  en el delta). Los 2 hallazgos de SEG-A r5 sobre IMP-B siguen
+  vigentes (verificado `noise-view.tsx:282` con `host: ''` en
+  `28d6f9e` — octavo aviso).
+- Informe: ronda_2026-10-06_09h18_B.md. Sin changelog (verificación).
+  PARADA; puerta: fusiones a main (receta del Makefile silencioso
+  lista), pantalla AD-6 de IMP-B, verificación SEC-5/SEC-9 que la
+  fusión habilite.
