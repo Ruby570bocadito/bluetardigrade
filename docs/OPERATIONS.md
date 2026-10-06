@@ -567,9 +567,16 @@ curl -X POST http://127.0.0.1:7778/api/alerts/<id>/status \
   -d '{"status":"acknowledged","note":"visto, investigando","by":"ana"}'
 
 # close it, reopen it ("new"), same endpoint — statuses: new, acknowledged, closed
+
+# record the verdict with the close: WHAT the alert was
+curl -X POST http://127.0.0.1:7778/api/alerts/<id>/status \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"closed","decision":"false_positive","note":"tarea programada","by":"ana"}'
 ```
 
-`GET /api/alerts` merges the current status into every alert (`status`, `status_note`, `status_by`, `status_at`), a `alert_lifecycle` SSE frame announces each decision live, and the web console renders the status chips plus the reconocer/cerrar/reabrir actions in the alert panel (the write goes console → same-origin Next.js proxy → engine; the API token stays on the server). The API token gates the write endpoint exactly like every read endpoint.
+The `decision` field is the operator's verdict: `false_positive` (benign — the rule fired on activity it does not exist to catch), `authorized_activity` (real but sanctioned: a pentest window, a change ticket) or `confirmed_incident`. It is optional and carries no workflow coupling — it may be recorded on any status, before or with the close. The POST body is the FULL triage record, never a partial patch: omitting `decision` (or `note`, or `by`) clears it. The verdict feeds the triage flow's «falso positivo» state in the console and the `false_positive_pct` of the [noise report](#alert-noise-control) — the real per-rule false-positive rate, no longer a proxy.
+
+`GET /api/alerts` merges the current status into every alert (`status`, `decision`, `status_note`, `status_by`, `status_at`), a `alert_lifecycle` SSE frame announces each decision live, and the web console renders the status chips plus the reconocer/cerrar/reabrir actions in the alert panel (the write goes console → same-origin Next.js proxy → engine; the API token stays on the server). The API token gates the write endpoint exactly like every read endpoint.
 
 Statuses persist across engine restarts with `-lifecycle <file>` (default `./alert-lifecycle.json`, falling back to the install root; `-lifecycle ""` keeps them in memory only). The file is written atomically on every decision and is FATAL to load if malformed — the same fail-loud standard as suppressions: triage work silently resetting to "new" would be a lie. One honest note on restarts: without `-store` the alert ring is in-memory, so after a restart the file preserves the audit record while the alerts it refers to are gone. With the SQLite store attached, alerts are served from the persisted history after a restart (see [Persistent storage](#persistent-storage-sqlite-opt-in)), so alert and lifecycle persist together and the triage status stays visible end to end.
 

@@ -693,11 +693,13 @@ paths:
       description: |
         Same filter semantics as `/api/events`. Each alert carries the
         lifecycle overlay merged at read time: `status` (always present,
-        `new` when no operator decision exists), plus `status_note`,
-        `status_by` and `status_at` when the alert has been triaged via
-        `POST /api/alerts/{id}/status`. When the engine runs with
-        `-store`, this list reads the persistent SQLite store (full
-        history, subject to the configured retention) instead of the
+        `new` when no operator decision exists), plus `decision`
+        (`false_positive`, `authorized_activity` or
+        `confirmed_incident`, present once a verdict is recorded), and
+        `status_note`, `status_by` and `status_at` when the alert has
+        been triaged via `POST /api/alerts/{id}/status`. When the engine
+        runs with `-store`, this list reads the persistent SQLite store
+        (full history, subject to the configured retention) instead of the
         in-memory ring — the overlay applies in both modes.
       parameters:
         - $ref: '#/components/parameters/Limit'
@@ -876,10 +878,19 @@ paths:
       description: |
         The WRITE surface of the alert lifecycle. `status` is one of
         `acknowledged` (seen, under investigation), `closed` (handled)
-        or `new` (explicit reopen). The optional `note` is the triage
-        note (max 2000 chars) and `by` a free-text operator name (max
-        200 chars; the API has a single shared bearer token, so `by`
-        is informational and NOT authenticated).
+        or `new` (explicit reopen). The optional `decision` is the
+        operator's VERDICT: `false_positive` (benign — the rule fired
+        on activity it does not exist to catch), `authorized_activity`
+        (real but sanctioned) or `confirmed_incident`. It carries no
+        workflow coupling — it may be recorded on any status, before
+        or with the close. The optional `note` is the triage note (max
+        2000 chars) and `by` a free-text operator name (max 200 chars;
+        the API has a single shared bearer token, so `by` is
+        informational and NOT authenticated).
+
+        The body is the FULL triage record, never a partial patch:
+        omitting `decision` (or `note`, or `by`) CLEARS it — two
+        operators cannot accidentally merge their views.
 
         The lifecycle store is the source of truth for STATUS: the
         target alert does not need to be in the 256-entry ring (an
@@ -920,9 +931,9 @@ paths:
                 $ref: '#/components/schemas/AlertLifecycle'
         '400':
           description: |
-            Malformed alert id, invalid JSON body, unknown status, or
-            note/by over their length limits. The JSON body names the
-            problem (`{"error":"..."}`).
+            Malformed alert id, invalid JSON body, unknown status,
+            unknown decision, or note/by over their length limits. The
+            JSON body names the problem (`{"error":"..."}`).
           content:
             application/json:
               schema:
@@ -1254,9 +1265,11 @@ paths:
         `id`, `status`, `timestamp`, `severity`, `rule_id`, `rule_name`,
         `event_type`, `host`, `user`, `summary`, `matched_on`
         (space-joined), `tags` (space-joined), `message`, `notify`,
-        `status_note`, `status_by`. When the engine runs with `-store`,
-        the export reads the persistent SQLite store (full history,
-        subject to the configured retention) instead of the alert ring.
+        `status_note`, `status_by`, `decision` (appended at the end;
+        positional consumers keep their columns). When the engine runs
+        with `-store`, the export reads the persistent SQLite store
+        (full history, subject to the configured retention) instead of
+        the alert ring.
       parameters:
         - $ref: '#/components/parameters/ExportFormat'
         - $ref: '#/components/parameters/Host'
@@ -1961,10 +1974,12 @@ paths:
         The noise report, fleet-wide by default; with `host` it narrows
         to one machine. Processes group by executable image
         (case-insensitive), DNS lookups by the queried name and rules
-        by rule id, each with its triage overlay percentages — today
-        `closed_pct`/`acknowledged_pct` over the rule's alerts (the
-        honest proxy until a triage decision field exists; the JSON
-        names exactly what it measures).
+        by rule id, each with its triage percentages: `false_positive_pct`
+        is the REAL false-positive rate (the recorded triage decision
+        `false_positive` over the rule's alerts), while
+        `closed_pct`/`acknowledged_pct` stay as the workflow-progress
+        proxies (the share whose CURRENT status is closed/acknowledged;
+        the JSON names exactly what each measures).
 
         Records come from the same source as the reports (store with
         full retention, rings otherwise) with a 10000-record scan cap
@@ -3181,6 +3196,14 @@ components:
           type: string
           enum: [new, acknowledged, closed]
           description: operator triage state (read-side overlay, always present)
+        decision:
+          type: string
+          enum: [false_positive, authorized_activity, confirmed_incident]
+          description: |
+            operator verdict on the alert (read-side overlay, present
+            once a verdict is recorded): false_positive feeds VIZ-3's
+            «falso positivo» state and the noise report's
+            false_positive_pct
         status_note:
           type: string
           description: free-text triage note from the operator decision
@@ -3199,6 +3222,14 @@ components:
           type: string
           enum: [new, acknowledged, closed]
           description: '`new` doubles as the explicit reopen'
+        decision:
+          type: string
+          enum: [false_positive, authorized_activity, confirmed_incident]
+          description: |
+            operator verdict (WHAT the alert was, as opposed to status,
+            WHERE it sits in the workflow). Optional: omitted = no
+            verdict, and a later request without it clears any previous
+            one (the body is the full triage record)
         note:
           type: string
           maxLength: 2000
@@ -3276,6 +3307,10 @@ components:
         status:
           type: string
           enum: [new, acknowledged, closed]
+        decision:
+          type: string
+          enum: [false_positive, authorized_activity, confirmed_incident]
+          description: present once a verdict is recorded; omitted otherwise
         note:
           type: string
         by:
@@ -4753,7 +4788,7 @@ components:
           type: string
     NoiseRule:
       type: object
-      required: [rule_id, rule_name, count, distinct_hosts, acknowledged_pct, closed_pct]
+      required: [rule_id, rule_name, count, distinct_hosts, false_positive_pct, acknowledged_pct, closed_pct]
       properties:
         rule_id:
           type: string
@@ -4767,11 +4802,15 @@ components:
             type: integer
         distinct_hosts:
           type: integer
+        false_positive_pct:
+          type: number
+          format: float
+          description: share of the rule's alerts whose recorded triage DECISION is false_positive — the real false-positive rate (0 when no decision exists yet)
         acknowledged_pct:
           type: number
           format: float
-          description: share of the rule's alerts whose CURRENT status is acknowledged (triage proxy until a decision field exists)
+          description: share of the rule's alerts whose CURRENT status is acknowledged (workflow-progress proxy)
         closed_pct:
           type: number
           format: float
-          description: share of the rule's alerts whose CURRENT status is closed (triage proxy until a decision field exists)
+          description: share of the rule's alerts whose CURRENT status is closed (workflow-progress proxy)

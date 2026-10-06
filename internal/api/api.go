@@ -1115,22 +1115,26 @@ func (h *Hub) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 // alertView is the wire form of an alert with the lifecycle overlay
 // applied. Embedding flattens the JSON, so the shape is the Alert
-// payload plus the four optional status fields — downstream consumers
-// keep parsing the same fields they already know.
+// payload plus the optional status fields — downstream consumers keep
+// parsing the same fields they already know.
 type alertView struct {
 	alert.Alert
 	Status     string `json:"status,omitempty"`      // new (implicit), acknowledged, closed
+	Decision   string `json:"decision,omitempty"`    // operator verdict: false_positive, authorized_activity, confirmed_incident
 	StatusNote string `json:"status_note,omitempty"` // operator free-text triage note
 	StatusBy   string `json:"status_by,omitempty"`   // who set it (unauthenticated free text)
 	StatusAt   string `json:"status_at,omitempty"`   // RFC 3339 when the status was set
 }
 
 // withLifecycle merges the store's entry (when any) into an alert.
+// The decision shares the entry's at/by with the status: one record
+// is one operator action, so there is no separate decision timestamp.
 func (h *Hub) withLifecycle(a alert.Alert) alertView {
 	v := alertView{Alert: a}
 	v.Status = "new" // explicit default: readers never special-case missing fields
 	if e, ok := h.lifecycle.Get(a.ID); ok {
 		v.Status = string(e.Status)
+		v.Decision = string(e.Decision)
 		v.StatusNote = e.Note
 		v.StatusBy = e.By
 		v.StatusAt = e.At
@@ -1192,11 +1196,16 @@ func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 // out of the store keys and the log lines.
 var alertIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
 
-// statusRequest is the POST /api/alerts/{id}/status body.
+// statusRequest is the POST /api/alerts/{id}/status body. Decision
+// is optional ("" = no verdict); see lifecycle.Decision for the
+// vocabulary. The body is the FULL triage record: omitting decision
+// (or note, or by) clears it — the same replace semantics the store
+// applies.
 type statusRequest struct {
-	Status string `json:"status"`
-	Note   string `json:"note"`
-	By     string `json:"by"`
+	Status   string `json:"status"`
+	Decision string `json:"decision"`
+	Note     string `json:"note"`
+	By       string `json:"by"`
 }
 
 // handleAlertStatus records the operator triage decision for one
@@ -1220,7 +1229,7 @@ func (h *Hub) handleAlertStatus(w http.ResponseWriter, r *http.Request) {
 	var req statusRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		writeErr(w, http.StatusBadRequest,
-			`invalid JSON body: want {"status":"acknowledged|closed|new","note":"...","by":"..."}`)
+			`invalid JSON body: want {"status":"acknowledged|closed|new","decision":"false_positive|authorized_activity|confirmed_incident","note":"...","by":"..."}`)
 		return
 	}
 	st := lifecycle.Status(req.Status)
@@ -1229,7 +1238,13 @@ func (h *Hub) handleAlertStatus(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("invalid status %q: valid values are new, acknowledged, closed", req.Status))
 		return
 	}
-	e, err := h.lifecycle.Set(id, st, req.Note, req.By)
+	decision := lifecycle.Decision(req.Decision)
+	if !lifecycle.DecisionValid(decision) {
+		writeErr(w, http.StatusBadRequest,
+			fmt.Sprintf("invalid decision %q: valid values are false_positive, authorized_activity, confirmed_incident (omit the field for no verdict)", req.Decision))
+		return
+	}
+	e, err := h.lifecycle.Set(id, st, decision, req.Note, req.By)
 	if err != nil {
 		// Persistence failures are the server's fault: 500 with a
 		// GENERIC body — the wrapped error names local paths that must
@@ -1246,8 +1261,15 @@ func (h *Hub) handleAlertStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// by is client-controlled free text: keep it single-line so the
-	// audit log cannot be forged with embedded newlines.
-	log.Printf("[API] alert %s -> %s (by=%s)", id, e.Status, oneLine(e.By))
+	// audit log cannot be forged with embedded newlines. The decision
+	// (when present) names the verdict in the same audit line — the
+	// «falso positivo» of the triage flow must be attributable the
+	// same way a status change is.
+	if e.Decision != "" {
+		log.Printf("[API] alert %s -> %s decision=%s (by=%s)", id, e.Status, e.Decision, oneLine(e.By))
+	} else {
+		log.Printf("[API] alert %s -> %s (by=%s)", id, e.Status, oneLine(e.By))
+	}
 	h.broadcast("alert_lifecycle", e)
 	writeJSON(w, e)
 }

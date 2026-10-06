@@ -1,7 +1,8 @@
 // Package lifecycle tracks the operator triage state of alerts
-// (new -> acknowledged -> closed, with an optional note). It is the
-// persistence behind POST /api/alerts/{id}/status and the status
-// overlay merged into GET /api/alerts.
+// (new -> acknowledged -> closed, with an optional note and an
+// optional decision). It is the persistence behind
+// POST /api/alerts/{id}/status and the status overlay merged into
+// GET /api/alerts.
 //
 // Design notes:
 //
@@ -57,6 +58,43 @@ const (
 // a slow leak.
 const MaxEntries = 10000
 
+// Decision is the operator's verdict on an alert — WHAT the alert was,
+// as opposed to Status, which is WHERE the alert sits in the workflow.
+// It is the field the triage flow (VIZ-3) and the per-rule
+// false-positive rate (/api/noise) have been waiting for: «falso
+// positivo» stops being a console label and becomes an explicit,
+// auditable engine decision. Empty means "no decision yet": an alert
+// may be closed without a verdict, and the three values carry no
+// workflow coupling — the operator may record the decision before
+// closing, in the same request, or never.
+type Decision string
+
+const (
+	// DecisionFalsePositive marks an alert as benign: the matched
+	// logic fired on activity that is not what the rule exists to
+	// catch (the classic false positive of the triage flow).
+	DecisionFalsePositive Decision = "false_positive"
+	// DecisionAuthorizedActivity marks an alert as real but
+	// sanctioned: the activity happened and is approved (a pentest
+	// window, a change ticket, an administrator's routine).
+	DecisionAuthorizedActivity Decision = "authorized_activity"
+	// DecisionConfirmedIncident marks an alert as a real incident.
+	DecisionConfirmedIncident Decision = "confirmed_incident"
+)
+
+// DecisionValid reports whether d is a decision the API accepts. The
+// zero value ("", absent) is valid: not every triage record carries a
+// verdict. Anything else that is not one of the three documented
+// values is a hard error — a typo like "false-positive" must never
+// silently become "no decision".
+func DecisionValid(d Decision) bool {
+	switch d {
+	case "", DecisionFalsePositive, DecisionAuthorizedActivity, DecisionConfirmedIncident:
+		return true
+	}
+	return false
+}
+
 // Limits for the free-text fields: enough for a real investigation
 // note, small enough that one hostile request cannot fatten the file.
 const (
@@ -84,13 +122,17 @@ func Valid(s Status) bool {
 	return false
 }
 
-// Entry is one lifecycle record. At is RFC 3339 UTC (Nano precision).
+// Entry is one lifecycle record — the COMPLETE current triage state of
+// one alert, not a delta: every Set replaces the entry for its alert,
+// so omitted optional fields (decision, note, by) clear. At is
+// RFC 3339 UTC (Nano precision).
 type Entry struct {
-	AlertID string `json:"alert_id"`
-	Status  Status `json:"status"`
-	Note    string `json:"note,omitempty"`
-	By      string `json:"by,omitempty"`
-	At      string `json:"at"`
+	AlertID  string   `json:"alert_id"`
+	Status   Status   `json:"status"`
+	Decision Decision `json:"decision,omitempty"`
+	Note     string   `json:"note,omitempty"`
+	By       string   `json:"by,omitempty"`
+	At       string   `json:"at"`
 }
 
 type fileFormat struct {
@@ -134,6 +176,9 @@ func New(path string) (*Store, error) {
 		if e.AlertID == "" || !Valid(e.Status) {
 			return nil, fmt.Errorf("lifecycle: %s: invalid entry (alert_id=%q status=%q)", path, e.AlertID, e.Status)
 		}
+		if !DecisionValid(e.Decision) {
+			return nil, fmt.Errorf("lifecycle: %s: invalid entry (alert_id=%q decision=%q)", path, e.AlertID, e.Decision)
+		}
 		if _, dup := s.entries[e.AlertID]; dup {
 			continue // first entry wins; a later duplicate never re-slots the order
 		}
@@ -143,15 +188,22 @@ func New(path string) (*Store, error) {
 	return s, nil
 }
 
-// Set records the new status of one alert and persists the store.
-// Validation errors (status, field lengths) are returned, not
-// swallowed: the API turns them into 400s.
-func (s *Store) Set(id string, st Status, note, by string) (Entry, error) {
+// Set records the new triage record of one alert and persists the
+// store. The entry REPLACES whatever the alert had before: omitted
+// optional fields (decision, note, by) clear — the request is the
+// full new state, never a partial patch, so two operators cannot
+// accidentally merge their views. Validation errors (status,
+// decision, field lengths) are returned, not swallowed: the API turns
+// them into 400s.
+func (s *Store) Set(id string, st Status, decision Decision, note, by string) (Entry, error) {
 	if id == "" {
 		return Entry{}, errors.New("lifecycle: empty alert id")
 	}
 	if !Valid(st) {
 		return Entry{}, fmt.Errorf("lifecycle: invalid status %q (valid: new, acknowledged, closed)", st)
+	}
+	if !DecisionValid(decision) {
+		return Entry{}, fmt.Errorf("lifecycle: invalid decision %q (valid: false_positive, authorized_activity, confirmed_incident)", decision)
 	}
 	if len(note) > MaxNoteLen {
 		return Entry{}, fmt.Errorf("lifecycle: note longer than %d characters", MaxNoteLen)
@@ -159,7 +211,7 @@ func (s *Store) Set(id string, st Status, note, by string) (Entry, error) {
 	if len(by) > MaxByLen {
 		return Entry{}, fmt.Errorf("lifecycle: by longer than %d characters", MaxByLen)
 	}
-	e := Entry{AlertID: id, Status: st, Note: note, By: by, At: time.Now().UTC().Format(time.RFC3339Nano)}
+	e := Entry{AlertID: id, Status: st, Decision: decision, Note: note, By: by, At: time.Now().UTC().Format(time.RFC3339Nano)}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
