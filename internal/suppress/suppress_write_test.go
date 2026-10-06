@@ -43,9 +43,14 @@ func TestValidateEntry(t *testing.T) {
 
 func TestNormalizeEntry(t *testing.T) {
 	got := NormalizeEntry(Entry{RuleID: "  r1 ", Host: "  LAB-WKS-01 ", Reason: " rw ", Expires: " 2026-10-02T00:00:00Z "})
+	// Entry carries When ([]Cond) since §2.3, so the structs are no
+	// longer comparable with ==: compare the scalar fields instead.
 	want := Entry{RuleID: "r1", Host: "lab-wks-01", Reason: "rw", Expires: "2026-10-02T00:00:00Z"}
-	if got != want {
+	if got.RuleID != want.RuleID || got.Host != want.Host || got.Reason != want.Reason || got.Expires != want.Expires {
 		t.Fatalf("NormalizeEntry = %+v, want %+v", got, want)
+	}
+	if got.When != nil {
+		t.Fatalf("NormalizeEntry When = %+v, want nil for an entry without conditions", got.When)
 	}
 }
 

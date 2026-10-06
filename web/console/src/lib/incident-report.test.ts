@@ -3,6 +3,9 @@ import type { SfAlert } from './console-types'
 import { buildEntityGraph } from './entity-graph'
 import type { Incident } from './engine-writes'
 import { buildIncidentHtml, buildIncidentMarkdown, graphSvg, reportFilename, techniques } from './incident-report'
+import { PLAYBOOK_TEMPLATES, addChronology, addEvidence, applyPlaybook, toggleCheck, type IncidentPlaybookState } from './incident-playbook'
+
+const ransomware = PLAYBOOK_TEMPLATES.find((t) => t.id === 'ransomware')!
 
 const alert = (id: string, over: Partial<SfAlert> = {}): SfAlert => ({
   id,
@@ -84,4 +87,77 @@ test('bidi controls are shown escaped', () => {
 
 test('a graph with a single node draws nothing', () => {
   expect(graphSvg({ nodes: [{ id: 'h', kind: 'host', label: 'PC', weight: 1 }], edges: [], folded: 0 })).toBe('')
+})
+
+test('the playbook renders in Markdown only when provided', () => {
+  const without = buildIncidentMarkdown({ incident, alerts, now: new Date('2026-10-04T12:00:00Z') })
+  expect(without).not.toContain('Plan de respuesta')
+  let state = applyPlaybook(incident.id, 'ransomware', '2026-10-04T11:00:00Z')
+  state = toggleCheck(state, ransomware, 'aislar', '2026-10-04T11:10:00Z')
+  state = addEvidence(state, { kind: 'hash', label: 'SHA-256 | cifrador', detail: 'abc', at: '2026-10-04T11:15:00Z' })
+  state = addChronology(state, { at: '2026-10-04T10:58:00Z', text: 'Primer cifrado observado' }, '2026-10-04T11:20:00Z')
+  const md = buildIncidentMarkdown({ incident, alerts, graph: buildEntityGraph(alerts.slice(0, 2), []), playbook: state, now: new Date('2026-10-04T12:00:00Z') })
+  expect(md).toContain('## Plan de respuesta: Ransomware')
+  expect(md).toContain('1 de 11 pasos completados')
+  expect(md).toContain('| 2 | A\u00edsla de la red')
+  expect(md).toContain('| SHA-256 \\| cifrador | abc |')
+  expect(md).toContain('- **2026-10-04 10:58:00 UTC**: Primer cifrado observado')
+  // the plan section sits after the engine timeline and before the graph
+  expect(md.indexOf('## Plan de respuesta')).toBeGreaterThan(md.indexOf('## Línea de tiempo'))
+  expect(md.indexOf('## Plan de respuesta')).toBeLessThan(md.indexOf('## Entidades relacionadas'))
+})
+
+test('the playbook renders in the printable HTML with progress and honest provenance', () => {
+  let state = applyPlaybook(incident.id, 'phishing', '2026-10-04T11:00:00Z')
+  state = toggleCheck(state, PLAYBOOK_TEMPLATES.find((t) => t.id === 'phishing')!, 'mensaje', '2026-10-04T11:10:00Z')
+  const html = buildIncidentHtml({ incident, alerts, playbook: state })
+  expect(html).toContain('Plan de respuesta: Phishing')
+  expect(html).toContain('1 de 10 pasos completados')
+  expect(html).toContain('<span class="ok">Hecho</span>')
+  expect(html).toContain('<span class="muted">Pendiente</span>')
+  expect(html).toContain('El plan de respuesta vive en la consola del analista')
+  // without a playbook the section never appears
+  expect(buildIncidentHtml({ incident, alerts })).not.toContain('Plan de respuesta')
+})
+
+test('the artifact follows the console language: EN export keeps engine text verbatim (ronda 12)', () => {
+  const md = buildIncidentMarkdown({ incident, alerts, now: new Date('2026-10-04T12:00:00Z'), lang: 'en' })
+  expect(md).toStartWith('# Incident report: Robo de credenciales en contabilidad')
+  // engine data never translates
+  expect(md).toContain('Volcado de LSASS y movimiento a SRV-FILES.')
+  expect(md).toContain('PsExec remoto')
+  // console chrome does
+  expect(md).toContain('| Status | Investigating |')
+  expect(md).toContain('| Owner | ana |')
+  expect(md).toContain('## ATT&CK techniques')
+  expect(md).toContain('## Case alerts (3)')
+  expect(md).toContain('| Time | Severity | Rule | Host | User | Summary |')
+  expect(md).toContain('1 alert was no longer in the console')
+  expect(md).toContain('## Timeline')
+  expect(reportFilename(incident, 'md', 'en')).toBe('incident-0123456789abcdef.md')
+  const html = buildIncidentHtml({ incident, alerts, now: new Date('2026-10-04T12:00:00Z'), lang: 'en' })
+  expect(html).toContain('<html lang="en">')
+  expect(html).toContain('Incident report · generated on')
+  expect(html).toContain('Print / save PDF')
+  // the ES default stays byte-identical to the pre-i18n artifact
+  const esHtml = buildIncidentHtml({ incident, alerts })
+  expect(esHtml).toContain('<html lang="es">')
+  expect(esHtml).toContain('Informe de incidente · generado el')
+})
+
+test('the EN playbook section carries the same structure with translated chrome', () => {
+  let state = applyPlaybook(incident.id, 'ransomware', '2026-10-04T11:00:00Z')
+  state = toggleCheck(state, ransomware, 'aislar', '2026-10-04T11:10:00Z')
+  const md = buildIncidentMarkdown({ incident, alerts, playbook: state, now: new Date('2026-10-04T12:00:00Z'), lang: 'en' })
+  expect(md).toContain('## Response plan: Ransomware')
+  expect(md).toContain('1 of 11 steps completed')
+  expect(md).toContain('Done |')
+  expect(md).toContain('### Evidence')
+  expect(md).toContain('### Analyst chronology')
+  // step texts are product data and stay verbatim
+  expect(md).toContain('A\u00edsla de la red')
+  const html = buildIncidentHtml({ incident, alerts, playbook: state, lang: 'en' })
+  expect(html).toContain('<h2>Response plan: Ransomware</h2>')
+  expect(html).toContain('<span class="ok">Done</span>')
+  expect(html).toContain('The response plan lives in the analyst')
 })

@@ -572,7 +572,7 @@ func mergeMaps(a, b map[string]string) map[string]string {
 	return out
 }
 
-// F1 (ronda 04 sobre da6382c): el corpus Sigma asume matching
+// F1 (over da6382c): el corpus Sigma asume matching
 // case-insensitive (escribe mimikatz y espera que Invoke-Mimikatz
 // dispare). Los valores con letras se emiten con la familia i*; los
 // puramente numéricos conservan el fast path exacto; los patrones

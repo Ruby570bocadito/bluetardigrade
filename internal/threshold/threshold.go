@@ -40,6 +40,9 @@
 //	                     of the table
 //	MaxCount 4096        a threshold that can never fire = silent control
 //	MaxWindow 24h        windows with no operational meaning
+//	MaxKeysPerHost 2048  v1.1 cuotas por equipo: the same ceiling per
+//	                     HOST — one noisy machine cannot fill the
+//	                     shared table the others report into
 //	maxFileBytes 4 MiB   same input standard as beacon/correlate
 //
 // Eviction policy (F1, adenda vinculante 11h02 — sustituye la
@@ -87,10 +90,12 @@ const (
 	MaxRules       = 64
 	MaxKeys        = 8192
 	MaxKeysPerRule = MaxKeys / 4 // dictamen Q2: 25% quota, no rule may monopolize
-	MaxCount       = 4096
-	MaxWindow      = 24 * time.Hour
-	maxFileBytes   = 4 << 20
-	MinCount       = 2
+	MaxKeysPerHost = MaxKeys / 4 // v1.1 cuotas por equipo: the same ceiling per HOST, one noisy
+	// machine may not monopolize the shared table either
+	MaxCount     = 4096
+	MaxWindow    = 24 * time.Hour
+	maxFileBytes = 4 << 20
+	MinCount     = 2
 )
 
 // Definition is one threshold rule as written in thresholds.yaml.
@@ -150,6 +155,13 @@ type Detector struct {
 	byID    map[string]*compiled
 	keys    map[key]*keyState
 	perRule map[string]int
+	// perHost is the per-host twin of perRule (v1.1 cuotas por
+	// equipo): the quota is an admission ceiling per host, and a
+	// host whose keys all expired recovers itself (dead evidence
+	// is purged before the refusal).
+	perHost       map[string]int
+	quotaRejected uint64            // host-quota refusals since startup
+	quotaHosts    map[string]uint64 // refusal tally by host, capped
 
 	emit  func(alert.Alert)
 	fired atomic.Uint64
@@ -169,10 +181,12 @@ func LoadFile(path string) (*Detector, error) {
 
 func newDetector(defs []compiled, byID map[string]*compiled) *Detector {
 	return &Detector{
-		defs:    defs,
-		byID:    byID,
-		keys:    map[key]*keyState{},
-		perRule: map[string]int{},
+		defs:       defs,
+		byID:       byID,
+		keys:       map[key]*keyState{},
+		perRule:    map[string]int{},
+		perHost:    map[string]int{},
+		quotaHosts: map[string]uint64{},
 	}
 }
 
@@ -385,7 +399,7 @@ func (d *Detector) Observe(ev *model.Event, now time.Time) {
 		}
 	}
 	d.mu.Unlock()
-	// Deliver OUTSIDE mu (the accumulated O1, acta 22h46 §1.4 — the
+	// Deliver OUTSIDE mu (the accumulated O1 — the
 	// same pattern beacon and the correlator had): the pipeline takes
 	// the hub lock and can block on SQLite, webhook and risk, and no
 	// stats read should queue behind delivery under this detector's
@@ -415,6 +429,19 @@ func (d *Detector) admitLocked(k key, _ *compiled, t, now time.Time) *keyState {
 	if d.perRule[k.ruleID] >= MaxKeysPerRule {
 		return nil
 	}
+	// Host quota (v1.1 cuotas por equipo): the same admission ceiling
+	// per host — a noisy machine cannot fill the table the others
+	// report into. Dead evidence is purged first so a host whose
+	// keys all expired recovers itself, without waiting for the
+	// global cap to fill (the per-rule ceiling above stays a pure
+	// ceiling: that semantics is the audited adenda behavior).
+	if d.perHost[k.host] >= MaxKeysPerHost {
+		d.purgeExpiredLocked(now)
+		if d.perHost[k.host] >= MaxKeysPerHost {
+			d.quotaRejectLocked(k.host)
+			return nil
+		}
+	}
 	// F1.2: global saturation — dead evidence (expired keys of ANY
 	// rule) frees slots first.
 	if len(d.keys) >= MaxKeys {
@@ -430,6 +457,7 @@ func (d *Detector) admitLocked(k key, _ *compiled, t, now time.Time) *keyState {
 	st := &keyState{windowStart: t, seen: now}
 	d.keys[k] = st
 	d.perRule[k.ruleID]++
+	d.perHost[k.host]++
 	return st
 }
 
@@ -479,6 +507,11 @@ func (d *Detector) deleteKeyLocked(k key) {
 		delete(d.perRule, k.ruleID)
 	} else {
 		d.perRule[k.ruleID]--
+	}
+	if d.perHost[k.host] <= 1 {
+		delete(d.perHost, k.host)
+	} else {
+		d.perHost[k.host]--
 	}
 }
 
@@ -539,3 +572,69 @@ func (d *Detector) fireLocked(c *compiled, ev *model.Event, group string, st *ke
 // group keys use rules.AsString: the canonical normalization the
 // operators apply when matching field values, so a group_by key can
 // never disagree with what an operator folded for the same field.
+
+// maxQuotaHostEntries caps the refusal tally by host: honesty about
+// WHICH host is being refused cannot itself become an unbounded map.
+// Past the cap the total keeps counting every refusal; only the
+// per-host attribution stops growing.
+const maxQuotaHostEntries = 64
+
+// quotaRejectLocked counts one host-quota refusal (total + capped
+// per-host tally). Caller holds mu.
+func (d *Detector) quotaRejectLocked(host string) {
+	d.quotaRejected++
+	if _, ok := d.quotaHosts[host]; !ok && len(d.quotaHosts) >= maxQuotaHostEntries {
+		return // tally full: the total still counts every refusal
+	}
+	d.quotaHosts[host]++
+}
+
+// QuotaHost is one host's row of the refusal tally (always served as
+// a copy — shared state leaves every read path as a copy).
+type QuotaHost struct {
+	Host     string
+	Rejected uint64
+}
+
+// QuotaRejected returns how many new aggregation keys were refused
+// because the HOST's own quota was full (v1.1 cuotas por equipo):
+// the width of the noisy-host pressure on the shared table.
+func (d *Detector) QuotaRejected() uint64 {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.quotaRejected
+}
+
+// QuotaHosts returns the capped per-host refusal tally as a copy:
+// top-list merging is the API layer's job, so the manager serves the
+// whole tally and stays out of presentation decisions.
+func (d *Detector) QuotaHosts() map[string]uint64 {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	out := make(map[string]uint64, len(d.quotaHosts))
+	for h, n := range d.quotaHosts {
+		out[h] = n
+	}
+	return out
+}
+
+// QuotaTopHosts returns the hosts with the most quota refusals, worst
+// first, at most 8 rows, always a copy.
+func (d *Detector) QuotaTopHosts() []QuotaHost {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	out := make([]QuotaHost, 0, len(d.quotaHosts))
+	for h, n := range d.quotaHosts {
+		out = append(out, QuotaHost{Host: h, Rejected: n})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Rejected != out[j].Rejected {
+			return out[i].Rejected > out[j].Rejected
+		}
+		return out[i].Host < out[j].Host
+	})
+	if len(out) > 8 {
+		out = out[:8]
+	}
+	return out
+}

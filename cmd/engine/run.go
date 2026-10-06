@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/actions"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/ad"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/api"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/baseline"
@@ -25,6 +26,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/incident"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/ingest"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/intel"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/known"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/lifecycle"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/notify"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/redact"
@@ -186,6 +188,25 @@ func runEngine(o *options, interactive bool) error {
 		supCount = supMgr.Count(time.Now())
 		if supCount > 0 {
 			fmt.Printf("[ENGINE] %d suppressions active from %s\n", supCount, supPath)
+		}
+	}
+
+	// §2.2 known-software list: events matching an entry carry
+	// enrichment.known_software (the event is never deleted or hidden).
+	// Hot-reloaded on the same ticker as rules; a malformed file is
+	// FATAL at startup, like the suppressions file — failing open would
+	// silently disarm a list the operator believes is armed.
+	knownMgr := known.New()
+	knownPath := ""
+	knownCount := 0
+	if o.knownFile != "" {
+		knownPath = resolveDataFile(o.knownFile, "known-software.yaml")
+		if err := knownMgr.LoadFile(knownPath); err != nil {
+			log.Fatalf("[ENGINE] %v", err)
+		}
+		knownCount = knownMgr.Count()
+		if knownCount > 0 {
+			fmt.Printf("[ENGINE] %d known-software entries from %s\n", knownCount, knownPath)
 		}
 	}
 
@@ -390,6 +411,9 @@ func runEngine(o *options, interactive bool) error {
 	// resolved once here so the active-response arming below can
 	// apply its token layer without duplicating the flag>env order
 	apiTok := ""
+	// SET-3: ingest→alert latency ring (the API closure reads it; the
+	// observer is attached to the alert manager once it exists).
+	latTracker := newAlertLatencyTracker(1024)
 	if o.apiAddr != "0" {
 		// API TLS: symmetric with the ingest listener — the pair
 		// is validated up front (cert without key or vice versa
@@ -418,6 +442,7 @@ func runEngine(o *options, interactive bool) error {
 			}
 			hub.SetRules(engine)
 			hub.SetSuppressions(supMgr)
+			hub.SetKnownSoftware(knownMgr)
 			if st != nil {
 				hub.SetStore(st)
 			}
@@ -458,6 +483,26 @@ func runEngine(o *options, interactive bool) error {
 				}
 				return thr.Count(), thr.KeysTracked(), thr.Fired()
 			})
+			// v1.1 cuotas por equipo: per-host admission refusals of
+			// the quota-capable detectors (beacon, threshold), so a
+			// noisy host's pressure on the shared tables is watchable
+			// from /api/stats. The closures run after the hub lock,
+			// like every other stats wiring.
+			hub.SetQuotaStats(func() api.QuotaSnapshot {
+				qs := api.QuotaSnapshot{
+					BeaconHosts:    map[string]uint64{},
+					ThresholdHosts: map[string]uint64{},
+				}
+				if bcn != nil {
+					qs.BeaconRejected = bcn.QuotaRejected()
+					qs.BeaconHosts = bcn.QuotaHosts()
+				}
+				if thr != nil {
+					qs.ThresholdRejected = thr.QuotaRejected()
+					qs.ThresholdHosts = thr.QuotaHosts()
+				}
+				return qs
+			})
 			hub.SetSequences(corr)
 			hub.SetLifecycle(lifeStore)
 			hub.SetIncidents(incStore)
@@ -489,7 +534,7 @@ func runEngine(o *options, interactive bool) error {
 			} else if !isLoopback(hub.Addr()) {
 				fmt.Println("[ENGINE] WARNING: API bound beyond loopback WITHOUT a token: anything that reaches this port can read every event and alert. Set -api-token or SF_API_TOKEN.")
 			}
-			// suppression writes (Director decision 6.1): the write
+			// suppression writes (design §6.1): the write
 			// surface is opt-in and inherits the bearer gate; a
 			// non-loopback bind without a token refuses it at startup
 			// because unauthenticated writes could silence detections.
@@ -530,6 +575,91 @@ func runEngine(o *options, interactive bool) error {
 				fmt.Printf("[ENGINE] scenarios: detection validation armed from %s (POST /api/scenarios/run; history %s)\n",
 					o.scenariosDir, history)
 			}
+
+			// SET-3 platform status: engine version, ingest→alert
+			// latency and both listeners' certificate expiry. The
+			// console's view used to mark these "not published";
+			// the engine publishes them from now on.
+			hub.SetVersion(engineVersion)
+			hub.SetAlertLatency(latTracker.snapshot)
+			hub.SetIngestCertExpiry(server.CertExpiry)
+
+			// Read-only Active Directory connector (AD-1/AD-2):
+			// armed only with -ad AND a store (the snapshot is
+			// persisted, never memory-only). The connector is
+			// read-only by construction (bind + search only),
+			// speaks LDAPS/StartTLS with the configured CA and a
+			// least-privilege account, and pages with an object
+			// cap. The posture analysis (AD-2) recomputes with
+			// every completed sync.
+			if o.adConfig != "" {
+				if st == nil {
+					log.Fatalf("[ENGINE] -ad requires -store: the directory snapshot is persisted to SQLite, never held in memory only")
+				}
+				adCfg, aerr := ad.Load(o.adConfig)
+				if aerr != nil {
+					log.Fatalf("[ENGINE] %v", aerr)
+				}
+				adLogger := log.New(os.Stderr, "[AD] ", log.LstdFlags)
+				sensorHosts := func() []string {
+					hosts := fleetTracker.Snapshot(time.Now())
+					names := make([]string, 0, len(hosts))
+					for _, fh := range hosts {
+						names = append(names, fh.Host)
+					}
+					return names
+				}
+				adConn, aerr := ad.New(adCfg, st, adLogger, sensorHosts)
+				if aerr != nil {
+					log.Fatalf("[ENGINE] %v", aerr)
+				}
+				if aerr := adConn.Run(ctx); aerr != nil {
+					log.Printf("[ENGINE] active directory: %v", aerr)
+				}
+				defer adConn.Stop()
+
+				// AD-6: the settings surface commits a new config and
+				// hot-swaps the connector. The hub invokes this callback
+				// SYNCHRONOUSLY inside its adWriteMu critical section: swaps
+				// are serialized against each other and against the file
+				// commit (publication order == commit order), so the
+				// `current` bookkeeping below needs no lock of its own.
+				// ad.New is validation only, no I/O; the long-lived work —
+				// start the next loop, stop the previous one — still happens
+				// in background goroutines. Shutdown relies on ctx
+				// cancellation for hot-swapped connectors (their loops
+				// select on ctx.Done); the initial connector keeps its
+				// explicit Stop above. A late sync of the PREVIOUS
+				// connector is discarded at its ctx check; at worst it
+				// leaves one stale snapshot that the next tick overwrites.
+				current := adConn
+				reconfigure := func(cfg *ad.Config) error {
+					next, nerr := ad.New(cfg, st, adLogger, sensorHosts)
+					if nerr != nil {
+						return nerr
+					}
+					prev := current
+					current = next
+					hub.SetAD(next)
+					go func() {
+						if rerr := next.Run(ctx); rerr != nil {
+							adLogger.Printf("[AD] sync after settings change failed: %v", rerr)
+						}
+					}()
+					if prev != nil {
+						go prev.Stop()
+					}
+					return nil
+				}
+				hub.SetADSettings(o.adConfig, reconfigure)
+				hub.SetAD(adConn)
+				mode := "LDAPS"
+				if adCfg.StartTLS {
+					mode = "StartTLS"
+				}
+				fmt.Printf("[ENGINE] active directory: read-only connector armed (%s://%s:%d, interval %s; GET /api/ad/*)\n",
+					mode, redact.EndpointLabel(adCfg.Server), adCfg.Port, adCfg.Interval)
+			}
 			go func() {
 				if err := hub.Run(); err != nil {
 					log.Printf("[ENGINE] api: %v", err)
@@ -544,9 +674,10 @@ func runEngine(o *options, interactive bool) error {
 	// opt-in by layers — flag AND bearer token AND an open audit
 	// file — and its state is announced at startup, never guessed.
 	// The token layer is stricter than the suppression writes it
-	// replicates: kill requires a token EVEN on loopback (dictamen
-	// 04-B: kill ≠ suppress). An audit open failure disables the
-	// surface loudly and keeps detection alive (R5b: NOT fatal —
+	// replicates: kill requires a token EVEN on loopback (kill ≠
+	// suppress: separate surfaces, separate credentials). An audit
+	// open failure disables the surface loudly and keeps detection
+	// alive (R5b: NOT fatal —
 	// taking down the whole engine over a respond misconfig would
 	// be the expensive failure direction).
 	var respMgr *respond.Manager
@@ -698,6 +829,8 @@ func runEngine(o *options, interactive bool) error {
 	}
 
 	enricher := enrich.New()
+	enricher.SetKnownSoftware(knownMgr) // empty manager = off
+
 	// In TUI mode the panel owns the screen: raw alert lines would
 	// corrupt the alt-buffer, so the console/JSON writer is muted and
 	// the panel presents the alerts (the API hub and the webhook still
@@ -750,18 +883,31 @@ func runEngine(o *options, interactive bool) error {
 	// webhook deliveries run in the background and never stall intake
 	dispatcher := actions.New(log.New(os.Stderr, "[ACTIONS] ", 0))
 	alerts.SetPreparer(dispatcher.Prepare)
+	// SET-3: every raised alert measures the ingest→alert latency.
+	alerts.SetLatencyObserver(latTracker.Observe)
 
 	// emitAllowlisted is the ONE suppression gate every secondary
-	// emitter shares: a host with a suppressed rule is in an accepted
+	// emitter shares. Two thin forms over the same helper:
+	//   - emitAllowlisted(a): aggregated emitters (kill-chains,
+	//     beaconing, volumetric) pass no event, so a CONDITIONAL
+	//     entry never silences them (§2.3: fail toward alerting).
+	//   - emitAllowlistedEvent(ev, a): per-event emitters (intel,
+	//     baseline novelty) pass the triggering event, so a
+	//     conditional entry suppresses exactly the invocation shape
+	//     it names.
+	// In both forms a host with a suppressed rule is in an accepted
 	// state, so an alert derived from its silenced evidence never
 	// fires — a kill-chain built on suppressed steps, a beacon built
 	// on silenced traffic or a volumetric alert fed by silenced
-	// events would all be false positives. One closure instead of
-	// three identical copies keeps the gate from diverging (any
-	// future change to how suppression gates secondary alerts is
-	// edited here, once).
+	// events would all be false positives.
 	emitAllowlisted := func(a alert.Alert) {
-		if suppressed(supMgr, a.RuleID, a.Host, time.Now()) {
+		if suppressed(supMgr, a.RuleID, a.Host, nil, time.Now()) {
+			return
+		}
+		alerts.Emit(a)
+	}
+	emitAllowlistedEvent := func(ev *model.Event, a alert.Alert) {
+		if suppressed(supMgr, a.RuleID, a.Host, ev, time.Now()) {
 			return
 		}
 		alerts.Emit(a)
@@ -821,8 +967,8 @@ func runEngine(o *options, interactive bool) error {
 		}
 	}()
 	if thr != nil {
-		// Threshold alerts NEVER feed the correlator (dictamen 04,
-		// Q3): one threshold alert already aggregates N events, and
+		// Threshold alerts NEVER feed the correlator (Q3): one
+		// threshold alert already aggregates N events, and
 		// chaining it would break the "steps = atomic rules"
 		// semantics of the sequencer. The suppression gate itself is
 		// the shared one above.
@@ -909,6 +1055,16 @@ func runEngine(o *options, interactive bool) error {
 								fmt.Printf("[ENGINE] suppressions reloaded (%d active)\n", n)
 							}
 							supCount = n
+						}
+					}
+					if o.knownFile != "" {
+						if err := knownMgr.LoadFile(knownPath); err != nil {
+							log.Printf("[ENGINE] known-software reload FAILED, keeping previous list: %v", err)
+						} else if n := knownMgr.Count(); n != knownCount {
+							if !tui {
+								fmt.Printf("[ENGINE] known-software reloaded (%d entries)\n", n)
+							}
+							knownCount = n
 						}
 					}
 					if bcn != nil && fileExists(bcnPath) {
@@ -1013,8 +1169,10 @@ func runEngine(o *options, interactive bool) error {
 		}
 		for _, hit := range engine.Evaluate(ev) {
 			// allowlist first: a suppressed hit raises no alert AND does
-			// not feed the correlator (see the Emit wrapper above).
-			if suppressed(supMgr, hit.Rule.ID, ev.Host, time.Now()) {
+			// not feed the correlator (see the Emit wrapper above). The
+			// event rides along so a CONDITIONAL entry (§2.3 when)
+			// suppresses only the invocation shape it names.
+			if suppressed(supMgr, hit.Rule.ID, ev.Host, ev, time.Now()) {
 				if !tui {
 					log.Printf("[SUPPRESS] rule=%s host=%s", redact.TerminalText(hit.Rule.ID), redact.TerminalText(ev.Host))
 				}
@@ -1043,13 +1201,17 @@ func runEngine(o *options, interactive bool) error {
 			now := time.Now()
 			for _, hit := range intelM.Match(ev) {
 				if intelM.Allow(hit, ev.Host, now) {
-					emitAllowlisted(intelAlert(ev, hit, now))
+					emitAllowlistedEvent(ev, intelAlert(ev, hit, now))
 				}
 			}
 		}
-		// baseline: a process this host never ran after its learning period
-		if nov := baseTracker.Observe(ev, time.Now()); nov != nil {
-			emitAllowlisted(noveltyAlert(ev, nov, time.Now()))
+		// baseline: a process this host never ran after its learning period.
+		// Known software (§2.2) is LEARNED but never reported as a novelty:
+		// the whole point of the list is that its boots are expected, and
+		// learning keeps the baseline honest for the day the entry is
+		// removed (the host has demonstrably run it for months).
+		if nov := baseTracker.Observe(ev, time.Now()); nov != nil && ev.Enrichment["known_software"] == "" {
+			emitAllowlistedEvent(ev, noveltyAlert(ev, nov, time.Now()))
 		}
 		processed++
 	}

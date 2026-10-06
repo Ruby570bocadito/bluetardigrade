@@ -91,7 +91,7 @@ func TestMailAttachmentNameIndicatorsAreObservedWithoutPayload(t *testing.T) {
 		key  string
 	}{
 		{"invoice.pdf.exe ", "mail_attachment_double_extension"},
-		// Deception edge (SEC-8 round 2026-10-05): a space before the
+		// Deception edge (SEC-8): a space before the
 		// active extension ("invoice.pdf .exe") used to defeat the
 		// double-extension signal because the intermediate name was not
 		// trimmed before the document-suffix check. Windows hides known

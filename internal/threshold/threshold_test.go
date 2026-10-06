@@ -618,3 +618,139 @@ func TestAlertCarriesDefinitionIdentity(t *testing.T) {
 		t.Fatalf("summary sin contenido: %q", got.Summary)
 	}
 }
+func TestHostQuotaIsAdmissionCeiling(t *testing.T) {
+	// v1.1 cuotas por equipo: un equipo ruidoso no puede llenar la
+	// tabla compartida. La cuota del host se llena repartida entre DOS
+	// reglas (1024 claves cada una) para ejercitar el camino por host
+	// y no el techo por regla (que va primero y es un techo puro por
+	// diseno auditado). La clave nueva 2049 de SU host se rechaza
+	// (techo de admision, sin expulsion), sus claves existentes siguen
+	// contando y los demas equipos admiten con normalidad.
+	defs := `
+- name: Flood una
+  id: thr-a
+  severity: low
+  event_type: file.write
+  threshold:
+    count: 4096
+    window: 24h
+    group_by: file.path
+- name: Flood dos
+  id: thr-b
+  severity: low
+  event_type: file.write
+  threshold:
+    count: 4096
+    window: 24h
+    group_by: file.path
+`
+	d := loadForTest(t, defs)
+	var fired int
+	d.SetEmit(func(a alert.Alert) { fired++ })
+	for i := 0; i < MaxKeysPerHost/2; i++ {
+		ev := &model.Event{ID: fmt.Sprintf("f%d", i), Type: "file.write", Host: "NOISY", Timestamp: t0,
+			File: &model.File{Path: fmt.Sprintf(`C:\temp\f%d.dll`, i)}}
+		d.Observe(ev, t0)
+	}
+	if d.KeysTracked() != MaxKeysPerHost {
+		t.Fatalf("keys=%d, want %d", d.KeysTracked(), MaxKeysPerHost)
+	}
+	// claves nuevas del host ruidoso: 20 eventos x 2 reglas = 40
+	// rechazos de admision (el contador cuenta pares regla-clave)
+	for i := 0; i < 20; i++ {
+		ev := &model.Event{ID: fmt.Sprintf("x%d", i), Type: "file.write", Host: "NOISY", Timestamp: t0,
+			File: &model.File{Path: fmt.Sprintf(`C:\temp\extra%d.dll`, i)}}
+		d.Observe(ev, t0)
+	}
+	if d.KeysTracked() != MaxKeysPerHost {
+		t.Fatalf("la cuota por host admitio o expulso: keys=%d", d.KeysTracked())
+	}
+	if got := d.QuotaRejected(); got != 40 {
+		t.Fatalf("QuotaRejected=%d, want 40 (20 eventos x 2 reglas)", got)
+	}
+	// otro equipo sigue admitiendo con normalidad (1 evento, 2 reglas)
+	d.Observe(&model.Event{ID: "v0", Type: "file.write", Host: "victim", Timestamp: t0,
+		File: &model.File{Path: `C:\Users\Public\a.dll`}}, t0)
+	if d.KeysTracked() != MaxKeysPerHost+2 {
+		t.Fatalf("la victima no admite: keys=%d", d.KeysTracked())
+	}
+	// las claves existentes del host ruidoso siguen contando
+	for i := 0; i < 5; i++ {
+		ts := t0.Add(time.Duration(i) * time.Second)
+		d.Observe(&model.Event{ID: fmt.Sprintf("r%d", i), Type: "file.write", Host: "NOISY", Timestamp: ts,
+			File: &model.File{Path: `C:\temp\f0.dll`}}, ts)
+	}
+	d.mu.Lock()
+	st := d.keys[key{ruleID: "thr-a", host: "noisy", group: `C:\temp\f0.dll`}]
+	perHost := d.perHost["noisy"]
+	d.mu.Unlock()
+	if st == nil {
+		t.Fatal("la clave existente del host ruidoso desaparecio")
+	}
+	if st.count != 6 {
+		t.Fatalf("la clave existente dejo de contar: count=%d, want 6", st.count)
+	}
+	if perHost != MaxKeysPerHost {
+		t.Fatalf("perHost=%d, want %d", perHost, MaxKeysPerHost)
+	}
+	top := d.QuotaTopHosts()
+	if len(top) != 1 || top[0].Host != "noisy" || top[0].Rejected != 40 {
+		t.Fatalf("QuotaTopHosts=%+v", top)
+	}
+	if fired != 0 {
+		t.Fatalf("no habia disparos esperados: fired=%d", fired)
+	}
+}
+
+func TestHostQuotaFreesWhenKeysExpire(t *testing.T) {
+	// la cuota por host se auto-repara: al rechazar, la evidencia
+	// muerta (2x ventana sin senal) se purga antes de negar la
+	// admision, sin esperar a que el cap global se llene.
+	defs := `
+- name: Flood una
+  id: thr-a
+  severity: low
+  event_type: file.write
+  threshold:
+    count: 4096
+    window: 5m
+    group_by: file.path
+- name: Flood dos
+  id: thr-b
+  severity: low
+  event_type: file.write
+  threshold:
+    count: 4096
+    window: 5m
+    group_by: file.path
+`
+	d := loadForTest(t, defs)
+	d.SetEmit(func(a alert.Alert) {})
+	for i := 0; i < MaxKeysPerHost/2; i++ {
+		p := fmt.Sprintf(`C:\temp\f%d.dll`, i)
+		d.Observe(&model.Event{ID: fmt.Sprintf("e%d", i), Type: "file.write", Host: "NOISY", Timestamp: t0,
+			File: &model.File{Path: p}}, t0)
+	}
+	d.mu.Lock()
+	perA, perB := d.perRule["thr-a"], d.perRule["thr-b"]
+	d.mu.Unlock()
+	if perA != MaxKeysPerHost/2 || perB != MaxKeysPerHost/2 {
+		t.Fatalf("montaje: perRule a=%d b=%d, want %d cada una", perA, perB, MaxKeysPerHost/2)
+	}
+	// 11 minutos despues todo expira (2x ventana de 5m = 10m); una
+	// admision nueva purga la evidencia muerta y entra sin rechazo.
+	// Un evento alimenta las dos reglas: quedan 2 claves vivas.
+	later := t0.Add(11 * time.Minute)
+	d.Observe(&model.Event{ID: "new", Type: "file.write", Host: "NOISY", Timestamp: later,
+		File: &model.File{Path: `C:\temp\new.dll`}}, later)
+	d.mu.Lock()
+	n := d.perHost["noisy"]
+	keys := len(d.keys)
+	d.mu.Unlock()
+	if n != 2 || keys != 2 {
+		t.Fatalf("la cuota no libero la evidencia expirada: perHost=%d keys=%d, want 2", n, keys)
+	}
+	if got := d.QuotaRejected(); got != 0 {
+		t.Fatalf("QuotaRejected=%d, want 0 (hubo sitio tras la purga)", got)
+	}
+}

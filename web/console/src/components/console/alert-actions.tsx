@@ -29,6 +29,7 @@ import { SeverityBadge } from './ui-bits'
 import { Meter } from '@/components/charts/bars'
 import { postAlertStatus } from '@/lib/lifecycle'
 import { alertKey } from '@/lib/engine-client'
+import { csvCell } from '@/lib/chart-export'
 import {
   addIncidentAlerts,
   createIncident,
@@ -68,12 +69,8 @@ function download(name: string, text: string, mime: string) {
   URL.revokeObjectURL(url)
 }
 
-function csvCell(value: unknown): string {
-  const text = value === undefined || value === null ? '' : String(value)
-  // spreadsheet formula injection guard (same rule as the engine export)
-  const safe = /^[=+\-@\t\r]/.test(text) ? "'" + text : text
-  return /[",\n\r]/.test(safe) ? '"' + safe.replace(/"/g, '""') + '"' : safe
-}
+// csvCell comes from lib/chart-export: the same guarded cell the table
+// twins use (engine formula rule + RFC 4180 quoting). One definition.
 
 // ---- bulk action bar ------------------------------------------------------
 
@@ -124,7 +121,7 @@ export function AlertActionBar({ alerts, onClear, onAnalyze, onAnalyzeGroup, onO
   return (
     <div role="region" aria-label="Acciones sobre la selección" className="sticky top-16 z-10 mb-3 rounded-xl border border-primary/25 bg-zinc-900/95 px-3 py-2.5 shadow-lg backdrop-blur">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium text-blue-100">{alerts.length} seleccionadas</span>
+        <span className="text-xs font-medium text-primary-soft">{alerts.length} seleccionadas</span>
         <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} aria-label="Nota común para el triaje" placeholder="nota común (opcional)"
           className="h-8 w-44 rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-100 placeholder:text-zinc-600" />
         <button type="button" className={btn} disabled={busy || withId.length === 0} onClick={() => void triage('acknowledged')}>
@@ -301,14 +298,26 @@ function IncidentDialog({ alerts, onClose, onOpenIncident }: {
 
 // ---- suppression ------------------------------------------------------------
 
+/** One (rule, host) pair the suppression applies to. The noise report
+ * builds targets from a loud rule; the alert actions from the selected
+ * alerts. */
+export type SuppressionTarget = { rule_id: string; rule_name: string; host: string }
+
 function SuppressDialog({ alerts, onClose }: { alerts: SfAlert[]; onClose: () => void }) {
-  const id = useId()
-  const first = useRef<HTMLTextAreaElement>(null)
   const pairs = useMemo(() => {
-    const seen = new Map<string, { rule_id: string; rule_name: string; host: string }>()
+    const seen = new Map<string, SuppressionTarget>()
     for (const a of alerts) seen.set(`${a.rule_id}|${a.host.toLowerCase()}`, { rule_id: a.rule_id, rule_name: a.rule_name, host: a.host })
     return [...seen.values()]
   }, [alerts])
+  return <SuppressionDialog targets={pairs} onClose={onClose} />
+}
+
+/** Shared suppression form: reason (mandatory, audited in the YAML),
+ * optional fleet-wide scope with its honest warning, and expiry. */
+export function SuppressionDialog({ targets, onClose }: { targets: SuppressionTarget[]; onClose: () => void }) {
+  const id = useId()
+  const first = useRef<HTMLTextAreaElement>(null)
+  const pairs = targets
   const [allHosts, setAllHosts] = useState(false)
   const [reason, setReason] = useState('')
   const [days, setDays] = useState('7')
@@ -519,7 +528,7 @@ function ReputationPanel({ alert }: { alert: SfAlert }) {
                       {res.link && <a href={res.link} target="_blank" rel="noreferrer noopener" className="ml-1 text-primary-link underline-offset-4 hover:underline">ver</a>}
                     </li>
                   ))}
-                  {r.cached && <li className="text-[10px] text-zinc-600">respuesta en caché del motor</li>}
+                  {r.cached && <li className="text-[10px] text-zinc-500">respuesta en caché del motor</li>}
                 </ul>
               )}
             </li>

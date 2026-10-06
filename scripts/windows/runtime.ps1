@@ -41,6 +41,18 @@ function Get-SfEngineArguments {
     # intel\ (intel\README.md); the engine re-reads them and downloads
     # nothing.
     $arguments += " -intel `"$Root\intel`""
+    # Detection validation: the inert scenario library in scenarios\
+    # arms the console's Validation view, which replays it inside the
+    # engine against the live rules. The replay stays in its own alert
+    # manager (no ring, store row, webhook or risk) and the machine sees
+    # nothing: the events are synthetic and never leave the process.
+    $scenarios = Join-Path $Root 'scenarios'
+    if (Test-Path -LiteralPath $scenarios -PathType Container) { $arguments += " -scenarios `"$scenarios`"" }
+    # Read-only Active Directory connector: armed only when the operator
+    # wrote tools\config\ad.yaml (copy of ad.example.yaml with the CA and
+    # the service account's password file).
+    $ad = Join-Path $Root 'tools\config\ad.yaml'
+    if (Test-Path -LiteralPath $ad) { $arguments += " -ad `"$ad`"" }
     $operators = Join-Path $Root 'tools\config\respond-operators.yaml'
     if (Test-Path -LiteralPath $operators) {
         $arguments += " -allow-kill -respond-operators `"$operators`" -respond-audit `"$data\respond-audit.jsonl`""

@@ -62,7 +62,7 @@ export function HostTacticHeatmap({ matrix, onHost }: { matrix: HostTacticMatrix
                     onPointerLeave={() => setHover(null)}
                     className={cn(
                       'h-9 rounded-[5px] text-center text-[11px] font-medium tabular-nums transition-[filter]',
-                      s < 0 ? 'bg-white/[0.025] text-zinc-600' : s >= 3 ? 'text-[#07111f]' : 'text-white',
+                      s < 0 ? 'bg-white/[0.025] text-zinc-500' : s >= 3 ? 'text-[#07111f]' : 'text-white',
                       hover === key && 'brightness-125',
                     )}
                     style={s >= 0 ? { background: RAMP[s] } : undefined}

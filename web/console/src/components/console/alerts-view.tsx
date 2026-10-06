@@ -27,7 +27,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { useEngine } from './engine-provider'
+import { useI18n } from './i18n-provider'
 import { EmptyState, LiveAnnouncer, SectionHeader, SeverityBadge, SkeletonRows } from './ui-bits'
+import { TABLIST_CLASS, tabButtonClass } from './ui-tabs'
 import { ExportButtons } from './export-menu'
 import { ForensicPanel } from './forensic-panel'
 import { ReportPanel } from './report-panel'
@@ -43,7 +45,7 @@ import { Meter } from '@/components/charts/bars'
 import { EntityGraphView, GraphLegend } from '@/components/charts/entity-graph'
 import { buildAlertGraph } from '@/lib/entity-graph'
 import { SEV_COLOR, SeverityIcon } from '@/components/charts/severity'
-import { SEVERITIES, SEVERITY_LABEL, severityCounts } from '@/lib/soc-metrics'
+import { SEVERITIES, severityCounts } from '@/lib/soc-metrics'
 import {
   currentSearch,
   readOperatorState,
@@ -75,6 +77,7 @@ type Props = {
 
 export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost, onOpenIncident }: Props) {
   const { alerts, status, lifecycleUpdates } = useEngine()
+  const { dict } = useI18n()
   const reduce = useReducedMotion()
   const [sevFilter, setSevFilterState] = useState<SeverityFilter>('all')
   const [query, setQueryState] = useState('')
@@ -224,9 +227,11 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
     }
     if (knownTop.current !== key) {
       knownTop.current = key
-      setAnnouncement(`Nueva alerta ${top.severity}: ${top.rule_name} en ${top.host}`)
+      // top.severity is the raw engine value (critical/high/...): data, not
+      // copy — the sentence around it is what the dictionary owns.
+      setAnnouncement(dict.alerts.arrival(top.severity, top.rule_name, top.host))
     }
-  }, [alerts])
+  }, [alerts, dict])
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -260,9 +265,9 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
     filtering && !compact
       ?
         [
-          sevFilter !== 'all' ? `severidad ${sevFilter}` : null,
-          stateFilter !== 'all' ? `estado ${stateFilter}` : null,
-          query.trim() !== '' ? `búsqueda «${query.trim()}»` : null,
+          sevFilter !== 'all' ? dict.alerts.filterSev(sevFilter) : null,
+          stateFilter !== 'all' ? dict.alerts.filterState(stateFilter) : null,
+          query.trim() !== '' ? dict.alerts.filterQuery(query.trim()) : null,
         ]
           .filter(Boolean)
           .join(' + ') || undefined
@@ -271,9 +276,9 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
 
   const header = (
     <SectionHeader
-      title={compact ? 'Alertas recientes' : 'Cola de alertas'}
+      title={compact ? dict.alerts.recentTitle : dict.alerts.queueTitle}
       count={visible.length}
-      hint={historyMode ? 'búsqueda en el motor' : !compact ? `de ${alerts.length} recibidas en vivo` : undefined}
+      hint={historyMode ? dict.alerts.hintHistory : !compact ? dict.alerts.hintLive(alerts.length) : undefined}
       action={
         !compact && (
           <div className="flex flex-wrap items-center gap-2">
@@ -289,32 +294,32 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') setQuery('')
                 }}
-                placeholder="buscar regla, host, usuario..."
-                aria-label="Buscar en alertas"
+                placeholder={dict.alerts.searchPlaceholder}
+                aria-label={dict.alerts.searchAria}
                 maxLength={MAX_QUERY_CHARS}
                 className="h-8 w-[220px] rounded-md border-zinc-800 bg-zinc-900 pl-7 text-xs text-zinc-200 placeholder:text-zinc-500"
               />
             </div>
             <Select value={sevFilter} onValueChange={setSevFilter}>
-              <SelectTrigger className="h-8 w-[150px] rounded-md border-zinc-800 bg-zinc-900 font-mono text-xs" aria-label="Filtrar por severidad">
-                <SelectValue placeholder="Severidad" />
+              <SelectTrigger className="h-8 w-[150px] rounded-md border-zinc-800 bg-zinc-900 font-mono text-xs" aria-label={dict.alerts.sevFilterAria}>
+                <SelectValue placeholder={dict.alerts.sevPlaceholder} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">todas</SelectItem>
-                <SelectItem value="critical">crítica</SelectItem>
-                <SelectItem value="high">alta</SelectItem>
-                <SelectItem value="medium">media</SelectItem>
-                <SelectItem value="low">baja</SelectItem>
-                <SelectItem value="info">info</SelectItem>
+                <SelectItem value="all">{dict.alerts.sevOptions.all}</SelectItem>
+                <SelectItem value="critical">{dict.alerts.sevOptions.critical}</SelectItem>
+                <SelectItem value="high">{dict.alerts.sevOptions.high}</SelectItem>
+                <SelectItem value="medium">{dict.alerts.sevOptions.medium}</SelectItem>
+                <SelectItem value="low">{dict.alerts.sevOptions.low}</SelectItem>
+                <SelectItem value="info">{dict.alerts.sevOptions.info}</SelectItem>
               </SelectContent>
             </Select>
-            <select value={stateFilter} onChange={(e) => changeState(e.target.value)} aria-label="Filtrar por estado"
+            <select value={stateFilter} onChange={(e) => changeState(e.target.value)} aria-label={dict.alerts.stateFilterAria}
               className="h-8 rounded-md border border-zinc-800 bg-zinc-900 px-2 font-mono text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              <option value="all">Todos los estados</option>
-              <option value="open">Sin cerrar</option>
-              <option value="new">Nuevas</option>
-              <option value="acknowledged">Reconocidas</option>
-              <option value="closed">Cerradas</option>
+              <option value="all">{dict.alerts.stateOptions.all}</option>
+              <option value="open">{dict.alerts.stateOptions.open}</option>
+              <option value="new">{dict.alerts.stateOptions.new}</option>
+              <option value="acknowledged">{dict.alerts.stateOptions.acknowledged}</option>
+              <option value="closed">{dict.alerts.stateOptions.closed}</option>
             </select>
             <ExportButtons kind="alerts" filterLabel={activeFilterLabel} hiddenCount={hiddenByFilter} />
           </div>
@@ -325,18 +330,18 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
 
   if (compact) {
     return (
-      <section aria-label="Alertas de detección">
+      <section aria-label={dict.alerts.sectionAria}>
         {header}
         {status === 'connecting' && alerts.length === 0 ? (
           <SkeletonRows rows={5} className="border-y border-zinc-800 py-6" />
         ) : status === 'down' ? (
-          <EmptyState icon={Tray} title="Alertas no disponibles" hint="Recupera la conexión con el motor para ver las detecciones." />
+          <EmptyState icon={Tray} title={dict.alerts.offlineTitle} hint={dict.alerts.offlineHintCompact} />
         ) : alerts.length === 0 ? (
           <div className="border-y border-zinc-800">
             <EmptyState
               icon={Tray}
-              title="Sin alertas todavía"
-              hint="Las detecciones aparecen en cuanto una regla evalúa telemetría sospechosa"
+              title={dict.alerts.emptyTitle}
+              hint={dict.alerts.emptyHintCompact}
             />
           </div>
         ) : (
@@ -357,7 +362,7 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
                         <SeverityBadge severity={al.severity} />
                         <StatusChip status={al.status} />
                         <span className="truncate text-sm text-zinc-100">{al.rule_name}</span>
-                        {al.notify && <BellRinging size={13} weight="fill" aria-label="Notifica a canales externos" className="shrink-0 text-amber-400" />}
+                        {al.notify && <BellRinging size={13} weight="fill" aria-label={dict.alerts.notifyIconAria} className="shrink-0 text-amber-400" />}
                       </span>
                       <span className="mt-1 block truncate font-mono text-xs text-zinc-500">{al.summary}</span>
                     </span>
@@ -382,42 +387,40 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
   }
 
   return (
-    <section aria-label="Alertas de detección">
+    <section aria-label={dict.alerts.sectionAria}>
       {header}
       <SeverityStrip alerts={alerts} active={sevFilter} onToggle={(sev) => setSevFilter(sevFilter === sev ? 'all' : sev)} />
       <ReportLibrary />
       <SavedSearches kind="alerts" getLens={() => alertSearchLens(filterRef.current.sev, filterRef.current.state, filterRef.current.scope, filterRef.current.q)} onApply={applySaved} />
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 px-3 py-2.5">
-        <div role="group" aria-label="Origen de alertas" className="flex gap-1 rounded-lg bg-zinc-950/60 p-0.5">
-          {([['live', 'En vivo'], ['history', 'Histórico']] as const).map(([id, label]) => (
+        <div role="group" aria-label={dict.alerts.scopeGroupAria} className={TABLIST_CLASS}>
+          {([['live', dict.alerts.scopeLive], ['history', dict.alerts.scopeHistory]] as const).map(([id, label]) => (
             <button key={id} type="button" aria-pressed={scope === id} onClick={() => changeScope(id)}
-              className={'rounded-md px-3 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ' + (scope === id ? 'bg-primary-tint/15 text-primary-soft ring-1 ring-inset ring-primary/25' : 'text-zinc-400 hover:text-zinc-100')}>
+              className={tabButtonClass(scope === id)}>
               {label}
             </button>
           ))}
         </div>
         {historyMode ? (
-          <nav aria-label="Páginas del histórico" className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-[11px] text-zinc-400">Página {history.pageNumber}</span>
-            <Button variant="outline" size="sm" onClick={history.previous} disabled={!history.canPrevious || history.loading || status !== 'live'}>Anterior</Button>
-            <Button variant="outline" size="sm" onClick={history.next} disabled={!history.page?.has_more || history.loading || status !== 'live'}>{history.page?.scan_limited ? 'Seguir buscando' : 'Siguiente'}</Button>
-            <Button variant="outline" size="sm" onClick={history.refresh} disabled={history.loading || status !== 'live'} aria-busy={history.loading}>Actualizar histórico</Button>
+          <nav aria-label={dict.alerts.pagesAria} className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-[11px] text-zinc-400">{dict.alerts.page(history.pageNumber)}</span>
+            <Button variant="outline" size="sm" onClick={history.previous} disabled={!history.canPrevious || history.loading || status !== 'live'}>{dict.alerts.previous}</Button>
+            <Button variant="outline" size="sm" onClick={history.next} disabled={!history.page?.has_more || history.loading || status !== 'live'}>{history.page?.scan_limited ? dict.alerts.keepSearching : dict.alerts.next}</Button>
+            <Button variant="outline" size="sm" onClick={history.refresh} disabled={history.loading || status !== 'live'} aria-busy={history.loading}>{dict.alerts.refreshHistory}</Button>
           </nav>
-        ) : <span className="text-[11px] text-zinc-500">Últimas {alerts.length} recibidas por la consola; usa el histórico para buscar más atrás.</span>}
+        ) : <span className="text-[11px] text-zinc-500">{dict.alerts.liveWindowHint(alerts.length)}</span>}
       </div>
       {historyMode && history.page && (
         <p role="status" className="mb-3 text-xs text-zinc-500">
-          {history.page.source === 'sqlite' ? 'Histórico SQLite, sujeto a la retención configurada.' : 'Solo memoria: últimas 256 alertas del motor. Activa -store para conservar el histórico.'}
-          {' '}25 por página, más recientes por orden de recepción. Actualiza para incluir nuevas llegadas.
-          {history.page.scan_limited && ' Se alcanzó el límite de lectura de esta consulta; continúa con «Seguir buscando».'}
+          {history.page.source === 'sqlite' ? dict.alerts.historySourceSqlite : dict.alerts.historySourceMemory}
+          {' '}{dict.alerts.historyPaging}
+          {history.page.scan_limited && ` ${dict.alerts.historyScanLimited}`}
         </p>
       )}
       {historyMode && history.error && <p role="alert" className="mb-3 rounded-md border border-red-400/20 bg-red-400/5 px-3 py-3 text-sm text-red-300">{history.error}</p>}
       {!compact && lensReady && status === 'live' && urlAlertId && !selected && !(historyMode && history.loading) && (
         <p role="status" className="mb-3 rounded-md border border-zinc-800 bg-zinc-900/40 px-3 py-2.5 text-xs text-zinc-400">
-          La alerta enlazada (<span className="font-mono break-all">{urlAlertId.length > 24 ? urlAlertId.slice(0, 24) + '…' : urlAlertId}</span>)
-          {' '}no está en esta cola: el anillo en vivo guarda solo las últimas alertas y el histórico pagina por bloques.
-          Usa la búsqueda o la paginación (el enlace resuelve en cuanto la alerta aparezca en la página cargada).
+          {dict.alerts.linkedProseA}<span className="font-mono break-all">{urlAlertId.length > 24 ? urlAlertId.slice(0, 24) + '…' : urlAlertId}</span>{dict.alerts.linkedProseB}
         </p>
       )}
 
@@ -426,21 +429,21 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
           <SkeletonRows rows={6} />
         </div>
       ) : status === 'down' ? (
-        <div className="panel"><EmptyState icon={Tray} title="Alertas no disponibles" hint="Recupera la conexión con el motor para consultar alertas." /></div>
+        <div className="panel"><EmptyState icon={Tray} title={dict.alerts.offlineTitle} hint={dict.alerts.offlineHintFull} /></div>
       ) : historyMode && history.error ? null : displayedAlerts.length === 0 && !filtering && !history.page?.scan_limited ? (
         <div className="panel">
           <EmptyState
             icon={Tray}
-            title="Sin alertas todavía"
-            hint="Las detecciones aparecen en cuanto una regla evalúa telemetría sospechosa. Verifica que el motor esté ingestando eventos de un sensor."
+            title={dict.alerts.emptyTitle}
+            hint={dict.alerts.emptyHintFull}
           />
         </div>
       ) : visible.length === 0 ? (
         <div className="panel">
           <EmptyState
             icon={MagnifyingGlass}
-            title="Sin resultados"
-            hint={history.page?.scan_limited ? 'Continúa la búsqueda: todavía quedan registros por examinar.' : 'Ninguna alerta coincide con la búsqueda o el filtro actual'}
+            title={dict.alerts.noResultsTitle}
+            hint={history.page?.scan_limited ? dict.alerts.noResultsHintScan : dict.alerts.noResultsHintLens}
             action={
               <Button
                 variant="outline"
@@ -452,7 +455,7 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
                   changeState('all')
                 }}
               >
-                Limpiar filtros
+                {dict.alerts.clearFilters}
               </Button>
             }
           />
@@ -467,7 +470,7 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
             <div className="max-h-[68vh] overflow-y-auto">
               <table className="w-full table-fixed border-collapse text-left text-sm">
                 <caption className="sr-only">
-                  Cola de alertas del motor: severidad, regla, equipo y hora. Selecciona una fila para ver el detalle.
+                  {dict.alerts.tableCaption}
                 </caption>
                 <thead className="sticky top-0 z-10">
                   <tr className="bg-zinc-900">
@@ -477,16 +480,16 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
                         checked={selection.allPicked}
                         ref={(el) => { if (el) el.indeterminate = pickedAlerts.length > 0 && !selection.allPicked }}
                         onChange={selection.toggleAll}
-                        aria-label="Seleccionar todas las alertas visibles"
+                        aria-label={dict.alerts.selectAllAria}
                         className="h-3.5 w-3.5 accent-primary-tint"
                       />
                     </th>
-                    <th scope="col" className="w-[124px] border-b border-zinc-800 py-2 pl-2 pr-3 text-[11px] font-medium uppercase tracking-wider text-zinc-500 sm:w-[136px]">Sev</th>
-                    <th scope="col" className="border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Alerta</th>
-                    <th scope="col" className={`hidden w-[180px] border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500 ${hostColumn}`}>Equipo / Usuario</th>
-                    <th scope="col" className="hidden w-[104px] border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500 md:table-cell">Técnica</th>
-                    <th scope="col" className="w-[84px] border-b border-zinc-800 px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-zinc-500">Hora</th>
-                    <th scope="col" className="w-9 border-b border-zinc-800 px-2 py-2"><span className="sr-only">Detalle</span></th>
+                    <th scope="col" className="w-[124px] border-b border-zinc-800 py-2 pl-2 pr-3 text-[11px] font-medium uppercase tracking-wider text-zinc-500 sm:w-[136px]">{dict.alerts.thSev}</th>
+                    <th scope="col" className="border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">{dict.alerts.thAlert}</th>
+                    <th scope="col" className={`hidden w-[180px] border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500 ${hostColumn}`}>{dict.alerts.thHostUser}</th>
+                    <th scope="col" className="hidden w-[104px] border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500 md:table-cell">{dict.alerts.thTechnique}</th>
+                    <th scope="col" className="w-[84px] border-b border-zinc-800 px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-zinc-500">{dict.alerts.thTime}</th>
+                    <th scope="col" className="w-9 border-b border-zinc-800 px-2 py-2"><span className="sr-only">{dict.alerts.thDetail}</span></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-800/80">
@@ -509,7 +512,7 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
                             type="checkbox"
                             checked={picked}
                             onChange={() => selection.toggle(key)}
-                            aria-label={`Seleccionar ${al.rule_name} (${formatTime(al.timestamp)})`}
+                            aria-label={dict.alerts.selectRowAria(al.rule_name, formatTime(al.timestamp))}
                             className="h-3.5 w-3.5 accent-primary-tint"
                           />
                         </td>
@@ -536,7 +539,7 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
                         </td>
                         <td className={`hidden px-3 py-2.5 align-middle ${hostColumn}`}>
                           <span className="block truncate font-mono text-xs text-zinc-300">{al.host}</span>
-                          <span className="block truncate font-mono text-xs text-zinc-500">{al.user ?? 'n/d'}</span>
+                          <span className="block truncate font-mono text-xs text-zinc-500">{al.user ?? dict.alerts.nd}</span>
                         </td>
                         <td className="hidden px-3 py-2.5 align-middle md:table-cell">
                           {mitre ? (
@@ -544,7 +547,7 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
                               {mitre.replace('attack.', '').toUpperCase()}
                             </span>
                           ) : (
-                            <span className="text-xs text-zinc-500">n/d</span>
+                            <span className="text-xs text-zinc-500">{dict.alerts.nd}</span>
                           )}
                         </td>
                         <td className="whitespace-nowrap px-3 py-2.5 text-right align-middle font-mono text-xs tabular-nums text-zinc-400">
@@ -564,7 +567,7 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
               </table>
             </div>
             <p className="border-t border-zinc-800 px-4 py-2 text-[11px] text-zinc-500">
-              {historyMode ? `Mostrando ${visible.length} alertas de esta página; no es el total del histórico.` : `Mostrando ${visible.length} de ${alerts.length} alertas recibidas en vivo.`}
+              {historyMode ? dict.alerts.showingPage(visible.length) : dict.alerts.showingLive(visible.length, alerts.length)}
             </p>
           </div>
 
@@ -574,7 +577,7 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
               initial={reduce ? false : { opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
-              aria-label="Detalle de la alerta seleccionada"
+              aria-label={dict.alerts.detailAria}
               className="panel min-w-0"
             >
               <AlertDetail alert={selected} onClose={() => selectAlert(null)} onAnalyze={onAnalyze} onHost={onHost} onOpenIncident={onOpenIncident} />
@@ -593,10 +596,11 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
  * severity lens (the same filter as the select; a second click clears).
  */
 function SeverityStrip({ alerts, active, onToggle }: { alerts: SfAlert[]; active: SeverityFilter; onToggle: (sev: Severity) => void }) {
+  const { dict } = useI18n()
   const counts = severityCounts(alerts)
   const total = alerts.length
   return (
-    <div role="group" aria-label="Alertas por severidad en la ventana en vivo" className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+    <div role="group" aria-label={dict.alerts.stripAria} className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
       {SEVERITIES.map((sev) => {
         const pressed = active === sev
         return (
@@ -605,14 +609,14 @@ function SeverityStrip({ alerts, active, onToggle }: { alerts: SfAlert[]; active
             type="button"
             aria-pressed={pressed}
             onClick={() => onToggle(sev)}
-            title={pressed ? 'Quitar el filtro de severidad' : 'Filtrar la cola por esta severidad'}
+            title={pressed ? dict.alerts.stripTitleOff : dict.alerts.stripTitleOn}
             className={`panel min-w-0 px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
               pressed ? 'border-primary/50 bg-primary-tint/[0.08]' : 'hover:border-zinc-700'
             }`}
           >
             <span className="flex items-center gap-1.5 text-xs text-zinc-400">
               <SeverityIcon severity={sev} size={13} />
-              {SEVERITY_LABEL[sev]}
+              {dict.alerts.sevLabels[sev]}
             </span>
             <span className="mt-1 flex items-baseline justify-between gap-2">
               <span className="text-xl font-semibold text-zinc-50">{counts[sev]}</span>
@@ -640,6 +644,7 @@ function AlertDetail({
   onHost?: (host: string) => void
   onOpenIncident?: (id: string) => void
 }) {
+  const { dict } = useI18n()
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-start justify-between gap-3 border-b border-zinc-800 px-4 py-3">
@@ -653,7 +658,7 @@ function AlertDetail({
         <button
           type="button"
           onClick={onClose}
-          aria-label="Cerrar detalle"
+          aria-label={dict.alerts.closeDetailAria}
           className="rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <CaretDown size={14} aria-hidden className="rotate-180" />
@@ -668,6 +673,7 @@ function AlertDetail({
 
 /** Every field the engine attached to the alert, shared by both modes. */
 export function AlertDetailBody({ alert, onAnalyze, onHost, onOpenIncident }: { alert: SfAlert; onAnalyze?: (alert: SfAlert) => void; onHost?: (host: string) => void; onOpenIncident?: (id: string) => void }) {
+  const { dict } = useI18n()
   const attackTags = (alert.tags ?? []).filter((t) => t.startsWith('attack.'))
   const otherTags = (alert.tags ?? []).filter((t) => !t.startsWith('attack.'))
   const enrichmentEntries = Object.entries(alert.enrichment ?? {})
@@ -676,26 +682,26 @@ export function AlertDetailBody({ alert, onAnalyze, onHost, onOpenIncident }: { 
     <div className="min-w-0">
       {alert.message && (
         <div className="mb-4 border-l-2 border-zinc-700 pl-3">
-          <p className="text-[10px] uppercase tracking-wider text-zinc-500">Mensaje de la regla</p>
+          <p className="text-[10px] uppercase tracking-wider text-zinc-500">{dict.alerts.ruleMessage}</p>
           <p className="mt-1 text-sm leading-relaxed text-zinc-300">{alert.message}</p>
         </div>
       )}
 
       <dl className="grid grid-cols-1 gap-x-6 gap-y-2.5 text-xs sm:grid-cols-2">
-        <Detail label="Equipo" value={alert.host} mono />
-        <Detail label="Usuario" value={alert.user ?? 'n/d'} mono />
-        <Detail label="Fuente declarada" value={alert.source ?? 'no declarada'} mono />
-        <Detail label="Tipo de evento" value={alert.event_type} mono />
-        <Detail label="ID de evento" value={alert.event_id} mono />
-        <Detail label="ID de regla" value={alert.rule_id} mono />
-        <Detail label="Campos coincidentes" value={alert.matched_on.join(', ') || 'n/d'} mono />
+        <Detail label={dict.alerts.labels.host} value={alert.host} mono />
+        <Detail label={dict.alerts.labels.user} value={alert.user ?? dict.alerts.nd} mono />
+        <Detail label={dict.alerts.labels.source} value={alert.source ?? dict.alerts.sourceNotDeclared} mono />
+        <Detail label={dict.alerts.labels.eventType} value={alert.event_type} mono />
+        <Detail label={dict.alerts.labels.eventId} value={alert.event_id} mono />
+        <Detail label={dict.alerts.labels.ruleId} value={alert.rule_id} mono />
+        <Detail label={dict.alerts.labels.matchedOn} value={alert.matched_on.join(', ') || dict.alerts.nd} mono />
       </dl>
 
       <AlertGraph alert={alert} />
 
       {(attackTags.length > 0 || otherTags.length > 0) && (
         <div className="mt-4">
-          <p className="text-[10px] uppercase tracking-wider text-zinc-500">Etiquetas</p>
+          <p className="text-[10px] uppercase tracking-wider text-zinc-500">{dict.alerts.tagsHeading}</p>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {attackTags.map((t) => (
               <span key={t} className="rounded-md border border-zinc-800 bg-zinc-950 px-1.5 py-0.5 font-mono text-[10px] text-zinc-300">
@@ -710,7 +716,7 @@ export function AlertDetailBody({ alert, onAnalyze, onHost, onOpenIncident }: { 
             {alert.notify && (
               <span className="flex items-center gap-1 rounded-md border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-[10px] text-amber-400">
                 <BellRinging size={11} weight="fill" aria-hidden />
-                notifica a canales externos
+                {dict.alerts.notifyChip}
               </span>
             )}
           </div>
@@ -719,7 +725,7 @@ export function AlertDetailBody({ alert, onAnalyze, onHost, onOpenIncident }: { 
 
       {alert.actions && alert.actions.length > 0 && (
         <div className="mt-4">
-          <p className="text-[10px] uppercase tracking-wider text-zinc-500">Acciones declaradas por la regla</p>
+          <p className="text-[10px] uppercase tracking-wider text-zinc-500">{dict.alerts.actionsHeading}</p>
           <ul className="mt-1.5 space-y-1">
             {alert.actions.map((a) => (
               <li key={a} className="font-mono text-xs text-zinc-400">
@@ -730,11 +736,11 @@ export function AlertDetailBody({ alert, onAnalyze, onHost, onOpenIncident }: { 
         </div>
       )}
 
-      {alert.network && <div className="mt-4 min-w-0"><p className="text-[10px] uppercase tracking-wider text-zinc-500">Flujo observado</p><p className="mt-1 break-all font-mono text-xs text-zinc-300">{alert.network.protocol ?? '?'} · {alert.network.source_ip ?? '?'}:{alert.network.source_port ?? '?'} → {alert.network.destination_ip ?? '?'}:{alert.network.destination_port ?? '?'}</p></div>}
-      {Object.keys(alert.attributes ?? {}).length > 0 && <div className="mt-4 min-w-0"><p className="text-[10px] uppercase tracking-wider text-zinc-500">Observaciones declaradas por la fuente</p><p className="mt-1 text-xs text-zinc-500">Metadatos recibidos; no acreditan por sí solos autenticidad ni compromiso.</p><dl className="mt-2 divide-y divide-zinc-800 rounded-md border border-zinc-800">{Object.entries(alert.attributes ?? {}).map(([key, value]) => <div key={key} className="grid min-w-0 grid-cols-1 gap-1 p-2 sm:grid-cols-[minmax(0,120px)_minmax(0,1fr)]"><dt className="break-all font-mono text-[10px] text-zinc-500">{key}</dt><dd className="whitespace-pre-wrap break-all font-mono text-[11px] text-zinc-300">{value}</dd></div>)}</dl></div>}
+      {alert.network && <div className="mt-4 min-w-0"><p className="text-[10px] uppercase tracking-wider text-zinc-500">{dict.alerts.flowHeading}</p><p className="mt-1 break-all font-mono text-xs text-zinc-300">{alert.network.protocol ?? '?'} · {alert.network.source_ip ?? '?'}:{alert.network.source_port ?? '?'} → {alert.network.destination_ip ?? '?'}:{alert.network.destination_port ?? '?'}</p></div>}
+      {Object.keys(alert.attributes ?? {}).length > 0 && <div className="mt-4 min-w-0"><p className="text-[10px] uppercase tracking-wider text-zinc-500">{dict.alerts.attributesHeading}</p><p className="mt-1 text-xs text-zinc-500">{dict.alerts.attributesProse}</p><dl className="mt-2 divide-y divide-zinc-800 rounded-md border border-zinc-800">{Object.entries(alert.attributes ?? {}).map(([key, value]) => <div key={key} className="grid min-w-0 grid-cols-1 gap-1 p-2 sm:grid-cols-[minmax(0,120px)_minmax(0,1fr)]"><dt className="break-all font-mono text-[10px] text-zinc-500">{key}</dt><dd className="whitespace-pre-wrap break-all font-mono text-[11px] text-zinc-300">{value}</dd></div>)}</dl></div>}
       {enrichmentEntries.length > 0 && (
         <div className="mt-4">
-          <p className="text-[10px] uppercase tracking-wider text-zinc-500">Enriquecimiento</p>
+          <p className="text-[10px] uppercase tracking-wider text-zinc-500">{dict.alerts.enrichmentHeading}</p>
           <dl className="mt-1.5 divide-y divide-zinc-800/80 rounded-md border border-zinc-800">
             {enrichmentEntries.map(([k, v]) => (
               <div key={k} className="grid grid-cols-[130px_1fr] gap-3 px-2.5 py-1.5">
@@ -750,7 +756,7 @@ export function AlertDetailBody({ alert, onAnalyze, onHost, onOpenIncident }: { 
         <div className="mt-5">
           <Button size="sm" onClick={() => onAnalyze(alert)} className="gap-1.5 rounded-md">
             <Sparkle size={14} weight="fill" aria-hidden />
-            Analizar con IA
+            {dict.alerts.analyzeWithAi}
           </Button>
         </div>
       )}
@@ -766,11 +772,12 @@ export function AlertDetailBody({ alert, onAnalyze, onHost, onOpenIncident }: { 
 /** Neighbourhood of the alert: rule, host, user, process chain, destination. */
 function AlertGraph({ alert }: { alert: SfAlert }) {
   const { events } = useEngine()
+  const { dict } = useI18n()
   const graph = useMemo(() => buildAlertGraph(alert, events), [alert, events])
   return (
     <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-950/40 p-2">
-      <p className="px-1 text-[11px] font-medium text-zinc-300">Grafo de la alerta</p>
-      <EntityGraphView graph={graph} height={250} ariaLabel={`Grafo de la alerta ${alert.rule_name}: ${graph.nodes.length} entidades relacionadas`} />
+      <p className="px-1 text-[11px] font-medium text-zinc-300">{dict.alerts.graphTitle}</p>
+      <EntityGraphView graph={graph} height={250} ariaLabel={dict.alerts.graphAria(alert.rule_name, graph.nodes.length)} />
       <div className="px-1 pb-1"><GraphLegend graph={graph} /></div>
     </div>
   )
@@ -783,6 +790,7 @@ function AlertGraph({ alert }: { alert: SfAlert }) {
 // under prefers-reduced-motion.
 function StatusChip({ status }: { status?: SfAlertStatus }) {
   const reduce = useReducedMotion()
+  const { dict } = useI18n()
   const reveal = reduce ? {} : { initial: { opacity: 0, scale: 0.85 }, animate: { opacity: 1, scale: 1 } }
   if (status === 'acknowledged') {
     return (
@@ -792,7 +800,7 @@ function StatusChip({ status }: { status?: SfAlertStatus }) {
         className="flex shrink-0 origin-left items-center gap-1 rounded-md border border-sky-400/30 bg-sky-400/10 px-1.5 py-0.5 text-[10px] text-sky-300"
       >
         <Eye size={11} weight="fill" aria-hidden />
-        reconocida
+        {dict.alerts.chipAcknowledged}
       </motion.span>
     )
   }
@@ -804,7 +812,7 @@ function StatusChip({ status }: { status?: SfAlertStatus }) {
         className="flex shrink-0 origin-left items-center gap-1 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] text-emerald-300"
       >
         <CheckCircle size={11} weight="fill" aria-hidden />
-        cerrada
+        {dict.alerts.chipClosed}
       </motion.span>
     )
   }
@@ -818,6 +826,7 @@ function StatusChip({ status }: { status?: SfAlertStatus }) {
 // error states are tracked locally.
 function TriagePanel({ alert }: { alert: SfAlert }) {
   const { applyTriage } = useEngine()
+  const { dict } = useI18n()
   const status: SfAlertStatus = alert.status ?? 'new'
   const [noteDraft, setNoteDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -840,9 +849,9 @@ function TriagePanel({ alert }: { alert: SfAlert }) {
   return (
     <div className="mt-5 rounded-md border border-zinc-800 bg-zinc-950/60 p-3">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[10px] uppercase tracking-wider text-zinc-500">Ciclo de vida</p>
+        <p className="text-[10px] uppercase tracking-wider text-zinc-500">{dict.alerts.lifecycleHeading}</p>
         <p className="font-mono text-[10px] text-zinc-500">
-          {alert.id ? `id ${alert.id}` : 'sin id del motor'}
+          {alert.id ? `id ${alert.id}` : dict.alerts.noEngineId}
           {alert.status_by ? ` · ${alert.status_by}` : ''}
           {alert.status_at ? ` · ${formatTime(alert.status_at)}` : ''}
         </p>
@@ -854,35 +863,35 @@ function TriagePanel({ alert }: { alert: SfAlert }) {
         value={noteDraft}
         onChange={(e) => setNoteDraft(e.target.value)}
         maxLength={2000}
-        placeholder="nota de triaje (opcional): qué se vio, qué se hizo..."
-        aria-label="Nota de triaje"
+        placeholder={dict.alerts.notePlaceholder}
+        aria-label={dict.alerts.noteAria}
         className="mb-2 h-8 rounded-md border-zinc-800 bg-zinc-900 font-mono text-xs text-zinc-200 placeholder:text-zinc-500"
       />
       {!alert.id ? (
         <p className="text-[11px] text-zinc-500">
-          Este alerta no lleva id del motor (motor anterior a r6): el triaje requiere reiniciar el motor actualizado.
+          {dict.alerts.noIdProse}
         </p>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
           {status === 'new' && (
             <Button size="sm" variant="outline" disabled={busy} onClick={() => apply('acknowledged')} className="gap-1.5 rounded-md">
               {busy ? <CircleNotch size={13} className="animate-spin" aria-hidden /> : <Eye size={13} aria-hidden />}
-              Reconocer
+              {dict.alerts.acknowledge}
             </Button>
           )}
           {status !== 'closed' && (
             <Button size="sm" variant="outline" disabled={busy} onClick={() => apply('closed')} className="gap-1.5 rounded-md">
               {busy ? <CircleNotch size={13} className="animate-spin" aria-hidden /> : <XCircle size={13} aria-hidden />}
-              Cerrar
+              {dict.alerts.close}
             </Button>
           )}
           {status === 'closed' && (
             <Button size="sm" variant="outline" disabled={busy} onClick={() => apply('new')} className="gap-1.5 rounded-md">
               {busy ? <CircleNotch size={13} className="animate-spin" aria-hidden /> : <ArrowCounterClockwise size={13} aria-hidden />}
-              Reabrir
+              {dict.alerts.reopen}
             </Button>
           )}
-          {status === 'new' && <span className="text-[10px] text-zinc-600">sin decisiones registradas</span>}
+          {status === 'new' && <span className="text-[10px] text-zinc-500">{dict.alerts.noDecisions}</span>}
         </div>
       )}
       {error && (

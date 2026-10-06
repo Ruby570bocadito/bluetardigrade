@@ -324,6 +324,75 @@ func TestIdempotencyRepeatedDenied(t *testing.T) {
 	}
 }
 
+// TestIdempotencyKeyRecheckedAtCommitInsideSingleFlight pins the commit
+// re-check: the pre-check in Kill runs OUTSIDE the single-flight span,
+// so a request A can pass it while request B (same key, different pid)
+// is still in flight. Without the re-check at commit, one key would
+// authorize two kills on different targets — the per-(host,pid)
+// cooldown only covers the same one. The interleaving is reproduced
+// deterministically: hold the span, start A (any outcome short of the
+// span returns and sends on the channel, so silence while the span is
+// held proves A passed the pre-check and is parked at the gate), let
+// B commit, release the span.
+func TestIdempotencyKeyRecheckedAtCommitInsideSingleFlight(t *testing.T) {
+	for i := 0; i < 200; i++ {
+		if runIdempotencyCommitRace(t, i) {
+			return
+		}
+	}
+	t.Fatal("the request never crossed the single-flight span; interleaving not reproduced")
+}
+
+// runIdempotencyCommitRace reports whether the interleaving under test
+// was reproduced (A provably crossed the span boundary after B's commit).
+func runIdempotencyCommitRace(t *testing.T, seq int) bool {
+	m, _, path := newTestManager(t, "ana")
+	target := spawnSleeper(t)
+
+	m.execMu.Lock() // hold the span: A can only park at its gate
+	done := make(chan Result, 1)
+	go func() {
+		req := killReq(target.Process.Pid, "sleep")
+		req.IdempotencyKey = "race-key-" + strconv.Itoa(seq)
+		done <- m.Kill(req)
+	}()
+
+	deadline := time.Now().Add(50 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		select {
+		case <-done:
+			return false // A lost the pre-check race; retry with a fresh key
+		default:
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	// The racing twin: same key, different target — exactly the retry
+	// the pre-check cannot catch and the cooldown does not cover.
+	twin := killReq(999999, "sleep")
+	twin.IdempotencyKey = "race-key-" + strconv.Itoa(seq)
+	m.recordCommit(twin, m.now())
+
+	m.execMu.Unlock()
+	res := <-done
+
+	if res.Executed {
+		t.Fatalf("a key another request already committed authorized a second kill: %+v", res)
+	}
+	if res.Code != CodeIdempotencyRepeated || res.HTTPStatus != 409 {
+		t.Fatalf("want idempotency_repeated/409 at commit, got %+v", res)
+	}
+	if !alive(target.Process) {
+		t.Fatal("target killed on a key another request already committed")
+	}
+	for _, rec := range readAuditLines(t, path) {
+		if rec.Decision == "executed" {
+			t.Fatalf("audit claims an execution that must not have happened: %+v", rec)
+		}
+	}
+	return true
+}
+
 func TestIdempotencyEvictionDegrades(t *testing.T) {
 	m, _, _ := newTestManager(t, "ana")
 	// fill the map to its cap with dummy keys, oldest = dummy-0

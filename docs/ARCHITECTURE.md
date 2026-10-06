@@ -75,7 +75,7 @@ no longer matched the code; its earlier revisions live in GitHub Releases.
 |------|--------------------|
 | **Telemetry** | Rust ETW sensor (Kernel-Process for process create/start/end, Kernel-Network for TCP connects, Kernel-Registry for SetValueKey, DNS-Client for query answers) + Sysmon ingestion path; NDJSON/TCP feed with schema validation and enrichment (user, command line, network context, image hashes) |
 | **SOC imports** | Explicit Go adapter for six observed log/mail formats; TLS/auth remote ingest, bounded attributes separated from engine enrichment |
-| **Analyst reports** | CLI API lookup plus human notes and exclusive file output; browser-local report catalog, frozen snapshots and Markdown/JSON exports |
+| **Analyst reports** | CLI API lookup plus human notes and exclusive file output; browser-local report catalog, frozen snapshots and Markdown/JSON exports; engine-side SOC report catalog (`GET /api/reports`: executive, incident, fleet coverage, SOC activity — JSON or CSV on demand) and the fleet noise report (`GET /api/noise`: top processes, DNS domains and rules with the triage overlay) |
 | **Detection** | 114 enabled YAML rules with 17 operators (`eq`, `regex`, `contains_any`, …), hot-reload every 15 s, per-rule MITRE ATT&CK tags and actions; `engine sigma` imports community Sigma rules (deterministic, fail-loud, provenance preserved) |
 | **Forensics** | Bounded per-host flight recorder; atomic high/critical evidence bundles with a 5-minute window and preserved trigger, served through the bearer-gated API; lazy console timeline with full JSON/JSONL downloads |
 | **Correlation** | Kill-chain sequencer: named steps across the same host within a time window raise one high-signal campaign alert |
@@ -83,7 +83,7 @@ no longer matched the code; its earlier revisions live in GitHub Releases.
 | **Beaconing** | Behavioral C2 call-home detector over `network.connect` (package A3): coefficient-of-variation regularity per (profile, host, destination), `min_interval` false-positive floor, per-key cooldown, bounded state — conservative profiles ship in `beacons.yaml` and detections flow through the standard alert pipeline (suppressions, triage, store, webhook, console) |
 | **Response** | Active response `kill_process` (C3, opt-in): armed only with `-allow-kill` + API token + open audit (otherwise a real `404`), five permission layers, append-only JSONL audit (fsync, 64 MiB ceiling) written before every signal, pidfd/handle process guard with declared `fallback_reason`; alert triage lifecycle (acknowledge / close / reopen with notes, persisted via `-lifecycle`), operator suppressions (rule/host, expiry, hot-reload), alert webhook with Bearer auth and bounded retries, external notifications to Slack / Telegram / email with per-channel severity floors (C2) |
 | **API** | Local REST API with OpenAPI 3.0 spec (drift-guarded in CI), SSE live stream, filters, exact JSONL export and formula-prefix mitigation on every CSV text column |
-| **Console** | Live feed, KPI dashboard, alert triage/history with free-text search, browser-local saved alert/feed filters, declared-source summary with mixed-demo indicator, rule/chain/suppression browsers, read-only response audit with filters/export, AI analyst calling the configured OpenAI-compatible endpoint with bounded evidence, actual progress steps and native provider token streaming (SSE with JSON fallback and first-byte/idle/total time guards) |
+| **Console** | Live feed, KPI dashboard, alert triage/history with free-text search, browser-local saved alert/feed filters, declared-source summary with mixed-demo indicator, rule/chain/suppression browsers, read-only response audit with filters/export, AI analyst calling the configured OpenAI-compatible endpoint with bounded evidence, actual progress steps and native provider token streaming (SSE with JSON fallback and first-byte/idle/total time guards), sensor enrollment wizard (create tokens, approve or reject pending hosts, revoke) |
 | **Storage** | Opt-in SQLite persistence (`-store`): events and alerts outlive restarts, retention pruner, lists and exports read the full history |
 | **Auth** | Shared-token ingest handshake (constant-time), zero-downtime token rotation window, optional Bearer on the API and on outbound webhooks |
 | **Ops** | One-command Windows installer (six commands on PATH), Docker image for the engine, GitHub Actions CI on every push |
@@ -95,6 +95,8 @@ cmd/engine/       detection engine binary (Go)
 scripts/dev-tests/ loopback-only scenario/bench tools and isolated test fixtures
 internal/ingest/  NDJSON TCP listener + schema validation
 internal/tlsutil/ hot-rotating TLS cert loader shared by ingest and the API
+internal/enroll/  sensor enrollment: multi-use tokens with expiry and approval
+                  (-enroll), host-bound credentials, collision-guarded identity names
 internal/enrich/  enrichment pipeline (context, not evidence mutation)
 internal/baseline/ per-host process baseline: learns what is normal, alerts on novelties
 internal/rules/   YAML parser, rule index and evaluator
@@ -104,10 +106,16 @@ internal/collector/ source normalization, offline MIME and ingest transport
 internal/intel/   offline threat-intel matcher (local lists: IP/CIDR/domain/hash)
 internal/reputation/ opt-in VirusTotal/AbuseIPDB lookups (analyst-driven, cached)
 internal/socreport/ human report validation, rendering and exclusive output
+internal/report/  pure aggregations + CSV behind the SOC report catalog
+                  (/api/reports) and the noise report (/api/noise)
 cmd/collector/     explicit SOC import command
 internal/threshold/ volumetric detector (windowed per-rule/per-host counts)
 internal/correlate/  kill-chain sequence correlator
 internal/sigma/   Sigma rule converter (YAML -> native rule pack via engine CLI)
+internal/scenario/ detection-validation scenario library + isolated in-process
+                  replay runner (the CI regression machinery)
+internal/scenrun/  on-demand scenario battery via POST /api/scenarios/run,
+                  run outcome kept as history (SIM-4, engine side)
 internal/alert/   alert rendering, dedup, structured JSON
 internal/actions/ rule action executor (message templates, webhooks)
 internal/redact/  URL credential redaction shared by outbound delivery paths (webhook/notify error reporting)
@@ -127,7 +135,7 @@ internal/respond/  active response (C3): operator-gated kill_process, append-onl
 pkg/model/        unified event schema (the wire contract)
 sensor/           Rust ETW sensor (collector is Windows-gated)
 rules/            seeded detection pack (windows/)
-sequences/        kill-chain sequences for the correlator
+sequences/        kill-chain, campaign and lateral sequence packs for the correlator
 suppressions.example.yaml  annotated allowlist format (rename to
                   suppressions.yaml to arm it)
 beacons.yaml      C2 beaconing detector config (hot-reloaded with the rules)

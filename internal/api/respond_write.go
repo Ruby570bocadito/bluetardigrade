@@ -7,7 +7,7 @@
 // actually being authorized to kill something). Arming (run.go)
 // requires ALL of: -allow-kill (or SF_ALLOW_KILL=1), a hub bearer
 // token (mandatory even on loopback — kill is stricter than the
-// suppression writes it replicates, dictamen 04-B), and an audit file
+// suppression writes it replicates), and an audit file
 // that opened; the permission layers themselves live in
 // internal/respond and every denial is audited there.
 
@@ -105,7 +105,7 @@ func (h *Hub) handleRespondKill(w http.ResponseWriter, r *http.Request) {
 		}
 		// omitempty semantics by construction: fallback_reason only
 		// exists when the mechanism IS the fallback (the errno name
-		// that defeated pidfd_open — 04-B ronda 18h00).
+		// that defeated pidfd_open).
 		if res.FallbackReason != "" {
 			body["fallback_reason"] = res.FallbackReason
 		}

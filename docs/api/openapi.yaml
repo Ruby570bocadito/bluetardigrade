@@ -213,7 +213,10 @@ paths:
         immediately, so hand edits and API edits share one state.
         Without the flag, both write operations answer `403` naming the
         flag. Suppressed hits raise no alert, skip the correlator and
-        are logged as `[SUPPRESS]`.
+        are logged as `[SUPPRESS]`. Entries with `when` conditions
+        narrow the silence to events matching every condition; they
+        never silence aggregated alerts (kill-chains, beaconing,
+        volumetric), which carry no single event to evaluate.
       responses:
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -693,11 +696,13 @@ paths:
       description: |
         Same filter semantics as `/api/events`. Each alert carries the
         lifecycle overlay merged at read time: `status` (always present,
-        `new` when no operator decision exists), plus `status_note`,
-        `status_by` and `status_at` when the alert has been triaged via
-        `POST /api/alerts/{id}/status`. When the engine runs with
-        `-store`, this list reads the persistent SQLite store (full
-        history, subject to the configured retention) instead of the
+        `new` when no operator decision exists), plus `decision`
+        (`false_positive`, `authorized_activity` or
+        `confirmed_incident`, present once a verdict is recorded), and
+        `status_note`, `status_by` and `status_at` when the alert has
+        been triaged via `POST /api/alerts/{id}/status`. When the engine
+        runs with `-store`, this list reads the persistent SQLite store
+        (full history, subject to the configured retention) instead of the
         in-memory ring — the overlay applies in both modes.
       parameters:
         - $ref: '#/components/parameters/Limit'
@@ -876,10 +881,19 @@ paths:
       description: |
         The WRITE surface of the alert lifecycle. `status` is one of
         `acknowledged` (seen, under investigation), `closed` (handled)
-        or `new` (explicit reopen). The optional `note` is the triage
-        note (max 2000 chars) and `by` a free-text operator name (max
-        200 chars; the API has a single shared bearer token, so `by`
-        is informational and NOT authenticated).
+        or `new` (explicit reopen). The optional `decision` is the
+        operator's VERDICT: `false_positive` (benign — the rule fired
+        on activity it does not exist to catch), `authorized_activity`
+        (real but sanctioned) or `confirmed_incident`. It carries no
+        workflow coupling — it may be recorded on any status, before
+        or with the close. The optional `note` is the triage note (max
+        2000 chars) and `by` a free-text operator name (max 200 chars;
+        the API has a single shared bearer token, so `by` is
+        informational and NOT authenticated).
+
+        The body is the FULL triage record, never a partial patch:
+        omitting `decision` (or `note`, or `by`) CLEARS it — two
+        operators cannot accidentally merge their views.
 
         The lifecycle store is the source of truth for STATUS: the
         target alert does not need to be in the 256-entry ring (an
@@ -920,9 +934,9 @@ paths:
                 $ref: '#/components/schemas/AlertLifecycle'
         '400':
           description: |
-            Malformed alert id, invalid JSON body, unknown status, or
-            note/by over their length limits. The JSON body names the
-            problem (`{"error":"..."}`).
+            Malformed alert id, invalid JSON body, unknown status,
+            unknown decision, or note/by over their length limits. The
+            JSON body names the problem (`{"error":"..."}`).
           content:
             application/json:
               schema:
@@ -1254,9 +1268,11 @@ paths:
         `id`, `status`, `timestamp`, `severity`, `rule_id`, `rule_name`,
         `event_type`, `host`, `user`, `summary`, `matched_on`
         (space-joined), `tags` (space-joined), `message`, `notify`,
-        `status_note`, `status_by`. When the engine runs with `-store`,
-        the export reads the persistent SQLite store (full history,
-        subject to the configured retention) instead of the alert ring.
+        `status_note`, `status_by`, `decision` (appended at the end;
+        positional consumers keep their columns). When the engine runs
+        with `-store`, the export reads the persistent SQLite store
+        (full history, subject to the configured retention) instead of
+        the alert ring.
       parameters:
         - $ref: '#/components/parameters/ExportFormat'
         - $ref: '#/components/parameters/Host'
@@ -1961,10 +1977,12 @@ paths:
         The noise report, fleet-wide by default; with `host` it narrows
         to one machine. Processes group by executable image
         (case-insensitive), DNS lookups by the queried name and rules
-        by rule id, each with its triage overlay percentages — today
-        `closed_pct`/`acknowledged_pct` over the rule's alerts (the
-        honest proxy until a triage decision field exists; the JSON
-        names exactly what it measures).
+        by rule id, each with its triage percentages: `false_positive_pct`
+        is the REAL false-positive rate (the recorded triage decision
+        `false_positive` over the rule's alerts), while
+        `closed_pct`/`acknowledged_pct` stay as the workflow-progress
+        proxies (the share whose CURRENT status is closed/acknowledged;
+        the JSON names exactly what each measures).
 
         Records come from the same source as the reports (store with
         full retention, rings otherwise) with a 10000-record scan cap
@@ -2012,6 +2030,387 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NoiseReport'
+  /api/ad/status:
+    get:
+      tags: [ad]
+      operationId: getADStatus
+      summary: Read-only Active Directory connector state (AD-1)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        State of the directory snapshot the connector maintains: when the
+        last sync attempt/completion happened, when the next one is due,
+        the per-kind object counts of the last completed snapshot and any
+        connector-level warnings (for example, the service account turning
+        out to be a member of a privileged group).
+
+        The routes under `/api/ad` answer 501 with an arming hint while the
+        engine runs without `-ad` (and `-store`, which keeps the snapshot):
+        the feature exists but is off, distinguishable from a 404. Reads
+        only — the connector never writes to the domain.
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '501':
+          description: The connector is not armed (no -ad config at startup)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Connector status (a value snapshot, never live memory)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ADStatus'
+
+  /api/ad/objects/{kind}:
+    get:
+      tags: [ad]
+      operationId: listADObjects
+      summary: One page of the directory snapshot (users, groups, computers or OUs)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Serves the LOCAL SQLite snapshot, paged and filtered — a console
+        query never composes an LDAP filter (the connector's own filters
+        are product literals, so there is no injection surface here).
+        `q` is a case-insensitive substring over the object name, DN and
+        operating system; wildcards are escaped.
+
+        Users carry the security attributes the posture analysis reads
+        (userAccountControl, pwdLastSet, lastLogonTimestamp, adminCount,
+        SPN count, Kerberos encryption types); groups carry their direct
+        member count; computers carry their OS and DNS host name.
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          description: object kind to list
+          schema:
+            type: string
+            enum: [user, group, computer, ou]
+        - name: q
+          in: query
+          required: false
+          description: substring filter over name, DN and OS (case-insensitive)
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: page size (default 50, max 500)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+        - name: offset
+          in: query
+          required: false
+          description: page start (default 0)
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          description: Unknown object kind
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '501':
+          description: The connector is not armed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: One filtered page plus the total that matches
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ADObjectsPage'
+
+  /api/ad/posture:
+    get:
+      tags: [ad]
+      operationId: getADPosture
+      summary: Domain posture analysis with the 0-100 score (AD-2)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The classical defensive-audit findings computed over the last
+        completed snapshot: effective members of privileged groups
+        (nested membership included), krbtgt password age, unconstrained
+        delegation, accounts without Kerberos pre-authentication, user
+        accounts with SPN and RC4-capable encryption, end-of-support
+        operating systems, inactive accounts, passwords that never
+        expire, orphaned adminCount and domain computers without a
+        sensor. Every finding carries severity, affected objects (the
+        list is capped at 50 entries; `count` is the true total) and a
+        plain-language remediation.
+
+        The score starts at 100 and deducts per finding (critical 10,
+        high 6, medium 3, low 1, each over a small per-finding cap), so
+        one noisy class cannot drown a targeted one. `ready` is false
+        and `score` null until the first sync completes — absence is
+        never rendered as a perfect score.
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '501':
+          description: The connector is not armed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: The stored posture document is unreadable (engine log has the detail)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: The posture document frozen by the last completed sync
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ADPosture'
+
+  /api/ad/posture/history:
+    get:
+      tags: [ad]
+      operationId: getADPostureHistory
+      summary: Past posture scores, one point per completed sync (AD-2 trend)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        One score point per completed sync, oldest first, so the console
+        renders the trend instead of a single number. The history keeps
+        the most recent 500 points (over a day of worst-case 5-minute
+        syncs, a year at the default 15-minute interval).
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: maximum points returned (default 500, max 500)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '501':
+          description: The connector is not armed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Score history (oldest first)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ADPostureHistory'
+
+  /api/settings/ad:
+    get:
+      tags: [ad]
+      operationId: getADSettings
+      summary: Effective Active Directory connector configuration (AD-6)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The configuration the connector currently runs with — the same
+        document the settings screen edits — plus the presence of its two
+        file-backed resources (the CA bundle and the credential envelope;
+        contents are never served) and the hot-reload bookkeeping.
+
+        Admin surface: the whole `/api/settings/ad` family answers 403
+        while the engine runs without `-api-write` (the engine's single
+        bearer token has no role model; arming writes IS the admin gate),
+        and 501 when the engine runs without `-ad` (feature off). The
+        service-account password is NEVER part of the response: it lives
+        in its own SEC-2 envelope file and is write-only over this API.
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: API writes are disabled (no -api-write at startup)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "api writes are disabled: restart the engine with -api-write (or SF_API_WRITE=1) to allow Active Directory settings"
+        '501':
+          description: The connector is not armed (no -ad config at startup)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Effective configuration, credential-free
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ADSettings'
+    put:
+      tags: [ad]
+      operationId: putADSettings
+      summary: Validate, commit and hot-reload the AD connector settings (AD-6)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        One call does four things, in this order: validate the merged
+        configuration with the SAME rules the `-ad` loader applies (a
+        rejected change never touches the disk); write the password, when
+        the request carries one, into its own SEC-2 envelope (DPAPI on
+        Windows, 0600 plain elsewhere — never into the YAML, never into a
+        log); commit the YAML atomically (temp+rename+Sync); and hot-swap
+        the live connector synchronously inside that same serialized
+        write (the next sync uses the new settings; the old loop stops in
+        the background). Overlapping PUTs therefore publish connectors in
+        the order they commit — the served connector always matches the
+        committed file, and no swapped-out connector is ever left
+        running. The response is the new effective document with the
+        swap already resolved: `reload_pending` false and the outcome in
+        `last_reload_at`/`last_reload_error` (a swap that failed still
+        applies on restart).
+
+        Guard rails: 409 when the `-ad` file changed on disk since the
+        engine loaded or last wrote it (hand edits are reconciled by a
+        human, never clobbered); 400 carries the loader's own validation
+        message. Every committed change leaves one audit line in the
+        engine log listing the changed field names — the password value is
+        never logged, echoed or stored in the YAML.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ADSettingsUpdate'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          description: Configuration rejected (validation) or malformed body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: API writes are disabled (no -api-write at startup)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "api writes are disabled: restart the engine with -api-write (or SF_API_WRITE=1) to allow Active Directory settings"
+        '409':
+          description: The -ad file drifted on disk (hand edit not reconciled)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Credential or config file not writable (engine log has the detail)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '501':
+          description: The connector is not armed (no -ad config at startup)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: The committed, effective configuration (reload pending)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ADSettings'
+
+  /api/ad/test:
+    post:
+      tags: [ad]
+      operationId: testADConnection
+      summary: 'Probar conexión — one bounded, read-only probe of a candidate configuration (AD-6)'
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The settings screen's "Probar conexión" button: opens the SAME
+        TLS-protected transport the connector uses (organization CA only,
+        pinned server name, TLS 1.2 floor), performs the authenticated
+        bind and samples every object kind (users, groups, computers, OUs)
+        up to 200 entries each, so the operator sees what the service
+        account can actually read before committing anything. It stores
+        nothing anywhere.
+
+        A failed CONNECTION is a successful TEST: the verdict is the
+        returned `ok` boolean (with a credential-free `error` reason);
+        the HTTP 400s are for malformed or invalid REQUESTS. The route
+        needs `-api-write` and an armed `-ad` surface: the CA and the
+        credential files always come from the `-ad` file on the engine
+        host, and a request that names other paths (`ca_file`,
+        `password_file`) is refused with 400 — otherwise the API
+        credential could make the engine read any file and send it as a
+        bind password. One probe at a time: a double click cannot hammer
+        the domain controller. The password, when the request carries
+        one, crosses only this call and is never stored by it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ADSettingsUpdate'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          description: Configuration rejected (validation), malformed body, a request that changes `ca_file` or `password_file`, or no password available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: API writes are disabled (no -api-write at startup)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "api writes are disabled: restart the engine with -api-write (or SF_API_WRITE=1) to allow Active Directory settings"
+        '501':
+          description: The Active Directory surface is not armed (no -ad at startup)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: The probe verdict (ok true/false with per-kind samples)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ADTestResult'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2199,6 +2598,7 @@ components:
         - splunk_failed
         - splunk_dropped
         - suppressions_active
+        - known_software_active
         - correlator_states
         - correlator_sequences
         - correlator_cap
@@ -2223,10 +2623,22 @@ components:
         - baseline_learning
         - baseline_novelties
         - notify_channels
+        - version
+        - alert_latency
+        - store_size_bytes
+        - certificates
+        - beacon_quota_rejected
+        - threshold_quota_rejected
+        - ring_dropped_events
+        - ring_dropped_alerts
+        - quota_top_hosts
       properties:
         suppressions_active:
           type: integer
           description: non-expired entries in the operator allowlist
+        known_software_active:
+          type: integer
+          description: entries in the known-software list (§2.2); 0 when -known-software is not armed
         store_enabled:
           type: boolean
           description: whether the engine runs with persistent SQLite storage (-store)
@@ -2443,6 +2855,526 @@ components:
             silence, reported as data).
           items:
             $ref: '#/components/schemas/NotifyChannelStats'
+        version:
+          type: string
+          description: engine version the running binary was built with
+            (the same string `engine version` prints); "" when unset
+        alert_latency:
+          type: object
+          description: ingest-to-alert latency (SET-3), measured from the
+            event's own sensor-side timestamp to the moment its alert was
+            raised by the engine, in milliseconds. count is the number of
+            raised alerts observed since start (0 means no alerts yet, not
+            zero latency); p50_ms/p95_ms/max_ms summarize the last 1024
+            observations. Sensor clocks far ahead of the engine are skipped,
+            never clamped into flattering zeros.
+          properties:
+            count:
+              type: integer
+              format: int64
+              description: raised alerts observed since engine start
+            p50_ms:
+              type: number
+              format: double
+              description: median ingest-to-alert latency (ms)
+            p95_ms:
+              type: number
+              format: double
+              description: 95th percentile ingest-to-alert latency (ms)
+            max_ms:
+              type: number
+              format: double
+              description: worst ingest-to-alert latency in the window (ms)
+        store_size_bytes:
+          type: integer
+          format: int64
+          description: durable on-disk size of the SQLite store as SQLite
+            accounts it (page_count x page_size; transient -wal/-shm siblings
+            excluded). 0 while store_enabled is false.
+        certificates:
+          type: object
+          description: expiry of both TLS listeners (SET-3). present=false and
+            empty strings when that listener runs without TLS; not_after is
+            RFC 3339 UTC. The console warns before a pair lapses instead of
+            discovering it on the day sensors fail to reconnect.
+          properties:
+            api:
+              $ref: '#/components/schemas/ADCertExpiry'
+            ingest:
+              $ref: '#/components/schemas/ADCertExpiry'
+        beacon_quota_rejected:
+          type: integer
+          format: int64
+          description: new beacon keys refused because the host's own admission
+            quota was full (v1.1 per-team quotas -- one noisy machine may not
+            monopolize the shared key table). Existing keys of the saturated
+            host keep counting and firing; only new ones are refused.
+        threshold_quota_rejected:
+          type: integer
+          format: int64
+          description: new threshold keys refused because the host's own admission
+            quota was full (v1.1 per-team quotas, same admission-ceiling
+            semantics as the per-rule quota; dead evidence is purged before the
+            refusal, so a host whose keys all expired recovers itself).
+        ring_dropped_events:
+          type: integer
+          format: int64
+          description: events rotated out of the in-memory view ring since API
+            start. The rings trim oldest-first, so a noisy host filling the
+            ring washes the others' recent records out -- this counter keeps
+            that loss visible. Full history stays in SQLite when -store is armed.
+        ring_dropped_alerts:
+          type: integer
+          format: int64
+          description: alerts rotated out of the in-memory view ring since API
+            start (same semantics as ring_dropped_events).
+        quota_top_hosts:
+          type: array
+          description: bounded top rows (8, worst first) of the per-host
+            pressure view -- ring rotation of each host's records and its
+            per-detector admission refusals; empty when nothing was refused
+            or rotated. /metrics serves the same totals without host labels
+            to keep series cardinality bounded.
+          items:
+            $ref: '#/components/schemas/QuotaHostRow'
+    QuotaHostRow:
+      type: object
+      required: [host, ring_events, ring_alerts, beacon, threshold]
+      properties:
+        host:
+          type: string
+          description: lowercased host name
+        ring_events:
+          type: integer
+          format: int64
+          description: events of this host rotated out of the view ring
+        ring_alerts:
+          type: integer
+          format: int64
+          description: alerts of this host rotated out of the view ring
+        beacon:
+          type: integer
+          format: int64
+          description: beacon keys of this host refused by its own quota
+        threshold:
+          type: integer
+          format: int64
+          description: threshold keys of this host refused by its own quota
+    ADCertExpiry:
+      type: object
+      required: [present, not_after, path]
+      properties:
+        present:
+          type: boolean
+          description: whether the listener runs with TLS
+        not_after:
+          type: string
+          description: certificate expiry, RFC 3339 UTC ("" while absent)
+        path:
+          type: string
+          description: configured certificate file ("" while absent)
+    ADStatus:
+      type: object
+      required: [connected, last_sync_at, last_success_at, next_sync_at,
+        last_error, truncated, syncs, objects, warnings]
+      properties:
+        connected:
+          type: boolean
+          description: the last sync attempt reached the server and bound
+        last_sync_at:
+          type: string
+          nullable: true
+          description: RFC 3339 instant of the last sync attempt (null until one)
+        last_success_at:
+          type: string
+          nullable: true
+          description: RFC 3339 instant of the last completed snapshot
+        next_sync_at:
+          type: string
+          nullable: true
+          description: RFC 3339 instant of the next scheduled sync (null while stopped)
+        last_error:
+          type: string
+          description: the last failed attempt's reason, credential-free
+            (server and result code only — the password is never logged
+            nor interpolated)
+        truncated:
+          type: boolean
+          description: the object cap stopped the last sync; the snapshot is partial
+        syncs:
+          type: integer
+          format: int64
+          description: sync attempts since engine start
+        objects:
+          type: object
+          description: per-kind counts of the last completed snapshot
+          properties:
+            users:
+              type: integer
+              format: int64
+            groups:
+              type: integer
+              format: int64
+            computers:
+              type: integer
+              format: int64
+            ous:
+              type: integer
+              format: int64
+        warnings:
+          type: array
+          description: connector-level observations (e.g. the service account
+            being effectively privileged — it must be a plain domain user)
+          items:
+            type: string
+    ADObject:
+      type: object
+      required: [dn, kind, name, user_account_control, admin_count,
+        pwd_last_set_unix, last_logon_unix, spn_count, enc_types,
+        when_changed_unix]
+      properties:
+        dn:
+          type: string
+          description: distinguished name of the directory object
+        kind:
+          type: string
+          enum: [user, group, computer, ou]
+        name:
+          type: string
+          description: sAMAccountName (or the OU's name)
+        sid:
+          type: string
+          description: canonical SID (S-1-...) when the object has one
+        user_account_control:
+          type: integer
+          format: int64
+          description: raw userAccountControl flags (bit 0x2 = disabled)
+        admin_count:
+          type: integer
+          format: int64
+        pwd_last_set_unix:
+          type: integer
+          format: int64
+          description: unix seconds of pwdLastSet (0 = never/unknown)
+        last_logon_unix:
+          type: integer
+          format: int64
+          description: unix seconds of lastLogonTimestamp (0 = never/unknown)
+        spn_count:
+          type: integer
+          description: number of servicePrincipalName values
+        enc_types:
+          type: integer
+          format: int64
+          description: msDS-SupportedEncryptionTypes (0 = unset, RC4 fallback)
+        os:
+          type: string
+          description: operatingSystem + version (computers)
+        when_changed_unix:
+          type: integer
+          format: int64
+          description: unix seconds of whenChanged (0 = unknown)
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
+          description: the remaining security-relevant attributes verbatim
+            (UPN, mail, dNSHostName, description, SPN list, member count)
+    ADObjectsPage:
+      type: object
+      required: [total, offset, objects]
+      properties:
+        total:
+          type: integer
+          description: rows matching the filter (for the pager)
+        offset:
+          type: integer
+          description: page start
+        objects:
+          type: array
+          items:
+            $ref: '#/components/schemas/ADObject'
+    ADPosture:
+      type: object
+      required: [ready, generated_at, score, summary, findings,
+        objects_checked, inactive_days, krbtgt_max_age_days]
+      properties:
+        ready:
+          type: boolean
+          description: false while the connector is armed but no sync has
+            completed yet (absence is never a fabricated zero score)
+        generated_at:
+          type: string
+          description: RFC 3339 instant the analysis was computed ("" while not ready)
+        score:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 100
+          description: the 0-100 posture score (null while not ready)
+        summary:
+          type: object
+          additionalProperties:
+            type: integer
+          description: number of FINDING CLASSES per severity (critical/high/medium/low)
+        findings:
+          type: array
+          items:
+            type: object
+            required: [id, title, severity, description, remediation, count,
+              objects, objects_truncated]
+            properties:
+              id:
+                type: string
+                description: stable finding identifier (e.g. krbtgt_password_age)
+              title:
+                type: string
+              severity:
+                type: string
+                enum: [critical, high, medium, low]
+              description:
+                type: string
+                description: what the finding means, in plain language
+              remediation:
+                type: string
+                description: what to do about it, in plain language
+              count:
+                type: integer
+                description: affected objects (the true total, list is capped)
+              objects:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    dn:
+                      type: string
+                    name:
+                      type: string
+                    detail:
+                      type: string
+              objects_truncated:
+                type: boolean
+                description: more objects are affected than the 50 listed
+        objects_checked:
+          type: integer
+          description: users + groups + computers the analysis walked
+        inactive_days:
+          type: integer
+          description: the configured stale-account threshold the findings used
+        krbtgt_max_age_days:
+          type: integer
+          description: the configured krbtgt password-age threshold
+    ADPostureHistory:
+      type: object
+      required: [points]
+      properties:
+        points:
+          type: array
+          description: one score point per completed sync, oldest first
+          items:
+            type: object
+            required: [at, score]
+            properties:
+              at:
+                type: integer
+                format: int64
+                description: unix seconds of the sync
+              score:
+                type: integer
+                description: the 0-100 score that sync computed
+    ADSettings:
+      type: object
+      required: [server, port, start_tls, base_dn, ca_file, ca_file_present,
+        bind_dn, password_file, password_stored, interval_seconds,
+        include_ous, exclude_ous, max_objects, page_size, inactive_days,
+        krbtgt_max_age_days, work_start, work_end, work_days, reload_pending]
+      description: |
+        The effective connector configuration. The credential is not part
+        of the document at all: `password_stored` says whether its SEC-2
+        envelope file exists on the engine host, and nothing more.
+      properties:
+        server:
+          type: string
+          description: AD DS hostname (also the TLS ServerName pinned in the handshake)
+        port:
+          type: integer
+          description: 636 for LDAPS, 389 for StartTLS
+        start_tls:
+          type: boolean
+          description: true upgrades ldap:// with StartTLS before the bind
+        base_dn:
+          type: string
+          description: subtree the connector reads
+        ca_file:
+          type: string
+          description: path of the CA PEM bundle on the engine host
+        ca_file_present:
+          type: boolean
+          description: the CA file exists right now (presence, not content)
+        bind_dn:
+          type: string
+          description: read-only service account DN
+        password_file:
+          type: string
+          description: path of the credential envelope on the engine host
+        password_stored:
+          type: boolean
+          description: the credential envelope exists right now; the secret itself is never served
+        interval_seconds:
+          type: integer
+          description: seconds between syncs (minimum 300)
+        include_ous:
+          type: array
+          description: when set, only objects under these OUs sync
+          items:
+            type: string
+        exclude_ous:
+          type: array
+          description: subtrees pruned after the include filter
+          items:
+            type: string
+        max_objects:
+          type: integer
+          description: per-sync object ceiling (the fetch STOPS at the cap)
+        page_size:
+          type: integer
+          description: RFC 2696 page size (ceiling 1000)
+        inactive_days:
+          type: integer
+          description: AD-2 stale-account threshold in days
+        krbtgt_max_age_days:
+          type: integer
+          description: AD-2 krbtgt password-age threshold in days
+        work_start:
+          type: string
+          description: work-hours window start (HH:MM 24h; empty when unset)
+        work_end:
+          type: string
+          description: work-hours window end (HH:MM 24h; empty when unset)
+        work_days:
+          type: array
+          description: working weekdays 0=Sunday..6=Saturday (default Mon-Fri when the window is set)
+          items:
+            type: integer
+        reload_pending:
+          type: boolean
+          description: >-
+            a committed settings change is being applied to the live
+            connector right now; the swap runs inside the PUT's serialized
+            write, so a concurrent GET during that window sees true while
+            the PUT response itself reports the resolved state
+        last_reload_at:
+          type: string
+          description: RFC 3339 instant of the last reload attempt
+        last_reload_error:
+          type: string
+          description: why the last reload could not take over (empty when it succeeded; the committed config applies on restart)
+    ADSettingsUpdate:
+      type: object
+      description: |
+        Settings change (PUT) or candidate (test): every field optional,
+        a present field REPLACES the current value; absent fields keep
+        theirs (or the engine default on a fresh commit). `password` is
+        write-only — it updates the credential envelope and is never
+        stored in, or echoed back as, configuration.
+      properties:
+        server:
+          type: string
+        port:
+          type: integer
+        start_tls:
+          type: boolean
+        base_dn:
+          type: string
+        ca_file:
+          type: string
+        bind_dn:
+          type: string
+        password_file:
+          type: string
+        password:
+          type: string
+          description: write-only; empty is rejected — omit the field to keep the stored credential
+        interval_seconds:
+          type: integer
+        include_ous:
+          type: array
+          items:
+            type: string
+        exclude_ous:
+          type: array
+          items:
+            type: string
+        max_objects:
+          type: integer
+        page_size:
+          type: integer
+        inactive_days:
+          type: integer
+        krbtgt_max_age_days:
+          type: integer
+        work_start:
+          type: string
+        work_end:
+          type: string
+        work_days:
+          type: array
+          items:
+            type: integer
+    ADTestResult:
+      type: object
+      required: [ok, tls_version, cipher_suite, bind_dn, base_dn, kinds, duration_ms]
+      description: |
+        Verdict of one "Probar conexión" probe. `ok: false` means the
+        probe RAN and the connection did not (dial, TLS, credentials or
+        readability); the reason travels credential-free in `error`.
+      properties:
+        ok:
+          type: boolean
+          description: bind succeeded and every kind search answered
+        tls_version:
+          type: string
+          description: negotiated TLS version (LDAPS; empty over StartTLS, whose handshake the client library performs internally)
+        cipher_suite:
+          type: string
+          description: negotiated cipher suite (LDAPS only, same caveat)
+        bind_dn:
+          type: string
+          description: the service account the probe bound as
+        base_dn:
+          type: string
+          description: the subtree the probe sampled
+        kinds:
+          type: array
+          description: per-kind readout (sample, not a directory dump)
+          items:
+            type: object
+            required: [kind, count, cap, truncated, sample_dns]
+            properties:
+              kind:
+                type: string
+                enum: [user, group, computer, ou]
+              count:
+                type: integer
+                description: entries actually read (a floor when truncated)
+              cap:
+                type: integer
+                description: the per-kind sample ceiling (200)
+              truncated:
+                type: boolean
+                description: the ceiling was hit; the directory holds at least `count`
+              sample_dns:
+                type: array
+                description: first DNs read, for the console's preview
+                items:
+                  type: string
+        duration_ms:
+          type: integer
+          format: int64
+          description: wall-clock duration of the whole probe
+        error:
+          type: string
+          description: credential-free reason when ok is false
     NotifyChannelStats:
       type: object
       description: |
@@ -2718,6 +3650,14 @@ components:
           type: string
           enum: [new, acknowledged, closed]
           description: operator triage state (read-side overlay, always present)
+        decision:
+          type: string
+          enum: [false_positive, authorized_activity, confirmed_incident]
+          description: |
+            operator verdict on the alert (read-side overlay, present
+            once a verdict is recorded): false_positive feeds VIZ-3's
+            «falso positivo» state and the noise report's
+            false_positive_pct
         status_note:
           type: string
           description: free-text triage note from the operator decision
@@ -2736,6 +3676,14 @@ components:
           type: string
           enum: [new, acknowledged, closed]
           description: '`new` doubles as the explicit reopen'
+        decision:
+          type: string
+          enum: [false_positive, authorized_activity, confirmed_incident]
+          description: |
+            operator verdict (WHAT the alert was, as opposed to status,
+            WHERE it sits in the workflow). Optional: omitted = no
+            verdict, and a later request without it clears any previous
+            one (the body is the full triage record)
         note:
           type: string
           maxLength: 2000
@@ -2813,6 +3761,10 @@ components:
         status:
           type: string
           enum: [new, acknowledged, closed]
+        decision:
+          type: string
+          enum: [false_positive, authorized_activity, confirmed_incident]
+          description: present once a verdict is recorded; omitted otherwise
         note:
           type: string
         by:
@@ -2892,7 +3844,16 @@ components:
         rule_id silences that rule everywhere). Field caps guard the
         control file: rule_id 128, host 253, reason 2000, expires 40
         characters; the request body is capped at 8 KiB and the file at
-        1000 entries via the write API.
+        1000 entries via the write API. The optional `when` conditions
+        (§2.3) narrow the entry to events whose fields match EVERY
+        condition, evaluated with the same operators the rule engine
+        uses (8 conditions max; field 128 and value 2000 characters;
+        value lists up to 16 items). A conditional entry only
+        silences alerts whose triggering event exists (rule hits,
+        intel and baseline-novelty alerts); aggregated alerts
+        (kill-chains, beaconing, volumetric) carry no single event and
+        are therefore never silenced by one — the failure direction is
+        an alert the operator still sees.
       properties:
         rule_id:
           type: string
@@ -2902,6 +3863,24 @@ components:
           type: string
           maxLength: 253
           description: host to scope the entry to (empty = every host); compared case-insensitively
+        when:
+          type: array
+          maxItems: 8
+          description: optional event-field conditions, ALL of which must hold for the entry to silence a hit (§2.3)
+          items:
+            type: object
+            required: [field, operator]
+            properties:
+              field:
+                type: string
+                maxLength: 128
+                description: dotted event field (e.g. process.command_line); events without the field never match
+              operator:
+                type: string
+                maxLength: 16
+                description: one of the rule engine's operators (eq, neq, contains, contains_any, startswith, endswith, regex, in, not_in, gt, lt and the case-insensitive i* variants)
+              value:
+                description: comparison value (string, number, boolean or a list of up to 16 of them)
         reason:
           type: string
           maxLength: 2000
@@ -4237,6 +5216,9 @@ components:
             truncated:
               type: boolean
               description: the scan hit its 10000-record cap (it then sees the newest slice of the window)
+            known_software_events:
+              type: integer
+              description: process boots excluded from the process aggregate because the known-software list labelled them (§2.2); the events stay stored and searchable
         processes:
           type: array
           items:
@@ -4290,7 +5272,7 @@ components:
           type: string
     NoiseRule:
       type: object
-      required: [rule_id, rule_name, count, distinct_hosts, acknowledged_pct, closed_pct]
+      required: [rule_id, rule_name, count, distinct_hosts, false_positive_pct, acknowledged_pct, closed_pct]
       properties:
         rule_id:
           type: string
@@ -4304,11 +5286,15 @@ components:
             type: integer
         distinct_hosts:
           type: integer
+        false_positive_pct:
+          type: number
+          format: float
+          description: share of the rule's alerts whose recorded triage DECISION is false_positive — the real false-positive rate (0 when no decision exists yet)
         acknowledged_pct:
           type: number
           format: float
-          description: share of the rule's alerts whose CURRENT status is acknowledged (triage proxy until a decision field exists)
+          description: share of the rule's alerts whose CURRENT status is acknowledged (workflow-progress proxy)
         closed_pct:
           type: number
           format: float
-          description: share of the rule's alerts whose CURRENT status is closed (triage proxy until a decision field exists)
+          description: share of the rule's alerts whose CURRENT status is closed (workflow-progress proxy)

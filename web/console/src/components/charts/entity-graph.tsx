@@ -93,8 +93,8 @@ export function EntityGraphView({
         <svg width={width} height={height} className="block">
           <defs>
             <radialGradient id="graph-halo" cx="50%" cy="50%" r="50%">
-              <stop offset="0" stopColor="rgba(96,165,250,0.10)" />
-              <stop offset="1" stopColor="rgba(96,165,250,0)" />
+              <stop offset="0" style={{ stopColor: 'var(--accent-halo, rgba(212, 212, 216, 0.1))' }} />
+              <stop offset="1" stopColor="transparent" />
             </radialGradient>
           </defs>
           <rect x={0} y={0} width={width} height={height} fill="url(#graph-halo)" aria-hidden />
@@ -141,7 +141,7 @@ export function EntityGraphView({
                 transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 70, damping: 16, delay: Math.min(i * 0.02, 0.4), opacity: { duration: 0.2 } }}
                 tabIndex={0}
                 role={onSelect ? 'button' : 'img'}
-                aria-label={`${NODE_KIND[node.kind].label}: ${node.label}${node.severity ? `, severidad ${SEVERITY_STYLE[node.severity].label}` : ''}, ${neighbours.get(node.id)?.size ?? 0} conexiones${onSelect ? `. ${selectHint}` : ''}`}
+                aria-label={`${NODE_KIND[node.kind].label}: ${labelText}${node.severity ? `, severidad ${SEVERITY_STYLE[node.severity].label}` : ''}, ${neighbours.get(node.id)?.size ?? 0} conexiones${onSelect ? `. ${selectHint}` : ''}`}
                 onPointerEnter={() => setActive(node.id)}
                 onPointerLeave={() => setActive(null)}
                 onFocus={() => setActive(node.id)}

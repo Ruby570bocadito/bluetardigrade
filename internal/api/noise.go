@@ -41,8 +41,14 @@ func (h *Hub) handleNoise(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Alerts come from the same window (and host filter) as the events;
-	// the rule aggregates read their triage overlay.
-	alertRows, _, _, ok := h.windowedAlerts(w, window)
+	// the rule aggregates read their triage overlay. The alert scan
+	// carries its own truncation flag: with the SQLite store attached,
+	// a window holding more than the scan cap must not present partial
+	// top lists as complete just because the EVENT scan fit under the
+	// cap (same scan-honesty rule the reports serve — truncation
+	// belongs to each scan, and the report says truncated when ANY of
+	// its scans hit the cap).
+	alertRows, alTrunc, _, ok := h.windowedAlerts(w, window)
 	if !ok {
 		return
 	}
@@ -62,7 +68,7 @@ func (h *Hub) handleNoise(w http.ResponseWriter, r *http.Request) {
 		Host:      host,
 		Limit:     limit,
 		Source:    source,
-		Truncated: evTrunc,
+		Truncated: evTrunc || alTrunc,
 	}, window, time.Now())
 	writeJSON(w, n)
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/incident"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/lifecycle"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/report"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/store"
 	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
@@ -95,7 +96,7 @@ func TestReportExecutiveAggregatesSeededAlerts(t *testing.T) {
 	seedAlert(t, h, "0123456789abcdef", "R1", "high", "PC-1", time.Hour, "attack.credential-access")
 	seedAlert(t, h, "0123456789abcdee", "R1", "high", "PC-1", 2*time.Hour)
 	seedAlert(t, h, "0123456789abcded", "R2", "low", "PC-2", 3*time.Hour)
-	if _, err := h.lifecycle.Set("0123456789abcdef", lifecycle.StatusClosed, "", "ana"); err != nil {
+	if _, err := h.lifecycle.Set("0123456789abcdef", lifecycle.StatusClosed, "", "", "ana"); err != nil {
 		t.Fatal(err)
 	}
 	code, body, _ := get(t, "http://"+addr+"/api/reports/executive?window=24h")
@@ -197,7 +198,7 @@ func TestReportSocBucketsSeededTriage(t *testing.T) {
 	h, addr := newTestHub(t)
 	seedAlert(t, h, "0123456789abcdef", "R1", "low", "PC-1", time.Hour)
 	seedAlert(t, h, "0123456789abcdee", "R1", "low", "PC-2", 2*time.Hour)
-	if _, err := h.lifecycle.Set("0123456789abcdef", lifecycle.StatusAcknowledged, "", "ana"); err != nil {
+	if _, err := h.lifecycle.Set("0123456789abcdef", lifecycle.StatusAcknowledged, "", "", "ana"); err != nil {
 		t.Fatal(err)
 	}
 	code, body, _ := get(t, "http://"+addr+"/api/reports/soc?window=24h")
@@ -339,5 +340,158 @@ func TestNoiseWindowValidation(t *testing.T) {
 	code, _, _ = get(t, "http://"+addr+"/api/noise")
 	if code != http.StatusOK {
 		t.Fatalf("default window = %d", code)
+	}
+}
+
+// The truncated flag belongs to the store SCAN, not to the filtered
+// set: when the window holds more events than one scan may read, a
+// host-filtered report must still say so, or it silently undercounts
+// while claiming the whole window (found by Seguridad A reviewing the
+// round-1 report code).
+func TestNoiseHostFilterKeepsScanTruncationHonest(t *testing.T) {
+	h, addr := newTestHub(t)
+	st, err := store.Open(t.TempDir() + "/noise-trunc.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	h.SetStore(st)
+
+	base := time.Now().UTC().Add(-time.Hour)
+	total := reportScanLimit + 1 // one event beyond what a scan may read
+	batch := make([]*model.Event, 0, 500)
+	for i := 0; i < total; i++ {
+		host := "pc-a"
+		if i == total-1 { // the NEWEST event: a filtered host must survive the cap
+			host = "pc-b"
+		}
+		ev := &model.Event{
+			ID:        fmt.Sprintf("trunc-%06d", i),
+			Timestamp: base.Add(time.Duration(i) * time.Millisecond).UTC(),
+			Type:      model.TypeProcessCreate,
+			Source:    "test",
+			Host:      host,
+			Process:   &model.Process{PID: i + 1, Name: "a.exe", Image: `C:\a.exe`},
+		}
+		batch = append(batch, ev)
+		if len(batch) == 500 || i == total-1 {
+			if res := st.InsertEvents(batch); len(res.Failed) > 0 || len(res.Conflicts) > 0 {
+				t.Fatalf("seed insert: failed=%v conflicts=%v", res.Failed, res.Conflicts)
+			}
+			batch = batch[:0]
+		}
+	}
+
+	// Host pc-b has exactly one event and it is inside the scan, but the
+	// window holds more events than one scan reads: truncated must stay
+	// true even though the filtered set is tiny.
+	code, body, _ := get(t, "http://"+addr+"/api/noise?window=24h&host=pc-b")
+	if code != http.StatusOK {
+		t.Fatalf("noise host filter = %d: %s", code, body)
+	}
+	var rep report.Noise
+	if err := json.Unmarshal([]byte(body), &rep); err != nil {
+		t.Fatal(err)
+	}
+	if rep.Scanned.Events != 1 || len(rep.Processes) != 1 {
+		t.Fatalf("host filter aggregates: %+v", rep.Scanned)
+	}
+	if !rep.Scanned.Truncated {
+		t.Fatalf("a capped scan filtered to one host must stay truncated: %+v", rep.Scanned)
+	}
+	// The unfiltered view of the same window agrees.
+	code, body, _ = get(t, "http://"+addr+"/api/noise?window=24h")
+	if code != http.StatusOK {
+		t.Fatalf("noise = %d: %s", code, body)
+	}
+	var all report.Noise
+	if err := json.Unmarshal([]byte(body), &all); err != nil {
+		t.Fatal(err)
+	}
+	if all.Scanned.Events != reportScanLimit || !all.Scanned.Truncated {
+		t.Fatalf("unfiltered scan: %+v, want %d events and truncated", all.Scanned, reportScanLimit)
+	}
+}
+
+// The alert scan carries its own truncation flag: a window holding more
+// alerts than one scan reads must say so even when the EVENT scan fits
+// under the cap. Regression: handleNoise used to keep only the events
+// scan's flag, so a store-backed window with plenty of alerts and few
+// events presented partial top lists as complete.
+func TestNoiseAlertScanTruncationIsReported(t *testing.T) {
+	h, addr := newTestHub(t)
+	st, err := store.Open(t.TempDir() + "/noise-alert-trunc.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	h.SetStore(st)
+
+	base := time.Now().UTC().Add(-time.Hour)
+	for i := 0; i < reportScanLimit+1; i++ { // one alert beyond the scan cap
+		a := alert.Alert{
+			ID:        fmt.Sprintf("%016x", i),
+			Timestamp: base.Add(time.Duration(i) * time.Millisecond).UTC().Format(time.RFC3339Nano),
+			RuleID:    "noise-rule",
+			Severity:  "low",
+			Host:      "pc-a",
+			Summary:   "alert-scan-truncation",
+		}
+		if err := st.InsertAlert(a); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	code, body, _ := get(t, "http://"+addr+"/api/noise?window=24h")
+	if code != http.StatusOK {
+		t.Fatalf("noise = %d: %s", code, body)
+	}
+	var rep report.Noise
+	if err := json.Unmarshal([]byte(body), &rep); err != nil {
+		t.Fatal(err)
+	}
+	if rep.Scanned.Alerts != reportScanLimit || !rep.Scanned.Truncated {
+		t.Fatalf("an alert scan capped by its own budget must be truncated: %+v", rep.Scanned)
+	}
+}
+
+// The decision recorded in the lifecycle store reaches /api/noise as
+// false_positive_pct on the wire (the integration point IMP-B's
+// screen consumes: POST /api/alerts/{id}/status with a decision, then
+// the FP rate of that rule moves).
+func TestNoiseCarriesDecisionFromLifecycle(t *testing.T) {
+	h, addr := newTestHub(t)
+	h.RecordAlert(alert.Alert{
+		Timestamp: time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano), RuleID: "R1", RuleName: "test rule",
+		Severity: "low", Host: "LAB-TEST", EventID: "ev-1",
+		EventType: "process.create", Summary: "s", MatchedOn: []string{"process.name"},
+	})
+	h.RecordAlert(alert.Alert{
+		Timestamp: time.Now().UTC().Add(-2 * time.Minute).Format(time.RFC3339Nano), RuleID: "R1", RuleName: "test rule",
+		Severity: "low", Host: "LAB-TEST", EventID: "ev-2",
+		EventType: "process.create", Summary: "s", MatchedOn: []string{"process.name"},
+	})
+	var listed []map[string]any
+	getJSON(t, fmt.Sprintf("http://%s/api/alerts", addr), &listed)
+	ids := make([]string, 0, 2)
+	for _, a := range listed {
+		ids = append(ids, a["id"].(string))
+	}
+	if _, err := h.lifecycle.Set(ids[0], lifecycle.StatusClosed, lifecycle.DecisionFalsePositive, "fp", "ana"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	code, body, _ := get(t, "http://"+addr+"/api/noise?window=1h")
+	if code != http.StatusOK {
+		t.Fatalf("noise = %d: %s", code, body)
+	}
+	if !strings.Contains(body, `"false_positive_pct":50`) {
+		t.Fatalf("wire body does not carry the 50%% FP rate: %s", body)
+	}
+	var rep report.Noise
+	if err := json.Unmarshal([]byte(body), &rep); err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Rules) != 1 || rep.Rules[0].FalsePositivePct != 50.0 {
+		t.Fatalf("rules = %+v", rep.Rules)
 	}
 }

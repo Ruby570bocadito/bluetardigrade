@@ -1,78 +1,75 @@
-# Plan de ronda — Pulimiento A (2026-10-05 14h10 Madrid)
+# Plan de ronda — Pulimiento A (2026-10-06 08h12 UTC, ronda 13)
 
-Séptima ronda del carril. Continuidad en `roadmap_A.md` (ronda 6 cerrada
-a las 14h05 con commit `1422427`).
+- **Contexto:** quinta sesión de la jornada. La ronda 12 (delegaciones
+  de SEG-B: `--ignore-scripts` implementado + fuzz nocturno
+  respondido) está publicada en `origin` (`10dbca9`), push verificado
+  con `git ls-remote`. «continua» del responsable autoriza esta ronda
+  (cuarta ronda extra sobre RONDAS_MAXIMAS=8). `origin/main` sigue en
+  `35cd866`: POL-1 sigue reservada (IMP-A `bc91c7d` sin fusionar; sus
+  2 hallazgos pendientes confirmados por doble fuente SEG-A+SEG-B).
 
-## Sincronización previa
+## Movimientos auditados al abrir
 
-- `git fetch origin --prune`: `main` sigue en `5e168ba` (el responsable
-  no ha fusionado carriles todavía). Mi rama al día con su remoto.
-- Novedades leídas: IMP-A cerró su ronda 2 (SIM-4 parte A + x/text;
-  tocó `internal/api`, `cmd/engine`, `openapi.yaml`, `go.mod` y añadió
-  su sección de scenarios en `docs/OPERATIONS.md`); IMP-B cerró VIZ-1/3
-  y planificó SET-3 (solo consola); SEG-B está EN RONDA activa
-  (`deps-audit.yml` nuevo + `check_workflows.py` + Makefile + website;
-  su parte (a) del CI rojo la lleva el PR #16, la (b) es de SEG-A);
-  SEG-A y PUL-B sin cambios (PUL-B sin ALTA para este carril).
+- SEG-A `343358a→810c882`: FIX del double-BOM de `decodeText` en
+  `internal/intel` (primer crasher del fuzzing vivo; fail-before/
+  pass-after) + verificación byte a byte de MI hallazgo del Makefile
+  («todo cierto», guardia probada en ambas direcciones). Su fix no
+  solapa con mi rama (solo un comentario mío en `intel_test.go`).
+- SEG-B `cf8997d→e868094`: verificación cruzada de mi trabajo de CI
+  (rondas 11-12): «LIMPIO», afirmaciones confirmadas por ejecución.
+  Además: su carril heredó el Makefile roto de main y su claim es que
+  el merge tomará mi versión reparada sin acción en su lado.
+- IMP-B `5ecbcc4→b5e26d7` (103 ficheros, +9731): ABSORBIÓ las ramas
+  de IMP-A (AD-1/AD-2, SEC-2 DPAPI) y PUL-B (CSP-nonce, a11y,
+  reduced-motion) y construyó encima AD-5 (vista Directorio).
+  Implicación: IMP-B es ahora el fusilador probable hacia main.
 
-## Coordinación (sin colisiones)
+## Trabajo de esta ronda: pre-flight de fusión (guardia sobre árboles fusionados simulados)
 
-- **`internal/api` sigue caliente:** la cola de IMP-A (REP-1, API de
-  ruido) vuelve a tocar `internal/api` y `openapi.yaml`. El candidato
-  POL-1 de esta ronda es `internal/correlate/correlate.go`, que no
-  aparece en ningún plan publicado de ningún carril.
-- **`-scenarios` en las tablas de flags:** el flag nuevo de IMP-A no
-  está en la tabla «full surface» de `docs/OPERATIONS.md`. NO lo
-  documento yo esta ronda: en `main` ese flag no existe todavía y
-  documentarlo sería drift inverso (prometer flags que el código de
-  main no tiene). Nota para IMP-A en el informe; en mi roadmap queda
-  como pendiente por si hay que hacerlo tras su fusión (patrón ronda 4).
-- **Enganches de CI diferidos** (checker de tema PUL-B, objetivos de
-  fuzz SEG-A): siguen bloqueados porque `main` no se ha movido. Nada
-  que hacer esta ronda en `ci.yml`; SEG-B además está en ronda activa
-  en workflows (su `deps-audit.yml`, fichero nuevo, sin colisión).
+- **Motivación:** mis observaciones abiertas (PUL-B ronda 11, SEG-B
+  ronda 12) predijen comportamientos de fusión distintos. Los
+  merge-tree `--name-only` solo detectan CONFLICTOS, no el contenido
+  resultante. Método nuevo, determinista y barato:
+  1. `git merge-tree --write-tree <mi tip> <tip ajeno>` → árbol
+     fusionado simulado.
+  2. `git show <árbol>:Makefile` → el Makefile que RESULTARÍA.
+  3. Ejecutar `check_makefile_tabs.py` SOBRE ese fichero.
+  4. Ídem `.github/workflows/ci.yml` (diff contra el mío: ¿sobrevive
+     mi `--ignore-scripts`? ¿alguien toca el job consola?).
+- **Resultados (ya ejecutados contra los 5 carriles):**
+  - SEG-A, SEG-B, IMP-A: Makefile fusionado → guardia OK; ci.yml
+    fusionado idéntico al mío.
+  - SEG-B: el Makefile fusionado es IDÉNTICO al mío (diff vacío) —
+    **mi observación de ronda 12 era ERRÓNEA**: sus líneas
+    `check_package_lifecycle` con espacios son contenido del
+    merge-base (las puso `63fa077` en main), no ediciones suyas.
+    El «sin acción requerida» de SEG-B era correcto. Cierro la
+    observación con corrección explícita de mi error.
+  - PUL-B (y por herencia IMP-B): guardia ROJA — 7 líneas de receta
+    con espacios (86-96 del fusionado): targets `console-a11y`
+    (86-88) y `console-lighthouse` (93-96), exactamente los de mi
+    observación de ronda 11. CONFIRMADA y ahora precisada con líneas.
+  - Bonus del pre-flight: el target `console-lighthouse` de PUL-B
+    instala `lighthouse@12.8.2` con npm SIN `--ignore-scripts` —
+    mismo patrón cadena-de-suministro que cerré en ci.yml (ronda
+    12); lo añado a la observación como decisión pendiente suya.
+- **NO toco el Makefile en su nombre:** reindentar yo esas recetas en
+  MI rama crearía conflicto real en la zona (sus ramas también la
+  tocan) y ensuciaría autoría. Remedio documentado para PUL-B/IMP-B
+  con líneas y comando reproducible.
 
-## Identificadores del TODO trabajados
+## Fuera de alcance (sin cambios)
 
-- **POL-1 (parte correlate):** dividir
-  `internal/correlate/correlate.go` (789 líneas) por responsabilidad
-  dentro del mismo paquete, sin cambiar comportamiento: cargar/recargar,
-  seguimiento de estados, disparo, poda. Los tests del paquete
-  (`correlate_test.go`, `scope_test.go`) no se tocan, solo se verifican.
-- **POL-5 (parte procesos):** `CONTRIBUTING.md` + plantillas de issue
-  (bug/feature) y de PR en `.github/` — no existen y son de este carril
-  según el TODO. En inglés, como el resto de la documentación para
-  contribuidores; referencias a los guards reales del CI
-  (`check_openapi.py`, `check_rule_inventory.py`, `check_workflows.py`
-  de SEG-B cuando exista en main — no lo referencio hasta que esté).
-- **Fijos de ronda:** `.gitignore` y ficheros temporales.
-
-## Ficheros que voy a tocar y por qué
-
-- `internal/correlate/correlate.go` → dividido en ficheros por
-  responsabilidad del mismo paquete (nuevos ficheros + el original
-  reducido). POL-1, mi área; nadie más lo toca.
-- `CONTRIBUTING.md` (nuevo), `.github/PULL_REQUEST_TEMPLATE.md` (nuevo),
-  `.github/ISSUE_TEMPLATE/bug_report.md` + `.github/ISSUE_TEMPLATE/feature_request.md`
-  + `config.yml` (nuevos). POL-5, mi área.
-- `changelog.d/` (2 fragmentos), `docs/agentes/03-pulimiento/` (informe
-  + roadmap). `docs/api/openapi.yaml` NO se toca (la API no cambia).
-
-## Por qué este alcance
-
-POL-1 es la única tarea del TODO que requiere el toolchain Go que esta
-ronda anterior quedó instalado; `correlate.go` es el candidato con
-menos riesgo de colisión (los otros dos están calientes: `api.go` por
-la cola de IMP-A, `run.go` recién tocado por SIM-4 y con cuotas de
-motor en cola). POL-5 (procesos de contribución) es autocontenido y
-llevaba cero avance; el repo ya tiene `SECURITY.md` pero nada de cómo
-contribuir, y es exactamente el tipo de documentación que un repo open
-source necesita antes de crecer en contribuidores.
+- POL-1/run.go: IMP-A sigue sin fusionar (y con 2 hallazgos que
+  corregir antes). Docs de AD-5/`/api/stats`/CSP: territory IMP,
+  documentar antes de fusión sería drift inverso (regla ronda 8).
+- Sin fragmento de changelog esta ronda: no cambia nada orientado al
+  repo; solo docs del carril.
 
 ## Verificación prevista
 
-Suite Go completa sobre el paquete tocado y el árbol entero:
-`gofmt -l .`, `go build ./...`, `go vet ./...`, `GOOS=windows go build ./...`,
-staticcheck doble pasada, `go test -race -count=1 ./...`, y los guards
-de Python (`check_openapi.py` + self-test, `check_rule_inventory.py`).
-Sin `cargo` ni `pwsh`: no toco sensor ni PowerShell.
+Pre-flight documentado arriba (ya ejecutado, resultados en el
+informe), guardias completas del árbol (7), batería Go completa
+(gofmt/build/vet/windows vet/staticcheck, `-race` 37 paquetes),
+merge-tree convencional 6/6, escaneo anti-credenciales, push con
+verificación `git ls-remote`.

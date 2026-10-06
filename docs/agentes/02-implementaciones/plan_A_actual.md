@@ -1,28 +1,35 @@
-# Plan de ronda — Implementación A (2026-10-05, ronda 3)
+# Plan de ronda — Implementación A (2026-10-06, ronda siguiente a las 11h50)
 
-- Tareas del TODO: **REP-1 parte A** (catálogo de informes, datos y API: resumen ejecutivo,
-  incidente, cobertura de flota y actividad del SOC; postura AD/inicios de sesión/ruido
-  siguen bloqueados por AD-1/AD-3 y la sección de ruido) y la **API de ruido** (§2.4:
-  `GET /api/noise?window=24h`, top de procesos, dominios y reglas, por equipo y flota).
-  Además el **hallazgo SEC-A-1 de Seguridad A** (bug real en mi carril: el nombre de
-  identidad del alta no comprueba unicidad; re-lanzar el sufijo dentro del cerrojo).
-- Ficheros: nuevo `internal/report` (agregaciones puras y CSV, probado sin HTTP),
-  `internal/api/reports.go` + `internal/api/noise.go` (2 rutas nuevas
-  `/api/reports`, `/api/reports/{kind}` y 1 ruta `/api/noise`), `docs/api/openapi.yaml`
-  (34 → 37 rutas), `internal/enroll/enroll.go` (fix SEC-A-1), changelog fragment,
-  e2e nueva `scripts/dev-tests/e2e_reports_noise.sh`, informe/roadmap.
-- Por qué este orden: IMP-B declara REP-3/REP-4 bloqueadas hasta publicar REP-1 y su
-  informe de ruido §2.4 espera la API; SEC-A-1 es un parche pequeño con alto impacto
-  (el motor se niega a arrancar tras una colisión) que Seguridad A dejó asignado a este
-  carril. El campo de decisión de triaje que IMP-B pide (MEDIA) queda fuera: cambia el
-  contrato del ciclo de vida y merece ronda propia; la API de ruido reporta hoy
-  `closed_pct` honesto y cambiará a FP% cuando exista el campo.
-- Para Implementación B (contrato): `GET /api/reports` (catálogo: kinds, parámetros y
-  formatos) y `GET /api/reports/{kind}?window=24h|7d|30d&format=json|csv` (json por
-  defecto; csv `text/csv` con el mismo escapado de fórmulas que los export existentes).
-  `GET /api/noise?window=24h&host=X&limit=10` (top procesos por imagen, dominios DNS,
-  reglas con recuento y % cerrado; `host` vacío = flota completa). Detalle y schemas en
-  OpenAPI al cerrar la ronda.
-- Fuera de alcance: pantalla de informes y pestaña de ruido (IMP-B), REP-2 (programados),
-  v1.1 Ruido (software conocido y supresiones con condiciones), AD-1, el campo `decision`
-  del triaje.
+Base: `c113fcb` — los 4 commits retenidos de la ronda doctor+cuotas están
+publicados al abrir esta ronda (`9409784..c113fcb`, la acción #1 de la cola).
+`origin/main` sigue en `35cd866` (ya fusionado en mi rama). Leído al abrir:
+informe ronda 16 de SEG-A (**hallazgo MEDIA nuevo sobre mi código**: hot-swap
+AD-6 sin serializar — carrera en `current` vía repro por la ruta real y
+lost-update fichero-vs-publicado en 7/20), informes ronda 17 de SEG-A y 15 de
+SEG-B (dirigidos a IMP-B o al Makefile, nada para mí), informe ronda 10 de
+IMP-B (su pantalla SET-1 ya consume mi API; sin petición nueva), planes de los
+cinco carriles. El Makefile sigue roto en solitario (heredado de `main`,
+dominio de PUL-A; el reparo canónico es el `0852035` de SEG-A): no lo toco.
+
+Tareas (en este orden):
+
+1. **SEG-A r16 MEDIA — serializar el hot-swap de AD-6.** El swap pasa a correr
+   SINCRÓNICAMENTE dentro de la sección crítica `adWriteMu` del PUT
+   (`adReloadAsync` → `adReloadSync`; `Run`/`Stop` siguen en goroutines de
+   fondo): el orden publicación==fichero queda determinista, el bookkeeping
+   `current` de `cmd/engine/run.go` queda bajo cerrojo y ningún conector
+   queda huérfano sin `Stop()`. NO basta tomar `adWriteMu` dentro de la
+   goroutine (el entrelazado H1,H2,C2,C1 seguiría divergiendo en reposo).
+   Test de concurrencia que replica el bookkeeping del motor por la ruta
+   real (fail-before/pass-after, `-race -count=5`). Ficheros:
+   `internal/api/ad_settings.go`, `internal/api/ad_settings_test.go`,
+   `cmd/engine/run.go` (comentario mentiroso), `docs/api/openapi.yaml`
+   (semántica de la respuesta del PUT), `docs/OPERATIONS.md`,
+   `changelog.d/IMP-A-ad-swap-serialization.md`.
+2. Verificación completa tras el ÚLTIMO cambio (checklist CI + `-race
+   -count=5` en api/engine/ad, `-count=3` en el resto tocado), merge-tree
+   contra las cinco puntas, informe, roadmap, push.
+
+Si la ronda sobra: cola (`REP-2` informes programados → purga de hosts
+rechazados por cuota). No toco: consola (IMP-B/PUL-B), CI/Makefile (PUL-A),
+sensor Rust (sin cargo), ficheros compartidos.

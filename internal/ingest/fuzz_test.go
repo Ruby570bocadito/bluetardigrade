@@ -14,12 +14,22 @@ package ingest
 //     succeeds the identities are self-consistent (non-empty reserved-
 //     name-free names, digest lookup round-trips through
 //     matchIdentity).
+//   - the first line of a connection classifies cleanly: isAuthLine
+//     and isEnrollLine are exact prefixes and mutually exclusive, and
+//     parseEnrollLine hands the registry two non-empty, whitespace-
+//     free fields or refuses the line.
 
 import (
+	"encoding/json"
+	"errors"
+	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+	"unicode"
 )
 
 func FuzzDecode(f *testing.F) {
@@ -139,6 +149,96 @@ func FuzzLoadIdentities(f *testing.F) {
 	})
 }
 
+// FuzzAuthEnrollFirstLine fuzzes the first line of a connection, the
+// one Server.handle dispatches on before a single event may flow:
+//   - isAuthLine is the exact "AUTH " prefix (never "AUTH" without the
+//     space, never "AUTH\t"); when it holds, slicing the credential off
+//     at byte 5 is in bounds, and the credential is the raw remainder,
+//     empty included ("AUTH " alone is a request with an empty token,
+//     which the constant-time compare must refuse, not panic on);
+//   - parseEnrollLine accepts exactly "ENROLL <token> <host>": both
+//     fields non-empty and whitespace-free (they reach the enrollment
+//     registry verbatim and bind a host, so a stray space inside one
+//     would forge a host the sensor never sent); a non-ENROLL line is
+//     never accepted; an ENROLL line with one or three-plus fields is
+//     refused;
+//   - no line is both an AUTH and an ENROLL request (disjoint
+//     prefixes), so the ENROLL check in Server.handle cannot shadow an
+//     AUTH request;
+//   - none of the classifiers ever panics on arbitrary bytes.
+//
+// Lines reach the dispatch stripped of their terminator (bufio
+// ScanLines drops \r\n), so the seeds are bare lines.
+func FuzzAuthEnrollFirstLine(f *testing.F) {
+	// Real first lines from the field.
+	f.Add([]byte("AUTH shared-token"))
+	f.Add([]byte("AUTH btsensor_c1"))
+	f.Add([]byte("ENROLL enroll-token-7 LAB-WKS-01"))
+	// Boundary shapes: prefix-only, wrong separators, casing, and
+	// lines that are neither AUTH nor ENROLL.
+	f.Add([]byte("AUTH "))
+	f.Add([]byte("AUTH"))
+	f.Add([]byte("AUTH\ttab-token"))
+	f.Add([]byte("auth lowercase-token"))
+	f.Add([]byte("ENROLL "))
+	f.Add([]byte("ENROLL only-token"))
+	f.Add([]byte("ENROLL a b c"))
+	f.Add([]byte("ENROLL\ttab\tseparated"))
+	f.Add([]byte("enroll lower host"))
+	f.Add([]byte(`{"id":"e1","type":"heartbeat"}`))
+	f.Add([]byte(""))
+	f.Add([]byte("\x00\x01\x02"))
+	f.Add([]byte("ENROLL tok host\u00a0x"))
+
+	f.Fuzz(func(t *testing.T, line []byte) {
+		auth := isAuthLine(line)
+		enroll := isEnrollLine(line)
+
+		// Bounds: when a classifier says yes, the prefix it matched is
+		// really there, so every slice in the handshake path is safe.
+		if auth && (len(line) < 5 || string(line[:5]) != "AUTH ") {
+			t.Fatalf("isAuthLine accepted a line without the AUTH prefix: %q", line)
+		}
+		if enroll && (len(line) < 7 || string(line[:7]) != "ENROLL ") {
+			t.Fatalf("isEnrollLine accepted a line without the ENROLL prefix: %q", line)
+		}
+		// Wrong separators must not pass as the other request type:
+		// the space is part of the wire contract the sensor speaks.
+		if len(line) >= 5 && string(line[:5]) == "AUTH\t" && auth {
+			t.Fatalf("tab after AUTH accepted as an AUTH line: %q", line)
+		}
+		// Disjoint prefixes: handle() checks ENROLL before AUTH, so a
+		// line matching both would enroll when the sensor meant to
+		// authenticate.
+		if auth && enroll {
+			t.Fatalf("line classified as both AUTH and ENROLL: %q", line)
+		}
+
+		token, host, ok := parseEnrollLine(line)
+		if !enroll {
+			if ok {
+				t.Fatalf("parseEnrollLine accepted a non-ENROLL line: %q", line)
+			}
+			return
+		}
+		fields := strings.Fields(string(line[len("ENROLL "):]))
+		if ok != (len(fields) == 2) {
+			t.Fatalf("parseEnrollLine ok=%v disagrees with %d fields: %q", ok, len(fields), line)
+		}
+		if !ok {
+			return
+		}
+		if token == "" || host == "" {
+			t.Fatalf("parseEnrollLine yielded an empty field: token=%q host=%q", token, host)
+		}
+		for i, field := range []string{token, host} {
+			if strings.IndexFunc(field, unicode.IsSpace) >= 0 {
+				t.Fatalf("field %d carries whitespace into the registry: %q", i, field)
+			}
+		}
+	})
+}
+
 // FuzzMatchIdentity builds identities from fuzz-chosen tokens and
 // checks the lookup: the identity whose digest is sha256(token) is
 // found by matchIdentity for exactly that token, any other token of
@@ -187,6 +287,114 @@ func FuzzMatchIdentity(f *testing.F) {
 			if got := matchIdentity(ids, []byte(guest)); got != nil {
 				t.Fatalf("unknown token matched identity %q", got.Name)
 			}
+		}
+	})
+}
+
+// fuzzEnrollRegistry mimics the enrollment registry contract the
+// handshake codes against: an unknown token is an error, a known one
+// grants a credential bound to the requested host (SEC-7).
+type fuzzEnrollRegistry struct{}
+
+func (fuzzEnrollRegistry) Enroll(token, host, peer string) (EnrollGrant, error) {
+	if token != "tok-1" {
+		return EnrollGrant{}, errors.New("unknown enrollment token")
+	}
+	return EnrollGrant{Name: "enr-" + strings.ToLower(host), Credential: "btsensor_fuzz", Active: true}, nil
+}
+
+func (fuzzEnrollRegistry) Authenticate(string) (EnrollCheck, bool) { return EnrollCheck{}, false }
+
+// FuzzEnrollLine drives the ENROLL first line end to end over an
+// in-process pipe: isEnrollLine's prefix test, handleEnroll's field
+// splitting and loopback guard, the registry call and the single-line
+// answer. Properties:
+//   - the handshake never panics, never blocks beyond the ack deadline
+//     and always answers exactly one line of valid JSON;
+//   - exactly one of the rejected/enrolled counters advances, matching
+//     the answer (error ack <=> rejected, enrolled ack <=> enrolled);
+//   - an enrolled answer carries the identity, the credential and the
+//     state the enroller returned; an error answer names a reason.
+func FuzzEnrollLine(f *testing.F) {
+	f.Add("ENROLL tok-1 PC-01", true)
+	f.Add("ENROLL tok-1 lab-host-9", true)
+	f.Add("ENROLL tok-1", true)
+	f.Add("ENROLL tok-1 PC-01 extra", true)
+	f.Add("ENROLL  PC-01", true) // empty token field
+	f.Add("ENROLL tok-1 PC-01 BAD", true)
+	f.Add("ENROLL btsensor_abc PC-01", true) // credential past as token
+	f.Add("ENROLL tok-1 PC-01", false)       // enrollment off
+	f.Add("ENROLL tok-1 PC-01\x00\x01", true)
+	f.Add("ENROLL tok-1 PC-01", true)
+
+	f.Fuzz(func(t *testing.T, line string, enrollerOn bool) {
+		if len(line) > maxLineSize || strings.ContainsAny(line, "\r\n\x00") {
+			return // ScanLines splits on these; the fuzz models one line
+		}
+		if !isEnrollLine([]byte(line)) {
+			return // the fuzz exercises the ENROLL dispatch specifically
+		}
+		var s Server // zero value: no listener, no goroutines, plain-text mode
+		if enrollerOn {
+			s.SetEnroller(fuzzEnrollRegistry{})
+		}
+		client, server := net.Pipe()
+		defer client.Close()
+		deadline := time.Now().Add(10 * time.Second)
+		_ = client.SetDeadline(deadline)
+		_ = server.SetDeadline(deadline)
+		var answer []byte
+		readDone := make(chan struct{})
+		go func() {
+			defer close(readDone)
+			b, _ := io.ReadAll(client)
+			answer = b
+		}()
+		served := make(chan struct{})
+		go func() {
+			defer close(served)
+			defer server.Close()
+			s.handleEnroll(server, []byte(line), "127.0.0.1")
+		}()
+		<-served
+		<-readDone
+
+		text := string(answer)
+		if !strings.HasSuffix(text, "\n") || strings.Count(text, "\n") != 1 {
+			t.Fatalf("ENROLL %q: handshake must answer exactly one line, got %q", line, text)
+		}
+		oneLine := strings.TrimSuffix(text, "\n")
+		var ack struct {
+			Ack        string `json:"ack"`
+			Identity   string `json:"identity"`
+			Credential string `json:"credential"`
+			State      string `json:"state"`
+			Error      string `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(oneLine), &ack); err != nil {
+			t.Fatalf("ENROLL %q: ack is not valid JSON: %v (%q)", line, err, oneLine)
+		}
+		rejected, enrolled := s.rejected.Load(), s.enrolledN.Load()
+		switch ack.Ack {
+		case "enrolled":
+			if !enrollerOn {
+				t.Fatalf("ENROLL %q: enrolled without an enroller", line)
+			}
+			if ack.Identity == "" || ack.Credential == "" || (ack.State != EnrollActive && ack.State != EnrollPending) {
+				t.Fatalf("ENROLL %q: enrolled ack missing fields: %+v", line, ack)
+			}
+			if enrolled != 1 || rejected != 0 {
+				t.Fatalf("ENROLL %q: counters rejected=%d enrolled=%d, want 0/1", line, rejected, enrolled)
+			}
+		case "error":
+			if ack.Error == "" {
+				t.Fatalf("ENROLL %q: error ack without a reason", line)
+			}
+			if rejected != 1 || enrolled != 0 {
+				t.Fatalf("ENROLL %q: counters rejected=%d enrolled=%d, want 1/0", line, rejected, enrolled)
+			}
+		default:
+			t.Fatalf("ENROLL %q: ack must be enrolled or error, got %q", line, ack.Ack)
 		}
 	})
 }

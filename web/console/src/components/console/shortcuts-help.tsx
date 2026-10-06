@@ -4,12 +4,14 @@ import { useId, type ReactNode } from 'react'
 import { Keyboard, X } from '@phosphor-icons/react'
 import { SHORTCUT_PREFIX } from '@/lib/keyboard-nav'
 import { ConsoleDialog } from './console-dialog'
+import { useI18n } from './i18n-provider'
 
 export type ShortcutHelpRow = { key: string; label: string; group: string }
 
 export function ShortcutsHelp({ open, rows, onClose }: {
   open: boolean; rows: ShortcutHelpRow[]; onClose: () => void
 }) {
+  const { dict } = useI18n()
   const id = useId()
   const groups: { group: string; rows: ShortcutHelpRow[] }[] = []
   for (const row of rows) {
@@ -24,18 +26,18 @@ export function ShortcutsHelp({ open, rows, onClose }: {
         <div className="flex items-center justify-between gap-3">
           <h2 id={`${id}-title`} className="flex items-center gap-2 text-sm font-medium">
             <Keyboard size={16} aria-hidden className="text-primary" />
-            Atajos de teclado
+            {dict.shortcuts.title}
           </h2>
-          <button type="button" onClick={onClose} aria-label="Cerrar la hoja de atajos" className="rounded-md p-1.5 text-zinc-400 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <button type="button" onClick={onClose} aria-label={dict.shortcuts.close} className="rounded-md p-1.5 text-zinc-400 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             <X size={16} aria-hidden />
           </button>
         </div>
 
         <section className="mt-4">
-          <p className="pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Comandos</p>
+          <p className="pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">{dict.shortcuts.commandsHeading}</p>
           <ul className="panel divide-y divide-white/[0.04] rounded-lg px-3 py-1">
             <li className="flex items-center justify-between gap-3 py-2">
-              <span className="text-sm text-zinc-300">Buscar vistas y acciones</span>
+              <span className="text-sm text-zinc-300">{dict.shortcuts.searchViews}</span>
               <KbdPair keys={['Ctrl / ⌘', 'K']} />
             </li>
           </ul>
@@ -56,14 +58,14 @@ export function ShortcutsHelp({ open, rows, onClose }: {
         ))}
 
         <section className="mt-4">
-          <p className="pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Esta hoja</p>
+          <p className="pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">{dict.shortcuts.thisSheet}</p>
           <ul className="panel divide-y divide-white/[0.04] rounded-lg px-3 py-1">
-            <li className="flex items-center justify-between gap-3 py-2"><span className="text-sm text-zinc-300">Abrir o cerrar</span><KbdPair keys={['?']} /></li>
-            <li className="flex items-center justify-between gap-3 py-2"><span className="text-sm text-zinc-300">Cerrar</span><KbdPair keys={['Esc']} /></li>
+            <li className="flex items-center justify-between gap-3 py-2"><span className="text-sm text-zinc-300">{dict.shortcuts.toggleRow}</span><KbdPair keys={['?']} /></li>
+            <li className="flex items-center justify-between gap-3 py-2"><span className="text-sm text-zinc-300">{dict.shortcuts.closeRow}</span><KbdPair keys={['Esc']} /></li>
           </ul>
         </section>
         <p id={`${id}-hint`} className="mt-4 text-xs leading-relaxed text-zinc-400">
-          Los atajos de navegación se ignoran mientras escribes, durante la composición de texto y dentro de menús o ventanas abiertas.
+          {dict.shortcuts.prose}
         </p>
       </div>
     </ConsoleDialog>

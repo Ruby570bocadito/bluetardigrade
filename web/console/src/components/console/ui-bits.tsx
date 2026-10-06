@@ -8,16 +8,17 @@
 import { SEVERITY_STYLE, type Severity } from '@/lib/console-types'
 import { cn } from '@/lib/utils'
 import { SeverityIcon } from '@/components/charts/severity'
+import { Badge } from '@/components/ui/badge'
 
 export function SeverityBadge({ severity, className }: { severity: Severity; className?: string }) {
   const s = SEVERITY_STYLE[severity] ?? SEVERITY_STYLE.low
+  // severity colors are DATA (SEVERITY_STYLE token map), not a badge
+  // variant: they ride on className over the shared shape
   return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-medium leading-none ${s.text} ${s.bg} ${s.border} ${className ?? ''}`}
-    >
+    <Badge className={`${s.text} ${s.bg} ${s.border} ${className ?? ''}`}>
       <SeverityIcon severity={SEVERITY_STYLE[severity] ? severity : 'low'} size={11} />
       {s.label}
-    </span>
+    </Badge>
   )
 }
 
@@ -38,14 +39,9 @@ export function StatTile({ icon: Icon, label, value, hint, warn = false }: { ico
 /** Mono chip for ids, techniques, tags, event types. */
 export function MonoTag({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <span
-      className={cn(
-        'inline-flex max-w-full items-center truncate rounded-md border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] leading-none text-zinc-400',
-        className,
-      )}
-    >
+    <Badge mono variant="neutral" title={typeof children === 'string' ? children : undefined} className={className}>
       {children}
-    </span>
+    </Badge>
   )
 }
 

@@ -1,40 +1,45 @@
-# Plan de ronda — Seguridad B (2026-10-05, ronda 2)
+# Plan de ronda — Seguridad B (ronda 18, verificación)
 
-Base: mi rama `carril/seguridad-b` (7 commits de la ronda 1, ya publicados
-en origin, pendientes de que el responsable decida su merge a main).
+- **Instancia:** Seguridad B — décima reapertura fuera de cuota.
+- **Base al abrir:** mi punta `70c7637` (ronda 17, PUBLICADA y
+  verificada).
+- **Delta que reabre (dos carriles a la vez):**
+  - **IMP-A `60a63a3..48b81f8`** — `f2e6378` aterriza EL FIX DEL
+    HOT-SWAP AD-6 (MEDIA, hallazgo de SEG-A ronda 13/16) que su
+    plan `60a63a3` anunció: swap síncrono dentro de la escritura
+    serializada del PUT, prueba de regresión determinista 8-PUT
+    con -race fail-before/pass-after; `48b81f8` lo documenta y
+    cierra la MEDIA en su carril. **Esta ronda ejecuta MI plan de
+    verificación registrado en ronda 17 §4.**
+  - **PUL-B `744d46a..e2bd3aa`** — publicación de sus rondas 9-15:
+    restauración de TABs del Makefile (lo que 63fa077 aplanó) +
+    adopción `--ignore-scripts` en los 6 installs npm de consola
+    (convergencia SEG-A) + `--no-save --no-package-lock` (evita
+    la mutación del manifest exacto), targets nuevos
+    `console-a11y`/`console-lighthouse`. Toca mi registro de
+    convergencia del Makefile → preflight con tips frescos.
+  - Sin mover: IMP-B `2c47271`, PUL-A `83e3a66`, SEG-A `4d23194`,
+    main `35cd866`.
 
-Tareas de esta ronda:
+Tareas:
 
-- **SEC-5 (bug propio de la ronda 1)**: el trigger `push` de
-  `.github/workflows/deps-audit.yml` quedó escrito como
-  `branches: ain]` — filtra a una rama inexistente y el job no se ha
-  disparado nunca (0 runs en `carril/seguridad-b`, verificado por API).
-  Lo arreglo según la intención documentada en la cabecera (push sin
-  filtro) y añado un guard estático (`scripts/dev-tests/check_workflows.py`,
-  con `--self-test`) que parsea los YAML de workflows y rechaza filtros
-  de rama malformados: es exactamente la clase de error que se coló y
-  no tiene test que lo cace. Guard en `make ci` y en el propio workflow.
-  Verificación de extremo a extremo: tras el push, el job debe aparecer
-  (y lo disparo también con `workflow_dispatch`).
-- **SEC-1/SEC-2/SEC-4: auditoría del protocolo ENROLL** (ítem 2 del
-  roadmap: desbloqueado, el TODO declara el alta de equipos «hecha» en
-  `feat/enrollment`). Auditoría de lectura del código publicado: emisión
-  y almacenamiento de tokens, canje único y canje en vuelo, exclusiva
-  TLS/servidor local, suplantación por nombre duplicado, estado pendiente
-  frente a ingesta, aprobación/revocación y fuga de secretos en
-  respuestas y logs. Resultado: veredictos con SHA del commit auditado
-  en `docs/MODELO-DE-AMENAZAS.md` §2 y hallazgos asignados a su carril
-  en el informe (no toco su código).
-- **Diagnóstico del CI rojo en `main` (5e168ba)**, para los carriles
-  dueños: (a) `smoke_file_forensics.py:115` con `rules_count == 75`
-  stale tras el pack de 39 reglas (7c2b7e8) — ya reclamado por el PR
-  #16, solo verifico su fix cuando aterrice; (b) 12 tests de
-  `internal/respond`/persistencia caen en el runner Windows con patrón
-  ~3s (esperas que expiran) — evidencia y hipótesis en el informe.
-
-Ficheros que voy a tocar: `.github/workflows/deps-audit.yml`,
-`scripts/dev-tests/check_workflows.py` (nuevo), `Makefile`,
-`docs/MODELO-DE-AMENAZAS.md` (§2), `docs/agentes/04-seguridad/*`,
-`changelog.d/*`. No toco: `scripts/dev-tests/smoke_file_forensics.py`
-(PR #16), código de `feat/enrollment` ni `feat/sensor-service`, ficheros
-compartidos vetados.
+1. **Verificación del fix hot-swap AD-6** contra los tres puntos
+   de mi plan r17 §4: (a) orden de publicación == orden de commit
+   (el swap debe correr DENTRO del `adWriteMu` del PUT),
+   (b) bookkeeping `current` del engine tocado por un único
+   llamador, (c) prueba -race con fail-before determinista y
+   pass-after. Cotejar además la semántica de respuesta
+   (`reload_pending` false resuelto, `last_reload_*`) y que
+   OPERATIONS.md + openapi.yaml no mientan.
+2. **Revisión del delta Makefile de PUL-B**: TABs, flags npm y
+   targets nuevos; actualizar la receta de convergencia de mi
+   registro (¿desaparece el caso silencioso l.86-96?).
+3. **Pre-flight desde mi punta contra las seis refs con tips
+   frescos** (IMP-A `48b81f8`, PUL-B `e2bd3aa`): guardia de tabs
+   sobre el Makefile fusionado de cada par CLEAN, recuento
+   `--ignore-scripts`, y recetas de conflicto actualizadas.
+4. **Informe + roadmap**; actualizar el estado de la puerta
+   AD-6 (verificada por SEG-B → recomendar cierre, dueño SEG-A).
+   Cierre: push con la credencial del responsable (solo memoria,
+   salida redactada), `ls-remote`, worklog. **Recordatorio:
+   revocar el token al cerrar.**

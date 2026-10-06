@@ -87,6 +87,7 @@ type Manager struct {
 	colored bool
 	onAlert func(Alert)                  // optional observer (local API, SIEM taps)
 	prepare func(*Alert, []rules.Action) // optional rule-action executor
+	latFn   func(time.Duration)          // optional ingest→alert latency observer (SET-3)
 }
 
 // dedupEntry is one remembered key and the instant it was stored.
@@ -162,6 +163,16 @@ func (m *Manager) SetPreparer(prepare func(*Alert, []rules.Action)) {
 	m.mu.Unlock()
 }
 
+// SetLatencyObserver wires the ingest→alert latency observer (SET-3):
+// called once per RAISED alert (deduplicated hits observe nothing)
+// with the delta between the event's sensor-side timestamp and the
+// raise. Nil (the default) keeps Raise allocation-free.
+func (m *Manager) SetLatencyObserver(fn func(time.Duration)) {
+	m.mu.Lock()
+	m.latFn = fn
+	m.mu.Unlock()
+}
+
 // expireLocked forgets every key whose TTL has elapsed. The queue is
 // ordered by insertion time, so the loop stops at the first live
 // entry: the cost is proportional to the keys that actually expired,
@@ -218,6 +229,7 @@ func (m *Manager) Raise(ev *model.Event, hit rules.Hit) {
 	// even when the current wiring happens to call SetPreparer before
 	// the ingest starts (races are about contracts, not luck).
 	prepare := m.prepare
+	latFn := m.latFn
 	m.mu.Unlock()
 
 	a := buildAlert(ev, hit)
@@ -231,6 +243,16 @@ func (m *Manager) Raise(ev *model.Event, hit rules.Hit) {
 	m.writeJSON(a)
 	if m.onAlert != nil {
 		m.onAlert(a)
+	}
+	// Ingest→alert latency (SET-3): the elapsed time between the
+	// event's own sensor-side timestamp and the raise. Negative deltas
+	// (a clock far ahead on the sensor) are skipped, never clamped:
+	// clamping would fabricate zero-latency alerts and flatter the
+	// metric. Deduplicated hits raise nothing and observe nothing.
+	if latFn != nil && !ev.Timestamp.IsZero() {
+		if d := time.Since(ev.Timestamp); d >= 0 {
+			latFn(d)
+		}
 	}
 }
 

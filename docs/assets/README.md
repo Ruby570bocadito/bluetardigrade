@@ -10,10 +10,13 @@ remains regenerable.
 | `logo.svg`                  | source  | bluetardigrade mark (README header, console sidebar and favicon) |
 | `diagram_arquitectura.png`  | output  | four-layer architecture diagram (linked from the root README) |
 | `diagram_tracer.png`        | output  | tracer-bullet pipeline: devsensor -> engine -> alert |
-| `console-panel.png`        | output  | operations panel: triage hero, stat tiles, activity, severity, timeline (root README hero) |
+| `console-panel.png`        | output  | operations panel: triage hero, stat tiles, activity, severity, timeline (root README hero, dark theme) |
+| `console-panel-light.png`  | output  | the same operations panel in the light theme (root README hero) |
+| `console-estado.png`       | output  | platform health: engine runtime counters, ingest, store and delivery |
 | `console-flujo.png`         | output  | live telemetry: ingest rate, event-type mix and the feed table |
 | `console-alertas.png`       | output  | alert queue with the severity strip and a selected alert's detail |
-| `console-reglas.png`        | output  | rule catalogue with ATT&CK, severity and event-type coverage |
+| `console-reglas.png`        | output  | rule catalogue with ATT&CK, severity and event-type coverage (dark theme) |
+| `console-reglas-light.png`  | output  | the detection tabs in the light theme |
 | `console-seleccion.png`     | output  | alert queue with several alerts selected and the bulk action bar |
 | `console-incidentes.png`    | output  | incident detail: status, owner, alerts, incident graph and timeline |
 | `console-equipos.png`       | output  | host page: risk, live process tree, entity graph, timeline, destinations |
@@ -23,7 +26,7 @@ remains regenerable.
 | `console-respuesta-activa.png` | output | active response: armed surface, audit decisions, denial codes and attempts |
 | `src/diagram_arquitectura.html` | source | self-contained HTML/CSS source of the architecture diagram (1060px canvas) |
 | `src/diagram_tracer.html`   | source  | self-contained HTML/CSS source of the pipeline above (900px canvas) |
-| `src/capture_console.mjs`   | source  | Playwright script that captures every `console-*.png` from a running console (lab recipe in its header) |
+| `src/capture_console.mjs`   | source  | Playwright script that captures every `console-*.png`: real-engine lab by default, `CONSOLE_CAPTURE_FIXTURES=1` for contract-true fixtures without a Go toolchain (lab recipe in its header) |
 
 ## Regenerating a diagram
 
@@ -48,6 +51,12 @@ remains regenerable.
    (`bun run build && bun run start` with `ENGINE_API_URL` and
    `SF_API_TOKEN`); a production build renders cleaner screenshots.
 3. Run `CONSOLE_URL=http://127.0.0.1:3000 node docs/assets/src/capture_console.mjs`.
+
+Without a Go toolchain, `CONSOLE_CAPTURE_FIXTURES=1 CONSOLE_URL=... node
+docs/assets/src/capture_console.mjs` captures the same set against the
+contract-true engine fixtures the browser regression uses (LAB-* hosts,
+`source=simulate`): still no fabricated product data, the console labels
+the window as demo either way.
 
 The scenario's events carry `source=simulate`, so the header shows the
 **demo** label in every capture: the console never hides that the

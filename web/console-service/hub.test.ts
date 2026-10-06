@@ -373,6 +373,22 @@ describe('hub HTTP surface (engine down)', () => {
     socket.disconnect()
   }, 10000)
 
+  // The fallback copy (id not in the hub ring) gets the same field-by-field
+  // cleaning as the incident flow: unknown fields a hostile client appends
+  // must never reach the provider prompt. Before the cleaning this prompt
+  // carried the injected field verbatim.
+  test('analyst:ask cleans the client fallback copy before it reaches the prompt', async () => {
+    const socket = connect(base)
+    await waitEvent(socket, 'connect')
+    socket.emit('analyst:ask', {
+      alert: { ...validAlert, id: 'rotated-1', injected: 'CAMPO FORJADO POR EL CLIENTE', summary: { text: 'no soy un string' } },
+    })
+    const done = await waitEvent<{ text: string }>(socket, 'analyst:done', 8000)
+    expect(done.text).toBe('analisis de prueba')
+    expect(llmLastPrompt).not.toContain('CAMPO FORJADO POR EL CLIENTE')
+    socket.disconnect()
+  }, 10000)
+
   test('a single socket cannot open more analyst calls than the cap', async () => {
     const socket = connect(base)
     await waitEvent(socket, 'connect')

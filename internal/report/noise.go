@@ -16,12 +16,14 @@ import (
 // "add to known software" / "create suppression" buttons stay console
 // work (and the suppression write surface already exists).
 //
-// The FP percentage the TODO asks for rides on the triage decision
-// field the lifecycle store does not have yet (Implementation B's
-// request to IMP-A, tracked for its own round): today the report
-// ships the honest proxy — the share of each rule's alerts whose
-// CURRENT status is closed/acknowledged — named exactly that
-// (closed_pct, acknowledged_pct).
+// The FP percentage the TODO asks for rides on the triage DECISION
+// field: since the lifecycle store carries `decision` (false_positive
+// | authorized_activity | confirmed_incident), the rule aggregate ships
+// the real measure — false_positive_pct, the share of each rule's
+// alerts whose recorded decision is false_positive. The older proxies
+// (closed_pct, acknowledged_pct — the share whose CURRENT status is
+// closed/acknowledged) stay: they describe workflow progress, and
+// existing consumers still read them.
 type Noise struct {
 	Kind        string    `json:"kind"`         // "noise"
 	GeneratedAt time.Time `json:"generated_at"` // UTC
@@ -38,11 +40,15 @@ type Noise struct {
 // Scanned is the honesty block: how many records fed the aggregates
 // and whether the scan hit its cap before exhausting the window (a
 // capped scan sees the NEWEST slice of the window, never a biased
-// sample of it).
+// sample of it). KnownSoftwareEvents counts the process boots the
+// known-software list (§2.2) removed from the process aggregate — the
+// events stay stored and searchable; the noise report just stops
+// treating them as noise, and the count keeps the arithmetic open.
 type Scanned struct {
-	Events    int  `json:"events"`
-	Alerts    int  `json:"alerts"`
-	Truncated bool `json:"truncated"`
+	Events              int  `json:"events"`
+	Alerts              int  `json:"alerts"`
+	Truncated           bool `json:"truncated"`
+	KnownSoftwareEvents int  `json:"known_software_events"`
 }
 
 // ProcessNoise is one aggregated process boot signature. The key is
@@ -70,15 +76,18 @@ type DomainNoise struct {
 	LastSeen      string `json:"last_seen"`
 }
 
-// RuleNoise is one aggregated rule with its triage proxy percentages.
+// RuleNoise is one aggregated rule with its triage percentages:
+// false_positive_pct is the REAL false-positive rate (recorded
+// decisions); acknowledged/closed are the workflow-progress proxies.
 type RuleNoise struct {
-	RuleID          string         `json:"rule_id"`
-	RuleName        string         `json:"rule_name"`
-	Count           int            `json:"count"`
-	BySeverity      map[string]int `json:"by_severity,omitempty"`
-	DistinctHosts   int            `json:"distinct_hosts"`
-	AcknowledgedPct float64        `json:"acknowledged_pct"`
-	ClosedPct       float64        `json:"closed_pct"`
+	RuleID           string         `json:"rule_id"`
+	RuleName         string         `json:"rule_name"`
+	Count            int            `json:"count"`
+	BySeverity       map[string]int `json:"by_severity,omitempty"`
+	DistinctHosts    int            `json:"distinct_hosts"`
+	FalsePositivePct float64        `json:"false_positive_pct"`
+	AcknowledgedPct  float64        `json:"acknowledged_pct"`
+	ClosedPct        float64        `json:"closed_pct"`
 }
 
 const (
@@ -156,6 +165,7 @@ func BuildNoise(in NoiseInputs, w Window, generated time.Time) Noise {
 
 	procs := map[string]*procAgg{}
 	doms := map[string]*domAgg{}
+	knownEvents := 0
 
 	for _, ev := range in.Events {
 		if ev.Timestamp.Before(w.From) || ev.Timestamp.After(w.Until) {
@@ -163,6 +173,14 @@ func BuildNoise(in NoiseInputs, w Window, generated time.Time) Noise {
 		}
 		switch {
 		case ev.Type == model.TypeProcessCreate && ev.Process != nil:
+			// §2.2: known software disappears from the noise report —
+			// that is its whole purpose — while the events remain
+			// stored and searchable in the flow. The honesty counter
+			// keeps the disappearance explainable.
+			if ev.Enrichment["known_software"] != "" {
+				knownEvents++
+				continue
+			}
 			key := strings.ToLower(ev.Process.Image)
 			if key == "" {
 				key = strings.ToLower(ev.Process.Name)
@@ -242,9 +260,13 @@ func BuildNoise(in NoiseInputs, w Window, generated time.Time) Noise {
 		case "closed":
 			r.wire.ClosedPct++
 		}
+		if a.Decision == "false_positive" {
+			r.wire.FalsePositivePct++
+		}
 	}
 
 	n.Processes = make([]ProcessNoise, 0, len(procs))
+	n.Scanned.KnownSoftwareEvents = knownEvents
 	for key, a := range procs {
 		n.Processes = append(n.Processes, ProcessNoise{
 			Image:         key,
@@ -270,6 +292,7 @@ func BuildNoise(in NoiseInputs, w Window, generated time.Time) Noise {
 	n.Rules = make([]RuleNoise, 0, len(rules))
 	for _, r := range rules {
 		if r.wire.Count > 0 {
+			r.wire.FalsePositivePct = round1(r.wire.FalsePositivePct * 100 / float64(r.wire.Count))
 			r.wire.AcknowledgedPct = round1(r.wire.AcknowledgedPct * 100 / float64(r.wire.Count))
 			r.wire.ClosedPct = round1(r.wire.ClosedPct * 100 / float64(r.wire.Count))
 		}

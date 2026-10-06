@@ -1,23 +1,31 @@
 import type { ConsoleView } from '@/components/console/dashboard'
 import { shortcutHintFor } from './keyboard-nav'
+import { DICTS, type Dict } from './i18n'
 
-export const CONSOLE_DESTINATIONS: {
-  id: ConsoleView; label: string; group: string; description: string; keywords: string
-}[] = [
-  { id: 'panel', label: 'Panel', group: 'Operación', description: 'Triaje pendiente, actividad y salud del motor', keywords: 'dashboard inicio métricas riesgo' },
-  { id: 'estado', label: 'Estado', group: 'Operación', description: 'Motor, ingesta, colas, almacén y entrega externa en un vistazo', keywords: 'salud health plataforma estado motor ingesta cola almacen version sink siem' },
-  { id: 'flujo', label: 'Flujo en vivo', group: 'Operación', description: 'Buscar telemetría y examinar eventos', keywords: 'eventos sensor procesos live feed' },
-  { id: 'alertas', label: 'Alertas', group: 'Operación', description: 'Investigar, reconocer y cerrar detecciones', keywords: 'histórico historial triage triaje cola evidencia' },
-  { id: 'incidentes', label: 'Incidentes', group: 'Operación', description: 'Casos que agrupan alertas, con estado, responsable y línea de tiempo', keywords: 'casos case incident investigacion' },
-  { id: 'equipos', label: 'Equipos', group: 'Operación', description: 'Ficha de cada equipo: riesgo, alertas, procesos y conexiones', keywords: 'hosts host maquinas endpoints ficha' },
-  { id: 'reglas', label: 'Reglas', group: 'Detección', description: 'Catálogo de reglas y condiciones cargadas', keywords: 'rules yaml mitre detecciones' },
-  { id: 'cadenas', label: 'Cadenas', group: 'Detección', description: 'Secuencias y etapas de correlación', keywords: 'kill chain sequences correlador' },
-  { id: 'inteligencia', label: 'Inteligencia', group: 'Detección', description: 'Listas de indicadores locales y línea base de procesos por equipo', keywords: 'intel ioc indicadores listas hash dominio ip baseline nuevo proceso amenazas' },
-  { id: 'supresiones', label: 'Supresiones', group: 'Detección', description: 'Excepciones del operador y expiraciones', keywords: 'allowlist ruido falsos positivos' },
-  { id: 'probador', label: 'Probador', group: 'Detección', description: 'Comprobar qué detecta un evento, sin generar alertas', keywords: 'test tester probar evento simular' },
-  { id: 'respuesta', label: 'Respuesta activa', group: 'Respuesta', description: 'Consultar estado y auditoría de respuesta', keywords: 'respond c3 audit kill proceso' },
-  { id: 'analista', label: 'Analista IA', group: 'Asistencia', description: 'Asistencia para explicar e investigar alertas', keywords: 'ai chat modelo inteligencia' },
+// The operator command catalogue is built FROM the i18n dictionary
+// (IDEA-10): one source of truth per language, stable command ids across
+// languages (`view:<id>`, refresh/noc/onboarding/help) so palette state,
+// deep links and tests never depend on the active language. The default
+// catalogue stays Spanish (the product default the batteries pin);
+// localized catalogues are built per render with buildConsoleCommands().
+
+const DESTINATION_IDS: ConsoleView[] = [
+  'panel', 'estado', 'flujo', 'alertas', 'incidentes', 'equipos', 'directorio', 'informes',
+  'reglas', 'cadenas', 'inteligencia', 'supresiones', 'probador',
+  'ruido', 'simulacion',
+  'respuesta', 'analista', 'ajustes',
 ]
+
+export type DestinationText = { id: ConsoleView; label: string; group: string; description: string; keywords: string }
+
+/** Navigation destinations in the given language (nav order is fixed). */
+export function buildDestinations(dict: Dict): DestinationText[] {
+  return DESTINATION_IDS.map((id) => ({ id, ...dict.nav[id] }))
+}
+
+/** The Spanish catalogue, unchanged from before i18n (tests, fixtures and
+ * the server render all consume it as the default). */
+export const CONSOLE_DESTINATIONS: DestinationText[] = buildDestinations(DICTS.es)
 
 type CommandText = { id: string; label: string; group: string; description: string; keywords: string; shortcut?: string }
 export type ConsoleCommand = CommandText & (
@@ -25,30 +33,40 @@ export type ConsoleCommand = CommandText & (
   | { kind: 'refresh' }
   | { kind: 'help' }
   | { kind: 'noc' }
+  | { kind: 'onboarding' }
 )
 
-export const CONSOLE_COMMANDS: ConsoleCommand[] = [
-  ...CONSOLE_DESTINATIONS.map((item): ConsoleCommand => ({
-    ...item, id: `view:${item.id}`, kind: 'navigate', view: item.id,
-    shortcut: shortcutHintFor(item.id) ?? undefined,
-  })),
-  { id: 'refresh', kind: 'refresh', label: 'Actualizar datos del motor', group: 'Acciones', description: 'Volver a consultar el estado y los búferes actuales', keywords: 'refresh recargar reconectar sincronizar recuperar' },
-  { id: 'noc', kind: 'noc', label: 'Modo NOC', group: 'Acciones', description: 'Pantalla completa rotativa para un monitor de sala', keywords: 'pantalla completa sala monitor wall pared' },
-  { id: 'help', kind: 'help', label: 'Ayuda de teclado', group: 'Acciones', description: 'Consultar los atajos de la consola', keywords: 'atajos shortcuts ayuda teclas', shortcut: '?' },
-]
+/** The full palette catalogue (navigation + standalone commands) in the
+ * given language. Ids and kinds are language-independent. */
+export function buildConsoleCommands(dict: Dict): ConsoleCommand[] {
+  return [
+    ...buildDestinations(dict).map((item): ConsoleCommand => ({
+      ...item, id: `view:${item.id}`, kind: 'navigate', view: item.id,
+      shortcut: shortcutHintFor(item.id) ?? undefined,
+    })),
+    { id: 'refresh', kind: 'refresh', ...dict.commands.refresh, group: dict.commands.acciones.group },
+    { id: 'noc', kind: 'noc', ...dict.commands.noc, group: dict.commands.acciones.group },
+    { id: 'onboarding', kind: 'onboarding', ...dict.commands.onboarding, group: dict.commands.acciones.group },
+    { id: 'help', kind: 'help', ...dict.commands.help, group: dict.commands.acciones.group, shortcut: '?' },
+  ]
+}
+
+export const CONSOLE_COMMANDS: ConsoleCommand[] = buildConsoleCommands(DICTS.es)
 
 function normalize(text: string): string {
   return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
 }
 
 /**
- * Search the command catalogue; never sends operator input to the engine.
+ * Search a command catalogue; never sends operator input to the engine.
  * Commands whose name contains every word come first (stable otherwise),
  * so "noc" finds Modo NOC before a description that merely contains it.
+ * The catalogue is a parameter (default: the Spanish one) so the palette
+ * searches in the operator's active language.
  */
-export function findConsoleCommands(query: string): ConsoleCommand[] {
+export function findConsoleCommands(query: string, catalogue: ConsoleCommand[] = CONSOLE_COMMANDS): ConsoleCommand[] {
   const words = normalize(query).trim().split(/\s+/).filter(Boolean)
-  const matches = CONSOLE_COMMANDS.filter((command) => {
+  const matches = catalogue.filter((command) => {
     const text = normalize(`${command.label} ${command.group} ${command.description} ${command.keywords}`)
     return words.every((word) => text.includes(word))
   })

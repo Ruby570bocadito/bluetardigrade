@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { CONSOLE_COMMANDS, CONSOLE_DESTINATIONS, findConsoleCommands } from './console-commands'
+import { CONSOLE_COMMANDS, CONSOLE_DESTINATIONS, buildConsoleCommands, buildDestinations, findConsoleCommands } from './console-commands'
+import { DICTS } from './i18n'
 import { CONSOLE_VIEWS } from './url-state'
 import { isKeyboardScope, isPaletteToggleKey, shortcutHintFor } from './keyboard-nav'
 
@@ -15,7 +16,9 @@ describe('operator command search', () => {
     expect(findConsoleCommands('  \t ')).toEqual(CONSOLE_COMMANDS)
   })
   test('search ignores accents, case and spacing', () => {
-    expect(findConsoleCommands('  DETECCION  ReGlAs ').map((command) => command.id)).toEqual(['view:reglas'])
+    // the label match ranks first; the Ruido view also lands here because
+    // it genuinely lives in the Detección group and its description names reglas
+    expect(findConsoleCommands('  DETECCION  ReGlAs ').map((command) => command.id)[0]).toBe('view:reglas')
     expect(findConsoleCommands('historico').map((command) => command.id)).toEqual(['view:alertas'])
   })
   test('descriptions and operator synonyms are searchable with every word required', () => {
@@ -33,6 +36,28 @@ describe('operator command search', () => {
   })
 })
 
+describe('localized command catalogue (IDEA-10)', () => {
+  test('command ids and kinds are language-independent', () => {
+    const en = buildConsoleCommands(DICTS.en)
+    expect(en.map((command) => `${command.id}:${command.kind}`)).toEqual(
+      CONSOLE_COMMANDS.map((command) => `${command.id}:${command.kind}`),
+    )
+    expect(en.map((command) => command.shortcut ?? '')).toEqual(CONSOLE_COMMANDS.map((command) => command.shortcut ?? ''))
+  })
+
+  test('the english catalogue is actually english and searchable in english', () => {
+    const en = buildConsoleCommands(DICTS.en)
+    expect(en.find((command) => command.id === 'view:equipos')?.label).toBe('Hosts')
+    expect(findConsoleCommands('hosts', en).map((command) => command.id)[0]).toBe('view:equipos')
+    expect(findConsoleCommands('refresh engine', en).map((command) => command.id)[0]).toBe('refresh')
+  })
+
+  test('spanish keywords keep working on both catalogues (deliberate recall)', () => {
+    expect(findConsoleCommands('equipos')[0].id).toBe('view:equipos')
+    expect(findConsoleCommands('equipos', buildConsoleCommands(DICTS.en))[0].id).toBe('view:equipos')
+  })
+})
+
 describe('palette activation', () => {
   const base = { key: 'k', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false }
   test('accepts Ctrl+K and Meta+K', () => {
@@ -45,5 +70,19 @@ describe('palette activation', () => {
   test('keyboard scopes tolerate SSR and non-element targets', () => {
     expect(isKeyboardScope(null)).toBe(false)
     expect(isKeyboardScope({} as EventTarget)).toBe(false)
+  })
+})
+
+describe('navigation groups', () => {
+  test('every group is one contiguous block in each language (no repeated sidebar headings)', () => {
+    for (const [lang, dict] of Object.entries(DICTS)) {
+      const groups = buildDestinations(dict).map((d) => d.group)
+      const seen = new Set<string>()
+      groups.forEach((g, i) => {
+        if (i > 0 && groups[i - 1] === g) return
+        expect(`${lang}: ${seen.has(g) ? 'repeated' : 'first'} ${g}`).toBe(`${lang}: first ${g}`)
+        seen.add(g)
+      })
+    }
   })
 })

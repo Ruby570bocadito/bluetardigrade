@@ -474,7 +474,7 @@ const MAX_BUNDLE_EVENT_CHARS = 768
 const MAX_BUNDLE_META_CHARS = 2048
 
 type ValidationFailure = { ok: false; error: string }
-type ValidationSuccess = { ok: true; value: IncidentPayload }
+type ValidationSuccess<T> = { ok: true; value: T }
 
 function str(value: unknown, max: number): string | undefined {
   if (value === undefined) return undefined
@@ -484,10 +484,60 @@ function str(value: unknown, max: number): string | undefined {
   return trimmed.slice(0, max)
 }
 
+/** Field-by-field cleaning of one client alert object: only known
+ * fields survive, strings are trimmed and clamped, arrays are filtered
+ * and capped. Shared by the incident flow and the single-alert
+ * fallback, so a hostile or bloated client copy cannot buy prompt size
+ * or smuggle extra fields on either path. */
+function cleanAlertObject(a: Record<string, unknown>): SfAlert {
+  const clean: SfAlert = {
+    id: str(a.id, 128) ?? '',
+    timestamp: str(a.timestamp, 64) ?? '',
+    rule_id: typeof a.rule_id === 'string' ? a.rule_id.trim() : '',
+    rule_name: str(a.rule_name, 256) ?? (typeof a.rule_id === 'string' ? a.rule_id.trim() : ''),
+    severity: (['critical', 'high', 'medium', 'low', 'info'].includes(a.severity as string) ? a.severity : 'medium') as SfAlert['severity'],
+    host: str(a.host, 200) ?? '(sin equipo)',
+    event_id: str(a.event_id, 128) ?? '',
+    event_type: str(a.event_type, 64) ?? '',
+    summary: str(a.summary, 2000) ?? '',
+    matched_on: Array.isArray(a.matched_on) ? a.matched_on.filter((m): m is string => typeof m === 'string').slice(0, 16) : [],
+    tags: Array.isArray(a.tags) ? a.tags.filter((t): t is string => typeof t === 'string').slice(0, 24) : [],
+  }
+  const user = str(a.user, 200)
+  if (user) clean.user = user
+  const attributes = a.attributes
+  if (typeof attributes === 'object' && attributes !== null && !Array.isArray(attributes)) {
+    clean.attributes = Object.fromEntries(
+      Object.entries(attributes as Record<string, unknown>)
+        .filter(([, v]) => typeof v === 'string')
+        .slice(0, 24)
+        .map(([k, v]) => [k.slice(0, 64), String(v).slice(0, 512)]),
+    )
+  }
+  return clean
+}
+
+/** Field-by-field validation of the single-alert analyst request's
+ * alert: the same cleaning the incident flow applies, for the client
+ * copy the hub uses when the alert already rotated out of its ring
+ * (the hub's engine-fed copy stays authoritative when present).
+ * Errors are operator-ready Spanish sentences. */
+export function validateAnalystAlert(item: unknown): ValidationFailure | ValidationSuccess<SfAlert> {
+  if (typeof item !== 'object' || item === null || Array.isArray(item)) {
+    return { ok: false, error: 'Alerta invalida: falta rule_id' }
+  }
+  const a = item as Record<string, unknown>
+  const ruleId = typeof a.rule_id === 'string' ? a.rule_id.trim() : ''
+  if (ruleId === '') {
+    return { ok: false, error: 'Alerta invalida: falta rule_id' }
+  }
+  return { ok: true, value: cleanAlertObject(a) }
+}
+
 /** Field-by-field validation of the socket payload. Returns a clean
  * IncidentPayload carrying only known fields: unknown extras never
  * reach the prompt. Errors are operator-ready Spanish sentences. */
-export function validateIncidentPayload(payload: unknown): ValidationFailure | ValidationSuccess {
+export function validateIncidentPayload(payload: unknown): ValidationFailure | ValidationSuccess<IncidentPayload> {
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
     return { ok: false, error: 'Peticion invalida: se esperaba un objeto con el incidente o la seleccion a analizar' }
   }
@@ -510,31 +560,7 @@ export function validateIncidentPayload(payload: unknown): ValidationFailure | V
     if (ruleId === '') {
       return { ok: false, error: `Alerta invalida en la posicion ${i + 1}: falta rule_id` }
     }
-    const clean: SfAlert = {
-      id: str(a.id, 128) ?? '',
-      timestamp: str(a.timestamp, 64) ?? '',
-      rule_id: ruleId,
-      rule_name: str(a.rule_name, 256) ?? ruleId,
-      severity: (['critical', 'high', 'medium', 'low', 'info'].includes(a.severity as string) ? a.severity : 'medium') as SfAlert['severity'],
-      host: str(a.host, 200) ?? '(sin equipo)',
-      event_id: str(a.event_id, 128) ?? '',
-      event_type: str(a.event_type, 64) ?? '',
-      summary: str(a.summary, 2000) ?? '',
-      matched_on: Array.isArray(a.matched_on) ? a.matched_on.filter((m): m is string => typeof m === 'string').slice(0, 16) : [],
-      tags: Array.isArray(a.tags) ? a.tags.filter((t): t is string => typeof t === 'string').slice(0, 24) : [],
-    }
-    const user = str(a.user, 200)
-    if (user) clean.user = user
-    const attributes = a.attributes
-    if (typeof attributes === 'object' && attributes !== null && !Array.isArray(attributes)) {
-      clean.attributes = Object.fromEntries(
-        Object.entries(attributes as Record<string, unknown>)
-          .filter(([, v]) => typeof v === 'string')
-          .slice(0, 24)
-          .map(([k, v]) => [k.slice(0, 64), String(v).slice(0, 512)]),
-      )
-    }
-    alerts.push(clean)
+    alerts.push(cleanAlertObject(a))
   }
 
   const out: IncidentPayload = { source: raw.source === 'selection' ? 'selection' : 'incident', alerts }

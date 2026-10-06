@@ -391,7 +391,7 @@ func TestStatesCountsInFlight(t *testing.T) {
 	}
 }
 
-// ---- load-time hardening (ronda 2026-09-30) ----------------------------
+// ---- load-time hardening ----------------------------------------------
 
 // TestLoadRejectsOversizedFile: os.ReadFile has no bound, so the size
 // check must fire BEFORE the read — a multi-gigabyte sequence file is

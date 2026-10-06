@@ -26,6 +26,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"sync"
 	"time"
@@ -74,6 +75,13 @@ var ErrRunning = errors.New("a scenario run is already in progress")
 
 // ErrNotArmed is answered as 501 by the API layer.
 var ErrNotArmed = errors.New("scenario validation is not armed")
+
+// ErrUnknownScenario marks a Start request that picked scenario ids the
+// loaded library does not have. It is answered as 400 by the API layer
+// (a client error), so it is a sentinel classified with errors.Is —
+// never by matching the message text, which is a wording change away
+// from silently turning the 400 into a 500.
+var ErrUnknownScenario = errors.New("escenario(s) desconocido(s)")
 
 // ExpectedView is the wire shape of one library expectation.
 type ExpectedView struct {
@@ -332,7 +340,7 @@ func (s *Service) Start(opts StartOptions) (*Run, error) {
 		}
 		if len(unknown) > 0 {
 			sort.Strings(unknown)
-			return nil, fmt.Errorf("escenario(s) desconocido(s): %v", unknown)
+			return nil, fmt.Errorf("%w: %v", ErrUnknownScenario, unknown)
 		}
 		list = filtered
 	}
@@ -572,7 +580,29 @@ func newRunID() string {
 		// The battery cannot mint an id only when the OS entropy
 		// source is broken; fall back to a timestamp-derived id
 		// rather than refusing to run.
-		return fmt.Sprintf("run-%d", time.Now().UnixNano())
+		return fallbackRunID(time.Now().UnixNano())
 	}
 	return "run-" + hex.EncodeToString(b[:])
+}
+
+// runIDPattern is the shape of every run identifier the battery
+// mints: "run-" followed by 16 lowercase hex characters. It is a wire
+// contract, not a convention: GET /api/scenarios/runs/{id} rejects
+// anything else, so the entropy fallback must emit the same shape.
+var runIDPattern = regexp.MustCompile(`^run-[0-9a-f]{16}$`)
+
+// validRunID reports whether id matches the run-id wire shape.
+func validRunID(id string) bool { return runIDPattern.MatchString(id) }
+
+// ValidRunID reports whether id is a well-formed run identifier. The
+// API layer guards its detail route with it, so the contract lives in
+// exactly one place.
+func ValidRunID(id string) bool { return validRunID(id) }
+
+// fallbackRunID derives a pattern-conforming id from the wall clock:
+// UnixNano formatted as exactly 16 lowercase hex digits (a non-negative
+// int64 always is), keeping the id queryable through the detail route
+// even while the entropy source is down.
+func fallbackRunID(n int64) string {
+	return fmt.Sprintf("run-%016x", n)
 }

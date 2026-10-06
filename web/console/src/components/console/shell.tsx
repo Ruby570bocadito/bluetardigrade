@@ -6,9 +6,9 @@ import { describeTelemetrySources } from '@/lib/telemetry-source'
 // on mobile (explicit collapse). The topbar carries the only status dot
 // of the chrome: it reflects the real engine connection state.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { ActivityIcon, Desktop, Flask, FolderOpen, Gauge, Lightning, Prohibit, ShieldCheck, SquaresFour, Warning, ChatsCircle, FlowArrow, Keyboard, ListMagnifyingGlass, MagnifyingGlass, Monitor } from '@phosphor-icons/react'
+import { ActivityIcon, BatteryCharging, ChatsCircle, Desktop, Files, Flask, FlowArrow, FolderOpen, Gauge, Gear, Keyboard, Lightning, ListMagnifyingGlass, MagnifyingGlass, Prohibit, RocketLaunch, ShieldCheck, SpeakerHigh, SquaresFour, TreeStructure, Warning, CornersOut } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { BlurText } from '@/components/reactbits/blur-text'
 import { ShinyText } from '@/components/reactbits/shiny-text'
@@ -32,11 +32,18 @@ import { NotifyMenu } from './critical-notifier'
 import { NocMode } from './noc-mode'
 import { DetectorsMenu } from './detectors-menu'
 import { ReadOnlyBanner, UserChip } from './user-session'
+import { OnboardingWizard } from './onboarding-wizard'
+import { readDismissed, shouldAutoOpen } from '@/lib/onboarding'
 import { ThemeToggle } from './theme-toggle'
-import { CONSOLE_DESTINATIONS, type ConsoleCommand } from '@/lib/console-commands'
+import { ReportsView } from './reports-view'
+import { DirectoryView } from './directory-view'
+import { SettingsView } from './settings-view'
+import { buildConsoleCommands, buildDestinations, type ConsoleCommand } from '@/lib/console-commands'
+import { useI18n } from './i18n-provider'
+import { LanguageToggle } from './language-toggle'
 import { formatUptime, type EngineStats, type SfAlert } from '@/lib/console-types'
 import { buildIncidentAnalysis, type PendingIncidentAnalysis } from '@/lib/incident-analysis'
-import { currentSearch, isDetectionView, pushOperatorState, readOperatorState, writeAlertLens, writeHostToSearch, writeIncidentToSearch, writeRulesToSearch, writeViewToSearch } from '@/lib/url-state'
+import { writeScenarioLensToSearch, writeReportLensToSearch, currentSearch, isDetectionView, pushOperatorState, readOperatorState, writeAlertLens, writeHostToSearch, writeIncidentToSearch, writeRulesToSearch, writeViewToSearch } from '@/lib/url-state'
 import {
   SHORTCUT_ARM_MS,
   SHORTCUT_PREFIX,
@@ -52,40 +59,28 @@ import { useAnalystChannel } from './socket-provider'
 import { writeTriageDestination, type TriageTarget } from '@/lib/operations'
 
 const NAV_ICONS: Record<ConsoleView, React.ElementType> = {
-  panel: SquaresFour, estado: Gauge, flujo: ActivityIcon, alertas: Warning, incidentes: FolderOpen, equipos: Desktop,
+  panel: SquaresFour, estado: Gauge, flujo: ActivityIcon, alertas: Warning, incidentes: FolderOpen, equipos: Desktop, informes: Files,
   reglas: ShieldCheck, cadenas: FlowArrow, inteligencia: ListMagnifyingGlass, supresiones: Prohibit, probador: Flask,
-  respuesta: Lightning, analista: ChatsCircle,
+  ruido: SpeakerHigh, simulacion: BatteryCharging,
+  directorio: TreeStructure,
+  respuesta: Lightning, analista: ChatsCircle, ajustes: Gear,
 }
-const NAV = CONSOLE_DESTINATIONS.map((item) => ({ ...item, icon: NAV_ICONS[item.id] }))
-
-// Sidebar and mobile nav: the detection tabs collapse into one
-// "Detección" entry (the palette and the help sheet keep every view).
-const SIDEBAR = NAV.filter((item) => !isDetectionView(item.id) || item.id === 'reglas').map((item) =>
-  item.id === 'reglas' ? { ...item, label: 'Detección' } : item,
-)
 const isCurrent = (id: ConsoleView, view: ConsoleView) => (id === 'reglas' ? isDetectionView(view) : id === view)
-
-// Help sheet rows: the resolver's map (keys, ordered) zipped with the
-// NAV labels/groups — both single sources of truth; flatMap drops a row
-// only if NAV ever lacks a view (type-impossible today), so the sheet
-// can never advertise an unlabeled binding.
-const HELP_ROWS: ShortcutHelpRow[] = shortcutRows().flatMap((row) => {
-  const nav = NAV.find((item) => item.id === row.view)
-  return nav ? [{ key: row.key, label: nav.label, group: nav.group }] : []
-})
 
 export function ConsoleShell() {
   const { status, stats, alerts, events, suppressions, sequences, rules, endpoint, refresh, refreshing } = useEngine()
   const { status: analystStatus } = useAnalystChannel()
   const { incidents } = useIncidents()
   const openIncidents = incidents.filter((i) => i.status !== 'closed').length
-  const { fleet } = useFleet()
+  const { fleet, enroll, loaded: fleetLoaded } = useFleet()
+  const { dict } = useI18n()
   const silentHosts = fleet?.silent ?? 0
   const [view, setViewState] = useState<ConsoleView>('panel')
   const [helpOpen, setHelpOpen] = useState(false)
   const [nocOpen, setNocOpen] = useState(false)
   const closeNoc = useCallback(() => setNocOpen(false), [])
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [onboardingOpen, setOnboardingOpen] = useState(false)
   const helpOpenRef = useRef(false)
   const paletteOpenRef = useRef(false)
   helpOpenRef.current = helpOpen
@@ -111,6 +106,31 @@ export function ConsoleShell() {
       pushOperatorState((search) => writeViewToSearch(search, next))
     }
   }
+
+  // IDEA-11: offer the first-run assistant once, only on a genuinely
+  // fresh install as the engine reports it (fleet and enrollment loaded,
+  // no inventory hosts, none active) and while this browser has not
+  // recorded a dismissal. The effect runs once that state is first
+  // observable; it never re-opens on later data changes.
+  const offeredRef = useRef(false)
+  useEffect(() => {
+    if (offeredRef.current || status !== 'live' || !fleetLoaded) return
+    offeredRef.current = true
+    const facts = {
+      engineLive: true,
+      loaded: fleetLoaded,
+      enroll: enroll
+        ? {
+            enabled: enroll.enabled,
+            usableTokens: enroll.tokens.filter((t) => t.status === 'active').length,
+            pendingHosts: enroll.hosts.filter((h) => h.state === 'pending').length,
+            activeHosts: enroll.hosts.filter((h) => h.state === 'active').length,
+          }
+        : null,
+      inventoryHosts: fleet ? fleet.hosts.length : null,
+    }
+    if (shouldAutoOpen(facts, readDismissed(window.localStorage))) setOnboardingOpen(true)
+  }, [status, fleetLoaded, enroll, fleet])
   const openTriage = (target: TriageTarget) => {
     pushOperatorState((search) => writeTriageDestination(search, target))
     setViewState('alertas')
@@ -131,10 +151,39 @@ export function ConsoleShell() {
   const openIncident = (id: string) => jump((search) => writeIncidentToSearch(search, id), 'incidentes')
   const openAlert = (id: string) => jump((search) => writeAlertLens(search, 'all', '', 'all', 'live', id), 'alertas')
   const openRule = (id: string) => jump((search) => writeRulesToSearch(search, '', id), 'reglas')
+  // SIM-3 click-through: a validated tactic cell opens the battery filtered by tactic
+  const openScenarioTactic = (slug: string) => jump((search) => writeScenarioLensToSearch(search, slug), 'simulacion')
+  // REP-4 hand-off: the case's own report in the engine catalog
+  const openIncidentReport = (id: string) => jump((search) => writeReportLensToSearch(search, 'incident', '', id), 'informes')
   const hintTitle = (id: ConsoleView): string | undefined => {
     const hint = shortcutHintFor(id)
-    return hint ? `Atajo: ${hint}` : undefined
+    return hint ? dict.badges.atajo(hint) : undefined
   }
+
+  // Navigation in the operator's language (IDEA-10): labels, groups and
+  // descriptions come from the active dictionary; icons and order stay
+  // fixed. The palette catalogue follows the same dictionary.
+  const nav = useMemo(() => buildDestinations(dict).map((item) => ({ ...item, icon: NAV_ICONS[item.id] })), [dict])
+  // Sidebar and mobile nav: the detection tabs collapse into one
+  // "Detección" entry (the palette and the help sheet keep every view).
+  const sidebar = useMemo(
+    () => nav.filter((item) => !isDetectionView(item.id) || item.id === 'reglas').map((item) =>
+      item.id === 'reglas' ? { ...item, label: dict.chrome.detectionTab } : item,
+    ),
+    [nav, dict],
+  )
+  // Help sheet rows: the resolver's map (keys, ordered) zipped with the
+  // nav labels/groups — both single sources of truth; flatMap drops a row
+  // only if nav ever lacks a view (type-impossible today), so the sheet
+  // can never advertise an unlabeled binding.
+  const helpRows = useMemo(
+    (): ShortcutHelpRow[] => shortcutRows().flatMap((row) => {
+      const navItem = nav.find((item) => item.id === row.view)
+      return navItem ? [{ key: row.key, label: navItem.label, group: navItem.group }] : []
+    }),
+    [nav],
+  )
+  const commands = useMemo(() => buildConsoleCommands(dict), [dict])
 
   // g-prefixed navigation (keyboard-nav.ts): 'g' arms a one-key buffer
   // that expires after SHORTCUT_ARM_MS, the next key jumps through the
@@ -203,6 +252,7 @@ export function ConsoleShell() {
     if (command.kind === 'help') setHelpOpen(true)
     else if (command.kind === 'refresh') refresh()
     else if (command.kind === 'noc') setNocOpen(true)
+    else if (command.kind === 'onboarding') setOnboardingOpen(true)
     else {
       setView(command.view)
       requestAnimationFrame(() => document.getElementById('console-main')?.focus({ preventScroll: true }))
@@ -230,21 +280,21 @@ export function ConsoleShell() {
   const openSelectionInAnalyst = (alerts: SfAlert[]) => {
     setPendingIncident({
       payload: buildIncidentAnalysis({ source: 'selection', alerts }),
-      label: 'Selección de la cola',
+      label: dict.chrome.selectionLabel,
     })
     setView('analista')
   }
 
   const statusColor = status === 'live' ? 'bg-emerald-500' : status === 'connecting' ? 'bg-amber-400' : 'bg-red-500'
-  const statusText = status === 'live' ? 'En vivo' : status === 'connecting' ? 'Conectando' : 'Motor offline'
+  const statusText = status === 'live' ? dict.chrome.live : status === 'connecting' ? dict.chrome.connecting : dict.chrome.engineOffline
   const openAlerts = alerts.filter((a) => a.status !== 'closed')
   const openCritical = openAlerts.some((a) => a.severity === 'critical')
-  const destination = CONSOLE_DESTINATIONS.find((item) => item.id === view)
+  const destination = nav.find((item) => item.id === view)
 
   return (
     <div className="relative min-h-[100dvh] bg-zinc-950 text-zinc-100">
       <a href="#console-main" className="sr-only z-50 rounded-md bg-primary-link px-4 py-2 text-sm text-zinc-950 focus:not-sr-only focus:fixed focus:left-4 focus:top-4">
-        Ir al contenido
+        {dict.chrome.skipToContent}
       </a>
       {/* DotGrid (React Bits): fondo de toda la consola, reactivo al puntero
           con la misma contención y congelado bajo prefers-reduced-motion. */}
@@ -252,14 +302,14 @@ export function ConsoleShell() {
       <div className="relative flex min-h-[100dvh] w-full flex-col lg:flex-row">
         <aside className="glass sticky top-0 hidden h-[100dvh] w-64 shrink-0 flex-col border-r border-white/[0.06] lg:flex">
           <BrandBlock live={status === 'live'} />
-          <nav aria-label="Secciones de la consola" className="mt-2 flex-1 overflow-y-auto px-3">
+          <nav aria-label={dict.chrome.navLabel} className="mt-2 flex-1 overflow-y-auto px-3">
             <ul className="space-y-0.5">
-              {SIDEBAR.map((item, idx) => {
+              {sidebar.map((item, idx) => {
                 const current = isCurrent(item.id, view)
                 return (
                   <li key={item.id}>
-                    {(idx === 0 || SIDEBAR[idx - 1].group !== item.group) && (
-                      <p className="kicker px-3 pb-1.5 pt-4 text-[10px] text-zinc-600">{item.group}</p>
+                    {(idx === 0 || sidebar[idx - 1].group !== item.group) && (
+                      <p className="kicker px-3 pb-1.5 pt-4 text-[10px] text-zinc-500">{item.group}</p>
                     )}
                     <button
                       type="button"
@@ -287,7 +337,7 @@ export function ConsoleShell() {
                       <span className="relative">{item.label}</span>
                       {item.id === 'alertas' && openAlerts.length > 0 && (
                         <span
-                          title={`${openAlerts.length} alertas sin cerrar en la ventana${openCritical ? ', con críticas' : ''}`}
+                          title={dict.badges.openAlerts(openAlerts.length, openCritical)}
                           className={`relative ml-auto rounded-md px-1.5 py-0.5 text-[11px] font-medium tabular-nums ${
                             openCritical ? 'bg-red-500/15 text-red-300' : 'bg-zinc-800 text-zinc-300'
                           }`}
@@ -296,12 +346,12 @@ export function ConsoleShell() {
                         </span>
                       )}
                       {item.id === 'equipos' && silentHosts > 0 && (
-                        <span title={`${silentHosts} equipos sin señal de su sensor`} className="relative ml-auto rounded-md bg-red-500/15 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-red-300">
+                        <span title={dict.badges.silentHosts(silentHosts)} className="relative ml-auto rounded-md bg-red-500/15 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-red-300">
                           {silentHosts}
                         </span>
                       )}
                       {item.id === 'incidentes' && openIncidents > 0 && (
-                        <span title={`${openIncidents} incidentes sin cerrar`} className="relative ml-auto rounded-md bg-amber-400/15 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-amber-200">
+                        <span title={dict.badges.openIncidents(openIncidents)} className="relative ml-auto rounded-md bg-amber-400/15 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-amber-200">
                           {openIncidents}
                         </span>
                       )}
@@ -309,7 +359,7 @@ export function ConsoleShell() {
                         <span className="relative ml-auto text-[11px] tabular-nums text-zinc-500">{rules.length}</span>
                       )}
                       {item.id === 'analista' && analystStatus !== 'live' && (
-                        <span aria-hidden className="relative ml-auto h-1.5 w-1.5 rounded-full bg-zinc-600" title="servicio de analista sin conexión" />
+                        <span aria-hidden className="relative ml-auto h-1.5 w-1.5 rounded-full bg-zinc-600" title={dict.chrome.analystDown} />
                       )}
                       {item.id === 'supresiones' && suppressions.length > 0 && (
                         <span className="relative ml-auto text-[11px] tabular-nums text-zinc-500">{suppressions.length}</span>
@@ -341,7 +391,7 @@ export function ConsoleShell() {
               <p className="mt-0.5 truncate text-[11px] text-zinc-500" title={telemetry.label}>{telemetry.label}</p>
             </div>
             <p className="text-[11px] leading-relaxed text-zinc-500">
-              Solo datos del pipeline real. La demo aparece etiquetada; sin eventos no se inventa telemetría.
+              {dict.chrome.dataHonesty}
             </p>
             <button
               type="button"
@@ -349,7 +399,15 @@ export function ConsoleShell() {
               className="inline-flex items-center gap-1.5 rounded text-[11px] text-zinc-500 transition-colors hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Keyboard size={12} aria-hidden />
-              Atajos: <span className="font-mono">{SHORTCUT_PREFIX}·vista</span> · <span className="font-mono">?</span>
+              {dict.chrome.shortcutsLine} <span className="font-mono">{SHORTCUT_PREFIX}·vista</span> · <span className="font-mono">?</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setOnboardingOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded text-[11px] text-zinc-500 transition-colors hover:text-zinc-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <RocketLaunch size={12} aria-hidden />
+              {dict.chrome.onboardingOpen}
             </button>
           </div>
         </aside>
@@ -366,7 +424,7 @@ export function ConsoleShell() {
                   {/* BlurText (React Bits): la entrada palabra a palabra marca el
                       cambio de vista; key={view} reinicia la secuencia. */}
                   <h1 className="truncate text-[15px] font-semibold tracking-tight text-zinc-50">
-                    <BlurText key={view} text={titleFor(view)} />
+                    <BlurText key={view} text={dict.views[view].title} />
                   </h1>
                   {destination && <p className="truncate text-xs text-zinc-500">{destination.description}</p>}
                 </div>
@@ -375,14 +433,15 @@ export function ConsoleShell() {
                 <button
                   type="button"
                   onClick={() => { setHelpOpen(false); setPaletteOpen(true) }}
-                  aria-label="Abrir comandos"
+                  aria-label={`${dict.chrome.openCommands} — ${dict.chrome.searchViewsCommands} Ctrl K`}
                   aria-haspopup="dialog"
                   aria-keyshortcuts="Control+k Meta+k"
-                  title="Comandos (Ctrl+K / ⌘K)"
+                  title={dict.chrome.commandsTitle}
                   className="chip shrink-0 gap-2 px-2.5 py-1.5 text-zinc-400 transition-colors hover:border-primary/40 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-w-[200px]"
                 >
                   <MagnifyingGlass size={15} aria-hidden />
-                  <span className="hidden text-xs sm:inline">Buscar vistas y comandos</span>
+                  <span className="hidden text-xs sm:inline">{dict.chrome.searchViewsCommands}</span>
+                  {' '}
                   <kbd aria-hidden className="ml-auto hidden rounded border border-zinc-700 px-1 font-mono text-[10px] text-zinc-400 md:inline">Ctrl K</kbd>
                 </button>
                 <div className="chip shrink-0 whitespace-nowrap px-2.5 py-1.5">
@@ -395,21 +454,22 @@ export function ConsoleShell() {
                   <span className="text-xs text-zinc-300">
                     {/* ShinyText (React Bits): el barrido solo corre con el motor
                         en vivo — comunica flujo activo, no decora. */}
-                    {status === 'live' ? <ShinyText>En vivo</ShinyText> : statusText}
+                    {status === 'live' ? <ShinyText>{dict.chrome.live}</ShinyText> : statusText}
                   </span>
-                  {telemetry.hasDemo && <span className="rounded bg-amber-400/10 px-1 text-[11px] text-amber-300" aria-label="La ventana recibida contiene datos de demostración">demo</span>}
+                  {telemetry.hasDemo && <span className="rounded bg-amber-400/10 px-1 text-[11px] text-amber-300" aria-label={dict.chrome.demoBadge}>demo</span>}
                 </div>
                 <UserChip />
                 <NotifyMenu />
+                <LanguageToggle />
                 <ThemeToggle />
                 <button
                   type="button"
                   onClick={() => setNocOpen(true)}
-                  aria-label="Abrir modo NOC"
-                  title="Modo NOC: pantalla completa rotativa para un monitor de sala"
+                  aria-label={dict.chrome.openNoc}
+                  title={dict.chrome.nocTitle}
                   className="chip shrink-0 px-2 py-1.5 text-zinc-400 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <Monitor size={15} aria-hidden />
+                  <CornersOut size={15} aria-hidden />
                 </button>
                 <WebhookChip stats={stats} />
                 <DetectorsMenu stats={stats} onOpen={setView} />
@@ -420,8 +480,8 @@ export function ConsoleShell() {
           </header>
 
           {/* Mobile nav: explicit collapse of the sidebar */}
-          <nav aria-label="Secciones de la consola" className="flex gap-1 overflow-x-auto border-b border-white/[0.06] px-3 py-2 lg:hidden">
-            {SIDEBAR.map((item) => (
+          <nav aria-label={dict.chrome.navLabel} className="flex gap-1 overflow-x-auto border-b border-white/[0.06] px-3 py-2 lg:hidden">
+            {sidebar.map((item) => (
               <button
                 key={item.id}
                 type="button"
@@ -441,12 +501,14 @@ export function ConsoleShell() {
           <main id="console-main" tabIndex={-1} className="flex-1 px-4 py-5 outline-none lg:px-8 lg:py-6">
             <div className="mx-auto w-full max-w-[1560px]">
               <AnimatedView viewKey={view}>
-                {view === 'panel' && <Dashboard onAnalyze={openInAnalyst} onNavigate={setView} onTriage={openTriage} onHunt={openHunt} onHost={openHost} />}
+                {view === 'panel' && <Dashboard onAnalyze={openInAnalyst} onNavigate={setView} onTriage={openTriage} onHunt={openHunt} onHost={openHost} onScenarioTactic={openScenarioTactic} />}
                 {view === 'estado' && <PlatformStatusView />}
                 {view === 'flujo' && <LiveFeed />}
                 {view === 'alertas' && <AlertsView onAnalyze={openInAnalyst} onAnalyzeGroup={openSelectionInAnalyst} onHost={openHost} onOpenIncident={openIncident} />}
-                {view === 'incidentes' && <IncidentsView onHost={openHost} onOpenAlert={openAlert} onAnalyze={openIncidentInAnalyst} />}
+                {view === 'incidentes' && <IncidentsView onHost={openHost} onOpenAlert={openAlert} onAnalyze={openIncidentInAnalyst} onOpenEngineReport={openIncidentReport} />}
                 {view === 'equipos' && <HostsView onHunt={(q) => openHunt({ q })} onOpenAlert={openAlert} onOpenIncident={openIncident} />}
+                {view === 'directorio' && <DirectoryView />}
+                {view === 'informes' && <ReportsView />}
                 {isDetectionView(view) && <DetectionHub tab={view} onTab={setView} onOpenRule={openRule} />}
                 {view === 'respuesta' && <RespondView />}
                 {view === 'analista' && (
@@ -457,28 +519,31 @@ export function ConsoleShell() {
                     clearPendingIncident={() => setPendingIncident(null)}
                   />
                 )}
+                {view === 'ajustes' && <SettingsView onNavigate={setView} onOpenOnboarding={() => setOnboardingOpen(true)} />}
               </AnimatedView>
             </div>
           </main>
 
           <footer className="border-t border-white/[0.06] px-4 py-3 lg:px-8">
             <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-500">
-              <span>bluetardigrade · consola SOC</span>
+              <span>{dict.chrome.footerProduct}</span>
               <span aria-hidden>·</span>
-              <span>detección, investigación y respuesta para endpoints Windows</span>
+              <span>{dict.chrome.footerTagline}</span>
             </p>
           </footer>
         </div>
       </div>
-      <ShortcutsHelp open={helpOpen} rows={HELP_ROWS} onClose={() => setHelpOpen(false)} />
-      {paletteOpen && <CommandPalette open refreshing={refreshing} onClose={() => setPaletteOpen(false)} onExecute={executeCommand} />}
+      <ShortcutsHelp open={helpOpen} rows={helpRows} onClose={() => setHelpOpen(false)} />
+      {paletteOpen && <CommandPalette open refreshing={refreshing} commands={commands} onClose={() => setPaletteOpen(false)} onExecute={executeCommand} />}
       {nocOpen && <NocMode onClose={closeNoc} />}
+      <OnboardingWizard open={onboardingOpen} onClose={() => setOnboardingOpen(false)} />
     </div>
   )
 }
 
 /** Wall clock in UTC (the timezone incident timelines are written in). */
 function UtcClock() {
+  const { dict } = useI18n()
   const [now, setNow] = useState<Date | null>(null)
   useEffect(() => {
     setNow(new Date())
@@ -487,42 +552,13 @@ function UtcClock() {
   }, [])
   if (!now) return null
   return (
-    <span className="chip hidden shrink-0 whitespace-nowrap px-2.5 py-1.5 font-mono text-[11px] tabular-nums text-zinc-400 2xl:flex" title="Hora UTC">
-      <span className="text-zinc-600">UTC</span>
+    <span className="chip hidden shrink-0 whitespace-nowrap px-2.5 py-1.5 font-mono text-[11px] tabular-nums text-zinc-400 2xl:flex" title={dict.chrome.utcTitle}>
+      {/* text-zinc-500: the AA-remapped hint tier (PUL-B axe round) — raw
+          zinc-600 is 2.6:1 here and this label is real text on wide screens */}
+      <span className="text-zinc-500">UTC</span>
       {now.toISOString().slice(11, 19)}
     </span>
   )
-}
-
-function titleFor(view: ConsoleView): string {
-  switch (view) {
-    case 'panel':
-      return 'Panel de operaciones'
-    case 'estado':
-      return 'Estado de la plataforma'
-    case 'flujo':
-      return 'Flujo en vivo'
-    case 'alertas':
-      return 'Cola de alertas'
-    case 'incidentes':
-      return 'Incidentes'
-    case 'equipos':
-      return 'Equipos'
-    case 'probador':
-      return 'Probador de reglas'
-    case 'reglas':
-      return 'Reglas de detección'
-    case 'cadenas':
-      return 'Cadenas de kill chain'
-    case 'inteligencia':
-      return 'Inteligencia de amenazas'
-    case 'supresiones':
-      return 'Supresiones del operador'
-    case 'respuesta':
-      return 'Respuesta activa'
-    case 'analista':
-      return 'Analista IA'
-  }
 }
 
 /**
@@ -535,6 +571,7 @@ function titleFor(view: ConsoleView): string {
  *   on display so the operator knows the SIEM is missing alerts.
  */
 function WebhookChip({ stats }: { stats: EngineStats | null }) {
+  const { dict } = useI18n()
   // mode is hub-only: with direct engine telemetry the chip shows whenever
   // the engine reports webhook counters (they are real either way).
   if (!stats || (stats.mode && stats.mode !== 'engine')) return null
@@ -546,8 +583,8 @@ function WebhookChip({ stats }: { stats: EngineStats | null }) {
     <div
       title={
         healthy
-          ? `Webhook: ${sent} alertas entregadas al conector externo`
-          : `Webhook con problemas: ${failed} fallidas, ${dropped} descartadas, ${sent} entregadas`
+          ? dict.badges.webhookOk(sent)
+          : dict.badges.webhookBad(failed, dropped, sent)
       }
       className={`chip hidden whitespace-nowrap px-2.5 py-1.5 font-mono text-[11px] xl:flex ${
         healthy ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300' : 'border-red-400/40 bg-red-400/10 text-red-300'
@@ -556,8 +593,8 @@ function WebhookChip({ stats }: { stats: EngineStats | null }) {
       <span aria-hidden>{healthy ? '✓' : '✕'}</span>
       <span>
         webhook {sent}
-        {failed > 0 && <span> / {failed} err</span>}
-        {dropped > 0 && <span> / {dropped} desc</span>}
+        {failed > 0 && <span> / {dict.badges.webhookErr(failed)}</span>}
+        {dropped > 0 && <span> / {dict.badges.webhookDropped(dropped)}</span>}
       </span>
     </div>
   )

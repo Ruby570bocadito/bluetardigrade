@@ -80,6 +80,13 @@ const (
 	// inventing unique destinations grows it without limit.
 	MaxKeys = 8192
 
+	// MaxKeysPerHost is the per-host twin of MaxKeys (v1.1 cuotas
+	// por equipo): the same admission ceiling per host, so one noisy
+	// machine scanning unique destinations cannot fill the table the
+	// others' beacons live in. Dead evidence is reclaimed before the
+	// refusal, so a host whose keys all went stale recovers itself.
+	MaxKeysPerHost = MaxKeys / 4
+
 	// ringCap caps the timestamps kept per key. 64 samples give a
 	// solid CV estimate while capping per-key memory; min_count above
 	// the ring could never fire, so profile validation rejects it
@@ -189,15 +196,20 @@ type Manager struct {
 	mu    sync.Mutex
 	profs []*compiled
 	state map[beaconKey]*keyState
-	emit  func(alert.Alert)
-	fired uint64
+	// perHost is the per-host share tally of the key table (v1.1
+	// cuotas por equipo) -- see MaxKeysPerHost.
+	perHost       map[string]int
+	quotaRejected uint64            // host-quota refusals since startup
+	quotaHosts    map[string]uint64 // refusal tally by host, capped
+	emit          func(alert.Alert)
+	fired         uint64
 }
 
 // LoadFile compiles the profiles in one YAML file. emit is called
 // once per detected beacon (wire it to alert.Manager.Emit through the
 // suppression wrapper, exactly like the correlator's).
 func LoadFile(path string, emit func(alert.Alert)) (*Manager, error) {
-	m := &Manager{state: map[beaconKey]*keyState{}, emit: emit}
+	m := &Manager{state: map[beaconKey]*keyState{}, emit: emit, perHost: map[string]int{}, quotaHosts: map[string]uint64{}}
 	if err := m.load(path); err != nil {
 		return nil, err
 	}
@@ -221,7 +233,7 @@ func (m *Manager) Reload(path string) error {
 	}
 	for k := range m.state {
 		if !alive[k.profileID] {
-			delete(m.state, k)
+			m.dropStateLocked(k)
 		}
 	}
 	m.profs = fresh.profs
@@ -344,15 +356,28 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 		key := beaconKey{profileID: c.p.ID, host: host, dest: dest, port: port}
 		st := m.state[key]
 		if st == nil {
+			// Host quota (v1.1 cuotas por equipo): the same admission
+			// ceiling per host -- one noisy machine scanning unique
+			// destinations cannot fill the table the others' beacons
+			// live in. Reclaim runs first so a host whose keys all
+			// went stale recovers itself instead of staying blocked.
+			if m.perHost[host] >= MaxKeysPerHost {
+				m.reclaimLocked(c, now)
+				if m.perHost[host] >= MaxKeysPerHost {
+					m.quotaRejectLocked(host)
+					continue
+				}
+			}
 			// Admission past the cap: drop fully stale keys first
 			// (they are dead evidence), then evict the coldest key.
-			// A newly observed key is by definition the freshest —
+			// A newly observed key is by definition the freshest --
 			// it can never be its own eviction victim.
 			if len(m.state) >= MaxKeys {
 				m.reclaimLocked(c, now)
 			}
 			st = &keyState{}
 			m.state[key] = st
+			m.perHost[host]++
 		}
 		st.seen = now
 		if alert.EventIsSimulated(ev) {
@@ -395,7 +420,7 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 		fired = append(fired, m.fire(c, ev, dest, port, len(st.times), mean, cv, st.simulated))
 	}
 	m.mu.Unlock()
-	// Deliver OUTSIDE mu (the accumulated O1, acta 22h46 §1.4): the
+	// Deliver OUTSIDE mu (the accumulated O1): the
 	// pipeline takes the hub lock and can block on SQLite, webhook and
 	// risk — holding beacon.mu through it made every /api/stats read
 	// (Tracked/Fired) queue behind delivery. Detection decisions and
@@ -433,11 +458,11 @@ func (m *Manager) reclaimLocked(c *compiled, now time.Time) {
 	for k, st := range m.state {
 		pc := byID[k.profileID]
 		if pc == nil || len(st.times) == 0 {
-			delete(m.state, k) // orphaned or empty: dead weight
+			m.dropStateLocked(k) // orphaned or empty: dead weight
 			continue
 		}
 		if now.Sub(st.seen) > 2*pc.window {
-			delete(m.state, k)
+			m.dropStateLocked(k)
 		}
 	}
 	if len(m.state) < MaxKeys {
@@ -458,8 +483,89 @@ func (m *Manager) reclaimLocked(c *compiled, now time.Time) {
 		}
 	}
 	if found {
-		delete(m.state, victim)
+		m.dropStateLocked(victim)
 	}
+}
+
+// dropStateLocked removes one key and keeps the per-host tally honest.
+// Caller holds mu.
+func (m *Manager) dropStateLocked(k beaconKey) {
+	if _, ok := m.state[k]; !ok {
+		return
+	}
+	delete(m.state, k)
+	if m.perHost[k.host] <= 1 {
+		delete(m.perHost, k.host)
+	} else {
+		m.perHost[k.host]--
+	}
+}
+
+// maxQuotaHostEntries caps the refusal tally by host: honesty about
+// WHICH host is being refused cannot itself become an unbounded map.
+// Past the cap the total keeps counting every refusal; only the
+// per-host attribution stops growing (threshold's convention).
+const maxQuotaHostEntries = 64
+
+// quotaRejectLocked counts one host-quota refusal (total + capped
+// per-host tally). Caller holds mu.
+func (m *Manager) quotaRejectLocked(host string) {
+	m.quotaRejected++
+	if _, ok := m.quotaHosts[host]; !ok && len(m.quotaHosts) >= maxQuotaHostEntries {
+		return // tally full: the total still counts every refusal
+	}
+	m.quotaHosts[host]++
+}
+
+// QuotaHost is one host's row of the refusal tally (always served as
+// a copy -- shared state leaves every read path as a copy).
+type QuotaHost struct {
+	Host     string
+	Rejected uint64
+}
+
+// QuotaRejected returns how many NEW destination keys were refused
+// because the HOST's own quota was full (v1.1 cuotas por equipo):
+// the width of the noisy-host pressure on the shared table. Existing
+// keys of the saturated host keep accumulating evidence and firing.
+func (m *Manager) QuotaRejected() uint64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.quotaRejected
+}
+
+// QuotaHosts returns the capped per-host refusal tally as a copy:
+// top-list merging is the API layer's job, so the manager serves the
+// whole tally and stays out of presentation decisions.
+func (m *Manager) QuotaHosts() map[string]uint64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make(map[string]uint64, len(m.quotaHosts))
+	for h, n := range m.quotaHosts {
+		out[h] = n
+	}
+	return out
+}
+
+// QuotaTopHosts returns the hosts with the most quota refusals, worst
+// first, at most 8 rows, always a copy.
+func (m *Manager) QuotaTopHosts() []QuotaHost {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]QuotaHost, 0, len(m.quotaHosts))
+	for h, n := range m.quotaHosts {
+		out = append(out, QuotaHost{Host: h, Rejected: n})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Rejected != out[j].Rejected {
+			return out[i].Rejected > out[j].Rejected
+		}
+		return out[i].Host < out[j].Host
+	})
+	if len(out) > 8 {
+		out = out[:8]
+	}
+	return out
 }
 
 // lessKey orders keys deterministically (profileID, host, dest, port).

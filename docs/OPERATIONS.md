@@ -168,6 +168,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 |------|---------|---------|
 | `-addr` | `127.0.0.1:7777` | NDJSON ingest listener (loopback unless you decide otherwise) |
 | `-api` | `127.0.0.1:7778` | local API — read endpoints + the alert triage write (`0` disables it) |
+| `-ad` | — | YAML config for the read-only Active Directory connector (LDAPS or explicit StartTLS with a configured CA, a least-privilege service account whose password lives in its own file, RFC 2696 paging and an object cap; requires `-store`); empty disables — see [Active Directory connector](#active-directory-connector-read-only) |
 | `-rules` | `./rules` | YAML rules directory (hot-reload aware) |
 | `-sequences` | `./sequences` | kill-chain sequences directory (correlator) |
 | `-beacons` | `./beacons.yaml` | beacon detector profiles (C2 call-home over `network.connect`; empty disables) |
@@ -175,6 +176,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `-intel` | `./intel` | offline threat-intel lists (`*.txt`/`*.list`: IPs, CIDRs, domains, URLs, hashes) matched against every event and re-read on change; nothing is downloaded; empty disables |
 | `-baseline-learn` | `24h` | per-host learning period before a never-seen process raises a low alert (falls back to `SF_BASELINE_LEARN`); `0` disables |
 | `-suppressions` | `./suppressions.yaml` | operator allowlist (hot-reload aware) |
+| `-known-software` | `./known-software.yaml` | known-software list (§2.2: `enrichment.known_software`, baseline/noise effects; hot-reload aware) |
 | `-lifecycle` | `./alert-lifecycle.json` | alert triage state file (acknowledged/closed + notes; empty keeps statuses in memory only) |
 | `-incidents` | `./incidents.json` | incidents file (cases grouping alerts, with status, owner and timeline; empty keeps them in memory only) |
 | `-reload-every` | `15s` | hot-reload cadence for rules/sequences/suppressions (`0` disables) |
@@ -194,6 +196,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `-splunk` / `-splunk-token` | — | Splunk HEC collector base URL (events POSTed to `/services/collector/event`) / HEC token (falls back to `SF_SPLUNK_TOKEN`) |
 | `-store` / `-store-retention` | off / `72h` | SQLite persistence / pruning window (`0` keeps everything) |
 | `-forensic` / `-forensic-dir` | on / `<forensics>` next to rules | freeze an evidence bundle (alert + 5m host timeline) for every high/critical alert, served at `GET /api/alerts/{id}/forensics`; directory capped at 256 bundles, oldest-first eviction |
+| `-scenarios` | — | directory with the detection-validation scenario library (arms `GET`/`POST /api/scenarios*` to replay the inert pack against the live rules and keep the run history; replayed hosts are tagged `simulation`); empty disables — see [Detection validation](#detection-validation-synthetic-scenarios) |
 | `-v` | off | print every event received |
 | `-pidfile` | — | write the engine PID to a file |
 | `-i`, `--interactive` | off | interactive TUI over the running engine (degrades to the classic flat run without a TTY) — see [Engine CLI reference](#engine-cli-reference) |
@@ -233,10 +236,10 @@ The engine serves a small read-only API used by the web console and handy for SI
 |----------|---------|
 | `GET /api/health` | liveness + mode |
 | `GET /metrics` | the same counters as `/api/stats` in the Prometheus text exposition format (`sf_*` families, `text/plain; version=0.0.4`) — scrapers read the credential from their `authorization` config; see [Prometheus](#prometheus-metrics) |
-| `GET /api/stats` | uptime, counters, per-severity totals, rule count, ingest auth rejections, webhook delivery counters, per-platform SIEM sink counters (`elastic_*` / `splunk_*`), per-channel external notification counters (`notify_channels`), active suppressions, kill-chain correlator observability (`correlator_states` / `correlator_sequences` / `correlator_cap`), store counters (`store_enabled` / `store_events` / `store_alerts`) |
+| `GET /api/stats` | uptime, counters, per-severity totals, rule count, ingest auth rejections, webhook delivery counters, per-platform SIEM sink counters (`elastic_*` / `splunk_*`), per-channel external notification counters (`notify_channels`), active suppressions, known-software entries, kill-chain correlator observability (`correlator_states` / `correlator_sequences` / `correlator_cap`), store counters (`store_enabled` / `store_events` / `store_alerts`), platform status (`version`, `alert_latency` p50/p95/max, `store_size_bytes`, `certificates` expiry of both listeners) |
 | `GET /api/events?limit=200` | recent events, newest first |
 | `GET /api/alerts?limit=100` | recent alerts, newest first |
-| `GET /api/suppressions` | operator allowlist currently active; `POST`/`DELETE` (only with `-api-write`) edit the same file atomically — see [Alert suppressions](#alert-suppressions-operator-allowlist) |
+| `GET /api/suppressions` | operator allowlist currently active (entries with `when` conditions included); `POST`/`DELETE` (only with `-api-write`) edit the same file atomically — see [Alert suppressions](#alert-suppressions-operator-allowlist) |
 | `POST /api/respond/kill` | active response (C3, opt-in): kill one verified local process, operator-invoked; exists only with `-allow-kill` + API token + open audit (otherwise a real `404`) — see [Active response](#active-response-kill_process-opt-in) |
 | `GET /api/respond/state` | armed state of the active-response surface: live allowlist/protected counts, the paths armed at startup and the audit file size against its 64 MiB ceiling; same real-`404` contract as the kill route |
 | `GET /api/respond/audit?limit=100` | tail of the `-respond-audit` JSONL (executed AND denied attempts, newest first) with honest scan bookkeeping (`skipped`/`truncated`); hard cap 500; same real-`404` contract |
@@ -245,7 +248,14 @@ The engine serves a small read-only API used by the web console and handy for SI
 | `GET /api/alerts/export?format=ndjson\|csv&limit=256` | downloadable alert feed for SIEM/SOAR handoff, chronological order |
 | `GET /api/alerts/{id}/forensics` | frozen alert + host timeline; `404` missing, `501` capture disabled, `500` unreadable evidence; protected by the API bearer gate |
 | `GET /api/rules` | live rule set (hot-reload aware) |
+| `GET /api/ad/status` | read-only Active Directory connector state (last sync, next sync, object counts, truncation and warnings); `501` with an arming hint while the engine runs without `-ad` — see [Active Directory connector](#active-directory-connector-read-only) |
+| `GET /api/ad/objects/{kind}?q=&limit=&offset=` | one page of the local directory snapshot (`kind` = `user`/`group`/`computer`/`ou`); the free-text `q` runs against the SQLite snapshot, never against LDAP |
+| `GET /api/ad/posture` | domain posture analysis (AD-2): severity-sorted findings with affected objects and remediation, plus the 0-100 score; `ready=false` until the first sync completes |
+| `GET /api/ad/posture/history?limit=` | past posture scores, one point per completed sync (oldest first) |
 | `GET /api/stream` | Server-Sent Events with live events + alerts |
+| `GET /api/reports` | the REP-1 report catalog: the kinds this engine can compute today (executive, incident, fleet coverage, SOC activity) with their parameters and formats; static per engine version, so a console renders its report picker from it — see [SOC reports and noise](#soc-reports-and-noise-rep-1) |
+| `GET /api/reports/{kind}?window=7d&format=json` | one report on demand, JSON or CSV; the `incident` kind takes `?id=` (16-hex case id) instead of a window — see [SOC reports and noise](#soc-reports-and-noise-rep-1) |
+| `GET /api/noise?window=24h&host=&limit=10` | the noise report: processes, DNS domains and rules that most generate events or alerts, each with its triage overlay; JSON only, fleet-wide by default, `host=` narrows to one machine — see [SOC reports and noise](#soc-reports-and-noise-rep-1) |
 
 All four telemetry endpoints (`/api/events`, `/api/alerts` and both `/export` variants) accept the same filter parameters, applied BEFORE `limit`: `host=<name>` (exact, case-insensitive), `since=`/`until=` (RFC 3339 timestamp or positive duration like `90m`/`24h`), `q=<free text>` (case-insensitive across ids, summaries, tags and context), plus `severity=a,b` and `rule_id=` on the alert endpoints and `type=` on the event ones. Invalid values answer 400 with an actionable message. When `-store` is attached, all four read the full stored history — not just the in-memory rings — subject to the configured retention (what that mode changes in [Persistent storage](#persistent-storage-sqlite-opt-in)). Examples: `/api/alerts/export?host=lab-wks-01&since=24h` for "that box, today", `/api/events?type=network.connect&q=suspicious.tld` to chase one domain.
 
@@ -273,6 +283,18 @@ scrape_configs:
 ```
 
 Worth alerting on: `sf_ingest_rejected_total` climbing (a probe against the ingest port), `sf_webhook_failed_total` climbing (a down SIEM connector), `sf_elastic_failed_total` / `sf_splunk_failed_total` climbing (a misconfigured or saturated SIEM sink), `sf_notify_failed_total` climbing (a dead chat or mail channel — the alert still fires, the operator just stops seeing it), `sf_store_write_failures_total` climbing (event or alert writes to SQLite are failing — affected records may exist only in memory and are lost on restart), and `sf_correlator_states` reaching `sf_correlator_cap` (a feed problem flooding the kill-chain tracker — see [Kill-chain correlation](#kill-chain-correlation)).
+
+## Per-team memory quotas (noisy-host protection)
+
+
+Every bounded in-memory structure the detectors share is partitioned per host with an admission ceiling of 25% of the table (v1.1 "cuotas por equipo"): a noisy machine — a scanner, a misbehaving agent, a hostile feed — cannot fill the shared tables and wash out the evidence the other hosts are accumulating.
+
+- **Threshold keys** (`thresholds.yaml`): at most 2048 keys per host (the same ceiling the per-rule quota sets). Existing keys of a saturated host keep counting and firing; only NEW keys are refused, and dead evidence (2x window without signal) is purged before the refusal, so a host whose keys all expired recovers itself without waiting for the global cap to fill.
+- **Beacon keys** (`beacons.yaml`): at most 2048 destination keys per host, same admission-ceiling semantics. Existing beacons of the saturated host keep accumulating evidence and firing; stale keys are reclaimed before a refusal.
+- **View rings** (`/api/events`, `/api/alerts`, SSE): the rings trim oldest-first by design; a host filling the ring rotates the others' recent records out. That rotation is counted per host and served in `/api/stats` (`ring_dropped_events`, `ring_dropped_alerts`), so the loss is visible, never silent. With `-store` attached the full history stays in SQLite regardless of the rings.
+- **Kill-chain correlator**: no extra per-host quota is needed — one host can hold at most one state per sequence, and the sequence ceiling (512) already bounds any host's share to a quarter of the tracking cap (8192).
+
+All refusals are honest counters, never silent drops: `/api/stats` serves the totals (`beacon_quota_rejected`, `threshold_quota_rejected`) and a bounded top-8 `quota_top_hosts` list that merges ring rotation and per-host refusals; `/metrics` serves the same totals as `sf_beacon_quota_rejected_total` / `sf_threshold_quota_rejected_total` / `sf_ring_dropped_events_total` / `sf_ring_dropped_alerts_total` (no host labels — series cardinality must not depend on telemetry). If one of these counters climbs, look at what that host is doing before considering caps: the quota doing its job is the symptom of a noisy machine, not a tuning bug.
 
 ## Persistent storage (SQLite, opt-in)
 
@@ -548,6 +570,19 @@ Point the engine at it with `-suppressions <path>` (default `./suppressions.yaml
 - A malformed file is FATAL at startup (a typo must not disable a control you believe is armed) and rejected — keeping the previous set — on hot reload, loudly.
 - The live set is observable at `GET /api/suppressions` and counted in `/api/stats` (`suppressions_active`).
 - **API writes are opt-in**: an engine started with `-api-write` (or `SF_API_WRITE=1`) also answers `POST /api/suppressions` (add/update one entry, keyed by the rule_id+host pair) and `DELETE /api/suppressions?rule_id=…&host=…` (exact-pair removal, `404` when nothing matched). Writes go through the same validation as the YAML loader, land on the file atomically (temp + rename, preserving its mode) and are loaded back immediately — the file stays the single source of truth, so hand edits and API edits never diverge. Without the flag both routes answer `403` naming it; beyond loopback, arming is refused at startup unless `-api-token` is set. Every write logs an audit line (`WRITE suppressions add rule=… host=… by=api`) with control characters %XX-escaped, so a hostile request cannot forge engine-log lines. Hard caps shared by the API and the YAML loader bound one hostile or careless request: fields (`rule_id` 128, `host` 253, `reason` 2000 characters), 8 KiB per request body and 1000 entries per file (hand edits of the file are not capped — you already hold the pen). Contract details: [`api/openapi.yaml`](api/openapi.yaml).
+- **Conditional entries (`when`, §2.3)** narrow a suppression to events whose fields match EVERY condition — the "suppress this exactly" case: one noisy invocation of an otherwise useful rule. Conditions use the SAME operators the rule engine evaluates (`eq`, `neq`, `contains`, `contains_any`, `startswith`, `endswith`, `regex`, `in`, `not_in`, `gt`, `lt` and the case-insensitive `i*` variants), so what a condition means is defined in exactly one place:
+
+  ```yaml
+  - rule_id: f0de8115-78c7-4ebd-add3-a1ac994d6a1c   # clipboard read
+    host: DESKTOP-1T9I3SH
+    when:
+      - field: process.command_line
+        operator: eq
+        value: 'powershell.exe -NoProfile -NonInteractive -Command "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-Clipboard -Raw"'
+    reason: asistente de desarrollo que lee el portapapeles
+  ```
+
+  A different `Get-Clipboard` command line keeps firing. Caps: 8 conditions per entry, field 128 and value 2000 characters, value lists up to 16 items; an unknown operator or a bad regex fails the load LOUDLY (the same standard as a rule). An event without the field never matches a condition on it. **Where conditions apply:** they are evaluated where the triggering event exists — rule hits, threat-intel matches and baseline novelties. Aggregated alerts (kill-chain completions, beaconing, volumetric) carry no single event, so a conditional entry never silences one; the failure direction is an alert you still see, never a lost signal. Unconditional entries keep silencing aggregates exactly as before.
 
 ## Alert triage (lifecycle)
 
@@ -561,9 +596,16 @@ curl -X POST http://127.0.0.1:7778/api/alerts/<id>/status \
   -d '{"status":"acknowledged","note":"visto, investigando","by":"ana"}'
 
 # close it, reopen it ("new"), same endpoint — statuses: new, acknowledged, closed
+
+# record the verdict with the close: WHAT the alert was
+curl -X POST http://127.0.0.1:7778/api/alerts/<id>/status \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"closed","decision":"false_positive","note":"tarea programada","by":"ana"}'
 ```
 
-`GET /api/alerts` merges the current status into every alert (`status`, `status_note`, `status_by`, `status_at`), a `alert_lifecycle` SSE frame announces each decision live, and the web console renders the status chips plus the reconocer/cerrar/reabrir actions in the alert panel (the write goes console → same-origin Next.js proxy → engine; the API token stays on the server). The API token gates the write endpoint exactly like every read endpoint.
+The `decision` field is the operator's verdict: `false_positive` (benign — the rule fired on activity it does not exist to catch), `authorized_activity` (real but sanctioned: a pentest window, a change ticket) or `confirmed_incident`. It is optional and carries no workflow coupling — it may be recorded on any status, before or with the close. The POST body is the FULL triage record, never a partial patch: omitting `decision` (or `note`, or `by`) clears it. The verdict feeds the triage flow's «falso positivo» state in the console and the `false_positive_pct` of the [noise report](#alert-noise-control) — the real per-rule false-positive rate, no longer a proxy.
+
+`GET /api/alerts` merges the current status into every alert (`status`, `decision`, `status_note`, `status_by`, `status_at`), a `alert_lifecycle` SSE frame announces each decision live, and the web console renders the status chips plus the reconocer/cerrar/reabrir actions in the alert panel (the write goes console → same-origin Next.js proxy → engine; the API token stays on the server). The API token gates the write endpoint exactly like every read endpoint.
 
 Statuses persist across engine restarts with `-lifecycle <file>` (default `./alert-lifecycle.json`, falling back to the install root; `-lifecycle ""` keeps them in memory only). The file is written atomically on every decision and is FATAL to load if malformed — the same fail-loud standard as suppressions: triage work silently resetting to "new" would be a lie. One honest note on restarts: without `-store` the alert ring is in-memory, so after a restart the file preserves the audit record while the alerts it refers to are gone. With the SQLite store attached, alerts are served from the persisted history after a restart (see [Persistent storage](#persistent-storage-sqlite-opt-in)), so alert and lifecycle persist together and the triage status stays visible end to end.
 
@@ -591,6 +633,40 @@ case carries its own audit trail.
   and timeline (open it and print to get a PDF). Both are built in the
   browser from what the console holds; alerts that already left the
   live window are counted, not invented.
+
+## SOC reports and noise (REP-1)
+
+The engine computes SOC reports on demand as read-only aggregations of
+records it already holds — no new capture, no side effects. With the
+SQLite store attached (`-store`) a report reads the full retention
+window; without it, the in-memory rings (last 1000 events / 256
+alerts), and the answer says so: every report carries `source: "ring"`
+plus `oldest_record`, so a consumer can see whether the requested
+window is actually covered before trusting the numbers. A scan capped
+at 10000 records flags `truncated` instead of failing silently.
+
+The catalog (`GET /api/reports`) lists the kinds this engine can
+compute today and appears only with what is computable: `executive`,
+`incident`, `fleet` (coverage) and `soc` (activity). One report comes
+from `GET /api/reports/{kind}`: `window` accepts `24h`, `7d`, `30d` or
+any positive duration within the kind's bounds (1h to 30d, default
+7d) — except the `incident` kind, which takes `?id=` (16 hex) instead
+because a case bundle is point in time; alert ids the engine can no
+longer resolve stay listed with `found: false` rather than dropped.
+`format=csv` reuses the export endpoints' spreadsheet formula
+escaping; JSON is the default. All three routes are bearer-gated like
+every other `/api/*` read.
+
+`GET /api/noise` is the tuning companion: the processes (grouped by
+executable image, case-insensitive), DNS domains (by queried name) and
+rules (by id) that most generate events or alerts over `window`
+(default 24h, 15m to 30d), `limit` entries per top list (default 10,
+max 50), fleet-wide by default and narrowed to one machine with
+`host=`. Each rule row carries its triage overlay — today
+`closed_pct`/`acknowledged_pct` over the rule's alerts, the honest
+proxy until a triage decision field exists; the JSON names exactly
+what it measures. It answers JSON only because the console renders it
+and adds the tuning buttons (known software, suppressions).
 
 ## Console accounts, roles and audit
 
@@ -686,6 +762,150 @@ every expectation must fire against the shipped pack, every shipped
 rule and chain must keep its scenario, and every raised alert must
 carry the `simulation` tag. A scenario that stops detecting breaks the
 build, so detection regressions cannot land silently.
+
+## Active Directory connector (read-only)
+
+Start the engine with `-ad <config.yaml>` (and `-store`, which holds
+the snapshot — see the example file [`ad.example.yaml`](../ad.example.yaml))
+and the engine periodically reads the directory over LDAPS (or plain
+LDAP explicitly upgraded with StartTLS) and installs a snapshot into
+SQLite:
+
+- the transport always validates the domain controller's certificate
+  against the CA file in the config: no CA file, no connector; plain
+  LDAP without StartTLS does not exist in this connector;
+- the bind is always the configured service account (a plain domain
+  user is enough). Anonymous binds are refused by construction, and the
+  account's password lives in its own file (`password_file`, a SEC-2
+  envelope or legacy raw text — see below), read at
+  every sync so a rotation needs no restart — it is never logged,
+  returned by the API or interpolated into errors;
+- users, groups, computers and OUs are read with product-literal LDAP
+  filters (no operator input ever composes a filter), paged per
+  RFC 2696 with a hard object cap (`max_objects`; a capped sync
+  reports `truncated` on `/api/ad/status`), and the security-relevant
+  attributes land as typed columns: `userAccountControl`, `pwdLastSet`,
+  `lastLogonTimestamp`, `adminCount`, SPNs, supported encryption types
+  and the OS;
+- include/exclude OU filters prune the subtree, and every sync replaces
+  the snapshot inside one transaction: readers see either the old or
+  the new directory, never a half-synced mixture.
+
+The console reads the snapshot through `GET /api/ad/status`,
+`GET /api/ad/objects/{kind}` (user/group/computer/ou), and the domain
+posture analysis through `GET /api/ad/posture` and
+`GET /api/ad/posture/history`:
+
+- the posture (recomputed after every completed sync) reports the
+  classical defensive-audit findings — effective members of the
+  privileged groups (nested membership walked through the group edges),
+  stale `krbtgt` password age, unconstrained delegation, accounts
+  without Kerberos pre-authentication, user accounts with an SPN and
+  RC4 still allowed, past-end-of-support operating systems, inactive
+  accounts, passwords that never expire, domain computers without a
+  sensor (compared against the engine's own fleet) and orphaned
+  `adminCount` — each with severity, affected objects and remediation
+  in plain language, plus a 0-100 score with one history point per
+  sync;
+- the connector also watches itself: if the service account it binds
+  with turns out to be an effective member of a privileged group, that
+  is surfaced as a warning on `/api/ad/status` (a reader credential
+  that powerful is one more secret worth protecting).
+
+The `GET /api/ad/*` routes sit behind the same bearer gate as every
+other `/api` route and answer `501` with an arming hint while the
+engine runs without `-ad`. The machine-readable contract lives in
+OpenAPI 3.0 at [`api/openapi.yaml`](api/openapi.yaml).
+
+### The service-account credential (SEC-2)
+
+`password_file` accepts two formats:
+
+- a **SEC-2 envelope** (recommended): one secret per file, a versioned
+  JSON document `{"version":1,"created_at":"...","scheme":"...","ciphertext":"..."}`
+  written by `engine secret-write <file> < pw.txt`. The secret itself
+  arrives on **stdin**, never on the command line or the environment.
+  On **Windows** the envelope is encrypted with DPAPI in the
+  LOCAL_MACHINE scope (the engine runs as a service; a user-scope blob
+  would break the sync the day the service account changes) — the blob
+  only decrypts on the machine that produced it. On **Linux/macOS**
+  (laboratory engines) the envelope is `scheme:"plain"` and the file is
+  installed atomically (temp + rename + fsync) with mode `0600`; a
+  plain envelope read with group/other bits set is a hard, actionable
+  error, because a made-up cipher with no honest key source would be a
+  worse trade than ownership enforced by the filesystem;
+- the **legacy raw text** (UTF-8, trailing newline tolerated), still
+  accepted for lab parity. On Windows a non-encrypted credential file
+  surfaces a one-line warning on `GET /api/ad/status` suggesting
+  `engine secret-write` — nothing is ever rewritten behind the
+  operator's back.
+
+On Windows the filesystem ACL is the other half of the barrier (DPAPI
+binds the blob to the machine, the ACL decides which local accounts may
+read it): restrict the file to SYSTEM, Administrators and the engine's
+service account, e.g. `icacls ad-bind.secret /inheritance:r /grant "SYSTEM:F" /grant "Administrators:F" /grant "NT SERVICE\bluetardigrade:F"`
+(adjust the last principal to your service account). The secret is
+never logged, never returned by the API (tests assert the absence of
+the secret, its base64/hex forms and its length from every `/api/ad/*`
+response) and is zeroed from memory right after each bind attempt; a
+failed bind reports server and result code, never the credential.
+
+### Settings over the API (AD-6)
+
+The settings the console's AD-6 screen edits live in three routes —
+all admin business, so the whole family answers `403` while the engine
+runs without `-api-write` (the engine's single bearer token has no
+role model; arming writes IS the admin gate), and `GET`/`PUT` answer
+`501` without `-ad` (feature off, the same contract as the rest of
+`/api/ad`):
+
+- `GET /api/settings/ad` — the effective configuration: server, port,
+  transport, base DN, the two file paths with their presence booleans
+  (contents are never served), sync interval, OU filters, safety
+  valves, posture thresholds and the work-hours window. The password
+  is NOT part of the document: `password_stored` says whether its SEC-2
+  envelope exists, nothing more.
+- `PUT /api/settings/ad` — validate, commit, hot-reload. The merged
+  configuration is validated with the SAME rules the `-ad` loader
+  applies (a rejected change never touches the disk); a password in
+  the request goes to its own SEC-2 envelope file (never into the
+  YAML, never into a log); the YAML is installed atomically
+  (temp+rename+Sync, mode 0600); the live connector is hot-swapped
+  synchronously inside that same serialized write (the next sync uses
+  the new settings, the old loop stops in the background, and
+  overlapping PUTs publish in commit order — the served connector
+  always matches the committed file). The PUT response reports the
+  resolved swap: `reload_pending` false and the outcome in
+  `last_reload_*` (a swap that failed still applies on restart).
+  Every commit leaves one audit line in the engine log listing the
+  changed field names. A `-ad` file edited by hand since the engine
+  loaded it refuses the PUT with `409` — reconcile the hand edit
+  first; the API never clobbers it.
+- `POST /api/ad/test` — the "Probar conexión" button: one bounded,
+  read-only probe (same TLS transport, authenticated bind, up to 200
+  sampled entries per object kind) of a candidate configuration. It
+  stores nothing, answers 200 with `ok: true/false` (a failed
+  CONNECTION is a successful TEST), needs `-ad`, and runs one probe at
+  a time.
+- File paths never come from the API: `ca_file` and `password_file` are
+  changed in the `-ad` file on the engine host. A PUT or probe that names
+  other paths is refused with `400` (sending the current value back
+  unchanged is fine). An API path would let the API credential overwrite
+  any file the engine can write, or read one and send it as a bind
+  password to a server of the caller's choosing.
+
+```bash
+curl -s -X PUT "$API/api/settings/ad" \
+  -H "Authorization: Bearer $SF_API_TOKEN" \
+  -d '{"interval_seconds": 900, "inactive_days": 60}'
+curl -s -X POST "$API/api/ad/test" \
+  -H "Authorization: Bearer $SF_API_TOKEN" \
+  -d '{"server": "dc01.corp.example.com", "port": 636}'
+```
+
+The machine-readable contract (including the `ADSettingsUpdate` field
+list and the `ADTestResult` verdict shape) lives in
+[`api/openapi.yaml`](api/openapi.yaml).
 
 ## Reputation lookups (opt-in)
 
@@ -785,6 +1005,26 @@ when no account is an administrator) and `ingest-identities.yaml`
 (validated with the engine's loader, since the engine refuses to start
 on a malformed one). Files saved by Windows tools with a UTF-8 BOM or as
 UTF-16 are read correctly.
+
+## Known software (§2.2, `-known-software`)
+
+`known-software.yaml` (see `known-software.example.yaml` for the annotated format) names software the whole deployment is expected to run — the Lenovo Vantage on every laptop, the corporate VPN, an internal agent pinned by hash. Events whose process matches an entry carry the enrichment `known_software: <name>`. The event is NEVER deleted, downgraded or hidden — known software is also compromised software — but three honest effects apply:
+
+- the **baseline** keeps learning the name but stops reporting it as a novelty;
+- the **noise report** (`GET /api/noise`) stops counting those boots in the process aggregate, and `scanned.known_software_events` keeps the disappearance explainable;
+- a **rule** may opt out of firing on it with `exclude_known_software: true` (intended for low/medium-confidence "unexpected software" rules; high/critical rules should never set it — the enrichment key is engine-owned, so a sensor cannot forge its way past a rule).
+
+```yaml
+version: 1
+software:
+  - name: Lenovo Vantage
+    image: 'C:\Program Files (x86)\Lenovo\VantageService\*\LenovoVantage-*.exe'
+    signer: 'Lenovo'          # metadata only: signature matching arrives in v1.2
+  - name: Inventory agent
+    sha256: ['9a1f2c3d4e5f60718293a4b5c6d7e8f900112233445566778899aabbccddeeff']
+```
+
+Matching is case-insensitive and backslash-normalized (write the path exactly like the sensor reports it); `*` does not cross a directory separator — one star per path level. An entry needs `image`, `sha256` or both. Point the engine at it with `-known-software <path>` (default `./known-software.yaml`, falling back to the install root); empty disables. The file hot-reloads on the same 15 s ticker as rules and suppressions; a malformed file is FATAL at startup and keeps the previous list on hot reload, loudly. The live count is visible at `GET /api/stats` (`known_software_active`).
 
 ## Host risk scoring (hot hosts)
 
@@ -1240,7 +1480,9 @@ Every push and pull request runs the same checks the maintainers run locally (`.
 - **Console** — hub: `bun install --frozen-lockfile`, `bun test`, `tsc --noEmit`; web console: same install, `bun test` (G1 landed in CI), `tsc --noEmit`, `next build`.
 - **Sensor** — `cargo check --locked`, `cargo test --locked` (the platform-independent decoders: process fields, network/registry, DNS answers, SHA-256, heartbeat, delivery queue) and `cargo clippy --all-targets -- -D warnings` on the host, plus a Windows cross-check (`cargo check` and `cargo clippy` with `--target x86_64-pc-windows-msvc`, type/borrow check without linking — the ETW collector is Windows-first and this is the only way to verify it still compiles without a Windows host). The crate itself compiles on any OS; ETW ingestion is cfg-gated to Windows and refuses to run off-Windows.
 
-Nightly (`.github/workflows/bench-nightly.yml`, also triggerable by hand), the pipeline bench runs the **real** engine over loopback with the documented baseline parameters (`scripts/dev-tests/bench -n 2000 -rate 1000`) in two passes on the same clock: a **rings** baseline, and a second identical pass with `-store` attached to a fresh SQLite file so the persistence overhead is measured, not assumed. The run summary records p50/p99 for both passes plus the store-overhead delta as data, alongside the runner identity and an fsync 4k dsync probe of the same medium the sqlite pass wrote to — the environment class that dominates the persistence tail, recorded per run because it is a datum of that run, not a property of the machine (the same role measured a 15.8 ms stalls-class tail one round and a 1.8 ms fast-fsync tail the next). The contract is enforced identically in each pass, and it is **advisory by design** (Director decision 6.2): a p99 at or above the phase-1 contract (< 10 ms) raises a warning annotation for the next review, but never fails the job — only a pipeline completeness failure (lost alerts, in either pass) turns the run red, because that is a functional defect, not a performance one. The same script runs locally: `bash scripts/dev-tests/bench_nightly.sh` (ports 7777/7778 free).
+Nightly (`.github/workflows/bench-nightly.yml`, also triggerable by hand), the pipeline bench runs the **real** engine over loopback with the documented baseline parameters (`scripts/dev-tests/bench -n 2000 -rate 1000`) in two passes on the same clock: a **rings** baseline, and a second identical pass with `-store` attached to a fresh SQLite file so the persistence overhead is measured, not assumed. The run summary records p50/p99 for both passes plus the store-overhead delta as data, alongside the runner identity and an fsync 4k dsync probe of the same medium the sqlite pass wrote to — the environment class that dominates the persistence tail, recorded per run because it is a datum of that run, not a property of the machine (a 15.8 ms stalls-class tail and a 1.8 ms fast-fsync tail were measured on different media with these exact parameters). The contract is enforced identically in each pass, and it is **advisory by design**: a p99 at or above the phase-1 contract (< 10 ms) raises a warning annotation for the next review, but never fails the job — only a pipeline completeness failure (lost alerts, in either pass) turns the run red, because that is a functional defect, not a performance one. The same script runs locally: `bash scripts/dev-tests/bench_nightly.sh` (ports 7777/7778 free).
+
+The same workflow also fuzzes: a discovery step turns every `func Fuzz*` target in the module into one matrix job (`go test -run '^$' -fuzz` with a 5-minute budget per target, ten in parallel), so a new fuzz target anywhere in the tree enters the nightly rotation without touching the workflow, and the discovery job fails loudly if it ever finds none (an empty matrix would skip silently and look green). A failing input is preserved as a run artifact (`fuzz-crasher-<target>`), and every target doubles as an ordinary test through its seed corpus, so a crasher pinned into `testdata/fuzz/` fails the regular suite afterwards. Like the bench, the fuzz jobs are **advisory by design**: a crash reports a real defect on an input surface, it does not gate a merge.
 
 To run the equivalent suite locally (Go 1.26+, bun, cargo via rustup, python3 with PyYAML):
 

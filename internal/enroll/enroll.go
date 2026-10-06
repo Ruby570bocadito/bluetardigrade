@@ -206,12 +206,13 @@ func Open(file string) (*Registry, error) {
 	if len(f.Tokens) > MaxTokens || len(f.Hosts) > MaxHosts {
 		return nil, fmt.Errorf("enroll: %s: %d tokens / %d hosts exceed the caps (%d / %d)", file, len(f.Tokens), len(f.Hosts), MaxTokens, MaxHosts)
 	}
-	ids := map[string]bool{}
+	ids, digests := map[string]bool{}, map[string]bool{}
 	for i, t := range f.Tokens {
-		if t == nil || !validDigest(t.Digest) || t.ID == "" || ids[t.ID] {
+		if t == nil || !validDigest(t.Digest) || t.ID == "" || ids[t.ID] || digests[t.Digest] {
 			return nil, fmt.Errorf("enroll: %s: token #%d is malformed or duplicated", file, i+1)
 		}
 		ids[t.ID] = true
+		digests[t.Digest] = true
 	}
 	names := map[string]bool{}
 	for i, h := range f.Hosts {
@@ -478,7 +479,7 @@ func (r *Registry) Enroll(token, host, peer string) (Enrolled, error) {
 		return Enrolled{}, failure(ErrFull, "%d hosts are already waiting for approval", MaxPending)
 	}
 
-	// SEC-A-1 (Seguridad A, ronda 2026-10-05 13h34): the 6-hex suffix
+	// SEC-A-1: the 6-hex suffix
 	// has a 16.7M space and host records are never purged, so across
 	// enough re-enrollments of the same host name a birthday collision
 	// becomes possible. Open() refuses a file with duplicate identity

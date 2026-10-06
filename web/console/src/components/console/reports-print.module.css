@@ -1,0 +1,54 @@
+/* Print styles of the REP-1 printable report view. Deliberately a CSS
+ * MODULE so the print contract never touches globals.css or the theme
+ * work of another lane: while printing, the console chrome is muted
+ * with the visibility pattern and the report takes the page. */
+
+.printRoot {
+  /* on screen the printable sheet is just another panel */
+  border-radius: 12px;
+}
+
+@media print {
+  @page {
+    margin: 14mm;
+  }
+
+  /* mute the whole app, show only the report sheet */
+  body * {
+    visibility: hidden;
+  }
+
+  .printRoot,
+  .printRoot * {
+    visibility: visible;
+  }
+
+  .printRoot {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    border-radius: 0;
+    padding: 0;
+  }
+
+  .noPrint {
+    display: none !important;
+  }
+
+  .printRoot table {
+    break-inside: auto;
+  }
+
+  .printRoot tr {
+    break-inside: avoid;
+  }
+
+  /* ink economy: keep the browser's default text colors when printing */
+  .printRoot,
+  .printRoot * {
+    color: #111 !important;
+    background: transparent !important;
+    border-color: #bbb !important;
+    box-shadow: none !important;
+  }
+}

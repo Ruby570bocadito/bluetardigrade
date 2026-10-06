@@ -19,7 +19,15 @@ func newRegistry(t *testing.T) (*Registry, *clock) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := &clock{t: time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)}
+	// The injected clock must stay NEAR the real wall clock, never a
+	// hardcoded date: the reload path (Open) uses the production
+	// time.Now, so a fixed base lets its 24h token TTL drift past the
+	// real clock and flip expiry-derived states under the test (the
+	// 2026-10-05 12:00 UTC base detonated at 2026-10-06 12:00 UTC:
+	// TestPersistenceAndReload reloaded a token as "expired" where it
+	// expected "used_up"). One hour back keeps every token inside its
+	// TTL for the whole run, on any day, forever.
+	c := &clock{t: time.Now().UTC().Add(-time.Hour)}
 	r.now = c.now
 	return r, c
 }
@@ -299,7 +307,7 @@ func TestFailedWriteLeavesStateUnchanged(t *testing.T) {
 	}
 }
 
-// SEC-A-1 (Seguridad A, ronda 2026-10-05 13h34): the identity suffix is
+// SEC-A-1: the identity suffix is
 // only 6 hex digits and host records are never purged, so across enough
 // re-enrollments of the same host a birthday collision is possible; one
 // duplicate name would save fine and then Open() (and the engine with

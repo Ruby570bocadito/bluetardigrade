@@ -245,6 +245,20 @@ func (s *Server) bindingActive() bool { return s.identitiesActive() || s.enrolle
 // Rotating reports whether a previous token is still being accepted.
 func (s *Server) Rotating() bool { return s.prevToken != "" }
 
+// CertExpiry returns the ingest listener's certificate expiry and the
+// configured cert path (SET-3 stats). ok=false when the listener runs
+// without TLS (plain TCP on loopback).
+func (s *Server) CertExpiry() (notAfter time.Time, path string, ok bool) {
+	if s.reloader == nil {
+		return time.Time{}, "", false
+	}
+	na, ok := s.reloader.NotAfter()
+	if !ok {
+		return time.Time{}, "", false
+	}
+	return na, s.reloader.CertFile(), true
+}
+
 // AuthEnabled reports whether the ingest requires the AUTH handshake
 // (shared token and/or per-sensor identities).
 func (s *Server) AuthEnabled() bool { return s.authRequired() }
@@ -285,7 +299,7 @@ func (s *Server) Serve() {
 		// land after Wait had already returned — a data race against the
 		// WaitGroup and an unsynchronized late connection on every
 		// shutdown whose accept window had a connection in flight
-		// (race report 03-A round 21h59, reproduced under -race).
+		// (race report, reproduced under -race).
 		s.mu.Lock()
 		if s.closing {
 			s.mu.Unlock()

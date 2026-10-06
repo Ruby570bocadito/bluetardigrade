@@ -309,7 +309,7 @@ function HostPage({ row, onHunt, onOpenAlert, onOpenIncident }: {
                   </li>
                 ) : (
                   <li key={'e' + item.event.id} className="grid grid-cols-[64px_120px_minmax(0,1fr)] items-center gap-2 px-2 py-1">
-                    <span className="font-mono text-[11px] tabular-nums text-zinc-600">{formatTime(item.at)}</span>
+                    <span className="font-mono text-[11px] tabular-nums text-zinc-500">{formatTime(item.at)}</span>
                     <span className="truncate font-mono text-[11px] text-primary-link/80">{item.event.type}</span>
                     <span className="truncate font-mono text-[11px] text-zinc-400" title={eventDetail(item.event)}>{eventDetail(item.event)}</span>
                   </li>

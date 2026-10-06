@@ -55,6 +55,40 @@ func TestParseWindowDefaultsAndAcceptsPresets(t *testing.T) {
 	}
 }
 
+// The documented presets of the report catalog ("24h | 7d | 30d") must
+// parse: the API catalog, openapi.yaml and the invalid-window error
+// message itself advertise them. time.ParseDuration has no day unit,
+// so the parser rewrites "<n>d" to hours before parsing; the window
+// echoes the requested preset verbatim.
+func TestParseWindowAcceptsDocumentedDayPresets(t *testing.T) {
+	for _, tc := range []struct {
+		kind string
+		in   string
+		want time.Duration
+	}{
+		{KindExecutive, "7d", 168 * time.Hour},
+		{KindExecutive, "30d", 30 * 24 * time.Hour},
+		{KindNoise, "2d", 48 * time.Hour},
+		{KindFleet, "1.5d", 36 * time.Hour},
+	} {
+		w, err := ParseWindow(tc.kind, tc.in)
+		if err != nil {
+			t.Fatalf("%s window %q: %v", tc.kind, tc.in, err)
+		}
+		if w.Preset != tc.in {
+			t.Fatalf("preset must echo the request verbatim: got %q, want %q", w.Preset, tc.in)
+		}
+		if d := w.Until.Sub(w.From); d != tc.want {
+			t.Fatalf("%q resolved to %s, want %s", tc.in, d, tc.want)
+		}
+	}
+	for _, bad := range []string{"31d", "0d", "-7d", "7dd", "d7", "7 d", "d"} {
+		if _, err := ParseWindow(KindExecutive, bad); err == nil {
+			t.Fatalf("window %q must be rejected", bad)
+		}
+	}
+}
+
 // ------------------------------------------------------------- tactic
 
 func TestTacticOf(t *testing.T) {
@@ -429,5 +463,40 @@ func TestExecutiveCSVMetricRowsAreDeterministic(t *testing.T) {
 		if strings.Join(first.Rows[i], "|") != strings.Join(second.Rows[i], "|") {
 			t.Fatalf("row %d differs: %v vs %v", i, first.Rows[i], second.Rows[i])
 		}
+	}
+}
+
+// false_positive_pct is the REAL false-positive rate (the recorded
+// decision); acknowledged/closed stay as the workflow-progress proxies.
+func TestBuildNoiseFalsePositivePct(t *testing.T) {
+	w := testWindow()
+	alerts := []AlertInput{
+		alert("a1", "R1", "low", "PC-1", at("2026-10-05T10:00:00Z"), "closed"),
+		alert("a2", "R1", "low", "PC-1", at("2026-10-05T10:05:00Z"), "closed"),
+		alert("a3", "R1", "medium", "PC-2", at("2026-10-05T10:06:00Z"), "acknowledged"),
+		alert("a4", "R1", "high", "PC-2", at("2026-10-05T10:07:00Z"), "new"),
+		alert("a5", "R2", "medium", "PC-1", at("2026-10-05T10:08:00Z"), "closed"),
+	}
+	// 2 of the 4 R1 alerts carry the false_positive verdict; R2 has a
+	// verdict but it is NOT a false positive; a3 is an authorized
+	// activity, which must not inflate the FP rate either.
+	alerts[1].Decision = "false_positive"
+	alerts[2].Decision = "authorized_activity"
+	alerts[4].Decision = "confirmed_incident"
+	n := BuildNoise(NoiseInputs{Source: SourceStore, Alerts: alerts}, w, w.Until)
+	if len(n.Rules) != 2 {
+		t.Fatalf("rules = %+v", n.Rules)
+	}
+	r1 := n.Rules[0]
+	if r1.RuleID != "R1" || r1.FalsePositivePct != 25.0 {
+		t.Fatalf("R1 false_positive_pct = %v, want 25.0 (2 of 4)", r1.FalsePositivePct)
+	}
+	r2 := n.Rules[1]
+	if r2.RuleID != "R2" || r2.FalsePositivePct != 0 {
+		t.Fatalf("R2 false_positive_pct = %v, want 0 (verdict is confirmed_incident)", r2.FalsePositivePct)
+	}
+	// proxies unaffected
+	if r1.ClosedPct != 50.0 || r1.AcknowledgedPct != 25.0 {
+		t.Fatalf("R1 proxies = closed %v ack %v", r1.ClosedPct, r1.AcknowledgedPct)
 	}
 }

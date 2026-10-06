@@ -28,6 +28,46 @@ describe('csvCell', () => {
   })
 })
 
+describe('csvCell — spreadsheet formula guard (the engine export rule)', () => {
+  test('prefixes with an apostrophe cells whose first non-space character starts a formula', () => {
+    expect(csvCell('=1+1|maliciosa')).toBe("'=1+1|maliciosa")
+    expect(csvCell('+34600')).toBe("'+34600")
+    expect(csvCell('-cmd')).toBe("'-cmd")
+    expect(csvCell('@sum(a1)')).toBe("'@sum(a1)")
+    expect(csvCell('＝completa')).toBe("'＝completa")
+    expect(csvCell('＋completa')).toBe("'＋completa")
+    expect(csvCell('－completa')).toBe("'－completa")
+    expect(csvCell('＠completa')).toBe("'＠completa")
+    expect(csvCell('\ttabulada')).toBe("'\ttabulada")
+    // a guarded cell that still carries CR/LF also gets the RFC 4180 quoting
+    expect(csvCell('\rretorno')).toBe("\"'\rretorno\"")
+    expect(csvCell('\nlinea')).toBe("\"'\nlinea\"")
+  })
+
+  test('decides on the first non-space character and keeps the leading spaces verbatim', () => {
+    expect(csvCell('   =cmd')).toBe("'   =cmd")
+    expect(csvCell('\t\t@at')).toBe("'\t\t@at")
+    expect(csvCell('  texto plano')).toBe('  texto plano')
+    expect(csvCell('total-1')).toBe('total-1')
+  })
+
+  test('a finite number is exempt: its string form cannot start a formula, only a value', () => {
+    expect(csvCell(-12.5)).toBe('-12.5')
+    expect(csvCell(3)).toBe('3')
+    expect(csvCell(-0)).toBe('0')
+  })
+
+  test('keeps the nullish-to-empty-cell contract the alert export already had', () => {
+    expect(csvCell(undefined)).toBe('')
+    expect(csvCell(null)).toBe('')
+  })
+
+  test('tableToCsv applies the guard to the whole row (a hostile host in the table twin)', () => {
+    const csv = tableToCsv(['Host', 'Alertas'], [['=equipo.maligno', 3], ['equipo bueno', -2]])
+    expect(csv).toBe('Host,Alertas\r\n\'=equipo.maligno,3\r\n' + 'equipo bueno,-2\r\n')
+  })
+})
+
 describe('tableToCsv', () => {
   test('emits an RFC 4180 body: header, CRLF rows, trailing CRLF', () => {
     const csv = tableToCsv(['Día', 'Total'], [['lunes', 4], ['martes', 'con, coma']])

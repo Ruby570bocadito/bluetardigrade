@@ -4,6 +4,7 @@ import { JSDOM } from 'jsdom'
 import React from 'react'
 import assert from 'node:assert/strict'
 import { EngineProvider, useEngine } from '../../web/console/src/components/console/engine-provider'
+import { I18nProvider } from '../../web/console/src/components/console/i18n-provider'
 import { AlertsView } from '../../web/console/src/components/console/alerts-view'
 import { Dashboard } from '../../web/console/src/components/console/dashboard'
 import { ForensicPanel } from '../../web/console/src/components/console/forensic-panel'
@@ -11,7 +12,9 @@ import { ReportPanel } from '../../web/console/src/components/console/report-pan
 import { ReportLibrary } from '../../web/console/src/components/console/report-library'
 import { readReports, REPORT_KEY, saveReport } from '../../web/console/src/lib/soc-report'
 import { SavedSearches } from '../../web/console/src/components/console/saved-searches'
+import { Table, TableBody, TableCaption, TableCell, TableEmpty, TableHead, TableHeader, TableHeadRow, TableRow } from '../../web/console/src/components/ui/table'
 import { alertSearchLens, SAVED_SEARCH_KEY } from '../../web/console/src/lib/saved-searches'
+import { LANG_STORAGE_KEY } from '../../web/console/src/lib/i18n'
 import type { TriageTarget } from '../../web/console/src/lib/operations'
 
 const dom = new JSDOM('<div id="root"></div>', {url:'http://localhost:3000', pretendToBeVisual:true})
@@ -22,6 +25,10 @@ for (const key of ['window','document','HTMLElement','HTMLFormElement','HTMLInpu
 dom.window.matchMedia = (() => ({matches:true, addListener(){}, removeListener(){}, addEventListener(){}, removeEventListener(){}})) as any
 ;(globalThis as any).requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.window)
 ;(globalThis as any).cancelAnimationFrame = dom.window.cancelAnimationFrame.bind(dom.window)
+// The fixture pins Spanish strings; jsdom reports navigator.language 'en-US',
+// so the console language is stored explicitly (a validated stored choice
+// always wins, exactly the decision path the i18n battery asserts).
+dom.window.localStorage.setItem(LANG_STORAGE_KEY, 'es')
 
 class FakeSource {
   static OPEN = 1
@@ -108,7 +115,7 @@ function Probe() {state=useEngine(); return null}
 // Initialize React's browser event support after jsdom globals exist.
 const { createRoot } = require('react-dom/client') as typeof import('react-dom/client')
 const root = createRoot(document.getElementById('root')!)
-root.render(<React.StrictMode><EngineProvider><Probe/><Dashboard onAnalyze={()=>{}} onNavigate={(view)=>{navigated=view}} onTriage={(target)=>{triageTarget=target}}/></EngineProvider></React.StrictMode>)
+root.render(<React.StrictMode><I18nProvider><EngineProvider><Probe/><Dashboard onAnalyze={()=>{}} onNavigate={(view)=>{navigated=view}} onTriage={(target)=>{triageTarget=target}}/></EngineProvider></I18nProvider></React.StrictMode>)
 const delay = (ms:number) => new Promise(resolve=>setTimeout(resolve,ms))
 async function until(fn:()=>boolean, timeout=7000) {
   const end=Date.now()+timeout
@@ -133,8 +140,13 @@ async function main() {
   await until(()=>state!.rules[0]?.name===ruleName)
   console.log('PASS: polled catalogue follows hot reload')
 
+  // the activity chart lives in the 'Equipos y actividad' tab of the panel
+  const tabButton=(label:string)=>[...document.querySelectorAll('[role="tab"]')].find(b=>b.textContent?.trim()===label)!
+  tabButton('Equipos y actividad').click()
   await until(()=>document.querySelector('[role="img"]')?.getAttribute('aria-label')?.includes('0 eventos del búfer') ?? false)
   console.log('PASS: activity ages out without incoming events')
+  tabButton('Resumen').click()
+  await delay(30)
 
   const queueButton=[...document.querySelectorAll('button')].find(button=>button.textContent?.includes('Abrir cola'))
   queueButton!.click()
@@ -142,7 +154,7 @@ async function main() {
   console.log('PASS: operation action navigates to the alert queue')
 
   for (const [label,target] of [['Ver críticas sin cerrar','critical'],['Ver alertas nuevas','new'],['Ver alertas reconocidas','acknowledged'],['Ver alertas cerradas','closed']] as const) {
-    const action=[...document.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')?.startsWith(label+':') || b.textContent?.trim()===label)!
+    const action=[...document.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')?.startsWith(label+':') || b.getAttribute('aria-label')?.startsWith(label+' ') || b.textContent?.trim()===label)!
     assert.equal(action.disabled,false)
     action.click()
     assert.equal(triageTarget,target)
@@ -189,9 +201,13 @@ async function main() {
   assert.equal(state!.rules.length,0)
   assert.equal(state!.stats,null)
   assert.equal(document.querySelectorAll('[aria-label="Sin datos"]').length,6)
-  assert.ok(document.body.textContent!.includes('Telemetría no disponible'))
-  assert.equal((document.querySelector('[aria-label^="Ver alertas nuevas:"]') as HTMLButtonElement).disabled,true)
+  assert.equal((document.querySelector('[aria-label^="Ver alertas nuevas"]') as HTMLButtonElement).disabled,true)
   assert.equal([...document.querySelectorAll('button')].find(b=>b.textContent?.trim()==='Ver críticas sin cerrar')!.disabled,true)
+  tabButton('Equipos y actividad').click()
+  await delay(30)
+  assert.ok(document.body.textContent!.includes('Telemetría no disponible'))
+  tabButton('Resumen').click()
+  await delay(30)
   console.log('PASS: outage clears stale telemetry and renders unavailable KPIs')
 
   engineUp=true
@@ -202,7 +218,7 @@ async function main() {
   assert.equal(state!.events.length,0)
   console.log('PASS: manual recovery loads the restarted engine snapshot')
 
-  root.render(<React.StrictMode><EngineProvider><Probe/><AlertsView/></EngineProvider></React.StrictMode>)
+  root.render(<React.StrictMode><I18nProvider><EngineProvider><Probe/><AlertsView/></EngineProvider></I18nProvider></React.StrictMode>)
   const button=(label:string)=>[...document.querySelectorAll('button')].find(b=>b.textContent?.trim()===label)!
   await until(()=>Boolean(button('Histórico')))
   button('Histórico').click()
@@ -427,14 +443,17 @@ async function main() {
   console.log('PASS: incompatible saved state is not silently overwritten')
 
   window.localStorage.clear()
+  // the report views are bilingual now: re-pin ES after the wipe (the
+  // stored choice wins; nothing stored falls to the browser preference)
+  dom.window.localStorage.setItem(LANG_STORAGE_KEY, 'es')
   const reportAlert={...alert,status:'new' as const,source:'suricata',attributes:{ids_action:'allowed',ids_verdict:'drop'},network:{source_ip:'10.0.0.1',destination_port:443},severity:'high' as const}
-  root.render(<ReportPanel alert={reportAlert} initiallyOpen />)
+  root.render(<I18nProvider><ReportPanel alert={reportAlert} initiallyOpen /></I18nProvider>)
   const findings=()=>document.querySelector<HTMLTextAreaElement>('textarea[id$="-findings"]')!
   await until(()=>Boolean(findings()))
   Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype,'value')!.set!.call(findings(),'Human fixture findings')
   findings().dispatchEvent(new dom.window.Event('input',{bubbles:true}))
   await delay(30)
-  root.render(<ReportPanel alert={{...reportAlert,status:'closed'}} initiallyOpen />)
+  root.render(<I18nProvider><ReportPanel alert={{...reportAlert,status:'closed'}} initiallyOpen /></I18nProvider>)
   await delay(30)
   assert.equal(findings().value,'Human fixture findings')
   assert.ok(document.body.textContent!.includes('Cambios sin guardar'))
@@ -471,7 +490,7 @@ async function main() {
   try { button('Guardar informe').click(); await until(()=>Boolean(document.querySelector('[role="alert"]'))); assert.equal(readReports(window.localStorage)[0].revision,2) }
   finally {dom.window.Storage.prototype.setItem=realSet}
   console.log('PASS: report storage errors remain visible and preserve the saved revision')
-  root.render(<ReportLibrary />)
+  root.render(<I18nProvider><ReportLibrary /></I18nProvider>)
   await until(()=>document.body.textContent!.includes('Informes guardados (1/10)'))
   ;(document.querySelector('summary') as HTMLElement).click()
   button('Abrir informe').click()
@@ -482,13 +501,79 @@ async function main() {
   assert.deepEqual(readReports(window.localStorage),[])
   console.log('PASS: orphan snapshots can be reopened and removed without the engine alert')
   window.localStorage.setItem(REPORT_KEY,'{corrupt report fixture')
-  root.render(<ReportPanel alert={reportAlert} initiallyOpen />)
+  root.render(<I18nProvider><ReportPanel alert={reportAlert} initiallyOpen /></I18nProvider>)
   await until(()=>Boolean(findings()))
   button('Guardar informe').click()
   await delay(30)
   assert.equal(window.localStorage.getItem(REPORT_KEY),'{corrupt report fixture')
   assert.ok(document.querySelector('[role="alert"]'))
   console.log('PASS: corrupt report stores are not silently replaced')
+
+  // POL-7 Fase B1: contract of the table primitive — sr-only caption,
+  // sticky head on thead, aria-sort passthrough, compact density, accent
+  // tint only through --primary* and zero hue literals.
+  root.render(
+    <Table className="table-fixed">
+      <TableCaption>Inventario de prueba de la primitiva</TableCaption>
+      <TableHeader sticky>
+        <TableHeadRow>
+          <TableHead>Regla</TableHead>
+          <TableHead sort="ascending">Severidad</TableHead>
+          <TableHead compact>Detalle</TableHead>
+        </TableHeadRow>
+      </TableHeader>
+      <TableBody>
+        <TableRow interactive>
+          <TableCell>demo</TableCell>
+          <TableCell className="font-mono">crit</TableCell>
+          <TableCell compact>compacto</TableCell>
+        </TableRow>
+        <TableRow selected>
+          <TableCell>seleccionada</TableCell>
+          <TableCell>—</TableCell>
+          <TableCell compact>—</TableCell>
+        </TableRow>
+      </TableBody>
+    </Table>,
+  )
+  await delay(30)
+  const table = document.querySelector('table')!
+  assert.ok(table.classList.contains('w-full') && table.classList.contains('border-collapse'))
+  assert.ok(table.classList.contains('table-fixed'))
+  const caption = table.querySelector('caption')!
+  assert.ok(caption.classList.contains('sr-only'))
+  const thead = table.querySelector('thead')!
+  assert.ok(thead.classList.contains('sticky') && thead.classList.contains('top-0') && thead.classList.contains('z-10'))
+  const heads = [...table.querySelectorAll('thead th')]
+  assert.equal(heads.length, 3)
+  assert.ok(heads.every((h) => h.getAttribute('scope') === 'col'))
+  assert.ok(heads[0].className.includes('uppercase'))
+  assert.ok(!heads[2].className.includes('uppercase'))
+  assert.equal(heads[1].getAttribute('aria-sort'), 'ascending')
+  assert.equal(heads[0].getAttribute('aria-sort'), null)
+  assert.ok(table.querySelector('tbody')!.classList.contains('divide-y'))
+  const bodyRows = [...table.querySelectorAll('tbody tr')]
+  assert.ok(bodyRows[0].className.includes('hover:bg-zinc-900/60'))
+  assert.ok(bodyRows[1].className.includes('bg-primary-tint/10'))
+  assert.ok(!bodyRows[1].className.includes('hover:bg'))
+  assert.ok(!table.outerHTML.includes('blue-'))
+  root.render(
+    <Table>
+      <TableCaption>Vacía</TableCaption>
+      <TableHeader>
+        <TableHeadRow>
+          <TableHead>Regla</TableHead>
+        </TableHeadRow>
+      </TableHeader>
+      <TableBody>
+        <TableEmpty colSpan={1}>Sin supresiones activas</TableEmpty>
+      </TableBody>
+    </Table>,
+  )
+  await delay(30)
+  const emptyCell = document.querySelector('td[colspan="1"]')
+  assert.ok(emptyCell && emptyCell.textContent === 'Sin supresiones activas')
+  console.log('PASS: the table primitive keeps the shared contract (caption, sticky head, aria-sort, compact, selection tint, empty row) with zero hue literals')
 
   root.unmount()
   assert.ok(FakeSource.instances.every(s=>s.closed))

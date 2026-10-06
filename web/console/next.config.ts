@@ -4,39 +4,18 @@ import type { NextConfig } from "next";
 // attacker-controllable telemetry (command lines, file paths, registry
 // values) fetched from monitored endpoints: React escapes text nodes,
 // but defense in depth demands the browser itself refuse anything the
-// app did not ask for. CSP notes:
-//   - script-src 'unsafe-inline': Next.js ships its bootstrap/flight
-//     scripts inline; a nonce pipeline would be the strict upgrade
-//     (tracked in the roadmap). The directive still blocks every
-//     EXTERNAL script origin.
-//   - style-src 'unsafe-inline': Tailwind + component-level inline
-//     styles and the reactbits animation keyframes.
-// The engine stays same-origin; the local analyst hub has its own port.
-// Keep HTTP polling and WebSocket origins aligned with the client URL.
-//   - img-src data:: inline chart markers and data URIs.
-// X-Frame-Options + frame-ancestors: the console must never be framed
-// (clickjacking on a kill-adjacent UI); nosniff and the referrer policy
-// round out the baseline.
-const hubUrl = new URL(process.env.NEXT_PUBLIC_CONSOLE_URL || 'http://localhost:3003', 'http://localhost:3000')
-if (!['http:', 'https:'].includes(hubUrl.protocol)) throw new Error('NEXT_PUBLIC_CONSOLE_URL must use HTTP(S)')
-const hubOrigin = hubUrl.origin
-const hubSocketOrigin = hubOrigin.replace(/^http/, 'ws')
+// app did not ask for.
+//
+// The Content-Security-Policy is NOT set here: it is minted per request
+// by the access proxy (src/proxy.ts), which signs the bootstrap with a
+// nonce in production ('strict-dynamic'). Two CSP headers intersect, so
+// a static copy here would re-break every nonce it does not know about.
+// The remaining headers below are static by nature.
+//
+// X-Frame-Options + frame-ancestors (in the proxy's policy and here):
+// the console must never be framed (clickjacking on a kill-adjacent
+// UI); nosniff and the referrer policy round out the baseline.
 const securityHeaders = [
-  {
-    key: "Content-Security-Policy",
-    value: [
-      "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data:",
-      "font-src 'self' data:",
-      `connect-src 'self' ${hubOrigin} ${hubSocketOrigin}`,
-      "object-src 'none'",
-      "base-uri 'self'",
-      "form-action 'self'",
-      "frame-ancestors 'none'",
-    ].join("; "),
-  },
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "no-referrer" },
@@ -46,6 +25,12 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   output: "standalone",
   reactStrictMode: true,
+  // Browser source maps for the production chunks: when an operator's
+  // browser logs a console error, the trace arrives symbolized instead
+  // of minified (Lighthouse best-practices: valid-source-maps). Maps
+  // are fetched only when DevTools opens — zero runtime cost, no
+  // effect on the bundle baseline (they are not executed).
+  productionBrowserSourceMaps: true,
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

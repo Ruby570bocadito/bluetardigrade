@@ -14,7 +14,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -22,10 +21,6 @@ import (
 )
 
 const scenarioHint = "start the engine with -scenarios <dir> (a laboratory engine, never production evidence)"
-
-// scenarioRunIDPattern matches the run identifiers the battery mints
-// ("run-" + 16 lowercase hex characters, crypto/rand).
-var scenarioRunIDPattern = regexp.MustCompile(`^run-[0-9a-f]{16}$`)
 
 // SetScenarios arms the battery (nil = disarmed: every route answers
 // 501 with the arming hint).
@@ -127,9 +122,11 @@ func (h *Hub) handleScenarioRun(w http.ResponseWriter, r *http.Request) {
 		// Library load errors and unknown scenario ids are the
 		// caller's information: name them verbatim (400 when the
 		// request picked the scenarios, 500 when the library itself
-		// is broken).
+		// is broken). Classified with the sentinel, never with the
+		// message text: error wording must not decide status codes
+		// (the same contract handleAlertStatus documents).
 		code := http.StatusInternalServerError
-		if strings.Contains(err.Error(), "desconocido") {
+		if errors.Is(err, scenrun.ErrUnknownScenario) {
 			code = http.StatusBadRequest
 		}
 		writeErr(w, code, err.Error())
@@ -181,7 +178,7 @@ func (h *Hub) handleScenarioRunDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	if !scenarioRunIDPattern.MatchString(id) {
+	if !scenrun.ValidRunID(id) {
 		writeErr(w, http.StatusBadRequest,
 			`malformed run id: want "run-" followed by 16 hex characters`)
 		return

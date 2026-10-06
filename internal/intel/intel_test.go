@@ -157,7 +157,7 @@ func TestWindowsEncodingsAreRead(t *testing.T) {
 	}
 }
 
-// Regression (SEC-7 fuzz round 2026-10-05): a lone trailing dot was
+// Regression (SEC-7 fuzzing): a lone trailing dot was
 // stripped with TrimSuffix, so malformed input like "000.." normalized
 // to the degenerate domain "000." — non-idempotent, and a list entry
 // "abc.." became a loadable indicator that a hostile event domain

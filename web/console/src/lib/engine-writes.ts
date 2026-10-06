@@ -13,7 +13,7 @@ function engineApiBase(): string {
 export type EngineResult<T> = { ok: true; data: T } | { ok: false; status: number; error: string }
 
 export async function engineCall<T>(
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   path: string,
   body?: unknown,
   headers: Record<string, string> = {},

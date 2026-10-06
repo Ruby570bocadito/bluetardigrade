@@ -37,7 +37,8 @@ const WHERE = {
   'remote-admin': 'En el equipo nuevo · PowerShell de administrador',
 } as const
 
-function CopyBox({ text, label }: { text: string; label: string }) {
+/** Command or secret with a copy button; shared with the first-run assistant. */
+export function CopyBox({ text, label }: { text: string; label: string }) {
   const [done, setDone] = useState(false)
   async function copy() {
     try {
@@ -218,7 +219,7 @@ function TokenList({ tokens }: { tokens: EnrollToken[] }) {
           <li key={t.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-xs">
             <span className="font-medium text-zinc-200">{t.label}</span>
             <span className="text-zinc-500">{t.uses} de {t.max_uses} equipos · caduca {formatDateTime(t.expires_at)}{t.auto_approve ? ` · aprueba ${t.auto_approve}` : ''}</span>
-            <span className="text-[11px] text-zinc-600">{TOKEN_STATUS_LABEL[t.status]}{t.created_by ? ` · creado por ${t.created_by}` : ''}</span>
+            <span className="text-[11px] text-zinc-500">{TOKEN_STATUS_LABEL[t.status]}{t.created_by ? ` · creado por ${t.created_by}` : ''}</span>
             <button type="button" onClick={() => void revoke(t.id)} className={`${QUIET} ml-auto`}>Revocar</button>
           </li>
         ))}

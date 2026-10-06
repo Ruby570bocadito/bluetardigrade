@@ -49,9 +49,14 @@ export function BarList({ rows, max, color = 'var(--series-1)', className, empty
               <button
                 type="button"
                 onClick={row.onSelect}
-                aria-label={row.selectLabel}
                 className="block w-full rounded-md px-1 py-0.5 text-left transition-colors hover:bg-zinc-800/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
+                {/* Label-in-Name (WCAG 2.5.3): the accessible name comes from
+                    the content, so the sentence rides in as sr-only text and
+                    the visible label/hint/count stay part of the name — an
+                    aria-label with a different wording fails axe's
+                    label-content-name-mismatch. */}
+                <span className="sr-only">{row.selectLabel} </span>
                 {body}
               </button>
             ) : (

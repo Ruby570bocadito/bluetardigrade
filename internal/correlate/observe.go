@@ -84,7 +84,7 @@ func (m *Manager) Observe(ev *model.Event, ruleName string) {
 		m.state[key] = st
 	}
 	m.mu.Unlock()
-	// Deliver OUTSIDE mu (the accumulated O1, acta 22h46 §1.4 — the
+	// Deliver OUTSIDE mu (the accumulated O1 — the
 	// same pattern beacon had): the pipeline takes the hub lock and
 	// can block on SQLite, webhook and risk, and no stats read should
 	// queue behind delivery under this manager's lock. Chain state

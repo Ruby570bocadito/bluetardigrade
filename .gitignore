@@ -49,7 +49,14 @@ web/console/*.tsbuildinfo
 
 # Local installer artifacts
 run/
-tools/
+# install.ps1 keeps operator-local runtime state under tools/ (server.json
+# names webhook URLs and ingest tokens - never committed). The only
+# committed part of tools/ is the browser-test tooling manifest
+# (tools/console-tests): exact versions + bun.lock so every runner and CI
+# resolves the same bits; its node_modules stays local.
+tools/*
+!tools/console-tests
+tools/console-tests/node_modules/
 
 # Operator-local suppressions (the armed copy of suppressions.example.yaml;
 # may name real hosts and change windows - never commit it)

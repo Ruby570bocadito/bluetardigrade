@@ -12,6 +12,116 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Active Directory, validation, reports, noise control and a bilingual console (2026-10-06)
+
+- **Active Directory, read only (`-ad`, needs `-store`):**
+  - **Connector:** reads users, groups, computers and OUs over LDAPS (or
+    LDAP upgraded with StartTLS). It validates the domain controller
+    against a configured CA, with TLS 1.2 or later and a pinned server
+    name, and binds as a least-privilege service account.
+  - **Paging:** objects are paged under a hard cap, and OUs can be
+    included or excluded.
+  - **Posture:** recomputed after every sync, with a 0–100 score and
+    history:
+    - effective privileged members;
+    - `krbtgt` age;
+    - unconstrained delegation;
+    - accounts without Kerberos pre-authentication;
+    - SPN accounts with RC4;
+    - unsupported operating systems;
+    - inactive accounts and passwords that never expire;
+    - computers without a sensor;
+    - orphaned `adminCount`.
+  - **API:** `GET /api/ad/status`, `/objects/{kind}`, `/posture`,
+    `/posture/history`.
+  - **Credential:** the service-account password lives in an envelope
+    (`engine secret-write`), DPAPI-encrypted on Windows and `0600`
+    elsewhere. It is zeroed after every bind and never served or logged.
+  - **Settings:** `GET/PUT /api/settings/ad` and `POST /api/ad/test`
+    («Probar conexión»), behind `-api-write` and the API token.
+    - A PUT validates first, then commits and swaps the connector
+      synchronously in commit order.
+    - A file changed by hand is protected with 409.
+    - **The CA and credential paths can only be changed in the `-ad` file
+      on the engine host:** a request that names other paths is refused
+      with 400, and the probe needs `-ad`. Before this fix, the API
+      credential could overwrite any file the engine can write, or read one
+      and send it as a bind password to a chosen server.
+- **Noise control and triage (v1.1):**
+  - **Known software (`-known-software`):**
+    - matched by image glob or SHA-256 and labelled
+      `enrichment.known_software`;
+    - events are never hidden;
+    - the baseline and the noise report stop counting it, and a rule may
+      opt out with `exclude_known_software`.
+  - **Conditional suppressions:** a `when` list of event-field conditions,
+    evaluated with the rule engine's operators, silences one exact use
+    without disabling the rule.
+  - **Triage verdict:** `false_positive`, `authorized_activity` or
+    `confirmed_incident`, in the lifecycle, the API and the exports. The
+    noise report ranks rules by their real false-positive rate.
+  - **Per-host quotas** in the beacon and threshold tables and the
+    in-memory rings, so one noisy host cannot wash the others out.
+    `/api/stats` reports the rotation and the per-host pressure.
+- **Platform status:** `/api/stats` publishes the engine version,
+  ingest→alert latency (p50/p95/max), store size and the expiry of both TLS
+  certificates.
+- **Console:**
+  - **Panel:** three tabs (Resumen, Detección, Equipos y actividad).
+  - **Detection:**
+    - «Validación» launches the inert scenario battery and shows its
+      trend, with a searchable, paged library;
+    - «Ruido» shows top processes, domains and rules, with one-click
+      suppressions;
+    - the ATT&CK matrix shows the scenarios that validate each tactic.
+  - **«Directorio»:** posture, findings, trend, privileged accounts,
+    domain-versus-sensor coverage and the object explorer.
+  - **«Ajustes»:** the Active Directory form, with a write-only password
+    and read-only file paths; the other sections show their real state.
+  - **«Informes»:** catalog, printable PDF sheet and the console's charts.
+  - **Incidents and onboarding:** incident playbooks and a first-run
+    assistant.
+  - **Language:** Spanish and English across the frame, the alerts,
+    incidents, reports, NOC and status views. The panel, directory,
+    validation and settings follow in the next round.
+  - **Look:**
+    - a zinc accent end to end;
+    - shared tab, badge and table components;
+    - motion fully still under `prefers-reduced-motion`;
+    - production source maps.
+  - **Fixes:**
+    - the theme and NOC buttons no longer share an icon;
+    - the risk history waits for the engine;
+    - the triage flow explains a single state;
+    - the English sidebar no longer repeats a group heading.
+- **Security and quality:**
+  - **Console CSP:** nonce-based, without `unsafe-inline`.
+  - **API:** `nosniff` and `no-referrer` on every engine response.
+  - **CSV:** console CSV exports neutralize formulas.
+  - **Analyst:** the single-alert analyst cleans client-provided alerts.
+  - **Active response:** a duplicate idempotency key is denied at commit.
+  - **Enrollment:** the registry refuses duplicate token digests.
+  - **Reports and noise:** they accept `7d`/`30d` and keep their truncation
+    flags honest.
+  - **Intel:** a list saved twice no longer glues a BOM to its first
+    indicator (found by live fuzzing).
+  - **Enrollment test:** it no longer depends on a fixed date.
+- **Build and CI:**
+  - `make` works again (recipe tabs restored, with a guard).
+  - Test tooling installs with `--ignore-scripts --no-save
+    --no-package-lock`.
+  - Windows `vet` covers the whole module.
+  - Nightly fuzzing runs every target, including the ingest first line.
+  - The console palette and accessibility (axe-core, 18 views, both
+    themes) are checked.
+  - Lighthouse baseline: 97/100/96/100.
+- **Windows launcher:**
+  - `sf-console`/`start-engine` arm the Validation view (`-scenarios`)
+    whenever the install ships `scenarios\`. The replay stays inside the
+    engine and never reaches the alerts, the store or the risk score.
+  - The AD connector (`-ad`) is armed only when the operator writes
+    `tools\config\ad.yaml`.
+
 ### Detection validation, reports and the noise report (2026-10-05)
 
 - **Detection validation with inert synthetic scenarios (`scenarios/`):**

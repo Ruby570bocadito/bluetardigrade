@@ -336,24 +336,34 @@ func loadFile(path string, ips, domains, hashes map[string]string, nets *[]netEn
 // saved on Windows often carry a UTF-8 BOM (Set-Content -Encoding UTF8
 // in PowerShell 5) or are UTF-16 (the '>' redirection of PowerShell 5);
 // read as-is, the first indicator or the whole file would be skipped.
+//
+// Regression (live fuzzing 2026-10-06, SEC-A): a list saved TWICE
+// carries two BOMs — and a UTF-16 payload can even start with a U+FEFF
+// of its own — so the first indicator came out glued to a BOM
+// character and never matched. The loop keeps stripping until no BOM
+// encoding remains; every consumed iteration shrinks b by at least two
+// bytes, so it terminates on any input.
 func decodeText(b []byte) []byte {
-	switch {
-	case bytes.HasPrefix(b, []byte{0xEF, 0xBB, 0xBF}):
-		return b[3:]
-	case bytes.HasPrefix(b, []byte{0xFF, 0xFE}), bytes.HasPrefix(b, []byte{0xFE, 0xFF}):
-		big := b[0] == 0xFE
-		b = b[2:]
-		units := make([]uint16, 0, len(b)/2)
-		for i := 0; i+1 < len(b); i += 2 {
-			if big {
-				units = append(units, uint16(b[i])<<8|uint16(b[i+1]))
-			} else {
-				units = append(units, uint16(b[i+1])<<8|uint16(b[i]))
+	for {
+		switch {
+		case bytes.HasPrefix(b, []byte{0xEF, 0xBB, 0xBF}):
+			b = b[3:]
+		case bytes.HasPrefix(b, []byte{0xFF, 0xFE}), bytes.HasPrefix(b, []byte{0xFE, 0xFF}):
+			big := b[0] == 0xFE
+			b = b[2:]
+			units := make([]uint16, 0, len(b)/2)
+			for i := 0; i+1 < len(b); i += 2 {
+				if big {
+					units = append(units, uint16(b[i])<<8|uint16(b[i+1]))
+				} else {
+					units = append(units, uint16(b[i+1])<<8|uint16(b[i]))
+				}
 			}
+			b = []byte(string(utf16.Decode(units)))
+		default:
+			return b
 		}
-		return []byte(string(utf16.Decode(units)))
 	}
-	return b
 }
 
 func stripComment(line string) string {

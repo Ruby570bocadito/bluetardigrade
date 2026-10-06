@@ -1,4 +1,4 @@
-# Dependency vulnerability auditing (SEC-5 of the lane plan): one job,
+# Dependency vulnerability auditing (SEC-5 of the quality plan): one job,
 # three ecosystems. Runs on every push and pull request next to ci, and
 # on a weekly schedule so a new advisory against an UNCHANGED
 # dependency still surfaces — a push-triggered scanner only notices the
@@ -49,9 +49,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      # Actions fijadas por SHA (ronda 20h40, agente 04): mismos pines
-      # verificados que ci.yml; un tag mutable no es una referencia de
-      # confianza para un repo de seguridad.
+      # Actions pinned by SHA: the commit hashes were verified with
+      # git ls-remote against the official tags (same pins as ci.yml).
+      # A mutable tag is not a trusted reference for a security repo.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:

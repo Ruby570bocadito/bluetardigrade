@@ -6,6 +6,7 @@ package api
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -60,5 +61,47 @@ func TestAuthFailMapIsBounded(t *testing.T) {
 	}
 	if !h.tooManyAuthFails("192.0.2.7:1") {
 		t.Fatal("an address over its budget was not throttled")
+	}
+}
+
+// Every engine API response carries the two browser-confusion headers:
+// nosniff (telemetry strings are attacker-influenced text the routes
+// echo back) and no-referrer (operators paste API URLs). The check runs
+// through the full handler chain — headers, rebinding guard, auth and
+// the mux — on a route with and without a token configured.
+func TestAPIResponsesCarrySecurityHeaders(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		token string
+	}{
+		{name: "tokenless loopback"},
+		{name: "token-protected", token: "secret-token"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h, addr := newTestHub(t)
+			h.SetToken(tt.token)
+			url := "http://" + addr + "/api/health"
+			req, err := http.NewRequest(http.MethodGet, url, nil)
+			if err != nil {
+				t.Fatalf("request: %v", err)
+			}
+			if tt.token != "" {
+				req.Header.Set("Authorization", "Bearer "+tt.token)
+			}
+			res, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("GET %s: %v", url, err)
+			}
+			defer res.Body.Close()
+			if res.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d, want 200", res.StatusCode)
+			}
+			if got := res.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+				t.Fatalf("X-Content-Type-Options = %q, want nosniff", got)
+			}
+			if got := res.Header.Get("Referrer-Policy"); got != "no-referrer" {
+				t.Fatalf("Referrer-Policy = %q, want no-referrer", got)
+			}
+		})
 	}
 }

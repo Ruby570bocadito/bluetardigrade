@@ -2,6 +2,7 @@ package incident
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -153,5 +154,47 @@ func TestStoreIsBounded(t *testing.T) {
 	}
 	if _, err := s.Create(Create{Title: "uno mas"}); !errors.Is(err, ErrFull) {
 		t.Fatalf("a full store must refuse new cases: %v", err)
+	}
+}
+
+// Breaching the per-case alert cap must refuse the request WHOLE: a
+// mid-loop error used to leave the ids that still fit appended in
+// memory (no timeline entry, no persist), so the client saw 400 while
+// the case had silently grown.
+func TestAddAlertsCapRefusalLeavesCaseUnchanged(t *testing.T) {
+	s, _ := New("")
+	inc, err := s.Create(Create{Title: "Tope de alertas"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := func(from, n int) []string {
+		out := make([]string, 0, n)
+		for i := 0; i < n; i++ {
+			out = append(out, fmt.Sprintf("%016x", from+i))
+		}
+		return out
+	}
+	if _, err := s.AddAlerts(inc.ID, ids(0, 500), nil, "", "ana"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddAlerts(inc.ID, ids(500, 499), nil, "", "ana"); err != nil {
+		t.Fatal(err)
+	}
+	// 999 linked: a request of two more breaches the cap.
+	if _, err := s.AddAlerts(inc.ID, ids(999, 2), nil, "", "ana"); err == nil {
+		t.Fatal("breaching the alert cap must fail")
+	}
+	got, err := s.Get(inc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.AlertIDs) != 999 {
+		t.Fatalf("a refused request must not mutate the case: %d alerts", len(got.AlertIDs))
+	}
+	if len(got.Timeline) != 3 { // created + 2 alerts entries
+		t.Fatalf("a refused request must not write timeline: %+v", got.Timeline)
+	}
+	if got.UpdatedAt != got.Timeline[2].At {
+		t.Fatalf("a refused request must not bump UpdatedAt: %s vs %s", got.UpdatedAt, got.Timeline[2].At)
 	}
 }

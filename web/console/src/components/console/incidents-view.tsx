@@ -14,6 +14,7 @@ import {
   Desktop,
   FileHtml,
   FileText,
+  Files,
   FolderOpen,
   Lightning,
   NotePencil,
@@ -26,6 +27,8 @@ import {
 } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { useIncidents } from './incidents-provider'
+import { useI18n } from './i18n-provider'
+import { IncidentPlaybook } from './incident-playbook'
 import { EmptyState, SeverityBadge, StatTile } from './ui-bits'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
 import { EntityGraphView, GraphLegend } from '@/components/charts/entity-graph'
@@ -35,16 +38,16 @@ import { buildIncidentHtml, buildIncidentMarkdown, reportFilename } from '@/lib/
 import {
   addIncidentNote,
   createIncident,
-  INCIDENT_STATUS_LABEL,
   updateIncident,
   type Incident,
   type IncidentEntry,
   type IncidentStatus,
 } from '@/lib/engine-writes'
+import type { IncidentPlaybookState } from '@/lib/incident-playbook'
 import { alertKey } from '@/lib/engine-client'
 import { formatDateTime, formatTime, type Severity } from '@/lib/console-types'
 import { currentSearch, readLensState, replaceOperatorState, writeIncidentToSearch } from '@/lib/url-state'
-import { SEVERITIES, SEVERITY_LABEL } from '@/lib/soc-metrics'
+import { SEVERITIES } from '@/lib/soc-metrics'
 
 type Filter = 'active' | 'all' | 'closed'
 
@@ -56,10 +59,12 @@ const STATUS_STYLE: Record<IncidentStatus, string> = {
 }
 
 export function StatusChip({ status }: { status: IncidentStatus }) {
-  return <span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${STATUS_STYLE[status]}`}>{INCIDENT_STATUS_LABEL[status]}</span>
+  const { dict } = useI18n()
+  return <span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${STATUS_STYLE[status]}`}>{dict.incidents.statusLabels[status]}</span>
 }
 
-export function IncidentsView({ onHost, onOpenAlert, onAnalyze }: { onHost: (host: string) => void; onOpenAlert: (alertId: string) => void; onAnalyze?: (pending: PendingIncidentAnalysis) => void }) {
+export function IncidentsView({ onHost, onOpenAlert, onAnalyze, onOpenEngineReport }: { onHost: (host: string) => void; onOpenAlert: (alertId: string) => void; onAnalyze?: (pending: PendingIncidentAnalysis) => void; onOpenEngineReport?: (incidentId: string) => void }) {
+  const { dict } = useI18n()
   const { incidents, persistent, available, loaded, upsert } = useIncidents()
   const [filter, setFilter] = useState<Filter>('active')
   const [selected, setSelectedState] = useState<string>('')
@@ -91,26 +96,22 @@ export function IncidentsView({ onHost, onOpenAlert, onAnalyze }: { onHost: (hos
   if (loaded && !available) {
     return (
       <div className="panel">
-        <EmptyState
-          icon={FolderOpen}
-          title="Este motor no ofrece incidentes"
-          hint="Actualiza la instalación (sf-update): los incidentes llegan con la versión del motor que incluye /api/incidents."
-        />
+        <EmptyState icon={FolderOpen} title={dict.incidents.unavailableTitle} hint={dict.incidents.unavailableHint} />
       </div>
     )
   }
 
   return (
-    <section aria-label="Incidentes" className="space-y-4">
+    <section aria-label={dict.incidents.sectionAria} className="space-y-4">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatTile icon={Warning} label="Abiertos" value={counts.open} hint="sin asignar trabajo todavía" warn={counts.open > 0} />
-        <StatTile icon={ClockCounterClockwise} label="Investigando" value={counts.investigating} hint="con analista trabajando" />
-        <StatTile icon={ShieldWarning} label="Contenidos" value={counts.contained} hint="amenaza aislada, sin cerrar" />
-        <StatTile icon={CheckCircle} label="Cerrados" value={counts.closed} hint={persistent ? 'guardados en el motor' : 'solo en memoria del motor'} />
+        <StatTile icon={Warning} label={dict.incidents.tiles.open} value={counts.open} hint={dict.incidents.tiles.openHint} warn={counts.open > 0} />
+        <StatTile icon={ClockCounterClockwise} label={dict.incidents.tiles.investigating} value={counts.investigating} hint={dict.incidents.tiles.investigatingHint} />
+        <StatTile icon={ShieldWarning} label={dict.incidents.tiles.contained} value={counts.contained} hint={dict.incidents.tiles.containedHint} />
+        <StatTile icon={CheckCircle} label={dict.incidents.tiles.closed} value={counts.closed} hint={persistent ? dict.incidents.tiles.closedHintPersistent : dict.incidents.tiles.closedHintMemory} />
       </div>
       {!persistent && loaded && (
         <p className="rounded-lg border border-amber-400/20 bg-amber-400/[0.05] px-3 py-2 text-xs text-amber-200/90">
-          El motor guarda los incidentes solo en memoria: se perderán al reiniciarlo. Arráncalo con -incidents para conservarlos.
+          {dict.incidents.memoryBanner}
         </p>
       )}
 
@@ -118,7 +119,7 @@ export function IncidentsView({ onHost, onOpenAlert, onAnalyze }: { onHost: (hos
         <div className="panel flex min-w-0 flex-col overflow-hidden">
           <div className="panel-head justify-between">
             <div className="flex items-baseline gap-2">
-              <h2 className="text-sm font-medium text-zinc-100">Casos</h2>
+              <h2 className="text-sm font-medium text-zinc-100">{dict.incidents.casesTitle}</h2>
               <span className="text-xs tabular-nums text-zinc-500">{visible.length}</span>
             </div>
             <button
@@ -127,7 +128,7 @@ export function IncidentsView({ onHost, onOpenAlert, onAnalyze }: { onHost: (hos
               aria-expanded={creating}
               className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary-tint/10 px-2.5 py-1.5 text-xs font-medium text-primary-soft hover:bg-primary-tint/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <Plus size={13} aria-hidden /> Nuevo incidente
+              <Plus size={13} aria-hidden /> {dict.incidents.newButton}
             </button>
           </div>
           {creating && (
@@ -141,8 +142,8 @@ export function IncidentsView({ onHost, onOpenAlert, onAnalyze }: { onHost: (hos
               }}
             />
           )}
-          <div role="group" aria-label="Filtrar incidentes" className="flex gap-1 border-b border-white/[0.06] px-3 py-2">
-            {([['active', 'Activos'], ['all', 'Todos'], ['closed', 'Cerrados']] as const).map(([id, label]) => (
+          <div role="group" aria-label={dict.incidents.filterAria} className="flex gap-1 border-b border-white/[0.06] px-3 py-2">
+            {([['active', dict.incidents.filters.active], ['all', dict.incidents.filters.all], ['closed', dict.incidents.filters.closed]] as const).map(([id, label]) => (
               <button
                 key={id}
                 type="button"
@@ -159,8 +160,8 @@ export function IncidentsView({ onHost, onOpenAlert, onAnalyze }: { onHost: (hos
           {visible.length === 0 ? (
             <EmptyState
               icon={FolderOpen}
-              title={incidents.length === 0 ? 'Ningún incidente todavía' : 'Ninguno con este filtro'}
-              hint="Crea uno aquí o selecciona alertas en la cola y usa «Añadir a incidente»."
+              title={incidents.length === 0 ? dict.incidents.emptyAllTitle : dict.incidents.emptyFilteredTitle}
+              hint={dict.incidents.emptyHint}
             />
           ) : (
             <ul className="max-h-[70vh] divide-y divide-white/[0.05] overflow-y-auto">
@@ -182,7 +183,7 @@ export function IncidentsView({ onHost, onOpenAlert, onAnalyze }: { onHost: (hos
                       </span>
                       <span className="mt-1.5 block truncate text-[13px] font-medium text-zinc-100">{inc.title}</span>
                       <span className="mt-0.5 block text-[11px] text-zinc-500">
-                        {inc.alert_ids.length} alertas · {inc.hosts.length} equipos{inc.owner ? ` · ${inc.owner}` : ''}
+                        {dict.incidents.caseMeta(inc.alert_ids.length, inc.hosts.length, inc.owner ?? '')}
                       </span>
                     </button>
                   </AnimatedItem>
@@ -193,10 +194,10 @@ export function IncidentsView({ onHost, onOpenAlert, onAnalyze }: { onHost: (hos
         </div>
 
         {current ? (
-          <IncidentDetail key={current.id} incident={current} onChange={upsert} onHost={onHost} onOpenAlert={onOpenAlert} onAnalyze={onAnalyze} />
+          <IncidentDetail key={current.id} incident={current} onChange={upsert} onHost={onHost} onOpenAlert={onOpenAlert} onAnalyze={onAnalyze} onOpenEngineReport={onOpenEngineReport} />
         ) : (
           <div className="panel">
-            <EmptyState icon={Stack} title="Selecciona un incidente" hint="Verás sus alertas, los equipos afectados, el grafo de entidades y la línea de tiempo." />
+            <EmptyState icon={Stack} title={dict.incidents.pickTitle} hint={dict.incidents.pickHint} />
           </div>
         )}
       </div>
@@ -205,6 +206,7 @@ export function IncidentsView({ onHost, onOpenAlert, onAnalyze }: { onHost: (hos
 }
 
 function NewIncidentForm({ onDone }: { onDone: (incident: Incident | null) => void }) {
+  const { dict } = useI18n()
   const [title, setTitle] = useState('')
   const [severity, setSeverity] = useState<Severity>('medium')
   const [summary, setSummary] = useState('')
@@ -222,26 +224,26 @@ function NewIncidentForm({ onDone }: { onDone: (incident: Incident | null) => vo
         onDone(res.data)
       }}
     >
-      <label className="block text-xs text-zinc-400" htmlFor="incident-title">Título</label>
+      <label className="block text-xs text-zinc-400" htmlFor="incident-title">{dict.incidents.form.titleLabel}</label>
       <input id="incident-title" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} required
         className="h-8 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 text-sm text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
       <div className="flex gap-2">
         <label className="flex-1 text-xs text-zinc-400">
-          Severidad
+          {dict.incidents.form.severityLabel}
           <select value={severity} onChange={(e) => setSeverity(e.target.value as Severity)}
             className="mt-1 block h-8 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 text-xs text-zinc-100">
-            {SEVERITIES.map((s) => <option key={s} value={s}>{SEVERITY_LABEL[s]}</option>)}
+            {SEVERITIES.map((s) => <option key={s} value={s}>{dict.incidents.sevOptions[s]}</option>)}
           </select>
         </label>
       </div>
-      <label className="block text-xs text-zinc-400" htmlFor="incident-summary">Resumen (opcional)</label>
+      <label className="block text-xs text-zinc-400" htmlFor="incident-summary">{dict.incidents.form.summaryLabel}</label>
       <textarea id="incident-summary" value={summary} onChange={(e) => setSummary(e.target.value)} rows={2} maxLength={4000}
         className="w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
       {error && <p role="alert" className="text-xs text-red-300">{error}</p>}
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={() => onDone(null)} className="rounded-md px-2.5 py-1.5 text-xs text-zinc-400 hover:text-zinc-100">Cancelar</button>
+        <button type="button" onClick={() => onDone(null)} className="rounded-md px-2.5 py-1.5 text-xs text-zinc-400 hover:text-zinc-100">{dict.incidents.form.cancel}</button>
         <button type="submit" disabled={busy || !title.trim()} className="rounded-md bg-primary-strong px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
-          {busy ? 'Creando…' : 'Crear incidente'}
+          {busy ? dict.incidents.form.creating : dict.incidents.form.submit}
         </button>
       </div>
     </form>
@@ -277,19 +279,30 @@ function IncidentDetail({
   onHost,
   onOpenAlert,
   onAnalyze,
+  onOpenEngineReport,
 }: {
   incident: Incident
   onChange: (incident: Incident) => void
   onHost: (host: string) => void
   onOpenAlert: (alertId: string) => void
   onAnalyze?: (pending: PendingIncidentAnalysis) => void
+  onOpenEngineReport?: (incidentId: string) => void
 }) {
+  const { dict, lang } = useI18n()
   const { alerts, events } = useEngine()
   const [owner, setOwner] = useState(incident.owner ?? '')
   const [summary, setSummary] = useState(incident.summary ?? '')
   const [note, setNote] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  // the response plan (IDEA-3) lives in this browser; the header keeps
+  // the current one so the export buttons carry it into the report
+  const [plan, setPlan] = useState<IncidentPlaybookState | null>(null)
+  const applyPlanNote = (text: string) => {
+    void addIncidentNote(incident.id, text).then((res) => {
+      if (res.ok) onChange(res.data)
+    })
+  }
 
   const ids = new Set(incident.alert_ids)
   const caseAlerts = alerts.filter((a) => a.id && ids.has(a.id))
@@ -310,19 +323,19 @@ function IncidentDetail({
   }
 
   return (
-    <article aria-label={`Incidente ${incident.title}`} className="panel min-w-0">
+    <article aria-label={dict.incidents.detailAria(incident.title)} className="panel min-w-0">
       <header className="border-b border-white/[0.06] px-5 py-4">
         <div className="flex flex-wrap items-center gap-2">
           <SeverityBadge severity={incident.severity} />
           <StatusChip status={incident.status} />
-          <span className="font-mono text-[11px] text-zinc-600">{incident.id}</span>
-          <div role="group" aria-label="Exportar informe del incidente" className="ml-auto flex items-center gap-1.5">
+          <span className="font-mono text-[11px] text-zinc-500">{incident.id}</span>
+          <div role="group" aria-label={dict.incidents.exportAria} className="ml-auto flex items-center gap-1.5">
             {onAnalyze && (
               <button
                 type="button"
                 className={exportCls}
                 disabled={caseAlerts.length === 0}
-                title="El analista IA estudia el caso completo: agrupa las alertas por equipo y ventana, adjunta el bundle forense de la alerta más grave y cita la evidencia"
+                title={dict.incidents.analyzeTitle}
                 onClick={() =>
                   onAnalyze({
                     payload: buildIncidentAnalysis({
@@ -341,77 +354,86 @@ function IncidentDetail({
                   })
                 }
               >
-                <Sparkle size={13} weight="fill" aria-hidden /> Analizar con IA
+                <Sparkle size={13} weight="fill" aria-hidden /> {dict.incidents.analyze}
               </button>
             )}
             <button
               type="button"
               className={exportCls}
-              title="Descargar el informe en Markdown (para un ticket o una wiki)"
-              onClick={() => downloadFile(reportFilename(incident, 'md'), buildIncidentMarkdown({ incident, alerts: caseAlerts, graph }), 'text/markdown;charset=utf-8')}
+              title={dict.incidents.reportMdTitle}
+              onClick={() => downloadFile(reportFilename(incident, 'md', lang), buildIncidentMarkdown({ incident, alerts: caseAlerts, graph, playbook: plan ?? undefined, lang }), 'text/markdown;charset=utf-8')}
             >
-              <FileText size={13} aria-hidden /> Informe .md
+              <FileText size={13} aria-hidden /> {dict.incidents.reportMd}
             </button>
             <button
               type="button"
               className={exportCls}
-              title="Descargar el informe como página imprimible, con el grafo (ábrela y usa Imprimir para obtener un PDF)"
-              onClick={() => downloadFile(reportFilename(incident, 'html'), buildIncidentHtml({ incident, alerts: caseAlerts, graph }), 'text/html;charset=utf-8')}
+              title={dict.incidents.reportPrintTitle}
+              onClick={() => downloadFile(reportFilename(incident, 'html', lang), buildIncidentHtml({ incident, alerts: caseAlerts, graph, playbook: plan ?? undefined, lang }), 'text/html;charset=utf-8')}
             >
-              <FileHtml size={13} aria-hidden /> Informe imprimible
+              <FileHtml size={13} aria-hidden /> {dict.incidents.reportPrint}
             </button>
+            {onOpenEngineReport && (
+              <button
+                type="button"
+                className={exportCls}
+                title={dict.incidents.reportEngineTitle}
+                onClick={() => onOpenEngineReport(incident.id)}
+              >
+                <Files size={13} aria-hidden /> {dict.incidents.reportEngine}
+              </button>
+            )}
           </div>
         </div>
         <h2 className="mt-2 text-lg font-semibold tracking-tight text-zinc-50">{incident.title}</h2>
         <p className="mt-0.5 text-xs text-zinc-500">
-          Abierto {formatDateTime(incident.created_at)} · actualizado {formatDateTime(incident.updated_at)}
-          {incident.closed_at ? ` · cerrado ${formatDateTime(incident.closed_at)}` : ''}
+          {dict.incidents.openedUpdated(formatDateTime(incident.created_at), formatDateTime(incident.updated_at), incident.closed_at ? formatDateTime(incident.closed_at) : null)}
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <label className="text-xs text-zinc-400">
-            Estado
+            {dict.incidents.statusField}
             <select
               value={incident.status}
               disabled={busy}
               onChange={(e) => void patch({ status: e.target.value as IncidentStatus })}
               className="mt-1 block h-8 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 text-xs text-zinc-100"
             >
-              {(Object.keys(INCIDENT_STATUS_LABEL) as IncidentStatus[]).map((s) => <option key={s} value={s}>{INCIDENT_STATUS_LABEL[s]}</option>)}
+              {(Object.keys(dict.incidents.statusLabels) as IncidentStatus[]).map((s) => <option key={s} value={s}>{dict.incidents.statusLabels[s]}</option>)}
             </select>
           </label>
           <label className="text-xs text-zinc-400">
-            Severidad
+            {dict.incidents.severityField}
             <select
               value={incident.severity}
               disabled={busy}
               onChange={(e) => void patch({ severity: e.target.value as Severity })}
               className="mt-1 block h-8 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 text-xs text-zinc-100"
             >
-              {SEVERITIES.map((s) => <option key={s} value={s}>{SEVERITY_LABEL[s]}</option>)}
+              {SEVERITIES.map((s) => <option key={s} value={s}>{dict.incidents.sevOptions[s]}</option>)}
             </select>
           </label>
           <label className="text-xs text-zinc-400">
-            Responsable
+            {dict.incidents.ownerField}
             <input
               value={owner}
               onChange={(e) => setOwner(e.target.value)}
               onBlur={() => owner !== (incident.owner ?? '') && void patch({ owner })}
               onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLInputElement).blur()}
               maxLength={200}
-              placeholder="sin asignar"
+              placeholder={dict.incidents.ownerPlaceholder}
               className="mt-1 block h-8 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 text-xs text-zinc-100 placeholder:text-zinc-600"
             />
           </label>
         </div>
         <label className="mt-3 block text-xs text-zinc-400">
-          Resumen
+          {dict.incidents.summaryField}
           <textarea
             value={summary}
             onChange={(e) => setSummary(e.target.value)}
             onBlur={() => summary !== (incident.summary ?? '') && void patch({ summary })}
             rows={2}
             maxLength={4000}
-            placeholder="Qué ha pasado, alcance y estado de la contención"
+            placeholder={dict.incidents.summaryPlaceholder}
             className="mt-1 block w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600"
           />
         </label>
@@ -422,10 +444,10 @@ function IncidentDetail({
         <div className="min-w-0 space-y-5">
           <div>
             <h3 className="mb-2 flex items-center gap-2 text-xs font-medium text-zinc-300">
-              <Desktop size={14} aria-hidden className="text-primary" /> Equipos afectados
+              <Desktop size={14} aria-hidden className="text-primary" /> {dict.incidents.hostsHeading}
             </h3>
             {incident.hosts.length === 0 ? (
-              <p className="text-xs text-zinc-500">Sin equipos todavía: se añaden con las alertas.</p>
+              <p className="text-xs text-zinc-500">{dict.incidents.hostsEmpty}</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {incident.hosts.map((h) => (
@@ -440,10 +462,10 @@ function IncidentDetail({
 
           <div>
             <h3 className="mb-2 flex items-center gap-2 text-xs font-medium text-zinc-300">
-              <Lightning size={14} aria-hidden className="text-primary" /> Alertas del caso ({incident.alert_ids.length})
+              <Lightning size={14} aria-hidden className="text-primary" /> {dict.incidents.alertsHeading(incident.alert_ids.length)}
             </h3>
             {caseAlerts.length === 0 && outside === 0 ? (
-              <p className="text-xs text-zinc-500">Sin alertas: selecciónalas en la cola y usa «Añadir a incidente».</p>
+              <p className="text-xs text-zinc-500">{dict.incidents.alertsEmpty}</p>
             ) : (
               <ul className="divide-y divide-white/[0.05] rounded-lg border border-white/[0.06]">
                 {caseAlerts.map((a) => (
@@ -454,13 +476,13 @@ function IncidentDetail({
                       <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{a.rule_name}</span>
                       <span className="font-mono text-[11px] text-zinc-500">{a.host}</span>
                       <span className="text-[11px] tabular-nums text-zinc-500">{formatTime(a.timestamp)}</span>
-                      <ArrowSquareOut size={12} aria-hidden className="text-zinc-600" />
+                      <ArrowSquareOut size={12} aria-hidden className="text-zinc-500" />
                     </button>
                   </li>
                 ))}
                 {outside > 0 && (
                   <li className="px-3 py-2 text-[11px] text-zinc-500">
-                    {outside} {outside === 1 ? 'alerta ya no está' : 'alertas ya no están'} en la ventana en vivo; búscalas en Alertas → Histórico.
+                    {dict.incidents.alertsOutside(outside)}
                   </li>
                 )}
               </ul>
@@ -469,8 +491,8 @@ function IncidentDetail({
 
           {graph.nodes.length > 1 && (
             <div className="rounded-lg border border-white/[0.06] bg-zinc-950/40 p-2">
-              <p className="px-1 text-[11px] font-medium text-zinc-300">Grafo del incidente</p>
-              <EntityGraphView graph={graph} height={300} ariaLabel={`Grafo del incidente: ${graph.nodes.length} entidades`} onSelect={(n) => n.kind === 'host' && onHost(n.label)} selectHint="Abrir la ficha del equipo" />
+              <p className="px-1 text-[11px] font-medium text-zinc-300">{dict.incidents.graphTitle}</p>
+              <EntityGraphView graph={graph} height={300} ariaLabel={dict.incidents.graphAria(graph.nodes.length)} onSelect={(n) => n.kind === 'host' && onHost(n.label)} selectHint={dict.incidents.graphSelectHint} />
               <div className="px-1 pb-1"><GraphLegend graph={graph} /></div>
             </div>
           )}
@@ -478,7 +500,7 @@ function IncidentDetail({
 
         <div className="min-w-0">
           <h3 className="mb-2 flex items-center gap-2 text-xs font-medium text-zinc-300">
-            <ClockCounterClockwise size={14} aria-hidden className="text-primary" /> Línea de tiempo
+            <ClockCounterClockwise size={14} aria-hidden className="text-primary" /> {dict.incidents.timelineHeading}
           </h3>
           <form
             className="mb-3 space-y-2"
@@ -492,12 +514,12 @@ function IncidentDetail({
               onChange(res.data)
             }}
           >
-            <label htmlFor={`note-${incident.id}`} className="sr-only">Nota del analista</label>
+            <label htmlFor={`note-${incident.id}`} className="sr-only">{dict.incidents.noteLabel}</label>
             <textarea id={`note-${incident.id}`} value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={4000}
-              placeholder="Añade una nota: qué viste, qué hiciste, siguiente paso"
+              placeholder={dict.incidents.notePlaceholder}
               className="block w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
             <button type="submit" disabled={busy || !note.trim()} className="rounded-md bg-primary-strong px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
-              Añadir nota
+              {dict.incidents.addNote}
             </button>
           </form>
           <ol className="relative space-y-3 border-l border-zinc-800 pl-4">
@@ -509,12 +531,16 @@ function IncidentDetail({
                     <Icon size={9} weight="bold" />
                   </span>
                   <p className={`text-xs leading-relaxed ${entry.kind === 'note' ? 'text-zinc-200' : 'text-zinc-400'}`}>{entry.text}</p>
-                  <p className="mt-0.5 text-[10px] text-zinc-600">{formatDateTime(entry.at)}{entry.by ? ` · ${entry.by}` : ''}</p>
+                  <p className="mt-0.5 text-[10px] text-zinc-500">{formatDateTime(entry.at)}{entry.by ? ` · ${entry.by}` : ''}</p>
                 </li>
               )
             })}
           </ol>
         </div>
+      </div>
+
+      <div className="border-t border-white/[0.06] px-5 py-4">
+        <IncidentPlaybook incidentId={incident.id} onPlanChange={setPlan} onApplyNote={applyPlanNote} />
       </div>
     </article>
   )

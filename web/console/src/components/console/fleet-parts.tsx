@@ -10,6 +10,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { Broadcast, CheckCircle, Copy, Cpu, Desktop, Fingerprint, HardDrives, PlugsConnected, Plus, Power, ShieldCheck, Timer, WarningCircle, WifiSlash } from '@phosphor-icons/react'
 import { ConsoleDialog } from './console-dialog'
 import { StatTile } from './ui-bits'
+import { TABLIST_CLASS, tabButtonClass } from './ui-tabs'
 import { useFleet } from './fleet-provider'
 import { EnrollmentRow, TokenEnrollment } from './enroll-parts'
 import { enrolledFor } from '@/lib/enroll'
@@ -102,12 +103,14 @@ export function SensorCard({ host }: { host?: FleetHost }) {
       </div>
       <dl className="grid gap-x-6 gap-y-2.5 px-5 py-4 sm:grid-cols-2">
         {rows.map((row) => (
-          <div key={row.label} className="flex min-w-0 items-start gap-2">
-            <row.icon size={14} aria-hidden className="mt-0.5 shrink-0 text-zinc-500" />
-            <div className="min-w-0">
-              <dt className="text-[11px] text-zinc-500">{row.label}</dt>
-              <dd className="truncate text-xs text-zinc-200" title={typeof row.value === 'string' ? row.value : undefined}>{row.value}</dd>
-            </div>
+          // one grouping div: dt/dd stay a direct grouping of the dl; the
+          // icon lives inside the dt (decorative)
+          <div key={row.label} className="min-w-0">
+            <dt className="flex items-start gap-2 text-[11px] text-zinc-500">
+              <row.icon size={14} aria-hidden className="mt-0.5 shrink-0" />
+              {row.label}
+            </dt>
+            <dd className="truncate pl-6 text-xs text-zinc-200" title={typeof row.value === 'string' ? row.value : undefined}>{row.value}</dd>
           </div>
         ))}
       </dl>
@@ -142,8 +145,6 @@ export function EnrollDialog({ onClose }: { onClose: () => void }) {
   const id = useId()
   const first = useRef<HTMLButtonElement>(null)
   const [tab, setTab] = useState<'token' | 'manual'>('token')
-  const tabClass = (on: boolean) =>
-    `rounded-md px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${on ? 'bg-white/[0.08] text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`
   return (
     <ConsoleDialog open onClose={onClose} titleId={`${id}-t`} initialFocus={first} className="sm:max-w-3xl">
       <div className="border-b border-zinc-800 px-5 py-4">
@@ -152,12 +153,14 @@ export function EnrollDialog({ onClose }: { onClose: () => void }) {
           Cada equipo envía su telemetría a este servidor con una identidad propia, atada a su nombre, y un latido cada minuto.
           La consola no se conecta a los equipos ni ejecuta nada en ellos. Guía completa: docs/FLOTA-REMOTA.md.
         </p>
-        <div role="tablist" aria-label="Método de alta" className="mt-3 flex gap-1">
-          <button ref={first} type="button" role="tab" aria-selected={tab === 'token'} onClick={() => setTab('token')} className={tabClass(tab === 'token')}>Con token de alta (recomendado)</button>
-          <button type="button" role="tab" aria-selected={tab === 'manual'} onClick={() => setTab('manual')} className={tabClass(tab === 'manual')}>Manual: identidad en fichero</button>
+        {/* same tab kit as the detection hub (POL-7); the buttons stay
+            plain tab stops so the dialog initial-focus ref keeps working */}
+        <div role="tablist" aria-label="Método de alta" className={`${TABLIST_CLASS} mt-3`}>
+          <button ref={first} type="button" role="tab" aria-selected={tab === 'token'} onClick={() => setTab('token')} className={tabButtonClass(tab === 'token')}>Con token de alta (recomendado)</button>
+          <button type="button" role="tab" aria-selected={tab === 'manual'} onClick={() => setTab('manual')} className={tabButtonClass(tab === 'manual')}>Manual: identidad en fichero</button>
         </div>
       </div>
-      <div className="max-h-[60vh] overflow-y-auto px-5 py-4" role="tabpanel">
+      <div className="max-h-[60vh] overflow-y-auto px-5 py-4" role="tabpanel" tabIndex={0}>
         {tab === 'token' ? <TokenEnrollment /> : <ManualEnrollment />}
       </div>
       <div className="flex justify-end border-t border-zinc-800 px-5 py-3">

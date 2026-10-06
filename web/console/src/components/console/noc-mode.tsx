@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CaretLeft, CaretRight, Pause, Play, X } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { BrandMark } from './brand-mark'
+import { useI18n } from './i18n-provider'
 import { ActivityChart, useActivity } from './activity-chart'
 import { AnimatedContent } from '@/components/reactbits/animated-content'
 import { CountUp } from '@/components/reactbits/count-up'
@@ -26,10 +27,19 @@ import { triageSummary } from '@/lib/operations'
 import { formatTime } from '@/lib/console-types'
 
 const SLIDE_MS = 20_000
-const SLIDES = ['Situación', 'Grafo de investigación', 'Cobertura y equipos'] as const
+// Stable slide identity between languages; the labels live in the dictionaries.
+const SLIDE_KEYS = ['situacion', 'grafo', 'cobertura'] as const
+
+/** Locale for client-side number formatting: it follows the console
+ * language (browser preference), never the engine. */
+function numberLocale(lang: 'es' | 'en'): string {
+  return lang === 'en' ? 'en-US' : 'es-ES'
+}
 
 export function NocMode({ onClose }: { onClose: () => void }) {
   const { status, stats } = useEngine()
+  const { dict } = useI18n()
+  const slides = SLIDE_KEYS.map((key) => dict.noc.slides[key])
   const [slide, setSlide] = useState(0)
   const [paused, setPaused] = useState(false)
   const [cycle, setCycle] = useState(0)
@@ -37,7 +47,7 @@ export function NocMode({ onClose }: { onClose: () => void }) {
   const enteredFullscreen = useRef(false)
 
   const go = useCallback((delta: number) => {
-    setSlide((s) => (s + delta + SLIDES.length) % SLIDES.length)
+    setSlide((s) => (s + delta + SLIDE_KEYS.length) % SLIDE_KEYS.length)
     setCycle((c) => c + 1)
   }, [])
 
@@ -104,17 +114,17 @@ export function NocMode({ onClose }: { onClose: () => void }) {
   }, [go, onClose])
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Modo NOC" className="fixed inset-0 z-[60] flex flex-col bg-zinc-950 text-zinc-100">
+    <div role="dialog" aria-modal="true" aria-label={dict.noc.ariaLabel} className="fixed inset-0 z-[60] flex flex-col bg-zinc-950 text-zinc-100">
       <header className="flex items-center gap-4 border-b border-white/[0.06] px-6 py-3">
         <BrandMark size={30} live={status === 'live'} />
         <div className="min-w-0">
           <p className="text-sm font-semibold tracking-tight">bluetardigrade · NOC</p>
-          <p className="text-xs text-zinc-500" aria-live="polite">{SLIDES[slide]}</p>
+          <p className="text-xs text-zinc-500" aria-live="polite">{slides[slide]}</p>
         </div>
-        <div className="ml-6 hidden items-center gap-1.5 md:flex" role="tablist" aria-label="Pantallas">
-          {SLIDES.map((name, i) => (
+        <div className="ml-6 hidden items-center gap-1.5 md:flex" role="tablist" aria-label={dict.noc.screens}>
+          {slides.map((name, i) => (
             <button
-              key={name}
+              key={SLIDE_KEYS[i]}
               type="button"
               role="tab"
               aria-selected={i === slide}
@@ -127,16 +137,16 @@ export function NocMode({ onClose }: { onClose: () => void }) {
         <div className="ml-auto flex items-center gap-2">
           <span className="flex items-center gap-2 rounded-lg border border-white/[0.08] px-2.5 py-1.5 text-xs">
             <span aria-hidden className={`h-2 w-2 rounded-full ${status === 'live' ? 'bg-emerald-500' : status === 'connecting' ? 'bg-amber-400' : 'bg-red-500'}`} />
-            {status === 'live' ? <ShinyText>En vivo</ShinyText> : status === 'connecting' ? 'Conectando' : 'Motor offline'}
+            {status === 'live' ? <ShinyText>{dict.chrome.live}</ShinyText> : status === 'connecting' ? dict.chrome.connecting : dict.chrome.engineOffline}
           </span>
           <NocClock />
-          <button type="button" onClick={() => go(-1)} aria-label="Pantalla anterior" className={iconBtn}><CaretLeft size={16} aria-hidden /></button>
-          <button type="button" onClick={() => setPaused((p) => !p)} aria-label={paused ? 'Reanudar rotación' : 'Pausar rotación'} className={iconBtn}>
+          <button type="button" onClick={() => go(-1)} aria-label={dict.noc.prev} className={iconBtn}><CaretLeft size={16} aria-hidden /></button>
+          <button type="button" onClick={() => setPaused((p) => !p)} aria-label={paused ? dict.noc.resume : dict.noc.pause} className={iconBtn}>
             {paused ? <Play size={16} aria-hidden /> : <Pause size={16} aria-hidden />}
           </button>
-          <button type="button" onClick={() => go(1)} aria-label="Pantalla siguiente" className={iconBtn}><CaretRight size={16} aria-hidden /></button>
+          <button type="button" onClick={() => go(1)} aria-label={dict.noc.next} className={iconBtn}><CaretRight size={16} aria-hidden /></button>
           <button ref={exitRef} type="button" onClick={onClose} className="ml-1 inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <X size={14} aria-hidden /> Salir <kbd className="rounded border border-zinc-700 px-1 font-mono text-[10px] text-zinc-400">Esc</kbd>
+            <X size={14} aria-hidden /> {dict.noc.exit} <kbd className="rounded border border-zinc-700 px-1 font-mono text-[10px] text-zinc-400">Esc</kbd>
           </button>
         </div>
       </header>
@@ -148,8 +158,8 @@ export function NocMode({ onClose }: { onClose: () => void }) {
       <main className="min-h-0 flex-1 overflow-hidden p-6">
         {status === 'down' || !stats ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-            <p className="text-2xl font-semibold text-zinc-200">{status === 'connecting' ? 'Conectando con el motor' : 'Motor sin conexión'}</p>
-            <p className="max-w-lg text-sm text-zinc-500">El modo NOC no muestra datos antiguos ni inventados; se recupera solo cuando el motor responda.</p>
+            <p className="text-2xl font-semibold text-zinc-200">{status === 'connecting' ? dict.noc.connectingTitle : dict.noc.offlineTitle}</p>
+            <p className="max-w-lg text-sm text-zinc-500">{dict.noc.offlineProse}</p>
           </div>
         ) : (
           <AnimatedContent key={slide} className="h-full">
@@ -173,7 +183,7 @@ function NocClock() {
   if (!now) return null
   return (
     <span className="rounded-lg border border-white/[0.08] px-2.5 py-1.5 font-mono text-xs tabular-nums text-zinc-300">
-      <span className="text-zinc-600">UTC </span>{now.toISOString().slice(11, 19)}
+      <span className="text-zinc-500">UTC </span>{now.toISOString().slice(11, 19)}
     </span>
   )
 }
@@ -190,6 +200,8 @@ function BigStat({ label, value, tone = 'text-zinc-50', hint }: { label: string;
 
 function SituationSlide() {
   const { alerts, events, stats } = useEngine()
+  const { dict, lang } = useI18n()
+  const noc = dict.noc.situation
   const activity = useActivity(events, alerts)
   const summary = triageSummary(alerts)
   const counts = severityCounts(alerts)
@@ -199,20 +211,20 @@ function SituationSlide() {
   return (
     <div className="grid h-full grid-rows-[auto_minmax(0,1fr)] gap-5">
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <BigStat label="Críticas sin cerrar" value={summary.critical} tone={summary.critical > 0 ? 'text-red-300' : 'text-zinc-50'} hint={`${summary.pending} nuevas · ${summary.acknowledged} reconocidas`} />
-        <BigStat label="Eventos por minuto" value={stats?.events_per_min ?? 0} hint={`${(stats?.events_total ?? 0).toLocaleString('es-ES')} desde el arranque`} />
-        <BigStat label="Alertas" value={stats?.alerts_total ?? 0} hint={`${alerts.length} en la ventana de la consola`} />
-        <BigStat label="Equipos en riesgo" value={stats?.risk_hosts_tracked ?? 0} hint={top ? `máx ${top.host} · ${top.score.toFixed(1)}` : 'sin riesgo activo'} />
+        <BigStat label={noc.criticalOpen} value={summary.critical} tone={summary.critical > 0 ? 'text-red-300' : 'text-zinc-50'} hint={noc.criticalHint(summary.pending, summary.acknowledged)} />
+        <BigStat label={noc.eventsPerMin} value={stats?.events_per_min ?? 0} hint={noc.eventsHint((stats?.events_total ?? 0).toLocaleString(numberLocale(lang)))} />
+        <BigStat label={noc.alerts} value={stats?.alerts_total ?? 0} hint={noc.alertsHint(alerts.length)} />
+        <BigStat label={noc.riskHosts} value={stats?.risk_hosts_tracked ?? 0} hint={top ? noc.riskHint(top.host, top.score.toFixed(1)) : noc.noRisk} />
       </div>
       <div className="grid min-h-0 gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <section aria-label="Actividad del sensor" className="panel flex min-h-0 flex-col px-5 py-4">
-          <h2 className="text-base font-medium text-zinc-100">Actividad del sensor · últimos 4 minutos</h2>
+        <section aria-label={noc.activityAria} className="panel flex min-h-0 flex-col px-5 py-4">
+          <h2 className="text-base font-medium text-zinc-100">{noc.activityTitle}</h2>
           <div className="mt-3 min-h-0 flex-1">
             <ActivityChart activity={activity} withMarkers height={chartHeight} />
           </div>
         </section>
-        <section aria-label="Alertas por severidad" className="panel px-5 py-4">
-          <h2 className="text-base font-medium text-zinc-100">Alertas por severidad</h2>
+        <section aria-label={noc.severityAria} className="panel px-5 py-4">
+          <h2 className="text-base font-medium text-zinc-100">{noc.severityTitle}</h2>
           <BarList
             className="mt-4 space-y-4"
             rows={SEVERITIES.map((s) => ({
@@ -239,20 +251,21 @@ function SituationSlide() {
 
 function GraphSlide() {
   const { alerts, events } = useEngine()
+  const { dict } = useI18n()
   const graph = useMemo(() => buildEntityGraph(alerts, events), [alerts, events])
   const [height, setHeight] = useState(600)
   useEffect(() => setHeight(Math.max(380, window.innerHeight - 220)), [])
   return (
-    <section aria-label="Grafo de investigación" className="panel flex h-full flex-col px-5 py-4">
+    <section aria-label={dict.noc.graph.ariaLabel} className="panel flex h-full flex-col px-5 py-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-base font-medium text-zinc-100">Grafo de investigación · {graph.nodes.length} entidades</h2>
+        <h2 className="text-base font-medium text-zinc-100">{dict.noc.graph.title(graph.nodes.length)}</h2>
         <GraphLegend graph={graph} />
       </div>
       <div className="mt-3 min-h-0 flex-1">
         {graph.nodes.length === 0 ? (
-          <p className="pt-20 text-center text-sm text-zinc-500">El grafo se dibuja con la primera alerta o conexión de red recibida.</p>
+          <p className="pt-20 text-center text-sm text-zinc-500">{dict.noc.graph.empty}</p>
         ) : (
-          <EntityGraphView graph={graph} height={height} ariaLabel={`Grafo de investigación: ${graph.nodes.length} entidades y ${graph.edges.length} relaciones`} />
+          <EntityGraphView graph={graph} height={height} ariaLabel={dict.noc.graph.canvasAria(graph.nodes.length, graph.edges.length)} />
         )}
       </div>
     </section>
@@ -261,6 +274,8 @@ function GraphSlide() {
 
 function CoverageSlide() {
   const { alerts, rules, stats, events } = useEngine()
+  const { dict } = useI18n()
+  const cov = dict.noc.coverage
   const cells = useMemo(() => tacticCoverage(rules, alerts), [rules, alerts])
   const matrix = useMemo(() => hostTacticMatrix(alerts), [alerts])
   const topRules = useMemo(() => topCounts(alerts, (a) => a.rule_name, 6), [alerts])
@@ -273,25 +288,25 @@ function CoverageSlide() {
   return (
     <div className="grid h-full gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
       <div className="flex min-h-0 flex-col gap-5">
-        <section aria-label="Cobertura MITRE ATT&CK" className="panel px-5 py-4">
-          <h2 className="text-base font-medium text-zinc-100">Cobertura MITRE ATT&CK · {cells.filter((c) => c.rules > 0).length} de 14 tácticas con reglas</h2>
+        <section aria-label={cov.matrixAria} className="panel px-5 py-4">
+          <h2 className="text-base font-medium text-zinc-100">{cov.matrixTitle(cells.filter((c) => c.rules > 0).length)}</h2>
           <div className="mt-3"><AttackMatrix cells={cells} /></div>
         </section>
-        <section aria-label="Equipos por táctica" className="panel px-5 py-4">
-          <h2 className="text-base font-medium text-zinc-100">Equipos por táctica</h2>
+        <section aria-label={cov.hostsAria} className="panel px-5 py-4">
+          <h2 className="text-base font-medium text-zinc-100">{cov.hostsTitle}</h2>
           <div className="mt-3">
-            {matrix.hosts.length === 0 ? <p className="text-sm text-zinc-500">Sin tácticas observadas en la ventana.</p> : <HostTacticHeatmap matrix={matrix} />}
+            {matrix.hosts.length === 0 ? <p className="text-sm text-zinc-500">{cov.hostsEmpty}</p> : <HostTacticHeatmap matrix={matrix} />}
           </div>
         </section>
-        <section aria-label="Reglas más activas" className="panel min-h-0 flex-1 overflow-hidden px-5 py-4">
-          <h2 className="text-base font-medium text-zinc-100">Reglas más activas</h2>
-          <BarList className="mt-4 space-y-3" rows={topRules.top.map((r) => ({ key: r.key, label: <span className="text-sm">{r.key}</span>, value: r.count }))} empty={<p className="mt-4 text-sm text-zinc-500">Sin detecciones en la ventana.</p>} />
+        <section aria-label={cov.rulesAria} className="panel min-h-0 flex-1 overflow-hidden px-5 py-4">
+          <h2 className="text-base font-medium text-zinc-100">{cov.rulesTitle}</h2>
+          <BarList className="mt-4 space-y-3" rows={topRules.top.map((r) => ({ key: r.key, label: <span className="text-sm">{r.key}</span>, value: r.count }))} empty={<p className="mt-4 text-sm text-zinc-500">{cov.rulesEmpty}</p>} />
         </section>
       </div>
-      <section aria-label="Equipos con más riesgo" className="panel px-5 py-4">
-        <h2 className="text-base font-medium text-zinc-100">Equipos con más riesgo</h2>
+      <section aria-label={cov.riskAria} className="panel px-5 py-4">
+        <h2 className="text-base font-medium text-zinc-100">{cov.riskTitle}</h2>
         {hot.length === 0 ? (
-          <p className="mt-4 text-sm text-zinc-500">Ningún equipo acumula riesgo ahora mismo.</p>
+          <p className="mt-4 text-sm text-zinc-500">{cov.riskEmpty}</p>
         ) : (
           <ul className="mt-4 space-y-4">
             {hot.map((h) => {
@@ -303,18 +318,18 @@ function CoverageSlide() {
                     <span className="text-2xl font-semibold text-zinc-50">{h.score.toFixed(1)}</span>
                   </div>
                   <Meter className="mt-2 h-2" value={h.score} max={max} color={color} />
-                  <p className="mt-1 text-xs text-zinc-500">{h.alerts} alertas · visto {formatTime(h.last_seen)}</p>
+                  <p className="mt-1 text-xs text-zinc-500">{cov.riskSeen(h.alerts, formatTime(h.last_seen))}</p>
                 </li>
               )
             })}
           </ul>
         )}
-        <h2 className="mt-8 border-t border-white/[0.06] pt-5 text-base font-medium text-zinc-100">Destinos de red</h2>
+        <h2 className="mt-8 border-t border-white/[0.06] pt-5 text-base font-medium text-zinc-100">{cov.destTitle}</h2>
         <BarList
           className="mt-4 space-y-3"
           color="var(--series-2)"
           rows={destinations.top.map((d) => ({ key: d.key, label: <span className="font-mono text-sm">{d.key}</span>, value: d.count }))}
-          empty={<p className="mt-4 text-sm text-zinc-500">Sin conexiones de red en el búfer.</p>}
+          empty={<p className="mt-4 text-sm text-zinc-500">{cov.destEmpty}</p>}
         />
       </section>
     </div>

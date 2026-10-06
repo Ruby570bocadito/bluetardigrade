@@ -3,7 +3,8 @@
 // CountUp — adaptado de React Bits (reactbits.dev). La cifra sube desde
 // su valor anterior (o desde 0 al montar) con un muelle amortiguado, en
 // lugar de saltar. Cifras proporcionales: es un valor suelto, no una
-// columna. Bajo prefers-reduced-motion muestra el valor final al instante.
+// columna. Bajo prefers-reduced-motion muestra el valor final al instante,
+// también si la preferencia se activa con la cifra en vuelo (snap).
 
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { useMotionValue, useReducedMotion, useSpring } from 'motion/react'
@@ -35,7 +36,15 @@ export function CountUp({ to, from = 0, decimals = 0, className }: CountUpProps)
 
   useEffect(() => {
     value.set(to)
-  }, [to, value])
+    // Preferencia activada con la cifra en vuelo (o objetivo nuevo bajo
+    // reduce): el muelle se corta en seco y el texto muestra el destino.
+    if (reduce) {
+      spring.jump(to)
+      if (ref.current) ref.current.textContent = format(to)
+    }
+    // format depends only on decimals
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [to, value, spring, reduce, decimals])
 
   useEffect(() => {
     if (reduce) return

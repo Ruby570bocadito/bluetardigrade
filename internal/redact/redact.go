@@ -7,8 +7,8 @@
 // rewriter): the output packages stay decoupled from each other, and
 // the moment a fourth copy appears the helpers are promoted to their
 // own shared package instead of one output package importing another.
-// The fourth copy appeared in internal/notify (defect #35, option b
-// ratified by the Director), so the promotion happened exactly as the
+// The fourth copy appeared in internal/notify (defect #35, option b),
+// so the promotion happened exactly as the
 // rule ordered.
 //
 // Why the rule exists: the path, query and userinfo of an outbound

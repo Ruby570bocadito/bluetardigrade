@@ -90,9 +90,12 @@ func (h *Hub) handleAlertsExport(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Disposition",
 			fmt.Sprintf("attachment; filename=\"alerts-%s.csv\"", stamp))
 		cw := csv.NewWriter(w)
+		// decision is APPENDED at the end (not slotted next to status):
+		// positional consumers keep their columns; the JSONL export
+		// carries the same field as a plain JSON key.
 		_ = cw.Write([]string{"id", "status", "timestamp", "severity", "rule_id", "rule_name",
 			"event_type", "host", "user", "summary", "matched_on", "tags",
-			"message", "notify", "status_note", "status_by"})
+			"message", "notify", "status_note", "status_by", "decision"})
 		for _, v := range views {
 			_ = cw.Write([]string{
 				csvSafe(v.ID), csvSafe(v.Status), csvSafe(v.Timestamp), csvSafe(v.Severity),
@@ -100,7 +103,7 @@ func (h *Hub) handleAlertsExport(w http.ResponseWriter, r *http.Request) {
 				csvSafe(v.Host), csvSafe(v.User), csvSafe(v.Summary),
 				csvSafe(strings.Join(v.MatchedOn, " ")), csvSafe(strings.Join(v.Tags, " ")),
 				csvSafe(v.Message), strconv.FormatBool(v.Notify),
-				csvSafe(v.StatusNote), csvSafe(v.StatusBy),
+				csvSafe(v.StatusNote), csvSafe(v.StatusBy), csvSafe(v.Decision),
 			})
 		}
 		cw.Flush()

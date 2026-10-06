@@ -10,16 +10,11 @@
 // preference live; 'light'/'dark' pin the theme until the next pick.
 
 import { useEffect, useState } from 'react'
-import { Monitor, Moon, Sun } from '@phosphor-icons/react'
+import { CircleHalf, Moon, Sun } from '@phosphor-icons/react'
 import { applyTheme, resolveTheme, THEME_STORAGE_KEY, type ThemeChoice } from '@/lib/theme'
+import { useI18n } from './i18n-provider'
 
 const CYCLE: readonly ThemeChoice[] = ['system', 'light', 'dark']
-
-const NEXT_LABEL: Record<ThemeChoice, string> = {
-  system: 'seguir el sistema',
-  light: 'tema claro',
-  dark: 'tema oscuro',
-}
 
 function storedChoice(): ThemeChoice {
   try {
@@ -36,6 +31,7 @@ function prefersLight(): boolean {
 }
 
 export function ThemeToggle() {
+  const { dict } = useI18n()
   // null until the mounted state aligns with the stored choice, so the
   // follow-the-OS effect cannot fight the boot decision on first paint.
   const [choice, setChoice] = useState<ThemeChoice | null>(null)
@@ -64,7 +60,7 @@ export function ThemeToggle() {
 
   const shown: ThemeChoice = choice ?? 'system'
   const next = CYCLE[(CYCLE.indexOf(shown) + 1) % CYCLE.length]
-  const label = `Cambiar a ${NEXT_LABEL[next]}`
+  const label = dict.theme.next[next]
 
   return (
     <button
@@ -84,7 +80,9 @@ export function ThemeToggle() {
       title={label}
       className="chip shrink-0 px-2 py-1.5 text-zinc-400 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      {shown === 'dark' ? <Moon size={15} aria-hidden /> : shown === 'light' ? <Sun size={15} aria-hidden /> : <Monitor size={15} aria-hidden />}
+      {/* half circle for "system": the monitor glyph belongs to the NOC
+          (full-screen) button next to it */}
+      {shown === 'dark' ? <Moon size={15} aria-hidden /> : shown === 'light' ? <Sun size={15} aria-hidden /> : <CircleHalf size={15} aria-hidden />}
     </button>
   )
 }
