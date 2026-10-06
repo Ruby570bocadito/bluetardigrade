@@ -1,0 +1,1 @@
+- The single-alert AI analyst now cleans a client-provided alert the same way the incident flow does before it reaches the model prompt: unknown fields are dropped and every string is trimmed and clamped, while the hub's engine-fed copy stays authoritative.

@@ -11,7 +11,7 @@ import http from 'http'
 import { Server } from 'socket.io'
 import pkg from './package.json'
 import { EngineBridge } from './bridge'
-import { runAnalysis, runIncidentAnalysis, validateIncidentPayload } from './analyst'
+import { runAnalysis, runIncidentAnalysis, validateAnalystAlert, validateIncidentPayload } from './analyst'
 import { HubState, MAX_EVENTS, MAX_ALERTS } from './hub-state'
 import { buildStatusData, renderNotFound, renderStatusPage, esc } from './http-ui'
 import { createRateLimiter, createSlotLimiter } from './limiter'
@@ -228,21 +228,34 @@ export function createHub(opts: HubOptions = {}): HubHandle {
         socket.emit('analyst:error', { message: 'Peticion invalida: se esperaba un objeto con la alerta a analizar' })
         return
       }
-      const sent = (payload as { alert?: unknown }).alert as SfAlert | undefined
+      const sent = (payload as { alert?: unknown }).alert
       // The hub's own copy (fed by the engine) is authoritative: the
       // panel only names WHICH alert to analyze. The client copy is the
       // fallback for alerts already rotated out of the hub ring (paged
-      // history), still validated below.
-      const known = typeof sent?.id === 'string' && sent.id ? state.alerts.find((a) => a.id === sent.id) : undefined
-      const alert = known ?? sent
-      if (typeof alert?.rule_id !== 'string' || alert.rule_id.trim() === '') {
-        socket.emit('analyst:error', { message: 'Alerta invalida: falta rule_id' })
-        return
-      }
+      // history) and goes through the same field-by-field cleaning as
+      // the incident flow: the socket peer is the browser, not the
+      // engine, and a bloated or mistyped copy must not buy prompt size
+      // or smuggle fields.
+      const known =
+        typeof sent === 'object' && sent !== null && !Array.isArray(sent) &&
+        typeof (sent as { id?: unknown }).id === 'string' && (sent as { id: string }).id !== ''
+          ? state.alerts.find((a) => a.id === (sent as { id: string }).id)
+          : undefined
       const question = (payload as { question?: unknown }).question
       if (question !== undefined && (typeof question !== 'string' || question.length > MAX_QUESTION_LENGTH)) {
         socket.emit('analyst:error', { message: `Pregunta invalida: maximo ${MAX_QUESTION_LENGTH} caracteres` })
         return
+      }
+      let alert: SfAlert
+      if (known) {
+        alert = known
+      } else {
+        const validated = validateAnalystAlert(sent)
+        if (!validated.ok) {
+          socket.emit('analyst:error', { message: validated.error })
+          return
+        }
+        alert = validated.value
       }
       if (!acquireAnalystBudget(socket)) return
 

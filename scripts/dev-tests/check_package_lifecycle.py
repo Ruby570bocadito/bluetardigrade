@@ -15,6 +15,16 @@ every bun.lock next to them and any package-lock.json, and fails with
 one line per finding. --self-test runs embedded fixtures through the
 same classifier: fixtures that must be flagged and fixtures that must
 stay clean. Stdlib only.
+
+Reviewed exceptions (ronda 12, SEG-B): a lockfile marker for a package
+whose install script was reviewed and justified lives in
+LOCKFILE_INSTALL_SCRIPT_EXCEPTIONS as an exact "name@version" entry,
+with the reason next to it. The mechanism is fail-closed: an entry the
+guard cannot resolve to name@version (unparseable lockfile, missing
+version field) is FLAGGED, never silently allowed; trustedDependencies
+has no exceptions anywhere. The exception is not a blanket pass: a
+version bump of the same package re-trips the guard on purpose, so the
+review happens again against the new code.
 """
 
 import argparse
@@ -42,6 +52,21 @@ LOCKFILE_MARKERS = (
     "trustedDependencies",
 )
 
+# Install-script markers accepted after explicit review (SEC-6). Each
+# entry is an exact "name@version"; the reason lives here, next to the
+# decision, not in a side file.
+#
+# esbuild@0.25.11 — its postinstall is a no-op fallback that only
+#   resolves the platform binary (@esbuild/linux-x64 optional
+#   dependency) when the standard install path failed; jsdom is pure
+#   JS. CI installs the browser harness with --ignore-scripts
+#   (ci.yml, PUL-A ronda 12), so the script never runs there either.
+#   Reviewed independently by PUL-A (ronda 12, 34/34 DOM PASS with the
+#   flag) and SEG-B (ronda 12, code read of the postinstall path).
+LOCKFILE_INSTALL_SCRIPT_EXCEPTIONS = {
+    "esbuild@0.25.11",
+}
+
 
 def findings_for_manifest(text, label):
     """Return findings for one package.json payload."""
@@ -63,12 +88,57 @@ def findings_for_manifest(text, label):
     return found
 
 
+def _install_script_entries(doc):
+    """Yield (name@version or None) for every dict carrying hasInstallScript.
+
+    Walks the whole JSON tree carrying each node's own key (npm v3 nests
+    entries under "packages" keyed by "node_modules/<name>"; older
+    layouts and exotic payloads differ), returning None whenever name or
+    version cannot be resolved — the caller treats None as NOT excepted
+    (fail closed).
+    """
+    stack = [("", doc)]
+    while stack:
+        key, node = stack.pop()
+        if isinstance(node, dict):
+            if node.get("hasInstallScript"):
+                name = key.rsplit("node_modules/", 1)[-1] if key else ""
+                version = node.get("version")
+                if name and version:
+                    yield f"{name}@{version}"
+                else:
+                    yield None
+            for child_key, child in node.items():
+                stack.append((child_key, child))
+        elif isinstance(node, list):
+            stack.extend((key, item) for item in node)
+
+
 def findings_for_lockfile(text, label):
-    """Return findings for one lockfile payload (raw scan)."""
+    """Return findings for one lockfile payload (raw scan + JSON review)."""
     found = []
-    for marker in LOCKFILE_MARKERS:
-        if marker in text:
-            found.append(f"{label}: contains '{marker}' (review the install-script surface on purpose)")
+    if "trustedDependencies" in text:
+        found.append(f"{label}: contains 'trustedDependencies' (review the install-script surface on purpose)")
+    if "hasInstallScript" not in text:
+        return found
+    # hasInstallScript present: resolve WHICH packages declare it, so a
+    # reviewed exception can be honored precisely. Unparseable payload
+    # => flagged (fail closed; the raw marker never passes silently).
+    try:
+        doc = json.loads(text.replace("\ufeff", ""))
+    except json.JSONDecodeError as err:
+        found.append(f"{label}: contains 'hasInstallScript' and is not valid JSON ({err})")
+        return found
+    allowed, flagged = [], []
+    for entry in _install_script_entries(doc):
+        if entry in LOCKFILE_INSTALL_SCRIPT_EXCEPTIONS:
+            allowed.append(entry)
+        else:
+            flagged.append(entry or "<unresolved name@version>")
+    for entry in sorted(set(flagged)):
+        found.append(
+            f"{label}: hasInstallScript for {entry} (review the install-script surface on purpose)"
+        )
     return found
 
 
@@ -105,9 +175,15 @@ SELF_TEST_POSITIVE = [
     ("package.json with trustedDependencies",
      '{"name":"x","trustedDependencies":["sharp"]}',
      findings_for_manifest, "trustedDependencies"),
-    ("lockfile with hasInstallScript",
+    ("lockfile with hasInstallScript for a package NOT in the exception list",
+     '{"packages":{"node_modules/rollup":{"version":"4.0.0","hasInstallScript":true}}}',
+     findings_for_lockfile, "hasInstallScript for rollup@4.0.0"),
+    ("lockfile with hasInstallScript but unresolvable name@version (fail closed)",
+     '{"packages":{"node_modules/mystery":{"hasInstallScript":true}}}',
+     findings_for_lockfile, "<unresolved name@version>"),
+    ("lockfile with hasInstallScript and no version field (fail closed)",
      '{"esbuild@0.25.11":{"hasInstallScript":true}}',
-     findings_for_lockfile, "hasInstallScript"),
+     findings_for_lockfile, "<unresolved name@version>"),
 ]
 
 SELF_TEST_NEGATIVE = [
@@ -117,6 +193,9 @@ SELF_TEST_NEGATIVE = [
      '{"name":"x","scripts":{"install":""}}'),
     ("clean lockfile",
      '{"socket.io@4.8.4":{"dependencies":{"engine.io":"6.6.4"}}}'),
+    ("lockfile with the REVIEWED exception esbuild@0.25.11",
+     '{"packages":{"node_modules/esbuild":{"version":"0.25.11","hasInstallScript":true}}}',
+     ),
 ]
 
 

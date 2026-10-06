@@ -356,3 +356,30 @@ func TestStartUnknownScenarioWrapsSentinel(t *testing.T) {
 		t.Fatalf("unknown scenario must wrap ErrUnknownScenario: %v", err)
 	}
 }
+
+// The run id is a wire contract: GET /api/scenarios/runs/{id} accepts
+// only "run-" plus 16 lowercase hex characters. Every id the service
+// can mint — the crypto/rand one AND the wall-clock fallback that
+// takes over when the OS entropy source is broken — must satisfy it,
+// or the run becomes unpollable through the detail route the moment
+// the fallback fires. The pre-fix fallback ("run-%d" of UnixNano,
+// 19 decimal digits) fails the fallback rows below.
+func TestRunIDsMatchWireContract(t *testing.T) {
+	if !validRunID(newRunID()) {
+		t.Fatalf("minted id %q does not match the run-id wire shape", newRunID())
+	}
+	for _, n := range []int64{0, 1, time.Now().UnixNano(), 1 << 62, 1<<63 - 1} {
+		id := fallbackRunID(n)
+		if !validRunID(id) {
+			t.Fatalf("fallback id %q (stamp %d) does not match the run-id wire shape", id, n)
+		}
+		if !ValidRunID(id) {
+			t.Fatalf("exported guard disagrees with the service about %q", id)
+		}
+	}
+	for _, malformed := range []string{"", "run-", "run-abc", "run-0123456789ABCDEF", "run-0123456789abcdef0", "1728..", "run-0123456789abcdeg"} {
+		if ValidRunID(malformed) {
+			t.Fatalf("malformed id %q accepted", malformed)
+		}
+	}
+}

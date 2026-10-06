@@ -177,9 +177,11 @@ def run_checks(spec: dict, go_src: str) -> tuple[list[str], dict]:
     # Native writes also have an Origin guard inside authentication. Anchor
     # on the actual server Handler, not an unrelated call to h.auth elsewhere.
     # the bearer middleware, optionally inside the DNS-rebinding guard
-    # (h.guardRebinding: Host check for the tokenless loopback API)
+    # (h.guardRebinding: Host check for the tokenless loopback API) and an
+    # outermost response-header wrapper (securityHeaders: nosniff + no-referrer
+    # on every answer, including 401/403 rejections).
     has_mw = bool(re.search(
-        r"\bHandler:\s*(?:h\.guardRebinding\(\s*)?h\.auth\(\s*(?:mux\s*|guardWriteOrigin\(\s*mux\s*\))\s*\)",
+        r"\bHandler:\s*(?:securityHeaders\(\s*)?(?:h\.guardRebinding\(\s*)?h\.auth\(\s*(?:mux\s*|guardWriteOrigin\(\s*mux\s*\))\s*\)(?:\s*\))?",
         go_src,
     ))
     exempt: set[str] = set()
@@ -550,6 +552,14 @@ def self_test() -> int:
     if findings:
         print(f"self-test: rebinding-guarded authenticated handler produced findings: {findings}", file=sys.stderr)
         return 1
+    headed = GO_FIXTURE.replace(
+        'Handler: h.auth(mux)',
+        'Handler: securityHeaders(h.guardRebinding(h.auth(guardWriteOrigin(mux))))',
+    )
+    findings, _ = run_checks(good_spec(), headed)
+    if findings:
+        print(f"self-test: header-wrapped authenticated handler produced findings: {findings}", file=sys.stderr)
+        return 1
     unguarded = GO_FIXTURE.replace('Handler: h.auth(mux)', 'Handler: mux')
     findings, _ = run_checks(good_spec(), unguarded)
     if not any('no auth middleware' in finding for finding in findings):
@@ -654,7 +664,7 @@ def self_test() -> int:
             return 1
 
     print(
-        f"self-test: OK — 3 positive fixtures + {len(variants) + 1} negative variants, "
+        f"self-test: OK — 4 positive fixtures + {len(variants) + 1} negative variants, "
         "the guard catches its own class of drift"
     )
     return 0

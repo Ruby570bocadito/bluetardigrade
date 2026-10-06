@@ -1,0 +1,1 @@
+CSV exports built by the console (chart table twins and the alert-selection export) now prefix cells that a spreadsheet could read as a formula — those starting with =, +, -, @, their fullwidth forms, or a tab/CR/LF after optional blanks — with a harmless apostrophe, matching what the engine already does in its report downloads.
