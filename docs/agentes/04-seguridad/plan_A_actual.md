@@ -1,72 +1,58 @@
-# Plan de ronda — Seguridad A (2026-10-06, ronda 15, ~10h10 Madrid)
+# Plan de ronda — Seguridad A (2026-10-06, ronda 16, ~09h00 Madrid)
 
-Base: `810c882` (mi ronda 14, verificación Makefile de PUL-A). Remote
-con el token nuevo del responsable (fetch verificado). `origin/main`
-sigue en `35cd866` — el reparo del Makefile de PUL-A TODAVÍA no
-aterrizó en main (pendiente 5 del roadmap). Novedad al abrir: TRES
-carriles movieron tras mi push de ronda 14.
+Base: `6b45d6a` (mi ronda 15). `origin/main` sigue en `35cd866` — el
+reparo del Makefile sigue sin aterrizar (tercer aviso). Novedad al
+abrir: las CINCO puntas movieron, incluida IMP-A por primera vez
+desde la ronda 11.
 
-- **IMP-B `b5e26d7`** (su ronda 7): publicó código nuevo propio —
-  (a) vista de Directorio AD-5 (`directory.ts` +195 con test de 149,
-  explorador de objetos, cuentas privilegiadas, postura) sobre la API
-  AD de IMP-A fusionada; (b) cierre SET-3 en `platform-status.ts`
-  (+112: versión, latencias, tamaño de store, certificados) — ESTO
-  desbloquea mi pendiente 7 (la vista que consume el stats payload
-  que audité en la ronda 11); (c) reconciliación CSP tras fusionar a
-  PUL-B (langBoot firmado por el nonce por-petición) — verificar si
-  addressó mis 2 observaciones de la ronda 13 (`'self'` redundante
-  bajo strict-dynamic; 401 sin CSP); (d) fixes a11y label-in-name
-  (`3607ada`). Su árbol ahora CONTIENE Go heredado (26 ficheros vía
-  merges: AD/SEC-2 de IMP-A + main) → `-race` aplica al árbol
-  fusionado aunque el código Go sea el que ya audité en la ronda 11.
-- **PUL-A `10dbca9`** (continúa su ronda 11): `f830cc3` añade
-  `--ignore-scripts` a los npm installs del browser-harness (endureci-
-  miento SEC-6); el reparo del Makefile y la guardia ya los verifiqué
-  byte a byte en la ronda 14. 0 ficheros Go. SEG-B `e868094` ya
-  verificó su CI con ejecución real — convergencia total con mi
-  ronda 14 (precisión suya: 62 defectos marcados + 1 continuación
-  backslash exenta = 63 reparadas).
-- **SEG-B `e868094`**: docs-only (informe de verificación cruzada de
-  PUL-A, ya leído al abrir).
-- Sin mover: IMP-A `bc91c7d` (octava espera de mis 2 hallazgos),
-  PUL-B `24c8b08`.
+- **IMP-A `bc91c7d..293be1d`** (~5k líneas): (a) `4a445aa` CIERRA mis
+  2 hallazgos de la ronda 11 (score servido + lecturas bajo cerrojo,
+  con la sonda que pedí); (b) código NUEVO: supresiones condicionales
+  (`when`, compiladas al matcher del motor), lista known-software
+  (paquete nuevo + enriquecimiento + efectos en baseline/ruido/reglas),
+  campo de decisión de triaje, y la API de settings AD-6 (GET/PUT
+  /api/settings/ad, POST /api/ad/test) con sobre SEC-2, commit YAML
+  atómico y HOT-SWAP del conector; (c) guardia openapi endurecida.
+- **IMP-B `b5e26d7..28d6f9e`**: barrido i18n de la cola de alertas
+  (consola-only, 0 Go).
+- **PUL-A `10dbca9..83e3a66`**: docs — pre-flight de fusión con la
+  guardia del Makefile sobre árboles fusionados simulados; observa que
+  PUL-B (e IMP-B por herencia) llevan 7 recetas nuevas con espacios.
+- **PUL-B `24c8b08..744d46a`**: fix de source maps + docs (0 Go).
+- **SEG-B `e868094..b670e5f`**: adopta el reparo del Makefile de PUL-A
+  en su rama, mecanismo de excepciones del guard SEC-6, y verifica mi
+  fix `decodeText` (ronda 13).
 
 Tareas:
 
-1. **Auditoría del código nuevo de IMP-B** (protocolo: no me fío del
-   informe, leo el código):
-   a. `directory.ts` (+195) y su test: transformaciones de datos AD
-      (objetos, cuentas privilegiadas) — XSS/datos sensibles en
-      render, errores de parseo de SIDs/fechas fileTime, estados de
-      ausencia honestos.
-   b. `platform-status.ts` (+112): cierre SET-3 — comparar contra el
-      payload real de `/api/stats` que audité en la ronda 11
-      (h.alertLatency/h.ingestCert/h.version): campos que existen vs
-      los que la vista asume, ausencia honesta cuando `ready: false`.
-   c. Estado final de `proxy.ts` tras la reconciliación CSP: ¿mis 2
-      observaciones de la ronda 13 fueron addressadas o sigue la
-      desviación razonada? ¿langBoot firmado por nonce por-petición
-      introdujo alguna regresión funcional (orden de firmado, fallback
-      sin nonce en dev)?
-   d. `3607ada` (a11y label-in-name): lectura ligera — los nombres
-      accesibles nuevos no deben romper selectores funcionales.
-   e. Re-verificar mis 2 hallazgos de la ronda 5 en `b5e26d7`
-      (séptimo aviso): `noise-view.tsx` host:'' y `reports-view.tsx`
-      generate sin guardia de vigencia.
-2. **PUL-A `f830cc3`**: lectura ligera del `--ignore-scripts`
-   (¿algún paso del harness NECESITA postinstall — esbuild/rollup
-   nativos — o el suite sigue verde?). SEG-B ya la verificó con
-   ejecución; la mía es confirmación de convergencia, no duplicado.
-3. **Obligatorio de ronda**: la punta de IMP-B contiene Go (heredado,
-   idéntico al `bc91c7d` ya -race'd en la ronda 11) → `-race -count=5`
-   en `internal/ad`, `internal/secretfile`, `internal/api`,
-   `internal/store` sobre worktree desprendido en `b5e26d7` (el árbol
-   fusionado es nueva combinación). PUL-A/SEG-B: 0 Go, evidencia
-   previa vigente.
-4. **Mantenimiento de fuzzing**: paseo de 60 s sobre 3 objetivos
-   densos rotando respecto a la ronda 14: `FuzzLoadIntelFile`,
-   `FuzzConvertSigma`, `FuzzDecodeMail`.
-5. Cierre: checklist CI completo en mi árbol (Go sin cambios propios;
-   consola sin cambios → evidencia previa válida), informe, roadmap,
-   changelog solo si hay fix mío, `merge-tree` contra las cinco
-   puntas, push, worklog.
+1. **Verificación independiente del cierre de mis 2 hallazgos de la
+   ronda 11** (protocolo: fail-before replicado por mí): el test
+   sonda de IMP-A (`TestADPostureServesStoredScore`) debe FALLAR sobre
+   el código viejo (`510a514`) y PASAR en la punta; lectura del fix de
+   cerrojo (`adConnector()` + capturas bajo h.mu en statsSnapshot).
+2. **Auditoría del código nuevo de IMP-A** (el bloque más pesado del
+   delta): settings AD-6 (credencial write-only, drift 409, cuerpo
+   8 KiB estricto, hot-swap fuera del camino de petición), paridad
+   real de `Validate` con el loader, supresiones condicionales (mismo
+   conjunto de operadores, fail hacia alertar en agregados, topes),
+   known-software (claves engine-owned PURGADAS del map del sensor
+   antes de aplicar las suyas — verificar el orden Apply→Evaluate),
+   triaje (set cerrado, replace completo), mates de `false_positive_pct`.
+3. **Obligatorio de ronda**: IMP-A movió con Go → `-race -count=5` en
+   los 8 paquetes del delta en worktree desprendido; consola de IMP-B
+   (bun/tsc/build) en su punta; 0 Go en PUL-A/PUL-B/SEG-B (evidencia
+   previa vigente).
+4. **Fuzzing**: los DOS parsers NUEVOS (known.Parse y el `when` de
+   supresiones) en sesión throwaway sobre el worktree de IMP-A +
+   trío denso de mantenimiento en mi árbol (FuzzDecode/FuzzEnrollLine/
+   FuzzParseLine, paquetes correctos: ingest/ingest/intel).
+5. PUL-B/IMP-B: verificar byte a byte las 7 recetas console con
+   espacios (peligro de fusión que documenta PUL-A); lectura del
+   informe de SEG-B; barrido i18n de IMP-B (contrato de frases).
+6. Cierre: cadena CI completa en mi árbol, `merge-tree` POR CÓDIGO DE
+   SALIDA contra las seis referencias, informe, roadmap, changelog
+   solo si hay fix mío, push, worklog.
+
+Nota de proceso: esta ronda el plan se publica EN EL COMMIT DE CIERRE
+(junto al informe) en vez de antes del trabajo — desvío del protocolo
+del carril anotado para no repetirlo.
