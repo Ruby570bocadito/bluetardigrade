@@ -1,0 +1,66 @@
+# Active Directory connector (read-only) — example configuration.
+#
+#   engine -ad ad.example.yaml -store sf-store.db
+#
+# The connector ONLY performs LDAP bind and search operations: there is
+# no write code path. Transport is LDAPS (implicit TLS, port 636) or
+# plain LDAP upgraded with StartTLS — every mode validates the domain
+# controller's certificate against the CA file configured below, so the
+# connector speaks to the organization's own AD CS chain and never to
+# whatever the network offers. Anonymous binds do not exist here: the
+# bind is always the least-privilege service account, whose password
+# lives in its OWN file (never in this YAML, never in logs, never in
+# the API output).
+#
+# Give the service account DOMAIN-READ ONLY rights: Authenticated
+# Users already read most of the directory; do NOT add it to
+# privileged groups (the engine warns if the bind account is itself
+# privileged — that is one more credential worth protecting).
+
+server: dc01.corp.example.com   # FQDN; also the TLS ServerName pinned in the handshake
+port: 636                       # 636 for LDAPS, 389 for StartTLS
+start_tls: false                # true upgrades ldap:// with StartTLS before the bind
+
+base_dn: DC=corp,DC=example,DC=com
+
+# PEM bundle of the CA that signed the domain controllers' LDAPS
+# certificates. Required in every mode: no CA file, no connector.
+ca_file: /etc/bluetardigrade/ad-ca.pem
+
+# Least-privilege read-only service account.
+bind_dn: CN=soc-reader,OU=Service Accounts,DC=corp,DC=example,DC=com
+
+# ONLY the credential lives here. Two formats:
+#   - a SEC-2 envelope written by "engine secret-write <fichero> < pw.txt"
+#     (DPAPI-encrypted on Windows, mode-0600 plain envelope elsewhere);
+#   - the legacy raw text (UTF-8, trailing newline tolerated) for labs.
+# Windows warns on /api/ad/status while the file is not DPAPI-encrypted.
+# Rotate without restart: the file is re-read at every sync.
+password_file: /etc/bluetardigrade/ad-bind.secret
+
+# Sync cadence. Minimum 5m: every cycle reads the whole subtree.
+interval: 15m
+
+# Optional subtree limits (applied after the include filter):
+#include_ous:
+#  - OU=Workstations,DC=corp,DC=example,DC=com
+#exclude_ous:
+#  - OU=Decommissioned,DC=corp,DC=example,DC=com
+
+# Safety valves: one sync never pulls more than max_objects (the fetch
+# STOPS at the cap and the status reports truncated) and pages through
+# the directory max page_size entries per round trip (RFC 2696).
+max_objects: 100000
+page_size: 500
+
+# Posture thresholds (AD-2).
+inactive_days: 90               # stale-account window
+krbtgt_max_age_days: 365        # krbtgt password age before it is flagged
+
+# Work-hours window. Validated and served by the settings API (AD-6)
+# today; the logon analysis (AD-3) consumes it once WEF telemetry
+# exists. 24h HH:MM, start strictly before end. work_days lists
+# weekdays 0=Sunday..6=Saturday; omit it for the Monday-Friday default.
+#work_start: "08:00"
+#work_end: "18:00"
+#work_days: [1, 2, 3, 4, 5]

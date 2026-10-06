@@ -171,6 +171,10 @@ CREATE INDEX IF NOT EXISTS alerts_host_ts_idx ON alerts(host COLLATE NOCASE, ts)
 		db.Close()
 		return nil, err
 	}
+	if err := s.migrateAD(); err != nil {
+		db.Close()
+		return nil, err
+	}
 	// seed the live counters with what is already on disk (a restart
 	// keeps serving history, so the stats must reflect it)
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM events`).Scan(&s.events); err != nil {

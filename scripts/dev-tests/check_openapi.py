@@ -314,7 +314,20 @@ def run_checks(spec: dict, go_src: str) -> tuple[list[str], dict]:
     # triage POST, for one) have their own gating contract — so the spec
     # must document the 403 on exactly these operations, with an error
     # example matching the code body byte-for-byte, like the 401 check.
-    m_403 = re.search(r'Fprintln\(w, `(\{"error":"api writes[^"]*"\})`\)', go_src)
+    # The package may host SEVERAL gated write surfaces, each with its
+    # own 403 body (the suppression writes and the AD-6 settings surface,
+    # for one). Collect them all: every gated operation must document one
+    # of the real bodies, and every real body must be documented
+    # somewhere in the spec — the wire contract cannot drift silently in
+    # either direction.
+    m_403_all = re.findall(r'Fprintln\(w, `(\{"error":"api writes[^"]*"\})`\)', go_src)
+    go_403_bodies = []
+    for m in m_403_all:
+        body = m.split('"error":"', 1)[1]
+        if not body.endswith('"}'):
+            errors.append(f"could not parse the 403 body in internal/api: {m!r}")
+            continue
+        go_403_bodies.append(body[:-2])
     gated_writes: set[tuple[str, str]] = set()
     m_reg = re.search(r"func \(h \*Hub\) registerSuppressionsWrite\(.*?\n\}", go_src, re.S)
     if m_reg:
@@ -340,7 +353,7 @@ def run_checks(spec: dict, go_src: str) -> tuple[list[str], dict]:
             )
             continue
         write_ops += 1
-        if not m_403:
+        if not go_403_bodies:
             continue  # no gated write surface in the code: nothing to match
         responses = op.get("responses", {}) or {}
         if "403" not in responses:
@@ -358,20 +371,47 @@ def run_checks(spec: dict, go_src: str) -> tuple[list[str], dict]:
             example = node["content"]["application/json"]["schema"]["properties"]["error"]["example"]
         except (KeyError, TypeError):
             example = None
-        go_403 = m_403.group(1).split('"error":"', 1)[1]
-        if not go_403.endswith('"}'):
-            errors.append(f"could not parse the 403 body in internal/api: {m_403.group(1)!r}")
-        else:
-            go_403 = go_403[:-2]
-            if example is None:
+        if example is None:
+            errors.append(
+                "the 403 response lacks the error example "
+                "(content.application/json.schema.properties.error.example) "
+                "while the code writes a concrete body"
+            )
+        elif example not in go_403_bodies:
+            errors.append(
+                f"403 example drift: spec {example!r} is not one of the "
+                f"bodies the internal/api write gates answer: {go_403_bodies!r}"
+            )
+
+    # every 403 body the code writes must appear as SOME 403 example in
+    # the spec (a surface whose body is documented nowhere is drift the
+    # per-operation check above cannot see when the op documents a
+    # DIFFERENT real body)
+    if go_403_bodies:
+        documented = set()
+
+        def _collect(node):
+            if isinstance(node, dict):
+                ex = None
+                try:
+                    ex = node["content"]["application/json"]["schema"]["properties"]["error"]["example"]
+                except (KeyError, TypeError):
+                    ex = None
+                if isinstance(ex, str):
+                    documented.add(ex)
+                for v in node.values():
+                    _collect(v)
+            elif isinstance(node, list):
+                for v in node:
+                    _collect(v)
+
+        _collect(spec.get("paths", {}) or {})
+        _collect(spec.get("components", {}) or {})
+        for body in go_403_bodies:
+            if body not in documented:
                 errors.append(
-                    "the 403 response lacks the error example "
-                    "(content.application/json.schema.properties.error.example) "
-                    "while the code writes a concrete body"
-                )
-            elif example != go_403:
-                errors.append(
-                    f"403 example drift: spec {example!r} != internal/api {go_403!r}"
+                    f"403 body undocumented: internal/api answers "
+                    f"{body!r} but the spec documents it nowhere"
                 )
 
     # ---- every $ref in the document must resolve inside the spec: a

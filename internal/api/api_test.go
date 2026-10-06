@@ -846,6 +846,10 @@ func TestMetricsParityWithStats(t *testing.T) {
 	wantMetric("sf_baseline_hosts", "baseline_hosts")
 	wantMetric("sf_baseline_hosts_learning", "baseline_learning")
 	wantMetric("sf_baseline_novelties_total", "baseline_novelties")
+	wantMetric("sf_ring_dropped_events_total", "ring_dropped_events")
+	wantMetric("sf_ring_dropped_alerts_total", "ring_dropped_alerts")
+	wantMetric("sf_beacon_quota_rejected_total", "beacon_quota_rejected")
+	wantMetric("sf_threshold_quota_rejected_total", "threshold_quota_rejected")
 	if stats["intel_indicators"] != float64(2) || stats["intel_hits"] != float64(1) || stats["baseline_learning"] != float64(1) {
 		t.Fatalf("intel/baseline stats: %v %v %v", stats["intel_indicators"], stats["intel_hits"], stats["baseline_learning"])
 	}
@@ -981,5 +985,79 @@ func TestMetricsEscapesLabelValues(t *testing.T) {
 	}
 	if n := strings.Count(text, "sf_alerts_by_severity{"); n != 1 {
 		t.Fatalf("expected exactly 1 severity series, got %d:\n%s", n, text)
+	}
+}
+
+func TestRingDropsCountedPerHost(t *testing.T) {
+	// v1.1 cuotas por equipo: los anillos recortan oldest-first, asi
+	// que un equipo ruidoso que llena el anillo lava el registro
+	// reciente de los demas. Esa perdida queda VISIBLE: total y por
+	// host, fusionada en quota_top_hosts.
+	h, addr := newTestHub(t)
+	for i := 0; i < maxEvents+30; i++ {
+		h.PublishEvent(sampleEvent(fmt.Sprintf("ev-%d", i)))
+	}
+	for i := 0; i < maxAlerts+7; i++ {
+		h.RecordAlert(alert.Alert{
+			Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+			RuleID:    "r", RuleName: "x", Severity: "low", Host: "VICTIM",
+			Summary: "s", MatchedOn: []string{"process.name"},
+		})
+	}
+	var stats map[string]any
+	getJSON(t, fmt.Sprintf("http://%s/api/stats", addr), &stats)
+	if got := stats["ring_dropped_events"].(float64); got != 30 {
+		t.Fatalf("ring_dropped_events=%v, want 30", got)
+	}
+	if got := stats["ring_dropped_alerts"].(float64); got != 7 {
+		t.Fatalf("ring_dropped_alerts=%v, want 7", got)
+	}
+	top, ok := stats["quota_top_hosts"].([]any)
+	if !ok || len(top) != 2 {
+		t.Fatalf("quota_top_hosts = %#v, want 2 rows", stats["quota_top_hosts"])
+	}
+	first := top[0].(map[string]any)
+	if first["host"] != "lab-test" || first["ring_events"] != float64(30) {
+		t.Fatalf("first row = %#v, want lab-test/30", first)
+	}
+	second := top[1].(map[string]any)
+	if second["host"] != "victim" || second["ring_alerts"] != float64(7) {
+		t.Fatalf("second row = %#v, want victim/7", second)
+	}
+}
+
+func TestStatsServesQuotaCounters(t *testing.T) {
+	h, addr := newTestHub(t)
+	h.SetQuotaStats(func() QuotaSnapshot {
+		return QuotaSnapshot{
+			BeaconRejected:    3,
+			ThresholdRejected: 4,
+			BeaconHosts:       map[string]uint64{"noisy": 3},
+			ThresholdHosts:    map[string]uint64{"noisy": 4},
+		}
+	})
+	var stats map[string]any
+	getJSON(t, fmt.Sprintf("http://%s/api/stats", addr), &stats)
+	if got := stats["beacon_quota_rejected"].(float64); got != 3 {
+		t.Fatalf("beacon_quota_rejected=%v, want 3", got)
+	}
+	if got := stats["threshold_quota_rejected"].(float64); got != 4 {
+		t.Fatalf("threshold_quota_rejected=%v, want 4", got)
+	}
+	top := stats["quota_top_hosts"].([]any)
+	if len(top) != 1 {
+		t.Fatalf("quota_top_hosts = %#v, want 1 row", stats["quota_top_hosts"])
+	}
+	row := top[0].(map[string]any)
+	if row["host"] != "noisy" || row["beacon"] != float64(3) || row["threshold"] != float64(4) {
+		t.Fatalf("row = %#v, want noisy beacon=3 threshold=4", row)
+	}
+	// sin detectores con cuota el contrato sigue estable: lista vacia,
+	// nunca null
+	_, addr2 := newTestHub(t)
+	var stats2 map[string]any
+	getJSON(t, fmt.Sprintf("http://%s/api/stats", addr2), &stats2)
+	if rows, ok := stats2["quota_top_hosts"].([]any); !ok || len(rows) != 0 {
+		t.Fatalf("quota_top_hosts sin wiring = %#v, want []", stats2["quota_top_hosts"])
 	}
 }

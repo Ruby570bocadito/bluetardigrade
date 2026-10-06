@@ -454,3 +454,44 @@ func TestNoiseAlertScanTruncationIsReported(t *testing.T) {
 		t.Fatalf("an alert scan capped by its own budget must be truncated: %+v", rep.Scanned)
 	}
 }
+
+// The decision recorded in the lifecycle store reaches /api/noise as
+// false_positive_pct on the wire (the integration point IMP-B's
+// screen consumes: POST /api/alerts/{id}/status with a decision, then
+// the FP rate of that rule moves).
+func TestNoiseCarriesDecisionFromLifecycle(t *testing.T) {
+	h, addr := newTestHub(t)
+	h.RecordAlert(alert.Alert{
+		Timestamp: time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano), RuleID: "R1", RuleName: "test rule",
+		Severity: "low", Host: "LAB-TEST", EventID: "ev-1",
+		EventType: "process.create", Summary: "s", MatchedOn: []string{"process.name"},
+	})
+	h.RecordAlert(alert.Alert{
+		Timestamp: time.Now().UTC().Add(-2 * time.Minute).Format(time.RFC3339Nano), RuleID: "R1", RuleName: "test rule",
+		Severity: "low", Host: "LAB-TEST", EventID: "ev-2",
+		EventType: "process.create", Summary: "s", MatchedOn: []string{"process.name"},
+	})
+	var listed []map[string]any
+	getJSON(t, fmt.Sprintf("http://%s/api/alerts", addr), &listed)
+	ids := make([]string, 0, 2)
+	for _, a := range listed {
+		ids = append(ids, a["id"].(string))
+	}
+	if _, err := h.lifecycle.Set(ids[0], lifecycle.StatusClosed, lifecycle.DecisionFalsePositive, "fp", "ana"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	code, body, _ := get(t, "http://"+addr+"/api/noise?window=1h")
+	if code != http.StatusOK {
+		t.Fatalf("noise = %d: %s", code, body)
+	}
+	if !strings.Contains(body, `"false_positive_pct":50`) {
+		t.Fatalf("wire body does not carry the 50%% FP rate: %s", body)
+	}
+	var rep report.Noise
+	if err := json.Unmarshal([]byte(body), &rep); err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Rules) != 1 || rep.Rules[0].FalsePositivePct != 50.0 {
+		t.Fatalf("rules = %+v", rep.Rules)
+	}
+}

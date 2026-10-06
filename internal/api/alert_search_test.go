@@ -71,11 +71,11 @@ func TestAlertSearchLifecycleFiltersBeforeLimit(t *testing.T) {
 		h.RecordAlert(searchAlert(i))
 	}
 	for _, i := range []int{5, 4, 2} {
-		if _, err := h.lifecycle.Set(searchAlert(i).ID, lifecycle.StatusClosed, "reviewed", "operator"); err != nil {
+		if _, err := h.lifecycle.Set(searchAlert(i).ID, lifecycle.StatusClosed, "", "reviewed", "operator"); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := h.lifecycle.Set(searchAlert(3).ID, lifecycle.StatusAcknowledged, "picked up", "operator"); err != nil {
+	if _, err := h.lifecycle.Set(searchAlert(3).ID, lifecycle.StatusAcknowledged, "", "picked up", "operator"); err != nil {
 		t.Fatal(err)
 	}
 	base := "http://" + addr + "/api/alerts/search?limit=1&status=open&severity=high&q=historical"
@@ -129,7 +129,7 @@ func TestAlertSearchSQLiteHistoryAndScanContinuation(t *testing.T) {
 	for i := 1; i <= alertSearchScanCap+1; i++ {
 		h.RecordAlert(searchAlert(i))
 	}
-	if _, err := h.lifecycle.Set(searchAlert(1).ID, lifecycle.StatusClosed, "outside ring", "operator"); err != nil {
+	if _, err := h.lifecycle.Set(searchAlert(1).ID, lifecycle.StatusClosed, "", "outside ring", "operator"); err != nil {
 		t.Fatal(err)
 	}
 	base := "http://" + addr + "/api/alerts/search?status=closed"

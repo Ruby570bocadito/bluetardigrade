@@ -54,10 +54,25 @@ type Rule struct {
 	Actions     []Action    `yaml:"actions"`
 	Tags        []string    `yaml:"tags"`
 	Enabled     *bool       `yaml:"enabled"`
+	// ExcludeKnownSoftware (§2.2, opt-in, default false): the rule does
+	// not fire on events the organization's known-software list
+	// enriches. Intended for the low/medium-confidence rules whose only
+	// purpose is flagging unexpected software — a known entry already
+	// covers them. High/critical rules should never set it: known
+	// software is also compromised software. The key it reads is
+	// engine-owned (set by the enricher, never by the sensor), so a
+	// sensor cannot forge its way past a rule.
+	ExcludeKnownSoftware *bool `yaml:"exclude_known_software,omitempty"`
 }
 
 // IsEnabled returns true unless the rule is explicitly disabled.
 func (r *Rule) IsEnabled() bool { return r.Enabled == nil || *r.Enabled }
+
+// ExcludesKnownSoftware reports whether the rule opted out of firing
+// on known-software-enriched events.
+func (r *Rule) ExcludesKnownSoftware() bool {
+	return r.ExcludeKnownSoftware != nil && *r.ExcludeKnownSoftware
+}
 
 // Load caps (F2): the rule directory is operator
 // config, but every other loader in the house bounds its input
@@ -159,12 +174,19 @@ func (e *Engine) Evaluate(ev *model.Event) []Hit {
 		return nil
 	}
 	fields := ev.FieldMap()
+	// §2.2 known software: events enriched with known_software may be
+	// opted out per rule (exclude_known_software). The enrichment is
+	// engine-owned, so a sensor cannot use the key to blind a rule.
+	known := ev.Enrichment["known_software"] != ""
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
 	var hits []Hit
 	for _, cr := range e.byType[ev.Type] {
 		if !cr.rule.IsEnabled() {
+			continue
+		}
+		if known && cr.rule.ExcludesKnownSoftware() {
 			continue
 		}
 		// F2 (adenda 11h02): ONE evaluation path — the compiled
@@ -534,6 +556,14 @@ var validOperators = map[string]bool{
 	"ieq": true, "icontains": true, "icontains_any": true,
 	"istartswith": true, "iendswith": true, "iin": true,
 }
+
+// IsValidOperator reports whether op belongs to the closed operator set
+// the engine evaluates. The other loaders that accept operator
+// conditions (the §2.3 suppression entries) validate against THIS
+// function so the set — and what every operator means — stays in one
+// place: a suppression with an unknown operator fails its load loudly
+// instead of silencing nothing while looking armed.
+func IsValidOperator(op string) bool { return validOperators[op] }
 
 func compile(r *Rule) (compiledRule, error) {
 	cr := compiledRule{rule: r}

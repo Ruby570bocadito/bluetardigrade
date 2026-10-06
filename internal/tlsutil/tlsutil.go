@@ -30,6 +30,7 @@ package tlsutil
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net"
 	"os"
@@ -125,6 +126,29 @@ func (r *Reloader) getCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error
 func (r *Reloader) GetCertificate(hi *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	return r.getCertificate(hi)
 }
+
+// NotAfter returns the expiry of the certificate currently being
+// served (SET-3: the console warns before a listener's pair lapses).
+// ok is false only if the loaded material carries no parseable leaf —
+// which cannot happen for pairs LoadX509KeyPair accepted, so the flag
+// exists to keep the caller honest rather than to be exercised.
+func (r *Reloader) NotAfter() (time.Time, bool) {
+	r.mu.Lock()
+	cert := r.cert
+	r.mu.Unlock()
+	if cert == nil || len(cert.Certificate) == 0 {
+		return time.Time{}, false
+	}
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		return time.Time{}, false
+	}
+	return leaf.NotAfter, true
+}
+
+// CertFile returns the configured certificate path (reported verbatim
+// by the stats surface so an operator can find the file to renew).
+func (r *Reloader) CertFile() string { return r.certFile }
 
 // emit delivers a reload event through the notify hook, if any.
 // Called with r.mu held: the hook must be quick and non-blocking (the

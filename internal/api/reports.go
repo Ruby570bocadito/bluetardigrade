@@ -192,6 +192,7 @@ func (h *Hub) alertInput(a alert.Alert) report.AlertInput {
 		Summary:   a.Summary,
 		Tags:      a.Tags,
 		Status:    v.Status,
+		Decision:  v.Decision,
 		StatusAt:  v.StatusAt,
 		StatusBy:  v.StatusBy,
 	}

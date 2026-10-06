@@ -113,6 +113,8 @@ func TestAlertLifecycleBadRequests(t *testing.T) {
 		{"bad id", "/api/alerts/ZZZ/status", `{"status":"closed"}`, "malformed alert id"},
 		{"empty body", "/api/alerts/ffffffffffffffff/status", ``, "invalid JSON"},
 		{"unknown status", "/api/alerts/ffffffffffffffff/status", `{"status":"resolved"}`, "invalid status"},
+		{"unknown decision", "/api/alerts/ffffffffffffffff/status", `{"status":"closed","decision":"benign"}`, "invalid decision"},
+		{"hyphen decision", "/api/alerts/ffffffffffffffff/status", `{"status":"closed","decision":"false-positive"}`, "invalid decision"},
 		{"missing status", "/api/alerts/ffffffffffffffff/status", `{"note":"hi"}`, "invalid status"},
 		{"oversized note", "/api/alerts/ffffffffffffffff/status",
 			`{"status":"closed","note":"` + strings.Repeat("x", lifecycle.MaxNoteLen+1) + `"}`, "note longer"},
@@ -325,5 +327,140 @@ func TestAlertStatusInvalidStatusIs400Not500(t *testing.T) {
 	}
 	if !strings.HasPrefix(body, `{"error":"invalid status`) {
 		t.Fatalf("body = %s, want an invalid-status 400", body)
+	}
+}
+
+func TestAlertDecisionEndpointFlow(t *testing.T) {
+	h, addr := newTestHub(t)
+	h.RecordAlert(alert.Alert{
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano), RuleID: "r1", RuleName: "test rule",
+		Severity: "high", Host: "LAB-TEST", EventID: "ev-1",
+		EventType: "process.create", Summary: "s", MatchedOn: []string{"process.name"},
+	})
+	base := fmt.Sprintf("http://%s", addr)
+	var listed []map[string]any
+	getJSON(t, base+"/api/alerts", &listed)
+	id, _ := listed[0]["id"].(string)
+
+	// close WITH a verdict: the decision rides the entry and shows up
+	// in the merged view
+	res, body := postStatus(t, base+"/api/alerts/"+id+"/status",
+		`{"status":"closed","decision":"false_positive","note":"tarea programada","by":"ana"}`, "")
+	if res.StatusCode != 200 {
+		t.Fatalf("close+decision status = %d body=%s", res.StatusCode, body)
+	}
+	var entry map[string]any
+	if err := json.Unmarshal([]byte(body), &entry); err != nil {
+		t.Fatalf("entry body: %v (%s)", err, body)
+	}
+	if entry["decision"] != "false_positive" {
+		t.Fatalf("entry decision = %v", entry["decision"])
+	}
+	listed = nil // decode reuses maps: a stale key would fake a failure
+	getJSON(t, base+"/api/alerts", &listed)
+	if listed[0]["decision"] != "false_positive" || listed[0]["status"] != "closed" {
+		t.Fatalf("merged view = %v / %v", listed[0]["status"], listed[0]["decision"])
+	}
+
+	// JSONL export flattens the same field
+	res2, err := http.Get(base + "/api/alerts/export")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res2.Body.Close()
+	var exported map[string]any
+	if err := json.NewDecoder(res2.Body).Decode(&exported); err != nil {
+		t.Fatalf("jsonl decode: %v", err)
+	}
+	if exported["decision"] != "false_positive" {
+		t.Fatalf("exported decision = %v", exported["decision"])
+	}
+
+	// CSV carries the decision column APPENDED at the end (positional
+	// consumers keep their columns)
+	res3, err := http.Get(base + "/api/alerts/export?format=csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res3.Body.Close()
+	csvData, _ := io.ReadAll(res3.Body)
+	header := strings.SplitN(string(csvData), "\n", 2)[0]
+	if !strings.HasSuffix(strings.TrimRight(header, "\r"), ",decision") {
+		t.Fatalf("csv header = %q, want a trailing decision column", header)
+	}
+	if !strings.Contains(string(csvData), ",false_positive") {
+		t.Fatalf("csv row misses the decision: %q", string(csvData))
+	}
+
+	// a later POST without decision CLEARS it: the body is the full
+	// triage record, never a partial patch
+	if res, _ = postStatus(t, base+"/api/alerts/"+id+"/status", `{"status":"closed"}`, ""); res.StatusCode != 200 {
+		t.Fatal("close without decision rejected")
+	}
+	listed = nil // same map-reuse hazard: reset before judging absence
+	getJSON(t, base+"/api/alerts", &listed)
+	if _, present := listed[0]["decision"]; present {
+		t.Fatalf("decision survived a record without it: %v", listed[0]["decision"])
+	}
+}
+
+func TestAlertDecisionAuditLine(t *testing.T) {
+	_, addr := newTestHub(t)
+	logs := captureLogs(t, func() {
+		res, body := postStatus(t, fmt.Sprintf("http://%s/api/alerts/0123456789abcdef/status", addr),
+			`{"status":"closed","decision":"confirmed_incident","by":"ana"}`, "")
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200: %s", res.StatusCode, body)
+		}
+	})
+	if !strings.Contains(logs, "decision=confirmed_incident") {
+		t.Fatalf("audit log lost the decision:\n%s", logs)
+	}
+	// a triage record without decision keeps the historical line shape
+	logs = captureLogs(t, func() {
+		postStatus(t, fmt.Sprintf("http://%s/api/alerts/0123456789abcdef/status", addr), `{"status":"closed"}`, "")
+	})
+	if strings.Contains(logs, "decision=") {
+		t.Fatalf("audit log invented a decision:\n%s", logs)
+	}
+}
+
+func TestAlertDecisionSSEBroadcast(t *testing.T) {
+	_, addr := newTestHub(t)
+	streamURL := fmt.Sprintf("http://%s/api/stream", addr)
+	req, _ := http.NewRequest(http.MethodGet, streamURL, nil)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	defer res.Body.Close()
+	frames := bufio.NewScanner(res.Body)
+
+	postStatus(t, fmt.Sprintf("http://%s/api/alerts/ffffffffffffffff/status", addr),
+		`{"status":"closed","decision":"authorized_activity","by":"ops"}`, "")
+
+	var entry map[string]any
+	found := false
+	for frames.Scan() {
+		if strings.TrimSpace(frames.Text()) != "event: alert_lifecycle" {
+			continue
+		}
+		found = true
+		for frames.Scan() {
+			line := frames.Text()
+			if strings.HasPrefix(line, "data: ") {
+				if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &entry); err != nil {
+					t.Fatalf("data decode: %v", err)
+				}
+				break
+			}
+		}
+		break
+	}
+	if !found {
+		t.Fatal("no alert_lifecycle SSE frame received")
+	}
+	if entry["decision"] != "authorized_activity" {
+		t.Fatalf("broadcast entry decision = %v", entry["decision"])
 	}
 }

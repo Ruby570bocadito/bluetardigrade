@@ -19,6 +19,7 @@ import (
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/ingest"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/intel"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/known"
 )
 
 func doctorIntelChecks(root string) []doctorCheck {
@@ -59,7 +60,7 @@ func doctorIntelChecks(root string) []doctorCheck {
 		}
 	}
 
-	checks = append(checks, doctorConsoleUsers(root), doctorIdentities(root))
+	checks = append(checks, doctorConsoleUsers(root), doctorIdentities(root), doctorKnownSoftware(root))
 	return checks
 }
 
@@ -181,4 +182,33 @@ func validPasswordHash(p string) bool {
 	salt, err1 := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[2], "="))
 	hash, err2 := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[3], "="))
 	return err1 == nil && err2 == nil && len(salt) >= 16 && len(hash) == 32
+}
+
+// doctorKnownSoftware validates the §2.2 known-software list with the
+// engine's own parser: a malformed file is FATAL at engine startup
+// (the engine refuses to run rather than silently disarm a list the
+// operator believes is armed), so the doctor catches the typo before
+// the restart does.
+func doctorKnownSoftware(root string) doctorCheck {
+	const name = "Software conocido"
+	path := filepath.Join(root, "known-software.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return doctorCheck{name, "skip", "Sin lista de software conocido (es opcional): ningun evento se marca como conocido", "Copia known-software.example.yaml como known-software.yaml junto al motor y edita las entradas de tu organizacion"}
+		}
+		return doctorCheck{name, "error", "No se puede leer la lista: el motor no arrancaria", "Revisa los permisos de " + path}
+	}
+	sws, err := known.Parse(data)
+	if err != nil {
+		return doctorCheck{name, "error", "El motor no arrancaria: " + err.Error(), "Corrige " + path + " (known-software.example.yaml documenta el formato: version 1 y cada entrada con imagen o sha256)"}
+	}
+	if len(sws) == 0 {
+		return doctorCheck{name, "warn", "La lista no tiene entradas: ningun evento se marcara como conocido", "Anade entradas (imagen o sha256) o retira el fichero"}
+	}
+	noun := "entradas validas de software conocido"
+	if len(sws) == 1 {
+		noun = "entrada valida de software conocido"
+	}
+	return doctorCheck{name, "ok", fmt.Sprintf("%d %s; los eventos coincidentes se marcan como conocidos y salen del ruido", len(sws), noun), ""}
 }
