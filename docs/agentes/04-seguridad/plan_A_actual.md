@@ -1,44 +1,48 @@
-# Plan de ronda — Seguridad A (2026-10-06, ronda 13, ~09h25 Madrid)
+# Plan de ronda — Seguridad A (2026-10-06, ronda 14, ~09h50 Madrid)
 
-Base: `f72a479` (mi ronda 12). `origin/main` sigue en `35cd866`.
-Novedad al abrir: DOS carriles movieron.
+Base: `ab60e91` (mi ronda 13, primer fix del fuzzing vivo). Token del
+remote rotado por el responsable (fetch verificado).
+`origin/main` sigue en `35cd866`. Novedad al abrir: DOS carriles
+movieron.
 
-- **PUL-B `24c8b08`**: publicó su ronda 5 — **CSP por nonce** en la
-  consola (`proxy.ts` acuña nonce por petición, `layout.tsx` async,
-  CSP estática fuera de `next.config.ts`, producción sin
-  `'unsafe-inline'` en `script-src` con `'strict-dynamic'`), manifest
-  del tooling de pruebas (`tools/console-tests/package.json` +
-  `bun.lock`), guardia nueva `check_console_csp.mjs`. **Cero ficheros
-  Go** (verificado por stat) — consola + scripts .mjs.
-- **SEG-B `32cf10a`**: docs-only (plan, roadmap y DOS informes de
-  ronda).
-- Sin mover: IMP-A `bc91c7d` (mis 2 hallazgos de la ronda 11 siguen
-  abiertos), IMP-B `5ecbcc4` (los 2 míos de la ronda 5, sexto aviso),
-  PUL-A `df323ad`.
+- **PUL-A `9ee1594`** (su ronda 11): anuncia y repara un defecto REAL
+  de `main` — `63fa077` (SEC-5, 5-oct) reescribió las 63 recetas del
+  Makefile con 8 espacios («missing separator» en cualquier target;
+  invisible porque `ci.yml` nunca invoca `make`). Reparo mecánico
+  (`49afd06`), guardia nueva `check_makefile_tabs.py` (máquina de
+  estados + self-test 5 fixtures), vet cross-Windows ampliado a
+  `GOOS=windows go vet ./...` en `ci.yml` (anti-drift, sustituye una
+  lista explícita de 3 paquetes). Cero ficheros Go de producto.
+- **SEG-B `cf8997d`**: docs-only (plan, roadmap, informe).
+- Sin mover: IMP-A `bc91c7d` (mis 2 hallazgos, octava espera —
+  ahora con doble confirmación SEG-A+SEG-B), IMP-B `5ecbcc4` (los 2
+  míos de la ronda 5), PUL-B `24c8b08`.
 
 Tareas:
 
-1. **Fuzzing vivo, tercera tanda** (pendiente 3 del roadmap): los 15
-   objetivos aún sin sesión viva — `FuzzDecode`, `FuzzDecodeText`,
-   `FuzzEnrollHost`, `FuzzFieldMapParity`, `FuzzHTMLAttribute`,
-   `FuzzInspectAttachmentName`, `FuzzLoadIdentities`,
-   `FuzzLoadRulesDir`, `FuzzLoadThreshold`, `FuzzMatchIdentity`,
-   `FuzzOpenRegistry`, `FuzzParseRecordFilter`, `FuzzParseTimeParam`,
-   `FuzzValidateHash`, `FuzzValidateIP` — 45-60 s cada uno. Si el
-   presupuesto aprieta, priorizo los de entrada hostil (decode/
-   enroll/HTML/attachment) sobre los de validación pura.
-2. **Revisión del CSP-nonce de PUL-B** (feature de seguridad en
-   producción — territorio natural de mi carril): `proxy.ts` (acuno,
-   cabeceras, rotación, dev vs prod), `layout.tsx` async (lectura de
-   `x-nonce`), `next.config.ts` (qué cabeceras quedan), la guardia
-   `check_console_csp.mjs` (que no pruebe lo que no existe) y el
-   manifest del tooling. Fix con prueba fail-before/pass-after por
-   cada bug real encontrado; anotación si es consola ajena.
-3. **Obligatorio de ronda**: ninguna punta movida toca Go esta vez
-   (PUL-B consola + .mjs; SEG-B docs) → `-race` no aplica; evidencia
-   de la ronda 12 vigente. Si el stat engaña, ejecuto.
-4. **Lectura de los informes de SEG-B** (`32cf10a`, docs-only) por si
-   anuncian hallazgos que me tocan.
+1. **Verificación independiente del hallazgo/reparo de PUL-A**
+   (protocolo del carril: no me fío del informe):
+   a. `63fa077` rompió el Makefile — comprobar el diff histórico
+      byte a byte (espacios vs tab) y que HOY el árbol de PUL-A tiene
+      tabs en las 63 recetas.
+   b. Su guardia: `--self-test` 5/5, salida 0 en el árbol reparado,
+      y detección real sobre una copia corrupta (fail-before de la
+      guardia misma).
+   c. `ci.yml`: vet `./...` + paso de la guardia cableados; lectura
+      de la desviación razonada (guardia solo en ci.yml, no en
+      `make ci` — argumento autorreferencial, verificar que es sano).
+2. **Obligatorio de ronda**: deltas movidos sin ficheros Go
+   (verificar por stat en ambos) → `-race` no aplica; evidencia de
+   la ronda 13 vigente.
+3. **Mi cadena se alinea con la CI nueva**: añadir
+   `GOOS=windows go vet ./...` a mi checklist de ronda (la CI lo
+   exige ahora; antes solo hacía build).
+4. **Mantenimiento de fuzzing** (primer paseo periódico, barato):
+   60 s sobre `FuzzDecode`, `FuzzEnrollLine` y `FuzzParseLine` — la
+   superficie de parseo hostil más densa, vecina del fix de la
+   ronda 13. Solo si el presupuesto de la verificación 1 deja.
+5. **Lectura del informe de SEG-B** (`cf8997d`, docs-only).
 
-Cierre: checklist CI completo en mi árbol, informe, roadmap, changelog
-solo si hay fix mío; push tras `merge-tree` contra las cinco puntas.
+Cierre: checklist CI completo (con el vet windows nuevo), informe,
+roadmap, changelog solo si hay fix mío; push tras `merge-tree` contra
+las cinco puntas.
