@@ -25,6 +25,12 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   output: "standalone",
   reactStrictMode: true,
+  // Browser source maps for the production chunks: when an operator's
+  // browser logs a console error, the trace arrives symbolized instead
+  // of minified (Lighthouse best-practices: valid-source-maps). Maps
+  // are fetched only when DevTools opens — zero runtime cost, no
+  // effect on the bundle baseline (they are not executed).
+  productionBrowserSourceMaps: true,
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

@@ -235,8 +235,11 @@ Measured on the production build (`bun run build`, Next 16.3.6 /
 Turbopack, 2026-10-05): client JS ≈ 1.52 MB total across
 `.next/static/chunks` — one ≈ 1.0 MB vendor chunk (chart + motion
 libraries), then ≈ 223 / 174 / 109 KB app chunks — plus ≈ 98 KB of CSS.
-Re-measure after adding a client dependency: any new dependency must
-justify its bytes here.
+Since 2026-10-06 the build also emits browser source maps
+(`productionBrowserSourceMaps`): separate `.map` files fetched only
+when DevTools opens, so traces arrive symbolized — they are never
+executed and do not change the executed bundle. Re-measure after adding
+a client dependency: any new dependency must justify its bytes here.
 
 Lighthouse (desktop preset, production build, Chromium). The nonce CSP
 turned `/` into a dynamic route, so the baseline was re-measured on
@@ -247,7 +250,15 @@ best-practices / 100 SEO** (FCP 0.3 s, LCP 1.2 s, TBT 30 ms, CLS
 0.019, SI 0.8 s) and the alerts view **100 / 100 / 96 / 100**: the
 per-request nonce costs nothing measurable (baseline 2026-10-05,
 prerendered `/`: 95 / 100 / 96 / 100 with FCP 0.4 s, LCP 1.5 s, TBT
-20 ms, CLS 0.02). Reproduce with `make console-lighthouse`
+20 ms, CLS 0.02). On best-practices: `valid-source-maps` was fixed on
+2026-10-06 by emitting browser source maps; the remaining item,
+`errors-in-console`, is binary and feeds on the measurement lab itself
+(the engine and console-service are deliberately offline, so their
+refused fetches and socket always fail — twelve 502s and two
+WebSocket errors on every trace). With a live backend that item clears
+by construction; the 96 in this lab is its ceiling. `/favicon.ico` is
+a non-issue: Next injects `<link rel="icon" href="/icon.svg">`, so
+browsers never request the .ico. Reproduce with `make console-lighthouse`
 (`CHROME_PATH` pointing at a Chromium binary) or directly:
 `lighthouse http://127.0.0.1:3100 --preset=desktop --output=json`
 against `bun run start` — kill any stale `next-server` first (a server
