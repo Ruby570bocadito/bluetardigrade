@@ -1,7 +1,7 @@
 # Roadmap B — carril Pulimiento B (archivo vivo)
 
-Última actualización: 2026-10-06, ronda 6 de este carril sobre la rama
-`carril/pulimiento-b` (base `d458fae`, plan `24c8b08`).
+Última actualización: 2026-10-06, ronda 7 de este carril sobre la rama
+`carril/pulimiento-b` (base `849ef4e`, plan `041c4aa`).
 
 ## Hecho (rondas cerradas)
 
@@ -94,6 +94,17 @@
   (`gradient-text` ya no existe). **371 tests, tsc, build, tema OK,
   CSP OK, motion PASS, 34 DOM, 18/18 axe, 21/21 navegador, ciclo de
   vida OK.** Informe: `ronda_2026-10-06_10h20_B.md`.
+- **2026-10-06 — Guardia sobre la ronda 7 de IMP-B y pronóstico de
+  fusión (ronda 7, solo lectura):** pase de guardia sobre su árbol
+  fusionado (AD-5 «Directorio» + SET-3 + label-in-name): cero
+  hallazgos — los tres `sky-*` del árbol son DATA/estado pre-existente
+  con remap claro documentado, la vista nueva no añade animaciones sin
+  puerta, mi gate de `entity-graph.tsx` sobrevive a su retoque
+  quirúrgico, el kicker `text-zinc-500` sobrevivió a la reconciliación
+  de `shell.tsx` y ambos boots inline van firmados con el nonce;
+  checker de temas en verde contra su árbol. Mi ronda 6 aún no está en
+  su línea (llega hasta el plan `24c8b08`): merge-tree 0 conflictos,
+  sin colisión prevista. Informe: `ronda_2026-10-06_10h45_B.md`.
 
 ## A medias
 
@@ -113,20 +124,23 @@
 
 ## Siguiente (orden propuesto)
 
-1. POL-7 kit de componentes restante (botón, campo, tabla, insignia y
+1. Ronda 8 (última de la ventana): candidato en mi carril — el 404 de
+   `favicon.ico` que mantiene Best-practices en 96 en Lighthouse
+   (medido en la ronda 6); fix + re-medida BP.
+2. POL-7 kit de componentes restante (botón, campo, tabla, insignia y
    diálogo con variantes) — exige coordinar ventanas con IMP-B (sus
    vistas, ahora desbloqueadas por el push de IMP-A: AD-5/AD-6, SET-3,
    REP-3): proponerlo en su roadmap antes de cogerlo.
-2. POL-8: aria/gemelo de tabla de las gráficas (fichero de IMP-B,
+3. POL-8: aria/gemelo de tabla de las gráficas (fichero de IMP-B,
    coordinar con su barrido i18n de vistas de datos).
-3. Revisar las rondas nuevas de IMP-B (vistas AD, barrido i18n) con el
-   pase barato de guardia: azules crudos, contraste fuera de tokens,
-   hallazgos axe.
-4. Propuestas a PUL-A: enganchar `check_console_csp.mjs` (barato, sin
+4. Integración de mi ronda 6 en la línea de IMP-B: pendiente, limpia
+   (merge-tree 0 conflictos, ronda 7); tras integrar, la batería de
+   motion es candidata a correr en su línea (necesita Chromium).
+5. Propuestas a PUL-A: enganchar `check_console_csp.mjs` (barato, sin
    navegador) y `check_console_a11y.mjs` / `check_console_motion.mjs` /
    `console-lighthouse` (con Chromium) al CI; este bloque necesita la
    corrección de tabs del Makefile.
-5. Si el responsable define POL-12 como tarea recurrente: nuevo pase de
+6. Si el responsable define POL-12 como tarea recurrente: nuevo pase de
    coherencia consola/README/SECURITY.md cuando IMP-B fusione vistas
    nuevas.
 
