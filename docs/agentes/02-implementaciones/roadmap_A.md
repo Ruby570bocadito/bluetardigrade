@@ -5,6 +5,21 @@ cada ronda: qué está a medias, qué sigue y por qué.
 
 ## Estado actual
 
+- Ronda 2026-10-05 21h48 cerrada (informe: `ronda_2026-10-05_21h48_A.md`). Primero se
+  publicó el cierre retenido de la ronda anterior (`2c32013..8150a37`): AD-1/AD-2/SET-3
+  quedan OFICIALES y visibles (SEG-B puede auditar `internal/ad`, IMP-B puede consumir
+  los contratos `/api/ad/*`). Después, entregado **SEC-2** al pie de la letra del
+  contrato de SEG-B (addendum 19h10): paquete `internal/secretfile` (sobre JSON
+  versionado; DPAPI con ámbito LOCAL_MACHINE en Windows vía x/sys/windows; plain con
+  0600 exigido en cada lectura en POSIX; paridad de laboratorio con texto en bruto y
+  aviso de re-guardado en Windows; `Zero` para el llamador), cableado en `internal/ad`
+  (el secreto cruza como []byte de fichero a bind, buffer a cero tras el intento, avisos
+  en `/api/ad/status`), subcomando `engine secret-write` (el secreto SOLO por stdin).
+  El checklist de SEG-B tiene un test por exigencia: la ida y vuelta DPAPI real corre en
+  el job `engine-windows` del CI; las cuatro formas JSON de `/api/ad/*` se escanean sin
+  secreto (crudo/base64/hex y longitud con frontera de dígito); higiene de logs ante
+  bind fallido. Docs: OPERATIONS.md (subsección SEC-2 + icacls), ad.example.yaml,
+  changelog.d. OpenAPI sin cambios (sin rutas nuevas; 41 verificadas).
 - Ronda 2026-10-05 12h36 cerrada (informe: `ronda_2026-10-05_12h36_A.md`). Entregado SIM-1 y
   SIM-2 completos: biblioteca `scenarios/` con 127 escenarios (114 reglas habilitadas + 13
   cadenas), etiqueta `simulation` propagada a toda alerta derivada de evidencia simulada,
@@ -30,13 +45,25 @@ cada ronda: qué está a medias, qué sigue y por qué.
   `TestScenarioEndpointsRoundTrip` (código propio de la ronda SIM-4). El entorno se
   reinició entre rondas: Go re-instalado (1.26.0) y GOPROXY alternativo documentado en
   el informe.
+- Ronda 2026-10-05 21h15 cerrada (informe: `ronda_2026-10-05_21h15_A.md`). Entregados
+  **AD-1** (conector LDAP de solo lectura: `internal/ad`, flag `-ad`, snapshot SQLite
+  reemplazado atómicamente por sincronización, LDAPS/StartTLS con CA obligatoria,
+  contraseña en fichero propio re-leída por sincronización, filtros literales,
+  paginación RFC 2696 crítica, tope de objetos, fixture LDAP propio en loopback para
+  los tests) y **AD-2** (`internal/ad/posture.go`: 10 hallazgos del TODO, severidad,
+  objetos afectados con tope 50, remediación, puntuación 0-100 con historial de 500
+  puntos; recomputado tras cada sincronización), más **SET-3 lado motor**
+  (`version`, `alert_latency` p50/p95/max, `store_size_bytes`, `certificates` en
+  `/api/stats`) y la fila `-scenarios` en `docs/OPERATIONS.md` (petición de PUL-A).
+  OpenAPI 37 → 41 rutas. Nueva dependencia `github.com/go-ldap/ldap/v3` (justificación
+  para SEG-B en el informe). El entorno se reinició de nuevo: Go 1.26.8 re-instalado.
 
 ## A medias
 
-- Nada a medias: las tres tareas de la ronda quedaron completas y verificadas.
-- SIM-4 queda a la espera de su parte B (pantalla de la consola, IMP-B): el contrato está
-  publicado en OpenAPI y en el informe de ronda. REP-1 igual: la pantalla es de IMP-B y
-  el contrato (catálogo + JSON/CSV + schemas) está publicado.
+- Nada a medias: AD-1, AD-2 y SET-3 lado motor quedaron completos y verificados.
+- AD-1/AD-2 quedan a la espera de su parte de consola (AD-5/AD-6, IMP-B): los contratos
+  JSON están publicados en OpenAPI y en el informe de esta ronda.
+- SIM-4 sigue a la espera de su parte B (pantalla de la consola, IMP-B); REP-1 igual.
 - El informe de ruido sirve hoy `closed_pct`/`acknowledged_pct` (estado actual del
   triage). Cuando el campo de decisión de triaje exista (petición MEDIA de IMP-B, ronda
   propia de este carril), migrará a `false_positive_pct`.
@@ -53,9 +80,10 @@ cada ronda: qué está a medias, qué sigue y por qué.
    repetidos en el sensor (§2.1, parte Rust; requiere cargo en el entorno o pruebas en
    otro sitio).
 3. **Motor**: cuotas por equipo en la memoria del motor (v1.1 «Motor y consola»).
-4. **AD-1** conector LDAP de solo lectura (necesita fixture LDAP de pruebas en CI); tras
-   él, AD-2 (cálculo de postura: el informe ejecutivo ganará la sección de postura y
-   el catálogo crecerá) y AD-6 (API de ajustes).
+4. **AD-6/SET-1 API de ajustes**: la primitiva de escritura segura ya existe
+   (`secretfile.Write` + `engine secret-write`); falta la superficie de ajustes decidida
+   con el responsable (qué campos, bind de prueba antes de comprometer el fichero,
+   auditoría, recarga en caliente). **AD-3** cuando WEF exista.
 5. **REP-2** informes programados (diarios/semanales en `data/reports` con retención,
    SMTP/webhook opcional): la maquinaria de datos ya existe tras REP-1 parte A.
 6. **Diseño**: purga de hosts rechazados/revocados en el registro de alta (observación
@@ -91,5 +119,35 @@ cada ronda: qué está a medias, qué sigue y por qué.
   catálogo del motor de laboratorio antes de repetir (`FALTA-CATALOGO`).
 - Corrección de CLI descubierta en la ronda SIM: los subcomandos nuevos deben registrarse en
   `cmd/engine/main.go` (`isRoutedSubcommand`) ADEMÁS de en el árbol Cobra.
-- Entorno de esta ronda: push resuelto con el token del responsable; sin `cargo` ni `pwsh`
-  (sensor y PowerShell no se tocaron); bun disponible pero la consola no cambió.
+- **El conector AD no tiene primitiva de escritura** (ronda AD): el paquete solo compila
+  `bind` y `search` sobre `ldap.Conn`; «solo lectura» es la ausencia de la capacidad, no
+  una política. El control de paginación se envía con criticality TRUE (un servidor que
+  no sepa paginar FALLA en vez de devolver el árbol sin paginar) y el tope abandona el
+  cursor con página 0, no leyendo todo y recortando.
+- **La contraseña se re-leé en cada sincronización** desde su fichero: rotar la
+  credencial no exige reiniciar el motor; vive solo en variables locales del stack de
+  llamada del bind.
+- **Snapshot atómico**: `ReplaceADSnapshot` borra e inserta dentro de UNA transacción
+  (WAL): los lectores ven el directorio viejo o el nuevo, nunca una mezcla.
+- **La postura se congela con cada snapshot** (se guarda en `ad_posture_history`, se
+  sirve del almacén): `/api/ad/posture` no recomputa por petición (no quema el almacén
+  ni puede ser más actual que el snapshot que sirve) y `ready=false` honesto hasta la
+  primera sincronización — nunca una puntuación fabricada.
+- **API = copias**: `Connector.Snapshot()` devuelve el `Status` por valor y copia el
+  slice de avisos; el postura servido es un documento decodificado del almacén. La
+  lección de scenrun (ronda 1) aplicada por construcción, verificada con
+  `-race -count=5` en `internal/ad`, `internal/api`, `cmd/engine`, `internal/ingest` e
+  `internal/alert`.
+- **`go-ldap/ldap/v3` elegida por necesidades del protocolo**: StartTLS, control
+  RFC 2696 (con criticality TRUE exprés, construido en BER a mano porque la librería
+  no lo expone), lectura cruda de `objectSid` y rendición de SIDs binarios. El
+  razonamiento completo para la auditoría de SEG-B está en el informe de ronda.
+- `TestExampleConfigLoads` carga `ad.example.yaml` con el cargador real (KnownFields
+  estricto): el ejemplo documentado no puede desincronizarse del esquema.
+- Entorno de esta ronda: workspace reiniciado de nuevo (Go ausente); instalado
+  Go 1.26.8 linux/amd64 en `/home/z/go`; staticcheck re-instalado; `DISCORD_WEBHOOK_URL`
+  sigue sin definirse (sin notificaciones, como en rondas previas); sin `cargo` ni
+  `pwsh`: sensor y PowerShell no se tocaron.
+- Entorno de la ronda 14h55 (histórico): push resuelto con el token del responsable; sin
+  `cargo` ni `pwsh` (sensor y PowerShell no se tocaron); bun disponible pero la consola
+  no cambió.

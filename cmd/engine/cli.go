@@ -35,6 +35,7 @@ const engineExamples = `  engine run                     arranca el motor con lo
   engine report --alert ID --interactive --out reports/ID.md   informe humano
   engine ingest-identity --name wks-01 --host WKS-01   credencial de ingesta por sensor
   engine operator-credential --name ana   credencial propia de un operador de respuesta activa
+  engine secret-write /etc/bluetardigrade/ad-bind.secret < pw.txt   guarda un secreto sobre SEC-2
   engine version                 version, runtime de Go y plataforma`
 
 const runLong = `Arranca el motor completo: ingesta TCP de eventos NDJSON, enriquecido,
@@ -90,7 +91,7 @@ func newRootCmd() *cobra.Command {
 	root.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		fmt.Fprint(cmd.OutOrStdout(), buildHelp(cmd))
 	})
-	root.AddCommand(newRunCmd(), newRulesCmd(), newValidateCmd(), newDoctorCmd(), newSigmaCmd(), newScenariosCmd(), newReportCmd(), newIngestIdentityCmd(), newOperatorCredentialCmd(), newVersionCmd())
+	root.AddCommand(newRunCmd(), newRulesCmd(), newValidateCmd(), newDoctorCmd(), newSigmaCmd(), newScenariosCmd(), newReportCmd(), newIngestIdentityCmd(), newOperatorCredentialCmd(), newSecretWriteCmd(), newVersionCmd())
 	return root
 }
 

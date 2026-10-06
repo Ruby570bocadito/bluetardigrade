@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Ruby570bocadito/bluetardigrade/internal/ad"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/baseline"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/correlate"
@@ -133,6 +134,21 @@ type Hub struct {
 	// the routes answer 501 with the arming hint instead of a
 	// misleading 404.
 	scenarios *scenrun.Service
+
+	// read-only Active Directory connector (ad.go): nil = disarmed
+	// (no -ad flag), the /api/ad routes answer 501 with the arming
+	// hint. All connector accessors return copies — the sync goroutine
+	// never shares live memory with handlers.
+	ad *ad.Connector
+
+	// SET-3 (platform status): the engine's own version string (set at
+	// startup), the ingest→alert latency tracker and the ingest
+	// listener's certificate expiry closure (returns RFC3339-ready
+	// time, configured path, ok). The API listener's own certificate is
+	// read from the reloader directly.
+	version      string
+	alertLatency func() (count uint64, p50, p95, max float64)
+	ingestCert   func() (time.Time, string, bool)
 }
 
 // New binds a plain-text API listener. Use addr ":0" in tests to pick
@@ -220,6 +236,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	h.registerScenarios(mux)
 	h.registerReports(mux)
 	h.registerNoise(mux)
+	h.registerAD(mux)
 	mux.HandleFunc("GET /api/intel", h.handleIntel)
 	mux.HandleFunc("GET /api/baseline", h.handleBaselineHost)
 	mux.HandleFunc("GET /api/stream", h.handleStream)
@@ -242,6 +259,43 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 
 // Addr returns the bound address (useful when listening on :0).
 func (h *Hub) Addr() string { return h.listener.Addr().String() }
+
+// SetAD arms the /api/ad read routes with the connector (nil keeps
+// them answering the 501 arming hint). The connector's accessors are
+// mutex-guarded and return copies, so handlers never race the sync
+// goroutine.
+func (h *Hub) SetAD(c *ad.Connector) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.ad = c
+}
+
+// SetVersion records the engine's version string for /api/stats
+// (SET-3: the platform-status view must not guess it).
+func (h *Hub) SetVersion(v string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.version = v
+}
+
+// SetAlertLatency wires the ingest→alert latency tracker (SET-3): the
+// closure returns the observation count and the p50/p95/max summary in
+// milliseconds. It is called after h.mu.Unlock (the uniform rule: no
+// other manager's lock under the hub lock).
+func (h *Hub) SetAlertLatency(fn func() (count uint64, p50, p95, max float64)) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.alertLatency = fn
+}
+
+// SetIngestCertExpiry wires the ingest listener's certificate expiry
+// (SET-3): ok=false when the listener runs without TLS. The API
+// listener's own expiry comes from its reloader.
+func (h *Hub) SetIngestCertExpiry(fn func() (time.Time, string, bool)) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.ingestCert = fn
+}
 
 // SetRules points the hub at the (hot-reloading) rule engine.
 func (h *Hub) SetRules(re *rules.Engine) {
@@ -743,6 +797,41 @@ type statsPayload struct {
 	// channel (Slack, Telegram, email). Empty when the engine runs
 	// without -notify.
 	NotifyChannels []notify.ChannelStats `json:"notify_channels"`
+
+	// SET-3 (platform status): everything the console's view used to
+	// mark "not published" is published here — engine version, the
+	// ingest→alert latency summary, the durable store's on-disk size
+	// and both listeners' certificate expiry.
+	Version        string              `json:"version"`
+	AlertLatency   latencyPayload      `json:"alert_latency"`
+	StoreSizeBytes int64               `json:"store_size_bytes"`
+	Certificates   certificatesPayload `json:"certificates"`
+}
+
+// latencyPayload summarizes the elapsed time between an event's own
+// sensor-side timestamp and the moment its alert was raised (transport
+// + queueing + detection). Count is the number of raised alerts
+// observed since engine start; a count of zero means "no alerts yet",
+// not "no latency".
+type latencyPayload struct {
+	Count uint64  `json:"count"`
+	P50Ms float64 `json:"p50_ms"`
+	P95Ms float64 `json:"p95_ms"`
+	MaxMs float64 `json:"max_ms"`
+}
+
+// certExpiryPayload is one listener's certificate visibility: Present
+// false and empty strings when that listener runs without TLS.
+type certExpiryPayload struct {
+	Present  bool   `json:"present"`
+	NotAfter string `json:"not_after"` // RFC 3339, "" when absent
+	Path     string `json:"path"`      // configured cert file, "" when absent
+}
+
+// certificatesPayload covers both TLS listeners the engine can serve.
+type certificatesPayload struct {
+	API    certExpiryPayload `json:"api"`
+	Ingest certExpiryPayload `json:"ingest"`
 }
 
 // statsSnapshot collects every counter /api/stats and /metrics serve.
@@ -885,6 +974,43 @@ func (h *Hub) statsSnapshot() statsPayload {
 		}
 	}
 
+	// SET-3 fields: version was written once at startup (plain field
+	// read under the hub lock at the top of this function would race
+	// nothing, but the uniform setter keeps the contract in one
+	// place); latency and the ingest certificate are closures called
+	// here — after h.mu.Unlock, like every other manager.
+	var lat latencyPayload
+	if fn := h.alertLatency; fn != nil {
+		lat.Count, lat.P50Ms, lat.P95Ms, lat.MaxMs = fn()
+	}
+	ingestCert := certExpiryPayload{}
+	if fn := h.ingestCert; fn != nil {
+		if na, path, ok := fn(); ok {
+			ingestCert = certExpiryPayload{
+				Present:  true,
+				NotAfter: na.UTC().Format(time.RFC3339),
+				Path:     path,
+			}
+		}
+	}
+	apiCert := certExpiryPayload{}
+	if h.reloader != nil {
+		if na, ok := h.reloader.NotAfter(); ok {
+			apiCert = certExpiryPayload{
+				Present:  true,
+				NotAfter: na.UTC().Format(time.RFC3339),
+				Path:     h.reloader.CertFile(),
+			}
+		}
+	}
+	var storeSize int64
+	if st != nil {
+		storeSize, _ = st.SizeBytes() // a transient pragma failure reports 0: the store stays enabled
+	}
+	h.mu.Lock()
+	version := h.version
+	h.mu.Unlock()
+
 	return statsPayload{
 		UptimeS:                  int64(time.Since(h.started) / time.Second),
 		EventsTotal:              ingested,
@@ -932,6 +1058,13 @@ func (h *Hub) statsSnapshot() statsPayload {
 		BaselineLearning:         baseLearning,
 		BaselineNovelties:        baseNovel,
 		NotifyChannels:           notifyRows,
+		Version:                  version,
+		AlertLatency:             lat,
+		StoreSizeBytes:           storeSize,
+		Certificates: certificatesPayload{
+			API:    apiCert,
+			Ingest: ingestCert,
+		},
 	}
 }
 

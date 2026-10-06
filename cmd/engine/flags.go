@@ -15,6 +15,7 @@ type options struct {
 	apiAddr          string
 	scenariosDir     string
 	rulesDir         string
+	adConfig         string
 	seqDir           string
 	beaconsFile      string
 	thresholdsFile   string
@@ -74,6 +75,8 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 	fs.StringVar(&o.apiAddr, "api", "127.0.0.1:7778", "local HTTP API for the console (stats/events/alerts/stream); 0 disables")
 	fs.StringVar(&o.scenariosDir, "scenarios", "",
 		"directory with the detection-validation scenarios (SIM-4: arms GET/POST /api/scenarios* to replay the inert library against the live rules and keep the run history); empty disables")
+	fs.StringVar(&o.adConfig, "ad", "",
+		"YAML config for the read-only Active Directory connector (AD-1: LDAPS or explicit StartTLS with a configured CA, a least-privilege service account, RFC 2696 paging and an object cap; the password lives in its own file; requires -store); empty disables")
 	fs.StringVar(&o.rulesDir, "rules", "./rules", "directory with YAML rules")
 	fs.StringVar(&o.seqDir, "sequences", "./sequences", "directory with YAML kill-chain sequences (correlator)")
 	fs.StringVar(&o.intelDir, "intel", "./intel",
