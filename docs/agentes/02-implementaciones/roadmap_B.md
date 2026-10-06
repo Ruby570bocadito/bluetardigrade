@@ -32,11 +32,14 @@ Archivo vivo: qué tengo a medias, qué sigue y por qué. Se actualiza cada rond
 - **Coordinación CSP**: los dos scripts inline de boot (tema de PUL-A/PUL-B e
   idioma de la ronda 6) van firmados con el nonce por petición del proxy;
   cualquier script inline nuevo del armazón necesita lo mismo.
-- **AD-6 + SET-1 SIGUEN BLOQUEADAS** (rondas 8-10): la punta de IMP-A sigue
-  en `c357cc8` (solo su plan; la API `GET/PUT /api/settings/ad` +
-  `POST /api/ad/test` sigue sin publicar ni en openapi). El merge de su
-  ronda es el gatillo de la pantalla de ajustes (General/Ingesta/AD/
-  Integraciones/Notificaciones/Cuentas/Apariencia).
+- **AD-6 + SET-1 DESBLOQUEADAS al cerrar esta ronda**: durante el cierre
+  IMP-A publicó su ronda (`293be1d`, «AD-6 settings API delivered»): su
+  openapi ya publica `GET/PUT /api/settings/ad` + `POST /api/ad/test`.
+  **El merge de su ronda es la primera tarea de la ronda 11**, seguida de
+  la pantalla de ajustes (General/Ingesta/AD/Integraciones/Notificaciones/
+  Cuentas/Apariencia) con «probar conexión» y contraseña que se escribe
+  pero nunca se muestra. Pre-chequeo merge-tree contra su punta nueva:
+  sin conflictos.
 - **DISCORD no disponible esta sesión** (`DISCORD_WEBHOOK_URL` sin definir):
   sin notificaciones de inicio/cierre; no se reintentó (rondas 5-10).
 
@@ -74,12 +77,11 @@ Archivo vivo: qué tengo a medias, qué sigue y por qué. Se actualiza cada rond
 
 ## Siguientes (por qué)
 
-1. **AD-6 (ajustes AD) + SET-1**: en cuanto IMP-A publique la API
-   (`GET/PUT /api/settings/ad` + `POST /api/ad/test`, anunciada como tarea #1
-   de su ronda en curso): formulario con «probar conexión» y contraseña que
-   se escribe pero nunca se muestra; pantalla
-   General/Ingesta/AD/Integraciones/Notificaciones/Cuentas/Apariencia. El
-   merge de su ronda es el gatillo.
+1. **AD-6 (ajustes AD) + SET-1**: DESBLOQUEADAS — IMP-A publicó la API
+   (`GET/PUT /api/settings/ad` + `POST /api/ad/test`, `293be1d`) durante el
+   cierre de mi ronda 10: merge de su ronda → formulario con «probar
+   conexión» y contraseña que se escribe pero nunca se muestra; pantalla
+   General/Ingesta/AD/Integraciones/Notificaciones/Cuentas/Apariencia.
 2. **IDEA-10 fase 2, continuación del barrido**: la receta de las rondas 8-10
    es mecánica (secciones de diccionario ES/EN + `useI18n` + ES byte-idéntico
    + tests de paridad + ajuste del fixture DOM si la vista entra en él).
