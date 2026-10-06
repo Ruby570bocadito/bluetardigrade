@@ -1,88 +1,75 @@
-# Plan de ronda — Pulimiento A (2026-10-06 07h47 UTC, ronda 12)
+# Plan de ronda — Pulimiento A (2026-10-06 08h12 UTC, ronda 13)
 
-- **Contexto:** cuarta sesión de la jornada. La ronda 11 (reparo del
-  Makefile + vet Windows + guardia de tabs) quedó PUBLICADA en
-  `origin` (`9ee1594`) con el token efímero del responsable, push
-  verificado con `git ls-remote`. «continua» del responsable autoriza
-  esta ronda (tercera ronda extra sobre RONDAS_MAXIMAS=8).
-  `origin/main` sigue en `35cd866` (ni mi rama ni IMP-A fusionadas):
-  POL-1 (`api.go`) sigue reservada por IMP-A, `bc91c7d` sin fusionar.
+- **Contexto:** quinta sesión de la jornada. La ronda 12 (delegaciones
+  de SEG-B: `--ignore-scripts` implementado + fuzz nocturno
+  respondido) está publicada en `origin` (`10dbca9`), push verificado
+  con `git ls-remote`. «continua» del responsable autoriza esta ronda
+  (cuarta ronda extra sobre RONDAS_MAXIMAS=8). `origin/main` sigue en
+  `35cd866`: POL-1 sigue reservada (IMP-A `bc91c7d` sin fusionar; sus
+  2 hallazgos pendientes confirmados por doble fuente SEG-A+SEG-B).
 
-## Trabajo encontrado al re-auditar los carriles
+## Movimientos auditados al abrir
 
-- Movimientos desde mi última auditoría: PUL-B `24c8b08` (CSP-nonce
-  en consola, no toca Makefile), SEG-A `343358a` (docs), SEG-B
-  `32cf10a→cf8997d` (docs). Cero solapamiento con mi territorio;
-  `merge-tree` de mi tip contra main + 5 carriles: 6/6 CLEAN.
-- Re-lectura COMPLETA de los informes de SEG ha destapado DOS ítems
-  asignados a PUL-A que quedaron fuera de mis rondas anteriores:
+- SEG-A `343358a→810c882`: FIX del double-BOM de `decodeText` en
+  `internal/intel` (primer crasher del fuzzing vivo; fail-before/
+  pass-after) + verificación byte a byte de MI hallazgo del Makefile
+  («todo cierto», guardia probada en ambas direcciones). Su fix no
+  solapa con mi rama (solo un comentario mío en `intel_test.go`).
+- SEG-B `cf8997d→e868094`: verificación cruzada de mi trabajo de CI
+  (rondas 11-12): «LIMPIO», afirmaciones confirmadas por ejecución.
+  Además: su carril heredó el Makefile roto de main y su claim es que
+  el merge tomará mi versión reparada sin acción en su lado.
+- IMP-B `5ecbcc4→b5e26d7` (103 ficheros, +9731): ABSORBIÓ las ramas
+  de IMP-A (AD-1/AD-2, SEC-2 DPAPI) y PUL-B (CSP-nonce, a11y,
+  reduced-motion) y construyó encima AD-5 (vista Directorio).
+  Implicación: IMP-B es ahora el fusilador probable hacia main.
 
-## Tarea 1 — Punto 5 de SEG-B: `--ignore-scripts` en el harness de navegador
+## Trabajo de esta ronda: pre-flight de fusión (guardia sobre árboles fusionados simulados)
 
-- SEG-B (ronda 2026-10-05 12h33, punto 5, asignado «Pulimiento A
-  (decisión)»): `tools/console-tests` se instala en CI con
-  `npm install` de paquetes fijados pero SIN `--ignore-scripts`; los
-  scripts de ciclo de vida (el postinstall de esbuild) corren en el
-  runner. Mitigación actual «razonable»; cerrarlo del todo es una
-  línea por comando.
-- **DECISIÓN: cerrarlo del todo.** Coste ~cero, cierra superficie de
-  cadena de suministro en CI, y SEG-B me lo delega explícitamente.
-  Territorio: `ci.yml` es infraestructura compartida que edito desde
-  la ronda 2; las líneas nuevas de SEG-B (`check_package_lifecycle`
-  en `Makefile:106-107`, workflow `deps-audit.yml`) NO se tocan.
-- Cambio EXACTO: `--ignore-scripts` en los dos `npm install
-  --prefix tools/console-tests` del job `console` + comentario que
-  documente por qué es seguro (esbuild resuelve su binario vía la
-  dependencia opcional de plataforma; jsdom es JS puro; el
-  postinstall de playwright solo imprime un aviso — los navegadores
-  los instala un paso explícito, que no es un lifecycle script).
-- SEGURIDAD DE LA DECISIÓN, verificada ANTES de commitear: reproduzco
-  la secuencia exacta de CI en local (`bun install --frozen-lockfile`
-  en `web/console` + installs con `--ignore-scripts`): el check DOM
-  pasa 34/34 con esbuild instalado sin scripts y el CLI de playwright
-  (`cli.js --version` = 1.63.0, `chromium.executablePath()` resuelve)
-  queda íntegro. El paso de navegador REAL no lo ejecuto en local
-  (Chromium + deps del runner); lo documento como no ejecutado, no
-  como pasado. Artefacto local del install (`package-lock.json`) se
-  elimina antes de commitear (la guardia `check_package_lifecycle`
-  de SEG-B lo detectó al vuelo: funciona).
-
-## Tarea 2 — Punto 3 de SEG-B (fuzzing nocturno): respuesta documentada, SIN cambio de código
-
-- SEG-B (roadmap_A, «Pendientes», punto 3) propone «a Pulimiento A un
-  paso con `-fuzztime=5m` por objetivo y el corpus ya fijado en
-  `testdata/`». Su rama parte de un estado anterior al mio: eso EXISTE
-  desde mi ronda 5 (`54b0e80`): `bench-nightly.yml` descubre cada
-  `func Fuzz*` (22 objetivos / 11 paquetes hoy), un job de matriz por
-  objetivo, `go test -run '^$' -fuzz ... -fuzztime 5m`, y el corpus de
-  fallo cae en `testdata/fuzz/` del paquete (rojo + reproductor
-  preservado). Respuesta: anotarla en mi roadmap e informe apuntando a
-  las líneas del workflow; nada que implementar.
-
-## Pre-registro para SEG-B (nueva observación)
-
-- Las recetas nuevas de SEG-B en SU rama (`check_package_lifecycle`
-  en `Makefile:106-107`) están sangradas con ESPACIOS (heredan el
-  Makefile roto por `63fa077`, que mi ronda 11 reconvirtió a TAB).
-  Cuando las ramas converjan: conflicto de fusible o guardia roja de
-  `check_makefile_tabs`. Mis filas del register ya lo anticipan;
-  observación escrita en mi roadmap para que ellos usen TAB.
+- **Motivación:** mis observaciones abiertas (PUL-B ronda 11, SEG-B
+  ronda 12) predijen comportamientos de fusión distintos. Los
+  merge-tree `--name-only` solo detectan CONFLICTOS, no el contenido
+  resultante. Método nuevo, determinista y barato:
+  1. `git merge-tree --write-tree <mi tip> <tip ajeno>` → árbol
+     fusionado simulado.
+  2. `git show <árbol>:Makefile` → el Makefile que RESULTARÍA.
+  3. Ejecutar `check_makefile_tabs.py` SOBRE ese fichero.
+  4. Ídem `.github/workflows/ci.yml` (diff contra el mío: ¿sobrevive
+     mi `--ignore-scripts`? ¿alguien toca el job consola?).
+- **Resultados (ya ejecutados contra los 5 carriles):**
+  - SEG-A, SEG-B, IMP-A: Makefile fusionado → guardia OK; ci.yml
+    fusionado idéntico al mío.
+  - SEG-B: el Makefile fusionado es IDÉNTICO al mío (diff vacío) —
+    **mi observación de ronda 12 era ERRÓNEA**: sus líneas
+    `check_package_lifecycle` con espacios son contenido del
+    merge-base (las puso `63fa077` en main), no ediciones suyas.
+    El «sin acción requerida» de SEG-B era correcto. Cierro la
+    observación con corrección explícita de mi error.
+  - PUL-B (y por herencia IMP-B): guardia ROJA — 7 líneas de receta
+    con espacios (86-96 del fusionado): targets `console-a11y`
+    (86-88) y `console-lighthouse` (93-96), exactamente los de mi
+    observación de ronda 11. CONFIRMADA y ahora precisada con líneas.
+  - Bonus del pre-flight: el target `console-lighthouse` de PUL-B
+    instala `lighthouse@12.8.2` con npm SIN `--ignore-scripts` —
+    mismo patrón cadena-de-suministro que cerré en ci.yml (ronda
+    12); lo añado a la observación como decisión pendiente suya.
+- **NO toco el Makefile en su nombre:** reindentar yo esas recetas en
+  MI rama crearía conflicto real en la zona (sus ramas también la
+  tocan) y ensuciaría autoría. Remedio documentado para PUL-B/IMP-B
+  con líneas y comando reproducible.
 
 ## Fuera de alcance (sin cambios)
 
-- POL-1/run.go: siguen de IMP-A. `collector.rs`: sin `cargo` en el
-  entorno. Caché de corpus nocturno: decisión del responsable. OpenAPI
-  de IMP-A (`/api/ad/*`, `/api/stats`): territorio suyo hasta fusión.
-  `tools/console-tests/package.json`+`bun.lock` del manifiesto de
-  PUL-B: territorio suyo; mi cambio no los toca (cuando aterrice, el
-  harness pasará a bun — bun ya bloquea lifecycle scripts no
-  confiables por defecto, así que la decisión sigue siendo válida).
+- POL-1/run.go: IMP-A sigue sin fusionar (y con 2 hallazgos que
+  corregir antes). Docs de AD-5/`/api/stats`/CSP: territory IMP,
+  documentar antes de fusión sería drift inverso (regla ronda 8).
+- Sin fragmento de changelog esta ronda: no cambia nada orientado al
+  repo; solo docs del carril.
 
 ## Verificación prevista
 
-Guardias completas del árbol (7 `check_*.py`, incluida la de SEG-B),
-`check_workflows.py` tras editar YAML, batería Go completa (`gofmt
--l`, build, vet, `GOOS=windows go vet`, staticcheck, `go test -race
--count=1` = 37 paquetes), merge-tree post-commit contra main + 5
-carriles, escaneo anti-credenciales del diff, push inmediato con
-verificación `git ls-remote` (remoto == local).
+Pre-flight documentado arriba (ya ejecutado, resultados en el
+informe), guardias completas del árbol (7), batería Go completa
+(gofmt/build/vet/windows vet/staticcheck, `-race` 37 paquetes),
+merge-tree convencional 6/6, escaneo anti-credenciales, push con
+verificación `git ls-remote`.
