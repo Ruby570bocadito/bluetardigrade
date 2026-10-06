@@ -1,9 +1,28 @@
 # Roadmap B — carril Pulimiento B (archivo vivo)
 
-Última actualización: 2026-10-06, ronda 8 (cierre de la ventana de 8)
-de este carril sobre la rama `carril/pulimiento-b` (base `c2adac6`).
+Última actualización: 2026-10-06, ronda 9 (primera de la ventana
+nueva) de este carril sobre la rama `carril/pulimiento-b` (base
+`744d46a`, plan `37ecb4e`).
 
 ## Hecho (rondas cerradas)
+
+- **2026-10-06 — Cierre THEME-2 en TODO.md, guardia i18n de IMP-B,
+  verificación de pestañas (ronda 9):** guardia THEME-2 repetida contra
+  el árbol actual y contra los dos barridos i18n fase 2 de IMP-B (689
+  líneas de consola revisadas): cero clases `blue-*`, los únicos
+  hex azules que quedan son tokens de DATO (`--chart-1`, `--sev-low`,
+  `--series-1`, `--seq-5`, remap `--color-sky-400`), familia
+  `--primary*` zinc verificada en los dos temas y checker de tema en
+  verde. THEME-2 cierra en `TODO.md` (tabla de estado «Casi»→«Hecho»,
+  checklist marcada, prioridad de ronda 2 tachada) con fragmento
+  `changelog.d/PUL-B-theme2-closure.md`. Densidad/aire de pestañas del
+  panel verificada sin hallazgos (kit `ui-tabs` + cabecera del Panel
+  intactos tras el barrido i18n). Pronóstico de fusión refrescado con
+  `merge-tree --write-tree` (leyendo exit code): 0 conflictos contra
+  las cinco ramas; solapes anotados con PUL-A (Makefile, README de
+  dev-tests, theme checker) y SEG-B (Makefile, alert-actions),
+  secciones distintas. **371/371 tests, tsc OK, tema OK.** Informe:
+  `ronda_2026-10-06_11h10_B.md`.
 
 - **2026-10-05 — Tema claro/oscuro de la consola (THEME-1/2/3 ronda 1):**
   paleta clara completa en `globals.css` (remap de rampa zinc bajo
