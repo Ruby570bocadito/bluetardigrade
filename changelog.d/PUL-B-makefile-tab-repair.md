@@ -13,6 +13,12 @@ en su ronda 17 (6 de 7 carriles rotos, main incluido).
   targets de consola (decisión ya convergida: PUL-A en ci.yml r12,
   SEG-B y SEG-A en su Makefile). esbuild resuelve vía `@esbuild/*`
   opcionales; el Chromium lo baja el paso explícito de Playwright.
+- Las recetas npm llevan `--no-save --no-package-lock`: sin
+  ellos, `npm install <pkg>` mutaba el manifest de versiones exactas
+  comprometido (`0.25.11` → `^0.25.11`) y dejaba un package-lock
+  huérfano junto al bun.lock del tooling (política del manifest:
+  versiones exactas y bun.lock comprometidos). Verificado: dos
+  corridas de `make console-dom` dejan el manifest intacto.
 - Convergencia: mis hunks compartidos son ya idénticos a los de
   SEG-A/PUL-A/SEG-B; el conflicto residual de 7 recetas que SEG-A
   dejó anotado para la integración PUL-B desaparece (mi Makefile es
