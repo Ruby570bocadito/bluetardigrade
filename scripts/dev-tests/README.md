@@ -245,6 +245,19 @@ verify browser behavior; they do not certify a live ETW capture, the engine
 transport or every UI flow. Cross-browser and additional mobile interaction
 coverage remain follow-up work.
 
+## Reduced motion (consola)
+
+`check_console_motion.mjs` carga la consola construida con
+`prefers-reduced-motion: reduce` emulado y exige que ninguna animación
+no-spinner esté en marcha (`document.getAnimations()`; los spinners se
+permiten: comunican actividad). Después repite la carga sin la
+preferencia y exige que la sonda (`.blur-text-word`) lleve sus
+keyframes: control positivo que prueba que la puerta está cableada y
+que el pase no pasa en vacío por un selector roto. El arranque del
+servidor sigue el patrón del arnés de navegador (solo loopback;
+`CONSOLE_BROWSER_URL` reutiliza una consola en marcha). Requiere el
+build de producción de `web/console` y Chromium.
+
 ## Incremento SOC
 
 ```bash

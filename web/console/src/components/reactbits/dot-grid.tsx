@@ -13,12 +13,15 @@
 //   la interacción no roba eventos a la UI.
 // - Sin rAF mientras no hay energía ni con la pestaña oculta; bajo
 //   prefers-reduced-motion queda la rejilla estática (solo escucha resize y
-//   el cambio de tema, para repintar la tinta en reposo).
+//   el cambio de tema, para repintar la tinta en reposo). La preferencia
+//   es reactiva (useReducedMotion): activarla con la consola abierta
+//   desmonta el bucle y el puntero al vuelo; quitarla los vuelve a montar.
 // - La tinta en reposo la marca el tema (--dot-grid-ink) y un cambio de
 //   tema dispara un repintado; los halos activos leen el acento del tema
 //   (--dot-grid-pulse-rgb) y también repintan al cambiar.
 
 import { useEffect, useRef } from 'react'
+import { useReducedMotion } from 'motion/react'
 import { THEME_EVENT } from '@/lib/theme'
 
 type DotGridProps = {
@@ -52,11 +55,13 @@ function readPulse(): string {
 
 export function DotGridLayer({ gap = 22, radius = 150, className = '' }: DotGridProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  // Reactiva: el hook (patrón de la casa) re-renderiza si la preferencia
+  // cambia con el componente montado; el efecto re-ejecuta y re-rama.
+  const reduce = useReducedMotion()
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
@@ -244,7 +249,9 @@ export function DotGridLayer({ gap = 22, radius = 150, className = '' }: DotGrid
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener(THEME_EVENT, onThemeChange)
     }
-  }, [gap, radius])
+    // `reduce` re-rama el efecto: al activarse desmonta puntero/bucle y
+    // repinta la rejilla estática; al desactivarse lo remonta.
+  }, [gap, radius, reduce])
 
   return (
     <canvas

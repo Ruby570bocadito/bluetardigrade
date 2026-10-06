@@ -187,21 +187,47 @@ it whenever a token changes.
 
 ## Motion components
 
-The eight motion primitives live in `src/components/reactbits/`, adapted from
+The motion primitives live in `src/components/reactbits/`, adapted from
 [React Bits](https://reactbits.dev) to the console theme (each header documents
 its origin). Every one communicates a state change — none is decoration — and
 the layer adds zero runtime dependencies beyond `motion`:
 
 | Component | What it does | Where it lives |
 |-----------|--------------|----------------|
+| `animated-content` | block rises into place on mount (cascaded by order) | dashboard panels, NOC slides |
 | `animated-list` | rows enter staggered (fade + short rise, delay per index) | alert queue, suppressions, chains, respond audit, dashboard lists |
 | `blur-text` | view titles reveal word by word (rise + blur) on section change | shell view headers |
+| `count-up` | KPI figures spring from their previous value | KPI row, NOC |
+| `counter` | digit columns roll to their value on a spring | KPI row, platform status, respond, dashboard |
 | `decrypted-text` | text enters as a decode cycle (unrevealed chars cycle glyphs once on load) | shell brand tagline |
 | `dot-grid` | pointer-reactive dot grid canvas behind the shell | shell ambient background |
-| `gradient-text` | animated gradient on text (`background-clip: text`, pure CSS) | KPI row (critical counter) |
+| `glare-hover` | diagonal shine crossing a card on hover/focus (pure CSS) | KPI cards |
 | `shiny-text` | shine sweep over text (`background-clip: text`, pure CSS) | shell hint/loading states |
 | `spotlight-card` | radial halo following the pointer via CSS custom properties | dashboard cards, KPI stat cards |
 | `star-border` | 1px border with a moving gradient (padding trick + animated background) | AI analyst panel while it is working |
+
+### Reduced motion (POL-11)
+
+`prefers-reduced-motion: reduce` stills the console in three layers:
+the global CSS gate in `globals.css` (animation/transition duration
+0.01 ms, `scroll-behavior: auto`), per-effect static end-states
+(`blur-text` only opts in under `no-preference`; `shiny-text`,
+`glare-hover`, `star-border`, `panel-hover`, `edge-flow`, `node-pulse`,
+`bt-breathe` and the NOC progress bar freeze or hide) and
+`useReducedMotion()` in every `motion/react` consumer (entrances skip
+their initial state; spinners keep running — they communicate
+activity, they do not decorate). The canvas dot grid paints its
+resting grid and ignores the pointer. Every gate is reactive: toggling
+the OS preference mid-session takes effect without a reload
+(dot-grid unmounts its loop, decrypted-text cuts its cycle, count-up
+snaps its spring to the target).
+
+Regression: `scripts/dev-tests/check_console_motion.mjs` loads the
+built console with the preference emulated and asserts that no
+non-spinner animation runs (via `document.getAnimations()`), then
+re-loads without the preference and requires the probe element to
+carry its keyframes — a positive control proving the gate is wired
+rather than passing vacuously on a broken selector.
 
 ## Bundle baseline (POL-9)
 
@@ -212,15 +238,23 @@ libraries), then ≈ 223 / 174 / 109 KB app chunks — plus ≈ 98 KB of CSS.
 Re-measure after adding a client dependency: any new dependency must
 justify its bytes here.
 
-Lighthouse (desktop preset, production build, Chromium, 2026-10-05):
-Panel scores **95 performance / 100 accessibility / 96 best-practices /
-100 SEO** (FCP 0.4 s, LCP 1.5 s, TBT 20 ms, CLS 0.02, SI 0.8 s) and the
-alerts view **100 / 100**. Reproduce with `make console-lighthouse`
+Lighthouse (desktop preset, production build, Chromium). The nonce CSP
+turned `/` into a dynamic route, so the baseline was re-measured on
+2026-10-06 under the same lab conditions (engine and console-service
+offline — their refused fetches are the only console noise in the
+trace). Panel **97 performance / 100 accessibility / 96
+best-practices / 100 SEO** (FCP 0.3 s, LCP 1.2 s, TBT 30 ms, CLS
+0.019, SI 0.8 s) and the alerts view **100 / 100 / 96 / 100**: the
+per-request nonce costs nothing measurable (baseline 2026-10-05,
+prerendered `/`: 95 / 100 / 96 / 100 with FCP 0.4 s, LCP 1.5 s, TBT
+20 ms, CLS 0.02). Reproduce with `make console-lighthouse`
 (`CHROME_PATH` pointing at a Chromium binary) or directly:
 `lighthouse http://127.0.0.1:3100 --preset=desktop --output=json`
-against `bun run start`. The axe pass runs in CI-shaped form as
-`scripts/dev-tests/check_console_a11y.mjs` (WCAG 2.x over every view,
-dark and light themes) — `make console-a11y`.
+against `bun run start` — kill any stale `next-server` first (a server
+left over from a previous session answers on 3100 with an old chunk
+manifest and silently skews the run). The axe pass runs in CI-shaped
+form as `scripts/dev-tests/check_console_a11y.mjs` (WCAG 2.x over every
+view, dark and light themes) — `make console-a11y`.
 
 ## Configuration
 
