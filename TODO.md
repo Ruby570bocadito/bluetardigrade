@@ -468,7 +468,7 @@ Prioridades de la ronda 4:
 | Carril | Prioridad |
 |---|---|
 | Implementación B | **Terminar IDEA-10:** el panel, el directorio, la validación y los ajustes en el idioma elegido, sin mezclar en ninguna pantalla. Después TEAM-1 (pantalla de inicio de sesión) |
-| Implementación A | **WEF y detecciones de AD** (despliegue 4), base de AD-3 y AD-4. Después TEAM-1 (sesiones), SEC-2 del sensor y REP-2 |
+| Implementación A | Primero, una tarea corta: **el dato escrito en `registry.set`**. El sensor Rust envía el valor (`registry.value_data`, por ejemplo la ruta del ejecutable) para que reglas y supresiones puedan exigirlo; hoy una supresión de la clave Run solo puede fijar la clave y el nombre del valor (caso real: Chrome y Copilot en el portátil). Después **WEF y detecciones de AD** (despliegue 4), base de AD-3 y AD-4. Luego TEAM-1 (sesiones), SEC-2 del sensor y REP-2 |
 | Pulimiento A | POL-1 (`api.go`, `run.go`), POL-2 (`slog`) y POL-5 |
 | Pulimiento B | Completar POL-7 y llevar las vistas a los componentes compartidos |
 | Seguridad A | Fixtures de corrección de la postura de AD y revisión de lo que llegue de WEF y de las sesiones |
