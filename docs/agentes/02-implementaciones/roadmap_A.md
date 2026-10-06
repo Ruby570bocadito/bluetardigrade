@@ -5,6 +5,25 @@ cada ronda: qué está a medias, qué sigue y por qué.
 
 ## Estado actual
 
+- Ronda 2026-10-06 11h50 cerrada (informe: `ronda_2026-10-06_11h50_A.md`). Dos
+  entregas: **(1)** `engine doctor` valida `known-software.yaml` con el parser real
+  (`known.Parse`, paridad con `ingest-identities`: error = lo que el motor haría,
+  warn si vacía, skip honesta si no existe); **(2) cuotas por equipo (v1.1)**:
+  `MaxKeysPerHost = 2048` (25%) en threshold y beacon como techo de ADMISIÓN — las
+  claves existentes del host saturado siguen contando, solo las nuevas se rechazan,
+  y la evidencia muerta se purga ANTES del rechazo (auto-reparación; el techo por
+  regla queda puro, semántica auditada intacta). El correlador no necesita cuota
+  (maxSequences=512 ya acota la parte de un host a 6,25% del cap, por construcción).
+  Los anillos de vista cuentan su rotación POR HOST. Honestidad en `/api/stats`
+  (`beacon_quota_rejected`, `threshold_quota_rejected`, `ring_dropped_events`,
+  `ring_dropped_alerts`, `quota_top_hosts` top-8) y `/metrics` sin etiquetas de
+  host. OpenAPI 43 rutas / 56 campos stats + `QuotaHostRow`; OPERATIONS.md con la
+  sección de cuotas. **RETENIDA EN LOCAL** (sin credencial de push esta sesión;
+  4 commits `9409784..HEAD`; el push es la primera acción de la siguiente ronda).
+  Verificación completa tras el último cambio: race x5 (api/engine/threshold/
+  beacon), 40 paquetes -race 0 fallos, staticcheck 0, guards y 4 baterías e2e
+  verdes. Merge-tree: 3 puntas CLEAN; los 2 conflictos conocidos (PUL-A comentarios,
+  SEG-A reports_test) con resolución ya acordada.
 - Ronda 2026-10-06 10h53 cerrada (informe: `ronda_2026-10-06_10h53_A.md`). Primero,
   **publicados los 8 commits retenidos** (`bc91c7d..9b82845`): la sesión trajo la
   credencial de push (usada solo como variable de entorno del proceso). Después,
@@ -130,18 +149,18 @@ cada ronda: qué está a medias, qué sigue y por qué.
 ## Cola de tareas del carril (orden pretendido)
 
 1. ~~Publicar la retención~~ — HECHO al abrir la ronda 10h53 (`bc91c7d..9b82845`).
-2. **v1.1 Ruido residual** (sigue como cabeza): `sf-engine doctor` valida
-   `known-software.yaml` con el cargador real (paridad con `ingest-identities`) y
-   §2.1 agrupación de arranques en el sensor (parte Rust; requiere `cargo` en el
-   entorno o pruebas en otro sitio).
-3. ~~AD-6/SET-1 parte A (API)~~ — HECHA en la ronda 10h53; queda la parte B
-   (pantalla, IMP-B). **AD-3** cuando WEF exista. **AD-7** cuando el responsable
-   decida el mapa grupos→roles.
-4. **Motor**: cuotas por equipo en la memoria del motor (v1.1 «Motor y consola»).
-4. **REP-2** informes programados (diarios/semanales en `data/reports` con retención,
-   SMTP/webhook opcional): la maquinaria de datos ya existe tras REP-1 parte A.
-5. **Diseño**: purga de hosts rechazados/revocados en el registro de alta (observación
-   de SEG-A: hoy cuentan para siempre en `MaxHosts`).
+   **Pendiente de nuevo**: publicar la ronda 11h50 (4 commits, `9409784..HEAD`)
+   — primera acción de la próxima sesión si llega credencial.
+2. **REP-2** informes programados (diarios/semanales en `data/reports` con
+   retención, SMTP/webhook opcional): la maquinaria de datos ya existe tras REP-1 A.
+3. **Purga de hosts rechazados/revocados** en el registro de alta (observación de
+   SEG-A: hoy cuentan para siempre en `MaxHosts`).
+4. ~~v1.1 Ruido residual: doctor `known-software.yaml`~~ — HECHA (ronda 11h50).
+   **§2.1 agrupación de arranques** (Rust) sigue bloqueada sin `cargo`.
+5. **Diseño**: cuotas por equipo en la memoria del motor — HECHAS (ronda 11h50);
+   queda el trabajo por hash de equipos de la fase B «Escala SOC» cuando llegue.
+6. **AD-3** cuando WEF exista. **AD-7** cuando el responsable decida el mapa
+   grupos→roles. REP-1 parte B (PDF vía vista imprimible) es de IMP-B.
 
 ## Decisiones y motivos (histórico vivo)
 
