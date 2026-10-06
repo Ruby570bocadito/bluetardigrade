@@ -10,6 +10,7 @@ import { Bell, BellSlash, SpeakerHigh } from '@phosphor-icons/react'
 import { Switch } from '@/components/ui/switch'
 import { useEngine } from './engine-provider'
 import { HeaderPopover } from './header-popover'
+import { useI18n } from './i18n-provider'
 import { alertKey } from '@/lib/engine-client'
 import { newCriticalAlerts, notificationText, readNotifyPrefs, writeNotifyPrefs, type NotifyPrefs } from '@/lib/alert-notify'
 
@@ -46,6 +47,7 @@ function playTone() {
 
 export function NotifyMenu() {
   const { alerts, status } = useEngine()
+  const { dict } = useI18n()
   const [prefs, setPrefs] = useState<NotifyPrefs>({ enabled: false, sound: false })
   const [permission, setPermission] = useState<Permission>('default')
   const [open, setOpen] = useState(false)
@@ -71,7 +73,7 @@ export function NotifyMenu() {
     seenRef.current = seen
     if (!prefs.enabled || fresh.length === 0) return
     if (permission === 'granted') {
-      const { title, body } = notificationText(fresh)
+      const { title, body } = notificationText(fresh, dict.notify.toast)
       try {
         const toast = new Notification(title, { body, tag: 'bluetardigrade-critical', icon: '/icon.svg' })
         toast.onclick = () => { window.focus(); toast.close() }
@@ -80,7 +82,7 @@ export function NotifyMenu() {
       }
     }
     if (prefs.sound) playTone()
-  }, [alerts, status, prefs, permission])
+  }, [alerts, status, prefs, permission, dict])
 
   const update = async (next: NotifyPrefs) => {
     if (next.enabled && !prefs.enabled && currentPermission() === 'default') {
@@ -100,30 +102,30 @@ export function NotifyMenu() {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="true"
-        aria-label="Avisos de alertas críticas"
-        title={active ? 'Avisos de alertas críticas activados' : 'Avisos de alertas críticas desactivados'}
+        aria-label={dict.notify.title}
+        title={active ? dict.notify.bellOn : dict.notify.bellOff}
         className={`chip px-2 py-1.5 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? 'text-primary-link' : 'text-zinc-500'}`}
       >
         <Icon size={15} weight={active ? 'fill' : 'regular'} aria-hidden />
       </button>
-      <HeaderPopover anchorRef={anchorRef} open={open} onClose={close} label="Preferencias de avisos" className="w-72 p-3">
-          <p className="text-sm font-medium text-zinc-100">Avisos de alertas críticas</p>
-          <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-500">Solo para alertas críticas nuevas y sin cerrar, mientras esta pestaña esté abierta. La preferencia se guarda en este navegador.</p>
+      <HeaderPopover anchorRef={anchorRef} open={open} onClose={close} label={dict.notify.popoverLabel} className="w-72 p-3">
+          <p className="text-sm font-medium text-zinc-100">{dict.notify.title}</p>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-500">{dict.notify.prose}</p>
           <label className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-200">
-            <span className="flex items-center gap-2"><Bell size={14} aria-hidden className="text-zinc-400" /> Notificación del navegador</span>
-            <Switch checked={prefs.enabled} onCheckedChange={(v) => void update({ ...prefs, enabled: v })} aria-label="Notificación del navegador para alertas críticas" />
+            <span className="flex items-center gap-2"><Bell size={14} aria-hidden className="text-zinc-400" /> {dict.notify.browserToggle}</span>
+            <Switch checked={prefs.enabled} onCheckedChange={(v) => void update({ ...prefs, enabled: v })} aria-label={dict.notify.browserToggleAria} />
           </label>
           <label className="mt-2.5 flex items-center justify-between gap-3 text-xs text-zinc-200">
-            <span className="flex items-center gap-2"><SpeakerHigh size={14} aria-hidden className="text-zinc-400" /> Sonido</span>
-            <Switch checked={prefs.sound} onCheckedChange={(v) => void update({ ...prefs, sound: v })} aria-label="Sonido para alertas críticas" />
+            <span className="flex items-center gap-2"><SpeakerHigh size={14} aria-hidden className="text-zinc-400" /> {dict.notify.soundToggle}</span>
+            <Switch checked={prefs.sound} onCheckedChange={(v) => void update({ ...prefs, sound: v })} aria-label={dict.notify.soundToggleAria} />
           </label>
           {prefs.enabled && permission === 'denied' && (
-            <p role="alert" className="mt-2.5 text-[11px] text-amber-300">El navegador bloqueó las notificaciones para este sitio: permítelas en el icono del candado de la barra de direcciones.</p>
+            <p role="alert" className="mt-2.5 text-[11px] text-amber-300">{dict.notify.denied}</p>
           )}
-          {permission === 'unsupported' && <p className="mt-2.5 text-[11px] text-zinc-500">Este navegador no admite notificaciones; el sonido sí funciona.</p>}
-          {storageError && <p role="alert" className="mt-2.5 text-[11px] text-amber-300">No se pudo guardar la preferencia en este navegador; dura hasta recargar.</p>}
+          {permission === 'unsupported' && <p className="mt-2.5 text-[11px] text-zinc-500">{dict.notify.unsupported}</p>}
+          {storageError && <p role="alert" className="mt-2.5 text-[11px] text-amber-300">{dict.notify.storageError}</p>}
           <button type="button" onClick={playTone} className="mt-3 text-[11px] text-primary-link underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            Probar sonido
+            {dict.notify.testSound}
           </button>
       </HeaderPopover>
     </div>

@@ -297,6 +297,88 @@ export const dictEs = {
       finish: 'Terminar la puesta en marcha',
     },
   },
+
+  // NOC wall (full-screen rotation). Slide titles, controls, honest outage
+  // prose and the big stats of the three slides. Numbers that need a locale
+  // arrive pre-formatted as strings so the dictionary stays language-only.
+  noc: {
+    ariaLabel: 'Modo NOC',
+    slides: {
+      situacion: 'Situación',
+      grafo: 'Grafo de investigación',
+      cobertura: 'Cobertura y equipos',
+    },
+    screens: 'Pantallas',
+    prev: 'Pantalla anterior',
+    next: 'Pantalla siguiente',
+    pause: 'Pausar rotación',
+    resume: 'Reanudar rotación',
+    exit: 'Salir',
+    connectingTitle: 'Conectando con el motor',
+    offlineTitle: 'Motor sin conexión',
+    offlineProse: 'El modo NOC no muestra datos antiguos ni inventados; se recupera solo cuando el motor responda.',
+    situation: {
+      criticalOpen: 'Críticas sin cerrar',
+      criticalHint: (pending: number, acknowledged: number): string => `${pending} nuevas · ${acknowledged} reconocidas`,
+      eventsPerMin: 'Eventos por minuto',
+      eventsHint: (total: string): string => `${total} desde el arranque`,
+      alerts: 'Alertas',
+      alertsHint: (n: number): string => `${n} en la ventana de la consola`,
+      riskHosts: 'Equipos en riesgo',
+      riskHint: (host: string, score: string): string => `máx ${host} · ${score}`,
+      noRisk: 'sin riesgo activo',
+      activityTitle: 'Actividad del sensor · últimos 4 minutos',
+      activityAria: 'Actividad del sensor',
+      severityTitle: 'Alertas por severidad',
+      severityAria: 'Alertas por severidad',
+    },
+    graph: {
+      title: (n: number): string => `Grafo de investigación · ${n} entidades`,
+      ariaLabel: 'Grafo de investigación',
+      empty: 'El grafo se dibuja con la primera alerta o conexión de red recibida.',
+      canvasAria: (nodes: number, edges: number): string => `Grafo de investigación: ${nodes} entidades y ${edges} relaciones`,
+    },
+    coverage: {
+      matrixTitle: (n: number): string => `Cobertura MITRE ATT&CK · ${n} de 14 tácticas con reglas`,
+      matrixAria: 'Cobertura MITRE ATT&CK',
+      hostsTitle: 'Equipos por táctica',
+      hostsAria: 'Equipos por táctica',
+      hostsEmpty: 'Sin tácticas observadas en la ventana.',
+      rulesTitle: 'Reglas más activas',
+      rulesAria: 'Reglas más activas',
+      rulesEmpty: 'Sin detecciones en la ventana.',
+      riskTitle: 'Equipos con más riesgo',
+      riskAria: 'Equipos con más riesgo',
+      riskEmpty: 'Ningún equipo acumula riesgo ahora mismo.',
+      riskSeen: (alerts: number, seen: string): string => `${alerts} alertas · visto ${seen}`,
+      destTitle: 'Destinos de red',
+      destEmpty: 'Sin conexiones de red en el búfer.',
+    },
+  },
+
+  // Critical-alert notifier (header bell). Preference prose, switches and
+  // the phrases the browser toast uses; the lib only concatenates engine
+  // data (host, user, summary, rule names) — wording lives here.
+  notify: {
+    title: 'Avisos de alertas críticas',
+    bellOn: 'Avisos de alertas críticas activados',
+    bellOff: 'Avisos de alertas críticas desactivados',
+    popoverLabel: 'Preferencias de avisos',
+    prose: 'Solo para alertas críticas nuevas y sin cerrar, mientras esta pestaña esté abierta. La preferencia se guarda en este navegador.',
+    browserToggle: 'Notificación del navegador',
+    browserToggleAria: 'Notificación del navegador para alertas críticas',
+    soundToggle: 'Sonido',
+    soundToggleAria: 'Sonido para alertas críticas',
+    denied: 'El navegador bloqueó las notificaciones para este sitio: permítelas en el icono del candado de la barra de direcciones.',
+    unsupported: 'Este navegador no admite notificaciones; el sonido sí funciona.',
+    storageError: 'No se pudo guardar la preferencia en este navegador; dura hasta recargar.',
+    testSound: 'Probar sonido',
+    toast: {
+      one: (rule: string): string => `Alerta crítica: ${rule}`,
+      many: (n: number): string => `${n} alertas críticas nuevas`,
+      moreHosts: (n: number): string => `y ${n} ${n === 1 ? 'equipo' : 'equipos'} más`,
+    },
+  },
 }
 
 /** The full shape every language must implement (EN is typed with this). */

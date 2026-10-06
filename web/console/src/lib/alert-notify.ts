@@ -46,16 +46,26 @@ export function newCriticalAlerts(alerts: readonly SfAlert[], seen: Set<string> 
   return { fresh, seen: next }
 }
 
+/** The language-dependent wording of the toast, supplied by the caller
+ * (the dictionaries own it — IDEA-10). The lib only concatenates engine
+ * data (hosts, users, summaries, rule names) around these phrases. */
+export type NotifyPhrases = {
+  one: (rule: string) => string
+  many: (n: number) => string
+  /** Suffix for the hosts beyond the first three, e.g. “y 2 equipos más”. */
+  moreHosts: (n: number) => string
+}
+
 /** Title and body of the toast; several arrivals collapse into one. */
-export function notificationText(fresh: readonly SfAlert[]): { title: string; body: string } {
+export function notificationText(fresh: readonly SfAlert[], phrases: NotifyPhrases): { title: string; body: string } {
   if (fresh.length === 1) {
     const a = fresh[0]
-    return { title: `Alerta crítica: ${a.rule_name}`, body: `${a.host}${a.user ? ' · ' + a.user : ''}\n${a.summary}`.slice(0, 240) }
+    return { title: phrases.one(a.rule_name), body: `${a.host}${a.user ? ' · ' + a.user : ''}\n${a.summary}`.slice(0, 240) }
   }
   const hosts = [...new Set(fresh.map((a) => a.host))]
   const extra = hosts.length - 3
   return {
-    title: `${fresh.length} alertas críticas nuevas`,
-    body: hosts.slice(0, 3).join(', ') + (extra > 0 ? ` y ${extra} ${extra === 1 ? 'equipo' : 'equipos'} más` : ''),
+    title: phrases.many(fresh.length),
+    body: hosts.slice(0, 3).join(', ') + (extra > 0 ? ` ${phrases.moreHosts(extra)}` : ''),
   }
 }

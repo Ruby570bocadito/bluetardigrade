@@ -277,4 +277,86 @@ export const dictEn: Dict = {
       finish: 'Finish setup',
     },
   },
+
+  // NOC wall (full-screen rotation). Slide titles, controls, honest outage
+  // prose and the big stats of the three slides. Numbers that need a locale
+  // arrive pre-formatted as strings so the dictionary stays language-only.
+  noc: {
+    ariaLabel: 'NOC mode',
+    slides: {
+      situacion: 'Situation',
+      grafo: 'Investigation graph',
+      cobertura: 'Coverage and hosts',
+    },
+    screens: 'Screens',
+    prev: 'Previous screen',
+    next: 'Next screen',
+    pause: 'Pause rotation',
+    resume: 'Resume rotation',
+    exit: 'Exit',
+    connectingTitle: 'Connecting to the engine',
+    offlineTitle: 'Engine offline',
+    offlineProse: 'NOC mode never shows stale or invented data; it recovers by itself as soon as the engine responds.',
+    situation: {
+      criticalOpen: 'Open criticals',
+      criticalHint: (pending, acknowledged): string => `${pending} new · ${acknowledged} acknowledged`,
+      eventsPerMin: 'Events per minute',
+      eventsHint: (total): string => `${total} since startup`,
+      alerts: 'Alerts',
+      alertsHint: (n): string => `${n} in the console window`,
+      riskHosts: 'Hosts at risk',
+      riskHint: (host, score): string => `max ${host} · ${score}`,
+      noRisk: 'no active risk',
+      activityTitle: 'Sensor activity · last 4 minutes',
+      activityAria: 'Sensor activity',
+      severityTitle: 'Alerts by severity',
+      severityAria: 'Alerts by severity',
+    },
+    graph: {
+      title: (n): string => `Investigation graph · ${n} entities`,
+      ariaLabel: 'Investigation graph',
+      empty: 'The graph draws itself with the first alert or network connection received.',
+      canvasAria: (nodes, edges): string => `Investigation graph: ${nodes} entities and ${edges} relationships`,
+    },
+    coverage: {
+      matrixTitle: (n): string => `MITRE ATT&CK coverage · ${n} of 14 tactics with rules`,
+      matrixAria: 'MITRE ATT&CK coverage',
+      hostsTitle: 'Hosts per tactic',
+      hostsAria: 'Hosts per tactic',
+      hostsEmpty: 'No tactics observed in the window.',
+      rulesTitle: 'Most active rules',
+      rulesAria: 'Most active rules',
+      rulesEmpty: 'No detections in the window.',
+      riskTitle: 'Highest-risk hosts',
+      riskAria: 'Highest-risk hosts',
+      riskEmpty: 'No host is accumulating risk right now.',
+      riskSeen: (alerts, seen): string => `${alerts} alerts · seen ${seen}`,
+      destTitle: 'Network destinations',
+      destEmpty: 'No network connections in the buffer.',
+    },
+  },
+
+  // Critical-alert notifier (header bell). Preference prose, switches and
+  // the phrases the browser toast uses; the lib only concatenates engine
+  // data (host, user, summary, rule names) — wording lives here.
+  notify: {
+    title: 'Critical alert notifications',
+    bellOn: 'Critical alert notifications on',
+    bellOff: 'Critical alert notifications off',
+    popoverLabel: 'Notification preferences',
+    prose: 'Only for new, still-open critical alerts, while this tab stays open. The preference is saved in this browser.',
+    browserToggle: 'Browser notification',
+    browserToggleAria: 'Browser notification for critical alerts',
+    soundToggle: 'Sound',
+    soundToggleAria: 'Sound for critical alerts',
+    denied: 'The browser blocked notifications for this site: allow them from the padlock icon in the address bar.',
+    unsupported: 'This browser does not support notifications; sound still works.',
+    storageError: 'The preference could not be saved in this browser; it lasts until reload.',
+    testSound: 'Test sound',
+    toast: {
+      one: (rule): string => `Critical alert: ${rule}`,
+      many: (n): string => `${n} new critical alerts`,
+      moreHosts: (n): string => `and ${n} more ${n === 1 ? 'host' : 'hosts'}`,
+    },
+  },
 }

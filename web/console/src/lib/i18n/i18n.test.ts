@@ -58,6 +58,30 @@ describe('i18n dictionaries', () => {
     expect(DICTS.en.chrome.live).toBe('Live')
     expect(DICTS.en.views.alertas.title).toBe('Alert queue')
   })
+
+  test('phase 2 sweep (noc + notify) keeps the spanish copy byte-identical', () => {
+    expect(dictEs.noc.ariaLabel).toBe('Modo NOC')
+    expect(dictEs.noc.slides.situacion).toBe('Situación')
+    expect(dictEs.noc.slides.grafo).toBe('Grafo de investigación')
+    expect(dictEs.noc.slides.cobertura).toBe('Cobertura y equipos')
+    expect(dictEs.noc.exit).toBe('Salir')
+    expect(dictEs.noc.offlineTitle).toBe('Motor sin conexión')
+    expect(dictEs.noc.situation.criticalOpen).toBe('Críticas sin cerrar')
+    expect(dictEs.noc.coverage.riskSeen(3, '10:05')).toBe('3 alertas · visto 10:05')
+    expect(dictEs.notify.title).toBe('Avisos de alertas críticas')
+    expect(dictEs.notify.testSound).toBe('Probar sonido')
+    expect(dictEs.notify.toast.many(5)).toBe('5 alertas críticas nuevas')
+  })
+
+  test('phase 2 english copy is a real translation of noc and notify', () => {
+    expect(DICTS.en.noc.ariaLabel).toBe('NOC mode')
+    expect(DICTS.en.noc.slides.cobertura).toBe('Coverage and hosts')
+    expect(DICTS.en.noc.situation.criticalHint(2, 1)).toBe('2 new · 1 acknowledged')
+    expect(DICTS.en.noc.coverage.riskSeen(3, '10:05')).toBe('3 alerts · seen 10:05')
+    expect(DICTS.en.notify.title).toBe('Critical alert notifications')
+    expect(DICTS.en.notify.toast.one('r')).toBe('Critical alert: r')
+    expect(DICTS.en.notify.toast.moreHosts(2)).toBe('and 2 more hosts')
+  })
 })
 
 describe('language resolution', () => {
