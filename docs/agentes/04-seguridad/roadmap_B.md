@@ -439,3 +439,28 @@ siguiente (checklist en la ronda 3 de este roadmap y modelo §3).
   PARADA; puerta: fix hot-swap (IMP-A), pantalla AD-6 (IMP-B r11),
   fusiones a main. Push SIGUE bloqueado sin credencial — 4 commits
   locales esperan (6d0b61f, 8af7c2b, 76e9de1, docs r14).
+
+## Ronda 15 (2026-10-06, 09h51 UTC, verificación)
+
+- **Push de las rondas 13-14 SALIÓ** (`b670e5f..abd812f`, credencial
+  del responsable solo en memoria, verificado con ls-remote).
+- **Pantalla AD-6/SET-1 de IMP-B (`2c47271`): LIMPIA salvo 1 BAJA.**
+  Contraseña write-only también en el cliente (solo estado React,
+  type=password + autocomplete new-password, limpiada tras guardar/
+  cargar, jamás localStorage ni URL); payload solo con campos dirty
+  (numéricos inválidos bloquean el envío; password solo si se
+  tecleó); fases 403/501 honestas con frase del motor verbatim;
+  reload_pending/last_reload_error mostrados; doble-submit
+  deshabilitado en la UI (reduce, NO cierra la carrera del hot-swap
+  — el fix del motor sigue siendo el requisito).
+- **BAJA (fix en runProbe ~l.385, para IMP-B):** «Probar conexión»
+  SIN confirmación — server/port editado + password vacío ⇒ el
+  motor envía la credencial ALMACENADA al servidor del formulario
+  en silencio (diseño correcto para migrar de DC, tras -api-write,
+  pero la UI no lo dice). Guardia propuesta: confirmación explícita
+  cuando cambie server/port, no hay password y hay sobre almacenado.
+  Su informe declara el comportamiento sin abordar la implicación.
+- Matriz de fusión sin cambios. Puertas: fix hot-swap (IMP-A,
+  MEDIA), guardia del botón (IMP-B, BAJA), Makefile a main,
+  hallazgos r5 de IMP-B, SEC-5/SEC-9 con la fusión.
+- Informe: ronda_2026-10-06_09h51_B.md. Sin changelog. PARADA.
