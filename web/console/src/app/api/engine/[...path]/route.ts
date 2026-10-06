@@ -68,6 +68,12 @@ const WRITES: WriteRoute[] = [
   { method: 'POST', path: /^\/api\/rules\/test$/, limit: 32 * KIB, role: 'viewer' },
   { method: 'POST', path: /^\/api\/suppressions$/, limit: 8 * KIB, role: 'analyst' },
   { method: 'DELETE', path: /^\/api\/suppressions$/, limit: 0, role: 'analyst' },
+  // detection-validation battery (SIM-4): inert synthetic telemetry
+  // replayed against the LAB scenario library of an engine started with
+  // -scenarios; nothing a run raises reaches the live pipeline, but it
+  // is still a POST with an engine-side 409/401 contract, so it travels
+  // the closed write list like every other write
+  { method: 'POST', path: /^\/api\/scenarios\/run$/, limit: 8 * KIB, role: 'analyst' },
   // sensor enrollment: who may feed the engine is an administrator's call
   { method: 'POST', path: /^\/api\/enroll\/tokens$/, limit: 4 * KIB, role: 'admin', attributed: true },
   { method: 'POST', path: /^\/api\/enroll\/tokens\/[0-9a-f]{8}\/revoke$/, limit: 4 * KIB, role: 'admin', attributed: true },
@@ -298,7 +304,7 @@ async function write(request: Request): Promise<Response> {
     return Response.json(
       {
         error: 'read_only',
-        hint: 'La consola solo reenvía al motor el triaje, los incidentes, el probador de reglas, las supresiones, el alta de equipos y la respuesta activa.',
+        hint: 'La consola solo reenvía al motor el triaje, los incidentes, el probador de reglas, las supresiones, la batería de validación, el alta de equipos y la respuesta activa.',
       },
       { status: 405 },
     )

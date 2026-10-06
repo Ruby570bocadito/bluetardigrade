@@ -141,7 +141,7 @@ export function EntityGraphView({
                 transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 70, damping: 16, delay: Math.min(i * 0.02, 0.4), opacity: { duration: 0.2 } }}
                 tabIndex={0}
                 role={onSelect ? 'button' : 'img'}
-                aria-label={`${NODE_KIND[node.kind].label}: ${node.label}${node.severity ? `, severidad ${SEVERITY_STYLE[node.severity].label}` : ''}, ${neighbours.get(node.id)?.size ?? 0} conexiones${onSelect ? `. ${selectHint}` : ''}`}
+                aria-label={`${NODE_KIND[node.kind].label}: ${labelText}${node.severity ? `, severidad ${SEVERITY_STYLE[node.severity].label}` : ''}, ${neighbours.get(node.id)?.size ?? 0} conexiones${onSelect ? `. ${selectHint}` : ''}`}
                 onPointerEnter={() => setActive(node.id)}
                 onPointerLeave={() => setActive(null)}
                 onFocus={() => setActive(node.id)}

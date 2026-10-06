@@ -4,6 +4,9 @@
 // order. Cell shade = alerts in the console window (one-hue sequential
 // ramp, never a rainbow); the rule count underneath shows detection
 // coverage, so a tactic with no rules reads as a gap, not as "quiet".
+// When the engine serves its scenario library, each cell also names how
+// many lab scenarios validate the tactic (SIM-3): clicking a validated
+// tactic opens those scenarios instead of the alert queue.
 
 import type { TacticCell } from '@/lib/soc-metrics'
 import { cn } from '@/lib/utils'
@@ -15,7 +18,19 @@ function step(alerts: number, max: number): number {
   return Math.min(RAMP.length - 1, Math.ceil((alerts / max) * RAMP.length) - 1)
 }
 
-export function AttackMatrix({ cells, onSelect }: { cells: TacticCell[]; onSelect?: (cell: TacticCell) => void }) {
+export function AttackMatrix({
+  cells,
+  onSelect,
+  onSelectValidated,
+  validations,
+}: {
+  cells: TacticCell[]
+  onSelect?: (cell: TacticCell) => void
+  /** click-through for a tactic with validating scenarios (SIM-3) */
+  onSelectValidated?: (cell: TacticCell) => void
+  /** scenario count per tactic slug; absent = validation not available */
+  validations?: Map<string, number>
+}) {
   const max = Math.max(0, ...cells.map((c) => c.alerts))
   return (
     <div>
@@ -24,7 +39,8 @@ export function AttackMatrix({ cells, onSelect }: { cells: TacticCell[]; onSelec
           const s = step(cell.alerts, max)
           // light ramp steps carry dark ink, dark steps white ink (contrast)
           const darkInk = s >= 3
-          const name = `${cell.label}: ${cell.alerts} alertas en la ventana, ${cell.rules} reglas`
+          const scenarios = validations?.get(cell.slug) ?? 0
+          const name = `${cell.label}: ${cell.alerts} alertas en la ventana, ${cell.rules} reglas${scenarios ? `, ${scenarios} escenarios de validación` : ''}`
           const body = (
             <>
               <span className={cn('block truncate text-[11px]', s < 0 ? 'text-zinc-400' : darkInk ? 'text-[#07111f]/80' : 'text-white/80')} title={cell.label}>
@@ -36,17 +52,23 @@ export function AttackMatrix({ cells, onSelect }: { cells: TacticCell[]; onSelec
               <span className={cn('mt-1.5 block truncate text-[10px]', s < 0 ? (cell.rules ? 'text-zinc-500' : 'text-amber-300/80') : darkInk ? 'text-[#07111f]/75' : 'text-white/75')}>
                 {cell.rules ? `${cell.rules} ${cell.rules === 1 ? 'regla' : 'reglas'}` : 'sin cobertura'}
               </span>
+              {scenarios > 0 && (
+                <span className={cn('mt-0.5 block truncate text-[10px] font-medium', darkInk ? 'text-[#07111f]' : 'text-white')}>
+                  {scenarios} {scenarios === 1 ? 'escenario válido' : 'escenarios válidos'}
+                </span>
+              )}
             </>
           )
           const style = s >= 0 ? { background: RAMP[s] } : undefined
           const base = 'block h-full w-full rounded-lg px-2.5 py-2 text-left'
+          const openValidated = scenarios > 0 && onSelectValidated
           return (
             <li key={cell.slug}>
-              {onSelect && cell.alerts > 0 ? (
+              {openValidated || (onSelect && cell.alerts > 0) ? (
                 <button
                   type="button"
-                  onClick={() => onSelect(cell)}
-                  aria-label={`${name}. Ver alertas de esta táctica`}
+                  onClick={() => (openValidated ? onSelectValidated?.(cell) : onSelect?.(cell))}
+                  aria-label={scenarios > 0 ? `${name}. Ver sus escenarios de validación` : `${name}. Ver alertas de esta táctica`}
                   title={cell.label}
                   style={style}
                   className={cn(base, 'transition-[filter] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--viz-surface)]')}
@@ -54,7 +76,7 @@ export function AttackMatrix({ cells, onSelect }: { cells: TacticCell[]; onSelec
                   {body}
                 </button>
               ) : (
-                <div aria-label={name} role="group" style={style} className={cn(base, s < 0 && 'border border-zinc-800 bg-zinc-900/60')}>
+                <div aria-label={name} role="group" style={style} className={cn(base, s < 0 && !scenarios && 'border border-zinc-800 bg-zinc-900/60')}>
                   {body}
                 </div>
               )}
@@ -74,6 +96,7 @@ export function AttackMatrix({ cells, onSelect }: { cells: TacticCell[]; onSelec
           <span className="tabular-nums">0 – {max}</span>
         </span>
         <span>Las celdas sin reglas muestran «sin cobertura».</span>
+        {validations && <span>«N escenarios válidos» = batería de telemetría inerte que valida la táctica en el laboratorio.</span>}
       </div>
     </div>
   )

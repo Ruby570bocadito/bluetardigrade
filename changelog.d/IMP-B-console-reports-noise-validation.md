@@ -1,0 +1,6 @@
+- The operations panel is now organized in three tabs (Overview, Detection, Hosts and activity) instead of one long stack, with the actionable queue and engine health up front.
+- New Detection tab "Validation": launch the inert detection-validation battery, watch the run in flight, and read the pass-rate trend and per-run results from the engine's scenario library.
+- New Detection tab "Noise": top processes, DNS domains and alerting rules by volume, with one-click suppression for loud rules (known-software arrives with the engine's v1.1).
+- New "Reports" view: the engine's report catalog with CSV/JSON downloads and a printable sheet for saving reports as PDF.
+- The MITRE ATT&CK matrix now shows how many lab scenarios validate each tactic and links straight to those scenarios when the engine runs with `-scenarios`.
+- Reports gain the console's own charts (severity, tactics, fleet status, daily triage) with PNG/SVG/CSV export, and every incident case links to its engine report.

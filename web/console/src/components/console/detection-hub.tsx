@@ -1,11 +1,12 @@
 'use client'
 
 // Detección: the detection content in one place. Rules, kill chains,
-// threat intel, suppressions and the rule tester are tabs of one section
-// (each tab keeps its own deep link:
-// ?view=reglas|cadenas|inteligencia|supresiones|probador).
+// threat intel, suppressions, the rule tester, the noise report and the
+// detection-validation battery are tabs of one section (each tab keeps
+// its own deep link:
+// ?view=reglas|cadenas|inteligencia|supresiones|probador|ruido|simulacion).
 
-import { FlowArrow, Flask, ListMagnifyingGlass, Prohibit, ShieldCheck } from '@phosphor-icons/react'
+import { BatteryCharging, Flask, FlowArrow, ListMagnifyingGlass, Prohibit, ShieldCheck, SpeakerHigh } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { ConsoleTablist, type ConsoleTab } from './ui-tabs'
 import { RulesView } from './rules-view'
@@ -13,6 +14,8 @@ import { SequencesView } from './sequences-view'
 import { SuppressionsView } from './suppressions-view'
 import { RuleTester } from './rule-tester'
 import { IntelView } from './intel-view'
+import { NoiseView } from './noise-view'
+import { ScenarioView } from './scenario-view'
 import type { DetectionView } from '@/lib/url-state'
 
 const TABS: ConsoleTab<DetectionView>[] = [
@@ -21,6 +24,8 @@ const TABS: ConsoleTab<DetectionView>[] = [
   { id: 'inteligencia', label: 'Inteligencia', icon: ListMagnifyingGlass },
   { id: 'supresiones', label: 'Supresiones', icon: Prohibit },
   { id: 'probador', label: 'Probador', icon: Flask },
+  { id: 'ruido', label: 'Ruido', icon: SpeakerHigh },
+  { id: 'simulacion', label: 'Validación', icon: BatteryCharging },
 ]
 
 export function DetectionHub({ tab, onTab, onOpenRule }: { tab: DetectionView; onTab: (tab: DetectionView) => void; onOpenRule: (id: string) => void }) {
@@ -36,6 +41,8 @@ export function DetectionHub({ tab, onTab, onOpenRule }: { tab: DetectionView; o
         {tab === 'inteligencia' && <IntelView />}
         {tab === 'supresiones' && <SuppressionsView />}
         {tab === 'probador' && <RuleTester onOpenRule={onOpenRule} />}
+        {tab === 'ruido' && <NoiseView />}
+        {tab === 'simulacion' && <ScenarioView onOpenRule={onOpenRule} />}
       </div>
     </div>
   )

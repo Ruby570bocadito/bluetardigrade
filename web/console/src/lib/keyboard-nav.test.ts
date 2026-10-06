@@ -55,8 +55,12 @@ describe('resolveShortcut — navigation', () => {
       c: 'cadenas',
       l: 'inteligencia',
       s: 'supresiones',
+      o: 'informes',
+      u: 'ruido',
+      v: 'simulacion',
       k: 'respuesta',
       n: 'analista',
+      j: 'ajustes',
     }
     for (const [key, view] of Object.entries(expected)) {
       expect(resolveShortcut({ key, prefixed: true })).toEqual({ action: 'navigate', view })
@@ -95,7 +99,7 @@ describe('shortcutHintFor', () => {
     ]
     for (const view of views) {
       // Every hint is the prefix plus exactly one of the mnemonic keys.
-      expect(shortcutHintFor(view)).toMatch(/^g [pfarclskn]$/)
+      expect(shortcutHintFor(view)).toMatch(/^g [pfarclsknuvo]$/)
     }
   })
 })

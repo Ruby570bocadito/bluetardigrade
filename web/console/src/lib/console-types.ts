@@ -302,10 +302,57 @@ export type EngineStats = {
   baseline_hosts?: number
   baseline_learning?: number
   baseline_novelties?: number
+  // SET-3 (platform status), published by the merged AD/SEC-2 engine
+  // (f8853eb): version string, ingest→alert latency summary, durable
+  // store size and both TLS listeners' certificate expiry. Optional so
+  // older engines keep decoding; absence never means zero.
+  version?: string
+  alert_latency?: AlertLatency
+  store_size_bytes?: number
+  certificates?: EngineCertificates
+  // v1.1 per-team admission quotas + in-memory ring rotation (IMP-A
+  // ronda 2026-10-06 48b81f8): refused new keys when a host's own quota
+  // was full, records rotated out of the live view rings, and a bounded
+  // worst-first pressure view. Optional so older engines keep decoding;
+  // absence never means zero.
+  beacon_quota_rejected?: number
+  threshold_quota_rejected?: number
+  ring_dropped_events?: number
+  ring_dropped_alerts?: number
+  quota_top_hosts?: QuotaHostRow[]
   // hub-only fields: the engine itself sends neither mode nor
   // interval_ms (mode optional so direct-engine responses type-check)
   interval_ms?: number
   mode?: 'engine' | 'sin-motor'
+}
+
+/** One worst-first row of the per-host pressure view (bounded top 8). */
+export type QuotaHostRow = {
+  host: string
+  ring_events: number
+  ring_alerts: number
+  beacon: number
+  threshold: number
+}
+
+/** SET-3: ingest→alert latency summary (count 0 = no alerts yet, not "no latency"). */
+export type AlertLatency = {
+  count: number
+  p50_ms: number
+  p95_ms: number
+  max_ms: number
+}
+
+/** SET-3: one listener's certificate visibility; present=false without TLS. */
+export type CertExpiry = {
+  present: boolean
+  not_after: string
+  path: string
+}
+
+export type EngineCertificates = {
+  api: CertExpiry
+  ingest: CertExpiry
 }
 
 // hub-forwarded alias: same wire shape as EngineStats

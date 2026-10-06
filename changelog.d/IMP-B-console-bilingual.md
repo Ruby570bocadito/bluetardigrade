@@ -1,0 +1,1 @@
+- The console speaks Spanish and English: a toggle in the header switches the whole frame (navigation, command palette, keyboard help, status chips and the first-run assistant), the choice follows the browser language on first visit, persists per browser and syncs across open tabs.

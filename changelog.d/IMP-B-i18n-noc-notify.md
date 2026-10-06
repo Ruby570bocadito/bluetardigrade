@@ -1,0 +1,2 @@
+- The NOC wall and the critical-alert bell now follow the console language (Spanish or English) like the rest of the shell: slide titles, controls, outage prose, big-stat labels, the notification preferences popover and the browser toast wording all switch with the language toggle, while rule names, hosts and summaries from the engine stay verbatim.
+- NOC numbers now group thousands the way the console language expects (1.234 for Spanish, 1,234 for English) instead of always using the Spanish locale.

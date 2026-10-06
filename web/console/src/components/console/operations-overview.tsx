@@ -99,13 +99,13 @@ export function OperationsOverview({ onNavigate, onTriage }: {
             {LIFECYCLE.map(({ target, label, color: swatch }) => (
               <button
                 key={target} type="button" onClick={() => onTriage(target)} disabled={!available}
-                aria-label={`Ver alertas ${label}: ${available ? counts[target] : 'sin datos'}`}
+                aria-label={`Ver alertas ${label} ${available ? counts[target] : '—'}`}
                 className="group rounded-lg border border-zinc-800 px-3 py-2 text-left transition-colors hover:border-zinc-700 hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent"
               >
                 <span className="flex items-center gap-1.5 text-[11px] text-zinc-400">
                   <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ background: swatch }} />
-                  {label}
-                </span>
+                  {label}{' '}
+                </span>{' '}
                 <span className="mt-0.5 block text-xl font-semibold text-zinc-100 group-hover:text-primary-soft">
                   {available ? counts[target] : '—'}
                 </span>

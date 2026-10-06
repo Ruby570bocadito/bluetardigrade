@@ -11,19 +11,22 @@ import { ConsoleShell } from '@/components/console/shell'
 import { IncidentsProvider } from '@/components/console/incidents-provider'
 import { FleetProvider } from '@/components/console/fleet-provider'
 import { ConsoleUserProvider } from '@/components/console/user-session'
+import { I18nProvider } from '@/components/console/i18n-provider'
 
 export default function ConsolePage() {
   return (
-    <ConsoleUserProvider>
-      <EngineProvider>
-        <AnalystProvider>
-          <IncidentsProvider>
-            <FleetProvider>
-              <ConsoleShell />
-            </FleetProvider>
-          </IncidentsProvider>
-        </AnalystProvider>
-      </EngineProvider>
-    </ConsoleUserProvider>
+    <I18nProvider>
+      <ConsoleUserProvider>
+        <EngineProvider>
+          <AnalystProvider>
+            <IncidentsProvider>
+              <FleetProvider>
+                <ConsoleShell />
+              </FleetProvider>
+            </IncidentsProvider>
+          </AnalystProvider>
+        </EngineProvider>
+      </ConsoleUserProvider>
+    </I18nProvider>
   )
 }

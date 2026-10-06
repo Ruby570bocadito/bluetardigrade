@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { DEFAULT_NOTIFY_PREFS, newCriticalAlerts, notificationText, NOTIFY_KEY, readNotifyPrefs, writeNotifyPrefs } from './alert-notify'
+import { DEFAULT_NOTIFY_PREFS, newCriticalAlerts, notificationText, NOTIFY_KEY, readNotifyPrefs, writeNotifyPrefs, type NotifyPhrases } from './alert-notify'
+import { dictEs } from './i18n/dict-es'
+import { dictEn } from './i18n/dict-en'
 import type { SfAlert } from './console-types'
 
 const alert = (id: string, over: Partial<SfAlert> = {}): SfAlert => ({
@@ -47,11 +49,30 @@ describe('critical arrivals', () => {
   })
 
   test('one arrival names the rule; several collapse into one toast', () => {
-    expect(notificationText([alert('a', { user: 'CORP\\ana' })])).toEqual({
+    expect(notificationText([alert('a', { user: 'CORP\\ana' })], dictEs.notify.toast)).toEqual({
       title: 'Alerta crítica: Volcado de LSASS',
       body: 'LAB-WKS-01 · CORP\\ana\nrundll32 comsvcs.dll MiniDump',
     })
     const many = ['h1', 'h2', 'h3', 'h4', 'h4'].map((h, i) => alert(String(i), { host: h }))
-    expect(notificationText(many)).toEqual({ title: '5 alertas críticas nuevas', body: 'h1, h2, h3 y 1 equipo más' })
+    expect(notificationText(many, dictEs.notify.toast)).toEqual({ title: '5 alertas críticas nuevas', body: 'h1, h2, h3 y 1 equipo más' })
+  })
+
+  test('the same arrivals in english: only the wording changes, never the engine data', () => {
+    const one = notificationText([alert('a', { user: 'CORP\\ana' })], dictEn.notify.toast)
+    expect(one.title).toBe('Critical alert: Volcado de LSASS')
+    expect(one.body).toBe('LAB-WKS-01 · CORP\\ana\nrundll32 comsvcs.dll MiniDump')
+    const many = ['h1', 'h2', 'h3', 'h4', 'h4'].map((h, i) => alert(String(i), { host: h }))
+    const text = notificationText(many, dictEn.notify.toast)
+    expect(text.title).toBe('5 new critical alerts')
+    expect(text.body).toBe('h1, h2, h3 and 1 more host')
+  })
+
+  test('both dictionaries implement the toast phrases shape', () => {
+    for (const toast of [dictEs.notify.toast, dictEn.notify.toast] satisfies NotifyPhrases[]) {
+      expect(toast.one('x')).toContain('x')
+      expect(toast.many(3)).toContain('3')
+      expect(toast.moreHosts(1)).toBeTruthy()
+      expect(toast.moreHosts(4)).toBeTruthy()
+    }
   })
 })

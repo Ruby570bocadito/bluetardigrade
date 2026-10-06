@@ -298,14 +298,26 @@ function IncidentDialog({ alerts, onClose, onOpenIncident }: {
 
 // ---- suppression ------------------------------------------------------------
 
+/** One (rule, host) pair the suppression applies to. The noise report
+ * builds targets from a loud rule; the alert actions from the selected
+ * alerts. */
+export type SuppressionTarget = { rule_id: string; rule_name: string; host: string }
+
 function SuppressDialog({ alerts, onClose }: { alerts: SfAlert[]; onClose: () => void }) {
-  const id = useId()
-  const first = useRef<HTMLTextAreaElement>(null)
   const pairs = useMemo(() => {
-    const seen = new Map<string, { rule_id: string; rule_name: string; host: string }>()
+    const seen = new Map<string, SuppressionTarget>()
     for (const a of alerts) seen.set(`${a.rule_id}|${a.host.toLowerCase()}`, { rule_id: a.rule_id, rule_name: a.rule_name, host: a.host })
     return [...seen.values()]
   }, [alerts])
+  return <SuppressionDialog targets={pairs} onClose={onClose} />
+}
+
+/** Shared suppression form: reason (mandatory, audited in the YAML),
+ * optional fleet-wide scope with its honest warning, and expiry. */
+export function SuppressionDialog({ targets, onClose }: { targets: SuppressionTarget[]; onClose: () => void }) {
+  const id = useId()
+  const first = useRef<HTMLTextAreaElement>(null)
+  const pairs = targets
   const [allHosts, setAllHosts] = useState(false)
   const [reason, setReason] = useState('')
   const [days, setDays] = useState('7')

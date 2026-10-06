@@ -8,7 +8,7 @@
 // own honest state instead of empty axes.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarDots, ChartLineUp, ChartPie, Cpu, Crosshair, Desktop, FlowArrow, Flame, Graph, GridFour, ListBullets, Pulse, ShieldWarning, Stack, Waveform } from '@phosphor-icons/react'
+import { CalendarDots, ChartLineUp, ChartPie, Cpu, Crosshair, Desktop, FlowArrow, Flame, Graph, GridFour, ListBullets, Pulse, ShieldWarning, SquaresFour, Stack, Waveform } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import type { EngineStatus } from '@/hooks/use-engine-stream'
 import { KpiRow } from './kpi-row'
@@ -19,6 +19,7 @@ import { EmptyState, OfflineNotice, SkeletonRows, MonoTag } from './ui-bits'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
 import { AnimatedContent } from '@/components/reactbits/animated-content'
 import { EntityGraphView, GraphLegend, NODE_KIND } from '@/components/charts/entity-graph'
+import { ConsoleTablist } from './ui-tabs'
 import { HostTacticHeatmap } from '@/components/charts/heatmap'
 import { WeekHourHeatmap } from '@/components/charts/week-hour-heatmap'
 import { buildEntityGraph } from '@/lib/entity-graph'
@@ -38,14 +39,18 @@ import { engineApiBase, readEngineJson } from '@/lib/engine-client'
 import { weekHourGrid, weekHourTableRows, weekStart, WEEK_HOUR_DAYS } from '@/lib/alert-heatmap'
 import { eventTypeMix, formatAgo, hostTacticMatrix, lifecycleTacticColumns, SEVERITIES, SEVERITY_LABEL, severityBuckets, severityCounts, tacticCoverage, topCounts, alertTactic, ATTACK_TACTICS, type LifecycleState } from '@/lib/soc-metrics'
 import { pushRiskSample, riskSeriesView, RISK_SLOT_MS, RISK_SLOTS, type RiskSample } from '@/lib/risk-history'
+import { pushOperatorState, currentSearch, dashboardTabFromParam, writeDashboardTabToSearch, DASHBOARD_TABS, type DashboardTab, type SeverityFilter } from '@/lib/url-state'
+import { scenarioCountsByTactic, fetchScenarioSurface, type ScenarioView } from '@/lib/simulation'
 import type { TriageTarget } from '@/lib/operations'
-import type { SeverityFilter } from '@/lib/url-state'
 
 export type ConsoleView =
-  | 'panel' | 'estado' | 'flujo' | 'alertas' | 'incidentes' | 'equipos'
-  | 'reglas' | 'cadenas' | 'inteligencia' | 'supresiones' | 'probador'
-  | 'respuesta' | 'analista'
+  | 'panel' | 'estado' | 'flujo' | 'alertas' | 'incidentes' | 'equipos' | 'directorio' | 'informes'
+  | 'reglas' | 'cadenas' | 'inteligencia' | 'supresiones' | 'probador' | 'ruido' | 'simulacion'
+  | 'respuesta' | 'analista' | 'ajustes'
 export type HuntLens = { q?: string; sev?: SeverityFilter }
+
+const TAB_ICONS: Record<DashboardTab, React.ElementType> = { resumen: SquaresFour, deteccion: ShieldWarning, actividad: Pulse }
+const TAB_LABELS: Record<DashboardTab, string> = { resumen: 'Resumen', deteccion: 'Detección', actividad: 'Equipos y actividad' }
 
 const TIMELINE_WINDOW_MS = 60 * 60 * 1000
 const TIMELINE_BUCKET_MS = 5 * 60 * 1000
@@ -76,6 +81,7 @@ export function Dashboard({
   onTriage,
   onHunt,
   onHost,
+  onScenarioTactic,
 }: {
   onAnalyze: (al: SfAlert) => void
   onNavigate: (view: ConsoleView) => void
@@ -83,11 +89,29 @@ export function Dashboard({
   onHunt?: (lens: HuntLens) => void
   /** open the Equipos page of a host (falls back to the alert lens) */
   onHost?: (host: string) => void
+  /** open the Validación view filtered by an ATT&CK tactic (SIM-3 click-through) */
+  onScenarioTactic?: (slug: string) => void
 }) {
   const hostLens = onHost ?? (onHunt ? (host: string) => onHunt({ q: host }) : undefined)
   const { events, alerts, status, stats } = useEngine()
   const activity = useActivity(events, alerts)
   const down = status === 'down'
+
+  // The panel's section is operator state in the URL (?pestana=): a
+  // refresh or a shared link lands on the same tab, never a resummed
+  // wall of charts. Read after mount so the pre-rendered HTML matches
+  // the default and hydration stays quiet; popstate re-syncs.
+  const [tab, setTabState] = useState<DashboardTab>('resumen')
+  useEffect(() => {
+    const read = () => setTabState(dashboardTabFromParam(new URLSearchParams(currentSearch()).get('pestana')))
+    read()
+    window.addEventListener('popstate', read)
+    return () => window.removeEventListener('popstate', read)
+  }, [])
+  const setTab = (next: DashboardTab) => {
+    setTabState(next)
+    pushOperatorState((search) => writeDashboardTabToSearch(search, next))
+  }
 
   return (
     <div className="space-y-5">
@@ -98,102 +122,128 @@ export function Dashboard({
         />
       )}
 
-      <AnimatedContent order={0}>
-        <OperationsOverview onNavigate={onNavigate} onTriage={onTriage} />
-      </AnimatedContent>
-      <AnimatedContent order={1}>
-        <KpiRow stats={stats} />
-      </AnimatedContent>
+      <DashboardTabs tab={tab} onTab={setTab} />
 
-      <AnimatedContent order={2} className="grid gap-5 xl:grid-cols-3">
-        <ChartCard
-          className="xl:col-span-2"
-          title="Actividad del sensor"
-          subtitle="Eventos por intervalo de 5 s en los últimos 4 minutos, con las alertas del periodo en la franja inferior"
-          icon={Pulse}
-          legend={[
-            { key: 'events', label: 'Eventos', color: 'var(--series-1)', shape: 'line' },
-            ...SEVERITIES.filter((s) => activity.markers.some((m) => m.color === SEV_COLOR[s])).map((s) => ({
-              key: s, label: 'Alerta ' + SEVERITY_LABEL[s].toLowerCase(), color: SEV_COLOR[s],
-            })),
-          ]}
-          table={{
-            caption: 'Eventos y alertas por intervalo de 5 segundos',
-            columns: ['Intervalo', 'Eventos', 'Alertas'],
-            rows: activity.points.slice().reverse().map((p) => [
-              formatAgo(activity.now - p.end),
-              p.value,
-              activity.markers.filter((m) => m.t >= p.start && m.t < p.end).length,
-            ]),
-          }}
-          footer={
-            <span className="flex flex-wrap gap-x-4">
-              <span>Muestra del búfer del cliente (últimos {events.length} eventos recibidos)</span>
-              <span>pico <span className="font-medium tabular-nums text-zinc-300">{activity.peak}</span> por intervalo</span>
-              <span>total <span className="font-medium tabular-nums text-zinc-300">{activity.total}</span> en 4 min</span>
-            </span>
-          }
-        >
-          {down ? <Unavailable /> : <ActivityChart activity={activity} withMarkers />}
-        </ChartCard>
+      {tab === 'resumen' && (
+        <>
+          {/* Reading order of a shift: what needs triage now, how the
+              engine is doing, and the shape of what came in. */}
+          <AnimatedContent order={0}>
+            <OperationsOverview onNavigate={onNavigate} onTriage={onTriage} />
+          </AnimatedContent>
+          <AnimatedContent order={1}>
+            <KpiRow stats={stats} />
+          </AnimatedContent>
+          {/* items-start: each panel hugs its content. Without it the
+              grid stretches the shorter panel and leaves a dead area
+              inside the card (Pulimiento B, ronda del acento zinc). */}
+          <AnimatedContent order={2} className="grid items-start gap-5 xl:grid-cols-2">
+            <div className="panel min-w-0 px-4 pb-3 pt-3.5">
+              <AlertsView compact onAnalyze={onAnalyze} />
+            </div>
+            <EngineSummary status={status} />
+          </AnimatedContent>
+          <AnimatedContent order={3} className="grid gap-5 xl:grid-cols-3">
+            <SeverityPanel alerts={alerts} down={down} onHunt={onHunt} />
+            <SourceDonutPanel alerts={alerts} down={down} />
+            <FleetDonutPanel />
+          </AnimatedContent>
+        </>
+      )}
 
-        <SeverityPanel alerts={alerts} down={down} onHunt={onHunt} />
-      </AnimatedContent>
+      {tab === 'deteccion' && (
+        <>
+          {/* What was detected and how the detection stack stands:
+              coverage and scenario validation first, then composition,
+              timeline and where triage work piles up. */}
+          <AnimatedContent order={0}>
+            <AttackPanel onHunt={onHunt} onScenarioTactic={onScenarioTactic} />
+          </AnimatedContent>
+          <AnimatedContent order={1} className="grid gap-5 xl:grid-cols-3">
+            <TimelinePanel alerts={alerts} down={down} />
+            <TopRulesPanel alerts={alerts} down={down} onHunt={onHunt} />
+          </AnimatedContent>
+          <AnimatedContent order={2} className="grid gap-5 xl:grid-cols-3">
+            <LifecycleTacticPanel alerts={alerts} down={down} />
+            <TacticDonutPanel alerts={alerts} down={down} />
+          </AnimatedContent>
+          <AnimatedContent order={3}>
+            <TriageFlowPanel alerts={alerts} down={down} />
+          </AnimatedContent>
+        </>
+      )}
 
-      <AnimatedContent order={3} className="grid gap-5 xl:grid-cols-3">
-        <InvestigationGraphPanel onHunt={onHunt} onHost={hostLens} />
-        <div className="flex min-w-0 flex-col gap-5">
-          <HotHostsPanel onHost={hostLens} />
-          <TopRulesPanel alerts={alerts} down={down} onHunt={onHunt} />
-        </div>
-      </AnimatedContent>
-
-      <AnimatedContent order={4} className="grid gap-5 xl:grid-cols-3">
-        <TimelinePanel alerts={alerts} down={down} />
-        <TelemetryMixPanel down={down} />
-      </AnimatedContent>
-
-      <AnimatedContent order={5} className="grid gap-5 xl:grid-cols-3">
-        <TacticDonutPanel alerts={alerts} down={down} />
-        <SourceDonutPanel alerts={alerts} down={down} />
-        <FleetDonutPanel />
-      </AnimatedContent>
-
-      <AnimatedContent order={6}>
-        <AlertHeatmapPanel down={down} />
-      </AnimatedContent>
-
-      <AnimatedContent order={7} className="grid gap-5 xl:grid-cols-3">
-        <LifecycleTacticPanel alerts={alerts} down={down} />
-        <RiskEvolutionPanel down={down} />
-      </AnimatedContent>
-
-      <AnimatedContent order={8}>
-        <TriageFlowPanel alerts={alerts} down={down} />
-      </AnimatedContent>
-
-      <AnimatedContent order={9}>
-        <AttackPanel onHunt={onHunt} />
-      </AnimatedContent>
-
-      <AnimatedContent order={10}>
-        <HeatmapPanel onHost={hostLens} />
-      </AnimatedContent>
-
-      <AnimatedContent order={11}>
-        <EngineSummary status={status} />
-      </AnimatedContent>
-
-      {/* items-start: each panel hugs its content. Without it the grid
-          stretches the shorter «Alertas recientes» panel to the telemetry
-          height and leaves a dead area inside the card. */}
-      <AnimatedContent order={12} className="grid items-start gap-5 xl:grid-cols-2">
-        <div className="panel min-w-0 px-4 pb-3 pt-3.5">
-          <AlertsView compact onAnalyze={onAnalyze} />
-        </div>
-        <RecentTelemetry onNavigate={onNavigate} />
-      </AnimatedContent>
+      {tab === 'actividad' && (
+        <>
+          {/* What the sensors see: volume, entity relationships, per-host
+              spread and when the load lands on the week. */}
+          <AnimatedContent order={0}>
+            <ActivityCard activity={activity} eventsCount={events.length} down={down} />
+          </AnimatedContent>
+          <AnimatedContent order={1} className="grid gap-5 xl:grid-cols-3">
+            <InvestigationGraphPanel onHunt={onHunt} onHost={hostLens} />
+            <div className="flex min-w-0 flex-col gap-5">
+              <HotHostsPanel onHost={hostLens} />
+            </div>
+          </AnimatedContent>
+          <AnimatedContent order={2} className="grid gap-5 xl:grid-cols-3">
+            <RiskEvolutionPanel down={down} />
+            <HeatmapPanel onHost={hostLens} />
+            <TelemetryMixPanel down={down} />
+          </AnimatedContent>
+          <AnimatedContent order={3}>
+            <AlertHeatmapPanel down={down} />
+          </AnimatedContent>
+          <AnimatedContent order={4}>
+            <RecentTelemetry onNavigate={onNavigate} />
+          </AnimatedContent>
+        </>
+      )}
     </div>
+  )
+}
+
+/** Section tabs of the Panel: one reading per tab, nothing stacked.
+ * Uses the shared tab kit (Pulimiento B, POL-7): same look and the same
+ * roving-tabindex keyboard pattern as the Detección tablist. */
+function DashboardTabs({ tab, onTab }: { tab: DashboardTab; onTab: (tab: DashboardTab) => void }) {
+  const tabs = DASHBOARD_TABS.map((id) => ({ id, label: TAB_LABELS[id], icon: TAB_ICONS[id] }))
+  return <ConsoleTablist idPrefix="panel" ariaLabel="Secciones del panel" tabs={tabs} value={tab} onSelect={onTab} />
+}
+
+/** Sensor activity of the received window (full-width card of the
+ * Equipos y actividad tab). */
+function ActivityCard({ activity, eventsCount, down }: { activity: ReturnType<typeof useActivity>; eventsCount: number; down: boolean }) {
+  return (
+    <ChartCard
+      title="Actividad del sensor"
+      subtitle="Eventos por intervalo de 5 s en los últimos 4 minutos, con las alertas del periodo en la franja inferior"
+      icon={Pulse}
+      legend={[
+        { key: 'events', label: 'Eventos', color: 'var(--series-1)', shape: 'line' },
+        ...SEVERITIES.filter((s) => activity.markers.some((m) => m.color === SEV_COLOR[s])).map((s) => ({
+          key: s, label: 'Alerta ' + SEVERITY_LABEL[s].toLowerCase(), color: SEV_COLOR[s],
+        })),
+      ]}
+      table={{
+        caption: 'Eventos y alertas por intervalo de 5 segundos',
+        columns: ['Intervalo', 'Eventos', 'Alertas'],
+        rows: activity.points.slice().reverse().map((p) => [
+          formatAgo(activity.now - p.end),
+          p.value,
+          activity.markers.filter((m) => m.t >= p.start && m.t < p.end).length,
+        ]),
+      }}
+      footer={
+        <span className="flex flex-wrap gap-x-4">
+          <span>Muestra del búfer del cliente (últimos {eventsCount} eventos recibidos)</span>
+          <span>pico <span className="font-medium tabular-nums text-zinc-300">{activity.peak}</span> por intervalo</span>
+          <span>total <span className="font-medium tabular-nums text-zinc-300">{activity.total}</span> en 4 min</span>
+        </span>
+      }
+    >
+      {down ? <Unavailable /> : <ActivityChart activity={activity} withMarkers />}
+    </ChartCard>
   )
 }
 
@@ -573,27 +623,67 @@ function HotHostsPanel({ onHost }: { onHost?: (host: string) => void }) {
   )
 }
 
-/** ATT&CK coverage: rules loaded and alerts of the window per tactic. */
-function AttackPanel({ onHunt }: { onHunt?: (lens: HuntLens) => void }) {
-  const { rules, alerts, status } = useEngine()
+/**
+ * ATT&CK coverage (SIM-3): rules loaded, alerts of the window and — when
+ * the engine serves its scenario library (`-scenarios`) — how many lab
+ * scenarios validate each tactic. A validated cell opens the Validación
+ * view filtered by tactic; the rest keep the alert hunt click-through.
+ */
+function AttackPanel({ onHunt, onScenarioTactic }: { onHunt?: (lens: HuntLens) => void; onScenarioTactic?: (slug: string) => void }) {
+  const { rules, alerts, status, sequences } = useEngine()
   const cells = useMemo(() => tacticCoverage(rules, alerts), [rules, alerts])
-  const covered = cells.filter((c) => c.rules > 0).length
+  // the library lives on disk and reloads on every engine call: fetched
+  // once per mount, mapped against the CURRENT rules and sequences
+  const [scenarios, setScenarios] = useState<ScenarioView[] | 'off' | null>(null)
+  useEffect(() => {
+    let alive = true
+    fetchScenarioSurface().then((surface) => {
+      if (!alive) return
+      setScenarios(surface.state === 'armed' ? surface.library.scenarios : 'off')
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
+  const validation = useMemo(
+    () => (scenarios && scenarios !== 'off' ? scenarioCountsByTactic(scenarios, rules, sequences) : null),
+    [scenarios, rules, sequences],
+  )
+  const validatedTactics = validation ? [...validation.values()].filter((n) => n > 0).length : 0
+  const validatedScenarios = validation ? [...validation.values()].reduce((sum, n) => sum + n, 0) : 0
   return (
     <ChartCard
       title="Cobertura MITRE ATT&CK"
-      subtitle={`${covered} de 14 tácticas con reglas cargadas · intensidad = alertas de la ventana`}
+      subtitle={`${coveredOf(cells)} de 14 tácticas con reglas cargadas · intensidad = alertas de la ventana${validation ? ` · ${validatedScenarios} escenarios de laboratorio validan ${validatedTactics} tácticas` : ''}`}
       icon={Crosshair}
       table={{
-        caption: 'Reglas y alertas por táctica de MITRE ATT&CK',
-        columns: ['Táctica', 'Reglas', 'Alertas'],
-        rows: cells.map((c) => [c.label, c.rules, c.alerts]),
+        caption: 'Reglas, alertas y escenarios de validación por táctica de MITRE ATT&CK',
+        columns: ['Táctica', 'Reglas', 'Alertas', 'Escenarios'],
+        rows: cells.map((c) => [c.label, c.rules, c.alerts, validation?.get(c.slug) ?? 0]),
       }}
+      footer={
+        validation
+          ? 'Las celdas «N esc.» cuentan escenarios del laboratorio (telemetría inerte) que validan la táctica; pulsa una táctica validada para verlos en Validación.'
+          : scenarios === 'off'
+            ? 'La validación por escenario no está disponible: el motor corre sin -scenarios, la matriz muestra cobertura y alertas.'
+            : undefined
+      }
     >
       {status === 'down' ? <Unavailable /> : (
-        <AttackMatrix cells={cells} onSelect={onHunt ? (cell) => onHunt({ q: 'attack.' + cell.slug }) : undefined} />
+        <AttackMatrix
+          cells={cells}
+          validations={validation ?? undefined}
+          onSelect={onHunt ? (cell) => onHunt({ q: 'attack.' + cell.slug }) : undefined}
+          onSelectValidated={onScenarioTactic ? (cell) => onScenarioTactic(cell.slug) : undefined}
+        />
       )}
     </ChartCard>
   )
+}
+
+/** Tactics carrying at least one loaded rule. */
+function coveredOf(cells: ReturnType<typeof tacticCoverage>): number {
+  return cells.filter((c) => c.rules > 0).length
 }
 
 function TopRulesPanel({ alerts, down, onHunt }: { alerts: SfAlert[]; down: boolean; onHunt?: (lens: HuntLens) => void }) {

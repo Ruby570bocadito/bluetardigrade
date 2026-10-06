@@ -80,3 +80,21 @@ test('exports validate metadata and omit unknown envelope properties', () => {
   expect(JSON.parse(file.contents).revision).toBe(0)
   expect(() => buildReportExport({ ...draft, created_at: 'invalid date' }, 'md')).toThrow()
 })
+
+test('the SOC export follows the console language; ES stays byte-identical (ronda 12)', () => {
+  const draft = newReport(alert, now())
+  const es = buildReportExport({ ...draft, fields: { ...draft.fields, decision: 'false_positive' } }, 'md')
+  expect(es.contents).toStartWith('# Informe SOC')
+  expect(es.contents).toContain('## Clasificación humana')
+  expect(es.contents).toContain('Falso positivo')
+  expect(es.contents).toContain('## Evidencia recibida')
+  const en = buildReportExport({ ...draft, fields: { ...draft.fields, decision: 'false_positive' } }, 'md', 'en')
+  expect(en.contents).toStartWith('# SOC report')
+  expect(en.contents).toContain('## Human classification')
+  expect(en.contents).toContain('False positive')
+  expect(en.contents).toContain('## Evidence received')
+  expect(en.contents).toContain('The report does not change the alert state')
+  // the default title follows the language; stored data afterwards
+  expect(newReport(alert, now(), 'en').fields.title).toBe(`Alert investigation ${alert.id}`)
+  expect(newReport(alert, now()).fields.title).toBe(`Investigación de alerta ${alert.id}`)
+})

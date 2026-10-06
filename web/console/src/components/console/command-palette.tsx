@@ -1,21 +1,26 @@
 'use client'
 
 import { useEffect, useId, useRef, useState } from 'react'
-import { ArrowClockwise, ArrowElbowDownLeft, Keyboard, MagnifyingGlass, Monitor, X } from '@phosphor-icons/react'
+import { ArrowClockwise, ArrowElbowDownLeft, Keyboard, MagnifyingGlass, Monitor, RocketLaunch, X } from '@phosphor-icons/react'
 import { ConsoleDialog } from './console-dialog'
 import { findConsoleCommands, type ConsoleCommand } from '@/lib/console-commands'
+import { useI18n } from './i18n-provider'
 
-export function CommandPalette({ open, refreshing, onClose, onExecute }: {
+export function CommandPalette({ open, refreshing, commands, onClose, onExecute }: {
   open: boolean
   refreshing: boolean
+  // The catalogue in the operator's language, built by the shell from the
+  // active dictionary (ids are language-independent).
+  commands: ConsoleCommand[]
   onClose: () => void
   onExecute: (command: ConsoleCommand) => void
 }) {
+  const { dict } = useI18n()
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const id = useId()
-  const results = findConsoleCommands(query)
+  const results = findConsoleCommands(query, commands)
   const selected = results[Math.min(active, results.length - 1)]
   const disabled = (command: ConsoleCommand) => command.kind === 'refresh' && refreshing
 
@@ -31,8 +36,8 @@ export function CommandPalette({ open, refreshing, onClose, onExecute }: {
   return (
     <ConsoleDialog open={open} onClose={onClose} titleId={`${id}-title`} descriptionId={`${id}-hint`} initialFocus={inputRef}>
       <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
-        <h2 id={`${id}-title`} className="text-sm font-medium">Comandos de la consola</h2>
-        <button type="button" onClick={onClose} aria-label="Cerrar comandos" className="rounded-md p-1.5 text-zinc-400 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <h2 id={`${id}-title`} className="text-sm font-medium">{dict.palette.title}</h2>
+        <button type="button" onClick={onClose} aria-label={dict.palette.close} className="rounded-md p-1.5 text-zinc-400 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           <X size={16} aria-hidden />
         </button>
       </div>
@@ -41,7 +46,7 @@ export function CommandPalette({ open, refreshing, onClose, onExecute }: {
         <input
           ref={inputRef}
           role="combobox"
-          aria-label="Buscar comandos"
+          aria-label={dict.palette.searchLabel}
           aria-autocomplete="list"
           aria-expanded={open}
           aria-controls={`${id}-results`}
@@ -61,12 +66,12 @@ export function CommandPalette({ open, refreshing, onClose, onExecute }: {
               if (selected) execute(selected)
             }
           }}
-          placeholder="Buscar una vista o acción…"
+          placeholder={dict.palette.placeholder}
           className="h-9 min-w-0 flex-1 bg-transparent text-base text-zinc-100 outline-none placeholder:text-zinc-500"
         />
       </div>
-      <div role="status" className="sr-only" aria-live="polite">{results.length} comandos disponibles</div>
-      <ul id={`${id}-results`} role="listbox" aria-label="Comandos disponibles" className="max-h-[min(50dvh,400px)] overflow-y-auto p-2">
+      <div role="status" className="sr-only" aria-live="polite">{dict.palette.available(results.length)}</div>
+      <ul id={`${id}-results`} role="listbox" aria-label={dict.palette.listLabel} className="max-h-[min(50dvh,400px)] overflow-y-auto p-2">
         {results.map((command, index) => (
           <li
             id={`${id}-${command.id}`}
@@ -79,17 +84,17 @@ export function CommandPalette({ open, refreshing, onClose, onExecute }: {
             onClick={() => execute(command)}
             className={`flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 ${disabled(command) ? 'cursor-wait opacity-50' : selected?.id === command.id ? 'bg-primary-tint/15 ring-1 ring-inset ring-primary/30' : 'hover:bg-white/[0.04]'}`}
           >
-            {command.kind === 'refresh' ? <ArrowClockwise size={18} aria-hidden className={refreshing ? 'animate-spin motion-reduce:animate-none' : 'text-zinc-400'} /> : command.kind === 'help' ? <Keyboard size={18} aria-hidden className="text-zinc-400" /> : command.kind === 'noc' ? <Monitor size={18} aria-hidden className="text-zinc-400" /> : <ArrowElbowDownLeft size={18} aria-hidden className="text-zinc-400" />}
+            {command.kind === 'refresh' ? <ArrowClockwise size={18} aria-hidden className={refreshing ? 'animate-spin motion-reduce:animate-none' : 'text-zinc-400'} /> : command.kind === 'help' ? <Keyboard size={18} aria-hidden className="text-zinc-400" /> : command.kind === 'noc' ? <Monitor size={18} aria-hidden className="text-zinc-400" /> : command.kind === 'onboarding' ? <RocketLaunch size={18} aria-hidden className="text-zinc-400" /> : <ArrowElbowDownLeft size={18} aria-hidden className="text-zinc-400" />}
             <span className="min-w-0 flex-1">
               <span className="block text-sm text-zinc-100">{command.label}</span>
-              <span className="block text-xs text-zinc-400">{disabled(command) ? 'Actualización en curso' : command.description}</span>
+              <span className="block text-xs text-zinc-400">{disabled(command) ? dict.palette.refreshing : command.description}</span>
             </span>
             {command.shortcut && <kbd aria-hidden className="shrink-0 rounded border border-zinc-700 px-1.5 py-0.5 font-mono text-[11px] text-zinc-400">{command.shortcut}</kbd>}
           </li>
         ))}
       </ul>
-      {results.length === 0 && <p className="px-5 pb-5 text-sm text-zinc-400">Sin comandos para esta búsqueda. Prueba con «alertas», «reglas» o «actualizar».</p>}
-      <p id={`${id}-hint`} className="border-t border-white/[0.06] px-4 py-3 text-xs text-zinc-400">↑ ↓ elegir · Enter ejecutar · Esc cerrar</p>
+      {results.length === 0 && <p className="px-5 pb-5 text-sm text-zinc-400">{dict.palette.empty}</p>}
+      <p id={`${id}-hint`} className="border-t border-white/[0.06] px-4 py-3 text-xs text-zinc-400">{dict.palette.hintLine}</p>
     </ConsoleDialog>
   )
 }
