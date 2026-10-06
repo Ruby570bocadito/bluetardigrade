@@ -1,7 +1,44 @@
 # Roadmap — Seguridad A (carril/seguridad-a)
 
 Archivo vivo: continuidad del carril. Última actualización: 2026-10-06,
-ronda 11, cierre (06:52 UTC, Europe/Madrid).
+ronda 12, cierre (09:12 UTC, Europe/Madrid).
+
+## Estado tras el cierre de la ronda 12 (2026-10-06)
+
+- **Fuzzing vivo, segunda tanda ejecutada** (pendiente 3 del roadmap
+  de las rondas 10-11, informe `ronda_2026-10-06_09h12_A.md`):
+  `FuzzLoadIntelFile`, `FuzzLoadSuppress`, `FuzzConvertSigma` y
+  `FuzzDecodeMail` a 60 s cada uno — 4/4 limpios, ~777 k ejecuciones,
+  0 crashes, corpus interesante acumulado en el build cache. Acumulado
+  del carril: 9 de 24 objetivos con sesión viva, ~2,78 M ejecuciones,
+  0 crashes.
+- **Delta de dependencias adoptado por PUL-A/PUL-B leído en clave de
+  seguridad** (mismo `go.mod`/`go.sum` byte a byte, PR #18 de
+  dependabot vía `main`): sqlite 1.60.1, libc 1.77.1, ansi 0.11.8 +
+  indirectas TUI nuevas `clipperhouse/*`. `go mod verify` íntegro,
+  pragmas DSN estables entre versiones del driver, TUI sin
+  exposición en el wire.
+- **Documentación REP-1 de PUL-A verificada contra el código: 100 %
+  fiel, cero drift** (source/oldest_record, truncated con cap 10 000,
+  ventanas 1h-30d def 7d, noise 15m-30d def 24h con limit 10/50,
+  closed_pct/acknowledged_pct, incident 16-hex con found: false).
+  Su informe «REP-1 surfaces documented» es cierto línea en mano.
+- **Obligatorio**: PUL-A `df323ad` y PUL-B `21d73f0` (únicas puntas
+  movidas, ambas tocan Go vía go.mod/go.sum) con `-race -count=5`
+  verde en `internal/store` + `cmd/engine` en worktree desprendido
+  (9,9-10,1 s y 2,7 s); IMP-B consola-only, IMP-A/SEG-B sin mover,
+  evidencia previa vigente.
+- **Corrección de registro**: el conflicto de
+  `internal/ingest/fuzz_test.go` es SOLO con PUL-A, no con IMP-A
+  (merge-tree limpio contra `bc91c7d` también desde la punta de la
+  ronda 11 — la frase «IMP-A/PUL-A» del informe anterior era
+  imprecisa). El de `scenrun_test.go` con SEG-B persiste.
+- Mis 2 hallazgos de la ronda 5 (IMP-B) y los 2 de la ronda 11
+  (IMP-A) siguen abiertos: puntas idénticas a las auditadas,
+  evidencia vigente sin re-ejecución.
+- Checklist Go completo verde en mi árbol (37 paquetes -race);
+  consola/sensor sin cambios en ninguna punta, evidencia previa
+  válida.
 
 ## Estado tras el cierre de la ronda 11 (2026-10-06)
 
@@ -49,6 +86,22 @@ ronda 11, cierre (06:52 UTC, Europe/Madrid).
   ronda 9 en todas las puntas, evidencia previa vigente.
 
 ## Historial reciente
+
+### Ronda 12 (09h12 UTC) — fuzzing vivo tanda 2 + deps de PUL-A/PUL-B + docs REP-1 verificadas (informe `ronda_2026-10-06_09h12_A.md`)
+
+- **Fuzzing vivo**: 4 objetivos nuevos (`FuzzLoadIntelFile`,
+  `FuzzLoadSuppress`, `FuzzConvertSigma`, `FuzzDecodeMail`), ~777 k
+  ejecuciones, 0 crashes. 9/24 objetivos con sesión viva.
+- **Deps** (sqlite/libc/ansi/clipperhouse): `go mod verify` íntegro,
+  pragmas DSN estables, `-race -count=5` store+engine verde en AMBAS
+  puntas movidas (PUL-A, PUL-B).
+- **Docs REP-1 de PUL-A**: verificadas 100 % fieles contra el código
+  (incluido el mínimo de 15 min del noise y la semántica del flag
+  `truncated` del escaneo que fijé en la ronda 7).
+- **Corrección**: conflicto `fuzz_test.go` SOLO con PUL-A; vs IMP-A
+  auto-fusiona limpio (error de redacción del informe 11 corregido).
+- Checklist Go completo verde (37 paquetes -race). Sin fix mío → sin
+  changelog.
 
 ### Ronda 11 (06h52 UTC) — auditoría AD/SEC-2 de IMP-A + consolas SEG-B/IMP-B (informe `ronda_2026-10-06_06h52_A.md`)
 
@@ -198,13 +251,19 @@ ronda 11, cierre (06:52 UTC, Europe/Madrid).
    los suba: re-auditar su delta y verificar la sonda del score.
 2. **Verificar que IMP-B incorpora los dos hallazgos de la ronda 5** en
    su rama antes de la fusión (sexto aviso en `5ecbcc4`).
-3. **Fuzzing vivo, segunda tanda**: `FuzzLoadIntelFile`,
-   `FuzzLoadSuppress`, `FuzzConvertSigma`, `FuzzDecodeMail` (45-60 s
-   cada uno); los cinco de la ronda 10 quedaron limpios.
+3. **Fuzzing vivo, tercera tanda** — los 15 objetivos aún sin sesión
+   viva: `FuzzDecode`, `FuzzDecodeText`, `FuzzEnrollHost`,
+   `FuzzFieldMapParity`, `FuzzHTMLAttribute`,
+   `FuzzInspectAttachmentName`, `FuzzLoadIdentities`,
+   `FuzzLoadRulesDir`, `FuzzLoadThreshold`, `FuzzMatchIdentity`,
+   `FuzzOpenRegistry`, `FuzzParseRecordFilter`,
+   `FuzzParseTimeParam`, `FuzzValidateHash`, `FuzzValidateIP`
+   (45-60 s cada uno; 9 ya limpios en rondas 10 y 12).
 4. **Resolver DOS conflictos al fusionar** (re-verificado en la
-   ronda 11): `internal/ingest/fuzz_test.go` con IMP-A/PUL-A —
+   ronda 12): `internal/ingest/fuzz_test.go` SOLO con PUL-A —
    conservar `"unicode"` junto a mi bloque (el EOF adoptado verbatim
-   se auto-fusiona) — y `internal/scenrun/scenrun_test.go` con SEG-B
+   se auto-fusiona; contra IMP-A auto-fusiona LIMPIO, corrección de
+   la ronda 11) — y `internal/scenrun/scenrun_test.go` con SEG-B
    — conservar `TestRunIDsMatchWireContract` (suyo) y
    `TestStartUnknownScenarioWrapsSentinel` (mío). Contra `main` de
    hoy ambas puntas fusionan limpias.
