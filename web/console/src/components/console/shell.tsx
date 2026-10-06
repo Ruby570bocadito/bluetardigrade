@@ -312,7 +312,7 @@ export function ConsoleShell() {
                 return (
                   <li key={item.id}>
                     {(idx === 0 || sidebar[idx - 1].group !== item.group) && (
-                      <p className="kicker px-3 pb-1.5 pt-4 text-[10px] text-zinc-600">{item.group}</p>
+                      <p className="kicker px-3 pb-1.5 pt-4 text-[10px] text-zinc-500">{item.group}</p>
                     )}
                     <button
                       type="button"
@@ -554,7 +554,9 @@ function UtcClock() {
   if (!now) return null
   return (
     <span className="chip hidden shrink-0 whitespace-nowrap px-2.5 py-1.5 font-mono text-[11px] tabular-nums text-zinc-400 2xl:flex" title={dict.chrome.utcTitle}>
-      <span className="text-zinc-600">UTC</span>
+      {/* text-zinc-500: the AA-remapped hint tier (PUL-B axe round) — raw
+          zinc-600 is 2.6:1 here and this label is real text on wide screens */}
+      <span className="text-zinc-500">UTC</span>
       {now.toISOString().slice(11, 19)}
     </span>
   )

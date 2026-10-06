@@ -244,7 +244,7 @@ export function AnalystPanel({
           <h2 className="text-sm font-medium text-zinc-100">Elige una alerta</h2>
           <span className="ml-auto text-xs tabular-nums text-zinc-500">{alerts.length}</span>
         </div>
-        <div className="max-h-[64vh] flex-1 overflow-y-auto">
+        <div className="max-h-[64vh] flex-1 overflow-y-auto" tabIndex={0} aria-label="Cola de alertas del analista">
           <ul className="divide-y divide-zinc-800/70">
             {alerts.slice(0, 20).map((al) => (
               <li key={`${al.event_id}:${al.rule_id}`}>

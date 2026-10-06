@@ -45,34 +45,52 @@
   contractuales sin Go. **371/371 bun tests, tsc OK, build OK, 89/89
   theme checks, 34/34 DOM, 21/21 Chromium** (primera corrida local
   posible). Informe: `ronda_2026-10-05_16h40_B.md`.
+- **2026-10-05 — POL-8 axe y POL-9 Lighthouse (ronda 4):** guard nuevo
+  `check_console_a11y.mjs` (axe-core WCAG 2.x, 18 cargas: todas las
+  vistas, cinco también en claro, fixtures contractuales) — **18/18
+  limpio** tras 17 correcciones: `--color-zinc-500` oscuro a `#93939a`
+  (era 4.12:1; checker a 93 checks con los pares del nivel), texto real
+  zinc-600 → zinc-500 (18 nodos, 12 ficheros), `dl` de Estado y de la
+  tarjeta de sensor a un solo `div` de agrupación (186 nodos
+  `definition-list`/`dlitem`), texto real para lectores en BlurText/
+  DecryptedText (`sr-only` + animación `aria-hidden`, fuera el
+  `role="text"` inválido) y `tabIndex`+etiqueta en los tres feeds
+  desplazables. Lighthouse desktop medido y documentado: Panel
+  **95/100/96/100** (FCP 0.4 s, LCP 1.5 s, TBT 20 ms, CLS 0.02),
+  Alertas **100/100**; targets `console-a11y` y `console-lighthouse` en
+  el Makefile (que tiene un defecto pre-existente de espacios vs tabs,
+  anotado a PUL-A). **371 tests, tsc, build, 93 theme checks, 34 DOM,
+  21 Chromium, 104 console-service: todo verde.** Informe:
+  `ronda_2026-10-05_17h35_B.md`.
 
 ## A medias
 
-- **POL-8/9:** axe en el CI del navegador, aria de gráficas (fichero de
-  IMP-B) y Lighthouse. Chromium ya corre en este entorno (21/21 en la
-  regresión): axe y Lighthouse son ahora viables localmente.
+- **POL-8/9:** aria de gráficas (fichero de IMP-B) y enganche de los
+  checks axe/tema en `ci.yml` (proponer a PUL-A). axe y Lighthouse ya
+  corren localmente; el CI nocturno puede tomarlos con Chromium.
+- **Makefile:** recetas con 8 espacios en vez de tabs — `make` falla en
+  todos los targets (pre-existente, área de PUL-A).
 
 ## Siguiente (orden propuesto)
 
-1. **Ronda 4: pipeline de nonce para la CSP de la consola** (asignación
+1. **Ronda 5: pipeline de nonce para la CSP de la consola** (asignación
    de SEG-B, BAJA, diseño en §7 de su modelo de amenazas): tocará
    `next.config.ts`/headers con verificación de que el bootstrap de
    Next no rompe. Ronda entera dedicada.
 2. Kit de componentes restante (POL-7): botón, campo, tabla, insignia y
    diálogo con variantes — exige coordinar ventanas con IMP-B (sus
    vistas): proponerlo en su roadmap antes de cogerlo.
-3. POL-8: pase axe local sobre las vistas y aria/gemelo de tabla de las
-   gráficas (fichero de IMP-B, coordinar).
-4. POL-9: informe Lighthouse real y actualización de la baseline si
-   cambia algo.
-5. Proponer a Pulimiento A el enganche de `check_console_theme.py` en
-   `ci.yml` (paso de 3 s, stdlib puro).
-6. Proponer al responsable la definición de POL-12 como tarea de carril
-   (pase de coherencia consola/README/SECURITY.md); esta ronda la
-   interpretó y la ejecutó una vez.
-7. Si IMP-B publica ronda con gráficas nuevas: revisar sus ficheros en
-   busca de azules crudos o contraste fuera de tokens (mismo pase que
-   esta ronda, ahora barato con el grep de acento).
+3. POL-8: aria/gemelo de tabla de las gráficas (fichero de IMP-B,
+   coordinar).
+4. Propuestas a PUL-A: enganchar `check_console_theme.py`,
+   `check_console_a11y.mjs` y `console-lighthouse` en el CI (este
+   último necesita la corrección de tabs del Makefile).
+5. Proponer al responsable la definición de POL-12 como tarea de carril
+   (pase de coherencia consola/README/SECURITY.md); ejecutada una vez
+   en la ronda 3.
+6. Si IMP-B publica ronda con gráficas nuevas: revisar sus ficheros en
+   busca de azules crudos, contraste fuera de tokens o hallazgos axe
+   (mismo pase que las rondas 3-4, ahora barato con el checker).
 
 ## Decisiones de ronda que conviene recordar
 

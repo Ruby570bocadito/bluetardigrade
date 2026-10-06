@@ -103,12 +103,14 @@ export function SensorCard({ host }: { host?: FleetHost }) {
       </div>
       <dl className="grid gap-x-6 gap-y-2.5 px-5 py-4 sm:grid-cols-2">
         {rows.map((row) => (
-          <div key={row.label} className="flex min-w-0 items-start gap-2">
-            <row.icon size={14} aria-hidden className="mt-0.5 shrink-0 text-zinc-500" />
-            <div className="min-w-0">
-              <dt className="text-[11px] text-zinc-500">{row.label}</dt>
-              <dd className="truncate text-xs text-zinc-200" title={typeof row.value === 'string' ? row.value : undefined}>{row.value}</dd>
-            </div>
+          // one grouping div: dt/dd stay a direct grouping of the dl; the
+          // icon lives inside the dt (decorative)
+          <div key={row.label} className="min-w-0">
+            <dt className="flex items-start gap-2 text-[11px] text-zinc-500">
+              <row.icon size={14} aria-hidden className="mt-0.5 shrink-0" />
+              {row.label}
+            </dt>
+            <dd className="truncate pl-6 text-xs text-zinc-200" title={typeof row.value === 'string' ? row.value : undefined}>{row.value}</dd>
           </div>
         ))}
       </dl>
@@ -158,7 +160,7 @@ export function EnrollDialog({ onClose }: { onClose: () => void }) {
           <button type="button" role="tab" aria-selected={tab === 'manual'} onClick={() => setTab('manual')} className={tabButtonClass(tab === 'manual')}>Manual: identidad en fichero</button>
         </div>
       </div>
-      <div className="max-h-[60vh] overflow-y-auto px-5 py-4" role="tabpanel">
+      <div className="max-h-[60vh] overflow-y-auto px-5 py-4" role="tabpanel" tabIndex={0}>
         {tab === 'token' ? <TokenEnrollment /> : <ManualEnrollment />}
       </div>
       <div className="flex justify-end border-t border-zinc-800 px-5 py-3">

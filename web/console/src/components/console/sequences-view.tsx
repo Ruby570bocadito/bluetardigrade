@@ -159,7 +159,7 @@ function SequenceCard({ seq, index, live, hits, campaigns }: { seq: SfSequence; 
                   {alternatives ? (
                     <ul className="mt-1 space-y-0.5">
                       {st.rules.map((r) => (
-                        <li key={r} className={`truncate text-[11px] leading-snug ${live.has(r) ? ((hits.get(r) ?? 0) > 0 ? 'text-zinc-100' : 'text-zinc-300') : 'text-zinc-600 line-through'}`} title={live.has(r) ? r : `${r} (no cargada)`}>
+                        <li key={r} className={`truncate text-[11px] leading-snug ${live.has(r) ? ((hits.get(r) ?? 0) > 0 ? 'text-zinc-100' : 'text-zinc-300') : 'text-zinc-500 line-through'}`} title={live.has(r) ? r : `${r} (no cargada)`}>
                           {r}
                         </li>
                       ))}
@@ -199,7 +199,7 @@ function SequenceCard({ seq, index, live, hits, campaigns }: { seq: SfSequence; 
               {t.startsWith('attack.') ? t.replace('attack.', '') : t}
             </span>
           ))}
-          <span className="ml-auto font-mono text-[10px] text-zinc-600">id: {seq.id}</span>
+          <span className="ml-auto font-mono text-[10px] text-zinc-500">id: {seq.id}</span>
         </div>
       </AnimatedItem>
     </li>

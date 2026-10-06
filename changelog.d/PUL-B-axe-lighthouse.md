@@ -1,0 +1,2 @@
+- The console passes an automated WCAG audit: a new axe-core check runs every view in dark and light themes and the whole surface is clean (17 accessibility fixes landed: description-list semantics, ARIA on brand text, keyboard-scrollable feeds, and the muted text tier brightened to AA in both themes).
+- Lighthouse baseline on the production console: 95 performance / 100 accessibility / 96 best-practices / 100 SEO on the operations panel, 100/100 on the alerts view.

@@ -70,7 +70,7 @@ export function WeekHourHeatmap({ grid }: { grid: WeekHourGrid }) {
                       onPointerLeave={() => setHover(null)}
                       className={cn(
                         'h-6 rounded-[4px] text-center text-[10px] font-medium tabular-nums transition-[filter]',
-                        s < 0 ? 'bg-white/[0.025] text-zinc-600' : s >= 3 ? 'text-[#07111f]' : 'text-white',
+                        s < 0 ? 'bg-white/[0.025] text-zinc-500' : s >= 3 ? 'text-[#07111f]' : 'text-white',
                         hover === key && 'brightness-125',
                       )}
                       style={s >= 0 ? { background: RAMP[s] } : undefined}

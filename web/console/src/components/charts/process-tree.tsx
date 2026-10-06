@@ -38,7 +38,7 @@ export function ProcessTree({ roots, label = 'Árbol de procesos' }: { roots: Pr
               {node.focus ? (
                 <Warning size={13} weight="fill" aria-hidden className="shrink-0 text-red-300" />
               ) : (
-                <GearSix size={13} aria-hidden className={`shrink-0 ${node.external ? 'text-zinc-600' : 'text-violet-300/80'}`} />
+                <GearSix size={13} aria-hidden className={`shrink-0 ${node.external ? 'text-zinc-500' : 'text-violet-300/80'}`} />
               )}
               <span className={`shrink-0 font-mono text-[11px] ${node.focus ? 'font-semibold text-zinc-50' : 'text-zinc-200'}`}>{node.name}</span>
               {node.external ? (
@@ -48,7 +48,7 @@ export function ProcessTree({ roots, label = 'Árbol de procesos' }: { roots: Pr
               )}
               {node.focus && <span className="shrink-0 rounded bg-red-500/15 px-1 text-[10px] text-red-200">disparó la alerta</span>}
               {node.commandLine && <span className="min-w-0 truncate font-mono text-[10px] text-zinc-500">{node.commandLine}</span>}
-              {node.timestamp && <span className="ml-auto shrink-0 font-mono text-[10px] tabular-nums text-zinc-600">{formatTime(node.timestamp)}</span>}
+              {node.timestamp && <span className="ml-auto shrink-0 font-mono text-[10px] tabular-nums text-zinc-500">{formatTime(node.timestamp)}</span>}
             </div>
           </AnimatedItem>
           {node.children.length > 0 && (

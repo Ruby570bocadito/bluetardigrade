@@ -213,7 +213,7 @@ function BundleView({ result }: { result: Extract<ForensicResult, { kind: 'bundl
       </div>
 
       {images.length > 0 && (
-        <p className="mb-2.5 truncate font-mono text-[10px] text-zinc-600" title={images.join('  ')}>
+        <p className="mb-2.5 truncate font-mono text-[10px] text-zinc-500" title={images.join('  ')}>
           {images.join('  ')}
         </p>
       )}
@@ -236,7 +236,7 @@ function BundleView({ result }: { result: Extract<ForensicResult, { kind: 'bundl
               key={`${ev.id}:${index}`}
               className="grid grid-cols-[52px_1fr] gap-2 border-b border-zinc-800/60 py-1.5 last:border-b-0"
             >
-              <span className="font-mono text-[10px] tabular-nums text-zinc-600" title={ev.timestamp}>
+              <span className="font-mono text-[10px] tabular-nums text-zinc-500" title={ev.timestamp}>
                 {formatTime(ev.timestamp)}
               </span>
               <span className="min-w-0">
@@ -251,7 +251,7 @@ function BundleView({ result }: { result: Extract<ForensicResult, { kind: 'bundl
       )}
 
       {bundle.timeline.length >= 200 && (
-        <p className="mt-2 text-[10px] text-zinc-600">
+        <p className="mt-2 text-[10px] text-zinc-500">
           Límite de 200 eventos: el motor conserva la cola y el evento que disparó la alerta si aún lo tenía registrado.
         </p>
       )}
