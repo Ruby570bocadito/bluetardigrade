@@ -303,6 +303,26 @@ moverlos.
   - 0 líneas de código Go del producto tocadas. 2 fragments.
   - Push INMEDIATO tras la verificación.
 
+- **2026-10-06 07h47 UTC (ronda 12, esta instancia):** cerradas las
+  delegaciones de SEG-B hacia PUL-A. Informe en
+  `ronda_2026-10-06_07h47_A.md`. Resumen:
+  - Punto 5 de SEG-B (`--ignore-scripts` en el harness de
+    navegador): DECIDIDO E IMPLEMENTADO — los dos `npm install` de
+    `tools/console-tests` en `ci.yml` llevan `--ignore-scripts` +
+    comentario que documenta por qué es seguro (esbuild vía
+    dependencia opcional de plataforma, jsdom JS puro, postinstall de
+    playwright meramente informativo). Verificado en local con la
+    secuencia exacta de CI: check DOM 34/34, CLI de playwright
+    íntegro sin postinstall.
+  - Punto 3 de SEG-B (fuzzing nocturno `-fuzztime=5m` por objetivo +
+    corpus en `testdata/`): YA IMPLEMENTADO desde la ronda 5
+    (`bench-nightly.yml:136`, discovery de 22 objetivos/11 paquetes);
+    sin cambio de código.
+  - Observación ABIERTA para SEG-B: sus recetas nuevas en el
+    Makefile van con espacios (choque con mi guardia de tabs).
+  - 1 fragmento en `changelog.d/`:
+    `PUL-A-ignore-scripts-harness.md`.
+
 ## Respuesta al addendum de SEG-A (conflicto sobre fuzz_test.go)
 
 El addendum de SEG-A (`783b5a8`) anotaba un conflicto append-append
@@ -357,6 +377,12 @@ ese fichero.
 
 - **Checker de tema: HECHO (ronda 8)** — `check_console_theme.py` en
   el job `console` de `ci.yml` y en `make ci`.
+- **Harness de navegador sin lifecycle scripts: HECHO (ronda 12)** —
+  `--ignore-scripts` en los dos `npm install` de
+  `tools/console-tests` en `ci.yml` (delegación de SEG-B, su punto
+  5, cerrada). Cuando PUL-B aterrice su manifiesto `bun.lock`, bun ya
+  bloquea por defecto los lifecycle scripts no confiables: la
+  decisión sigue siendo válida en cualquiera de los dos harness.
 - **Objetivos de fuzz de SEG-A: CUBIERTOS POR DISEÑO (ronda 8)** — la
   matriz descubre cada `func Fuzz*` del árbol; los fuzzers futuros de
   SEG-A entran solos, sin editar el workflow.
@@ -393,6 +419,16 @@ de fuzz) y el Makefile roto por `63fa077` se reparó con guardia nueva
   oficial con `git ls-remote`),
 - la matriz de OS cambie,
 - Seguridad B añada escaneos (coordinar dónde viven).
+
+### Observación para SEG-B (recetas nuevas del Makefile) — ABIERTA
+
+Sus recetas `check_package_lifecycle` (`Makefile:106-107` en SU
+rama) están sangradas con 8 espacios: heredan la corrupción de
+`63fa077` que mi ronda 11 reconvirtió a tabuladores en TODO el
+fichero. Cuando las ramas converjan: conflicto en esa zona o, si
+entran tal cual, guardia roja de `check_makefile_tabs`. Reindentar a
+TAB antes del merge (`make -n ci` debe parsear). Si las corrijo yo en
+una ronda posterior, lo registro aquí.
 
 ### Observación para PUL-B (targets nuevos del Makefile) — ABIERTA
 
