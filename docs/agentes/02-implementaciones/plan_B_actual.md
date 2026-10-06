@@ -1,24 +1,26 @@
-# Plan de ronda — Implementación B (2026-10-06, ronda 8)
+# Plan de ronda — Implementación B (2026-10-06, ronda 9)
 
-- Tarea del TODO: **IDEA-10 fase 2, primer barrido de vistas** — las dos piezas
-  pequeñas de la cola del roadmap: `noc-mode` (modo NOC completo: pantalla,
-  diapositivas, controles, prosa de motor caído y titulares de las tres
-  pantallas) y `critical-notifier` (menú de avisos, interruptores, avisos de
-  permiso/almacenamiento y el texto de la notificación del navegador, hoy en
-  la lib `alert-notify`).
-- Cómo: secciones `noc` y `notify` nuevas en `dict-es.ts`/`dict-en.ts` con
-  paridad tipada (compilación + paseo del test); `useI18n()` en ambos
-  componentes; `notificationText(fresh, phrases)` pasa a recibir las frases del
-  diccionario (lib pura, ES byte-idéntico); el formateo de números del NOC
-  sigue el idioma activo (es-ES / en). El texto del motor (reglas, hosts,
-  resúmenes) sigue sin traducirse.
-- Ficheros: `noc-mode.tsx`, `critical-notifier.tsx`, `lib/alert-notify.ts`
-  (+test), `lib/i18n/dict-es.ts`, `lib/i18n/dict-en.ts`, `lib/i18n/i18n.test.ts`.
-- Por qué: AD-6/SET-1 y el campo de decisión de triaje siguen bloqueados en
-  IMP-A (sin API de ajustes ni campo publicado; su plan repetido lo confirma) y
-  REP-3 sin rutas que sirvan los ficheros. La fase 2 de i18n es la primera
-  prioridad desbloqueada del roadmap y no solapa con nadie: PUL-B mantiene
-  globals/layout/entity-graph, SEG-B va de `console-service`, PUL-A/SEG-A de Go.
-- Verificación: `bun test`, `tsc --noEmit`, `bun run build`, baterías DOM,
-  navegador, temas, a11y y CSP tras el último cambio de código; el motor no se
-  toca.
+Base: `fc7bdbd` (ronda 8 publicada). `DISCORD_WEBHOOK_URL` sin definir en este
+entorno (rondas 5-9): sin notificaciones. AD-6 + SET-1 SIGUEN BLOQUEADAS: la
+punta de IMP-A sigue en `c357cc8` (solo su plan; la API `GET/PUT
+/api/settings/ad` + `POST /api/ad/test` sigue sin publicar ni openapi). Merge
+de su ronda = gatillo, como las rondas 8.
+
+1. **IDEA-10 fase 2, continuación del barrido i18n: `alerts-view`** (la cola
+   de triaje, primera de la cola del roadmap): sección `alerts` en los
+   diccionarios ES/EN con paridad tipada, todos los subcomponentes
+   (SeverityStrip, AlertDetail, AlertDetailBody, AlertGraph, StatusChip,
+   TriagePanel) consumen `useI18n`; ES byte-idéntico (las baterías fijan
+   «Reconocer», «Cerrar», «Anterior», «Siguiente», «Histórico», «Buscar en
+   alertas»); `by: 'consola'` queda literal (dato de auditoría, no copia de
+   UI); las etiquetas de severidad del strip entran al diccionario SOLO para
+   esta vista (SEVERITY_LABEL sigue para las vistas sin barrer).
+2. Tests i18n fase 3 (anclas ES byte-idénticas + traducción EN real).
+3. Verificación completa tras el ÚLTIMO cambio: bun test, tsc, build, DOM,
+   navegador, axe (2 temas), temas, CSP. Motor sin tocar.
+4. Informe `ronda_2026-10-06_09h25_B.md`, roadmap, `changelog.d/`,
+   merge-tree contra las cinco puntas, push.
+
+No toco: motor (IMP-A), sensor, CI/Makefile (PUL-A), `globals.css`/
+`layout.tsx`/`entity-graph.tsx` (PUL-B), `user-session`/`detectors-menu`
+(fuera del barrido por depender de otros).

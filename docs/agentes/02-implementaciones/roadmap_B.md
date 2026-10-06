@@ -2,32 +2,35 @@
 
 Archivo vivo: qué tengo a medias, qué sigue y por qué. Se actualiza cada ronda.
 
-## Estado actual (ronda 8 del nuevo ciclo, 2026-10-06)
+## Estado actual (ronda 9 del nuevo ciclo, 2026-10-06)
 
-- Rama `carril/implementacion-b` sobre la ronda 7 (`b5e26d7`); rondas 2-7
+- Rama `carril/implementacion-b` sobre la ronda 8 (`fc7bdbd`); rondas 2-8
   entregadas (pestañas del panel, SIM-4, REP-1, informe de ruido, SIM-3, REP-4,
   enlace del informe de caso, IDEA-3 plantillas de incidente, IDEA-11
-  asistente de primer arranque, IDEA-10 fase 1, AD-5, cierre de SET-3).
-- **Ronda 8 ENTREGADA: IDEA-10 fase 2, primer barrido (noc + avisos).**
-  - Secciones `noc`/`notify` en los diccionarios ES/EN (paridad tipada + paseo
-    del test); `noc-mode.tsx` y `critical-notifier.tsx` consumen `useI18n`;
-    el texto del toast del navegador sale del diccionario vía
-    `notificationText(fresh, phrases)` (lib pura, `NotifyPhrases`; ES
-    byte-idéntico, EN con sus plurales). Los números del NOC formatean con el
-    locale del idioma activo (es-ES/en-US); los datos del motor (reglas,
-    hosts, resúmenes) siguen sin traducirse. 442/442 tests, tsc/build
-    limpios, DOM 34/34, navegador 23/23, axe 18/18, temas OK, CSP PASS.
+  asistente de primer arranque, IDEA-10 fases 1-2, AD-5, cierre de SET-3).
+- **Ronda 9 ENTREGADA: IDEA-10 fase 2, segundo barrido (`alerts-view`).**
+  - Sección `alerts` en los diccionarios ES/EN (paridad tipada; ES
+    byte-idéntico incluidas las seis cadenas que la batería de navegador fija
+    como selectores: «Reconocer», «Cerrar», «Anterior», «Siguiente»,
+    «Histórico», «Buscar en alertas»). El componente principal y sus seis
+    subcomponentes (strip, detalle, cuerpo, grafo, chip, triaje) consumen
+    `useI18n`; `by: 'consola'` queda literal (dato de auditoría, no copia de
+    UI); `alerts.sevLabels` traduce el strip SOLO en esta vista
+    (`SEVERITY_LABEL` sigue para las vistas sin barrer). El fixture DOM
+    monta dentro de `I18nProvider` con idioma `es` guardado (jsdom declara
+    `en-US`; la elección guardada validada siempre gana). 444/444 tests
+    (2 nuevos de fase 3), tsc/build limpios, DOM 34/34, navegador 23/23,
+    axe 18/18, temas OK, CSP PASS.
 - **Coordinación CSP**: los dos scripts inline de boot (tema de PUL-A/PUL-B e
   idioma de la ronda 6) van firmados con el nonce por petición del proxy;
   cualquier script inline nuevo del armazón necesita lo mismo.
-- **AD-6 a punto de desbloquearse**: el plan nuevo de IMP-A (`c357cc8`,
-  empujado durante mi ronda 8) declara la **API de ajustes AD**
-  (`GET/PUT /api/settings/ad` + `POST /api/ad/test`, 41→44 rutas) como tarea
-  #1 de su ronda en curso; su openapi todavía no la publica. Sin la ruta
-  publicada no hay formulario honesto que construir — el merge de su ronda
-  es el gatillo de AD-6+SET-1 (pantalla).
+- **AD-6 + SET-1 SIGUEN BLOQUEADAS** (rondas 8-9): la punta de IMP-A sigue
+  en `c357cc8` (solo su plan; la API `GET/PUT /api/settings/ad` +
+  `POST /api/ad/test` sigue sin publicar ni en openapi). El merge de su
+  ronda es el gatillo de la pantalla de ajustes (General/Ingesta/AD/
+  Integraciones/Notificaciones/Cuentas/Apariencia).
 - **DISCORD no disponible esta sesión** (`DISCORD_WEBHOOK_URL` sin definir):
-  sin notificaciones de inicio/cierre; no se reintentó (rondas 5-8).
+  sin notificaciones de inicio/cierre; no se reintentó (rondas 5-9).
 
 ## Decisiones de carrera registradas
 
@@ -69,12 +72,13 @@ Archivo vivo: qué tengo a medias, qué sigue y por qué. Se actualiza cada rond
    se escribe pero nunca se muestra; pantalla
    General/Ingesta/AD/Integraciones/Notificaciones/Cuentas/Apariencia. El
    merge de su ronda es el gatillo.
-2. **IDEA-10 fase 2, continuación del barrido**: la receta de la ronda 8 es
-   mecánica (secciones de diccionario ES/EN + `useI18n` + ES byte-idéntico +
-   tests de paridad). Cola: `alerts-view` y las demás vistas de datos en
-   rondas separadas por tamaño; Directorio entra a la cola como las demás.
-   Quedan fuera por depender de otros: `user-session`/`console-user`,
-   `detectors-menu`.
+2. **IDEA-10 fase 2, continuación del barrido**: la receta de las rondas 8-9
+   es mecánica (secciones de diccionario ES/EN + `useI18n` + ES byte-idéntico
+   + tests de paridad + ajuste del fixture DOM si la vista entra en él).
+   Cola: `incidentes` (la siguiente por tamaño y tráfico de triaje) y las
+   demás vistas de datos en rondas separadas por tamaño; Directorio entra a
+   la cola como las demás. Quedan fuera por depender de otros:
+   `user-session`/`console-user`, `detectors-menu`.
 3. **Campo de decisión de triaje** (petición MEDIA repetida a IMP-A):
    desbloquea el «falso positivo» real del flujo de triaje y los
    porcentajes FP del ruido.
