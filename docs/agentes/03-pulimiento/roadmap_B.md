@@ -1,10 +1,23 @@
 # Roadmap B — carril Pulimiento B (archivo vivo)
 
-Última actualización: 2026-10-06, ronda 11 de este carril sobre la
-rama `carril/pulimiento-b` (base `37a6188`, plan de ronda 11; push
+Última actualización: 2026-10-06, ronda 12 de este carril sobre la
+rama `carril/pulimiento-b` (base `8cbd62c`, plan de ronda 12; push
 pendiente de `GH_TOKEN` en el entorno).
 
 ## Hecho (rondas cerradas)
+
+- **2026-10-06 — POL-7 Fase A: insignia genérica (ronda 12):**
+  `ui/badge.tsx` nuevo con la forma única de insignia/chip y solo dos
+  variantes tokenizadas (`neutral`, `accent`); los colores de DATO
+  (severidad, series) llegan por `className` desde sus mapas — la
+  primitiva hace imposible un acento azul por accidente. `SeverityBadge`
+  y `MonoTag` delegan en ella con colores intactos; `MonoTag` gana
+  `title` en strings. Cero cambios en vistas. Batería completa en verde
+  (371 tests, tsc, build, tema, 34 DOM, 21/21 navegador, 18/18 axe,
+  motion, CSP) contra el build recién hecho tras matar un
+  `next-server` residual del 3100 (trampa de la ronda 6, detectada
+  antes de medir). merge-tree ×5 limpio. Informe:
+  `ronda_2026-10-06_12h25_B.md`.
 
 - **2026-10-06 — Guardia del tercer barrido i18n de IMP-B y lectura
   del `csvCell` de SEG-B (ronda 10):** `0380c89` traduce incidentes y
