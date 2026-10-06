@@ -464,3 +464,40 @@ siguiente (checklist en la ronda 3 de este roadmap y modelo §3).
   MEDIA), guardia del botón (IMP-B, BAJA), Makefile a main,
   hallazgos r5 de IMP-B, SEC-5/SEC-9 con la fusión.
 - Informe: ronda_2026-10-06_09h51_B.md. Sin changelog. PARADA.
+
+## Ronda 16 (2026-10-06, 10h28 UTC, verificación)
+
+- **Delta:** SEG-A `5678f6b..4d23194` (su ronda 17): TABs del
+  Makefile reparados, `--ignore-scripts` en targets npm, informe con
+  2 hallazgos BAJOS nuevos sobre SET-1.
+- **BAJA-1 CONFIRMADA (contraseña recortada, para IMP-B):** el
+  cliente envía `password?.trim()` (`draftPayload`; rutas runProbe
+  l.391 y runSave l.410) pero el motor almacena VERBATIM
+  (`pw := *in.Password` → sobre SEC-2) y la sonda usa verbatim.
+  Contraseñas de bind con espacios —legales en AD— quedan mutadas
+  para siempre. Fix: enviar tal cual, trim solo para decidir si
+  viaja. Mi ronda 15 no lo vio: el checklist de exposición no cubre
+  el contrato de normalización — lección registrada.
+- **BAJA-2 CONFIRMADA (presupuesto de sonda, para IMP-B):** cliente
+  aborta a 30 s (`AbortSignal.timeout(30_000)` en engine-writes
+  l.28) vs motor 45 s (`context.WithTimeout(r.Context(), 45s)`):
+  el aborto del fetch mata el contexto del motor ⇒ 30-45 s
+  inalcanzable vía consola. Fix: 50 s en el cliente.
+- **Tabla Makefile de SEG-A verificada exacta:** main ROJO (66
+  líneas espacios), mi carril OK (reparo `a04379b`), su reparación
+  OK. Paridad `--ignore-scripts` byte a byte (4 líneas npm idénticas).
+- **CORRECCIÓN a los dos registros de conflictos:** con el Makefile
+  reescrito de SEG-A, la fusión conmigo confligte en Makefile (2
+  hunks triviales: alcance del vet windows, línea del check de
+  tema) — su §8 decía «LIMPIO contra todos» y mi matriz registraba
+  solo scenrun_test.go (receta nº 2 vigente). PUL-A: único
+  conflicto real sigue siendo su Makefile de 3 hunks npm (receta
+  nº 1); el .py auto-fusiona limpio. IMP-B/PUL-B: CLEAN con guardia
+  ROJA en las mismas 7 líneas (4.ª confirmación del caso
+  silencioso). main/IMP-A: CLEAN + guardia verde.
+- Puertas: hot-swap AD-6 (MEDIA, IMP-A, sin movimiento), TRES BAJOS
+  en SET-1 para IMP-B (botón sin confirmación + los 2 de SEG-A),
+  Makefile roto en main (6 de 7 carriles estaban rotos en solitario;
+  lo reparan las fusiones de SEG-A/mí), SEC-9 bloqueado, SEC-5
+  cerrado.
+- Informe: ronda_2026-10-06_10h28_B.md. Sin changelog. PARADA.
