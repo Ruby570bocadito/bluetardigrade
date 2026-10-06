@@ -580,15 +580,16 @@ func runEngine(o *options, interactive bool) error {
 				if aerr != nil {
 					log.Fatalf("[ENGINE] %v", aerr)
 				}
-				adConn, aerr := ad.New(adCfg, st, log.New(os.Stderr, "[AD] ", log.LstdFlags),
-					func() []string {
-						hosts := fleetTracker.Snapshot(time.Now())
-						names := make([]string, 0, len(hosts))
-						for _, fh := range hosts {
-							names = append(names, fh.Host)
-						}
-						return names
-					})
+				adLogger := log.New(os.Stderr, "[AD] ", log.LstdFlags)
+				sensorHosts := func() []string {
+					hosts := fleetTracker.Snapshot(time.Now())
+					names := make([]string, 0, len(hosts))
+					for _, fh := range hosts {
+						names = append(names, fh.Host)
+					}
+					return names
+				}
+				adConn, aerr := ad.New(adCfg, st, adLogger, sensorHosts)
 				if aerr != nil {
 					log.Fatalf("[ENGINE] %v", aerr)
 				}
@@ -596,6 +597,39 @@ func runEngine(o *options, interactive bool) error {
 					log.Printf("[ENGINE] active directory: %v", aerr)
 				}
 				defer adConn.Stop()
+
+				// AD-6: the settings surface commits a new config and
+				// hot-swaps the connector. The swap never touches the
+				// request path: build the next connector (validation
+				// only, no I/O), publish it with SetAD, then stop the
+				// previous loop in the background. Calls are serialized
+				// by the hub's adWriteMu, so the `current` bookkeeping
+				// needs no extra lock. Shutdown relies on ctx
+				// cancellation for hot-swapped connectors (their loops
+				// select on ctx.Done); the initial connector keeps its
+				// explicit Stop above. A late sync of the PREVIOUS
+				// connector is discarded at its ctx check; at worst it
+				// leaves one stale snapshot that the next tick overwrites.
+				current := adConn
+				reconfigure := func(cfg *ad.Config) error {
+					next, nerr := ad.New(cfg, st, adLogger, sensorHosts)
+					if nerr != nil {
+						return nerr
+					}
+					prev := current
+					current = next
+					hub.SetAD(next)
+					go func() {
+						if rerr := next.Run(ctx); rerr != nil {
+							adLogger.Printf("[AD] sync after settings change failed: %v", rerr)
+						}
+					}()
+					if prev != nil {
+						go prev.Stop()
+					}
+					return nil
+				}
+				hub.SetADSettings(o.adConfig, reconfigure)
 				hub.SetAD(adConn)
 				mode := "LDAPS"
 				if adCfg.StartTLS {

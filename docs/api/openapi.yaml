@@ -2220,6 +2220,183 @@ paths:
               schema:
                 $ref: '#/components/schemas/ADPostureHistory'
 
+  /api/settings/ad:
+    get:
+      tags: [ad]
+      operationId: getADSettings
+      summary: Effective Active Directory connector configuration (AD-6)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The configuration the connector currently runs with — the same
+        document the settings screen edits — plus the presence of its two
+        file-backed resources (the CA bundle and the credential envelope;
+        contents are never served) and the hot-reload bookkeeping.
+
+        Admin surface: the whole `/api/settings/ad` family answers 403
+        while the engine runs without `-api-write` (the engine's single
+        bearer token has no role model; arming writes IS the admin gate),
+        and 501 when the engine runs without `-ad` (feature off). The
+        service-account password is NEVER part of the response: it lives
+        in its own SEC-2 envelope file and is write-only over this API.
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: API writes are disabled (no -api-write at startup)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "api writes are disabled: restart the engine with -api-write (or SF_API_WRITE=1) to allow Active Directory settings"
+        '501':
+          description: The connector is not armed (no -ad config at startup)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Effective configuration, credential-free
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ADSettings'
+    put:
+      tags: [ad]
+      operationId: putADSettings
+      summary: Validate, commit and hot-reload the AD connector settings (AD-6)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        One call does four things, in this order: validate the merged
+        configuration with the SAME rules the `-ad` loader applies (a
+        rejected change never touches the disk); write the password, when
+        the request carries one, into its own SEC-2 envelope (DPAPI on
+        Windows, 0600 plain elsewhere — never into the YAML, never into a
+        log); commit the YAML atomically (temp+rename+Sync); and hot-swap
+        the live connector (the next sync uses the new settings; the old
+        loop stops in the background). The response is the new effective
+        document with `reload_pending: true`.
+
+        Guard rails: 409 when the `-ad` file changed on disk since the
+        engine loaded or last wrote it (hand edits are reconciled by a
+        human, never clobbered); 400 carries the loader's own validation
+        message. Every committed change leaves one audit line in the
+        engine log listing the changed field names — the password value is
+        never logged, echoed or stored in the YAML.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ADSettingsUpdate'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          description: Configuration rejected (validation) or malformed body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: API writes are disabled (no -api-write at startup)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "api writes are disabled: restart the engine with -api-write (or SF_API_WRITE=1) to allow Active Directory settings"
+        '409':
+          description: The -ad file drifted on disk (hand edit not reconciled)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Credential or config file not writable (engine log has the detail)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '501':
+          description: The connector is not armed (no -ad config at startup)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: The committed, effective configuration (reload pending)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ADSettings'
+
+  /api/ad/test:
+    post:
+      tags: [ad]
+      operationId: testADConnection
+      summary: 'Probar conexión — one bounded, read-only probe of a candidate configuration (AD-6)'
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The settings screen's "Probar conexión" button: opens the SAME
+        TLS-protected transport the connector uses (organization CA only,
+        pinned server name, TLS 1.2 floor), performs the authenticated
+        bind and samples every object kind (users, groups, computers, OUs)
+        up to 200 entries each, so the operator sees what the service
+        account can actually read before committing anything. It stores
+        nothing anywhere.
+
+        A failed CONNECTION is a successful TEST: the verdict is the
+        returned `ok` boolean (with a credential-free `error` reason);
+        the HTTP 400s are for malformed or invalid REQUESTS. The route is
+        armed with `-api-write` alone — an operator may test a full
+        configuration BEFORE restarting the engine with `-ad` (when no
+        connector is armed, the request must be complete). One probe at a
+        time: a double click cannot hammer the domain controller. The
+        password, when the request carries one, crosses only this call
+        and is never stored by it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ADSettingsUpdate'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          description: Configuration rejected (validation), malformed body, or no password available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: API writes are disabled (no -api-write at startup)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "api writes are disabled: restart the engine with -api-write (or SF_API_WRITE=1) to allow Active Directory settings"
+        '200':
+          description: The probe verdict (ok true/false with per-kind samples)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ADTestResult'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2928,6 +3105,195 @@ components:
               score:
                 type: integer
                 description: the 0-100 score that sync computed
+    ADSettings:
+      type: object
+      required: [server, port, start_tls, base_dn, ca_file, ca_file_present,
+        bind_dn, password_file, password_stored, interval_seconds,
+        include_ous, exclude_ous, max_objects, page_size, inactive_days,
+        krbtgt_max_age_days, work_start, work_end, work_days, reload_pending]
+      description: |
+        The effective connector configuration. The credential is not part
+        of the document at all: `password_stored` says whether its SEC-2
+        envelope file exists on the engine host, and nothing more.
+      properties:
+        server:
+          type: string
+          description: AD DS hostname (also the TLS ServerName pinned in the handshake)
+        port:
+          type: integer
+          description: 636 for LDAPS, 389 for StartTLS
+        start_tls:
+          type: boolean
+          description: true upgrades ldap:// with StartTLS before the bind
+        base_dn:
+          type: string
+          description: subtree the connector reads
+        ca_file:
+          type: string
+          description: path of the CA PEM bundle on the engine host
+        ca_file_present:
+          type: boolean
+          description: the CA file exists right now (presence, not content)
+        bind_dn:
+          type: string
+          description: read-only service account DN
+        password_file:
+          type: string
+          description: path of the credential envelope on the engine host
+        password_stored:
+          type: boolean
+          description: the credential envelope exists right now; the secret itself is never served
+        interval_seconds:
+          type: integer
+          description: seconds between syncs (minimum 300)
+        include_ous:
+          type: array
+          description: when set, only objects under these OUs sync
+          items:
+            type: string
+        exclude_ous:
+          type: array
+          description: subtrees pruned after the include filter
+          items:
+            type: string
+        max_objects:
+          type: integer
+          description: per-sync object ceiling (the fetch STOPS at the cap)
+        page_size:
+          type: integer
+          description: RFC 2696 page size (ceiling 1000)
+        inactive_days:
+          type: integer
+          description: AD-2 stale-account threshold in days
+        krbtgt_max_age_days:
+          type: integer
+          description: AD-2 krbtgt password-age threshold in days
+        work_start:
+          type: string
+          description: work-hours window start (HH:MM 24h; empty when unset)
+        work_end:
+          type: string
+          description: work-hours window end (HH:MM 24h; empty when unset)
+        work_days:
+          type: array
+          description: working weekdays 0=Sunday..6=Saturday (default Mon-Fri when the window is set)
+          items:
+            type: integer
+        reload_pending:
+          type: boolean
+          description: a committed settings change is being applied to the live connector
+        last_reload_at:
+          type: string
+          description: RFC 3339 instant of the last reload attempt
+        last_reload_error:
+          type: string
+          description: why the last reload could not take over (empty when it succeeded; the committed config applies on restart)
+    ADSettingsUpdate:
+      type: object
+      description: |
+        Settings change (PUT) or candidate (test): every field optional,
+        a present field REPLACES the current value; absent fields keep
+        theirs (or the engine default on a fresh commit). `password` is
+        write-only — it updates the credential envelope and is never
+        stored in, or echoed back as, configuration.
+      properties:
+        server:
+          type: string
+        port:
+          type: integer
+        start_tls:
+          type: boolean
+        base_dn:
+          type: string
+        ca_file:
+          type: string
+        bind_dn:
+          type: string
+        password_file:
+          type: string
+        password:
+          type: string
+          description: write-only; empty is rejected — omit the field to keep the stored credential
+        interval_seconds:
+          type: integer
+        include_ous:
+          type: array
+          items:
+            type: string
+        exclude_ous:
+          type: array
+          items:
+            type: string
+        max_objects:
+          type: integer
+        page_size:
+          type: integer
+        inactive_days:
+          type: integer
+        krbtgt_max_age_days:
+          type: integer
+        work_start:
+          type: string
+        work_end:
+          type: string
+        work_days:
+          type: array
+          items:
+            type: integer
+    ADTestResult:
+      type: object
+      required: [ok, tls_version, cipher_suite, bind_dn, base_dn, kinds, duration_ms]
+      description: |
+        Verdict of one "Probar conexión" probe. `ok: false` means the
+        probe RAN and the connection did not (dial, TLS, credentials or
+        readability); the reason travels credential-free in `error`.
+      properties:
+        ok:
+          type: boolean
+          description: bind succeeded and every kind search answered
+        tls_version:
+          type: string
+          description: negotiated TLS version (LDAPS; empty over StartTLS, whose handshake the client library performs internally)
+        cipher_suite:
+          type: string
+          description: negotiated cipher suite (LDAPS only, same caveat)
+        bind_dn:
+          type: string
+          description: the service account the probe bound as
+        base_dn:
+          type: string
+          description: the subtree the probe sampled
+        kinds:
+          type: array
+          description: per-kind readout (sample, not a directory dump)
+          items:
+            type: object
+            required: [kind, count, cap, truncated, sample_dns]
+            properties:
+              kind:
+                type: string
+                enum: [user, group, computer, ou]
+              count:
+                type: integer
+                description: entries actually read (a floor when truncated)
+              cap:
+                type: integer
+                description: the per-kind sample ceiling (200)
+              truncated:
+                type: boolean
+                description: the ceiling was hit; the directory holds at least `count`
+              sample_dns:
+                type: array
+                description: first DNs read, for the console's preview
+                items:
+                  type: string
+        duration_ms:
+          type: integer
+          format: int64
+          description: wall-clock duration of the whole probe
+        error:
+          type: string
+          description: credential-free reason when ok is false
     NotifyChannelStats:
       type: object
       description: |

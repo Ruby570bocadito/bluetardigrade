@@ -801,6 +801,54 @@ the secret, its base64/hex forms and its length from every `/api/ad/*`
 response) and is zeroed from memory right after each bind attempt; a
 failed bind reports server and result code, never the credential.
 
+### Settings over the API (AD-6)
+
+The settings the console's AD-6 screen edits live in three routes —
+all admin business, so the whole family answers `403` while the engine
+runs without `-api-write` (the engine's single bearer token has no
+role model; arming writes IS the admin gate), and `GET`/`PUT` answer
+`501` without `-ad` (feature off, the same contract as the rest of
+`/api/ad`):
+
+- `GET /api/settings/ad` — the effective configuration: server, port,
+  transport, base DN, the two file paths with their presence booleans
+  (contents are never served), sync interval, OU filters, safety
+  valves, posture thresholds and the work-hours window. The password
+  is NOT part of the document: `password_stored` says whether its SEC-2
+  envelope exists, nothing more.
+- `PUT /api/settings/ad` — validate, commit, hot-reload. The merged
+  configuration is validated with the SAME rules the `-ad` loader
+  applies (a rejected change never touches the disk); a password in
+  the request goes to its own SEC-2 envelope file (never into the
+  YAML, never into a log); the YAML is installed atomically
+  (temp+rename+Sync, mode 0600); the live connector is hot-swapped
+  (the next sync uses the new settings; the response reports
+  `reload_pending` and the swap result lands in `last_reload_*`).
+  Every commit leaves one audit line in the engine log listing the
+  changed field names. A `-ad` file edited by hand since the engine
+  loaded it refuses the PUT with `409` — reconcile the hand edit
+  first; the API never clobbers it.
+- `POST /api/ad/test` — the "Probar conexión" button: one bounded,
+  read-only probe (same TLS transport, authenticated bind, up to 200
+  sampled entries per object kind) of a candidate configuration. It
+  stores nothing, answers 200 with `ok: true/false` (a failed
+  CONNECTION is a successful TEST), works without `-ad` (test a full
+  configuration BEFORE restarting the engine with it), and runs one
+  probe at a time.
+
+```bash
+curl -s -X PUT "$API/api/settings/ad" \
+  -H "Authorization: Bearer $SF_API_TOKEN" \
+  -d '{"interval_seconds": 900, "inactive_days": 60}'
+curl -s -X POST "$API/api/ad/test" \
+  -H "Authorization: Bearer $SF_API_TOKEN" \
+  -d '{"server": "dc01.corp.example.com", "port": 636}'
+```
+
+The machine-readable contract (including the `ADSettingsUpdate` field
+list and the `ADTestResult` verdict shape) lives in
+[`api/openapi.yaml`](api/openapi.yaml).
+
 ## Reputation lookups (opt-in)
 
 Set `SF_VT_API_KEY` (VirusTotal) and/or `SF_ABUSEIPDB_API_KEY`

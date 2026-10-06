@@ -79,6 +79,18 @@ type Config struct {
 	// KrbtgtMaxAgeDays is the AD-2 krbtgt-password-age threshold.
 	// Default 365 (the twice-rotated-after-compromise guidance).
 	KrbtgtMaxAgeDays int `yaml:"krbtgt_max_age_days"`
+	// WorkStart is the "from" edge of the work-hours window (HH:MM,
+	// 24h clock) the logon analysis (AD-3) will use to tell an
+	// office-hours login from a night one. Validated and stored now,
+	// served through the settings API; the analysis consumes it once
+	// WEF telemetry exists (declared honestly: no consumer today).
+	WorkStart string `yaml:"work_start"`
+	// WorkEnd is the "to" edge of the same window. Configured
+	// together with WorkStart; start must be strictly before end.
+	WorkEnd string `yaml:"work_end"`
+	// WorkDays lists the working weekdays (0=Sunday .. 6=Saturday).
+	// Empty while the window is configured defaults to Monday-Friday.
+	WorkDays []int `yaml:"work_days"`
 }
 
 // DefaultMaxObjects bounds a sync when the config does not say.
@@ -164,8 +176,77 @@ func (c *Config) validate() error {
 			return fmt.Errorf("OU filter %q is outside base_dn %q", dn, c.BaseDN)
 		}
 	}
+	if err := c.validateWorkHours(); err != nil {
+		return err
+	}
 	return nil
 }
+
+// Validate re-checks a programmatically composed config (the AD-6
+// settings API builds one from the file on disk plus a PUT body)
+// with exactly the rules Load applies to files: one rule set, two
+// entrances, or the API would accept what the loader refuses.
+func (c *Config) Validate() error { return c.validate() }
+
+// validateWorkHours checks the AD-3 work window: both edges or
+// neither, HH:MM, start before end, and days only make sense with a
+// window (a weekday list alone configures nothing).
+func (c *Config) validateWorkHours() error {
+	s, e := strings.TrimSpace(c.WorkStart), strings.TrimSpace(c.WorkEnd)
+	if s == "" && e == "" {
+		if len(c.WorkDays) > 0 {
+			return fmt.Errorf("work_days without work_start/work_end: configure the window first")
+		}
+		return nil
+	}
+	if s == "" || e == "" {
+		return fmt.Errorf("work_start and work_end are configured together")
+	}
+	sm, err := parseHHMM(s)
+	if err != nil {
+		return fmt.Errorf("work_start %q is not HH:MM (24h)", s)
+	}
+	em, err := parseHHMM(e)
+	if err != nil {
+		return fmt.Errorf("work_end %q is not HH:MM (24h)", e)
+	}
+	if sm >= em {
+		return fmt.Errorf("work_start %s is not before work_end %s", s, e)
+	}
+	seen := map[int]bool{}
+	for _, d := range c.WorkDays {
+		if d < 0 || d > 6 {
+			return fmt.Errorf("work_days entry %d out of range 0-6 (0=Sunday)", d)
+		}
+		if seen[d] {
+			return fmt.Errorf("work_days entry %d is repeated", d)
+		}
+		seen[d] = true
+	}
+	return nil
+}
+
+// parseHHMM parses a 24h clock time into minutes since midnight.
+func parseHHMM(s string) (int, error) {
+	var h, m int
+	if _, err := fmt.Sscanf(s, "%d:%d", &h, &m); err != nil {
+		return 0, fmt.Errorf("not HH:MM")
+	}
+	if h < 0 || h > 23 || m < 0 || m > 59 {
+		return 0, fmt.Errorf("out of range")
+	}
+	// Reject forms Sscanf leniently accepts, like "8:5": a config that
+	// means 08:50 must not silently become 08:05.
+	parts := strings.Split(s, ":")
+	if len(parts) != 2 || len(parts[0]) != 2 || len(parts[1]) != 2 {
+		return 0, fmt.Errorf("not HH:MM")
+	}
+	return h*60 + m, nil
+}
+
+// DefaultWorkDays is the Monday-Friday window applied when work
+// hours are configured without an explicit weekday list.
+var DefaultWorkDays = []int{1, 2, 3, 4, 5}
 
 // normalized returns the config with defaults applied.
 func (c *Config) normalized() *Config {
@@ -191,6 +272,11 @@ func (c *Config) normalized() *Config {
 	}
 	if n.KrbtgtMaxAgeDays == 0 {
 		n.KrbtgtMaxAgeDays = 365
+	}
+	n.WorkStart = strings.TrimSpace(n.WorkStart)
+	n.WorkEnd = strings.TrimSpace(n.WorkEnd)
+	if n.WorkStart != "" && n.WorkEnd != "" && len(n.WorkDays) == 0 {
+		n.WorkDays = append([]int{}, DefaultWorkDays...)
 	}
 	return &n
 }

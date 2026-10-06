@@ -23,6 +23,13 @@ func (h *Hub) registerAD(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/ad/objects/{kind}", h.handleADObjects)
 	mux.HandleFunc("GET /api/ad/posture", h.handleADPosture)
 	mux.HandleFunc("GET /api/ad/posture/history", h.handleADPostureHistory)
+	// AD-6 settings surface (ad_settings.go): the handlers answer
+	// 403/501 by themselves when the engine runs without -api-write
+	// or without -ad, so the registration stays unconditional like
+	// the rest of this family.
+	mux.HandleFunc("GET /api/settings/ad", h.handleADSettingsGet)
+	mux.HandleFunc("PUT /api/settings/ad", h.handleADSettingsPut)
+	mux.HandleFunc("POST /api/ad/test", h.handleADTest)
 }
 
 const adOff = "the Active Directory connector is not armed: start the engine with -ad <config.yaml> (and -store, which holds the snapshot)"

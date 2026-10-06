@@ -56,3 +56,11 @@ page_size: 500
 # Posture thresholds (AD-2).
 inactive_days: 90               # stale-account window
 krbtgt_max_age_days: 365        # krbtgt password age before it is flagged
+
+# Work-hours window. Validated and served by the settings API (AD-6)
+# today; the logon analysis (AD-3) consumes it once WEF telemetry
+# exists. 24h HH:MM, start strictly before end. work_days lists
+# weekdays 0=Sunday..6=Saturday; omit it for the Monday-Friday default.
+#work_start: "08:00"
+#work_end: "18:00"
+#work_days: [1, 2, 3, 4, 5]

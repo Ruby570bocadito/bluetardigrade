@@ -8,6 +8,7 @@
 package api
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -113,6 +114,20 @@ type Hub struct {
 	supWriteMu   sync.Mutex
 	writeEnabled bool
 	suppressPath string
+
+	// AD-6 settings surface (ad_settings.go): armed only with -ad,
+	// handlers additionally demand -api-write. adWriteMu serializes
+	// the config-file read-merge-write (and with it the engine's
+	// reconfigure callback); adTestMu allows one DC probe at a time.
+	// The reload bookkeeping is atomic: GET never blocks on (or
+	// races) a PUT's asynchronous connector swap.
+	adSettingsPath  string
+	adReconfigure   func(*ad.Config) error
+	adConfigSum     [sha256.Size]byte
+	adWriteMu       sync.Mutex
+	adTestMu        sync.Mutex
+	adReloadPending atomic.Bool
+	adReloadRecord  atomic.Pointer[adReloadRecord]
 
 	// active response (C3, armed only with -allow-kill + token + an
 	// open audit file; see respond_write.go). nil = the route answers
