@@ -115,6 +115,12 @@ and the `make dist` target.
   - The console palette and accessibility (axe-core, 18 views, both
     themes) are checked.
   - Lighthouse baseline: 97/100/96/100.
+- **Windows launcher:**
+  - `sf-console`/`start-engine` arm the Validation view (`-scenarios`)
+    whenever the install ships `scenarios\`. The replay stays inside the
+    engine and never reaches the alerts, the store or the risk score.
+  - The AD connector (`-ad`) is armed only when the operator writes
+    `tools\config\ad.yaml`.
 
 ### Detection validation, reports and the noise report (2026-10-05)
 

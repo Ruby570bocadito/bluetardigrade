@@ -36,11 +36,18 @@ try {
     Assert ($script:childArguments -notmatch $savedApi) 'API token in process arguments'
     Assert ($script:childArguments -match '-api-write' -and $script:childArguments -match '-store ') 'Console write surface or history not enabled'
     Assert ($script:childArguments -notmatch '-allow-kill') 'Active response armed without an operator allowlist'
+    Assert ($script:childArguments -notmatch '-scenarios' -and $script:childArguments -notmatch '-ad ') 'Validation or AD armed without their files'
     Assert ((Initialize-SfApiToken $testRoot) -eq $savedApi) 'API token regenerated on a later start'
     Set-Content (Join-Path $testRoot 'tools\config\respond-operators.yaml') 'version: 2'
     Start-SfEngine $testRoot (Join-Path $testRoot 'bin\engine.exe') 'flag-token' | Out-Null
     Assert ($script:childArguments -match '-allow-kill' -and $script:childArguments -match 'respond-audit') 'Operator allowlist did not arm active response'
     Remove-Item (Join-Path $testRoot 'tools\config\respond-operators.yaml')
+    New-Item -ItemType Directory (Join-Path $testRoot 'scenarios') -Force | Out-Null
+    Set-Content (Join-Path $testRoot 'tools\config\ad.yaml') 'server: dc01'
+    Start-SfEngine $testRoot (Join-Path $testRoot 'bin\engine.exe') 'flag-token' | Out-Null
+    Assert ($script:childArguments -match '-scenarios "[^"]*\\scenarios"') 'Scenario library did not arm detection validation'
+    Assert ($script:childArguments -match '-ad "[^"]*\\ad\.yaml"') 'AD config did not arm the connector'
+    Remove-Item (Join-Path $testRoot 'scenarios'), (Join-Path $testRoot 'tools\config\ad.yaml')
     Assert ($script:childArguments -notmatch '0\.0\.0\.0') 'Ingest listened beyond loopback without identities'
     Set-Content (Join-Path $testRoot 'tools\config\ingest-identities.yaml') 'version: 1'
     Start-SfEngine $testRoot (Join-Path $testRoot 'bin\engine.exe') 'flag-token' | Out-Null
@@ -81,7 +88,7 @@ function Start-SfEngine {
 '@
     & (Join-Path $testRoot 'scripts\start-engine.ps1')
     Assert ((Get-Content (Join-Path $testRoot 'run\resolved-root.txt')) -eq $testRoot) 'NoConsole startup depends on web sources'
-    Write-Output 'PASS: persisted settings, precedence, child environment, API token and engine arguments, stable state directory, stale PID protection and NoConsole startup root'
+    Write-Output 'PASS: persisted settings, precedence, child environment, API token and engine arguments (validation and AD included), stable state directory, stale PID protection and NoConsole startup root'
 } finally {
     foreach ($key in $saved.Keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key], 'Process') }
     foreach ($name in @('Start-Process', 'Get-CimInstance', 'Stop-Process')) { Remove-Item ('Function:' + $name) -ErrorAction SilentlyContinue }
