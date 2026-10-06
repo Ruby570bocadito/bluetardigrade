@@ -1,43 +1,43 @@
-# Plan de ronda — Seguridad A (2026-10-05, ronda 10, ~21h30 Madrid)
+# Plan de ronda — Seguridad A (2026-10-06, ronda 11, ~00h10 Madrid)
 
-Base: `7a0a059` (mi ronda 9, sin cambios en `origin/main` desde el
-merge de la ronda 9). Novedad al abrir:
+Base: `aad1aed` (mi ronda 10; sandbox reiniciado y reconstruido:
+repo re-clonado, Go 1.26.0 reinstalado). `origin/main` sigue en
+`35cd866`. Novedad al abrir: CUATRO carriles movieron.
 
-- **PUL-A `829f7f0`** (4 commits nuevos): adopta mi `FuzzEnrollLine`
-  verbatim en `internal/ingest/fuzz_test.go` (SEC-7) y quita la
-  procedencia de carril de 2 comentarios de `internal/enroll`
-  (POL-12). El diff Go declarado es test-only + comentarios; verifico
-  ambas afirmaciones línea en mano y ejecuto su suite.
-- **IMP-B `d6f2285`** (2 commits): asistente de primer arranque
-  (IDEA-11), consola-only, 0 ficheros Go. Revisión funcional completa
-  (`onboarding.ts`, wizard, integración en `shell.tsx`, paleta) y
-  re-verificación de MIS dos hallazgos de la ronda 5
-  (`noise-view.tsx` supresión flota-completa MEDIA;
-  `reports-view.tsx` `generate` sin guardia de vigencia BAJA).
-- IMP-A `2c32013`, PUL-B `173ac11`, SEG-B `b0eaa60`: sin movimiento;
-  `internal/ad` sigue bloqueado por IMP-A.
+- **IMP-A `bc91c7d`** (7 commits, ~6.1k líneas): publicó el cierre
+  retenido — AD-1/AD-2/SET-3 (`internal/ad`: conector LDAPS de solo
+  lectura, postura de dominio, estado de plataforma en `/api/stats`)
+  y SEC-2 (`internal/secretfile`: sobres versionados, DPAPI
+  LOCAL_MACHINE en Windows, plain 0600 en POSIX, `engine
+  secret-write` por stdin) + `internal/api/ad.go` (+193) e
+  `internal/store/ad.go` (+367). **Mi pendiente 1 por fin
+  desbloqueado: esta es la tarea grande de la ronda.**
+- **SEG-B `55c8b35`**: guardia anti-fórmulas en exportaciones CSV del
+  lado consola (`chart-export.ts`, `alert-actions.tsx`).
+- **IMP-B `5ecbcc4`**: i18n fase 1 (armazón bilingüe, consola-only,
+  0 ficheros Go verificado por stat).
+- **PUL-A `e66ece5`**: docs-only.
 
 Tareas:
 
-1. **Revisión de PUL-A**: diff de `internal/enroll` (¿solo
-   comentarios?), verbatim byte a byte del bloque adoptado, suite de
-   `internal/ingest` + `internal/enroll` en su punta (worktree
-   desprendido), y su resolución del conflicto append-append de
-   `fuzz_test.go` contra mi carril (`merge-tree` de nuevo).
-2. **Revisión de IMP-B IDEA-11**: lógica de auto-apertura
-   (`shouldAutoOpen` + efecto de `shell.tsx` con `offeredRef`),
-   semántica de `loaded` en `fleet-provider` (¿carrera
-   fleet-vs-enroll?), registro de descarte tolerante, cálculo del
-   «token que caduca antes» (¿qué pasa con `expires_at` vacío?),
-   acople en paleta. Estado de mis dos hallazgos de la ronda 5.
-3. **Obligatorio de ronda**: única punta ajena movida con Go = PUL-A
-   (delta test-only): `go test -race -count=5` en los paquetes que
-   toca (`internal/ingest`, `internal/enroll`). IMP-B sigue sin tocar
-   Go (evidencia de rondas 5-8 vigente).
-4. **Fuzzing vivo corto** (si el tiempo acompaña): sesiones `-fuzz`
-   breves sobre los objetivos de entrada más densos de mi carril
-   (`FuzzEnrollLine`, carga YAML de escenarios, límites de report),
-   buscando crashes reales más allá de los corpora de semilla.
+1. **Auditoría del código AD/SEC-2 de IMP-A** (prioridad 1 del
+   roadmap): `internal/secretfile` (manejo de errores, modo 0600,
+   Zero, paridad de texto plano, dpapi_other honesto),
+   `internal/ad` (conector LDAPS: bind, timeouts, límites, re-lectura
+   de credencial por sync y puesta a cero), `internal/api/ad.go` +
+   `internal/store/ad.go` (auth, límites, concurrencia) y los deltas
+   de `internal/ingest` y `internal/tlsutil`. Fix con test
+   fail-before/pass-after por cada bug real.
+2. **Obligatorio de ronda**: `-race -count=5` en los paquetes con
+   goroutines que toca la punta de IMP-A (ad/secretfile/api/store/
+   ingest según toque) sobre su carril; PUL-A docs-only y PUL-B sin
+   mover (evidencia vigente); IMP-B consola-only.
+3. **Revisión rápida de consolas ajenas si el presupuesto deja**:
+   guardia CSV de SEG-B (¿cubre `=`/`+`/`-`/`@`, tab y CR?) y el
+   armazón i18n de IMP-B (paridad de diccionarios, html lang,
+   sincronía multi-pestaña). Mis dos hallazgos de la ronda 5:
+   re-verificar contra `5ecbcc4`.
 
-Cierre: checklist CI completo, informe, roadmap, changelog solo si hay
-fix que anunciar; push tras `merge-tree` contra las cinco puntas.
+Cierre: checklist CI completo (reinstalando staticcheck si hace
+falta), informe, roadmap, changelog solo si hay fix; push tras
+`merge-tree` contra las cinco puntas.
