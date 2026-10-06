@@ -1,0 +1,11 @@
+{
+  "name": "bluetardigrade-console-test-tools",
+  "private": true,
+  "//": "Optional test tooling for the console (NOT part of the application dependency graph): playwright drives check_console_browser.mjs / check_console_a11y.mjs and docs/assets/src/capture_console.mjs, esbuild+jsdom drive check_console_dom.mjs, axe-core feeds the WCAG audit. Exact versions and bun.lock are committed so every runner resolves the same bits; node_modules stays local. No lifecycle scripts by policy (scripts/dev-tests/check_package_lifecycle.py).",
+  "devDependencies": {
+    "axe-core": "4.10.2",
+    "esbuild": "0.25.11",
+    "jsdom": "26.1.0",
+    "playwright": "1.63.0"
+  }
+}

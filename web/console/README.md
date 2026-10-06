@@ -109,12 +109,30 @@ validates browser origins for polling and WebSocket handshakes; extend
 `CONSOLE_CORS_ORIGIN` when serving the console at another origin. Analyst
 concurrency and the request budget also apply across all hub connections.
 
+## Content security policy
+
+The CSP is minted per request by the access proxy (`src/proxy.ts`): in
+production `script-src` is `self` + a fresh `nonce` + `strict-dynamic` —
+never `unsafe-inline`. The proxy publishes the policy on the request
+headers so Next.js signs its own bootstrap scripts with the same nonce,
+and `app/layout.tsx` reads `x-nonce` to sign the inline theme boot (the
+only hand-written script in the tree). Dev keeps the inline/eval
+allowances the React refresh runtime needs. `style-src` stays
+`unsafe-inline` (Tailwind, component inline styles and reactbits
+keyframes). Because two CSP headers intersect, the policy lives only in
+the proxy — `next.config.ts` keeps the static headers (frame options,
+nosniff, referrer, permissions). `scripts/dev-tests/check_console_csp.mjs`
+regresses the whole pipeline against the production build: nonce present,
+rotating per request, every script tag signed, no inline fallback.
+
 `bun.lock` is the only lockfile in this package: bun is the toolchain
 the docs and the installer rely on, and keeping a second `package-lock.json`
 in parallel produced real drift (the two files resolved different
 `@types/node` versions). npm users can reproduce a resolution at any
 time with `npm install --package-lock-only` if they need one locally,
-but it is not committed.
+but it is not committed. The optional browser-test tooling outside this
+package (`tools/console-tests`) follows the same policy: exact versions
+and a committed `bun.lock`, `node_modules` local only.
 
 ## Theme (dark default, light available, system follow)
 

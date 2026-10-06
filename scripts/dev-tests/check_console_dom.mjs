@@ -16,7 +16,7 @@ try {
   build = requireTools('esbuild').build
   jsdom = requireTools.resolve('jsdom')
 } catch {
-  console.error('Install optional test tools first: npm install --prefix tools/console-tests --no-audit --no-fund esbuild@0.25.11 jsdom@26.1.0')
+  console.error('Install the committed test tooling: cd tools/console-tests && bun install')
   process.exit(1)
 }
 const temp = mkdtempSync(join(tmpdir(), 'sf-console-dom-'))

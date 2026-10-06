@@ -363,7 +363,7 @@ web/console/         Next.js SOC console
 web/console-service/ Bun + socket.io AI analyst hub
 website/             project landing page
 scripts/             Windows tooling, dev tests and verification harnesses
-tools/               local browser-test tooling for the console
+tools/               browser-test tooling for the console (committed manifest, local node_modules)
 changelog.d/         one changelog fragment per change, consolidated on release
 docs/                guides, architecture and API reference
 ```
