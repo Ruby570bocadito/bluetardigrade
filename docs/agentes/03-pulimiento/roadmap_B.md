@@ -1,7 +1,7 @@
 # Roadmap B — carril Pulimiento B (archivo vivo)
 
-Última actualización: 2026-10-06, ronda 7 de este carril sobre la rama
-`carril/pulimiento-b` (base `849ef4e`, plan `041c4aa`).
+Última actualización: 2026-10-06, ronda 8 (cierre de la ventana de 8)
+de este carril sobre la rama `carril/pulimiento-b` (base `c2adac6`).
 
 ## Hecho (rondas cerradas)
 
@@ -105,6 +105,20 @@
   checker de temas en verde contra su árbol. Mi ronda 6 aún no está en
   su línea (llega hasta el plan `24c8b08`): merge-tree 0 conflictos,
   sin colisión prevista. Informe: `ronda_2026-10-06_10h45_B.md`.
+- **2026-10-06 — POL-9 apéndice: source maps de navegador y corrección
+  del registro (ronda 8, cierre de la ventana):** re-inspección del
+  JSON de Lighthouse: el 96 de BP NUNCA fue el favicon (esa auditoría
+  no existe en BP; el `<link rel="icon">` de `icon.svg` evita la
+  petición) — eran `valid-source-maps` y `errors-in-console`. Fix:
+  `productionBrowserSourceMaps: true` en `next.config.ts` (mapas solo
+  se descargan con DevTools abierto; trazas simbolizadas para el
+  operador; baseline de bundle intacta) — `valid-source-maps` pasa;
+  `errors-in-console` es binaria y el laboratorio la genera por
+  construcción (motor/console-service apagados), así que 96 es su
+  techo aquí y desaparece con backend vivo. README corregido (párrafo
+  Lighthouse + nota de mapas en la baseline). **371 tests, tsc, build
+  con 8 mapas, tema, CSP, motion, 34 DOM, 18/18 axe, 21/21 navegador,
+  ciclo de vida: verde.** Informe: `ronda_2026-10-06_11h05_B.md`.
 
 ## A medias
 
@@ -122,25 +136,22 @@
   nav móvil de `shell.tsx` vuelve a tocararse (ronda 5, sección de
   conflictos).
 
-## Siguiente (orden propuesto)
+## Siguiente (orden propuesto para la próxima ventana)
 
-1. Ronda 8 (última de la ventana): candidato en mi carril — el 404 de
-   `favicon.ico` que mantiene Best-practices en 96 en Lighthouse
-   (medido en la ronda 6); fix + re-medida BP.
+1. Integración de mis rondas 6-8 en la línea de IMP-B: pendiente y
+   limpia (merge-tree 0 conflictos); tras integrar, la batería de
+   motion es candidata a correr en su línea (necesita Chromium).
 2. POL-7 kit de componentes restante (botón, campo, tabla, insignia y
    diálogo con variantes) — exige coordinar ventanas con IMP-B (sus
    vistas, ahora desbloqueadas por el push de IMP-A: AD-5/AD-6, SET-3,
    REP-3): proponerlo en su roadmap antes de cogerlo.
 3. POL-8: aria/gemelo de tabla de las gráficas (fichero de IMP-B,
    coordinar con su barrido i18n de vistas de datos).
-4. Integración de mi ronda 6 en la línea de IMP-B: pendiente, limpia
-   (merge-tree 0 conflictos, ronda 7); tras integrar, la batería de
-   motion es candidata a correr en su línea (necesita Chromium).
-5. Propuestas a PUL-A: enganchar `check_console_csp.mjs` (barato, sin
+4. Propuestas a PUL-A: enganchar `check_console_csp.mjs` (barato, sin
    navegador) y `check_console_a11y.mjs` / `check_console_motion.mjs` /
    `console-lighthouse` (con Chromium) al CI; este bloque necesita la
    corrección de tabs del Makefile.
-6. Si el responsable define POL-12 como tarea recurrente: nuevo pase de
+5. Si el responsable define POL-12 como tarea recurrente: nuevo pase de
    coherencia consola/README/SECURITY.md cuando IMP-B fusione vistas
    nuevas.
 
