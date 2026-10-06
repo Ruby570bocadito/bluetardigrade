@@ -1,10 +1,24 @@
 # Roadmap B — carril Pulimiento B (archivo vivo)
 
-Última actualización: 2026-10-06, ronda 12 de este carril sobre la
-rama `carril/pulimiento-b` (base `8cbd62c`, plan de ronda 12; push
+Última actualización: 2026-10-06, ronda 13 de este carril sobre la
+rama `carril/pulimiento-b` (base `54a62c4`, plan de ronda 13; push
 pendiente de `GH_TOKEN` en el entorno).
 
 ## Hecho (rondas cerradas)
+
+- **2026-10-06 — Guardia de vista nueva: pantalla de ajustes AD
+  (ronda 13):** guardia completa sobre el árbol de IMP-B en `2c47271`
+  (SET-1/AD-6, 681 líneas): grep azul 0, checker de tema verde,
+  **463/463 tests**, build OK, **axe 20/20** (IMP-B extendió el roster
+  con `ajustes` dark+light), CSP PASS (11 scripts). Lectura manual: el
+  acento es 100% `--primary*`, formularios con label/grupos/
+  aria-pressed/role=alert, contraseña write-only con
+  `autoComplete="new-password"`. **Un hallazgo menor:** el resultado de
+  «Probar conexión» sin `role="status"` (línea 624 de su fichero; el
+  patrón ya existe en su banner de recarga) — su ronda o micro-fix
+  post-integración. Motion no aplicable en su árbol (guard sin
+  integrar allí aún). merge-tree ×5 limpio. Informe:
+  `ronda_2026-10-06_12h55_B.md`.
 
 - **2026-10-06 — POL-7 Fase A: insignia genérica (ronda 12):**
   `ui/badge.tsx` nuevo con la forma única de insignia/chip y solo dos
