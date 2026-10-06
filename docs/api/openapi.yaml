@@ -2613,6 +2613,11 @@ components:
         - alert_latency
         - store_size_bytes
         - certificates
+        - beacon_quota_rejected
+        - threshold_quota_rejected
+        - ring_dropped_events
+        - ring_dropped_alerts
+        - quota_top_hosts
       properties:
         suppressions_active:
           type: integer
@@ -2883,6 +2888,64 @@ components:
               $ref: '#/components/schemas/ADCertExpiry'
             ingest:
               $ref: '#/components/schemas/ADCertExpiry'
+        beacon_quota_rejected:
+          type: integer
+          format: int64
+          description: new beacon keys refused because the host's own admission
+            quota was full (v1.1 per-team quotas -- one noisy machine may not
+            monopolize the shared key table). Existing keys of the saturated
+            host keep counting and firing; only new ones are refused.
+        threshold_quota_rejected:
+          type: integer
+          format: int64
+          description: new threshold keys refused because the host's own admission
+            quota was full (v1.1 per-team quotas, same admission-ceiling
+            semantics as the per-rule quota; dead evidence is purged before the
+            refusal, so a host whose keys all expired recovers itself).
+        ring_dropped_events:
+          type: integer
+          format: int64
+          description: events rotated out of the in-memory view ring since API
+            start. The rings trim oldest-first, so a noisy host filling the
+            ring washes the others' recent records out -- this counter keeps
+            that loss visible. Full history stays in SQLite when -store is armed.
+        ring_dropped_alerts:
+          type: integer
+          format: int64
+          description: alerts rotated out of the in-memory view ring since API
+            start (same semantics as ring_dropped_events).
+        quota_top_hosts:
+          type: array
+          description: bounded top rows (8, worst first) of the per-host
+            pressure view -- ring rotation of each host's records and its
+            per-detector admission refusals; empty when nothing was refused
+            or rotated. /metrics serves the same totals without host labels
+            to keep series cardinality bounded.
+          items:
+            $ref: '#/components/schemas/QuotaHostRow'
+    QuotaHostRow:
+      type: object
+      required: [host, ring_events, ring_alerts, beacon, threshold]
+      properties:
+        host:
+          type: string
+          description: lowercased host name
+        ring_events:
+          type: integer
+          format: int64
+          description: events of this host rotated out of the view ring
+        ring_alerts:
+          type: integer
+          format: int64
+          description: alerts of this host rotated out of the view ring
+        beacon:
+          type: integer
+          format: int64
+          description: beacon keys of this host refused by its own quota
+        threshold:
+          type: integer
+          format: int64
+          description: threshold keys of this host refused by its own quota
     ADCertExpiry:
       type: object
       required: [present, not_after, path]

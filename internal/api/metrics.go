@@ -100,6 +100,13 @@ func (h *Hub) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 	writeMetric(&b, "sf_baseline_hosts", "Hosts tracked by the process baseline.", "gauge", float64(s.BaselineHosts))
 	writeMetric(&b, "sf_baseline_hosts_learning", "Hosts still inside their baseline learning period.", "gauge", float64(s.BaselineLearning))
 	writeMetric(&b, "sf_baseline_novelties_total", "Never-seen processes reported since engine start.", "counter", float64(s.BaselineNovelties))
+	// v1.1 cuotas por equipo: totals only — the per-host detail lives
+	// in /api/stats quota_top_hosts, keeping series cardinality
+	// bounded instead of telemetry-controlled.
+	writeMetric(&b, "sf_ring_dropped_events_total", "Events rotated out of the in-memory view ring since API start.", "counter", float64(s.RingDroppedEvents))
+	writeMetric(&b, "sf_ring_dropped_alerts_total", "Alerts rotated out of the in-memory view ring since API start.", "counter", float64(s.RingDroppedAlerts))
+	writeMetric(&b, "sf_beacon_quota_rejected_total", "New beacon keys refused because the host's own quota was full.", "counter", float64(s.BeaconQuotaRejected))
+	writeMetric(&b, "sf_threshold_quota_rejected_total", "New threshold keys refused because the host's own quota was full.", "counter", float64(s.ThresholdQuotaRejected))
 	// Host risk (A1): the tracked gauge is a plain number; the top-5
 	// scores are the second labeled family. Hosts come from telemetry
 	// (operator-visible data /api/stats already serves), so the same

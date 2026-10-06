@@ -483,6 +483,26 @@ func runEngine(o *options, interactive bool) error {
 				}
 				return thr.Count(), thr.KeysTracked(), thr.Fired()
 			})
+			// v1.1 cuotas por equipo: per-host admission refusals of
+			// the quota-capable detectors (beacon, threshold), so a
+			// noisy host's pressure on the shared tables is watchable
+			// from /api/stats. The closures run after the hub lock,
+			// like every other stats wiring.
+			hub.SetQuotaStats(func() api.QuotaSnapshot {
+				qs := api.QuotaSnapshot{
+					BeaconHosts:    map[string]uint64{},
+					ThresholdHosts: map[string]uint64{},
+				}
+				if bcn != nil {
+					qs.BeaconRejected = bcn.QuotaRejected()
+					qs.BeaconHosts = bcn.QuotaHosts()
+				}
+				if thr != nil {
+					qs.ThresholdRejected = thr.QuotaRejected()
+					qs.ThresholdHosts = thr.QuotaHosts()
+				}
+				return qs
+			})
 			hub.SetSequences(corr)
 			hub.SetLifecycle(lifeStore)
 			hub.SetIncidents(incStore)

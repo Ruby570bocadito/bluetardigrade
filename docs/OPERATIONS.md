@@ -281,6 +281,18 @@ scrape_configs:
 
 Worth alerting on: `sf_ingest_rejected_total` climbing (a probe against the ingest port), `sf_webhook_failed_total` climbing (a down SIEM connector), `sf_elastic_failed_total` / `sf_splunk_failed_total` climbing (a misconfigured or saturated SIEM sink), `sf_notify_failed_total` climbing (a dead chat or mail channel — the alert still fires, the operator just stops seeing it), `sf_store_write_failures_total` climbing (event or alert writes to SQLite are failing — affected records may exist only in memory and are lost on restart), and `sf_correlator_states` reaching `sf_correlator_cap` (a feed problem flooding the kill-chain tracker — see [Kill-chain correlation](#kill-chain-correlation)).
 
+## Per-team memory quotas (noisy-host protection)
+
+
+Every bounded in-memory structure the detectors share is partitioned per host with an admission ceiling of 25% of the table (v1.1 "cuotas por equipo"): a noisy machine — a scanner, a misbehaving agent, a hostile feed — cannot fill the shared tables and wash out the evidence the other hosts are accumulating.
+
+- **Threshold keys** (`thresholds.yaml`): at most 2048 keys per host (the same ceiling the per-rule quota sets). Existing keys of a saturated host keep counting and firing; only NEW keys are refused, and dead evidence (2x window without signal) is purged before the refusal, so a host whose keys all expired recovers itself without waiting for the global cap to fill.
+- **Beacon keys** (`beacons.yaml`): at most 2048 destination keys per host, same admission-ceiling semantics. Existing beacons of the saturated host keep accumulating evidence and firing; stale keys are reclaimed before a refusal.
+- **View rings** (`/api/events`, `/api/alerts`, SSE): the rings trim oldest-first by design; a host filling the ring rotates the others' recent records out. That rotation is counted per host and served in `/api/stats` (`ring_dropped_events`, `ring_dropped_alerts`), so the loss is visible, never silent. With `-store` attached the full history stays in SQLite regardless of the rings.
+- **Kill-chain correlator**: no extra per-host quota is needed — one host can hold at most one state per sequence, and the sequence ceiling (512) already bounds any host's share to a quarter of the tracking cap (8192).
+
+All refusals are honest counters, never silent drops: `/api/stats` serves the totals (`beacon_quota_rejected`, `threshold_quota_rejected`) and a bounded top-8 `quota_top_hosts` list that merges ring rotation and per-host refusals; `/metrics` serves the same totals as `sf_beacon_quota_rejected_total` / `sf_threshold_quota_rejected_total` / `sf_ring_dropped_events_total` / `sf_ring_dropped_alerts_total` (no host labels — series cardinality must not depend on telemetry). If one of these counters climbs, look at what that host is doing before considering caps: the quota doing its job is the symptom of a noisy machine, not a tuning bug.
+
 ## Persistent storage (SQLite, opt-in)
 
 

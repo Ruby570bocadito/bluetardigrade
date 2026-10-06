@@ -105,6 +105,19 @@ type Hub struct {
 	beacon      func() (int, int, uint64)       // live beacon keys, cap, fired (A3)
 	threshold   func() (int, int, uint64)       // defs, live keys, fired (A2)
 
+	// v1.1 cuotas por equipo: the bounded detectors' per-host
+	// admission quota counters (beacon + threshold; the correlator's
+	// per-host share is already bounded by maxSequences by
+	// construction) and the view rings' rotation tally by host — the
+	// visible counterpart of "a noisy host cannot wash out the
+	// others". Both are read under mu.
+	quotaStats func() QuotaSnapshot
+	ringDrops  struct {
+		events uint64
+		alerts uint64
+		hosts  map[string][2]uint64 // lowercased host -> [events, alerts]
+	}
+
 	storeFails uint64 // cumulative failed event/alert writes, also throttles logging (atomic)
 
 	// suppression write surface (armed only with -api-write; see
@@ -557,6 +570,66 @@ func (h *Hub) SetThresholdStats(fn func() (defs, keys int, fired uint64)) {
 	h.mu.Unlock()
 }
 
+// SetQuotaStats wires the bounded detectors' per-host admission quota
+// counters into /api/stats (v1.1 cuotas por equipo). nil = no
+// quota-capable detector armed (zeros); the stats contract stays
+// stable. The closure is called after h.mu.Unlock like every other
+// manager's: the managers' Quota* methods take their own mutexes and
+// the fire paths run that lock order the other way round.
+func (h *Hub) SetQuotaStats(fn func() QuotaSnapshot) {
+	h.mu.Lock()
+	h.quotaStats = fn
+	h.mu.Unlock()
+}
+
+// maxRingHostEntries caps the ring-rotation tally by host: honesty
+// about WHICH host is rotating out cannot itself become an unbounded
+// map. Past the cap the totals keep counting every rotation; only the
+// per-host attribution stops growing (threshold's convention).
+const maxRingHostEntries = 64
+
+// ringDropLocked counts one record rotated out of a view ring: the
+// total always, and the per-host tally while it fits. Caller holds mu.
+func (h *Hub) ringDropLocked(host string, isEvent bool) {
+	host = strings.ToLower(host)
+	if host == "" {
+		return
+	}
+	if h.ringDrops.hosts == nil {
+		h.ringDrops.hosts = map[string][2]uint64{}
+	}
+	if _, ok := h.ringDrops.hosts[host]; !ok && len(h.ringDrops.hosts) >= maxRingHostEntries {
+		if isEvent {
+			h.ringDrops.events++
+		} else {
+			h.ringDrops.alerts++
+		}
+		return
+	}
+	row := h.ringDrops.hosts[host]
+	if isEvent {
+		row[0]++
+		h.ringDrops.events++
+	} else {
+		row[1]++
+		h.ringDrops.alerts++
+	}
+	h.ringDrops.hosts[host] = row
+}
+
+// ringDropsCopy snapshots the rotation tally as a copy. Never call it
+// while holding mu (it takes mu itself).
+func (h *Hub) ringDropsCopy() (events, alerts uint64, hosts map[string][2]uint64) {
+	h.mu.Lock()
+	events, alerts = h.ringDrops.events, h.ringDrops.alerts
+	hosts = make(map[string][2]uint64, len(h.ringDrops.hosts))
+	for k, v := range h.ringDrops.hosts {
+		hosts[k] = v
+	}
+	h.mu.Unlock()
+	return events, alerts, hosts
+}
+
 // SetSequences exposes the loaded kill-chain sequences (read-only)
 // through /api/sequences. A nil manager means the correlator is off:
 // the endpoint serves an empty list, mirroring the suppressions
@@ -707,8 +780,14 @@ func (h *Hub) PublishEvent(ev *model.Event) {
 	}
 	h.mu.Lock()
 	h.events = append(h.events, ev)
-	if len(h.events) > maxEvents {
-		h.events = h.events[len(h.events)-maxEvents:]
+	if n := len(h.events) - maxEvents; n > 0 {
+		// v1.1 cuotas por equipo: rotation out of the view ring is
+		// counted per host — a noisy host filling the ring washes the
+		// others' recent records out, and that loss stays visible.
+		for i := 0; i < n; i++ {
+			h.ringDropLocked(h.events[i].Host, true)
+		}
+		h.events = h.events[n:]
 	}
 	h.mu.Unlock()
 	h.broadcast("event", ev)
@@ -727,8 +806,13 @@ func (h *Hub) RecordAlert(a alert.Alert) {
 	h.alerts = append(h.alerts, a)
 	h.alertsTotal++
 	h.bySeverity[a.Severity]++
-	if len(h.alerts) > maxAlerts {
-		h.alerts = h.alerts[len(h.alerts)-maxAlerts:]
+	if n := len(h.alerts) - maxAlerts; n > 0 {
+		// v1.1 cuotas por equipo: same per-host rotation tally as the
+		// events ring (see PublishEvent).
+		for i := 0; i < n; i++ {
+			h.ringDropLocked(h.alerts[i].Host, false)
+		}
+		h.alerts = h.alerts[n:]
 	}
 	h.mu.Unlock()
 	// The tracker owns its mutex — like every other manager's lock,
@@ -836,6 +920,37 @@ type statsPayload struct {
 	AlertLatency   latencyPayload      `json:"alert_latency"`
 	StoreSizeBytes int64               `json:"store_size_bytes"`
 	Certificates   certificatesPayload `json:"certificates"`
+
+	// v1.1 cuotas por equipo: per-host admission refusals of the
+	// bounded detectors and view-ring rotation counted by host — a
+	// noisy host cannot wash the others out silently.
+	BeaconQuotaRejected    uint64         `json:"beacon_quota_rejected"`
+	ThresholdQuotaRejected uint64         `json:"threshold_quota_rejected"`
+	RingDroppedEvents      uint64         `json:"ring_dropped_events"`
+	RingDroppedAlerts      uint64         `json:"ring_dropped_alerts"`
+	QuotaTopHosts          []quotaHostRow `json:"quota_top_hosts"`
+}
+
+// quotaHostRow is one host's row of the per-host pressure view: how
+// many of its records rotated out of the view rings and how many of
+// its new detector keys were refused by its own quota. Bounded top
+// rows only (8), so /api/stats stays bounded.
+type quotaHostRow struct {
+	Host       string `json:"host"`
+	RingEvents uint64 `json:"ring_events"`
+	RingAlerts uint64 `json:"ring_alerts"`
+	Beacon     uint64 `json:"beacon"`
+	Threshold  uint64 `json:"threshold"`
+}
+
+// QuotaSnapshot is one read of the quota-capable detectors' per-host
+// admission counters (v1.1 cuotas por equipo). The maps are copies
+// served by each manager (capped at 64 hosts each).
+type QuotaSnapshot struct {
+	BeaconRejected    uint64
+	ThresholdRejected uint64
+	BeaconHosts       map[string]uint64
+	ThresholdHosts    map[string]uint64
 }
 
 // latencyPayload summarizes the elapsed time between an event's own
@@ -862,6 +977,47 @@ type certExpiryPayload struct {
 type certificatesPayload struct {
 	API    certExpiryPayload `json:"api"`
 	Ingest certExpiryPayload `json:"ingest"`
+}
+
+// mergeQuotaRows folds the ring-rotation tally and the detectors'
+// per-host refusal tallies into one bounded top list (8 rows, worst
+// first by the row's counter sum, host name as tie-break).
+func mergeQuotaRows(ringHosts map[string][2]uint64, quota QuotaSnapshot) []quotaHostRow {
+	rows := map[string]*quotaHostRow{}
+	row := func(host string) *quotaHostRow {
+		if r, ok := rows[host]; ok {
+			return r
+		}
+		r := &quotaHostRow{Host: host}
+		rows[host] = r
+		return r
+	}
+	for host, v := range ringHosts {
+		r := row(host)
+		r.RingEvents, r.RingAlerts = v[0], v[1]
+	}
+	for host, n := range quota.BeaconHosts {
+		row(host).Beacon = n
+	}
+	for host, n := range quota.ThresholdHosts {
+		row(host).Threshold = n
+	}
+	out := make([]quotaHostRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, *r)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		si := out[i].RingEvents + out[i].RingAlerts + out[i].Beacon + out[i].Threshold
+		sj := out[j].RingEvents + out[j].RingAlerts + out[j].Beacon + out[j].Threshold
+		if si != sj {
+			return si > sj
+		}
+		return out[i].Host < out[j].Host
+	})
+	if len(out) > 8 {
+		out = out[:8]
+	}
+	return out
 }
 
 // statsSnapshot collects every counter /api/stats and /metrics serve.
@@ -918,6 +1074,7 @@ func (h *Hub) statsSnapshot() statsPayload {
 	rel := h.reloader
 	riskM := h.risk
 	tFn := h.threshold
+	quotaFn := h.quotaStats
 	version := h.version
 	rulesCount, rulesTypes := 0, []string{}
 	if h.rules != nil {
@@ -1054,6 +1211,17 @@ func (h *Hub) statsSnapshot() statsPayload {
 		storeSize, _ = st.SizeBytes() // a transient pragma failure reports 0: the store stays enabled
 	}
 
+	// v1.1 cuotas por equipo: the detectors' quota counters (their
+	// own mutexes) and the ring-rotation tally (a second, flat
+	// h.mu acquisition, never nested) are read after the main
+	// Unlock, like every other manager read in this function.
+	ringEvents, ringAlerts, ringHosts := h.ringDropsCopy()
+	var quota QuotaSnapshot
+	if quotaFn != nil {
+		quota = quotaFn()
+	}
+	quotaTop := mergeQuotaRows(ringHosts, quota)
+
 	return statsPayload{
 		UptimeS:                  int64(time.Since(h.started) / time.Second),
 		EventsTotal:              ingested,
@@ -1102,6 +1270,11 @@ func (h *Hub) statsSnapshot() statsPayload {
 		BaselineLearning:         baseLearning,
 		BaselineNovelties:        baseNovel,
 		NotifyChannels:           notifyRows,
+		BeaconQuotaRejected:      quota.BeaconRejected,
+		ThresholdQuotaRejected:   quota.ThresholdRejected,
+		RingDroppedEvents:        ringEvents,
+		RingDroppedAlerts:        ringAlerts,
+		QuotaTopHosts:            quotaTop,
 		Version:                  version,
 		AlertLatency:             lat,
 		StoreSizeBytes:           storeSize,

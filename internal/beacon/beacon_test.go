@@ -760,3 +760,66 @@ func TestShippedProfilesLoad(t *testing.T) {
 		t.Fatal("beacons.yaml loaded no profile")
 	}
 }
+
+func TestHostQuotaKeepsTheOthersTableSafe(t *testing.T) {
+	// v1.1 cuotas por equipo: un equipo que escanea destinos unicos
+	// llena SU cuota (25% de la tabla) y ahi se queda: techo de
+	// admision (sin expulsion), contador honesto, y los demas equipos
+	// admiten con normalidad.
+	m, err := LoadFile(writeProfiles(t, strictProfile), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	at := base
+	for i := 0; i < MaxKeysPerHost; i++ {
+		m.Observe(netEv("NOISY", fmt.Sprintf("10.9.%d.%d", i/256%256, i%256), "", 1024+i), at)
+		at = at.Add(time.Millisecond)
+	}
+	if n := len(m.state); n != MaxKeysPerHost {
+		t.Fatalf("state = %d, want %d", n, MaxKeysPerHost)
+	}
+	// el host saturado no admite destinos nuevos
+	m.Observe(netEv("NOISY", "10.9.250.1", "", 40000), at)
+	if n := len(m.state); n != MaxKeysPerHost {
+		t.Fatalf("la cuota admitio o expulso: state=%d", n)
+	}
+	if got := m.QuotaRejected(); got != 1 {
+		t.Fatalf("QuotaRejected=%d, want 1", got)
+	}
+	// otro host sigue admitiendo su evidencia
+	m.Observe(netEv("VICTIM", "185.220.101.47", "", 443), at)
+	if n := len(m.state); n != MaxKeysPerHost+1 {
+		t.Fatalf("la victima no admite: state=%d", n)
+	}
+	top := m.QuotaTopHosts()
+	if len(top) != 1 || top[0].Host != "noisy" || top[0].Rejected != 1 {
+		t.Fatalf("QuotaTopHosts=%+v", top)
+	}
+}
+
+func TestHostQuotaFreesWhenKeysGoStale(t *testing.T) {
+	// la cuota por host se auto-repara: al rechazar, la evidencia
+	// muerta (2x ventana sin senal) se reclama antes de negar la
+	// admision, sin esperar a que el cap global se llene.
+	m, err := LoadFile(writeProfiles(t, strictProfile), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	at := base
+	for i := 0; i < MaxKeysPerHost; i++ {
+		m.Observe(netEv("NOISY", fmt.Sprintf("10.9.%d.%d", i/256%256, i%256), "", 1024+i), at)
+		at = at.Add(time.Millisecond)
+	}
+	// 11 minutos despues todo es stale (2x ventana de 5m); una
+	// admision nueva del mismo host reclama la evidencia muerta y entra
+	later := base.Add(11 * time.Minute)
+	m.Observe(netEv("NOISY", "10.9.250.2", "", 40001), later)
+	if n := len(m.state); n != 1 {
+		t.Fatalf("la cuota no libero la evidencia stale: state=%d, want 1", n)
+	}
+	if got := m.QuotaRejected(); got != 0 {
+		t.Fatalf("QuotaRejected=%d, want 0 (hubo sitio tras la reclamacion)", got)
+	}
+}
