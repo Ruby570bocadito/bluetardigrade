@@ -435,7 +435,13 @@ function RunDetail({ run, onClose, onOpenRule }: { run: ScenarioRun; onClose: ()
   )
 }
 
-/** The lab library itself, with per-scenario selection for a partial run. */
+/** Rows rendered at once: the library holds one scenario per rule and
+ * chain (127 today), and listing them all made the page ~13,000 px tall. */
+const SCENARIO_PAGE = 20
+
+/** The lab library itself, with per-scenario selection for a partial run.
+ * A search box (name, id, technique, host) and a "show more" pager keep it
+ * one screen tall; selections survive filtering and paging. */
 function ScenarioList({
   scenarios,
   filtered,
@@ -447,21 +453,45 @@ function ScenarioList({
   selected: Set<string>
   onToggle: (id: string) => void
 }) {
+  const [query, setQuery] = useState('')
+  const [shown, setShown] = useState(SCENARIO_PAGE)
+  const q = query.trim().toLowerCase()
+  const matching = q
+    ? scenarios.filter((s) => [s.name, s.id, s.host, s.attack.join(' ')].some((v) => v.toLowerCase().includes(q)))
+    : scenarios
+  const page = matching.slice(0, shown)
+  const rest = matching.length - page.length
   return (
     <div className="panel overflow-hidden">
-      <div className="flex items-baseline gap-2 px-4 pt-3.5 pb-2">
+      <div className="flex flex-wrap items-baseline gap-2 px-4 pt-3.5 pb-2">
         <h2 className="text-sm font-medium text-zinc-100">Biblioteca de escenarios</h2>
         <span className="text-xs text-zinc-500">
           {scenarios.length} escenarios{filtered ? ' (filtrados por táctica)' : ''} · telemetría inerte en hosts LAB-SIM-*
         </span>
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value)
+            setShown(SCENARIO_PAGE)
+          }}
+          placeholder="Buscar por nombre, id, técnica o host"
+          aria-label="Buscar en la biblioteca de escenarios"
+          className="ml-auto w-full max-w-xs rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-100 placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-64"
+        />
       </div>
-      {scenarios.length === 0 ? (
+      {matching.length === 0 ? (
         <div className="px-4 pb-4">
-          <EmptyState icon={BatteryCharging} title="Ningún escenario en este filtro" hint="Quita el filtro de táctica para ver la biblioteca completa." />
+          <EmptyState
+            icon={BatteryCharging}
+            title="Ningún escenario en este filtro"
+            hint={q ? 'Cambia la búsqueda o bórrala para ver la biblioteca completa.' : 'Quita el filtro de táctica para ver la biblioteca completa.'}
+          />
         </div>
       ) : (
+        <>
         <ul className="divide-y divide-zinc-800/70 border-t border-zinc-800">
-          {scenarios.map((s) => (
+          {page.map((s) => (
             <li key={s.id} className="flex items-start gap-3 px-4 py-3">
               <input
                 type="checkbox"
@@ -476,7 +506,7 @@ function ScenarioList({
                   <span className="font-mono text-[11px] text-zinc-500">{s.id}</span>
                   <span className="text-[11px] tabular-nums text-zinc-500">{s.events} eventos</span>
                 </span>
-                <span className="mt-0.5 block text-xs leading-relaxed text-zinc-400">{s.description}</span>
+                <span className="mt-0.5 line-clamp-2 block text-xs leading-relaxed text-zinc-400" title={s.description}>{s.description}</span>
                 <span className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-zinc-500">
                   <span>técnicas: <span className="font-mono text-zinc-400">{s.attack.join(', ') || '—'}</span></span>
                   <span>
@@ -488,6 +518,22 @@ function ScenarioList({
             </li>
           ))}
         </ul>
+        <div className="flex items-center gap-3 border-t border-zinc-800 px-4 py-2.5 text-xs text-zinc-500">
+          <span>
+            {page.length} de {matching.length}
+            {q ? ` que coinciden con «${query.trim()}»` : ''}
+          </span>
+          {rest > 0 && (
+            <button
+              type="button"
+              onClick={() => setShown((n) => n + SCENARIO_PAGE)}
+              className="ml-auto rounded-md border border-white/10 px-2.5 py-1 text-xs text-zinc-300 hover:border-white/20 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Mostrar {Math.min(SCENARIO_PAGE, rest)} más ({rest} restantes)
+            </button>
+          )}
+        </div>
+        </>
       )}
     </div>
   )

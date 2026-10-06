@@ -9,3 +9,6 @@
 - Active Directory settings: the CA and credential paths are shown read-only (they are set in
   the `-ad` file on the engine host), and an engine without `-ad` explains how to arm it
   instead of offering a form that could no longer be tested or saved.
+- «Validación»: the scenario library has a search box (name, id, technique, host) and shows 20
+  scenarios at a time with «Mostrar más», instead of listing all 127 expanded (the page was
+  about 13,000 px tall); selections for a partial run survive searching and paging.
