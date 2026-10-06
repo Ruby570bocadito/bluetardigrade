@@ -5,6 +5,23 @@ cada ronda: qué está a medias, qué sigue y por qué.
 
 ## Estado actual
 
+- Ronda 2026-10-06 10h53 cerrada (informe: `ronda_2026-10-06_10h53_A.md`). Primero,
+  **publicados los 8 commits retenidos** (`bc91c7d..9b82845`): la sesión trajo la
+  credencial de push (usada solo como variable de entorno del proceso). Después,
+  **AD-6/SET-1 parte A (motor)**: `GET/PUT /api/settings/ad` + `POST /api/ad/test`
+  («Probar conexión» del TODO): validación con las reglas del cargador `-ad` ANTES
+  de tocar disco, contraseña a su sobre SEC-2 (nunca en el YAML/logs/respuesta),
+  YAML atómico con valores efectivos, **recarga en caliente** del conector
+  (`ad.New` + `SetAD` bajo cerrojo, bucle anterior parado fuera de camino),
+  drift de fichero `-ad` → 409, auditoría por nombres de campo, horario laboral
+  (work_start/work_end/work_days, validado; consumidor: AD-3 cuando haya WEF).
+  Transporte LDAP unificado (`openLDAP`): el probe usa el MISMO handshake que la
+  sync, con `conn.Start()` explícito (su ausencia = deadlock de Bind, cazado en
+  test). Guard compartida `check_openapi.py` extendida a múltiples cuerpos 403
+  (segunda superficie de escritura); self-test 5/5. OpenAPI 41→43 paths
+  (schemas ADSettings/ADSettingsUpdate/ADTestResult). Verificación: build+windows,
+  vet, staticcheck 0, race x5 (api 50 s/ad/engine), suite completa -race 40 paquetes
+  0 fallos, guards OK, e2e reports_noise 33/33 + smoke_lifecycle 12/12.
 - Ronda 2026-10-06 07h58 cerrada (informe: `ronda_2026-10-06_07h58_A.md`). Primero,
   **los DOS hallazgos de SEG-A ronda 11 en mi rama, corregidos con su sonda**:
   `/api/ad/posture` ya sirve el score almacenado (MEDIA; prueba nueva con store
@@ -112,16 +129,15 @@ cada ronda: qué está a medias, qué sigue y por qué.
 
 ## Cola de tareas del carril (orden pretendido)
 
-1. **Publicar la retención** (8 commits de hoy) en cuanto la sesión traiga la
-   credencial de push: PRIMERO, sin tocar nada más.
-2. **v1.1 Ruido residual**: `sf-engine doctor` valida `known-software.yaml` con el
-   cargador real (paridad con `ingest-identities`) y §2.1 agrupación de arranques en
-   el sensor (parte Rust; requiere `cargo` en el entorno o pruebas en otro sitio).
-3. **Motor**: cuotas por equipo en la memoria del motor (v1.1 «Motor y consola»).
-3. **AD-6/SET-1 API de ajustes**: la primitiva de escritura segura ya existe
-   (`secretfile.Write` + `engine secret-write`); falta la superficie de ajustes decidida
-   con el responsable (qué campos, bind de prueba antes de comprometer el fichero,
-   auditoría, recarga en caliente). **AD-3** cuando WEF exista.
+1. ~~Publicar la retención~~ — HECHO al abrir la ronda 10h53 (`bc91c7d..9b82845`).
+2. **v1.1 Ruido residual** (sigue como cabeza): `sf-engine doctor` valida
+   `known-software.yaml` con el cargador real (paridad con `ingest-identities`) y
+   §2.1 agrupación de arranques en el sensor (parte Rust; requiere `cargo` en el
+   entorno o pruebas en otro sitio).
+3. ~~AD-6/SET-1 parte A (API)~~ — HECHA en la ronda 10h53; queda la parte B
+   (pantalla, IMP-B). **AD-3** cuando WEF exista. **AD-7** cuando el responsable
+   decida el mapa grupos→roles.
+4. **Motor**: cuotas por equipo en la memoria del motor (v1.1 «Motor y consola»).
 4. **REP-2** informes programados (diarios/semanales en `data/reports` con retención,
    SMTP/webhook opcional): la maquinaria de datos ya existe tras REP-1 parte A.
 5. **Diseño**: purga de hosts rechazados/revocados en el registro de alta (observación
