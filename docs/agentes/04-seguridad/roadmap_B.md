@@ -232,9 +232,10 @@ siguiente (checklist en la ronda 3 de este roadmap y modelo §3).
   tres intentos, límite del sandbox); queda para su CI y la
   re-auditoría al fusionar. La batería Go propia no se repite: árbol
   idéntico al 55c8b35 ya validado.
-- **Cierre del carril:** 8/8 rondas. Pendiente de otros: SEC-9
-  (verificar el ciclo real de `deps-audit` cuando las rondas lleguen a
-  main), O-2 (decisión sobre la fila E) y O-3 (bind de prueba en AD-6).
+- **Cierre del carril:** 8/8 rondas. Pendiente de otros: seguimiento
+  SEC-5 (ciclo real de `deps-audit` — CERRADO en la ronda 10; en esta
+  línea lo numeré antes por error como «SEC-9», corrección pública
+  allí), O-2 (decisión sobre la fila E) y O-3 (bind de prueba en AD-6).
   Para quien fusione: conservar ambos tests EOF en
   internal/scenrun/scenrun_test.go (conflicto anotado con seguridad-a).
 
@@ -256,5 +257,35 @@ siguiente (checklist en la ronda 3 de este roadmap y modelo §3).
 - **PUL-A go.mod (df323ad): limpio** — solo sincronización con la
   cadena del PR #18 ya auditada.
 - El carril vuelve a parada por cuota agotada; puerta de reapertura:
-  contenido nuevo de seguridad (AD-6, verificación SEC-9 tras la
-  fusión a main).
+  contenido nuevo de seguridad (AD-6, re-verificación integrada tras
+  la fusión a main). La mención a «SEC-9» de esta entrada era el
+  seguimiento de deps-audit, que es SEC-5 — corregido y cerrado en la
+  ronda 10; SEC-9 real es Privacidad y depende de AD-3/AD-4.
+
+## Ronda 10 (2026-10-06, 07h22 UTC, verificación fuera de cuota)
+
+- **Cruce con la ronda 12 de seguridad-a (f72a479):** registro de
+  conflictos re-verificado (único conflicto: `scenrun_test.go`,
+  «conservar ambos» vigente; su corrección de `fuzz_test.go` es
+  solo-suya y consistente); identidad byte a byte del go.mod/go.sum
+  (`380a323f`/`d3211152`) en main/PUL-A/PUL-B confirmada; versiones
+  del delta verificadas contra el árbol; cobertura de seguridad del
+  conjunto ya completa entre ambos carriles (integridad suya,
+  govulncheck/licencias mías).
+- **Seguimiento SEC-5 CERRADO:** el ciclo real de `deps-audit` está
+  verificado con evidencia de primera mano en main — workflow con
+  cron semanal + política de alertas (`deps-audit.yml`), primer ciclo
+  real con 5 vulnerabilidades de stdlib alcanzadas y corregidas vía
+  go 1.26.6 (`cfe9d85`), y mi ALTA de x/text aplicada (`cbc31b1`,
+  GO-2026-5970). Límite: la historia de Actions no es observable
+  desde el sandbox; evidencia documental.
+- **Corrección pública de numeración:** deps-audit es SEC-5, no
+  SEC-9. SEC-9 real = Privacidad (TODO.md l. 767), bloqueada por
+  AD-3/AD-4 de IMP-A (sin código). Mis informes históricos no se
+  tocan; las entradas vivas del roadmap quedan corregidas.
+- **Fuzz lote 2 constatado:** los 4 objetivos existen en f72a479 en
+  los paquetes listados; 24 objetivos en su carril vs 20 en main.
+- Informe: ronda_2026-10-06_07h22_B.md. Sin changelog (verificación).
+  Sin Go en el sandbox (ronda de docs; evidencia previa válida).
+  Puerta de reapertura actualizada: AD-6, AD-3/AD-4 (SEC-9),
+  fusiones a main.
