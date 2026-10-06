@@ -538,3 +538,45 @@ siguiente (checklist en la ronda 3 de este roadmap y modelo §3).
   OPERATIONS.md (IMP-A, BAJA), Makefile roto en main, SEC-9
   bloqueado, SEC-5 cerrado.
 - Informe: ronda_2026-10-06_12h05_B.md. Sin changelog. PARADA.
+
+## Ronda 18 (2026-10-06, verificación) — hot-swap AD-6 verificado; Makefile de PUL-B converge
+
+- **Gatillo doble:** IMP-A `60a63a3..48b81f8` (aterriza el fix del
+  hot-swap MEDIA anunciado) y PUL-B `744d46a..e2bd3aa`
+  (publicación de sus rondas 9-15: TABs + `--ignore-scripts` +
+  `--no-save --no-package-lock`).
+- **AD-6 hot-swap: LIMPIO.** Los tres puntos de mi plan r17 §4
+  verificados en la diff `f2e6378`: swap síncrono DENTRO del
+  `adWriteMu` del PUT (`defer Unlock`; orden de publicación ==
+  orden de commit por construcción), bookkeeping `current` de
+  llamador-único ahora verídico (cambio solo de comentarios en
+  `cmd/engine/run.go`; además `adReconfigure` ahora se lee bajo
+  `h.mu`), y prueba determinista 8-PUT que replica el bookkeeping
+  del engine SIN cerrojo propio (pausa 200µs hace el fail-before
+  determinista bajo el async viejo; aserciones: 8×200, swaps
+  completos, último publicado == archivo commiteado, cero
+  huérfanos). `-race -count=5` afirmado por IMP-A; sandbox sin Go
+  → verificación por construcción, anotada. Respuesta del PUT
+  reporta swap resuelto (`reload_pending` false +
+  `last_reload_*`); el GET concurrente en ventana ve true —
+  openapi.yaml lo distingue con exactitud. OPERATIONS.md sin
+  mentiras. **Recomendación: SEG-A cierra el gate (dueño).**
+- **Makefile PUL-B: convergencia SEG-A adoptada** (TABs, 6/6
+  flags, `--no-save --no-package-lock` — la mutación del manifest
+  que documenté en r13 queda cortada también en su carril).
+  Targets nuevos console-a11y/console-lighthouse con versiones
+  pinneadas y `--ignore-scripts`: sin observaciones.
+- **Matriz r18:** main/IMP-A CLEAN + guardia verde (4 flags);
+  IMP-B CLEAN + guardia ROJA — 6.ª confirmación del caso
+  silencioso (se resuelve cuando PUL-B llegue a main); PUL-A
+  receta nº 1 sin cambios + `.py` nuevo = ruido informativo
+  (comentario, limpio); **PUL-B CONFLICTO NUEVO conmigo (5
+  hunks)** — receta: npm×3 y windows vet → tomar PUL-B (superset
+  y convergencia SEG-A); línea `check_console_theme.py` → mi
+  carril es el único portador (conservar la mía, aditiva;
+  señalar a PUL-B/SEG-A); `alert-actions.tsx` auto-merge limpio.
+  SEG-A receta nº 2 sin cambios.
+- Puertas: AD-6 (MEDIA) verificada por SEG-B → cierre pendiente
+  del dueño; 3 BAJOS de SET-1 (IMP-B); frase de OPERATIONS.md
+  (IMP-A); Makefile a main; SEC-9 bloqueado; SEC-5 cerrado.
+- Informe: ronda_2026-10-06_10h55_B.md. Sin changelog. PARADA.
