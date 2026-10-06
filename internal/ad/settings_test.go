@@ -47,10 +47,10 @@ func TestProbeReadsFixtureDirectory(t *testing.T) {
 		if k.Count <= 0 {
 			t.Fatalf("kind %s read %d entries, want >0", k.Kind, k.Count)
 		}
-		if len(k.SampleDNs) == 0 || len(k.SampleDNs) > probeSampleDNs {
-			t.Fatalf("kind %s sampled %d DNs, want 1..%d", k.Kind, len(k.SampleDNs), probeSampleDNs)
+		if len(k.SampleDNS) == 0 || len(k.SampleDNS) > probeSampleDNS {
+			t.Fatalf("kind %s sampled %d DNs, want 1..%d", k.Kind, len(k.SampleDNS), probeSampleDNS)
 		}
-		for _, dn := range k.SampleDNs {
+		for _, dn := range k.SampleDNS {
 			if !strings.HasSuffix(dn, fixtureBase) {
 				t.Fatalf("sample DN %q outside the fixture base", dn)
 			}

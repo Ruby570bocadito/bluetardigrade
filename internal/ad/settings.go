@@ -35,7 +35,7 @@ import (
 // floor for the count", never "the whole directory over HTTP".
 const (
 	probeSampleCap = 200
-	probeSampleDNs = 5
+	probeSampleDNS = 5
 )
 
 // ProbeKind is the per-kind readout of a probe.
@@ -44,7 +44,7 @@ type ProbeKind struct {
 	Count     int      `json:"count"`     // entries actually read (a floor when truncated)
 	Cap       int      `json:"cap"`       // the per-kind sample ceiling
 	Truncated bool     `json:"truncated"` // count hit the ceiling: the directory has at least this many
-	SampleDNs []string `json:"sample_dns"`
+	SampleDNS []string `json:"sample_dns"`
 }
 
 // ProbeResult is the JSON verdict of one test connection. OK=false
@@ -122,13 +122,13 @@ func Probe(ctx context.Context, cfg *Config, password []byte) *ProbeResult {
 			Count:     len(entries),
 			Cap:       probeSampleCap,
 			Truncated: truncated,
-			SampleDNs: []string{},
+			SampleDNS: []string{},
 		}
 		for i, e := range entries {
-			if i >= probeSampleDNs {
+			if i >= probeSampleDNS {
 				break
 			}
-			pk.SampleDNs = append(pk.SampleDNs, e.DN)
+			pk.SampleDNS = append(pk.SampleDNS, e.DN)
 		}
 		res.Kinds = append(res.Kinds, pk)
 	}
