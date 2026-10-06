@@ -26,13 +26,18 @@ func isLoopback(addr string) bool {
 }
 
 // suppressed reports whether the allowlist currently silences this
-// rule/host pair. nil manager means the feature is off.
-func suppressed(m *suppress.Manager, ruleID, host string, now time.Time) bool {
+// rule/host pair. nil manager means the feature is off. ev is the
+// triggering event when one exists (rule hits, intel, baseline
+// novelty); nil for aggregated alerts (kill-chains, beaconing,
+// volumetric), which a CONDITIONAL entry (§2.3 when) therefore never
+// silences — the failure direction is an alert the operator still
+// sees, never a lost signal.
+func suppressed(m *suppress.Manager, ruleID, host string, ev *model.Event, now time.Time) bool {
 	if m == nil {
 		return false
 	}
-	ok, _ := m.SuppressedAt(ruleID, host, now)
-	return ok
+	ok, entry := m.SuppressedAt(ruleID, host, now)
+	return ok && entry.MatchesEvent(ev)
 }
 
 var storeFails uint64
