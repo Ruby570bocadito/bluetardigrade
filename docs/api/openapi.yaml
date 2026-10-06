@@ -2279,9 +2279,15 @@ paths:
         the request carries one, into its own SEC-2 envelope (DPAPI on
         Windows, 0600 plain elsewhere — never into the YAML, never into a
         log); commit the YAML atomically (temp+rename+Sync); and hot-swap
-        the live connector (the next sync uses the new settings; the old
-        loop stops in the background). The response is the new effective
-        document with `reload_pending: true`.
+        the live connector synchronously inside that same serialized
+        write (the next sync uses the new settings; the old loop stops in
+        the background). Overlapping PUTs therefore publish connectors in
+        the order they commit — the served connector always matches the
+        committed file, and no swapped-out connector is ever left
+        running. The response is the new effective document with the
+        swap already resolved: `reload_pending` false and the outcome in
+        `last_reload_at`/`last_reload_error` (a swap that failed still
+        applies on restart).
 
         Guard rails: 409 when the `-ad` file changed on disk since the
         engine loaded or last wrote it (hand edits are reconciled by a
@@ -3244,7 +3250,11 @@ components:
             type: integer
         reload_pending:
           type: boolean
-          description: a committed settings change is being applied to the live connector
+          description: >-
+            a committed settings change is being applied to the live
+            connector right now; the swap runs inside the PUT's serialized
+            write, so a concurrent GET during that window sees true while
+            the PUT response itself reports the resolved state
         last_reload_at:
           type: string
           description: RFC 3339 instant of the last reload attempt

@@ -834,8 +834,12 @@ role model; arming writes IS the admin gate), and `GET`/`PUT` answer
   the request goes to its own SEC-2 envelope file (never into the
   YAML, never into a log); the YAML is installed atomically
   (temp+rename+Sync, mode 0600); the live connector is hot-swapped
-  (the next sync uses the new settings; the response reports
-  `reload_pending` and the swap result lands in `last_reload_*`).
+  synchronously inside that same serialized write (the next sync uses
+  the new settings, the old loop stops in the background, and
+  overlapping PUTs publish in commit order — the served connector
+  always matches the committed file). The PUT response reports the
+  resolved swap: `reload_pending` false and the outcome in
+  `last_reload_*` (a swap that failed still applies on restart).
   Every commit leaves one audit line in the engine log listing the
   changed field names. A `-ad` file edited by hand since the engine
   loaded it refuses the PUT with `409` — reconcile the hand edit

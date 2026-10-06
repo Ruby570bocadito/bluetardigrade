@@ -15,7 +15,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -197,8 +200,11 @@ func TestADSettingsPutCommitsAndHotSwaps(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("PUT: status %d: %s", res.StatusCode, raw)
 	}
-	if !strings.Contains(raw, `"reload_pending":true`) {
-		t.Fatalf("PUT response must report the pending swap: %s", raw)
+	if !strings.Contains(raw, `"reload_pending":false`) {
+		t.Fatalf("PUT response must report the swap already resolved (it runs inside the PUT): %s", raw)
+	}
+	if !strings.Contains(raw, `"last_reload_at":"`) {
+		t.Fatalf("PUT response must carry the reload bookkeeping: %s", raw)
 	}
 	if strings.Contains(raw, brandNewPassword) {
 		t.Fatalf("the PUT response echoes the credential value")
@@ -255,6 +261,122 @@ func TestADSettingsPutCommitsAndHotSwaps(t *testing.T) {
 	defer res2.Body.Close()
 	if res2.StatusCode != http.StatusOK {
 		t.Fatalf("second PUT: status %d: %s (the engine's own write must not look like drift)", res2.StatusCode, raw2)
+	}
+}
+
+// TestADSettingsHotSwapSerializesConcurrentPUTs is the SEG-A ronda 16
+// regression: overlapping PUTs (a double click, two operators) used to
+// run the engine callback in bare goroutines OUTSIDE adWriteMu — a
+// data race on the engine's captured `current` connector, lost updates
+// between the committed file and the published connector, and orphaned
+// connectors whose sync loop never received Stop(). The callback below
+// replicates the engine bookkeeping (cmd/engine/run.go) with NO lock of
+// its own: serialization must come from the hub, the same contract
+// production relies on. Eight PUTs at once, and a short pause at the
+// top of the callback (a stand-in for the real swap work: config
+// validation, cert pool handling), make the pre-fix overlap
+// deterministic instead of a timing lottery — under the old async swap
+// this test fails with a data race and a lost update on every run; the
+// synchronous swap serializes the pauses inside the PUT critical
+// section and every assertion holds.
+func TestADSettingsHotSwapSerializesConcurrentPUTs(t *testing.T) {
+	h, addr := newTestHub(t)
+	cfgPath, _ := writeADConfig(t)
+	armWrites(h)
+	armADConnector(t, h, cfgPath)
+
+	type fakeConn struct{ interval int }
+	current := &fakeConn{interval: 900}
+	var (
+		published []int
+		stopped   []int
+	)
+	swaps := make(chan struct{}, 8)
+	h.SetADSettings(cfgPath, func(cfg *ad.Config) error {
+		// The pause widens the swap window honestly: whatever the
+		// real callback costs, two of them must never overlap.
+		time.Sleep(200 * time.Microsecond)
+		next := &fakeConn{interval: int(cfg.Interval / time.Second)}
+		prev := current
+		current = next
+		published = append(published, next.interval)
+		if prev != nil && prev != next {
+			stopped = append(stopped, prev.interval)
+		}
+		swaps <- struct{}{}
+		return nil
+	})
+
+	const putCount = 8
+	bodies := make([]string, putCount)
+	for i := range bodies {
+		bodies[i] = `{"interval_seconds": ` + strconv.Itoa(610+100*i) + `}`
+	}
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	codes := make([]int, putCount)
+	for i, body := range bodies {
+		wg.Add(1)
+		go func(i int, body string) {
+			defer wg.Done()
+			<-start
+			req, err := http.NewRequest(http.MethodPut, "http://"+addr+"/api/settings/ad", strings.NewReader(body))
+			if err != nil {
+				t.Errorf("PUT %d: %v", i, err)
+				return
+			}
+			defer req.Body.Close()
+			res, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Errorf("PUT %d: %v", i, err)
+				return
+			}
+			defer res.Body.Close()
+			_, _ = io.Copy(io.Discard, res.Body)
+			codes[i] = res.StatusCode
+		}(i, body)
+	}
+	close(start)
+	wg.Wait()
+	for i, code := range codes {
+		if code != http.StatusOK {
+			t.Fatalf("PUT %d: status %d, want 200", i, code)
+		}
+	}
+	// Every swap must have run (each PUT waits for its own swap now).
+	for i := 0; i < putCount; i++ {
+		select {
+		case <-swaps:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("swap %d never ran", i)
+		}
+	}
+
+	if len(published) != putCount {
+		t.Fatalf("published %d swaps, want %d (%v)", len(published), putCount, published)
+	}
+	// At rest the published connector must match the committed file —
+	// the lost-update the old async swap served 7/20 runs (SEG-A r16).
+	loaded, err := ad.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("the committed file must load with the strict loader: %v", err)
+	}
+	fileInterval := int(loaded.Interval / time.Second)
+	if published[len(published)-1] != fileInterval {
+		t.Fatalf("at rest the published connector serves %ds while the committed file says %ds (lost update)", published[len(published)-1], fileInterval)
+	}
+	// No orphan: every connector except the live one stopped exactly
+	// once; the live one never.
+	wantStops := []int{900}
+	for _, iv := range published {
+		if iv != fileInterval {
+			wantStops = append(wantStops, iv)
+		}
+	}
+	slices.Sort(stopped)
+	slices.Sort(wantStops)
+	if !slices.Equal(stopped, wantStops) {
+		t.Fatalf("stopped connectors %v, want exactly %v (an orphan keeps hitting the DC forever)", stopped, wantStops)
 	}
 }
 

@@ -408,40 +408,56 @@ func (h *Hub) handleADSettingsPut(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("[API] WRITE ad-settings fields=%s by=api (file %s)", strings.Join(changed, ","), oneLine(h.adSettingsPath))
-	h.adReloadAsync(&candidate)
+	h.adReloadSync(&candidate)
 
+	// The swap already resolved: it runs inside this adWriteMu
+	// critical section, so the response reports the end state —
+	// reload_pending false, last_reload_* carrying the outcome.
 	out := adWireFromConfig(&candidate)
-	out.ReloadPending = true
+	out.ReloadPending = h.adReloadPending.Load()
+	if rec := h.adReloadRecord.Load(); rec != nil {
+		out.LastReloadAt = rec.At.UTC().Format(time.RFC3339)
+		out.LastReloadError = rec.Error
+	}
 	writeJSON(w, out)
 }
 
-// adReloadAsync swaps the live connector off the request path: the
-// PUT response reports reload_pending=true and the callback (stop the
-// previous loop, build and start the new connector, publish it) runs
-// in its own goroutine. Callbacks are serialized by adWriteMu, so the
-// engine-side swap bookkeeping needs no lock of its own.
-func (h *Hub) adReloadAsync(candidate *ad.Config) {
-	h.adReloadPending.Store(true)
+// adReloadSync runs the engine's hot-swap callback to completion
+// INSIDE the caller's adWriteMu critical section. Serializing the
+// swap against the file commit is the whole point: two overlapping
+// PUTs (a double click, two operators) must publish connectors in
+// the same order the YAML was committed, or the engine would serve
+// a configuration the committed file no longer describes — and the
+// engine-side bookkeeping (the captured `current` connector in
+// cmd/engine/run.go) is only touched by one caller at a time. The
+// old async version ran the callback in a bare goroutine OUTSIDE
+// the mutex (SEG-A ronda 16: data race on `current`, lost-update
+// between the committed file and the published connector, and an
+// orphaned connector whose sync loop never received Stop()).
+// ad.New is validation without I/O, so the added response latency
+// is negligible; the long-lived work (Run/Stop loops) still
+// happens in background goroutines owned by the engine callback.
+func (h *Hub) adReloadSync(candidate *ad.Config) {
+	h.mu.Lock()
 	reconfigure := h.adReconfigure
+	h.mu.Unlock()
 	if reconfigure == nil {
 		h.adReloadRecord.Store(&adReloadRecord{
 			At:    time.Now(),
 			Error: "no reload callback armed: the committed config applies on restart",
 		})
-		h.adReloadPending.Store(false)
 		return
 	}
-	go func() {
-		rec := &adReloadRecord{At: time.Now()}
-		if err := reconfigure(candidate); err != nil {
-			rec.Error = fmt.Sprintf("the committed config could not take over (it applies on restart): %v", err)
-			log.Printf("[API] ad-settings reload FAILED: %v", err)
-		} else {
-			log.Printf("[API] ad-settings reload OK (connector hot-swapped)")
-		}
-		h.adReloadRecord.Store(rec)
-		h.adReloadPending.Store(false)
-	}()
+	h.adReloadPending.Store(true)
+	rec := &adReloadRecord{At: time.Now()}
+	if err := reconfigure(candidate); err != nil {
+		rec.Error = fmt.Sprintf("the committed config could not take over (it applies on restart): %v", err)
+		log.Printf("[API] ad-settings reload FAILED: %v", err)
+	} else {
+		log.Printf("[API] ad-settings reload OK (connector hot-swapped)")
+	}
+	h.adReloadRecord.Store(rec)
+	h.adReloadPending.Store(false)
 }
 
 // handleADTest serves POST /api/ad/test, the "Probar conexión" of the
