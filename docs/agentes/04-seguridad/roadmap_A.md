@@ -106,6 +106,45 @@ ronda 17, cierre (10:14 UTC, Europe/Madrid).
   changelog. Nota de proceso: el plan se publicó en el commit de
   cierre (desvío de ORDEN anotado).
 
+## Estado tras el cierre de la ronda 18 (2026-10-06)
+
+- **IMP-A `48b81f8` auditado (hot-swap + quotas + doctor, ~1,4 k
+  líneas): LIMPIO y mi MEDIA de la ronda 16 CERRADA con verificación
+  independiente** (informe `ronda_2026-10-06_14h50_A.md`): swap
+  síncrono dentro de `adWriteMu` verificado en los cuatro puntos de
+  locking, `current` mono-llamador, sin deadlock; su test de 8 PUTs
+  montado sobre el hub viejo `293be1d` revienta con DATA RACE
+  (fail-before replicado por mí) y en su punta pasa `-race -count=5`.
+  Quotas por equipo con tallies honestos y casing `ToLower`
+  consistente en las tres capas; doctor con el parser propio.
+- **BOMBA DE TIEMPO detonada y desactivada (fix propio nº 2,
+  `b0fbc0e`)**: `TestPersistenceAndReload` de enroll llevaba base
+  fija 2026-10-05 12:00 + TTL 24h y recarga con el reloj de
+  producción — falla desde las 12h UTC de hoy en main y TODOS los
+  carriles. Fix: reloj inyectado relativo (`now-1h`). Árbol completo
+  de vuelta a 37/37 con `-race -count=1`. Aplica verbatim a todas
+  las puntas.
+- **Convergencia Makefile completada en mi carril (fix propio nº 1,
+  `99264c1`)**: `--no-save --no-package-lock` con fail-before real
+  (manifest comprometido mutado en árbol fusionado simulado). Matriz
+  de convergencia medida: SEG-A y PUL-B convergidos; SEG-B a medias
+  (su mensaje `7b6a562` exagera); PUL-A y main con recetas desnudas
+  — dos avisos nuevos.
+- **PUL-B `54a62c4` (badge POL-7) LIMPIA** estático y dinámico (bun
+  371 pass, tsc, build en su punta). SEG-B delta docs-only (diff-stat
+  0 ficheros fuera de docs/).
+- **Noveno aviso a IMP-B** (4 hallazgos, punta sin mover). Aviso a
+  main elevado a rojo (Makefile roto + batería enroll roja; mi punta
+  fusiona LIMPIA y aterriza ambos reparos).
+- **Baterías**: `-race -count=5` en api/beacon/threshold/engine de la
+  punta IMP-A; árbol combinado mi carril+IMP-A con el conflicto
+  aditivo resuelto por conjuntos (15 tests) y `-race -count=3` verde;
+  CI de mi árbol completo; fuzzing 3/3 a 60 s. Dos fixes propios →
+  dos changelogs (`SEG-A-makefile-no-save.md`,
+  `SEG-A-enroll-time-bomb.md`).
+- Entorno reconstruido tras reset del sandbox: repo re-clonado,
+  Go 1.26.6 y staticcheck 2026.2.1 re-instalados, token nuevo rotado.
+
 ## Estado tras el cierre de la ronda 15 (2026-10-06)
 
 - **Auditoría del código nuevo de IMP-B (`b5e26d7`): LIMPIA, sin
@@ -520,19 +559,26 @@ ronda 17, cierre (10:14 UTC, Europe/Madrid).
 
 ## Pendiente (orden de prioridad para reabrir)
 
-1. **IMP-A: hot-swap de AD-6 sin serializar (hallazgo MEDIA de la
-   ronda 16)** — repro con carrera confirmada por -race y lost-update
-   7/20 entregado en el informe `ronda_2026-10-06_09h22_A.md` (copia
-   del repro en mi sandbox `scripts/repro-r16/`). Sin movimiento en
-   la ronda 17 (su carril sigue en `293be1d`). Cuando lo corrija:
-   re-verificar con dos PUTs concurrentes bajo -race en su punta.
-   SUS OTROS 2 hallazgos (ronda 11) quedaron CERRADOS y verificados
-   en dos direcciones (ronda 16).
+1. **CERRADO (ronda 18): IMP-A hot-swap AD-6 (mi MEDIA de la ronda
+   16)** — su fix `f2e6378` (síncrono dentro de `adWriteMu`) auditado
+   estático en los cuatro puntos de locking y VERIFICADO dinámico de
+   forma independiente: su test de 8 PUTs montado sobre el hub viejo
+   `293be1d` revienta con DATA RACE + lost-update (fail-before
+   replicado por mí) y en su punta pasa `-race -count=5`. Sus 2
+   hallazgos míos anteriores (ronda 11) ya estaban cerrados (ronda
+   16). El BAJA de SEG-B sobre OPERATIONS.md (identity bindings no
+   enunciados) sigue abierto en su haber.
+   **NUEVO (ronda 18, rojo): bomba de tiempo en enroll** —
+   `TestPersistenceAndReload` detonó a las 12h UTC del 2026-10-06
+   (base fija 2026-10-05 12:00 + TTL 24h + recarga con reloj real);
+   la batería de main y de TODOS los carriles está roja desde
+   entonces. Mi fix `b0fbc0e` aplica verbatim a todas las puntas
+   (fichero idéntico); avisado el integrador.
 2. **Verificar que IMP-B incorpora los hallazgos pendientes** en su
    rama antes de la fusión — son CUATRO: los 2 de la ronda 5
    (noise-view `host: ''` flota completa; reports-view `generate`
-   sin guardia de vigencia — octavo aviso, re-verificados vigentes
-   en `2c47271`) más los 2 NUEVOS de la ronda 17 (trim del password
+   sin guardia de vigencia — noveno aviso, punta sin mover en
+   `2c47271`) más los 2 de la ronda 17 (trim del password
    en `draftPayload` vs motor verbatim; timeout de sonda 30 s
    cliente vs 45 s motor). Ninguno es bloqueante de fusión por
    severidad, pero el trim afecta a la credencial permanente.
@@ -542,29 +588,31 @@ ronda 17, cierre (10:14 UTC, Europe/Madrid).
    objetivos densos por ronda (FuzzDecode/FuzzEnrollLine/FuzzParseLine
    en la 14: limpio) mientras no haya código NUEVO que fuzzear
    (deltas de IMP-A/IMP-B) o fusiones grandes a `main`.
-4. **Resolver TRES conflictos al fusionar** (re-verificado POR EXIT
-   CODE en la ronda 17 desde `a13012e`):
-   `internal/ingest/fuzz_test.go` SOLO con PUL-A —
-   conservar `"time"` y `"unicode"` junto a mi bloque — y
-   `internal/scenrun/scenrun_test.go` con SEG-B
-   — conservar `TestRunIDsMatchWireContract` (suyo) y
-   `TestStartUnknownScenarioWrapsSentinel` (mío) — y
+4. **Resolver CINCO conflictos al fusionar** (re-verificado POR EXIT
+   CODE en la ronda 18 desde `99264c1`):
    `internal/api/reports_test.go` con IMP-A y con IMP-B (vía
-   absorción; aditivo: mi test truncado de la ronda 7 + sus tests,
-   conservar AMBOS). Contra `main` de hoy mi punta fusiona LIMPIA
-   (mi reparación del Makefile aterrizaría sola).
-5. **Makefile — UPGRADE (ronda 17)**: el corte de `63fa077` no son
-   las 7 líneas de PUL-B: son TODAS las recetas (62 líneas a 8
-   espacios). Matriz `make -n tidy` en solitario: rotos = main,
-   implementacion-a, implementacion-b, pulimiento-b (y mi carril
-   antes del fix); OK = pulimiento-a, seguridad-b. **MI carril ya
-   está reparado** (`0852035` tabs + `a13012e` --ignore-scripts,
-   pass-after con make real) y fusiona LIMPIO contra todos — quien
-   fusione mi carril a main aterriza el reparo de paso. Aviso a
-   IMP-A: es quien integrará a main y SU árbol también está roto.
-   Quedan a la zaga: main, IMP-A, IMP-B, PUL-B en sus Makefiles
-   propios. Las 7 recetas console de PUL-B siguen siendo peligro de
-   fusión para quien integre su carril sin tabs.
+   absorción; ADITIVO y con RECETA PROBADA en mi worktree de la
+   ronda 18: 15 tests = 13 suyos + 2 míos, import de
+   `internal/store` añadido, `-race -count=3` verde).
+   `internal/ingest/fuzz_test.go` SOLO con PUL-A — conservar
+   `"time"` y `"unicode"` junto a mi bloque — y
+   `internal/scenrun/scenrun_test.go` con SEG-B — conservar ambos
+   tests. NUEVO: `Makefile` con PUL-A, PUL-B y SEG-B (mis recetas ya
+   convergidas a `--ignore-scripts --no-save --no-package-lock`;
+   los hunks son aditivos/mejora — tomar la forma convergida; contra
+   PUL-B queda UN hunk: sus targets console-a11y/console-lighthouse).
+   Contra `main` de hoy mi punta fusiona LIMPIA y aterriza tabs +
+   ignore-scripts + no-save + fix enroll de paso.
+5. **Makefile — convergencia casi completa (ronda 18)**: mi carril
+   adopta `--no-save --no-package-lock` (`99264c1`; fail-before en
+   árbol fusionado simulado: manifest `0.25.11` → `^0.25.11` +
+   lockfile espurio; pass-after: byte-idéntico x2). Matriz medida
+   hoy: convergidos = SEG-A (4/4 flags) y PUL-B (6/6); a medias =
+   SEG-B (ignore-scripts sí, no-save NO — su mensaje `7b6a562`
+   exagera); desnudos = PUL-A (4/4 sin flags: solo lo aplicó en
+   ci.yml, NO en su Makefile — reescribirá el manifest trackeado de
+   PUL-B al fusionar) y main (0/4 + espacios). Avisos nuevos a
+   PUL-A y SEG-B en el informe de la ronda 18.
 6. **`min_count: 2` en beacons** — decisión del responsable pendiente
    desde la ronda 1.
 7. **CERRADO (ronda 15)**: la vista de IMP-B que consume el stats
