@@ -848,9 +848,14 @@ role model; arming writes IS the admin gate), and `GET`/`PUT` answer
   read-only probe (same TLS transport, authenticated bind, up to 200
   sampled entries per object kind) of a candidate configuration. It
   stores nothing, answers 200 with `ok: true/false` (a failed
-  CONNECTION is a successful TEST), works without `-ad` (test a full
-  configuration BEFORE restarting the engine with it), and runs one
-  probe at a time.
+  CONNECTION is a successful TEST), needs `-ad`, and runs one probe at
+  a time.
+- File paths never come from the API: `ca_file` and `password_file` are
+  changed in the `-ad` file on the engine host. A PUT or probe that names
+  other paths is refused with `400` (sending the current value back
+  unchanged is fine). An API path would let the API credential overwrite
+  any file the engine can write, or read one and send it as a bind
+  password to a server of the caller's choosing.
 
 ```bash
 curl -s -X PUT "$API/api/settings/ad" \

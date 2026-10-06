@@ -136,13 +136,12 @@ func TestADSettingsNotArmedWithoutAD(t *testing.T) {
 	if res2.StatusCode != http.StatusNotImplemented {
 		t.Fatalf("PUT: status %d, want 501 without -ad", res2.StatusCode)
 	}
-	// The TEST route is usable without -ad: a complete-but-invalid
-	// request answers 400 (validation), never the 501 of a family it
-	// does not belong to.
+	// The TEST route needs -ad too: its CA and credential files come
+	// from the -ad file on the engine host, never from the request.
 	res3, _ := doJSON(t, "POST", "http://"+addr+"/api/ad/test", `{}`)
 	defer res3.Body.Close()
-	if res3.StatusCode != http.StatusBadRequest {
-		t.Fatalf("POST test: status %d, want 400 (the empty candidate cannot validate)", res3.StatusCode)
+	if res3.StatusCode != http.StatusNotImplemented {
+		t.Fatalf("POST test: status %d, want 501 without -ad", res3.StatusCode)
 	}
 }
 
@@ -508,35 +507,66 @@ func TestADTestContractWithoutConnector(t *testing.T) {
 	h, addr := newTestHub(t)
 	armWrites(h)
 
-	// A full candidate with an unreachable CA: the probe RUNS and the
-	// verdict is ok=false — a failed connection is a successful test.
+	// Without -ad there are no CA and credential files to test with,
+	// and the request cannot name its own: 501 before any dial.
 	body := `{"server": "dc01.corp.example.invalid", "port": 636, "base_dn": "DC=corp,DC=example,DC=invalid", "bind_dn": "CN=x,DC=corp,DC=example,DC=invalid", "ca_file": "/nonexistent/ca.pem", "password_file": "/nonexistent/ad-bind.secret", "password": "probe-pw-value"}`
 	res, raw := doJSON(t, "POST", "http://"+addr+"/api/ad/test", body)
 	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("POST test: status %d: %s", res.StatusCode, raw)
+	if res.StatusCode != http.StatusNotImplemented {
+		t.Fatalf("POST test without -ad: status %d, want 501: %s", res.StatusCode, raw)
 	}
 	if strings.Contains(raw, "probe-pw-value") {
 		t.Fatalf("the test response echoes the credential value")
 	}
-	var got ad.ProbeResult
-	if err := json.Unmarshal([]byte(raw), &got); err != nil {
-		t.Fatalf("decode: %v", err)
+}
+
+// File paths never come from the API: a request naming another CA or
+// credential file is refused before anything is read, written or dialed.
+// Otherwise the API credential would read any file the engine can read
+// (sent as the bind password of a probe) or overwrite one (the
+// credential envelope of a PUT).
+func TestADSettingsRefuseFilePathsFromTheAPI(t *testing.T) {
+	h, addr := newTestHub(t)
+	cfgPath, _ := writeADConfig(t)
+	armWrites(h)
+	armADConnector(t, h, cfgPath)
+	h.SetADSettings(cfgPath, func(*ad.Config) error { return nil })
+
+	victim := filepath.Join(t.TempDir(), "victim.txt")
+	if err := os.WriteFile(victim, []byte("do-not-touch"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if got.OK {
-		t.Fatalf("probe ok with a nonexistent CA file")
+	for _, tc := range []struct{ method, route, body, field string }{
+		{"PUT", "/api/settings/ad", `{"password_file": "` + filepath.ToSlash(victim) + `", "password": "x"}`, "password_file"},
+		{"PUT", "/api/settings/ad", `{"ca_file": "` + filepath.ToSlash(victim) + `"}`, "ca_file"},
+		{"POST", "/api/ad/test", `{"password_file": "` + filepath.ToSlash(victim) + `", "server": "attacker.example.invalid"}`, "password_file"},
+		{"POST", "/api/ad/test", `{"ca_file": "/etc/ssl/certs/ca-certificates.crt", "server": "attacker.example.invalid"}`, "ca_file"},
+	} {
+		res, raw := doJSON(t, tc.method, "http://"+addr+tc.route, tc.body)
+		res.Body.Close()
+		if res.StatusCode != http.StatusBadRequest || !strings.Contains(raw, tc.field) {
+			t.Fatalf("%s %s with %s: status %d, want 400 naming the field: %s", tc.method, tc.route, tc.field, res.StatusCode, raw)
+		}
 	}
-	if got.Error == "" || got.DurationMS < 0 {
-		t.Fatalf("verdict incomplete: %+v", got)
+	if got, err := os.ReadFile(victim); err != nil || string(got) != "do-not-touch" {
+		t.Fatalf("a refused request touched the file: %q, %v", got, err)
 	}
 
-	// Without -ad there is no stored credential: a password-less probe
-	// is refused BEFORE any dial (no anonymous binds, ever).
-	body2 := `{"server": "dc01.corp.example.invalid", "port": 636, "base_dn": "DC=corp,DC=example,DC=invalid", "bind_dn": "CN=x,DC=corp,DC=example,DC=invalid", "ca_file": "/nonexistent/ca.pem", "password_file": "/nonexistent/ad-bind.secret"}`
-	res2, _ := doJSON(t, "POST", "http://"+addr+"/api/ad/test", body2)
-	defer res2.Body.Close()
-	if res2.StatusCode != http.StatusBadRequest {
-		t.Fatalf("POST test without a password: status %d, want 400", res2.StatusCode)
+	// Sending the current paths back unchanged is not a change.
+	res, raw := doJSON(t, "GET", "http://"+addr+"/api/settings/ad", "")
+	res.Body.Close()
+	var cur struct {
+		CAFile       string `json:"ca_file"`
+		PasswordFile string `json:"password_file"`
+	}
+	if err := json.Unmarshal([]byte(raw), &cur); err != nil {
+		t.Fatal(err)
+	}
+	same, _ := json.Marshal(map[string]any{"ca_file": cur.CAFile, "password_file": cur.PasswordFile, "inactive_days": 61})
+	res2, raw2 := doJSON(t, "PUT", "http://"+addr+"/api/settings/ad", string(same))
+	res2.Body.Close()
+	if res2.StatusCode != http.StatusOK {
+		t.Fatalf("PUT with the unchanged paths: status %d: %s", res2.StatusCode, raw2)
 	}
 }
 

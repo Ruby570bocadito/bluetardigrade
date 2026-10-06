@@ -2364,13 +2364,15 @@ paths:
 
         A failed CONNECTION is a successful TEST: the verdict is the
         returned `ok` boolean (with a credential-free `error` reason);
-        the HTTP 400s are for malformed or invalid REQUESTS. The route is
-        armed with `-api-write` alone — an operator may test a full
-        configuration BEFORE restarting the engine with `-ad` (when no
-        connector is armed, the request must be complete). One probe at a
-        time: a double click cannot hammer the domain controller. The
-        password, when the request carries one, crosses only this call
-        and is never stored by it.
+        the HTTP 400s are for malformed or invalid REQUESTS. The route
+        needs `-api-write` and an armed `-ad` surface: the CA and the
+        credential files always come from the `-ad` file on the engine
+        host, and a request that names other paths (`ca_file`,
+        `password_file`) is refused with 400 — otherwise the API
+        credential could make the engine read any file and send it as a
+        bind password. One probe at a time: a double click cannot hammer
+        the domain controller. The password, when the request carries
+        one, crosses only this call and is never stored by it.
       requestBody:
         required: true
         content:
@@ -2381,7 +2383,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '400':
-          description: Configuration rejected (validation), malformed body, or no password available
+          description: Configuration rejected (validation), malformed body, a request that changes `ca_file` or `password_file`, or no password available
           content:
             application/json:
               schema:
@@ -2396,6 +2398,12 @@ paths:
                   error:
                     type: string
                     example: "api writes are disabled: restart the engine with -api-write (or SF_API_WRITE=1) to allow Active Directory settings"
+        '501':
+          description: The Active Directory surface is not armed (no -ad at startup)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '200':
           description: The probe verdict (ok true/false with per-kind samples)
           content:

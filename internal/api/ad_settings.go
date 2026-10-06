@@ -317,10 +317,35 @@ func decodeADUpdate(w http.ResponseWriter, r *http.Request) (*adSettingsUpdate, 
 	return &in, true
 }
 
+// refusePathChange answers 400 when the request moves ca_file or
+// password_file. Both paths stay where the operator put them in the -ad
+// file on the engine host: a path taken from the API would let whoever
+// holds the API credential make the engine overwrite any file it can
+// write (the credential envelope of a PUT) or read any file it can read
+// and send it, as the bind password of a probe, to a server of their
+// choosing. Sending the current value back unchanged is not a change.
+func refusePathChange(w http.ResponseWriter, in *adSettingsUpdate, base ad.Config) bool {
+	field := ""
+	switch {
+	case in.CAFile != nil && strings.TrimSpace(*in.CAFile) != base.CAFile:
+		field = "ca_file"
+	case in.PasswordFile != nil && strings.TrimSpace(*in.PasswordFile) != base.PasswordFile:
+		field = "password_file"
+	}
+	if field == "" {
+		return false
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"error": field + " is a file on the engine host: change it in the -ad file, not through the API",
+	})
+	return true
+}
+
 // currentADBase returns the config any merge starts from: the armed
 // connector's effective configuration, or the zero config when the
-// surface runs without -ad (test-before-arm: the request must then be
-// complete, and Validate says exactly what is missing).
+// surface runs without -ad.
 func (h *Hub) currentADBase() ad.Config {
 	if c := h.adConnector(); c != nil {
 		return c.Config()
@@ -348,6 +373,9 @@ func (h *Hub) handleADSettingsPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	candidate := c.Config()
+	if refusePathChange(w, in, candidate) {
+		return
+	}
 	changed := in.apply(&candidate)
 	if err := candidate.Validate(); err != nil {
 		http.Error(w, fmt.Sprintf("configuration rejected: %v", err), http.StatusBadRequest)
@@ -461,15 +489,16 @@ func (h *Hub) adReloadSync(candidate *ad.Config) {
 }
 
 // handleADTest serves POST /api/ad/test, the "Probar conexión" of the
-// TODO: one bounded probe of a candidate configuration — bind plus a
-// capped per-kind sample of what the service account can read. It is
-// armed with -api-write alone (an operator may test a configuration
-// BEFORE restarting the engine with it), it never mutates anything,
-// and its verdict is a 200 with ok=true/false: a failed CONNECTION is
-// a successful TEST. One probe at a time, so a double click cannot
+// settings form: one bounded probe of a candidate configuration — bind
+// plus a capped per-kind sample of what the service account can read.
+// It needs -api-write and an armed -ad surface: the CA and credential
+// files always come from the -ad file on the engine host, never from
+// the request (refusePathChange). It never mutates anything, and its
+// verdict is a 200 with ok=true/false: a failed CONNECTION is a
+// successful TEST. One probe at a time, so a double click cannot
 // hammer the domain controller.
 func (h *Hub) handleADTest(w http.ResponseWriter, r *http.Request) {
-	if !h.adSettingsGate(w, false) {
+	if !h.adSettingsGate(w, true) {
 		return
 	}
 	in, ok := decodeADUpdate(w, r)
@@ -477,6 +506,9 @@ func (h *Hub) handleADTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	candidate := h.currentADBase()
+	if refusePathChange(w, in, candidate) {
+		return
+	}
 	in.apply(&candidate)
 	if err := candidate.Validate(); err != nil {
 		http.Error(w, fmt.Sprintf("configuration rejected: %v", err), http.StatusBadRequest)
