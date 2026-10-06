@@ -82,6 +82,49 @@ describe('i18n dictionaries', () => {
     expect(DICTS.en.notify.toast.one('r')).toBe('Critical alert: r')
     expect(DICTS.en.notify.toast.moreHosts(2)).toBe('and 2 more hosts')
   })
+
+  test('phase 3 sweep (alerts queue) keeps the spanish copy byte-identical', () => {
+    // Strings the browser battery pins as selectors — they must not move.
+    expect(dictEs.alerts.searchAria).toBe('Buscar en alertas')
+    expect(dictEs.alerts.acknowledge).toBe('Reconocer')
+    expect(dictEs.alerts.close).toBe('Cerrar')
+    expect(dictEs.alerts.previous).toBe('Anterior')
+    expect(dictEs.alerts.next).toBe('Siguiente')
+    expect(dictEs.alerts.scopeHistory).toBe('Histórico')
+    // Anchas de la vista completa y del widget compacto.
+    expect(dictEs.alerts.sectionAria).toBe('Alertas de detección')
+    expect(dictEs.alerts.queueTitle).toBe('Cola de alertas')
+    expect(dictEs.alerts.recentTitle).toBe('Alertas recientes')
+    expect(dictEs.alerts.offlineTitle).toBe('Alertas no disponibles')
+    expect(dictEs.alerts.emptyTitle).toBe('Sin alertas todavía')
+    expect(dictEs.alerts.clearFilters).toBe('Limpiar filtros')
+    expect(dictEs.alerts.reopen).toBe('Reabrir')
+    expect(dictEs.alerts.tableCaption).toBe(
+      'Cola de alertas del motor: severidad, regla, equipo y hora. Selecciona una fila para ver el detalle.',
+    )
+    expect(dictEs.alerts.hintLive(7)).toBe('de 7 recibidas en vivo')
+    expect(dictEs.alerts.page(2)).toBe('Página 2')
+    expect(dictEs.alerts.showingLive(3, 12)).toBe('Mostrando 3 de 12 alertas recibidas en vivo.')
+    expect(dictEs.alerts.selectRowAria('Regla X', '10:05')).toBe('Seleccionar Regla X (10:05)')
+    expect(dictEs.alerts.arrival('critical', 'R', 'H-1')).toBe('Nueva alerta critical: R en H-1')
+    expect(dictEs.alerts.linkedProseA + 'id' + dictEs.alerts.linkedProseB).toBe(
+      'La alerta enlazada (id) no está en esta cola: el anillo en vivo guarda solo las últimas alertas y el histórico pagina por bloques. Usa la búsqueda o la paginación (el enlace resuelve en cuanto la alerta aparezca en la página cargada).',
+    )
+  })
+
+  test('phase 3 english copy is a real translation of the alerts queue', () => {
+    expect(DICTS.en.alerts.queueTitle).toBe('Alert queue')
+    expect(DICTS.en.alerts.searchAria).toBe('Search alerts')
+    expect(DICTS.en.alerts.acknowledge).toBe('Acknowledge')
+    expect(DICTS.en.alerts.stateOptions.acknowledged).toBe('Acknowledged')
+    expect(DICTS.en.alerts.sevLabels.critical).toBe('Critical')
+    expect(DICTS.en.alerts.hintLive(7)).toBe('of 7 received live')
+    expect(DICTS.en.alerts.page(2)).toBe('Page 2')
+    expect(DICTS.en.alerts.showingLive(3, 12)).toBe('Showing 3 of 12 alerts received live.')
+    expect(DICTS.en.alerts.selectRowAria('Rule X', '10:05')).toBe('Select Rule X (10:05)')
+    expect(DICTS.en.alerts.arrival('critical', 'R', 'H-1')).toBe('New critical alert: R on H-1')
+    expect(DICTS.en.alerts.nd).toBe('n/a')
+  })
 })
 
 describe('language resolution', () => {

@@ -4,6 +4,7 @@ import { JSDOM } from 'jsdom'
 import React from 'react'
 import assert from 'node:assert/strict'
 import { EngineProvider, useEngine } from '../../web/console/src/components/console/engine-provider'
+import { I18nProvider } from '../../web/console/src/components/console/i18n-provider'
 import { AlertsView } from '../../web/console/src/components/console/alerts-view'
 import { Dashboard } from '../../web/console/src/components/console/dashboard'
 import { ForensicPanel } from '../../web/console/src/components/console/forensic-panel'
@@ -12,6 +13,7 @@ import { ReportLibrary } from '../../web/console/src/components/console/report-l
 import { readReports, REPORT_KEY, saveReport } from '../../web/console/src/lib/soc-report'
 import { SavedSearches } from '../../web/console/src/components/console/saved-searches'
 import { alertSearchLens, SAVED_SEARCH_KEY } from '../../web/console/src/lib/saved-searches'
+import { LANG_STORAGE_KEY } from '../../web/console/src/lib/i18n'
 import type { TriageTarget } from '../../web/console/src/lib/operations'
 
 const dom = new JSDOM('<div id="root"></div>', {url:'http://localhost:3000', pretendToBeVisual:true})
@@ -22,6 +24,10 @@ for (const key of ['window','document','HTMLElement','HTMLFormElement','HTMLInpu
 dom.window.matchMedia = (() => ({matches:true, addListener(){}, removeListener(){}, addEventListener(){}, removeEventListener(){}})) as any
 ;(globalThis as any).requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.window)
 ;(globalThis as any).cancelAnimationFrame = dom.window.cancelAnimationFrame.bind(dom.window)
+// The fixture pins Spanish strings; jsdom reports navigator.language 'en-US',
+// so the console language is stored explicitly (a validated stored choice
+// always wins, exactly the decision path the i18n battery asserts).
+dom.window.localStorage.setItem(LANG_STORAGE_KEY, 'es')
 
 class FakeSource {
   static OPEN = 1
@@ -108,7 +114,7 @@ function Probe() {state=useEngine(); return null}
 // Initialize React's browser event support after jsdom globals exist.
 const { createRoot } = require('react-dom/client') as typeof import('react-dom/client')
 const root = createRoot(document.getElementById('root')!)
-root.render(<React.StrictMode><EngineProvider><Probe/><Dashboard onAnalyze={()=>{}} onNavigate={(view)=>{navigated=view}} onTriage={(target)=>{triageTarget=target}}/></EngineProvider></React.StrictMode>)
+root.render(<React.StrictMode><I18nProvider><EngineProvider><Probe/><Dashboard onAnalyze={()=>{}} onNavigate={(view)=>{navigated=view}} onTriage={(target)=>{triageTarget=target}}/></EngineProvider></I18nProvider></React.StrictMode>)
 const delay = (ms:number) => new Promise(resolve=>setTimeout(resolve,ms))
 async function until(fn:()=>boolean, timeout=7000) {
   const end=Date.now()+timeout
@@ -211,7 +217,7 @@ async function main() {
   assert.equal(state!.events.length,0)
   console.log('PASS: manual recovery loads the restarted engine snapshot')
 
-  root.render(<React.StrictMode><EngineProvider><Probe/><AlertsView/></EngineProvider></React.StrictMode>)
+  root.render(<React.StrictMode><I18nProvider><EngineProvider><Probe/><AlertsView/></EngineProvider></I18nProvider></React.StrictMode>)
   const button=(label:string)=>[...document.querySelectorAll('button')].find(b=>b.textContent?.trim()===label)!
   await until(()=>Boolean(button('Histórico')))
   button('Histórico').click()
