@@ -1,36 +1,41 @@
-# Plan de ronda — Pulimiento B (2026-10-06, 10:35 Madrid, ronda 7)
+# Plan de ronda — Pulimiento B (2026-10-06, 10:50 Madrid, ronda 8 — última de la ventana)
 
-Base: `carril/pulimiento-b` `849ef4e` (ronda 6); `origin/main` sigue en
-`35cd866`. Estado leído: IMP-B cerró su ronda 7 (AD-5 «Directorio»,
-SET-3, arreglos label-in-name y **dos reconciliaciones con mi carril**,
-la última con mi CSP por nonce); SEG-A ronda 15 en marcha (rondas 13-14
-cerradas: fuzzing live 24/24, fix decodeText); SEG-B ronda 12 (adopta
-la reparación de tabs del Makefile de PUL-A); PUL-A con pre-flight de
-fusión sobre árboles simulados.
+Base: `carril/pulimiento-b` `c2adac6` (ronda 7); `origin/main` sigue en
+`35cd866`. Estado leído al abrir: sin pushes nuevos de las otras cinco
+ramas desde la lectura de la ronda 7.
 
 ## Tareas cogidas
 
-1. **Guardia sobre la ronda 7 de IMP-B** (cola del roadmap, punto 3):
-   pase de guardia de solo lectura sobre su árbol fusionado — azules
-   crudos fuera de tokens de datos, hex literales, disciplina POL-11 en
-   la vista «Directorio» nueva, integridad de mis gates tras sus dos
-   reconciliaciones (`shell.tsx`, `layout.tsx`, `entity-graph.tsx`), y
-   checker de temas contra su árbol.
-2. **Pronóstico de fusión de mi ronda 6** hacia su línea (su árbol solo
-   llega al plan `24c8b08`): confirmar cero conflictos y que mis cuatro
-   reactbits corregidos no colisionan con sus cambios.
+1. **POL-9 apéndice — Best-practices a source maps:** re-inspección del
+   informe Lighthouse de la ronda 6 revela que el ítem BP que falla NO
+   es el favicon (mi nota de la ronda 6 fue imprecisa: el 404 del
+   favicon ni siquiera aparece como auditoría; el `errors-in-console`
+   de esa corrida rota sí lo incluía, pero en la corrida limpia los 14
+   errores son solo 502 del motor y WebSocket del console-service,
+   ausentes en producción real). Los dos ítem BP reales:
+   `errors-in-console` (ruido del laboratorio: motor y console-service
+   apagados por diseño de la medición) y **`valid-source-maps`**
+   (chunks grandes de primera parte sin mapas). Accionable en mi
+   carril: `productionBrowserSourceMaps: true` en `next.config.ts` —
+   los mapas solo se descargan con DevTools abierto (coste cero en
+   runtime), y devuelven trazas simbolizadas cuando algo rompe en el
+   navegador de un operador.
+2. **Corrección del registro:** README de la consola (párrafo
+   Lighthouse) — el 96 de BP se debe a source maps + ruido de
+   laboratorio, no al favicon; y verificación de que `/favicon.ico`
+   ni siquiera se pide cuando hay `<link rel="icon">` (Next inyecta el
+   de `app/icon.svg`).
 
 ## No toca
 
-Código de la consola esta ronda (guardia de solo lectura; si hubiera
-hallazgo, solo ficheros de este carril); `ci.yml`/Makefile (PUL-A);
-`web/console-service` (SEG-B); Go/sensor (IMP-A/SEG-A).
+Vistas/lib de IMP-B (su línea absorberá mi ronda 6 con merge limpio);
+`ci.yml`/Makefile (PUL-A); `web/console-service` (SEG-B); Go/sensor.
 
 ## Coordinación
 
-- IMP-B: su retoque en `entity-graph.tsx` fue declarado y es quirúrgico
-  (nombre accesible); verificado que conserva mi gate de movimiento.
-  Mi ronda 6 no tocó ese fichero: sin colisión.
-- PUL-A: su pre-flight de fusiones es el paso formal antes de cualquier
-  integración; mis pronósticos quedan anotados en el informe como
-  input, no como sustituto.
+- Cambio de configuración de la consola (fichero mío desde la ronda 5,
+  donde retiré la CSP estática): cabezas de prioridad de headers sin
+  cambios; la CSP por nonce del proxy no interfiere con los `.map`
+  (los descarga DevTools, no el runtime de la página).
+- Batería completa de nuevo tras el cambio de build (el estándar del
+  carril: ningún cambio de build sin batería).
