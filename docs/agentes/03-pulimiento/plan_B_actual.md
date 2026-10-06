@@ -1,32 +1,36 @@
-# Plan de ronda — Pulimiento B (2026-10-06, 09h10 Madrid, ronda 6)
+# Plan de ronda — Pulimiento B (2026-10-06, 10:35 Madrid, ronda 7)
 
-Base: `carril/pulimiento-b` `d458fae` (ronda 5); `origin/main` sigue en
-`35cd866` (merge: up to date). Estado leído: SEG-B cierra su cuota
-(ronda 8, veredictos positivos sobre AD-1, nada para este carril);
-SEG-A ronda 11 con dos hallazgos en la rama de IMP-A y cero en las
-consolas; IMP-A/IMP-B/PUL-A sin planes nuevos.
+Base: `carril/pulimiento-b` `849ef4e` (ronda 6); `origin/main` sigue en
+`35cd866`. Estado leído: IMP-B cerró su ronda 7 (AD-5 «Directorio»,
+SET-3, arreglos label-in-name y **dos reconciliaciones con mi carril**,
+la última con mi CSP por nonce); SEG-A ronda 15 en marcha (rondas 13-14
+cerradas: fuzzing live 24/24, fix decodeText); SEG-B ronda 12 (adopta
+la reparación de tabs del Makefile de PUL-A); PUL-A con pre-flight de
+fusión sobre árboles simulados.
 
 ## Tareas cogidas
 
-1. **POL-11 (auditoría y cierre de `prefers-reduced-motion`):** pase
-   completo de microinteracciones — reactbits (`motion`), transiciones
-   CSS y animaciones de canvas — verificando que cada animación no
-   esencial se apaga o reduce con la preferencia activa. Correcciones
-   solo en ficheros de este carril (reactbits, shell, theme) o de
-   tokens; las gráficas de IMP-B solo se auditan y se anotan.
-2. **POL-9 (re-medida Lighthouse tras la ronda 5):** el nonce hace la
-   ruta dinámica; se re-mide la baseline documentada (Panel
-   95/100/96/100, Alertas 100/100) y se actualiza la sección del
-   README de la consola con la comparación antes/después.
+1. **Guardia sobre la ronda 7 de IMP-B** (cola del roadmap, punto 3):
+   pase de guardia de solo lectura sobre su árbol fusionado — azules
+   crudos fuera de tokens de datos, hex literales, disciplina POL-11 en
+   la vista «Directorio» nueva, integridad de mis gates tras sus dos
+   reconciliaciones (`shell.tsx`, `layout.tsx`, `entity-graph.tsx`), y
+   checker de temas contra su árbol.
+2. **Pronóstico de fusión de mi ronda 6** hacia su línea (su árbol solo
+   llega al plan `24c8b08`): confirmar cero conflictos y que mis cuatro
+   reactbits corregidos no colisionan con sus cambios.
 
 ## No toca
 
-Vistas y gráficas de IMP-B (su barrido i18n y las vistas AD entrantes);
-`ci.yml`/Makefile (PUL-A); `web/console-service`; Go, sensor, scripts.
+Código de la consola esta ronda (guardia de solo lectura; si hubiera
+hallazgo, solo ficheros de este carril); `ci.yml`/Makefile (PUL-A);
+`web/console-service` (SEG-B); Go/sensor (IMP-A/SEG-A).
 
 ## Coordinación
 
-- IMP-B: reactbits y shell están en mis ficheros auditados por SEG-B;
-  su barrido i18n toca vistas, no estos ficheros. Conflicto ya
-  documentado de `shell.tsx` sigue en manos del responsable.
-- SEG-A ronda 11 revisó mis consolas: cero bugs; sin acciones.
+- IMP-B: su retoque en `entity-graph.tsx` fue declarado y es quirúrgico
+  (nombre accesible); verificado que conserva mi gate de movimiento.
+  Mi ronda 6 no tocó ese fichero: sin colisión.
+- PUL-A: su pre-flight de fusiones es el paso formal antes de cualquier
+  integración; mis pronósticos quedan anotados en el informe como
+  input, no como sustituto.
