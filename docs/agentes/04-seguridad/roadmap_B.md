@@ -289,3 +289,30 @@ siguiente (checklist en la ronda 3 de este roadmap y modelo §3).
   Sin Go en el sandbox (ronda de docs; evidencia previa válida).
   Puerta de reapertura actualizada: AD-6, AD-3/AD-4 (SEC-9),
   fusiones a main.
+
+## Ronda 11 (2026-10-06, 07h43 UTC, verificación fuera de cuota)
+
+- **Cruce con la ronda 11 de PUL-A (`df323ad..22878b3`)** — superficie
+  SEC-5/SEC-6: guardia de tabs del Makefile en CI, vet cross-Windows
+  ampliado a todo el módulo.
+- **`check_makefile_tabs.py`: LIMPIO** — solo stdlib, sin
+  subprocess/eval/red, self-test bidireccional 5/5 verificado por mí,
+  semántica GNU make fiel (asignaciones con `:` vs cabeceras de regla,
+  continuaciones `\` exentas, comentarios/blank sin estado).
+- **`ci.yml`: saneador, sin superficie nueva** — cero acciones
+  externas nuevas (nada que re-fijar por SHA), permisos intactos;
+  `vet ./...` estrictamente más fuerte (type-chequea `_test.go` bajo
+  GOOS=windows).
+- **Verificación con ejecución real** (python3 y make sí hay en este
+  sandbox): `63fa077` ancestro de main ✓; MI Makefile heredado roto —
+  62 defectos en mi árbol (62 marcadas + 1 continuación exenta = las
+  63 reparadas: reconcilia y valida la exención por diseño) ✓;
+  Makefile reparado OK ✓; `make -n build` parsea ✓. Evidencia:
+  `scripts/pula-cross/` (fuera del repo).
+- **Para quien fusione:** merge-tree de mi punta vs PUL-A limpio — el
+  Makefile toma su versión reparada automáticamente; el conflicto
+  único sigue siendo `scenrun_test.go` con seguridad-a (receta en mi
+  ronda 10).
+- Informe: ronda_2026-10-06_07h43_B.md. Sin changelog (verificación).
+  PARADA; puerta de reapertura: informe ronda 13 de seguridad-a,
+  AD-6, AD-3/AD-4 (SEC-9), fusiones a main.
