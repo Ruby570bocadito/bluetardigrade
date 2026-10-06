@@ -246,6 +246,9 @@ The engine serves a small read-only API used by the web console and handy for SI
 | `GET /api/alerts/{id}/forensics` | frozen alert + host timeline; `404` missing, `501` capture disabled, `500` unreadable evidence; protected by the API bearer gate |
 | `GET /api/rules` | live rule set (hot-reload aware) |
 | `GET /api/stream` | Server-Sent Events with live events + alerts |
+| `GET /api/reports` | the REP-1 report catalog: the kinds this engine can compute today (executive, incident, fleet coverage, SOC activity) with their parameters and formats; static per engine version, so a console renders its report picker from it — see [SOC reports and noise](#soc-reports-and-noise-rep-1) |
+| `GET /api/reports/{kind}?window=7d&format=json` | one report on demand, JSON or CSV; the `incident` kind takes `?id=` (16-hex case id) instead of a window — see [SOC reports and noise](#soc-reports-and-noise-rep-1) |
+| `GET /api/noise?window=24h&host=&limit=10` | the noise report: processes, DNS domains and rules that most generate events or alerts, each with its triage overlay; JSON only, fleet-wide by default, `host=` narrows to one machine — see [SOC reports and noise](#soc-reports-and-noise-rep-1) |
 
 All four telemetry endpoints (`/api/events`, `/api/alerts` and both `/export` variants) accept the same filter parameters, applied BEFORE `limit`: `host=<name>` (exact, case-insensitive), `since=`/`until=` (RFC 3339 timestamp or positive duration like `90m`/`24h`), `q=<free text>` (case-insensitive across ids, summaries, tags and context), plus `severity=a,b` and `rule_id=` on the alert endpoints and `type=` on the event ones. Invalid values answer 400 with an actionable message. When `-store` is attached, all four read the full stored history — not just the in-memory rings — subject to the configured retention (what that mode changes in [Persistent storage](#persistent-storage-sqlite-opt-in)). Examples: `/api/alerts/export?host=lab-wks-01&since=24h` for "that box, today", `/api/events?type=network.connect&q=suspicious.tld` to chase one domain.
 
@@ -591,6 +594,40 @@ case carries its own audit trail.
   and timeline (open it and print to get a PDF). Both are built in the
   browser from what the console holds; alerts that already left the
   live window are counted, not invented.
+
+## SOC reports and noise (REP-1)
+
+The engine computes SOC reports on demand as read-only aggregations of
+records it already holds — no new capture, no side effects. With the
+SQLite store attached (`-store`) a report reads the full retention
+window; without it, the in-memory rings (last 1000 events / 256
+alerts), and the answer says so: every report carries `source: "ring"`
+plus `oldest_record`, so a consumer can see whether the requested
+window is actually covered before trusting the numbers. A scan capped
+at 10000 records flags `truncated` instead of failing silently.
+
+The catalog (`GET /api/reports`) lists the kinds this engine can
+compute today and appears only with what is computable: `executive`,
+`incident`, `fleet` (coverage) and `soc` (activity). One report comes
+from `GET /api/reports/{kind}`: `window` accepts `24h`, `7d`, `30d` or
+any positive duration within the kind's bounds (1h to 30d, default
+7d) — except the `incident` kind, which takes `?id=` (16 hex) instead
+because a case bundle is point in time; alert ids the engine can no
+longer resolve stay listed with `found: false` rather than dropped.
+`format=csv` reuses the export endpoints' spreadsheet formula
+escaping; JSON is the default. All three routes are bearer-gated like
+every other `/api/*` read.
+
+`GET /api/noise` is the tuning companion: the processes (grouped by
+executable image, case-insensitive), DNS domains (by queried name) and
+rules (by id) that most generate events or alerts over `window`
+(default 24h, 15m to 30d), `limit` entries per top list (default 10,
+max 50), fleet-wide by default and narrowed to one machine with
+`host=`. Each rule row carries its triage overlay — today
+`closed_pct`/`acknowledged_pct` over the rule's alerts, the honest
+proxy until a triage decision field exists; the JSON names exactly
+what it measures. It answers JSON only because the console renders it
+and adds the tuning buttons (known software, suppressions).
 
 ## Console accounts, roles and audit
 
