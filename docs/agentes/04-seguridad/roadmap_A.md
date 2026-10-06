@@ -1,7 +1,37 @@
 # Roadmap — Seguridad A (carril/seguridad-a)
 
 Archivo vivo: continuidad del carril. Última actualización: 2026-10-06,
-ronda 13, cierre (09:41 UTC, Europe/Madrid).
+ronda 14, cierre (09:51 UTC, Europe/Madrid).
+
+## Estado tras el cierre de la ronda 14 (2026-10-06)
+
+- **Hallazgo de PUL-A sobre `main` verificado byte a byte y
+  CONFIRMADO** (informe `ronda_2026-10-06_09h51_A.md`): `63fa077`
+  (SEC-5, 5-oct) rompió el Makefile en TODO el árbol (60 recetas
+  tab→8 espacios; `make -n build` falla en MI árbol:
+  «missing separator» Makefile:31 — fail-before capturado). Su reparo
+  (`9ee1594`: 63 recetas con tab, 0 con espacios) y su guardia
+  (`check_makefile_tabs.py`: self-test 5/5, exit 0 reparado, exit 1
+  con línea exacta sobre copia corrupta fabricada por mí) quedan
+  verificados. `make` sigue roto en mi carril HASTA que su reparo
+  aterrice en main — no duplico el fix (hallazgo con dueño).
+- **Lección registrada**: mi checklist tampoco habría visto el
+  Makefile roto (ejecuta los comandos directamente, no vía `make`) —
+  los puntos de entrada también son código que auditar.
+- **Mi checklist alineado con la CI nueva**: `GOOS=windows go vet
+  ./...` (que PUL-A amplió desde 3 paquetes) añadido a mi cadena —
+  verde en mi árbol.
+- **Fuzzing**: primer paseo de mantenimiento (60 s: `FuzzDecode`,
+  `FuzzEnrollLine`, `FuzzParseLine`) — 3/3 limpios. Los 24 objetivos
+  mantienen sesión viva de la ronda 13.
+- **Obligatorio**: 0 ficheros Go en ambos deltas movidos (PUL-A:
+  Makefile/ci.yml/scripts/docs; SEG-B: docs) → `-race` no aplica,
+  evidencia de la ronda 13 vigente.
+- **SEG-B** cierra el ciclo SEC-5 (`deps-audit` en main) y confirma
+  vía OIDs de blob la identidad go.mod/go.sum que documenté en la
+  ronda 12 — misma conclusión, dos carriles.
+- Checklist Go completo verde (37 paquetes -race). Conflictos: los
+  MISMOS DOS conocidos, ninguno nuevo.
 
 ## Estado tras el cierre de la ronda 13 (2026-10-06)
 
@@ -117,6 +147,22 @@ ronda 13, cierre (09:41 UTC, Europe/Madrid).
   ronda 9 en todas las puntas, evidencia previa vigente.
 
 ## Historial reciente
+
+### Ronda 14 (09h51 UTC) — verificación del hallazgo Makefile de PUL-A + mantenimiento fuzzing + checklist alineado con CI nueva (informe `ronda_2026-10-06_09h51_A.md`)
+
+- **63fa077/Makefile confirmado byte a byte**: fail-before en mi
+  árbol (missing separator), reparo de PUL-A y guardia verificados
+  en las dos direcciones; no duplico el fix (con dueño); dependencia
+  registrada: reparar en main para todos los carriles.
+- **CI nueva**: `GOOS=windows go vet ./...` añadido a mi checklist —
+  verde; guardia del Makefile cableada en ci.yml (no en `make ci`,
+  argumento autorreferencial sano).
+- **Fuzzing mantenimiento**: 3/3 limpios (FuzzDecode,
+  FuzzEnrollLine, FuzzParseLine).
+- **SEG-B**: cierre SEC-5 + confirmación blob-OID de la identidad de
+  deps (coincide con mi ronda 12).
+- **Obligatorio**: -race no aplica (0 Go en deltas). Checklist verde
+  (37 paquetes -race). Conflictos: los mismos 2.
 
 ### Ronda 13 (09h41 UTC) — primer crasher del fuzzing vivo corregido (intel BOM doble) + revisión CSP-nonce de PUL-B (informe `ronda_2026-10-06_09h41_A.md`)
 
@@ -299,26 +345,34 @@ ronda 13, cierre (09:41 UTC, Europe/Madrid).
    su rama antes de la fusión (sexto aviso en `5ecbcc4`).
 3. **Fuzzing vivo — COMPLETADO (ronda 13)**: los 24 objetivos del
    proyecto tienen sesión viva (rondas 10, 12 y 13; ~3,7 M ejecuciones;
-   1 crasher corregido). Futuras tandas solo si hay código NUEVO que
-   fuzzear (deltas de IMP-A/IMP-B) o como mantenimiento periódico
-   (p. ej. tras fusiones grandes a `main`).
+   1 crasher corregido). Mantenimiento: paseo de 60 s sobre 3
+   objetivos densos por ronda (FuzzDecode/FuzzEnrollLine/FuzzParseLine
+   en la 14: limpio) mientras no haya código NUEVO que fuzzear
+   (deltas de IMP-A/IMP-B) o fusiones grandes a `main`.
 4. **Resolver DOS conflictos al fusionar** (re-verificado en la
-   ronda 13): `internal/ingest/fuzz_test.go` SOLO con PUL-A —
-   conservar `"unicode"` junto a mi bloque (el EOF adoptado verbatim
-   se auto-fusiona; contra IMP-A auto-fusiona LIMPIO, corrección de
-   la ronda 11) — y `internal/scenrun/scenrun_test.go` con SEG-B
+   ronda 14): `internal/ingest/fuzz_test.go` SOLO con PUL-A —
+   conservar `"time"` y `"unicode"` junto a mi bloque (el EOF
+   adoptado verbatim se auto-fusiona; contra IMP-A auto-fusiona
+   LIMPIO, corrección de la ronda 11) — y
+   `internal/scenrun/scenrun_test.go` con SEG-B
    — conservar `TestRunIDsMatchWireContract` (suyo) y
    `TestStartUnknownScenarioWrapsSentinel` (mío). Contra `main` de
    hoy ambas puntas fusionan limpias. Mi fix de intel auto-fusiona
    contra todas las puntas.
-5. **`min_count: 2` en beacons** — decisión del responsable pendiente
+5. **Dependencia del carril (nueva, ronda 14)**: el reparo del
+   Makefile de PUL-A (`9ee1594`) debe aterrizar en `main` —
+   verificado byte a byte que es correcto y completo; `make` sigue
+   roto en TODOS los carriles con `main` como base hasta entonces
+   (63fa077). No duplico el fix: hallazgo con dueño, guardia y
+   changelog de PUL-A.
+6. **`min_count: 2` en beacons** — decisión del responsable pendiente
    desde la ronda 1.
-6. **SET-3 lado consola de IMP-A revisado** (stats payload con
+7. **SET-3 lado consola de IMP-A revisado** (stats payload con
    versión/latencia/certificados, ronda 11): pendiente solo la vista
    de IMP-B que lo consuma.
-7. **PowerShell con `pwsh`** — el entorno no lo tiene; scripts revisados
+8. **PowerShell con `pwsh`** — el entorno no lo tiene; scripts revisados
    en lectura sin hallazgos.
-8. **`internal/ad` auditado (ronda 11)**: el bloqueo de rondas 1-10
+9. **`internal/ad` auditado (ronda 11)**: el bloqueo de rondas 1-10
    quedó resuelto con la publicación de IMP-A; de aquí en adelante,
    re-auditar solo deltas NUEVOS del carril.
 
