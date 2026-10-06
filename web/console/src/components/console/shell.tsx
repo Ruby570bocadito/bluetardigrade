@@ -9,7 +9,7 @@ import { describeTelemetrySources } from '@/lib/telemetry-source'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import {
-  ActivityIcon, BatteryCharging, ChatsCircle, Desktop, Files, Flask, FlowArrow, FolderOpen, Gauge, Keyboard, Lightning,
+  ActivityIcon, BatteryCharging, ChatsCircle, Desktop, Files, Flask, FlowArrow, FolderOpen, Gauge, Gear, Keyboard, Lightning,
   ListMagnifyingGlass, MagnifyingGlass, Monitor, Prohibit, RocketLaunch, ShieldCheck, SpeakerHigh, SquaresFour,
   TreeStructure, Warning,
 } from '@phosphor-icons/react'
@@ -41,6 +41,7 @@ import { readDismissed, shouldAutoOpen } from '@/lib/onboarding'
 import { ThemeToggle } from './theme-toggle'
 import { ReportsView } from './reports-view'
 import { DirectoryView } from './directory-view'
+import { SettingsView } from './settings-view'
 import { buildConsoleCommands, buildDestinations, type ConsoleCommand } from '@/lib/console-commands'
 import { useI18n } from './i18n-provider'
 import { LanguageToggle } from './language-toggle'
@@ -66,7 +67,7 @@ const NAV_ICONS: Record<ConsoleView, React.ElementType> = {
   reglas: ShieldCheck, cadenas: FlowArrow, inteligencia: ListMagnifyingGlass, supresiones: Prohibit, probador: Flask,
   ruido: SpeakerHigh, simulacion: BatteryCharging,
   directorio: TreeStructure,
-  respuesta: Lightning, analista: ChatsCircle,
+  respuesta: Lightning, analista: ChatsCircle, ajustes: Gear,
 }
 const isCurrent = (id: ConsoleView, view: ConsoleView) => (id === 'reglas' ? isDetectionView(view) : id === view)
 
@@ -522,6 +523,7 @@ export function ConsoleShell() {
                     clearPendingIncident={() => setPendingIncident(null)}
                   />
                 )}
+                {view === 'ajustes' && <SettingsView onNavigate={setView} onOpenOnboarding={() => setOnboardingOpen(true)} />}
               </AnimatedView>
             </div>
           </main>

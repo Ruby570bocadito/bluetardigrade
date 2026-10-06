@@ -76,6 +76,7 @@ export const CONSOLE_VIEWS = [
   'simulacion',
   'respuesta',
   'analista',
+  'ajustes',
 ] as const
 
 /** Views rendered as tabs of the single Detección section. */

@@ -2,46 +2,37 @@
 
 Archivo vivo: qué tengo a medias, qué sigue y por qué. Se actualiza cada ronda.
 
-## Estado actual (ronda 10 del nuevo ciclo, 2026-10-06)
+## Estado actual (ronda 11 del nuevo ciclo, 2026-10-06)
 
-- Rama `carril/implementacion-b` sobre la ronda 9 (`28d6f9e`); rondas 2-9
+- Rama `carril/implementacion-b` sobre la ronda 10 (`9d329f1`); rondas 2-10
   entregadas (pestañas del panel, SIM-4, REP-1, informe de ruido, SIM-3, REP-4,
   enlace del informe de caso, IDEA-3 plantillas de incidente, IDEA-11
   asistente de primer arranque, IDEA-10 fases 1-2, AD-5, cierre de SET-3).
-- **Ronda 10 ENTREGADA: IDEA-10 fase 2, tercer barrido (vista de incidentes).**
-  - Secciones `incidents` y `playbook` en los diccionarios ES/EN (paridad
-    tipada; ES byte-idéntico). `IncidentsView` y todo su árbol (`StatusChip`,
-    `NewIncidentForm`, `IncidentDetail`, `IncidentPlaybook` con selector,
-    checklist, evidencias y cronología) consumen `useI18n`.
-  - **Las tres plantillas del plan de respuesta entran al diccionario como
-    contenido de producto**: nombres, descripciones, pasos claveados por el
-    id del ítem y pistas de evidencia. La lib `lib/incident-playbook.ts` no
-    cambia (estructura, ids, orden y ATT&CK para el estado guardado y los
-    informes exportados); un test nuevo liga las dos fuentes (ids + pistas +
-    ES byte-idéntico al texto de la lib).
-  - La nota que la aplicación de plantilla escribe en la línea de tiempo del
-    motor se compone en el idioma del momento (`appliedNote`), como los
-    avisos de llegada de la ronda 9. 449/449 tests (5 nuevos de fase 4),
-    tsc/build limpios, DOM 34/34, navegador 23/23, axe 18/18, temas OK,
-    CSP PASS.
-- **El informe de caso exportado conserva su idioma (ES) esta ronda**:
-  `lib/incident-report.ts` no se toca; el idioma del documento se decide
-  junto con el barrido de `report-library` (REP-1) para no barrer dos veces
-  el mismo fichero. `INCIDENT_STATUS_LABEL` queda intacta para
-  `alert-actions`/`reports-view` hasta sus rondas.
+- **Ronda 11 ENTREGADA: merge de IMP-A + SET-1 (pantalla Ajustes) + AD-6.**
+  - Merge limpio de `origin/carril/implementacion-a` (`293be1d`, API de
+    ajustes AD `GET/PUT /api/settings/ad` + `POST /api/ad/test`).
+  - Vista nueva `ajustes` (SET-1): General / Ingesta / Active Directory /
+    Integraciones / Notificaciones / Cuentas / Apariencia en una página.
+    AD-6 con formulario real: solo viajan los campos cambiados, contraseña
+    write-only, «Probar conexión» con veredicto por tipo, estados honestos
+    501 (candidato: probar sí, guardar no) / 403 / 409 con frases del motor
+    verbatim. Secciones sin API de escritura declaran su hueco y muestran
+    la señal real (alta, almacén, contadores de entrega, sesión).
+  - Registro completo (unión, CONSOLE_VIEWS, destinos, atajo `g j`, icono
+    Gear, diccionarios ES/EN con paridad tipada; ES byte-idéntico). 463/463
+    tests (12 de la lib nueva + 2 de fase 5), tsc/build limpios, DOM 34/34,
+    navegador 23/23, **axe 20/20** (la batería cubre `ajustes` dark+light;
+    2 hallazgos 2.5.3 corregidos), temas OK, CSP PASS. Motor fusionado:
+    build/gofmt/vet/race (`-count=1`) en `internal/api` + `internal/ad`,
+    openapi 43 rutas, inventario 114 reglas, workflows OK.
+  - Helpers de notificación (`currentPermission`, `playNotifyTone`) movidos
+    a `lib/alert-notify.ts` para compartirlos con la página de ajustes; el
+    cascabel de la ronda 8 no cambia de comportamiento.
 - **Coordinación CSP**: los dos scripts inline de boot (tema de PUL-A/PUL-B e
   idioma de la ronda 6) van firmados con el nonce por petición del proxy;
   cualquier script inline nuevo del armazón necesita lo mismo.
-- **AD-6 + SET-1 DESBLOQUEADAS al cerrar esta ronda**: durante el cierre
-  IMP-A publicó su ronda (`293be1d`, «AD-6 settings API delivered»): su
-  openapi ya publica `GET/PUT /api/settings/ad` + `POST /api/ad/test`.
-  **El merge de su ronda es la primera tarea de la ronda 11**, seguida de
-  la pantalla de ajustes (General/Ingesta/AD/Integraciones/Notificaciones/
-  Cuentas/Apariencia) con «probar conexión» y contraseña que se escribe
-  pero nunca se muestra. Pre-chequeo merge-tree contra su punta nueva:
-  sin conflictos.
 - **DISCORD no disponible esta sesión** (`DISCORD_WEBHOOK_URL` sin definir):
-  sin notificaciones de inicio/cierre; no se reintentó (rondas 5-10).
+  sin notificaciones de inicio/cierre; no se reintentó (rondas 5-11).
 
 ## Decisiones de carrera registradas
 
@@ -77,19 +68,15 @@ Archivo vivo: qué tengo a medias, qué sigue y por qué. Se actualiza cada rond
 
 ## Siguientes (por qué)
 
-1. **AD-6 (ajustes AD) + SET-1**: DESBLOQUEADAS — IMP-A publicó la API
-   (`GET/PUT /api/settings/ad` + `POST /api/ad/test`, `293be1d`) durante el
-   cierre de mi ronda 10: merge de su ronda → formulario con «probar
-   conexión» y contraseña que se escribe pero nunca se muestra; pantalla
-   General/Ingesta/AD/Integraciones/Notificaciones/Cuentas/Apariencia.
-2. **IDEA-10 fase 2, continuación del barrido**: la receta de las rondas 8-10
-   es mecánica (secciones de diccionario ES/EN + `useI18n` + ES byte-idéntico
-   + tests de paridad + ajuste del fixture DOM si la vista entra en él).
-   Cola: **informes (`report-library`/REP-1 + decidir el idioma del informe
-   de caso exportado en `lib/incident-report.ts`)** y las demás vistas de
-   datos en rondas separadas por tamaño; Directorio entra a la cola como las
-   demás. Quedan fuera por depender de otros: `user-session`/
-   `console-user`, `detectors-menu`.
+1. **Barrido i18n de informes**: `report-library` (REP-1) y decidir el
+   idioma del informe de caso exportado (`lib/incident-report.ts`) en la
+   misma ronda; después las demás vistas de datos por tamaño (Directorio
+   entra como las demás). Quedan fuera por depender de otros:
+   `user-session`/`console-user`, `detectors-menu`.
+2. **AD-6 parte B / retícula de ajustes**: si IMP-A publica más campos o
+   nuevas familias de ajustes (TEAM-2 cuentas, ingesta, integraciones),
+   ampliar las secciones de Ajustes con la misma receta (estado honesto +
+   solo campos cambiados).
 3. **Campo de decisión de triaje** (petición MEDIA repetida a IMP-A):
    desbloquea el «falso positivo» real del flujo de triaje y los
    porcentajes FP del ruido.

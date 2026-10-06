@@ -60,6 +60,7 @@ describe('resolveShortcut — navigation', () => {
       v: 'simulacion',
       k: 'respuesta',
       n: 'analista',
+      j: 'ajustes',
     }
     for (const [key, view] of Object.entries(expected)) {
       expect(resolveShortcut({ key, prefixed: true })).toEqual({ action: 'navigate', view })

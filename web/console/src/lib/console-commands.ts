@@ -13,7 +13,7 @@ const DESTINATION_IDS: ConsoleView[] = [
   'panel', 'estado', 'flujo', 'alertas', 'incidentes', 'equipos', 'directorio', 'informes',
   'reglas', 'cadenas', 'inteligencia', 'supresiones', 'probador',
   'ruido', 'simulacion',
-  'respuesta', 'analista',
+  'respuesta', 'analista', 'ajustes',
 ]
 
 export type DestinationText = { id: ConsoleView; label: string; group: string; description: string; keywords: string }

@@ -10,7 +10,7 @@
 //   d directorio (AD) · o informes · h estado (health) · r reglas · c cadenas
 //   l inteligencia (listas) · s supresiones · t probador (test)
 //   u ruido · v validación (simulación)
-//   k respuesta (the view's own action: kill) · n analista
+//   k respuesta (the view's own action: kill) · n analista · j ajustes
 // The help sheet (?) lists this map through shortcutRows(): keys come
 // from HERE, labels/groups from the shell's NAV — neither side can
 // drift from the resolver.
@@ -41,6 +41,7 @@ const KEY_TO_VIEW: Record<string, ConsoleView> = {
   v: 'simulacion',
   k: 'respuesta',
   n: 'analista',
+  j: 'ajustes',
 }
 
 export type ShortcutInput = {

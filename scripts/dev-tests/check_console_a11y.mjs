@@ -113,6 +113,14 @@ function fixtureEngine(page) {
       tokens: [{ id: 'tok-1', label: 'Laboratorio', max_uses: 5, uses: 2, created_at: iso(DAY), expires_at: new Date(now + DAY).toISOString(), created_by: 'consola', status: 'active' }],
       hosts: [{ name: 'LAB-WKS-12', host: 'LAB-WKS-12', state: 'pending', token_id: 'tok-1', peer: '10.10.1.40', enrolled_at: iso(30 * MIN), last_attempt: iso(30 * MIN) }],
     },
+    '/api/settings/ad': {
+      server: 'LAB-SRV-DC01', port: 636, start_tls: false, base_dn: 'DC=lab,DC=local',
+      ca_file: 'C:\\ProgramData\\bluetardigrade\\ad-ca.pem', ca_file_present: true,
+      bind_dn: 'CN=bt-reader,OU=svc,DC=lab,DC=local', password_file: 'C:\\ProgramData\\bluetardigrade\\ad.secret', password_stored: true,
+      interval_seconds: 900, include_ous: ['OU=people,DC=lab,DC=local'], exclude_ous: [], max_objects: 20000, page_size: 500,
+      inactive_days: 45, krbtgt_max_age_days: 180, work_start: '08:00', work_end: '18:00', work_days: [1, 2, 3, 4, 5],
+      reload_pending: false,
+    },
     '/api/incidents': {
       persistent: true,
       incidents: [{
@@ -155,6 +163,7 @@ const VIEWS = [
   { view: 'probador', theme: 'dark' },
   { view: 'respuesta', theme: 'dark' },
   { view: 'analista', theme: 'dark' },
+  { view: 'ajustes', theme: 'dark' }, { view: 'ajustes', theme: 'light' },
 ]
 
 let server

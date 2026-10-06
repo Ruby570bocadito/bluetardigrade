@@ -12,44 +12,13 @@ import { useEngine } from './engine-provider'
 import { HeaderPopover } from './header-popover'
 import { useI18n } from './i18n-provider'
 import { alertKey } from '@/lib/engine-client'
-import { newCriticalAlerts, notificationText, readNotifyPrefs, writeNotifyPrefs, type NotifyPrefs } from '@/lib/alert-notify'
-
-type Permission = NotificationPermission | 'unsupported'
-
-function currentPermission(): Permission {
-  return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'
-}
-
-/** Two short descending tones through WebAudio (no audio asset). */
-function playTone() {
-  try {
-    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-    if (!Ctx) return
-    const ctx = new Ctx()
-    const at = ctx.currentTime
-    for (const [i, freq] of [880, 660].entries()) {
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
-      osc.type = 'sine'
-      osc.frequency.value = freq
-      gain.gain.setValueAtTime(0.0001, at + i * 0.18)
-      gain.gain.exponentialRampToValueAtTime(0.18, at + i * 0.18 + 0.02)
-      gain.gain.exponentialRampToValueAtTime(0.0001, at + i * 0.18 + 0.16)
-      osc.connect(gain).connect(ctx.destination)
-      osc.start(at + i * 0.18)
-      osc.stop(at + i * 0.18 + 0.17)
-    }
-    setTimeout(() => void ctx.close(), 600)
-  } catch {
-    // audio is a courtesy; a blocked context must never break the console
-  }
-}
+import { currentPermission, newCriticalAlerts, notificationText, playNotifyTone, readNotifyPrefs, writeNotifyPrefs, type NotifyPermission, type NotifyPrefs } from '@/lib/alert-notify'
 
 export function NotifyMenu() {
   const { alerts, status } = useEngine()
   const { dict } = useI18n()
   const [prefs, setPrefs] = useState<NotifyPrefs>({ enabled: false, sound: false })
-  const [permission, setPermission] = useState<Permission>('default')
+  const [permission, setPermission] = useState<NotifyPermission>('default')
   const [open, setOpen] = useState(false)
   const [storageError, setStorageError] = useState(false)
   const seenRef = useRef<Set<string> | null>(null)
@@ -81,7 +50,7 @@ export function NotifyMenu() {
         // some browsers only allow notifications from a service worker
       }
     }
-    if (prefs.sound) playTone()
+    if (prefs.sound) playNotifyTone()
   }, [alerts, status, prefs, permission, dict])
 
   const update = async (next: NotifyPrefs) => {
@@ -124,7 +93,7 @@ export function NotifyMenu() {
           )}
           {permission === 'unsupported' && <p className="mt-2.5 text-[11px] text-zinc-500">{dict.notify.unsupported}</p>}
           {storageError && <p role="alert" className="mt-2.5 text-[11px] text-amber-300">{dict.notify.storageError}</p>}
-          <button type="button" onClick={playTone} className="mt-3 text-[11px] text-primary-link underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <button type="button" onClick={playNotifyTone} className="mt-3 text-[11px] text-primary-link underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             {dict.notify.testSound}
           </button>
       </HeaderPopover>

@@ -46,7 +46,7 @@ import type { TriageTarget } from '@/lib/operations'
 export type ConsoleView =
   | 'panel' | 'estado' | 'flujo' | 'alertas' | 'incidentes' | 'equipos' | 'directorio' | 'informes'
   | 'reglas' | 'cadenas' | 'inteligencia' | 'supresiones' | 'probador' | 'ruido' | 'simulacion'
-  | 'respuesta' | 'analista'
+  | 'respuesta' | 'analista' | 'ajustes'
 export type HuntLens = { q?: string; sev?: SeverityFilter }
 
 const TAB_ICONS: Record<DashboardTab, React.ElementType> = { resumen: SquaresFour, deteccion: ShieldWarning, actividad: Pulse }
