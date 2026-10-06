@@ -1,8 +1,9 @@
 # Roadmap B — carril Pulimiento B (archivo vivo)
 
 Última actualización: 2026-10-06, ronda 15 de este carril sobre la
-rama `carril/pulimiento-b` (base `32aafb4`, plan de ronda 15; push
-pendiente de `GH_TOKEN` en el entorno).
+rama `carril/pulimiento-b` (base `32aafb4`, plan de ronda 15; rondas
+9-15 publicadas al cierre de la sesión — credencial del responsable
+por el canal askpass/`GH_TOKEN`).
 
 ## Hecho (rondas cerradas)
 
