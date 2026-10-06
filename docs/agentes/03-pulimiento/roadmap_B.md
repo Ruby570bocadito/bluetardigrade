@@ -1,10 +1,24 @@
 # Roadmap B — carril Pulimiento B (archivo vivo)
 
-Última actualización: 2026-10-06, ronda 9 (primera de la ventana
-nueva) de este carril sobre la rama `carril/pulimiento-b` (base
-`744d46a`, plan `37ecb4e`).
+Última actualización: 2026-10-06, ronda 10 de este carril sobre la
+rama `carril/pulimiento-b` (base `a715f34`, plan `da29e8f`; push
+pendiente de `GH_TOKEN` en el entorno).
 
 ## Hecho (rondas cerradas)
+
+- **2026-10-06 — Guardia del tercer barrido i18n de IMP-B y lectura
+  del `csvCell` de SEG-B (ronda 10):** `0380c89` traduce incidentes y
+  planes de respuesta (642 líneas de consola): dif filtrado por azules
+  → 0 adiciones; `className` solo re-indentación y sustituciones por
+  diccionario, acento en tokens y rampa zinc intactas; su árbol completo
+  verificado en worktree de lectura (grep azul 0, checker de tema
+  verde). Cambio de consola de SEG-B (`csvCell` unificado con guard de
+  fórmulas en `lib/chart-export`) leído sin hallazgos — deja lista la
+  pieza de exportación que los gemelos de tabla de POL-8 reutilizan.
+  merge-tree ×5 limpio, solapes sin cambio. **371/371 tests, tsc OK,
+  tema OK en ambos árboles.** Informe:
+  `ronda_2026-10-06_11h35_B.md`. Push de las rondas 9-10 pendiente de
+  credencial en el entorno.
 
 - **2026-10-06 — Cierre THEME-2 en TODO.md, guardia i18n de IMP-B,
   verificación de pestañas (ronda 9):** guardia THEME-2 repetida contra
