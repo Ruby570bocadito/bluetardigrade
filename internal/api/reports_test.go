@@ -96,7 +96,7 @@ func TestReportExecutiveAggregatesSeededAlerts(t *testing.T) {
 	seedAlert(t, h, "0123456789abcdef", "R1", "high", "PC-1", time.Hour, "attack.credential-access")
 	seedAlert(t, h, "0123456789abcdee", "R1", "high", "PC-1", 2*time.Hour)
 	seedAlert(t, h, "0123456789abcded", "R2", "low", "PC-2", 3*time.Hour)
-	if _, err := h.lifecycle.Set("0123456789abcdef", lifecycle.StatusClosed, "", "ana"); err != nil {
+	if _, err := h.lifecycle.Set("0123456789abcdef", lifecycle.StatusClosed, "", "", "ana"); err != nil {
 		t.Fatal(err)
 	}
 	code, body, _ := get(t, "http://"+addr+"/api/reports/executive?window=24h")
@@ -198,7 +198,7 @@ func TestReportSocBucketsSeededTriage(t *testing.T) {
 	h, addr := newTestHub(t)
 	seedAlert(t, h, "0123456789abcdef", "R1", "low", "PC-1", time.Hour)
 	seedAlert(t, h, "0123456789abcdee", "R1", "low", "PC-2", 2*time.Hour)
-	if _, err := h.lifecycle.Set("0123456789abcdef", lifecycle.StatusAcknowledged, "", "ana"); err != nil {
+	if _, err := h.lifecycle.Set("0123456789abcdef", lifecycle.StatusAcknowledged, "", "", "ana"); err != nil {
 		t.Fatal(err)
 	}
 	code, body, _ := get(t, "http://"+addr+"/api/reports/soc?window=24h")
