@@ -316,3 +316,38 @@ siguiente (checklist en la ronda 3 de este roadmap y modelo §3).
 - Informe: ronda_2026-10-06_07h43_B.md. Sin changelog (verificación).
   PARADA; puerta de reapertura: informe ronda 13 de seguridad-a,
   AD-6, AD-3/AD-4 (SEC-9), fusiones a main.
+
+## Ronda 12 (2026-10-06, 08h16 UTC, verificación + 2 fixes de convergencia)
+
+- **SEG-A fix `decodeText` (primer crasher real del fuzzing):
+  CORRECTO** — verificado por lectura independiente: bucle con
+  terminación garantizada (cada iteración consume ≥2 bytes), traza del
+  crasher `fffefffe30` produce `"0"` limpio, cadena mixta UTF-8→UTF-16
+  cubierta, semillas de regresión completas, 2,3 M re-fuzz limpio.
+  Fuzzing: 24/24 objetivos con sesión viva. Su revisión CSP coincide
+  con mi ronda 9; mis hallazgos de IMP-A quedan con doble respaldo.
+- **Mis delegaciones cerradas por PUL-A (ronda 12), verificadas:**
+  punto 5 (--ignore-scripts en el harness, con justificación correcta
+  y 34/34 DOM local) y punto 3 (fuzzing nocturno ya existía en
+  bench-nightly desde su ronda 5 — mi ítem era stale, cerrado).
+- **IMP-B: lockfile del tooling revisado** — v3, 70 paquetes, todo
+  registry.npmjs.org; única hasInstallScript = esbuild (ver abajo).
+  Delta de export-menu.tsx = solo aria-label; el CSV de servidor usa
+  el escape del motor — sin regresión en mi guardia CSV.
+- **FIX Mío a04379b — Makefile:** adopto el reparo de PUL-A (tabs,
+  vet ./..., guardia theme, mis líneas ya tabuladas) + añado
+  --ignore-scripts a las 4 líneas npm del harness (paridad con su
+  ci.yml). Guardia de tabs 0 defectos; make -n ci parsea. Para el
+  fusionador: conflicto con PUL-A = 3 hunks npm; tomar mi versión
+  (= suya + flag) reproduce mi fichero exacto (verificado).
+- **FIX Mío 3046716 — guardia SEC-6:** mecanismo de excepción de
+  install-script REVISADA y fail-closed (entradas exactas
+  name@version con la razón en el código; unresolvable = marcado;
+  trustedDependencies sin excepciones; bump de versión re-dispara).
+  fail-before/pass-after demostrado contra el lockfile de IMP-B:
+  guardia vieja exit 1 → nueva exit 0; self-test 5+4.
+- Informe: ronda_2026-10-06_08h16_B.md. Sin changelog (los dos fixes
+  son de convergencia interna del carril, no visibles al usuario
+  final; el fusionador decide si el Makefile/guard merecen entrada
+  al converger). PARADA; puerta: fusiones a main (recetas listas),
+  AD-6, AD-3/AD-4 (SEC-9), observaciones CSP no-bug de PUL-B.
