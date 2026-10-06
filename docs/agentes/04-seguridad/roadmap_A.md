@@ -1,7 +1,52 @@
 # Roadmap — Seguridad A (carril/seguridad-a)
 
 Archivo vivo: continuidad del carril. Última actualización: 2026-10-06,
-ronda 14, cierre (09:51 UTC, Europe/Madrid).
+ronda 15, cierre (08:24 UTC, Europe/Madrid).
+
+## Estado tras el cierre de la ronda 15 (2026-10-06)
+
+- **Auditoría del código nuevo de IMP-B (`b5e26d7`): LIMPIA, sin
+  hallazgos funcionales** (informe `ronda_2026-10-06_08h24_A.md`):
+  AD-5 (`directory.ts` +195 y vista ~700 líneas) contra el wire real
+  del motor campo a campo; sin `dangerouslySetInnerHTML`; explorador
+  con reset de página y guardia `alive`; cierre SET-3 de
+  `platform-status.ts` verificado contra la forma real de
+  `/api/stats` (el motor serializa siempre los campos nuevos — las
+  guardias «no publicado» solo alcanzan con motores pre-f8853eb).
+  **Mi pendiente 7 QUEDA CERRADO** (la vista que consume el stats
+  payload de IMP-A está publicada y revisada).
+- **Reconciliación CSP sin regresión**: `proxy.ts` idéntico byte a
+  byte a lo revisado en la ronda 13; `langBoot` añadido como segundo
+  inline firmado por el mismo nonce por-petición (cadenas
+  constantes, sin interpolación). Mis 2 observaciones no-bug siguen
+  abiertas (cosméticas).
+- **Baterías en la punta de IMP-B**: bun 438 pass / tsc / build
+  limpios; `-race -count=5` en el árbol fusionado (ad 12,9 s,
+  secretfile 1,1 s, api 52,7 s, store 12,6 s) — la combinación nueva
+  contiene el Go heredado de IMP-A.
+- **Interacción documentada**: el `?? 0` de la vista de postura
+  pintaría un «0» rojo fabricado con el bug del score de IMP-A
+  presente (fallback defensivo conforme a contrato, no bug de
+  IMP-B) — NOVENO aviso a IMP-A.
+- **Mis 2 hallazgos de la ronda 5 sobre IMP-B: SÉPTIMO aviso**
+  (`host: ''` en noise-view y `generate` sin guardia de vigencia,
+  re-verificados en `b5e26d7`).
+- **PUL-A `f830cc3` (`--ignore-scripts`): LIMPIO** — esbuild vía
+  dependencias opcionales, playwright por CLI, jsdom puro. Tres
+  carriles convergen en el veredicto del Makefile (mi ronda 14 +
+  SEG-B con ejecución + PUL-A). **Pendiente 5, segundo aviso**: el
+  reparo sigue sin aterrizar en main.
+- **Fuzzing mantenimiento 3/3 limpio** (~692 k execs: LoadIntelFile
+  84,7 k, ConvertSigma 22,3 k, DecodeMail 585,6 k). Acumulado del
+  carril ~4,4 M.
+- **Nota de método corregida para siempre**: `merge-tree
+  --write-tree --name-only` NO imprime la palabra CONFLICT — la
+  señal fiable es el CÓDIGO DE SALIDA. Mi primer parseo de la ronda
+  dio falsos «limpio» en las 6 puntas; corregido: los MISMOS DOS
+  conflictos conocidos persisten (fuzz_test.go con PUL-A,
+  scenrun_test.go con SEG-B); limpio contra IMP-A/IMP-B/PUL-B/main.
+- Checklist CI completo verde (37 paquetes -race; windows vet/build
+  incluidos). Sin fix mío → sin changelog.
 
 ## Estado tras el cierre de la ronda 14 (2026-10-06)
 
@@ -147,6 +192,24 @@ ronda 14, cierre (09:51 UTC, Europe/Madrid).
   ronda 9 en todas las puntas, evidencia previa vigente.
 
 ## Historial reciente
+
+### Ronda 15 (08h24 UTC) — auditoría AD-5/SET-3 de IMP-B + reconciliación CSP + convergencia Makefile (informe `ronda_2026-10-06_08h24_A.md`)
+
+- **IMP-B `b5e26d7` auditado: LIMPIO** (directory.ts/vista/platform-
+  status contra el wire real; sin innerHTML; baterías en su punta:
+  bun 438, tsc, build, `-race -count=5` en 4 paquetes del árbol
+  fusionado). Pendiente 7 CERRADO.
+- **CSP**: reconciliación sin regresión; `langBoot` firmado por el
+  mismo nonce; mis 2 observaciones cosméticas siguen abiertas.
+- **Interacción con IMP-A**: el `?? 0` de la vista pintaría un 0 rojo
+  fabricado con su bug del score — noveno aviso.
+- **Séptimo aviso** a IMP-B (mis 2 hallazgos de la ronda 5, vigentes).
+- **PUL-A `--ignore-scripts` LIMPIO**; Makefile pendiente en main
+  (segundo aviso); convergencia triple SEG-A/SEG-B/PUL-A.
+- **Fuzzing 3/3 limpio** (~692 k execs). **merge-tree por código de
+  salida**: los mismos 2 conflictos; nota de método registrada.
+- Checklist CI completo verde (37 paquetes -race). Sin fix mío → sin
+  changelog.
 
 ### Ronda 14 (09h51 UTC) — verificación del hallazgo Makefile de PUL-A + mantenimiento fuzzing + checklist alineado con CI nueva (informe `ronda_2026-10-06_09h51_A.md`)
 
@@ -342,7 +405,8 @@ ronda 14, cierre (09:51 UTC, Europe/Madrid).
    informe `ronda_2026-10-06_06h52_A.md` con fix y prueba). Cuando
    los suba: re-auditar su delta y verificar la sonda del score.
 2. **Verificar que IMP-B incorpora los dos hallazgos de la ronda 5** en
-   su rama antes de la fusión (sexto aviso en `5ecbcc4`).
+   su rama antes de la fusión (séptimo aviso en `b5e26d7`; el delta
+   nuevo de AD-5/SET-3 no tocó esos ficheros).
 3. **Fuzzing vivo — COMPLETADO (ronda 13)**: los 24 objetivos del
    proyecto tienen sesión viva (rondas 10, 12 y 13; ~3,7 M ejecuciones;
    1 crasher corregido). Mantenimiento: paseo de 60 s sobre 3
@@ -360,16 +424,18 @@ ronda 14, cierre (09:51 UTC, Europe/Madrid).
    hoy ambas puntas fusionan limpias. Mi fix de intel auto-fusiona
    contra todas las puntas.
 5. **Dependencia del carril (nueva, ronda 14)**: el reparo del
-   Makefile de PUL-A (`9ee1594`) debe aterrizar en `main` —
-   verificado byte a byte que es correcto y completo; `make` sigue
-   roto en TODOS los carriles con `main` como base hasta entonces
-   (63fa077). No duplico el fix: hallazgo con dueño, guardia y
-   changelog de PUL-A.
+   Makefile de PUL-A (`49afd06` + guardia, push en `9ee1594`) debe
+   aterrizar en `main` — verificado byte a byte que es correcto y
+   completo (ronda 14) y re-confirmado por SEG-B con ejecución
+   (ronda 15); `make` sigue roto en TODOS los carriles con `main`
+   como base hasta entonces (63fa077, segundo aviso). No duplico el
+   fix: hallazgo con dueño, guardia y changelog de PUL-A.
 6. **`min_count: 2` en beacons** — decisión del responsable pendiente
    desde la ronda 1.
-7. **SET-3 lado consola de IMP-A revisado** (stats payload con
-   versión/latencia/certificados, ronda 11): pendiente solo la vista
-   de IMP-B que lo consuma.
+7. **CERRADO (ronda 15)**: la vista de IMP-B que consume el stats
+   payload de SET-3 (`platform-status.ts` + AD-5) está publicada en
+   `b5e26d7`, revisada contra el wire real y limpia; baterías de
+   consola y `-race` pasadas en su punta.
 8. **PowerShell con `pwsh`** — el entorno no lo tiene; scripts revisados
    en lectura sin hallazgos.
 9. **`internal/ad` auditado (ronda 11)**: el bloqueo de rondas 1-10
@@ -379,9 +445,15 @@ ronda 14, cierre (09:51 UTC, Europe/Madrid).
 ## Notas de contexto que no deben perderse
 
 - **El canal de salida de este entorno se come la secuencia literal
-  `[h`**: esta ronda volvió a ocurrir al leer `dashboard.tsx` (parecía
-  `const istory`); verificar SIEMPRE con recuentos grep/booleanos o
-  extracción por índice, nunca fiarse de la salida cruda con corchetes.
+  `[h`**: volvió a ocurrir en la ronda 15 leyendo `directory-view.tsx`
+  (`const [history` parecía `const istory`, `const [hint` parecía
+  `const int`); verificar SIEMPRE con recuentos grep/booleanos o
+  extracción por índice, nunca fiarse de la salida cruda con
+  corchetes.
+- **`git merge-tree --write-tree --name-only` NO imprime la palabra
+  CONFLICT** (ronda 15): la señal fiable de conflicto es el CÓDIGO
+  DE SALIDA (rc≠0); el texto adicional va después del nombre del
+  fichero. Parsear por texto da falsos «limpio».
 - Los worktrees de solo lectura (`git worktree add --detach`) son la vía
   cómoda para revisar/verificar ramas ajenas sin tocarlas: crear, medir,
   `git worktree remove --force`.
