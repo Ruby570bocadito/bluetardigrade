@@ -1,7 +1,52 @@
 # Roadmap — Seguridad A (carril/seguridad-a)
 
 Archivo vivo: continuidad del carril. Última actualización: 2026-10-06,
-ronda 16, cierre (09:22 UTC, Europe/Madrid).
+ronda 17, cierre (10:14 UTC, Europe/Madrid).
+
+## Estado tras el cierre de la ronda 17 (2026-10-06)
+
+- **Solo movió IMP-B (`28d6f9e..2c47271`)**: barrido i18n de
+  incidentes (`0380c89`), merge sano de la rama de IMP-A
+  (`9763675`: `internal/` idéntico a `293be1d`, consola intacta, sin
+  marcadores) y la página SET-1 (`2c47271`). Auditoría de las ~1.600
+  líneas nuevas: LIMPIA con 2 hallazgos BAJA nuevos para IMP-B —
+  (1) `draftPayload` recorta el password (`password?.trim()`) pero el
+  motor lo almacena/sondea verbatim (PUT sin trim, `:476` literal):
+  un bind password con espacios en los extremos viaja mutado y el PUT
+  persiste la credencial recortada; (2) presupuesto de la sonda
+  desalineado: cliente `AbortSignal.timeout(30_000)` vs motor
+  `45*time.Second` colgado de `r.Context()` — 30-45 s es inalcanzable
+  vía consola. La disciplina del secreto en la vista es correcta
+  (write-only, nunca en localStorage/consola/URL, `setPassword('')`
+  tras guardar), el merge y el cableado de `ajustes` en los 5 puntos
+  de extensión son consistentes.
+- **FIX PROPIO — `make` estaba ROTO en 6 de 7 carriles en solitario
+  (incluido el mío y `main`)**: `63fa077` convirtió TODOS los TAB de
+  receta a 8 espacios (62 líneas), no solo las 7 de PUL-B. Matriz
+  verificada con `make -n tidy`: rotos = main, seguridad-a
+  (pre-fix), implementacion-a, implementacion-b, pulimiento-b; OK =
+  pulimiento-a, seguridad-b. La tabla de PUL-A era correcta para
+  parejas (su lado reparado gana en el 3-way) pero ocultaba el
+  alcance en solitario. Reparé MI carril: TAB restaurados sin tocar
+  contenido (verificado normalizando indentación contra `63fa077^`),
+  fail-before capturado, 18/18 targets en `make -n`, guardia de
+  PUL-A verde. Commit `0852035` + changelog.
+- **FIX PROPIO — `--ignore-scripts` en los 4 `npm install` del
+  Makefile** (decisión convergida: PUL-A ci.yml r12, SEG-B Makefile;
+  main/IMP-A/IMP-B/PUL-B/mío a 0 antes de esta ronda). Pass-after
+  REAL: `make console-install && make console-dom` verde completo.
+  Commit `a13012e` + changelog.
+- **Octavo aviso a IMP-B**: los 2 hallazgos de la ronda 5 siguen
+  vigentes en `2c47271` (ninguno de sus commits los tocó).
+- **Baterías**: worktree `2c47271` — bun 463 pass / tsc / build;
+  `-race -count=5` api (55,0 s) + ad (17,3 s) en el árbol fusionado
+  (Go heredado, combinación nueva); fuzzing trío 3/3 (60 s c/u);
+  checklist CI completa en mi árbol (37 paquetes -race).
+- **Conflictos (POR EXIT CODE, desde `a13012e`)**: main y pulimiento-b
+  LIMPIOS (mi reparación del Makefile aterrizaría sola en main);
+  reports_test.go con IMP-A e IMP-B (aditivo, conservar ambos),
+  fuzz_test.go con PUL-A (`"time"`+`"unicode"`), scenrun_test.go con
+  SEG-B (ambos tests). El Makefile fusiona limpio contra todos.
 
 ## Estado tras el cierre de la ronda 16 (2026-10-06)
 
@@ -478,39 +523,48 @@ ronda 16, cierre (09:22 UTC, Europe/Madrid).
 1. **IMP-A: hot-swap de AD-6 sin serializar (hallazgo MEDIA de la
    ronda 16)** — repro con carrera confirmada por -race y lost-update
    7/20 entregado en el informe `ronda_2026-10-06_09h22_A.md` (copia
-   del repro en mi sandbox `scripts/repro-r16/`). Cuando lo corrija:
+   del repro en mi sandbox `scripts/repro-r16/`). Sin movimiento en
+   la ronda 17 (su carril sigue en `293be1d`). Cuando lo corrija:
    re-verificar con dos PUTs concurrentes bajo -race en su punta.
    SUS OTROS 2 hallazgos (ronda 11) quedaron CERRADOS y verificados
    en dos direcciones (ronda 16).
-2. **Verificar que IMP-B incorpora los dos hallazgos de la ronda 5** en
-   su rama antes de la fusión (octavo aviso en `28d6f9e`; ni AD-5/SET-3
-   ni el barrido i18n tocaron esos ficheros).
+2. **Verificar que IMP-B incorpora los hallazgos pendientes** en su
+   rama antes de la fusión — son CUATRO: los 2 de la ronda 5
+   (noise-view `host: ''` flota completa; reports-view `generate`
+   sin guardia de vigencia — octavo aviso, re-verificados vigentes
+   en `2c47271`) más los 2 NUEVOS de la ronda 17 (trim del password
+   en `draftPayload` vs motor verbatim; timeout de sonda 30 s
+   cliente vs 45 s motor). Ninguno es bloqueante de fusión por
+   severidad, pero el trim afecta a la credencial permanente.
 3. **Fuzzing vivo — COMPLETADO (ronda 13)**: los 24 objetivos del
    proyecto tienen sesión viva (rondas 10, 12 y 13; ~3,7 M ejecuciones;
    1 crasher corregido). Mantenimiento: paseo de 60 s sobre 3
    objetivos densos por ronda (FuzzDecode/FuzzEnrollLine/FuzzParseLine
    en la 14: limpio) mientras no haya código NUEVO que fuzzear
    (deltas de IMP-A/IMP-B) o fusiones grandes a `main`.
-4. **Resolver DOS conflictos al fusionar** (re-verificado en la
-   ronda 14): `internal/ingest/fuzz_test.go` SOLO con PUL-A —
-   conservar `"time"` y `"unicode"` junto a mi bloque (el EOF
-   adoptado verbatim se auto-fusiona; contra IMP-A auto-fusiona
-   LIMPIO, corrección de la ronda 11) — y
+4. **Resolver TRES conflictos al fusionar** (re-verificado POR EXIT
+   CODE en la ronda 17 desde `a13012e`):
+   `internal/ingest/fuzz_test.go` SOLO con PUL-A —
+   conservar `"time"` y `"unicode"` junto a mi bloque — y
    `internal/scenrun/scenrun_test.go` con SEG-B
    — conservar `TestRunIDsMatchWireContract` (suyo) y
-   `TestStartUnknownScenarioWrapsSentinel` (mío). Contra `main` de
-   hoy ambas puntas fusionan limpias. Mi fix de intel auto-fusiona
-   contra todas las puntas.
-5. **Dependencia del carril (nueva, ronda 14)**: el reparo del
-   Makefile de PUL-A (`49afd06` + guardia, push en `9ee1594`) debe
-   aterrizar en `main` — verificado byte a byte (ronda 14),
-   re-confirmado por SEG-B con ejecución (ronda 15) y ADOPTADO por
-   SEG-B en su rama `a04379b` (ronda 16); `make` sigue roto en TODOS
-   los carriles con `main` como base (63fa077, tercer aviso). Sumar
-   el peligro de fusión de las 7 recetas console de PUL-B (espacios,
-   verificadas byte a byte en la ronda 16) para quien integre.
-   No duplico el fix: hallazgo con dueño, guardia y changelog de
-   PUL-A.
+   `TestStartUnknownScenarioWrapsSentinel` (mío) — y
+   `internal/api/reports_test.go` con IMP-A y con IMP-B (vía
+   absorción; aditivo: mi test truncado de la ronda 7 + sus tests,
+   conservar AMBOS). Contra `main` de hoy mi punta fusiona LIMPIA
+   (mi reparación del Makefile aterrizaría sola).
+5. **Makefile — UPGRADE (ronda 17)**: el corte de `63fa077` no son
+   las 7 líneas de PUL-B: son TODAS las recetas (62 líneas a 8
+   espacios). Matriz `make -n tidy` en solitario: rotos = main,
+   implementacion-a, implementacion-b, pulimiento-b (y mi carril
+   antes del fix); OK = pulimiento-a, seguridad-b. **MI carril ya
+   está reparado** (`0852035` tabs + `a13012e` --ignore-scripts,
+   pass-after con make real) y fusiona LIMPIO contra todos — quien
+   fusione mi carril a main aterriza el reparo de paso. Aviso a
+   IMP-A: es quien integrará a main y SU árbol también está roto.
+   Quedan a la zaga: main, IMP-A, IMP-B, PUL-B en sus Makefiles
+   propios. Las 7 recetas console de PUL-B siguen siendo peligro de
+   fusión para quien integre su carril sin tabs.
 6. **`min_count: 2` en beacons** — decisión del responsable pendiente
    desde la ronda 1.
 7. **CERRADO (ronda 15)**: la vista de IMP-B que consume el stats
@@ -535,6 +589,16 @@ ronda 16, cierre (09:22 UTC, Europe/Madrid).
   CONFLICT** (ronda 15): la señal fiable de conflicto es el CÓDIGO
   DE SALIDA (rc≠0); el texto adicional va después del nombre del
   fichero. Parsear por texto da falsos «limpio».
+- **El rc tras un pipe captura el ÚLTIMO comando del pipe, no el
+  programa** (ronda 17): `python3 guard.py f | head -5; echo $?`
+  devolvió el rc de `head` (0) y casi se da por verde una guardia
+  ROJA. Medir rc SIEMPRE fuera del pipe (o con
+  `set -o pipefail`).
+- **`make -n` sobre el Makefile EN SOLITARIO de cada carril es la
+  prueba de verdad del corte de 63fa077** (ronda 17): la guardia de
+  tabs sobre Makefiles FUSIONADOS (pre-flight de PUL-A) valida la
+  pareja, no el árbol propio — mi carril estaba roto en solitario
+  con pre-flight «verde» en las tablas ajenas.
 - Los worktrees de solo lectura (`git worktree add --detach`) son la vía
   cómoda para revisar/verificar ramas ajenas sin tocarlas: crear, medir,
   `git worktree remove --force`.
