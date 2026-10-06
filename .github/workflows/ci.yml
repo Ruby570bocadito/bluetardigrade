@@ -91,10 +91,22 @@ jobs:
       # QueryFullProcessImageNameW/TerminateProcess) that without this
       # step would never be compile-certified anywhere - the Rust
       # sensor already has its own below.
+      # The vet sweeps the WHOLE module, not a hand-picked package
+      # list. A package list drifts silently - the exact failure mode
+      # bench-nightly.yml documents for its old fuzz step list
+      # ("while the module shipped twenty targets the job silently
+      # ran one, and nothing failed"). The next package that grows a
+      # windows-only file (a future connector, a new collector lane)
+      # is vetted the day it appears, with zero list maintenance.
+      # vet under GOOS=windows also type-checks the *_test.go files
+      # of every package against the windows constraints, which the
+      # GOOS=windows go build above never compiles. Measured cost of
+      # the wider vet: ~9 s cold, ~1 s warm (Go 1.26.6, whole module)
+      # - noise against this job's 15-minute budget.
       - name: Go engine Windows cross-check (respond kill_process, C3 R1)
         run: |
           GOOS=windows go build ./...
-          GOOS=windows go vet ./internal/respond/ ./internal/api/ ./cmd/engine/
+          GOOS=windows go vet ./...
       - name: PowerShell syntax guard (pwsh AST parse)
         # The $Url: parse error class (InvalidVariableReferenceWithDrive)
         # shipped a BROKEN installer through a green CI: nothing parsed
@@ -111,6 +123,19 @@ jobs:
         # one-command installer. Invoke-Native is the only sanctioned
         # pattern; this lint keeps the class from coming back.
         run: python3 scripts/dev-tests/check_installer_native_stderr.py
+      - name: Makefile recipe guard (tab indentation)
+        # An editor expanded every Makefile recipe tab to 8 spaces
+        # (63fa077) and `make` died with "missing separator" on every
+        # target - silently, because this pipeline runs the underlying
+        # commands directly and never invokes make, so a broken build
+        # entry point shipped behind a green run. The guard pins the
+        # GNU make contract (recipe lines start with TAB); it lives
+        # here and NOT inside `make ci` on purpose: a broken Makefile
+        # cannot run its own guard. Static, stdlib only, no make
+        # binary needed; --self-test covers both directions.
+        run: |
+          python3 scripts/dev-tests/check_makefile_tabs.py --self-test
+          python3 scripts/dev-tests/check_makefile_tabs.py
       - name: OpenAPI spec drift guard
         run: |
           # PyYAML pinned: a PyPI version release is immutable once

@@ -99,7 +99,7 @@ ci:
 	$(GO) build -o bin/collector-smoke ./cmd/collector
 	python3 scripts/dev-tests/smoke_soc_pipeline.py --engine ./bin/engine-file-smoke --collector ./bin/collector-smoke
 	GOOS=windows $(GO) build ./...
-	GOOS=windows $(GO) vet ./internal/respond/ ./internal/api/ ./cmd/engine/
+	GOOS=windows $(GO) vet ./...
 	python3 scripts/dev-tests/check_openapi.py
 	python3 scripts/dev-tests/check_openapi.py --self-test
 	python3 scripts/dev-tests/check_rule_inventory.py
