@@ -1,7 +1,7 @@
 # Roadmap B — carril Pulimiento B (archivo vivo)
 
-Última actualización: 2026-10-06, ronda 5 de este carril sobre la rama
-`carril/pulimiento-b` (base `173ac11` + main `35cd866`).
+Última actualización: 2026-10-06, ronda 6 de este carril sobre la rama
+`carril/pulimiento-b` (base `d458fae`, plan `24c8b08`).
 
 ## Hecho (rondas cerradas)
 
@@ -75,21 +75,41 @@
   de IMP-B sin hallazgos. **371 tests, tsc, build, 21/21 navegador,
   34 DOM, 18/18 axe, tema OK, ciclo de vida OK.** Informe:
   `ronda_2026-10-06_09h05_B.md`.
+- **2026-10-06 — POL-11 reduced-motion reactiva y POL-9 Lighthouse
+  re-medido (ronda 6):** auditoría completa de microinteracciones — el
+  gate de tres capas ya estaba completo y los 10 consumidores de
+  `motion/react` gatean con `useReducedMotion()`; hallazgo: `dot-grid`
+  y `decrypted-text` leían la preferencia una sola vez al montar —
+  ahora reactivos (activar `reduce` con la sesión abierta desmonta el
+  bucle del canvas y corta el ciclo de glifos; `count-up` recorta el
+  muelle con `jump`, `animated-list` cierra el caso con `duration: 0`);
+  guard nuevo `check_console_motion.mjs` (con preferencia emulada
+  ninguna animación no-spinner corre; control positivo sin la
+  preferencia: la sonda anima — no pasa en vacío); gráficas de IMP-B
+  auditadas sin hallazgos (solo lectura). Lighthouse desktop re-medido
+  tras el nonce: Panel **97/100/96/100** (LCP 1.2 s) y Alertas
+  **100/100/96/100** — sin coste medible; README con before/after, la
+  advertencia del `next-server` residual en el 3100 (invalidó la
+  primera medición) y la tabla de primitivas corregida a las 11 reales
+  (`gradient-text` ya no existe). **371 tests, tsc, build, tema OK,
+  CSP OK, motion PASS, 34 DOM, 18/18 axe, 21/21 navegador, ciclo de
+  vida OK.** Informe: `ronda_2026-10-06_10h20_B.md`.
 
 ## A medias
 
 - **POL-8/9:** aria de gráficas (fichero de IMP-B) y enganche de los
-  checks axe/CSP en `ci.yml` (proponer a PUL-A). axe, CSP y Lighthouse
-  ya corren localmente; el CI nocturno puede tomarlos con Chromium.
+  checks axe/CSP/motion en `ci.yml` (proponer a PUL-A). axe, CSP,
+  motion y Lighthouse ya corren localmente; el CI nocturno puede
+  tomarlos con Chromium.
 - **Makefile:** recetas con 8 espacios en vez de tabs — `make` falla en
-  todos los targets (pre-existente, área de PUL-A).
-- **Fusión con la ronda de IMP-B (para el responsable, dos retos):**
-  (1) conflicto de `shell.tsx` en la nav móvil — su estructura i18n
-  debe llevar mi `text-zinc-500` del kicker (AA de la ronda 4, su lado
-  conserva `zinc-600`); (2) su `langBoot` entra sin nonce — tras
-  fusionar debe ser `<script nonce={nonce} …>` o la CSP de producción
-  lo bloquea en silencio. Detalle y resolución en el informe de la
-  ronda 5.
+  todos los targets (pre-existente, área de PUL-A; su rama ya toca el
+  Makefile — confirmar al fusionar que los targets `console-*`
+  sobreviven).
+- **Fusión con la ronda de IMP-B:** el reto del `langBoot` sin nonce
+  quedó **resuelto por IMP-B** (su informe cubre la reconciliación
+  CSP). Queda solo la nota del kicker `text-zinc-500` si la zona de la
+  nav móvil de `shell.tsx` vuelve a tocararse (ronda 5, sección de
+  conflictos).
 
 ## Siguiente (orden propuesto)
 
@@ -103,9 +123,9 @@
    pase barato de guardia: azules crudos, contraste fuera de tokens,
    hallazgos axe.
 4. Propuestas a PUL-A: enganchar `check_console_csp.mjs` (barato, sin
-   navegador) y `check_console_a11y.mjs`/`console-lighthouse` (con
-   Chromium) al CI; este último necesita la corrección de tabs del
-   Makefile.
+   navegador) y `check_console_a11y.mjs` / `check_console_motion.mjs` /
+   `console-lighthouse` (con Chromium) al CI; este bloque necesita la
+   corrección de tabs del Makefile.
 5. Si el responsable define POL-12 como tarea recurrente: nuevo pase de
    coherencia consola/README/SECURITY.md cuando IMP-B fusione vistas
    nuevas.
@@ -128,9 +148,22 @@
 - La regla de tinta por celda de `attack-matrix`/`heatmap` (`s >= 3 →
   tinta oscura`) depende de que las rampas secuenciales sean monotónicas
   oscuro→claro: si se tocan los `--seq-*`, pasar el checker.
+- **Las preferencias de movimiento son reactivas, no solo de montaje**
+  (ronda 6): todo consumidor de `motion/react` usa `useReducedMotion()`
+  (nunca `matchMedia` crudo), el canvas desmonta su bucle y las
+  puertas CSS dan estado final estático. Los spinners son la única
+  animación permitida bajo `reduce` (actividad, no decoración). El
+  guard `check_console_motion.mjs` lleva control positivo a propósito:
+  si algún día la sonda deja de animar sin preferencia, el gate está
+  roto y el pase deja de ser válido.
+- **Medir Lighthouse contra el build recién arrancado:** matar cualquier
+  `next-server` residual en el 3100 antes de medir (un servidor viejo
+  responde el readiness check con un manifest viejo y puede servir
+  chunks a 500 — invalidó la primera medición de la ronda 6).
 - La paridad de dE entre temas tiene tolerancia 5.0 (documentada en el
   checker): lo vinculante son los suelos absolutos por tema.
-- El checker tiene 89 checks: los pares del acento incluyen ya la
+- El checker tiene 93 checks (ronda 4 añadió los pares del nivel de
+  texto `--color-zinc-500`): los pares del acento incluyen ya la
   etiqueta blanca sobre el hover sólido (`--primary-tint`).
 - Las capturas del README se regeneran con
   `docs/assets/src/capture_console.mjs`: laboratorio real por defecto o
