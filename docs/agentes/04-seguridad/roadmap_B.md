@@ -200,3 +200,40 @@ siguiente (checklist en la ronda 3 de este roadmap y modelo §3).
 5. Revisar los próximos PRs de Dependabot con la misma disciplina
    (bump + CI verde local antes de recomendar; los de seguridad,
    urgentes).
+
+## Ronda 8 (2026-10-06) — cierre del carril (RONDAS_MAXIMAS)
+
+- **Segundo reinicio del entorno** tras publicar la ronda 7; sin
+  pérdida (el push con el token efímero dejó 55c8b35 en remoto). La
+  lección «publicar pronto» se validó en la práctica.
+- **AD-1 auditada** (IMP-A f8853eb): LDAPS implícito por defecto con
+  CA exigida y ServerName fijado; filtros literales (inyección
+  imposible por construcción); paginación RFC 2696 con criticality
+  TRUE y tope aplicado en el bucle; credencial fuera de logs y API con
+  tests canario (137 chars, en crudo/base64/hex + longitud); cero
+  primitivas de escritura LDAP; fixture LDAP real en CI. Cumple, con
+  la fila «E» (negativa a operar) como aviso a la espera de decisión
+  del responsable.
+- **SEC-2 auditada** (IMP-A 3c8a97d): sobre versionado dpapi|plain,
+  LOCAL_MACHINE en Windows, plain+0600 verificado en cada lectura
+  POSIX, temp+rename+Sync con chmod previo, secreto solo por stdin,
+  búfer propio puesto a cero tras el bind (copia string documentada
+  como límite de go-ldap), avisos sin reescritura automática. Cumple:
+  4/5 tests exigidos; el 5.º (bind de prueba) es del flujo AD-6.
+- **Cadena de suministro:** go-ldap v3.4.11, asn1-ber, go-ntlmssp —
+  MIT las tres, sin red fuera del DC configurado. Limpia.
+- **IMP-B i18n + asistente (46e3996/7c21abb):** limpio (listas
+  blancas, lectura tolerante validada, sin HTML crudo, secretos fuera
+  de cliente). **SEG-A idempotencia (1979f83):** correcta (cierra
+  check-then-act). **PUL-B a11y (fa2b56a):** sin regresiones sobre la
+  guardia CSV (solo contraste).
+- **Verificación:** consola 376 pass / tsc / build en el clon nuevo.
+  La batería Go de imp-a no se ejecutó aquí (CDN de Go inalcanzable,
+  tres intentos, límite del sandbox); queda para su CI y la
+  re-auditoría al fusionar. La batería Go propia no se repite: árbol
+  idéntico al 55c8b35 ya validado.
+- **Cierre del carril:** 8/8 rondas. Pendiente de otros: SEC-9
+  (verificar el ciclo real de `deps-audit` cuando las rondas lleguen a
+  main), O-2 (decisión sobre la fila E) y O-3 (bind de prueba en AD-6).
+  Para quien fusione: conservar ambos tests EOF en
+  internal/scenrun/scenrun_test.go (conflicto anotado con seguridad-a).
