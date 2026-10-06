@@ -1,31 +1,24 @@
-# Plan de ronda — Implementación B (2026-10-06, ronda 7)
+# Plan de ronda — Implementación B (2026-10-06, ronda 8)
 
-- Tarea del TODO: **AD-5 «Directorio activo»** sobre la API AD-1/AD-2 que IMP-A
-  publicó en su rama (`f8853eb`): estado del conector, puntuación de postura con
-  donut de hallazgos por severidad, lista de hallazgos con objetos y remediación,
-  cobertura (equipos del dominio frente a equipos con sensor, hallazgo
-  `computers_without_sensor`), cuentas privilegiadas efectivas (hallazgo
-  `privileged_effective_members`), historial de la puntuación y explorador de
-  objetos (usuarios/grupos/equipos/UOs, paginado y búsqueda). 501 → «no armada»
-  con el hint del motor; `ready:false` → «aún sin análisis»; nada inventado.
-- También: **SET-3 cierre** — el mismo merge trajo los campos que faltaban en
-  `/api/stats` (versión, latencias p50/p95/max, tamaño del almacén, caducidad de
-  los dos certificados): filas nuevas en la vista «Estado» y nota al pie reducida
-  a lo que sigue sin publicarse (último informe programado).
-- Ficheros: nuevos `web/console/src/lib/directory.ts` (+test) y
-  `directory-view.tsx`; cambios en `console-types.ts` (campos SET-3),
-  `platform-status.ts` (+test), `platform-status.tsx`, `dashboard.tsx` (union
-  ConsoleView), `shell.tsx` (icono + render), `console-commands.ts` (destino),
-  `keyboard-nav.ts` (+test: tecla `d`), diccionarios ES/EN (chrome/destinos).
-- Por qué: primera prioridad del roadmap_B — IMP-A ya empujó su ronda de AD-1
-  (verificado con fetch). AD-6 sigue bloqueada: no existe API de ajustes (IMP-A
-  la deja para su ronda siguiente); una pantalla que no puede persistir sería
-  decorativa. Sin solape verificado: SEG-B no toca `web/console/src` ahora
-  mismo; PUL-B mantiene globals.css/layout/entity-graph, que no toco.
-- Diseño: la vista se llama «Directorio» y replica el contrato de honestidad del
-  carril (estado del conector arriba, postura solo cuando `ready`, páginas de
-  objetos desde el paginado real del motor, el texto que envía el motor —
-  títulos, descripciones y remediaciones de los hallazgos, ya en español — no se
-  traduce ni se reescribe). El árbol de grupos con edges exactos no es posible
-  hoy: la API no expone las aristas de membresía; se muestran los caminos
-  efectivos que el motor ya calcula y se declara el límite.
+- Tarea del TODO: **IDEA-10 fase 2, primer barrido de vistas** — las dos piezas
+  pequeñas de la cola del roadmap: `noc-mode` (modo NOC completo: pantalla,
+  diapositivas, controles, prosa de motor caído y titulares de las tres
+  pantallas) y `critical-notifier` (menú de avisos, interruptores, avisos de
+  permiso/almacenamiento y el texto de la notificación del navegador, hoy en
+  la lib `alert-notify`).
+- Cómo: secciones `noc` y `notify` nuevas en `dict-es.ts`/`dict-en.ts` con
+  paridad tipada (compilación + paseo del test); `useI18n()` en ambos
+  componentes; `notificationText(fresh, phrases)` pasa a recibir las frases del
+  diccionario (lib pura, ES byte-idéntico); el formateo de números del NOC
+  sigue el idioma activo (es-ES / en). El texto del motor (reglas, hosts,
+  resúmenes) sigue sin traducirse.
+- Ficheros: `noc-mode.tsx`, `critical-notifier.tsx`, `lib/alert-notify.ts`
+  (+test), `lib/i18n/dict-es.ts`, `lib/i18n/dict-en.ts`, `lib/i18n/i18n.test.ts`.
+- Por qué: AD-6/SET-1 y el campo de decisión de triaje siguen bloqueados en
+  IMP-A (sin API de ajustes ni campo publicado; su plan repetido lo confirma) y
+  REP-3 sin rutas que sirvan los ficheros. La fase 2 de i18n es la primera
+  prioridad desbloqueada del roadmap y no solapa con nadie: PUL-B mantiene
+  globals/layout/entity-graph, SEG-B va de `console-service`, PUL-A/SEG-A de Go.
+- Verificación: `bun test`, `tsc --noEmit`, `bun run build`, baterías DOM,
+  navegador, temas, a11y y CSP tras el último cambio de código; el motor no se
+  toca.

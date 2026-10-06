@@ -2,36 +2,32 @@
 
 Archivo vivo: qué tengo a medias, qué sigue y por qué. Se actualiza cada ronda.
 
-## Estado actual (ronda 7 del nuevo ciclo, 2026-10-06)
+## Estado actual (ronda 8 del nuevo ciclo, 2026-10-06)
 
-- Rama `carril/implementacion-b` sobre la ronda 6 (`5ecbcc4`); rondas 2-6
+- Rama `carril/implementacion-b` sobre la ronda 7 (`b5e26d7`); rondas 2-7
   entregadas (pestañas del panel, SIM-4, REP-1, informe de ruido, SIM-3, REP-4,
   enlace del informe de caso, IDEA-3 plantillas de incidente, IDEA-11
-  asistente de primer arranque, IDEA-10 fase 1).
-- **Ronda 7 ENTREGADA: AD-5 (vista «Directorio») + cierre de SET-3.**
-  - `git merge origin/carril/implementacion-a` (IMP-A publicó AD-1/AD-2:
-    `f8853eb`, y SEC-2: `3c8a97d`); merge limpio, declarado en el informe.
-  - Vista nueva `directorio` (nav, paleta, atajo `g d`): tira del conector
-    (estado, últimas/next sync, conteos, truncado, error y warnings), postura
-    con puntuación 0-100 + donut de hallazgos por severidad (marco ChartCard
-    con leyenda y tabla gemela), tendencia de la puntuación (≥2 puntos),
-    cobertura de sensores (equipos del directorio vs flota vs sin telemetría,
-    todo del motor), cuentas privilegiadas efectivas (caminos del motor) y
-    explorador de objetos paginado (usuarios/grupos/equipos/UOs, búsqueda
-    local del snapshot, tamaños 25/50/100). 501 → «no armado» con el hint del
-    motor; `ready:false` → «aún sin análisis»; el texto del motor no se toca.
-  - SET-3 cerrado: /api/stats publica versión, latencias p50/p95/max, tamaño
-    del almacén y caducidad de los dos certificados; la vista Estado añade
-    filas y sección «Certificados» (warn <30 días, bad <7 — umbral propio
-    documentado), y la nota al pie queda solo con «último informe programado».
+  asistente de primer arranque, IDEA-10 fase 1, AD-5, cierre de SET-3).
+- **Ronda 8 ENTREGADA: IDEA-10 fase 2, primer barrido (noc + avisos).**
+  - Secciones `noc`/`notify` en los diccionarios ES/EN (paridad tipada + paseo
+    del test); `noc-mode.tsx` y `critical-notifier.tsx` consumen `useI18n`;
+    el texto del toast del navegador sale del diccionario vía
+    `notificationText(fresh, phrases)` (lib pura, `NotifyPhrases`; ES
+    byte-idéntico, EN con sus plurales). Los números del NOC formatean con el
+    locale del idioma activo (es-ES/en-US); los datos del motor (reglas,
+    hosts, resúmenes) siguen sin traducirse. 442/442 tests, tsc/build
+    limpios, DOM 34/34, navegador 23/23, axe 18/18, temas OK, CSP PASS.
 - **Coordinación CSP**: los dos scripts inline de boot (tema de PUL-A/PUL-B e
   idioma de la ronda 6) van firmados con el nonce por petición del proxy;
   cualquier script inline nuevo del armazón necesita lo mismo.
-- **AD-6 sigue bloqueada**: IMP-A deja la API de ajustes para su ronda
-  siguiente («API de ajustes: ronda siguiente» en su plan); sin ruta de
-  escritura no hay formulario honesto que construir.
+- **AD-6 a punto de desbloquearse**: el plan nuevo de IMP-A (`c357cc8`,
+  empujado durante mi ronda 8) declara la **API de ajustes AD**
+  (`GET/PUT /api/settings/ad` + `POST /api/ad/test`, 41→44 rutas) como tarea
+  #1 de su ronda en curso; su openapi todavía no la publica. Sin la ruta
+  publicada no hay formulario honesto que construir — el merge de su ronda
+  es el gatillo de AD-6+SET-1 (pantalla).
 - **DISCORD no disponible esta sesión** (`DISCORD_WEBHOOK_URL` sin definir):
-  sin notificaciones de inicio/cierre; no se reintentó.
+  sin notificaciones de inicio/cierre; no se reintentó (rondas 5-8).
 
 ## Decisiones de carrera registradas
 
@@ -67,21 +63,24 @@ Archivo vivo: qué tengo a medias, qué sigue y por qué. Se actualiza cada rond
 
 ## Siguientes (por qué)
 
-1. **AD-6 (ajustes AD) + SET-1**: en cuanto IMP-A publique la API de ajustes
-   (su plan la promete para su ronda siguiente): formulario con «probar
-   conexión» y contraseña que se escribe pero nunca se muestra; pantalla
-   General/Ingesta/AD/Integraciones/Notificaciones/Cuentas/Apariencia.
-2. **Campo de decisión de triaje** (petición MEDIA repetida a IMP-A):
+1. **AD-6 (ajustes AD) + SET-1**: en cuanto IMP-A publique la API
+   (`GET/PUT /api/settings/ad` + `POST /api/ad/test`, anunciada como tarea #1
+   de su ronda en curso): formulario con «probar conexión» y contraseña que
+   se escribe pero nunca se muestra; pantalla
+   General/Ingesta/AD/Integraciones/Notificaciones/Cuentas/Apariencia. El
+   merge de su ronda es el gatillo.
+2. **IDEA-10 fase 2, continuación del barrido**: la receta de la ronda 8 es
+   mecánica (secciones de diccionario ES/EN + `useI18n` + ES byte-idéntico +
+   tests de paridad). Cola: `alerts-view` y las demás vistas de datos en
+   rondas separadas por tamaño; Directorio entra a la cola como las demás.
+   Quedan fuera por depender de otros: `user-session`/`console-user`,
+   `detectors-menu`.
+3. **Campo de decisión de triaje** (petición MEDIA repetida a IMP-A):
    desbloquea el «falso positivo» real del flujo de triaje y los
    porcentajes FP del ruido.
-3. **REP-3 (Descargas)**: superficies del sensor firmado, certificado de
+4. **REP-3 (Descargas)**: superficies del sensor firmado, certificado de
    ingesta y guías; hoy sin rutas que las sirvan (IMP-A). El paso de
    certificado del asistente ya declara este hueco.
-4. **IDEA-10 fase 2 (barrido de vistas)**: la infraestructura ya existe;
-   receta documentada. Cola propuesta: `noc-mode` y `critical-notifier`
-   (pequeños), luego vistas de datos grandes en rondas separadas. La vista
-   de Directorio entra a la cola como las demás. Quedan fuera por depender
-   de otros: `user-session`/`console-user`, `detectors-menu`.
 5. **Árbol de grupos privilegiados completo**: si la API AD expone aristas
    de membresía (petición a IMP-A), sustituir la tabla de caminos por el
    árbol prometido en el TODO.
