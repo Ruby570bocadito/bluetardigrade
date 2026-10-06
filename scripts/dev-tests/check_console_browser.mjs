@@ -122,7 +122,7 @@ async function waitView(view) {
   await page.waitForFunction((expected) => (new URLSearchParams(location.search).get('view') || 'panel') === expected, view)
 }
 const focusMain = () => page.locator('#console-main').focus()
-const openPalette = () => page.getByRole('button', { name: 'Abrir comandos', exact: true }).click()
+const openPalette = () => page.getByRole('button', { name: /^Abrir comandos/ }).click()
 const palette = () => page.getByRole('dialog', { name: 'Comandos de la consola' })
 const search = () => palette().getByRole('combobox', { name: 'Buscar comandos' })
 
@@ -158,7 +158,7 @@ try {
     await page.keyboard.press('Shift+Tab')
     assert.equal(await palette().evaluate((dialog) => dialog.contains(document.activeElement)), true)
     await page.keyboard.press('Escape')
-    assert.equal(await page.getByRole('button', { name: 'Abrir comandos', exact: true }).evaluate((button) => document.activeElement === button), true)
+    assert.equal(await page.getByRole('button', { name: /^Abrir comandos/ }).evaluate((button) => document.activeElement === button), true)
   })
   await check('accent-insensitive search and Enter navigate while preserving other URL lenses', async () => {
     await openPalette()
@@ -300,7 +300,7 @@ try {
       ['Ver alertas reconocidas', 'acknowledged', null],
       ['Ver alertas cerradas', 'closed', null],
     ]) {
-      await page.getByRole('button', { name: state === 'open' ? name : new RegExp('^' + name + ':') }).click()
+      await page.getByRole('button', { name: state === 'open' ? name : new RegExp('^' + name + '[: ]') }).click()
       await waitView('alertas')
       const params = new URL(page.url()).searchParams
       assert.equal(params.get('estado'), state)
@@ -554,7 +554,7 @@ try {
       assert.ok(record && JSON.parse(record).dismissed_at, 'dismissal not recorded')
       await wizard.getByRole('button', { name: 'Cerrar el asistente' }).click()
       await freshPage.goto(base + '/')
-      await freshPage.getByRole('button', { name: 'Abrir comandos', exact: true }).waitFor()
+      await freshPage.getByRole('button', { name: /^Abrir comandos/ }).waitFor()
       let reopened = false
       for (let waited = 0; waited < 2000 && !reopened; waited += 100) {
         reopened = await wizard.isVisible().catch(() => false)
@@ -572,10 +572,10 @@ try {
   await check('language toggle flips the chrome to English and back to Spanish (IDEA-10)', async () => {
     // The accessible name is the active dictionary's own wording, so it
     // changes with the language; <html lang> follows for assistive tech.
-    await page.getByRole('button', { name: 'Cambiar la consola a inglés', exact: true }).click()
+    await page.getByRole('button', { name: /^Cambiar la consola a inglés/ }).click()
     await page.waitForFunction(() => document.documentElement.lang === 'en')
     await page.locator('aside').getByText('Dashboard', { exact: true }).waitFor()
-    await page.getByRole('button', { name: 'Switch the console to Spanish', exact: true }).click()
+    await page.getByRole('button', { name: /^Switch the console to Spanish/ }).click()
     await page.waitForFunction(() => document.documentElement.lang === 'es')
     await page.locator('aside').getByText('Panel', { exact: true }).waitFor()
     // The choice persists for the whole context (localStorage key bt-lang).

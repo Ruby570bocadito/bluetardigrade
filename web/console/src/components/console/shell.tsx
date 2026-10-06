@@ -436,7 +436,7 @@ export function ConsoleShell() {
                 <button
                   type="button"
                   onClick={() => { setHelpOpen(false); setPaletteOpen(true) }}
-                  aria-label={dict.chrome.openCommands}
+                  aria-label={`${dict.chrome.openCommands} — ${dict.chrome.searchViewsCommands} Ctrl K`}
                   aria-haspopup="dialog"
                   aria-keyshortcuts="Control+k Meta+k"
                   title={dict.chrome.commandsTitle}
@@ -444,6 +444,7 @@ export function ConsoleShell() {
                 >
                   <MagnifyingGlass size={15} aria-hidden />
                   <span className="hidden text-xs sm:inline">{dict.chrome.searchViewsCommands}</span>
+                  {' '}
                   <kbd aria-hidden className="ml-auto hidden rounded border border-zinc-700 px-1 font-mono text-[10px] text-zinc-400 md:inline">Ctrl K</kbd>
                 </button>
                 <div className="chip shrink-0 whitespace-nowrap px-2.5 py-1.5">

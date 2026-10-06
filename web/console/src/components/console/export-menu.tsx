@@ -96,7 +96,7 @@ export function AuditExportButton({
       type="button"
       onClick={download}
       disabled={disabled}
-      aria-label="Exportar la cola del audit"
+      aria-label="Exportar la cola del audit como jsonl"
       title={
         disabled
           ? 'Sin intentos en la cola: nada que exportar todavía'

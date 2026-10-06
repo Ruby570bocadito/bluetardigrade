@@ -147,7 +147,7 @@ async function main() {
   console.log('PASS: operation action navigates to the alert queue')
 
   for (const [label,target] of [['Ver críticas sin cerrar','critical'],['Ver alertas nuevas','new'],['Ver alertas reconocidas','acknowledged'],['Ver alertas cerradas','closed']] as const) {
-    const action=[...document.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')?.startsWith(label+':') || b.textContent?.trim()===label)!
+    const action=[...document.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')?.startsWith(label+':') || b.getAttribute('aria-label')?.startsWith(label+' ') || b.textContent?.trim()===label)!
     assert.equal(action.disabled,false)
     action.click()
     assert.equal(triageTarget,target)
@@ -194,7 +194,7 @@ async function main() {
   assert.equal(state!.rules.length,0)
   assert.equal(state!.stats,null)
   assert.equal(document.querySelectorAll('[aria-label="Sin datos"]').length,6)
-  assert.equal((document.querySelector('[aria-label^="Ver alertas nuevas:"]') as HTMLButtonElement).disabled,true)
+  assert.equal((document.querySelector('[aria-label^="Ver alertas nuevas"]') as HTMLButtonElement).disabled,true)
   assert.equal([...document.querySelectorAll('button')].find(b=>b.textContent?.trim()==='Ver críticas sin cerrar')!.disabled,true)
   tabButton('Equipos y actividad').click()
   await delay(30)

@@ -17,7 +17,7 @@ export function LanguageToggle() {
     <button
       type="button"
       onClick={() => setLang(next)}
-      aria-label={label}
+      aria-label={`${label} ${next === 'es' ? 'ES' : 'EN'}`}
       title={label}
       className="chip shrink-0 px-2 py-1.5 text-xs font-medium tracking-wide text-zinc-400 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
