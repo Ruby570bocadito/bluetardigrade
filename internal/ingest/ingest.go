@@ -285,7 +285,7 @@ func (s *Server) Serve() {
 		// land after Wait had already returned — a data race against the
 		// WaitGroup and an unsynchronized late connection on every
 		// shutdown whose accept window had a connection in flight
-		// (race report 03-A round 21h59, reproduced under -race).
+		// (race report, reproduced under -race).
 		s.mu.Lock()
 		if s.closing {
 			s.mu.Unlock()

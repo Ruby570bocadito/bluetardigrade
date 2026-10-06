@@ -395,7 +395,7 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 		fired = append(fired, m.fire(c, ev, dest, port, len(st.times), mean, cv, st.simulated))
 	}
 	m.mu.Unlock()
-	// Deliver OUTSIDE mu (the accumulated O1, acta 22h46 §1.4): the
+	// Deliver OUTSIDE mu (the accumulated O1): the
 	// pipeline takes the hub lock and can block on SQLite, webhook and
 	// risk — holding beacon.mu through it made every /api/stats read
 	// (Tracked/Fired) queue behind delivery. Detection decisions and

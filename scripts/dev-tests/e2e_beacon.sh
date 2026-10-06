@@ -72,7 +72,7 @@ else
 fi
 
 # preflight de puertos: un residual reteniendo el puerto produce
-# fallos confusos a mitad de ronda (misma lección del smoke).
+# fallos confusos difíciles de atribuir (misma lección del smoke).
 python3 - "$INGEST_PORT" "$API_PORT" <<'PY' || { echo "FALLO preflight: puerto ocupado (¿proceso residual?)"; exit 1; }
 import socket, sys
 for p in sys.argv[1:]:

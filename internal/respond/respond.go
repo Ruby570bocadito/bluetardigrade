@@ -1,12 +1,11 @@
 // Package respond implements active response (roadmap C3, iteration 1:
 // kill_process only, local engine host only). It is deliberately NOT a
 // feature bolted onto the alert pipeline: it is a permission
-// architecture with one action inside, replicating the Decision 6.1
+// architecture with one action inside, replicating the design §6.1
 // mold (opt-in by layers, loud degradation, full audit) and applying
 // the owner's "degrade loudly" philosophy to a destructive action.
 //
-// Five AND layers, every failure denies AND audits (design §2, dictamen
-// 04-B 16h11):
+// Five AND layers, every failure denies AND audits (design §2):
 //
 //  1. the route does not exist without -allow-kill (wiring in
 //     cmd/engine/run.go + internal/api/respond_write.go),
@@ -153,8 +152,8 @@ type Result struct {
 	ActionID  string
 	Mechanism string
 	// FallbackReason is non-empty exactly when Mechanism is
-	// "fallback": the errno name that defeated pidfd_open (04-B
-	// ronda 18h00). Travels in the API response and the engine log
+	// "fallback": the errno name that defeated pidfd_open. Travels
+	// in the API response and the engine log
 	// next to the mechanism, and in the audit followup line.
 	FallbackReason string
 	HTTPStatus     int

@@ -1,12 +1,12 @@
 #!/usr/bin/env pwsh
 # smoke_respond.ps1 - Smoke CONDUCTUAL de la respuesta activa C3 en
-# Windows real (camino handle, R1 del dictamen 04-B 16h11). Es la
+# Windows real (camino handle, R1). Es la
 # condicion de cierre del paquete respond: el cross-check GOOS=windows
 # de CI certifica COMPILACION; este smoke certifica CONDUCTA sobre un
 # engine nativo de Windows con kills reales de procesos propios.
 #
 # Verifica (cada asercion puede fallar - "un check que no puede
-# fallar, miente", ronda 13h30):
+# fallar, miente"):
 #   a. kill feliz        -> 200 (nunca 202, R7a) + status=executed +
 #                           mechanism=handle + proceso MUERTO de verdad
 #   b. sin token         -> 401 (el token es obligatorio en loopback)
@@ -158,7 +158,7 @@ function Test-Alive($proc) {
     try { return -not (Get-Process -Id $proc.Id -ErrorAction Stop).HasExited } catch { return $false }
 }
 
-# Sondeo activo (directiva 23h55 §3.4: "esperas activas por sondeo en
+# Sondeo activo ("esperas activas por sondeo en
 # lugar de sleeps fijos"). Los sleeps fijos de 300/500/800 ms eran la
 # clase de fragilidad de entorno que produce falsos fallos en un runner
 # compartido bajo carga: 300 ms suelen sobrar en local y a veces NO
@@ -198,8 +198,7 @@ try {
     $v1 = New-Victim
     # Toda victima se registra al nacer: si el smoke aborta antes de su
     # kill, Cleanup la recoge (Stop-Process sobre un pid muerto es no-op
-    # con SilentlyContinue) — limpieza de huerfanos entre fases, directiva
-    # 23h55 §3.4.
+    # con SilentlyContinue) — limpieza de huerfanos entre fases.
     $script:decoys += $v1
     if (-not (Wait-Alive $v1)) { throw "la victima v1 no arranco" }
     $res = Post-Kill $API_BASE @{

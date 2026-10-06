@@ -385,7 +385,7 @@ func (d *Detector) Observe(ev *model.Event, now time.Time) {
 		}
 	}
 	d.mu.Unlock()
-	// Deliver OUTSIDE mu (the accumulated O1, acta 22h46 §1.4 — the
+	// Deliver OUTSIDE mu (the accumulated O1 — the
 	// same pattern beacon and the correlator had): the pipeline takes
 	// the hub lock and can block on SQLite, webhook and risk, and no
 	// stats read should queue behind delivery under this detector's

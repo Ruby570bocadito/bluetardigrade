@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Supply-chain guard: no package lifecycle scripts in the JS tree.
 
-SEC-6 of the lane plan: the console and the hub are the only Bun
+SEC-6: the console and the hub are the only Bun
 packages in the repository, and neither of them declares lifecycle
 scripts (preinstall/install/postinstall/prepare/...). Bun additionally
 refuses to run dependency lifecycle scripts unless a package is listed

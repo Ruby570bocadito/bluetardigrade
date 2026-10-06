@@ -468,7 +468,7 @@ func TestDecodeStripsFieldSeparatorFromFeedStrings(t *testing.T) {
 // TestServeShutdownAcceptWindowHammer drives Serve and Shutdown while
 // clients keep dialing, so connections land inside the shutdown window
 // over and over. The race this guards (Serve's conns.Add landing after
-// Shutdown's conns.Wait — 03-A round 21h59) is timing-dependent: this
+// Shutdown's conns.Wait) is timing-dependent: this
 // test is a flake-detector under -race (run with -count in CI), not a
 // deterministic proof. Post-fix, every Add is ordered by mu before
 // Wait, so the detector stays silent however the interleaving falls.

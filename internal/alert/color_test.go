@@ -7,7 +7,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
 )
 
-// The ANSI constants were corrupted once (round 1 of the audit): every
+// The ANSI constants were corrupted once (first audit pass): every
 // constant held the bare ESC byte with no SGR parameters, so the colored
 // console line emitted raw ESC garbage instead of colors. These tests
 // pin the EXACT escape sequences by literal value — they must fail if

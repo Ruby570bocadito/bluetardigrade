@@ -307,7 +307,7 @@ func TestFailedWriteLeavesStateUnchanged(t *testing.T) {
 	}
 }
 
-// SEC-A-1 (Seguridad A, ronda 2026-10-05 13h34): the identity suffix is
+// SEC-A-1: the identity suffix is
 // only 6 hex digits and host records are never purged, so across enough
 // re-enrollments of the same host a birthday collision is possible; one
 // duplicate name would save fine and then Open() (and the engine with

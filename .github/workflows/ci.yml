@@ -9,7 +9,7 @@
 # type/borrow check, no linking). A full Windows cross-build (a linked
 # .exe) stays a release concern, not a CI concern.
 #
-# Reading runs (Director directive 23h55 s3.3): a "cancelled" run is
+# Reading runs: a "cancelled" run is
 # concurrency supersession (cancel-in-progress on the next push), NOT a
 # code failure - the UI and the badge may still paint it with a grey
 # cross. Only "failure" signals a real defect.
@@ -33,9 +33,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      # Actions fijadas por SHA (ronda 20h40, agente 04): el SHA se verificó
-      # con git ls-remote contra la tag oficial; un tag mutable no es una
-      # referencia de confianza para un repo de seguridad.
+      # Actions pinned by SHA: the commit hash was verified with
+      # git ls-remote against the official tag. A mutable tag is not a
+      # trusted reference for a security repository.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -53,30 +53,30 @@ jobs:
         run: go build ./...
       - name: vet
         run: go vet ./...
-      # staticcheck (defect-class G2 of the 2026-09-30 gap-analysis round):
-      # vet no ve la clase de hallazgo que el carril de pulimiento ya certifica
-      # localmente (ST1000 doc-comment anclado a una cláusula package de un
-      # fichero nuevo, U1000 código muerto, ST1012 vocabulario de errores) — un
-      # hallazgo real de esa clase aterrizó CON el CI verde (ronda 19h15_A).
-      # Dos pasadas, exactamente el estándar local de 03-A: el juego completo
-      # menos el grupo de estilo, más el grupo de estilo/documentación.
-      # Versión fijada: 2026.2.1 es la que soporta la linea Go del go.mod
-      # (1.26+); 2024.1.1 quedaba por debajo y rompía los PRs de dependabot
-      # que suben la directiva go (causa raíz del rojo en PR #5). Un @latest
-      # flotaría a la versión que el registry sirva en el push, la misma clase
-      # de referencia mutable que este workflow rechaza arriba.
-      - name: staticcheck (dos pasadas, estándar del carril de pulimiento)
+      # staticcheck catches a defect class vet does not see: ST1000
+      # (doc comment anchored to one package clause of a new file),
+      # U1000 (dead code), ST1012 (error vocabulary) - a real finding
+      # of that class landed with CI green before staticcheck ran
+      # here. Two passes, matching the local standard: the full set
+      # minus the style group, plus the style/documentation group.
+      # Version pinned: 2026.2.1 is the release that supports the
+      # go.mod Go line (1.26+); 2024.1.1 sat below it and broke
+      # dependabot PRs that raise the go directive (root cause of the
+      # PR #5 red). A floating @latest would drift to whatever the
+      # registry serves at push time - the same mutable-reference
+      # class this workflow rejects above.
+      - name: staticcheck (two passes, local standard)
         run: |
           go install honnef.co/go/tools/cmd/staticcheck@2026.2.1
           staticcheck -checks "all,-ST1000" ./...
           staticcheck -checks "ST1000,ST1020,ST1021,ST1022" ./...
       - name: test
-        # -count=1: no test cache, same standard as the local rounds.
+        # -count=1: no test cache, so a pass certifies this exact tree.
         # -race: the engine is concurrent by design (SSE, fsync-per-line
         # audit, kill dispatcher, network sinks) and the house standard
         # (GUIA-VERIFICACION) already demands the race detector locally on
-        # the concurrent packages — CI enforces it on every push now
-        # (defect-class G3 of the 2026-09-30 gap-analysis round).
+        # the concurrent packages - a data race shipped to main behind a
+        # green suite before, so CI enforces the detector on every push.
         run: go test -race -count=1 ./...
       - name: file alarms and forensic evidence (inert loopback fixtures)
         run: |
@@ -86,15 +86,27 @@ jobs:
         run: |
           go build -o "$RUNNER_TEMP/bluetardigrade-collector-smoke" ./cmd/collector
           python3 scripts/dev-tests/smoke_soc_pipeline.py --engine "$RUNNER_TEMP/bluetardigrade-file-smoke" --collector "$RUNNER_TEMP/bluetardigrade-collector-smoke"
-      # Windows cross-check del motor (C3, requisito vinculante R1 del
-      # dictamen 04-B 16h11): internal/respond tiene un carril windows
-      # (process_windows.go, OpenProcess/QueryFullProcessImageNameW/
-      # TerminateProcess) que sin este paso no compilaría certificado
-      # en ningún sitio — el sensor Rust ya tiene el suyo abajo.
+      # Windows cross-check of the engine: internal/respond has a
+      # windows-only build lane (process_windows.go, OpenProcess/
+      # QueryFullProcessImageNameW/TerminateProcess) that without this
+      # step would never be compile-certified anywhere - the Rust
+      # sensor already has its own below.
+      # The vet sweeps the WHOLE module, not a hand-picked package
+      # list. A package list drifts silently - the exact failure mode
+      # bench-nightly.yml documents for its old fuzz step list
+      # ("while the module shipped twenty targets the job silently
+      # ran one, and nothing failed"). The next package that grows a
+      # windows-only file (a future connector, a new collector lane)
+      # is vetted the day it appears, with zero list maintenance.
+      # vet under GOOS=windows also type-checks the *_test.go files
+      # of every package against the windows constraints, which the
+      # GOOS=windows go build above never compiles. Measured cost of
+      # the wider vet: ~9 s cold, ~1 s warm (Go 1.26.6, whole module)
+      # - noise against this job's 15-minute budget.
       - name: Go engine Windows cross-check (respond kill_process, C3 R1)
         run: |
           GOOS=windows go build ./...
-          GOOS=windows go vet ./internal/respond/ ./internal/api/ ./cmd/engine/
+          GOOS=windows go vet ./...
       - name: PowerShell syntax guard (pwsh AST parse)
         # The $Url: parse error class (InvalidVariableReferenceWithDrive)
         # shipped a BROKEN installer through a green CI: nothing parsed
@@ -111,14 +123,27 @@ jobs:
         # one-command installer. Invoke-Native is the only sanctioned
         # pattern; this lint keeps the class from coming back.
         run: python3 scripts/dev-tests/check_installer_native_stderr.py
+      - name: Makefile recipe guard (tab indentation)
+        # An editor expanded every Makefile recipe tab to 8 spaces
+        # (63fa077) and `make` died with "missing separator" on every
+        # target - silently, because this pipeline runs the underlying
+        # commands directly and never invokes make, so a broken build
+        # entry point shipped behind a green run. The guard pins the
+        # GNU make contract (recipe lines start with TAB); it lives
+        # here and NOT inside `make ci` on purpose: a broken Makefile
+        # cannot run its own guard. Static, stdlib only, no make
+        # binary needed; --self-test covers both directions.
+        run: |
+          python3 scripts/dev-tests/check_makefile_tabs.py --self-test
+          python3 scripts/dev-tests/check_makefile_tabs.py
       - name: OpenAPI spec drift guard
         run: |
           # PyYAML pinned: a PyPI version release is immutable once
           # published, so an exact pin is a stable reference — the same
-          # rationale as the SHA-pinned actions above (ronda 20h40):
-          # an unpinned install floats to whatever the registry serves
-          # at run time, the mutable-reference class this repo rejects
-          # for CI supply-chain.
+          # rationale as the SHA-pinned actions above: an unpinned
+          # install floats to whatever the registry serves at run time,
+          # the mutable-reference class this repo rejects for CI
+          # supply-chain.
           python3 -m pip install --quiet pyyaml==6.0.3
           python3 scripts/dev-tests/check_openapi.py
           # El guard también verifica el guard: fixtures embebidas
@@ -127,15 +152,15 @@ jobs:
           # Keep the full operator inventory/counts in sync with rule packs.
           python3 scripts/dev-tests/check_rule_inventory.py
 
-  # Smoke CONDUCTUAL de la respuesta activa en Windows real (C3, R1):
-  # hasta hoy el camino handle solo tenía certificación de COMPILACIÓN
-  # (el cross-check GOOS=windows del job engine); la condición de
-  # cierre del paquete respond (actas 04-B 17h35 §4 y 17h58) exigía
-  # conducta en host Windows. Este job la ejecuta en cada push con
-  # kills reales sobre procesos que el propio smoke arranca (ping
-  # desechable, sebo csrss.exe en temp) — nada del runner real es
-  # tocado: el guard R6 niega el protegido antes de señalizar y el
-  # resto de los kills recae en hijos del propio smoke.
+  # Behavioral smoke of active response on real Windows: until this
+  # job existed, the kill path only had BUILD certification (the
+  # GOOS=windows cross-check in the engine job); the respond package
+  # closure criteria demanded behavior on a real Windows host. This
+  # job runs it on every push with real kills over processes the
+  # smoke itself starts (disposable ping, csrss.exe decoy in temp) —
+  # nothing on the runner is touched: the R6 guard denies the
+  # protected process before signaling and the rest of the kills fall
+  # on the smoke's own children.
   engine-windows:
     name: Engine conductual Windows (respond handle path, C3)
     runs-on: windows-latest
@@ -181,19 +206,18 @@ jobs:
         run: ./scripts/dev-tests/check_installer_behavior.ps1
       - name: smoke conductual del camino handle (kills reales, audit JSONL)
         shell: pwsh
-        # Reintento flaky-tolerant ACOTADO (directiva 23h55 §3.4, decision
-        # documentada del carril 02-A): exactamente UNA re-ejecucion. El
-        # smoke ejecuta kills reales sobre procesos propios en un runner
-        # compartido (orden de planificacion, antivirus, carga) — la clase
-        # de flakiness de entorno que produjo los 3 failures historicos
-        # (f7428ff/d1737c0/02c5c55, todos durante el aterrizaje C3, verde
-        # desde entonces). Un solo reintento acota el coste (el job entero
-        # sigue dentro de su timeout de 10 min) y no enmascara defectos
-        # reales: dos fallos consecutivos sobre el mismo arbol siguen
-        # fallando el job. Entre intentos se espera (polling activo, misma
-        # receta anti re-bind del bench_nightly) a que los puertos del
-        # smoke queden libres para que el reintento no herede sockets a
-        # medio cerrar del intento anterior.
+        # Bounded flaky-tolerant retry: exactly ONE re-run. The smoke
+        # performs real kills on its own processes on a shared runner
+        # (scheduling order, antivirus, load) - the environment
+        # flakiness class behind the 3 historical failures
+        # (f7428ff/d1737c0/02c5c55, all during the C3 landing, green
+        # ever since). A single retry bounds the cost (the job stays
+        # within its 10 min timeout) and does not mask real defects:
+        # two consecutive failures on the same tree still fail the
+        # job. Between attempts it waits (active polling, the same
+        # anti-rebind recipe as bench_nightly) for the smoke ports to
+        # go free so the retry does not inherit half-closed sockets
+        # from the previous attempt.
         run: |
           $ok = $false
           foreach ($attempt in 1..2) {
@@ -235,20 +259,32 @@ jobs:
         run: |
           bun install --frozen-lockfile
           # The 19-test/58-expect client floor (proxy route + triage
-          # lifecycle validation) runs on every push now: a regression in
-          # the r6 client-side gate used to pass CI green because only the
-          # hub battery ran here (defect-class G1 of
-          # the 2026-09-30 gap-analysis round).
+          # lifecycle validation) runs on every push now: a regression
+          # in the client-side gate used to pass CI green because only
+          # the hub battery ran here.
           bun test
           bunx tsc --noEmit
           bun run build
+      - name: console theme pairs (WCAG contrast + CVD, both themes)
+        # The palette is a contract, not a taste: text/UI contrast
+        # pairs, the sequential ramp and color-vision-deficiency
+        # separation are checked in both themes on every push, right
+        # after the build they decorate. Stdlib-only, seconds to run.
+        run: python3 scripts/dev-tests/check_console_theme.py
       - name: console DOM regression (real provider + dashboard in jsdom)
         run: |
-          npm install --prefix tools/console-tests --no-audit --no-fund esbuild@0.25.11 jsdom@26.1.0
+          # --ignore-scripts: the lifecycle scripts of these pinned
+          # packages never run in CI (SEG-B supply-chain review, point
+          # 5). esbuild resolves its binary through the platform
+          # optional dependency, jsdom is pure JS, and playwright's
+          # postinstall only prints an advisory - browsers are installed
+          # explicitly in the next step, which is a regular step and not
+          # a lifecycle script.
+          npm install --prefix tools/console-tests --no-audit --no-fund --ignore-scripts esbuild@0.25.11 jsdom@26.1.0
           node scripts/dev-tests/check_console_dom.mjs
       - name: console browser regression (Chromium, desktop and mobile)
         run: |
-          npm install --prefix tools/console-tests --no-audit --no-fund playwright@1.63.0
+          npm install --prefix tools/console-tests --no-audit --no-fund --ignore-scripts playwright@1.63.0
           node tools/console-tests/node_modules/playwright/cli.js install --with-deps chromium
           node scripts/dev-tests/check_console_browser.mjs
           node scripts/dev-tests/check_analyst_browser.mjs
@@ -280,12 +316,11 @@ jobs:
         run: cargo test --locked --manifest-path sensor/Cargo.toml
       - name: cargo clippy --locked (warnings are errors)
         run: cargo clippy --locked --all-targets --manifest-path sensor/Cargo.toml -- -D warnings
-      # Windows cross-check (agent-04 delta, convergencia ronda 20h31): el
-      # sensor es Windows-first (colector ETW) y este check es la única vía
-      # de verificar ese código sin host Windows; coste ~1-2 min por push.
-      # Pulimiento lo certificó en frío dos veces con este comando exacto.
-      # Contra-argumento documentado: "release concern, not CI concern" —
-      # decisión final para el Director si el tiempo de CI pesa.
+      # Windows cross-check: the sensor is Windows-first (ETW
+      # collector) and this check is the only way to verify that code
+      # without a Windows host; cost ~1-2 min per push. Counter-argument
+      # on record: "release concern, not CI concern" - worth revisiting
+      # if CI time ever gets tight.
       - name: cargo check --locked (Windows cross-check)
         run: |
           rustup target add x86_64-pc-windows-msvc

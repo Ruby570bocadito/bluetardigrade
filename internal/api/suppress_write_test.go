@@ -1,7 +1,7 @@
 package api
 
-// Integration tests for the suppression write surface (Director
-// decision 6.1): opt-in via EnableSuppressionsWrite, 403 without it,
+// Integration tests for the suppression write surface (design §6.1):
+// opt-in via EnableSuppressionsWrite, 403 without it,
 // file as source of truth, upsert by (rule_id, host) identity, exact
 // pair semantics on DELETE, and the auth middleware still in front.
 
@@ -274,10 +274,9 @@ func TestSuppressionWriteServerErrorOnUnwritablePath(t *testing.T) {
 	}
 }
 
-// --- auditoría del agente-04 sobre el aterrizaje 6.1 (Director, informe
-// 2026-09-30 04h53, asignación (i)): fichero como fuente única ante edits
-// manuales concurrentes, cuerpo acotado como el otro write surface, y
-// cuerpos de error JSON válidos ante query hostil. ---
+// --- suppress-file write audit: the file as the single source of
+// truth against concurrent manual edits, bounded body like the other
+// write surfaces, and valid JSON error bodies under a hostile query. ---
 
 // futureMtime forces a deterministic mtime delta so the drift check
 // does not depend on the filesystem timestamp granularity (a manual

@@ -4,7 +4,7 @@
 # (-X main.engineVersion), so `engine version` on a release binary
 # always reports the exact tag it was built from.
 #
-# Design notes (ronda 22h00, carril 02-A):
+# Design notes:
 #   - No third-party actions: the same two SHA-pinned actions CI uses
 #     (checkout, setup-go) plus the preinstalled `gh` CLI create the
 #     release. A mutable third-party release action would be the exact

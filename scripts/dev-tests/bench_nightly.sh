@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Nightly pipeline bench (Director decision 6.2 — ADVISORY, never a gate).
+# Nightly pipeline bench (advisory, never a gate).
 #
 # Runs the REAL pipeline end to end over loopback TWICE with the
 # documented baseline parameters: a freshly built engine, then scripts/dev-tests/bench
@@ -10,7 +10,7 @@
 #     as the recorded local baseline (p99 319-434 µs, README "Measured
 #     performance", commit b69053a era hardware) — the continuity row.
 #   - Pass 2 "sqlite":  same bench with -store on a fresh SQLite file
-#     (the debt of acta 08h40, "bench comparativo con/sin -store").
+#     (the standing "bench comparativo con/sin -store" debt).
 #     Every event and alert pays a write-through INSERT on the hot path,
 #     so the delta quantifies what the opt-in persistence costs; the
 #     store itself keeps its functional coverage in smoke_store.sh and
@@ -72,7 +72,7 @@ run_pass() {
     # pass 1, repeated before EVERY pass: the pass-to-pass gap (stop
     # of the previous engine, start of this one) is a second window
     # where a leftover engine could own the port and fake this
-    # pass's numbers (agent-04 round over 1a13f15).
+    # pass's numbers (lesson from 1a13f15).
     if curl -sf http://127.0.0.1:7778/api/health >/dev/null 2>&1; then
         echo "[bench-nightly] FAIL [$label]: port 7778 already serving /api/health before this pass started — a previous engine is still listening; measuring it would fake this pass." >&2
         exit 1
@@ -104,7 +104,7 @@ run_pass() {
     # e2e_beacon/e2e_risk_a1 run via their log check; here liveness
     # of the known PID is the stronger, log-free equivalent.
     #
-    # Live-fire mapped semantics (agent-04 round over 1491f88): a
+    # Live-fire mapped semantics (over 1491f88): a
     # foreign stack on BOTH ports makes OUR engine exit 0 cleanly
     # during the health wait ("another engine instance is already
     # running", the ingest.New branch of run.go) — the foreign answers
@@ -159,7 +159,7 @@ to_us() {
     esac
 }
 
-# Runner-class probe (agent-04 round over 1491f88, serving acta 13h05):
+# Runner-class probe (over 1491f88):
 # the SAME two-pass bench measured sqlite p99 ~0.9 ms on fsync-fast
 # containers and 15.8 ms on a stalls-class one — the persistence tail
 # is dominated by the medium, not the build, so the nightly records

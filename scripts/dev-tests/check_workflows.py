@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Workflow trigger guard: no malformed branch/tag filters in CI triggers.
 
-SEC-5 hardening, round 2. The on: block of a GitHub workflow is
+SEC-5 hardening. The on: block of a GitHub workflow is
 hand-written YAML where a single malformed scalar silently disables a
 trigger: `branches: [main` (unclosed flow list), a stray bracket or
 whitespace inside a filter value, an accidental glob — GitHub accepts
@@ -10,10 +10,9 @@ Nothing else in the tree catches this class: actionlint is not pinned
 here, and the failure is invisible until somebody notices the missing
 run. This guard was written while verifying the deps-audit trigger
 after its first push produced no runs; the trigger itself turned out to
-be valid (see the byte-level check note in the round report — display
-tools in this working environment mangle bracket sequences, so trust
-byte comparisons, not rendered text), but the guard stays as preventive
-coverage for every current and future workflow.
+be valid (trust byte comparisons, not rendered text — display
+tools in some working environments mangle bracket sequences), but the
+guard stays as preventive coverage for every current and future workflow.
 
 The guard scans every .github/workflows/*.yml|yaml and validates the
 on: trigger block with a line-oriented walker:

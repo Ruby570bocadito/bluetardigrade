@@ -12,11 +12,9 @@
 #                  el estado observable es store_events=0 y lista vacía; el
 #                  log "[ENGINE] store pruned ..." es la segunda vía.
 #
-# Origen: E2E de la ronda 9 de Pulimiento (scripts del workspace) + la cola de
-# la paralela (informe 21h42: "versionar el store-smoke parametrizado").
 # Las aserciones son de consistencia interna (N es lo que sea que se siembre);
 # los números canónicos del devsensor demo son 19 eventos / 18 alertas /
-# q=lsass 2 (replicados por tres agentes independientes).
+# q=lsass 2, contra los que se compara el output.
 #
 # Uso:
 #   bash scripts/dev-tests/e2e_store_sequences.sh
@@ -80,7 +78,7 @@ fi
 [ -d "$SEQDIR" ] || { echo "FALLO preflight: no existe el directorio de secuencias $SEQDIR"; exit 1; }
 
 # preflight de puertos: un residual reteniendo el puerto produce fallos
-# confusos a mitad de ronda (misma lección del smoke).
+# confusos difíciles de atribuir (misma lección del smoke).
 python3 - "$INGEST_PORT" "$API_PORT" <<'PY' || { echo "FALLO preflight: puerto ocupado (¿proceso residual?)"; exit 1; }
 import socket, sys
 for p in sys.argv[1:]:

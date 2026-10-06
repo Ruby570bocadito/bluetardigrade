@@ -10,8 +10,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
 )
 
-// Benchmarks for the performance review the Director registered as the
-// accumulated O1 package (acta 22h46 §1.4 + 04's O1 of 09h50): fire()
+// Benchmarks for the accumulated O1 performance package: fire()
 // used to hold m.mu across the emit callback, so every /api/stats read
 // (Tracked/Fired) waited behind the whole alert pipeline (SQLite
 // write-through, webhook enqueue, risk observe). Observe now emits

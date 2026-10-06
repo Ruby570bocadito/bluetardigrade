@@ -5,7 +5,7 @@
 #
 #   a. kill feliz        → 200 (NO 202, R7a) + proceso muerto + audit
 #   b. sin token         → 401 (el token es obligatorio incluso en
-#                          loopback, dictamen 04-B)
+#                          loopback: kill no es suppress)
 #   c. sin -allow-kill   → 404 REAL (la superficie no existe)
 #   d. operator fuera    → 403 operator_not_allowed
 #   e. host remoto       → 403 host_mismatch (R3: el campo host no es
@@ -65,10 +65,10 @@ trap cleanup EXIT
 # vías de escape: SF_E2E_ENGINE (binario externo, se usa verbatim y gana
 # a todo lo demás) y SF_E2E_REBUILD=1 (forzar recompilación).
 #
-# El reuse sin rebuild es exactamente la clase O-E1 (acta 19h15_A §8):
-# un binario stale —p. ej. compilado antes de que aterricen rutas o
-# campos nuevos en el engine— produce falsos rojos con síntomas
-# engañosos a mitad de ronda (incidente real: un engine pre-rutas
+# El reuse sin rebuild es exactamente la clase O-E1: un binario
+# stale —p. ej. compilado antes de que aterricen rutas o campos
+# nuevos en el engine— produce falsos rojos con síntomas engañosos
+# y difíciles de atribuir (incidente real: un engine pre-rutas
 # cb33da6 generó 6 fallos ficticios en la fase j: state/audit 404 con
 # token; el árbol prístino fallaba lo idéntico y el binario fresco
 # respondía 200/401 correctos). REBUILD=1 elimina el binario del repo y
