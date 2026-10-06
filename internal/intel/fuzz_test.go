@@ -83,6 +83,12 @@ func FuzzDecodeText(f *testing.F) {
 	f.Add([]byte{0xFF, 0xFE, 'e', 0, 'v', 0, 'i', 0, 'l', 0, '.', 0, 'e', 0})
 	f.Add([]byte{0xFE, 0xFF, 0, 'e', 0, 'v', 0, 'i', 0, 'l'})
 	f.Add([]byte{0xFF, 0xFE, 'o', 0}) // odd payload, trailing byte dropped
+	// Regression (live fuzzing 2026-10-06): files saved twice carry two
+	// BOMs; a UTF-16 payload can also start with a U+FEFF of its own.
+	f.Add([]byte{0xFF, 0xFE, 0xFF, 0xFE, '0'})
+	f.Add([]byte{0xFE, 0xFF, 0xFE, 0xFF, '0'})
+	f.Add([]byte{0xEF, 0xBB, 0xBF, 0xEF, 0xBB, 0xBF, 'e', '.', 'x'})
+	f.Add([]byte{0xEF, 0xBB, 0xBF, 0xFF, 0xFE, 'e', 0, 'v', 0}) // UTF-8 BOM then UTF-16
 	f.Add([]byte{})
 
 	f.Fuzz(func(t *testing.T, raw []byte) {

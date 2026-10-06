@@ -1,7 +1,38 @@
 # Roadmap — Seguridad A (carril/seguridad-a)
 
 Archivo vivo: continuidad del carril. Última actualización: 2026-10-06,
-ronda 12, cierre (09:12 UTC, Europe/Madrid).
+ronda 13, cierre (09:41 UTC, Europe/Madrid).
+
+## Estado tras el cierre de la ronda 13 (2026-10-06)
+
+- **PRIMER FIX DEL FUZZING VIVO DEL PROYECTO** (informe
+  `ronda_2026-10-06_09h41_A.md`): tanda 3 de fuzzing (15 objetivos a
+  45 s) capturó `FuzzDecodeText` con `ff fe ff fe 30` —
+  `decodeText` (internal/intel) quitaba la BOM de codificación pero
+  no la de contenido que quedara tras decodificar: una lista
+  guardada DOS veces (o UTF-16 con payload que arranca con U+FEFF)
+  dejaba su primer indicador pegado a un carácter BOM y nunca
+  casaba. Fix iterativo (términa: cada iteración consume ≥2 bytes),
+  fail-before/pass-after con stash, semillas nuevas en `f.Add`,
+  corpus del fuzzer retenido como regresión, re-fuzzing 60 s limpio
+  (2,3 M execs), changelog `SEG-A-intel-double-bom.md`.
+- **Los 24 objetivos de fuzzing del proyecto tienen sesión viva**
+  (~3,7 M ejecuciones acumuladas en el carril, 1 crasher): futuras
+  tandas solo con código nuevo que fuzzear o como mantenimiento.
+- **CSP-nonce de PUL-B (`24c8b08`) revisado a fondo: sin bug
+  funcional** (patrón Next aplicado bien: nonce 122 bits sin padding,
+  CSP en petición+respuesta, CSP estática fuera por la intersección,
+  árbol dinámico completo, guardia de build que rota nonce). Dos
+  observaciones no-bug anotadas para PUL-B (`'self'` redundante bajo
+  strict-dynamic; 401 sin CSP). Manifest del tooling correcto.
+- **SEG-B confirma independientemente mis 2 hallazgos de la ronda 11**
+  sobre el código de IMP-A (corrección pública de su ronda 8) y
+  valida mi fix de respond `1979f83` — doble respaldo de carriles.
+- **Obligatorio**: ninguna punta movida toca Go (verificado por stat:
+  0 ficheros `.go`/`go.mod`/`go.sum` en ambos deltas) → `-race` no
+  aplica; evidencia de la ronda 12 vigente.
+- Checklist Go completo verde en mi árbol CON el fix (37 paquetes
+  -race). Conflictos: los MISMOS DOS conocidos, ninguno nuevo.
 
 ## Estado tras el cierre de la ronda 12 (2026-10-06)
 
@@ -86,6 +117,21 @@ ronda 12, cierre (09:12 UTC, Europe/Madrid).
   ronda 9 en todas las puntas, evidencia previa vigente.
 
 ## Historial reciente
+
+### Ronda 13 (09h41 UTC) — primer crasher del fuzzing vivo corregido (intel BOM doble) + revisión CSP-nonce de PUL-B (informe `ronda_2026-10-06_09h41_A.md`)
+
+- **FIX (MEDIA-BAJA)**: `decodeText` servía el primer indicador de
+  listas con BOM doble pegado a un carácter BOM — found by
+  `FuzzDecodeText`, fail-before/pass-after probado, changelog
+  incluido. Re-fuzzing post-fix: 2,3 M execs limpios.
+- **Fuzzing tanda 3**: 15/15 objetivos con sesión viva (14 limpios +
+  1 crasher). Proyecto completo: 24/24, ~3,7 M execs.
+- **PUL-B CSP-nonce**: revisión completa sin bug funcional; 2
+  observaciones no-bug anotadas. Manifest del tooling correcto.
+- **SEG-B**: confirma mis 2 hallazgos de IMP-A de forma
+  independiente; valida mi fix de respond.
+- **Obligatorio**: `-race` no aplica (0 Go en deltas movidos).
+- Checklist verde (37 paquetes -race). Conflictos: los mismos 2.
 
 ### Ronda 12 (09h12 UTC) — fuzzing vivo tanda 2 + deps de PUL-A/PUL-B + docs REP-1 verificadas (informe `ronda_2026-10-06_09h12_A.md`)
 
@@ -251,22 +297,20 @@ ronda 12, cierre (09:12 UTC, Europe/Madrid).
    los suba: re-auditar su delta y verificar la sonda del score.
 2. **Verificar que IMP-B incorpora los dos hallazgos de la ronda 5** en
    su rama antes de la fusión (sexto aviso en `5ecbcc4`).
-3. **Fuzzing vivo, tercera tanda** — los 15 objetivos aún sin sesión
-   viva: `FuzzDecode`, `FuzzDecodeText`, `FuzzEnrollHost`,
-   `FuzzFieldMapParity`, `FuzzHTMLAttribute`,
-   `FuzzInspectAttachmentName`, `FuzzLoadIdentities`,
-   `FuzzLoadRulesDir`, `FuzzLoadThreshold`, `FuzzMatchIdentity`,
-   `FuzzOpenRegistry`, `FuzzParseRecordFilter`,
-   `FuzzParseTimeParam`, `FuzzValidateHash`, `FuzzValidateIP`
-   (45-60 s cada uno; 9 ya limpios en rondas 10 y 12).
+3. **Fuzzing vivo — COMPLETADO (ronda 13)**: los 24 objetivos del
+   proyecto tienen sesión viva (rondas 10, 12 y 13; ~3,7 M ejecuciones;
+   1 crasher corregido). Futuras tandas solo si hay código NUEVO que
+   fuzzear (deltas de IMP-A/IMP-B) o como mantenimiento periódico
+   (p. ej. tras fusiones grandes a `main`).
 4. **Resolver DOS conflictos al fusionar** (re-verificado en la
-   ronda 12): `internal/ingest/fuzz_test.go` SOLO con PUL-A —
+   ronda 13): `internal/ingest/fuzz_test.go` SOLO con PUL-A —
    conservar `"unicode"` junto a mi bloque (el EOF adoptado verbatim
    se auto-fusiona; contra IMP-A auto-fusiona LIMPIO, corrección de
    la ronda 11) — y `internal/scenrun/scenrun_test.go` con SEG-B
    — conservar `TestRunIDsMatchWireContract` (suyo) y
    `TestStartUnknownScenarioWrapsSentinel` (mío). Contra `main` de
-   hoy ambas puntas fusionan limpias.
+   hoy ambas puntas fusionan limpias. Mi fix de intel auto-fusiona
+   contra todas las puntas.
 5. **`min_count: 2` en beacons** — decisión del responsable pendiente
    desde la ronda 1.
 6. **SET-3 lado consola de IMP-A revisado** (stats payload con
