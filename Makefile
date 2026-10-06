@@ -70,13 +70,13 @@ console:
 # (esbuild + jsdom fixture; the optional tooling lives in the ignored
 # tools/ directory). Same commands the console job of ci.yml runs.
 console-dom:
-	npm install --prefix tools/console-tests --no-audit --no-fund --ignore-scripts esbuild@0.25.11 jsdom@26.1.0
+	npm install --prefix tools/console-tests --no-audit --no-fund --ignore-scripts --no-save --no-package-lock esbuild@0.25.11 jsdom@26.1.0
 	node scripts/dev-tests/check_console_dom.mjs
 
 # Real Chromium checks of the production console with isolated REST/SSE fixtures.
 # Build the console first; CONSOLE_BROWSER_URL can select a running loopback app.
 console-browser:
-	npm install --prefix tools/console-tests --no-audit --no-fund --ignore-scripts playwright@1.63.0
+	npm install --prefix tools/console-tests --no-audit --no-fund --ignore-scripts --no-save --no-package-lock playwright@1.63.0
 	node tools/console-tests/node_modules/playwright/cli.js install chromium
 	node scripts/dev-tests/check_console_browser.mjs
 
@@ -111,9 +111,9 @@ ci:
 	python3 scripts/dev-tests/check_installer_native_stderr.py
 	cd web/console-service && $(BUN) install --frozen-lockfile && $(BUN) test && bunx tsc --noEmit
 	cd web/console && $(BUN) install --frozen-lockfile && $(BUN) test && bunx tsc --noEmit && $(BUN) run build
-	npm install --prefix tools/console-tests --no-audit --no-fund --ignore-scripts esbuild@0.25.11 jsdom@26.1.0
+	npm install --prefix tools/console-tests --no-audit --no-fund --ignore-scripts --no-save --no-package-lock esbuild@0.25.11 jsdom@26.1.0
 	node scripts/dev-tests/check_console_dom.mjs
-	npm install --prefix tools/console-tests --no-audit --no-fund --ignore-scripts playwright@1.63.0
+	npm install --prefix tools/console-tests --no-audit --no-fund --ignore-scripts --no-save --no-package-lock playwright@1.63.0
 	node tools/console-tests/node_modules/playwright/cli.js install chromium
 	node scripts/dev-tests/check_console_browser.mjs
 	$(CARGO) check --locked --manifest-path sensor/Cargo.toml

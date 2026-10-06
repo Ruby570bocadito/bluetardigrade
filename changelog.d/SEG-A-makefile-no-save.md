@@ -1,0 +1,1 @@
+make: the console npm installs go --no-save --no-package-lock (SEG-A convergence with PUL-B r13; fail-before on the simulated merged tree: my recipes rewrote the committed exact-version manifest 0.25.11 -> ^0.25.11 and left a stray package-lock.json beside the committed bun.lock; pass-after: manifest byte-identical across two green make console-dom runs and no stray lockfile)
