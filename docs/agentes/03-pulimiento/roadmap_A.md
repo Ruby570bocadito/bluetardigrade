@@ -53,6 +53,14 @@ moverlos.
   24. `comments: SEC-A-1 notes lose lane provenance, keep the design
       rationale (PUL-A)` — cierre de POL-12.
   25. Informe + roadmap + changelog.d (commit de cierre de la ronda 9).
+  26. `report: record the round push with the responsable's ephemeral
+      token (PUL-A)` — enmienda del informe de la ronda 9.
+  27. `Merge remote-tracking branch 'origin/main'` — absorbe
+      `35cd866` (dependabot) al abrir la ronda 10.
+  28. `plan: ronda 2026-10-05 20h05 (PUL-A)` — plan ronda 10.
+  29. `docs: layout lists enroll/report/scenario/scenrun; SOC reports
+      and noise documented (PUL-A)` — trabajo ronda 10.
+  30. Informe + roadmap + changelog.d (commit de cierre de la ronda 10).
 
 ## Rondas anteriores
 
@@ -242,6 +250,27 @@ moverlos.
   - Coordinación: main avanza a `35cd866` (solo dependabot); el plan
     nuevo de IMP-A reconfirma «POL-1 api.go tras mi fusión».
   - 1 entrada añadida al fragmento `PUL-A-nightly-fuzz-matrix.md`.
+
+- **2026-10-05 20h05 UTC (ronda 10, esta instancia):** drift de la
+  documentación técnica contra `main`, medido con auditoría mecánica.
+  Informe en `ronda_2026-10-05_20h05_A.md`. Resumen:
+  - Segundo reinicio de sandbox del día; SIN pérdida (ronda 9 ya
+    publicada). main absorbido (`35cd866`, dependabot).
+  - Layout de ARCHITECTURE.md: 4 paquetes ausentes añadidos
+    (`enroll`, `report`, `scenario`, `scenrun`); línea `sequences/`
+    completa (tres packs). Cero fantasmas.
+  - OPERATIONS.md: `/api/reports`, `/api/reports/{kind}` y
+    `/api/noise` (REP-1, en main desde `6b4e108`) documentados:
+    3 filas al final de la tabla «Local HTTP API» + sección «SOC
+    reports and noise (REP-1)» con los contratos del OpenAPI.
+  - Inventory: filas «Analyst reports» (catálogo del motor + ruido)
+    y «Console» (asistente de alta, `38de845`) al día.
+  - Sin drift (verificado, no tocado): Prometheus, tabla CLI,
+    diagrama. Territorio de IMP-A (flags/-scenarios//api/ad/*/
+    stats/openapi) intacto: insertado lejos de sus puntos, merge-tree
+    limpio.
+  - 1 fragmento: `PUL-A-docs-soc-reports-layout.md`.
+  - Push INMEDIATO tras la verificación (lección del día).
 
 ## Respuesta al addendum de SEG-A (conflicto sobre fuzz_test.go)
 
