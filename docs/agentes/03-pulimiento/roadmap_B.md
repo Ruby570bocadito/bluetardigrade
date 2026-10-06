@@ -1,7 +1,7 @@
 # Roadmap B — carril Pulimiento B (archivo vivo)
 
-Última actualización: 2026-10-06, ronda 10 de este carril sobre la
-rama `carril/pulimiento-b` (base `a715f34`, plan `da29e8f`; push
+Última actualización: 2026-10-06, ronda 11 de este carril sobre la
+rama `carril/pulimiento-b` (base `37a6188`, plan de ronda 11; push
 pendiente de `GH_TOKEN` en el entorno).
 
 ## Hecho (rondas cerradas)
@@ -159,15 +159,61 @@ pendiente de `GH_TOKEN` en el entorno).
   checks axe/CSP/motion en `ci.yml` (proponer a PUL-A). axe, CSP,
   motion y Lighthouse ya corren localmente; el CI nocturno puede
   tomarlos con Chromium.
-- **Makefile:** recetas con 8 espacios en vez de tabs — `make` falla en
-  todos los targets (pre-existente, área de PUL-A; su rama ya toca el
-  Makefile — confirmar al fusionar que los targets `console-*`
-  sobreviven).
+- **Makefile:** recetas con 8 espacios en vez de tabs — `make` falla
+  en todos los targets (pre-existente, área de PUL-A). **Reparación
+  disponible:** SEG-B adoptó el parche de tabs en su carril (`a04379b`)
+  junto con la paridad `--ignore-scripts`; al fusionar, confirmar que
+  los targets `console-*` sobreviven.
 - **Fusión con la ronda de IMP-B:** el reto del `langBoot` sin nonce
   quedó **resuelto por IMP-B** (su informe cubre la reconciliación
   CSP). Queda solo la nota del kicker `text-zinc-500` si la zona de la
   nav móvil de `shell.tsx` vuelve a tocararse (ronda 5, sección de
   conflictos).
+
+## Propuestas abiertas a otros carriles (ronda 11)
+
+### A IMP-B — POL-7 resto del kit, en dos fases
+
+Inventario actual: `ui/button|input|select|switch` existen; pestañas
+con `ui-tabs.tsx` (mío); `ui-bits.tsx` trae `SeverityBadge`,
+`MonoTag`, `StatTile`, `SectionHeader`, `EmptyState`, `OfflineNotice`,
+`SkeletonRows`, `LiveAnnouncer`; diálogos con `console-dialog.tsx` y
+`header-popover.tsx`. De la lista POL-7 (botón, campo, tabla,
+pestañas, insignia, diálogo) falta de verdad: **insignia genérica** y
+**tabla compartida**.
+
+- **Fase A (mi carril, sin tocar vistas):** `ui/badge.tsx` con
+  variantes tokenizadas (severidad, estado, neutra) y
+  `SeverityBadge`/`MonoTag` delegando en ella; cero cambios en las
+  vistas, cero fricción con los barridos i18n.
+- **Fase B (ventana coordinada):** `ui/table.tsx` (superficie, cabecera
+  pegajosa, ordenación, estado vacío) y migración progresiva de las
+  tablas de flota/cola de incidentes. Toca exactamente los ficheros que
+  su barrido i18n de fase 2 sigue barriendo, así que se proponen dos
+  ventanas: (1) cuando acabe el barrido de vistas de datos, yo tomo la
+  migración de tablas mientras ellos avanzan motor; o (2) vista a vista
+  con reparto por ficheros, como hicieron con la reconciliación CSP.
+  Regla fija: cualquier color nuevo entra por tokens y pasa el
+  checker; los gemelos de tabla de POL-8 reutilizan el `csvCell`
+  unificado de SEG-B (`lib/chart-export`).
+
+### A PUL-A — CI de guards de la consola, dos jobs
+
+Precondiciones ya resueltas: reparación de tabs del Makefile adoptada
+por SEG-B (`a04379b`), manifest + `bun.lock` del tooling comprometidos
+(mi ronda 5), `--ignore-scripts` (su `f830cc3`) con el tripwire de
+esbuild de SEG-B (`3046716`).
+
+- **Job 1 `console-static-guards` (sin Chromium, segundos):**
+  `check_console_theme.py` (stdlib pura) y `check_console_csp.mjs`
+  (Node, sin navegador). Barato, apto para cada push.
+- **Job 2 `console-browser` (Chromium; por rutas de consola o
+  nocturno):** build → `next start` **matando antes cualquier
+  `next-server` residual del 3100** (lección de la ronda 6: un
+  servidor viejo invalida las mediciones) → `check_console_a11y.mjs`
+  (18 cargas), `check_console_motion.mjs` (con control positivo) y
+  `console-lighthouse`. Instalaciones con `--ignore-scripts` y
+  caché de navegadores de Playwright.
 
 ## Siguiente (orden propuesto para la próxima ventana)
 
