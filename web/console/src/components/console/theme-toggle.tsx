@@ -10,7 +10,7 @@
 // preference live; 'light'/'dark' pin the theme until the next pick.
 
 import { useEffect, useState } from 'react'
-import { Monitor, Moon, Sun } from '@phosphor-icons/react'
+import { CircleHalf, Moon, Sun } from '@phosphor-icons/react'
 import { applyTheme, resolveTheme, THEME_STORAGE_KEY, type ThemeChoice } from '@/lib/theme'
 import { useI18n } from './i18n-provider'
 
@@ -80,7 +80,9 @@ export function ThemeToggle() {
       title={label}
       className="chip shrink-0 px-2 py-1.5 text-zinc-400 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      {shown === 'dark' ? <Moon size={15} aria-hidden /> : shown === 'light' ? <Sun size={15} aria-hidden /> : <Monitor size={15} aria-hidden />}
+      {/* half circle for "system": the monitor glyph belongs to the NOC
+          (full-screen) button next to it */}
+      {shown === 'dark' ? <Moon size={15} aria-hidden /> : shown === 'light' ? <Sun size={15} aria-hidden /> : <CircleHalf size={15} aria-hidden />}
     </button>
   )
 }

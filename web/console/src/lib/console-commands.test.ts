@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { CONSOLE_COMMANDS, CONSOLE_DESTINATIONS, buildConsoleCommands, findConsoleCommands } from './console-commands'
+import { CONSOLE_COMMANDS, CONSOLE_DESTINATIONS, buildConsoleCommands, buildDestinations, findConsoleCommands } from './console-commands'
 import { DICTS } from './i18n'
 import { CONSOLE_VIEWS } from './url-state'
 import { isKeyboardScope, isPaletteToggleKey, shortcutHintFor } from './keyboard-nav'
@@ -70,5 +70,19 @@ describe('palette activation', () => {
   test('keyboard scopes tolerate SSR and non-element targets', () => {
     expect(isKeyboardScope(null)).toBe(false)
     expect(isKeyboardScope({} as EventTarget)).toBe(false)
+  })
+})
+
+describe('navigation groups', () => {
+  test('every group is one contiguous block in each language (no repeated sidebar headings)', () => {
+    for (const [lang, dict] of Object.entries(DICTS)) {
+      const groups = buildDestinations(dict).map((d) => d.group)
+      const seen = new Set<string>()
+      groups.forEach((g, i) => {
+        if (i > 0 && groups[i - 1] === g) return
+        expect(`${lang}: ${seen.has(g) ? 'repeated' : 'first'} ${g}`).toBe(`${lang}: first ${g}`)
+        seen.add(g)
+      })
+    }
   })
 })

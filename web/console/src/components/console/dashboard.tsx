@@ -496,6 +496,12 @@ function TriageFlowPanel({ alerts, down }: { alerts: SfAlert[]; down: boolean })
     >
       {down ? <Unavailable /> : model.total === 0 ? (
         <EmptyState icon={FlowArrow} title="Sin alertas en la ventana" hint="El flujo se dibuja en cuanto la consola recibe detecciones." />
+      ) : model.states.filter((st) => st.value > 0).length < 2 ? (
+        <EmptyState
+          icon={FlowArrow}
+          title={`Las ${model.total} alertas están en «${model.states.find((st) => st.value > 0)?.label ?? 'Nuevas'}»`}
+          hint="El flujo enseña cómo avanza el triaje: se dibuja cuando haya alertas en al menos dos estados. El desglose por fuente y táctica está en la tabla."
+        />
       ) : (
         <TriageFlowChart model={model} unit="alertas" ariaLabel={`Flujo del triaje: ${model.total} alertas desde ${model.sources.length} fuentes hacia ${model.tactics.length} tácticas y ${model.states.filter((s) => s.value > 0).length} estados`} />
       )}
@@ -779,6 +785,9 @@ function useRiskHistory(stats: EngineStats | null, down: boolean): RiskSample[] 
   const [history, setHistory] = useState<RiskSample[]>([])
   const lastApplied = useRef(0)
   useEffect(() => {
+    // before the first stats reply there is nothing to record: taking the
+    // slot then showed "no risk" next to Hosts calientes for 10 s
+    if (!stats && !down) return
     const now = Date.now()
     if (lastApplied.current && now - lastApplied.current < RISK_SLOT_MS) return
     lastApplied.current = now

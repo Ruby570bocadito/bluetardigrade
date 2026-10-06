@@ -459,7 +459,6 @@ function AdSettingsPanel() {
         <div className="mb-3 rounded-lg border border-amber-400/20 bg-amber-400/[0.05] px-3 py-2 text-xs text-amber-200/90">
           <p className="font-medium">{dict.settings.ad.notArmed}</p>
           <p className="mt-1 leading-relaxed">{dict.settings.ad.notArmedProse}</p>
-          <p className="mt-1 leading-relaxed">{dict.settings.ad.probeOnly}</p>
         </div>
       )}
       {current?.reload_pending && (
@@ -473,8 +472,12 @@ function AdSettingsPanel() {
         </p>
       )}
 
+      {/* Without -ad there is nothing to edit or test: the probe and the
+          save both need the armed surface, whose CA and credential files
+          come from the -ad file on the engine host (never from here). */}
+      {!unarmed && (
       <form
-        aria-label={unarmed ? dict.settings.ad.candidateAria : dict.settings.ad.formAria}
+        aria-label={dict.settings.ad.formAria}
         className="space-y-5"
         onSubmit={(e) => {
           e.preventDefault()
@@ -500,8 +503,8 @@ function AdSettingsPanel() {
           <Field label={dict.settings.ad.baseDn} hint={dict.settings.ad.baseDnHint}>
             <input value={draft.base_dn} onChange={(e) => set('base_dn', e.target.value)} maxLength={255} autoComplete="off" className={`mt-1 ${inputCls}`} />
           </Field>
-          <Field label={dict.settings.ad.caFile} hint={dict.settings.ad.caFileHint}>
-            <input value={draft.ca_file} onChange={(e) => set('ca_file', e.target.value)} maxLength={500} autoComplete="off" className={`mt-1 ${inputCls}`} />
+          <Field label={dict.settings.ad.caFile} hint={`${dict.settings.ad.caFileHint}. ${dict.settings.ad.pathFixed}`}>
+            <input value={draft.ca_file} readOnly aria-readonly="true" maxLength={500} autoComplete="off" className={`mt-1 ${inputCls} cursor-default opacity-70`} />
           </Field>
         </fieldset>
 
@@ -511,8 +514,8 @@ function AdSettingsPanel() {
             <Field label={dict.settings.ad.bindDn}>
               <input value={draft.bind_dn} onChange={(e) => set('bind_dn', e.target.value)} maxLength={255} autoComplete="off" className={`mt-1 ${inputCls}`} />
             </Field>
-            <Field label={dict.settings.ad.passwordFile}>
-              <input value={draft.password_file} onChange={(e) => set('password_file', e.target.value)} maxLength={500} autoComplete="off" className={`mt-1 ${inputCls}`} />
+            <Field label={dict.settings.ad.passwordFile} hint={dict.settings.ad.pathFixed}>
+              <input value={draft.password_file} readOnly aria-readonly="true" maxLength={500} autoComplete="off" className={`mt-1 ${inputCls} cursor-default opacity-70`} />
             </Field>
           </div>
           <Field label={dict.settings.ad.password} hint={dict.settings.ad.passwordHint}>
@@ -620,6 +623,7 @@ function AdSettingsPanel() {
           <p className="ml-auto max-w-md text-[10px] leading-relaxed text-zinc-500">{dict.settings.ad.probeNote}</p>
         </div>
       </form>
+      )}
 
       {probe && (
         <div className="mt-4 rounded-lg border border-white/[0.06] bg-zinc-950/40 p-3">

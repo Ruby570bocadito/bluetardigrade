@@ -8,11 +8,7 @@ import { describeTelemetrySources } from '@/lib/telemetry-source'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import {
-  ActivityIcon, BatteryCharging, ChatsCircle, Desktop, Files, Flask, FlowArrow, FolderOpen, Gauge, Gear, Keyboard, Lightning,
-  ListMagnifyingGlass, MagnifyingGlass, Monitor, Prohibit, RocketLaunch, ShieldCheck, SpeakerHigh, SquaresFour,
-  TreeStructure, Warning,
-} from '@phosphor-icons/react'
+import { ActivityIcon, BatteryCharging, ChatsCircle, Desktop, Files, Flask, FlowArrow, FolderOpen, Gauge, Gear, Keyboard, Lightning, ListMagnifyingGlass, MagnifyingGlass, Prohibit, RocketLaunch, ShieldCheck, SpeakerHigh, SquaresFour, TreeStructure, Warning, CornersOut } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { BlurText } from '@/components/reactbits/blur-text'
 import { ShinyText } from '@/components/reactbits/shiny-text'
@@ -473,7 +469,7 @@ export function ConsoleShell() {
                   title={dict.chrome.nocTitle}
                   className="chip shrink-0 px-2 py-1.5 text-zinc-400 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <Monitor size={15} aria-hidden />
+                  <CornersOut size={15} aria-hidden />
                 </button>
                 <WebhookChip stats={stats} />
                 <DetectorsMenu stats={stats} onOpen={setView} />
