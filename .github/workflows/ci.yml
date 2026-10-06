@@ -273,11 +273,18 @@ jobs:
         run: python3 scripts/dev-tests/check_console_theme.py
       - name: console DOM regression (real provider + dashboard in jsdom)
         run: |
-          npm install --prefix tools/console-tests --no-audit --no-fund esbuild@0.25.11 jsdom@26.1.0
+          # --ignore-scripts: the lifecycle scripts of these pinned
+          # packages never run in CI (SEG-B supply-chain review, point
+          # 5). esbuild resolves its binary through the platform
+          # optional dependency, jsdom is pure JS, and playwright's
+          # postinstall only prints an advisory - browsers are installed
+          # explicitly in the next step, which is a regular step and not
+          # a lifecycle script.
+          npm install --prefix tools/console-tests --no-audit --no-fund --ignore-scripts esbuild@0.25.11 jsdom@26.1.0
           node scripts/dev-tests/check_console_dom.mjs
       - name: console browser regression (Chromium, desktop and mobile)
         run: |
-          npm install --prefix tools/console-tests --no-audit --no-fund playwright@1.63.0
+          npm install --prefix tools/console-tests --no-audit --no-fund --ignore-scripts playwright@1.63.0
           node tools/console-tests/node_modules/playwright/cli.js install --with-deps chromium
           node scripts/dev-tests/check_console_browser.mjs
           node scripts/dev-tests/check_analyst_browser.mjs
