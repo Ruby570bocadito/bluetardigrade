@@ -1,45 +1,70 @@
 # Roadmap — Seguridad A (carril/seguridad-a)
 
-Archivo vivo: continuidad del carril. Última actualización: 2026-10-05,
-ronda 10, cierre (19:39 UTC, Europe/Madrid).
+Archivo vivo: continuidad del carril. Última actualización: 2026-10-06,
+ronda 11, cierre (06:52 UTC, Europe/Madrid).
 
-## Estado tras el cierre de la ronda 10 (2026-10-05)
+## Estado tras el cierre de la ronda 11 (2026-10-06)
 
-- **Ronda de revisión y verificación, 0 fixes que anunciar** (informe
-  `ronda_2026-10-05_19h39_A.md`): las dos puntas nuevas ajenas se
-  revisaron a fondo sin hallar bug funcional nuevo.
-- **PUL-A (`829f7f0`) verificado línea en mano**: su diff de
-  `internal/enroll` son 2 líneas de comentario (POL-12, mi ID
-  SEC-A-1 y su porqué intactos); su adopción de mi `FuzzEnrollLine`
-  es verbatim real (4 102 bytes desde `fuzzEnrollRegistry` a EOF
-  idénticos a mi árbol); su punta pasa `-race -count=5` en
-  ingest (14,5 s) y enroll (1,2 s) en worktree desprendido.
-- **El conflicto con PUL-A se encogió**: `merge-tree` contra mi punta
-  deja UN hunk de 2 líneas en `internal/ingest/fuzz_test.go`
-  (conservar `"unicode"`, suyo); el bloque EOF que motivó el addendum
-  de la ronda 4 hoy se auto-fusiona. El de SEG-B en
-  `internal/scenrun/scenrun_test.go` sigue igual.
-- **IMP-B IDEA-11 (`d6f2285`) revisado sin bug**: la carrera que
-  busqué en la auto-apertura (effect con `offeredRef` vs `enroll`
-  sin responder) no existe — `fleet-provider` hace
-  `Promise.all` y setea `enroll`+`loaded` en el mismo lote de React;
-  el «token que caduca antes» es honesto (TTL validado 1 h–30 días,
-  `active` exige `now < ExpiresAt`, todo activo lleva RFC3339
-  futuro; orden lexicográfico = cronológico). Lectura de descarte
-  tolerante verificada.
-- **Mis dos hallazgos de la ronda 5 siguen vigentes en `d6f2285`**
-  (re-verificados; quinto aviso): supresión flota-completa desde
-  Ruido acotado (MEDIA) y `generate` sin guardia de vigencia (BAJA).
-- **Fuzzing vivo: ~2,0 M ejecuciones, 0 crashes** — primera ronda con
-  sesiones `-fuzz` reales: FuzzEnrollLine 521 182, FuzzParseLine
-  1 168 130, FuzzSplitCSV 160 934, FuzzLoadScenarioFile 98 355,
-  FuzzLoadBeacon 13 371. Sin contaminar `testdata`.
-- Checklist: Go completo re-ejecutado verde (gofmt vacío, build
-  nativo y GOOS=windows, vet, staticcheck, `-race -count=1 ./...` 37
-  paquetes); consola/sensor sin cambios desde la ronda 9 (solo docs
-  en mi diff), evidencia de esa ronda válida para el árbol idéntico.
+- **Auditoría completa del código AD/SEC-2 de IMP-A (`bc91c7d`,
+  ~4.8k líneas Go) ejecutada — mi pendiente 1 desbloqueado y hecho.**
+  2 hallazgos, ambos en su rama (aún sin fusionar en main — no
+  corrijo en su carril; informe `ronda_2026-10-06_06h52_A.md` con
+  prueba fail-before y fix verificado):
+  1. **MEDIA** — `internal/api/ad.go`: `postureWire.Score` (l. 107)
+     se declara y JAMÁS se asigna; `GET /api/ad/posture` responde
+     `"score": null` incluso con `ready: true` (probe con store
+     temporal + 87 almacenado confirmó el fail-before; parche de una
+     línea verificado pass-after). Fix para IMP-A: `score := p.Score;
+     out.Score = &score` al inicio del bloque `if p != nil`.
+  2. **BAJA** — lecturas sin cerrojo de campos seteados bajo cerrojo:
+     `h.ad` en los 4 handlers (`ad.go` l. 38/81/136/178) y
+     `h.alertLatency`/`h.ingestCert`/`h.version` en `statsSnapshot`
+     DESPUÉS del `h.mu.Unlock()` (la disciplina del paquete es la de
+     `scenarioService()`: copiar bajo cerrojo). Sin disparador en el
+     cableado actual (setters solo en arranque), pero carrera real si
+     se re-arrrma en caliente.
+- **Limpio sin hallazgos**: secretfile (ida y vuelta, 0600, DPAPI con
+  LocalFree, Zero real), config validation, client.go (paginación
+  crítica BER correcta, fileTime/SID, tope que corta el fetch),
+  connector.go (estado por copias, credencial puesta a cero siempre),
+  store/ad.go (snapshot atómico, NOCASE, poda), posture.go (BFS
+  anti-ciclo, listas capadas, ausencia honesta), latency ring (p95
+  sin desborde), secret-write por stdin, deltas de alert/ingest/
+  tlsutil/run.
+- **Observaciones (no bugs)**: `eolOS` no incluye Windows 10 (EOL
+  2025-10, anterior a la fecha del proyecto — decidir si ESU o
+  omisión); el primer sync AD bloquea el arranque (Run síncrono,
+  documentado).
+- **Consolas ajenas sin hallazgos**: guardia CSV de SEG-B (misma regla
+  que SafeCell del motor, fullwidth y espacios correctos) y armazón
+  i18n de IMP-B (disciplina del tema). Mis dos hallazgos de la ronda 5
+  siguen vigentes en `5ecbcc4` (sexto aviso).
+- **Obligatorio**: IMP-A tip con `-race -count=5` verde en ad
+  (12,8 s), secretfile (1,1 s), api (52,2 s), store (13,1 s) en
+  worktree desprendido; PUL-A docs-only; IMP-B/SEG-B consola; PUL-B
+  sin mover.
+- Entorno reconstruido tras el reset del sandbox (repo re-clonado,
+  Go 1.26.0, staticcheck 2026.2.1). Checklist Go completo verde en mi
+  árbol (37 paquetes -race); consola/sensor sin cambios desde la
+  ronda 9 en todas las puntas, evidencia previa vigente.
 
 ## Historial reciente
+
+### Ronda 11 (06h52 UTC) — auditoría AD/SEC-2 de IMP-A + consolas SEG-B/IMP-B (informe `ronda_2026-10-06_06h52_A.md`)
+
+- **2 hallazgos en la rama de IMP-A (anotados, no corregidos: rama
+  sin fusionar)**: score de postura jamás servido (MEDIA, con
+  fail-before/pass-after probados) y lecturas de Hub sin cerrojo
+  (BAJA, disciplina scenarioService).
+- **Auditoría limpia** del resto del código nuevo: secretfile,
+  ad/client/connector/posture, store/ad, latency ring, secret-write.
+- **Consolas**: guardia CSV de SEG-B e i18n de IMP-B sin hallazgos;
+  mis dos hallazgos de la ronda 5 re-verificados vigentes (sexto
+  aviso).
+- **Obligatorio**: `-race -count=5` en la punta de IMP-A (ad/
+  secretfile/api/store), verde.
+- Sandbox reiniciado y reconstruido; checklist Go completo verde
+  (37 paquetes).
 
 ### Ronda 10 (19h39 UTC) — revisión PUL-A re-ejecutada + IMP-B IDEA-11 + fuzzing vivo (informe `ronda_2026-10-05_19h39_A.md`)
 
@@ -167,40 +192,32 @@ ronda 10, cierre (19:39 UTC, Europe/Madrid).
 
 ## Pendiente (orden de prioridad para reabrir)
 
-1. **Auditar `internal/ad` (AD-1/AD-2/SEC-2)** — sigue bloqueado: IMP-A
-   tiene solo plan (16h05); su plan reserva la auditoría para cuando se
-   fusione. Prioridad real al reabrir. SEG-B dejó lista su propuesta
-   de diseño SEC-2 (credenciales en reposo) en su informe 19h10.
+1. **IMP-A debe corregir los 2 hallazgos de la ronda 11 antes de
+   fusionar** (score de postura MEDIA + lecturas sin cerrojo BAJA;
+   informe `ronda_2026-10-06_06h52_A.md` con fix y prueba). Cuando
+   los suba: re-auditar su delta y verificar la sonda del score.
 2. **Verificar que IMP-B incorpora los dos hallazgos de la ronda 5** en
-   su rama antes de la fusión (su REP-4 de la ronda 6 no los tocó; su
-   IDEA-3 de la ronda 8 tampoco).
-3. **Resolver DOS conflictos al fusionar** (re-verificado en la
-   ronda 10 contra la punta de mi carril):
-   `internal/ingest/fuzz_test.go` con PUL-A quedó reducido a UN hunk
-   de 2 líneas en el bloque de imports — conservar `"unicode"` (de
-   su `FuzzAuthEnrollFirstLine`) junto a mi bloque; el bloque EOF
-   adoptado verbatim se auto-fusiona. Y
-   `internal/scenrun/scenrun_test.go` con SEG-B — conservar
-   `TestRunIDsMatchWireContract` (suyo) y
-   `TestStartUnknownScenarioWrapsSentinel` (mío); `scenrun.go` y
-   `api/scenarios.go` se auto-fusionan limpios. Contra `main` de hoy
-   ambas puntas fusionan limpias: el conflicto solo vive entre mi
-   carril y los suyos (ambos lados añadieron tests al mismo fichero
-   desde la misma base).
-4. **`min_count: 2` en beacons** — decisión del responsable pendiente
-   desde la ronda 1 (¿validación en carga `>= 3` o documentar?).
-5. **SET-3 lado motor** — depende de IMP-A; auditar cuando suba.
-6. **PowerShell con `pwsh`** — el entorno no lo tiene; scripts revisados
-   en lectura sin hallazgos.
-7. **PR #18 de Dependabot** — fusionado en `main` (5 de octubre,
-   go.mod/go.sum); reclamación de Seguridad B resuelta.
-8. **Motor auditado en profundidad (ronda 9)**: queda `internal/ad`
-   cuando IMP-A publique; re-auditar solo diffs NUEVOS de otros
-   carriles a partir de aquí (ronda 10: puntas de PUL-A e IMP-B
-   revisadas sin hallazgos nuevos).
-9. **Fuzzing vivo, segunda tanda (ronda 11+)**: `FuzzLoadIntelFile`,
+   su rama antes de la fusión (sexto aviso en `5ecbcc4`).
+3. **Fuzzing vivo, segunda tanda**: `FuzzLoadIntelFile`,
    `FuzzLoadSuppress`, `FuzzConvertSigma`, `FuzzDecodeMail` (45-60 s
    cada uno); los cinco de la ronda 10 quedaron limpios.
+4. **Resolver DOS conflictos al fusionar** (re-verificado en la
+   ronda 11): `internal/ingest/fuzz_test.go` con IMP-A/PUL-A —
+   conservar `"unicode"` junto a mi bloque (el EOF adoptado verbatim
+   se auto-fusiona) — y `internal/scenrun/scenrun_test.go` con SEG-B
+   — conservar `TestRunIDsMatchWireContract` (suyo) y
+   `TestStartUnknownScenarioWrapsSentinel` (mío). Contra `main` de
+   hoy ambas puntas fusionan limpias.
+5. **`min_count: 2` en beacons** — decisión del responsable pendiente
+   desde la ronda 1.
+6. **SET-3 lado consola de IMP-A revisado** (stats payload con
+   versión/latencia/certificados, ronda 11): pendiente solo la vista
+   de IMP-B que lo consuma.
+7. **PowerShell con `pwsh`** — el entorno no lo tiene; scripts revisados
+   en lectura sin hallazgos.
+8. **`internal/ad` auditado (ronda 11)**: el bloqueo de rondas 1-10
+   quedó resuelto con la publicación de IMP-A; de aquí en adelante,
+   re-auditar solo deltas NUEVOS del carril.
 
 ## Notas de contexto que no deben perderse
 
