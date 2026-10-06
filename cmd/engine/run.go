@@ -26,6 +26,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/incident"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/ingest"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/intel"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/known"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/lifecycle"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/notify"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/redact"
@@ -187,6 +188,25 @@ func runEngine(o *options, interactive bool) error {
 		supCount = supMgr.Count(time.Now())
 		if supCount > 0 {
 			fmt.Printf("[ENGINE] %d suppressions active from %s\n", supCount, supPath)
+		}
+	}
+
+	// §2.2 known-software list: events matching an entry carry
+	// enrichment.known_software (the event is never deleted or hidden).
+	// Hot-reloaded on the same ticker as rules; a malformed file is
+	// FATAL at startup, like the suppressions file — failing open would
+	// silently disarm a list the operator believes is armed.
+	knownMgr := known.New()
+	knownPath := ""
+	knownCount := 0
+	if o.knownFile != "" {
+		knownPath = resolveDataFile(o.knownFile, "known-software.yaml")
+		if err := knownMgr.LoadFile(knownPath); err != nil {
+			log.Fatalf("[ENGINE] %v", err)
+		}
+		knownCount = knownMgr.Count()
+		if knownCount > 0 {
+			fmt.Printf("[ENGINE] %d known-software entries from %s\n", knownCount, knownPath)
 		}
 	}
 
@@ -422,6 +442,7 @@ func runEngine(o *options, interactive bool) error {
 			}
 			hub.SetRules(engine)
 			hub.SetSuppressions(supMgr)
+			hub.SetKnownSoftware(knownMgr)
 			if st != nil {
 				hub.SetStore(st)
 			}
@@ -751,6 +772,8 @@ func runEngine(o *options, interactive bool) error {
 	}
 
 	enricher := enrich.New()
+	enricher.SetKnownSoftware(knownMgr) // empty manager = off
+
 	// In TUI mode the panel owns the screen: raw alert lines would
 	// corrupt the alt-buffer, so the console/JSON writer is muted and
 	// the panel presents the alerts (the API hub and the webhook still
@@ -807,16 +830,27 @@ func runEngine(o *options, interactive bool) error {
 	alerts.SetLatencyObserver(latTracker.Observe)
 
 	// emitAllowlisted is the ONE suppression gate every secondary
-	// emitter shares: a host with a suppressed rule is in an accepted
+	// emitter shares. Two thin forms over the same helper:
+	//   - emitAllowlisted(a): aggregated emitters (kill-chains,
+	//     beaconing, volumetric) pass no event, so a CONDITIONAL
+	//     entry never silences them (§2.3: fail toward alerting).
+	//   - emitAllowlistedEvent(ev, a): per-event emitters (intel,
+	//     baseline novelty) pass the triggering event, so a
+	//     conditional entry suppresses exactly the invocation shape
+	//     it names.
+	// In both forms a host with a suppressed rule is in an accepted
 	// state, so an alert derived from its silenced evidence never
 	// fires — a kill-chain built on suppressed steps, a beacon built
 	// on silenced traffic or a volumetric alert fed by silenced
-	// events would all be false positives. One closure instead of
-	// three identical copies keeps the gate from diverging (any
-	// future change to how suppression gates secondary alerts is
-	// edited here, once).
+	// events would all be false positives.
 	emitAllowlisted := func(a alert.Alert) {
-		if suppressed(supMgr, a.RuleID, a.Host, time.Now()) {
+		if suppressed(supMgr, a.RuleID, a.Host, nil, time.Now()) {
+			return
+		}
+		alerts.Emit(a)
+	}
+	emitAllowlistedEvent := func(ev *model.Event, a alert.Alert) {
+		if suppressed(supMgr, a.RuleID, a.Host, ev, time.Now()) {
 			return
 		}
 		alerts.Emit(a)
@@ -966,6 +1000,16 @@ func runEngine(o *options, interactive bool) error {
 							supCount = n
 						}
 					}
+					if o.knownFile != "" {
+						if err := knownMgr.LoadFile(knownPath); err != nil {
+							log.Printf("[ENGINE] known-software reload FAILED, keeping previous list: %v", err)
+						} else if n := knownMgr.Count(); n != knownCount {
+							if !tui {
+								fmt.Printf("[ENGINE] known-software reloaded (%d entries)\n", n)
+							}
+							knownCount = n
+						}
+					}
 					if bcn != nil && fileExists(bcnPath) {
 						err := bcn.Reload(bcnPath)
 						bcnRep.report(bcn.Count(), err)
@@ -1068,8 +1112,10 @@ func runEngine(o *options, interactive bool) error {
 		}
 		for _, hit := range engine.Evaluate(ev) {
 			// allowlist first: a suppressed hit raises no alert AND does
-			// not feed the correlator (see the Emit wrapper above).
-			if suppressed(supMgr, hit.Rule.ID, ev.Host, time.Now()) {
+			// not feed the correlator (see the Emit wrapper above). The
+			// event rides along so a CONDITIONAL entry (§2.3 when)
+			// suppresses only the invocation shape it names.
+			if suppressed(supMgr, hit.Rule.ID, ev.Host, ev, time.Now()) {
 				if !tui {
 					log.Printf("[SUPPRESS] rule=%s host=%s", redact.TerminalText(hit.Rule.ID), redact.TerminalText(ev.Host))
 				}
@@ -1098,13 +1144,17 @@ func runEngine(o *options, interactive bool) error {
 			now := time.Now()
 			for _, hit := range intelM.Match(ev) {
 				if intelM.Allow(hit, ev.Host, now) {
-					emitAllowlisted(intelAlert(ev, hit, now))
+					emitAllowlistedEvent(ev, intelAlert(ev, hit, now))
 				}
 			}
 		}
-		// baseline: a process this host never ran after its learning period
-		if nov := baseTracker.Observe(ev, time.Now()); nov != nil {
-			emitAllowlisted(noveltyAlert(ev, nov, time.Now()))
+		// baseline: a process this host never ran after its learning period.
+		// Known software (§2.2) is LEARNED but never reported as a novelty:
+		// the whole point of the list is that its boots are expected, and
+		// learning keeps the baseline honest for the day the entry is
+		// removed (the host has demonstrably run it for months).
+		if nov := baseTracker.Observe(ev, time.Now()); nov != nil && ev.Enrichment["known_software"] == "" {
+			emitAllowlistedEvent(ev, noveltyAlert(ev, nov, time.Now()))
 		}
 		processed++
 	}

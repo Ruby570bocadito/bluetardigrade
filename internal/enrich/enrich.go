@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Ruby570bocadito/bluetardigrade/internal/known"
 	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
@@ -35,6 +36,7 @@ type procEntry struct {
 // tests and future fan-out rely on the mutex.
 type Enricher struct {
 	startedAt time.Time
+	known     *known.Manager // nil = the known-software list is off
 
 	mu    sync.Mutex
 	hosts map[string]map[int64]procEntry // host -> pid -> identity
@@ -62,8 +64,10 @@ func (en *Enricher) Apply(ev *model.Event) {
 		ev.Enrichment = make(map[string]string, 6)
 	}
 	// These keys are engine-owned. A replay or sensor-supplied map must
-	// not retain an identity that the current evidence cannot establish.
-	for _, key := range []string{"user_domain", "user_name", "image_dir", "image_origin", "parent_name", "parent_image"} {
+	// not retain an identity that the current evidence cannot establish
+	// (known_software especially: a forged one would blind rules that
+	// opted out of firing on known software).
+	for _, key := range []string{"user_domain", "user_name", "image_dir", "image_origin", "parent_name", "parent_image", "known_software"} {
 		delete(ev.Enrichment, key)
 	}
 	ev.Enrichment["seen_at"] = time.Now().UTC().Format(time.RFC3339Nano)
@@ -87,9 +91,27 @@ func (en *Enricher) Apply(ev *model.Event) {
 		}
 	}
 
+	// §2.2 known software: a match labels the event — never deletes or
+	// downgrades it — so the baseline, the noise report and opted-out
+	// rules can each decide how much to trust it. nil manager = off.
+	if en.known != nil {
+		if name, ok := en.known.Match(ev); ok {
+			ev.Enrichment["known_software"] = name
+		}
+	}
+
 	if ev.Process != nil {
 		en.trackProcess(ev)
 	}
+}
+
+// SetKnownSoftware arms the §2.2 list (nil keeps it off). The manager
+// is hot-reloaded by the engine's ticker; the enricher only holds the
+// reference, and known.Manager is safe for concurrent use.
+func (en *Enricher) SetKnownSoftware(m *known.Manager) {
+	en.mu.Lock()
+	en.known = m
+	en.mu.Unlock()
 }
 
 // trackProcess resolves the event's parent (PPID -> identity recorded

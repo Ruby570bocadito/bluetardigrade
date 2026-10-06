@@ -40,11 +40,15 @@ type Noise struct {
 // Scanned is the honesty block: how many records fed the aggregates
 // and whether the scan hit its cap before exhausting the window (a
 // capped scan sees the NEWEST slice of the window, never a biased
-// sample of it).
+// sample of it). KnownSoftwareEvents counts the process boots the
+// known-software list (§2.2) removed from the process aggregate — the
+// events stay stored and searchable; the noise report just stops
+// treating them as noise, and the count keeps the arithmetic open.
 type Scanned struct {
-	Events    int  `json:"events"`
-	Alerts    int  `json:"alerts"`
-	Truncated bool `json:"truncated"`
+	Events              int  `json:"events"`
+	Alerts              int  `json:"alerts"`
+	Truncated           bool `json:"truncated"`
+	KnownSoftwareEvents int  `json:"known_software_events"`
 }
 
 // ProcessNoise is one aggregated process boot signature. The key is
@@ -161,6 +165,7 @@ func BuildNoise(in NoiseInputs, w Window, generated time.Time) Noise {
 
 	procs := map[string]*procAgg{}
 	doms := map[string]*domAgg{}
+	knownEvents := 0
 
 	for _, ev := range in.Events {
 		if ev.Timestamp.Before(w.From) || ev.Timestamp.After(w.Until) {
@@ -168,6 +173,14 @@ func BuildNoise(in NoiseInputs, w Window, generated time.Time) Noise {
 		}
 		switch {
 		case ev.Type == model.TypeProcessCreate && ev.Process != nil:
+			// §2.2: known software disappears from the noise report —
+			// that is its whole purpose — while the events remain
+			// stored and searchable in the flow. The honesty counter
+			// keeps the disappearance explainable.
+			if ev.Enrichment["known_software"] != "" {
+				knownEvents++
+				continue
+			}
 			key := strings.ToLower(ev.Process.Image)
 			if key == "" {
 				key = strings.ToLower(ev.Process.Name)
@@ -253,6 +266,7 @@ func BuildNoise(in NoiseInputs, w Window, generated time.Time) Noise {
 	}
 
 	n.Processes = make([]ProcessNoise, 0, len(procs))
+	n.Scanned.KnownSoftwareEvents = knownEvents
 	for key, a := range procs {
 		n.Processes = append(n.Processes, ProcessNoise{
 			Image:         key,

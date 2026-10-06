@@ -213,7 +213,10 @@ paths:
         immediately, so hand edits and API edits share one state.
         Without the flag, both write operations answer `403` naming the
         flag. Suppressed hits raise no alert, skip the correlator and
-        are logged as `[SUPPRESS]`.
+        are logged as `[SUPPRESS]`. Entries with `when` conditions
+        narrow the silence to events matching every condition; they
+        never silence aggregated alerts (kill-chains, beaconing,
+        volumetric), which carry no single event to evaluate.
       responses:
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -2404,6 +2407,7 @@ components:
         - splunk_failed
         - splunk_dropped
         - suppressions_active
+        - known_software_active
         - correlator_states
         - correlator_sequences
         - correlator_cap
@@ -2436,6 +2440,9 @@ components:
         suppressions_active:
           type: integer
           description: non-expired entries in the operator allowlist
+        known_software_active:
+          type: integer
+          description: entries in the known-software list (§2.2); 0 when -known-software is not armed
         store_enabled:
           type: boolean
           description: whether the engine runs with persistent SQLite storage (-store)
@@ -3390,7 +3397,16 @@ components:
         rule_id silences that rule everywhere). Field caps guard the
         control file: rule_id 128, host 253, reason 2000, expires 40
         characters; the request body is capped at 8 KiB and the file at
-        1000 entries via the write API.
+        1000 entries via the write API. The optional `when` conditions
+        (§2.3) narrow the entry to events whose fields match EVERY
+        condition, evaluated with the same operators the rule engine
+        uses (8 conditions max; field 128 and value 2000 characters;
+        value lists up to 16 items). A conditional entry only
+        silences alerts whose triggering event exists (rule hits,
+        intel and baseline-novelty alerts); aggregated alerts
+        (kill-chains, beaconing, volumetric) carry no single event and
+        are therefore never silenced by one — the failure direction is
+        an alert the operator still sees.
       properties:
         rule_id:
           type: string
@@ -3400,6 +3416,24 @@ components:
           type: string
           maxLength: 253
           description: host to scope the entry to (empty = every host); compared case-insensitively
+        when:
+          type: array
+          maxItems: 8
+          description: optional event-field conditions, ALL of which must hold for the entry to silence a hit (§2.3)
+          items:
+            type: object
+            required: [field, operator]
+            properties:
+              field:
+                type: string
+                maxLength: 128
+                description: dotted event field (e.g. process.command_line); events without the field never match
+              operator:
+                type: string
+                maxLength: 16
+                description: one of the rule engine's operators (eq, neq, contains, contains_any, startswith, endswith, regex, in, not_in, gt, lt and the case-insensitive i* variants)
+              value:
+                description: comparison value (string, number, boolean or a list of up to 16 of them)
         reason:
           type: string
           maxLength: 2000
@@ -4735,6 +4769,9 @@ components:
             truncated:
               type: boolean
               description: the scan hit its 10000-record cap (it then sees the newest slice of the window)
+            known_software_events:
+              type: integer
+              description: process boots excluded from the process aggregate because the known-software list labelled them (§2.2); the events stay stored and searchable
         processes:
           type: array
           items:
