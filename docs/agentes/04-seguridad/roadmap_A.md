@@ -1,7 +1,65 @@
 # Roadmap — Seguridad A (carril/seguridad-a)
 
 Archivo vivo: continuidad del carril. Última actualización: 2026-10-06,
-ronda 15, cierre (08:24 UTC, Europe/Madrid).
+ronda 16, cierre (09:22 UTC, Europe/Madrid).
+
+## Estado tras el cierre de la ronda 16 (2026-10-06)
+
+- **IMP-A publicó (`293be1d`) y CERRÓ mis 2 hallazgos de la ronda 11,
+  verificados en dos direcciones**: fail-before replicado por mí
+  (su test sonda falla sobre `510a514` con «score=null on the wire»)
+  y pass-after en su punta; el fix de cerrojo (`adConnector()` +
+  capturas pre-Unlock en `statsSnapshot`, closures sin llamar hasta
+  después) sigue la disciplina que cité.
+- **1 hallazgo NUEVO (MEDIA) en la rama de IMP-A — hot-swap de AD-6
+  sin serializar**: `adReloadAsync` lanza la callback en gorutina
+  FUERA de `adWriteMu` mientras AMBOS comentarios (ad_settings.go y
+  run.go) afirman lo contrario; el bookkeeping `current` de
+  `reconfigure` (run.go ~614) es lectura-escritura sin sincronizar.
+  Con dos PUTs solapados: carrera de datos (CONFIRMADA con -race vía
+  repro con la topología real de producción), lost-update fichero vs
+  conector publicado (7/20 repeticiones sin -race: «el fichero dice
+  1800s pero el conector sirve 900s») y conector huérfano con bucle
+  de sync eterno. Repro en mi sandbox `scripts/repro-r16/`; NUNCA
+  commiteado a su carril. Sus tests cubren solo PUTs secuenciales.
+  Fix propuesto: sostener el cerrojo DURANTE la callback.
+- **El resto del delta de IMP-A (~5k líneas) auditado: LIMPIO** —
+  settings AD-6 (credencial write-only, drift 409, commit atómico
+  temp+fsync+rename, cuerpo estricto 8 KiB, sonda acotada sin bind
+  anónimo), paridad Validate/loader REAL (misma función), supresiones
+  condicionales (mismo conjunto de operadores, fail hacia alertar en
+  agregados, operador/regex inválidos fallan el load ruidoso),
+  known-software (validación ruidosa; la promesa anti-forja SE
+  CUMPLE: Apply borra las claves engine-owned del sensor antes de
+  aplicar las suyas y corre antes de Evaluate; efectos honestos con
+  contador `known_software_events`), decisión de triaje (set cerrado,
+  400 duro, replace completo documentado, CSV apenda columna),
+  guardia openapi bidireccional.
+- **Obligatorio**: `-race -count=5` 8/8 paquetes del delta de IMP-A
+  (api 63,8 s, rules 44,6 s, resto <3 s); consola de IMP-B 444 pass +
+  tsc + build. PUL-A/PUL-B/SEG-B sin Go (evidencia previa).
+- **Fuzzing de parsers NUEVOS** (throwaway en worktree de IMP-A):
+  `known.Parse` 691 k execs y suppressions-`when` 5,3 k execs —
+  limpios; proponer `FuzzKnownParse` permanente al aterrizar. Trío
+  denso en mi árbol 3/3 (nota: localizar el target con git grep
+  ANTES — mi primer intento corrió en paquetes equivocados).
+- **PUL-A pre-flight** (guardia sobre el Makefile fusionado simulado):
+  buen método, registrado. Verifiqué byte a byte que las 7 recetas
+  console de PUL-B siguen con espacios en `744d46a` e IMP-B — el
+  peligro de fusión (fusión SIN conflicto + guardia roja) es real y
+  con dueño (PUL-B).
+- **SEG-B** verifica mi fix `decodeText` y ADOPTA el reparo del
+  Makefile en su rama (`a04379b`) — convergencia de 3 carriles;
+  main sigue sin el reparo (TERCER aviso).
+- **Conflictos (por código de salida)**: los 2 conocidos + UNO NUEVO
+  con IMP-A en `internal/api/reports_test.go` (mi test de truncado
+  ronda 7 vs sus tests decisión→ruido — ambos aditivos, conservar
+  los dos).
+- **Mis 2 hallazgos de ronda 5 sobre IMP-B: OCTAVO aviso** (su delta
+  no tocó esos ficheros).
+- Checklist CI completo verde (37 paquetes -race). Sin fix mío → sin
+  changelog. Nota de proceso: el plan se publicó en el commit de
+  cierre (desvío de ORDEN anotado).
 
 ## Estado tras el cierre de la ronda 15 (2026-10-06)
 
@@ -192,6 +250,23 @@ ronda 15, cierre (08:24 UTC, Europe/Madrid).
   ronda 9 en todas las puntas, evidencia previa vigente.
 
 ## Historial reciente
+
+### Ronda 16 (09h22 UTC) — IMP-A publica: mis 2 hallazgos cerrados (verificados) + hot-swap de AD-6 sin serializar (hallazgo MEDIA con repro) + ~5k líneas auditadas (informe `ronda_2026-10-06_09h22_A.md`)
+
+- **Cierre verificado en dos direcciones** de mis 2 hallazgos de la
+  ronda 11 (fail-before replicado por mí sobre `510a514`).
+- **HALLAZGO (MEDIA)**: hot-swap AD-6 sin serializar — carrera en
+  `current` (confirmada -race, topología real) + lost-update fichero/
+  conector (7/20) + conector huérfano. Repro entregado; fix
+  propuesto (cerrojo DURANTE la callback).
+- **~5k líneas LIMPIAS**: settings AD-6, supresiones `when`,
+  known-software (anti-forja verificada en el orden Apply→Evaluate),
+  triaje, openapi guard.
+- **-race -count=5** 8/8 paquetes del delta; consola IMP-B 444 pass;
+  fuzzing de parsers nuevos (691k+5,3k) y trío denso 3/3.
+- **Conflictos**: los 2 conocidos + reports_test.go con IMP-A
+  (aditivo). Octavo aviso a IMP-B; tercer aviso del Makefile en main.
+- Nota de proceso: plan publicado en el commit de cierre.
 
 ### Ronda 15 (08h24 UTC) — auditoría AD-5/SET-3 de IMP-B + reconciliación CSP + convergencia Makefile (informe `ronda_2026-10-06_08h24_A.md`)
 
@@ -400,13 +475,16 @@ ronda 15, cierre (08:24 UTC, Europe/Madrid).
 
 ## Pendiente (orden de prioridad para reabrir)
 
-1. **IMP-A debe corregir los 2 hallazgos de la ronda 11 antes de
-   fusionar** (score de postura MEDIA + lecturas sin cerrojo BAJA;
-   informe `ronda_2026-10-06_06h52_A.md` con fix y prueba). Cuando
-   los suba: re-auditar su delta y verificar la sonda del score.
+1. **IMP-A: hot-swap de AD-6 sin serializar (hallazgo MEDIA de la
+   ronda 16)** — repro con carrera confirmada por -race y lost-update
+   7/20 entregado en el informe `ronda_2026-10-06_09h22_A.md` (copia
+   del repro en mi sandbox `scripts/repro-r16/`). Cuando lo corrija:
+   re-verificar con dos PUTs concurrentes bajo -race en su punta.
+   SUS OTROS 2 hallazgos (ronda 11) quedaron CERRADOS y verificados
+   en dos direcciones (ronda 16).
 2. **Verificar que IMP-B incorpora los dos hallazgos de la ronda 5** en
-   su rama antes de la fusión (séptimo aviso en `b5e26d7`; el delta
-   nuevo de AD-5/SET-3 no tocó esos ficheros).
+   su rama antes de la fusión (octavo aviso en `28d6f9e`; ni AD-5/SET-3
+   ni el barrido i18n tocaron esos ficheros).
 3. **Fuzzing vivo — COMPLETADO (ronda 13)**: los 24 objetivos del
    proyecto tienen sesión viva (rondas 10, 12 y 13; ~3,7 M ejecuciones;
    1 crasher corregido). Mantenimiento: paseo de 60 s sobre 3
@@ -425,11 +503,14 @@ ronda 15, cierre (08:24 UTC, Europe/Madrid).
    contra todas las puntas.
 5. **Dependencia del carril (nueva, ronda 14)**: el reparo del
    Makefile de PUL-A (`49afd06` + guardia, push en `9ee1594`) debe
-   aterrizar en `main` — verificado byte a byte que es correcto y
-   completo (ronda 14) y re-confirmado por SEG-B con ejecución
-   (ronda 15); `make` sigue roto en TODOS los carriles con `main`
-   como base hasta entonces (63fa077, segundo aviso). No duplico el
-   fix: hallazgo con dueño, guardia y changelog de PUL-A.
+   aterrizar en `main` — verificado byte a byte (ronda 14),
+   re-confirmado por SEG-B con ejecución (ronda 15) y ADOPTADO por
+   SEG-B en su rama `a04379b` (ronda 16); `make` sigue roto en TODOS
+   los carriles con `main` como base (63fa077, tercer aviso). Sumar
+   el peligro de fusión de las 7 recetas console de PUL-B (espacios,
+   verificadas byte a byte en la ronda 16) para quien integre.
+   No duplico el fix: hallazgo con dueño, guardia y changelog de
+   PUL-A.
 6. **`min_count: 2` en beacons** — decisión del responsable pendiente
    desde la ronda 1.
 7. **CERRADO (ronda 15)**: la vista de IMP-B que consume el stats
