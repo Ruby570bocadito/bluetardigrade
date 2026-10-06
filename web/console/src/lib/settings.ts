@@ -65,8 +65,16 @@ export function updateADSettings(update: ADSettingsUpdate): Promise<EngineResult
   return engineCall<ADSettings>('PUT', '/api/settings/ad', update, {}, 12000)
 }
 
+/** Client budget for POST /api/ad/test (SEG-A r10 LOW): the engine gives
+ * its probe 45s hung off the request context, and aborting the fetch
+ * cancels that context — a client timeout at or below 45s would make the
+ * engine's own budget unreachable from the console (a slow LDAP/WAN probe
+ * would always die client-side). 50s lets the engine spend its full 45s
+ * and still leaves room for the response to travel. */
+export const AD_PROBE_BUDGET_MS = 50_000
+
 export function testADConnection(candidate: ADSettingsUpdate): Promise<EngineResult<ADTestResult>> {
-  return engineCall<ADTestResult>('POST', '/api/ad/test', candidate, {}, 30000)
+  return engineCall<ADTestResult>('POST', '/api/ad/test', candidate, {}, AD_PROBE_BUDGET_MS)
 }
 
 // ---------------------------------------------------------------------------
@@ -237,7 +245,11 @@ export function draftPayload(s: ADSettings | null, d: ADSettingsDraft, password?
   if (dirty.has('work_start')) update.work_start = d.work_start.trim()
   if (dirty.has('work_end')) update.work_end = d.work_end.trim()
   if (dirty.has('work_days')) update.work_days = checksToDays(d.work_days)
-  const trimmedPassword = password?.trim()
-  if (trimmedPassword) update.password = trimmedPassword
+  // The password travels VERBATIM (SEG-A r10 LOW): the engine stores and
+  // probes it exactly as typed — leading/trailing spaces are legal bind
+  // passwords, and trimming here would silently probe one credential
+  // while storing another. The trimmed copy only decides whether the
+  // field travels (an all-whitespace field means "no change").
+  if (password?.trim()) update.password = password
   return { update, invalid: [] }
 }

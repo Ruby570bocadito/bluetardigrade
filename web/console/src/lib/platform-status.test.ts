@@ -53,11 +53,49 @@ describe('platformStatus', () => {
     expect(platformStatus(null)).toBeNull()
   })
 
-  test('the seven TODO sections are always present in order', () => {
+  test('the eight TODO sections are always present in order (cuotas joins with the v1.1 engine)', () => {
     const report = platformStatus(baseStats())!
     expect(report.sections.map((s) => s.key)).toEqual([
-      'motor', 'ingesta', 'colas', 'almacen', 'entrega', 'certificados', 'deteccion',
+      'motor', 'ingesta', 'colas', 'almacen', 'entrega', 'certificados', 'deteccion', 'cuotas',
     ])
+  })
+
+  test('the v1.1 quota fields render in their section; an older engine stays honest (ronda 12)', () => {
+    const report = platformStatus(baseStats())!
+    const quota = report.sections.find((s) => s.key === 'cuotas')!
+    const byKey = (k: string) => quota.rows.find((r) => r.key === k)
+    // absent on the base snapshot: declared, never zero
+    expect(byKey('quota-beacon')?.absent).toBe(true)
+    expect(byKey('quota-beacon')?.display).toBe('no publicado')
+    expect(byKey('quota-threshold')?.absent).toBe(true)
+    expect(byKey('quota-hosts')?.absent).toBe(true)
+    // ring rotation rows live in the correlator section, same contract
+    const colas = report.sections.find((s) => s.key === 'colas')!
+    expect(colas.rows.find((r) => r.key === 'ring-events')?.absent).toBe(true)
+    expect(colas.rows.find((r) => r.key === 'ring-alerts')?.absent).toBe(true)
+
+    const withQuotas = platformStatus({ ...baseStats(), beacon_quota_rejected: 12, threshold_quota_rejected: 0, ring_dropped_events: 3400, ring_dropped_alerts: 7, quota_top_hosts: [{ host: 'PC-RUIDOSA', ring_events: 3000, ring_alerts: 5, beacon: 12, threshold: 0 }] } as never)!
+    const byKeyOf = (report: NonNullable<ReturnType<typeof platformStatus>>) => (k: string) => report.sections.flatMap((s) => s.rows).find((r) => r.key === k)
+    const q2 = byKeyOf(withQuotas)
+    expect(q2('quota-beacon')?.display).toBe('12')
+    expect(q2('quota-beacon')?.tone).toBe('warn')
+    expect(q2('quota-threshold')?.tone).toBe('neutral')
+    expect(q2('quota-host-0')?.label).toBe('PC-RUIDOSA')
+    expect(q2('quota-host-0')?.display).toContain('beacon 12')
+    const colas2 = withQuotas.sections.find((s) => s.key === 'colas')!
+    // es-ES does not group 4-digit numbers (CLDR minimumGroupingDigits=2)
+    expect(colas2.rows.find((r) => r.key === 'ring-events')?.display).toBe('3400')
+    expect(colas2.rows.find((r) => r.key === 'ring-events')?.tone).toBe('warn')
+    expect(colas2.rows.find((r) => r.key === 'ring-alerts')?.display).toBe('7')
+  })
+
+  test('the EN language renders the twin labels and en-US numbers (ronda 12)', () => {
+    const report = platformStatus(baseStats(), 'en')!
+    expect(report.sections.map((s) => s.title)).toContain('Per-host quotas')
+    expect(report.sections[0].rows[0].label).toBe('Uptime')
+    expect(report.unavailable).toEqual(['last scheduled report'])
+    const withQuotas = platformStatus({ ...baseStats(), ring_dropped_events: 3400 } as never, 'en')!
+    expect(withQuotas.sections.find((s) => s.key === 'colas')!.rows.find((r) => r.key === 'ring-events')?.display).toBe('3,400')
   })
 
   test('healthy report: no bad rows on a clean snapshot', () => {

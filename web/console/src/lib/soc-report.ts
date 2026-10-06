@@ -1,10 +1,20 @@
 import type { SfAlert } from './console-types'
+import type { Lang } from './i18n'
 
 export const REPORT_KEY = 'bluetardigrade.soc-reports.v1'
 export const REPORT_UPDATED_EVENT = 'bluetardigrade:reports-updated'
 export const MAX_REPORTS = 10
+// Spanish remains the storage/validation vocabulary (lib errors keep the
+// round-6 boundary: they are shown as the engine says them, in Spanish).
 export const DECISIONS = { pending: 'Pendiente', false_positive: 'Falso positivo', authorized_activity: 'Actividad autorizada', confirmed_incident: 'Incidente confirmado' } as const
 export type Decision = keyof typeof DECISIONS
+
+// Display labels per console language — the ONE source for both the
+// editor's select and the exported file, so they can never drift apart.
+export const DECISION_LABELS: Record<Lang, Record<Decision, string>> = {
+  es: DECISIONS,
+  en: { pending: 'Pending', false_positive: 'False positive', authorized_activity: 'Authorized activity', confirmed_incident: 'Confirmed incident' },
+}
 export type ReportFields = { title: string; analyst: string; decision: Decision; findings: string; actions: string; recommendations: string; references: string }
 export type SocReport = { version: 1; alert_id: string; created_at: string; updated_at: string; revision: number; fields: ReportFields; alert: SfAlert }
 type StorageReader = Pick<Storage, 'getItem'>
@@ -81,10 +91,12 @@ function parseReport(value: unknown): SocReport {
   return { version: 1, alert_id: input.alert_id, created_at: created, updated_at: updated, revision: input.revision as number, fields: fields(input.fields), alert: alertSnapshot(input.alert, input.alert_id) }
 }
 
-export function newReport(alert: SfAlert, now = new Date()): SocReport {
+/** The default title is generated console copy, so it follows the console
+ * language (stored data the analyst owns afterwards); Spanish by default. */
+export function newReport(alert: SfAlert, now = new Date(), lang: Lang = 'es'): SocReport {
   if (!alert.id || !ID.test(alert.id)) throw new Error('El informe requiere un ID de alerta del motor.')
   const at = now.toISOString()
-  return { version: 1, alert_id: alert.id, created_at: at, updated_at: at, revision: 0, alert: alertSnapshot(alert, alert.id), fields: { title: `Investigación de alerta ${alert.id}`, analyst: '', decision: 'pending', findings: '', actions: '', recommendations: '', references: '' } }
+  return { version: 1, alert_id: alert.id, created_at: at, updated_at: at, revision: 0, alert: alertSnapshot(alert, alert.id), fields: { title: lang === 'en' ? `Alert investigation ${alert.id}` : `Investigación de alerta ${alert.id}`, analyst: '', decision: 'pending', findings: '', actions: '', recommendations: '', references: '' } }
 }
 export function readReports(storage: StorageReader): SocReport[] {
   const raw = storage.getItem(REPORT_KEY)
@@ -114,15 +126,45 @@ function fence(value: string, language: string): string {
   const runs = value.match(/`+/g) ?? []; const marker = '`'.repeat(Math.max(3, ...runs.map((item) => item.length + 1)))
   return `${marker}${language}\n${value}\n${marker}`
 }
-export function buildReportExport(report: SocReport, format: 'md' | 'json') {
+// Artifact vocabulary per language (the exported file is console copy
+// around the analyst's own text; the language follows the console, never
+// the engine). ES entries are byte-identical to the pre-i18n artifact.
+const EXPORT_TEXT: Record<Lang, {
+  title: string; alertWord: string; createdWord: string; sections: Record<'title' | 'analyst' | 'decision' | 'findings' | 'actions' | 'recommendations' | 'references', string>;
+  unfilled: string; evidenceHeading: string; evidenceProse: string; closing: string;
+}> = {
+  es: {
+    title: 'Informe SOC',
+    alertWord: 'Alerta',
+    createdWord: 'Creado',
+    sections: { title: 'Título', analyst: 'Analista', decision: 'Clasificación humana', findings: 'Hallazgos', actions: 'Acciones realizadas', recommendations: 'Recomendaciones', references: 'Referencias' },
+    unfilled: 'Sin completar',
+    evidenceHeading: 'Evidencia recibida',
+    evidenceProse: 'Snapshot de la alerta; la clasificación pertenece al analista.',
+    closing: 'El informe no modifica el estado de la alerta ni ejecuta una respuesta.',
+  },
+  en: {
+    title: 'SOC report',
+    alertWord: 'Alert',
+    createdWord: 'Created',
+    sections: { title: 'Title', analyst: 'Analyst', decision: 'Human classification', findings: 'Findings', actions: 'Actions taken', recommendations: 'Recommendations', references: 'References' },
+    unfilled: 'Not filled in',
+    evidenceHeading: 'Evidence received',
+    evidenceProse: 'Snapshot of the alert; the classification belongs to the analyst.',
+    closing: 'The report does not change the alert state and does not run a response.',
+  },
+}
+
+export function buildReportExport(report: SocReport, format: 'md' | 'json', lang: Lang = 'es') {
   if (!Number.isSafeInteger(report.revision) || report.revision < 0) throw new Error('Revisión de informe incompatible.')
   const checked = { ...parseReport({ ...report, revision: Math.max(1, report.revision) }), revision: report.revision }
   let contents: string
   if (format === 'json') contents = JSON.stringify(checked, null, 2) + '\n'
   else {
-    const sections: [string, string][] = [['Título', checked.fields.title], ['Analista', checked.fields.analyst], ['Clasificación humana', DECISIONS[checked.fields.decision]], ['Hallazgos', checked.fields.findings], ['Acciones realizadas', checked.fields.actions], ['Recomendaciones', checked.fields.recommendations], ['Referencias', checked.fields.references]]
+    const t = EXPORT_TEXT[lang]
+    const sections: [string, string][] = [[t.sections.title, checked.fields.title], [t.sections.analyst, checked.fields.analyst], [t.sections.decision, DECISION_LABELS[lang][checked.fields.decision]], [t.sections.findings, checked.fields.findings], [t.sections.actions, checked.fields.actions], [t.sections.recommendations, checked.fields.recommendations], [t.sections.references, checked.fields.references]]
     const evidence = JSON.stringify(checked.alert, null, 2).replace(/[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, (char) => '\\u' + char.charCodeAt(0).toString(16).padStart(4, '0'))
-    contents = `# Informe SOC\n\nAlerta: ${checked.alert_id}\n\nCreado: ${checked.created_at}\n\n` + sections.map(([title, value]) => `## ${title}\n\n${fence(value || 'Sin completar', 'text')}\n\n`).join('') + `## Evidencia recibida\n\nSnapshot de la alerta; la clasificación pertenece al analista.\n\n${fence(evidence, 'json')}\n\nEl informe no modifica el estado de la alerta ni ejecuta una respuesta.\n`
+    contents = `# ${t.title}\n\n${t.alertWord}: ${checked.alert_id}\n\n${t.createdWord}: ${checked.created_at}\n\n` + sections.map(([title, value]) => `## ${title}\n\n${fence(value || t.unfilled, 'text')}\n\n`).join('') + `## ${t.evidenceHeading}\n\n${t.evidenceProse}\n\n${fence(evidence, 'json')}\n\n${t.closing}\n`
   }
   return { filename: `soc-${report.alert_id}.${format}`, mime: format === 'json' ? 'application/json;charset=utf-8' : 'text/markdown;charset=utf-8', contents }
 }

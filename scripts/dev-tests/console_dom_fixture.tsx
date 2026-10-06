@@ -442,14 +442,17 @@ async function main() {
   console.log('PASS: incompatible saved state is not silently overwritten')
 
   window.localStorage.clear()
+  // the report views are bilingual now: re-pin ES after the wipe (the
+  // stored choice wins; nothing stored falls to the browser preference)
+  dom.window.localStorage.setItem(LANG_STORAGE_KEY, 'es')
   const reportAlert={...alert,status:'new' as const,source:'suricata',attributes:{ids_action:'allowed',ids_verdict:'drop'},network:{source_ip:'10.0.0.1',destination_port:443},severity:'high' as const}
-  root.render(<ReportPanel alert={reportAlert} initiallyOpen />)
+  root.render(<I18nProvider><ReportPanel alert={reportAlert} initiallyOpen /></I18nProvider>)
   const findings=()=>document.querySelector<HTMLTextAreaElement>('textarea[id$="-findings"]')!
   await until(()=>Boolean(findings()))
   Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype,'value')!.set!.call(findings(),'Human fixture findings')
   findings().dispatchEvent(new dom.window.Event('input',{bubbles:true}))
   await delay(30)
-  root.render(<ReportPanel alert={{...reportAlert,status:'closed'}} initiallyOpen />)
+  root.render(<I18nProvider><ReportPanel alert={{...reportAlert,status:'closed'}} initiallyOpen /></I18nProvider>)
   await delay(30)
   assert.equal(findings().value,'Human fixture findings')
   assert.ok(document.body.textContent!.includes('Cambios sin guardar'))
@@ -486,7 +489,7 @@ async function main() {
   try { button('Guardar informe').click(); await until(()=>Boolean(document.querySelector('[role="alert"]'))); assert.equal(readReports(window.localStorage)[0].revision,2) }
   finally {dom.window.Storage.prototype.setItem=realSet}
   console.log('PASS: report storage errors remain visible and preserve the saved revision')
-  root.render(<ReportLibrary />)
+  root.render(<I18nProvider><ReportLibrary /></I18nProvider>)
   await until(()=>document.body.textContent!.includes('Informes guardados (1/10)'))
   ;(document.querySelector('summary') as HTMLElement).click()
   button('Abrir informe').click()
@@ -497,7 +500,7 @@ async function main() {
   assert.deepEqual(readReports(window.localStorage),[])
   console.log('PASS: orphan snapshots can be reopened and removed without the engine alert')
   window.localStorage.setItem(REPORT_KEY,'{corrupt report fixture')
-  root.render(<ReportPanel alert={reportAlert} initiallyOpen />)
+  root.render(<I18nProvider><ReportPanel alert={reportAlert} initiallyOpen /></I18nProvider>)
   await until(()=>Boolean(findings()))
   button('Guardar informe').click()
   await delay(30)

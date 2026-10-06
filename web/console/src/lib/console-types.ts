@@ -310,10 +310,29 @@ export type EngineStats = {
   alert_latency?: AlertLatency
   store_size_bytes?: number
   certificates?: EngineCertificates
+  // v1.1 per-team admission quotas + in-memory ring rotation (IMP-A
+  // ronda 2026-10-06 48b81f8): refused new keys when a host's own quota
+  // was full, records rotated out of the live view rings, and a bounded
+  // worst-first pressure view. Optional so older engines keep decoding;
+  // absence never means zero.
+  beacon_quota_rejected?: number
+  threshold_quota_rejected?: number
+  ring_dropped_events?: number
+  ring_dropped_alerts?: number
+  quota_top_hosts?: QuotaHostRow[]
   // hub-only fields: the engine itself sends neither mode nor
   // interval_ms (mode optional so direct-engine responses type-check)
   interval_ms?: number
   mode?: 'engine' | 'sin-motor'
+}
+
+/** One worst-first row of the per-host pressure view (bounded top 8). */
+export type QuotaHostRow = {
+  host: string
+  ring_events: number
+  ring_alerts: number
+  beacon: number
+  threshold: number
 }
 
 /** SET-3: ingest→alert latency summary (count 0 = no alerts yet, not "no latency"). */

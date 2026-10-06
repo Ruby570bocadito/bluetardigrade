@@ -288,7 +288,7 @@ function IncidentDetail({
   onAnalyze?: (pending: PendingIncidentAnalysis) => void
   onOpenEngineReport?: (incidentId: string) => void
 }) {
-  const { dict } = useI18n()
+  const { dict, lang } = useI18n()
   const { alerts, events } = useEngine()
   const [owner, setOwner] = useState(incident.owner ?? '')
   const [summary, setSummary] = useState(incident.summary ?? '')
@@ -361,7 +361,7 @@ function IncidentDetail({
               type="button"
               className={exportCls}
               title={dict.incidents.reportMdTitle}
-              onClick={() => downloadFile(reportFilename(incident, 'md'), buildIncidentMarkdown({ incident, alerts: caseAlerts, graph, playbook: plan ?? undefined }), 'text/markdown;charset=utf-8')}
+              onClick={() => downloadFile(reportFilename(incident, 'md', lang), buildIncidentMarkdown({ incident, alerts: caseAlerts, graph, playbook: plan ?? undefined, lang }), 'text/markdown;charset=utf-8')}
             >
               <FileText size={13} aria-hidden /> {dict.incidents.reportMd}
             </button>
@@ -369,7 +369,7 @@ function IncidentDetail({
               type="button"
               className={exportCls}
               title={dict.incidents.reportPrintTitle}
-              onClick={() => downloadFile(reportFilename(incident, 'html'), buildIncidentHtml({ incident, alerts: caseAlerts, graph, playbook: plan ?? undefined }), 'text/html;charset=utf-8')}
+              onClick={() => downloadFile(reportFilename(incident, 'html', lang), buildIncidentHtml({ incident, alerts: caseAlerts, graph, playbook: plan ?? undefined, lang }), 'text/html;charset=utf-8')}
             >
               <FileHtml size={13} aria-hidden /> {dict.incidents.reportPrint}
             </button>

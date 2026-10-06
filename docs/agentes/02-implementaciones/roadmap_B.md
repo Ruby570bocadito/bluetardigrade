@@ -2,37 +2,50 @@
 
 Archivo vivo: qué tengo a medias, qué sigue y por qué. Se actualiza cada ronda.
 
-## Estado actual (ronda 11 del nuevo ciclo, 2026-10-06)
+## Estado actual (ronda 12 del nuevo ciclo, 2026-10-06)
 
-- Rama `carril/implementacion-b` sobre la ronda 10 (`9d329f1`); rondas 2-10
+- Rama `carril/implementacion-b` sobre la ronda 11 (`2c47271`); rondas 2-11
   entregadas (pestañas del panel, SIM-4, REP-1, informe de ruido, SIM-3, REP-4,
   enlace del informe de caso, IDEA-3 plantillas de incidente, IDEA-11
-  asistente de primer arranque, IDEA-10 fases 1-2, AD-5, cierre de SET-3).
-- **Ronda 11 ENTREGADA: merge de IMP-A + SET-1 (pantalla Ajustes) + AD-6.**
-  - Merge limpio de `origin/carril/implementacion-a` (`293be1d`, API de
-    ajustes AD `GET/PUT /api/settings/ad` + `POST /api/ad/test`).
-  - Vista nueva `ajustes` (SET-1): General / Ingesta / Active Directory /
-    Integraciones / Notificaciones / Cuentas / Apariencia en una página.
-    AD-6 con formulario real: solo viajan los campos cambiados, contraseña
-    write-only, «Probar conexión» con veredicto por tipo, estados honestos
-    501 (candidato: probar sí, guardar no) / 403 / 409 con frases del motor
-    verbatim. Secciones sin API de escritura declaran su hueco y muestran
-    la señal real (alta, almacén, contadores de entrega, sesión).
-  - Registro completo (unión, CONSOLE_VIEWS, destinos, atajo `g j`, icono
-    Gear, diccionarios ES/EN con paridad tipada; ES byte-idéntico). 463/463
-    tests (12 de la lib nueva + 2 de fase 5), tsc/build limpios, DOM 34/34,
-    navegador 23/23, **axe 20/20** (la batería cubre `ajustes` dark+light;
-    2 hallazgos 2.5.3 corregidos), temas OK, CSP PASS. Motor fusionado:
-    build/gofmt/vet/race (`-count=1`) en `internal/api` + `internal/ad`,
-    openapi 43 rutas, inventario 114 reglas, workflows OK.
-  - Helpers de notificación (`currentPermission`, `playNotifyTone`) movidos
-    a `lib/alert-notify.ts` para compartirlos con la página de ajustes; el
-    cascabel de la ronda 8 no cambia de comportamiento.
+  asistente de primer arranque, IDEA-10 fases 1-2, AD-5, cierre de SET-3,
+  SET-1 + AD-6).
+- **Ronda 12 ENTREGADA: 2 LOW de SEG-A cerrados + barrido i18n de informes +
+  idioma del informe exportado + cuotas v1.1 en Estado.**
+  - **LOW 1 (SEG-A r10)**: la contraseña AD viaja VERBATIM (el trim solo
+    decide si el campo viaja; el motor almacena y sondea tal cual y los
+    espacios son legales en un bind). **LOW 2**: sonda de AD a 50 s en
+    cliente (`AD_PROBE_BUDGET_MS`) para que el presupuesto de 45 s del
+    motor sea alcanzable (abortar el fetch cancela su contexto). Tests
+    fail-before/pass-after incluidos; SEG-A puede re-verificar.
+  - **i18n informes (IDEA-10)**: `reports-view.tsx` (REP-1/REP-4),
+    `report-panel.tsx` y `report-library.tsx` al diccionario (secciones
+    `reports` y `socReport`; ES byte-idéntico, EN con paridad tipada).
+    `INCIDENT_STATUS_LABEL`/`SEVERITY_LABEL` compartidos pasan a las
+    secciones dict que los esperaban.
+  - **Idioma del informe exportado**: el artefacto (MD/HTML del caso,
+    informe SOC del analista y nombre de fichero) sigue el idioma de la
+    consola (`lang`, 'es' por defecto); el vocabulario del artefacto vive
+    en mapas por idioma EN LAS LIBS (`incident-report.ts`,
+    `DECISION_LABELS`/export en `soc-report.ts`), severidades/estados/
+    evidencias se toman del dict compartido; el texto del motor viaja
+    verbatim; errores de lib siguen en ES (frontera intacta).
+  - **SET-3 crece con el motor**: cuotas de admisión v1.1
+    (`beacon_quota_rejected`, `threshold_quota_rejected`, caídas del
+    anillo y `quota_top_hosts` peor-primero, tope 8) en sección propia
+    «Cuotas por equipo» + filas de anillo en «Colas y correlación»;
+    motor antiguo = «no publicado» (nunca 0). `platformStatus(stats,
+    lang)` bilingüe en la misma pasada (mapa propio por idioma, ES
+    byte-idéntico) — desvío benigno del orden del roadmap; **Directorio
+    es el siguiente en la cola i18n**.
+  - Verificación completa tras el último cambio: bun test 469/469, tsc,
+    build, DOM 34/34 (fixture: ReportPanel/ReportLibrary envueltos en
+    I18nProvider y pin ES re-aplicado tras el clear), navegador 23/23,
+    axe 20/20, temas OK, CSP PASS. Sin cambios Go ni openapi.
 - **Coordinación CSP**: los dos scripts inline de boot (tema de PUL-A/PUL-B e
   idioma de la ronda 6) van firmados con el nonce por petición del proxy;
   cualquier script inline nuevo del armazón necesita lo mismo.
 - **DISCORD no disponible esta sesión** (`DISCORD_WEBHOOK_URL` sin definir):
-  sin notificaciones de inicio/cierre; no se reintentó (rondas 5-11).
+  sin notificaciones de inicio/cierre; no se reintentó (rondas 5-12).
 
 ## Decisiones de carrera registradas
 
@@ -51,6 +64,12 @@ Archivo vivo: qué tengo a medias, qué sigue y por qué. Se actualiza cada rond
   ES por defecto; el texto que llega del motor (títulos, descripciones y
   remediaciones de los hallazgos AD) no se traduce jamás. Las entradas de
   diccionario nuevas (chrome de la vista) van en ES y EN con paridad tipada.
+- **El artefacto exportado sigue al idioma de la consola** (ronda 12): el
+  informe de caso y el informe SOC se generan en el idioma que el operador
+  eligió para la consola (ES por defecto), con el vocabulario del artefacto
+  en las libs (fuente única con las vistas) y el texto del motor verbatim;
+  `<html lang>` y el fichero siguen. Los errores de validación de libs
+  quedan en ES (frontera de las rondas 6-11).
 - **Pestañas, no pilas** (ronda 2): cada gráfica nueva va a la vista que le
   toca y ninguna duplica la decisión de otra; el clic de la matriz lleva a
   los escenarios; la postura AD vive en su propia vista, no en el Resumen.
@@ -68,11 +87,11 @@ Archivo vivo: qué tengo a medias, qué sigue y por qué. Se actualiza cada rond
 
 ## Siguientes (por qué)
 
-1. **Barrido i18n de informes**: `report-library` (REP-1) y decidir el
-   idioma del informe de caso exportado (`lib/incident-report.ts`) en la
-   misma ronda; después las demás vistas de datos por tamaño (Directorio
-   entra como las demás). Quedan fuera por depender de otros:
-   `user-session`/`console-user`, `detectors-menu`.
+1. **Barrido i18n — Directorio** (siguiente por tamaño, cola del plan de
+   rondas 12-13): `directory-view.tsx` (~38 cadenas) con la misma receta;
+   detrás, por tamaño: `scenario-view`, `alert-actions`, `fleet-parts`,
+   `respond-view`, `noise-view`, `enroll-parts`. Quedan fuera por depender
+   de otros: `user-session`/`console-user`, `detectors-menu`.
 2. **AD-6 parte B / retícula de ajustes**: si IMP-A publica más campos o
    nuevas familias de ajustes (TEAM-2 cuentas, ingesta, integraciones),
    ampliar las secciones de Ajustes con la misma receta (estado honesto +

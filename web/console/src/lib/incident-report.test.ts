@@ -119,3 +119,45 @@ test('the playbook renders in the printable HTML with progress and honest proven
   // without a playbook the section never appears
   expect(buildIncidentHtml({ incident, alerts })).not.toContain('Plan de respuesta')
 })
+
+test('the artifact follows the console language: EN export keeps engine text verbatim (ronda 12)', () => {
+  const md = buildIncidentMarkdown({ incident, alerts, now: new Date('2026-10-04T12:00:00Z'), lang: 'en' })
+  expect(md).toStartWith('# Incident report: Robo de credenciales en contabilidad')
+  // engine data never translates
+  expect(md).toContain('Volcado de LSASS y movimiento a SRV-FILES.')
+  expect(md).toContain('PsExec remoto')
+  // console chrome does
+  expect(md).toContain('| Status | Investigating |')
+  expect(md).toContain('| Owner | ana |')
+  expect(md).toContain('## ATT&CK techniques')
+  expect(md).toContain('## Case alerts (3)')
+  expect(md).toContain('| Time | Severity | Rule | Host | User | Summary |')
+  expect(md).toContain('1 alert was no longer in the console')
+  expect(md).toContain('## Timeline')
+  expect(reportFilename(incident, 'md', 'en')).toBe('incident-0123456789abcdef.md')
+  const html = buildIncidentHtml({ incident, alerts, now: new Date('2026-10-04T12:00:00Z'), lang: 'en' })
+  expect(html).toContain('<html lang="en">')
+  expect(html).toContain('Incident report · generated on')
+  expect(html).toContain('Print / save PDF')
+  // the ES default stays byte-identical to the pre-i18n artifact
+  const esHtml = buildIncidentHtml({ incident, alerts })
+  expect(esHtml).toContain('<html lang="es">')
+  expect(esHtml).toContain('Informe de incidente · generado el')
+})
+
+test('the EN playbook section carries the same structure with translated chrome', () => {
+  let state = applyPlaybook(incident.id, 'ransomware', '2026-10-04T11:00:00Z')
+  state = toggleCheck(state, ransomware, 'aislar', '2026-10-04T11:10:00Z')
+  const md = buildIncidentMarkdown({ incident, alerts, playbook: state, now: new Date('2026-10-04T12:00:00Z'), lang: 'en' })
+  expect(md).toContain('## Response plan: Ransomware')
+  expect(md).toContain('1 of 11 steps completed')
+  expect(md).toContain('Done |')
+  expect(md).toContain('### Evidence')
+  expect(md).toContain('### Analyst chronology')
+  // step texts are product data and stay verbatim
+  expect(md).toContain('A\u00edsla de la red')
+  const html = buildIncidentHtml({ incident, alerts, playbook: state, lang: 'en' })
+  expect(html).toContain('<h2>Response plan: Ransomware</h2>')
+  expect(html).toContain('<span class="ok">Done</span>')
+  expect(html).toContain('The response plan lives in the analyst')
+})
