@@ -1,7 +1,7 @@
 # Roadmap B — carril Pulimiento B (archivo vivo)
 
-Última actualización: 2026-10-06, ronda 13 de este carril sobre la
-rama `carril/pulimiento-b` (base `54a62c4`, plan de ronda 13; push
+Última actualización: 2026-10-06, ronda 14 de este carril sobre la
+rama `carril/pulimiento-b` (base `363ff4c`, plan de ronda 14; push
 pendiente de `GH_TOKEN` en el entorno).
 
 ## Hecho (rondas cerradas)
@@ -212,10 +212,19 @@ pestañas, insignia, diálogo) falta de verdad: **insignia genérica** y
 - **Fase A (mi carril, sin tocar vistas):** `ui/badge.tsx` con
   variantes tokenizadas (severidad, estado, neutra) y
   `SeverityBadge`/`MonoTag` delegando en ella; cero cambios en las
-  vistas, cero fricción con los barridos i18n.
+  vistas, cero fricción con los barridos i18n. **Entregada en la
+  ronda 12**; documentada en el README de la consola (ronda 14).
 - **Fase B (ventana coordinada):** `ui/table.tsx` (superficie, cabecera
   pegajosa, ordenación, estado vacío) y migración progresiva de las
-  tablas de flota/cola de incidentes. Toca exactamente los ficheros que
+  tablas. **Inventario de la ronda 14** — seis tablas semánticas:
+  `suppressions-view` (2 th, la más simple), `user-session` (5 th),
+  `intel-view` (6 th), `live-feed` (6 th), `rules-view` (1 th) y
+  `alerts-view` (8 th con sticky + selección de filas, la compleja, al
+  final). `hosts-view`, `incidents-view` y `fleet-parts` son listas de
+  tarjetas en grid, no candidatas al kit. Orden propuesto: de simple a
+  compleja, empezando por supresiones; las gemelas de exportación de
+  POL-8 reutilizan el `csvCell` de `lib/chart-export` (SEG-B). Toca
+  exactamente los ficheros que
   su barrido i18n de fase 2 sigue barriendo, así que se proponen dos
   ventanas: (1) cuando acabe el barrido de vistas de datos, yo tomo la
   migración de tablas mientras ellos avanzan motor; o (2) vista a vista

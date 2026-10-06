@@ -185,6 +185,22 @@ it whenever a token changes.
 - Radius: single 8px scale (`--radius: 0.5rem`).
 - Motion: state transitions only, `prefers-reduced-motion` honoured.
 
+### Shared components (POL-7)
+
+The console kit lives in `src/components/ui/` and `ui-tabs.tsx`: button,
+input, select and switch (variants on the token utilities), the tab kit
+(`ConsoleTablist` — a WAI-ARIA tablist with roving tabindex and arrow
+keys, plus the `TABLIST_CLASS`/`tabButtonClass` pair for segmented
+groups that are not content tabs) and `Badge` (`ui/badge.tsx`), the one
+pill shape every badge and chip shares. `Badge` has exactly two
+tokenized color variants (`neutral`, `accent` — the `--primary*`
+family); DATA colors such as severity ride on `className` from their
+own token maps (`SEVERITY_STYLE`), never as variants, so the component
+cannot reintroduce a hue accent by accident. `SeverityBadge` and
+`MonoTag` render it with unchanged visuals. New views consume the kit
+instead of restyling pills inline; anything missing goes through POL-7
+coordination before growing the kit.
+
 ## Motion components
 
 The motion primitives live in `src/components/reactbits/`, adapted from
