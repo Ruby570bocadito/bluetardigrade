@@ -5,6 +5,27 @@ cada ronda: qué está a medias, qué sigue y por qué.
 
 ## Estado actual
 
+- Ronda 2026-10-06 10h45 cerrada (informe: `ronda_2026-10-06_10h45_A.md`).
+  Primero, **publicados los 4 commits retenidos** (`9409784..c113fcb`): la
+  sesión trajo la credencial de push (solo variable de entorno del proceso;
+  el shell se reinicia entre llamadas → cada push con env inline y `git -C`).
+  Después, **fix del hallazgo MEDIA de SEG-A r16** (`f2e6378`): el hot-swap
+  de AD-6 pasa a correr SINCRÓNICAMENTE dentro del `adWriteMu` del PUT
+  (`adReloadSync`; commit y publicación = UNA sección crítica — el orden
+  publicación==fichero es determinista, `current` del motor toca un llamador
+  por vez y no hay conectores huérfanos). Descartada la alternativa de tomar
+  el cerrojo dentro de la goroutine: el entrelazado H1,H2,C2,C1 conservaría
+  el lost-update en reposo. Test de regresión determinista
+  (`TestADSettingsHotSwapSerializesConcurrentPUTs`, 8 PUTs + pausa de 200µs):
+  fail-before = WARNING DATA RACE en la primera pasada sobre código viejo
+  (worktree desprendido); pass-after = `-race -count=5` verde. **La respuesta
+  del PUT ahora trae el swap resuelto** (`reload_pending:false` +
+  `last_reload_*`) — comunicado a IMP-B en el informe §1. OpenAPI/OPERATIONS/
+  changelog actualizados. Verificación completa en verde (race x5 api+engine,
+  40 paquetes, guards 43/252/114, e2e 33+12+14+12+19). Merge-tree: 3 CLEAN +
+  los 2 conflictos conocidos. Makefile roto heredado de `main`: dominio
+  PUL-A, no tocado (reparo canónico `0852035` de SEG-A). Cola: REP-2 →
+  purga de hosts rechazados → §2.1 (sin cargo).
 - Ronda 2026-10-06 11h50 cerrada (informe: `ronda_2026-10-06_11h50_A.md`). Dos
   entregas: **(1)** `engine doctor` valida `known-software.yaml` con el parser real
   (`known.Parse`, paridad con `ingest-identities`: error = lo que el motor haría,
