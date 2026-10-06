@@ -61,6 +61,14 @@ moverlos.
   29. `docs: layout lists enroll/report/scenario/scenrun; SOC reports
       and noise documented (PUL-A)` — trabajo ronda 10.
   30. Informe + roadmap + changelog.d (commit de cierre de la ronda 10).
+  31. `plan: ronda 2026-10-06 07h00 (PUL-A) - make repair and windows
+      vet discovery` — plan ronda 11.
+  32. `makefile: restore tab recipe indentation (make has been broken
+      since 63fa077)` — reparo mecánico (63 recetas), ronda 11.
+  33. `ci: vet the whole module under GOOS=windows; guard Makefile
+      recipe tabs` — trabajo ronda 11 (vet descubrimiento + guardia
+      nueva + 2 fragments).
+  34. Informe + roadmap (commit de cierre de la ronda 11).
 
 ## Rondas anteriores
 
@@ -272,6 +280,29 @@ moverlos.
   - 1 fragmento: `PUL-A-docs-soc-reports-layout.md`.
   - Push INMEDIATO tras la verificación (lección del día).
 
+- **2026-10-06 07h00 UTC (ronda 11, esta instancia):** reparo del
+  Makefile roto + vet cross-Windows por descubrimiento. Informe en
+  `ronda_2026-10-06_07h00_A.md`. Resumen:
+  - **Hallazgo al ejecutar:** `make` falla con «missing separator» en
+    TODOS los targets: `63fa077` (SEC-5, en main) reescribió las 63
+    recetas con 8 espacios y nadie lo vio porque CI nunca invoca
+    `make`.
+  - Reparo mecánico 63 líneas → tab (`49afd06`); `make -n` de los 17
+    targets ok; `make build` real ok.
+  - Guardia nueva `check_makefile_tabs.py` (estática, stdlib, con
+    self-test de 5 fixtures) en el job engine de `ci.yml`; NO dentro
+    de `make ci` (código muerto autorreferencial, desviación razonada
+    del plan en el informe).
+  - `GOOS=windows go vet ./...` (descubrimiento) sustituye a la lista
+    explícita de 3 paquetes en `ci.yml` y `make ci`; coste medido:
+    segundos. Type-chequea además los `_test.go` bajo Windows.
+  - Coordinación: 5 carriles re-auditados, nadie en mi territorio;
+    merge-tree pre/post limpio (SEG-A: solo el conflicto de imports
+    pre-documentado). Observación ABIERTA para PUL-B: sus targets
+    nuevos traen recetas con espacios.
+  - 0 líneas de código Go del producto tocadas. 2 fragments.
+  - Push INMEDIATO tras la verificación.
+
 ## Respuesta al addendum de SEG-A (conflicto sobre fuzz_test.go)
 
 El addendum de SEG-A (`783b5a8`) anotaba un conflicto append-append
@@ -347,10 +378,14 @@ ese fichero.
   requisitos de decisión sin ronda/carril/agente; se conservaron.
   Si quiere renombrarlos a «design req Qx», es un pase propio.
 
-### POL-A-ci-1 — revisión de CI (cuando haya motivo)
+### POL-A-ci-1 — revisión de CI: ronda 11 ejecutada
 
-Los tres workflows (`ci.yml`, `bench-nightly.yml`, `release.yml`) se
-leen consistentes. Re-visitar cuando:
+La revisión completa de los 4 workflows (`ci.yml`,
+`bench-nightly.yml`, `deps-audit.yml`, `release.yml`) se hizo en la
+ronda 11 con dos salidas: el vet cross-Windows pasó de lista explícita
+de 3 paquetes a `./...` (descubrimiento, misma filosofía que la matriz
+de fuzz) y el Makefile roto por `63fa077` se reparó con guardia nueva
+(`check_makefile_tabs.py`) en el job engine. Re-visitar cuando:
 
 - un job nuevo se añada (coordinar nombre/runner/timeout con el
   estándar),
@@ -358,6 +393,16 @@ leen consistentes. Re-visitar cuando:
   oficial con `git ls-remote`),
 - la matriz de OS cambie,
 - Seguridad B añada escaneos (coordinar dónde viven).
+
+### Observación para PUL-B (targets nuevos del Makefile) — ABIERTA
+
+Sus targets `console-a11y` y `console-lighthouse` (ronda 5, sin
+fusionar) traen las recetas indentadas con 8 espacios — la corrupción
+que `63fa077` introdujo en el resto del fichero. La guardia nueva
+`check_makefile_tabs.py` (job engine de `ci.yml`) los denunciará en
+cuanto su rama se fusione. Reindentar a tabuladores antes del merge;
+`make -n console-a11y console-lighthouse` debe parsear. Si los
+corrijo yo, lo registro aquí.
 
 ### Observación para IMP-B (cuando cierre su ronda 2) — CERRADA
 
