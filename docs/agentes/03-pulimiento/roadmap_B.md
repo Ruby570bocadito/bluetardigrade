@@ -1,11 +1,24 @@
 # Roadmap B — carril Pulimiento B (archivo vivo)
 
-Última actualización: 2026-10-06, ronda 15 de este carril sobre la
-rama `carril/pulimiento-b` (base `32aafb4`, plan de ronda 15; rondas
-9-15 publicadas al cierre de la sesión — credencial del responsable
-por el canal askpass/`GH_TOKEN`).
+Última actualización: 2026-10-06, ronda 16 de este carril sobre la
+rama `carril/pulimiento-b` (base: punta publicada `e2bd3aa`; rondas
+9-15 ya en el remoto, credencial del responsable por el canal
+askpass/`GH_TOKEN`).
 
 ## Hecho (rondas cerradas)
+
+- **2026-10-06 — POL-7 Fase B1: primitiva de tabla (ronda 16):**
+  `ui/table.tsx` extraída VERBATIM del marcado real de las seis tablas
+  (supresiones, live-feed, alertas, user-session, intel, rules):
+  superficie + caption sr-only, pin sticky opcional (thead) con banda
+  zinc en el `TableHeadRow`, cabezas dato/`compact` con `aria-sort`,
+  cuerpo con filete, filas `interactive`/`selected` (tinte por
+  `--primary*`), `TableEmpty` a todo lo ancho. Cero cambios en vistas
+  — la ventana coordinada queda reducida a migración mecánica (B2).
+  Guard DOM con check de contrato nuevo (0 literales de tono);
+  batería completa en verde en sandbox fresco (371 tests, tsc, build,
+  tema, CSP, DOM, navegador 21/21, axe 18/18, motion). README del kit
+  actualizado. Informe: `ronda_2026-10-06_17h30_B.md`.
 
 - **2026-10-06 — Reparación del Makefile en mi carril: TABs +
   --ignore-scripts (ronda 15):** confirmado el fail-before que
@@ -236,8 +249,11 @@ pestañas, insignia, diálogo) falta de verdad: **insignia genérica** y
   `SeverityBadge`/`MonoTag` delegando en ella; cero cambios en las
   vistas, cero fricción con los barridos i18n. **Entregada en la
   ronda 12**; documentada en el README de la consola (ronda 14).
-- **Fase B (ventana coordinada):** `ui/table.tsx` (superficie, cabecera
+- **Fase B (ventana coordinada):** ~~`ui/table.tsx` (superficie, cabecera
   pegajosa, ordenación, estado vacío) y migración progresiva de las
+  tablas.~~ **B1 entregada en la ronda 16** (primitiva sin tocar
+  vistas, validada por contrato en el guard DOM); la ventana que
+  IMP-B elija se reduce a la **B2: migración mecánica** de las
   tablas. **Inventario de la ronda 14** — seis tablas semánticas:
   `suppressions-view` (2 th, la más simple), `user-session` (5 th),
   `intel-view` (6 th), `live-feed` (6 th), `rules-view` (1 th) y
