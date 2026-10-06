@@ -2,35 +2,43 @@
 
 Archivo vivo: qué tengo a medias, qué sigue y por qué. Se actualiza cada ronda.
 
-## Estado actual (ronda 9 del nuevo ciclo, 2026-10-06)
+## Estado actual (ronda 10 del nuevo ciclo, 2026-10-06)
 
-- Rama `carril/implementacion-b` sobre la ronda 8 (`fc7bdbd`); rondas 2-8
+- Rama `carril/implementacion-b` sobre la ronda 9 (`28d6f9e`); rondas 2-9
   entregadas (pestañas del panel, SIM-4, REP-1, informe de ruido, SIM-3, REP-4,
   enlace del informe de caso, IDEA-3 plantillas de incidente, IDEA-11
   asistente de primer arranque, IDEA-10 fases 1-2, AD-5, cierre de SET-3).
-- **Ronda 9 ENTREGADA: IDEA-10 fase 2, segundo barrido (`alerts-view`).**
-  - Sección `alerts` en los diccionarios ES/EN (paridad tipada; ES
-    byte-idéntico incluidas las seis cadenas que la batería de navegador fija
-    como selectores: «Reconocer», «Cerrar», «Anterior», «Siguiente»,
-    «Histórico», «Buscar en alertas»). El componente principal y sus seis
-    subcomponentes (strip, detalle, cuerpo, grafo, chip, triaje) consumen
-    `useI18n`; `by: 'consola'` queda literal (dato de auditoría, no copia de
-    UI); `alerts.sevLabels` traduce el strip SOLO en esta vista
-    (`SEVERITY_LABEL` sigue para las vistas sin barrer). El fixture DOM
-    monta dentro de `I18nProvider` con idioma `es` guardado (jsdom declara
-    `en-US`; la elección guardada validada siempre gana). 444/444 tests
-    (2 nuevos de fase 3), tsc/build limpios, DOM 34/34, navegador 23/23,
-    axe 18/18, temas OK, CSP PASS.
+- **Ronda 10 ENTREGADA: IDEA-10 fase 2, tercer barrido (vista de incidentes).**
+  - Secciones `incidents` y `playbook` en los diccionarios ES/EN (paridad
+    tipada; ES byte-idéntico). `IncidentsView` y todo su árbol (`StatusChip`,
+    `NewIncidentForm`, `IncidentDetail`, `IncidentPlaybook` con selector,
+    checklist, evidencias y cronología) consumen `useI18n`.
+  - **Las tres plantillas del plan de respuesta entran al diccionario como
+    contenido de producto**: nombres, descripciones, pasos claveados por el
+    id del ítem y pistas de evidencia. La lib `lib/incident-playbook.ts` no
+    cambia (estructura, ids, orden y ATT&CK para el estado guardado y los
+    informes exportados); un test nuevo liga las dos fuentes (ids + pistas +
+    ES byte-idéntico al texto de la lib).
+  - La nota que la aplicación de plantilla escribe en la línea de tiempo del
+    motor se compone en el idioma del momento (`appliedNote`), como los
+    avisos de llegada de la ronda 9. 449/449 tests (5 nuevos de fase 4),
+    tsc/build limpios, DOM 34/34, navegador 23/23, axe 18/18, temas OK,
+    CSP PASS.
+- **El informe de caso exportado conserva su idioma (ES) esta ronda**:
+  `lib/incident-report.ts` no se toca; el idioma del documento se decide
+  junto con el barrido de `report-library` (REP-1) para no barrer dos veces
+  el mismo fichero. `INCIDENT_STATUS_LABEL` queda intacta para
+  `alert-actions`/`reports-view` hasta sus rondas.
 - **Coordinación CSP**: los dos scripts inline de boot (tema de PUL-A/PUL-B e
   idioma de la ronda 6) van firmados con el nonce por petición del proxy;
   cualquier script inline nuevo del armazón necesita lo mismo.
-- **AD-6 + SET-1 SIGUEN BLOQUEADAS** (rondas 8-9): la punta de IMP-A sigue
+- **AD-6 + SET-1 SIGUEN BLOQUEADAS** (rondas 8-10): la punta de IMP-A sigue
   en `c357cc8` (solo su plan; la API `GET/PUT /api/settings/ad` +
   `POST /api/ad/test` sigue sin publicar ni en openapi). El merge de su
   ronda es el gatillo de la pantalla de ajustes (General/Ingesta/AD/
   Integraciones/Notificaciones/Cuentas/Apariencia).
 - **DISCORD no disponible esta sesión** (`DISCORD_WEBHOOK_URL` sin definir):
-  sin notificaciones de inicio/cierre; no se reintentó (rondas 5-9).
+  sin notificaciones de inicio/cierre; no se reintentó (rondas 5-10).
 
 ## Decisiones de carrera registradas
 
@@ -72,13 +80,14 @@ Archivo vivo: qué tengo a medias, qué sigue y por qué. Se actualiza cada rond
    se escribe pero nunca se muestra; pantalla
    General/Ingesta/AD/Integraciones/Notificaciones/Cuentas/Apariencia. El
    merge de su ronda es el gatillo.
-2. **IDEA-10 fase 2, continuación del barrido**: la receta de las rondas 8-9
+2. **IDEA-10 fase 2, continuación del barrido**: la receta de las rondas 8-10
    es mecánica (secciones de diccionario ES/EN + `useI18n` + ES byte-idéntico
    + tests de paridad + ajuste del fixture DOM si la vista entra en él).
-   Cola: `incidentes` (la siguiente por tamaño y tráfico de triaje) y las
-   demás vistas de datos en rondas separadas por tamaño; Directorio entra a
-   la cola como las demás. Quedan fuera por depender de otros:
-   `user-session`/`console-user`, `detectors-menu`.
+   Cola: **informes (`report-library`/REP-1 + decidir el idioma del informe
+   de caso exportado en `lib/incident-report.ts`)** y las demás vistas de
+   datos en rondas separadas por tamaño; Directorio entra a la cola como las
+   demás. Quedan fuera por depender de otros: `user-session`/
+   `console-user`, `detectors-menu`.
 3. **Campo de decisión de triaje** (petición MEDIA repetida a IMP-A):
    desbloquea el «falso positivo» real del flujo de triaje y los
    porcentajes FP del ruido.

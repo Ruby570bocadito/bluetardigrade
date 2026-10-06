@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { DICTS, LANG_STORAGE_KEY, resolveLang, storedLang, type Lang } from './index'
 import { dictEs } from './dict-es'
+import { PLAYBOOK_TEMPLATES } from '../incident-playbook'
 
 // Parity walk: every key of the Spanish source must exist in the English
 // dictionary with the same kind (string vs function), functions keep the
@@ -124,6 +125,121 @@ describe('i18n dictionaries', () => {
     expect(DICTS.en.alerts.selectRowAria('Rule X', '10:05')).toBe('Select Rule X (10:05)')
     expect(DICTS.en.alerts.arrival('critical', 'R', 'H-1')).toBe('New critical alert: R on H-1')
     expect(DICTS.en.alerts.nd).toBe('n/a')
+  })
+
+  test('phase 4 sweep (incidents view) keeps the spanish copy byte-identical', () => {
+    expect(dictEs.incidents.sectionAria).toBe('Incidentes')
+    expect(dictEs.incidents.unavailableTitle).toBe('Este motor no ofrece incidentes')
+    expect(dictEs.incidents.tiles.open).toBe('Abiertos')
+    expect(dictEs.incidents.tiles.closedHintPersistent).toBe('guardados en el motor')
+    expect(dictEs.incidents.casesTitle).toBe('Casos')
+    expect(dictEs.incidents.newButton).toBe('Nuevo incidente')
+    expect(dictEs.incidents.filters.active).toBe('Activos')
+    expect(dictEs.incidents.emptyAllTitle).toBe('Ningún incidente todavía')
+    expect(dictEs.incidents.pickTitle).toBe('Selecciona un incidente')
+    expect(dictEs.incidents.statusLabels).toEqual({ open: 'Abierto', investigating: 'Investigando', contained: 'Contenido', closed: 'Cerrado' })
+    expect(dictEs.incidents.sevOptions.critical).toBe('Crítica')
+    expect(dictEs.incidents.form.submit).toBe('Crear incidente')
+    expect(dictEs.incidents.exportAria).toBe('Exportar informe del incidente')
+    expect(dictEs.incidents.analyze).toBe('Analizar con IA')
+    expect(dictEs.incidents.reportPrint).toBe('Informe imprimible')
+    expect(dictEs.incidents.hostsHeading).toBe('Equipos afectados')
+    expect(dictEs.incidents.graphTitle).toBe('Grafo del incidente')
+    expect(dictEs.incidents.timelineHeading).toBe('Línea de tiempo')
+    expect(dictEs.incidents.addNote).toBe('Añadir nota')
+    expect(dictEs.incidents.caseMeta(3, 2, 'ana')).toBe('3 alertas · 2 equipos · ana')
+    expect(dictEs.incidents.caseMeta(3, 2, '')).toBe('3 alertas · 2 equipos')
+    expect(dictEs.incidents.alertsHeading(5)).toBe('Alertas del caso (5)')
+    expect(dictEs.incidents.alertsOutside(1)).toBe('1 alerta ya no está en la ventana en vivo; búscalas en Alertas → Histórico.')
+    expect(dictEs.incidents.alertsOutside(4)).toBe('4 alertas ya no están en la ventana en vivo; búscalas en Alertas → Histórico.')
+    expect(dictEs.incidents.graphAria(7)).toBe('Grafo del incidente: 7 entidades')
+    expect(dictEs.incidents.openedUpdated('10:00', '10:05', '10:10')).toBe('Abierto 10:00 · actualizado 10:05 · cerrado 10:10')
+    expect(dictEs.incidents.openedUpdated('10:00', '10:05', null)).toBe('Abierto 10:00 · actualizado 10:05')
+  })
+
+  test('phase 4 english copy is a real translation of the incidents view', () => {
+    expect(DICTS.en.incidents.sectionAria).toBe('Incidents')
+    expect(DICTS.en.incidents.unavailableTitle).toBe('This engine does not offer incidents')
+    expect(DICTS.en.incidents.tiles.open).toBe('Open')
+    expect(DICTS.en.incidents.casesTitle).toBe('Cases')
+    expect(DICTS.en.incidents.newButton).toBe('New incident')
+    expect(DICTS.en.incidents.statusLabels.contained).toBe('Contained')
+    expect(DICTS.en.incidents.form.submit).toBe('Create incident')
+    expect(DICTS.en.incidents.analyze).toBe('Analyze with AI')
+    expect(DICTS.en.incidents.reportPrint).toBe('Printable report')
+    expect(DICTS.en.incidents.hostsHeading).toBe('Affected hosts')
+    expect(DICTS.en.incidents.ownerPlaceholder).toBe('unassigned')
+    expect(DICTS.en.incidents.caseMeta(3, 2, 'ana')).toBe('3 alerts · 2 hosts · ana')
+    expect(DICTS.en.incidents.caseMeta(3, 2, '')).toBe('3 alerts · 2 hosts')
+    expect(DICTS.en.incidents.alertsHeading(5)).toBe('Case alerts (5)')
+    expect(DICTS.en.incidents.alertsOutside(1)).toBe('1 alert is no longer in the live window; look for them in Alerts → History.')
+    expect(DICTS.en.incidents.alertsOutside(4)).toBe('4 alerts are no longer in the live window; look for them in Alerts → History.')
+    expect(DICTS.en.incidents.graphAria(7)).toBe('Incident graph: 7 entities')
+    expect(DICTS.en.incidents.openedUpdated('10:00', '10:05', '10:10')).toBe('Opened 10:00 · updated 10:05 · closed 10:10')
+    expect(DICTS.en.incidents.openedUpdated('10:00', '10:05', null)).toBe('Opened 10:00 · updated 10:05')
+  })
+
+  test('phase 4 sweep (playbook) keeps the spanish copy byte-identical', () => {
+    expect(dictEs.playbook.sectionAria).toBe('Plan de respuesta')
+    expect(dictEs.playbook.heading).toBe('Plan de respuesta')
+    expect(dictEs.playbook.apply).toBe('Aplicar')
+    expect(dictEs.playbook.removePlan).toBe('Quitar el plan')
+    expect(dictEs.playbook.removeConfirm).toBe('Confirmar: se borra de este navegador')
+    expect(dictEs.playbook.addEvidence).toBe('Añadir evidencia')
+    expect(dictEs.playbook.addMilestone).toBe('Añadir hito')
+    expect(dictEs.playbook.removeShort).toBe('Quitar')
+    expect(dictEs.playbook.evidenceKinds.file).toBe('Fichero o muestra')
+    expect(dictEs.playbook.evidenceKinds.account).toBe('Cuenta o identidad')
+    expect(dictEs.playbook.stepsCount(11)).toBe('11 pasos')
+    expect(dictEs.playbook.stepsDone(2, 11)).toBe('2/11 pasos')
+    expect(dictEs.playbook.progressAria(2, 11)).toBe('Progreso del plan: 2 de 11 pasos')
+    expect(dictEs.playbook.evidenceHeading(4)).toBe('Evidencias (4)')
+    expect(dictEs.playbook.chronoHeading(0)).toBe('Cronología del analista (0)')
+    expect(dictEs.playbook.removeEvidenceAria('nota')).toBe('Quitar la evidencia nota')
+    expect(dictEs.playbook.removeMilestoneAria('hito')).toBe('Quitar el hito hito')
+    expect(dictEs.playbook.sectionAriaName('Phishing')).toBe('Plan de respuesta: Phishing')
+    expect(dictEs.playbook.appliedNote('Phishing')).toBe('Plan de respuesta aplicado: Phishing (lista de comprobación en la consola).')
+  })
+
+  test('phase 4 english copy is a real translation of the playbook', () => {
+    expect(DICTS.en.playbook.sectionAria).toBe('Response plan')
+    expect(DICTS.en.playbook.apply).toBe('Apply')
+    expect(DICTS.en.playbook.removePlan).toBe('Remove the plan')
+    expect(DICTS.en.playbook.addEvidence).toBe('Add evidence')
+    expect(DICTS.en.playbook.addMilestone).toBe('Add milestone')
+    expect(DICTS.en.playbook.evidenceKinds.file).toBe('File or sample')
+    expect(DICTS.en.playbook.evidenceKinds.account).toBe('Account or identity')
+    expect(DICTS.en.playbook.stepsDone(2, 11)).toBe('2/11 steps')
+    expect(DICTS.en.playbook.progressAria(2, 11)).toBe('Plan progress: 2 of 11 steps')
+    expect(DICTS.en.playbook.removeEvidenceAria('note')).toBe('Remove the evidence note')
+    expect(DICTS.en.playbook.removeMilestoneAria('milestone')).toBe('Remove the milestone milestone')
+    expect(DICTS.en.playbook.sectionAriaName('Phishing')).toBe('Response plan: Phishing')
+    expect(DICTS.en.playbook.appliedNote('Phishing')).toBe('Response plan applied: Phishing (checklist in the console).')
+  })
+
+  test('playbook dict templates stay bound to the product templates (ids, texts, hints)', () => {
+    for (const lang of ['es', 'en'] as const) {
+      const dict = DICTS[lang].playbook.templates
+      for (const t of PLAYBOOK_TEMPLATES) {
+        const copy = dict[t.id]
+        expect(Object.keys(copy.items).sort(), `${lang} item ids for ${t.id}`).toEqual(t.items.map((i) => i.id).sort())
+        expect(copy.evidenceHints).toHaveLength(t.evidenceHints.length)
+      }
+    }
+    // the Spanish copy of the templates is byte-identical to the product
+    // templates the exported reports still carry (source of truth: dict-es)
+    for (const t of PLAYBOOK_TEMPLATES) {
+      const copy = dictEs.playbook.templates[t.id]
+      expect(copy.name).toBe(t.name)
+      expect(copy.description).toBe(t.description)
+      expect(copy.evidenceHints).toEqual(t.evidenceHints)
+      for (const item of t.items) expect(copy.items[item.id]).toBe(item.text)
+    }
+    // the English copy is a real translation, not the spanish source
+    expect(DICTS.en.playbook.templates.ransomware.name).toBe('Ransomware')
+    expect(DICTS.en.playbook.templates['compromised-account'].name).toBe('Compromised account')
+    expect(DICTS.en.playbook.templates.ransomware.description).not.toBe(dictEs.playbook.templates.ransomware.description)
+    expect(DICTS.en.playbook.templates.ransomware.items.alcance).not.toBe(dictEs.playbook.templates.ransomware.items.alcance)
   })
 })
 
