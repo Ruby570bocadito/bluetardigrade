@@ -501,3 +501,40 @@ siguiente (checklist en la ronda 3 de este roadmap y modelo §3).
   lo reparan las fusiones de SEG-A/mí), SEC-9 bloqueado, SEC-5
   cerrado.
 - Informe: ronda_2026-10-06_10h28_B.md. Sin changelog. PARADA.
+
+## Ronda 17 (2026-10-06, 12h05 UTC, verificación)
+
+- **Delta:** IMP-A `293be1d..60a63a3` — doctor de known-software
+  (mismo parser del motor), cuotas de memoria por equipo v1.1
+  (threshold/beacon/anillos), informe + plan siguiente.
+- **Cuotas: LIMPIO salvo 1 BAJA documental.** Techo de admisión
+  nunca expulsión; recuperación por purga de evidencia muerta
+  antes del rechazo; saturación global conserva la conducta
+  auditada (weakest-first); tallies por host acotados a 64 con
+  totales siempre; top-8 determinista; métricas SIN etiquetas de
+  host (cardinalidad acotada por construcción — sin label-
+  bombing); anillos atribuyen el host del registro antes de
+  recortar; correlator sin cuota justificado por construcción
+  (1 estado por (secuencia, host), 8192 cap). Baterías cotejadas:
+  `-race -count=5` incluyó los paquetes del delta.
+- **BAJA documental (para IMP-A):** la propiedad depende del
+  binding de identidades — con bindings activos la ingesta refusa
+  hosts fuera del binding (l.422-429); con token compartido
+  `Host` es auto-declarado y un feed hostil puede quemar la cuota
+  de otro equipo (acotada, visible en quota_top_hosts). Fix: una
+  frase en OPERATIONS.md (la sección nueva promete la propiedad
+  sin declarar el requisito).
+- **Doctor known-software: LIMPIO** (paridad por construcción con
+  `known.Parse`; 5 formas honestas; sin superficie nueva).
+- **Matriz sin cambios** (5.ª confirmación del caso silencioso
+  IMP-B/PUL-B; recetas nº 1 y nº 2 vigentes; IMP-A `60a63a3`
+  CLEAN + guardia verde).
+- **Hot-swap MEDIA: sigue abierto**, sin tocar esta ronda; el plan
+  de IMP-A anuncia el fix con el diseño correcto (swap síncrono
+  bajo `adWriteMu`) — verificación prevista registrada (§4 del
+  informe).
+- Puertas: hot-swap (IMP-A, MEDIA — fix anunciado), guardia del
+  botón + 2 BAJOS de contrato en SET-1 (IMP-B), frase de
+  OPERATIONS.md (IMP-A, BAJA), Makefile roto en main, SEC-9
+  bloqueado, SEC-5 cerrado.
+- Informe: ronda_2026-10-06_12h05_B.md. Sin changelog. PARADA.
