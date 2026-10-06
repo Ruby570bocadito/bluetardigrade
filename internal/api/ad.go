@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Ruby570bocadito/bluetardigrade/internal/ad"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/store"
 )
 
@@ -31,11 +32,23 @@ func (h *Hub) adOffJSON(w http.ResponseWriter) {
 	writeErr(w, http.StatusNotImplemented, adOff)
 }
 
+// adConnector returns the AD connector pointer under the hub lock —
+// the same read-under-lock discipline the setters follow (SEG-A ronda
+// 11: the four /api/ad handlers read h.ad raw; a hot re-arm via SetAD
+// while the server serves would be a data race). The connector's own
+// accessors are mutex-guarded and return copies, so nothing else from
+// it is shared live.
+func (h *Hub) adConnector() *ad.Connector {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.ad
+}
+
 // handleADStatus serves GET /api/ad/status: the connector state as a
 // VALUE snapshot (the sync goroutine never shares live memory with
 // handlers).
 func (h *Hub) handleADStatus(w http.ResponseWriter, _ *http.Request) {
-	c := h.ad
+	c := h.adConnector()
 	if c == nil {
 		h.adOffJSON(w)
 		return
@@ -78,7 +91,7 @@ func adPageOffset(r *http.Request) int {
 // against the LOCAL snapshot (SQLite LIKE with escaped wildcards):
 // operator input never composes an LDAP filter.
 func (h *Hub) handleADObjects(w http.ResponseWriter, r *http.Request) {
-	c := h.ad
+	c := h.adConnector()
 	if c == nil {
 		h.adOffJSON(w)
 		return
@@ -133,12 +146,12 @@ type adFinding struct {
 // completed sync froze (recomputing per request would burn the store
 // on every poll and could not be more current anyway).
 func (h *Hub) handleADPosture(w http.ResponseWriter, _ *http.Request) {
-	c := h.ad
+	c := h.adConnector()
 	if c == nil {
 		h.adOffJSON(w)
 		return
 	}
-	gen, _, p, err := c.Posture()
+	gen, score, p, err := c.Posture()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "the stored posture document is unreadable (see engine log)")
 		return
@@ -152,6 +165,7 @@ func (h *Hub) handleADPosture(w http.ResponseWriter, _ *http.Request) {
 	}
 	if p != nil {
 		out.GeneratedAt = gen.UTC().Format(time.RFC3339)
+		out.Score = &score // SEG-A ronda 11: the envelope carried the field but never filled it — the 0-100 the console renders must travel the wire
 		out.Summary = p.Summary
 		out.Checked = p.Checked
 		if out.Summary == nil {
@@ -175,7 +189,7 @@ func (h *Hub) handleADPosture(w http.ResponseWriter, _ *http.Request) {
 // handleADPostureHistory serves GET /api/ad/posture/history?limit=:
 // one point per completed sync (oldest first), for the trend graph.
 func (h *Hub) handleADPostureHistory(w http.ResponseWriter, r *http.Request) {
-	c := h.ad
+	c := h.adConnector()
 	if c == nil {
 		h.adOffJSON(w)
 		return

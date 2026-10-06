@@ -32,6 +32,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/forensic"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/incident"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/intel"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/known"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/lifecycle"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/notify"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/reputation"
@@ -140,6 +141,10 @@ type Hub struct {
 	// hint. All connector accessors return copies — the sync goroutine
 	// never shares live memory with handlers.
 	ad *ad.Connector
+
+	// known-software list (§2.2, read-only count in /api/stats): nil =
+	// off (no -known-software file or an empty one).
+	known *known.Manager
 
 	// SET-3 (platform status): the engine's own version string (set at
 	// startup), the ingest→alert latency tracker and the ingest
@@ -310,6 +315,15 @@ func (h *Hub) SetRules(re *rules.Engine) {
 func (h *Hub) SetSuppressions(m *suppress.Manager) {
 	h.mu.Lock()
 	h.suppress = m
+	h.mu.Unlock()
+}
+
+// SetKnownSoftware exposes the §2.2 known-software list's live entry
+// count in /api/stats. Read-only: the list is an operator config file,
+// not API-editable state.
+func (h *Hub) SetKnownSoftware(m *known.Manager) {
+	h.mu.Lock()
+	h.known = m
 	h.mu.Unlock()
 }
 
@@ -756,6 +770,7 @@ type statsPayload struct {
 	SplunkFailed       uint64 `json:"splunk_failed"`
 	SplunkDropped      uint64 `json:"splunk_dropped"`
 	Suppressions       int    `json:"suppressions_active"`
+	KnownSoftware      int    `json:"known_software_active"`
 	StoreEnabled       bool   `json:"store_enabled"`
 	StoreWriteFailures uint64 `json:"store_write_failures"`
 	StoreEvents        int64  `json:"store_events"`
@@ -877,12 +892,25 @@ func (h *Hub) statsSnapshot() statsPayload {
 	notifyFn := h.notify
 	bFn := h.beacon
 	st := h.store
+	// Every remaining hub field statsSnapshot reads is captured HERE,
+	// under the lock (SEG-A ronda 11): the setters write these under
+	// h.mu, so a raw read after Unlock is a data race the moment any
+	// of them is ever re-armed hot. The captured closures stay UNCALLED
+	// until after Unlock — the uniform no-other-manager's-lock rule
+	// below is untouched.
+	latFn := h.alertLatency
+	ingCertFn := h.ingestCert
+	rel := h.reloader
+	riskM := h.risk
+	tFn := h.threshold
+	version := h.version
 	rulesCount, rulesTypes := 0, []string{}
 	if h.rules != nil {
 		rulesCount = h.rules.Count()
 		rulesTypes = h.rules.Types()
 	}
 	sup := h.suppress
+	knownM := h.known
 	intelM, base := h.intel, h.baseline
 	h.mu.Unlock()
 	// The correlator closure is called AFTER h.mu.Unlock, never under
@@ -920,6 +948,10 @@ func (h *Hub) statsSnapshot() statsPayload {
 	if sup != nil {
 		supActive = sup.Count(time.Now())
 	}
+	knownActive := 0
+	if knownM != nil {
+		knownActive = knownM.Count()
+	}
 
 	// Risk tracker has its own mutex: read after h.mu.Unlock, the same
 	// uniform rule as the correlator/store/suppress managers above.
@@ -927,9 +959,9 @@ func (h *Hub) statsSnapshot() statsPayload {
 	// signal (how many hosts carry non-cold risk right now).
 	now := time.Now()
 	riskHosts, hotHosts := 0, []risk.HostRisk{}
-	if h.risk != nil {
-		riskHosts = h.risk.Tracked(now)
-		hotHosts = h.risk.Snapshot(now, 5)
+	if riskM != nil {
+		riskHosts = riskM.Tracked(now)
+		hotHosts = riskM.Snapshot(now, 5)
 	}
 
 	// Beacon detector closure: same uniform rule — called after
@@ -942,13 +974,13 @@ func (h *Hub) statsSnapshot() statsPayload {
 		bTracked, bCap, bFired = bFn()
 	}
 
-	// Threshold detector closure (A2): same uniform rule — called
-	// after h.mu.Unlock (fire path runs the lock order the other way
+	// Threshold detector closure (A2): captured under the lock above,
+	// called after Unlock (fire path runs the lock order the other way
 	// round: Observe holds its mutex across fire -> RecordAlert, which
 	// takes h.mu).
 	var tDefs, tKeys int
 	var tFired uint64
-	if tFn := h.threshold; tFn != nil {
+	if tFn != nil {
 		tDefs, tKeys, tFired = tFn()
 	}
 
@@ -974,18 +1006,17 @@ func (h *Hub) statsSnapshot() statsPayload {
 		}
 	}
 
-	// SET-3 fields: version was written once at startup (plain field
-	// read under the hub lock at the top of this function would race
-	// nothing, but the uniform setter keeps the contract in one
-	// place); latency and the ingest certificate are closures called
-	// here — after h.mu.Unlock, like every other manager.
+	// SET-3 fields: version is captured under the lock at the top of
+	// this function; latency and the ingest certificate closures were
+	// captured there too and are only CALLED here — after h.mu.Unlock,
+	// like every other manager.
 	var lat latencyPayload
-	if fn := h.alertLatency; fn != nil {
-		lat.Count, lat.P50Ms, lat.P95Ms, lat.MaxMs = fn()
+	if latFn != nil {
+		lat.Count, lat.P50Ms, lat.P95Ms, lat.MaxMs = latFn()
 	}
 	ingestCert := certExpiryPayload{}
-	if fn := h.ingestCert; fn != nil {
-		if na, path, ok := fn(); ok {
+	if ingCertFn != nil {
+		if na, path, ok := ingCertFn(); ok {
 			ingestCert = certExpiryPayload{
 				Present:  true,
 				NotAfter: na.UTC().Format(time.RFC3339),
@@ -994,12 +1025,12 @@ func (h *Hub) statsSnapshot() statsPayload {
 		}
 	}
 	apiCert := certExpiryPayload{}
-	if h.reloader != nil {
-		if na, ok := h.reloader.NotAfter(); ok {
+	if rel != nil {
+		if na, ok := rel.NotAfter(); ok {
 			apiCert = certExpiryPayload{
 				Present:  true,
 				NotAfter: na.UTC().Format(time.RFC3339),
-				Path:     h.reloader.CertFile(),
+				Path:     rel.CertFile(),
 			}
 		}
 	}
@@ -1007,9 +1038,6 @@ func (h *Hub) statsSnapshot() statsPayload {
 	if st != nil {
 		storeSize, _ = st.SizeBytes() // a transient pragma failure reports 0: the store stays enabled
 	}
-	h.mu.Lock()
-	version := h.version
-	h.mu.Unlock()
 
 	return statsPayload{
 		UptimeS:                  int64(time.Since(h.started) / time.Second),
@@ -1034,6 +1062,7 @@ func (h *Hub) statsSnapshot() statsPayload {
 		SplunkFailed:             spFailed,
 		SplunkDropped:            spDropped,
 		Suppressions:             supActive,
+		KnownSoftware:            knownActive,
 		StoreEnabled:             storeEnabled,
 		StoreWriteFailures:       atomic.LoadUint64(&h.storeFails),
 		StoreEvents:              storeEvents,
