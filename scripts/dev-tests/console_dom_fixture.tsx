@@ -11,6 +11,7 @@ import { ReportPanel } from '../../web/console/src/components/console/report-pan
 import { ReportLibrary } from '../../web/console/src/components/console/report-library'
 import { readReports, REPORT_KEY, saveReport } from '../../web/console/src/lib/soc-report'
 import { SavedSearches } from '../../web/console/src/components/console/saved-searches'
+import { Table, TableBody, TableCaption, TableCell, TableEmpty, TableHead, TableHeader, TableHeadRow, TableRow } from '../../web/console/src/components/ui/table'
 import { alertSearchLens, SAVED_SEARCH_KEY } from '../../web/console/src/lib/saved-searches'
 import type { TriageTarget } from '../../web/console/src/lib/operations'
 
@@ -489,6 +490,72 @@ async function main() {
   assert.equal(window.localStorage.getItem(REPORT_KEY),'{corrupt report fixture')
   assert.ok(document.querySelector('[role="alert"]'))
   console.log('PASS: corrupt report stores are not silently replaced')
+
+  // POL-7 Fase B1: contract of the table primitive — sr-only caption,
+  // sticky head on thead, aria-sort passthrough, compact density, accent
+  // tint only through --primary* and zero hue literals.
+  root.render(
+    <Table className="table-fixed">
+      <TableCaption>Inventario de prueba de la primitiva</TableCaption>
+      <TableHeader sticky>
+        <TableHeadRow>
+          <TableHead>Regla</TableHead>
+          <TableHead sort="ascending">Severidad</TableHead>
+          <TableHead compact>Detalle</TableHead>
+        </TableHeadRow>
+      </TableHeader>
+      <TableBody>
+        <TableRow interactive>
+          <TableCell>demo</TableCell>
+          <TableCell className="font-mono">crit</TableCell>
+          <TableCell compact>compacto</TableCell>
+        </TableRow>
+        <TableRow selected>
+          <TableCell>seleccionada</TableCell>
+          <TableCell>—</TableCell>
+          <TableCell compact>—</TableCell>
+        </TableRow>
+      </TableBody>
+    </Table>,
+  )
+  await delay(30)
+  const table = document.querySelector('table')!
+  assert.ok(table.classList.contains('w-full') && table.classList.contains('border-collapse'))
+  assert.ok(table.classList.contains('table-fixed'))
+  const caption = table.querySelector('caption')!
+  assert.ok(caption.classList.contains('sr-only'))
+  const thead = table.querySelector('thead')!
+  assert.ok(thead.classList.contains('sticky') && thead.classList.contains('top-0') && thead.classList.contains('z-10'))
+  const heads = [...table.querySelectorAll('thead th')]
+  assert.equal(heads.length, 3)
+  assert.ok(heads.every((h) => h.getAttribute('scope') === 'col'))
+  assert.ok(heads[0].className.includes('uppercase'))
+  assert.ok(!heads[2].className.includes('uppercase'))
+  assert.equal(heads[1].getAttribute('aria-sort'), 'ascending')
+  assert.equal(heads[0].getAttribute('aria-sort'), null)
+  assert.ok(table.querySelector('tbody')!.classList.contains('divide-y'))
+  const bodyRows = [...table.querySelectorAll('tbody tr')]
+  assert.ok(bodyRows[0].className.includes('hover:bg-zinc-900/60'))
+  assert.ok(bodyRows[1].className.includes('bg-primary-tint/10'))
+  assert.ok(!bodyRows[1].className.includes('hover:bg'))
+  assert.ok(!table.outerHTML.includes('blue-'))
+  root.render(
+    <Table>
+      <TableCaption>Vacía</TableCaption>
+      <TableHeader>
+        <TableHeadRow>
+          <TableHead>Regla</TableHead>
+        </TableHeadRow>
+      </TableHeader>
+      <TableBody>
+        <TableEmpty colSpan={1}>Sin supresiones activas</TableEmpty>
+      </TableBody>
+    </Table>,
+  )
+  await delay(30)
+  const emptyCell = document.querySelector('td[colspan="1"]')
+  assert.ok(emptyCell && emptyCell.textContent === 'Sin supresiones activas')
+  console.log('PASS: the table primitive keeps the shared contract (caption, sticky head, aria-sort, compact, selection tint, empty row) with zero hue literals')
 
   root.unmount()
   assert.ok(FakeSource.instances.every(s=>s.closed))

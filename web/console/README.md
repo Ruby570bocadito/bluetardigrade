@@ -197,7 +197,16 @@ tokenized color variants (`neutral`, `accent` — the `--primary*`
 family); DATA colors such as severity ride on `className` from their
 own token maps (`SEVERITY_STYLE`), never as variants, so the component
 cannot reintroduce a hue accent by accident. `SeverityBadge` and
-`MonoTag` render it with unchanged visuals. New views consume the kit
+`MonoTag` render it with unchanged visuals. `Table` (`ui/table.tsx`) is
+the shared surface for the six semantic tables: `Table` + sr-only
+`TableCaption`, `TableHeader` (optional `sticky` pin), `TableHeadRow`,
+`TableHead` (uppercase data style, `compact` density, `sort` publishes
+aria-sort), `TableBody` (hairline rows), `TableRow` (`interactive`
+hover, `selected` takes the `--primary*` tint), `TableCell` and a
+full-width `TableEmpty` row. Like `Badge`, it bakes in no DATA color —
+cell accents ride on `className`; the API was extracted verbatim from
+the markup the views already ship, so the phase-B migration is
+mechanical. New views consume the kit
 instead of restyling pills inline; anything missing goes through POL-7
 coordination before growing the kit.
 
