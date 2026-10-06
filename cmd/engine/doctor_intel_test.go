@@ -127,3 +127,36 @@ func TestDoctorIdentities(t *testing.T) {
 		t.Fatalf("malformed: %+v", c)
 	}
 }
+
+func TestDoctorKnownSoftware(t *testing.T) {
+	root := t.TempDir()
+	if c := doctorKnownSoftware(root); c.Status != "skip" {
+		t.Fatalf("no file: %+v", c)
+	}
+	path := filepath.Join(root, "known-software.yaml")
+	valid := "version: 1\nsoftware:\n  - name: Inventory agent\n    sha256:\n      - '9a1f2c3d4e5f60718293a4b5c6d7e8f900112233445566778899aabbccddeeff'\n"
+	if err := os.WriteFile(path, []byte(valid), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c := doctorKnownSoftware(root); c.Status != "ok" || !strings.Contains(c.Detail, "1 entrada valida") {
+		t.Fatalf("valid file: %+v", c)
+	}
+	if err := os.WriteFile(path, []byte("version: 2\nsoftware: []\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c := doctorKnownSoftware(root); c.Status != "error" || !strings.Contains(c.Detail, "no arrancaria") {
+		t.Fatalf("bad version: %+v", c)
+	}
+	if err := os.WriteFile(path, []byte("version: 1\nsoftware: []\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c := doctorKnownSoftware(root); c.Status != "warn" || !strings.Contains(c.Detail, "no tiene entradas") {
+		t.Fatalf("empty list: %+v", c)
+	}
+	if err := os.WriteFile(path, []byte("version: 1\nsoftware:\n  - name: X\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c := doctorKnownSoftware(root); c.Status != "error" || !strings.Contains(c.Detail, "image and sha256 are both empty") {
+		t.Fatalf("entry without match keys: %+v", c)
+	}
+}
