@@ -5,6 +5,22 @@ cada ronda: qué está a medias, qué sigue y por qué.
 
 ## Estado actual
 
+- Ronda 2026-10-06 09h01 cerrada (informe: `ronda_2026-10-06_09h01_A.md`).
+  Entregado el **campo de decisión de triaje** (petición MEDIA de IMP-B,
+  cola #1): `Decision` en `internal/lifecycle` (`false_positive`,
+  `authorized_activity`, `confirmed_incident`; typo = error duro, fichero
+  sigue en versión 1 con compatibilidad hacia atrás probada), semántica de
+  REEMPLAZO completo (omitir `decision` la limpia, como `note`/`by`),
+  `POST /api/alerts/{id}/status` + overlay `decision` en `GET /api/alerts`
+  + CSV con la columna AÑADIDA AL FINAL + línea de auditoría con veredicto,
+  y `false_positive_pct` REAL en `/api/noise` (los proxies
+  closed/acknowledged quedan intactos). OpenAPI (4 esquemas + 4
+  descripciones), OPERATIONS.md, changelog.d. smoke_lifecycle 9 → 12.
+  Dos fallos cazados en propia casa: la herramienta de edición normalizó
+  lifecycle.go a espacios (gofmt lo cazó; restaurado) y la pegajosidad de
+  claves JSON en un test reutilizando mapas (el servidor estaba bien; nota
+  para IMP-B en el informe). Retenida en local: la sesión NO trajo
+  credencial de push (declarado en el informe; commits listos para push).
 - Ronda 2026-10-05 21h48 cerrada (informe: `ronda_2026-10-05_21h48_A.md`). Primero se
   publicó el cierre retenido de la ronda anterior (`2c32013..8150a37`): AD-1/AD-2/SET-3
   quedan OFICIALES y visibles (SEG-B puede auditar `internal/ad`, IMP-B puede consumir
@@ -60,33 +76,31 @@ cada ronda: qué está a medias, qué sigue y por qué.
 
 ## A medias
 
-- Nada a medias: AD-1, AD-2 y SET-3 lado motor quedaron completos y verificados.
+- Nada a medias: AD-1, AD-2, SET-3, SEC-2 y el campo de decisión de triaje quedaron
+  completos y verificados.
 - AD-1/AD-2 quedan a la espera de su parte de consola (AD-5/AD-6, IMP-B): los contratos
   JSON están publicados en OpenAPI y en el informe de esta ronda.
 - SIM-4 sigue a la espera de su parte B (pantalla de la consola, IMP-B); REP-1 igual.
-- El informe de ruido sirve hoy `closed_pct`/`acknowledged_pct` (estado actual del
-  triage). Cuando el campo de decisión de triaje exista (petición MEDIA de IMP-B, ronda
-  propia de este carril), migrará a `false_positive_pct`.
+- El informe de ruido sirve `false_positive_pct` (decisiones registradas, real) DESDE
+  la ronda 2026-10-06 junto a los proxies `closed_pct`/`acknowledged_pct`; la pestaña
+  de ruido de IMP-B ya puede pintar el FP% por regla, y VIZ-3 puede pintar «falso
+  positivo» desde `decision` en `GET /api/alerts`.
 
 ## Cola de tareas del carril (orden pretendido)
 
-1. **Campo de decisión de triaje** (petición MEDIA de IMP-B): `decision:
-   false_positive | authorized_activity | confirmed_incident` en el ciclo de vida
-   (`POST /api/alerts/{id}/status` + store + OpenAPI), que desbloquea el «falso
-   positivo» del flujo del triaje y convierte los porcentajes del ruido en FP% real.
-2. **v1.1 Ruido**: supresiones con condiciones (PLAN-DETALLADO §2.3), lista de software
+1. **v1.1 Ruido**: supresiones con condiciones (PLAN-DETALLADO §2.3), lista de software
    conocido por organización (§2.2, `known-software.yaml`; el botón «añadir a software
    conocido» de la pestaña de ruido de IMP-B espera esto) y agrupación de arranques
    repetidos en el sensor (§2.1, parte Rust; requiere cargo en el entorno o pruebas en
    otro sitio).
-3. **Motor**: cuotas por equipo en la memoria del motor (v1.1 «Motor y consola»).
-4. **AD-6/SET-1 API de ajustes**: la primitiva de escritura segura ya existe
+2. **Motor**: cuotas por equipo en la memoria del motor (v1.1 «Motor y consola»).
+3. **AD-6/SET-1 API de ajustes**: la primitiva de escritura segura ya existe
    (`secretfile.Write` + `engine secret-write`); falta la superficie de ajustes decidida
    con el responsable (qué campos, bind de prueba antes de comprometer el fichero,
    auditoría, recarga en caliente). **AD-3** cuando WEF exista.
-5. **REP-2** informes programados (diarios/semanales en `data/reports` con retención,
+4. **REP-2** informes programados (diarios/semanales en `data/reports` con retención,
    SMTP/webhook opcional): la maquinaria de datos ya existe tras REP-1 parte A.
-6. **Diseño**: purga de hosts rechazados/revocados en el registro de alta (observación
+5. **Diseño**: purga de hosts rechazados/revocados en el registro de alta (observación
    de SEG-A: hoy cuentan para siempre en `MaxHosts`).
 
 ## Decisiones y motivos (histórico vivo)
