@@ -24,6 +24,9 @@ Archivo vivo: qué tengo a medias, qué sigue y por qué. Se actualiza cada rond
     del almacén y caducidad de los dos certificados; la vista Estado añade
     filas y sección «Certificados» (warn <30 días, bad <7 — umbral propio
     documentado), y la nota al pie queda solo con «último informe programado».
+- **Coordinación CSP**: los dos scripts inline de boot (tema de PUL-A/PUL-B e
+  idioma de la ronda 6) van firmados con el nonce por petición del proxy;
+  cualquier script inline nuevo del armazón necesita lo mismo.
 - **AD-6 sigue bloqueada**: IMP-A deja la API de ajustes para su ronda
   siguiente («API de ajustes: ronda siguiente» en su plan); sin ruta de
   escritura no hay formulario honesto que construir.
