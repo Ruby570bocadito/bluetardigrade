@@ -237,3 +237,24 @@ siguiente (checklist en la ronda 3 de este roadmap y modelo §3).
   main), O-2 (decisión sobre la fila E) y O-3 (bind de prueba en AD-6).
   Para quien fusione: conservar ambos tests EOF en
   internal/scenrun/scenrun_test.go (conflicto anotado con seguridad-a).
+
+## Ronda 9 (2026-10-06, verificación fuera de cuota)
+
+- **Hallazgos de SEG-A confirmados de forma independiente** (inspección
+  propia sobre bc91c7d): (1) MEDIA — `GET /api/ad/posture` nunca sirve
+  `score` (campo declarado y jamás asignado); (2) BAJA — lecturas sin
+  cerrojo de `h.ad` (4 handlers) y de `version`/`alertLatency`/
+  `ingestCert` fuera del span en `statsSnapshot`. Corrección pública:
+  los veredictos de seguridad de la ronda 8 se mantienen; la fila
+  «limpio» de `api/ad.go` era incompleta (mi checklist no cubre
+  completitud de campos ni contratos de mutex). Corregirá IMP-A.
+- **PUL-B CSP por nonce (d458fae): limpio** — patrón Next.js correcto
+  (nonce por petición de 122 bits, strict-dynamic, firma del theme
+  boot vía x-nonce, CSP estática eliminada con razonamiento correcto,
+  check dedicado que exige rotación y firma total). Observación de la
+  ronda 6 (lockfile del tooling) CERRADA con su manifest.
+- **PUL-A go.mod (df323ad): limpio** — solo sincronización con la
+  cadena del PR #18 ya auditada.
+- El carril vuelve a parada por cuota agotada; puerta de reapertura:
+  contenido nuevo de seguridad (AD-6, verificación SEC-9 tras la
+  fusión a main).
