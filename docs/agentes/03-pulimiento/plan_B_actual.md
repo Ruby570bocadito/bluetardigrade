@@ -1,44 +1,32 @@
-# Plan de ronda — Pulimiento B (2026-10-06, 08h50 Madrid, ronda 5)
+# Plan de ronda — Pulimiento B (2026-10-06, 09h10 Madrid, ronda 6)
 
-Base: `carril/pulimiento-b` `173ac11` + merge de `origin/main` (`35cd866`,
-solo dependabot go.mod/go.sum). Carril al día: rondas 1-4 cerradas (tema,
-zinc, kit de pestañas, POL-12/POL-10, axe/Lighthouse).
+Base: `carril/pulimiento-b` `d458fae` (ronda 5); `origin/main` sigue en
+`35cd866` (merge: up to date). Estado leído: SEG-B cierra su cuota
+(ronda 8, veredictos positivos sobre AD-1, nada para este carril);
+SEG-A ronda 11 con dos hallazgos en la rama de IMP-A y cero en las
+consolas; IMP-A/IMP-B/PUL-A sin planes nuevos.
 
 ## Tareas cogidas
 
-1. **CSP por nonce en la consola** (asignación de SEG-B, §7 de
-   `docs/MODELO-DE-AMENAZAS.md`; mi roadmap, cola 1): fuera
-   `script-src 'unsafe-inline'` del build de producción. Nonce por
-   petición en `src/proxy.ts` (Next 16 lee la cabecera de petición y
-   firma su bootstrap), `'strict-dynamic'`, el script de arranque del
-   tema lleva `nonce` en `layout.tsx` (único inline del árbol), la CSP
-   estática sale de `next.config.ts` (dos cabeceras se intersecan: la
-   deja solo el proxy) y dev conserva `unsafe-inline`/`unsafe-eval`.
-   Sin cambio de comportamiento: baterías de navegador/DOM/axe y un
-   aserto nuevo de cabecera lo verifican.
-2. **Manifest del tooling a11y** (nota menor de SEG-B, ronda 7):
-   `tools/console-tests/package.json` + lockfile comprometidos con
-   versiones exactas (playwright/axe-core), excepción en `.gitignore`,
-   cabecera de `check_console_a11y.mjs` actualizada. Sin
-   `postinstall` (guard SEC-6).
-3. **Guardia THEME-2 sobre la ronda i18n de IMP-B** (solo lectura en su
-   rama, `9f35615`): azules crudos, literales fuera de tokens o drift de
-   contraste en los ficheros del armazón que tocaron
-   (`theme-toggle.tsx`, `shell.tsx`, `layout.tsx`); hallazgos al informe
-   para el momento de la fusión.
+1. **POL-11 (auditoría y cierre de `prefers-reduced-motion`):** pase
+   completo de microinteracciones — reactbits (`motion`), transiciones
+   CSS y animaciones de canvas — verificando que cada animación no
+   esencial se apaga o reduce con la preferencia activa. Correcciones
+   solo en ficheros de este carril (reactbits, shell, theme) o de
+   tokens; las gráficas de IMP-B solo se auditan y se anotan.
+2. **POL-9 (re-medida Lighthouse tras la ronda 5):** el nonce hace la
+   ruta dinámica; se re-mide la baseline documentada (Panel
+   95/100/96/100, Alertas 100/100) y se actualiza la sección del
+   README de la consola con la comparación antes/después.
 
 ## No toca
 
-`charts/*` y vistas de datos de IMP-B (su barrido i18n y las vistas AD
-que les desbloqueó el push de IMP-A: 21h48); POL-7 y el aria de gráficas
-siguen esperando ventana con IMP-B; `web/console-service` (SEG-B); Go,
-sensor, scripts (intactos esta ronda).
+Vistas y gráficas de IMP-B (su barrido i18n y las vistas AD entrantes);
+`ci.yml`/Makefile (PUL-A); `web/console-service`; Go, sensor, scripts.
 
 ## Coordinación
 
-- Choque declarado potencial: `layout.tsx` — IMP-B añade el boot de
-  `lang` a ese fichero en su ronda 6 (no fusionada). Mi cambio ahí es
-  mínimo (async + `nonce` en los inline); al fusionar, su boot de `lang`
-  necesitará el mismo `nonce`: anotado en el informe para el responsable.
-- PUL-A ya enganchó `check_console_theme.py` al CI (16h41): mi propuesta
-  restante (axe nocturno con Chromium) queda en su cola.
+- IMP-B: reactbits y shell están en mis ficheros auditados por SEG-B;
+  su barrido i18n toca vistas, no estos ficheros. Conflicto ya
+  documentado de `shell.tsx` sigue en manos del responsable.
+- SEG-A ronda 11 revisó mis consolas: cero bugs; sin acciones.

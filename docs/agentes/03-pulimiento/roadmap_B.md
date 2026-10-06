@@ -1,7 +1,7 @@
 # Roadmap B — carril Pulimiento B (archivo vivo)
 
-Última actualización: 2026-10-05, ronda 3 de este carril sobre la rama
-`carril/pulimiento-b` (creada desde `origin/main` `a1bca4f`).
+Última actualización: 2026-10-06, ronda 5 de este carril sobre la rama
+`carril/pulimiento-b` (base `173ac11` + main `35cd866`).
 
 ## Hecho (rondas cerradas)
 
@@ -62,35 +62,53 @@
   anotado a PUL-A). **371 tests, tsc, build, 93 theme checks, 34 DOM,
   21 Chromium, 104 console-service: todo verde.** Informe:
   `ronda_2026-10-05_17h35_B.md`.
+- **2026-10-06 — CSP por nonce, manifest del tooling, guardia i18n (ronda 5):**
+  CSP de la consola acuñada por petición en `src/proxy.ts` (nonce +
+  `strict-dynamic` en producción; la estática salió de `next.config.ts`
+  porque dos CSP se intersecan), boot de tema firmado vía `x-nonce` en
+  `layout.tsx` asíncrono, guard nuevo `check_console_csp.mjs` (nonce
+  presente, rotatorio y en todos los scripts; apto para CI),
+  manifest+`bun.lock` del tooling de pruebas comprometidos en
+  `tools/console-tests` (playwright/axe/esbuild/jsdom exactos, SEC-6
+  verde, `.gitignore` con excepción quirúrgica que preserva el
+  `tools/config/` del instalador), guardia THEME-2 sobre la ronda i18n
+  de IMP-B sin hallazgos. **371 tests, tsc, build, 21/21 navegador,
+  34 DOM, 18/18 axe, tema OK, ciclo de vida OK.** Informe:
+  `ronda_2026-10-06_09h05_B.md`.
 
 ## A medias
 
 - **POL-8/9:** aria de gráficas (fichero de IMP-B) y enganche de los
-  checks axe/tema en `ci.yml` (proponer a PUL-A). axe y Lighthouse ya
-  corren localmente; el CI nocturno puede tomarlos con Chromium.
+  checks axe/CSP en `ci.yml` (proponer a PUL-A). axe, CSP y Lighthouse
+  ya corren localmente; el CI nocturno puede tomarlos con Chromium.
 - **Makefile:** recetas con 8 espacios en vez de tabs — `make` falla en
   todos los targets (pre-existente, área de PUL-A).
+- **Fusión con la ronda de IMP-B (para el responsable, dos retos):**
+  (1) conflicto de `shell.tsx` en la nav móvil — su estructura i18n
+  debe llevar mi `text-zinc-500` del kicker (AA de la ronda 4, su lado
+  conserva `zinc-600`); (2) su `langBoot` entra sin nonce — tras
+  fusionar debe ser `<script nonce={nonce} …>` o la CSP de producción
+  lo bloquea en silencio. Detalle y resolución en el informe de la
+  ronda 5.
 
 ## Siguiente (orden propuesto)
 
-1. **Ronda 5: pipeline de nonce para la CSP de la consola** (asignación
-   de SEG-B, BAJA, diseño en §7 de su modelo de amenazas): tocará
-   `next.config.ts`/headers con verificación de que el bootstrap de
-   Next no rompe. Ronda entera dedicada.
-2. Kit de componentes restante (POL-7): botón, campo, tabla, insignia y
-   diálogo con variantes — exige coordinar ventanas con IMP-B (sus
-   vistas): proponerlo en su roadmap antes de cogerlo.
-3. POL-8: aria/gemelo de tabla de las gráficas (fichero de IMP-B,
-   coordinar).
-4. Propuestas a PUL-A: enganchar `check_console_theme.py`,
-   `check_console_a11y.mjs` y `console-lighthouse` en el CI (este
-   último necesita la corrección de tabs del Makefile).
-5. Proponer al responsable la definición de POL-12 como tarea de carril
-   (pase de coherencia consola/README/SECURITY.md); ejecutada una vez
-   en la ronda 3.
-6. Si IMP-B publica ronda con gráficas nuevas: revisar sus ficheros en
-   busca de azules crudos, contraste fuera de tokens o hallazgos axe
-   (mismo pase que las rondas 3-4, ahora barato con el checker).
+1. POL-7 kit de componentes restante (botón, campo, tabla, insignia y
+   diálogo con variantes) — exige coordinar ventanas con IMP-B (sus
+   vistas, ahora desbloqueadas por el push de IMP-A: AD-5/AD-6, SET-3,
+   REP-3): proponerlo en su roadmap antes de cogerlo.
+2. POL-8: aria/gemelo de tabla de las gráficas (fichero de IMP-B,
+   coordinar con su barrido i18n de vistas de datos).
+3. Revisar las rondas nuevas de IMP-B (vistas AD, barrido i18n) con el
+   pase barato de guardia: azules crudos, contraste fuera de tokens,
+   hallazgos axe.
+4. Propuestas a PUL-A: enganchar `check_console_csp.mjs` (barato, sin
+   navegador) y `check_console_a11y.mjs`/`console-lighthouse` (con
+   Chromium) al CI; este último necesita la corrección de tabs del
+   Makefile.
+5. Si el responsable define POL-12 como tarea recurrente: nuevo pase de
+   coherencia consola/README/SECURITY.md cuando IMP-B fusione vistas
+   nuevas.
 
 ## Decisiones de ronda que conviene recordar
 

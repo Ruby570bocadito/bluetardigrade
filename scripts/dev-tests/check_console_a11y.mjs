@@ -3,9 +3,10 @@
 // against contract-true engine fixtures (same interception approach as
 // check_console_browser.mjs; no running Go engine is contacted).
 //
-// Optional tooling lives outside the application dependency graph:
-//   npm install --prefix tools/console-tests --no-audit --no-fund playwright@1.63.0 axe-core@4.10.2
-//   node tools/console-tests/node_modules/playwright/cli.js install chromium
+// Optional tooling lives outside the application dependency graph; its
+// manifest (exact versions + bun.lock) is committed in tools/console-tests:
+//   cd tools/console-tests && bun install
+//   cd tools/console-tests && bunx playwright install chromium
 // Build the console first (bun run build). Env:
 //   CONSOLE_BROWSER_URL  reuse a running loopback console (127.0.0.1 only)
 //   CONSOLE_A11Y_TAGS    axe tags to enforce (default: wcag2a,wcag2aa,wcag21a,wcag21aa)
