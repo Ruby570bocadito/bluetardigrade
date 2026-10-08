@@ -221,7 +221,13 @@ func LoadFile(path string, emit func(alert.Alert)) (*Manager, error) {
 // profiles that no longer exist are pruned: they can never fire
 // again and would leak toward the key cap.
 func (m *Manager) Reload(path string) error {
-        fresh := &Manager{state: map[beaconKey]*keyState{}, emit: m.emit}
+        // read the emit callback UNDER m.mu (audit 5.3): Observe runs on
+        // the ingest path and touches the same field; the race was
+        // latent in the current wiring, not absent.
+        m.mu.Lock()
+        emit := m.emit
+        m.mu.Unlock()
+        fresh := &Manager{state: map[beaconKey]*keyState{}, emit: emit, perHost: map[string]int{}, quotaHosts: map[string]uint64{}}
         if err := fresh.load(path); err != nil {
                 return err
         }
@@ -583,33 +589,44 @@ func lessKey(a, b beaconKey) bool {
 }
 
 // regularity computes the mean inter-arrival interval and its
-// coefficient of variation over the ring. ok is false with fewer
-// than two intervals (nothing meaningful to spread) or a non-positive
-// interval (zero/duplicated timestamps).
+// coefficient of variation over the ring. ok is false with fewer than
+// two usable intervals (nothing meaningful to spread).
+//
+// Zero/negative intervals (duplicated or out-of-order timestamps —
+// audit 5.3) are EXCLUDED from the computation instead of invalidating
+// the whole ring: a single duplicated timestamp used to silence the
+// evaluation of that key until the sample aged out of the window (up
+// to 15 min of a blind spot). The beacon profile threshold still
+// requires enough samples upstream, so excluding a degenerate interval
+// only removes noise it would otherwise have amplified.
 func regularity(times []time.Time) (mean time.Duration, cv float64, ok bool) {
         n := len(times)
         if n < 3 {
                 return 0, 0, false
         }
+        ds := make([]float64, 0, n-1)
         var total time.Duration
         for i := 1; i < n; i++ {
                 d := times[i].Sub(times[i-1])
                 if d <= 0 {
-                        return 0, 0, false
+                        continue // duplicated/reordered timestamp: skip, not fatal
                 }
+                ds = append(ds, d.Seconds())
                 total += d
         }
-        mean = total / time.Duration(n-1)
+        if len(ds) < 2 {
+                return 0, 0, false
+        }
+        mean = total / time.Duration(len(ds))
         if mean <= 0 {
                 return 0, 0, false
         }
         m := mean.Seconds()
         var sumSq float64
-        for i := 1; i < n; i++ {
-                d := times[i].Sub(times[i-1]).Seconds()
+        for _, d := range ds {
                 sumSq += (d - m) * (d - m)
         }
-        sd := math.Sqrt(sumSq / float64(n-2))
+        sd := math.Sqrt(sumSq / float64(len(ds)-1))
         return mean, sd / m, true
 }
 

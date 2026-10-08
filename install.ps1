@@ -33,11 +33,15 @@
 #                        persisted, engine autostart delivers it (empty clears)
 #   -WebhookToken <t>    bearer token the deliveries carry as
 #                        'Authorization: Bearer' (env SF_WEBHOOK_TOKEN also
-#                        works at runtime; empty disables)
+#                        works here AND at runtime; empty disables). Prefer
+#                        the env var: a value passed on the command line is
+#                        readable by any local user via Win32_Process for
+#                        as long as this installer builds
 #   -IngestToken <t>     shared secret sensors must send ('AUTH <token>');
 #                        persisted, engine autostart enforces it. -Firewall
 #                        REQUIRES it: an open 7777 without a token lets any
-#                        LAN host inject events (empty clears)
+#                        LAN host inject events (empty clears). Prefer env
+#                        SF_INGEST_TOKEN (same argv-exposure caveat)
 #   -Update              refresh an existing install and rebuild
 #   -SkipBuild           fetch sources + tools but skip compiling (debug)
 #   -SourceReady         internal: source already fetched (the updater
@@ -823,8 +827,37 @@ function Set-IngestTokenConfig {
     }
     New-Item -ItemType Directory -Path (Split-Path $File -Parent) -Force | Out-Null
     Set-Content -Path $File -Value $t -Encoding ascii
+    Protect-TokenFile -File $File
     Write-Ok "ingest token saved: sensors must send 'AUTH <token>' (-Token or SF_INGEST_TOKEN)"
     return $t
+}
+
+function Protect-TokenFile {
+    # Restricts the DACL of a persisted secret (audit 5.18 #2): the
+    # default ProgramData/LOCALAPPDATA inheritance grants Users:Read on
+    # everything, and the server-mode tree lockdown runs LATER (after
+    # the console build) — a failed build would otherwise leave the
+    # ingest/webhook tokens world-readable indefinitely, letting
+    # another local user inject events. Inheritance is cut and the
+    # file re-granted to SYSTEM+Administrators+the current user
+    # IMMEDIATELY after the write, so there is no window to close
+    # later. Best-effort by design: a non-elevated user install can
+    # always protect its own files (owner ACE), only the SYSTEM ACE
+    # may fail and only when the user cannot read the SIDs — which
+    # does not weaken the protection the file already has.
+    param([string]$File)
+    try {
+        $acl = Get-Acl -LiteralPath $File
+        $acl.SetAccessRuleProtection($true, $false)   # cut inheritance, drop inherited ACEs
+        $me = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+        foreach ($who in @($me, 'NT AUTHORITY\SYSTEM', 'BUILTIN\Administrators')) {
+            $rule = New-Object Security.AccessControl.FileSystemAccessRule($who, 'FullControl', 'Allow')
+            $acl.SetAccessRule($rule) | Out-Null
+        }
+        Set-Acl -LiteralPath $File -AclObject $acl
+    } catch {
+        Write-Warn2 "could not restrict the DACL of $File ($($_.Exception.Message)) — protect it manually: icacls `"$File`" /inheritance:r"
+    }
 }
 
 function Register-Autostart {
@@ -1058,11 +1091,17 @@ if ($MyInvocation.InvocationName -ne '.') {
 
     # ingest token: -IngestToken rewrites the persisted one (empty
     # clears); without the flag an existing one is picked up so
-    # sf-update and re-installs keep the auth config untouched
+    # sf-update and re-installs keep the auth config untouched.
+    # Env fallback (audit 5.18 #1): SF_INGEST_TOKEN keeps the secret
+    # OFF the command line, where any local user could read it via
+    # Win32_Process for the whole build. Flag > env > persisted file.
     $ingestToken = ''
     $tokFile = Join-Path $tools 'config\ingest.token'
     if ($PSBoundParameters.ContainsKey('IngestToken')) {
         $ingestToken = Set-IngestTokenConfig -File $tokFile -Token $IngestToken
+    } elseif (-not [string]::IsNullOrEmpty($env:SF_INGEST_TOKEN)) {
+        $ingestToken = Set-IngestTokenConfig -File $tokFile -Token $env:SF_INGEST_TOKEN
+        Write-Ok 'ingest token taken from SF_INGEST_TOKEN (not from argv: keeps it off Win32_Process)'
     } elseif (Test-Path $tokFile) {
         $raw = Get-Content $tokFile -First 1 -ErrorAction SilentlyContinue
         if ($null -ne $raw) { $ingestToken = $raw.Trim() }
@@ -1082,7 +1121,8 @@ if ($MyInvocation.InvocationName -ne '.') {
         if ($null -ne $raw) { $webhook = $raw.Trim() }
     }
 
-    # webhook token: same rules as the URL (persisted, flag wins)
+    # webhook token: same rules as the URL (persisted, flag wins; env
+    # SF_WEBHOOK_TOKEN preferred over argv for the same reason)
     $webhookToken = ''
     $wtFile = Join-Path $tools 'config\webhook.token'
     if ($PSBoundParameters.ContainsKey('WebhookToken')) {
@@ -1099,8 +1139,20 @@ if ($MyInvocation.InvocationName -ne '.') {
             }
             New-Item -ItemType Directory -Path (Split-Path $wtFile -Parent) -Force | Out-Null
             Set-Content -Path $wtFile -Value $wt -Encoding ascii
+            Protect-TokenFile -File $wtFile
             Write-Ok 'webhook token saved: deliveries carry Authorization: Bearer'
             $webhookToken = $wt
+        }
+    } elseif (-not [string]::IsNullOrEmpty($env:SF_WEBHOOK_TOKEN)) {
+        $wt = $env:SF_WEBHOOK_TOKEN.Trim()
+        if ($wt -ne '' -and $wt -match '^[A-Za-z0-9._~+/=:-]{8,512}$') {
+            New-Item -ItemType Directory -Path (Split-Path $wtFile -Parent) -Force | Out-Null
+            Set-Content -Path $wtFile -Value $wt -Encoding ascii
+            Protect-TokenFile -File $wtFile
+            Write-Ok 'webhook token taken from SF_WEBHOOK_TOKEN (not from argv)'
+            $webhookToken = $wt
+        } else {
+            Write-Warn2 'SF_WEBHOOK_TOKEN is set but empty or malformed (8-512 chars, no spaces/quotes) - ignored'
         }
     } elseif (Test-Path $wtFile) {
         $raw = Get-Content $wtFile -First 1 -ErrorAction SilentlyContinue

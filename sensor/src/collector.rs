@@ -694,6 +694,16 @@ fn handle_process(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &Sh
     let Ok(pid) = parser.try_parse::<u32>("ProcessId") else {
         return;
     };
+    // Same self-exclusion every other handler applies (network, DNS,
+    // registry): the sensor must not report ITSELF. Its process.create
+    // carries its own CommandLine -- including `--token <secret>` when
+    // the operator launched it without --token-file -- and that line
+    // would otherwise land verbatim in the evidence of every console
+    // and every bundle (audit 5.9 #1). The PID->name table entry is
+    // skipped too: the sensor needs no enrichment traffic of its own.
+    if pid == ctx.own_pid {
+        return;
+    }
     if opcode == OPCODE_PROCESS_END {
         if let Ok(mut table) = ctx.processes.lock() {
             table.remove(pid);
