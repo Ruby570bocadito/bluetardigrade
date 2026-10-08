@@ -1,9 +1,9 @@
 package api
 
 import (
-        "log"
-        "net/http"
-        "time"
+	"log"
+	"net/http"
+	"time"
 )
 
 // recoverPanic is the outermost middleware: a panic in ANY handler
@@ -16,21 +16,21 @@ import (
 // not take the process down); re-raising would only undo the JSON
 // response this middleware writes.
 func recoverPanic(next http.Handler) http.Handler {
-        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-                defer func() {
-                        if rec := recover(); rec != nil {
-                                log.Printf("[API] PANIC recovered: %s %s from %s: %v",
-                                        r.Method, r.URL.Path, r.RemoteAddr, rec)
-                                // headers may already be written (the panic can land
-                                // mid-response); WriteHeader on a flushed response just
-                                // logs a superfluous-warning internally — harmless.
-                                w.Header().Set("Content-Type", "application/json")
-                                w.WriteHeader(http.StatusInternalServerError)
-                                _, _ = w.Write([]byte(`{"error":"internal error: the handler crashed; the engine log has the details"}`))
-                        }
-                }()
-                next.ServeHTTP(w, r)
-        })
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("[API] PANIC recovered: %s %s from %s: %v",
+					r.Method, r.URL.Path, r.RemoteAddr, rec)
+				// headers may already be written (the panic can land
+				// mid-response); WriteHeader on a flushed response just
+				// logs a superfluous-warning internally — harmless.
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"error":"internal error: the handler crashed; the engine log has the details"}`))
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
 }
 
 // requestDeadlines closes the slow-body hole (audit 5.5 #1): the
@@ -45,20 +45,20 @@ func recoverPanic(next http.Handler) http.Handler {
 const handlerReadTimeout = 30 * time.Second
 
 func requestDeadlines(next http.Handler) http.Handler {
-        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-                if r.URL.Path != "/api/stream" {
-                        // ResponseController reaches the server's connection state
-                        // through the middleware chain (net/http >= 1.20 unwraps
-                        // wrappers); if the writer does not support it (a test
-                        // double) the deadline is skipped silently.
-                        rc := http.NewResponseController(w)
-                        if err := rc.SetReadDeadline(time.Now().Add(handlerReadTimeout)); err != nil {
-                                // no-op for ResponseWriter implementations without the hook
-                                _ = err
-                        }
-                }
-                next.ServeHTTP(w, r)
-        })
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/stream" {
+			// ResponseController reaches the server's connection state
+			// through the middleware chain (net/http >= 1.20 unwraps
+			// wrappers); if the writer does not support it (a test
+			// double) the deadline is skipped silently.
+			rc := http.NewResponseController(w)
+			if err := rc.SetReadDeadline(time.Now().Add(handlerReadTimeout)); err != nil {
+				// no-op for ResponseWriter implementations without the hook
+				_ = err
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // noStore marks an operator-write handler's response as uncacheable at
@@ -67,8 +67,8 @@ func requestDeadlines(next http.Handler) http.Handler {
 // state the engine never recorded. Wired only on the write routes —
 // reads keep their deliberate per-route caching.
 func (h *Hub) noStore(next http.HandlerFunc) http.HandlerFunc {
-        return func(w http.ResponseWriter, r *http.Request) {
-                w.Header().Set("Cache-Control", "no-store")
-                next(w, r)
-        }
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		next(w, r)
+	}
 }

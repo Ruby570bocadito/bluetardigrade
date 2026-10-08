@@ -12,15 +12,15 @@
 package api
 
 import (
-        "log"
-        "net/http"
+	"log"
+	"net/http"
 
-        "github.com/Ruby570bocadito/bluetardigrade/internal/respond"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/respond"
 )
 
 const (
-        respondAuditDefaultLimit = 100
-        respondAuditMaxLimit     = 500
+	respondAuditDefaultLimit = 100
+	respondAuditMaxLimit     = 500
 )
 
 // SetRespondPaths records the active-response file paths the engine
@@ -29,9 +29,9 @@ const (
 // EnableRespondKill; harmless when the surface is disarmed (the routes
 // keep answering the real 404).
 func (h *Hub) SetRespondPaths(operators, protected, audit string) {
-        h.mu.Lock()
-        h.respondOpsPath, h.respondProtPath, h.respondAuditPath = operators, protected, audit
-        h.mu.Unlock()
+	h.mu.Lock()
+	h.respondOpsPath, h.respondProtPath, h.respondAuditPath = operators, protected, audit
+	h.mu.Unlock()
 }
 
 // respondStatePayload is the GET /api/respond/state wire contract
@@ -42,37 +42,37 @@ func (h *Hub) SetRespondPaths(operators, protected, audit string) {
 // audit size travels with its ceiling so the console can show how
 // close the proof surface is to the rotation wall.
 type respondStatePayload struct {
-        Armed          bool   `json:"armed"`
-        Signal         string `json:"signal"`
-        OperatorsCount int    `json:"operators_count"`
-        ProtectedCount int    `json:"protected_count"`
-        OperatorsPath  string `json:"operators_path,omitempty"`
-        ProtectedPath  string `json:"protected_path,omitempty"`
-        AuditPath      string `json:"audit_path"`
-        AuditSize      int64  `json:"audit_size"`
-        AuditCeiling   int64  `json:"audit_ceiling"`
+	Armed          bool   `json:"armed"`
+	Signal         string `json:"signal"`
+	OperatorsCount int    `json:"operators_count"`
+	ProtectedCount int    `json:"protected_count"`
+	OperatorsPath  string `json:"operators_path,omitempty"`
+	ProtectedPath  string `json:"protected_path,omitempty"`
+	AuditPath      string `json:"audit_path"`
+	AuditSize      int64  `json:"audit_size"`
+	AuditCeiling   int64  `json:"audit_ceiling"`
 }
 
 func (h *Hub) handleRespondState(w http.ResponseWriter, r *http.Request) {
-        h.mu.Lock()
-        m := h.respond
-        ops, prot, auditPath := h.respondOpsPath, h.respondProtPath, h.respondAuditPath
-        h.mu.Unlock()
-        if m == nil {
-                http.NotFound(w, r)
-                return
-        }
-        writeJSON(w, respondStatePayload{
-                Armed:          true,
-                Signal:         respond.Signal,
-                OperatorsCount: m.OperatorsCount(),
-                ProtectedCount: m.ProtectedCount(),
-                OperatorsPath:  ops,
-                ProtectedPath:  prot,
-                AuditPath:      auditPath,
-                AuditSize:      m.AuditSize(),
-                AuditCeiling:   respond.MaxAuditBytes,
-        })
+	h.mu.Lock()
+	m := h.respond
+	ops, prot, auditPath := h.respondOpsPath, h.respondProtPath, h.respondAuditPath
+	h.mu.Unlock()
+	if m == nil {
+		http.NotFound(w, r)
+		return
+	}
+	writeJSON(w, respondStatePayload{
+		Armed:          true,
+		Signal:         respond.Signal,
+		OperatorsCount: m.OperatorsCount(),
+		ProtectedCount: m.ProtectedCount(),
+		OperatorsPath:  ops,
+		ProtectedPath:  prot,
+		AuditPath:      auditPath,
+		AuditSize:      m.AuditSize(),
+		AuditCeiling:   respond.MaxAuditBytes,
+	})
 }
 
 // respondAuditPayload is the GET /api/respond/audit wire contract: the
@@ -81,39 +81,39 @@ func (h *Hub) handleRespondState(w http.ResponseWriter, r *http.Request) {
 // not records yet (torn tail, malformed) and whether older records
 // exist beyond the scan window.
 type respondAuditPayload struct {
-        Records   []respond.Record `json:"records"`
-        Skipped   int              `json:"skipped"`
-        Truncated bool             `json:"truncated"`
+	Records   []respond.Record `json:"records"`
+	Skipped   int              `json:"skipped"`
+	Truncated bool             `json:"truncated"`
 }
 
 func (h *Hub) handleRespondAudit(w http.ResponseWriter, r *http.Request) {
-        h.mu.Lock()
-        m := h.respond
-        auditPath := h.respondAuditPath
-        h.mu.Unlock()
-        if m == nil {
-                http.NotFound(w, r)
-                return
-        }
-        limit := limitFrom(r, respondAuditDefaultLimit)
-        if limit > respondAuditMaxLimit {
-                limit = respondAuditMaxLimit
-        }
-        if auditPath == "" {
-                // armed implies an opened audit file, so this is defensive
-                // honesty, not a reachable state: never answer invented data
-                // over a wiring gap
-                http.Error(w, "respond audit path unknown", http.StatusInternalServerError)
-                return
-        }
-        records, skipped, truncated, err := respond.ReadAuditTail(auditPath, limit)
-        if err != nil {
-                // full detail to the log, generic body to the client (audit 5.5):
-                // err.Error() embeds server paths (the audit file path among
-                // them) and must not cross the wire
-                log.Printf("[API] respond audit read failed: %v", err)
-                http.Error(w, "respond audit could not be read", http.StatusInternalServerError)
-                return
-        }
-        writeJSON(w, respondAuditPayload{Records: records, Skipped: skipped, Truncated: truncated})
+	h.mu.Lock()
+	m := h.respond
+	auditPath := h.respondAuditPath
+	h.mu.Unlock()
+	if m == nil {
+		http.NotFound(w, r)
+		return
+	}
+	limit := limitFrom(r, respondAuditDefaultLimit)
+	if limit > respondAuditMaxLimit {
+		limit = respondAuditMaxLimit
+	}
+	if auditPath == "" {
+		// armed implies an opened audit file, so this is defensive
+		// honesty, not a reachable state: never answer invented data
+		// over a wiring gap
+		http.Error(w, "respond audit path unknown", http.StatusInternalServerError)
+		return
+	}
+	records, skipped, truncated, err := respond.ReadAuditTail(auditPath, limit)
+	if err != nil {
+		// full detail to the log, generic body to the client (audit 5.5):
+		// err.Error() embeds server paths (the audit file path among
+		// them) and must not cross the wire
+		log.Printf("[API] respond audit read failed: %v", err)
+		http.Error(w, "respond audit could not be read", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, respondAuditPayload{Records: records, Skipped: skipped, Truncated: truncated})
 }

@@ -14,15 +14,15 @@
 package api
 
 import (
-        "encoding/json"
-        "fmt"
-        "io"
-        "log"
-        "net/http"
-        "strings"
-        "time"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"strings"
+	"time"
 
-        "github.com/Ruby570bocadito/bluetardigrade/internal/suppress"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/suppress"
 )
 
 // suppressMaxBodyBytes caps the POST /api/suppressions request body,
@@ -37,10 +37,10 @@ const suppressMaxBodyBytes = 8192
 // bound beyond loopback, because the bearer gate below is the only
 // credential a write request carries.
 func (h *Hub) EnableSuppressionsWrite(path string) {
-        h.mu.Lock()
-        h.suppressPath = path
-        h.writeEnabled = true
-        h.mu.Unlock()
+	h.mu.Lock()
+	h.suppressPath = path
+	h.writeEnabled = true
+	h.mu.Unlock()
 }
 
 // registerSuppressionsWrite wires the write methods onto the existing
@@ -48,8 +48,8 @@ func (h *Hub) EnableSuppressionsWrite(path string) {
 // -api-write they answer a loud, documented 403 - not a 405 - so
 // consumers see the same contract whether or not the flag is on.
 func (h *Hub) registerSuppressionsWrite(mux *http.ServeMux) {
-        mux.HandleFunc("POST /api/suppressions", h.noStore(h.handleSuppressionsCreate))
-        mux.HandleFunc("DELETE /api/suppressions", h.noStore(h.handleSuppressionsDelete))
+	mux.HandleFunc("POST /api/suppressions", h.noStore(h.handleSuppressionsCreate))
+	mux.HandleFunc("DELETE /api/suppressions", h.noStore(h.handleSuppressionsDelete))
 }
 
 // suppressWriteTarget resolves the write surface for one request. It
@@ -58,20 +58,20 @@ func (h *Hub) registerSuppressionsWrite(mux *http.ServeMux) {
 // and 500 when armed but misconfigured (no manager or no path - only
 // reachable in embedded setups that skipped SetSuppressions).
 func (h *Hub) suppressWriteTarget(w http.ResponseWriter) (*suppress.Manager, string, bool) {
-        h.mu.Lock()
-        enabled, path, sup := h.writeEnabled, h.suppressPath, h.suppress
-        h.mu.Unlock()
-        if !enabled {
-                w.Header().Set("Content-Type", "application/json")
-                w.WriteHeader(http.StatusForbidden)
-                fmt.Fprintln(w, `{"error":"api writes are disabled: restart the engine with -api-write (or SF_API_WRITE=1) to allow suppression writes"}`)
-                return nil, "", false
-        }
-        if sup == nil || path == "" {
-                http.Error(w, "suppression write surface misconfigured (no manager or no path)", http.StatusInternalServerError)
-                return nil, "", false
-        }
-        return sup, path, true
+	h.mu.Lock()
+	enabled, path, sup := h.writeEnabled, h.suppressPath, h.suppress
+	h.mu.Unlock()
+	if !enabled {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprintln(w, `{"error":"api writes are disabled: restart the engine with -api-write (or SF_API_WRITE=1) to allow suppression writes"}`)
+		return nil, "", false
+	}
+	if sup == nil || path == "" {
+		http.Error(w, "suppression write surface misconfigured (no manager or no path)", http.StatusInternalServerError)
+		return nil, "", false
+	}
+	return sup, path, true
 }
 
 // reloadDriftedFile picks up manual edits before the read-modify-write.
@@ -84,14 +84,14 @@ func (h *Hub) suppressWriteTarget(w http.ResponseWriter) (*suppress.Manager, str
 // response (no path echo to clients - same standard as the 500).
 // Caller must hold h.supWriteMu.
 func (h *Hub) reloadDriftedFile(w http.ResponseWriter, sup *suppress.Manager, path string) bool {
-        if _, err := sup.ReloadIfChanged(path); err != nil {
-                log.Printf("[API] WRITE suppressions REFUSED (drifted file does not parse): %v", err)
-                w.Header().Set("Content-Type", "application/json")
-                w.WriteHeader(http.StatusConflict)
-                fmt.Fprintln(w, `{"error":"suppressions file changed on disk but does not parse - not overwriting it; fix the YAML first (details in engine log)"}`)
-                return false
-        }
-        return true
+	if _, err := sup.ReloadIfChanged(path); err != nil {
+		log.Printf("[API] WRITE suppressions REFUSED (drifted file does not parse): %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprintln(w, `{"error":"suppressions file changed on disk but does not parse - not overwriting it; fix the YAML first (details in engine log)"}`)
+		return false
+	}
+	return true
 }
 
 // handleSuppressionsCreate adds (or updates) one entry: the body is a
@@ -102,77 +102,77 @@ func (h *Hub) reloadDriftedFile(w http.ResponseWriter, sup *suppress.Manager, pa
 // the change is live immediately and survives restarts, and the next
 // hot-reload tick finds the same file content.
 func (h *Hub) handleSuppressionsCreate(w http.ResponseWriter, r *http.Request) {
-        sup, path, ok := h.suppressWriteTarget(w)
-        if !ok {
-                return
-        }
-        // Same cap as the triage endpoint: a write body is a small
-        // structured request, not a data channel. Without it a single
-        // request could stream an arbitrarily large string into memory
-        // (the decoder buffers whole JSON values) before validation ran.
-        body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, suppressMaxBodyBytes))
-        if err != nil {
-                http.Error(w, "unreadable or oversized request body (8 KiB limit)", http.StatusBadRequest)
-                return
-        }
-        var in suppress.Entry
-        if err := json.Unmarshal(body, &in); err != nil {
-                http.Error(w, fmt.Sprintf("invalid JSON body: %v", err), http.StatusBadRequest)
-                return
-        }
-        in = suppress.NormalizeEntry(in)
-        if err := suppress.ValidateEntry(in); err != nil {
-                http.Error(w, err.Error(), http.StatusBadRequest)
-                return
-        }
+	sup, path, ok := h.suppressWriteTarget(w)
+	if !ok {
+		return
+	}
+	// Same cap as the triage endpoint: a write body is a small
+	// structured request, not a data channel. Without it a single
+	// request could stream an arbitrarily large string into memory
+	// (the decoder buffers whole JSON values) before validation ran.
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, suppressMaxBodyBytes))
+	if err != nil {
+		http.Error(w, "unreadable or oversized request body (8 KiB limit)", http.StatusBadRequest)
+		return
+	}
+	var in suppress.Entry
+	if err := json.Unmarshal(body, &in); err != nil {
+		http.Error(w, fmt.Sprintf("invalid JSON body: %v", err), http.StatusBadRequest)
+		return
+	}
+	in = suppress.NormalizeEntry(in)
+	if err := suppress.ValidateEntry(in); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
-        // All -> mutate -> SaveFile -> LoadFile must be one logical
-        // operation against concurrent POST/DELETE requests; the file lock
-        // is held across the whole sequence.
-        h.supWriteMu.Lock()
-        defer h.supWriteMu.Unlock()
+	// All -> mutate -> SaveFile -> LoadFile must be one logical
+	// operation against concurrent POST/DELETE requests; the file lock
+	// is held across the whole sequence.
+	h.supWriteMu.Lock()
+	defer h.supWriteMu.Unlock()
 
-        if !h.reloadDriftedFile(w, sup, path) {
-                return
-        }
+	if !h.reloadDriftedFile(w, sup, path) {
+		return
+	}
 
-        entries := sup.All()
-        action := "add"
-        for i := range entries {
-                if entries[i].RuleID == in.RuleID && entries[i].Host == in.Host {
-                        entries[i] = in
-                        action = "update"
-                        break
-                }
-        }
-        if action == "add" {
-                // Disk-fill guard: the file is rewritten whole on every
-                // write, so an unbounded entry count would grow it one
-                // request at a time. Operator hand-edits stay uncapped
-                // (the operator already holds the pen).
-                if len(entries) >= suppress.MaxEntries {
-                        http.Error(w, "suppressions set is at the entry cap: remove entries before adding new ones", http.StatusBadRequest)
-                        return
-                }
-                entries = append(entries, in)
-        }
-        if err := suppress.SaveFile(path, entries); err != nil {
-                log.Printf("[API] WRITE suppressions FAILED: %v", err)
-                http.Error(w, "suppressions file not writable (see engine log)", http.StatusInternalServerError)
-                return
-        }
-        if err := sup.LoadFile(path); err != nil {
-                // cannot happen after SaveFile validated the same entries, but a
-                // control that silently stayed stale would be worse than a 500
-                log.Printf("[API] WRITE suppressions reload FAILED: %v", err)
-                http.Error(w, "suppressions reload failed (see engine log)", http.StatusInternalServerError)
-                return
-        }
-        // audit line: the operator must be able to reconstruct who silenced
-        // what and when, exactly as the file comment promises. rule_id and
-        // host are client-controlled: oneLine keeps the log single-line.
-        log.Printf("[API] WRITE suppressions %s rule=%s host=%s by=api (file %s)", action, oneLine(in.RuleID), oneLine(in.Host), path)
-        h.writeSuppressionsSnapshot(w, sup)
+	entries := sup.All()
+	action := "add"
+	for i := range entries {
+		if entries[i].RuleID == in.RuleID && entries[i].Host == in.Host {
+			entries[i] = in
+			action = "update"
+			break
+		}
+	}
+	if action == "add" {
+		// Disk-fill guard: the file is rewritten whole on every
+		// write, so an unbounded entry count would grow it one
+		// request at a time. Operator hand-edits stay uncapped
+		// (the operator already holds the pen).
+		if len(entries) >= suppress.MaxEntries {
+			http.Error(w, "suppressions set is at the entry cap: remove entries before adding new ones", http.StatusBadRequest)
+			return
+		}
+		entries = append(entries, in)
+	}
+	if err := suppress.SaveFile(path, entries); err != nil {
+		log.Printf("[API] WRITE suppressions FAILED: %v", err)
+		http.Error(w, "suppressions file not writable (see engine log)", http.StatusInternalServerError)
+		return
+	}
+	if err := sup.LoadFile(path); err != nil {
+		// cannot happen after SaveFile validated the same entries, but a
+		// control that silently stayed stale would be worse than a 500
+		log.Printf("[API] WRITE suppressions reload FAILED: %v", err)
+		http.Error(w, "suppressions reload failed (see engine log)", http.StatusInternalServerError)
+		return
+	}
+	// audit line: the operator must be able to reconstruct who silenced
+	// what and when, exactly as the file comment promises. rule_id and
+	// host are client-controlled: oneLine keeps the log single-line.
+	log.Printf("[API] WRITE suppressions %s rule=%s host=%s by=api (file %s)", action, oneLine(in.RuleID), oneLine(in.Host), path)
+	h.writeSuppressionsSnapshot(w, sup)
 }
 
 // handleSuppressionsDelete removes every entry matching the exact
@@ -182,60 +182,60 @@ func (h *Hub) handleSuppressionsCreate(w http.ResponseWriter, r *http.Request) {
 // way. 404 when nothing matched, so a stale console view cannot believe
 // it unsilenced something that is still on disk.
 func (h *Hub) handleSuppressionsDelete(w http.ResponseWriter, r *http.Request) {
-        sup, path, ok := h.suppressWriteTarget(w)
-        if !ok {
-                return
-        }
-        q := r.URL.Query()
-        rule := strings.TrimSpace(q.Get("rule_id"))
-        host := strings.ToLower(strings.TrimSpace(q.Get("host")))
-        if rule == "" && host == "" {
-                http.Error(w, "rule_id and host are both empty (nothing would match - fix or delete the entry)", http.StatusBadRequest)
-                return
-        }
+	sup, path, ok := h.suppressWriteTarget(w)
+	if !ok {
+		return
+	}
+	q := r.URL.Query()
+	rule := strings.TrimSpace(q.Get("rule_id"))
+	host := strings.ToLower(strings.TrimSpace(q.Get("host")))
+	if rule == "" && host == "" {
+		http.Error(w, "rule_id and host are both empty (nothing would match - fix or delete the entry)", http.StatusBadRequest)
+		return
+	}
 
-        h.supWriteMu.Lock()
-        defer h.supWriteMu.Unlock()
+	h.supWriteMu.Lock()
+	defer h.supWriteMu.Unlock()
 
-        if !h.reloadDriftedFile(w, sup, path) {
-                return
-        }
+	if !h.reloadDriftedFile(w, sup, path) {
+		return
+	}
 
-        entries := sup.All()
-        kept := make([]suppress.Entry, 0, len(entries))
-        removed := 0
-        for _, e := range entries {
-                if e.RuleID == rule && e.Host == host {
-                        removed++
-                        continue
-                }
-                kept = append(kept, e)
-        }
-        if removed == 0 {
-                writeErr(w, http.StatusNotFound, fmt.Sprintf("no suppression entry matches rule_id=%q host=%q", rule, host))
-                return
-        }
-        if err := suppress.SaveFile(path, kept); err != nil {
-                log.Printf("[API] WRITE suppressions FAILED: %v", err)
-                http.Error(w, "suppressions file not writable (see engine log)", http.StatusInternalServerError)
-                return
-        }
-        if err := sup.LoadFile(path); err != nil {
-                log.Printf("[API] WRITE suppressions reload FAILED: %v", err)
-                http.Error(w, "suppressions reload failed (see engine log)", http.StatusInternalServerError)
-                return
-        }
-        log.Printf("[API] WRITE suppressions remove rule=%s host=%s by=api (%d removed, file %s)", oneLine(rule), oneLine(host), removed, path)
-        h.writeSuppressionsSnapshot(w, sup)
+	entries := sup.All()
+	kept := make([]suppress.Entry, 0, len(entries))
+	removed := 0
+	for _, e := range entries {
+		if e.RuleID == rule && e.Host == host {
+			removed++
+			continue
+		}
+		kept = append(kept, e)
+	}
+	if removed == 0 {
+		writeErr(w, http.StatusNotFound, fmt.Sprintf("no suppression entry matches rule_id=%q host=%q", rule, host))
+		return
+	}
+	if err := suppress.SaveFile(path, kept); err != nil {
+		log.Printf("[API] WRITE suppressions FAILED: %v", err)
+		http.Error(w, "suppressions file not writable (see engine log)", http.StatusInternalServerError)
+		return
+	}
+	if err := sup.LoadFile(path); err != nil {
+		log.Printf("[API] WRITE suppressions reload FAILED: %v", err)
+		http.Error(w, "suppressions reload failed (see engine log)", http.StatusInternalServerError)
+		return
+	}
+	log.Printf("[API] WRITE suppressions remove rule=%s host=%s by=api (%d removed, file %s)", oneLine(rule), oneLine(host), removed, path)
+	h.writeSuppressionsSnapshot(w, sup)
 }
 
 // writeSuppressionsSnapshot answers with the same shape as
 // GET /api/suppressions, so a console round-trip needs one payload
 // shape only: the new state, not an echo of the request.
 func (h *Hub) writeSuppressionsSnapshot(w http.ResponseWriter, sup *suppress.Manager) {
-        now := time.Now()
-        writeJSON(w, suppressPayload{
-                Active:  sup.Count(now),
-                Entries: sup.Snapshot(now),
-        })
+	now := time.Now()
+	writeJSON(w, suppressPayload{
+		Active:  sup.Count(now),
+		Entries: sup.Snapshot(now),
+	})
 }
