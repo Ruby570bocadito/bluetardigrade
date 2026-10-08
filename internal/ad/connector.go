@@ -50,6 +50,10 @@ type Connector struct {
 
 	mu     sync.Mutex
 	status Status
+	// started is closed by Run the moment cancel is assigned (under
+	// mu): Stop waits on it before reading cancel, closing the
+	// Run/Stop race (sesión 100agentes-2, agente 13).
+	started chan struct{}
 
 	cancel context.CancelFunc
 	// started closes once Run has fully stopped (tests wait on it).
@@ -80,6 +84,7 @@ func New(cfg *Config, st *store.Store, logger *log.Logger, sensorHosts func() []
 		sensorHosts: sensorHosts,
 		status:      Status{Warnings: []string{}},
 		done:        make(chan struct{}),
+		started:     make(chan struct{}),
 	}, nil
 }
 
@@ -108,7 +113,16 @@ func (c *Connector) setStatus(fn func(*Status)) {
 // background. Calling Run twice is a programming error (use one
 // connector per engine).
 func (c *Connector) Run(ctx context.Context) error {
-	ctx, c.cancel = context.WithCancel(ctx)
+	// started cierra el hueco Run/Stop (sesión 100agentes-2, agente
+	// 13, P2): Stop corriendo antes de que Run asigne c.cancel lo
+	// saltaba y se bloqueaba en <-c.done hasta el apagado — el
+	// conector obsoleto seguía sincronizando y pisando el snapshot
+	// del nuevo (y había data race real sobre el campo cancel).
+	c.mu.Lock()
+	ctx, cancel := context.WithCancel(ctx)
+	c.cancel = cancel
+	close(c.started)
+	c.mu.Unlock()
 	if err := c.SyncOnce(ctx); err != nil {
 		// The first failure is logged and surfaced in the status, not
 		// fatal: a domain controller briefly offline at engine start
@@ -140,10 +154,16 @@ func (c *Connector) Run(ctx context.Context) error {
 }
 
 // Stop cancels the loop and waits for it (used on shutdown paths and
-// by tests). Safe to call once; Run must have been called.
+// by tests). Safe to call once; Run must have been called. Stop issued
+// BEFORE Run finishes assigning the cancel: it waits for `started`
+// first, so the cancel can never be skipped.
 func (c *Connector) Stop() {
-	if c.cancel != nil {
-		c.cancel()
+	<-c.started
+	c.mu.Lock()
+	cancel := c.cancel
+	c.mu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
 	<-c.done
 }

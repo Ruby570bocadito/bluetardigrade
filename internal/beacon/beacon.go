@@ -85,6 +85,7 @@ const (
 	// machine scanning unique destinations cannot fill the table the
 	// others' beacons live in. Dead evidence is reclaimed before the
 	// refusal, so a host whose keys all went stale recovers itself.
+	reclaimEvery   = time.Second // rate limit for quota-path sweeps (sesión 100agentes-2)
 	MaxKeysPerHost = MaxKeys / 4
 
 	// ringCap caps the timestamps kept per key. 64 samples give a
@@ -203,6 +204,12 @@ type Manager struct {
 	quotaHosts    map[string]uint64 // refusal tally by host, capped
 	emit          func(alert.Alert)
 	fired         uint64
+	// lastReclaim rate-limits the quota-path reclaim sweep (sesión
+	// 100agentes-2, agente 19): un host en su cuota pagaba un
+	// reclaim O(MaxKeys=8192) + rebuild de byID POR EVENTO — un
+	// escáner con destinos únicos sostenidos convertía la cuota en
+	// un hotspot de CPU.
+	lastReclaim time.Time
 }
 
 // LoadFile compiles the profiles in one YAML file. emit is called
@@ -368,7 +375,10 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 			// live in. Reclaim runs first so a host whose keys all
 			// went stale recovers itself instead of staying blocked.
 			if m.perHost[host] >= MaxKeysPerHost {
-				m.reclaimLocked(c, now)
+				if now.Sub(m.lastReclaim) >= reclaimEvery {
+					m.lastReclaim = now
+					m.reclaimLocked(c, now)
+				}
 				if m.perHost[host] >= MaxKeysPerHost {
 					m.quotaRejectLocked(host)
 					continue

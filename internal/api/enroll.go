@@ -77,7 +77,7 @@ func (h *Hub) handleEnrollState(w http.ResponseWriter, r *http.Request) {
 		Pending: pending,
 		Active:  active,
 		Usable:  usable,
-		Writes:  h.token != "",
+		Writes:  h.tokenString() != "",
 		Tokens:  reg.Tokens(),
 		Hosts:   reg.Hosts(),
 	})
@@ -91,7 +91,7 @@ func (h *Hub) enrollWriteTarget(w http.ResponseWriter) (*enroll.Registry, bool) 
 		writeEnrollError(w, http.StatusNotFound, "enrollment is off: start the engine with -enroll <file>")
 		return nil, false
 	}
-	if h.token == "" {
+	if h.tokenString() == "" {
 		writeEnrollError(w, http.StatusForbidden, "enrollment writes need an API token: start the engine with -api-token or SF_API_TOKEN")
 		return nil, false
 	}

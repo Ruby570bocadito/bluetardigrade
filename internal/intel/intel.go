@@ -36,6 +36,10 @@ const (
 	maxLineBytes    = 4096
 	cooldown        = 10 * time.Minute
 	maxCooldownKeys = 100_000
+	// reclaimEvery rate-limits the cooldown-map eviction sweep (same
+	// pattern as correlate's reclaimEvery): a full map must not turn
+	// every Allow into a full-map scan.
+	reclaimEvery    = time.Second
 	maxHitsPerEvent = 3
 )
 
@@ -76,6 +80,11 @@ type Matcher struct {
 	cmu      sync.Mutex
 	lastSeen map[string]time.Time // list|value|host -> last alert
 	hits     uint64               // hits allowed to alert since start (under cmu)
+	// lastReclaim rate-limits the full-map eviction sweep (sesión
+	// 100agentes-2, agentes 13+19): con el mapa lleno, cada Allow
+	// recorría 2×100k entradas — una inundación de indicadores únicos
+	// serializaba ~200k iteraciones por evento bajo cmu.
+	lastReclaim time.Time
 }
 
 // Load reads every *.txt and *.list file of dir. A missing directory
@@ -188,15 +197,35 @@ func (m *Matcher) Match(ev *model.Event) []Hit {
 			}
 		}
 	}
-	for field, hashes := range map[string]model.Hashes{"process.hashes": processHashes(ev), "file.hashes": fileHashes(ev)} {
-		for _, v := range hashes {
-			v = strings.ToLower(strings.TrimSpace(v))
+	// Orden determinista (sesión 100agentes-2, agente 19, P3): el
+	// map literal hacía aleatorio qué hash llegaba al tope de
+	// maxHitsPerEvent, y model.Hashes es un mapa — se itera por
+	// clave ordenada.
+	for _, field := range []string{"file.hashes", "process.hashes"} {
+		hashes := fileHashes(ev)
+		if field == "process.hashes" {
+			hashes = processHashes(ev)
+		}
+		for _, kind := range sortedHashKinds(hashes) {
+			v := strings.ToLower(strings.TrimSpace(hashes[kind]))
 			if list, ok := m.hashes[v]; ok {
 				add(Hit{List: list, Kind: KindHash, Value: v, Field: field})
 			}
 		}
 	}
 	return hits
+}
+
+// sortedHashKinds returns the hash map keys sorted so hit reporting is
+// deterministic when maxHitsPerEvent truncates (map iteration order is
+// otherwise random: which hash surfaced changed run to run).
+func sortedHashKinds(h model.Hashes) []string {
+	kinds := make([]string, 0, len(h))
+	for k := range h {
+		kinds = append(kinds, k)
+	}
+	sort.Strings(kinds)
+	return kinds
 }
 
 // Allow reports whether a hit on host may raise an alert now: the same
@@ -218,22 +247,45 @@ func (m *Matcher) Allow(h Hit, host string, now time.Time) bool {
 		return false
 	}
 	if len(m.lastSeen) >= maxCooldownKeys {
-		for k, at := range m.lastSeen {
-			if now.Sub(at) >= cooldown {
-				delete(m.lastSeen, k)
+		if now.Sub(m.lastReclaim) >= reclaimEvery {
+			// Ventana de barrido completa: expira vencidos y, si sigue
+			// lleno, expulsa el más viejo (mismo contrato LRU del
+			// audit 5.13 #3, ahora como máximo 1 sweep/segundo).
+			m.lastReclaim = now
+			for k, at := range m.lastSeen {
+				if now.Sub(at) >= cooldown {
+					delete(m.lastSeen, k)
+				}
 			}
-		}
-		for len(m.lastSeen) >= maxCooldownKeys {
+			for len(m.lastSeen) >= maxCooldownKeys {
+				oldest, oldestAt := "", now
+				for k, at := range m.lastSeen {
+					if oldest == "" || at.Before(oldestAt) {
+						oldest, oldestAt = k, at
+					}
+				}
+				if oldest == "" {
+					break
+				}
+				delete(m.lastSeen, oldest)
+			}
+		} else {
+			// Entre barridos: expulsa el más viejo de una muestra
+			// acotada (64 claves) — el mapa sigue acotado con coste
+			// O(64) por evento en lugar de O(100k).
 			oldest, oldestAt := "", now
+			n := 0
 			for k, at := range m.lastSeen {
 				if oldest == "" || at.Before(oldestAt) {
 					oldest, oldestAt = k, at
 				}
+				if n++; n >= 64 {
+					break
+				}
 			}
-			if oldest == "" {
-				break
+			if oldest != "" {
+				delete(m.lastSeen, oldest)
 			}
-			delete(m.lastSeen, oldest)
 		}
 	}
 	m.lastSeen[key] = now

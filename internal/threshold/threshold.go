@@ -90,6 +90,7 @@ const (
 	MaxRules       = 64
 	MaxKeys        = 8192
 	MaxKeysPerRule = MaxKeys / 4 // dictamen Q2: 25% quota, no rule may monopolize
+	purgeEvery     = time.Second // rate limit for quota-path sweeps (sesión 100agentes-2)
 	MaxKeysPerHost = MaxKeys / 4 // v1.1 cuotas por equipo: the same ceiling per HOST, one noisy
 	// machine may not monopolize the shared table either
 	MaxCount     = 4096
@@ -162,6 +163,9 @@ type Detector struct {
 	perHost       map[string]int
 	quotaRejected uint64            // host-quota refusals since startup
 	quotaHosts    map[string]uint64 // refusal tally by host, capped
+	// lastPurge rate-limits the quota-path purge sweep (sesión
+	// 100agentes-2, agente 19; paridad con beacon).
+	lastPurge time.Time
 
 	emit  func(alert.Alert)
 	fired atomic.Uint64
@@ -360,7 +364,16 @@ func (d *Detector) Observe(ev *model.Event, now time.Time) {
 		}
 		group := ""
 		if c.def.Threshold.GroupBy != "" {
-			group = rules.AsString(rules.Lookup(fields, c.def.Threshold.GroupBy))
+			if v := rules.Lookup(fields, c.def.Threshold.GroupBy); v != nil {
+				group = rules.AsString(v)
+			} else {
+				// El campo group_by no existe en el evento (sesión
+				// 100agentes-2, agente 19, P3): ANTES agregaba todos
+				// esos eventos en la clave "" — un falso volumétrico
+				// colectivo podía alcanzar el umbral. Un evento sin
+				// su clave de agrupación no cuenta para NINGÚN grupo.
+				continue
+			}
 		}
 		k := key{ruleID: c.def.ID, host: host, group: group}
 		st := d.admitLocked(k, c, t, now)
@@ -436,7 +449,10 @@ func (d *Detector) admitLocked(k key, _ *compiled, t, now time.Time) *keyState {
 	// global cap to fill (the per-rule ceiling above stays a pure
 	// ceiling: that semantics is the audited adenda behavior).
 	if d.perHost[k.host] >= MaxKeysPerHost {
-		d.purgeExpiredLocked(now)
+		if now.Sub(d.lastPurge) >= purgeEvery {
+			d.lastPurge = now
+			d.purgeExpiredLocked(now)
+		}
 		if d.perHost[k.host] >= MaxKeysPerHost {
 			d.quotaRejectLocked(k.host)
 			return nil

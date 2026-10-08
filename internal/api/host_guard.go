@@ -18,7 +18,7 @@ import (
 func (h *Hub) guardRebinding(next http.Handler) http.Handler {
 	loopback := listenerIsLoopback(h.listener)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !loopback || h.token != "" || hostIsLocal(r.Host) {
+		if !loopback || h.tokenString() != "" || hostIsLocal(r.Host) {
 			next.ServeHTTP(w, r)
 			return
 		}

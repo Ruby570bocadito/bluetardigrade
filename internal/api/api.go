@@ -70,7 +70,11 @@ const (
 type Hub struct {
 	listener net.Listener
 	srv      *http.Server
-	token    string            // bearer token for /api/* (empty = no auth)
+	// token is atomic (sesión 100agentes-2, agente 13): SetToken writes
+	// it and the auth middleware reads it per request without sync; the
+	// "call before Run" contract stays, but the field is now race-free
+	// even if a caller re-arms hot.
+	token    atomic.Value      // string; bearer token for /api/* (empty = no auth)
 	tls      bool              // true when the listener is TLS-wrapped
 	reloader *tlsutil.Reloader // hot-rotation state; nil on plain listeners
 
@@ -386,11 +390,22 @@ func (h *Hub) SetIngestIdentityStats(fn func() (identities int, violations uint6
 // ingest auth: a listener reachable beyond loopback must demand an
 // explicit credential - the API hands out every event and alert, so an
 // open port on a shared network is a silent data leak.
-func (h *Hub) SetToken(token string) { h.token = token }
+// SetToken stores the bearer credential. Atomic since sesión
+// 100agentes-2 (agente 13): the contract is still "call before Run",
+// but a raw string read per request was a data race the moment anyone
+// re-armed a token hot — the same standard the audit applied to emit/
+// prepare under mu.
+func (h *Hub) SetToken(token string) { h.token.Store(token) }
 
 // TLS reports whether the API listener is TLS-wrapped (startup
 // banners and tests).
 func (h *Hub) TLS() bool { return h.tls }
+
+// tokenString returns the current bearer credential ("" when unset).
+func (h *Hub) tokenString() string {
+	s, _ := h.token.Load().(string)
+	return s
+}
 
 // CertReloads returns how many times the API certificate was rotated
 // in place (file mtime change); 0 on plain listeners.
@@ -482,14 +497,14 @@ func remoteIP(addr string) string {
 // volume as one.
 func (h *Hub) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if h.token == "" || r.URL.Path == "/api/health" {
+		if h.tokenString() == "" || r.URL.Path == "/api/health" {
 			next.ServeHTTP(w, r)
 			return
 		}
 		got := r.Header.Get("Authorization")
 		const prefix = "Bearer "
 		ok := len(got) > len(prefix) && strings.EqualFold(got[:len(prefix)], prefix) &&
-			subtle.ConstantTimeCompare([]byte(got[len(prefix):]), []byte(h.token)) == 1
+			subtle.ConstantTimeCompare([]byte(got[len(prefix):]), []byte(h.tokenString())) == 1
 		if !ok {
 			if h.tooManyAuthFails(r.RemoteAddr) {
 				w.Header().Set("Content-Type", "application/json")
@@ -1090,15 +1105,22 @@ func (h *Hub) statsSnapshot() statsPayload {
 	tFn := h.threshold
 	quotaFn := h.quotaStats
 	version := h.version
-	rulesCount, rulesTypes := 0, []string{}
-	if h.rules != nil {
-		rulesCount = h.rules.Count()
-		rulesTypes = h.rules.Types()
-	}
+	// rulesCount/Types se capturan aquí y se llaman DESPUÉS de Unlock
+	// (sesión 100agentes-2, agente 13): Count()/Types() toman el
+	// RLock del engine de reglas, y era la ÚNICA llamada a otro
+	// manager hecha bajo h.mu — el mismo deadlock latente que la regla
+	// uniforme de este fichero existe para prevenir (handleRules ya
+	// capturaba-llamaba correctamente).
+	rulesM := h.rules
 	sup := h.suppress
 	knownM := h.known
 	intelM, base := h.intel, h.baseline
 	h.mu.Unlock()
+	rulesCount, rulesTypes := 0, []string{}
+	if rulesM != nil {
+		rulesCount = rulesM.Count()
+		rulesTypes = rulesM.Types()
+	}
 	// The correlator closure is called AFTER h.mu.Unlock, never under
 	// it: the real closure enters correlate.Manager's mutex (States,
 	// Count), and the chain-completion path runs the lock order the

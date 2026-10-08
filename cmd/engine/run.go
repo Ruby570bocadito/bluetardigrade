@@ -619,9 +619,19 @@ func runEngine(o *options, interactive bool) error {
 				if aerr != nil {
 					log.Fatalf("[ENGINE] %v", aerr)
 				}
-				if aerr := adConn.Run(ctx); aerr != nil {
-					log.Printf("[ENGINE] active directory: %v", aerr)
-				}
+				// El primer sync corre en goroutine (sesión
+				// 100agentes-2, agente 14, P2): Run era síncrono y un
+				// DC lento (dial 10s + búsquedas paginadas de minutos)
+				// congelaba el arranque del engine completo — ingest ya
+				// aceptaba, pero el hub/API no llegaban a arrancar y el
+				// buffer de eventos podía llenarse. El hot-swap de
+				// abajo ya lanzaba Run en background; el arranque hace
+				// lo mismo.
+				go func() {
+					if rerr := adConn.Run(ctx); rerr != nil {
+						log.Printf("[ENGINE] active directory: %v", rerr)
+					}
+				}()
 				defer adConn.Stop()
 
 				// AD-6: the settings surface commits a new config and
@@ -924,10 +934,18 @@ func runEngine(o *options, interactive bool) error {
 	if bcn != nil {
 		bcn.SetEmit(emitAllowlisted)
 	}
+	// tickerWG (sesión 100agentes-2, agente 14): las goroutines de
+	// mantenimiento (fleet, reload, sweeps, prune) no se esperaban al
+	// apagar — un tick en vuelo podía escribir en la store YA cerrada
+	// (fallo logueado) y sobrevivir a runEngine. Se espera en la ruta
+	// de shutdown, antes de que los defers cierren la store.
+	var tickerWG sync.WaitGroup
 	// one "sensor sin señal" alert per outage of a sensor that sends
 	// heartbeats; it goes through the same suppression gate, so a
 	// planned maintenance can be silenced per host
+	tickerWG.Add(1)
 	go func() {
+		defer tickerWG.Done()
 		const every = 30 * time.Second
 		t := time.NewTicker(every)
 		defer t.Stop()
@@ -988,7 +1006,9 @@ func runEngine(o *options, interactive bool) error {
 	// still evict on terminate and on the per-host cap). The correlator
 	// sweep rides the same cadence.
 	if o.reloadEvery > 0 {
+		tickerWG.Add(1)
 		go func() {
+			defer tickerWG.Done()
 			t := time.NewTicker(o.reloadEvery)
 			defer t.Stop()
 			for {
@@ -1033,7 +1053,9 @@ func runEngine(o *options, interactive bool) error {
 		if thr != nil {
 			thrRep.count = thr.Count()
 		}
+		tickerWG.Add(1)
 		go func() {
+			defer tickerWG.Done()
 			t := time.NewTicker(o.reloadEvery)
 			defer t.Stop()
 			for {
@@ -1128,7 +1150,9 @@ func runEngine(o *options, interactive bool) error {
 	}
 
 	if st != nil && o.storeRetention > 0 {
+		tickerWG.Add(1)
 		go func() {
+			defer tickerWG.Done()
 			t := time.NewTicker(5 * time.Minute)
 			defer t.Stop()
 			for {
@@ -1318,6 +1342,10 @@ func runEngine(o *options, interactive bool) error {
 	if splunkSink != nil {
 		splunkSink.Wait()
 	}
+	// Los ticks de mantenimiento salieron con ctx.Done (stop() arriba):
+	// esperarlos garantiza que ningún prune/sweep tarde una escritura
+	// sobre la store que los defers van a cerrar.
+	tickerWG.Wait()
 
 	fmt.Printf("[ENGINE] processed %d events in %s (ingested=%d dropped=%d)\n",
 		processed, time.Since(start).Round(time.Millisecond),

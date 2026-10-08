@@ -83,25 +83,32 @@ func NewReloader(certFile, keyFile string) (*Reloader, error) {
 // branch: a handshake that would fail outright leaves the client with
 // a verification error anyway, while the listener keeps its current
 // state clean and countable.
+// The disk I/O happens OUTSIDE the lock (sesión 100agentes-2, agente
+// 13): this callback runs on EVERY TLS handshake, and the previous
+// version held mu across two os.Stat plus a full LoadX509KeyPair —
+// slow disk or certificate rotation serialized/stalled every
+// handshake (SSE reconnect storm included). Only the cache read and
+// the swap take the mutex.
 func (r *Reloader) getCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	ci, err := os.Stat(r.certFile)
 	if err != nil {
 		r.errors.Add(1)
 		r.emit("reload failed: stat cert")
-		return r.cert, nil
+		return r.current(), nil
 	}
 	ki, err := os.Stat(r.keyFile)
 	if err != nil {
 		r.errors.Add(1)
 		r.emit("reload failed: stat key")
-		return r.cert, nil
+		return r.current(), nil
 	}
 	cm, km := ci.ModTime(), ki.ModTime()
-	if cm.Equal(r.certMtime) && km.Equal(r.keyMtime) {
-		return r.cert, nil // cache hit: nothing changed on disk
+
+	r.mu.Lock()
+	cached, ccm, ckm := r.cert, r.certMtime, r.keyMtime
+	r.mu.Unlock()
+	if cm.Equal(ccm) && km.Equal(ckm) {
+		return cached, nil // cache hit: nothing changed on disk
 	}
 
 	pair, err := tls.LoadX509KeyPair(r.certFile, r.keyFile)
@@ -111,14 +118,26 @@ func (r *Reloader) getCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error
 		// remember the mtimes we failed on so a handshake storm does
 		// not retry the broken pair on every connection: the retry
 		// happens when the operator fixes a file and mtime moves again
+		r.mu.Lock()
 		r.certMtime, r.keyMtime = cm, km
-		return r.cert, nil
+		r.mu.Unlock()
+		return cached, nil
 	}
+	r.mu.Lock()
 	r.cert = &pair
 	r.certMtime, r.keyMtime = cm, km
 	r.reloads.Add(1)
+	r.mu.Unlock()
 	r.emit("certificate reloaded")
-	return r.cert, nil
+	return &pair, nil
+}
+
+// current returns the cached certificate under mu (fail-safe branch of
+// the handshake callback).
+func (r *Reloader) current() *tls.Certificate {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.cert
 }
 
 // GetCertificate is the tls.Config callback exported for listeners
