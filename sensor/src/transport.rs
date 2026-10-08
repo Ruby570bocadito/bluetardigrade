@@ -231,7 +231,18 @@ pub fn is_transient(err: &anyhow::Error) -> bool {
 /// Dial and, when a CA bundle is configured, upgrade to TLS, with the
 /// handshake-phase timeouts set on the raw socket so the TLS handshake
 /// and the first exchange are bounded by the same deadline.
+///
+/// Plain is refused for anything beyond loopback (sesión 100agentes-2,
+/// agente 07, P1): con `--addr` de flota real el `AUTH <token>` y TODA
+/// la telemetría viajaban en claro POR DEFECTO y no había modo que lo
+/// exigiera. Loopback queda exento (el riesgo es local y el engine
+/// local nunca cifró por defecto); flota exige --tls-ca.
 fn open(addr: &str, tls_ca: Option<&Path>) -> Result<Stream> {
+    if tls_ca.is_none() && !is_loopback_addr(addr) {
+        bail!(
+            "engine {addr} is not loopback and no --tls-ca was configured: refusing to send the ingest token and telemetry in plain text (configure --tls-ca for fleet deployments)"
+        );
+    }
     let tcp = TcpStream::connect(addr).map_err(|source| EngineUnreachable {
         addr: addr.to_string(),
         source,
@@ -242,6 +253,20 @@ fn open(addr: &str, tls_ca: Option<&Path>) -> Result<Stream> {
         None => Stream::Plain(tcp),
         Some(ca) => Stream::Tls(Box::new(tls_connect(addr, tcp, ca)?)),
     })
+}
+
+/// is_loopback_addr reports whether the host part of `host:port` is a
+/// loopback address (literal) or resolves to one.
+fn is_loopback_addr(addr: &str) -> bool {
+    let host = addr.rsplit_once(':').map(|(h, _)| h).unwrap_or(addr);
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    if host == "localhost" {
+        return true;
+    }
+    match host.parse::<std::net::IpAddr>() {
+        Ok(ip) => ip.is_loopback(),
+        Err(_) => false,
+    }
 }
 
 /// What the engine answers to ENROLL.
@@ -292,11 +317,24 @@ fn dial(addr: &str, token: Option<&str>, tls_ca: Option<&Path>) -> Result<Stream
         .with_context(|| format!("AUTH handshake to {addr}"))?;
     let ack = read_ack_line(&mut stream)
         .with_context(|| format!("reading AUTH ack from {addr}"))?;
-    if ack.contains("\"ack\":\"pending\"") {
+    // Veredicto tipado (sesión 100agentes-2, agente 07, P3): el
+    // contains() daba por autenticada cualquier respuesta malformada
+    // que contuviera la subcadena \"ack\":\"ok\" — ENROLL ya parsea
+    // con serde; AUTH hace lo mismo ahora.
+    #[derive(serde::Deserialize)]
+    struct AuthAck {
+        #[serde(default)]
+        ack: String,
+        #[serde(default)]
+        error: String,
+    }
+    let parsed: AuthAck = serde_json::from_str(&ack)
+        .with_context(|| format!("engine {addr} answered AUTH with something unexpected: {ack}"))?;
+    if parsed.ack == "pending" {
         return Err(PendingApproval { addr: addr.to_string() }.into());
     }
-    if !ack.contains("\"ack\":\"ok\"") {
-        bail!("engine {addr} rejected the ingest token: {ack}");
+    if parsed.ack != "ok" {
+        bail!("engine {addr} rejected the ingest token: {}", if parsed.error.is_empty() { &ack } else { &parsed.error });
     }
     // back to blocking semantics for the event stream: clears both the
     // read and write timeouts set for the handshake
@@ -400,17 +438,32 @@ fn read_ack_line(stream: &mut Stream) -> Result<String> {
 }
 
 fn read_line_capped(stream: &mut Stream, cap: usize) -> Result<String> {
+    // Deadline ABSOLUTO (sesión 100agentes-2, agente 07, P3): el
+    // timeout de 10 s se renovaba con CADA byte, así que un engine que
+    // goteaba 1 byte/10 s retenía el hilo de entrega hasta 256x10 s
+    // (~42 min) por intento, indefinidamente. Lectura por ráfagas de
+    // 256 bytes: ~1 syscall por ack en vez de una por carácter.
+    let deadline = std::time::Instant::now() + AUTH_TIMEOUT;
     let mut buf = Vec::with_capacity(64);
-    let mut byte = [0u8; 1];
+    let mut chunk = [0u8; 256];
     while buf.len() < cap {
-        let n = stream.read(&mut byte)?;
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            bail!("engine ack did not arrive within the handshake deadline");
+        }
+        stream.set_timeouts(Some(remaining))?;
+        let n = stream.read(&mut chunk)?;
         if n == 0 {
             bail!("connection closed before an ack arrived");
         }
-        if byte[0] == b'\n' {
+        if let Some(pos) = chunk[..n].iter().position(|&b| b == b'\n') {
+            buf.extend_from_slice(&chunk[..pos]);
+            if buf.len() > cap {
+                bail!("ack line exceeded {cap} bytes");
+            }
             return Ok(String::from_utf8_lossy(&buf).into_owned());
         }
-        buf.push(byte[0]);
+        buf.extend_from_slice(&chunk[..n]);
     }
     bail!("ack line exceeded {cap} bytes")
 }

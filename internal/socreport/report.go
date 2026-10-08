@@ -192,19 +192,19 @@ func fence(value, language string) string {
 // and symlinks are never overwritten, including during a concurrent race.
 func WriteNew(path string, raw []byte) error {
 	parent := filepath.Dir(path)
-	if err := os.MkdirAll(parent, 0700); err != nil {
-		return errors.New("cannot create report directory")
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return fmt.Errorf("create report dir: %w", err)
 	}
 	file, err := os.CreateTemp(parent, ".soc-report-*")
 	if err != nil {
-		return errors.New("cannot prepare report file")
+		return fmt.Errorf("prepare report file: %w", err)
 	}
 	defer os.Remove(file.Name())
 	_, writeErr := file.Write(raw)
 	syncErr := file.Sync()
 	closeErr := file.Close()
 	if writeErr != nil || syncErr != nil || closeErr != nil {
-		return errors.New("cannot complete report file")
+		return fmt.Errorf("complete report file: write=%v sync=%v close=%v", writeErr, syncErr, closeErr)
 	}
 	if err := os.Link(file.Name(), path); err != nil {
 		return errors.New("cannot create report: destination already exists or filesystem does not support exclusive hard links")

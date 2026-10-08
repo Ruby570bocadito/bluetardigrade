@@ -24,8 +24,12 @@ MODULE  := github.com/Ruby570bocadito/bluetardigrade
 
 all: build
 
+# Dev run: loopback by default (a :7777 bind without a token exposes
+# event ingestion to the LAN — the engine prints exactly that warning).
+# Export SF_INGEST_TOKEN or add -addr 0.0.0.0 -token ... explicitly if
+# you really mean it.
 run-engine:
-	$(GO) run ./cmd/engine -addr :7777 -rules ./rules -v
+	$(GO) run ./cmd/engine -addr 127.0.0.1:7777 -rules ./rules
 
 build:
 	$(GO) build -o $(BIN_DIR)/engine ./cmd/engine

@@ -25,6 +25,9 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   output: "standalone",
   reactStrictMode: true,
+  // No framework/version fingerprint on the wire (sesión 100agentes-2,
+  // agente 12): the Go API sends no Server header either.
+  poweredByHeader: false,
   // Browser source maps for the production chunks: when an operator's
   // browser logs a console error, the trace arrives symbolized instead
   // of minified (Lighthouse best-practices: valid-source-maps). Maps

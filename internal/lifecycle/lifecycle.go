@@ -285,7 +285,11 @@ func (s *Store) persistLocked() error {
 		return err
 	}
 	data = append(data, '\n')
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+	// 0700 (sesión 100agentes-2, agente 6): estandar de la casa para
+	// directorios con evidencia (forensic, enroll, socreport) — en
+	// hosts POSIX multiusuario 0755 lista rutas y nombres de fichero
+	// de triage a cualquier cuenta local.
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return err
 	}
 	// A unique temp name (create-then-rename) instead of the fixed
@@ -315,13 +319,19 @@ func (s *Store) persistLocked() error {
 	// as the forensic bundles — after a power cut the rename must not
 	// reach the directory before the data does, or the whole triage
 	// state file comes back truncated/empty.
-	if f, err := os.Open(tmpName); err == nil {
-		if err := f.Sync(); err != nil {
-			f.Close()
-			os.Remove(tmpName)
-			return err
-		}
-		f.Close()
+	// Un fallo del Open YA NO salta el fsync en silencio (sesión
+	// 100agentes-2, agente 15): la invariante de durabilidad del
+	// audit 5.4 se derogaba sin ruido y el rename procedia igual.
+	fh, err := os.Open(tmpName)
+	if err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("lifecycle: abrir para fsync: %w", err)
 	}
+	if err := fh.Sync(); err != nil {
+		fh.Close()
+		os.Remove(tmpName)
+		return err
+	}
+	fh.Close()
 	return os.Rename(tmpName, s.path)
 }

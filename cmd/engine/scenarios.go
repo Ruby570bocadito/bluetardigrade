@@ -534,7 +534,14 @@ func getJSONInto(o replayOptions, path string, into func([]byte) error) error {
 	if tok != "" {
 		req.Header.Set("Authorization", "Bearer "+tok)
 	}
-	client := &http.Client{Timeout: 10 * time.Second}
+	// Sin redirects: el Bearer no debe reenviarse a otro host (sesión
+	// 100agentes-2, agente 5; paridad con report.go).
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err

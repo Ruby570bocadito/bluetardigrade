@@ -77,6 +77,18 @@ fn store_credential(path: &Path, credential: &str) -> Result<()> {
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(".new");
     std::fs::write(&tmp, format!("{credential}\n")).with_context(|| format!("writing the credential to {}", path.display()))?;
+    // Permisos owner-only (sesión 100agentes-2, agentes 2+4, P2): en
+    // POSIX std::fs::write crea 0644 menos umask — el secreto de
+    // ingesta quedaría legible por cualquier cuenta local. En Windows
+    // la barrera es la ACL del directorio (instalado por sf-etw -Install);
+    // una ejecución manual con --token-file en otra ruta hereda ACLs
+    // por defecto, documentado en MODELO-DE-AMENAZAS.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("restricting permissions of {}", path.display()))?;
+    }
     std::fs::rename(&tmp, path).with_context(|| format!("storing the credential in {}", path.display()))?;
     Ok(())
 }

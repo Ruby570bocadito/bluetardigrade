@@ -59,7 +59,7 @@ func notArmed(w http.ResponseWriter) {
 // registerScenarios wires the four routes into the mux.
 func (h *Hub) registerScenarios(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/scenarios", h.handleScenarioLibrary)
-	mux.HandleFunc("POST /api/scenarios/run", h.handleScenarioRun)
+	mux.HandleFunc("POST /api/scenarios/run", h.noStore(h.handleScenarioRun))
 	mux.HandleFunc("GET /api/scenarios/runs", h.handleScenarioRuns)
 	mux.HandleFunc("GET /api/scenarios/runs/{id}", h.handleScenarioRunDetail)
 }
@@ -132,6 +132,14 @@ func (h *Hub) handleScenarioRun(w http.ResponseWriter, r *http.Request) {
 		code := http.StatusInternalServerError
 		if errors.Is(err, scenrun.ErrUnknownScenario) {
 			code = http.StatusBadRequest
+		}
+		// Los errores de library embedden rutas absolutas del servidor
+		// (sesión 100agentes-2, agente 12): mismo contrato que el GET
+		// hermano — detalle al log, cuerpo generico al cliente.
+		if code == http.StatusInternalServerError {
+			log.Printf("[API] scenario run rejected: %v", err)
+			writeErr(w, code, "scenario library could not be read or the request could not be executed")
+			return
 		}
 		writeErr(w, code, err.Error())
 	}

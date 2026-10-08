@@ -8,6 +8,8 @@
 // the same credential and host-pinning checks as the engine proxy.
 
 import { authorized, unauthorizedResponse } from '@/lib/access'
+import { roleAtLeast } from '@/lib/users'
+import { principalFor } from '@/lib/access'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,6 +35,18 @@ export async function GET(request: Request): Promise<Response> {
   if (!(await authorized(request))) return unauthorizedResponse()
   if (!hostAllowed(request) || request.headers.get('sec-fetch-site') === 'cross-site') {
     return Response.json({ error: 'host_not_allowed' }, { status: 403 })
+  }
+  // Rol mínimo analyst (sesión 100agentes-2, agente 8, P2): el hub
+  // acepta analyst:ask de cualquier socket autenticado sin concepto de
+  // rol — entregar el token a un viewer le regalaba la cuota LLM y el
+  // control del analista. La UI del viewer no lo usa; que lo pida es
+  // señal de uso directo de la ruta.
+  const principal = await principalFor(request)
+  if (principal && !roleAtLeast(principal.role, 'analyst')) {
+    return Response.json(
+      { token: '', error: 'role_forbidden', hint: 'El analista IA requiere una cuenta analyst o admin.' },
+      { status: 403, headers: { 'cache-control': 'no-store' } },
+    )
   }
   return Response.json(
     { token: process.env.HUB_ACCESS_TOKEN || '' },

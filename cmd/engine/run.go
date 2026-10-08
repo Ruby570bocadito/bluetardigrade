@@ -752,7 +752,7 @@ func runEngine(o *options, interactive bool) error {
 			whToken = os.Getenv("SF_WEBHOOK_TOKEN")
 		}
 		wh.SetToken(whToken)
-		go wh.Run(whCtx)
+		wh.Start(whCtx)
 		if hub != nil {
 			hub.SetWebhookStats(wh.Stats)
 		}
@@ -802,7 +802,7 @@ func runEngine(o *options, interactive bool) error {
 			elasticKey = os.Getenv("SF_ELASTIC_API_KEY")
 		}
 		elasticSink.SetAPIKey(elasticKey)
-		go elasticSink.Run(sinkCtx)
+		elasticSink.Start(sinkCtx)
 		if hub != nil {
 			hub.SetElasticStats(elasticSink.Stats)
 		}
@@ -823,7 +823,7 @@ func runEngine(o *options, interactive bool) error {
 			splunkTok = os.Getenv("SF_SPLUNK_TOKEN")
 		}
 		splunkSink.SetToken(splunkTok)
-		go splunkSink.Run(sinkCtx)
+		splunkSink.Start(sinkCtx)
 		if hub != nil {
 			hub.SetSplunkStats(splunkSink.Stats)
 		}

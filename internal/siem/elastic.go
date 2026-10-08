@@ -18,8 +18,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	neturl "net/url"
 	"time"
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
@@ -67,11 +69,21 @@ func newElastic(url, index string, queue int) (*Elastic, error) {
 	if index == "" {
 		index = elasticDefaultIndex
 	}
+	// Sin redirects transparentes + aviso http con credencial (sesión
+	// 100agentes-2, agente 5; paridad con splunk).
+	if u, perr := neturl.Parse(url); perr == nil && u.Scheme == "http" {
+		log.Printf("[SIEM][WARN] elasticsearch por http sin cifrar: la ApiKey viaja en claro; usa https o loopback")
+	}
 	return &Elastic{
-		spool:     newSpool(queue),
-		url:       trimTrailingSlash(url),
-		index:     index,
-		hc:        &http.Client{Timeout: elasticPostTimeout},
+		spool: newSpool(queue),
+		url:   trimTrailingSlash(url),
+		index: index,
+		hc: &http.Client{
+			Timeout: elasticPostTimeout,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 		backoff:   400 * time.Millisecond,
 		flushEver: elasticFlushEvery,
 		maxBatch:  elasticMaxBatch,
@@ -101,6 +113,20 @@ func (e *Elastic) Handle(a alert.Alert) { e.handle(a) }
 func (e *Elastic) Run(ctx context.Context) {
 	e.worker.Add(1)
 	defer e.worker.Done()
+	e.run(ctx)
+}
+
+// Start lanza Run en goroutine con el WaitGroup YA registrado (sesión
+// 100agentes-2, agentes 13+14) — ver webhook.Client.Start.
+func (e *Elastic) Start(ctx context.Context) {
+	e.worker.Add(1)
+	go func() {
+		defer e.worker.Done()
+		e.run(ctx)
+	}()
+}
+
+func (e *Elastic) run(ctx context.Context) {
 	ticker := time.NewTicker(e.flushEver)
 	defer ticker.Stop()
 	var batch []alert.Alert
@@ -251,7 +277,7 @@ type bulkResponse struct {
 // unknown and re-indexing by _id is idempotent.
 func (e *Elastic) parseBulkResponse(resp *http.Response, batch []alert.Alert) (accepted int, retryable []alert.Alert, rejected int, err error) {
 	var parsed bulkResponse
-	if derr := json.NewDecoder(resp.Body).Decode(&parsed); derr != nil {
+	if derr := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&parsed); derr != nil {
 		return 0, batch, 0, fmt.Errorf("unreadable bulk answer: %w", derr)
 	}
 	if len(parsed.Items) != len(batch) {

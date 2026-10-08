@@ -79,6 +79,13 @@ const WRITES: WriteRoute[] = [
   { method: 'POST', path: /^\/api\/enroll\/tokens\/[0-9a-f]{8}\/revoke$/, limit: 4 * KIB, role: 'admin', attributed: true },
   { method: 'POST', path: /^\/api\/enroll\/hosts\/enr-[a-z0-9._-]{1,48}-[0-9a-f]{6}\/(approve|reject|revoke)$/, limit: 4 * KIB, role: 'admin', attributed: true },
   { method: 'POST', path: /^\/api\/respond\/kill$/, limit: 8 * KIB, role: 'admin', operatorToken: true },
+  // Conector AD (AD-6): la familia admin de escritura existía en el
+  // motor y en la UI, pero fuera de esta allowlist el botón «Guardar»
+  // moría en 405 y «Probar conexión» en 405 read_only. SIN
+  // attributed:true: decodeADUpdate usa DisallowUnknownFields y
+  // attribute() inyectaría un campo `by` desconocido → 400.
+  { method: 'PUT', path: /^\/api\/settings\/ad$/, limit: 8 * KIB, role: 'admin' },
+  { method: 'POST', path: /^\/api\/ad\/test$/, limit: 8 * KIB, role: 'admin' },
 ]
 
 function writeRoute(method: string, path: string): WriteRoute | undefined {
@@ -301,10 +308,14 @@ async function write(request: Request): Promise<Response> {
     )
   }
   if (!route) {
+    // Contrato "every write, allowed or refused" (sesión 100agentes-2,
+    // agente 3, P3): los 405 fuera de la allowlist se auditan igual
+    // que un 403 — un intento de escritura nunca desaparece del rastro.
+    record(405)
     return Response.json(
       {
         error: 'read_only',
-        hint: 'La consola solo reenvía al motor el triaje, los incidentes, el probador de reglas, las supresiones, la batería de validación, el alta de equipos y la respuesta activa.',
+        hint: 'La consola solo reenvía al motor el triaje, los incidentes, el probador de reglas, las supresiones, la batería de validación, el alta de equipos, el conector AD y la respuesta activa.',
       },
       { status: 405 },
     )
@@ -326,6 +337,11 @@ export async function POST(request: Request): Promise<Response> {
 }
 
 export async function PATCH(request: Request): Promise<Response> {
+  return write(request)
+}
+
+// PUT alcanza la familia admin del conector AD (PUT /api/settings/ad).
+export async function PUT(request: Request): Promise<Response> {
   return write(request)
 }
 

@@ -18,9 +18,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"net/http"
+	neturl "net/url"
 	"time"
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
@@ -58,10 +60,21 @@ func newSplunk(url string, queue int) (*Splunk, error) {
 	if err := requireHTTPScheme("splunk hec", url); err != nil {
 		return nil, err
 	}
+	// Sin redirects transparentes (sesión 100agentes-2, agente 5): un
+	// 302 hacia http:// reenviaba el NDJSON con evidencia en claro.
+	// Aviso honesto cuando el sink lleva token por http en claro.
+	if u, perr := neturl.Parse(url); perr == nil && u.Scheme == "http" {
+		log.Printf("[SIEM][WARN] splunk hec por http sin cifrar: el token HEC viaja en claro; usa https o loopback")
+	}
 	return &Splunk{
-		spool:       newSpool(queue),
-		url:         trimTrailingSlash(url),
-		hc:          &http.Client{Timeout: splunkPostTimeout},
+		spool: newSpool(queue),
+		url:   trimTrailingSlash(url),
+		hc: &http.Client{
+			Timeout: splunkPostTimeout,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 		backoff:     400 * time.Millisecond,
 		nowFallback: time.Now,
 	}, nil
@@ -89,6 +102,20 @@ func (s *Splunk) Handle(a alert.Alert) { s.handle(a) }
 func (s *Splunk) Run(ctx context.Context) {
 	s.worker.Add(1)
 	defer s.worker.Done()
+	s.run(ctx)
+}
+
+// Start lanza Run en goroutine con el WaitGroup YA registrado (sesión
+// 100agentes-2, agentes 13+14) — ver webhook.Client.Start.
+func (s *Splunk) Start(ctx context.Context) {
+	s.worker.Add(1)
+	go func() {
+		defer s.worker.Done()
+		s.run(ctx)
+	}()
+}
+
+func (s *Splunk) run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -224,7 +251,7 @@ type hecResponse struct {
 
 func (s *Splunk) parseHECResponse(resp *http.Response) error {
 	var parsed hecResponse
-	if derr := json.NewDecoder(resp.Body).Decode(&parsed); derr != nil {
+	if derr := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&parsed); derr != nil {
 		return fmt.Errorf("unreadable HEC answer: %w", derr)
 	}
 	if parsed.Code != 0 {

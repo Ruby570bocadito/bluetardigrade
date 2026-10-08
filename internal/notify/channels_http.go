@@ -16,7 +16,17 @@ type httpTimeoutClient struct {
 }
 
 func newTimeoutClient(timeout time.Duration) *httpTimeoutClient {
-	return &httpTimeoutClient{hc: &http.Client{Timeout: timeout}}
+	// No transparent redirects (sesión 100agentes-2, agente 5, P2):
+	// Go strips sensitive HEADERS cross-host but never the URL — and
+	// both the Telegram bot token and the Slack hook secret live in
+	// the path/query. A 30x from the receiver would leak them to
+	// whatever host the redirect named.
+	return &httpTimeoutClient{hc: &http.Client{
+		Timeout: timeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}}
 }
 
 func (c *httpTimeoutClient) post(ctx context.Context, url string, payload []byte) error {

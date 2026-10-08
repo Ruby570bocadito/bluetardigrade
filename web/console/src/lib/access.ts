@@ -25,6 +25,34 @@ import { accountPrincipal, basicCredentials, loadAccounts, usersFile, type Princ
 
 const encoder = new TextEncoder()
 
+// LOOPBACK_HOSTS y hostAllowed: host-pinning anti-DNS-rebinding como
+// fuente ÚNICA para todas las rutas de API de Next (sesión
+// 100agentes-2, agente 3, P2) — /api/engine y /api/hub-token lo
+// aplicaban, pero /api/console/audit y /api/console/me no, y un
+// payload rebind en modo open leía el rastro de auditoría.
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
+
+function extraAllowedHosts(): string[] {
+  return (process.env.CONSOLE_ALLOWED_HOSTS || '')
+    .split(',')
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean)
+}
+
+export function hostAllowed(request: Request): boolean {
+  const raw = request.headers.get('host') ?? new URL(request.url).host
+  // Rechaza userinfo y delimitadores: la normalización de URL no debe
+  // convertir un Host inválido en un hostname de loopback de confianza.
+  if (/[\s/@\\?#]/.test(raw)) return false
+  let hostname: string
+  try {
+    hostname = new URL('http://' + raw).hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+  } catch {
+    return false
+  }
+  return LOOPBACK_HOSTS.has(hostname) || extraAllowedHosts().includes(hostname)
+}
+
 export function accessToken(): string {
   return process.env.CONSOLE_ACCESS_TOKEN || ''
 }

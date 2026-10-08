@@ -28,8 +28,8 @@ func (h *Hub) registerAD(mux *http.ServeMux) {
 	// or without -ad, so the registration stays unconditional like
 	// the rest of this family.
 	mux.HandleFunc("GET /api/settings/ad", h.handleADSettingsGet)
-	mux.HandleFunc("PUT /api/settings/ad", h.handleADSettingsPut)
-	mux.HandleFunc("POST /api/ad/test", h.handleADTest)
+	mux.HandleFunc("PUT /api/settings/ad", h.noStore(h.handleADSettingsPut))
+	mux.HandleFunc("POST /api/ad/test", h.noStore(h.handleADTest))
 }
 
 const adOff = "the Active Directory connector is not armed: start the engine with -ad <config.yaml> (and -store, which holds the snapshot)"

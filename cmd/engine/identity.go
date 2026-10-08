@@ -125,7 +125,7 @@ func newOperatorCredentialCmd() *cobra.Command {
 		Example: "  engine operator-credential --name ana\n  echo -n \"$TOKEN\" | engine operator-credential --name beto --token-stdin",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runOperatorCredential(cmd.InOrStdin(), cmd.OutOrStdout(), name, fromStdin)
+			return runOperatorCredential(cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr(), name, fromStdin)
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "nombre del operador (el campo operator de cada peticion)")
@@ -133,7 +133,7 @@ func newOperatorCredentialCmd() *cobra.Command {
 	return cmd
 }
 
-func runOperatorCredential(in io.Reader, out io.Writer, name string, fromStdin bool) error {
+func runOperatorCredential(in io.Reader, out, errOut io.Writer, name string, fromStdin bool) error {
 	name = strings.TrimSpace(name)
 	if name == "" || len([]rune(name)) > 64 || strings.IndexFunc(name, unicode.IsControl) >= 0 || strings.ContainsAny(name, `"'\:#{}[],`) {
 		return errors.New("--name es obligatorio (maximo 64 caracteres, sin caracteres de control, comillas, ':', '#', llaves, corchetes ni comas)")
@@ -143,9 +143,15 @@ func runOperatorCredential(in io.Reader, out io.Writer, name string, fromStdin b
 		return err
 	}
 	if !fromStdin {
-		fmt.Fprintln(out, "# Credencial del operador (cabecera X-SF-Operator-Token). Se muestra UNA vez:")
-		fmt.Fprintln(out, "# "+token)
-		fmt.Fprintln(out)
+		// El token va por STDERR (sesión 100agentes-2, agentes 2+4+20,
+		// P1): el flujo natural `engine operator-credential --name ana
+		// > respond-operators.yaml` redirige STDOUT al fichero que el
+		// motor relee en hot-reload — el secreto quedaba persistido
+		// en claro como comentario dentro del fichero de operadores.
+		// Mismo fix que ingest-identity (auditoria 5.2).
+		fmt.Fprintln(errOut, "# Credencial del operador (cabecera X-SF-Operator-Token). Se muestra UNA vez:")
+		fmt.Fprintln(errOut, "# "+token)
+		fmt.Fprintln(errOut)
 	}
 	fmt.Fprintln(out, "# Entrada para -respond-operators (version: 2, operators: [...]):")
 	fmt.Fprintf(out, "  - name: %s\n    token_sha256: %s\n", name, ingest.TokenDigest(token))

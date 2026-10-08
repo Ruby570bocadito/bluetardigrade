@@ -120,9 +120,15 @@ func (h *Hub) handleAlertsExport(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Disposition",
 			fmt.Sprintf("attachment; filename=\"alerts-%s.jsonl\"", stamp))
 		for _, v := range views {
-			if payload, err := json.Marshal(v); err == nil {
-				fmt.Fprintf(w, "%s\n", payload)
+			payload, err := json.Marshal(v)
+			if err != nil {
+				// Paridad con la rama CSV (sesión 100agentes-2, agente
+				// 15): un marshal que falla en silencio producía un
+				// 200 con el export truncado sin rastro en el log.
+				log.Printf("[API] alerts JSONL export marshal failed: %v", err)
+				continue
 			}
+			fmt.Fprintf(w, "%s\n", payload)
 		}
 	}
 }
@@ -176,7 +182,7 @@ func (h *Hub) handleEventsExport(w http.ResponseWriter, r *http.Request) {
 	case "csv":
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition",
-			fmt.Sprintf("attachment; filename=events-%s.csv", stamp))
+			fmt.Sprintf("attachment; filename=\"events-%s.csv\"", stamp))
 		cw := csv.NewWriter(w)
 		_ = cw.Write([]string{"id", "timestamp", "type", "source", "host", "user",
 			"process_name", "process_pid", "process_command_line",
@@ -202,11 +208,14 @@ func (h *Hub) handleEventsExport(w http.ResponseWriter, r *http.Request) {
 	default: // jsonl
 		w.Header().Set("Content-Type", "application/x-ndjson")
 		w.Header().Set("Content-Disposition",
-			fmt.Sprintf("attachment; filename=events-%s.jsonl", stamp))
+			fmt.Sprintf("attachment; filename=\"events-%s.jsonl\"", stamp))
 		for _, ev := range events {
-			if payload, err := json.Marshal(ev); err == nil {
-				fmt.Fprintf(w, "%s\n", payload)
+			payload, err := json.Marshal(ev)
+			if err != nil {
+				log.Printf("[API] events JSONL export marshal failed: %v", err)
+				continue
 			}
+			fmt.Fprintf(w, "%s\n", payload)
 		}
 	}
 }

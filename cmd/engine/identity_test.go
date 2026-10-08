@@ -69,13 +69,24 @@ func TestIngestIdentityRejectsBadInput(t *testing.T) {
 }
 
 // The generated operator entry loads as a version-2 operators file and
-// authenticates exactly the printed credential.
+// authenticates exactly the printed credential. The token goes to the
+// ERROR writer (sesión 100agentes-2: paridad con ingest-identity, el
+// fix de la auditoría 5.2 — un `> respond-operators.yaml` redirige
+// stdout al fichero que el motor relee; el secreto jamás debe caer
+// ahí).
 func TestOperatorCredentialRoundTrip(t *testing.T) {
-	var out strings.Builder
-	if err := runOperatorCredential(strings.NewReader(""), &out, "ana", false); err != nil {
+	var out, errOut strings.Builder
+	if err := runOperatorCredential(strings.NewReader(""), &out, &errOut, "ana", false); err != nil {
 		t.Fatal(err)
 	}
-	token := strings.TrimPrefix(strings.Split(out.String(), "\n")[1], "# ")
+	if strings.Contains(out.String(), "Se muestra UNA vez") {
+		t.Fatalf("stdout must not carry the token reveal (it would persist in redirected operators YAML):\n%s", out.String())
+	}
+	lines := strings.Split(errOut.String(), "\n")
+	token := strings.TrimPrefix(lines[1], "# ")
+	if len(token) != 64 {
+		t.Fatalf("token line = %q, want 64 hex characters", lines[1])
+	}
 	entry := out.String()[strings.Index(out.String(), "  - name:"):]
 	p := filepath.Join(t.TempDir(), "ops.yaml")
 	if err := os.WriteFile(p, []byte("version: 2\noperators:\n"+entry), 0o600); err != nil {
@@ -93,7 +104,7 @@ func TestOperatorCredentialRoundTrip(t *testing.T) {
 	if m.CredentialedOperators() != 1 || len(token) != 64 {
 		t.Fatalf("credentialed=%d token=%q", m.CredentialedOperators(), token)
 	}
-	if err := runOperatorCredential(strings.NewReader(""), &out, "a: b", false); err == nil {
+	if err := runOperatorCredential(strings.NewReader(""), &out, &errOut, "a: b", false); err == nil {
 		t.Fatal("YAML-breaking operator name accepted")
 	}
 }

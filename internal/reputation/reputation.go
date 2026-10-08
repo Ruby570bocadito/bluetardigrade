@@ -75,8 +75,23 @@ func New(vtKey, abuseKey string) *Client {
 	return &Client{
 		vtKey: strings.TrimSpace(vtKey), abuseKey: strings.TrimSpace(abuseKey),
 		VTBase: "https://www.virustotal.com", AbuseBase: "https://api.abuseipdb.com",
-		HTTP: &http.Client{Timeout: 8 * time.Second},
-		now:  time.Now, cache: map[string]Report{}, buckets: map[string][]time.Time{},
+		// Redirects stay on the SAME host (sesión 100agentes-2,
+		// agente 5): the API keys travel in headers, which Go already
+		// strips cross-host, but a 30x would still turn the engine
+		// into a fetcher of arbitrary URLs.
+		HTTP: &http.Client{
+			Timeout: 8 * time.Second,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= 10 {
+					return fmt.Errorf("demasiados redirects")
+				}
+				if len(via) > 0 && req.URL.Hostname() != via[0].URL.Hostname() {
+					return fmt.Errorf("redirect fuera del host del proveedor (%s)", via[0].URL.Hostname())
+				}
+				return nil
+			},
+		},
+		now: time.Now, cache: map[string]Report{}, buckets: map[string][]time.Time{},
 	}
 }
 

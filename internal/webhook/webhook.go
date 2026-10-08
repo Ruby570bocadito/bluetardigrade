@@ -14,10 +14,14 @@ package webhook
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	neturl "net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -55,15 +59,33 @@ type Client struct {
 	dropped atomic.Uint64
 }
 
-// New creates a client for url with the default queue depth.
+// New creates a client for url with the default queue depth. The URL
+// must be http(s): a typo like "file://" or a missing scheme would
+// surface only as cryptic delivery failures (sesión 100agentes-2,
+// agente 5 — parity with siem.requireHTTPScheme).
 func New(url string) *Client {
+	u, err := neturl.Parse(url)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		log.Printf("[WEBHOOK] url %s no es http(s): las entregas fallaran hasta corregirlo", redact.EndpointLabel(url))
+	}
 	return newClient(url, queueSize)
 }
 
 func newClient(url string, queue int) *Client {
 	return &Client{
-		url:     url,
-		hc:      &http.Client{Timeout: postTimeout},
+		url: url,
+		// No transparent redirects (sesión 100agentes-2, agente 5,
+		// P2): Go followed up to 10 redirects and RE-POSTed the full
+		// alert JSON (command lines, users, hashes) to whatever host
+		// the receiver's 3xx named — including silent https→http
+		// downgrades. internal/actions fixed the same hole in its
+		// own client; this one was the last copy without it.
+		hc: &http.Client{
+			Timeout: postTimeout,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 		queue:   make(chan alert.Alert, queue),
 		backoff: 400 * time.Millisecond,
 	}
@@ -94,6 +116,31 @@ func (c *Client) Handle(a alert.Alert) {
 func (c *Client) Run(ctx context.Context) {
 	c.worker.Add(1)
 	defer c.worker.Done()
+	for {
+		select {
+		case <-ctx.Done():
+			c.drain()
+			return
+		case a := <-c.queue:
+			c.deliver(ctx, a)
+		}
+	}
+}
+
+// Start launches Run in its own goroutine AFTER registering it with the
+// WaitGroup (sesión 100agentes-2, agentes 13+14): with Add(1) inside
+// the goroutine, a shutdown racing the scheduler made Wait() return
+// immediately and the drain never ran. notify.go already used this
+// pattern; the three HTTP sinks now share it.
+func (c *Client) Start(ctx context.Context) {
+	c.worker.Add(1)
+	go func() {
+		defer c.worker.Done()
+		c.run(ctx)
+	}()
+}
+
+func (c *Client) run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -168,6 +215,18 @@ func (c *Client) post(payload []byte) (retryable bool, err error) {
 	req.Header.Set("User-Agent", userAgent)
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
+		// Message signature (sesión 100agentes-2, agente 4, P2):
+		// a static Bearer cannot prove payload integrity or
+		// freshness — a SOAR triggering active response from these
+		// alerts deserves a verifiable chain. The receiver recomputes
+		// HMAC-SHA256(token, "<ts>.<body>") and compares with
+		// constant time; the timestamp bounds replay.
+		ts := time.Now().Unix()
+		mac := hmac.New(sha256.New, []byte(c.token))
+		fmt.Fprintf(mac, "%d.", ts)
+		mac.Write(payload)
+		req.Header.Set("X-SF-Timestamp", fmt.Sprint(ts))
+		req.Header.Set("X-SF-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
 	}
 
 	resp, err := c.hc.Do(req)

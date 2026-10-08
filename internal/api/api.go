@@ -255,7 +255,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	mux.HandleFunc("POST /api/alerts/{id}/status", h.noStore(h.handleAlertStatus))
 	mux.HandleFunc("GET /api/alerts/{id}/forensics", h.handleAlertForensics)
 	mux.HandleFunc("GET /api/rules", h.handleRules)
-	mux.HandleFunc("POST /api/rules/test", h.handleRuleTest)
+	mux.HandleFunc("POST /api/rules/test", h.noStore(h.handleRuleTest))
 	h.registerIncidents(mux)
 	mux.HandleFunc("GET /api/reputation", h.handleReputation)
 	mux.HandleFunc("GET /api/suppressions", h.handleSuppressions)
@@ -266,7 +266,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	// distinguish "disarmed" from "does not exist"). The read surface
 	// (respond_read.go) follows the same contract: an unarmed engine
 	// exposes no state and no audit tail either.
-	mux.HandleFunc("POST /api/respond/kill", h.handleRespondKill)
+	mux.HandleFunc("POST /api/respond/kill", h.noStore(h.handleRespondKill))
 	mux.HandleFunc("GET /api/respond/state", h.handleRespondState)
 	mux.HandleFunc("GET /api/respond/audit", h.handleRespondAudit)
 	mux.HandleFunc("GET /api/sequences", h.handleSequences)

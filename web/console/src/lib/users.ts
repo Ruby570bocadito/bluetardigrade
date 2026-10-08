@@ -23,7 +23,7 @@
 // changes. A file that is configured but unreadable or empty locks the
 // console (fail closed) instead of opening it.
 
-import { appendFileSync, readFileSync, statSync } from 'node:fs'
+import { appendFileSync, closeSync, openSync, readFileSync, readSync, statSync } from 'node:fs'
 
 // The paths come from the operator's environment at run time; the
 // turbopackIgnore markers keep the build from tracing the whole project
@@ -245,17 +245,28 @@ export function auditFile(): string {
 
 // audit appends one JSON line; a failing disk never blocks the action
 // (the engine keeps its own record of triage and incidents).
+// Techo del fichero de auditoría (sesión 100agentes-2, agente 6, P2):
+// espejo del MaxDenialAuditBytes del motor. Sin él, un viewer
+// autenticado podía hacer crecer el fichero sin límite (cada write
+// auditado suma una línea) y cada GET cargaba el fichero entero.
+const AUDIT_MAX_BYTES = 64 * 1024 * 1024
+const AUDIT_TAIL_BYTES = 512 * 1024
+
 export function audit(entry: AuditEntry): void {
   const file = auditFile()
   if (!file) return
   try {
+    if (statSync(/*turbopackIgnore: true*/ file).size > AUDIT_MAX_BYTES) {
+      // El trail está lleno: no crece más (el motor aplica la misma
+      // política); los writes siguen funcionando y el trail conserva
+      // lo más antiguo en disco.
+      return
+    }
     appendFileSync(/*turbopackIgnore: true*/ file, JSON.stringify(entry) + '\n', { encoding: 'utf8', mode: 0o600 })
   } catch {
     // reported by GET /api/console/audit as an unreadable trail
   }
 }
-
-const AUDIT_TAIL_BYTES = 512 * 1024
 
 // readAudit returns the newest entries first (at most limit), reading
 // only the tail of the file.
@@ -264,8 +275,20 @@ export function readAudit(limit: number): { entries: AuditEntry[]; error?: strin
   if (!file) return { entries: [] }
   let text: string
   try {
-    const buf = readFileSync(/*turbopackIgnore: true*/ file)
-    text = buf.subarray(Math.max(0, buf.length - AUDIT_TAIL_BYTES)).toString('utf8')
+    // Lectura de la COLA por fd (sesión 100agentes-2, agente 6): el
+    // readFileSync entero cargaba el fichero completo en memoria por
+    // cada GET — paridad con el gemelo Go (respond/audit_read.go,
+    // ventana de 4 MiB).
+    const size = statSync(/*turbopackIgnore: true*/ file).size
+    const start = Math.max(0, size - AUDIT_TAIL_BYTES)
+    const fd = openSync(/*turbopackIgnore: true*/ file, 'r')
+    try {
+      const buf = Buffer.alloc(size - start)
+      const n = readSync(fd, buf, 0, buf.length, start)
+      text = buf.subarray(0, n).toString('utf8')
+    } finally {
+      closeSync(fd)
+    }
   } catch (err) {
     if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return { entries: [] }
     return { entries: [], error: 'no se puede leer el registro de auditoría' }

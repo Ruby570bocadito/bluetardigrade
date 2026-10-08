@@ -218,7 +218,18 @@ export function createHub(opts: HubOptions = {}): HubHandle {
 
   const globalSlots = createSlotLimiter(MAX_ANALYST_CONCURRENT)
   const globalRate = createRateLimiter(MAX_ANALYST_PER_MINUTE, 60_000)
+  // Tope de sockets simultáneos (sesión 100agentes-2, agente 9, P3):
+  // cada conexión recibe un snapshot de hasta ~1 MB (2048 reglas +
+  // registros); un flood local de sockets era GC/CPU garantizados y
+  // no había ningún techo (el engine sí tiene maxSSEClients=64).
+  const MAX_HUB_CLIENTS = 128
   io.on('connection', (socket) => {
+    if (state.clientsConnected >= MAX_HUB_CLIENTS) {
+      logLine(`conexion rechazada: tope de ${MAX_HUB_CLIENTS} clientes activos`)
+      socket.emit('hub:rejected', { reason: 'hub_client_cap', limit: MAX_HUB_CLIENTS })
+      socket.disconnect(true)
+      return
+    }
     state.incClients()
     logLine(`consola conectada: ${socket.id} (${state.clientsConnected} activas)`)
 
@@ -496,6 +507,10 @@ function securityHeaders(): Record<string, string> {
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
     'Cache-Control': 'no-store',
+    // frame-ancestors does NOT inherit from default-src 'none' (CSP
+    // spec): the status page is framable without this (sesión
+    // 100agentes-2, agente 8).
+    'X-Frame-Options': 'DENY',
   }
 }
 
@@ -513,7 +528,7 @@ function sendHtml(res: http.ServerResponse, status: number, html: string, headOn
   res.writeHead(status, {
     ...securityHeaders(),
     'Content-Security-Policy':
-      "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'; connect-src 'self'",
+      "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'",
     'Content-Type': 'text/html; charset=utf-8',
     'Content-Length': Buffer.byteLength(html),
   })

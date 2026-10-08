@@ -478,7 +478,8 @@ func (s *Store) persistLocked() error {
 		return err
 	}
 	data = append(data, '\n')
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+	// 0700 (sesión 100agentes-2, agente 6): paridad con lifecycle.
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(s.path), filepath.Base(s.path)+".tmp-*")
@@ -502,14 +503,19 @@ func (s *Store) persistLocked() error {
 	// fsync before the rename (audit 5.4): same forensic-integrity
 	// argument as lifecycle/forensics — the rename must never land
 	// before the data after a power cut.
-	if f, err := os.Open(name); err == nil {
-		if err := f.Sync(); err != nil {
-			f.Close()
-			os.Remove(name)
-			return err
-		}
-		f.Close()
+	// El fallo del Open no salta el fsync en silencio (sesión
+	// 100agentes-2, agente 15; paridad con lifecycle).
+	fh, err := os.Open(name)
+	if err != nil {
+		os.Remove(name)
+		return fmt.Errorf("incident: abrir para fsync: %w", err)
 	}
+	if err := fh.Sync(); err != nil {
+		fh.Close()
+		os.Remove(name)
+		return err
+	}
+	fh.Close()
 	return os.Rename(name, s.path)
 }
 

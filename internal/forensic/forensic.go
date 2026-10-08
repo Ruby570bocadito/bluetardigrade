@@ -343,7 +343,14 @@ func (r *Recorder) Load(alertID string) (*Bundle, error) {
 	if len(alertID) != alertIDLen || !isHex(alertID) {
 		return nil, fmt.Errorf("malformed alert id %q: want 16 lowercase hex characters", alertID)
 	}
-	data, err := os.ReadFile(filepath.Join(r.dir, alertID+".json"))
+	full := filepath.Join(r.dir, alertID+".json")
+	// Rechazar symlinks (sesión 100agentes-2, agente 6): os.ReadFile
+	// los sigue, y un <16hex>.json plantado como enlace en el dir
+	// forense (0700, mitigación local) se serviría como Bundle.
+	if info, lerr := os.Lstat(full); lerr == nil && !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("forensic: %q no es un fichero regular", alertID)
+	}
+	data, err := os.ReadFile(full)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, ErrNotFound

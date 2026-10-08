@@ -38,9 +38,9 @@ func (h *Hub) SetEnrollment(r *enroll.Registry) {
 
 func (h *Hub) registerEnroll(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/enroll", h.handleEnrollState)
-	mux.HandleFunc("POST /api/enroll/tokens", h.handleEnrollTokenCreate)
-	mux.HandleFunc("POST /api/enroll/tokens/{id}/revoke", h.handleEnrollTokenRevoke)
-	mux.HandleFunc("POST /api/enroll/hosts/{name}/{action}", h.handleEnrollHostDecide)
+	mux.HandleFunc("POST /api/enroll/tokens", h.noStore(h.handleEnrollTokenCreate))
+	mux.HandleFunc("POST /api/enroll/tokens/{id}/revoke", h.noStore(h.handleEnrollTokenRevoke))
+	mux.HandleFunc("POST /api/enroll/hosts/{name}/{action}", h.noStore(h.handleEnrollHostDecide))
 }
 
 func (h *Hub) enrollment() *enroll.Registry {

@@ -3,12 +3,15 @@
 // without accounts. The UI shows it in the header and hides what the
 // role cannot do; route.ts enforces it either way.
 
-import { principalFor, unauthorizedResponse } from '@/lib/access'
+import { hostAllowed, principalFor, unauthorizedResponse } from '@/lib/access'
 import { auditFile, roleAtLeast } from '@/lib/users'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request): Promise<Response> {
+  if (!hostAllowed(request)) {
+    return Response.json({ error: 'host_not_allowed' }, { status: 403 })
+  }
   const principal = await principalFor(request)
   if (!principal) return unauthorizedResponse()
   return Response.json(

@@ -37,7 +37,11 @@ ENTRYPOINT ["/usr/local/bin/engine"]
 # SF_INGEST_TOKEN — the engine reads both as flag fallbacks), NOT baked
 # into the command line: process arguments are world-readable metadata
 # (docker inspect, /proc) and a token there is a leak by construction.
-# A container started without SF_API_TOKEN still binds its API to
-# 0.0.0.0 (container isolation gates exposure) exactly like before;
-# publishing the port to the host without a token is on the operator.
+# IMPORTANT (fail-closed, engine >= audit 2026-10-08): the API REFUSES
+# to start when bound beyond loopback without a token. This CMD binds
+# 0.0.0.0:7778, so run the container with -e SF_API_TOKEN=<secret>
+# (or -e SF_API_TOKEN + -e SF_INGEST_TOKEN for sensor fleets). A
+# container started WITHOUT SF_API_TOKEN will crash-loop BY DESIGN —
+# that is the fail-closed posture, not a bug. -api-allow-open exists
+# for throwaway labs only.
 CMD ["-addr", ":7777", "-rules", "/opt/bluetardigrade/rules", "-sequences", "/opt/bluetardigrade/sequences", "-beacons", "/opt/bluetardigrade/beacons.yaml", "-thresholds", "/opt/bluetardigrade/thresholds.yaml", "-api", "0.0.0.0:7778", "-respond-audit", "/var/lib/bluetardigrade/respond-audit.jsonl", "-lifecycle", "/var/lib/bluetardigrade/alert-lifecycle.json"]

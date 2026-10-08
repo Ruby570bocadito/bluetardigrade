@@ -23,7 +23,26 @@ function Initialize-SfApiToken {
     $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
     try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
     $token = -join ($bytes | ForEach-Object { $_.ToString('x2') })
-    [IO.File]::WriteAllText((Join-Path $config 'api.token'), $token, [Text.Encoding]::ASCII)
+    $tokenFile = Join-Path $config 'api.token'
+    [IO.File]::WriteAllText($tokenFile, $token, [Text.Encoding]::ASCII)
+    # DACL owner-only inmediata (sesión 100agentes-2, agente 4, P2):
+    # con -InstallDir en una ruta compartida, el fichero heredaba
+    # Users:Read — y es la credencial que abre las superficies de
+    # ESCRITURA (supresiones, kill). Misma política que Protect-TokenFile
+    # de install.ps1 (no dot-sourceable desde aquí): herencia cortada y
+    # ACEs SYSTEM+Administrators+propietario, best-effort.
+    try {
+        $acl = Get-Acl -LiteralPath $tokenFile
+        $acl.SetAccessRuleProtection($true, $false)   # cut inheritance, drop inherited ACEs
+        $me = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+        foreach ($who in @($me, 'NT AUTHORITY\SYSTEM', 'BUILTIN\Administrators')) {
+            $rule = New-Object Security.AccessControl.FileSystemAccessRule($who, 'FullControl', 'Allow')
+            $acl.SetAccessRule($rule) | Out-Null
+        }
+        Set-Acl -LiteralPath $tokenFile -AclObject $acl
+    } catch {
+        Write-Warn2 "no se pudo endurecer la DACL de $tokenFile (best-effort): $($_.Exception.Message)"
+    }
     return $token
 }
 

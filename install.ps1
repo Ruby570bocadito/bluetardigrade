@@ -742,7 +742,8 @@ function Add-FirewallRule {
     param([bool]$HasToken = $false)
     if (-not $HasToken) {
         Write-Warn2 "-Firewall refused: no ingest token configured. Opening TCP $ENGINE_PORT without one would let any host on the network inject events (NDJSON, no auth)."
-        Write-Info "configure a token and re-run:  .\install.ps1 -Firewall -IngestToken 'a-long-random-secret'"
+        Write-Info "configure a token and re-run:  `$env:SF_INGEST_TOKEN = 'a-long-random-secret'; .\install.ps1 -Firewall"
+        Write-Info "(the environment survives the session via setx; -IngestToken on the command line is legacy: args are world-readable via Win32_Process)"
         $chk = Invoke-Native -Command { & netsh advfirewall firewall show rule "name=security-framework engine" } -Quiet -AllowFailure
         if ("$chk" -match 'security-framework engine') {
             netsh advfirewall firewall delete rule "name=security-framework engine" | Out-Null

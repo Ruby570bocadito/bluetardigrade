@@ -241,7 +241,9 @@ func (d *Dispatcher) deliver(rawURL, secret string, timeout time.Duration, paylo
 		return
 	}
 	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body) // drain so the connection is reusable
+	// Drain acotado (sesión 100agentes-2, agente 5): el timeout del
+	// cliente acota el tiempo, no los bytes.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10)) // drain so the connection is reusable
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		d.log.Printf("webhook %s: respuesta no esperada %d", name, resp.StatusCode)
 		return

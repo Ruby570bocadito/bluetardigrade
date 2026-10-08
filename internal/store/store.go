@@ -195,7 +195,15 @@ CREATE INDEX IF NOT EXISTS alerts_search_idx ON alerts(search);
 // is 0644 minus umask, too open for evidence). A file created in
 // between by someone else is accepted as-is.
 func ensurePrivateFile(path string) error {
-	if _, err := os.Stat(path); err == nil {
+	if info, err := os.Lstat(path); err == nil {
+		// Un symlink preexistente en la ruta de la BD (plantado por un
+		// atacante local con write en el data dir) redirigiría TODA la
+		// evidencia fuera del data dir — se rechaza en vez de seguirlo
+		// (sesión 100agentes-2, agente 6). El O_EXCL de abajo solo
+		// protegía la rama de creación.
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("store: %s existe y no es un fichero regular", path)
+		}
 		return nil
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
