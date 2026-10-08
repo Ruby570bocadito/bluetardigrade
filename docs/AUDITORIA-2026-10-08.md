@@ -595,3 +595,82 @@ Severidades: 🔴 CRÍTICO · 🟠 ALTO · 🟡 MEDIO · 🔵 BAJO. Cada hallazg
 | Linaje de evidencia | todos los hallazgos con fichero:línea reales, sin especulación |
 
 *Informe generado el 8 de octubre de 2026. Los hallazgos citan ficheros y líneas del commit `9c1f654`; las líneas pueden desplazarse con los fixes ya aplicados.*
+
+---
+
+## 9. Addendum — Rondas de implementación "100agentes" (misma fecha, commit final `128cf42`)
+
+Tras publicar el informe (secciones 1–8) se ejecutaron **5 rondas adicionales de implementación** sobre la rama **`100agentes`**, cerrando **35 hallazgos más** de los listados en la sección 5. Cada ronda quedó en verde antes de pasar a la siguiente (`go build ./...`, `go vet`, `go test -count=1`, `-race` en los paquetes tocados, `check_openapi.py` en sincronía, typecheck + 583 tests bun de consola y hub, y un smoke end-to-end del binario: 20.050 eventos, 0 perdidos, fail-closed del API verificado).
+
+### Ronda 1 — P0 seguridad (8 fixes)
+
+| # | Fix | Fichero | Hallazgo |
+|---|-----|---------|----------|
+| 8 | Rate-limit de denial-audit por Source (60/min) + headroom de 4 MiB reservado para líneas EXECUTED (`WriteDenial` con techo reducido) | `internal/respond/{audit,respond}.go` | 5.6 #1 — DoS de kill_process |
+| 9 | Índices `events(search)` y `alerts(search)` | `internal/store/store.go` | 5.4 #2 — búsqueda full-scan |
+| 10 | Self-exclusion `own_pid` en `handle_process` (el sensor ya no reporta su propio `--token`) | `sensor/src/collector.rs` | 5.9 #1 |
+| 11 | API fail-closed: bind no-loopback sin token se NIEGA salvo `-api-allow-open` explícito | `cmd/engine/{run,flags}.go` | 5.5 #1 |
+| 12 | Cap de pre-lectura (8 MiB) compartido `yamlcheck.ReadFileCapped` en los 3 loaders de hot-reload | `internal/{known,suppress,respond}` | 5.16 |
+| 13 | Token del instalador por env (`SF_INGEST_TOKEN`/`SF_WEBHOOK_TOKEN`) + DACL restringida inmediatamente tras escribir cada token (`Protect-TokenFile`) | `install.ps1` | 5.18 #1 #2 |
+
+### Ronda 2 — motor de detección (8 fixes)
+
+| # | Fix | Fichero | Hallazgo |
+|---|-----|---------|----------|
+| 14 | `neq`/`not_in` no se satisfacen con campo ausente + operador nuevo `not_iin` | `internal/rules/rules.go` | 5.3 #1 |
+| 15 | `gt`/`lt` exigen valor numérico en carga (adiós fallback lexicográfico `"9" > "10"`) | `internal/rules/rules.go` | 5.3 |
+| 16 | Unicidad de `name`/`id` de reglas en la carga (el correlator matchea por nombre) | `internal/rules/rules.go` | 5.3 #3 |
+| 17 | `regularity()` excluye intervalos ≤ 0: un timestamp duplicado ya no ciega la clave hasta que envejece | `internal/beacon/beacon.go` | 5.3 |
+| 18 | `Reload` de correlator lee `state`/`emit` bajo `m.mu` | `internal/correlate/correlate.go` | 5.3 (carrera) |
+| 19 | `Reload` de beacon lee `emit` bajo `m.mu` | `internal/beacon/beacon.go` | 5.3 (carrera) |
+| 20 | `enrich` lee `known` bajo RWMutex | `internal/enrich/enrich.go` | 5.13 (carrera) |
+| 21 | Riesgo por host normalizado a minúsculas (`WKS-01` y `wks-01` son la misma máquina) | `internal/risk/risk.go` | 5.3 |
+
+### Ronda 3 — API y robustez (8 fixes)
+
+| # | Fix | Fichero | Hallazgo |
+|---|-----|---------|----------|
+| 22 | `recoverPanic` global: un panic en handler responde 500 JSON y queda en el log | `internal/api/middleware.go` | 5.5 #3 |
+| 23 | Read deadline 30 s por request (excepto `/api/stream`): adiós slow-body eterno | `internal/api/middleware.go` | 5.5 #1 |
+| 24 | SSE con write deadline 30 s por frame: un peer colgado libera su slot | `internal/api/api.go` | 5.5 #2 |
+| 25 | 429 del throttle con `Retry-After` y `code: rate_limited` | `internal/api/api.go` | 5.5 |
+| 26 | 500 de audit/scenarios ya no filtran rutas del servidor (detalle al log, cuerpo genérico) | `internal/api/{respond_read,scenarios}.go` | 5.5 |
+| 27 | `Cache-Control: no-store` en rutas de escritura (triage, incidentes, suppressions) | `internal/api/*.go` | 5.5 |
+| 28 | Backoff exponencial del accept loop ante error persistente (EMFILE spin al 100 % CPU) | `internal/ingest/ingest.go` | 5.2 |
+| 29 | Rama legacy de `secretfile` exige modo 0600 en POSIX + token de `ingest-identity` a stderr (redirigir stdout ya no persiste el secreto en el YAML) | `internal/secretfile/secretfile.go`, `cmd/engine/identity.go` | 5.2 |
+
+### Ronda 4 — persistencia y evidencia (6 fixes)
+
+| # | Fix | Fichero | Hallazgo |
+|---|-----|---------|----------|
+| 30 | `Prune` por chunks de 10k + `wal_checkpoint(TRUNCATE)`: el borrado masivo ya no detiene la ingesta | `internal/store/store.go` | 5.4 #1 |
+| 31 | fsync antes del rename en lifecycle e incidents (integridad post-corte de luz, igual que los bundles) | `internal/lifecycle`, `internal/incident` | 5.4 |
+| 32 | CSV exports comprueban `cw.Error()` y lo reportan al log (no más 200 con CSV truncado) | `internal/api/{export,reports}.go` | 5.16 |
+| 33 | `intel.Allow` expulsa el más antiguo cuando el mapa de cooldown se llena (el atacante ya no ciega el intel) | `internal/intel/intel.go` | 5.13 #3 |
+| 34 | Cap de 8 KiB para `command_line` en ingest (antes viajaba verbatim a rings/store/bundles) | `internal/ingest/ingest.go` | 5.14 |
+| 35 | Baseline: `Sweep(now, 7d)` expulsa hosts muertos + contadores `CapHits`/`Evicted`, cableado al ticker del engine | `internal/baseline/baseline.go`, `cmd/engine/run.go` | 5.13 #2 |
+
+### Ronda 5 — periféricos (8 fixes)
+
+| # | Fix | Fichero | Hallazgo |
+|---|-----|---------|----------|
+| 36 | CI: `npm ci` en browser tests (no muta el lockfile del runner) | `.github/workflows/ci.yml` | 5.10 |
+| 37 | Release: `concurrency` group + `cache: false` en setup-go | `.github/workflows/release.yml` | 5.10 |
+| 38 | Dockerfile: `ARG GOLANG_VERSION=1.26.6` alineado con go.mod (base no flotante) | `Dockerfile` | 5.10 |
+| 39 | Hub: `/` y `/health` exigen `HUB_ACCESS_TOKEN` cuando existe + `maxHttpBufferSize: 64 KB` | `web/console-service/hub.ts` | 5.12 |
+| 40 | Consola: campos hostiles truncados a 4 KB en `mapAlert` (DoS de pestaña) | `web/console/src/lib/engine-client.ts` | 5.8 |
+| 41 | Consola: enlace de reputación solo con URL `https://` absoluta | `web/console/src/components/console/alert-actions.tsx` | 5.8 |
+| 42 | Consola: atribución `by` sobrescrita también en modo token (no la decide el navegador) | `web/console/src/lib/users.ts` | 5.8 |
+| 43 | Índice de las bitácoras en `docs/agentes/README.md` | `docs/agentes/README.md` | 5.11 #3 |
+
+### Verificación de las rondas
+
+- `go build ./...` ✅ · `go vet ./...` 0 avisos ✅ · `go test -count=1 ./...` 40/40 paquetes ✅
+- `go test -race` en api, ingest, respond, store, beacon, correlate, enrich, intel, baseline: sin carreras ✅
+- `check_openapi.py`: 43 rutas, spec en sincronía (el checker reconoce la nueva cadena de middlewares) ✅
+- Typecheck + tests bun: consola 475/475, hub 108/108 ✅
+- Smoke end-to-end del binario con todo aplicado: fail-closed del API sin token en 0.0.0.0 ✅, 20.050 eventos inyectados (incluidos timestamps duplicados para el beacon), **0 perdidos, 0 dropped, 0 rejected**, `hot_hosts` normalizado, p95 por nearest-rank presente, 401 sin credencial ✅
+
+### Pendiente (roadmap P1/P2 restante)
+
+Quedan abiertos los items más grandes de la sección 6: LPM/radix-tree para intel CIDR, extraer `processEvent` testeable del bucle central, redacción de secretos en evidencia con `-no-redact-evidence`, pseudonimización pre-LLM en el hub, spool BufWriter del sensor Rust, extraer `internal/app` (P2), FTS5, dead-letter por canal y la emisión real de `file.write`/`image.load` en el sensor.
