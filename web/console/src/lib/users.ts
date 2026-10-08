@@ -208,8 +208,16 @@ export async function accountPrincipal(header: string | null, now = Date.now()):
 // attribute replaces the sender name of an attributed write with the
 // account name. Bodies that are not a JSON object go through untouched
 // (the engine rejects them itself).
+//
+// Token mode also overwrites (audit 5.8): the "by" field used to travel
+// whatever the BROWSER body carried while the credential was the shared
+// token — any console user could attribute their triage to a colleague
+// (or to nothing). The principal's name in token mode comes from the
+// Basic-auth username of the request, which is the only attribution
+// signal that exists there. Open mode keeps the raw body: there is no
+// credential to attribute, by design.
 export function attribute(body: string, principal: Principal): string {
-  if (principal.mode !== 'users') return body
+  if (principal.mode === 'open') return body
   let doc: unknown
   try {
     doc = JSON.parse(body)

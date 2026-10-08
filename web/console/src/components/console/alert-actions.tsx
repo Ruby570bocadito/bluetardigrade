@@ -58,6 +58,17 @@ function worstOf(alerts: SfAlert[]): Severity {
   return alerts.reduce<Severity>((w, a) => (RANK[a.severity] > RANK[w] ? a.severity : w), 'info')
 }
 
+// isSafeReputationLink (audit 5.8): reputation results carry a provider
+// link; only an absolute https URL is allowed to become an anchor.
+function isSafeReputationLink(link: string): boolean {
+  try {
+    const u = new URL(link)
+    return u.protocol === 'https:' && u.hostname.length > 0
+  } catch {
+    return false
+  }
+}
+
 function download(name: string, text: string, mime: string) {
   const url = URL.createObjectURL(new Blob([text], { type: mime }))
   const a = document.createElement('a')
@@ -525,7 +536,11 @@ function ReputationPanel({ alert }: { alert: SfAlert }) {
                       ) : (
                         <span> · <span className={res.malicious ? 'text-red-300' : 'text-zinc-200'}>{res.malicious ?? 0} motores lo marcan malicioso</span> de {(res.malicious ?? 0) + (res.suspicious ?? 0) + (res.harmless ?? 0) + (res.undetected ?? 0)}{res.owner ? ` · ${res.owner}` : ''}</span>
                       )}
-                      {res.link && <a href={res.link} target="_blank" rel="noreferrer noopener" className="ml-1 text-primary-link underline-offset-4 hover:underline">ver</a>}
+                      {/* schema allowlist (audit 5.8): the link comes from
+                          the API response — only an absolute https:// URL may
+                          render as an anchor, so a crafted payload cannot turn
+                          the 'ver' link into javascript:/data:/whatever */}
+                      {res.link && isSafeReputationLink(res.link) && <a href={res.link} target="_blank" rel="noreferrer noopener" className="ml-1 text-primary-link underline-offset-4 hover:underline">ver</a>}
                     </li>
                   ))}
                   {r.cached && <li className="text-[10px] text-zinc-500">respuesta en caché del motor</li>}

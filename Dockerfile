@@ -1,5 +1,13 @@
 # bluetardigrade detection engine — production container
-FROM golang:1.27-alpine AS builder
+#
+# ARG GOLANG_VERSION (audit 5.10): the builder base is parametrized so
+# the pinned toolchain travels with go.mod (go.mod's `go 1.26` line is
+# the source of truth). Floating `golang:1.27-alpine` could silently
+# build with a different toolchain than CI certified; pinning the ARG
+# to the CI-certified version keeps the container inside the same
+# verifiable chain as the release binaries.
+ARG GOLANG_VERSION=1.26.6
+FROM golang:${GOLANG_VERSION}-alpine AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

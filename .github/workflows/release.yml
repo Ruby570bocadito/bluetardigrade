@@ -39,6 +39,14 @@ on:
 permissions:
   contents: read
 
+# concurrency (audit 5.10): two tags pushed in quick succession used to
+# run release builds in PARALLEL — racing `gh release` mutations on the
+# same repository and interleaved attestations. New runs now cancel the
+# pending/superseded one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   release:
     name: Build + checksum + publish (linux, windows)
@@ -53,6 +61,12 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          # cache: false (audit 5.10): a release binary must not link
+          # artifacts from a shared runner cache; the build is already
+          # -trimpath CGO_ENABLED=0 from a clean checkout, so the cache
+          # only ever added provenance ambiguity, never speed that
+          # matters at this cadence.
+          cache: false
 
       - name: Resolve version from the tag
         id: ver

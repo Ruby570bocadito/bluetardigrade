@@ -55,6 +55,24 @@ export function hubTokenMatches(supplied: unknown, expected: string): boolean {
   return timingSafeEqual(a, b)
 }
 
+// httpTokenMatches checks an HTTP request's credential against the hub
+// token: `Authorization: Bearer <token>` first, `?token=` as fallback
+// (browser address bar for the status page). Same timing-safe contract
+// as hubTokenMatches. Returns false on any absent/malformed credential.
+export function httpTokenMatches(req: http.IncomingMessage, expected: string, url: URL): boolean {
+  const auth = req.headers.authorization
+  if (typeof auth === 'string') {
+    const prefix = 'Bearer '
+    if (auth.length > prefix.length && auth.slice(0, prefix.length).toLowerCase() === prefix.toLowerCase()) {
+      return hubTokenMatches(auth.slice(prefix.length), expected)
+    }
+    return false
+  }
+  const q = url.searchParams.get('token')
+  if (q !== null) return hubTokenMatches(q, expected)
+  return false
+}
+
 export type HubHandle = {
   io: Server
   state: HubState
@@ -97,6 +115,10 @@ export function createHub(opts: HubOptions = {}): HubHandle {
     // Keep in sync with the console client (socket-provider.tsx)
     path: SOCKET_PATH,
     cors: { origin: corsOrigins, methods: ['GET', 'POST'] },
+    // maxHttpBufferSize (audit 5.12): the engine.io default accepts
+    // ~1 MB per frame — a cheap CPU-DoS parsing MBs from any connected
+    // socket. The console never sends frames anywhere near 64 KB.
+    maxHttpBufferSize: 64 * 1024,
     // CORS alone does not gate WebSocket upgrades. Reject browser origins
     // before any transport can receive telemetry or submit analyst work.
     allowRequest: (req, done) => {
@@ -153,11 +175,29 @@ export function createHub(opts: HubOptions = {}): HubHandle {
       return
     }
     if (pathname === '/' || pathname === '/index.html') {
+      // status page under the same credential as the sockets (audit
+      // 5.12): it exposes the engine endpoint, the analyst provider
+      // URL, the CORS origins and the console count — exactly the
+      // internal topology a scanner wants first
+      if (accessToken && !httpTokenMatches(req, accessToken, url)) {
+        sendJson(res, 401, {
+          error: { code: 'hub_auth_required', message: 'HUB_ACCESS_TOKEN requerido: Authorization: Bearer <token> o ?token=' },
+        })
+        return
+      }
       const data = buildStatusData(state, { version: HUB_VERSION, host, port: listenPort(), socketPath: SOCKET_PATH, corsOrigins })
       sendHtml(res, 200, renderStatusPage(data), headOnly)
       return
     }
     if (pathname === '/health' || pathname === '/healthz') {
+      // health reveals the engine endpoint and mode (audit 5.12): same
+      // token gate as the status page when a token is configured
+      if (accessToken && !httpTokenMatches(req, accessToken, url)) {
+        sendJson(res, 401, {
+          error: { code: 'hub_auth_required', message: 'HUB_ACCESS_TOKEN requerido: Authorization: Bearer <token> o ?token=' },
+        })
+        return
+      }
       sendJson(res, 200, state.health(HUB_VERSION), headOnly)
       return
     }

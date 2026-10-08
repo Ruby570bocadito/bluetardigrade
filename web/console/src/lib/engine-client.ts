@@ -92,6 +92,23 @@ export function engineApiBase(): string {
   return process.env.NEXT_PUBLIC_ENGINE_API || '/api/engine'
 }
 
+// MAX_FIELD_CHARS caps hostile string fields at the console boundary
+// (audit 5.8): a compromised sensor can emit a multi-MB command_line or
+// summary that used to travel intact into the DOM (a frozen tab is a
+// denial of service for the analyst exactly when they need the view
+// most). The engine caps command_line at 8 KiB since the 2026-10
+// rounds; this is the second layer — 4 KB is far past anything a human
+// reads, and ellipsis marks the cut.
+const MAX_FIELD_CHARS = 4096
+
+function clampText(value: string): string {
+  return value.length <= MAX_FIELD_CHARS ? value : value.slice(0, MAX_FIELD_CHARS) + '…[truncado]'
+}
+
+function clampOptional(value: string | undefined): string | undefined {
+  return value === undefined ? undefined : clampText(value)
+}
+
 export function mapAlert(raw: Record<string, unknown>): SfAlert {
   const tags = Array.isArray(raw.tags) ? raw.tags.filter((item): item is string => typeof item === 'string') : []
   const matched = Array.isArray(raw.matched_on) ? raw.matched_on.filter((item): item is string => typeof item === 'string') : []
@@ -99,25 +116,25 @@ export function mapAlert(raw: Record<string, unknown>): SfAlert {
   return {
     id: raw.id ? String(raw.id) : undefined,
     timestamp: String(raw.timestamp ?? ''),
-    rule_id: String(raw.rule_id ?? ''),
-    rule_name: String(raw.rule_name ?? ''),
+    rule_id: clampText(String(raw.rule_id ?? '')),
+    rule_name: clampText(String(raw.rule_name ?? '')),
     severity: severityOf(typeof raw.severity === 'string' ? raw.severity : undefined),
-    host: String(raw.host ?? ''),
-    user: raw.user ? String(raw.user) : undefined,
+    host: clampText(String(raw.host ?? '')),
+    user: clampOptional(raw.user ? String(raw.user) : undefined),
     event_id: String(raw.event_id ?? ''),
-    event_type: String(raw.event_type ?? ''),
-    source: typeof raw.source === 'string' ? raw.source : undefined,
+    event_type: clampText(String(raw.event_type ?? '')),
+    source: clampOptional(typeof raw.source === 'string' ? raw.source : undefined),
     attributes: stringMap(raw.attributes),
     network: observedNetwork(raw.network),
-    summary: String(raw.summary ?? ''),
-    message: raw.message ? String(raw.message) : undefined,
+    summary: clampText(String(raw.summary ?? '')),
+    message: clampOptional(raw.message ? String(raw.message) : undefined),
     notify: raw.notify === true,
     matched_on: matched,
     tags,
     actions: Array.isArray(raw.actions) ? raw.actions.filter((item): item is string => typeof item === 'string') : undefined,
     enrichment: stringMap(raw.enrichment),
     status: status === 'new' || status === 'acknowledged' || status === 'closed' ? status : undefined,
-    status_note: raw.status_note ? String(raw.status_note) : undefined,
+    status_note: clampOptional(raw.status_note ? String(raw.status_note) : undefined),
     status_by: raw.status_by ? String(raw.status_by) : undefined,
     status_at: raw.status_at ? String(raw.status_at) : undefined,
   }
