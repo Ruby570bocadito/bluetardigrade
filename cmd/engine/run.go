@@ -998,6 +998,11 @@ func runEngine(o *options, interactive bool) error {
                                 case <-t.C:
                                         now := time.Now()
                                         enricher.Sweep(now)
+                                        // baseline: retire hosts idle past 7 days so
+                                        // dead machines cannot hold the 4.096-host cap
+                                        // forever and stop live ones from learning
+                                        // (audit 5.13 #2)
+                                        baseTracker.Sweep(now, 7*24*time.Hour)
                                         // correlator: retire chains whose window elapsed
                                         // without progress, so correlator_states reports
                                         // live chains and the cap never fills with dead ones

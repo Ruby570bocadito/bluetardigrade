@@ -578,11 +578,24 @@ const (
         // so legitimate destinations pass byte-identical while a hostile
         // ~1 MiB "domain" cannot park its bytes in detector state.
         maxDestRunes = 253
+
+        // maxCommandLineRunes caps process.command_line / target
+        // command_line (audit 5.14): a hostile sensor could emit a ~1 MiB
+        // line that would travel VERBATIM into the rings, the SQLite
+        // payload, every alert FieldMap, the SSE broadcast and the
+        // forensic bundle (MarshalIndent doubling peak RAM). 8 KiB covers
+        // any honest invocation (cmdline limits: Windows 32k CHARS,
+        // Linux MAX_ARG_STRLEN 128 KiB per arg — but one ARGUMENT this
+        // long is never operator-legible evidence) and matches the
+        // collector's own 4-8 KiB evidence caps.
+        maxCommandLineRunes = 8192
 )
 
 // normalizeIdentity truncates the feed-controlled identity fields that
 // long-lived engine state pins (see the caps above): host/user/id, and
 // the network destination the beaconing detector keys its state on.
+// The command lines are capped here too — every surface downstream
+// copies them per event/alert.
 func normalizeIdentity(ev *model.Event) {
         ev.Host = truncateRunes(ev.Host, maxHostRunes)
         ev.User = truncateRunes(ev.User, maxUserRunes)
@@ -590,6 +603,12 @@ func normalizeIdentity(ev *model.Event) {
         if ev.Network != nil {
                 ev.Network.DestinationIP = truncateRunes(ev.Network.DestinationIP, maxDestRunes)
                 ev.Network.Domain = truncateRunes(ev.Network.Domain, maxDestRunes)
+        }
+        if ev.Process != nil {
+                ev.Process.CommandLine = truncateRunes(ev.Process.CommandLine, maxCommandLineRunes)
+        }
+        if ev.Target != nil {
+                ev.Target.CommandLine = truncateRunes(ev.Target.CommandLine, maxCommandLineRunes)
         }
 }
 

@@ -422,20 +422,45 @@ func (s *Store) QueryAlerts(q AlertQuery) ([]alert.Alert, error) {
 // Prune deletes rows older than the retention window and reports how
 // many were removed per table. A retention of 0 (keep forever) is a
 // no-op handled by the caller.
+//
+// Chunked (audit 5.4 #1): a single DELETE of millions of rows (a long
+// downtime across the retention edge) used to run in ONE transaction —
+// the WAL ballooned, the write lock stayed held for the whole sweep and
+// ingestion stalled behind wmu until it finished. Batches of 10k rows
+// commit independently (each a bounded WAL append), ingest interleaves
+// between batches, and one TRUNCATE checkpoint at the end reclaims the
+// WAL so the file does not linger at its peak size.
 func (s *Store) Prune(retention time.Duration) (events, alerts int64, err error) {
+        const pruneBatch = 10_000
         cutoff := time.Now().Add(-retention).UnixNano()
         s.wmu.Lock()
         defer s.wmu.Unlock()
-        res, err := s.db.Exec(`DELETE FROM events WHERE ts < ?`, cutoff)
-        if err != nil {
-                return 0, 0, fmt.Errorf("store: prune events: %w", err)
+        for {
+                res, err := s.db.Exec(`DELETE FROM events WHERE rowid IN (SELECT rowid FROM events WHERE ts < ? LIMIT ?)`, cutoff, pruneBatch)
+                if err != nil {
+                        return events, alerts, fmt.Errorf("store: prune events: %w", err)
+                }
+                n, _ := res.RowsAffected()
+                events += n
+                if n < pruneBatch {
+                        break
+                }
         }
-        events, _ = res.RowsAffected()
-        res, err = s.db.Exec(`DELETE FROM alerts WHERE ts < ?`, cutoff)
-        if err != nil {
-                return events, 0, fmt.Errorf("store: prune alerts: %w", err)
+        for {
+                res, err := s.db.Exec(`DELETE FROM alerts WHERE seq IN (SELECT seq FROM alerts WHERE ts < ? LIMIT ?)`, cutoff, pruneBatch)
+                if err != nil {
+                        return events, alerts, fmt.Errorf("store: prune alerts: %w", err)
+                }
+                n, _ := res.RowsAffected()
+                alerts += n
+                if n < pruneBatch {
+                        break
+                }
         }
-        alerts, _ = res.RowsAffected()
+        // reclaim the WAL after a large sweep (no-op-ish when few rows
+        // were removed); a failure here is not fatal — the counts above
+        // are already durable
+        _, _ = s.db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
         atomic.AddInt64(&s.events, -events)
         atomic.AddInt64(&s.alerts, -alerts)
         return events, alerts, nil
