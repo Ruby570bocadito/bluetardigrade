@@ -5,6 +5,7 @@
 package rules
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -217,6 +218,16 @@ func (e *Engine) Evaluate(ev *model.Event) []Hit {
 // every positive operator answers false on nil (eq, contains, in...),
 // so negations now degrade to false instead of flipping to true.
 func matchCondition(c Condition, val any, re *regexp.Regexp) bool {
+	// Absent fields never satisfy ANY operator, positive or negative
+	// (sesión 100agentes-2, agente 17): asString(nil) == "" made
+	// positive operators with empty-ish values (eq "", regex ".*",
+	// startswith "") answer true on fields that are not even there,
+	// contradicting the documented contract right above Match. The
+	// negations below already answered false on nil — this guard
+	// pins the whole family to one direction.
+	if val == nil {
+		return false
+	}
 	switch c.Operator {
 	case "eq":
 		return compareEqual(val, c.Value)
@@ -278,9 +289,20 @@ func matchCondition(c Condition, val any, re *regexp.Regexp) bool {
 			}
 		}
 		return true
-	case "gt":
-		return compareNumeric(val, c.Value) > 0
-	case "lt":
+	case "gt", "lt":
+		// Event side must be numeric too (sesión 100agentes-2,
+		// agente 17): compareNumeric still fell back to a
+		// lexicographic strings.Compare when the EVENT value was
+		// not numeric (e.g. an attributes.* string), so gt 5 fired
+		// on "abc" and lt 5 on "0x10". The rule-side value is
+		// already rejected at load; a non-numeric event value now
+		// answers false instead of comparing strings.
+		if _, ok := toFloat(val); !ok {
+			return false
+		}
+		if c.Operator == "gt" {
+			return compareNumeric(val, c.Value) > 0
+		}
 		return compareNumeric(val, c.Value) < 0
 	case "ieq":
 		return strings.EqualFold(asString(val), asString(c.Value))
@@ -419,7 +441,13 @@ func lookup(m map[string]any, path string) any {
 	if m == nil {
 		return nil
 	}
-	parts := strings.Split(path, ".")
+	return lookupParts(m, strings.Split(path, "."))
+}
+
+// lookupParts resolves an already-split path (zero allocations on the
+// hot path — every Matcher carries its paths pre-split since
+// NewMatcher).
+func lookupParts(m map[string]any, parts []string) any {
 	var cur any = m
 	for _, p := range parts {
 		mp, ok := cur.(map[string]any)
@@ -551,8 +579,19 @@ func (e *Engine) load(dir string) error {
 		if err := yamlcheck.Guard(path, data); err != nil {
 			return err
 		}
+		// Strict decode (sesión 100agentes-2, agente 11): unknown
+		// keys used to be dropped silently, so a typo like
+		// "condition:" (singular) left Conditions empty and the
+		// empty Matcher matched EVERY event — a rule renamed into a
+		// pure counter with zero feedback. Every other loader in
+		// the house already refuses unknown fields (scenario,
+		// identities, respond operators, AD config); the rule
+		// engine — the thing every other safeguard depends on —
+		// was the only one left out.
+		dec := yaml.NewDecoder(bytes.NewReader(data))
+		dec.KnownFields(true)
 		var rules []Rule
-		if err := yaml.Unmarshal(data, &rules); err != nil {
+		if err := dec.Decode(&rules); err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
 		for i := range rules {
@@ -634,6 +673,15 @@ func compile(r *Rule) (compiledRule, error) {
 		return cr, err
 	}
 	cr.matcher = m
+	// Severity policy for exclude_known_software (sesión
+	// 100agentes-2, agente 17): the docs say high/critical rules
+	// must never set it, but compile() used to accept it for any
+	// severity — a critical detection could go blind exactly in the
+	// scenario (legitimate software) the warning describes. Fail
+	// the load loudly; no shipped pack sets it on high/critical.
+	if r.ExcludesKnownSoftware() && (r.Severity == SevHigh || r.Severity == SevCritical) {
+		return cr, fmt.Errorf("exclude_known_software is not allowed on %s rules (it would blind a high-impact detection on legitimate software)", r.Severity)
+	}
 	return cr, nil
 }
 
@@ -645,6 +693,7 @@ func compile(r *Rule) (compiledRule, error) {
 // construction and Match only reads.
 type Matcher struct {
 	conds   []Condition
+	paths   [][]string       // per condition: pre-split dotted field path
 	regexes []*regexp.Regexp // per condition index (nil when not "regex")
 }
 
@@ -660,6 +709,7 @@ type Matcher struct {
 func NewMatcher(conds []Condition) (*Matcher, error) {
 	m := &Matcher{
 		conds:   make([]Condition, len(conds)),
+		paths:   make([][]string, len(conds)),
 		regexes: make([]*regexp.Regexp, len(conds)),
 	}
 	for i, c := range conds {
@@ -667,15 +717,47 @@ func NewMatcher(conds []Condition) (*Matcher, error) {
 		if c.Field == "" || c.Operator == "" {
 			return nil, fmt.Errorf("condition %d: field and operator are required", i)
 		}
+		// Pre-split the dotted path once (sesión 100agentes-2,
+		// agente 24): lookup used to run strings.Split per
+		// condition per event — at ~2k eps with dozens of
+		// candidate rules that is 10^4-10^5 allocations/s just
+		// for path splitting.
+		m.paths[i] = strings.Split(c.Field, ".")
 		if !validOperators[c.Operator] {
 			return nil, fmt.Errorf("condition %d: operator %q no soportado", i, c.Operator)
 		}
 		if c.Operator == "regex" {
-			re, err := regexp.Compile(asString(c.Value))
+			// The value must be a string scalar (sesión
+			// 100agentes-2, agente 17): a list value used to
+			// reach regexp.Compile via fmt.Sprint, compiling
+			// "[a b]" into a character CLASS that matches "a",
+			// " ", "b"... — a silent widening of the detection.
+			s, ok := c.Value.(string)
+			if !ok {
+				return nil, fmt.Errorf("condition %d: operator %q requires a string value, got %T", i, c.Operator, c.Value)
+			}
+			re, err := regexp.Compile(s)
 			if err != nil {
 				return nil, fmt.Errorf("condition %d: bad regex: %w", i, err)
 			}
 			m.regexes[i] = re
+		}
+		// Empty-pattern / empty-list guards (sesión 100agentes-2,
+		// agente 17): an empty needle is ALWAYS contained, so
+		// contains "" (and the whole prefix/suffix/i* family)
+		// answered true on every present field, and an empty list
+		// made not_in/not_iin answer true for anything — or never
+		// fired for in/iin. Both shapes are load errors now, the
+		// same loud-failure standard as an unknown operator.
+		switch c.Operator {
+		case "regex", "contains", "icontains", "startswith", "istartswith", "endswith", "iendswith", "eq", "ieq":
+			if asString(c.Value) == "" {
+				return nil, fmt.Errorf("condition %d: operator %q requires a non-empty value", i, c.Operator)
+			}
+		case "in", "iin", "not_in", "not_iin", "contains_any", "icontains_any":
+			if len(toList(c.Value)) == 0 {
+				return nil, fmt.Errorf("condition %d: operator %q requires a non-empty value list", i, c.Operator)
+			}
 		}
 		if c.Operator == "gt" || c.Operator == "lt" {
 			// numeric-only (audit 5.3): the old matcher fell back
@@ -725,7 +807,7 @@ func (m *Matcher) Match(ev *model.Event) bool {
 // marshal round-trip when the caller already has one).
 func (m *Matcher) MatchFields(fields map[string]any) bool {
 	for i, c := range m.conds {
-		if !matchCondition(c, lookup(fields, c.Field), m.regexes[i]) {
+		if !matchCondition(c, lookupParts(fields, m.paths[i]), m.regexes[i]) {
 			return false
 		}
 	}

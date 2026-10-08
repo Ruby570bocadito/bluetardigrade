@@ -20,11 +20,11 @@ package ad
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/secretfile"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/yamlcheck"
 	"gopkg.in/yaml.v3"
 )
 
@@ -103,9 +103,16 @@ const MinInterval = 5 * time.Minute
 // Load reads and validates the connector configuration. Errors carry
 // the field name and never any file content.
 func Load(path string) (*Config, error) {
-	raw, err := os.ReadFile(path)
+	// Capped read + resource-bomb guard (sesión 100agentes-2,
+	// agentes 1+6): this was the ONLY YAML surface left reading with
+	// a bare os.ReadFile — a multi-GB or alias-bombed -ad file would
+	// be read whole at startup AND on every PUT /api/settings/ad.
+	raw, err := yamlcheck.ReadFileCapped(path, yamlcheck.MaxReadBytes)
 	if err != nil {
 		return nil, fmt.Errorf("ad: read config: %w", err)
+	}
+	if err := yamlcheck.Guard(path, raw); err != nil {
+		return nil, err
 	}
 	var c Config
 	dec := yaml.NewDecoder(strings.NewReader(string(raw)))

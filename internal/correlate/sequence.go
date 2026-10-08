@@ -2,8 +2,10 @@ package correlate
 
 import (
 	"fmt"
+	"hash/fnv"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -70,6 +72,12 @@ type compiled struct {
 	scope    string
 	minHosts int
 	steps    [][]string // rule names advancing each step
+	// fp is the layout fingerprint of steps (see stepsFingerprint):
+	// every in-flight state carries it, and a reload that changes the
+	// step order/composition drops the old progress instead of
+	// reinterpreting it against the new layout (sesión 100agentes-2,
+	// agente 18, P2).
+	fp uint64
 }
 
 // Load-time hardening: sequences/ is configuration, but configuration
@@ -310,7 +318,24 @@ func compile(s Sequence) (*compiled, error) {
 		}
 		w = d
 	}
-	return &compiled{seq: s, window: w, scope: scope, minHosts: minHosts, steps: steps}, nil
+	return &compiled{seq: s, window: w, scope: scope, minHosts: minHosts, steps: steps, fp: stepsFingerprint(steps)}, nil
+}
+
+// stepsFingerprint hashes the step layout (rule names, order kept —
+// progress is stored per step INDEX). A reordering or recomposition of
+// the steps of a live sequence would otherwise reinterpret old
+// progress against the new layout and complete a chain where a step
+// never fired (reproduced: pasos [A,B] → hit A → reload [B,A] → hit A
+// ⇒ cadena completa con 0 pasos esperados).
+func stepsFingerprint(steps [][]string) uint64 {
+	h := fnv.New64a()
+	for _, names := range steps {
+		s := append([]string(nil), names...)
+		sort.Strings(s)
+		h.Write([]byte(strings.Join(s, "\x00")))
+		h.Write([]byte{0xff})
+	}
+	return h.Sum64()
 }
 
 // firstControlRune returns the first Unicode control rune (Cc: NUL,

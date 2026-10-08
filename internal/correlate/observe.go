@@ -35,11 +35,18 @@ func (m *Manager) Observe(ev *model.Event, ruleName string) {
 		}
 		key := stateKey{seqID: c.seq.ID, host: entity}
 		st := m.state[key]
-		if st == nil {
-			if len(m.state) >= maxTrackedStates && !m.reclaimLocked(wall, false) {
-				continue
+		if st == nil || st.fp != c.fp {
+			// st.fp != c.fp: the sequence's steps changed under
+			// a hot-reload — old progress maps to a layout that
+			// no longer exists, so the chain restarts (the
+			// Reload prune handles the map-wide pass; this
+			// guard covers the state before its next prune).
+			if st == nil {
+				if len(m.state) >= maxTrackedStates && !m.reclaimLocked(wall, false) {
+					continue
+				}
 			}
-			st = &state{at: map[int]time.Time{}, hosts: map[string]string{}}
+			st = &state{fp: c.fp, at: map[int]time.Time{}, hosts: map[string]string{}}
 		}
 		if h := strings.ToLower(ev.Host); h != "" && len(st.hosts) < maxMinHosts {
 			if _, ok := st.hosts[h]; !ok {

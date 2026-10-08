@@ -69,8 +69,20 @@ func (s *Store) DeleteFleetHosts(hosts []string) error {
 	s.wmu.Lock()
 	defer s.wmu.Unlock()
 	for _, host := range hosts {
-		if _, err := s.db.Exec(`DELETE FROM fleet_hosts WHERE host = ?`, strings.ToLower(host)); err != nil {
+		h := strings.ToLower(host)
+		if _, err := s.db.Exec(`DELETE FROM fleet_hosts WHERE host = ?`, h); err != nil {
 			return fmt.Errorf("store: fleet delete: %w", err)
+		}
+		// Baseline cleanup (sesión 100agentes-2, agente 16, P1):
+		// retirar un host dejaba sus filas de baseline para
+		// siempre — y en cada reinicio LoadBaseline→Restore
+		// re-sembraba el tracker con hosts muertos hasta llenar
+		// maxHosts, deshaciendo el Sweep de la auditoría.
+		if _, err := s.db.Exec(`DELETE FROM baseline WHERE host = ?`, h); err != nil {
+			return fmt.Errorf("store: baseline delete: %w", err)
+		}
+		if _, err := s.db.Exec(`DELETE FROM baseline_hosts WHERE host = ?`, h); err != nil {
+			return fmt.Errorf("store: baseline hosts delete: %w", err)
 		}
 	}
 	return nil

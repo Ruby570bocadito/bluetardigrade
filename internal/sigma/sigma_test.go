@@ -342,9 +342,166 @@ level: medium
 		t.Errorf("nombres de la division mal: %q / %q",
 			res.Converted[0].Name, res.Converted[1].Name)
 	}
-	// mismo id (la identidad Sigma se conserva), condiciones distintas
-	if res.Converted[0].ID != res.Converted[1].ID {
-		t.Error("la division OR debe conservar el id Sigma")
+	// ids ÚNICOS por rama (sesión 100agentes-2, P0 agentes 18+31):
+	// antes ambas ramas llevaban el mismo id Sigma y el loader del
+	// motor rechazaba el fichero emitido por "duplicate rule id"
+	// (log.Fatalf en el arranque). Ahora cada rama lleva -orN.
+	if res.Converted[0].ID == res.Converted[1].ID {
+		t.Error("la division OR debe emitir ids UNICOS por rama")
+	}
+	if res.Converted[0].ID != "aaaaaaaa-2222-2222-2222-222222222222-or1" ||
+		res.Converted[1].ID != "aaaaaaaa-2222-2222-2222-222222222222-or2" {
+		t.Errorf("sufijos de id mal: %q / %q", res.Converted[0].ID, res.Converted[1].ID)
+	}
+}
+
+// TestConvertORSplitEmitLoadsAndFiresBranch2 (sesión 100agentes-2,
+// agente 31, P0): el flujo COMPLETO de la división OR — convertir,
+// emitir, cargar en el motor y disparar SOLO la rama 2 — no tenía
+// ningún test y el camino estaba roto de extremo a extremo (ids
+// duplicados → log.Fatalf en la carga).
+func TestConvertORSplitEmitLoadsAndFiresBranch2(t *testing.T) {
+	dir := writeCorpus(t, map[string]string{"or.yml": `
+title: Or campos distintos
+id: aaaaaaaa-2222-2222-2222-222222222222
+logsource: {product: windows, category: process_creation}
+detection:
+    S1: {Image|endswith: 'whoami.exe'}
+    S2: {CommandLine|contains: '/grant'}
+    condition: S1 or S2
+level: medium
+`})
+	res, err := ConvertDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Converted) != 2 || len(res.Skipped) != 0 {
+		t.Fatalf("converted=%d skipped=%d, want 2/0", len(res.Converted), len(res.Skipped))
+	}
+	data, err := res.Emit()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := t.TempDir()
+	if err := os.WriteFile(filepath.Join(out, "converted.yaml"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	engine, err := rules.LoadDir(out)
+	if err != nil {
+		t.Fatalf("el YAML emitido con la division OR no carga en el motor: %v", err)
+	}
+	if engine.Count() != 2 {
+		t.Fatalf("engine.Count() = %d, want 2", engine.Count())
+	}
+	// Un evento que matchea SOLO la rama 2 (CommandLine) dispara
+	// exactamente una alerta, con el id de la rama 2.
+	ev := &model.Event{
+		ID:   "or-split-branch2",
+		Type: "process.create",
+		Host: "LAB",
+		Process: &model.Process{
+			Name:        "icacls.exe",
+			Image:       `C:\Windows\System32\icacls.exe`,
+			CommandLine: `icacls.exe C:\Users /grant everyone:F`,
+		},
+	}
+	hits := engine.Evaluate(ev)
+	if len(hits) != 1 {
+		t.Fatalf("la rama 2 del OR no disparo: hits=%d", len(hits))
+	}
+	if got := hits[0].Rule.ID; got != "aaaaaaaa-2222-2222-2222-222222222222-or2" {
+		t.Errorf("id que disparo: %q, want ...-or2", got)
+	}
+	// Un evento inocente no dispara ninguna rama.
+	ev.Process.CommandLine = "icacls.exe C:\\Users /list"
+	if hits := engine.Evaluate(ev); len(hits) != 0 {
+		t.Fatalf("falso positivo del evento inocente: hits=%d", len(hits))
+	}
+}
+
+// Un valor solo-wildcard ('*') se rechaza con motivo en vez de emitir
+// startswith "" (que matcheaba TODO, incluso campos ausentes) —
+// sesión 100agentes-2, agente 18, P1.
+func TestSigmaWildcardOnlyRejected(t *testing.T) {
+	dir := writeCorpus(t, map[string]string{"w.yml": `
+title: Comodin solitario
+id: aaaaaaaa-4444-4444-4444-444444444444
+logsource: {product: windows, category: process_creation}
+detection:
+    SEL: {User: '*'}
+    condition: SEL
+level: low
+`})
+	res, err := ConvertDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Converted) != 0 || len(res.Skipped) != 1 {
+		t.Fatalf("converted=%d skipped=%d, want 0/1", len(res.Converted), len(res.Skipped))
+	}
+	if !strings.Contains(res.Skipped[0].Reason, "solo-wildcard") {
+		t.Errorf("motivo del skip inesperado: %q", res.Skipped[0].Reason)
+	}
+}
+
+// La forma lista de condition ([S1, S2]) antes abortaba TODA la
+// conversion; ahora convierte cada elemento como un OR — sesión
+// 100agentes-2, agente 18, P2.
+func TestSigmaConditionListForm(t *testing.T) {
+	dir := writeCorpus(t, map[string]string{"list.yml": `
+title: Lista de condiciones
+id: aaaaaaaa-5555-5555-5555-555555555555
+logsource: {product: windows, category: process_creation}
+detection:
+    S1: {Image|endswith: 'whoami.exe'}
+    S2: {Image|endswith: 'net.exe'}
+    condition: [S1, S2]
+level: low
+`})
+	res, err := ConvertDir(dir)
+	if err != nil {
+		t.Fatalf("la forma lista de condition debe convertir sin abortar: %v", err)
+	}
+	if len(res.Converted) != 2 || len(res.Skipped) != 0 {
+		t.Fatalf("converted=%d skipped=%d, want 2/0", len(res.Converted), len(res.Skipped))
+	}
+	// ids únicos con sufijo -cN (cada elemento es una regla).
+	if res.Converted[0].ID == res.Converted[1].ID {
+		t.Error("las condiciones de la lista deben emitir ids unicos")
+	}
+	if !strings.Contains(res.Converted[0].Name, "(cond 1/2)") ||
+		!strings.Contains(res.Converted[1].Name, "(cond 2/2)") {
+		t.Errorf("nombres con sufijo cond ausentes: %q / %q",
+			res.Converted[0].Name, res.Converted[1].Name)
+	}
+}
+
+// Un fichero Sigma multi-documento convertia solo el documento 1 y
+// descartaba el resto en silencio — sesión 100agentes-2, agente 18, P3.
+func TestSigmaMultiDoc(t *testing.T) {
+	dir := writeCorpus(t, map[string]string{"multi.yml": `
+title: Doc uno
+id: aaaaaaaa-6666-6666-6666-666666666666
+logsource: {product: windows, category: process_creation}
+detection:
+    SEL: {Image|endswith: 'whoami.exe'}
+    condition: SEL
+level: low
+---
+title: Doc dos
+id: aaaaaaaa-7777-7777-7777-777777777777
+logsource: {product: windows, category: process_creation}
+detection:
+    SEL: {Image|endswith: 'net.exe'}
+    condition: SEL
+level: low
+`})
+	res, err := ConvertDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Converted) != 2 {
+		t.Fatalf("converted=%d, want 2 (los dos documentos)", len(res.Converted))
 	}
 }
 

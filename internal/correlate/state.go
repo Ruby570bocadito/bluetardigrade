@@ -6,6 +6,11 @@ import (
 
 // state is one in-flight (sequence, entity) chain.
 type state struct {
+	// fp is the step-layout fingerprint of the sequence this state
+	// was started under (sesión 100agentes-2, agente 18): progress
+	// is stored per step index, so a reload that reorders/recomposes
+	// the steps must drop this state instead of reinterpreting it.
+	fp uint64
 	// at maps a matched step index to the event time of its most
 	// recent hit. Only times are kept (never the event itself): a
 	// state lives until its chain completes or is reclaimed, and

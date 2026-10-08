@@ -368,10 +368,16 @@ func summarize(ev *model.Event) string {
 				s += " " + ev.Process.CommandLine
 			}
 		}
-		return s
+		// Truncate like every other branch (sesión 100agentes-2,
+		// agentes 9+24, P2): Process.Name is attacker-controlled
+		// and traveled VERBATIM as Alert.Summary into the ring,
+		// SSE, SQLite, webhook and SOC reports — up to ~1 MiB per
+		// alert from a hostile feed.
+		return truncateRunes(s, 240)
 	}
 	if ev.File != nil {
-		return ev.File.Path
+		// Same cap for file paths (previously unbounded).
+		return truncateRunes(ev.File.Path, 240)
 	}
 	if ev.Network != nil {
 		return fmt.Sprintf("%s -> %s:%d", ev.Network.Protocol,
@@ -391,6 +397,13 @@ func pidOf(ev *model.Event) int {
 // multi-byte UTF-8 sequence: byte slicing would corrupt command lines
 // containing accented or non-Latin characters.
 func truncateRunes(s string, max int) string {
+	// Early exit by byte length (sesión 100agentes-2, agente 24):
+	// len(s) is an upper bound of the rune count, so a short string
+	// never needs the []rune allocation — summarize of an 8 KiB
+	// command line used to allocate ~32 KB per alert.
+	if len(s) <= max {
+		return s
+	}
 	r := []rune(s)
 	if len(r) <= max {
 		return s

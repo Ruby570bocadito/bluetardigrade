@@ -314,6 +314,174 @@ func TestOperators(t *testing.T) {
 	}
 }
 
+// Semantica nil fijada en test (sesión 100agentes-2, agente 17): un
+// campo AUSENTE nunca satisface NINGUN operador, positivo o negativo.
+// El fix de negaciones de la ronda anterior (neq/not_in/not_iin →
+// false) no tenía ni un test que lo pinne: una "simplificación" de
+// matchCondition podría reabrir el agujero de atribución en silencio
+// (privilege-escalation.yaml depende de ello).
+func TestOperatorsNilFieldSemantics(t *testing.T) {
+	cases := []struct {
+		op   string
+		val  any
+		want bool
+	}{
+		// positivos: false sobre campo ausente
+		{"eq", "x", false},
+		{"ieq", "x", false},
+		{"contains", "x", false},
+		{"icontains", "x", false},
+		{"startswith", "x", false},
+		{"endswith", "x", false},
+		{"istartswith", "x", false},
+		{"iendswith", "x", false},
+		{"in", []any{"x", "y"}, false},
+		{"iin", []any{"x", "y"}, false},
+		{"contains_any", []any{"x", "y"}, false},
+		{"icontains_any", []any{"x", "y"}, false},
+		{"regex", ".*", false},
+		{"gt", 5, false},
+		{"lt", 5, false},
+		// negaciones: TAMBIEN false (el fix audit 5.3 #1 se sostiene)
+		{"neq", "x", false},
+		{"not_in", []any{"x", "y"}, false},
+		{"not_iin", []any{"x", "y"}, false},
+	}
+	for i, tc := range cases {
+		m, err := NewMatcher([]Condition{{Field: "f", Operator: tc.op, Value: tc.val}})
+		if err != nil {
+			t.Fatalf("case %d (%s): %v", i, tc.op, err)
+		}
+		// el campo "f" NO existe en el mapa
+		if got := m.MatchFields(map[string]any{"other": 1}); got != tc.want {
+			t.Errorf("case %d: %s sobre campo ausente = %v, want %v", i, tc.op, got, tc.want)
+		}
+	}
+}
+
+// gt/lt con valor de evento NO numérico → false (sesión 100agentes-2,
+// agente 17, P1): compareNumeric conservaba un fallback lexicográfico
+// en el lado del evento — gt 5 disparaba con "abc" y lt 5 con "0x10".
+func TestNumericOperatorsRejectNonNumericEventValue(t *testing.T) {
+	for _, op := range []string{"gt", "lt"} {
+		m, err := NewMatcher([]Condition{{Field: "n", Operator: op, Value: 5}})
+		if err != nil {
+			t.Fatalf("%s: %v", op, err)
+		}
+		for _, given := range []any{"abc", "0x10", nil, true, []any{"1"}} {
+			if m.MatchFields(map[string]any{"n": given}) {
+				t.Errorf("%s(%v) disparo con valor de evento no numerico %v", op, 5, given)
+			}
+		}
+		// y los valores numéricos (y sus formas string) siguen funcionando
+		if op == "gt" && !m.MatchFields(map[string]any{"n": float64(9)}) {
+			t.Errorf("gt 5 con float64(9) debe disparar")
+		}
+		if op == "lt" && !m.MatchFields(map[string]any{"n": float64(2)}) {
+			t.Errorf("lt 5 con float64(2) debe disparar")
+		}
+	}
+	// el rechazo de carga del lado regla también se fija en test
+	if _, err := NewMatcher([]Condition{{Field: "n", Operator: "gt", Value: "abc"}}); err == nil {
+		t.Error("gt con valor de regla no numerico debe fallar en carga")
+	}
+}
+
+// Claves desconocidas en el YAML de reglas = error de carga ruidoso
+// (sesión 100agentes-2, agente 11, P1): "condition:" (singular) dejaba
+// Conditions vacío y el matcher vacío matcheaba CADA evento — una
+// errata convertía la regla en un contador puro sin feedback.
+func TestLoadRejectsUnknownFields(t *testing.T) {
+	dir := t.TempDir()
+	bad := filepath.Join(dir, "typo.yaml")
+	src := `
+- name: regla con errata
+  id: typo-0001
+  event_type: process.create
+  severity: high
+  condition:
+      - {field: process.name, operator: iendswith, value: .exe}
+`
+	if err := os.WriteFile(bad, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadDir(dir); err == nil {
+		t.Fatal("una clave desconocida (condition singular) debe fallar la carga")
+	}
+	// y la forma correcta sigue cargando
+	good := filepath.Join(dir, "ok.yaml")
+	ok := `
+- name: regla correcta
+  id: ok-000001
+  event_type: process.create
+  severity: high
+  conditions:
+      - {field: process.name, operator: iendswith, value: .exe}
+`
+	if err := os.WriteFile(good, []byte(ok), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(bad); err != nil {
+		t.Fatal(err)
+	}
+	e, err := LoadDir(dir)
+	if err != nil {
+		t.Fatalf("el YAML correcto debe cargar: %v", err)
+	}
+	if e.Count() != 1 {
+		t.Fatalf("count = %d, want 1", e.Count())
+	}
+}
+
+// Valores vacíos en condiciones = error de carga (sesión 100agentes-2,
+// agente 17): contains "" / regex "" / not_in [] eran match-everything
+// o mute-forever mientras la regla parecía armada.
+func TestNewMatcherRejectsEmptyValues(t *testing.T) {
+	cases := []Condition{
+		{Field: "f", Operator: "regex", Value: ""},
+		{Field: "f", Operator: "contains", Value: ""},
+		{Field: "f", Operator: "icontains", Value: ""},
+		{Field: "f", Operator: "startswith", Value: ""},
+		{Field: "f", Operator: "endswith", Value: ""},
+		{Field: "f", Operator: "eq", Value: ""},
+		{Field: "f", Operator: "ieq", Value: ""},
+		{Field: "f", Operator: "in", Value: []any{}},
+		{Field: "f", Operator: "not_in", Value: []any{}},
+		{Field: "f", Operator: "not_iin", Value: nil},
+		{Field: "f", Operator: "regex", Value: []any{"a", "b"}}, // regex exige string escalar
+	}
+	for i, c := range cases {
+		if _, err := NewMatcher([]Condition{c}); err == nil {
+			t.Errorf("caso %d (%s %v): debe rechazarse en carga", i, c.Operator, c.Value)
+		}
+	}
+	// listas con contenido siguen siendo válidas
+	if _, err := NewMatcher([]Condition{{Field: "f", Operator: "not_in", Value: []any{"a"}}}); err != nil {
+		t.Errorf("not_in con lista no vacia debe cargar: %v", err)
+	}
+}
+
+// exclude_known_software en reglas high/critical = error de carga
+// (sesión 100agentes-2, agente 17, P3): la doc lo prohibía pero
+// compile() lo aceptaba para cualquier severidad.
+func TestExcludeKnownSoftwareSeverityPolicy(t *testing.T) {
+	r := &Rule{
+		Name: "critica ciega", ID: "eksw-00001",
+		EventType: "process.create", Severity: SevCritical,
+		ExcludeKnownSoftware: boolPtr(true),
+		Conditions:           []Condition{{Field: "process.name", Operator: "ieq", Value: "tool.exe"}},
+	}
+	if _, err := compile(r); err == nil {
+		t.Fatal("exclude_known_software en critical debe fallar la carga")
+	}
+	r.Severity = SevMedium
+	if _, err := compile(r); err != nil {
+		t.Fatalf("exclude_known_software en medium debe ser legitimo: %v", err)
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }
+
 // F1: la familia i* entera comparte UNA semantica de
 // folding — strings.EqualFold y RE2 (?i) aplican simple case folding,
 // mientras que un ToLower plano no pliega caracteres fold-exoticos
@@ -338,7 +506,6 @@ func TestFoldFamilyUnicodeConsistency(t *testing.T) {
 		{"icontains", "MIMIKATZ", "invoke-mimikatz", true},
 		{"istartswith", "RUNDLL32", "rundll32.exe", true},
 		{"iendswith", ".EXE", "rundll32.exe", true},
-		{"icontains", "", "anything", true},
 	}
 	for i, tc := range cases {
 		c := Condition{Field: "f", Operator: tc.op, Value: tc.val}
@@ -350,6 +517,14 @@ func TestFoldFamilyUnicodeConsistency(t *testing.T) {
 			t.Errorf("case %d: operator %s(%v, %v) = %v, want %v",
 				i, tc.op, tc.given, tc.val, got, tc.want)
 		}
+	}
+	// Aguja vacía = carga rechazada (sesión 100agentes-2, agente 17):
+	// un needle vacío está "siempre contenido", así que icontains ""
+	// respondía true en cada campo presente — el caso 12 de la tabla
+	// antigua documentaba ese match-everything como comportamiento
+	// deseado; ahora es un error de carga ruidoso.
+	if _, err := NewMatcher([]Condition{{Field: "f", Operator: "icontains", Value: ""}}); err == nil {
+		t.Fatal("icontains con valor vacio debe rechazarse en carga")
 	}
 	// Paridad con el camino regex del convertidor Sigma: la misma
 	// seleccion traducida como wildcard mixto (regex (?i)) y como valor

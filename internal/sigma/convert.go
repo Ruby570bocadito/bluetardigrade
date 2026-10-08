@@ -123,6 +123,13 @@ func hasLetters(s string) bool {
 func translateSelection(fvs []fieldValue) ([]Condition, string) {
 	conds := make([]Condition, 0, len(fvs))
 	for _, fv := range fvs {
+		// A modifier chain applies ONE meaning; "contains|re"
+		// used to pass the supported-check and then only apply
+		// modifiers[0], silently matching the regex as a literal
+		// substring (sesión 100agentes-2, agente 18).
+		if len(fv.modifiers) > 1 {
+			return nil, fmt.Sprintf("field %q: cadenas de modificador multiple no soportadas (%v)", fv.field, fv.modifiers)
+		}
 		for _, m := range fv.modifiers {
 			if !supportedModifiers[m] {
 				return nil, fmt.Sprintf("field %q: modificador %q no soportado (soportados: contains, startswith, endswith, re, gt, lt)", fv.field, m)
@@ -178,10 +185,23 @@ func translateRegex(v any) (string, any, error) {
 // translateString handles scalar and list values with the optional
 // string modifier ("" = plain equality context).
 func translateString(v any, modifier string) (string, any, error) {
+	// A null value ("User: null") used to become ieq "<nil>" via
+	// fmt.Sprint — a condition that can never fire while looking
+	// armed (sesión 100agentes-2, agente 18). Skip loudly instead.
+	if v == nil {
+		return "", nil, fmt.Errorf("valor null no traducible (campo vacio en Sigma)")
+	}
 	if list, ok := v.([]any); ok {
 		return translateList(list, modifier)
 	}
 	s := fmt.Sprint(v)
+	// A pattern of ONLY wildcards ("*", "?", "**") carries zero
+	// information: '*' used to fall into the startswith branch and
+	// emit startswith "" — true for every event INCLUDING ones
+	// without the field (sesión 100agentes-2, agente 18, P1).
+	if strings.Trim(s, "*?") == "" {
+		return "", nil, fmt.Errorf("patron solo-wildcard %q no traducible (matchearia todo)", s)
+	}
 	// A modified value keeps its literal meaning; if it carries
 	// wildcards the semantics shift to regex so nothing changes
 	// silently.
@@ -305,6 +325,16 @@ func translateList(list []any, modifier string) (string, any, error) {
 		vals[i] = s
 		if strings.ContainsAny(s, "*?") {
 			wildcardFree = false
+		}
+		// An only-wildcards element would compile to an always-true
+		// regex alternative ("(?i)^.*$") that matches every event
+		// with the field — and every one without it (sesión
+		// 100agentes-2, agente 18). Reject the selection loudly.
+		if el != nil && strings.Trim(s, "*?") == "" {
+			return "", nil, fmt.Errorf("elemento solo-wildcard %q en lista no traducible", s)
+		}
+		if el == nil {
+			return "", nil, fmt.Errorf("valor null en lista no traducible")
 		}
 	}
 	if wildcardFree {

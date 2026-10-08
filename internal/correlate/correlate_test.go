@@ -156,6 +156,62 @@ func TestReloadPreservesProgress(t *testing.T) {
 	}
 }
 
+// TestReloadDropsProgressWhenStepsChange (sesión 100agentes-2, agente
+// 18, P2): el progreso se guarda por ÍNDICE de paso, así que
+// reordenar/recomponer los pasos de una secuencia viva reinterpretaba
+// el progreso viejo contra el layout nuevo y completaba la cadena sin
+// que un paso hubiera disparado nunca (reproducido: pasos [R1,R2] →
+// hit R1 → reload [R2,R1] → hit R1 ⇒ alerta con el paso R2 jamás
+// visto). El fingerprint del layout viaja en cada estado y el reload
+// poda los estados cuyo fingerprint difiere.
+func TestReloadDropsProgressWhenStepsChange(t *testing.T) {
+	two := `
+- name: "S"
+  id: "reorder-1"
+  severity: high
+  window: 5m
+  steps:
+    - rule: "R1"
+    - rule: "R2"
+`
+	reordered := `
+- name: "S"
+  id: "reorder-1"
+  severity: high
+  window: 5m
+  steps:
+    - rule: "R2"
+    - rule: "R1"
+`
+	var c collector
+	dir := writeSeq(t, two)
+	m, err := LoadDir(dir, c.emit)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	m.Observe(ev("H1", 0), "R1") // progreso del paso 0 bajo [R1, R2]
+	// Reordenar los pasos en disco y recargar.
+	if err := os.WriteFile(filepath.Join(dir, "seq.yaml"), []byte(reordered), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Reload(dir); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	// Con el estado viejo podado, un único hit de R1 (ahora paso 1)
+	// NO puede completar la cadena.
+	m.Observe(ev("H1", time.Second), "R1")
+	if c.count() != 0 {
+		t.Fatalf("la cadena se completo reinterpremando progreso viejo (alerts=%d) — el estado debia podarse", c.count())
+	}
+	// Y la cadena arrancada de nuevo sigue siendo completable con
+	// los pasos en el orden nuevo: R2 (paso 0) + R1 (paso 1).
+	m.Observe(ev("H1", 2*time.Second), "R2")
+	m.Observe(ev("H1", 3*time.Second), "R1")
+	if c.count() != 1 {
+		t.Fatalf("la cadena con layout nuevo debe completar normalmente, alerts = %d", c.count())
+	}
+}
+
 func TestCompileValidation(t *testing.T) {
 	cases := []string{
 		`- name: "x"

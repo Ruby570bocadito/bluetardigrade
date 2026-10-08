@@ -24,6 +24,41 @@ type condPlan struct {
 	selections []string
 }
 
+// conditionSpec accepts both documented forms of detection.condition:
+// a scalar string and a list of strings (Sigma: the list is an OR
+// across conditions). A rule using the list form used to abort the
+// whole conversion run with "cannot unmarshal !!seq into string";
+// now it is parsed like any other shape and each element converts
+// with its own (cond i/N) suffix (sesión 100agentes-2, agente 18).
+type conditionSpec struct {
+	str  string
+	list []string
+}
+
+func (c *conditionSpec) UnmarshalYAML(unmarshal func(any) error) error {
+	var s string
+	if err := unmarshal(&s); err == nil {
+		c.str, c.list = s, nil
+		return nil
+	}
+	var l []any
+	if err := unmarshal(&l); err != nil {
+		return fmt.Errorf("condition: debe ser texto o lista de textos")
+	}
+	c.list = make([]string, 0, len(l))
+	for _, el := range l {
+		s, ok := el.(string)
+		if !ok {
+			return fmt.Errorf("condition: toda entrada de la lista debe ser texto")
+		}
+		c.list = append(c.list, s)
+	}
+	if len(c.list) == 0 {
+		return fmt.Errorf("condition: la lista esta vacia")
+	}
+	return nil
+}
+
 // selOut pairs a selection name with its translated engine conditions.
 type selOut struct {
 	name  string

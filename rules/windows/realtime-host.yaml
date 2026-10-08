@@ -56,6 +56,12 @@
     - field: registry.operation
       operator: eq
       value: "SetValue"
+    # Anclar a la clave de politicas de Defender (sesión 100agentes-2,
+    # agente 11): sin este ancla la regla disparaba en CUALQUIER clave
+    # cuyo value_name coincidiera (p.ej. HKCU\Software\Foo\DisableAntivirus).
+    - field: registry.key
+      operator: regex
+      value: '(?i)\\Microsoft\\Windows Defender($|\\)'
     - field: registry.value_name
       operator: regex
       value: '(?i)^(disableantispyware|disableantivirus|disablerealtimemonitoring|disablebehaviormonitoring|disableioavprotection|disablescheduledscans)$'

@@ -39,6 +39,7 @@ package sigma
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -191,17 +192,24 @@ type sigmaRule struct {
 	} `yaml:"logsource"`
 	Detection struct {
 		Selections map[string]any `yaml:",inline"`
-		Condition  string         `yaml:"condition"`
+		// Condition accepts the string form AND the list form
+		// (condition: [S1, S2] is valid Sigma and means "S1 or
+		// S2"); the previous string-only field made any list
+		// abort the WHOLE conversion run with an unmarshal error
+		// (sesión 100agentes-2, agente 18).
+		Condition conditionSpec `yaml:"condition"`
 	} `yaml:"detection"`
 	FalsePositives []string `yaml:"falsepositives"`
 	Level          string   `yaml:"level"`
 	Tags           []string `yaml:"tags"`
 }
 
-// convertFile parses one Sigma file (single-document YAML; the corpus
-// convention is one rule per file) and appends to the result. An error
-// returned here is ALWAYS fatal for the run: invalid YAML or an
-// oversized file means the input is not what the operator thinks it is.
+// convertFile parses one Sigma file and appends to the result. The
+// file may hold several YAML documents ("---" separated): every one is
+// converted in order — the previous yaml.Unmarshal silently dropped
+// documents 2..N (sesión 100agentes-2, agente 18). An error returned
+// here is ALWAYS fatal for the run: invalid YAML or an oversized file
+// means the input is not what the operator thinks it is.
 func convertFile(path string, res *Result) error {
 	res.Files++
 	info, err := os.Stat(path)
@@ -218,11 +226,23 @@ func convertFile(path string, res *Result) error {
 	if err := yamlcheck.Guard(path, data); err != nil {
 		return err
 	}
-	var sr sigmaRule
-	if err := yaml.Unmarshal(data, &sr); err != nil {
-		return fmt.Errorf("sigma: %s: YAML invalido: %w", path, err)
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	for {
+		var sr sigmaRule
+		err := dec.Decode(&sr)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("sigma: %s: YAML invalido: %w", path, err)
+		}
+		// A bare "---" document decodes to the zero rule: it carries
+		// no detection, title or id, so it is not a rule at all.
+		if sr.Title == "" && sr.ID == "" && len(sr.Detection.Selections) == 0 {
+			continue
+		}
+		convertRule(&sr, res)
 	}
-	convertRule(&sr, res)
 	return nil
 }
 
@@ -325,56 +345,105 @@ func convertRule(sr *sigmaRule, res *Result) {
 		sels[name] = fvs
 	}
 
-	// ---- condition grammar ----
-	plan, err := parseCondition(sr.Detection.Condition, sels)
-	if err != nil {
-		res.skip(sr, "%q: %v", sr.Title, err)
+	// ---- condition grammar: string form AND Sigma list form ----
+	// condition: [S1, S2] means "S1 or S2". Every condition is
+	// parsed and translated FIRST; only when all of them succeed
+	// are the emitted rules appended — a failure in condition 2
+	// must never leave condition 1 armed (all-or-nothing, same as
+	// the OR-split budget below).
+	condExprs := sr.Detection.Condition.list
+	if condExprs == nil {
+		condExprs = []string{sr.Detection.Condition.str}
+	}
+	if len(condExprs) == 0 {
+		res.skip(sr, "%q: detection.condition vacio", sr.Title)
 		return
 	}
-
-	// ---- translate each requested selection into engine conditions ----
-	outs := make([]selOut, 0, len(plan.selections))
-	for _, name := range plan.selections {
-		conds, reason := translateSelection(sels[name])
-		if reason != "" {
-			res.skip(sr, "%q: %s", sr.Title, reason)
+	type planOut struct {
+		plan condPlan
+		outs []selOut
+	}
+	plans := make([]planOut, 0, len(condExprs))
+	for _, expr := range condExprs {
+		plan, err := parseCondition(expr, sels)
+		if err != nil {
+			res.skip(sr, "%q: %v", sr.Title, err)
 			return
 		}
-		outs = append(outs, selOut{name: name, conds: conds})
+		// ---- translate each requested selection into engine conditions ----
+		outs := make([]selOut, 0, len(plan.selections))
+		for _, name := range plan.selections {
+			conds, reason := translateSelection(sels[name])
+			if reason != "" {
+				res.skip(sr, "%q: %s", sr.Title, reason)
+				return
+			}
+			outs = append(outs, selOut{name: name, conds: conds})
+		}
+		plans = append(plans, planOut{plan: plan, outs: outs})
+	}
+
+	// ---- budget, all-or-nothing across every emitted rule ----
+	total := 0
+	for _, p := range plans {
+		if p.plan.kind != condOr {
+			total++
+			continue
+		}
+		if _, ok := mergeOR(p.outs); ok {
+			total++
+			continue
+		}
+		total += len(p.outs)
+	}
+	if len(res.Converted)+total > MaxRulesOut {
+		res.skip(sr, "tope de salida alcanzado (%d reglas): la regla necesita %d y no cabe entera", MaxRulesOut, total)
+		return
 	}
 
 	// ---- build the emitted rules ----
-	if plan.kind != condOr {
-		conds := []Condition{}
-		for _, o := range outs {
-			conds = append(conds, o.conds...)
+	for ci, p := range plans {
+		nameTag, idTag := "", ""
+		if len(plans) > 1 {
+			nameTag = fmt.Sprintf(" (cond %d/%d)", ci+1, len(plans))
+			idTag = fmt.Sprintf("-c%d", ci+1)
 		}
-		res.Converted = append(res.Converted, buildRule(sr, sev, et, conds, ""))
-		return
-	}
-
-	// OR family: try the same-field merge first (keeps `1 of them` with
-	// three CommandLine selections as ONE rule); otherwise split into
-	// one rule per selection (semantically identical: any branch fires).
-	if merged, ok := mergeOR(outs); ok {
-		res.Converted = append(res.Converted, buildRule(sr, sev, et, merged, ""))
-		return
-	}
-	sort.Slice(outs, func(i, j int) bool { return outs[i].name < outs[j].name })
-	for i, o := range outs {
-		if len(res.Converted) >= MaxRulesOut {
-			res.skip(sr, "tope de salida alcanzado (%d reglas) durante la division OR", MaxRulesOut)
-			return
+		if p.plan.kind != condOr {
+			conds := []Condition{}
+			for _, o := range p.outs {
+				conds = append(conds, o.conds...)
+			}
+			res.Converted = append(res.Converted, buildRule(sr, sev, et, conds, nameTag, idTag))
+			continue
 		}
-		suffix := fmt.Sprintf(" (or %d/%d)", i+1, len(outs))
-		res.Converted = append(res.Converted, buildRule(sr, sev, et, o.conds, suffix))
+		// OR family: try the same-field merge first (keeps `1 of them` with
+		// three CommandLine selections as ONE rule); otherwise split into
+		// one rule per selection (semantically identical: any branch fires).
+		if merged, ok := mergeOR(p.outs); ok {
+			res.Converted = append(res.Converted, buildRule(sr, sev, et, merged, nameTag, idTag))
+			continue
+		}
+		sort.Slice(p.outs, func(i, j int) bool { return p.outs[i].name < p.outs[j].name })
+		for i, o := range p.outs {
+			suffix := fmt.Sprintf(" (or %d/%d)", i+1, len(p.outs))
+			// Unique id per branch (sesión 100agentes-2, agentes 18+31,
+			// P0): every branch used to carry the SAME Sigma id, and the
+			// engine loader rejects duplicate ids with log.Fatalf — one
+			// converted rule with an OR over different fields left the
+			// emitted YAML unloadable and the engine refusing to start.
+			idSuffix := fmt.Sprintf("%s-or%d", idTag, i+1)
+			res.Converted = append(res.Converted, buildRule(sr, sev, et, o.conds, nameTag+suffix, idSuffix))
+		}
 	}
 }
 
 // buildRule assembles the native rule with provenance folded into the
 // description and a deterministic alert action (the Sigma title as
 // message: no invented content, rendered by the engine's templates).
-func buildRule(sr *sigmaRule, sev, et string, conds []Condition, nameSuffix string) Rule {
+// idSuffix disambiguates multi-rule emissions (OR split, condition
+// lists): every emitted rule needs its own id or the engine loader
+// rejects the whole set as duplicate.
+func buildRule(sr *sigmaRule, sev, et string, conds []Condition, nameSuffix, idSuffix string) Rule {
 	desc := strings.TrimSpace(sr.Description)
 	if desc == "" {
 		desc = sr.Title
@@ -401,7 +470,7 @@ func buildRule(sr *sigmaRule, sev, et string, conds []Condition, nameSuffix stri
 	tags := append([]string{"sigma"}, sr.Tags...)
 	return Rule{
 		Name:        sr.Title + nameSuffix,
-		ID:          sr.ID,
+		ID:          sr.ID + idSuffix,
 		Description: desc,
 		Severity:    sev,
 		EventType:   et,

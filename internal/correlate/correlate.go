@@ -75,18 +75,22 @@ func (m *Manager) Reload(dir string) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	// Prune progress of sequences that no longer exist on disk: their
-	// states can never complete, yet each counted against
-	// maxTrackedStates forever — enough removals/renames would exhaust
-	// the cap and silently stop correlation for NEW hosts (detection
-	// loss, not just memory). Only reached on a successful load: a
-	// failed reload keeps the previous sequence set AND its progress.
-	alive := make(map[string]bool, len(fresh.seqs))
+	// Prune progress of sequences that no longer exist on disk, AND
+	// of sequences whose step layout changed (sesión 100agentes-2,
+	// agente 18, P2): progress is stored per step INDEX, so old
+	// progress under a reordered/edited sequence could complete a
+	// chain where a step never fired. Their states can never be
+	// trusted, yet each counted against maxTrackedStates forever —
+	// enough removals/renames would exhaust the cap and silently
+	// stop correlation for NEW hosts (detection loss, not just
+	// memory). Only reached on a successful load: a failed reload
+	// keeps the previous sequence set AND its progress.
+	alive := make(map[string]uint64, len(fresh.seqs))
 	for _, c := range fresh.seqs {
-		alive[c.seq.ID] = true
+		alive[c.seq.ID] = c.fp
 	}
-	for k := range m.state {
-		if !alive[k.seqID] {
+	for k, st := range m.state {
+		if fp, ok := alive[k.seqID]; !ok || fp != st.fp {
 			delete(m.state, k)
 		}
 	}
