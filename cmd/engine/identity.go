@@ -7,7 +7,6 @@ import (
         "errors"
         "fmt"
         "io"
-        "os"
         "strings"
         "unicode"
 
@@ -38,7 +37,7 @@ func newIngestIdentityCmd() *cobra.Command {
                 Example: identityExamples,
                 Args:    cobra.NoArgs,
                 RunE: func(cmd *cobra.Command, args []string) error {
-                        return runIngestIdentity(cmd.InOrStdin(), cmd.OutOrStdout(), name, hosts, anyHost, fromStdin)
+                        return runIngestIdentity(cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr(), name, hosts, anyHost, fromStdin)
                 },
         }
         cmd.Flags().StringVar(&name, "name", "", "nombre de la identidad (se graba en cada evento como attributes.ingest_identity)")
@@ -48,7 +47,7 @@ func newIngestIdentityCmd() *cobra.Command {
         return cmd
 }
 
-func runIngestIdentity(in io.Reader, out io.Writer, name string, hosts []string, anyHost, fromStdin bool) error {
+func runIngestIdentity(in io.Reader, out, errOut io.Writer, name string, hosts []string, anyHost, fromStdin bool) error {
         name = strings.TrimSpace(name)
         if name == "" || strings.IndexFunc(name, unicode.IsControl) >= 0 || strings.ContainsAny(name, `"'\:#`) {
                 return errors.New("--name es obligatorio y no puede llevar caracteres de control, comillas, ':' ni '#'")
@@ -79,9 +78,9 @@ func runIngestIdentity(in io.Reader, out io.Writer, name string, hosts []string,
                 // used to persist the CLEAR token as comments inside the
                 // identities file itself. Stderr keeps the one-time reveal
                 // on the terminal while the redirect captures YAML only.
-                fmt.Fprintln(os.Stderr, "# Token del sensor (SF_INGEST_TOKEN o -token del sensor). Se muestra UNA vez:")
-                fmt.Fprintln(os.Stderr, "# "+token)
-                fmt.Fprintln(os.Stderr)
+                fmt.Fprintln(errOut, "# Token del sensor (SF_INGEST_TOKEN o -token del sensor). Se muestra UNA vez:")
+                fmt.Fprintln(errOut, "# "+token)
+                fmt.Fprintln(errOut)
         }
         fmt.Fprintln(out, "# Entrada para el fichero de -ingest-identities (version: 1, identities: [...]):")
         fmt.Fprintf(out, "  - name: %s\n    token_sha256: %s\n    hosts: %s\n", name, ingest.TokenDigest(token), hostList)

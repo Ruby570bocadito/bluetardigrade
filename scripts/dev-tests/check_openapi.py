@@ -179,9 +179,12 @@ def run_checks(spec: dict, go_src: str) -> tuple[list[str], dict]:
     # the bearer middleware, optionally inside the DNS-rebinding guard
     # (h.guardRebinding: Host check for the tokenless loopback API) and an
     # outermost response-header wrapper (securityHeaders: nosniff + no-referrer
-    # on every answer, including 401/403 rejections).
+    # on every answer, including 401/403 rejections). Since the 2026-10 audit
+    # rounds the chain also carries recoverPanic(requestDeadlines(...)) as the
+    # outermost layers — the regex accepts them so the guard stays anchored to
+    # the REAL chain without weakening the bearer requirement itself.
     has_mw = bool(re.search(
-        r"\bHandler:\s*(?:securityHeaders\(\s*)?(?:h\.guardRebinding\(\s*)?h\.auth\(\s*(?:mux\s*|guardWriteOrigin\(\s*mux\s*\))\s*\)(?:\s*\))?",
+        r"\bHandler:\s*(?:recoverPanic\(\s*requestDeadlines\(\s*)?(?:securityHeaders\(\s*)?(?:h\.guardRebinding\(\s*)?h\.auth\(\s*(?:mux\s*|guardWriteOrigin\(\s*mux\s*\))\s*\)(?:\s*\))?",
         go_src,
     ))
     exempt: set[str] = set()
