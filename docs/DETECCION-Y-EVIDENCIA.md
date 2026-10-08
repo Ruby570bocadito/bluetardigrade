@@ -2,9 +2,10 @@
 
 Actualización: 2026-10-01. Esta entrega parte de `444473d`, conserva el
 renombrado a **bluetardigrade** y amplía la capa de detección y forense.
-El inventario cargado pasa de 49 a **55 reglas habilitadas**: 16 critical,
-33 high y 6 medium, repartidas en seis tipos de evento. Las cuatro
-secuencias existentes permanecen disponibles.
+El inventario cargado asciende a **114 reglas habilitadas**: 25 critical,
+55 high, 28 medium, 3 low y 3 info, repartidas en doce tipos de evento.
+Las trece secuencias existentes (4 de kill-chain, 2 laterales y 7 de
+campaña) permanecen disponibles.
 
 ## Alarmas nuevas
 

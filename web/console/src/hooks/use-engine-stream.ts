@@ -168,11 +168,31 @@ export function useEngineStream(): EngineState {
         let merged = mergeNewest(als.map(mapAlert), receivedAlerts, alertKey, MAX_ALERTS)
         for (const decision of decisions) merged = applyLifecycle(merged, decision)
         setAlerts(merged)
-        setRules(rs.map(mapRule))
+        const mapped = rs.map(mapRule)
+        setRules((prev) =>
+          prev.length === mapped.length &&
+          prev.every((p, i) => p.id === mapped[i].id && p.enabled === mapped[i].enabled)
+            ? prev // sin cambios: identidad estable para los consumidores lentos (sesión 100agentes-3, agente 63)
+            : mapped,
+        )
         setStats(st)
-        if (sup !== undefined) setSuppressions(sup?.entries ?? [])
-        if (seq !== undefined) setSequences(seq ?? [])
-        if (response !== undefined) setRespondState(response)
+        if (sup !== undefined) {
+          const sups = sup?.entries ?? []
+          setSuppressions((prev) => (prev.length === sups.length ? prev : sups))
+        }
+        if (seq !== undefined) {
+          const seqs = seq ?? []
+          setSequences((prev) => (prev.length === seqs.length ? prev : seqs))
+        }
+        if (response !== undefined) {
+          setRespondState((prev) =>
+            prev !== null &&
+            prev.operators.length === response.operators.length &&
+            prev.kills.length === response.kills.length
+              ? prev
+              : response,
+          )
+        }
         if (audit !== undefined) {
           setRespondAudit((prev) =>
             prev !== null && audit !== null &&

@@ -26,6 +26,7 @@ func FuzzParseLine(f *testing.F) {
 	f.Add("0.0.0.0 evil.example")
 	f.Add("127.0.0.1 localhost.evil # comment")
 	f.Add("10.0.0.0/8")
+	f.Add("10.0.0.1/8") // CIDR no canónico: bits de host puestos, parseLine lo canoniza
 	f.Add("::/0")
 	f.Add("evil.example")
 	f.Add("*.sub.evil.example")

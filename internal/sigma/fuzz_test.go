@@ -27,6 +27,8 @@ func FuzzConvertSigma(f *testing.F) {
 	f.Add([]byte("detection:\n  condition: A\nlogsource:\n  product: linux\n  category: process_creation\n"))
 	f.Add([]byte("not sigma: true\n"))
 	f.Add([]byte(""))
+	f.Add([]byte("title: contains-all\nid: 22222222-bbbb-4e18-8a02-3b9c6d1e7f40\ndetection:\n  SEL:\n    CommandLine|contains|all: ['whoami', '/priv']\n  condition: SEL\nlogsource:\n  product: windows\n  category: process_creation\nlevel: high\n"))
+	f.Add([]byte("title: nested-subsel\nid: 33333333-cccc-4e18-8a02-3b9c6d1e7f40\ndetection:\n  SEL:\n    Image:\n      name: cmd.exe\n    CommandLine: whoami\n  condition: SEL\nlogsource:\n  product: windows\n  category: process_creation\nlevel: high\n"))
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		dir := t.TempDir()

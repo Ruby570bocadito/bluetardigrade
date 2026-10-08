@@ -167,7 +167,6 @@ arranques de proceso de un portátil en reposo. Un SOC no puede guardar ni mirar
 - [ ] **Registro, raíz `?`:** resolverla con el usuario del proceso (`HKU\<SID>`) o deduciendo la
   colmena por las claves vistas bajo esa base.
 - [x] **Registro, valor escrito:** ENTREGADO — `sensor/src/collector.rs` captura `CapturedData` vía `netreg::registry_value`; el modelo lo lleva (`pkg/model` `Registry.Value`, "data written") y las reglas lo consumen (`registry.value`).
-  valor tras la escritura.
 - [ ] **El latido informa de los eventos ETW perdidos** (EventsLost y BuffersLost de la sesión)
   y de los descartes del hilo de hashes. «No lo vi» nunca debe ser silencioso.
 - [ ] **Versión del sensor en el latido** y aviso en Equipos de sensores desactualizados.
@@ -177,7 +176,7 @@ arranques de proceso de un portátil en reposo. Un SOC no puede guardar ni mirar
 
 ### Motor y consola
 
-- [ ] Cuotas por equipo en la memoria del motor, para que un equipo ruidoso no expulse a los demás.
+- [x] Cuotas por equipo en la memoria del motor, para que un equipo ruidoso no expulse a los demás. (commit `6cb3fe6`, cuotas v1.1 en threshold/beacon)
 - [ ] Agrupar en la cola la misma alerta en varios equipos (una fila con N equipos).
 - [ ] Revisar la memoria de la consola (node, 196 MB) y el consumo con la consola abierta todo el día.
 - [ ] Comprobar en uso real el arreglo de la suspensión del portátil (cerrar y abrir la tapa sin
@@ -197,9 +196,9 @@ arranques de proceso de un portátil en reposo. Un SOC no puede guardar ni mirar
   - huecos (suspensiones);
   - procesos y dominios más frecuentes;
   - alertas por regla.
-- [ ] Actualizar `docs/ROADMAP.md`: red, registro, DNS y hashes del sensor ya están entregados.
-- [ ] Notas de limitaciones conocidas de la v1.0 (raíz `?`, valor del registro, ruido de software
-  de fabricante).
+- [x] Actualizar `docs/ROADMAP.md`: red, registro, DNS y hashes del sensor ya están entregados. (commit `06f707f`)
+- [x] Notas de limitaciones conocidas de la v1.0 (raíz `?`, valor del registro, ruido de software
+  de fabricante). (CHANGELOG `[v1.0.0-rc1]`, commit `af75c91`)
 
 ## Escala SOC: miles de equipos
 
@@ -500,7 +499,7 @@ Todo el CI está en verde. Los informes de cada carril están en `docs/agentes/`
 | POL-4 | Hecho | Fuera los restos de «security-framework» |
 | POL-5 | Parcial | Hechos CONTRIBUTING, SECURITY y plantillas; falta dividir OPERATIONS y la referencia de la API |
 | SEC-1, SEC-5, SEC-7, SEC-8 | Hecho | Modelo de amenazas, auditoría de dependencias en el CI, 20 objetivos de fuzzing, bugs del banner, de inteligencia y de doble extensión, unicidad de identidades del alta |
-| SEC-7 en el CI nocturno | Pendiente | El job nocturno solo ejecuta 1 de los 20 objetivos (A de pulimiento) |
+| SEC-7 en el CI nocturno | Hecho | Descubrimiento automático (`46a8fa6`): la matriz nocturna genera un job por cada `func Fuzz` del árbol |
 | SEC-2 | Pendiente | Credencial del sensor cifrada con DPAPI (A) |
 
 Prioridades de la ronda 2:

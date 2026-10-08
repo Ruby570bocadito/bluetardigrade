@@ -12,6 +12,20 @@ and the `make dist` target.
 
 ## [Unreleased]
 
+### Detection-engine speed, secret redaction and beacon aliasing (2026-10-08)
+
+- **CIDR/LPM index for intel matching:** nets bucketed by first octet, most-specific first — the match drops from a full linear scan per event to 163 ns/op with 20k loaded CIDRs.
+- **Secret redaction (`-redact-secrets`, default on):** 13 verified RE2 patterns (PEM, JWT, AWS, GitHub, Slack, bearer, CLI flags...) scrub console, JSON, SSE, SQLite alerts, webhook, SIEM and bundle output; raw evidence in `events` is never rewritten, and `sf_redact_hits_total` counts hits per kind.
+- **Beaconing:** IP-only destinations inherit the last DNS resolution (alias table, TTL 10m, cap 4096) so E3 and ETW evidence of one C2 shares a key and reaches `min_count`; canonical destinations (IPv4-mapped, trailing-dot FQDNs) no longer evade `excludes`; flood admission and the threshold saturation purge are rate-limited.
+- **Sigma:** nested map selections no longer translate into a dead `ieq "map[...]"` condition, and `contains|all` is supported.
+- **Scenario runs:** a `timeout_ms` watchdog marks stuck runs as errors and frees the slot (no eternal 409), and the replay goroutine recovers from panics.
+- **Suppression:** `KnownFields(true)` on load — an errata key no longer silences every host; `SuppressedEvent` evaluates all structural matches.
+- **Intel:** per-file reload isolation (one broken file no longer freezes the whole update), CIDR dedup counted in `Skipped`, and `user:pass@host` URLs keep the host.
+- **Correlation:** host-scoped chains complete with empty host feeds, and expired steps are re-anchored out of immortal chain state.
+- **Performance:** FieldMap is computed once per event, SSE broadcasts convert once per frame, and `Prune` takes the write lock per chunk instead of freezing ingestion.
+- **Ingest cap** on `Network.SourceIP` so a hostile feed can no longer pin ~8 GiB of threshold state.
+
+
 ### Active Directory, validation, reports, noise control and a bilingual console (2026-10-06)
 
 - **Active Directory, read only (`-ad`, needs `-store`):**
