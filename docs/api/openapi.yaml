@@ -4041,7 +4041,7 @@ components:
           description: absent while the run is in flight
         status:
           type: string
-          enum: [running, completed]
+          enum: [running, completed, error]
         total:
           type: integer
           description: scenarios selected for the run

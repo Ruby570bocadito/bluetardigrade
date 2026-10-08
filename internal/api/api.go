@@ -36,6 +36,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/known"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/lifecycle"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/notify"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/redact"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/reputation"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/respond"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/risk"
@@ -94,6 +95,7 @@ type Hub struct {
 	identities  func() (int, uint64)            // per-sensor ingest identities, host-binding violations
 	webhook     func() (uint64, uint64, uint64) // sent, failed, dropped
 	notify      func() []notify.ChannelStats    // per-channel delivery counters (C2)
+	redactFn    func() []redact.KindStats       // secret-scrubber counters (getter-polling)
 	elastic     func() (uint64, uint64, uint64) // Elasticsearch sink: sent, failed, dropped
 	splunk      func() (uint64, uint64, uint64) // Splunk HEC sink: sent, failed, dropped
 	correlator  func() (int, int, int)          // in-flight states, loaded sequences, tracking cap
@@ -537,6 +539,14 @@ func (h *Hub) SetWebhookStats(stats func() (sent, failed, dropped uint64)) {
 // channel. No wiring at all means the engine runs without -notify
 // (reported as an empty list) — the stats contract stays stable
 // whether or not external notifications are configured.
+// SetRedactStats wires the secret-scrubber counters (getter-polling,
+// the house pattern: called per scrape, never pushed).
+func (h *Hub) SetRedactStats(fn func() []redact.KindStats) {
+	h.mu.Lock()
+	h.redactFn = fn
+	h.mu.Unlock()
+}
+
 func (h *Hub) SetNotifyStats(fn func() []notify.ChannelStats) {
 	h.mu.Lock()
 	h.notify = fn
@@ -941,6 +951,10 @@ type statsPayload struct {
 	// without -notify.
 	NotifyChannels []notify.ChannelStats `json:"notify_channels"`
 
+	// Secret-scrubber counters per pattern kind (empty when nothing
+	// has been redacted yet or -redact-secrets=false).
+	RedactKinds []redact.KindStats `json:"redact_kinds"`
+
 	// SET-3 (platform status): everything the console's view used to
 	// mark "not published" is published here — engine version, the
 	// ingest→alert latency summary, the durable store's on-disk size
@@ -1090,6 +1104,7 @@ func (h *Hub) statsSnapshot() statsPayload {
 	}
 	corrFn := h.correlator
 	notifyFn := h.notify
+	redactFn := h.redactFn
 	bFn := h.beacon
 	st := h.store
 	// Every remaining hub field statsSnapshot reads is captured HERE,
@@ -1214,6 +1229,15 @@ func (h *Hub) statsSnapshot() statsPayload {
 		}
 	}
 
+	// secret-scrubber counters (sesión 100agentes-3, agente 44): same
+	// uniform rule — captured under the lock, called after Unlock.
+	redactRows := []redact.KindStats{}
+	if redactFn != nil {
+		if rows := redactFn(); rows != nil {
+			redactRows = rows
+		}
+	}
+
 	// SET-3 fields: version is captured under the lock at the top of
 	// this function; latency and the ingest certificate closures were
 	// captured there too and are only CALLED here — after h.mu.Unlock,
@@ -1306,6 +1330,7 @@ func (h *Hub) statsSnapshot() statsPayload {
 		BaselineLearning:         baseLearning,
 		BaselineNovelties:        baseNovel,
 		NotifyChannels:           notifyRows,
+		RedactKinds:              redactRows,
 		BeaconQuotaRejected:      quota.BeaconRejected,
 		ThresholdQuotaRejected:   quota.ThresholdRejected,
 		RingDroppedEvents:        ringEvents,

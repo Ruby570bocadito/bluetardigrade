@@ -127,6 +127,24 @@ func translateSelection(fvs []fieldValue) ([]Condition, string) {
 		// used to pass the supported-check and then only apply
 		// modifiers[0], silently matching the regex as a literal
 		// substring (sesión 100agentes-2, agente 18).
+		// Sigma "field|contains|all: [a, b]" requires EVERY listed
+		// value to appear; the engine ANDs a rule's conditions, so the
+		// exact translation is one contains/icontains condition per
+		// element on the SAME field (sesión 100agentes-3, agente 36
+		// H5). The multi-modifier rejection below stays for everything
+		// else (base64offset|contains, all|contains...).
+		if len(fv.modifiers) == 2 && fv.modifiers[0] == "contains" && fv.modifiers[1] == "all" {
+			dst, ok := fieldMap[fv.field]
+			if !ok {
+				return nil, fmt.Sprintf("field %q sin equivalente en el esquema del motor", fv.field)
+			}
+			acs, err := translateContainsAll(dst, fv.value)
+			if err != nil {
+				return nil, fmt.Sprintf("field %q: %v", fv.field, err)
+			}
+			conds = append(conds, acs...)
+			continue
+		}
 		if len(fv.modifiers) > 1 {
 			return nil, fmt.Sprintf("field %q: cadenas de modificador multiple no soportadas (%v)", fv.field, fv.modifiers)
 		}
@@ -157,7 +175,31 @@ func translateSelection(fvs []fieldValue) ([]Condition, string) {
 //	'*x*'                   -> contains x
 //	any other wildcard mix  -> anchored regex (literals escaped, * -> .*, ? -> .)
 //	lists                   -> in / contains_any / regex alternation
+//
+// structured reports whether v is a structured (non-scalar) Sigma
+// value: a nested map or a list carrying maps/nested lists. Structured
+// values used to reach fmt.Sprint and render as "map[...]" — a
+// condition that can never fire while LOOKING armed (sesión
+// 100agentes-3, agente 36 H1). Reject loudly instead.
+func structured(v any) bool {
+	switch t := v.(type) {
+	case map[string]any:
+		return true
+	case []any:
+		for _, el := range t {
+			switch el.(type) {
+			case map[string]any, []any:
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func translateValue(fv fieldValue) (string, any, error) {
+	if structured(fv.value) {
+		return "", nil, fmt.Errorf("selection anidada (mapa) no traducible a escalar")
+	}
 	if len(fv.modifiers) > 0 {
 		switch fv.modifiers[0] {
 		case "re":
@@ -321,6 +363,9 @@ func translateList(list []any, modifier string) (string, any, error) {
 	wildcardFree := true
 	vals := make([]string, len(list))
 	for i, el := range list {
+		if structured(el) {
+			return "", nil, fmt.Errorf("valor estructurado (mapa/lista) en lista no traducible")
+		}
 		s := fmt.Sprint(el)
 		vals[i] = s
 		if strings.ContainsAny(s, "*?") {
@@ -391,4 +436,38 @@ func anySlice(ss []string) []any {
 		out[i] = s
 	}
 	return out
+}
+
+// translateContainsAll expands the contains|all pair into one
+// condition per element. Elements must be strings; a wildcard element
+// keeps its exact meaning (same machinery as translateString). The
+// engine ANDs conditions inside a rule, which is exactly the |all
+// contract.
+func translateContainsAll(dst string, v any) ([]Condition, error) {
+	list, ok := v.([]any)
+	if !ok {
+		return nil, fmt.Errorf("modificador all: el valor debe ser una lista de textos")
+	}
+	if len(list) == 0 {
+		return nil, fmt.Errorf("lista de valores vacia")
+	}
+	out := make([]Condition, 0, len(list))
+	for _, el := range list {
+		if structured(el) {
+			return nil, fmt.Errorf("valor estructurado (mapa/lista) en lista no traducible")
+		}
+		if el == nil {
+			return nil, fmt.Errorf("valor null en lista no traducible")
+		}
+		s, ok := el.(string)
+		if !ok {
+			return nil, fmt.Errorf("modificador all: los valores deben ser texto")
+		}
+		op, val, err := translateString(s, "contains")
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, Condition{Field: dst, Operator: op, Value: val})
+	}
+	return out, nil
 }

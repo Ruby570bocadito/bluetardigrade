@@ -309,6 +309,7 @@ keyboard-driven alert and rule workspace (see the
 | AI hub | `HUB_ACCESS_TOKEN` per socket, Origin allowlist and shared rate limits |
 | Response | `kill_process` needs an arm flag, a response token and **per-operator credentials**. Protected processes are refused, and every attempt is audited |
 | Evidence | Stored events are **append-only**: a second copy of an event id cannot rewrite the first |
+| Outbound evidence | Secret-shaped values in alert free text (`password=`, `-P`, `Bearer ...`) are masked keeping only the last 4 characters before they reach the JSON log, webhook, SIEM sinks, notifications, exports and the forensic bundle's alert (`-redact-secrets`, on by default); raw events stay untouched for forensics |
 | Supply chain | SHA-pinned GitHub Actions, minimal permissions, Sigstore release attestations |
 
 Report vulnerabilities privately: [SECURITY.md](SECURITY.md).

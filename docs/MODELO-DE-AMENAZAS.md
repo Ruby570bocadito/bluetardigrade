@@ -62,6 +62,15 @@ controles: son restricciones de alcance que ningún hallazgo levanta.
   verdad; el conector lee con una cuenta sin privilegios y nada de lo
   que el directorio responde ejecuta ni modifica nada.
 
+La redacción de secretos en las salidas es defensa en profundidad, no un
+perímetro: el webhook, los sumideros SIEM, las notificaciones y el proveedor
+LLM son superficies de fuga fuera del control del producto — destinos que el
+operador configura y que reenvían, indexan o retienen lo que reciben. El
+scrub en la frontera de salida limita el daño de una URL mal puesta, un
+índice con retención larga o un proveedor público: lo que viaja ya no lleva
+credenciales que valgan. No sustituye al TLS ni a la validación de destinos;
+la evidencia cruda no se reescribe, solo se degrada lo que sale del equipo.
+
 ## 1. Ingesta de telemetría (existente)
 
 | Amenaza | Escenario | Mitigación | Estado |

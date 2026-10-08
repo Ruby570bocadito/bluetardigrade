@@ -67,6 +67,15 @@ func (h *Hub) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 			fmt.Fprintf(&b, "sf_notify_filtered_total{channel=\"%s\"} %s\n", label, formatValue(float64(ch.Filtered)))
 		}
 	}
+	// Secret-scrubber counters (sesion 100agentes-3, agente 44): one
+	// series per pattern kind, vocabulary bounded by the pattern table.
+	if len(s.RedactKinds) > 0 {
+		b.WriteString("# HELP sf_redact_hits_total Secret-shaped values redacted in alert surfaces, by pattern kind.\n# TYPE sf_redact_hits_total counter\n")
+		for _, k := range s.RedactKinds {
+			label := escapeLabelValue(k.Kind)
+			fmt.Fprintf(&b, "sf_redact_hits_total{kind=%q} %s\n", label, formatValue(float64(k.Hits)))
+		}
+	}
 	writeMetric(&b, "sf_suppressions_active", "Operator suppressions currently active.", "gauge", float64(s.Suppressions))
 	writeMetric(&b, "sf_store_write_failures_total", "Failed event or alert writes to SQLite since API start; affected evidence may exist only in memory.", "counter", float64(s.StoreWriteFailures))
 	if s.StoreEnabled {

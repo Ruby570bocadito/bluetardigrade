@@ -321,6 +321,15 @@ func runEngine(o *options, interactive bool) error {
 	if ingestToken == "" {
 		ingestToken = os.Getenv("SF_INGEST_TOKEN")
 	}
+	// redact mode: flag wins over env (the SF_ fallback only sets the
+	// flag default); an invalid value must fail the start, same
+	// standard as every other enum knob (doctor's sensor, --format).
+	redactMode := o.redactMode
+	switch redactMode {
+	case "tail4", "full":
+	default:
+		return fmt.Errorf("-redact-mode %q is invalid: only tail4 or full", redactMode)
+	}
 	server.SetToken(ingestToken)
 	if server.AuthEnabled() {
 		// rotation window: flag wins over the env var, mirroring
@@ -805,6 +814,7 @@ func runEngine(o *options, interactive bool) error {
 		nt = svc
 		go nt.Run(whCtx)
 		if hub != nil {
+			hub.SetRedactStats(redact.ScrubStats)
 			hub.SetNotifyStats(nt.Stats)
 		}
 		fmt.Printf("[ENGINE] notify: %d channel(s): %s\n", len(nt.Summary()), strings.Join(nt.Summary(), ", "))
@@ -910,6 +920,19 @@ func runEngine(o *options, interactive bool) error {
 			splunkSink.Handle(a)
 		}
 	})
+	// Secret redaction (sesion 100agentes-3, agentes 41/42/49): one
+	// scrub pass before every consumer; raw events stay untouched.
+	if o.redactSecrets {
+		mode := redact.ModeTail4
+		if redactMode == "full" {
+			mode = redact.ModeFull
+		}
+		alerts.SetSecretScrubber(func(a *alert.Alert) { alert.ScrubWith(mode, a) })
+		fmt.Printf("[ENGINE] redact: ENABLED (mode %s) - secret-shaped values masked in alert surfaces; raw events intact\n", redactMode)
+	} else {
+		fmt.Println("[ENGINE] redact: DISABLED (-redact-secrets=false): secrets reach console, JSON, API, webhook and SIEM verbatim")
+	}
+
 	// rule actions: rendered messages land inside the alert payload;
 	// webhook deliveries run in the background and never stall intake
 	dispatcher := actions.New(log.New(os.Stderr, "[ACTIONS] ", 0))

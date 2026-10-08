@@ -65,7 +65,7 @@ func (m *Manager) Reload(dir string) error {
 	// (audit 5.3): both are replaced/read by Observe and the reload
 	// ticker; wiring made the race latent, not absent. The shared
 	// map itself stays shared by design (in-flight progress), the
-	// load below only touches fresh.profs.
+	// load below only touches fresh.seqs.
 	m.mu.Lock()
 	sharedState, emit := m.state, m.emit
 	m.mu.Unlock()

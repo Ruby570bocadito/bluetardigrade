@@ -82,12 +82,28 @@ func (m *Manager) Observe(ev *model.Event, ruleName string) {
 		}
 		st.at[stepIdx] = ts
 		st.expires = wall.Add(c.window)
-		if len(st.at) == len(c.seq.Steps) && len(st.hosts) >= c.minHosts {
-			if span := st.span(); span <= c.window {
-				completed = append(completed, m.fire(c, span, ev, st))
-				delete(m.state, key) // re-arm
-				continue
+		// el host-scope no mira st.hosts: la entidad de la clave YA es
+		// el host (state.go) y compile garantiza minHosts==1 sin
+		// scope:user — un feed con Host vacío nunca registraba
+		// st.hosts y clavaba la cadena hasta expirar sin alertar
+		// (sesión 100agentes-3, agente 35/48, P2)
+		hostsOK := c.scope == ScopeHost || len(st.hosts) >= c.minHosts
+		if span := st.span(); span > c.window {
+			// re-anclaje: pasos con t < ts-window ya no pueden
+			// completar NINGUNA cadena futura anclada en ts' >= ts;
+			// soltar el ancla vieja evita el estado inmortal que se
+			// refrescaba expires en cada hit sin poder completar
+			// (agente 35/48, P3)
+			stale := ts.Add(-c.window)
+			for i, t := range st.at {
+				if t.Before(stale) {
+					delete(st.at, i)
+				}
 			}
+		} else if len(st.at) == len(c.seq.Steps) && hostsOK {
+			completed = append(completed, m.fire(c, span, ev, st))
+			delete(m.state, key) // re-arm
+			continue
 		}
 		m.state[key] = st
 	}

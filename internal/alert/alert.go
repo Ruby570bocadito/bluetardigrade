@@ -89,6 +89,7 @@ type Manager struct {
 	onAlert func(Alert)                  // optional observer (local API, SIEM taps)
 	prepare func(*Alert, []rules.Action) // optional rule-action executor
 	latFn   func(time.Duration)          // optional ingest→alert latency observer (SET-3)
+	scrub   func(*Alert)                 // optional outbound secret scrubber (sesion 100agentes-3); nil keeps raw evidence
 }
 
 // dedupEntry is one remembered key and the instant it was stored.
@@ -239,11 +240,17 @@ func (m *Manager) Raise(ev *model.Event, hit rules.Hit) {
 	// the ingest starts (races are about contracts, not luck).
 	prepare := m.prepare
 	latFn := m.latFn
+	scrub := m.scrub
 	m.mu.Unlock()
 
 	a := buildAlert(ev, hit)
 	if a.ID == "" {
 		a.ID = NewID()
+	}
+	// scrub BEFORE prepare: the rendered Message inherits the masked
+	// summary, so no second unredacted copy exists anywhere.
+	if scrub != nil {
+		scrub(&a)
 	}
 	if prepare != nil {
 		prepare(&a, hit.Rule.Actions)
@@ -275,7 +282,11 @@ func (m *Manager) Emit(a Alert) {
 	}
 	m.mu.Lock()
 	prepare := m.prepare
+	scrub := m.scrub
 	m.mu.Unlock()
+	if scrub != nil {
+		scrub(&a)
+	}
 	if prepare != nil {
 		prepare(&a, nil)
 	}

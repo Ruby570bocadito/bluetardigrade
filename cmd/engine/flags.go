@@ -47,6 +47,8 @@ type options struct {
 	storePath        string
 	storeRetention   time.Duration
 	forensic         bool
+	redactSecrets    bool
+	redactMode       string
 	forensicDir      string
 	pidFile          string
 	apiWrite         bool
@@ -150,6 +152,11 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 		"delete stored events/alerts older than this on a 5-minute ticker (0 keeps everything)")
 	fs.BoolVar(&o.forensic, "forensic", true,
 		"freeze an evidence bundle (alert + 5m host timeline) for every high/critical alert; -forensic=false disables")
+
+	fs.BoolVar(&o.redactSecrets, "redact-secrets", envBool("SF_REDACT_SECRETS", true),
+		"scrub credential-shaped values (passwords, tokens, keys) out of alert free text before any surface ships it - console, JSON, API, webhook, SIEM; raw events are never rewritten; -redact-secrets=false keeps raw evidence (laboratory; falls back to SF_REDACT_SECRETS=0)")
+	fs.StringVar(&o.redactMode, "redact-mode", envString("SF_REDACT_MODE", "tail4"),
+		"how much of a scrubbed secret survives: tail4 keeps the last 4 characters for triage, full removes it entirely (falls back to SF_REDACT_MODE)")
 	fs.StringVar(&o.forensicDir, "forensic-dir", "",
 		"directory for forensic evidence bundles (default: <forensics> resolved next to the rules directory)")
 	fs.StringVar(&o.pidFile, "pidfile", "",
@@ -162,6 +169,27 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 
 // envDuration reads a duration from the environment, or def when unset
 // or unparseable (with a warning: a typo must not pass silently).
+func envBool(key string, def bool) bool {
+	if v := os.Getenv(key); v != "" {
+		switch v {
+		case "1", "true", "yes":
+			return true
+		case "0", "false", "no":
+			return false
+		default:
+			log.Printf("[ENGINE] %s=%q is not a valid boolean; using %v", key, v, def)
+		}
+	}
+	return def
+}
+
+func envString(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
 func envDuration(key string, def time.Duration) time.Duration {
 	if v := os.Getenv(key); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d >= 0 {

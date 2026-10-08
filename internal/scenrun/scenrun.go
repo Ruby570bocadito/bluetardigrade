@@ -27,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"runtime/debug"
 	"sort"
 	"sync"
 	"time"
@@ -132,18 +133,21 @@ type ScenarioResult struct {
 // Run is one battery execution: the summary the history list serves
 // and, with Results, the detail of a single run.
 type Run struct {
-	ID         string           `json:"run_id"`
-	StartedAt  time.Time        `json:"started_at"`
-	FinishedAt *time.Time       `json:"finished_at,omitempty"`
-	Status     Status           `json:"status"`
-	Total      int              `json:"total"`
-	Detected   int              `json:"detected"`
-	Missing    int              `json:"missing"`
-	CatalogErr int              `json:"catalog_errors"`
-	Errors     int              `json:"errors"`
-	DurationMS int64            `json:"duration_ms"`
-	PassRate   float64          `json:"pass_rate"`
-	Results    []ScenarioResult `json:"results,omitempty"`
+	ID         string     `json:"run_id"`
+	StartedAt  time.Time  `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	Status     Status     `json:"status"`
+	Total      int        `json:"total"`
+	Detected   int        `json:"detected"`
+	Missing    int        `json:"missing"`
+	CatalogErr int        `json:"catalog_errors"`
+	Errors     int        `json:"errors"`
+	DurationMS int64      `json:"duration_ms"`
+	// Error carries WHY the run aborted (watchdog timeout, panic):
+	// a hung replay produces no per-scenario result to host it.
+	Error    string           `json:"error,omitempty"`
+	PassRate float64          `json:"pass_rate"`
+	Results  []ScenarioResult `json:"results,omitempty"`
 }
 
 // summary recomputes the aggregate counters from the results so far.
@@ -205,6 +209,10 @@ type Service struct {
 	mu      sync.Mutex
 	current *Run   // in-flight run, nil when idle
 	recent  []*Run // completed-run history when deps.Sink == nil, newest first
+	// runOneFn es el seam de prueba (nil en producción): execute lo
+	// usa en lugar de runOne para simular replays colgados o con
+	// pánico (sesión 100agentes-3, agente 47).
+	runOneFn func(*scenario.Runner, *scenario.Catalog, *scenario.Scenario) ScenarioResult
 }
 
 // New arms the service with the scenario library at dir and the
@@ -375,15 +383,27 @@ func (s *Service) Start(opts StartOptions) (*Run, error) {
 	launched := *run
 	s.mu.Unlock()
 
-	go s.execute(run, list, timeout)
-	s.logf("[SCENRUN] run %s started: %d escenario(s) contra las reglas vivas del motor", launched.ID, launched.Total)
+	// Watchdog (sesión 100agentes-3, agente 47): timeout_ms era un
+	// parámetro muerto — un replay colgado dejaba el run "running"
+	// para siempre y TODO POST /api/scenarios/run respondía 409 hasta
+	// reiniciar. El watchdog marca el run como error y libera
+	// s.current; el replay bloqueado (irrecuperable sin ctx) ya no
+	// corrompe el run cerrado: el guard de aborto lo salta.
+	timer := time.AfterFunc(timeout, func() { s.abortRun(run, timeout) })
+	go s.execute(run, list, timer)
+	s.logf("[SCENRUN] run %s started: %d escenario(s) contra las reglas vivas del motor (timeout %s)", launched.ID, launched.Total, timeout)
 	return &launched, nil
 }
 
 // execute replays the selected scenarios one by one, recording each
 // result as it completes so the detail view shows progress while the
 // run is still in flight.
-func (s *Service) execute(run *Run, list []*scenario.Scenario, timeout time.Duration) {
+func (s *Service) execute(run *Run, list []*scenario.Scenario, timer *time.Timer) {
+	// un pánico en el replay mataba el MOTOR entero (goroutine sin
+	// recover): ahora marca el run como error y libera s.current
+	// siempre (sesión 100agentes-3, agente 47 H4).
+	defer s.recoverRun(run, timer)
+
 	re := s.deps.Rules()
 	// The catalog the expectations are validated against is the one
 	// THIS run will actually use: the live rule set plus the
@@ -393,18 +413,55 @@ func (s *Service) execute(run *Run, list []*scenario.Scenario, timeout time.Dura
 	cat := catalog(re, s.seqDir)
 	runner := &scenario.Runner{Rules: re, SeqDir: s.seqDir}
 
+	if s.runOneFn == nil {
+		s.runOneFn = s.runOne
+	}
 	for _, sc := range list {
-		res := s.runOne(runner, cat, sc)
+		if !s.runAlive(run) {
+			return // the watchdog already closed the run: a replay
+			// blocked past the timeout must not write into it
+		}
+		res := s.runOneFn(runner, cat, sc)
 		s.mu.Lock()
-		run.Results = append(run.Results, res)
-		run.summary()
+		// the watchdog may have fired while this blocked replay was
+		// returning: a closed run never takes results again
+		if run.Status == StatusRunning {
+			run.Results = append(run.Results, res)
+			run.summary()
+		}
 		s.mu.Unlock()
 	}
 
+	if timer != nil {
+		timer.Stop()
+	}
+	s.finishRun(run, StatusCompleted, "")
+}
+
+// runAlive reports whether the run is still open (the watchdog may
+// have closed it mid-flight). Caller does NOT hold mu.
+func (s *Service) runAlive(run *Run) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return run.Status == StatusRunning
+}
+
+// finishRun is the SINGLE idempotent close path (execute's happy end,
+// the watchdog's abort and the panic recover all land here): the first
+// caller wins, s.current is ALWAYS released, and the snapshot reaches
+// the sink/history exactly once.
+func (s *Service) finishRun(run *Run, st Status, detail string) {
 	finished := time.Now().UTC()
 	s.mu.Lock()
+	if run.Status != StatusRunning {
+		s.mu.Unlock()
+		return
+	}
 	run.FinishedAt = &finished
-	run.Status = StatusCompleted
+	run.Status = st
+	if st == StatusError && detail != "" {
+		run.Error = detail
+	}
 	run.DurationMS = finished.Sub(run.StartedAt).Milliseconds()
 	snapshot := *run
 	if s.current == run {
@@ -423,9 +480,42 @@ func (s *Service) execute(run *Run, list []*scenario.Scenario, timeout time.Dura
 			s.logf("[SCENRUN] run %s: guardar el historial FALLO: %v", run.ID, err)
 		}
 	}
-	s.logf("[SCENRUN] run %s completed: %d/%d detectado(s), %d sin detectar, %d de catalogo, %d error(es) en %s",
-		run.ID, snapshot.Detected, snapshot.Total, snapshot.Missing, snapshot.CatalogErr, snapshot.Errors,
-		time.Duration(snapshot.DurationMS)*time.Millisecond)
+	if st == StatusCompleted {
+		s.logf("[SCENRUN] run %s completed: %d/%d detectado(s), %d sin detectar, %d de catalogo, %d error(es) en %s",
+			run.ID, snapshot.Detected, snapshot.Total, snapshot.Missing, snapshot.CatalogErr, snapshot.Errors,
+			time.Duration(snapshot.DurationMS)*time.Millisecond)
+	} else {
+		s.logf("[SCENRUN] run %s ABORTED (%s) tras %s", run.ID, st, time.Duration(snapshot.DurationMS)*time.Millisecond)
+	}
+}
+
+// abortRun closes a run whose replay exceeded the timeout, naming the
+// scenario that was in flight when the watchdog fired.
+func (s *Service) abortRun(run *Run, timeout time.Duration) {
+	s.mu.Lock()
+	idx := len(run.Results)
+	hung := ""
+	if idx < run.Total {
+		hung = "escenario en curso"
+	}
+	s.mu.Unlock()
+	detail := fmt.Sprintf("run timeout tras %s: el replay de %s no termino", timeout, hung)
+	s.finishRun(run, StatusError, detail)
+	s.logf("[SCENRUN] run %s: timeout del watchdog tras %s (el replay bloqueado sigue vivo: sin ctx no es interrumpible)", run.ID, timeout)
+}
+
+// recoverRun turns a panic in the replay goroutine into a failed run
+// instead of a dead engine.
+func (s *Service) recoverRun(run *Run, timer *time.Timer) {
+	r := recover()
+	if r == nil {
+		return
+	}
+	if timer != nil {
+		timer.Stop()
+	}
+	s.finishRun(run, StatusError, fmt.Sprintf("panic interno del replay: %v", r))
+	s.logf("[SCENRUN] run %s PANIC en el replay: %v\n%s", run.ID, r, debug.Stack())
 }
 
 // runOne replays one scenario and maps the outcome to its wire shape.
