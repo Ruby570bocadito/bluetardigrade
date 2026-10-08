@@ -143,13 +143,22 @@ type compiled struct {
 	cooldown    time.Duration
 	ports       map[int]bool
 	excluded    []string // lowercased domains, without "*." or a trailing dot
+	// excludedSuf mirrors excluded as ".<domain>" so excludes()
+	// never concatenates per event (sesion 100agentes-3, agente 34
+	// H4: techo 64x256 dominios = ~16k allocs/evento).
+	excludedSuf []string
 }
 
 // excludes reports whether domain is one of the profile's excluded
 // services or a subdomain of one.
 func (c *compiled) excludes(domain string) bool {
 	for _, d := range c.excluded {
-		if domain == d || strings.HasSuffix(domain, "."+d) {
+		if domain == d {
+			return true
+		}
+	}
+	for _, s := range c.excludedSuf {
+		if strings.HasSuffix(domain, s) {
 			return true
 		}
 	}
@@ -201,6 +210,7 @@ type Manager struct {
 	// cuotas por equipo) -- see MaxKeysPerHost.
 	perHost       map[string]int
 	quotaRejected uint64            // host-quota refusals since startup
+	sampledEvict  uint64            // sampled evictions under a full table (rate-limited reclaim, agente 34 H1)
 	quotaHosts    map[string]uint64 // refusal tally by host, capped
 	emit          func(alert.Alert)
 	fired         uint64
@@ -281,6 +291,15 @@ func (m *Manager) Fired() uint64 {
 	return m.fired
 }
 
+// SampledEvictions counts the bounded-sample evictions done under a
+// full table between reclaim sweeps (sesion 100agentes-3): the total
+// pressure a destination flood put on the key table.
+func (m *Manager) SampledEvictions() uint64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.sampledEvict
+}
+
 // Tracked reports how many keys currently hold in-window evidence,
 // i.e. the width of the live signal. Keys whose last connection is
 // older than their profile's window are NOT counted (their evidence
@@ -339,7 +358,10 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 	if (n.DestinationPort == 53 || n.DestinationPort == 853) && ev.Process != nil && strings.EqualFold(ev.Process.Name, "svchost.exe") {
 		return
 	}
-	dest := strings.ToLower(n.Domain)
+	// Trailing dot: an FQDN form of the same host ("evil.com.")
+	// must not open a second key nor evade exclude_domains (sesion
+	// 100agentes-3, agente 34 H2).
+	dest := strings.TrimSuffix(strings.ToLower(n.Domain), ".")
 	if dest == "" {
 		ip := net.ParseIP(strings.TrimSpace(n.DestinationIP))
 		// loopback, link-local (the router's DNS on fe80::), multicast:
@@ -347,7 +369,18 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 		if ip != nil && (ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified()) {
 			return
 		}
-		dest = strings.ToLower(n.DestinationIP)
+		if ip == nil {
+			// Sysmon emits zone-ids ("fe80::1%12") and transport junk
+			// reaches Network fields: an unparseable destination is
+			// not a beacon signal and must not skip the plumbing
+			// filter above by falling through as a raw key (agente
+			// 34 H3).
+			return
+		}
+		// Canonical form: "::ffff:93.184.216.34" and "93.184.216.34"
+		// are the same C2 and share one key (agente 34 H2; the
+		// CHANGELOG documents Sysmon emitting the mapped form).
+		dest = strings.ToLower(ip.String())
 	}
 	if dest == "" {
 		return
@@ -388,8 +421,21 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 			// (they are dead evidence), then evict the coldest key.
 			// A newly observed key is by definition the freshest --
 			// it can never be its own eviction victim.
+			// Cost control (sesion 100agentes-3, agente 34 H1): the
+			// full reclaim runs rate-limited, and between sweeps a
+			// SAMPLED weakest eviction (64 keys, same comparator)
+			// frees the slot -- admission is never refused (the
+			// hot-key bootstrap contract, pinned by
+			// TestBoundsFloodEvictionKeepsHotKey) yet a full table
+			// costs O(64) per event instead of O(MaxKeys).
 			if len(m.state) >= MaxKeys {
-				m.reclaimLocked(c, now)
+				if now.Sub(m.lastReclaim) >= reclaimEvery {
+					m.lastReclaim = now
+					m.reclaimLocked(c, now)
+				}
+				if len(m.state) >= MaxKeys {
+					m.evictWeakestSampledLocked()
+				}
 			}
 			st = &keyState{}
 			m.state[key] = st
@@ -404,6 +450,10 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 		if n := len(st.times); n > 0 && st.times[n-1].Sub(t) > c.window {
 			st.times = st.times[:0]
 			st.lastFired = time.Time{}
+			// the restart discards the ring: the SIM tag dies with
+			// it, or real traffic on the same key is suppressed as
+			// simulated forever (sesion 100agentes-3, agente 34 H5)
+			st.simulated = false
 		}
 		st.times = insertSorted(st.times, t)
 		// window prune: drop samples older than the profile window,
@@ -503,6 +553,36 @@ func (m *Manager) reclaimLocked(c *compiled, now time.Time) {
 	}
 }
 
+// evictWeakestSampledLocked frees one slot by evicting the weakest
+// key of a bounded map sample (64 entries, same comparator as
+// reclaimLocked pass 2: fewest samples, then oldest, then key order).
+// Admission must never be refused -- a beacon building evidence
+// against a flood has to win its slot -- but a permanently full table
+// must not pay a full-map scan per event (sesion 100agentes-3,
+// agente 34 H1). Caller holds mu.
+func (m *Manager) evictWeakestSampledLocked() {
+	defer func() { m.sampledEvict++ }()
+	var victim beaconKey
+	victimN, victimTime := -1, time.Time{}
+	found := false
+	n := 0
+	for k, st := range m.state {
+		if n++; n > evictSample {
+			break
+		}
+		s := len(st.times)
+		t := st.times[s-1]
+		if !found || s < victimN ||
+			(s == victimN && t.Before(victimTime)) ||
+			(s == victimN && t.Equal(victimTime) && lessKey(k, victim)) {
+			victim, victimN, victimTime, found = k, s, t, true
+		}
+	}
+	if found {
+		m.dropStateLocked(victim)
+	}
+}
+
 // dropStateLocked removes one key and keeps the per-host tally honest.
 // Caller holds mu.
 func (m *Manager) dropStateLocked(k beaconKey) {
@@ -521,6 +601,11 @@ func (m *Manager) dropStateLocked(k beaconKey) {
 // WHICH host is being refused cannot itself become an unbounded map.
 // Past the cap the total keeps counting every refusal; only the
 // per-host attribution stops growing (threshold's convention).
+// evictSample bounds the sampled eviction scan (agente 34 H1): a
+// fixed slice of the key table is enough to find a near-weakest
+// victim without paying O(MaxKeys) per event.
+const evictSample = 64
+
 const maxQuotaHostEntries = 64
 
 // quotaRejectLocked counts one host-quota refusal (total + capped
@@ -778,6 +863,10 @@ func compileProfile(p *Profile) (*compiled, error) {
 		}
 		excluded = append(excluded, norm)
 	}
+	excludedSuf := make([]string, 0, len(excluded))
+	for _, norm := range excluded {
+		excludedSuf = append(excludedSuf, "."+norm)
+	}
 	return &compiled{
 		p:           *p,
 		window:      window,
@@ -785,6 +874,7 @@ func compileProfile(p *Profile) (*compiled, error) {
 		cooldown:    cooldown,
 		ports:       ports,
 		excluded:    excluded,
+		excludedSuf: excludedSuf,
 	}, nil
 }
 

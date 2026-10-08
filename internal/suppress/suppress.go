@@ -16,7 +16,10 @@
 package suppress
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -271,7 +274,9 @@ func (m *Manager) Count(now time.Time) int {
 	return n
 }
 
-// SuppressedAt reports whether a rule/host pair is currently silenced,
+// SuppressedAt reports whether a rule/host pair has a structural
+// suppression match (observability). The alert gate is
+// SuppressedEvent, which also evaluates each entry's conditions,
 // and if so returns the entry that matched (for engine logs). When the
 // matched entry is CONDITIONAL the caller decides with
 // MatchesEvent: pass the triggering event where one exists, nil for
@@ -294,6 +299,34 @@ func (m *Manager) SuppressedAt(ruleID, host string, now time.Time) (bool, Parsed
 		}
 		// both fields empty was rejected at load; here at least one matched
 		return true, e
+	}
+	return false, Parsed{}
+}
+
+// SuppressedEvent is the authoritative gate (sesion 100agentes-3,
+// agente 37 H2): EVERY structural match is evaluated against the
+// event, so a later unconditional entry still silences what an
+// earlier conditional one let through. SuppressedAt alone decided on
+// the FIRST structural match — the outcome depended on file order. A
+// nil event keeps the aggregated-alerts contract: conditional entries
+// never silence without an event.
+func (m *Manager) SuppressedEvent(ruleID, host string, ev *model.Event, now time.Time) (bool, Parsed) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	hostLow := strings.ToLower(strings.TrimSpace(host))
+	for _, e := range m.entries {
+		if e.Expired(now) {
+			continue
+		}
+		if e.RuleID != "" && e.RuleID != ruleID {
+			continue
+		}
+		if e.Host != "" && e.Host != hostLow {
+			continue
+		}
+		if e.MatchesEvent(ev) {
+			return true, e
+		}
 	}
 	return false, Parsed{}
 }
@@ -462,7 +495,15 @@ func parseFile(path string) ([]Parsed, error) {
 		return nil, err
 	}
 	var raw []Entry
-	if err := yaml.Unmarshal(data, &raw); err != nil {
+	// Strict parsing (sesion 100agentes-3, agente 37 H1): a typo
+	// ("hosts:" plural instead of "host:") was ignored silently and the
+	// entry applied to EVERY host — the opposite of what the operator
+	// wrote. Same KnownFields contract as rules/operators/scenario.
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&raw); err != nil && !errors.Is(err, io.EOF) {
+		// io.EOF = file with no documents: an empty set, exactly what
+		// yaml.Unmarshal returned for it before strict parsing.
 		return nil, fmt.Errorf("suppress: parse %s: %w", path, err)
 	}
 	out := make([]Parsed, 0, len(raw))

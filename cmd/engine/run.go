@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -141,7 +142,14 @@ func runEngine(o *options, interactive bool) error {
 		var ierr error
 		if intelM, ierr = intel.Load(intelPath); ierr != nil {
 			intelErr = ierr.Error()
-			log.Printf("[ENGINE] threat-intel lists from %s NOT loaded: %v", intelPath, ierr)
+			var partial *intel.PartialLoadError
+			if errors.As(ierr, &partial) {
+				// per-file isolation: what loaded is live; the broken
+				// lists are named in the error (sesion 100agentes-3)
+				log.Printf("[ENGINE] threat-intel lists from %s PARTIALLY loaded (%d indicators live): %v", intelPath, intelM.Total(), ierr)
+			} else {
+				log.Printf("[ENGINE] threat-intel lists from %s NOT loaded: %v", intelPath, ierr)
+			}
 		}
 		if n := intelM.Total(); n > 0 {
 			fmt.Printf("[ENGINE] threat intel: %d indicators in %d lists from %s\n", n, len(intelM.Lists()), intelPath)
@@ -1116,8 +1124,18 @@ func runEngine(o *options, interactive bool) error {
 						thrRep.report(thr.Count(), err)
 					}
 					if intelM != nil {
+						// Reload with per-file isolation (sesión 100agentes-3,
+						// agente 32 F1): a broken list no longer freezes the
+						// whole update — what loaded is already live (changed
+						// + PartialLoadError), and only a total failure keeps
+						// the previous snapshot.
 						if changed, err := intelM.Reload(); err != nil {
-							if err.Error() != intelErr {
+							if changed {
+								if err.Error() != intelErr {
+									intelErr = err.Error()
+									log.Printf("[ENGINE] threat-intel reload PARTIAL, %d indicators live: %v", intelM.Total(), err)
+								}
+							} else if err.Error() != intelErr {
 								intelErr = err.Error()
 								log.Printf("[ENGINE] threat-intel reload FAILED, keeping previous lists: %v", err)
 							}

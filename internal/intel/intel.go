@@ -9,6 +9,7 @@ package intel
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -64,6 +65,10 @@ type Hit struct {
 type netEntry struct {
 	net  *net.IPNet
 	list string
+	// ones is the effective prefix length, computed once at load so
+	// the net index can order buckets most-specific first without
+	// re-deriving mask sizes per comparison.
+	ones int
 }
 
 // Matcher is safe for concurrent use.
@@ -76,6 +81,16 @@ type Matcher struct {
 	domains map[string]string
 	hashes  map[string]string
 	lists   []List
+	// CIDR index (sesión 100agentes-3, agentes 31+33): buckets by the
+	// leading octet for prefixes of 8+ bits, with a linear fallback for
+	// the rare wide prefixes (<8 bits, which span many buckets). Match
+	// cost per IP drops from O(nets) — 100k /24 ranges froze the
+	// detection loop — to O(bucket). Kept m.nets stays the canonical
+	// store (Total, reload swap, tests).
+	nets4 [256][]int32
+	nets6 [256][]int32
+	wide4 []int32
+	wide6 []int32
 
 	cmu      sync.Mutex
 	lastSeen map[string]time.Time // list|value|host -> last alert
@@ -98,8 +113,27 @@ func Load(dir string) (*Matcher, error) {
 	return m, err
 }
 
+// PartialLoadError reports list files that failed to load while the
+// rest still swapped in. Before the per-file isolation (sesión
+// 100agentes-3, agente 32) a single broken file — one overlong line,
+// one unreadable path — aborted the whole Reload, so the matcher kept
+// serving its previous snapshot forever: an IOC the operator deleted
+// never stopped matching, and fresh feeds never landed.
+type PartialLoadError struct{ Errs []error }
+
+func (e *PartialLoadError) Error() string {
+	return fmt.Sprintf("intel: %d list(s) failed to load: %s", len(e.Errs), errors.Join(e.Errs...).Error())
+}
+
+func (e *PartialLoadError) Unwrap() []error { return e.Errs }
+
 // Reload re-reads the directory when the set of files, their sizes or
 // their modification times changed. It reports whether it reloaded.
+//
+// A file that fails to load no longer freezes the whole update: its
+// contents are dropped, everything else swaps in, and Reload returns a
+// PartialLoadError so the operator can act. Only when EVERY file fails
+// is the previous snapshot kept (err with changed=false).
 func (m *Matcher) Reload() (bool, error) {
 	files, sig, err := scan(m.dir)
 	if err != nil {
@@ -114,20 +148,116 @@ func (m *Matcher) Reload() (bool, error) {
 	ips := map[string]string{}
 	domains := map[string]string{}
 	hashes := map[string]string{}
+	netsSeen := map[string]string{}
 	var nets []netEntry
 	var lists []List
+	var errs []error
 	total := 0
 	for _, f := range files {
-		l, err := loadFile(f, ips, domains, hashes, &nets, &total)
+		l, err := loadFile(f, ips, domains, hashes, netsSeen, &nets, &total)
 		if err != nil {
-			return false, err
+			errs = append(errs, err)
+			continue
 		}
 		lists = append(lists, l)
 	}
+	if len(errs) > 0 && len(lists) == 0 && len(files) > 0 {
+		return false, &PartialLoadError{Errs: errs}
+	}
+	idx4, idx6, w4, w6 := buildNetsIndex(nets)
 	m.mu.Lock()
 	m.sig, m.ips, m.domains, m.hashes, m.nets, m.lists = sig, ips, domains, hashes, nets, lists
+	m.nets4, m.nets6, m.wide4, m.wide6 = idx4, idx6, w4, w6
 	m.mu.Unlock()
+	if len(errs) > 0 {
+		return true, &PartialLoadError{Errs: errs}
+	}
 	return true, nil
+}
+
+// buildNetsIndex buckets every net by leading octet (v4 and genuine v6
+// separately; v4-mapped forms canonicalize to v4 before reaching here).
+// Prefixes shorter than 8 bits span 2..256 buckets, so a hostile feed
+// of /1s would multiply memory: they stay in the linear wide lists —
+// negligible in real feeds, still matched, after the bucket scan.
+// Buckets are ordered most-specific first, then by network address,
+// then load order (stable sort): with overlapping CIDRs the most
+// specific list now wins the Hit instead of whichever file sorted
+// first (agente 32 F3).
+func buildNetsIndex(nets []netEntry) (nets4, nets6 [256][]int32, wide4, wide6 []int32) {
+	for i, e := range nets {
+		n := e.net
+		if n == nil { // defensive: loadFile re-validates, but a nil here would panic lookupNet
+			continue
+		}
+		if ip4 := n.IP.To4(); ip4 != nil {
+			if e.ones >= 8 {
+				nets4[ip4[0]] = append(nets4[ip4[0]], int32(i))
+			} else {
+				wide4 = append(wide4, int32(i))
+			}
+		} else if len(n.IP) == net.IPv6len {
+			if e.ones >= 8 {
+				nets6[n.IP[0]] = append(nets6[n.IP[0]], int32(i))
+			} else {
+				wide6 = append(wide6, int32(i))
+			}
+		}
+	}
+	for b := range nets4 {
+		sortNetBucket(nets, nets4[b])
+	}
+	for b := range nets6 {
+		sortNetBucket(nets, nets6[b])
+	}
+	sortNetBucket(nets, wide4)
+	sortNetBucket(nets, wide6)
+	return
+}
+
+func sortNetBucket(nets []netEntry, idx []int32) {
+	sort.SliceStable(idx, func(a, b int) bool {
+		x, y := nets[idx[a]], nets[idx[b]]
+		if x.ones != y.ones {
+			return x.ones > y.ones
+		}
+		if c := bytes.Compare(x.net.IP, y.net.IP); c != 0 {
+			return c < 0
+		}
+		return false
+	})
+}
+
+// lookupNet returns the most specific CIDR containing ip, or
+// netEntry{}, false. Bucket scan first, wide prefixes after (they are
+// always less specific by construction).
+func (m *Matcher) lookupNet(ip net.IP) (netEntry, bool) {
+	if ip4 := ip.To4(); ip4 != nil {
+		for _, i := range m.nets4[ip4[0]] {
+			if m.nets[i].net.Contains(ip4) {
+				return m.nets[i], true
+			}
+		}
+		for _, i := range m.wide4 {
+			if m.nets[i].net.Contains(ip4) {
+				return m.nets[i], true
+			}
+		}
+		return netEntry{}, false
+	}
+	if len(ip) == net.IPv6len {
+		for _, i := range m.nets6[ip[0]] {
+			if m.nets[i].net.Contains(ip) {
+				return m.nets[i], true
+			}
+		}
+		for _, i := range m.wide6 {
+			if m.nets[i].net.Contains(ip) {
+				return m.nets[i], true
+			}
+		}
+	}
+	return netEntry{}, false
 }
 
 // Lists returns the loaded lists, sorted by name.
@@ -176,11 +306,8 @@ func (m *Matcher) Match(ev *model.Event) []Hit {
 				add(Hit{List: list, Kind: KindIP, Value: key, Field: f.field})
 				continue
 			}
-			for _, e := range m.nets {
-				if e.net.Contains(ip) {
-					add(Hit{List: e.list, Kind: KindNet, Value: e.net.String(), Field: f.field})
-					break
-				}
+			if e, ok := m.lookupNet(ip); ok {
+				add(Hit{List: e.list, Kind: KindNet, Value: e.net.String(), Field: f.field})
 			}
 		}
 		if d := normalizeDomain(n.Domain); d != "" {
@@ -342,7 +469,7 @@ func scan(dir string) ([]string, string, error) {
 	return files, sig.String(), nil
 }
 
-func loadFile(path string, ips, domains, hashes map[string]string, nets *[]netEntry, total *int) (List, error) {
+func loadFile(path string, ips, domains, hashes, netsSeen map[string]string, nets *[]netEntry, total *int) (List, error) {
 	name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	l := List{Name: name, File: filepath.Base(path), ByKind: map[string]int{}}
 	info, err := os.Stat(path)
@@ -374,22 +501,40 @@ func loadFile(path string, ips, domains, hashes map[string]string, nets *[]netEn
 		switch kind {
 		case KindIP:
 			if _, dup := ips[value]; dup {
+				l.Skipped++ // duplicates count as skipped so per-list stats stay honest (agente 32 F4)
 				continue
 			}
 			ips[value] = name
 		case KindDomain:
 			if _, dup := domains[value]; dup {
+				l.Skipped++
 				continue
 			}
 			domains[value] = name
 		case KindHash:
 			if _, dup := hashes[value]; dup {
+				l.Skipped++
 				continue
 			}
 			hashes[value] = name
 		case KindNet:
-			_, n, _ := net.ParseCIDR(value)
-			*nets = append(*nets, netEntry{net: n, list: name})
+			_, n, err := net.ParseCIDR(value)
+			if err != nil || n == nil {
+				l.Skipped++ // defensive: parseLine validated, but never trust the re-parse (agente 31 riesgo 3)
+				continue
+			}
+			mask := n.Mask
+			if len(mask) == net.IPv6len && n.IP.To4() != nil {
+				mask = mask[12:] // v4-mapped mask: Size() over 16 bytes would misreport
+			}
+			ones, _ := net.IPMask(mask).Size()
+			s := n.String()
+			if _, dup := netsSeen[s]; dup { // nets were the only kind without dedup (agente 32 F5)
+				l.Skipped++
+				continue
+			}
+			netsSeen[s] = name
+			*nets = append(*nets, netEntry{net: n, list: name, ones: ones})
 		}
 		*total++
 		l.Indicators++
@@ -478,6 +623,12 @@ func parseLine(raw string) (string, string) {
 		lower = lower[i+3:]
 		if j := strings.IndexAny(lower, "/?#"); j >= 0 {
 			lower = lower[:j]
+		}
+		if j := strings.LastIndexByte(lower, '@'); j >= 0 {
+			// drop userinfo BEFORE the port strip: "user:pass@host"
+			// lost its host to the colon cut entirely (sesion
+			// 100agentes-3, agente 32 F6)
+			lower = lower[j+1:]
 		}
 		if j := strings.LastIndexByte(lower, ':'); j >= 0 && !strings.Contains(lower[j:], "]") {
 			lower = lower[:j]

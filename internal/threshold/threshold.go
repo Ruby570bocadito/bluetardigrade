@@ -459,9 +459,16 @@ func (d *Detector) admitLocked(k key, _ *compiled, t, now time.Time) *keyState {
 		}
 	}
 	// F1.2: global saturation — dead evidence (expired keys of ANY
-	// rule) frees slots first.
+	// rule) frees slots first. Rate-limited like the per-host path
+	// above (sesion 100agentes-3, agente 37 H3: con la tabla llena de
+	// claves vivas el purge completo pagaba ~2x O(MaxKeys) por evento,
+	// 485 us/op medidos); la eviccion weakest-first de abajo sigue
+	// garantizando la admision entre purgas.
 	if len(d.keys) >= MaxKeys {
-		d.purgeExpiredLocked(now)
+		if now.Sub(d.lastPurge) >= purgeEvery {
+			d.lastPurge = now
+			d.purgeExpiredLocked(now)
+		}
 	}
 	// F1.2/F1.3: still saturated → weakest-first GLOBAL (lowest count,
 	// deterministic tie-break), never the newly-arrived key. A flood
