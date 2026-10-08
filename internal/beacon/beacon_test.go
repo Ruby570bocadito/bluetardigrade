@@ -262,10 +262,11 @@ func TestHostCaseFoldsAndDomainIPAreDistinctKeys(t *testing.T) {
 		t.Fatalf("Fired() = %d, want 1 (case-flipped evidence accumulated)", m.Fired())
 	}
 
-	// Domain and IP are DISTINCT keys by design: the detector sees the
-	// destination as the sensor reports it, and folding them would
-	// require DNS resolution the engine does not have. Each form
-	// accumulates its own evidence.
+	// Domain and IP now SHARE one key via the IP->domain alias
+	// (sesión 100agentes-3, agente 52): the domain-keyed observations
+	// seed the alias, and the IP-only ones resolve to the same
+	// destination — the evidence of ONE C2 no longer splits in two
+	// rings that neither reaches min_count.
 	m2, err := LoadFile(writeProfiles(t, strictProfile), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -274,11 +275,14 @@ func TestHostCaseFoldsAndDomainIPAreDistinctKeys(t *testing.T) {
 		m2.Observe(netEv("LAB-WKS-01", "185.220.101.47", "evil.example.net", 443), base.Add(time.Duration(i)*time.Second))
 		m2.Observe(netEv("LAB-WKS-01", "185.220.101.47", "", 443), base.Add(time.Duration(i)*time.Second))
 	}
-	if n := m2.Tracked(base.Add(7 * time.Second)); n != 2 {
-		t.Fatalf("Tracked() = %d, want 2 (domain-keyed and IP-keyed rings are separate)", n)
+	if n := m2.Tracked(base.Add(7 * time.Second)); n != 1 {
+		t.Fatalf("Tracked() = %d, want 1 (alias merges domain and IP-only evidence)", n)
 	}
-	if m2.Fired() != 0 {
-		t.Fatalf("Fired() = %d, want 0 (split evidence: neither ring reached min_count)", m2.Fired())
+	// 6 domain + 6 IP-only samples merge into ONE ring of 12: the
+	// merged evidence now REACHES min_count and fires once — before
+	// the alias, the same C2 traffic fired never (split evidence).
+	if m2.Fired() != 1 {
+		t.Fatalf("Fired() = %d, want 1 (merged ring of 12 samples reaches min_count=8)", m2.Fired())
 	}
 }
 

@@ -603,6 +603,11 @@ func normalizeIdentity(ev *model.Event) {
 	if ev.Network != nil {
 		ev.Network.DestinationIP = truncateRunes(ev.Network.DestinationIP, maxDestRunes)
 		ev.Network.Domain = truncateRunes(ev.Network.Domain, maxDestRunes)
+		// SourceIP estaba sin cap (sesión 100agentes-3, agente 55 P1):
+		// thresholds.yaml agrupa por network.source_ip y el detector
+		// fija ese valor como clave viva — un feed hostil podía
+		// aparcár ~1 MiB por clave (tabla de 8192 = ~8 GiB fijables).
+		ev.Network.SourceIP = truncateRunes(ev.Network.SourceIP, maxDestRunes)
 	}
 	if ev.Process != nil {
 		ev.Process.CommandLine = truncateRunes(ev.Process.CommandLine, maxCommandLineRunes)

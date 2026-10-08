@@ -170,11 +170,27 @@ func (e *Engine) Snapshot() []Rule {
 
 // Evaluate returns the hits for a single event. Rules are evaluated
 // AND-wise: every condition must match.
+// Evaluate builds the event field map once and delegates to
+// EvaluateFields (kept for tests and cold paths: rule tester,
+// scenario runner).
 func (e *Engine) Evaluate(ev *model.Event) []Hit {
 	if ev == nil {
 		return nil
 	}
-	fields := ev.FieldMap()
+	return e.EvaluateFields(ev, ev.FieldMap())
+}
+
+// EvaluateFields is Evaluate with a caller-built field map (sesión
+// 100agentes-3, agentes 38/51: UN FieldMap por evento construido en
+// process() y propagado a rules/threshold/suppress — antes se
+// reconstruía 2-3× por evento). The map is read-only by contract: no
+// consumer may mutate it (the map is shared with the other detectors
+// of the same event). ev must still be non-nil: the Type and
+// Enrichment reads come from the event, not the map.
+func (e *Engine) EvaluateFields(ev *model.Event, fields map[string]any) []Hit {
+	if ev == nil {
+		return nil
+	}
 	// §2.2 known software: events enriched with known_software may be
 	// opted out per rule (exclude_known_software). The enrichment is
 	// engine-owned, so a sensor cannot use the key to blind a rule.

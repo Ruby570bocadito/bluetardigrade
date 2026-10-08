@@ -344,11 +344,19 @@ func (d *Detector) Fired() uint64 { return d.fired.Load() }
 // matches and whose conditions pass. Events that fail the predicate
 // never count. The caller passes the clock (non-decreasing), exactly
 // like the beacon manager.
+// Observe builds the event field map once and delegates to
+// ObserveFields (kept for tests and direct callers).
 func (d *Detector) Observe(ev *model.Event, now time.Time) {
+	d.ObserveFields(ev, ev.FieldMap(), now)
+}
+
+// ObserveFields is Observe with a caller-built field map (sesión
+// 100agentes-3, agentes 38/51): UN FieldMap por evento, compartido con
+// rules y suppress. Read-only by contract.
+func (d *Detector) ObserveFields(ev *model.Event, fields map[string]any, now time.Time) {
 	if ev == nil {
 		return
 	}
-	fields := ev.FieldMap()
 	host := strings.ToLower(ev.Host)
 	t := ev.DetectionTime(now)
 	d.mu.Lock()

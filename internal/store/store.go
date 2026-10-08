@@ -155,6 +155,7 @@ CREATE INDEX IF NOT EXISTS alerts_ts_idx ON alerts(ts);
 CREATE INDEX IF NOT EXISTS alerts_rule_idx ON alerts(rule_id);
 CREATE INDEX IF NOT EXISTS alerts_host_ts_idx ON alerts(host COLLATE NOCASE, ts);
 CREATE INDEX IF NOT EXISTS alerts_search_idx ON alerts(search);
+CREATE INDEX IF NOT EXISTS events_type_ts_idx ON events(type, ts);
 `
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
@@ -441,10 +442,15 @@ func (s *Store) QueryAlerts(q AlertQuery) ([]alert.Alert, error) {
 func (s *Store) Prune(retention time.Duration) (events, alerts int64, err error) {
 	const pruneBatch = 10_000
 	cutoff := time.Now().Add(-retention).UnixNano()
-	s.wmu.Lock()
-	defer s.wmu.Unlock()
+	// El wmu se toma POR CHUNK (sesión 100agentes-3, agente 56 P1):
+	// holding it across the whole sweep froze InsertEvents/InsertAlert
+	// for the entire prune — after a long downtime the ingest pipeline
+	// stalled for minutes. The single-writer contract holds per batch;
+	// busy_timeout absorbs the interleaving.
 	for {
+		s.wmu.Lock()
 		res, err := s.db.Exec(`DELETE FROM events WHERE rowid IN (SELECT rowid FROM events WHERE ts < ? LIMIT ?)`, cutoff, pruneBatch)
+		s.wmu.Unlock()
 		if err != nil {
 			return events, alerts, fmt.Errorf("store: prune events: %w", err)
 		}
@@ -455,7 +461,9 @@ func (s *Store) Prune(retention time.Duration) (events, alerts int64, err error)
 		}
 	}
 	for {
+		s.wmu.Lock()
 		res, err := s.db.Exec(`DELETE FROM alerts WHERE seq IN (SELECT seq FROM alerts WHERE ts < ? LIMIT ?)`, cutoff, pruneBatch)
+		s.wmu.Unlock()
 		if err != nil {
 			return events, alerts, fmt.Errorf("store: prune alerts: %w", err)
 		}
@@ -521,7 +529,7 @@ func alertWhere(q AlertQuery) (string, []any) {
 			marks[i] = "?"
 			args = append(args, strings.ToLower(sev))
 		}
-		conds = append(conds, `LOWER(severity) IN (`+strings.Join(marks, ",")+`)`)
+		conds = append(conds, `severity IN (`+strings.Join(marks, ",")+`)`)
 	}
 	if q.RuleID != "" {
 		conds = append(conds, `rule_id = ?`)

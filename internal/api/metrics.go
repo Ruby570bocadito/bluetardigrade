@@ -168,11 +168,15 @@ func formatValue(v float64) string {
 // requires inside label values: backslash, double quote and newline.
 // fmt's %q is NOT used because it would also escape non-ASCII runes,
 // mangling operator-supplied severity strings.
+// labelEscaper se construye UNA vez (agente 54): strings.NewReplacer
+// por etiqueta en cada scrape era trabajo repetido; los Replacer son
+// seguros para uso concurrente.
+var labelEscaper = strings.NewReplacer(
+	`\`, `\\`,
+	`"`, `\"`,
+	"\n", `\n`,
+)
+
 func escapeLabelValue(s string) string {
-	r := strings.NewReplacer(
-		`\`, `\\`,
-		`"`, `\"`,
-		"\n", `\n`,
-	)
-	return r.Replace(s)
+	return labelEscaper.Replace(s)
 }

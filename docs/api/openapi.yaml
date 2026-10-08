@@ -2684,6 +2684,7 @@ components:
         - baseline_learning
         - baseline_novelties
         - notify_channels
+        - redact_kinds
         - version
         - alert_latency
         - store_size_bytes
@@ -2907,6 +2908,17 @@ components:
           format: int64
           description: never-seen processes reported since engine start
         notify_channels:
+        redact_kinds:
+          type: array
+          description: secret-scrubber counters per pattern kind (empty when nothing has been redacted yet or -redact-secrets=false)
+          items:
+            type: object
+            properties:
+              kind:
+                type: string
+              hits:
+                type: integer
+                format: int64
           type: array
           description: one delivery row per external notification channel
             configured via -notify (Slack, Telegram, email); empty when the

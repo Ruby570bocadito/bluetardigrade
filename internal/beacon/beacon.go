@@ -94,6 +94,14 @@ const (
 	// (a control that silently can never fire is a misconfig, not a
 	// knob — the loud-failure standard).
 	ringCap = 64
+	// aliasMax bounds the IP->domain alias table (sesión
+	// 100agentes-3, agente 52): a flood of unique IPs must not grow it
+	// without limit — same lesson as MaxKeys.
+	aliasMax = 4096
+	// aliasTTL: an alias not refreshed for 10m is stale — DNS
+	// re-resolutions rotate C2 IPs; a frozen mapping would pin hosts
+	// to dead domains.
+	aliasTTL = 10 * time.Minute
 
 	// MaxProfiles bounds the loaded profile set: Observe walks EVERY
 	// profile on each network event, so the per-event cost is bounded
@@ -179,6 +187,15 @@ type keyState struct {
 	simulated bool
 }
 
+// aliasEntry is one IP->domain mapping (sesión 100agentes-3): the
+// ETW sensor and Sysmon DNS memory report the same C2 as
+// domain+IP (connect after resolution) or IP only (E3) — the alias
+// merges both into ONE beacon key instead of splitting the evidence.
+type aliasEntry struct {
+	domain string // lowercased, trailing dot trimmed
+	seen   time.Time
+}
+
 // insertSorted adds t to times keeping them in ascending order (the
 // common in-order case is a plain append).
 func insertSorted(times []time.Time, t time.Time) []time.Time {
@@ -209,9 +226,10 @@ type Manager struct {
 	// perHost is the per-host share tally of the key table (v1.1
 	// cuotas por equipo) -- see MaxKeysPerHost.
 	perHost       map[string]int
-	quotaRejected uint64            // host-quota refusals since startup
-	sampledEvict  uint64            // sampled evictions under a full table (rate-limited reclaim, agente 34 H1)
-	quotaHosts    map[string]uint64 // refusal tally by host, capped
+	quotaRejected uint64                // host-quota refusals since startup
+	sampledEvict  uint64                // sampled evictions under a full table (rate-limited reclaim, agente 34 H1)
+	quotaHosts    map[string]uint64     // refusal tally by host, capped
+	alias         map[string]aliasEntry // canonical IP -> last DNS domain seen with it (agente 52)
 	emit          func(alert.Alert)
 	fired         uint64
 	// lastReclaim rate-limits the quota-path reclaim sweep (sesión
@@ -226,7 +244,7 @@ type Manager struct {
 // once per detected beacon (wire it to alert.Manager.Emit through the
 // suppression wrapper, exactly like the correlator's).
 func LoadFile(path string, emit func(alert.Alert)) (*Manager, error) {
-	m := &Manager{state: map[beaconKey]*keyState{}, emit: emit, perHost: map[string]int{}, quotaHosts: map[string]uint64{}}
+	m := &Manager{state: map[beaconKey]*keyState{}, alias: map[string]aliasEntry{}, emit: emit, perHost: map[string]int{}, quotaHosts: map[string]uint64{}}
 	if err := m.load(path); err != nil {
 		return nil, err
 	}
@@ -362,6 +380,7 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 	// must not open a second key nor evade exclude_domains (sesion
 	// 100agentes-3, agente 34 H2).
 	dest := strings.TrimSuffix(strings.ToLower(n.Domain), ".")
+	destFromIP := false
 	if dest == "" {
 		ip := net.ParseIP(strings.TrimSpace(n.DestinationIP))
 		// loopback, link-local (the router's DNS on fe80::), multicast:
@@ -381,6 +400,7 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 		// are the same C2 and share one key (agente 34 H2; the
 		// CHANGELOG documents Sysmon emitting the mapped form).
 		dest = strings.ToLower(ip.String())
+		destFromIP = true
 	}
 	if dest == "" {
 		return
@@ -391,12 +411,32 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 
 	m.mu.Lock()
 	emit := m.emit
+	// Alias dominio/IP (sesión 100agentes-3, agente 52): un destino
+	// conocido solo por IP hereda el dominio de la última resolución
+	// DNS que lo trajo, así que el tráfico E3 (solo IP) y el ETW
+	// (dominio + IP tras resolver) caen en la MISMA clave beacon en
+	// vez de partir la evidencia de un mismo C2.
+	aliasIP := ""
+	destIsDomain := n.Domain != ""
+	if destFromIP {
+		if ae, ok := m.alias[dest]; ok && now.Sub(ae.seen) < aliasTTL {
+			aliasIP, dest, destIsDomain = dest, ae.domain, true
+		}
+	} else if n.DestinationIP != "" {
+		// dominio + IP tras resolver (Sysmon/ETW post-DNS): siembra el
+		// alias IP->dominio para que el E3 posterior (solo IP) converja
+		if ip := net.ParseIP(strings.TrimSpace(n.DestinationIP)); ip != nil &&
+			!ip.IsLoopback() && !ip.IsLinkLocalUnicast() &&
+			!ip.IsLinkLocalMulticast() && !ip.IsMulticast() && !ip.IsUnspecified() {
+			m.observeAliasLocked(ip.String(), dest, now)
+		}
+	}
 	var fired []alert.Alert
 	for _, c := range m.profs {
 		if len(c.ports) > 0 && !c.ports[port] {
 			continue
 		}
-		if n.Domain != "" && c.excludes(dest) {
+		if destIsDomain && c.excludes(dest) {
 			continue
 		}
 		key := beaconKey{profileID: c.p.ID, host: host, dest: dest, port: port}
@@ -483,7 +523,7 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 		}
 		st.lastFired = newest
 		m.fired++
-		fired = append(fired, m.fire(c, ev, dest, port, len(st.times), mean, cv, st.simulated))
+		fired = append(fired, m.fire(c, ev, dest, aliasIP, port, len(st.times), mean, cv, st.simulated))
 	}
 	m.mu.Unlock()
 	// Deliver OUTSIDE mu (the accumulated O1): the
@@ -595,6 +635,32 @@ func (m *Manager) dropStateLocked(k beaconKey) {
 	} else {
 		m.perHost[k.host]--
 	}
+}
+
+// observeAliasLocked records one IP->domain mapping under the alias
+// cap: lazy sweep of expired entries first, oldest-seen eviction as
+// the pressure fallback (same shape as the key table's reclaim).
+// Caller holds mu.
+func (m *Manager) observeAliasLocked(ip, domain string, now time.Time) {
+	if len(m.alias) >= aliasMax {
+		for a, ae := range m.alias {
+			if now.Sub(ae.seen) >= aliasTTL {
+				delete(m.alias, a)
+			}
+		}
+	}
+	if len(m.alias) >= aliasMax {
+		oldestIP, oldestAt := "", now
+		for a, ae := range m.alias {
+			if ae.seen.Before(oldestAt) {
+				oldestIP, oldestAt = a, ae.seen
+			}
+		}
+		if oldestIP != "" {
+			delete(m.alias, oldestIP)
+		}
+	}
+	m.alias[ip] = aliasEntry{domain: domain, seen: now}
 }
 
 // maxQuotaHostEntries caps the refusal tally by host: honesty about
@@ -734,7 +800,11 @@ func regularity(times []time.Time) (mean time.Duration, cv float64, ok bool) {
 // that. With delivery outside mu there is no nested locking at all:
 // the old "documented lock order" (detector.mu before hub.mu) is gone
 // because the two locks are never held together.
-func (m *Manager) fire(c *compiled, ev *model.Event, dest string, port, count int, mean time.Duration, cv float64, simulated bool) alert.Alert {
+func (m *Manager) fire(c *compiled, ev *model.Event, dest, aliasIP string, port, count int, mean time.Duration, cv float64, simulated bool) alert.Alert {
+	aliasNote := ""
+	if aliasIP != "" {
+		aliasNote = fmt.Sprintf(" (alias %s)", aliasIP)
+	}
 	a := alert.Alert{
 		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
 		RuleID:    c.p.ID,
@@ -744,8 +814,8 @@ func (m *Manager) fire(c *compiled, ev *model.Event, dest string, port, count in
 		User:      ev.User,
 		EventID:   ev.ID,
 		EventType: ev.Type,
-		Summary: fmt.Sprintf("beacon hacia %s:%d: %d conexiones cada ~%s (jitter %.2f) en la ventana %s",
-			dest, port, count, mean.Round(10*time.Millisecond), cv, c.p.Window),
+		Summary: fmt.Sprintf("beacon hacia %s:%d: %d conexiones cada ~%s (jitter %.2f) en la ventana %s%s",
+			dest, port, count, mean.Round(10*time.Millisecond), cv, c.p.Window, aliasNote),
 		MatchedOn: []string{"destination", "interval", "jitter"},
 		Tags:      c.p.Tags,
 		Enrich:    ev.Enrichment,

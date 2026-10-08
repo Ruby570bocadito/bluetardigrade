@@ -247,6 +247,16 @@ func (p Parsed) MatchesEvent(ev *model.Event) bool {
 	return p.matcher.Match(ev)
 }
 
+// MatchesEventFields is MatchesEvent with a caller-built field map
+// (sesión 100agentes-3, agentes 38/51): evita reconstruir el FieldMap
+// por entrada cuando el llamador ya lo tiene. Read-only by contract.
+func (p Parsed) MatchesEventFields(fields map[string]any) bool {
+	if p.matcher == nil {
+		return true
+	}
+	return p.matcher.MatchFields(fields)
+}
+
 // Manager holds the active suppression set. LoadFile swaps the whole
 // set atomically (hot reload), SuppressedAt is the only lookup the
 // engine needs on the alert path.
@@ -314,6 +324,13 @@ func (m *Manager) SuppressedEvent(ruleID, host string, ev *model.Event, now time
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	hostLow := strings.ToLower(strings.TrimSpace(host))
+	// UN FieldMap por llamada (agentes 38/51), construido solo si hay
+	// evento (las alertas agregadas ev=nil siguen el contrato
+	// documentado: las condicionales nunca silencian sin evento)
+	var fields map[string]any
+	if ev != nil {
+		fields = ev.FieldMap()
+	}
 	for _, e := range m.entries {
 		if e.Expired(now) {
 			continue
@@ -324,7 +341,7 @@ func (m *Manager) SuppressedEvent(ruleID, host string, ev *model.Event, now time
 		if e.Host != "" && e.Host != hostLow {
 			continue
 		}
-		if e.MatchesEvent(ev) {
+		if e.MatchesEventFields(fields) {
 			return true, e
 		}
 	}

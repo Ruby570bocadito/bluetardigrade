@@ -23,6 +23,10 @@
 # para cualquier otra alerta.
 
 # ---------- corazón del detector: HTTPS/HTTP call-home lento ----------
+# Un destino conocido solo por IP hereda el dominio de la última resolución DNS que lo
+# trajo (alias, TTL 10 m): dominio e IP caen en la MISMA clave y la alerta lo anota como
+# "alias <ip>".
+
 - name: C2 beacon web lento
   id: bcn-periodic-web
   description: >

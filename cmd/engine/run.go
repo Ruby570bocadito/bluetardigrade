@@ -1250,7 +1250,13 @@ func runEngine(o *options, interactive bool) error {
 			log.Printf("[EVENT] %-18s %s pid=%d host=%s",
 				redact.TerminalText(ev.Type), redact.TerminalText(describe(ev)), pidOf(ev), redact.TerminalText(ev.Host))
 		}
-		for _, hit := range engine.Evaluate(ev) {
+		// UN FieldMap por evento (sesión 100agentes-3, agentes 38/51):
+		// construido una vez aquí (post-enriquecimiento, nada muta ev
+		// durante detección) y propagado a rules, suppress y threshold
+		// — antes se reconstruía 2-3× por evento. Read-only por
+		// contrato para todos los consumidores.
+		fields := ev.FieldMap()
+		for _, hit := range engine.EvaluateFields(ev, fields) {
 			// allowlist first: a suppressed hit raises no alert AND does
 			// not feed the correlator (see the Emit wrapper above). The
 			// event rides along so a CONDITIONAL entry (§2.3 when)
@@ -1276,7 +1282,7 @@ func runEngine(o *options, interactive bool) error {
 		// each definition's predicate — the signal is the COUNT
 		// within a window, orthogonal to rules and beaconing.
 		if thr != nil {
-			thr.Observe(ev, time.Now())
+			thr.ObserveFields(ev, fields, time.Now())
 		}
 		// offline threat intel: indicators in the event, one alert per
 		// indicator and host per cooldown
