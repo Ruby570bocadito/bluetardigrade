@@ -74,7 +74,7 @@ export function useEngineStream(): EngineState {
     triageDuringSync.current?.(entry)
     setLifecycleUpdates((previous) => {
       const current = previous.find((item) => item.alert_id === entry.alert_id)
-      if (current && Date.parse(current.at) > Date.parse(entry.at)) return previous
+      if (current && (Date.parse(current.at) || 0) > (Date.parse(entry.at) || 0)) return previous
       return [...previous.filter((item) => item.alert_id !== entry.alert_id), entry].slice(-MAX_ALERTS)
     })
     setAlerts((list) => list.map((a) => applyAlertLifecycle(a, entry)))
@@ -173,7 +173,15 @@ export function useEngineStream(): EngineState {
         if (sup !== undefined) setSuppressions(sup?.entries ?? [])
         if (seq !== undefined) setSequences(seq ?? [])
         if (response !== undefined) setRespondState(response)
-        if (audit !== undefined) setRespondAudit(audit)
+        if (audit !== undefined) {
+          setRespondAudit((prev) =>
+            prev !== null && audit !== null &&
+            prev.records.length === audit.records.length &&
+            prev.records[0]?.action_id === audit.records[0]?.action_id
+              ? prev // sin cambios: evita reconciliar 500 AnimatedItem por poll (sesión 100agentes-2, agente 26)
+              : audit,
+          )
+        }
         lastUptime = st.uptime_s
         failures = 0
         offline = false
@@ -227,7 +235,15 @@ export function useEngineStream(): EngineState {
         if (sup !== undefined) setSuppressions(sup?.entries ?? [])
         if (seq !== undefined) setSequences(seq ?? [])
         if (response !== undefined) setRespondState(response)
-        if (audit !== undefined) setRespondAudit(audit)
+        if (audit !== undefined) {
+          setRespondAudit((prev) =>
+            prev !== null && audit !== null &&
+            prev.records.length === audit.records.length &&
+            prev.records[0]?.action_id === audit.records[0]?.action_id
+              ? prev
+              : audit,
+          )
+        }
         lastUptime = st.uptime_s
         failures = 0
         setStatus('live')

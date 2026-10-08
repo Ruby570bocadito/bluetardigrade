@@ -256,7 +256,15 @@ export function audit(entry: AuditEntry): void {
   const file = auditFile()
   if (!file) return
   try {
-    if (statSync(/*turbopackIgnore: true*/ file).size > AUDIT_MAX_BYTES) {
+    // ENOENT = primera entrada: sigue adelante y la crea el append
+    // (el stat guarda el techo, no impide nacer al fichero).
+    let size = 0
+    try {
+      size = statSync(/*turbopackIgnore: true*/ file).size
+    } catch (statErr) {
+      if ((statErr as NodeJS.ErrnoException)?.code !== 'ENOENT') throw statErr
+    }
+    if (size > AUDIT_MAX_BYTES) {
       // El trail está lleno: no crece más (el motor aplica la misma
       // política); los writes siguen funcionando y el trail conserva
       // lo más antiguo en disco.

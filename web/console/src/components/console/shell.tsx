@@ -259,7 +259,9 @@ export function ConsoleShell() {
     }
   }
 
-  const telemetry = describeTelemetrySources(events)
+  // useMemo (sesión 100agentes-2, agente 26): O(300) con Set+map en
+  // cada render del shell (que repinta por frame SSE).
+  const telemetry = useMemo(() => describeTelemetrySources(events), [events])
 
   const [pendingAlert, setPendingAlert] = useState<SfAlert | null>(null)
   const [pendingIncident, setPendingIncident] = useState<PendingIncidentAnalysis | null>(null)

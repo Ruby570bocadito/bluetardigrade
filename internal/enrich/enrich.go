@@ -312,6 +312,9 @@ func imageDir(image string) string {
 // Windows system root (c:\windows, case-insensitive) or the Unix-form
 // /system32/ prefix.
 func isSystemPath(dir string) bool {
-	d := strings.ToLower(dir)
-	return strings.HasPrefix(d, `c:\windows`) || strings.HasPrefix(d, `/system32/`)
+	// Sin ToLower por evento (sesión 100agentes-2, agente 24): EqualFold
+	// sobre el prefijo da 0 allocations con la misma semántica
+	// case-insensitive (rutas Windows llegan en cualquier caja).
+	return strings.HasPrefix(dir, `/system32/`) ||
+		(len(dir) >= len(`c:\windows`) && strings.EqualFold(dir[:len(`c:\windows`)], `c:\windows`))
 }

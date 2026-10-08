@@ -72,14 +72,21 @@ export class HubState {
 
   // r6 triage: patch the stored alert in place (the lifecycle frame
   // carries only the status fields) so snapshots stay honest.
+  // Validación (sesión 100agentes-2, agente 22, P2): una frame
+  // malformada u out-of-order degradaba/borraba el estado de triaje
+  // que los snapshots sirven a cada reconexión.
   applyLifecycle(entry: SfAlertLifecycle) {
+    if (!entry || typeof entry.alert_id !== 'string') return
+    if (entry.status !== 'new' && entry.status !== 'acknowledged' && entry.status !== 'closed') return
     const al = this.alerts.find((a) => a.id === entry.alert_id)
-    if (al) {
-      al.status = entry.status
-      al.status_note = entry.note
-      al.status_by = entry.by
-      al.status_at = entry.at
-    }
+    if (!al) return
+    const incoming = Date.parse(entry.at ?? '')
+    const current = Date.parse(al.status_at ?? '')
+    if (Number.isFinite(incoming) && Number.isFinite(current) && incoming < current) return
+    al.status = entry.status
+    al.status_note = entry.note
+    al.status_by = entry.by
+    al.status_at = entry.at
   }
 
   setRules(rules: RuleMeta[]) {
@@ -138,7 +145,10 @@ export class HubState {
       sequences: this.sequences,
       stats,
       // engine session start, derived from the engine's own uptime
-      started_at: new Date(Date.now() - stats.uptime_s * 1000).toISOString(),
+      // (uptime_s ya viene saneado por bridge.counter; el fallback
+      // evita RangeError aunque algún camino traiga NaN — sesión
+      // 100agentes-2, agente 22)
+      started_at: new Date(Date.now() - (Number.isFinite(stats.uptime_s) ? stats.uptime_s : 0) * 1000).toISOString(),
     }
   }
 

@@ -1,5 +1,7 @@
 'use client'
 
+import dynamic from 'next/dynamic'
+
 // AI triage analyst. Agent-style interaction: steps report what stage the
 // analysis is in; the provider's answer arrives over the socket and renders
 // as it is generated (native streaming from the hub; providers without
@@ -10,7 +12,7 @@
 // stays usable.
 
 import { useEffect, useRef, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
+const ReactMarkdown = dynamic(() => import('react-markdown'), { ssr: false, loading: () => null })
 import { motion, useReducedMotion } from 'motion/react'
 import { ArrowsClockwise, CheckCircle, CircleNotch, Sparkle, Stack, Tray, Warning } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
@@ -81,6 +83,12 @@ export function AnalystPanel({
   const [pickerId, setPickerId] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const channelLive = channelStatus === 'live'
+  // Si el canal cae a mitad de análisis nadie emite done/error: el
+  // panel quedaba bloqueado con running=true hasta desmontar (sesión
+  // 100agentes-2, agente 22, P3).
+  useEffect(() => {
+    if (channelStatus === 'down') setRunning(false)
+  }, [channelStatus])
 
   // Live updates while the analyst works.
   useEffect(() => {
@@ -138,7 +146,12 @@ export function AnalystPanel({
       socket.off('analyst:done', onDone)
       socket.off('analyst:error', onError)
     }
-  }, [getSocket])
+    // channelStatus en dependencias (sesión 100agentes-2, agente 22,
+    // P1): con ?view=analista el panel montaba antes de que el socket
+    // existiera (connect espera /api/hub-token), el efecto volvía sin
+    // suscribirse y NUNCA se re-ejecutaba — el análisis emitía, el hub
+    // respondía y el transcript quedaba congelado con running=true.
+  }, [getSocket, channelStatus])
 
   // Keep the transcript pinned to the newest line.
   useEffect(() => {

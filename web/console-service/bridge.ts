@@ -283,22 +283,31 @@ export class EngineBridge {
 
 // ---------------------------------------------------------------- mappers
 
+// counter (sesión 100agentes-2, agente 22, P2): coacción con guardia
+// finita — un único contador malformado (NaN) del motor lanzaba
+// RangeError: Invalid time value dentro de state.snapshot() en CADA
+// conexión (started_at = Date.now() - NaN) y tumbaba el hub.
+function counter(v: unknown): number {
+  const n = Number(v ?? 0)
+  return Number.isFinite(n) && n >= 0 ? n : 0
+}
+
 function mapStats(st: Record<string, unknown>): HubStats {
   return {
-    events_total: Number(st.events_total ?? 0),
-    alerts_total: Number(st.alerts_total ?? 0),
+    events_total: counter(st.events_total),
+    alerts_total: counter(st.alerts_total),
     by_severity: (st.by_severity as Record<string, number>) ?? {},
-    events_per_min: Number(st.events_per_min ?? 0),
-    uptime_s: Number(st.uptime_s ?? 0),
+    events_per_min: counter(st.events_per_min),
+    uptime_s: counter(st.uptime_s),
     interval_ms: 0,
     mode: 'engine',
-    webhook_sent: Number(st.webhook_sent ?? 0),
-    webhook_failed: Number(st.webhook_failed ?? 0),
-    webhook_dropped: Number(st.webhook_dropped ?? 0),
-    suppressions_active: Number(st.suppressions_active ?? 0),
-    correlator_states: Number(st.correlator_states ?? 0),
-    correlator_sequences: Number(st.correlator_sequences ?? 0),
-    correlator_cap: Number(st.correlator_cap ?? 0),
+    webhook_sent: counter(st.webhook_sent),
+    webhook_failed: counter(st.webhook_failed),
+    webhook_dropped: counter(st.webhook_dropped),
+    suppressions_active: counter(st.suppressions_active),
+    correlator_states: counter(st.correlator_states),
+    correlator_sequences: counter(st.correlator_sequences),
+    correlator_cap: counter(st.correlator_cap),
     // optional SQLite persistence (-store): both type contracts declare
     // these as "forwarded by the hub when the engine reports it" —
     // actually forward them
@@ -307,40 +316,40 @@ function mapStats(st: Record<string, unknown>): HubStats {
       ? st.store_write_failures : undefined,
     store_id_conflicts: typeof st.store_id_conflicts === 'number' && Number.isFinite(st.store_id_conflicts) && st.store_id_conflicts >= 0
       ? st.store_id_conflicts : undefined,
-    store_events: Number(st.store_events ?? 0),
-    store_alerts: Number(st.store_alerts ?? 0),
+    store_events: counter(st.store_events),
+    store_alerts: counter(st.store_alerts),
     // per-host risk scoring (engine A1): every entry is sanitized —
     // a malformed row (host not a non-empty string, score not a finite
     // number) is dropped here, never forwarded to the console
-    risk_hosts_tracked: Number(st.risk_hosts_tracked ?? 0),
+    risk_hosts_tracked: counter(st.risk_hosts_tracked),
     hot_hosts: mapHotHosts(st.hot_hosts),
     // behavioral detector observability (A3 beacons, A2 thresholds): the
     // engine always serves both trios (documented in the OpenAPI Stats
     // schema) and the console header chips read them; older engines that
     // predate the fields degrade to zeros, which keep the chips hidden
-    beacons_tracked: Number(st.beacons_tracked ?? 0),
-    beacons_cap: Number(st.beacons_cap ?? 0),
-    beacons_fired: Number(st.beacons_fired ?? 0),
-    threshold_rules: Number(st.threshold_rules ?? 0),
-    threshold_keys: Number(st.threshold_keys ?? 0),
-    threshold_fired: Number(st.threshold_fired ?? 0),
+    beacons_tracked: counter(st.beacons_tracked),
+    beacons_cap: counter(st.beacons_cap),
+    beacons_fired: counter(st.beacons_fired),
+    threshold_rules: counter(st.threshold_rules),
+    threshold_keys: counter(st.threshold_keys),
+    threshold_fired: counter(st.threshold_fired),
     // offline threat intel and the process baseline: zeros on engines
     // that predate them (or run without -intel), which hide the chip
-    intel_indicators: Number(st.intel_indicators ?? 0),
-    intel_lists: Number(st.intel_lists ?? 0),
-    intel_hits: Number(st.intel_hits ?? 0),
-    baseline_hosts: Number(st.baseline_hosts ?? 0),
-    baseline_learning: Number(st.baseline_learning ?? 0),
-    baseline_novelties: Number(st.baseline_novelties ?? 0),
+    intel_indicators: counter(st.intel_indicators),
+    intel_lists: counter(st.intel_lists),
+    intel_hits: counter(st.intel_hits),
+    baseline_hosts: counter(st.baseline_hosts),
+    baseline_learning: counter(st.baseline_learning),
+    baseline_novelties: counter(st.baseline_novelties),
     // SIEM sinks and notify channels (SET-3 console round): required by
     // the OpenAPI Stats schema, sanitized like every counter above —
     // malformed rows are dropped, never forwarded
-    elastic_sent: Number(st.elastic_sent ?? 0),
-    elastic_failed: Number(st.elastic_failed ?? 0),
-    elastic_dropped: Number(st.elastic_dropped ?? 0),
-    splunk_sent: Number(st.splunk_sent ?? 0),
-    splunk_failed: Number(st.splunk_failed ?? 0),
-    splunk_dropped: Number(st.splunk_dropped ?? 0),
+    elastic_sent: counter(st.elastic_sent),
+    elastic_failed: counter(st.elastic_failed),
+    elastic_dropped: counter(st.elastic_dropped),
+    splunk_sent: counter(st.splunk_sent),
+    splunk_failed: counter(st.splunk_failed),
+    splunk_dropped: counter(st.splunk_dropped),
     notify_channels: mapNotifyChannels(st.notify_channels),
   }
 }

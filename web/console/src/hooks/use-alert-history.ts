@@ -29,7 +29,7 @@ export function useAlertHistory(enabled: boolean, filters: AlertSearchFilters, s
     if (status === 'down') decisions.current.clear()
     for (const entry of lifecycleUpdates) {
       const previous = decisions.current.get(entry.alert_id)
-      if (previous && Date.parse(previous.at) > Date.parse(entry.at)) continue
+      if (previous && (Date.parse(previous.at) || 0) > (Date.parse(entry.at) || 0)) continue
       decisions.current.delete(entry.alert_id)
       decisions.current.set(entry.alert_id, entry)
     }

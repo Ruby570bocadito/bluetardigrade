@@ -123,11 +123,16 @@ fn sid_to_string(sid: &[u8]) -> Option<String> {
         return None;
     }
     let authority = sid[2..8].iter().fold(0u64, |acc, b| (acc << 8) | u64::from(*b));
-    let mut out = format!("S-1-{authority}");
+    // Un solo String con capacidad reservada (sesión 100agentes-2,
+    // agente 25): S-1-5-21-x-y-z = 5 allocations por process.create.
+    let mut out = String::with_capacity(48);
+    out.push_str("S-1-");
+    out.push_str(&authority.to_string());
     for i in 0..count {
         let at = 8 + 4 * i;
         let sub = u32::from_le_bytes([sid[at], sid[at + 1], sid[at + 2], sid[at + 3]]);
-        out.push_str(&format!("-{sub}"));
+        out.push('-');
+        out.push_str(&sub.to_string());
     }
     Some(out)
 }

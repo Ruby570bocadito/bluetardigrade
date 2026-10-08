@@ -435,19 +435,16 @@ export function severityOf(value: string | undefined): Severity {
 }
 
 export function formatTime(iso: string): string {
-  try {
-    return new Date(iso).toLocaleTimeString('es-ES', { hour12: false })
-  } catch {
-    return iso
-  }
+  // try/catch era código muerto: new Date('garbage') no lanza, devuelve
+  // Invalid Date y toLocaleTimeString pintaba "Invalid Date" (sesión
+  // 100agentes-2, agente 22).
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleTimeString('es-ES', { hour12: false })
 }
 
 export function formatDateTime(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString('es-ES', { hour12: false })
-  } catch {
-    return iso
-  }
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('es-ES', { hour12: false })
 }
 
 export function formatUptime(s: number): string {

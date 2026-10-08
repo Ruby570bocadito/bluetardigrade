@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -200,11 +201,14 @@ func (m *Manager) expireLocked(now time.Time) {
 // Raise processes one hit; duplicate hits for the same rule/host/event
 // triple inside the TTL window are silently dropped.
 func (m *Manager) Raise(ev *model.Event, hit rules.Hit) {
-	key := fmt.Sprintf("%s|%s|%d", hit.Rule.ID, ev.Host, pidOf(ev))
+	// Concatenación directa (sesión 100agentes-2, agente 24): Sprintf
+	// por hit antes del lock era parseo de formato + interface boxing
+	// en el camino caliente de cada alerta.
+	key := hit.Rule.ID + "|" + ev.Host + "|" + strconv.Itoa(pidOf(ev))
 	// Imported observations have no reliable process identity. Preserve
 	// distinct mail, IDS and query records while deduplicating exact replays.
 	if ev.Attributes["observer_host"] != "" {
-		key = fmt.Sprintf("%s|%s|%s|%s", hit.Rule.ID, ev.Host, ev.Source, ev.ID)
+		key = hit.Rule.ID + "|" + ev.Host + "|" + ev.Source + "|" + ev.ID
 	} else if pidOf(ev) == 0 {
 		// No process identity either: dedup by the event itself so
 		// distinct occurrences (N run keys, N destinations) each raise

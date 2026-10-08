@@ -88,6 +88,15 @@ impl DnsState {
             }
         }
         for ip in ips {
+            // Skip the clone when the mapping is already fresh (sesión
+            // 100agentes-2, agente 25, P3): un dominio con 8 A-records
+            // consultado cada 5 s clonaba 8 veces el mismo nombre por
+            // proceso aunque la entrada existiera.
+            if let Some((existing, at)) = self.answers.get(ip) {
+                if existing == name && now.duration_since(*at) < ANSWER_TTL {
+                    continue;
+                }
+            }
             self.answers.insert(*ip, (name.to_string(), now));
         }
         let key = (pid, name.to_string());

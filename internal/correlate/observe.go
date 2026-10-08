@@ -21,11 +21,12 @@ func (m *Manager) Observe(ev *model.Event, ruleName string) {
 	ts := ev.DetectionTime(wall)
 	emit := m.emit
 	var completed []alert.Alert
+	hostLower := strings.ToLower(ev.Host) // hoisted (sesión 100agentes-2, agente 24): 1 alloc por EVENTO, no por secuencia referenciadora
 	for _, c := range m.seqs {
 		if !c.references(ruleName) {
 			continue
 		}
-		entity := strings.ToLower(ev.Host)
+		entity := hostLower
 		if c.scope == ScopeUser {
 			account := trackedAccount(ev.User)
 			if account == "" {

@@ -38,11 +38,21 @@ pub struct KeyNames<T> {
     cap: usize,
     parked: Vec<(usize, Instant, T)>,
     park_cap: usize,
+    /// Rate limit for the expire sweep (sesión 100agentes-2, agente
+    /// 25, P1): el callback de registro llamaba `expire` por EVENTO,
+    /// y con `parked` no vacío cada llamada barría hasta 4096
+    /// entradas — en Win11 25H2 (todo aparca 5 s) eso son decenas de
+    /// millones de comparaciones/s sobre el hilo ETW.
+    last_expire: Option<Instant>,
 }
+
+/// Minimum gap between expire sweeps: PARK_FOR is seconds-scale, so
+/// sweeping every 200 ms loses nothing and bounds the cost.
+const EXPIRE_EVERY: std::time::Duration = std::time::Duration::from_millis(200);
 
 impl<T> KeyNames<T> {
     pub fn new(cap: usize, park_cap: usize) -> Self {
-        KeyNames { names: HashMap::new(), cap, parked: Vec::new(), park_cap }
+        KeyNames { names: HashMap::new(), cap, parked: Vec::new(), park_cap, last_expire: None }
     }
 
     /// A handle was created or opened: remembers its full kernel path.
@@ -130,6 +140,12 @@ impl<T> KeyNames<T> {
         if self.parked.is_empty() {
             return Vec::new();
         }
+        if let Some(last) = self.last_expire {
+            if now.duration_since(last) < EXPIRE_EVERY {
+                return Vec::new();
+            }
+        }
+        self.last_expire = Some(now);
         let mut out = Vec::new();
         let mut i = 0;
         while i < self.parked.len() {

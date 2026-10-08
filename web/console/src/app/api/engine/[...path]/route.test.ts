@@ -403,12 +403,16 @@ describe('engine proxy with analyst accounts', () => {
     expect(JSON.parse(String(captured[0].init.body))).toEqual({ label: 'aula 3', by: 'jefa' })
     expect((await POST(new Request(approve, { method: 'POST', headers: as('jefa'), body: '{}' }))).status).toBe(200)
     expect((await POST(new Request(base + '/api/enroll/tokens/0a1b2c3d/revoke', { method: 'POST', headers: as('jefa'), body: '{}' }))).status).toBe(200)
-    // any other shape never reaches the engine
+    // any other shape never reaches the engine — and the 405 is now
+    // AUDITED too (sesión 100agentes-2: "every write, allowed or
+    // refused"; antes un intento de escritura fuera de la allowlist
+    // desaparecía del rastro)
     for (const path of ['/api/enroll/hosts/enr-pc-1-a1b2c3/delete', '/api/enroll/hosts/../tokens/approve', '/api/enroll/tokens/xyz/revoke']) {
       expect((await POST(new Request(base + path, { method: 'POST', headers: as('jefa'), body: '{}' }))).status).toBe(405)
     }
     expect(captured).toHaveLength(3)
     const lines = readFileSync(audit, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
-    expect(lines.map((l) => `${l.user}:${l.outcome}`)).toEqual(['ana:denied', 'ana:denied', 'jefa:ok', 'jefa:ok', 'jefa:ok'])
+    expect(lines.map((l) => `${l.user}:${l.outcome}`)).toEqual(['ana:denied', 'ana:denied', 'jefa:ok', 'jefa:ok', 'jefa:ok', 'jefa:error', 'jefa:error', 'jefa:error'])
+    expect(lines[5]).toMatchObject({ status: 405 })
   })
 })

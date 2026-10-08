@@ -179,9 +179,12 @@ export function DotGridLayer({ gap = 22, radius = 150, className = '' }: DotGrid
         }
       }
 
-      // el bucle vive mientras haya energía que decaer o el puntero esté
-      // dentro (puede encender puntos en el siguiente movimiento)
-      if (active > 0 || pointerInside) {
+      // El bucle vive solo mientras haya energía que decaer (sesión
+      // 100agentes-2, agente 26, P1): con pointerInside constantemente
+      // true, el rAF repintaba un canvas fixed bajo DOS superficies
+      // glass con backdrop-filter a 60fps AUNQUE la energía fuera 0.
+      // El wake() de onMove re-enciende el bucle al siguiente movimiento.
+      if (active > 0) {
         raf = requestAnimationFrame(frame)
       } else {
         running = false
