@@ -246,7 +246,13 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
         mux.HandleFunc("GET /api/events", h.handleEvents)
         mux.HandleFunc("GET /api/alerts", h.handleAlerts)
         mux.HandleFunc("GET /api/alerts/search", h.handleAlertSearch)
-        mux.HandleFunc("POST /api/alerts/{id}/status", h.handleAlertStatus)
+        // noStore on the write routes (audit 5.5): a triage/suppression
+        // response answered through an intermediary proxy could be cached
+        // and re-served stale — the operator believes the status was
+        // written when the proxy replayed an old 200. no-store keeps
+        // every hop honest; the read routes stay untouched (their
+        // caching story is deliberate per-route).
+        mux.HandleFunc("POST /api/alerts/{id}/status", h.noStore(h.handleAlertStatus))
         mux.HandleFunc("GET /api/alerts/{id}/forensics", h.handleAlertForensics)
         mux.HandleFunc("GET /api/rules", h.handleRules)
         mux.HandleFunc("POST /api/rules/test", h.handleRuleTest)
@@ -277,7 +283,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
         mux.HandleFunc("GET /api/alerts/export", h.handleAlertsExport)
         mux.HandleFunc("GET /api/events/export", h.handleEventsExport)
         h.srv = &http.Server{
-                Handler:           securityHeaders(h.guardRebinding(h.auth(guardWriteOrigin(mux)))),
+                Handler:           recoverPanic(requestDeadlines(securityHeaders(h.guardRebinding(h.auth(guardWriteOrigin(mux)))))),
                 ReadHeaderTimeout: 5 * time.Second,
                 // idle keep-alive connections are reclaimed instead of pinning
                 // a goroutine and a socket each for as long as a client likes;
@@ -487,8 +493,10 @@ func (h *Hub) auth(next http.Handler) http.Handler {
                 if !ok {
                         if h.tooManyAuthFails(r.RemoteAddr) {
                                 w.Header().Set("Content-Type", "application/json")
+                                w.Header().Set("Retry-After", "60")
+                                w.Header().Set("X-RateLimit-Window", "60")
                                 w.WriteHeader(http.StatusTooManyRequests)
-                                fmt.Fprintln(w, `{"error":"too many unauthorized requests from this address; retry after the window"}`)
+                                fmt.Fprintln(w, `{"error":"too many unauthorized requests from this address; retry after the window","code":"rate_limited"}`)
                                 return
                         }
                         w.Header().Set("WWW-Authenticate", `Bearer realm="bluetardigrade api"`)
@@ -1673,6 +1681,17 @@ func (h *Hub) handleStream(w http.ResponseWriter, r *http.Request) {
         fmt.Fprint(w, "retry: 2000\n\n")
         fl.Flush()
 
+        // Write deadline per frame (audit 5.5 #2): a peer that stops
+        // ACKing (half-open TCP, a wedged proxy) previously blocked the
+        // flusher FOREVER — the frame write parked inside the kernel
+        // buffer with no timeout, pinning this goroutine, one of the 64
+        // subscriber slots and its channel. 30 s of blocked write closes
+        // the stream; the browser's `retry: 2000` reconnects and the
+        // slot is freed. Cleared between frames so an idle-but-alive
+        // stream (heartbeats keep it warm) is never cut.
+        const sseWriteTimeout = 30 * time.Second
+        rc := http.NewResponseController(w)
+
         hb := time.NewTicker(heartbeatEvery)
         defer hb.Stop()
         for {
@@ -1680,18 +1699,26 @@ func (h *Hub) handleStream(w http.ResponseWriter, r *http.Request) {
                 case <-r.Context().Done():
                         return
                 case <-hb.C:
+                        if err := rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout)); err != nil {
+                                return
+                        }
                         if _, err := fmt.Fprint(w, ": hb\n\n"); err != nil {
                                 return
                         }
                         fl.Flush()
+                        _ = rc.SetWriteDeadline(time.Time{})
                 case msg, ok := <-ch:
                         if !ok {
+                                return
+                        }
+                        if err := rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout)); err != nil {
                                 return
                         }
                         if _, err := w.Write(msg); err != nil {
                                 return
                         }
                         fl.Flush()
+                        _ = rc.SetWriteDeadline(time.Time{})
                 }
         }
 }

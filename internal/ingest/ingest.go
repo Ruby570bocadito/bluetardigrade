@@ -279,6 +279,13 @@ func (s *Server) Rejected() uint64 { return s.rejected.Load() }
 
 // Serve accepts connections until Shutdown is called.
 func (s *Server) Serve() {
+        // EMFILE/ENFILE backoff (audit 5.2): Accept failing transiently in
+        // a tight loop (fd-table exhaustion is the classic) used to spin
+        // at 100% CPU while rejecting every new connection — the same
+        // self-inflicted outage the fd cap meant to prevent. net/http
+        // established the pattern: sleep grows exponentially (1 ms → 1 s)
+        // and resets on any successful accept.
+        var acceptPause time.Duration
         for {
                 conn, err := s.listener.Accept()
                 if err != nil {
@@ -288,8 +295,16 @@ func (s *Server) Serve() {
                         if closing {
                                 return
                         }
-                        continue // transient accept error; keep accepting
+                        if acceptPause == 0 {
+                                acceptPause = time.Millisecond
+                        }
+                        time.Sleep(acceptPause)
+                        if acceptPause < time.Second {
+                                acceptPause *= 2
+                        }
+                        continue // transient accept error; keep accepting (paced)
                 }
+                acceptPause = 0
                 // Register the connection AND arm its handler counter under mu,
                 // the same critical section Shutdown uses to set closing and
                 // close everything in open: either Serve sees closing (the conn
