@@ -107,7 +107,7 @@ function FindingItem({ finding }: { finding: ADFinding }) {
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[560px] border-collapse text-left text-xs">
               <thead>
-                <tr className="border-b border-zinc-800/60 text-[11px] uppercase tracking-wide text-zinc-600">
+                <tr className="border-b border-zinc-800/60 text-[11px] uppercase tracking-wide text-zinc-500">
                   <th scope="col" className="py-1.5 pr-3 font-medium">Objeto</th>
                   <th scope="col" className="py-1.5 pr-3 font-medium">DN</th>
                   <th scope="col" className="py-1.5 font-medium">Detalle</th>
@@ -124,7 +124,7 @@ function FindingItem({ finding }: { finding: ADFinding }) {
               </tbody>
             </table>
             {truncated && (
-              <p className="mt-2 text-[11px] text-zinc-600">La lista de objetos está truncada; el recuento de arriba es el total real.</p>
+              <p className="mt-2 text-[11px] text-zinc-500">La lista de objetos está truncada; el recuento de arriba es el total real.</p>
             )}
           </div>
         )}
@@ -174,7 +174,7 @@ function ObjectExplorer() {
           <TreeStructure size={16} aria-hidden className="text-zinc-500" />
           Objetos del snapshot
         </span>
-        <span className="text-[11px] text-zinc-600">búsqueda de texto sobre el snapshot local · el motor nunca recibe filtros LDAP</span>
+        <span className="text-[11px] text-zinc-500">búsqueda de texto sobre el snapshot local · el motor nunca recibe filtros LDAP</span>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800/60 px-4 py-2.5">
@@ -191,14 +191,14 @@ function ObjectExplorer() {
           ))}
         </div>
         <div className="relative min-w-[200px] flex-1">
-          <MagnifyingGlass size={13} aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-600" />
+          <MagnifyingGlass size={13} aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" />
           <input
             type="search"
             value={queryInput}
             onChange={(e) => setQueryInput(e.target.value)}
             placeholder="Buscar por nombre, DN o OS…"
             aria-label={`Buscar objetos de tipo ${KIND_TABS.find((t) => t.kind === kind)?.label ?? kind}`}
-            className="w-full rounded-lg border border-zinc-800 bg-transparent py-1.5 pl-8 pr-3 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="w-full rounded-lg border border-zinc-800 bg-transparent py-1.5 pl-8 pr-3 text-xs text-zinc-200 placeholder:text-zinc-500 focus:border-zinc-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
         </div>
         <label className="flex items-center gap-1.5 text-[11px] text-zinc-500">
@@ -232,7 +232,7 @@ function ObjectExplorer() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] border-collapse text-left text-xs">
               <thead>
-                <tr className="border-b border-zinc-800/60 text-[11px] uppercase tracking-wide text-zinc-600">
+                <tr className="border-b border-zinc-800/60 text-[11px] uppercase tracking-wide text-zinc-500">
                   <th scope="col" className="px-4 py-2 font-medium">Nombre</th>
                   <th scope="col" className="px-4 py-2 font-medium">Detalle</th>
                   <th scope="col" className="px-4 py-2 font-medium">Último cambio</th>
@@ -472,7 +472,7 @@ export function DirectoryView() {
                     <span className="text-xs tabular-nums text-zinc-300">equipos en el directorio: <b className="font-semibold text-zinc-100">{cov.inDirectory.toLocaleString('es-ES')}</b></span>
                     {cov.withSensor !== null && <span className="text-xs tabular-nums text-zinc-300">equipos que reportan al motor: <b className="font-semibold text-emerald-300">{cov.withSensor.toLocaleString('es-ES')}</b></span>}
                     <span className="text-xs tabular-nums text-zinc-300">sin telemetría del sensor: <b className="font-semibold text-amber-200">{cov.withoutSensor.toLocaleString('es-ES')}</b></span>
-                    <span className="text-[11px] text-zinc-600">el detalle, equipo a equipo, está en el hallazgo «Equipos del dominio sin sensor»</span>
+                    <span className="text-[11px] text-zinc-500">el detalle, equipo a equipo, está en el hallazgo «Equipos del dominio sin sensor»</span>
                   </div>
                 )
               })()}
@@ -494,7 +494,7 @@ export function DirectoryView() {
                   <div className="flex flex-1 flex-wrap items-center justify-around gap-4 py-2">
                     <div className="text-center">
                       <p className={'text-4xl font-semibold tabular-nums ' + (scoreTone(score) === 'ok' ? 'text-emerald-300' : scoreTone(score) === 'warn' ? 'text-amber-300' : 'text-red-300')}>{score}</p>
-                      <p className="mt-1 text-[11px] text-zinc-600">de 100</p>
+                      <p className="mt-1 text-[11px] text-zinc-500">de 100</p>
                       <span className="mt-2 block w-40"><Meter value={score} max={100} color={TONE_COLOR[scoreTone(score)]} /></span>
                     </div>
                     <DonutChart
@@ -506,7 +506,7 @@ export function DirectoryView() {
                       thickness={24}
                     />
                   </div>
-                  <p className="px-1 text-[11px] text-zinc-600">
+                  <p className="px-1 text-[11px] text-zinc-500">
                     umbrales del análisis: cuenta inactiva a partir de {posture.inactive_days} días · KRBTGT con rotación recomendada cada {posture.krbtgt_max_age_days} días
                   </p>
                 </ChartCard>
@@ -547,12 +547,12 @@ export function DirectoryView() {
                       <Key size={16} aria-hidden className="text-zinc-500" />
                       Cuentas privilegiadas efectivas
                     </span>
-                    <span className="text-[11px] tabular-nums text-zinc-600">{privileged.count} cuentas</span>
+                    <span className="text-[11px] tabular-nums text-zinc-500">{privileged.count} cuentas</span>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[560px] border-collapse text-left text-xs">
                       <thead>
-                        <tr className="border-b border-zinc-800/60 text-[11px] uppercase tracking-wide text-zinc-600">
+                        <tr className="border-b border-zinc-800/60 text-[11px] uppercase tracking-wide text-zinc-500">
                           <th scope="col" className="px-4 py-2 font-medium">Cuenta</th>
                           <th scope="col" className="px-4 py-2 font-medium">Caminos de privilegio</th>
                         </tr>
@@ -567,7 +567,7 @@ export function DirectoryView() {
                       </tbody>
                     </table>
                   </div>
-                  <p className="border-t border-zinc-800/60 px-4 py-2.5 text-[11px] text-zinc-600">
+                  <p className="border-t border-zinc-800/60 px-4 py-2.5 text-[11px] text-zinc-500">
                     Los caminos (directos y anidados) los calcula el motor sobre el snapshot; la API todavía no expone
                     las aristas de membresía completas, así que el árbol de grupos se mostrará cuando exista esa ruta.
                   </p>
@@ -581,7 +581,7 @@ export function DirectoryView() {
                     <TreeStructure size={16} aria-hidden className="text-zinc-500" />
                     Hallazgos
                   </span>
-                  <span className="text-[11px] text-zinc-600">texto del motor, sin reescribir · el recuento es el total aunque la lista venga truncada</span>
+                  <span className="text-[11px] text-zinc-500">texto del motor, sin reescribir · el recuento es el total aunque la lista venga truncada</span>
                 </div>
                 {posture.findings.length === 0 ? (
                   <div className="px-4 py-8">

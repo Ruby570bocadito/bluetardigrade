@@ -10,12 +10,12 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/report"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/store"
@@ -237,18 +237,10 @@ func exportFormat(w http.ResponseWriter, r *http.Request) string {
 // csvSafe prefixes textual formula/control characters with an apostrophe,
 // including full-width variants and prefixes after leading whitespace.
 // The original string stays intact; exact-data imports should use JSONL.
-func csvSafe(s string) string {
-	for _, ch := range s {
-		switch ch {
-		case '=', '+', '-', '@', '＝', '＋', '－', '＠', '\t', '\r', '\n':
-			return "'" + s
-		}
-		if !unicode.IsSpace(ch) {
-			break
-		}
-	}
-	return s
-}
+// csvSafe delegates to report.SafeCell (sesión 100agentes-2, agente
+// 27): cuerpos byte a byte identicos — el contrato se mantiene en UN
+// lugar (cuarta-copia rule del repo).
+func csvSafe(s string) string { return report.SafeCell(s) }
 
 func eventProcessName(ev *model.Event) string {
 	if ev.Process != nil {

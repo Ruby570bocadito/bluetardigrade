@@ -76,7 +76,7 @@ no longer matched the code; its earlier revisions live in GitHub Releases.
 | **Telemetry** | Rust ETW sensor (Kernel-Process for process create/start/end, Kernel-Network for TCP connects, Kernel-Registry for SetValueKey, DNS-Client for query answers) + Sysmon ingestion path; NDJSON/TCP feed with schema validation and enrichment (user, command line, network context, image hashes) |
 | **SOC imports** | Explicit Go adapter for six observed log/mail formats; TLS/auth remote ingest, bounded attributes separated from engine enrichment |
 | **Analyst reports** | CLI API lookup plus human notes and exclusive file output; browser-local report catalog, frozen snapshots and Markdown/JSON exports; engine-side SOC report catalog (`GET /api/reports`: executive, incident, fleet coverage, SOC activity — JSON or CSV on demand) and the fleet noise report (`GET /api/noise`: top processes, DNS domains and rules with the triage overlay) |
-| **Detection** | 114 enabled YAML rules with 17 operators (`eq`, `regex`, `contains_any`, …), hot-reload every 15 s, per-rule MITRE ATT&CK tags and actions; `engine sigma` imports community Sigma rules (deterministic, fail-loud, provenance preserved) |
+| **Detection** | 114 enabled YAML rules with 18 operators (`eq`, `regex`, `contains_any`, …), hot-reload every 15 s, per-rule MITRE ATT&CK tags and actions; `engine sigma` imports community Sigma rules (deterministic, fail-loud, provenance preserved) |
 | **Forensics** | Bounded per-host flight recorder; atomic high/critical evidence bundles with a 5-minute window and preserved trigger, served through the bearer-gated API; lazy console timeline with full JSON/JSONL downloads |
 | **Correlation** | Kill-chain sequencer: named steps across the same host within a time window raise one high-signal campaign alert |
 | **Risk scoring** | Severity-weighted per-host score with time decay (half-life 30 min, bounded host map): `hot_hosts` top-5 and `risk_hosts_tracked` in `/api/stats`, `sf_host_risk_score{host=...}` in `/metrics`, hot-hosts panel in the console dashboard |
@@ -86,7 +86,7 @@ no longer matched the code; its earlier revisions live in GitHub Releases.
 | **Console** | Live feed, KPI dashboard, alert triage/history with free-text search, browser-local saved alert/feed filters, declared-source summary with mixed-demo indicator, rule/chain/suppression browsers, read-only response audit with filters/export, AI analyst calling the configured OpenAI-compatible endpoint with bounded evidence, actual progress steps and native provider token streaming (SSE with JSON fallback and first-byte/idle/total time guards), sensor enrollment wizard (create tokens, approve or reject pending hosts, revoke) |
 | **Storage** | Opt-in SQLite persistence (`-store`): events and alerts outlive restarts, retention pruner, lists and exports read the full history |
 | **Auth** | Shared-token ingest handshake (constant-time), zero-downtime token rotation window, optional Bearer on the API and on outbound webhooks |
-| **Ops** | One-command Windows installer (six commands on PATH), Docker image for the engine, GitHub Actions CI on every push |
+| **Ops** | One-command Windows installer (seven commands on PATH, incl. sf-etw), Docker image for the engine, GitHub Actions CI on every push |
 
 ## Repository layout
 

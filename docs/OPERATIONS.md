@@ -17,7 +17,7 @@ From any PowerShell window, no admin account and no prior download required:
 irm https://raw.githubusercontent.com/Ruby570bocadito/bluetardigrade/main/install.ps1 | iex
 ```
 
-The installer downloads the repository, provisions portable Go, Node and Bun under your user profile, builds the engine and the web console, and puts six commands on your PATH:
+The installer downloads the repository, provisions portable Go, Node and Bun under your user profile, builds the engine and the web console, and puts seven commands on your PATH:
 
 | Command         | What it does                                   |
 |-----------------|------------------------------------------------|
@@ -230,7 +230,9 @@ Details in [`web/console/README.md`](../web/console/README.md).
 ## Local HTTP API
 
 
-The engine serves a small read-only API used by the web console and handy for SIEM taps. Both the ingest port and the API bind to `127.0.0.1` by default: the feed carries sensitive host data (users, command lines) and the NDJSON ingest must stay unauthenticated only on loopback, so nothing should be reachable from other machines unless you decide so. To accept sensors running on different hosts, start the engine with `-addr 0.0.0.0:7777` (and `-api 0.0.0.0:7778` if the console is remote too), enable the shared-token auth ([next section](#ingest-authentication-shared-token)), open the port with the installer's `-Firewall` switch, and plan a network-level restriction to the sensor segment. The API can be disabled entirely with `-api 0`:
+The engine serves a small read-only API used by the web console and handy for SIEM taps. Both the ingest port and the API bind to `127.0.0.1` by default: the feed carries sensitive host data (users, command lines) and the NDJSON ingest must stay unauthenticated only on loopback, so nothing should be reachable from other machines unless you decide so. To accept sensors running on different hosts, start the engine with `-addr 0.0.0.0:7777` (and `-api 0.0.0.0:7778` if the console is remote too), enable the shared-token auth ([next section](#ingest-authentication-shared-token)), open the port with the installer's `-Firewall` switch, and plan a network-level restriction to the sensor segment.
+
+> **Fail-closed (desde la auditoría 2026-10-08):** la API se NIEGA a arrancar si escucha fuera de loopback sin `-api-token`/`SF_API_TOKEN`. Este es el comportamiento correcto, no un bug: expone telemetría sin auth. Para un laboratorio desechable existe el escape explícito `-api-allow-open` — no lo uses en producción. La ingesta (`-addr` no loopback) sin token solo emite WARNING, así que publica `-p 7777` SIEMPRE con `SF_INGEST_TOKEN` configurado. The API can be disabled entirely with `-api 0`:
 
 | Endpoint | Returns |
 |----------|---------|

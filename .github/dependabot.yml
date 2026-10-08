@@ -89,3 +89,14 @@ updates:
         update-types:
           - "minor"
           - "patch"
+
+  # Herramientas de navegador (axe-core, playwright, jsdom): estaban
+  # FUERA del perímetro de auditoría (sesión 100agentes-2, agente 28)
+  - package-ecosystem: "npm"
+    directory: "/tools/console-tests"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]

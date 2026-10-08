@@ -28,6 +28,7 @@ name: deps-audit
 
 on:
   push:
+    branches: [main]
   pull_request:
   schedule:
     # Mondays 03:17 UTC (04:17/05:17 Madrid, nocturnal): GitHub
@@ -73,6 +74,7 @@ jobs:
           osv-scanner scan source \
             --lockfile web/console/bun.lock \
             --lockfile web/console-service/bun.lock \
+            --lockfile tools/console-tests/bun.lock \
             --lockfile website/bun.lock
       - name: package lifecycle guard (no install-time scripts, SEC-6)
         # Supply chain, the other half of the lane task: the JS tree

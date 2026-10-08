@@ -955,7 +955,7 @@ export const dictEs = {
       fleetUnavailable: 'La flota no está disponible: el motor corre sin el rastreador de equipos, así que no se pintan ceros como cobertura.',
       storePersistent: 'persistente en disco',
       storeMemory: 'en memoria (se pierde al reiniciar el motor)',
-      incidentStore: 'Incident store',
+      incidentStore: 'Almacén de incidentes',
     },
     fleet: {
       unavailable: 'Cobertura no disponible',

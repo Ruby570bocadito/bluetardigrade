@@ -324,7 +324,7 @@
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #71717a;
+  color: var(--color-zinc-500);
 }
 .icon-tile {
   display: flex;
@@ -422,20 +422,6 @@
    cabecera + vignette superior. La rejilla de puntos ahora la pinta el
    canvas DotGrid (React Bits) y reacciona al puntero; debajo del contenido
    siempre. isolation + z-index -1: el halo queda SIEMPRE detrás del contenido. */
-.ambient-glow {
-  isolation: isolate;
-}
-.ambient-glow::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(700px 190px at 15% -12%, rgba(255, 255, 255, 0.07), transparent 70%),
-    radial-gradient(560px 170px at 88% -18%, rgba(255, 255, 255, 0.04), transparent 70%),
-    radial-gradient(1100px 480px at 50% 118%, rgba(255, 255, 255, 0.025), transparent 72%);
-}
 
 /* StarBorder: borde de 1px con degradado en movimiento. En reposo es el
    borde estático de siempre (fondo transparente, pelo blanco al 8%); en
@@ -686,12 +672,7 @@ html.light .viz-tooltip {
   background: rgba(255, 255, 255, 0.97);
   box-shadow: 0 12px 32px -12px rgba(9, 9, 11, 0.2);
 }
-html.light .ambient-glow::before {
-  background:
-    radial-gradient(700px 190px at 15% -12%, rgba(9, 9, 11, 0.04), transparent 70%),
-    radial-gradient(560px 170px at 88% -18%, rgba(9, 9, 11, 0.03), transparent 70%),
-    radial-gradient(1100px 480px at 50% 118%, rgba(9, 9, 11, 0.02), transparent 72%);
-}
+/* .ambient-glow eliminado: bloques muertos (sesión 100agentes-2, agente 27) */
 html.light .star-border { border-color: rgba(9, 9, 11, 0.1); }
 html.light .star-border--active {
   background:

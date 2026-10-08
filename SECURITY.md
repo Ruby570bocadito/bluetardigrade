@@ -9,7 +9,7 @@ bluetardigrade es un producto de seguridad de producción: la misma exigencia qu
 | main (HEAD) | Sí — única línea de desarrollo; las correcciones aterrizan en main |
 | tags / releases anteriores | No — se asume que los despliegues siguen main o builds etiquetados recientes |
 
-El proyecto todavía no publica releases versionadas. Mientras tanto, reporta siempre contra el commit exacto (`git rev-parse HEAD`) del build afectado.
+Se publican releases versionadas (tags `vX.Y.Z`; los candidatos usan el sufijo `-rc`). Reporta contra la última release publicada; para builds antiguos, reporta contra el commit exacto. Mientras tanto, reporta siempre contra el commit exacto (`git rev-parse HEAD`) del build afectado.
 
 ## Cómo reportar una vulnerabilidad
 

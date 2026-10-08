@@ -67,7 +67,7 @@ respond from a live web console.
   ran.
 - **C2 beaconing** detection on event time.
 - **Volumetric thresholds** and decaying per-host risk scores.
-- **Sigma import** and 17 rule operators.
+- **Sigma import** and 18 rule operators.
 
 </td>
 <td width="50%" valign="top">
@@ -134,6 +134,7 @@ these commands on your `PATH`:
 | `sf-engine` | The detection engine |
 | `sf-console` | Engine + console |
 | `sf-sensor` | Sysmon sensor |
+| `sf-etw` | ETW sensor installer (network + registry + DNS telemetry) |
 | `sf-collector` | Log and mail importer |
 | `sf-update` | Updates the install |
 | `sf-uninstall` | Removes it |

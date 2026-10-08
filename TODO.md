@@ -166,7 +166,7 @@ arranques de proceso de un portátil en reposo. Un SOC no puede guardar ni mirar
 
 - [ ] **Registro, raíz `?`:** resolverla con el usuario del proceso (`HKU\<SID>`) o deduciendo la
   colmena por las claves vistas bajo esa base.
-- [ ] **Registro, valor escrito:** llega vacío. Activar la captura de datos del proveedor o leer el
+- [x] **Registro, valor escrito:** ENTREGADO — `sensor/src/collector.rs` captura `CapturedData` vía `netreg::registry_value`; el modelo lo lleva (`pkg/model` `Registry.Value`, "data written") y las reglas lo consumen (`registry.value`).
   valor tras la escritura.
 - [ ] **El latido informa de los eventos ETW perdidos** (EventsLost y BuffersLost de la sesión)
   y de los descartes del hilo de hashes. «No lo vi» nunca debe ser silencioso.

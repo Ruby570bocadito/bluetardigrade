@@ -44,7 +44,7 @@ permissions:
 # same repository and interleaved attestations. New runs now cancel the
 # pending/superseded one.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release # cadena FIJA: dos tags distintos no pueden publicar en paralelo (sesión 100agentes-2, agente 29)
   cancel-in-progress: true
 
 jobs:

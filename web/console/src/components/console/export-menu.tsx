@@ -101,8 +101,8 @@ export function AuditExportButton({
         disabled
           ? 'Sin intentos en la cola: nada que exportar todavía'
           : filterLabel
-            ? `Exporta la ventana completa, independiente del filtro «${filterLabel}»: los ${records.length} registros de la cola, incluidos los ${hiddenCount ?? 0} que el filtro oculta en la vista, más recientes primero, línea a línea como la escribe el motor; el archivo completo vive en el host del motor (append-only, nunca se trunca)`
-            : `Descarga la cola de la ventana (${records.length} registros, más recientes primero) línea a línea como la escribe el motor; el archivo completo vive en el host del motor (append-only, nunca se trunca)`
+            ? `Exporta la ventana completa, independiente del filtro «${filterLabel}»: los ${records.length} ${records.length === 1 ? 'registro' : 'registros'} de la cola, incluidos los ${hiddenCount ?? 0} que el filtro oculta en la vista, más recientes primero, línea a línea como la escribe el motor; el archivo completo vive en el host del motor (append-only, nunca se trunca)`
+            : `Descarga la cola de la ventana (${records.length === 1 ? 'registro' : 'registros'}, más recientes primero) línea a línea como la escribe el motor; el archivo completo vive en el host del motor (append-only, nunca se trunca)`
       }
       className={`${linkCls} disabled:cursor-not-allowed disabled:opacity-50`}
     >

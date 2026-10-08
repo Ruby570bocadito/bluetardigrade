@@ -179,13 +179,16 @@ jobs:
         run: go build -o engine-smoke.exe ./cmd/engine
       - name: Windows unit tests and provider fixtures
         run: |
-          go test -count=1 ./...
+          go test -race -count=1 ./...
           go build -o collector-smoke.exe ./cmd/collector
           python scripts/dev-tests/smoke_soc_pipeline.py --engine engine-smoke.exe --collector collector-smoke.exe
           python scripts/dev-tests/smoke_file_forensics.py --engine engine-smoke.exe
       - name: Shared launcher configuration and process ownership
         shell: powershell
         run: ./scripts/dev-tests/check_runtime_behavior.ps1
+      - name: Sensor Rust tests on the real target (collector.rs es
+          cfg(windows): ubuntu nunca ejecuta estos tests)
+        run: cargo test --locked --manifest-path sensor/Cargo.toml
       - name: Sysmon sensor mapping self-test (sample records, no Sysmon needed)
         shell: powershell
         run: ./scripts/windows/sensor.ps1 -SelfTest

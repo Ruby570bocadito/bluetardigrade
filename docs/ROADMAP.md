@@ -13,7 +13,7 @@ la arquitectura vigente en [ARCHITECTURE.md](ARCHITECTURE.md).
 ## H1 — Detección: profundidad y cobertura (siguiente)
 
 **Problema**: la cobertura actual es fuerte en procesos y artefactos
-(114 reglas, 11 cadenas), incluida una primera capa de ficheros y phishing; sigue
+(114 reglas, 13 cadenas), incluida una primera capa de ficheros y phishing; sigue
 siendo delgada en memoria y en la confirmación de cargas de DLL.
 
 - **Reglas de fichero: primera capa entregada** — paquete
@@ -67,10 +67,11 @@ esa evidencia.
 registro y red pero con la fricción de instalación. Falta el punto
 medio: ETW nativo ampliado.
 
-- **ETW de red y registro** — providers `Microsoft-Windows-Kernel-Network`
-  y `Registry`/`Sysmon`-equivalentes vía ETW puro (sin instalar nada).
-  Cierre: eventos `network.connect` y `registry.set` emitidos por el
-  sensor Rust en un host real, con el pipeline de reglas validándolos.
+- **[x] ETW de red y registro — ENTREGADO** (sensor `netreg.rs` +
+  `dns.rs` activos vía `Capture{network, registry, dns}`; eventos
+  `network.connect` y `registry.set` fluyen por el pipeline de reglas;
+  ver README). Queda el cierre formal en host real documentado como
+  validación operativa, no como pendiente de desarrollo.
 - **Cert stream (firma de binarios)** — `Microsoft-Windows-Certificate`
   para validar firmantes de ejecutables. Cierre: campo `signer` en el
   evento + regla de binarios sin firmar desde rutas de sistema.

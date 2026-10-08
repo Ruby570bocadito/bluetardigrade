@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"runtime"
 	"net/http"
 	"net/url"
 	"os"
@@ -249,10 +250,38 @@ func doctorContentChecks(root string) []doctorCheck {
 	return checks
 }
 
+// doctorFilePerm checks the POSIX mode of a credential file: the
+// secretfile standard is 0600, and a world-readable api.token or
+// ingest.token is exactly what doctor exists to catch (sesión
+// 100agentes-2, agente 32 — solo se puede comprobar en POSIX; en
+// Windows la DACL la protege install.ps1/runtime.ps1).
+func doctorFilePerm(path string) (string, bool) {
+	if runtime.GOOS == "windows" {
+		return "", true // sin sevside: la DACL es la barrera
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", true // no existe: doctor lo reporta por su camino
+	}
+	perm := info.Mode().Perm()
+	if perm&0o077 != 0 {
+		return fmt.Sprintf("permisos %o (debería ser 600): cualquier cuenta local puede leer la credencial", perm), false
+	}
+	return "", true
+}
+
 func doctorSetting(root, envName, fileName string) (string, error) {
 	value := os.Getenv(envName)
 	if value == "" {
-		file, err := os.Open(filepath.Join(root, "tools", "config", fileName))
+		path := filepath.Join(root, "tools", "config", fileName)
+		// Chequeo de permisos de la credencial en disco (sesión
+		// 100agentes-2, agente 32, P1): doctor exigia 0600 al ESCRIBIR
+		// (secretfile) pero nunca lo VERIFICABA — un api.token
+		// mundo-legible en POSIX reportaba OK.
+		if detail, ok := doctorFilePerm(path); !ok {
+			return "", errors.New(fileName + ": " + detail)
+		}
+		file, err := os.Open(path)
 		if os.IsNotExist(err) {
 			return "", nil
 		}

@@ -18,7 +18,14 @@ SEVERITIES = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
 
 def inventory():
     rules = []
+    # Unicidad de id Y name INCLUYENDO las disabled (sesión
+    # 100agentes-2, agente 11): el motor valida ambos contra el árbol
+    # COMPLETO y revienta el arranque (log.Fatalf); el check de CI se
+    # saltaba las disabled antes del dedup, así que un pack con un
+    # duplicado en una regla desactivada pasaba en CI y caía en
+    # producción.
     ids = set()
+    names = set()
     for path in sorted((ROOT / "rules").rglob("*.yaml")):
         pack = yaml.safe_load(path.read_text(encoding="utf-8"))
         if not isinstance(pack, list):
@@ -26,8 +33,6 @@ def inventory():
         for rule in pack:
             if not isinstance(rule, dict):
                 raise ValueError(f"{path.relative_to(ROOT)}: expected a rule mapping")
-            if rule.get("enabled", True) is False:
-                continue
             for key in ("id", "name", "severity", "event_type"):
                 if not isinstance(rule.get(key), str) or not rule[key]:
                     raise ValueError(f"{path.relative_to(ROOT)}: invalid {key}")
@@ -36,6 +41,11 @@ def inventory():
             if rule["id"] in ids:
                 raise ValueError(f"duplicate rule id: {rule['id']}")
             ids.add(rule["id"])
+            if rule["name"] in names:
+                raise ValueError(f"duplicate rule name: {rule['name']}")
+            names.add(rule["name"])
+            if rule.get("enabled", True) is False:
+                continue
             rules.append(rule)
     return sorted(rules, key=lambda rule: (SEVERITIES[rule["severity"]], rule["name"].casefold(), rule["id"]))
 

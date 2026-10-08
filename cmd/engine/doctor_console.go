@@ -39,17 +39,17 @@ func doctorConsoleChecks(ctx context.Context, consoleURL, hubURL string, client 
 	case consoleURL == "":
 		checks = append(checks, doctorCheck{Name: "Consola", Status: "skip", Detail: "No se ha indicado una consola."})
 	case !consoleValid:
-		checks = append(checks, doctorCheck{Name: "Consola", Status: "warn", Detail: "La URL de la consola no es una URL HTTP(S) valida sin credenciales, consulta ni fragmento.", Remedy: "Indica la URL base de la consola con --console-url."})
+		checks = append(checks, doctorCheck{Name: "Consola", Status: "warn", Detail: "La URL de la consola no es una URL HTTP(S) valida sin credenciales, consulta ni fragmento.", Remedy: "Indica la URL base de la consola con -console-url."})
 	default:
 		body, headers, status, err := doctorPublicGet(ctx, probeClient, console)
 		mediaType, _, _ := mime.ParseMediaType(headers.Get("Content-Type"))
 		switch {
 		case err != nil:
-			checks = append(checks, doctorCheck{Name: "Consola", Status: "warn", Detail: "No se pudo leer la consola en " + console.Host + ".", Remedy: "Arranca la consola y comprueba su puerto y --console-url."})
+			checks = append(checks, doctorCheck{Name: "Consola", Status: "warn", Detail: "No se pudo leer la consola en " + console.Host + ".", Remedy: "Arranca la consola y comprueba su puerto y -console-url."})
 		case status != http.StatusOK:
 			checks = append(checks, doctorCheck{Name: "Consola", Status: "warn", Detail: "La consola no devuelve HTTP 200 en " + console.Host + ".", Remedy: "Comprueba la URL base y el servicio de la consola; el diagnostico no sigue redirecciones."})
 		case mediaType != "text/html" || !strings.Contains(strings.ToLower(string(body)), "bluetardigrade"):
-			checks = append(checks, doctorCheck{Name: "Consola", Status: "warn", Detail: "La respuesta de " + console.Host + " no permite confirmar la consola bluetardigrade en los primeros 128 KiB.", Remedy: "Comprueba que --console-url apunta a la consola SOC y no a otra web."})
+			checks = append(checks, doctorCheck{Name: "Consola", Status: "warn", Detail: "La respuesta de " + console.Host + " no permite confirmar la consola bluetardigrade en los primeros 128 KiB.", Remedy: "Comprueba que -console-url apunta a la consola SOC y no a otra web."})
 		default:
 			consoleVerified, consoleBody, consoleHeaders = true, body, headers
 			checks = append(checks, doctorCheck{Name: "Consola", Status: "ok", Detail: "La consola bluetardigrade responde con HTML en " + console.Host + "."})
@@ -69,7 +69,7 @@ func doctorConsoleChecks(ctx context.Context, consoleURL, hubURL string, client 
 	case hubURL == "":
 		checks = append(checks, doctorCheck{Name: "Hub IA", Status: "skip", Detail: "No se ha indicado un hub IA."}, doctorCheck{Name: "Configuracion IA", Status: "skip", Detail: "No se ha indicado un hub IA."})
 	case !hubValid:
-		checks = append(checks, doctorCheck{Name: "Hub IA", Status: "warn", Detail: "La URL del hub no es una URL HTTP(S) valida sin credenciales, consulta ni fragmento.", Remedy: "Indica la URL base del hub con --hub-url."}, doctorCheck{Name: "Configuracion IA", Status: "skip", Detail: "No hay una URL valida del hub."})
+		checks = append(checks, doctorCheck{Name: "Hub IA", Status: "warn", Detail: "La URL del hub no es una URL HTTP(S) valida sin credenciales, consulta ni fragmento.", Remedy: "Indica la URL base del hub con -hub-url."}, doctorCheck{Name: "Configuracion IA", Status: "skip", Detail: "No hay una URL valida del hub."})
 	default:
 		healthURL := *hub
 		healthURL.Path = strings.TrimRight(healthURL.Path, "/") + "/health"
@@ -87,7 +87,7 @@ func doctorConsoleChecks(ctx context.Context, consoleURL, hubURL string, client 
 			} `json:"analyst"`
 		}
 		if err != nil || status != http.StatusOK || json.Unmarshal(body, &health) != nil || health.Service != "console-service" {
-			checks = append(checks, doctorCheck{Name: "Hub IA", Status: "warn", Detail: "No se pudo confirmar console-service en /health de " + hub.Host + ".", Remedy: "Arranca web/console-service y comprueba --hub-url; el diagnostico no sigue redirecciones."}, doctorCheck{Name: "Configuracion IA", Status: "skip", Detail: "No se ha podido leer un estado valido del hub."})
+			checks = append(checks, doctorCheck{Name: "Hub IA", Status: "warn", Detail: "No se pudo confirmar console-service en /health de " + hub.Host + ".", Remedy: "Arranca web/console-service y comprueba -hub-url; el diagnostico no sigue redirecciones."}, doctorCheck{Name: "Configuracion IA", Status: "skip", Detail: "No se ha podido leer un estado valido del hub."})
 			break
 		}
 		if health.Mode == "engine" && health.Status == "ok" && health.Engine.Connected != nil && *health.Engine.Connected {

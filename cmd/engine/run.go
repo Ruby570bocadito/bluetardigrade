@@ -429,7 +429,14 @@ func runEngine(o *options, interactive bool) error {
 			hub, err = api.New(o.apiAddr)
 		}
 		if err != nil {
-			log.Printf("[ENGINE] api disabled: %v", err)
+			// Hint accionable (sesión 100agentes-2, agente 32): el
+			// gemelo de ingest sí sondea el puerto y sugiere remedy;
+			// aqui solo decia "api disabled" sin salida.
+			if strings.Contains(err.Error(), "address already in use") || strings.Contains(err.Error(), "bind") {
+				log.Printf("[ENGINE] api disabled: %v (¿otra instancia en marcha? sf-console -Stop, o desactiva con -api 0)", err)
+			} else {
+				log.Printf("[ENGINE] api disabled: %v", err)
+			}
 			hub = nil
 		} else {
 			if hub.TLS() {

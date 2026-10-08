@@ -336,10 +336,18 @@ func parentName(ev *model.Event) string {
 }
 
 func truncate(s string, max int) string {
+	// Rune-safe (sesión 100agentes-2, agente 27, P1): el corte por
+	// bytes partia secuencias multi-byte y emitia UTF-8 corrupto en
+	// command_line del informe de ruido. Early-exit por bytes como el
+	// truncateRunes de internal/alert.
 	if len(s) <= max {
 		return s
 	}
-	return s[:max] + "..."
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max]) + "..."
 }
 
 func round1(f float64) float64 { return float64(int(f*10+0.5)) / 10 }

@@ -19,22 +19,27 @@ info:
 
     Design constraints worth knowing before integrating:
 
-    - The API is **read-only by default** with three opt-in write
-      surfaces: alert triage via `POST /api/alerts/{id}/status`
-      (acknowledge / close / reopen with a note; gated by the bearer
-      token like every read endpoint), `POST`/`DELETE` on
-      `/api/suppressions` when the engine starts with `-api-write`
-      (or `SF_API_WRITE=1`; edits the `suppressions.yaml` file
-      atomically, answers `403` naming the flag when it is off), and
-      `POST /api/respond/kill` when the engine starts with
-      `-allow-kill` plus a token plus an open audit file (C3 active
-      response: one verified local process, operator-invoked, every
-      attempt audited before the signal; a disarmed engine answers a
-      real `404`). Everything else — configuration, rules,
-      sequences — stays flag/YAML-driven, never writable through
-      this API.
+    - The API is **read-only by default** with a closed allowlist of
+      opt-in write surfaces: alert triage via `POST
+      /api/alerts/{id}/status` (acknowledge / close / reopen with a
+      note), `POST`/`DELETE` on `/api/suppressions` when the engine
+      starts with `-api-write` (or `SF_API_WRITE=1`; edits the
+      `suppressions.yaml` file atomically, answers `403` naming the
+      flag when it is off), incident management (`POST`/`PATCH` on
+      `/api/incidents`), the AD connector admin family (`PUT
+      /api/settings/ad`, `POST /api/ad/test`), sensor enrollment
+      (`POST /api/enroll/tokens`, revoke, approve/reject), the rule
+      dry-run tester (`POST /api/rules/test`), the scenario battery
+      (`POST /api/scenarios/run`) and `POST /api/respond/kill` when
+      the engine starts with `-allow-kill` plus a token plus an open
+      audit file (C3 active response: one verified local process,
+      operator-invoked, every attempt audited before the signal; a
+      disarmed engine answers a real `404`). Everything else — the
+      rules themselves, sequences, intel lists, thresholds — stays
+      flag/YAML-driven, not writable through this API.
     - `GET /api/events` and `GET /api/alerts` return the **in-memory
-      ring** (last 1000 events / 256 alerts), newest first. For bulk
+      ring** (last 1000 events / 256 alerts) by default — the FULL
+      SQLite history when the engine runs with `-store`. For bulk
       download use the `/export` endpoints.
     - `GET /api/stream` is Server-Sent Events: one connection, live
       frames of `event: event`, `event: alert` and
@@ -919,6 +924,13 @@ paths:
       responses:
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '500':
+          description: La decisión de triaje no pudo persistirse (lifecycle
+            ErrPersistFailed); el estado en memoria sigue vivo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: Native API writes reject a foreign or malformed browser Origin
             and Sec-Fetch-Site cross-site. Originless CLI clients remain supported.
@@ -969,6 +981,12 @@ paths:
       responses:
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '501':
+          description: La biblioteca de escenarios no está armada (sin -scenarios)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '500':
           description: The scenario library failed to load (the error names the file)
           content:
@@ -1012,6 +1030,13 @@ paths:
       responses:
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '500':
+          description: La decisión de triaje no pudo persistirse (lifecycle
+            ErrPersistFailed); el estado en memoria sigue vivo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '403':
           description: Native API writes reject a foreign or malformed browser Origin
             and Sec-Fetch-Site cross-site. Originless CLI clients remain supported.
@@ -1080,8 +1105,20 @@ paths:
       responses:
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '501':
+          description: La batería de validación no está armada (sin -scenarios)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '400':
           description: Malformed limit parameter.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Fallo de persistencia al leer el historial
           content:
             application/json:
               schema:
@@ -1183,6 +1220,8 @@ paths:
           kill-chain completions from the correlator)
         - `event: alert_lifecycle` - data is one `AlertLifecycle` JSON
           (a triage decision recorded via `POST /api/alerts/{id}/status`)
+        - `event: incident` - data is one `Incident` JSON (an incident
+          was created or mutated)
 
         Control lines: `retry: 2000`, heartbeat comments (`: hb`) every
         15 s. Slow consumers with a full per-client buffer miss frames
@@ -1191,6 +1230,21 @@ paths:
       responses:
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '503':
+          description: Cap de suscriptores SSE alcanzado (64). Reintentar tras
+            el `Retry-After` (5 s) que acompana la respuesta
+          headers:
+            Retry-After:
+              description: Segundos hasta el próximo intento razonable
+              schema:
+                type: integer
+        '500':
+          description: El writer de la respuesta no soporta flush (proxy no
+            compatible)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '200':
           description: SSE stream
           content:
@@ -1425,6 +1479,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/RespondKillDenied'
 
+        '404':
+          description: El engine no tiene la respuesta activa armada (respond_write responde
+            404 real sin revelar la superficie)
+          content:
+            text/plain:
+              schema:
+                type: string
   /api/respond/state:
     get:
       tags: [respond]

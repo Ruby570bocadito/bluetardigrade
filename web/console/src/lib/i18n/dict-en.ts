@@ -811,7 +811,7 @@ export const dictEn: Dict = {
       probeStartTls: 'StartTLS: the client library performs the negotiation and does not expose the version or the cipher.',
       probeKindsHeading: 'What the account can read',
       probeKinds: { user: 'Users', group: 'Groups', computer: 'Computers', ou: 'Organizational units' },
-      probeRead: (count): string => `${count} read`,
+      probeRead: (count): string => `${count} read${count === 1 ? '' : 's'}`,
       probeAtLeast: (count): string => `at least ${count}`,
       probeSampleHeading: 'First DNs read',
       probeDuration: (ms): string => `${ms} ms`,
