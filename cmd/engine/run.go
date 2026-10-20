@@ -23,6 +23,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/enroll"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/fleet"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/forensic"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/hostgroup"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/incident"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/ingest"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/intel"
@@ -507,6 +508,17 @@ func runEngine(o *options, interactive bool) error {
 			hub.SetLifecycle(lifeStore)
 			hub.SetIncidents(incStore)
 			hub.SetFleet(fleetTracker)
+			if o.hostGroupsFile != "" {
+				groups, sum, err := hostgroup.Load(o.hostGroupsFile)
+				if err != nil {
+					// operator access will be scoped by these groups: a
+					// broken file stops the engine, it never silently
+					// means "no groups"
+					log.Fatalf("[ENGINE] %v", err)
+				}
+				hub.SetHostGroups(o.hostGroupsFile, groups, sum)
+				fmt.Printf("[ENGINE] host groups: %d (%s)\n", len(groups.Names()), o.hostGroupsFile)
+			}
 			if enrollReg != nil {
 				hub.SetEnrollment(enrollReg)
 			}

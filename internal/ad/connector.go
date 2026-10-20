@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -263,6 +264,28 @@ func (c *Connector) Objects(kind, q string, limit, offset int) (*store.ADObjects
 		return nil, fmt.Errorf("unknown object kind %q", kind)
 	}
 	return c.store.QueryADObjects(kind, q, limit, offset)
+}
+
+// ComputerDNByHost maps the computers of the last synchronization to their
+// DN, keyed by the lowercased names a sensor may report for one: the
+// account name without "$", the full dNSHostName and its first label.
+// Host groups (internal/hostgroup) place machines by OU through it.
+func (c *Connector) ComputerDNByHost() (map[string]string, error) {
+	page, err := c.store.QueryADObjects(store.ADKindComputer, "", c.cfg.MaxObjects, 0)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(page.Objects)*3)
+	for _, o := range page.Objects {
+		if name := strings.ToLower(strings.TrimSuffix(o.Name, "$")); name != "" {
+			out[name] = o.DN
+		}
+		if dns := strings.ToLower(o.Attributes["dNSHostName"]); dns != "" {
+			out[dns] = o.DN
+			out[strings.SplitN(dns, ".", 2)[0]] = o.DN
+		}
+	}
+	return out, nil
 }
 
 // Config returns a COPY of the effective (normalized) configuration

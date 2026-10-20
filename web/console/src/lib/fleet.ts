@@ -33,6 +33,8 @@ export type FleetHost = {
   identity?: string
   sensor?: FleetSensor
   silent_since?: string
+  // host groups (engine -host-groups); absent when in none
+  groups?: string[]
 }
 
 export type FleetPayload = {

@@ -34,11 +34,16 @@ func (h *Hub) handleFleet(w http.ResponseWriter, _ *http.Request) {
 	h.mu.Lock()
 	t := h.fleet
 	h.mu.Unlock()
+	now := time.Now()
 	out := fleetPayload{Hosts: []fleet.Host{}, GraceMinS: int(fleet.Grace(0) / time.Second)}
 	if t != nil {
 		out.Enabled = true
-		out.Hosts = t.Snapshot(time.Now())
-		for _, host := range out.Hosts {
+		// each host carries its groups (host_groups.go)
+		set, _ := h.currentHostGroups()
+		dnByHost := h.computerDNByHost(now)
+		for _, host := range t.Snapshot(now) {
+			host.Groups = set.Of(groupMember(host, dnByHost))
+			out.Hosts = append(out.Hosts, host)
 			switch host.Status {
 			case fleet.StatusOnline:
 				out.Online++

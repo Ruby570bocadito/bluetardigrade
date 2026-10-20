@@ -178,6 +178,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `-baseline-learn` | `24h` | per-host learning period before a never-seen process raises a low alert (falls back to `SF_BASELINE_LEARN`); `0` disables |
 | `-suppressions` | `./suppressions.yaml` | operator allowlist (hot-reload aware) |
 | `-known-software` | `./known-software.yaml` | known-software list (§2.2: `enrichment.known_software`, baseline/noise effects; hot-reload aware) |
+| `-host-groups` | empty (off) | host groups file (see "Host groups"): `GET /api/groups`, and `PUT /api/settings/groups` with `-api-write`; a missing file is an empty list, a malformed one is fatal at startup |
 | `-lifecycle` | `./alert-lifecycle.json` | alert triage state file (acknowledged/closed + notes; empty keeps statuses in memory only) |
 | `-incidents` | `./incidents.json` | incidents file (cases grouping alerts, with status, owner and timeline; empty keeps them in memory only) |
 | `-reload-every` | `15s` | hot-reload cadence for rules/sequences/suppressions (`0` disables) |
@@ -782,6 +783,38 @@ gets in acts as administrator. That stays unchanged unless
   HTTP Basic alike. For Basic clients, verified credentials are cached
   for 10 minutes so the slow key derivation does not run on every
   request.
+
+## Host groups
+
+Host groups name sets of machines: a site, a department, an AD OU,
+servers or workstations. They are the base of per-account permissions.
+Groups only organize machines: nobody sees less because of them yet.
+
+- Where: the engine reads them from `-host-groups <file.yaml>`. The
+  Windows launcher always passes `tools\config\host-groups.yaml`. A
+  missing file is an empty list; a malformed one stops the engine, and
+  `sf-engine doctor` names the problem. `host-groups.example.yaml` at the
+  repository root shows the format.
+- Membership: a machine belongs to a group when any criterion matches.
+  - Host-name patterns, compared without case: `*` is any text and `?`
+    one character, e.g. `pc-mad-*`.
+  - Active Directory OUs: computers at the OU or under it, matched by
+    account or DNS name. This needs the `-ad` connector.
+  - Ingest credential names, from `sf-engine ingest-identity`.
+
+  A machine may belong to several groups.
+- Console: **Ajustes → Grupos** lists each group with its criteria and
+  machines and the number of machines in no group. Administrators
+  create, edit and delete groups there; the engine validates every save
+  and names the group and field of a mistake. **Equipos** shows each
+  machine's groups and filters by group, or by "Sin grupo".
+- API: `GET /api/groups`, and `PUT /api/settings/groups` with the whole
+  list. The PUT needs `-api-write`; the console only lets administrators
+  send it. A hand edit of the file after the engine started is never
+  overwritten: the PUT answers 409 until the engine is restarted.
+- The same console change lets administrators save and test the Active
+  Directory settings in Ajustes through the console's own proxy, which
+  used to refuse them.
 
 ## Rule tester
 
