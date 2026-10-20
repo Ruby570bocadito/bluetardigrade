@@ -7,12 +7,14 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/store"
 	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
@@ -25,6 +27,10 @@ type recordFilter struct {
 	since  time.Time
 	until  time.Time
 	q      string // free-text substring, case-insensitive
+	// scope is the request's host-group limit (scope.go), nil when
+	// unrestricted: the ring matchers apply it, and the store queries
+	// built by eventQuery/alertQuery carry it as a host list.
+	scope *scope
 }
 
 // parseRecordFilter reads and validates the filter parameters, writing
@@ -43,7 +49,8 @@ func parseRecordFilter(w http.ResponseWriter, r *http.Request) (*recordFilter, b
 		// question. Strip it at this chokepoint both backends
 		// share; the store's likeNeedle strips it again for
 		// legacy rows and direct callers.
-		q: strings.ToLower(strings.ReplaceAll(q.Get("q"), "\x1f", "")),
+		q:     strings.ToLower(strings.ReplaceAll(q.Get("q"), "\x1f", "")),
+		scope: scopeFrom(r),
 	}
 	for _, s := range splitCSV(q.Get("severity")) {
 		switch s {
@@ -149,6 +156,9 @@ func (f *recordFilter) matchAlert(a alert.Alert, ts time.Time) bool {
 	if f.host != "" && strings.ToLower(a.Host) != f.host {
 		return false
 	}
+	if !f.scope.allows(a.Host) {
+		return false
+	}
 	if len(f.sevs) > 0 && !containsFold(f.sevs, a.Severity) {
 		return false
 	}
@@ -169,6 +179,9 @@ func (f *recordFilter) matchEvent(ev *model.Event) bool {
 	if f.host != "" && strings.ToLower(ev.Host) != f.host {
 		return false
 	}
+	if !f.scope.allows(ev.Host) {
+		return false
+	}
 	if f.evType != "" && ev.Type != f.evType {
 		return false
 	}
@@ -179,6 +192,22 @@ func (f *recordFilter) matchEvent(ev *model.Event) bool {
 		return false
 	}
 	return true
+}
+
+// eventQuery and alertQuery are the store form of the filter, narrowed
+// to the request's scope.
+func (h *Hub) eventQuery(ctx context.Context, f *recordFilter, limit int) (store.EventQuery, error) {
+	return h.scopeEventQuery(ctx, f.scope, store.EventQuery{
+		Host: f.host, Type: f.evType, Q: f.q,
+		Since: f.since, Until: f.until, Limit: limit,
+	})
+}
+
+func (h *Hub) alertQuery(ctx context.Context, f *recordFilter, limit int) (store.AlertQuery, error) {
+	return h.scopeAlertQuery(ctx, f.scope, store.AlertQuery{
+		Host: f.host, Severities: f.sevs, RuleID: f.ruleID, Q: f.q,
+		Since: f.since, Until: f.until, Limit: limit,
+	})
 }
 
 func containsFold(list []string, s string) bool {

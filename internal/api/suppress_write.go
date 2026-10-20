@@ -125,6 +125,9 @@ func (h *Hub) handleSuppressionsCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if !scopedSuppressionHost(w, r, in.Host) {
+		return
+	}
 
 	// All -> mutate -> SaveFile -> LoadFile must be one logical
 	// operation against concurrent POST/DELETE requests; the file lock
@@ -172,7 +175,7 @@ func (h *Hub) handleSuppressionsCreate(w http.ResponseWriter, r *http.Request) {
 	// what and when, exactly as the file comment promises. rule_id and
 	// host are client-controlled: oneLine keeps the log single-line.
 	log.Printf("[API] WRITE suppressions %s rule=%s host=%s by=api (file %s)", action, oneLine(in.RuleID), oneLine(in.Host), path)
-	h.writeSuppressionsSnapshot(w, sup)
+	h.writeSuppressionsSnapshot(w, r, sup)
 }
 
 // handleSuppressionsDelete removes every entry matching the exact
@@ -191,6 +194,9 @@ func (h *Hub) handleSuppressionsDelete(w http.ResponseWriter, r *http.Request) {
 	host := strings.ToLower(strings.TrimSpace(q.Get("host")))
 	if rule == "" && host == "" {
 		http.Error(w, "rule_id and host are both empty (nothing would match - fix or delete the entry)", http.StatusBadRequest)
+		return
+	}
+	if !scopedSuppressionHost(w, r, host) {
 		return
 	}
 
@@ -226,16 +232,41 @@ func (h *Hub) handleSuppressionsDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("[API] WRITE suppressions remove rule=%s host=%s by=api (%d removed, file %s)", oneLine(rule), oneLine(host), removed, path)
-	h.writeSuppressionsSnapshot(w, sup)
+	h.writeSuppressionsSnapshot(w, r, sup)
 }
 
 // writeSuppressionsSnapshot answers with the same shape as
 // GET /api/suppressions, so a console round-trip needs one payload
 // shape only: the new state, not an echo of the request.
-func (h *Hub) writeSuppressionsSnapshot(w http.ResponseWriter, sup *suppress.Manager) {
-	now := time.Now()
-	writeJSON(w, suppressPayload{
-		Active:  sup.Count(now),
-		Entries: sup.Snapshot(now),
-	})
+func (h *Hub) writeSuppressionsSnapshot(w http.ResponseWriter, r *http.Request, sup *suppress.Manager) {
+	writeJSON(w, scopedSuppressions(scopeFrom(r), sup, time.Now()))
+}
+
+// scopedSuppressions is the list a caller sees: a caller limited to host
+// groups (scope.go) gets the entries that apply to every machine and
+// those of its own machines.
+func scopedSuppressions(sc *scope, sup *suppress.Manager, now time.Time) suppressPayload {
+	entries := sup.Snapshot(now)
+	if sc == nil {
+		return suppressPayload{Active: sup.Count(now), Entries: entries}
+	}
+	kept := []suppress.Entry{}
+	for _, e := range entries {
+		if e.Host == "" || sc.allows(e.Host) {
+			kept = append(kept, e)
+		}
+	}
+	return suppressPayload{Active: len(kept), Entries: kept}
+}
+
+// scopedSuppressionHost refuses, for a caller limited to host groups, an
+// entry that is not about one of its machines: silencing a rule on every
+// machine would silence it on the other groups too.
+func scopedSuppressionHost(w http.ResponseWriter, r *http.Request, host string) bool {
+	sc := scopeFrom(r)
+	if sc == nil || (host != "" && sc.allows(host)) {
+		return true
+	}
+	writeErr(w, http.StatusForbidden, "una cuenta limitada a grupos de equipos solo silencia reglas en sus propios equipos: indica uno de ellos")
+	return false
 }

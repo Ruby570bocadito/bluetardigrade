@@ -94,7 +94,9 @@ func (h *Hub) handleBaselineHost(w http.ResponseWriter, r *http.Request) {
 		out.LearnS = int(b.Learning() / time.Second)
 		out.Enabled = out.LearnS > 0
 		now := time.Now()
-		if v, ok := b.Host(host, now); ok {
+		// a machine outside the caller's host groups (scope.go) reads
+		// like one the baseline has never seen
+		if v, ok := b.Host(host, now); ok && scopeFrom(r).allows(host) {
 			out.Known = true
 			first := v.FirstSeen.UTC()
 			out.FirstSeen = &first

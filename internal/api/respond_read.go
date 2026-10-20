@@ -110,5 +110,16 @@ func (h *Hub) handleRespondAudit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// a caller limited to host groups (scope.go) reads the actions on
+	// its own machines only
+	if sc := scopeFrom(r); sc != nil {
+		kept := []respond.Record{}
+		for _, rec := range records {
+			if sc.allows(rec.Host) {
+				kept = append(kept, rec)
+			}
+		}
+		records = kept
+	}
 	writeJSON(w, respondAuditPayload{Records: records, Skipped: skipped, Truncated: truncated})
 }

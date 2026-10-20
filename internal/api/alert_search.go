@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -45,6 +46,11 @@ func searchFingerprint(r *http.Request) string {
 	values := r.URL.Query()
 	values.Del("cursor")
 	values.Del("limit")
+	// a cursor belongs to the scope it was minted under (scope.go)
+	values.Del("\x00scope")
+	if sc := scopeFrom(r); sc != nil {
+		values.Set("\x00scope", strings.Join(sc.names, ","))
+	}
 	sum := sha256.Sum256([]byte(values.Encode()))
 	return hex.EncodeToString(sum[:])
 }
@@ -148,10 +154,11 @@ func (h *Hub) handleAlertSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	load := func(before int64, size int) ([]store.AlertRecord, error) {
 		if st != nil {
-			return st.QueryAlertPage(r.Context(), store.AlertQuery{
-				Host: f.host, Severities: f.sevs, RuleID: f.ruleID, Q: f.q,
-				Since: f.since, Until: f.until, Limit: size,
-			}, before, cursor.Fence)
+			q, err := h.alertQuery(r.Context(), f, size)
+			if err != nil {
+				return nil, err
+			}
+			return st.QueryAlertPage(r.Context(), q, before, cursor.Fence)
 		}
 		rows := []store.AlertRecord{}
 		for i := len(ring) - 1; i >= 0 && len(rows) < size; i-- {

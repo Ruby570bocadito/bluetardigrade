@@ -38,9 +38,12 @@ func (h *Hub) SetEnrollment(r *enroll.Registry) {
 
 func (h *Hub) registerEnroll(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/enroll", h.handleEnrollState)
-	mux.HandleFunc("POST /api/enroll/tokens", h.handleEnrollTokenCreate)
-	mux.HandleFunc("POST /api/enroll/tokens/{id}/revoke", h.handleEnrollTokenRevoke)
-	mux.HandleFunc("POST /api/enroll/hosts/{name}/{action}", h.handleEnrollHostDecide)
+	// who may feed the engine is decided engine-wide: no caller limited
+	// to host groups (scope.go) does it
+	const enrollWrite = "El alta de equipos"
+	mux.HandleFunc("POST /api/enroll/tokens", unscopedOnly(enrollWrite, h.handleEnrollTokenCreate))
+	mux.HandleFunc("POST /api/enroll/tokens/{id}/revoke", unscopedOnly(enrollWrite, h.handleEnrollTokenRevoke))
+	mux.HandleFunc("POST /api/enroll/hosts/{name}/{action}", unscopedOnly(enrollWrite, h.handleEnrollHostDecide))
 }
 
 func (h *Hub) enrollment() *enroll.Registry {
@@ -72,7 +75,7 @@ func (h *Hub) handleEnrollState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pending, active, usable := reg.Counts()
-	writeJSON(w, enrollState{
+	out := enrollState{
 		Enabled: true,
 		Pending: pending,
 		Active:  active,
@@ -80,7 +83,26 @@ func (h *Hub) handleEnrollState(w http.ResponseWriter, r *http.Request) {
 		Writes:  h.token != "",
 		Tokens:  reg.Tokens(),
 		Hosts:   reg.Hosts(),
-	})
+	}
+	// a caller limited to host groups (scope.go) sees its own machines
+	// and no enrollment token: tokens admit machines to any group
+	if sc := scopeFrom(r); sc != nil {
+		hosts := []enroll.Host{}
+		out.Pending, out.Active, out.Usable = 0, 0, 0
+		for _, eh := range out.Hosts {
+			if sc.allows(eh.Host) {
+				hosts = append(hosts, eh)
+				switch eh.State {
+				case enroll.Pending:
+					out.Pending++
+				case enroll.Active:
+					out.Active++
+				}
+			}
+		}
+		out.Hosts, out.Tokens, out.Writes = hosts, []enroll.Token{}, false
+	}
+	writeJSON(w, out)
 }
 
 // enrollWriteTarget resolves the registry for a write, or answers why

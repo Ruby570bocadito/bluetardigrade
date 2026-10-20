@@ -92,6 +92,12 @@ func (h *Hub) handleRespondKill(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
 		return
 	}
+	// a caller limited to host groups (scope.go) acts on its own
+	// machines only
+	if sc := scopeFrom(r); sc != nil && !sc.allows(req.Host) {
+		writeErr(w, http.StatusForbidden, "una cuenta limitada a grupos de equipos solo actúa sobre equipos de sus grupos")
+		return
+	}
 
 	res := m.Kill(req)
 	if res.Executed {

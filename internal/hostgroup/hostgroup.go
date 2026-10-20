@@ -58,6 +58,9 @@ const (
 
 var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
 
+// ValidName tells whether s is a well-formed group name.
+func ValidName(s string) bool { return nameRE.MatchString(s) }
+
 // Group is one group as the file and the API carry it.
 type Group struct {
 	Name       string   `yaml:"name" json:"name"`

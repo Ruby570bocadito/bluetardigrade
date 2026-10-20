@@ -18,6 +18,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -63,17 +64,25 @@ var ErrIDConflict = errors.New("store: event id already stored with a different 
 // EventQuery is the filter form of the API telemetry parameters for
 // events (same semantics as the hub's recordFilter).
 type EventQuery struct {
-	Host  string // exact, case-insensitive
-	Type  string // exact event type
-	Q     string // free-text substring, case-insensitive
-	Since time.Time
-	Until time.Time
-	Limit int // must be > 0; results come newest-first
+	Host string // exact, case-insensitive
+	// Scoped limits the rows to the hosts in HostIn (any case): a
+	// console account limited to host groups. Scoped with an empty
+	// HostIn matches nothing.
+	Scoped bool
+	HostIn []string
+	Type   string // exact event type
+	Q      string // free-text substring, case-insensitive
+	Since  time.Time
+	Until  time.Time
+	Limit  int // must be > 0; results come newest-first
 }
 
 // AlertQuery is the filter form for alerts.
 type AlertQuery struct {
-	Host       string
+	Host string
+	// Scoped and HostIn: as in EventQuery.
+	Scoped     bool
+	HostIn     []string
 	Severities []string // accepted severities, case-insensitive (empty = any)
 	RuleID     string   // exact
 	Q          string
@@ -153,6 +162,7 @@ CREATE TABLE IF NOT EXISTS alerts (
 CREATE INDEX IF NOT EXISTS alerts_ts_idx ON alerts(ts);
 CREATE INDEX IF NOT EXISTS alerts_rule_idx ON alerts(rule_id);
 CREATE INDEX IF NOT EXISTS alerts_host_ts_idx ON alerts(host COLLATE NOCASE, ts);
+CREATE INDEX IF NOT EXISTS alerts_id_idx ON alerts(CASE WHEN json_valid(json) THEN json_extract(json, '$.id') END);
 `
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
@@ -417,6 +427,68 @@ func (s *Store) QueryAlerts(q AlertQuery) ([]alert.Alert, error) {
 	return out, rows.Err()
 }
 
+// alertIDExpr is the indexed expression of an alert's id (alerts_id_idx).
+// A row whose JSON is unreadable indexes as NULL: one damaged row must
+// neither stop the index from building nor any later write.
+const alertIDExpr = `(CASE WHEN json_valid(json) THEN json_extract(json, '$.id') END)`
+
+// AlertByID returns the stored alert with that id (the newest copy if
+// a producer ever stored two), and false when there is none.
+func (s *Store) AlertByID(ctx context.Context, id string) (alert.Alert, bool, error) {
+	var payload string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT json FROM alerts WHERE `+alertIDExpr+` = ? ORDER BY seq DESC LIMIT 1`, id).Scan(&payload)
+	if errors.Is(err, sql.ErrNoRows) {
+		return alert.Alert{}, false, nil
+	}
+	if err != nil {
+		return alert.Alert{}, false, fmt.Errorf("store: alert by id: %w", err)
+	}
+	var a alert.Alert
+	if err := json.Unmarshal([]byte(payload), &a); err != nil {
+		return alert.Alert{}, false, fmt.Errorf("store: unmarshal alert: %w", err)
+	}
+	return a, true, nil
+}
+
+// Hosts returns the distinct host names of the stored events and
+// alerts (one spelling per name, any case), at most limit of them. It
+// walks the host indexes one name at a time, so the cost follows the
+// number of hosts, not of rows.
+func (s *Store) Hosts(ctx context.Context, limit int) ([]string, error) {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, table := range []string{"events", "alerts"} {
+		rows, err := s.db.QueryContext(ctx, `
+WITH RECURSIVE h(x) AS (
+        SELECT (SELECT host FROM `+table+` ORDER BY host COLLATE NOCASE LIMIT 1)
+        UNION ALL
+        SELECT (SELECT host FROM `+table+` WHERE host > h.x COLLATE NOCASE ORDER BY host COLLATE NOCASE LIMIT 1)
+        FROM h WHERE h.x IS NOT NULL
+) SELECT x FROM h WHERE x IS NOT NULL LIMIT ?`, limit)
+		if err != nil {
+			return nil, fmt.Errorf("store: hosts: %w", err)
+		}
+		for rows.Next() {
+			var host string
+			if err := rows.Scan(&host); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("store: scan host: %w", err)
+			}
+			if key := strings.ToLower(host); host != "" && !seen[key] && len(out) < limit {
+				seen[key] = true
+				out = append(out, host)
+			}
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, fmt.Errorf("store: hosts: %w", err)
+		}
+	}
+	return out, nil
+}
+
 // Prune deletes rows older than the retention window and reports how
 // many were removed per table. A retention of 0 (keep forever) is a
 // no-op handled by the caller.
@@ -448,6 +520,9 @@ func eventWhere(q EventQuery) (string, []any) {
 		conds = append(conds, `host = ? COLLATE NOCASE`)
 		args = append(args, q.Host)
 	}
+	if q.Scoped {
+		conds, args = hostIn(conds, args, q.HostIn)
+	}
 	if q.Type != "" {
 		conds = append(conds, `type = ?`)
 		args = append(args, q.Type)
@@ -477,6 +552,9 @@ func alertWhere(q AlertQuery) (string, []any) {
 	if q.Host != "" {
 		conds = append(conds, `host = ? COLLATE NOCASE`)
 		args = append(args, q.Host)
+	}
+	if q.Scoped {
+		conds, args = hostIn(conds, args, q.HostIn)
 	}
 	if len(q.Severities) > 0 {
 		// severity values arrive validated from the API layer; compare
@@ -509,6 +587,20 @@ func alertWhere(q AlertQuery) (string, []any) {
 		where = ""
 	}
 	return where, args
+}
+
+// hostIn adds the host-list condition of a scoped query: an empty
+// list matches no row.
+func hostIn(conds []string, args []any, hosts []string) ([]string, []any) {
+	if len(hosts) == 0 {
+		return append(conds, `0`), args
+	}
+	marks := make([]string, len(hosts))
+	for i, h := range hosts {
+		marks[i] = "?"
+		args = append(args, h)
+	}
+	return append(conds, `host COLLATE NOCASE IN (`+strings.Join(marks, ",")+`)`), args
 }
 
 // likeNeedle lowercases the needle and escapes the LIKE wildcards so
