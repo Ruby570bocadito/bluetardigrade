@@ -184,7 +184,7 @@ The one-liner and `sf-update` track `main`. For a reproducible install, pin a
 release tag in both the URL and `-Branch`:
 
 ```powershell
-$tag = 'v0.1.0'   # a published tag you reviewed
+$tag = 'v1.0.0-rc1'   # a published release tag you reviewed
 & ([scriptblock]::Create((irm "https://raw.githubusercontent.com/Ruby570bocadito/bluetardigrade/$tag/install.ps1"))) -Branch $tag
 ```
 

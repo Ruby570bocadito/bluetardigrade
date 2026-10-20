@@ -481,7 +481,7 @@ Fusionada en `main` con el PR #19. La revisión encontró y corrigió:
 - 5 conflictos entre ramas;
 - la identidad de los commits.
 
-Todo el CI está en verde. Los informes de cada carril están en `docs/agentes/`.
+Todo el CI está en verde. Los informes de cada carril se retiraron del árbol (2026-10-20); el historial de git los conserva.
 
 | Tarea | Estado | Qué falta |
 |---|---|---|

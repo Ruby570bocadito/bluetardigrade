@@ -8,8 +8,6 @@ remains regenerable.
 | File                        | Kind    | What it is                                            |
 |-----------------------------|---------|-------------------------------------------------------|
 | `logo.svg`                  | source  | bluetardigrade mark (README header, console sidebar and favicon) |
-| `diagram_arquitectura.png`  | output  | four-layer architecture diagram (linked from the root README) |
-| `diagram_tracer.png`        | output  | tracer-bullet pipeline: devsensor -> engine -> alert |
 | `console-panel.png`        | output  | operations panel: triage hero, stat tiles, activity, severity, timeline (root README hero, dark theme) |
 | `console-panel-light.png`  | output  | the same operations panel in the light theme (root README hero) |
 | `console-estado.png`       | output  | platform health: engine runtime counters, ingest, store and delivery |
@@ -24,20 +22,13 @@ remains regenerable.
 | `console-cadenas.png`       | output  | kill-chain sequences with per-step alerts and completed campaigns |
 | `console-supresiones.png`   | output  | operator suppressions: scope, reason and expiry |
 | `console-respuesta-activa.png` | output | active response: armed surface, audit decisions, denial codes and attempts |
-| `src/diagram_arquitectura.html` | source | self-contained HTML/CSS source of the architecture diagram (1060px canvas) |
-| `src/diagram_tracer.html`   | source  | self-contained HTML/CSS source of the pipeline above (900px canvas) |
 | `src/capture_console.mjs`   | source  | Playwright script that captures every `console-*.png`: real-engine lab by default, `CONSOLE_CAPTURE_FIXTURES=1` for contract-true fixtures without a Go toolchain (lab recipe in its header) |
 
-## Regenerating a diagram
+## Diagrams
 
-1. Edit the matching `.html` file under `src/` (plain HTML/CSS, no
-   build step; the root element carrying the canvas is `.canvas`).
-2. Open it in any Chromium-based browser at 100% zoom and screenshot
-   the `.canvas` element (or use Playwright:
-   `page.locator('.canvas').screenshot(...)` at `deviceScaleFactor: 2`
-   for a crisp 2x PNG).
-3. Save the result over the corresponding `.png` in this directory
-   (same base name) so existing README links keep working.
+The architecture diagrams are Mermaid blocks inside
+[`../ARCHITECTURE.md`](../ARCHITECTURE.md): GitHub renders them from the
+text, so they are edited in place and never drift from a stale image.
 
 ## Regenerating the console captures
 
