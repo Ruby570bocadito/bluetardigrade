@@ -152,12 +152,31 @@ function hash(text: string): number {
   return (h >>> 0) / 4294967295
 }
 
+// placedNeighbour returns the position of a pinned node linked to id, so
+// a node joining a live graph starts next to what it connects to.
+function placedNeighbour(graph: EntityGraph, id: string, pos: ReadonlyMap<string, Point>, pinned: ReadonlySet<string>): Point | undefined {
+  for (const e of graph.edges) {
+    const other = e.source === id ? e.target : e.target === id ? e.source : null
+    if (other && pinned.has(other)) return pos.get(other)
+  }
+  return undefined
+}
+
 /**
  * Deterministic force layout (same graph, same picture): seeded by the
  * node ids, repulsion between all pairs, springs along edges, gravity to
  * the centre, then clamped inside the box with a margin.
+ *
+ * `previous` keeps a live graph steady: the host graph is rebuilt as
+ * telemetry flows, and a fresh layout per rebuild reshuffled every node.
+ * Nodes the previous picture already placed stay pinned where they were
+ * and only the newcomers are simulated, starting next to a placed
+ * neighbour. When most of the graph is new, a full layout is cheaper to
+ * read than a patched one, so it starts over.
  */
-export function layoutGraph(graph: EntityGraph, width: number, height: number, iterations = 260): Map<string, Point> {
+export function layoutGraph(
+  graph: EntityGraph, width: number, height: number, iterations = 260, previous?: ReadonlyMap<string, Point>,
+): Map<string, Point> {
   const pos = new Map<string, Point>()
   const n = graph.nodes.length
   const cx = width / 2
@@ -166,9 +185,30 @@ export function layoutGraph(graph: EntityGraph, width: number, height: number, i
   if (n === 0 || width <= 0 || height <= 0) return pos
   const focus = graph.nodes.find((node) => node.focus)
   if (focus) return layoutRadial(graph, focus.id, width, height)
+  const pinned = new Set<string>()
+  if (previous) {
+    const kept = graph.nodes.filter((node) => previous.has(node.id))
+    if (kept.length * 2 >= n) {
+      for (const node of kept) {
+        const before = previous.get(node.id)!
+        pinned.add(node.id)
+        pos.set(node.id, {
+          x: Math.min(width - margin * 1.7, Math.max(margin * 1.7, before.x)),
+          y: Math.min(height - margin, Math.max(margin, before.y)),
+        })
+      }
+    }
+  }
   graph.nodes.forEach((node, i) => {
+    if (pinned.has(node.id)) return
     if (node.focus) {
       pos.set(node.id, { x: cx, y: cy })
+      return
+    }
+    const anchor = pinned.size > 0 ? placedNeighbour(graph, node.id, pos, pinned) : undefined
+    if (anchor) {
+      const a = hash(node.id) * Math.PI * 2
+      pos.set(node.id, { x: anchor.x + Math.cos(a) * 40, y: anchor.y + Math.sin(a) * 40 })
       return
     }
     const angle = (i / n) * Math.PI * 2 + hash(node.id) * 0.8
@@ -177,6 +217,7 @@ export function layoutGraph(graph: EntityGraph, width: number, height: number, i
   })
   const area = (width - margin * 2) * (height - margin * 2)
   const k = Math.sqrt(area / n) * 0.75
+  if (pinned.size === n) return pos
   for (let it = 0; it < iterations; it++) {
     const temp = (1 - it / iterations) * Math.min(width, height) * 0.08 + 0.5
     const disp = new Map<string, Point>(graph.nodes.map((node) => [node.id, { x: 0, y: 0 }]))
@@ -220,7 +261,7 @@ export function layoutGraph(graph: EntityGraph, width: number, height: number, i
     }
     for (const node of graph.nodes) {
       const p = pos.get(node.id)!
-      if (node.focus) continue
+      if (node.focus || pinned.has(node.id)) continue
       const d = disp.get(node.id)!
       // gravity keeps disconnected parts on screen (stronger vertically:
       // the boxes are wide)

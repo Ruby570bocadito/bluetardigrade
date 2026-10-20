@@ -265,7 +265,7 @@ function GraphSlide() {
         {graph.nodes.length === 0 ? (
           <p className="pt-20 text-center text-sm text-zinc-500">{dict.noc.graph.empty}</p>
         ) : (
-          <EntityGraphView graph={graph} height={height} ariaLabel={dict.noc.graph.canvasAria(graph.nodes.length, graph.edges.length)} />
+          <EntityGraphView graph={graph} height={height} ariaLabel={dict.noc.graph.canvasAria(graph.nodes.length, graph.edges.length)} live />
         )}
       </div>
     </section>

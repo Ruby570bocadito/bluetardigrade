@@ -275,6 +275,7 @@ function InvestigationGraphPanel({ onHunt, onHost }: { onHunt?: (lens: HuntLens)
           <GraphLegend graph={graph} />
           <EntityGraphView
             graph={graph}
+            live
             height={430}
             ariaLabel={`Grafo de investigación: ${graph.nodes.length} entidades y ${graph.edges.length} relaciones`}
             onSelect={onHunt ? (node) => (node.kind === 'host' && onHost ? onHost(node.label) : onHunt({ q: node.kind === 'destination' ? node.label.replace(/:\d+$/, '') : node.label })) : undefined}

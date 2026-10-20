@@ -330,7 +330,8 @@ token y la aprobación son los mismos para un segundo equipo.
   «prueba» y «último intento hace …».
 - [ ] **Aprobar**. En 1–2 minutos tu equipo está «en línea». En su ficha sale «Alta por token:
   aprobado» y, en «Identidad de ingesta», `enr-<tu-equipo>-…`. Lo que guardó mientras esperaba
-  llega: «En cola de disco» baja a 0.
+  llega: sus eventos aparecen en la línea de tiempo con su hora original («Desbordados a disco»
+  es un acumulado desde que arrancó el sensor: no vuelve a 0).
 - [ ] Equipos → Añadir equipos: en «Tokens en uso» ya no está el de prueba (estaba agotado).
 - [ ] **Revocar**: en la ficha, «Revocar identidad» → «Revocar». El sensor deja de entregar
   (`sf-etw` lo muestra) y a los 3–4 minutos salta «Sensor sin señal».

@@ -8,13 +8,35 @@
 // that carry an open critical detection or an observed connection flow.
 // Nodes settle from the centre on mount (static under reduced motion).
 
-import { useMemo, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { Desktop, Globe, Gear, ShieldWarning, User, type Icon } from '@phosphor-icons/react'
 import { useElementWidth } from './chart-frame'
 import { SEV_COLOR } from './severity'
-import { layoutGraph, type EntityGraph, type GraphNode, type NodeKind } from '@/lib/entity-graph'
+import { layoutGraph, type EntityGraph, type GraphNode, type NodeKind, type Point } from '@/lib/entity-graph'
 import { SEVERITY_STYLE } from '@/lib/console-types'
+import { useThrottledValue } from '@/hooks/use-throttled-value'
+
+// A live graph (host, dashboard) is rebuilt from the event buffer as
+// telemetry flows; it is redrawn at most this often.
+const LIVE_GRAPH_MS = 3000
+
+// The layout depends only on which nodes and edges exist (not on their
+// weights): a rebuild that only changes counts keeps the picture.
+function structureOf(graph: EntityGraph): string {
+  const nodes = graph.nodes.map((n) => (n.focus ? '*' : '') + n.id).sort()
+  const edges = graph.edges.map((e) => e.source + '|' + e.target).sort()
+  return nodes.join('\n') + '\n\n' + edges.join('\n')
+}
+
+// A resized box keeps the picture's proportions: the previous positions
+// are scaled to the new size before they pin the nodes.
+function scaledTo(prev: { pos: Map<string, Point>; width: number; height: number }, width: number, height: number): Map<string, Point> {
+  if ((prev.width === width && prev.height === height) || prev.width <= 0 || prev.height <= 0) return prev.pos
+  const sx = width / prev.width
+  const sy = height / prev.height
+  return new Map([...prev.pos].map(([id, p]) => [id, { x: p.x * sx, y: p.y * sy }]))
+}
 
 export const NODE_KIND: Record<NodeKind, { label: string; color: string; icon: Icon }> = {
   host: { label: 'Equipo', color: 'var(--series-1)', icon: Desktop },
@@ -48,22 +70,35 @@ function truncate(text: string, max: number): string {
 }
 
 export function EntityGraphView({
-  graph,
+  graph: liveGraph,
   height = 360,
   ariaLabel,
   onSelect,
   selectHint = 'Ver alertas relacionadas',
+  live = false,
 }: {
   graph: EntityGraph
   height?: number
   ariaLabel: string
   onSelect?: (node: GraphNode) => void
   selectHint?: string
+  /** rebuilt from the live buffer: redraw at most every LIVE_GRAPH_MS */
+  live?: boolean
 }) {
   const [ref, width] = useElementWidth<HTMLDivElement>()
   const reduce = useReducedMotion()
   const [active, setActive] = useState<string | null>(null)
-  const layout = useMemo(() => layoutGraph(graph, width, height), [graph, width, height])
+  const graph = useThrottledValue(liveGraph, live ? LIVE_GRAPH_MS : 0)
+  const structure = useMemo(() => structureOf(graph), [graph])
+  // Nodes already on screen stay pinned across rebuilds (layoutGraph's
+  // `previous`); only a new structure or a new box size re-lays out.
+  const placed = useRef<{ pos: Map<string, Point>; width: number; height: number } | undefined>(undefined)
+  // keyed on the structure, not on graph identity (see structureOf)
+  const layout = useMemo(
+    () => layoutGraph(graph, width, height, undefined, placed.current && scaledTo(placed.current, width, height)),
+    [structure, width, height],
+  )
+  useEffect(() => { placed.current = { pos: layout, width, height } }, [layout, width, height])
   const maxWeight = Math.max(1, ...graph.nodes.map((n) => n.weight))
   const neighbours = useMemo(() => {
     const map = new Map<string, Set<string>>()

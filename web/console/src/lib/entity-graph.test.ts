@@ -68,6 +68,25 @@ describe('layout', () => {
       expect(p.y).toBeLessThanOrEqual(266)
     }
   })
+
+  test('a live rebuild keeps the nodes already on screen where they were', () => {
+    const before = buildEntityGraph([alert({ user: 'u' }), alert({ id: 'b', rule_name: 'otra' })], [event({})])
+    const prev = layoutGraph(before, 600, 300)
+    const net = event({ id: 'n1', type: 'network.connect', network: { domain: 'nuevo.example', destination_port: 443 } })
+    const after = buildEntityGraph([alert({ user: 'u' }), alert({ id: 'b', rule_name: 'otra' })], [event({}), net])
+    const next = layoutGraph(after, 600, 300, 260, prev)
+    for (const [id, p] of prev) if (next.has(id)) expect(next.get(id)).toEqual(p)
+    const added = next.get('destination:nuevo.example:443')!
+    expect(added).toBeDefined()
+    // the newcomer finds its own spot instead of landing on a pinned node
+    for (const [id, p] of next) if (id !== 'destination:nuevo.example:443') expect(Math.hypot(p.x - added.x, p.y - added.y)).toBeGreaterThan(15)
+  })
+
+  test('a mostly new graph is laid out from scratch', () => {
+    const g = buildEntityGraph([alert({ user: 'u' }), alert({ id: 'b', rule_name: 'otra', host: 'LAB-2' })], [event({})])
+    const stale = new Map([['host:lab-wks-01', { x: 60, y: 40 }]])
+    expect([...layoutGraph(g, 600, 300, 260, stale).entries()]).toEqual([...layoutGraph(g, 600, 300).entries()])
+  })
 })
 
 describe('process tree', () => {

@@ -117,12 +117,16 @@ export function SensorCard({ host }: { host?: FleetHost }) {
       <div className="grid grid-cols-3 border-t border-white/[0.06] text-center">
         {[
           { label: 'Eventos (5 min)', value: host.events_last_5m },
-          { label: 'En cola de disco', value: s ? s.spooled : '—', warn: (s?.spooled ?? 0) > 0 },
-          { label: 'Descartados', value: s ? s.dropped : '—', warn: (s?.dropped ?? 0) > 0 },
+          // the sensor's counters are cumulative since it started, not the
+          // backlog still pending: spooled lines may have been delivered
+          // long ago (a sensor that outlived an engine stop replays them)
+          { label: 'Desbordados a disco', hint: 'acumulado desde que arrancó el sensor', value: s ? s.spooled : '—', warn: (s?.spooled ?? 0) > 0 },
+          { label: 'Descartados', hint: 'acumulado desde que arrancó el sensor', value: s ? s.dropped : '—', warn: (s?.dropped ?? 0) > 0 },
         ].map((cell) => (
-          <div key={cell.label} className="px-3 py-3">
+          <div key={cell.label} className="px-3 py-3" title={cell.hint}>
             <p className={`text-lg font-semibold ${cell.warn ? 'text-amber-300' : 'text-zinc-50'}`}>{cell.value}</p>
             <p className="text-[11px] text-zinc-500">{cell.label}</p>
+            {cell.hint && <p className="text-[10px] text-zinc-500">{cell.hint}</p>}
           </div>
         ))}
       </div>
