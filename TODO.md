@@ -30,10 +30,6 @@ punto, con el CI en verde (incluidos los jobs de Windows) antes de fusionar.
 
 ## F0 — Higiene del repositorio
 
-- [ ] Abrir el PR de la rama `claude/trusting-fermat-ffz98u` (Go 1.26.10,
-  Next 16.3.8, oráculo del fuzz, ARCHITECTURE, limpieza, roadmap,
-  `sf-start`/`sf-stop`/`sf-status`, instalador silencioso) y fusionarlo con el
-  CI en verde, incluidos los jobs de Windows.
 - [ ] Borrar ramas en GitHub (la sesión de Claude no puede borrar ramas
   ajenas): `100agentes`, `audit/mejoras-2026-10-08` (cierra el PR #22) e
   `integracion/rondas-2-3`.
@@ -54,8 +50,8 @@ punto, con el CI en verde (incluidos los jobs de Windows) antes de fusionar.
 
 ## F1 — Uso diario
 
-`sf-start`, `sf-stop`, `sf-status` y el instalador silencioso ya están en la
-rama de F0; las acciones en lote sobre alertas ya existían.
+`sf-start`, `sf-stop`, `sf-status` y el instalador silencioso ya están en
+`main` (PR #29); las acciones en lote sobre alertas ya existían.
 
 - [ ] Probar en Windows real `sf-start` / `sf-stop` / `sf-stop -KeepSensor` /
   `sf-status`: UAC solo cuando el sensor cambia de estado y el sensor parado
@@ -67,21 +63,17 @@ rama de F0; las acciones en lote sobre alertas ya existían.
 ## F2 — Acceso
 
 Base de todo lo que abre lectura o escritura sensible (F3). Diseño de sesiones
-y cuentas: [PLAN-DETALLADO](docs/PLAN-DETALLADO.md).
+y cuentas: [OPERATIONS](docs/OPERATIONS.md#console-accounts-roles-and-audit).
 
-- [ ] **Login propio** (TEAM-1). Sustituye el diálogo Basic del navegador sobre
-  las cuentas con rol que ya existen (lector, analista, administrador):
-  - pantalla de inicio de sesión;
-  - sesión con cookie `HttpOnly`, `Secure` y `SameSite=Strict`, caducidad por
-    inactividad y cierre de sesión;
-  - bloqueo temporal tras varios fallos;
-  - protección de sesión (SEC-4): CSRF, fijación de sesión, `frame-ancestors`
-    y HSTS detrás de HTTPS.
+- [ ] Probar en Windows real el inicio de sesión (sección 7 de
+  PRUEBAS-PENDIENTES): primera cuenta desde `sf-start`, `sf-console -AddUser`
+  y `-RemoveUser`, caducidad al cambiar la contraseña.
 - [ ] **MFA opcional por TOTP**, con códigos de recuperación y obligatorio por
   rol si se configura. Sin servicios externos.
 - [ ] **Cuentas desde la consola** (TEAM-2): alta, baja, rol, deshabilitar y
   restablecer contraseña, con cambio obligatorio en el primer acceso. Solo
-  administradores y auditado. Hoy se edita a mano `CONSOLE_USERS_FILE`.
+  administradores y auditado. Hoy se gestionan desde la terminal con
+  `sf-console -AddUser` / `-RemoveUser`.
 - [ ] **ACL de máquinas y servicios:**
   - grupos y etiquetas de equipos (sede, departamento, OU de AD, servidores o
     puestos);

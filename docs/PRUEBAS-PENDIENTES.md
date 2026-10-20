@@ -242,46 +242,52 @@ se deja como estaba.
   Remove-Item "$env:LOCALAPPDATA\bluetardigrade\tools\config\baseline.learn"; sf-console -Stop; sf-console
   ```
 
-## 7. Cuentas de analista y roles en la consola (opcional)
+## 7. Inicio de sesión, cuentas y roles en la consola
 
-Sin el fichero de cuentas, la consola sigue como siempre. Con él, cada persona entra con su
-usuario y queda registrado quién hace cada cosa.
+Sin cuentas, la consola abre sin pedir nada a quien use el equipo. Con cuentas, pide iniciar
+sesión y queda registrado quién hace cada cosa.
 
-- [ ] **[normal]** Crea una cuenta de administrador y otra de solo lectura. Cada comando
-  pide una contraseña de al menos 12 caracteres e imprime una línea que empieza por `{"user"`:
+- [ ] **[normal]** `sf-stop` y después `sf-start`. Antes de arrancar pregunta «create the
+  administrator account now? [Y/n]». Pulsa Intro, acepta el nombre que propone (o escribe
+  `jefa`) y una contraseña de al menos 12 caracteres, dos veces. No se ve al escribirla.
+  Debe decir «cuenta … creada (admin)» y, al final, «sign-in: console accounts (…)».
+- [ ] **[normal]** Crea una cuenta de solo lectura:
 
   ```powershell
-  & "$env:LOCALAPPDATA\bluetardigrade\tools\bun.exe" "$env:LOCALAPPDATA\bluetardigrade\web\console\scripts\console-user.mjs" jefa admin
+  sf-console -AddUser luis -Role viewer
   ```
 
-  ```powershell
-  & "$env:LOCALAPPDATA\bluetardigrade\tools\bun.exe" "$env:LOCALAPPDATA\bluetardigrade\web\console\scripts\console-user.mjs" luis viewer
-  ```
-
-- [ ] **[normal]** Abre el fichero de cuentas:
-  `notepad "$env:LOCALAPPDATA\bluetardigrade\tools\config\console-users.json"`.
-  Escribe `{"users": [LINEA1, LINEA2]}`, cambiando LINEA1 y LINEA2 por las dos líneas
-  anteriores. Guarda el fichero.
 - [ ] **[normal]** `sf-engine doctor` debe decir «Cuentas de la consola: 2 cuentas
-  (administradores 1, analistas 0, lectores 1)». Si dice «la consola quedaria bloqueada»,
-  corrige lo que indique antes de seguir.
-- [ ] **[normal]** `sf-console -Stop; sf-console`
-- [ ] El navegador pide usuario y contraseña. Con una contraseña mala no entra.
+  (administradores 1, analistas 0, lectores 1)».
+- [ ] El navegador abre la página «Iniciar sesión», no el diálogo gris del navegador.
+  - Con una contraseña mala vuelve al formulario con «Usuario o contraseña incorrectos».
+  - Antes de entrar, abre `http://localhost:3000/?view=equipos`: pide iniciar sesión y, al
+    entrar, abre Equipos.
 - [ ] Entra como `luis`:
   - La cabecera dice «luis · Lector» y debajo sale «Modo lectura…».
   - Al intentar reconocer una alerta sale «Tu cuenta (luis, lector) no puede hacer esto…».
-- [ ] Entra como `jefa` (ventana de incógnito):
-  - Reconoce una alerta. En su detalle, en «Ciclo de vida», junto al id sale `· jefa`, no `· consola`.
-  - En el chip de sesión, la auditoría muestra el intento denegado de `luis` y la acción de `jefa`.
-- [ ] El fichero `"$env:LOCALAPPDATA\bluetardigrade\data\console-audit.jsonl"` tiene esas líneas.
-- [ ] **[normal]** Para volver a la consola sin cuentas, borra el fichero y reinicia:
+- [ ] Entra como el administrador (ventana de incógnito):
+  - Reconoce una alerta. En su detalle, en «Ciclo de vida», junto al id sale tu cuenta, no `· consola`.
+  - En el chip de sesión, la auditoría muestra «Inicio de sesión», el intento denegado de `luis`
+    y tu acción.
+  - En ese mismo panel, «Cerrar sesión» vuelve al formulario. Recargar no entra sin contraseña.
+- [ ] **[normal]** Con `luis` dentro en una ventana, cambia su contraseña:
+  `sf-console -AddUser luis -Role viewer`. En unos segundos su ventana vuelve al formulario con
+  «Tu sesión ha terminado».
+- [ ] El fichero `"$env:LOCALAPPDATA\bluetardigrade\data\console-audit.jsonl"` tiene esas líneas,
+  también los inicios y cierres de sesión.
+- [ ] **[normal]** `sf-console -RemoveUser luis`. Debe decir «cuenta luis eliminada».
+- [ ] **[normal]** Para volver a la consola sin cuentas, borra el fichero, evita que `sf-start`
+  vuelva a preguntar y reinicia:
 
   ```powershell
-  Remove-Item "$env:LOCALAPPDATA\bluetardigrade\tools\config\console-users.json"; sf-console -Stop; sf-console
+  Remove-Item "$env:LOCALAPPDATA\bluetardigrade\tools\config\console-users.json"
+  New-Item -ItemType File "$env:LOCALAPPDATA\bluetardigrade\tools\config\no-console-accounts"
+  sf-stop; sf-start
   ```
 
-- [ ] En la misma ventana de PowerShell, la consola vuelve a abrir sin pedir contraseña
-  y la cabecera dice «local · Administrador».
+- [ ] La consola vuelve a abrir sin pedir contraseña y la cabecera dice «local · Administrador».
+  `sf-status` dice «sign-in: none».
 
 ## 8. Reputación por hash (solo si tienes clave de VirusTotal)
 

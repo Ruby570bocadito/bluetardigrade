@@ -676,17 +676,46 @@ By default the console has no accounts: on loopback, or behind
 gets in acts as administrator. That stays unchanged unless
 `CONSOLE_USERS_FILE` points at a users file.
 
+- Windows: `sf-console -AddUser ana -Role analyst` creates an account
+  (the role defaults to `admin`) or resets the password and role of an
+  existing one; `sf-console -RemoveUser ana` removes one. Both write
+  `tools\config\console-users.json`, which the launcher passes to the
+  console. While there is no account, `sf-start` offers to
+  create the administrator account first; declining is remembered in
+  `tools\config\no-console-accounts` (delete it to be asked again).
+  The first account only takes effect after restarting a console that
+  was already running (`sf-stop`, then `sf-start`); later changes are
+  picked up on their own.
 - File: JSON `{"users": [{"user": "ana", "role": "analyst",
-  "password": "pbkdf2-sha256$..."}]}`. Generate each entry with
-  `bun scripts/console-user.mjs <user> <admin|analyst|viewer>` from
-  `web/console` (it asks for the password, at least 12 characters, and
-  prints only its PBKDF2-SHA256 hash). The console re-reads the file
-  when it changes. On Windows the launcher uses
-  `tools\config\console-users.json` when it exists.
-- With accounts, only they get in (HTTP Basic, the browser's own
-  prompt; put TLS in front when the console leaves the machine). The
-  shared token no longer bypasses them. A file that is configured but
-  missing, empty or malformed locks the console instead of opening it.
+  "password": "pbkdf2-sha256$..."}]}`. Elsewhere, manage it with
+  `node scripts/console-user.mjs --file <path> <user> <admin|analyst|viewer>`
+  (or `--file <path> --remove <user>`) from `web/console`. It asks for
+  the password (at least 12 characters, not echoed) and stores only its
+  PBKDF2-SHA256 hash, replacing the file in one rename. Without `--file`
+  it prints the entry instead. The console re-reads the file when it
+  changes. Removing the last account is refused: an empty file locks
+  the console, so going back to no accounts means deleting the file.
+- With accounts (or the shared token), the browser gets a sign-in page
+  at `/login` and a session: a random cookie (`sf_session`, HttpOnly,
+  SameSite=Strict, Secure over HTTPS) that ends with the browser, after
+  30 minutes without activity (`CONSOLE_SESSION_IDLE_MINUTES`) or after
+  12 hours whatever the activity (`CONSOLE_SESSION_MAX_HOURS`).
+  Sessions live in the console's memory: restarting it signs everyone
+  out. Changing an account's password or role, removing it, or rotating
+  the shared token ends its open sessions. **Cerrar sesión** in the
+  session panel (the account chip) signs out. A page opened without a
+  session goes to `/login` and back to where it was heading after
+  signing in; an open console whose session ends returns to the
+  sign-in page on its next poll. Scripts keep sending HTTP Basic
+  credentials on each request. The shared token no longer bypasses
+  the accounts. A file that is configured but missing, empty or
+  malformed locks the console instead of opening it, and the sign-in
+  page says why. Put TLS in front when the console leaves the machine;
+  behind it the console sends HSTS.
+- Sign-in and sign-out only accept requests from the console's own page
+  (host pinning plus an Origin and `Sec-Fetch-Site` check), so another
+  site can neither sign the browser in to an account of its choosing
+  nor sign it out.
 - Roles: **viewer** reads everything and may dry-run rules; **analyst**
   also triages alerts, manages incidents and notes, and edits
   suppressions; **admin** also runs active response (which still asks
@@ -698,12 +727,15 @@ gets in acts as administrator. That stays unchanged unless
   who did it whatever the browser sent.
 - Audit: with `CONSOLE_AUDIT_FILE` (the Windows launcher always sets
   `data\console-audit.jsonl`) every write sent through the proxy,
-  allowed or refused, is appended as one JSON line: time, account,
-  role, method, path, status and outcome. Administrators read the latest
+  allowed or refused, and every sign-in attempt and sign-out, is
+  appended as one JSON line: time, account, role, method, path, status
+  and outcome. Administrators read the latest
   entries in the session panel (click the account chip).
 - Failed logins: 10 wrong passwords for an account within 5 minutes
-  block it for the rest of that window. Verified credentials are cached
-  for 10 minutes so the slow key derivation runs once per session.
+  block it for the rest of that window, on the sign-in page and over
+  HTTP Basic alike. For Basic clients, verified credentials are cached
+  for 10 minutes so the slow key derivation does not run on every
+  request.
 
 ## Rule tester
 
