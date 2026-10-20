@@ -309,7 +309,7 @@ keyboard-driven alert and rule workspace (see the
 | Ingest | Shared token or **per-sensor identities** bound to their hosts; events for other hosts are refused and counted |
 | Transport | Native TLS on both listeners; the sensor trusts only the CA you give it |
 | API | Bearer token; listens on loopback by default |
-| Console | `CONSOLE_ACCESS_TOKEN` gates every page and API call off-loopback; optional **per-analyst accounts** with viewer/analyst/admin roles, a sign-in page with expiring sessions (`sf-console -AddUser`), signed triage and an audit trail of every write and sign-in |
+| Console | `CONSOLE_ACCESS_TOKEN` gates every page and API call off-loopback; optional **per-analyst accounts** with viewer/analyst/admin roles, a sign-in page with expiring sessions (`sf-console -AddUser`), optional or per-role two-step sign-in (TOTP, recovery codes), signed triage and an audit trail of every write and sign-in |
 | AI hub | `HUB_ACCESS_TOKEN` per socket, Origin allowlist and shared rate limits |
 | Response | `kill_process` needs an arm flag, a response token and **per-operator credentials**. Protected processes are refused, and every attempt is audited |
 | Evidence | Stored events are **append-only**: a second copy of an event id cannot rewrite the first |

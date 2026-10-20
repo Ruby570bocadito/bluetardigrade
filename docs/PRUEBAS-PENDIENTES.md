@@ -242,7 +242,7 @@ se deja como estaba.
   Remove-Item "$env:LOCALAPPDATA\bluetardigrade\tools\config\baseline.learn"; sf-console -Stop; sf-console
   ```
 
-## 7. Inicio de sesión, cuentas y roles en la consola
+## 7. Inicio de sesión, verificación en dos pasos, cuentas y roles
 
 Sin cuentas, la consola abre sin pedir nada a quien use el equipo. Con cuentas, pide iniciar
 sesión y queda registrado quién hace cada cosa.
@@ -276,6 +276,20 @@ sesión y queda registrado quién hace cada cosa.
   «Tu sesión ha terminado».
 - [ ] El fichero `"$env:LOCALAPPDATA\bluetardigrade\data\console-audit.jsonl"` tiene esas líneas,
   también los inicios y cierres de sesión.
+- [ ] **[normal]** Verificación en dos pasos. Ten a mano una app de autenticación en el móvil
+  (Microsoft o Google Authenticator, Aegis…).
+  - Entra como el administrador. En el chip de sesión, «Verificación en dos pasos: Desactivada»
+    → «Activar». Escanea el QR, escribe el código de 6 cifras y guarda los 10 códigos de
+    recuperación que aparecen.
+  - Cierra sesión y vuelve a entrar: tras la contraseña pide el código. Uno mal dice «Código
+    incorrecto»; el de la app entra.
+  - Vuelve a entrar con un código de recuperación en lugar del de la app. El chip dice
+    «9 códigos de recuperación».
+- [ ] **[normal]** Obligatoria por rol: `sf-console -RequireMfa viewer`. Debe decir que `luis` la
+  configurará al entrar. Entra como `luis`: tras la contraseña muestra el QR y no entra hasta
+  activarla. Para quitarla: `sf-console -ResetMfa luis` y `sf-console -RequireMfa none`.
+- [ ] **[normal]** `sf-engine doctor` dice «verificacion en dos pasos: 1 de 2» (o los que hayas
+  activado).
 - [ ] **[normal]** `sf-console -RemoveUser luis`. Debe decir «cuenta luis eliminada».
 - [ ] **[normal]** Para volver a la consola sin cuentas, borra el fichero, evita que `sf-start`
   vuelva a preguntar y reinicia:

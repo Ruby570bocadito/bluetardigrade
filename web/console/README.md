@@ -328,8 +328,9 @@ view, dark and light themes) — `make console-a11y`.
   can send `Host: localhost` from anywhere it can reach the port; so a
   console served to other machines needs `CONSOLE_ACCESS_TOKEN` or
   per-analyst accounts (`CONSOLE_USERS_FILE`): browsers sign in at
-  `/login` and get a session cookie, scripts send HTTP Basic (any user
-  name, the token as password); put TLS in front. Accounts, sessions and
+  `/login` and get a session cookie (accounts may add a TOTP second
+  step), scripts send HTTP Basic (any user name, the token as password);
+  put TLS in front. Accounts, sessions and
   their limits: `docs/OPERATIONS.md`, "Console accounts, roles and
   audit". Extra hosts without it are refused unless
   `CONSOLE_ALLOW_UNAUTHENTICATED=1` declares an authenticating front
