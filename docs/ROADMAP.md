@@ -6,7 +6,82 @@ roadmap sin criterios de aceptación es una lista de deseos. El estado
 "shipped" de cada horizontal vive en el [CHANGELOG](../CHANGELOG.md) y
 la arquitectura vigente en [ARCHITECTURE.md](ARCHITECTURE.md).
 
-Última actualización: 2026-10-02 (integraciones SOC e informes).
+Última actualización: 2026-10-20 (plan por fases del responsable).
+
+---
+
+## Plan por fases (2026-10-20)
+
+Orden fijado por dependencias: la seguridad de acceso va antes de las
+funciones que abren lectura o escritura sensible (BD, YARA, acciones), y
+las imágenes y el vídeo van después del rediseño para no rehacerlos. Un
+PR pequeño por punto, con el CI en verde antes de fusionar.
+
+**Decisiones tomadas**
+
+- La rama `100agentes` se descarta (PR #23 cerrado sin fusionar).
+- La regla *observe-only* pasa a ser una opción de instalación: la
+  respuesta activa ampliada se elige al instalar y está apagada por defecto.
+- `sf-start` arranca motor, consola, hub **y** el servicio del sensor ETW.
+
+**F0 — Higiene del repositorio**
+
+- CI en verde: Go 1.26.10 (9 vulnerabilidades de la stdlib en 1.26.6) y el
+  oráculo de `FuzzHTMLAttribute` (cuelgue con nombre vacío). Cierre:
+  `deps-audit` y `bench-nightly` en verde en `main`.
+- Ramas y tags: solo quedan `main` y las ramas con PR vivo; `v1.0.0-rc1` es
+  la única release publicada. Cierre: listado de ramas y tags revisado.
+- Archivos: fuera los informes de rondas, el informe de auditoría y los
+  diagramas desfasados. ARCHITECTURE con diagramas Mermaid verticales.
+- Descripción y *topics* del repositorio actualizados.
+
+**F1 — Uso diario**
+
+- `sf-start` / `sf-stop` / `sf-status`. Cierre: un comando arranca y otro
+  para las cuatro piezas; `sf-status` dice qué está vivo.
+- Instalador silencioso: resumen por pasos, log completo a fichero,
+  `-Verbose` para verlo todo. Cierre: una pantalla de salida sin ruido de
+  bun/next.
+- Acciones en lote: ya existían (reconocer, cerrar y reabrir con nota común,
+  añadir a incidente, suprimir, exportar y analizar la selección). Asignar
+  alertas a un responsable necesita un campo nuevo en el motor y pasa a F3.
+
+**F2 — Acceso**
+
+- Login con pantalla propia y sesión (cookie segura, cierre de sesión,
+  bloqueo por intentos) sobre las cuentas con rol que ya existen.
+- MFA opcional por TOTP con códigos de recuperación, obligatorio por rol
+  si se configura.
+- ACL de máquinas y servicios: qué operador ve y actúa sobre qué grupos
+  de equipos y servicios. Por concretar: si incluye auditar en los
+  endpoints los permisos débiles de servicios Windows.
+
+**F3 — Funciones**
+
+- Asignar alertas a un responsable (campo en el ciclo de vida del motor,
+  filtro "mías" y asignación en lote desde la barra de selección).
+- Respuesta activa ampliable, opt-in al instalar: aislar equipo, cuarentena
+  de fichero, suspender proceso; cada acción auditada como `kill_process`.
+- YARA: escaneo en el sensor Rust (`yara-x`), reglas guardadas y
+  distribuidas por el motor, gestión en la consola (ver, añadir, eliminar)
+  con validación al compilar, solo administradores y auditada.
+- Consulta de la BD: solo lectura (la evidencia es append-only), límites de
+  tiempo y filas, solo administradores, cada consulta auditada.
+- AD: más lectura (grupos privilegiados, cuentas inactivas, cambios
+  recientes). Las acciones sobre AD seguirían la misma regla opt-in.
+
+**F4 — Diferenciadores**
+
+- ML beta para el triaje: modelo local y explicable que ordena alertas por
+  probabilidad de ruido aprendiendo de las decisiones de triaje, con la
+  razón visible, detrás de `-ml-beta`. No sustituye a las reglas legibles.
+- Ediciones: perfiles de instalación `lite` (motor, sensor, CLI) y `full`
+  (consola, hub IA, SQLite, AD, SIEM) sobre un único código.
+
+**F5 — Escaparate**
+
+- Rediseño del dashboard, luego capturas en una VM de laboratorio (sin
+  nombres de equipo, usuarios ni dominios reales), luego vídeo y README.
 
 ---
 
@@ -127,10 +202,6 @@ un cluster de alertas correlacionadas.
 
 ## No-roadmap (decisión deliberada)
 
-- **EDR-style quarantine nativo** — la respuesta activa se mantiene
-  `kill_process` opt-in con guard de operadores: ampliarla a cuarentena
-  de ficheros o aislamiento de red es una decisión de producto que
-  exige un caso de uso real primero.
 - **gRPC / filaments / eBPF** — registrados como design-only en la
   arquitectura: no entran hasta que el pipeline NDJSON-TCP demuestre ser
   el cuello.

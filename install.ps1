@@ -59,17 +59,22 @@ param(
     [string]$IngestToken = '',
     [switch]$Update,
     [switch]$SkipBuild,
-    [switch]$SourceReady
+    [switch]$SourceReady,
+    # show go/bun/next output on screen; it always lands in the install
+    # log (irm | iex installs set SF_INSTALL_VERBOSE=1 instead)
+    [switch]$ShowBuildOutput
 )
 
 $ErrorActionPreference = 'Stop'
+$script:ShowBuildOutput = $ShowBuildOutput -or $env:SF_INSTALL_VERBOSE -eq '1'
+$script:InstallLog = $null
 if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') {
     throw 'This installer is not authorized by the Windows App Control policy (ConstrainedLanguage). Use an approved signed package and review docs/SMART-APP-CONTROL.md; ExecutionPolicy cannot override application trust.'
 }
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
 $ProgressPreference = 'SilentlyContinue'   # makes Invoke-WebRequest usable on PS 5.1
 
-$GO_VERSION   = '1.26.8'
+$GO_VERSION   = '1.26.10'
 $NODE_VERSION = 'v22.23.3'
 $BUN_VERSION  = 'v1.4.2'
 $ENGINE_PORT  = 7777
@@ -119,6 +124,19 @@ function Assert-SfInstallEnvironment {
     }
 }
 
+# Add-InstallLog keeps the full output of every native step (go, bun,
+# next, git) in one file, so a quiet screen never hides a diagnosis.
+function Add-InstallLog {
+    param([string]$Activity, [string[]]$Lines)
+    try {
+        if (-not $script:InstallLog) {
+            $script:InstallLog = Join-Path (Get-TempDir) 'bluetardigrade-install.log'
+            Set-Content -LiteralPath $script:InstallLog -Value "bluetardigrade install $(Get-Date -Format s)" -Encoding UTF8
+        }
+        Add-Content -LiteralPath $script:InstallLog -Value (@("", "== $Activity") + $Lines) -Encoding UTF8
+    } catch { }
+}
+
 function Invoke-Native {
     # Native commands (git, netsh, reg, go, node, bun) write progress and
     # diagnostics to STDERR, and 'git clone' ALWAYS opens with one
@@ -160,6 +178,7 @@ function Invoke-Native {
     if (-not $Quiet) {
         foreach ($l in $lines) { Write-Info $l }
     }
+    if ($Activity) { Add-InstallLog -Activity $Activity -Lines $lines }
     if ($LASTEXITCODE -ne 0 -and -not $AllowFailure) {
         $detail = ($lines | Where-Object { $_ }) -join ' '
         if ($LASTEXITCODE -eq -1) {
@@ -285,7 +304,9 @@ function Ensure-Go {
     $portable = Join-Path $Tools 'go\bin\go.exe'
     if (Test-Path $portable) {
         $version = Get-ToolVersion -Executable $portable -Arguments @('version') -Pattern 'go version go(\d+\.\d+(?:\.\d+)?)'
-        if ($version -and $version -ge [version]'1.26.0') {
+        # go.mod pins the patch release (stdlib security fixes) and the
+        # build runs with GOTOOLCHAIN=local: an older Go cannot build it.
+        if ($version -and $version -ge [version]$GO_VERSION) {
             $env:Path = "$Tools\go\bin;" + $env:Path
             Write-Ok "Go $version (portable)"
             return
@@ -297,17 +318,21 @@ function Ensure-Go {
     if ($sys) {
         $v = Get-ToolVersion -Executable $sys.Source -Arguments @('version') -Pattern 'go version go(\d+\.\d+(?:\.\d+)?)'
         if ($v) {
-            if ($v -ge [version]'1.26.0') {
+            if ($v -ge [version]$GO_VERSION) {
                 Write-Ok "Go $v (system)"
                 return
             }
-            Write-Warn2 "system Go is $v (need 1.26+); installing a portable one"
+            Write-Warn2 "system Go is $v (need $GO_VERSION+); installing a portable one"
         }
     }
     Write-Step "Downloading Go $GO_VERSION (portable, ~105 MB)"
     $zip = Join-Path $Tools 'go.zip'
     Invoke-Download -Url "https://go.dev/dl/go$GO_VERSION.windows-amd64.zip" -OutFile $zip -ExpectedSha256 (Get-GoSha256)
     Write-Info "extracting..."
+    # replace, never overlay: extracting a new release over an older
+    # GOROOT leaves the old release's files mixed into the stdlib
+    # (same rule as the portable Node below)
+    if (Test-Path (Join-Path $Tools 'go')) { Remove-Item (Join-Path $Tools 'go') -Recurse -Force }
     Expand-Archive -Path $zip -DestinationPath $Tools -Force
     Remove-Item $zip -Force -ErrorAction SilentlyContinue
     $env:Path = "$Tools\go\bin;" + $env:Path
@@ -455,8 +480,8 @@ function Build-Engine {
     Push-Location $Root
     try {
         $env:GOTOOLCHAIN = 'local'
-        $null = Invoke-Native -Command { & go build -o (Join-Path $Root 'bin\engine.exe') ./cmd/engine } -Utf8 -Activity 'go build ./cmd/engine'
-        $null = Invoke-Native -Command { & go build -o (Join-Path $Root 'bin\collector.exe') ./cmd/collector } -Utf8 -Activity 'go build ./cmd/collector'
+        $null = Invoke-Native -Command { & go build -o (Join-Path $Root 'bin\engine.exe') ./cmd/engine } -Utf8 -Quiet:(-not $script:ShowBuildOutput) -Activity 'go build ./cmd/engine'
+        $null = Invoke-Native -Command { & go build -o (Join-Path $Root 'bin\collector.exe') ./cmd/collector } -Utf8 -Quiet:(-not $script:ShowBuildOutput) -Activity 'go build ./cmd/collector'
     } finally { Pop-Location }
     Write-Ok "bin\engine.exe + bin\collector.exe"
 }
@@ -477,16 +502,17 @@ function Build-Console {
     Write-Step "Installing console dependencies (bun)"
     Push-Location (Join-Path $web 'console-service')
     try {
-        $null = Invoke-Native -Command { & bun install --frozen-lockfile } -Utf8 -Activity 'bun install (console-service)'
+        $null = Invoke-Native -Command { & bun install --frozen-lockfile } -Utf8 -Quiet:(-not $script:ShowBuildOutput) -Activity 'bun install (console-service)'
     } finally { Pop-Location }
     Push-Location (Join-Path $web 'console')
     try {
-        $null = Invoke-Native -Command { & bun install --frozen-lockfile } -Utf8 -Activity 'bun install (console)'
+        $null = Invoke-Native -Command { & bun install --frozen-lockfile } -Utf8 -Quiet:(-not $script:ShowBuildOutput) -Activity 'bun install (console)'
+        Write-Ok 'console dependencies installed'
         Write-Step "Building web console (Next.js, 1-2 min)"
         $env:NEXT_TELEMETRY_DISABLED = '1'
-        $null = Invoke-Native -Command { & $NodeExe (Join-Path $web 'console\node_modules\next\dist\bin\next') build } -Utf8 -Activity 'next build'
+        $null = Invoke-Native -Command { & $NodeExe (Join-Path $web 'console\node_modules\next\dist\bin\next') build } -Utf8 -Quiet:(-not $script:ShowBuildOutput) -Activity 'next build'
     } finally { Pop-Location }
-    Write-Ok "web console ready (start it with sf-console)"
+    Write-Ok "web console ready (start everything with sf-start)"
 }
 
 function Build-Sensor {
@@ -527,6 +553,7 @@ function Copy-RuntimeScripts {
     $scripts = Join-Path $Root 'scripts'
     New-Item -ItemType Directory -Path $scripts -Force | Out-Null
     Copy-Item (Join-Path $Root 'scripts\windows\sf-console.ps1') (Join-Path $scripts 'sf-console.ps1') -Force
+    Copy-Item (Join-Path $Root 'scripts\windows\sf-stack.ps1') (Join-Path $scripts 'sf-stack.ps1') -Force
     Copy-Item (Join-Path $Root 'scripts\windows\sensor.ps1') (Join-Path $scripts 'sensor.ps1') -Force
     Copy-Item (Join-Path $Root 'scripts\windows\sensor-service.ps1') (Join-Path $scripts 'sensor-service.ps1') -Force
     Copy-Item (Join-Path $Root 'scripts\windows\runtime.ps1') (Join-Path $scripts 'runtime.ps1') -Force
@@ -549,6 +576,7 @@ function Write-Shims {
     $enc = $null
     try { $enc = [Text.Encoding]::GetEncoding(0) } catch { $enc = [Text.Encoding]::ASCII }
     $consolePs1   = Join-Path $scripts 'sf-console.ps1'
+    $stackPs1     = Join-Path $scripts 'sf-stack.ps1'
     $sensorPs1    = Join-Path $scripts 'sensor.ps1'
     $etwPs1       = Join-Path $scripts 'sensor-service.ps1'
     $installPs1   = Join-Path $scripts 'install.ps1'
@@ -590,6 +618,9 @@ function Write-Shims {
     # (built as line arrays: avoids "$nlif"-style variable-name pitfalls)
     $shims = [ordered]@{
         'sf-console.cmd' = "@echo off$nl powershell -NoProfile -ExecutionPolicy Bypass -File `"$consolePs1`" %*$nl"
+        'sf-start.cmd' = "@echo off$nl powershell -NoProfile -ExecutionPolicy Bypass -File `"$stackPs1`" -Start %*$nl"
+        'sf-stop.cmd' = "@echo off$nl powershell -NoProfile -ExecutionPolicy Bypass -File `"$stackPs1`" -Stop %*$nl"
+        'sf-status.cmd' = "@echo off$nl powershell -NoProfile -ExecutionPolicy Bypass -File `"$stackPs1`" -Status %*$nl"
         'sf-sensor.cmd' = "@echo off$nl powershell -NoProfile -ExecutionPolicy Bypass -File `"$sensorPs1`" %*$nl"
         'sf-etw.cmd' = "@echo off$nl powershell -NoProfile -ExecutionPolicy Bypass -File `"$etwPs1`" %*$nl"
         'sf-update.cmd' = (@(
@@ -613,7 +644,7 @@ function Write-Shims {
     foreach ($k in $shims.Keys) {
         [IO.File]::WriteAllText((Join-Path $bin $k), $shims[$k], $enc)
     }
-    Write-Ok "sf-engine / sf-collector / sf-sensor / sf-etw / sf-console / sf-update / sf-uninstall"
+    Write-Ok "sf-start / sf-stop / sf-status / sf-engine / sf-collector / sf-sensor / sf-etw / sf-console / sf-update / sf-uninstall"
 }
 
 # Whatever still comes before this install on the effective PATH after
@@ -1142,6 +1173,11 @@ if ($MyInvocation.InvocationName -ne '.') {
     }
     Write-Host '------------------------------------------------------------'
     Write-Host ' commands  :'
+    if ($consoleReady) {
+        Write-Host '   sf-start       start everything: engine, console, hub and the ETW sensor service'
+        Write-Host '   sf-stop        stop everything (sf-stop -KeepSensor keeps the sensor capturing)'
+        Write-Host '   sf-status      what is running'
+    }
     Write-Host '   sf-engine      detection engine, prints alerts live'
     Write-Host '   sf-sensor      REAL telemetry via Sysmon (setup: sf-sensor -SetupSysmon)'
     Write-Host '   sf-etw         ETW sensor as a Windows service (sf-etw -Install, once, UAC)'
@@ -1160,9 +1196,10 @@ if ($MyInvocation.InvocationName -ne '.') {
     Write-Host ' quick test (open a NEW terminal first):'
     Write-Host '   real mode :  sf-sensor -SetupSysmon  (once, UAC) then sf-sensor'
     Write-Host '                -> alerts depend on observed activity and configured rules'
-    if ($consoleReady) { Write-Host '   dashboard:   sf-console' }
+    if ($consoleReady) { Write-Host '   dashboard:   sf-start' }
     Write-Host '  ----------------------------------------------------------' -ForegroundColor DarkCyan
     if ($consoleReady) { Write-Host '   console:  http://localhost:3000  (engine API :7778)' -ForegroundColor Gray }
+    if ($script:InstallLog) { Write-Host "   build log: $($script:InstallLog)  (-ShowBuildOutput to see it live)" -ForegroundColor Gray }
     Write-Host '  ==========================================================' -ForegroundColor DarkCyan
     if ($consoleError) { throw "Console build failed: $consoleError. Engine/collector are available; run sf-update to retry." }
 }

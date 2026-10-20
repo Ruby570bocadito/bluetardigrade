@@ -1,56 +1,52 @@
 # Architecture
 
-The project overview and quickstart live in the [README](README.md); the day-to-day operation manual in [OPERATIONS.md](OPERATIONS.md). This document holds the system architecture, the full annotated repository tree and the detailed feature inventory.
+The project overview and quickstart live in the [README](../README.md); the day-to-day operation manual in [OPERATIONS.md](OPERATIONS.md). This document holds the system architecture, the full annotated repository tree and the detailed feature inventory.
 
 ## System overview
 
-![Architecture: kernel, Rust sensor, Go detection engine with its behavioral detectors and output layers](assets/diagram_arquitectura.png)
+From the endpoint to the analyst:
 
 ```mermaid
-flowchart LR
-    subgraph EP["Windows endpoints"]
-        direction TB
-        ETW["ETW providers: Kernel-Process, Kernel-Network, Kernel-Registry, DNS-Client"] --> RS["sf-sensor · Rust"]
-        SYS["Sysmon"] --> RS
+flowchart TB
+    subgraph EP["Windows endpoint"]
+        ETW["ETW providers<br/>process, network, registry, DNS"] --> SEN["sf-sensor (Rust)<br/>memory queue + disk spool"]
+        SYS["Sysmon (optional)"] --> SEN
     end
+    COL["sf-collector (Go)<br/>IDS, osquery, firewall, honeypot, mail logs"]
+    SEN -->|"NDJSON over TCP, AUTH, optional TLS"| ENG["sf-engine (Go, single static binary)<br/>detection, correlation, evidence, history"]
+    COL -->|"same event schema"| ENG
+    ENG --> OUT["Webhook, Slack / Telegram / email,<br/>Elasticsearch, Splunk"]
+    ENG --> RSP["Active response<br/>kill_process (opt-in, audited)"]
+    UI["Web console (Next.js, :3000)"] -->|"same-origin proxy: REST + SSE (:7778)"| ENG
+    UI <-->|"socket.io"| HUB["console-service hub<br/>AI analyst, live state"]
+    HUB -->|"REST (:7778)"| ENG
+```
 
-    RS -- "NDJSON/TCP · AUTH handshake" --> ING
+Inside the engine, every event takes one path and every detector feeds
+the same alert pipeline:
 
-    subgraph ENG["sf-engine · Go, single binary"]
-        direction TB
-        ING["ingest · schema validation"] --> ENR["enrich"]
-        ENR -- "context" --> INT["intel · offline threat lists"]
-        ENR -- "context" --> BAS["baseline · per-host novelty"]
-        ENR -- "context" --> FLT["fleet · machine inventory + heartbeats"]
-        ENR --> RUL["rules · hot-reload 15 s"]
-        ENR --> BCN["beaconing tracker · C2 timing"]
-        ENR --> THR["volumetric thresholds · windowed counts"]
-        RUL --> COR["kill-chain correlator"]
-        RUL --> ALR["alert · dedup + render"]
-        COR --> ALR
-        BCN --> ALR
-        THR --> ALR
-        INT -- "intel hits" --> ALR
-        BAS -- "novelties" --> ALR
-        SUP["suppressions · operator allowlist"] -.-> ALR
-        ALR --> RSK["risk tracker · per-host score"]
-        ALR --> ACT["actions · message templates"]
-        ALR --> FOR["forensic · evidence bundles"]
-        ALR --> LIF["lifecycle · triage state"]
-        ING -- "events · write-through" --> ST[("SQLite store · opt-in")]
-        ALR -- "alerts" --> ST
-    end
-
-    ACT --> WH["webhook · SIEM/SOAR"]
-    ACT --> NTF["notify · Slack / Telegram / email"]
-    ACT --> SIEM["SIEM sinks · Elastic / Splunk"]
-    ALR --> RSP["respond · kill_process (opt-in, audited)"]
-    ENG -- "REST + SSE on :7778" --> HUB
-
-    subgraph CON["Web console"]
-        HUB["console-service · socket.io hub"] --> UI["Next.js UI · live triage + AI analyst"]
-    end
-
+```mermaid
+flowchart TB
+    ING["ingest<br/>schema validation, caps, ingest auth"] --> ENR["enrich<br/>parent, user, hashes, known software"]
+    ING --> ST[("SQLite store (opt-in)<br/>events + alerts")]
+    ENR --> RUL["rules<br/>YAML, hot-reload 15 s"]
+    ENR --> BCN["beaconing<br/>C2 call-home timing"]
+    ENR --> THR["thresholds<br/>windowed counts"]
+    ENR --> INT["threat intel<br/>offline lists"]
+    ENR --> BAS["baseline<br/>first process per host"]
+    RUL --> COR["kill-chain correlator"]
+    RUL --> ALR["alert<br/>dedup, render, actions"]
+    COR --> ALR
+    BCN --> ALR
+    THR --> ALR
+    INT --> ALR
+    BAS --> ALR
+    SUP["suppressions<br/>operator allowlist"] -.-> ALR
+    ALR --> ST
+    ALR --> RSK["risk score per host"]
+    ALR --> FOR["forensic evidence bundles"]
+    ALR --> LIF["triage lifecycle"]
+    ALR --> API["local API + SSE stream"]
 ```
 
 The unified event schema (`pkg/model`) is the master contract: the

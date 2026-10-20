@@ -11,7 +11,10 @@ param(
     [switch]$Status,
     [switch]$NoBrowser,
     [int]$ConsolePort = 3000,
-    [int]$ServicePort = 3003
+    [int]$ServicePort = 3003,
+    # how to stop what was started (sf-start passes 'sf-stop': it also
+    # stops the ETW sensor service)
+    [string]$StopHint = 'sf-console -Stop'
 )
 
 # 'Continue' (the default the script used to override away): failures
@@ -177,4 +180,4 @@ if (-not (Test-PortLocal $ConsolePort)) {
 
 if (-not $NoBrowser) { Start-Process "http://localhost:$ConsolePort" }
 Write-Host "  console:  http://localhost:$ConsolePort"
-Write-Host '  stop it:  sf-console -Stop'
+Write-Host "  stop it:  $StopHint"

@@ -56,7 +56,8 @@ run/
 # resolves the same bits; its node_modules stays local.
 tools/*
 !tools/console-tests
-tools/console-tests/node_modules/
+# no trailing slash: also matches a node_modules symlink to a build cache
+tools/console-tests/node_modules
 
 # Operator-local suppressions (the armed copy of suppressions.example.yaml;
 # may name real hosts and change windows - never commit it)
