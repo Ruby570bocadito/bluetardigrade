@@ -5,7 +5,8 @@
 // Without a users file nothing changes: the console is open on loopback
 // or gated by the shared CONSOLE_ACCESS_TOKEN (lib/access.ts), and
 // whoever gets in acts as "admin". With a users file every request
-// carries HTTP Basic credentials of one of its accounts, and the account
+// belongs to a session of one of its accounts (lib/sessions.ts, opened
+// at /login) or carries its HTTP Basic credentials, and the account
 // decides three things:
 //
 //   - who: the name the engine records as "by" on triage, incidents and
@@ -22,8 +23,15 @@
 // plain-text password is ever stored. The file is re-read when it
 // changes. A file that is configured but unreadable or empty locks the
 // console (fail closed) instead of opening it.
+//
+// Two-step sign-in (lib/mfa.ts) adds, per account, "totp" (the base32
+// secret of the authenticator app) and "recovery" (SHA-256 of each
+// unused recovery code), and at the top level "mfa_required" (the roles
+// that must use it). The console itself writes those fields when an
+// operator enrolls or spends a recovery code (updateAccount).
 
-import { appendFileSync, readFileSync, statSync } from 'node:fs'
+import { appendFileSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { base32Decode } from './totp'
 
 // The paths come from the operator's environment at run time; the
 // turbopackIgnore markers keep the build from tracing the whole project
@@ -41,7 +49,19 @@ export type Principal = {
   mode: 'users' | 'token' | 'open'
 }
 
-type Account = { user: string; role: Role; iterations: number; salt: Uint8Array; hash: Uint8Array }
+type Account = {
+  user: string
+  role: Role
+  iterations: number
+  salt: Uint8Array
+  hash: Uint8Array
+  // base32 TOTP secret, or null without two-step sign-in
+  totp: string | null
+  // SHA-256 (hex) of each unused recovery code
+  recovery: string[]
+}
+
+type Parsed = { accounts: Account[]; mfaRequired: Role[]; error?: string }
 
 const MIN_ITERATIONS = 100_000
 const MAX_ITERATIONS = 5_000_000
@@ -65,60 +85,83 @@ function b64url(s: string): Uint8Array | null {
   }
 }
 
+const MAX_RECOVERY = 20
+const RECOVERY_HASH_RE = /^[0-9a-f]{64}$/
+
+function isRole(value: unknown): value is Role {
+  return value === 'admin' || value === 'analyst' || value === 'viewer'
+}
+
 // parseUsers validates the whole file: any malformed entry rejects it,
 // so a typo never silently drops (or opens) an account.
-export function parseUsers(text: string): { accounts: Account[]; error?: string } {
+export function parseUsers(text: string): Parsed {
+  const fail = (error: string): Parsed => ({ accounts: [], mfaRequired: [], error })
   let doc: unknown
   try {
     // Notepad and PowerShell 5 (Set-Content -Encoding UTF8) may save a BOM
     doc = JSON.parse(text.replace(/^\uFEFF/, ''))
   } catch {
-    return { accounts: [], error: 'el fichero de usuarios no es JSON válido' }
+    return fail('el fichero de usuarios no es JSON válido')
   }
   const list = Array.isArray(doc) ? doc : (doc as { users?: unknown })?.users
-  if (!Array.isArray(list) || list.length === 0) return { accounts: [], error: 'el fichero de usuarios no tiene cuentas' }
+  if (!Array.isArray(list) || list.length === 0) return fail('el fichero de usuarios no tiene cuentas')
+  const required = Array.isArray(doc) ? undefined : (doc as { mfa_required?: unknown })?.mfa_required
+  if (required !== undefined && (!Array.isArray(required) || !required.every(isRole))) {
+    return fail('mfa_required debe ser una lista de roles (admin, analyst, viewer)')
+  }
   const accounts: Account[] = []
   const seen = new Set<string>()
   for (const [i, raw] of list.entries()) {
-    const entry = raw as { user?: unknown; role?: unknown; password?: unknown }
+    const entry = raw as { user?: unknown; role?: unknown; password?: unknown; totp?: unknown; recovery?: unknown }
     const user = typeof entry?.user === 'string' ? entry.user.trim() : ''
-    if (!NAME_RE.test(user)) return { accounts: [], error: `cuenta ${i + 1}: nombre de usuario inválido` }
-    if (seen.has(user.toLowerCase())) return { accounts: [], error: `cuenta ${user}: repetida` }
+    if (!NAME_RE.test(user)) return fail(`cuenta ${i + 1}: nombre de usuario inválido`)
+    if (seen.has(user.toLowerCase())) return fail(`cuenta ${user}: repetida`)
     seen.add(user.toLowerCase())
     const role = entry.role
-    if (role !== 'admin' && role !== 'analyst' && role !== 'viewer') return { accounts: [], error: `cuenta ${user}: rol inválido (admin, analyst o viewer)` }
+    if (!isRole(role)) return fail(`cuenta ${user}: rol inválido (admin, analyst o viewer)`)
     const parts = typeof entry.password === 'string' ? entry.password.split('$') : []
     const iterations = Number(parts[1])
     const salt = parts[2] ? b64url(parts[2]) : null
     const hash = parts[3] ? b64url(parts[3]) : null
     if (parts.length !== 4 || parts[0] !== 'pbkdf2-sha256' || !Number.isInteger(iterations) || iterations < MIN_ITERATIONS || iterations > MAX_ITERATIONS || !salt || salt.length < 16 || !hash || hash.length !== 32) {
-      return { accounts: [], error: `cuenta ${user}: contraseña con formato inválido (genera la entrada con scripts/console-user.mjs)` }
+      return fail(`cuenta ${user}: contraseña con formato inválido (genera la entrada con scripts/console-user.mjs)`)
     }
-    accounts.push({ user, role, iterations, salt, hash })
+    let totp: string | null = null
+    if (entry.totp !== undefined && entry.totp !== null) {
+      const key = typeof entry.totp === 'string' ? base32Decode(entry.totp) : null
+      if (!key || key.length < 16 || key.length > 64) return fail(`cuenta ${user}: secreto de verificación en dos pasos inválido`)
+      totp = (entry.totp as string).replace(/[\s=]/g, '').toUpperCase()
+    }
+    const recovery = entry.recovery ?? []
+    if (!Array.isArray(recovery) || recovery.length > MAX_RECOVERY || !recovery.every((h) => typeof h === 'string' && RECOVERY_HASH_RE.test(h))) {
+      return fail(`cuenta ${user}: códigos de recuperación inválidos`)
+    }
+    accounts.push({ user, role, iterations, salt, hash, totp, recovery: recovery as string[] })
   }
-  return { accounts }
+  return { accounts, mfaRequired: (required as Role[] | undefined) ?? [] }
 }
 
-let cached: { signature: string; accounts: Account[]; error?: string } | null = null
+let cached: (Parsed & { signature: string }) | null = null
 
 // loadAccounts re-reads the file when its size or mtime changed.
-export function loadAccounts(): { accounts: Account[]; error?: string; signature: string } {
+export function loadAccounts(): Parsed & { signature: string } {
   const file = usersFile()
-  if (!file) return { accounts: [], signature: '' }
+  if (!file) return { accounts: [], mfaRequired: [], signature: '' }
+  const fail = (error: string, signature: string) => ({ accounts: [], mfaRequired: [], error, signature })
   let signature: string
   try {
     const st = statSync(/*turbopackIgnore: true*/ file)
-    if (st.size > MAX_FILE_BYTES) return { accounts: [], error: 'el fichero de usuarios es demasiado grande', signature: 'big' }
+    if (st.size > MAX_FILE_BYTES) return fail('el fichero de usuarios es demasiado grande', 'big')
     signature = `${st.size}:${st.mtimeMs}`
   } catch {
-    return { accounts: [], error: 'no se puede leer el fichero de usuarios', signature: 'missing' }
+    return fail('no se puede leer el fichero de usuarios', 'missing')
   }
   if (cached?.signature === signature) return cached
   let text: string
   try {
     text = readFileSync(/*turbopackIgnore: true*/ file, 'utf8')
   } catch {
-    return { accounts: [], error: 'no se puede leer el fichero de usuarios', signature: 'unreadable' }
+    return fail('no se puede leer el fichero de usuarios', 'unreadable')
   }
   const parsed = parseUsers(text)
   cached = { signature, ...parsed }
@@ -197,7 +240,22 @@ export async function verifyAccount(user: string, password: string, now = Date.n
   return { name: account.user, role: account.role, mode: 'users' }
 }
 
+// findAccount returns the account as the users file holds it now.
+export function findAccount(user: string): Account | null {
+  const { accounts, error } = loadAccounts()
+  if (error) return null
+  return accounts.find((a) => a.user.toLowerCase() === user.trim().toLowerCase()) ?? null
+}
+
+// mfaRequiredFor tells whether the file asks this role for a second step.
+export function mfaRequiredFor(role: Role): boolean {
+  const { mfaRequired, error } = loadAccounts()
+  return !error && mfaRequired.includes(role)
+}
+
 // accountPrincipal checks Basic credentials against the users file.
+// Basic carries no second factor: an account that has two-step sign-in,
+// or whose role requires it, cannot use it.
 export async function accountPrincipal(header: string | null, now = Date.now()): Promise<Principal | null> {
   const creds = basicCredentials(header)
   if (!creds || !header) return null
@@ -206,23 +264,60 @@ export async function accountPrincipal(header: string | null, now = Date.now()):
   if (hit && hit.until > now) return hit.principal
   const principal = await verifyAccount(creds.user, creds.password, now)
   if (!principal) return null
+  if (findAccount(principal.name)?.totp || mfaRequiredFor(principal.role)) return null
   if (verified.size >= MAX_VERIFIED) verified.clear()
   verified.set(digest, { principal, until: now + VERIFIED_TTL_MS })
   return principal
 }
 
 // accountStamp fingerprints an account as the users file holds it now
-// (role and password hash), or null when it is gone or the file is
-// broken. A session remembers the stamp it was opened with: changing
-// the password or the role, or removing the account, ends it.
+// (role, password hash and two-step secret), or null when it is gone or
+// the file is broken. A session remembers the stamp it was opened with:
+// changing the password, the role or the authenticator, or removing the
+// account, ends it. Spending a recovery code does not. Neither does a
+// new mfa_required for an account that already has the second step;
+// one that has not loses its sessions and enrolls at the next sign-in.
 export async function accountStamp(user: string): Promise<string | null> {
-  const { accounts, error } = loadAccounts()
-  if (error) return null
-  const account = accounts.find((a) => a.user.toLowerCase() === user.toLowerCase())
+  const account = findAccount(user)
   if (!account) return null
-  const material = new Uint8Array([...new TextEncoder().encode(account.role + '\n'), ...account.hash])
+  const second = account.totp ?? (mfaRequiredFor(account.role) ? 'required' : '')
+  const encoder = new TextEncoder()
+  const material = new Uint8Array([...encoder.encode(account.role + '\n'), ...account.hash, ...encoder.encode('\n' + second)])
   const d = new Uint8Array(await crypto.subtle.digest('SHA-256', material))
   return Array.from(d, (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+// updateAccount rewrites one account of the users file (the two-step
+// sign-in fields), keeping every other field and account as they are.
+// The result must parse before it replaces the file, in one rename, so
+// an edit never leaves the console locked by a half-written file.
+// Returns an error message, or null when the file was written.
+export function updateAccount(user: string, edit: (entry: Record<string, unknown>) => void): string | null {
+  const file = usersFile()
+  if (!file) return 'no hay fichero de cuentas'
+  let doc: unknown
+  try {
+    doc = JSON.parse(readFileSync(/*turbopackIgnore: true*/ file, 'utf8').replace(/^\uFEFF/, ''))
+  } catch {
+    return 'no se puede leer el fichero de cuentas'
+  }
+  const root = (Array.isArray(doc) ? { users: doc } : doc) as Record<string, unknown> | null
+  const list = root?.users
+  if (!root || !Array.isArray(list)) return 'el fichero de cuentas no tiene la forma {"users": [...]}'
+  const entry = list.find((e) => typeof e?.user === 'string' && e.user.trim().toLowerCase() === user.trim().toLowerCase())
+  if (!entry || typeof entry !== 'object') return `no hay ninguna cuenta ${user}`
+  edit(entry as Record<string, unknown>)
+  const text = JSON.stringify(root, null, 2) + '\n'
+  if (parseUsers(text).error) return 'el cambio dejaría el fichero de cuentas inválido'
+  const tmp = `${file}.${process.pid}.tmp`
+  try {
+    writeFileSync(/*turbopackIgnore: true*/ tmp, text, { mode: 0o600 })
+    renameSync(/*turbopackIgnore: true*/ tmp, /*turbopackIgnore: true*/ file)
+  } catch {
+    return 'no se puede escribir el fichero de cuentas'
+  }
+  cached = null
+  return null
 }
 
 // ---- attribution and audit ---------------------------------------------------------------
