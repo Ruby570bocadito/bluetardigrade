@@ -79,6 +79,19 @@ export function prependLive<T extends { timestamp: string }>(
     : mergeNewest([item], previous, key, limit)
 }
 
+// Batch form of prependLive: one merge (and one React update) for every
+// frame that arrived since the last flush. A sensor draining its backlog
+// after an engine outage delivers hundreds of events per second; merging
+// them one by one re-sorted the buffer and re-rendered every view per
+// frame. Same contract: already-known keys keep the existing entry.
+export function prependLiveBatch<T extends { timestamp: string }>(
+  items: readonly T[], previous: T[], key: (item: T) => string, limit: number,
+): T[] {
+  const known = new Set(previous.map(key))
+  const fresh = items.filter((item) => !known.has(key(item)))
+  return fresh.length === 0 ? previous : mergeNewest(fresh, previous, key, limit)
+}
+
 export function engineDisplayEndpoint(base: string): string {
   if (base.startsWith('/')) return 'proxy local · ' + base
   try {

@@ -11,7 +11,7 @@ import { severityOf } from '@/lib/console-types'
 import { applyAlertLifecycle } from '@/lib/alert-search'
 import {
   alertKey, engineApiBase, engineDisplayEndpoint, mapAlert, mergeNewest, prependLive,
-  readEngineJson, readOptionalEngineJson, settledBatch,
+  prependLiveBatch, readEngineJson, readOptionalEngineJson, settledBatch,
 } from '@/lib/engine-client'
 
 export type EngineStatus = 'connecting' | 'live' | 'down'
@@ -42,6 +42,12 @@ const STATS_POLL_MS = 2000
 const REBOOT_DELAY_MS = 3000
 const MAX_EVENTS = 300
 const MAX_ALERTS = 128
+// Event frames are applied in batches: a sensor draining its backlog
+// after an engine outage (in-memory queue + disk spool) delivers
+// hundreds of events per second, and one React update per frame
+// re-rendered every view (feed, host tree, graph) at that rate. Alerts
+// stay per-frame: they are rare and the triage overlay applies to them.
+const EVENT_FLUSH_MS = 500
 
 function mapRule(raw: Record<string, unknown>): RuleMeta {
   const tags = Array.isArray(raw.tags) ? (raw.tags as string[]) : []
@@ -107,6 +113,8 @@ export function useEngineStream(): EngineState {
     let retryTimer: ReturnType<typeof setTimeout> | null = null
     let es: EventSource | null = null
     let syncPending: Promise<boolean> | null = null
+    let liveEvents: SfEvent[] = []
+    let flushTimer: ReturnType<typeof setTimeout> | null = null
     let syncEvents: SfEvent[] = []
     let syncAlerts: SfAlert[] = []
     let syncLifecycle: SfAlertLifecycle[] = []
@@ -118,7 +126,29 @@ export function useEngineStream(): EngineState {
     const getJson = <T,>(path: string) => readEngineJson<T>(base, path, ctrl.signal)
     const optional = <T,>(path: string) => readOptionalEngineJson<T>(base, path, ctrl.signal)
 
+    function dropLiveEvents() {
+      liveEvents = []
+      if (flushTimer) clearTimeout(flushTimer)
+      flushTimer = null
+    }
+
+    function flushLiveEvents() {
+      flushTimer = null
+      const batch = liveEvents
+      liveEvents = []
+      if (disposed || offline || batch.length === 0) return
+      setEvents((prev) => prependLiveBatch(batch, prev, (e) => e.id, MAX_EVENTS))
+    }
+
+    function queueLiveEvent(ev: SfEvent) {
+      liveEvents.push(ev)
+      // only the newest MAX_EVENTS can survive the merge anyway
+      if (liveEvents.length > MAX_EVENTS) liveEvents = liveEvents.slice(-MAX_EVENTS)
+      if (!flushTimer) flushTimer = setTimeout(flushLiveEvents, EVENT_FLUSH_MS)
+    }
+
     function clearTelemetry() {
+      dropLiveEvents()
       setStats(null)
       setLifecycleUpdates([])
       setEvents([])
@@ -248,7 +278,7 @@ export function useEngineStream(): EngineState {
           const ev = JSON.parse(frame.data) as SfEvent
           if (!ev || typeof ev.id !== 'string' || typeof ev.timestamp !== 'string') return
           if (syncPending) syncEvents = [ev, ...syncEvents].slice(0, MAX_EVENTS)
-          if (!offline) setEvents((prev) => prependLive(ev, prev, (e) => e.id, MAX_EVENTS))
+          if (!offline) queueLiveEvent(ev)
         } catch { /* malformed frame */ }
       })
       es.addEventListener('alert', (frame: MessageEvent<string>) => {
@@ -300,6 +330,7 @@ export function useEngineStream(): EngineState {
       triageDuringSync.current = null
       ctrl.abort()
       es?.close()
+      dropLiveEvents()
       if (pollTimer) clearTimeout(pollTimer)
       if (retryTimer) clearTimeout(retryTimer)
     }

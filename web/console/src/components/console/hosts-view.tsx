@@ -285,7 +285,7 @@ function HostPage({ row, onHunt, onOpenAlert, onOpenIncident }: {
           ) : (
             <div className="space-y-2">
               <GraphLegend graph={graph} />
-              <EntityGraphView graph={graph} height={360} ariaLabel={`Grafo del equipo ${row.host}`} />
+              <EntityGraphView graph={graph} height={360} ariaLabel={`Grafo del equipo ${row.host}`} live />
             </div>
           )}
         </ChartCard>

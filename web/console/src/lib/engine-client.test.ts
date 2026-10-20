@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import {
-  alertKey, engineDisplayEndpoint, mergeNewest, prependLive,
+  alertKey, engineDisplayEndpoint, mergeNewest, prependLive, prependLiveBatch,
   readEngineJson, readOptionalEngineJson, settledBatch,
 } from './engine-client'
 
@@ -24,6 +24,13 @@ describe('engine snapshots and SSE replay', () => {
     const merged = prependLive(alert('same', 1), previous, alertKey, 128)
     expect(merged).toBe(previous)
     expect(merged[0].status).toBe('closed')
+  })
+  test('a batch of live frames merges once and keeps existing entries', () => {
+    const previous = [alert('same', 1, 'closed'), alert('old', 0)]
+    const merged = prependLiveBatch([alert('b', 3), alert('same', 1), alert('a', 2), alert('b', 3)], previous, alertKey, 3)
+    expect(merged.map((a) => a.id)).toEqual(['b', 'a', 'same'])
+    expect(merged.find((a) => a.id === 'same')?.status).toBe('closed')
+    expect(prependLiveBatch([alert('same', 1)], previous, alertKey, 3)).toBe(previous)
   })
   test('deduplicates snapshots and caps the retained window', () => {
     const merged = mergeNewest([alert('same', 3, 'acknowledged')], [alert('same', 3), alert('two', 2), alert('one', 1)], alertKey, 2)
