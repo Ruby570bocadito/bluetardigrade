@@ -17,14 +17,15 @@ From any PowerShell window, no admin account and no prior download required:
 irm https://raw.githubusercontent.com/Ruby570bocadito/bluetardigrade/main/install.ps1 | iex
 ```
 
-The installer downloads the repository, provisions portable Go, Node and Bun under your user profile, builds the engine and the web console, and puts six commands on your PATH:
+The installer downloads the repository, provisions portable Go, Node and Bun under your user profile, builds the engine and the web console, and puts its commands on your PATH (the everyday ones below):
 
 | Command         | What it does                                   |
 |-----------------|------------------------------------------------|
+| `sf-start`      | starts engine, console, hub and the ETW sensor service; `sf-stop` stops them (sensor first, so it delivers its queue), `sf-stop -KeepSensor` keeps it capturing, `sf-status` shows the state |
 | `sf-engine`     | detection engine, prints alerts live           |
 | `sf-sensor`     | streams REAL host telemetry through the engine via Sysmon (`-SetupSysmon` installs it in one command) |
 | `sf-collector`  | imports observed IDS/NDR/osquery/honeypot/firewall logs and offline EML |
-| `sf-console`    | starts the web console and opens the browser   |
+| `sf-console`    | starts engine, hub and web console (no sensor) and opens the browser |
 | `sf-update`     | updates the code and rebuilds                  |
 | `sf-uninstall`  | removes everything                             |
 

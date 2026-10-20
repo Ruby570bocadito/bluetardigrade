@@ -42,8 +42,9 @@ PR pequeño por punto, con el CI en verde antes de fusionar.
 - Instalador silencioso: resumen por pasos, log completo a fichero,
   `-Verbose` para verlo todo. Cierre: una pantalla de salida sin ruido de
   bun/next.
-- Acciones de alerta en la consola: cierre en lote, asignar, comentar y
-  crear incidente desde una selección.
+- Acciones en lote: ya existían (reconocer, cerrar y reabrir con nota común,
+  añadir a incidente, suprimir, exportar y analizar la selección). Asignar
+  alertas a un responsable necesita un campo nuevo en el motor y pasa a F3.
 
 **F2 — Acceso**
 
@@ -57,6 +58,8 @@ PR pequeño por punto, con el CI en verde antes de fusionar.
 
 **F3 — Funciones**
 
+- Asignar alertas a un responsable (campo en el ciclo de vida del motor,
+  filtro "mías" y asignación en lote desde la barra de selección).
 - Respuesta activa ampliable, opt-in al instalar: aislar equipo, cuarentena
   de fichero, suspender proceso; cada acción auditada como `kill_process`.
 - YARA: escaneo en el sensor Rust (`yara-x`), reglas guardadas y

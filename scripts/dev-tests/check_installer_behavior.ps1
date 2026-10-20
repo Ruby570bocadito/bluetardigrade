@@ -199,6 +199,13 @@ try {
         & (Join-Path $installed 'install.ps1') -SourceReady -InstallDir $installed
         Assert (Test-Path (Join-Path $installed 'web\console\.next\BUILD_ID')) 'Windows Next build did not complete.'
         Assert (Test-Path (Join-Path $installed 'bin\sf-console.cmd')) 'Console command was not installed.'
+        Assert (Test-Path (Join-Path $installed 'scripts\sf-stack.ps1')) 'Stack launcher was not copied.'
+        foreach ($pair in @(@('sf-start.cmd', '-Start'), @('sf-stop.cmd', '-Stop'), @('sf-status.cmd', '-Status'))) {
+            $shim = Join-Path $installed ('bin\' + $pair[0])
+            Assert (Test-Path $shim) "$($pair[0]) was not installed."
+            $body = Get-Content $shim -Raw
+            Assert ($body -match 'sf-stack\.ps1' -and $body -match [regex]::Escape($pair[1])) "$($pair[0]) does not run sf-stack.ps1 $($pair[1])."
+        }
         $update = Get-Content (Join-Path $installed 'bin\sf-update.cmd') -Raw
         Assert ($update -notmatch '-NoConsole') 'Updater incorrectly retained an excluded console.'
         Assert ($update -match '-Repo' -and $update -match '-Branch') 'Updater lost source selection.'

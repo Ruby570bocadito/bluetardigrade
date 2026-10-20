@@ -131,8 +131,12 @@ these commands on your `PATH`:
 
 | Command | What it does |
 |---|---|
+| `sf-start` | Starts everything: engine, console and the ETW sensor service |
+| `sf-stop` | Stops everything (`-KeepSensor` keeps the sensor capturing) |
+| `sf-status` | Shows what is running |
 | `sf-engine` | The detection engine |
-| `sf-console` | Engine + console |
+| `sf-console` | Engine + console, without the sensor |
+| `sf-etw` | Installs and manages the ETW sensor service |
 | `sf-sensor` | Sysmon sensor |
 | `sf-collector` | Log and mail importer |
 | `sf-update` | Updates the install |
@@ -144,22 +148,23 @@ these commands on your `PATH`:
 sf-engine version
 ```
 
-**3. Start the engine and the console** (normal PowerShell). The browser opens
-at <http://localhost:3000>:
+**3. Install a sensor once**, choosing one of these:
+
+- **Rust ETW sensor** (needs the `-WithSensor` install): `sf-etw -Install`
+  registers it as a Windows service (one UAC prompt).
+- **Sysmon**: run `sf-sensor -SetupSysmon` once (UAC prompt), then `sf-sensor`.
+
+**4. Start everything** (normal PowerShell). The browser opens at
+<http://localhost:3000>; `sf-stop` stops it all again:
 
 ```powershell
-sf-console
+sf-start
 ```
 
-**4. Connect a sensor**, choosing one of these:
-
-- **Rust ETW sensor**, in an Administrator PowerShell:
-
-  ```powershell
-  & "$env:LOCALAPPDATA\bluetardigrade\bin\security-sensor.exe" --addr 127.0.0.1:7777 --spool "$env:LOCALAPPDATA\bluetardigrade\spool\sensor.ndjson"
-  ```
-
-- **Sysmon**: run `sf-sensor -SetupSysmon` once (UAC prompt), then `sf-sensor`.
+Starting or stopping the sensor service shows a UAC prompt, and only when
+its state has to change. `sf-stop -KeepSensor` leaves the sensor capturing
+while the engine is off: it queues what it sees and delivers it at the
+next `sf-start`.
 
 **5. Verify the pipeline** end to end:
 

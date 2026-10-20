@@ -78,7 +78,7 @@ En una terminal nueva conecta telemetría:
 ```powershell
 sf-sensor -SetupSysmon # instalación de Sysmon; pide elevación
 sf-sensor             # observa actividad del host
-sf-console            # cuando se compiló la consola
+sf-start              # motor, consola y servicio del sensor ETW; sf-stop lo para todo
 ```
 
 Comprueba primero eventos recibidos, fuente, timestamps y salud. Un equipo
