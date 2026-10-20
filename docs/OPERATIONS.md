@@ -691,7 +691,8 @@ gets in acts as administrator. That stays unchanged unless
   `node scripts/console-user.mjs --file <path> <user> <admin|analyst|viewer>`
   (or `--remove <user>`, `--reset-mfa <user>`,
   `--require-mfa <roles|none>`, each after `--file <path>`) from
-  `web/console`. A new password keeps the account's second step. It asks for
+  `web/console`. A new password keeps the account's second step and
+  cancels a pending forced change: whoever typed it chose it. It asks for
   the password (at least 12 characters, not echoed) and stores only its
   PBKDF2-SHA256 hash, replacing the file in one rename. Without `--file`
   it prints the entry instead. The console re-reads the file when it
@@ -714,6 +715,25 @@ gets in acts as administrator. That stays unchanged unless
   malformed locks the console instead of opening it, and the sign-in
   page says why. Put TLS in front when the console leaves the machine;
   behind it the console sends HSTS.
+- Accounts from the console: administrators manage them in **Ajustes →
+  Cuentas**. They can create an account, change its role, disable or
+  enable it, reset its password, remove its second step or delete it.
+  A new account or a reset gets a temporary password, shown once to the
+  administrator. Its owner must choose their own at the next sign-in,
+  after the second step if the account has one, before any session
+  opens. A reset keeps the account's second step. Disabling an account,
+  or changing its role or password, ends its open sessions; a disabled
+  account answers like a wrong password. Two rules keep the console
+  reachable: an administrator does not change their own account there
+  (their own password and second step have their pages, and the
+  terminal covers the rest), and no change may leave the console
+  without an enabled administrator. Every action, allowed or refused, is
+  audited with the account it targeted. In the file these are the
+  per-account fields `"disabled": true` and `"must_change": true`.
+  Anyone signed in with an account can change their own password from
+  the session panel (**Cambiar contraseña**: the current one, then the
+  new one twice). It must have at least 12 characters and differ from
+  the current one; their other sessions end and this one carries on.
 - Two-step sign-in (TOTP, optional per account): in the session panel,
   **Verificación en dos pasos → Activar** shows a QR code, and the key
   typed out, for any authenticator app (RFC 6238: 6 digits, 30 seconds).

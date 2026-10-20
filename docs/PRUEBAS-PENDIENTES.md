@@ -242,7 +242,7 @@ se deja como estaba.
   Remove-Item "$env:LOCALAPPDATA\bluetardigrade\tools\config\baseline.learn"; sf-console -Stop; sf-console
   ```
 
-## 7. Inicio de sesión, verificación en dos pasos, cuentas y roles
+## 7. Inicio de sesión, verificación en dos pasos, cuentas y roles (también desde la consola)
 
 Sin cuentas, la consola abre sin pedir nada a quien use el equipo. Con cuentas, pide iniciar
 sesión y queda registrado quién hace cada cosa.
@@ -290,6 +290,16 @@ sesión y queda registrado quién hace cada cosa.
   activarla. Para quitarla: `sf-console -ResetMfa luis` y `sf-console -RequireMfa none`.
 - [ ] **[normal]** `sf-engine doctor` dice «verificacion en dos pasos: 1 de 2» (o los que hayas
   activado).
+- [ ] Cuentas desde la consola. Entra como el administrador y abre Ajustes → Cuentas.
+  - Crea la cuenta `marta` con rol Lector. Copia la contraseña temporal que aparece.
+  - En otra ventana de incógnito entra como `marta` con esa contraseña: pide «Elige tu
+    contraseña» y no entra hasta guardarla. Después entra con la suya.
+  - Desde el administrador: cambia el rol de `marta` a Analista, deshabilítala (su ventana
+    vuelve al formulario y no puede entrar), habilítala, restablece su contraseña y elimínala.
+  - En tu propia fila no hay botones. En la auditoría del chip de sesión aparece cada acción
+    con la cuenta afectada.
+- [ ] En el chip de sesión, «Cambiar contraseña»: con la actual mal dice «La contraseña actual no
+  es correcta»; con todo bien dice «Contraseña cambiada» y sigues dentro.
 - [ ] **[normal]** `sf-console -RemoveUser luis`. Debe decir «cuenta luis eliminada».
 - [ ] **[normal]** Para volver a la consola sin cuentas, borra el fichero, evita que `sf-start`
   vuelva a preguntar y reinicia:
