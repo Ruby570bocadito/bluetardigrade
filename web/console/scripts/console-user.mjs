@@ -5,13 +5,19 @@
 //       prints one account entry, to paste into the "users" list
 //   node scripts/console-user.mjs --file <path> <user> <admin|analyst|viewer>
 //       creates the account in the file (and the file), or replaces the
-//       password and role of an existing one
+//       password and role of an existing one (its two-step sign-in stays)
 //   node scripts/console-user.mjs --file <path> --remove <user>
+//   node scripts/console-user.mjs --file <path> --reset-mfa <user>
+//       removes the account's two-step sign-in (a lost phone); with a
+//       role that requires it, the next sign-in enrolls again
+//   node scripts/console-user.mjs --file <path> --require-mfa <roles|none>
+//       roles that must use two-step sign-in, e.g. admin,analyst
 //
 // The password is read from the terminal (or from stdin when piped) and
 // only its PBKDF2-SHA256 hash is stored. The console re-reads the file
-// on its own; changing a password or a role, or removing an account,
-// ends that account's open sessions.
+// on its own; changing a password, a role or the two-step sign-in, or
+// removing an account, ends that account's open sessions. Account names
+// compare without case, as in the console.
 
 import { pbkdf2Sync, randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -25,6 +31,8 @@ const USAGE = [
   'uso: node scripts/console-user.mjs <usuario> <admin|analyst|viewer>',
   '     node scripts/console-user.mjs --file <ruta> <usuario> <admin|analyst|viewer>',
   '     node scripts/console-user.mjs --file <ruta> --remove <usuario>',
+  '     node scripts/console-user.mjs --file <ruta> --reset-mfa <usuario>',
+  '     node scripts/console-user.mjs --file <ruta> --require-mfa <admin,analyst,viewer|none>',
 ].join('\n')
 
 function usage() {
@@ -39,10 +47,16 @@ if (args[0] === '--file') {
   args.splice(0, 2)
   if (!file) usage()
 }
-const remove = args[0] === '--remove'
-if (remove) args.shift()
+const command = ['--remove', '--reset-mfa', '--require-mfa'].includes(args[0]) ? args.shift() : 'set'
+if (command !== 'set' && (!file || args.length !== 1)) usage()
 const [user, role] = args
-if (!user || !USER_RE.test(user) || (remove ? !file || role !== undefined : !ROLES.includes(role))) usage()
+let required = []
+if (command === '--require-mfa') {
+  required = user === 'none' ? [] : user.split(',').map((r) => r.trim())
+  if (!required.length && user !== 'none') usage()
+  if (!required.every((r) => ROLES.includes(r))) usage()
+} else if (!user || !USER_RE.test(user) || (command === 'set' && !ROLES.includes(role))) usage()
+const same = (u) => typeof u?.user === 'string' && u.user.trim().toLowerCase() === user.toLowerCase()
 
 async function readPassword() {
   const tty = Boolean(process.stdin.isTTY)
@@ -87,45 +101,69 @@ function entryFor(password) {
   return { user, role, password: `pbkdf2-sha256$${ITERATIONS}$${b64url(salt)}$${b64url(hash)}` }
 }
 
-// readUsers refuses a file it cannot parse rather than overwriting it:
-// it may hold accounts the operator wants to keep.
-function readUsers() {
-  if (!existsSync(file)) return []
-  const doc = JSON.parse(readFileSync(file, 'utf8').replace(/^﻿/, ''))
+// readDoc refuses a file it cannot parse rather than overwriting it: it
+// may hold accounts the operator wants to keep. Every other field (the
+// two-step secrets, mfa_required) is written back as it was.
+function readDoc() {
+  if (!existsSync(file)) return { users: [] }
+  const doc = JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, ''))
+  if (Array.isArray(doc)) return { users: doc }
   if (!doc || !Array.isArray(doc.users)) throw new Error(`${file} no tiene la forma {"users": [...]}; corrígelo a mano`)
-  return doc.users
+  return doc
 }
 
-// writeUsers replaces the file in one rename, so the console never
-// reads it half written (and a missing file never locks it).
-function writeUsers(users) {
+// writeDoc replaces the file in one rename, so the console never reads
+// it half written (and a missing file never locks it).
+function writeDoc(doc) {
   mkdirSync(dirname(file), { recursive: true })
   const tmp = `${file}.${process.pid}.tmp`
-  writeFileSync(tmp, JSON.stringify({ users }, null, 2) + '\n', { mode: 0o600 })
+  writeFileSync(tmp, JSON.stringify(doc, null, 2) + '\n', { mode: 0o600 })
   renameSync(tmp, file)
 }
 
 try {
   if (!file) {
     console.log(JSON.stringify(entryFor(await readPassword())))
-  } else if (remove) {
-    const users = readUsers()
-    const kept = users.filter((u) => u?.user !== user)
-    if (kept.length === users.length) throw new Error(`no hay ninguna cuenta ${user}`)
+  } else if (command === '--remove') {
+    const doc = readDoc()
+    const gone = doc.users.find(same)
+    if (!gone) throw new Error(`no hay ninguna cuenta ${user}`)
+    const kept = doc.users.filter((u) => !same(u))
     // an empty file locks the console (users.ts): going back to a console
     // without accounts is deleting the file, a step of its own
-    if (kept.length === 0) throw new Error(`${user} es la última cuenta; para volver a la consola sin cuentas borra ${file} y reinicia la consola`)
+    if (kept.length === 0) throw new Error(`${gone.user} es la última cuenta; para volver a la consola sin cuentas borra ${file} y reinicia la consola`)
     if (!kept.some((u) => u?.role === 'admin')) console.error('aviso: no queda ninguna cuenta admin (la respuesta activa y la auditoría solo las ve un admin)')
-    writeUsers(kept)
-    console.error(`cuenta ${user} eliminada; sus sesiones abiertas terminan`)
+    writeDoc({ ...doc, users: kept })
+    console.error(`cuenta ${gone.user} eliminada; sus sesiones abiertas terminan`)
+  } else if (command === '--reset-mfa') {
+    const doc = readDoc()
+    const account = doc.users.find(same)
+    if (!account) throw new Error(`no hay ninguna cuenta ${user}`)
+    if (!account.totp) throw new Error(`${account.user} no tiene verificación en dos pasos`)
+    delete account.totp
+    delete account.recovery
+    writeDoc(doc)
+    const enrolls = (doc.mfa_required ?? []).includes(account.role)
+    console.error(`verificación en dos pasos de ${account.user} quitada; sus sesiones abiertas terminan${enrolls ? ' y al entrar la configurará de nuevo' : ''}`)
+  } else if (command === '--require-mfa') {
+    const doc = readDoc()
+    if (doc.users.length === 0) throw new Error(`${file} no tiene cuentas`)
+    if (required.length) doc.mfa_required = [...new Set(required)]
+    else delete doc.mfa_required
+    writeDoc(doc)
+    const pending = doc.users.filter((u) => required.includes(u?.role) && !u.totp).map((u) => u.user)
+    console.error(required.length
+      ? `verificación en dos pasos obligatoria para: ${required.join(', ')}${pending.length ? `; la configurarán al entrar: ${pending.join(', ')}` : ''}`
+      : 'verificación en dos pasos opcional para todos los roles')
   } else {
-    const users = readUsers()
+    const doc = readDoc()
     const entry = entryFor(await readPassword())
-    const at = users.findIndex((u) => u?.user === user)
-    if (at >= 0) users[at] = entry
-    else users.push(entry)
-    writeUsers(users)
-    console.error(at >= 0 ? `cuenta ${user} actualizada (${role}); sus sesiones abiertas terminan` : `cuenta ${user} creada (${role})`)
+    const at = doc.users.findIndex(same)
+    // a new password keeps the account's two-step sign-in
+    if (at >= 0) doc.users[at] = { ...doc.users[at], ...entry, user: doc.users[at].user }
+    else doc.users.push(entry)
+    writeDoc(doc)
+    console.error(at >= 0 ? `cuenta ${doc.users[at].user} actualizada (${role}); sus sesiones abiertas terminan` : `cuenta ${user} creada (${role})`)
   }
 } catch (err) {
   console.error(String(err?.message ?? err))
