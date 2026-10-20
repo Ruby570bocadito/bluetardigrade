@@ -53,6 +53,10 @@ function Get-SfEngineArguments {
     # the service account's password file).
     $ad = Join-Path $Root 'tools\config\ad.yaml'
     if (Test-Path -LiteralPath $ad) { $arguments += " -ad `"$ad`"" }
+    # Host groups (sites, departments, OUs): always armed, so the console
+    # can create the file from Ajustes -> Grupos; a missing file is an
+    # empty list, a broken one stops the engine (sf-engine doctor names it).
+    $arguments += " -host-groups `"$Root\tools\config\host-groups.yaml`""
     $operators = Join-Path $Root 'tools\config\respond-operators.yaml'
     if (Test-Path -LiteralPath $operators) {
         $arguments += " -allow-kill -respond-operators `"$operators`" -respond-audit `"$data\respond-audit.jsonl`""

@@ -1,0 +1,24 @@
+# Host groups (bluetardigrade engine, -host-groups). The console edits
+# this file in Ajustes -> Grupos; on Windows it lives in
+# tools\config\host-groups.yaml and the launcher always passes it.
+#
+# A machine belongs to a group when ANY criterion matches:
+#   hosts       host-name patterns, any case: * is any text, ? one
+#               character (the name the sensor reports, FQDN or short)
+#   ad_ou       an Active Directory OU: computers at it or under it
+#               (needs the -ad connector; matched by account or DNS name)
+#   identities  ingest credential names (sf-engine ingest-identity)
+#
+# Names: lower case, digits, - and _ (up to 32); console accounts are
+# scoped by them. A malformed file stops the engine (sf-engine doctor
+# names the problem); a missing one is simply "no groups".
+version: 1
+groups:
+  - name: madrid
+    label: Sede de Madrid
+    hosts: ["pc-mad-*", "srv-mad-??"]
+    ad_ou: ["OU=Madrid,DC=empresa,DC=local"]
+  - name: servidores
+    label: Servidores
+    hosts: ["srv-*"]
+    identities: ["servidores-dmz"]

@@ -377,6 +377,105 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Fleet'
+  /api/groups:
+    get:
+      tags: [status]
+      operationId: listHostGroups
+      summary: Host groups, their criteria and the inventory machines in each (read-only)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Host groups (`-host-groups <file.yaml>`) name sets of machines: a
+        host belongs to a group when its name matches one of the group's
+        patterns (`*`, `?`, any case), when the ingest identity that
+        delivers it is listed, or when its Active Directory computer
+        object sits at or under one of the listed OUs (needs the `-ad`
+        connector; matched on the account name or the DNS name). Groups
+        are what console accounts are scoped by. `members` lists the
+        machines of the inventory (`/api/fleet`) in each group and
+        `ungrouped` the ones in none. Without `-host-groups` the list is
+        empty and `enabled` false.
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '200':
+          description: Groups in file order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HostGroups'
+  /api/settings/groups:
+    put:
+      tags: [status]
+      operationId: putHostGroups
+      summary: Replace every host group (console editor)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The body is the whole new list. It is validated strictly (names
+        `[a-z0-9][a-z0-9_-]{0,31}` and unique, well-formed patterns, DNs
+        with `=`, no unknown fields, at most 64 groups) before the file is
+        replaced in one rename (mode 0600). Criteria come back normalized:
+        trimmed, lowercased, deduplicated. 403 without `-api-write`, 501
+        without `-host-groups`, 409 when the file changed on disk since
+        the engine loaded or last wrote it (hand edits are never
+        clobbered: restart the engine to load them). Every committed
+        change leaves one line in the engine log.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [groups]
+              additionalProperties: false
+              properties:
+                groups:
+                  type: array
+                  maxItems: 64
+                  items:
+                    $ref: '#/components/schemas/HostGroup'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          description: Invalid body or groups (the message names the group and the field)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: API writes are disabled (no -api-write at startup)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The file changed on disk since the engine loaded or wrote it
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '413':
+          description: Body over 256 KiB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '501':
+          description: Host groups are not armed (no -host-groups at startup)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: The groups as saved, with their members
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HostGroups'
   /api/enroll:
     get:
       tags: [status]
@@ -4387,6 +4486,71 @@ components:
         silent_since:
           type: string
           format: date-time
+        groups:
+          type: array
+          description: host groups the machine belongs to (`/api/groups`); absent when it is in none
+          items:
+            type: string
+    HostGroup:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9_-]{0,31}$'
+        label:
+          type: string
+          maxLength: 64
+        hosts:
+          type: array
+          description: host-name patterns (`*`, `?`, `[...]`), compared without case
+          items:
+            type: string
+            maxLength: 128
+        ad_ou:
+          type: array
+          description: distinguished names of OUs; a computer at or under one matches
+          items:
+            type: string
+            maxLength: 512
+        identities:
+          type: array
+          description: ingest identity names (credentials of the sensors)
+          items:
+            type: string
+            maxLength: 64
+    HostGroups:
+      type: object
+      required: [enabled, writable, ad, groups, ungrouped]
+      properties:
+        enabled:
+          type: boolean
+          description: false without -host-groups
+        writable:
+          type: boolean
+          description: false without -api-write
+        ad:
+          type: boolean
+          description: an Active Directory connector is armed, so OU criteria can match
+        groups:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/HostGroup'
+              - type: object
+                required: [members]
+                properties:
+                  members:
+                    type: array
+                    description: inventory machines in the group, sorted
+                    items:
+                      type: string
+        ungrouped:
+          type: array
+          description: inventory machines in no group, sorted
+          items:
+            type: string
     FleetSensor:
       type: object
       required: [interval_s, uptime_s, spooled, dropped, last_heartbeat]

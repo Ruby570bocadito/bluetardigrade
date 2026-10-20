@@ -92,6 +92,9 @@ type Host struct {
 	Identity      string     `json:"identity,omitempty"`
 	Sensor        *Sensor    `json:"sensor,omitempty"`
 	SilentSince   *time.Time `json:"silent_since,omitempty"`
+	// Groups are the host groups the machine belongs to. The tracker
+	// leaves them nil; the API fills them from -host-groups.
+	Groups []string `json:"groups,omitempty"`
 }
 
 type record struct {

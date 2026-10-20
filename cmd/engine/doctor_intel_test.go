@@ -182,3 +182,27 @@ func TestDoctorKnownSoftware(t *testing.T) {
 		t.Fatalf("entry without match keys: %+v", c)
 	}
 }
+
+func TestDoctorHostGroups(t *testing.T) {
+	root := t.TempDir()
+	if c := doctorHostGroups(root); c.Status != "skip" {
+		t.Fatalf("no file: %+v", c)
+	}
+	cfg := filepath.Join(root, "tools", "config")
+	if err := os.MkdirAll(cfg, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(cfg, "host-groups.yaml")
+	if err := os.WriteFile(path, []byte("version: 1\ngroups:\n  - name: madrid\n    hosts: [\"pc-mad-*\"]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c := doctorHostGroups(root); c.Status != "ok" || c.Detail != "1 grupo de equipos" {
+		t.Fatalf("valid: %+v", c)
+	}
+	if err := os.WriteFile(path, []byte("version: 1\ngroups:\n  - name: Madrid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c := doctorHostGroups(root); c.Status != "error" || !strings.Contains(c.Detail, "no arrancaria") || !strings.Contains(c.Detail, "Madrid") {
+		t.Fatalf("broken: %+v", c)
+	}
+}

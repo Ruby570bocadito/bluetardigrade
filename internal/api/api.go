@@ -31,6 +31,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/enroll"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/fleet"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/forensic"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/hostgroup"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/incident"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/intel"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/known"
@@ -170,6 +171,16 @@ type Hub struct {
 	// never shares live memory with handlers.
 	ad *ad.Connector
 
+	// host groups (host_groups.go): the -host-groups file ("" =
+	// disarmed), the validated set, the drift baseline of the file and
+	// the AD computer -> DN map OU criteria are matched with (cached).
+	// hostGroupsMu serializes the PUT's check-write-swap.
+	hostGroupsPath string
+	hostGroups     *hostgroup.Set
+	hostGroupsSum  [sha256.Size]byte
+	hostGroupsMu   sync.Mutex
+	computerDN     adDNCache
+
 	// known-software list (§2.2, read-only count in /api/stats): nil =
 	// off (no -known-software file or an empty one).
 	known *known.Manager
@@ -265,6 +276,8 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	mux.HandleFunc("GET /api/respond/audit", h.handleRespondAudit)
 	mux.HandleFunc("GET /api/sequences", h.handleSequences)
 	mux.HandleFunc("GET /api/fleet", h.handleFleet)
+	mux.HandleFunc("GET /api/groups", h.handleGroups)
+	mux.HandleFunc("PUT /api/settings/groups", h.handleGroupsPut)
 	h.registerEnroll(mux)
 	h.registerScenarios(mux)
 	h.registerReports(mux)

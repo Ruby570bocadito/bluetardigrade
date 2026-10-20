@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Ruby570bocadito/bluetardigrade/internal/hostgroup"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/ingest"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/intel"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/known"
@@ -61,7 +62,7 @@ func doctorIntelChecks(root string) []doctorCheck {
 		}
 	}
 
-	checks = append(checks, doctorConsoleUsers(root), doctorIdentities(root), doctorKnownSoftware(root))
+	checks = append(checks, doctorConsoleUsers(root), doctorHostGroups(root), doctorIdentities(root), doctorKnownSoftware(root))
 	return checks
 }
 
@@ -89,6 +90,27 @@ func doctorIdentities(root string) doctorCheck {
 		noun = "identidad de sensor valida"
 	}
 	return doctorCheck{name, "ok", fmt.Sprintf("%d %s; la ingesta escucha en la red", len(ids), noun), ""}
+}
+
+// doctorHostGroups validates the launcher's tools/config/host-groups.yaml
+// with the engine's own loader: the launcher always passes it, and a
+// malformed file stops the engine.
+func doctorHostGroups(root string) doctorCheck {
+	const name = "Grupos de equipos"
+	path := filepath.Join(root, "tools", "config", "host-groups.yaml")
+	if !fileExists(path) {
+		return doctorCheck{name, "skip", "Sin grupos de equipos: se crean en la consola, Ajustes -> Grupos", ""}
+	}
+	set, _, err := hostgroup.Load(path)
+	if err != nil {
+		return doctorCheck{name, "error", err.Error() + ": el motor no arrancaria", "Corrige " + path + " o borralo y vuelve a crear los grupos desde la consola"}
+	}
+	n := len(set.Names())
+	noun := "grupos"
+	if n == 1 {
+		noun = "grupo"
+	}
+	return doctorCheck{name, "ok", fmt.Sprintf("%d %s de equipos", n, noun), ""}
 }
 
 var consoleUserName = regexp.MustCompile(`^[\p{L}\p{N}._@-]{1,64}$`)
