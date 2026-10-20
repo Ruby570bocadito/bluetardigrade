@@ -105,6 +105,11 @@ func FuzzHTMLAttribute(f *testing.F) {
 	f.Add(`a='b' c="d"`, "c")
 	f.Add(`href="a\"b"`, "href")
 	f.Add("0\v=0", "0") // separator runes the oracle must treat as spaces
+	// The nightly fuzz found two oracle defects (not parser defects):
+	// an empty wanted name made strings.Index return 0 forever (hang),
+	// and ToLower missed EqualFold's simple folding ("ſ" folds to "s").
+	f.Add("a=b =c", "")
+	f.Add("ſ=x", "s")
 
 	f.Fuzz(func(t *testing.T, attrs, wanted string) {
 		got, ok := htmlAttribute(attrs, wanted)
@@ -115,25 +120,25 @@ func FuzzHTMLAttribute(f *testing.F) {
 		// actually present. Re-scan for the name: without an "=" the
 		// bare name alone must not satisfy the lookup, so the value
 		// can only be produced when some "=" follows the name.
-		// htmlAttribute matches names with EqualFold, so the scan is
-		// case-insensitive too.
-		needle := strings.ToLower(wanted)
+		// htmlAttribute matches names with strings.EqualFold, whose
+		// simple folding maps rune to rune: compare rune windows of the
+		// wanted name's length with the same EqualFold, one start rune
+		// at a time (an empty name still advances).
+		needle := []rune(wanted)
+		runes := []rune(attrs)
 		found := false
-		rest := strings.ToLower(attrs)
-		for len(rest) > 0 {
-			i := strings.Index(rest, needle)
-			if i < 0 {
+		for i := 0; i+len(needle) <= len(runes); i++ {
+			if !strings.EqualFold(string(runes[i:i+len(needle)]), wanted) {
+				continue
+			}
+			after := string(runes[i+len(needle):])
+			if caseFollows(after) {
+				continue
+			}
+			if strings.HasPrefix(strings.TrimLeftFunc(after, unicode.IsSpace), "=") {
+				found = true
 				break
 			}
-			after := rest[i+len(needle):]
-			if !caseFollows(after) {
-				trimmed := strings.TrimLeftFunc(after, unicode.IsSpace)
-				if strings.HasPrefix(trimmed, "=") {
-					found = true
-					break
-				}
-			}
-			rest = rest[i+len(needle):]
 		}
 		if !found {
 			t.Fatalf("htmlAttribute(%q, %q) returned %q without a name= occurrence", attrs, wanted, got)

@@ -69,7 +69,7 @@ if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') {
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
 $ProgressPreference = 'SilentlyContinue'   # makes Invoke-WebRequest usable on PS 5.1
 
-$GO_VERSION   = '1.26.8'
+$GO_VERSION   = '1.26.10'
 $NODE_VERSION = 'v22.23.3'
 $BUN_VERSION  = 'v1.4.2'
 $ENGINE_PORT  = 7777
@@ -285,7 +285,9 @@ function Ensure-Go {
     $portable = Join-Path $Tools 'go\bin\go.exe'
     if (Test-Path $portable) {
         $version = Get-ToolVersion -Executable $portable -Arguments @('version') -Pattern 'go version go(\d+\.\d+(?:\.\d+)?)'
-        if ($version -and $version -ge [version]'1.26.0') {
+        # go.mod pins the patch release (stdlib security fixes) and the
+        # build runs with GOTOOLCHAIN=local: an older Go cannot build it.
+        if ($version -and $version -ge [version]$GO_VERSION) {
             $env:Path = "$Tools\go\bin;" + $env:Path
             Write-Ok "Go $version (portable)"
             return
@@ -297,17 +299,21 @@ function Ensure-Go {
     if ($sys) {
         $v = Get-ToolVersion -Executable $sys.Source -Arguments @('version') -Pattern 'go version go(\d+\.\d+(?:\.\d+)?)'
         if ($v) {
-            if ($v -ge [version]'1.26.0') {
+            if ($v -ge [version]$GO_VERSION) {
                 Write-Ok "Go $v (system)"
                 return
             }
-            Write-Warn2 "system Go is $v (need 1.26+); installing a portable one"
+            Write-Warn2 "system Go is $v (need $GO_VERSION+); installing a portable one"
         }
     }
     Write-Step "Downloading Go $GO_VERSION (portable, ~105 MB)"
     $zip = Join-Path $Tools 'go.zip'
     Invoke-Download -Url "https://go.dev/dl/go$GO_VERSION.windows-amd64.zip" -OutFile $zip -ExpectedSha256 (Get-GoSha256)
     Write-Info "extracting..."
+    # replace, never overlay: extracting a new release over an older
+    # GOROOT leaves the old release's files mixed into the stdlib
+    # (same rule as the portable Node below)
+    if (Test-Path (Join-Path $Tools 'go')) { Remove-Item (Join-Path $Tools 'go') -Recurse -Force }
     Expand-Archive -Path $zip -DestinationPath $Tools -Force
     Remove-Item $zip -Force -ErrorAction SilentlyContinue
     $env:Path = "$Tools\go\bin;" + $env:Path
