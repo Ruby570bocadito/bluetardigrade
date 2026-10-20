@@ -288,6 +288,7 @@ jobs:
           node tools/console-tests/node_modules/playwright/cli.js install --with-deps chromium
           node scripts/dev-tests/check_console_browser.mjs
           node scripts/dev-tests/check_analyst_browser.mjs
+          node scripts/dev-tests/check_console_login_browser.mjs
       - name: browser regression captures (isolated fixtures)
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -148,7 +148,9 @@ describe('engine proxy boundary', () => {
       if (authorization) headers.authorization = authorization
       const res = await GET(new Request('http://127.0.0.1:3000/api/engine/api/alerts', { headers }))
       expect(res.status).toBe(401)
-      expect(res.headers.get('www-authenticate')).toContain('Basic')
+      // no Basic challenge: browsers sign in on /login, never the native prompt
+      expect(res.headers.get('www-authenticate')).toBeNull()
+      expect((await res.json()).hint).toContain('/login')
     }
     const post = await POST(new Request(triageUrl, { method: 'POST', body: JSON.stringify({ status: 'closed' }) }))
     expect(post.status).toBe(401)
@@ -210,6 +212,21 @@ describe('engine proxy boundary', () => {
       }),
     )
     expect(res.status).toBe(403)
+    expect(captured).toHaveLength(0)
+  })
+
+  test('an opaque origin (Origin: null from a sandboxed frame) is refused', async () => {
+    const { POST } = await loadRoute()
+    for (const site of ['cross-site', '']) {
+      const res = await POST(
+        new Request(triageUrl, {
+          method: 'POST',
+          headers: { origin: 'null', 'sec-fetch-site': site },
+          body: JSON.stringify({ status: 'closed' }),
+        }),
+      )
+      expect(res.status).toBe(403)
+    }
     expect(captured).toHaveLength(0)
   })
 

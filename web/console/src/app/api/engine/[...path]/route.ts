@@ -46,6 +46,7 @@
 //    (CONSOLE_ALLOW_UNAUTHENTICATED=1).
 
 import { accessToken, principalFor, unauthorizedResponse } from '@/lib/access'
+import { LOOPBACK_HOSTS, crossSiteContext, extraHosts, hostAllowed } from '@/lib/request-guard'
 import { ROLE_LABEL, attribute, audit, roleAtLeast, type Principal, type Role } from '@/lib/users'
 
 const ENGINE_URL = process.env.ENGINE_API_URL || 'http://127.0.0.1:7778'
@@ -85,25 +86,10 @@ function writeRoute(method: string, path: string): WriteRoute | undefined {
   return WRITES.find((route) => route.method === method && route.path.test(path))
 }
 
-// Loopback hostnames served by default; everything else must be
-// allowlisted explicitly via CONSOLE_ALLOWED_HOSTS.
-const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
-
 // Read per request (not at module load) so operators and tests can
 // toggle the environment without restarting the module graph.
 function apiToken(): string {
   return process.env.SF_API_TOKEN || ''
-}
-
-function extraHosts(): string[] {
-  return (process.env.CONSOLE_ALLOWED_HOSTS || '')
-    .split(',')
-    .map((h) => h.trim().toLowerCase())
-    .filter(Boolean)
-}
-
-function allowedHosts(): Set<string> {
-  return new Set([...LOOPBACK_HOSTS, ...extraHosts()])
 }
 
 // exposedWithoutCredentials: the operator allowed hosts beyond loopback
@@ -112,41 +98,6 @@ function allowedHosts(): Set<string> {
 function exposedWithoutCredentials(): boolean {
   const beyondLoopback = extraHosts().some((h) => !LOOPBACK_HOSTS.has(h))
   return beyondLoopback && !accessToken() && process.env.CONSOLE_ALLOW_UNAUTHENTICATED !== '1'
-}
-
-// hostAllowed checks the Host header (falling back to the request URL
-// host): hostname compared without port, IPv6 brackets and any trailing
-// dot normalized away, so `127.0.0.1:3000`, `LOCALHOST.` and
-// `[::1]:3000` all match the loopback set.
-function hostAllowed(request: Request): boolean {
-  const raw = request.headers.get('host') ?? new URL(request.url).host
-  // Parse the entire authority: splitting on ':' breaks [::1]:3000.
-  // Reject userinfo and delimiters instead of letting URL normalization
-  // turn an invalid Host into a trusted loopback hostname.
-  if (/[\s/@\\?#]/.test(raw)) return false
-  let hostname: string
-  try {
-    hostname = new URL('http://' + raw).hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
-  } catch {
-    return false
-  }
-  return allowedHosts().has(hostname)
-}
-
-// crossSiteContext reports whether the request carries browser evidence
-// of a cross-site sender. Headerless non-browser clients (curl, the
-// dev-tests smokes) carry neither header and stay allowed.
-function crossSiteContext(request: Request): boolean {
-  const origin = request.headers.get('origin')
-  if (origin) {
-    const host = request.headers.get('host') ?? new URL(request.url).host
-    try {
-      if (new URL(origin).host.toLowerCase() !== host.toLowerCase()) return true
-    } catch {
-      return true // malformed Origin: never forward on its behalf
-    }
-  }
-  return request.headers.get('sec-fetch-site') === 'cross-site'
 }
 
 export const dynamic = 'force-dynamic'

@@ -326,9 +326,12 @@ view, dark and light themes) — `make console-a11y`.
 - Access control. `bun run dev` / `bun run start` bind `127.0.0.1`.
   Host pinning stops DNS rebinding but not a non-browser client, which
   can send `Host: localhost` from anywhere it can reach the port; so a
-  console served to other machines needs `CONSOLE_ACCESS_TOKEN` (HTTP
-  Basic auth on every request, any user name, the token as password;
-  put TLS in front). Extra hosts without it are refused unless
+  console served to other machines needs `CONSOLE_ACCESS_TOKEN` or
+  per-analyst accounts (`CONSOLE_USERS_FILE`): browsers sign in at
+  `/login` and get a session cookie, scripts send HTTP Basic (any user
+  name, the token as password); put TLS in front. Accounts, sessions and
+  their limits: `docs/OPERATIONS.md`, "Console accounts, roles and
+  audit". Extra hosts without it are refused unless
   `CONSOLE_ALLOW_UNAUTHENTICATED=1` declares an authenticating front
   end. The analyst hub accepts sockets only with `HUB_ACCESS_TOKEN` when
   it is set (mandatory when the hub binds beyond loopback); the browser

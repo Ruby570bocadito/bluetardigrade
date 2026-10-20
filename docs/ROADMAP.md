@@ -142,10 +142,10 @@ esa evidencia.
 registro y red pero con la fricción de instalación. Falta el punto
 medio: ETW nativo ampliado.
 
-- **ETW de red y registro** — providers `Microsoft-Windows-Kernel-Network`
-  y `Registry`/`Sysmon`-equivalentes vía ETW puro (sin instalar nada).
-  Cierre: eventos `network.connect` y `registry.set` emitidos por el
-  sensor Rust en un host real, con el pipeline de reglas validándolos.
+- **ETW de red, registro y DNS: entregado** — el sensor Rust emite
+  `network.connect`, `registry.set` y las respuestas DNS por ETW puro, sin
+  instalar nada. Pendiente: el valor escrito en `registry.set` y la raíz `?`
+  del registro (ver TODO).
 - **Cert stream (firma de binarios)** — `Microsoft-Windows-Certificate`
   para validar firmantes de ejecutables. Cierre: campo `signer` en el
   evento + regla de binarios sin firmar desde rutas de sistema.

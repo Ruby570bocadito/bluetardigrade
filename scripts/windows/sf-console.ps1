@@ -5,6 +5,10 @@
 #   sf-console -Stop        stop both
 #   sf-console -Status      show what is running
 #   sf-console -ConsolePort 3000 -ServicePort 3003   (custom ports)
+#   sf-console -AddUser ana [-Role analyst]   create a console account
+#                           (default role admin), or reset its password
+#                           and role; the console then asks to sign in
+#   sf-console -RemoveUser ana                remove one
 # ======================================================================
 param(
     [switch]$Stop,
@@ -14,7 +18,12 @@ param(
     [int]$ServicePort = 3003,
     # how to stop what was started (sf-start passes 'sf-stop': it also
     # stops the ETW sensor service)
-    [string]$StopHint = 'sf-console -Stop'
+    [string]$StopHint = 'sf-console -Stop',
+    # console accounts, kept in tools\config\console-users.json
+    [string]$AddUser,
+    [ValidateSet('admin', 'analyst', 'viewer')]
+    [string]$Role = 'admin',
+    [string]$RemoveUser
 )
 
 # 'Continue' (the default the script used to override away): failures
@@ -40,6 +49,7 @@ $engineExe = Join-Path $root 'bin\sf-engine.exe'
 if (-not (Test-Path $engineExe)) { $engineExe = Join-Path $root 'bin\engine.exe' }
 if (-not (Test-Path $bunExe))  { $bunExe  = 'bun' }
 if (-not (Test-Path $nodeExe)) { $nodeExe = 'node' }
+$usersFile = Join-Path $tools 'config\console-users.json'
 
 function Test-PortLocal {
     param([int]$Port)
@@ -76,6 +86,32 @@ function Write-PidFile {
 
 function Stop-Tracked { Stop-SfTrackedProcesses -Root $root }
 
+function Write-SignInMode {
+    if (Test-Path -LiteralPath $usersFile) { Write-Host "  sign-in:  console accounts ($usersFile)" }
+    elseif ($env:CONSOLE_ACCESS_TOKEN) { Write-Host '  sign-in:  shared token (CONSOLE_ACCESS_TOKEN)' }
+    else { Write-Host '  sign-in:  none, anyone on this machine opens the console (add an account: sf-console -AddUser <name>)' }
+}
+
+if ($AddUser -or $RemoveUser) {
+    # the tool asks for the password (not echoed) and stores only its
+    # PBKDF2 hash; it writes the file in one rename, and the console
+    # re-reads it on its own
+    $userTool = Join-Path $web 'console\scripts\console-user.mjs'
+    if (-not (Test-Path -LiteralPath $userTool)) {
+        Write-Host '  [x] console sources not found; reinstall with sf-update' -ForegroundColor Red
+        return
+    }
+    $hadFile = Test-Path -LiteralPath $usersFile
+    if ($AddUser) { & $nodeExe $userTool --file $usersFile $AddUser $Role }
+    else { & $nodeExe $userTool --file $usersFile --remove $RemoveUser }
+    if ($LASTEXITCODE -ne 0) { return }
+    # a console started without the file never looks for it
+    if (-not $hadFile -and (Test-PortLocal $ConsolePort)) {
+        Write-Host '  the running console still opens without signing in; restart it to apply: sf-stop, then sf-start' -ForegroundColor Yellow
+    }
+    return
+}
+
 if ($Status) {
     $svcPid = Read-PidFile -Name 'console-service.pid'
     $appPid = Read-PidFile -Name 'console.pid'
@@ -95,6 +131,7 @@ if ($Status) {
     } else {
         Write-Host '  engine  :7777  not running (start it with sf-engine)'
     }
+    Write-SignInMode
     return
 }
 
@@ -160,7 +197,6 @@ if (-not (Test-PortLocal $ConsolePort)) {
     # $env changes outlive this script in the operator's PowerShell, so a
     # deleted accounts file must also clear the variable it set, or the
     # next start would point the console at a missing file (locked).
-    $usersFile = Join-Path $root 'tools\config\console-users.json'
     if (Test-Path -LiteralPath $usersFile) { $env:CONSOLE_USERS_FILE = $usersFile }
     elseif ($env:CONSOLE_USERS_FILE -eq $usersFile) { Remove-Item Env:CONSOLE_USERS_FILE -ErrorAction SilentlyContinue }
     New-Item -ItemType Directory -Path (Join-Path $root 'data') -Force | Out-Null
@@ -180,4 +216,5 @@ if (-not (Test-PortLocal $ConsolePort)) {
 
 if (-not $NoBrowser) { Start-Process "http://localhost:$ConsolePort" }
 Write-Host "  console:  http://localhost:$ConsolePort"
+Write-SignInMode
 Write-Host "  stop it:  $StopHint"

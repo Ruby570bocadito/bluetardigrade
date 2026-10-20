@@ -79,6 +79,7 @@ console-browser:
 	npm install --prefix tools/console-tests --no-audit --no-fund --ignore-scripts --no-save --no-package-lock playwright@1.63.0
 	node tools/console-tests/node_modules/playwright/cli.js install chromium
 	node scripts/dev-tests/check_console_browser.mjs
+	node scripts/dev-tests/check_console_login_browser.mjs
 
 # axe-core (WCAG 2.x) over every console view, dark and light themes, on
 # the production build with the same fixture approach. POL-8.
@@ -132,6 +133,7 @@ ci:
 	npm install --prefix tools/console-tests --no-audit --no-fund --ignore-scripts --no-save --no-package-lock playwright@1.63.0
 	node tools/console-tests/node_modules/playwright/cli.js install chromium
 	node scripts/dev-tests/check_console_browser.mjs
+	node scripts/dev-tests/check_console_login_browser.mjs
 	$(CARGO) check --locked --manifest-path sensor/Cargo.toml
 	rustup target add x86_64-pc-windows-msvc
 	$(CARGO) check --locked --target x86_64-pc-windows-msvc --manifest-path sensor/Cargo.toml

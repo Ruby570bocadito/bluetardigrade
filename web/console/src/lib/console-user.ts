@@ -16,7 +16,8 @@ export type ConsoleMe = {
 export type ConsoleAuditEntry = {
   at: string
   user: string
-  role: ConsoleRole
+  // '' for a rejected sign-in
+  role: ConsoleRole | ''
   mode: ConsoleMe['mode']
   method: string
   path: string
@@ -48,6 +49,8 @@ export function permissions(me: ConsoleMe): { label: string; allowed: boolean }[
 }
 
 const ACTIONS: [RegExp, string][] = [
+  [/^POST \/login$/, 'Inicio de sesión'],
+  [/^POST \/logout$/, 'Cierre de sesión'],
   [/^POST \/api\/alerts\/[0-9a-f]{16}\/status$/, 'Triaje de alerta'],
   [/^POST \/api\/incidents$/, 'Nuevo incidente'],
   [/^PATCH \/api\/incidents\/[0-9a-f]{16}$/, 'Cambio en incidente'],
@@ -65,6 +68,12 @@ export function describeAction(entry: Pick<ConsoleAuditEntry, 'method' | 'path'>
 }
 
 export const OUTCOME_TEXT: Record<ConsoleAuditEntry['outcome'], string> = { ok: 'Hecho', error: 'Error del motor', denied: 'Denegado por rol' }
+
+// outcomeText: a refused sign-in is a credential problem, not a role one.
+export function outcomeText(entry: Pick<ConsoleAuditEntry, 'outcome' | 'path'>): string {
+  if (entry.path === '/login' && entry.outcome === 'denied') return 'Credenciales rechazadas'
+  return OUTCOME_TEXT[entry.outcome] ?? entry.outcome
+}
 
 export async function fetchMe(): Promise<ConsoleMe | null> {
   try {

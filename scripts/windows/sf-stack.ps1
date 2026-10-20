@@ -15,6 +15,10 @@
 # Windows service: starting or stopping it needs administrator rights, so
 # those two steps show one UAC prompt (sf-etw relaunches itself elevated)
 # and are skipped when there is nothing to change.
+#
+# While the console has no accounts, sf-start offers to create the
+# administrator account (sf-console -AddUser) so the console asks to sign
+# in. Declining is remembered in tools\config\no-console-accounts.
 # ======================================================================
 param(
     [switch]$Start,
@@ -37,7 +41,40 @@ function Get-SfSensorService {
     return Get-Service $ServiceName -ErrorAction SilentlyContinue
 }
 
+# Only from an interactive sf-start: the logon autostart runs sf-console
+# hidden, where a question would wait forever.
+function Request-FirstAccount {
+    $root = Split-Path -Parent $PSScriptRoot
+    if (-not (Test-Path (Join-Path $root 'web'))) { $root = Split-Path -Parent $root }
+    $config = Join-Path $root 'tools\config'
+    $declined = Join-Path $config 'no-console-accounts'
+    if ((Test-Path -LiteralPath (Join-Path $config 'console-users.json')) -or (Test-Path -LiteralPath $declined)) { return }
+    if ($env:CONSOLE_ACCESS_TOKEN -or -not [Environment]::UserInteractive -or [Console]::IsInputRedirected) { return }
+    Write-Host '  the console has no accounts: anyone using this machine opens it without signing in'
+    $answer = Read-Host '  create the administrator account now? [Y/n]'
+    if ($answer -match '^\s*(n|no)\s*$') {
+        New-Item -ItemType Directory -Path $config -Force | Out-Null
+        New-Item -ItemType File -Path $declined -Force | Out-Null
+        Write-Host '  not asking again; add one any time: sf-console -AddUser <name>'
+        return
+    }
+    # the account name rules of the console (letters, digits, . _ @ -)
+    $suggested = if ($env:USERNAME -match '^[\p{L}\p{N}._@-]{1,64}$') { $env:USERNAME } else { '' }
+    for ($try = 1; $try -le 3; $try++) {
+        $name = Read-Host "  account name [$suggested]"
+        if (-not $name) { $name = $suggested }
+        if ($name -notmatch '^[\p{L}\p{N}._@-]{1,64}$') {
+            Write-Host '  use letters, digits and . _ @ - (no spaces)'
+            continue
+        }
+        & $consolePs1 -AddUser $name -Role admin
+        if ($LASTEXITCODE -eq 0) { return }
+    }
+    Write-Host '  no account created; the console opens without signing in (sf-console -AddUser <name>)' -ForegroundColor Yellow
+}
+
 if ($Start) {
+    Request-FirstAccount
     # engine first: a sensor that starts before it only waits and queues
     & $consolePs1 -NoBrowser -StopHint 'sf-stop' @ports
     if (-not $NoSensor) {
