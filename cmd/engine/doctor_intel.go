@@ -154,6 +154,12 @@ func doctorConsoleUsers(root string) doctorCheck {
 	if counts["must_change"] > 0 {
 		detail += fmt.Sprintf("; con contrasena temporal %d", counts["must_change"])
 	}
+	if counts["scoped"] > 0 {
+		detail += fmt.Sprintf("; limitadas a grupos de equipos %d", counts["scoped"])
+		if missing := missingAccountGroups(root, data); len(missing) > 0 {
+			return doctorCheck{name, "warn", detail + ": " + strings.Join(missing, "; "), "Crea esos grupos en Ajustes -> Grupos o quitaselos a la cuenta en Ajustes -> Cuentas: un grupo que el motor no tiene no da acceso a ningun equipo"}
+		}
+	}
 	if counts["enabled_admin"] == 0 {
 		return doctorCheck{name, "warn", detail + ": ningun administrador habilitado", "Sin administrador nadie ve la auditoria, gestiona las cuentas ni puede usar la respuesta activa (sf-console -AddUser <nombre> crea uno)"}
 	}
@@ -187,6 +193,7 @@ func validateConsoleUsers(data []byte) (map[string]int, consoleMFA, string) {
 			// raw, so a non-boolean is named like the console names it
 			Disabled   json.RawMessage `json:"disabled"`
 			MustChange json.RawMessage `json:"must_change"`
+			Groups     json.RawMessage `json:"groups"`
 		} `json:"users"`
 	}
 	if err := json.Unmarshal(data, &doc); err != nil {
@@ -244,6 +251,13 @@ func validateConsoleUsers(data []byte) (map[string]int, consoleMFA, string) {
 		if mustChange {
 			counts["must_change"]++
 		}
+		groups, ok := consoleGroups(u.Groups)
+		if !ok {
+			return nil, mfa, fmt.Sprintf("Cuenta %s: groups debe ser una lista de nombres de grupo (minusculas, cifras, - y _; hasta %d)", user, maxAccountGroups)
+		}
+		if len(groups) > 0 && u.Role != "admin" {
+			counts["scoped"]++
+		}
 		if u.TOTP != nil {
 			if !validTOTPSecret(*u.TOTP) {
 				return nil, mfa, fmt.Sprintf("Cuenta %s: secreto de verificacion en dos pasos invalido", user)
@@ -265,6 +279,72 @@ func validateConsoleUsers(data []byte) (map[string]int, consoleMFA, string) {
 		counts[u.Role]++
 	}
 	return counts, mfa, ""
+}
+
+// maxAccountGroups is the console's cap on an account's host groups.
+const maxAccountGroups = 64
+
+// consoleGroups reads an account's optional "groups": absent or null is
+// none; otherwise a list of group names (any case), as the console reads
+// it (cleanGroups in web/console/src/lib/users.ts).
+func consoleGroups(raw json.RawMessage) ([]string, bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, true
+	}
+	var list []string
+	if json.Unmarshal(raw, &list) != nil || len(list) > maxAccountGroups {
+		return nil, false
+	}
+	out := []string{}
+	for _, g := range list {
+		g = strings.ToLower(strings.TrimSpace(g))
+		if !hostgroup.ValidName(g) {
+			return nil, false
+		}
+		out = append(out, g)
+	}
+	return out, true
+}
+
+// missingAccountGroups names the groups the limited accounts of a valid
+// users file use that the launcher's host-groups file does not define
+// (nothing when that file is absent or broken: its own check reports it).
+func missingAccountGroups(root string, data []byte) []string {
+	set, _, err := hostgroup.Load(filepath.Join(root, "tools", "config", "host-groups.yaml"))
+	if err != nil {
+		return nil
+	}
+	known := map[string]bool{}
+	for _, n := range set.Names() {
+		known[n] = true
+	}
+	var doc struct {
+		Users []struct {
+			User   string          `json:"user"`
+			Role   string          `json:"role"`
+			Groups json.RawMessage `json:"groups"`
+		} `json:"users"`
+	}
+	if json.Unmarshal(bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF}), &doc) != nil {
+		return nil
+	}
+	var out []string
+	for _, u := range doc.Users {
+		if u.Role == "admin" {
+			continue
+		}
+		groups, _ := consoleGroups(u.Groups)
+		var gone []string
+		for _, g := range groups {
+			if !known[g] {
+				gone = append(gone, g)
+			}
+		}
+		if len(gone) > 0 {
+			out = append(out, fmt.Sprintf("la cuenta %s nombra grupos que el motor no tiene (%s)", strings.TrimSpace(u.User), strings.Join(gone, ", ")))
+		}
+	}
+	return out
 }
 
 // consoleFlag reads an optional boolean field: absent or null is false.

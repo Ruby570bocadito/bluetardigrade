@@ -13,6 +13,9 @@
 #                           sign-in (none: optional for everyone)
 #   sf-console -ResetMfa ana                  remove an account's two-step
 #                           sign-in (a lost phone)
+#   sf-console -SetGroups ana -Groups madrid,servidores
+#                           limit an account to engine host groups (none:
+#                           every machine); -AddUser takes -Groups too
 # ======================================================================
 param(
     [switch]$Stop,
@@ -29,7 +32,10 @@ param(
     [string]$Role = 'admin',
     [string]$RemoveUser,
     [string]$ResetMfa,
-    [string]$RequireMfa
+    [string]$RequireMfa,
+    # host groups an account is limited to (comma separated, or none)
+    [string]$SetGroups,
+    [string]$Groups
 )
 
 # 'Continue' (the default the script used to override away): failures
@@ -98,7 +104,11 @@ function Write-SignInMode {
     else { Write-Host '  sign-in:  none, anyone on this machine opens the console (add an account: sf-console -AddUser <name>)' }
 }
 
-if ($AddUser -or $RemoveUser -or $ResetMfa -or $RequireMfa) {
+if ($SetGroups -and -not $Groups) {
+    Write-Host '  [x] -SetGroups needs -Groups <grupo,grupo> (or -Groups none for every machine)' -ForegroundColor Red
+    return
+}
+if ($AddUser -or $RemoveUser -or $ResetMfa -or $RequireMfa -or $SetGroups) {
     # the tool asks for the password (not echoed) and stores only its
     # PBKDF2 hash; it writes the file in one rename, and the console
     # re-reads it on its own
@@ -108,7 +118,11 @@ if ($AddUser -or $RemoveUser -or $ResetMfa -or $RequireMfa) {
         return
     }
     $hadFile = Test-Path -LiteralPath $usersFile
-    if ($AddUser) { & $nodeExe $userTool --file $usersFile $AddUser $Role }
+    if ($AddUser) {
+        & $nodeExe $userTool --file $usersFile $AddUser $Role
+        if ($LASTEXITCODE -eq 0 -and $Groups) { & $nodeExe $userTool --file $usersFile --groups $AddUser $Groups }
+    }
+    elseif ($SetGroups) { & $nodeExe $userTool --file $usersFile --groups $SetGroups $Groups }
     elseif ($RemoveUser) { & $nodeExe $userTool --file $usersFile --remove $RemoveUser }
     elseif ($ResetMfa) { & $nodeExe $userTool --file $usersFile --reset-mfa $ResetMfa }
     else { & $nodeExe $userTool --file $usersFile --require-mfa $RequireMfa }

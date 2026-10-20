@@ -26,7 +26,7 @@ import { codeLocked, enroll, mfaState, verifySecondStep } from '@/lib/mfa'
 import { crossSiteContext, hostAllowed } from '@/lib/request-guard'
 import { openSession, requestIsHttps, sessionCookie, tokenStamp } from '@/lib/sessions'
 import { newTotpSecret } from '@/lib/totp'
-import { accountStamp, audit, findAccount, passwordHash, updateAccount, usersFile, verifyAccount, type Principal, type Role } from '@/lib/users'
+import { accountStamp, audit, findAccount, passwordHash, principalOf, updateAccount, usersFile, verifyAccount, type Principal, type Role } from '@/lib/users'
 
 export const dynamic = 'force-dynamic'
 
@@ -160,7 +160,7 @@ async function passwordStep(request: Request, reply: Reply, fields: Fields): Pro
   const account = findAccount(pending.user)
   const stamp = await accountStamp(pending.user)
   if (!account || !stamp) return reply.back('credenciales', 401)
-  const principal: Principal = { name: account.user, role: account.role, mode: 'users' }
+  const principal = principalOf(account)
   audited(principal.name, principal.role, '/login/contrasena', 200, 'ok')
   return signedIn(request, { ...reply, next: pending.next }, principal, stamp, [clearedChallengeCookie(requestIsHttps(request))])
 }
@@ -186,7 +186,7 @@ async function secondStep(request: Request, reply: Reply, code: string): Promise
   const account = findAccount(pending.user)
   const stamp = await accountStamp(pending.user)
   if (!account || !stamp) return reply.back('credenciales', 401)
-  const principal: Principal = { name: account.user, role: account.role, mode: 'users' }
+  const principal = principalOf(account)
   if ('usedRecovery' in result && result.usedRecovery) audited(principal.name, principal.role, '/login/recuperacion', 200, 'ok')
   if (pending.kind === 'enroll') audited(principal.name, principal.role, '/mfa/activar', 200, 'ok')
   audited(principal.name, principal.role, '/login', 200, 'ok')

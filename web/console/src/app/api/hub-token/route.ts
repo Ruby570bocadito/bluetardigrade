@@ -6,8 +6,14 @@
 // same-origin route for it: the request crossed the console's own gate
 // first (src/proxy.ts with CONSOLE_ACCESS_TOKEN), and the route applies
 // the same credential and host-pinning checks as the engine proxy.
+//
+// The hub reads the engine with the console's own token and answers
+// about every machine, so an account limited to host groups
+// (lib/users.ts, scopeOf) gets no hub credential: the AI analyst is for
+// accounts that see the whole fleet.
 
-import { authorized, unauthorizedResponse } from '@/lib/access'
+import { principalFor, unauthorizedResponse } from '@/lib/access'
+import { scopeOf } from '@/lib/users'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,9 +36,16 @@ function hostAllowed(request: Request): boolean {
 }
 
 export async function GET(request: Request): Promise<Response> {
-  if (!(await authorized(request))) return unauthorizedResponse()
+  const principal = await principalFor(request)
+  if (!principal) return unauthorizedResponse()
   if (!hostAllowed(request) || request.headers.get('sec-fetch-site') === 'cross-site') {
     return Response.json({ error: 'host_not_allowed' }, { status: 403 })
+  }
+  if (scopeOf(principal)) {
+    return Response.json(
+      { error: 'scoped_account', hint: 'El analista IA lee todos los equipos: no está disponible para cuentas limitadas a grupos de equipos.' },
+      { status: 403, headers: { 'cache-control': 'no-store' } },
+    )
   }
   return Response.json(
     { token: process.env.HUB_ACCESS_TOKEN || '' },

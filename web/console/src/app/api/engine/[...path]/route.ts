@@ -44,10 +44,18 @@
 //    extra hosts without it is refused unless the operator states that
 //    something in front already authenticates
 //    (CONSOLE_ALLOW_UNAUTHENTICATED=1).
+//
+// 4. Host groups. An account limited to host groups (lib/users.ts,
+//    scopeOf) reaches the engine with its groups in X-SF-Scope on every
+//    request, reads and writes alike: the engine then serves and touches
+//    the machines of those groups only (internal/api/scope.go). The
+//    header is built here from the session, never copied from the
+//    browser, and the engine token must stay with this console: the
+//    header narrows what the token may see, it cannot widen it.
 
 import { accessToken, principalFor, unauthorizedResponse } from '@/lib/access'
 import { LOOPBACK_HOSTS, crossSiteContext, extraHosts, hostAllowed } from '@/lib/request-guard'
-import { ROLE_LABEL, attribute, audit, roleAtLeast, type Principal, type Role } from '@/lib/users'
+import { ROLE_LABEL, attribute, audit, roleAtLeast, scopeOf, type Principal, type Role } from '@/lib/users'
 
 const ENGINE_URL = process.env.ENGINE_API_URL || 'http://127.0.0.1:7778'
 
@@ -114,7 +122,7 @@ function engineTarget(request: Request): string {
   return `${ENGINE_URL}${path}${search}`
 }
 
-async function forward(request: Request, body?: string, operatorToken = false): Promise<Response> {
+async function forward(request: Request, principal: Principal, body?: string, operatorToken = false): Promise<Response> {
   // Bearer pass-through (SF_API_TOKEN, the same env var the engine and
   // the console-service bridge honor): without it a token-protected
   // engine (-api-token) would leave this console stuck in 401s, and the
@@ -131,6 +139,8 @@ async function forward(request: Request, body?: string, operatorToken = false): 
   const operator = request.headers.get('x-sf-operator-token')
   if (operatorToken && operator) headers['x-sf-operator-token'] = operator
   if (token) headers.authorization = `Bearer ${token}`
+  const scope = scopeOf(principal)
+  if (scope) headers['x-sf-scope'] = scope.join(',')
   let upstream: Response
   try {
     upstream = await fetch(engineTarget(request), {
@@ -223,9 +233,10 @@ async function refused(request: Request, principal: Principal | null): Promise<R
 }
 
 export async function GET(request: Request): Promise<Response> {
-  const guard = await refused(request, await principalFor(request))
-  if (guard) return guard
-  return forward(request)
+  const principal = await principalFor(request)
+  const guard = await refused(request, principal)
+  if (guard || !principal) return guard ?? unauthorizedResponse()
+  return forward(request, principal)
 }
 
 async function write(request: Request): Promise<Response> {
@@ -266,13 +277,13 @@ async function write(request: Request): Promise<Response> {
     )
   }
   if (route.limit === 0) {
-    const res = await forward(request, undefined, route.operatorToken)
+    const res = await forward(request, principal, undefined, route.operatorToken)
     record(res.status)
     return res
   }
   const body = await writeBody(request, route.limit)
   if (body instanceof Response) return body
-  const res = await forward(request, route.attributed ? attribute(body, principal) : body, route.operatorToken)
+  const res = await forward(request, principal, route.attributed ? attribute(body, principal) : body, route.operatorToken)
   record(res.status)
   return res
 }

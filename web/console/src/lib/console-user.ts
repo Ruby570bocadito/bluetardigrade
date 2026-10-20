@@ -11,6 +11,9 @@ export type ConsoleMe = {
   can_triage: boolean
   can_respond: boolean
   audit: boolean
+  // the host groups the account is limited to; null (or absent, older
+  // servers) when it sees every machine
+  scope?: string[] | null
   // two-step sign-in, accounts of the users file only
   mfa?: { enrolled: boolean; required: boolean; recovery_left: number }
 }
@@ -39,6 +42,13 @@ export function modeText(me: ConsoleMe): string {
   if (me.mode === 'users') return 'Cuenta de analista (CONSOLE_USERS_FILE)'
   if (me.mode === 'token') return 'Token compartido (CONSOLE_ACCESS_TOKEN): todos actúan como administrador'
   return 'Sin cuentas: acceso por loopback, actúas como administrador'
+}
+
+// scopeText says which machines the account sees, for the session panel.
+export function scopeText(me: ConsoleMe): string {
+  if (!me.scope?.length) return 'Ves todos los equipos.'
+  const list = me.scope.join(', ')
+  return `Ves solo los equipos de ${me.scope.length === 1 ? 'el grupo' : 'los grupos'} ${list}: alertas, eventos, incidentes e informes de los demás no te aparecen, y el analista IA no está disponible.`
 }
 
 // permissions lists what the role allows, for the session panel.

@@ -17,6 +17,7 @@ import {
   modeText,
   outcomeText,
   permissions,
+  scopeText,
   type ConsoleAuditEntry,
   type ConsoleMe,
 } from '@/lib/console-user'
@@ -127,13 +128,14 @@ export function UserChip() {
         type="button"
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
-        aria-label={`Sesión: ${me.name}, ${ROLE_TEXT[me.role]}`}
+        aria-label={`Sesión: ${me.name}, ${ROLE_TEXT[me.role]}${me.scope?.length ? `, grupos ${me.scope.join(', ')}` : ''}`}
         title={`${me.name} · ${ROLE_TEXT[me.role]}`}
         className="chip shrink-0 gap-1.5 whitespace-nowrap px-2.5 py-1.5 text-zinc-300 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {viewer ? <Eye size={15} aria-hidden className="text-zinc-400" /> : <UserCircle size={15} aria-hidden className="text-zinc-400" />}
         <span className="max-w-[9rem] truncate text-xs">{me.name}</span>
         <span className="hidden rounded bg-white/[0.06] px-1 text-[10px] text-zinc-400 2xl:inline">{ROLE_TEXT[me.role]}</span>
+        {me.scope?.length ? <span className="hidden rounded bg-white/[0.06] px-1 text-[10px] text-zinc-400 xl:inline">{me.scope.length === 1 ? me.scope[0] : `${me.scope.length} grupos`}</span> : null}
       </button>
       <ConsoleDialog open={open} onClose={() => setOpen(false)} titleId={titleId} descriptionId={descId} initialFocus={closeRef} className="max-w-2xl">
         <div className="p-5">
@@ -155,6 +157,7 @@ export function UserChip() {
               </li>
             ))}
           </ul>
+          <p className={`mt-3 text-xs ${me.scope?.length ? 'text-zinc-200' : 'text-zinc-400'}`}>{scopeText(me)}</p>
           {me.mode === 'users' && <p className="mt-3 text-[11px] text-zinc-500">Tus cambios quedan firmados en el motor con tu nombre de cuenta.</p>}
           {me.mode === 'users' && me.mfa && <TwoStepCard mfa={me.mfa} />}
           {me.mode === 'users' && (

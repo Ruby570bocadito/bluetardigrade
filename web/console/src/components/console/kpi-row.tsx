@@ -80,7 +80,7 @@ export function KpiRow({ stats }: { stats: EngineStats | null }) {
   return (
     <div aria-label="Indicadores del motor" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
       <Tile label="Eventos por minuto" icon={ActivityIcon} value={stats?.events_per_min} trend={pick(history, (s) => s.eventsPerMin)}>
-        {stats ? `${stats.events_total.toLocaleString('es-ES')} desde el arranque` : 'sin datos'}
+        {stats ? `${stats.events_total.toLocaleString('es-ES')} ${stats.scoped ? 'recientes de tus grupos' : 'desde el arranque'}` : 'sin datos'}
       </Tile>
 
       <Tile label="Alertas" icon={Siren} value={stats?.alerts_total} trend={pick(history, (s) => s.alertsTotal)}>
