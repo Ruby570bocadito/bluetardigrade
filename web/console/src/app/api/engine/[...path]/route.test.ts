@@ -428,4 +428,26 @@ describe('engine proxy with analyst accounts', () => {
     const lines = readFileSync(audit, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
     expect(lines.map((l) => `${l.user}:${l.outcome}`)).toEqual(['ana:denied', 'ana:denied', 'jefa:ok', 'jefa:ok', 'jefa:ok'])
   })
+
+  test('only an administrator saves the AD connector and the host groups (PUT travels the proxy)', async () => {
+    const { POST, PUT } = await loadRoute()
+    const writes: [typeof POST, string, string][] = [
+      [PUT, 'PUT', '/api/settings/ad'],
+      [POST, 'POST', '/api/ad/test'],
+      [PUT, 'PUT', '/api/settings/groups'],
+    ]
+    for (const [handler, method, path] of writes) {
+      expect((await handler(new Request(base + path, { method, headers: as('ana'), body: '{}' }))).status).toBe(403)
+    }
+    expect(captured).toHaveLength(0)
+    for (const [handler, method, path] of writes) {
+      expect((await handler(new Request(base + path, { method, headers: as('jefa'), body: '{"groups":[]}' }))).status).toBe(200)
+    }
+    expect(captured.map((c) => `${c.init.method} ${new URL(c.url).pathname}`)).toEqual(['PUT /api/settings/ad', 'POST /api/ad/test', 'PUT /api/settings/groups'])
+    // any other PUT stays read-only
+    expect((await PUT(new Request(base + '/api/rules', { method: 'PUT', headers: as('jefa'), body: '{}' }))).status).toBe(405)
+    // the groups body may be large, but not unbounded
+    const huge = JSON.stringify({ groups: [{ name: 'a', hosts: ['x'.repeat(300 * 1024)] }] })
+    expect((await PUT(new Request(base + '/api/settings/groups', { method: 'PUT', headers: as('jefa'), body: huge }))).status).toBe(413)
+  })
 })

@@ -32,6 +32,10 @@ import { currentSearch, readLensState, replaceOperatorState, writeHostToSearch }
 
 type HostRow = { host: string; score: number; alerts: number; critical: number; events: number; lastSeen: string; fleet?: FleetHost }
 
+// the group filter's value for machines in no group (group names never
+// contain spaces, so this cannot collide with one)
+const NO_GROUP = ' sin grupo'
+
 const RANK: Record<Severity, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 }
 
 export function riskLevel(score: number) {
@@ -96,6 +100,8 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
   const [selected, setSelectedState] = useState('')
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | FleetStatus>('all')
+  // '' = every group, NO_GROUP = machines in none
+  const [groupFilter, setGroupFilter] = useState('')
   const [enrolling, setEnrolling] = useState(false)
 
   useEffect(() => {
@@ -109,7 +115,10 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
     replaceOperatorState((search) => writeHostToSearch(search, host))
   }
 
-  const visible = rows.filter((r) => r.host.toLowerCase().includes(query.trim().toLowerCase()) && (statusFilter === 'all' || r.fleet?.status === statusFilter))
+  const groupNames = useMemo(() => [...new Set(rows.flatMap((r) => r.fleet?.groups ?? []))].sort(), [rows])
+  const inGroup = (r: HostRow) =>
+    groupFilter === '' || (groupFilter === NO_GROUP ? !r.fleet?.groups?.length : Boolean(r.fleet?.groups?.includes(groupFilter)))
+  const visible = rows.filter((r) => r.host.toLowerCase().includes(query.trim().toLowerCase()) && (statusFilter === 'all' || r.fleet?.status === statusFilter) && inGroup(r))
   // Without a ?host= lens the riskiest host opens (the index is sorted by
   // risk), so the page is never an empty frame; the URL stays untouched
   // until the analyst picks a host.
@@ -142,6 +151,18 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
             </button>
           ))}
         </div>
+        {/* host groups (Ajustes -> Grupos): shown once any machine has one */}
+        {groupNames.length > 0 && (
+          <div className="flex items-center gap-2 border-b border-white/[0.05] px-3 py-2">
+            <label htmlFor="hosts-group-filter" className="text-[11px] text-zinc-400">Grupo</label>
+            <select id="hosts-group-filter" value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)}
+              className="h-7 min-w-0 flex-1 rounded-md border border-zinc-800 bg-zinc-900 px-2 text-[11px] text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <option value="">Todos los grupos</option>
+              {groupNames.map((g) => <option key={g} value={g}>{g}</option>)}
+              <option value={NO_GROUP}>Sin grupo</option>
+            </select>
+          </div>
+        )}
         {visible.length === 0 ? (
           <EmptyState icon={Desktop} title={status === 'down' ? 'Motor sin conexión' : 'Ningún equipo todavía'} hint="Los equipos aparecen con su primera telemetría o alerta." />
         ) : (
@@ -169,6 +190,13 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
                       <span className="mt-1.5 block text-[11px] text-zinc-500">
                         {r.alerts} alertas{r.critical ? ` (${r.critical} críticas)` : ''} · {r.events} eventos{r.lastSeen ? ` · ${formatTime(r.lastSeen)}` : ''}
                       </span>
+                      {r.fleet?.groups?.length ? (
+                        <span className="mt-1.5 flex flex-wrap gap-1" aria-label={`Grupos: ${r.fleet.groups.join(', ')}`}>
+                          {r.fleet.groups.map((g) => (
+                            <span key={g} className="rounded border border-white/[0.08] px-1.5 py-px text-[10px] text-zinc-400">{g}</span>
+                          ))}
+                        </span>
+                      ) : null}
                     </button>
                   </AnimatedItem>
                 </li>
