@@ -12,25 +12,28 @@
 // pending sign-in (lib/challenges.ts) and the form comes back with
 // step=code (a code, or a recovery code) or step=enroll (the QR code
 // its role requires first). Enrolling answers with the recovery codes
-// page instead of a redirect: they are shown once.
+// page instead of a redirect: they are shown once. An account whose
+// password an administrator reset (must_change) then posts
+// step=password with its new password before its session opens.
 
 import { accessToken, tokenEquals } from '@/lib/access'
 import {
   challengeCookie, clearedChallengeCookie, closeChallenge, failedAttempt, openChallenge, readChallenge, readChallengeCookie,
 } from '@/lib/challenges'
+import { newPasswordProblem } from '@/lib/accounts'
 import { htmlResponse, recoveryPage, redirectTo, safeNext } from '@/lib/login'
 import { codeLocked, enroll, mfaState, verifySecondStep } from '@/lib/mfa'
 import { crossSiteContext, hostAllowed } from '@/lib/request-guard'
 import { openSession, requestIsHttps, sessionCookie, tokenStamp } from '@/lib/sessions'
 import { newTotpSecret } from '@/lib/totp'
-import { accountStamp, audit, findAccount, usersFile, verifyAccount, type Principal, type Role } from '@/lib/users'
+import { accountStamp, audit, findAccount, passwordHash, updateAccount, usersFile, verifyAccount, type Principal, type Role } from '@/lib/users'
 
 export const dynamic = 'force-dynamic'
 
 const MAX_BODY = 4096
 const NAME_RE = /^[\p{L}\p{N}._@ -]{1,64}$/u
 
-type Fields = { user: string; password: string; next: string; step: string; code: string }
+type Fields = { user: string; password: string; next: string; step: string; code: string; newPassword: string; repeat: string }
 
 // readCapped stops at MAX_BODY bytes: this route is public, so an
 // oversized body must not be buffered whole before it is refused.
@@ -81,7 +84,15 @@ async function readFields(request: Request, json: boolean): Promise<Fields | nul
     get = (key) => form.get(key)
   }
   const str = (v: unknown) => (typeof v === 'string' ? v : '')
-  return { user: str(get('user')).trim(), password: str(get('password')), next: str(get('next')), step: str(get('step')), code: str(get('code')).slice(0, 64) }
+  return {
+    user: str(get('user')).trim(),
+    password: str(get('password')),
+    next: str(get('next')),
+    step: str(get('step')),
+    code: str(get('code')).slice(0, 64),
+    newPassword: str(get('new_password')),
+    repeat: str(get('repeat')),
+  }
 }
 
 type Reply = {
@@ -108,12 +119,58 @@ async function signedIn(request: Request, reply: Reply, principal: Principal, st
   return redirectTo(reply.next, {}, cookies)
 }
 
+// authenticated: the credentials, and the second step if any, are done.
+// An account whose password an administrator reset chooses its own
+// before any session opens (a pending sign-in of kind "password");
+// after an enrollment, the recovery codes page leads there.
+async function authenticated(request: Request, reply: Reply, principal: Principal, stamp: string, extra: string[] = [], codes?: string[]): Promise<Response> {
+  if (principal.mode !== 'users' || !findAccount(principal.name)?.mustChange) return signedIn(request, reply, principal, stamp, extra, codes)
+  const id = await openChallenge({ user: principal.name, role: principal.role, kind: 'password', next: reply.next })
+  // replaces the cleared cookie of a finished second step, if any
+  const cookie = challengeCookie(id, requestIsHttps(request))
+  const target = `/login?paso=contrasena&next=${encodeURIComponent(reply.next)}`
+  if (reply.json) {
+    const res = Response.json({ ok: false, step: 'contrasena', ...(codes ? { recovery_codes: codes } : {}) }, { headers: { 'cache-control': 'no-store' } })
+    res.headers.append('set-cookie', cookie)
+    return res
+  }
+  if (codes) return htmlResponse(recoveryPage({ codes, next: target, first: true }), [cookie])
+  return redirectTo(target, {}, [cookie])
+}
+
+// passwordStep: the owner of a reset account sets a new password, which
+// is written to the users file before the session opens.
+async function passwordStep(request: Request, reply: Reply, fields: Fields): Promise<Response> {
+  const id = readChallengeCookie(request)
+  const pending = await readChallenge(id)
+  if (!pending || pending.kind !== 'password') return reply.back('caducado', 401)
+  const problem = await newPasswordProblem(pending.user, fields.newPassword, fields.repeat)
+  if (problem) {
+    audited(pending.user, '', '/login/contrasena', 400, 'denied')
+    if (!(await failedAttempt(id))) return reply.back('caducado', 401)
+    return reply.back(problem, 400, `/login?paso=contrasena&error=${problem}&next=${encodeURIComponent(pending.next)}`)
+  }
+  const hash = await passwordHash(fields.newPassword)
+  const error = updateAccount(pending.user, (entry) => {
+    entry.password = hash
+    delete entry.must_change
+  })
+  if (error) return reply.back('escritura', 500, `/login?paso=contrasena&error=escritura&next=${encodeURIComponent(pending.next)}`)
+  await closeChallenge(id)
+  const account = findAccount(pending.user)
+  const stamp = await accountStamp(pending.user)
+  if (!account || !stamp) return reply.back('credenciales', 401)
+  const principal: Principal = { name: account.user, role: account.role, mode: 'users' }
+  audited(principal.name, principal.role, '/login/contrasena', 200, 'ok')
+  return signedIn(request, { ...reply, next: pending.next }, principal, stamp, [clearedChallengeCookie(requestIsHttps(request))])
+}
+
 // secondStep finishes a sign-in its password started: a code (or a
 // recovery code), or the enrollment its role requires.
 async function secondStep(request: Request, reply: Reply, code: string): Promise<Response> {
   const id = readChallengeCookie(request)
   const pending = await readChallenge(id)
-  if (!pending || pending.kind === 'account') return reply.back('caducado', 401)
+  if (!pending || (pending.kind !== 'code' && pending.kind !== 'enroll')) return reply.back('caducado', 401)
   const page = pending.kind === 'code' ? 'codigo' : 'activar'
   const path = pending.kind === 'code' ? '/login/codigo' : '/login/activar'
   const result = pending.kind === 'code'
@@ -134,7 +191,7 @@ async function secondStep(request: Request, reply: Reply, code: string): Promise
   if (pending.kind === 'enroll') audited(principal.name, principal.role, '/mfa/activar', 200, 'ok')
   audited(principal.name, principal.role, '/login', 200, 'ok')
   const cleared = clearedChallengeCookie(requestIsHttps(request))
-  return signedIn(request, { ...reply, next: pending.next }, principal, stamp, [cleared], 'codes' in result ? result.codes : undefined)
+  return authenticated(request, { ...reply, next: pending.next }, principal, stamp, [cleared], 'codes' in result ? result.codes : undefined)
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -155,6 +212,7 @@ export async function POST(request: Request): Promise<Response> {
   const token = accessToken()
   if (!users && !token) return json ? Response.json({ ok: true, next }) : redirectTo(next)
   if (users && fields && (fields.step === 'code' || fields.step === 'enroll')) return secondStep(request, reply, fields.code)
+  if (users && fields && fields.step === 'password') return passwordStep(request, reply, fields)
   if (!fields || !fields.password || fields.password.length > 1024 || fields.user.length > 64) return reply.back('credenciales', 401)
 
   const typedName = NAME_RE.test(fields.user) ? fields.user : '?'
@@ -177,7 +235,7 @@ export async function POST(request: Request): Promise<Response> {
   const state = mfaState(principal.name)
   if (!state || (!state.enrolled && !state.required)) {
     audited(principal.name, principal.role, '/login', 200, 'ok')
-    return signedIn(request, reply, principal, stamp)
+    return authenticated(request, reply, principal, stamp)
   }
   // the password was right; the session waits for the second step
   if (codeLocked(principal.name)) {

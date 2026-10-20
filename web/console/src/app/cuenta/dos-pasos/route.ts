@@ -20,7 +20,7 @@ export async function GET(request: Request): Promise<Response> {
   const principal = await principalFor(request)
   if (!principal) return redirectTo('/login?next=%2Fcuenta%2Fdos-pasos')
   const state = principal.mode === 'users' ? mfaState(principal.name) : null
-  if (!state) return htmlResponse(unavailablePage())
+  if (!state) return htmlResponse(unavailablePage('dos-pasos'))
   const error = new URL(request.url).searchParams.get('error')
   const base = { user: principal.name, roleLabel: ROLE_LABEL[principal.role], state, error }
   if (state.enrolled) return htmlResponse(accountMfaPage(base))

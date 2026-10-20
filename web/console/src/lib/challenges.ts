@@ -19,8 +19,9 @@ export type Challenge = {
   role: Role
   // code: the account has an authenticator; enroll: its role requires
   // one and it has none yet; account: a signed-in operator enrolling
-  // from the session panel
-  kind: 'code' | 'enroll' | 'account'
+  // from the session panel; password: fully authenticated, but an
+  // administrator reset the password and its owner must choose one
+  kind: 'code' | 'enroll' | 'account' | 'password'
   secret?: string
   next: string
   created: number

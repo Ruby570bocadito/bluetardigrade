@@ -3,13 +3,14 @@
 // credentials, or a caller already signed in, goes straight on.
 //
 // ?paso=codigo and ?paso=activar are the second step of an account with
-// two-step sign-in (lib/mfa.ts): they need the pending sign-in its
+// two-step sign-in (lib/mfa.ts), ?paso=contrasena the new password of an
+// account an administrator reset: they need the pending sign-in its
 // password opened (lib/challenges.ts), and fall back to the password
 // form when it is gone.
 
 import { accessToken, lockedReason, principalFor } from '@/lib/access'
 import { readChallenge, readChallengeCookie } from '@/lib/challenges'
-import { codePage, enrollPage, htmlResponse, loginPage, redirectTo, safeNext } from '@/lib/login'
+import { codePage, enrollPage, htmlResponse, loginPage, passwordPage, redirectTo, safeNext } from '@/lib/login'
 import { qrSvg } from '@/lib/qr'
 import { otpauthUri } from '@/lib/totp'
 import { ROLE_LABEL, usersFile } from '@/lib/users'
@@ -26,6 +27,7 @@ export async function GET(request: Request): Promise<Response> {
   if (mode === 'users' && step) {
     const pending = await readChallenge(readChallengeCookie(request))
     if (pending?.kind === 'code' && step === 'codigo') return htmlResponse(codePage({ user: pending.user, next: pending.next, error }))
+    if (pending?.kind === 'password' && step === 'contrasena') return htmlResponse(passwordPage({ user: pending.user, mode: 'forced', next: pending.next, error }))
     if (pending?.kind === 'enroll' && step === 'activar' && pending.secret) {
       const qr = qrSvg(otpauthUri(pending.secret, pending.user), { title: 'Código QR para tu app de autenticación' })
       return htmlResponse(enrollPage({ user: pending.user, roleLabel: ROLE_LABEL[pending.role], secret: pending.secret, qr, next: pending.next, error }))

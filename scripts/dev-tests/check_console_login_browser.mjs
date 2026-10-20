@@ -7,7 +7,11 @@
 // whose role requires it enrolls right after its password (the secret
 // typed out next to the QR code, the code computed here), saves its
 // recovery codes, signs in again with a code and with a recovery code,
-// and finds it in the session panel. The engine is not running: the
+// and finds it in the session panel. Last, account management: the
+// administrator creates an account in Ajustes, its owner signs in with
+// the temporary password and must choose their own, and the
+// administrator disables it, which ends its session. The engine is not
+// running: the
 // console's engine calls fail as they would with the engine down, which
 // must not be mistaken for an ended session.
 //
@@ -107,7 +111,8 @@ try {
   writeUsers('una-contraseña-larga')
   await startServer()
   browser = await chromium.launch({ headless: true, executablePath: process.env.CONSOLE_CHROMIUM_PATH || process.env.BROWSER_EXE })
-  const context = await browser.newContext()
+  // the console follows the browser's language; the checks read Spanish
+  const context = await browser.newContext({ locale: 'es-ES' })
   const page = await context.newPage()
   const cspErrors = []
   const watchCsp = (p) => p.on('console', (message) => {
@@ -171,7 +176,7 @@ try {
 
   let recovery = []
   await check('a role that requires the second step enrolls right after the password', async () => {
-    const fresh = await browser.newContext()
+    const fresh = await browser.newContext({ locale: 'es-ES' })
     const luisPage = await fresh.newPage()
     watchCsp(luisPage)
     await luisPage.goto(base + '/?view=alertas')
@@ -193,7 +198,7 @@ try {
   })
 
   await check('signing in again asks for the code; a wrong one says so, a recovery code works once', async () => {
-    const fresh = await browser.newContext()
+    const fresh = await browser.newContext({ locale: 'es-ES' })
     const luisPage = await fresh.newPage()
     watchCsp(luisPage)
     await luisPage.goto(base + '/')
@@ -214,12 +219,54 @@ try {
     await fresh.close()
   })
 
+  await check('an administrator creates an account; its owner chooses a password at first sign-in; disabling ends it', async () => {
+    await page.goto(base + '/')
+    await signIn(page, 'otra-contraseña-larga')
+    await page.waitForURL(base + '/')
+    await page.goto(base + '/?view=ajustes')
+    await page.getByRole('heading', { name: 'Cuentas de la consola' }).waitFor({ timeout: 15000 })
+    const create = page.locator('form').filter({ has: page.getByRole('button', { name: 'Crear cuenta' }) })
+    await create.getByLabel('Nombre').fill('marta')
+    await create.getByLabel('Rol').selectOption({ label: 'Lector' })
+    await create.getByRole('button', { name: 'Crear cuenta' }).click()
+    const notice = page.getByRole('status').filter({ hasText: 'Contraseña temporal de marta' })
+    await notice.waitFor()
+    const temp = (await notice.locator('code').textContent()).trim()
+    assert.match(temp, /^[0-9a-z]{4}(-[0-9a-z]{4}){3}$/)
+
+    const fresh = await browser.newContext({ locale: 'es-ES' })
+    const martaPage = await fresh.newPage()
+    watchCsp(martaPage)
+    await martaPage.goto(base + '/')
+    await signIn(martaPage, temp, 'marta')
+    await martaPage.getByRole('heading', { name: 'Elige tu contraseña' }).waitFor()
+    assert.equal((await fresh.cookies()).map((c) => c.name).join(), 'sf_mfa', 'no session with a temporary password')
+    await martaPage.getByLabel(/^Contraseña nueva/).fill('la-contraseña-de-marta')
+    await martaPage.getByLabel('Repite la contraseña nueva').fill('la-contraseña-de-marta')
+    await martaPage.getByRole('button', { name: 'Guardar y entrar' }).click()
+    await martaPage.waitForURL(base + '/')
+    await martaPage.getByRole('button', { name: /^Sesión: marta/ }).waitFor({ timeout: 15000 })
+
+    const row = page.getByRole('row').filter({ hasText: 'marta' })
+    await row.getByRole('button', { name: 'Deshabilitar' }).click()
+    await row.getByRole('button', { name: 'Confirmar' }).click()
+    await page.getByRole('status').filter({ hasText: 'marta deshabilitada' }).waitFor()
+    await row.getByText('Deshabilitada').waitFor()
+    // the open session of marta ends on its next request
+    await martaPage.goto(base + '/')
+    assert.equal(new URL(martaPage.url()).pathname, '/login')
+    await fresh.close()
+  })
+
   await check('the sign-in pages and the console raise no CSP violation; every attempt is audited', async () => {
     assert.deepEqual(cspErrors, [])
     const audit = readFileSync(auditFile, 'utf8').trim().split('\n').map((line) => JSON.parse(line))
     const of = (user) => audit.filter((e) => e.user === user && (e.path.startsWith('/login') || e.path.startsWith('/logout') || e.path.startsWith('/mfa'))).map((e) => `${e.path} ${e.outcome}`)
-    assert.deepEqual(of('ana'), ['/login denied', '/login ok', '/logout ok', '/login ok'])
+    assert.deepEqual(of('ana'), ['/login denied', '/login ok', '/logout ok', '/login ok', '/login ok'])
     assert.deepEqual(of('luis'), ['/mfa/activar ok', '/login ok', '/login/codigo denied', '/login/recuperacion ok', '/login ok'])
+    assert.deepEqual(of('marta'), ['/login ok', '/login/contrasena ok'])
+    const managed = audit.filter((e) => e.path.startsWith('/accounts/')).map((e) => `${e.user} ${e.path} ${e.target} ${e.outcome}`)
+    assert.deepEqual(managed, ['ana /accounts/crear marta ok', 'ana /accounts/deshabilitar marta ok'])
   })
 
   console.log(`${passed} login browser checks passed`)

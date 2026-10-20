@@ -27,8 +27,10 @@
 // Two-step sign-in (lib/mfa.ts) adds, per account, "totp" (the base32
 // secret of the authenticator app) and "recovery" (SHA-256 of each
 // unused recovery code), and at the top level "mfa_required" (the roles
-// that must use it). The console itself writes those fields when an
-// operator enrolls or spends a recovery code (updateAccount).
+// that must use it). Account management (lib/accounts.ts) adds
+// "disabled" (the account cannot sign in) and "must_change" (its next
+// sign-in sets a new password first). The console itself writes the
+// file for all of these (editUsers / updateAccount).
 
 import { appendFileSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { base32Decode } from './totp'
@@ -59,6 +61,9 @@ type Account = {
   totp: string | null
   // SHA-256 (hex) of each unused recovery code
   recovery: string[]
+  disabled: boolean
+  // set by an administrator's reset: a new password before any session
+  mustChange: boolean
 }
 
 type Parsed = { accounts: Account[]; mfaRequired: Role[]; error?: string }
@@ -112,7 +117,7 @@ export function parseUsers(text: string): Parsed {
   const accounts: Account[] = []
   const seen = new Set<string>()
   for (const [i, raw] of list.entries()) {
-    const entry = raw as { user?: unknown; role?: unknown; password?: unknown; totp?: unknown; recovery?: unknown }
+    const entry = raw as { user?: unknown; role?: unknown; password?: unknown; totp?: unknown; recovery?: unknown; disabled?: unknown; must_change?: unknown }
     const user = typeof entry?.user === 'string' ? entry.user.trim() : ''
     if (!NAME_RE.test(user)) return fail(`cuenta ${i + 1}: nombre de usuario inválido`)
     if (seen.has(user.toLowerCase())) return fail(`cuenta ${user}: repetida`)
@@ -136,7 +141,10 @@ export function parseUsers(text: string): Parsed {
     if (!Array.isArray(recovery) || recovery.length > MAX_RECOVERY || !recovery.every((h) => typeof h === 'string' && RECOVERY_HASH_RE.test(h))) {
       return fail(`cuenta ${user}: códigos de recuperación inválidos`)
     }
-    accounts.push({ user, role, iterations, salt, hash, totp, recovery: recovery as string[] })
+    for (const flag of ['disabled', 'must_change'] as const) {
+      if (entry[flag] !== undefined && typeof entry[flag] !== 'boolean') return fail(`cuenta ${user}: ${flag} debe ser true o false`)
+    }
+    accounts.push({ user, role, iterations, salt, hash, totp, recovery: recovery as string[], disabled: entry.disabled === true, mustChange: entry.must_change === true })
   }
   return { accounts, mfaRequired: (required as Role[] | undefined) ?? [] }
 }
@@ -236,6 +244,9 @@ export async function verifyAccount(user: string, password: string, now = Date.n
     }
     return null
   }
+  // a disabled account answers like a wrong password, without counting
+  // a failure against it
+  if (account.disabled) return null
   failures.delete(failKey)
   return { name: account.user, role: account.role, mode: 'users' }
 }
@@ -271,15 +282,16 @@ export async function accountPrincipal(header: string | null, now = Date.now()):
 }
 
 // accountStamp fingerprints an account as the users file holds it now
-// (role, password hash and two-step secret), or null when it is gone or
-// the file is broken. A session remembers the stamp it was opened with:
-// changing the password, the role or the authenticator, or removing the
-// account, ends it. Spending a recovery code does not. Neither does a
+// (role, password hash and two-step secret), or null when it is gone,
+// disabled, or the file is broken. A session remembers the stamp it was
+// opened with: changing the password, the role or the authenticator,
+// disabling or removing the account, ends it. Spending a recovery code does not. Neither does a
 // new mfa_required for an account that already has the second step;
 // one that has not loses its sessions and enrolls at the next sign-in.
 export async function accountStamp(user: string): Promise<string | null> {
   const account = findAccount(user)
   if (!account) return null
+  if (account.disabled) return null
   const second = account.totp ?? (mfaRequiredFor(account.role) ? 'required' : '')
   const encoder = new TextEncoder()
   const material = new Uint8Array([...encoder.encode(account.role + '\n'), ...account.hash, ...encoder.encode('\n' + second)])
@@ -287,27 +299,34 @@ export async function accountStamp(user: string): Promise<string | null> {
   return Array.from(d, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-// updateAccount rewrites one account of the users file (the two-step
-// sign-in fields), keeping every other field and account as they are.
-// The result must parse before it replaces the file, in one rename, so
-// an edit never leaves the console locked by a half-written file.
-// Returns an error message, or null when the file was written.
-export function updateAccount(user: string, edit: (entry: Record<string, unknown>) => void): string | null {
+export type UsersDoc = Record<string, unknown> & { users: Record<string, unknown>[] }
+
+export function sameUser(entry: unknown, user: string): boolean {
+  const name = (entry as { user?: unknown } | null)?.user
+  return typeof name === 'string' && name.trim().toLowerCase() === user.trim().toLowerCase()
+}
+
+// editUsers rewrites the users file through edit, which changes the
+// document in place or returns an error message to abort. Every field it
+// does not touch is kept. The result must parse before it replaces the
+// file, in one rename, so an edit never leaves the console locked by a
+// half-written or invalid file. Returns an error message, or null when
+// the file was written. Synchronous on purpose: two requests of this
+// process cannot interleave between the read and the rename.
+export function editUsers(edit: (doc: UsersDoc) => string | null): string | null {
   const file = usersFile()
   if (!file) return 'no hay fichero de cuentas'
-  let doc: unknown
+  let parsed: unknown
   try {
-    doc = JSON.parse(readFileSync(/*turbopackIgnore: true*/ file, 'utf8').replace(/^\uFEFF/, ''))
+    parsed = JSON.parse(readFileSync(/*turbopackIgnore: true*/ file, 'utf8').replace(/^\uFEFF/, ''))
   } catch {
     return 'no se puede leer el fichero de cuentas'
   }
-  const root = (Array.isArray(doc) ? { users: doc } : doc) as Record<string, unknown> | null
-  const list = root?.users
-  if (!root || !Array.isArray(list)) return 'el fichero de cuentas no tiene la forma {"users": [...]}'
-  const entry = list.find((e) => typeof e?.user === 'string' && e.user.trim().toLowerCase() === user.trim().toLowerCase())
-  if (!entry || typeof entry !== 'object') return `no hay ninguna cuenta ${user}`
-  edit(entry as Record<string, unknown>)
-  const text = JSON.stringify(root, null, 2) + '\n'
+  const doc = (Array.isArray(parsed) ? { users: parsed } : parsed) as UsersDoc | null
+  if (!doc || !Array.isArray(doc.users)) return 'el fichero de cuentas no tiene la forma {"users": [...]}'
+  const refused = edit(doc)
+  if (refused) return refused
+  const text = JSON.stringify(doc, null, 2) + '\n'
   if (parseUsers(text).error) return 'el cambio dejaría el fichero de cuentas inválido'
   const tmp = `${file}.${process.pid}.tmp`
   try {
@@ -318,6 +337,47 @@ export function updateAccount(user: string, edit: (entry: Record<string, unknown
   }
   cached = null
   return null
+}
+
+// updateAccount edits one account of the users file (see editUsers).
+export function updateAccount(user: string, edit: (entry: Record<string, unknown>) => void): string | null {
+  return editUsers((doc) => {
+    const entry = doc.users.find((e) => sameUser(e, user))
+    if (!entry || typeof entry !== 'object') return `no hay ninguna cuenta ${user}`
+    edit(entry)
+    return null
+  })
+}
+
+// Same cost as scripts/console-user.mjs, so both tools write equal hashes.
+export const PASSWORD_ITERATIONS = 310_000
+export const MIN_PASSWORD = 12
+export const MAX_PASSWORD = 1024
+
+function toB64url(bytes: Uint8Array): string {
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+// passwordHash is the stored form of a new password.
+export async function passwordHash(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(16))
+  return `pbkdf2-sha256$${PASSWORD_ITERATIONS}$${toB64url(salt)}$${toB64url(await pbkdf2(password, salt, PASSWORD_ITERATIONS))}`
+}
+
+// passwordMatches checks a password against an account's current hash
+// (the "not the same as before" rule of a password change).
+export async function passwordMatches(user: string, password: string): Promise<boolean> {
+  const account = findAccount(user)
+  return account ? sameBytes(await pbkdf2(password, account.salt, account.iterations), account.hash) : false
+}
+
+// temporaryPassword is what an administrator hands over after creating
+// an account or resetting its password: 16 characters of Crockford's
+// base32 in four groups (80 bits), changed by its owner at first use.
+export function temporaryPassword(): string {
+  const alphabet = '0123456789abcdefghjkmnpqrstvwxyz'
+  const chars = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => alphabet[b & 31]).join('')
+  return chars.match(/.{4}/g)!.join('-')
 }
 
 // ---- attribution and audit ---------------------------------------------------------------
@@ -347,6 +407,8 @@ export type AuditEntry = {
   path: string
   status: number
   outcome: 'ok' | 'error' | 'denied'
+  // the account an administrator acted on (account management)
+  target?: string
 }
 
 export function auditFile(): string {

@@ -2,18 +2,21 @@
 
 // Settings (SET-1): the sections the TODO names on one page — General,
 // Ingesta, Active Directory (AD-6), Integraciones, Notificaciones, Cuentas
-// and Apariencia. The AD section is the only one with a write API today
-// (GET/PUT /api/settings/ad + POST /api/ad/test): the form edits a draft,
-// only the changed fields travel, the password is write-only and the
-// honest states mirror the directory view (501 not armed -> candidate can
-// be probed but not saved; 403 -> the family is closed; 409 -> the -ad
-// file drifted on disk). Every other section shows the real signal the
-// console already has (engine stats, enrollment, session) and declares
-// that its configuration has no write API yet — nothing is invented.
+// and Apariencia. Two sections write. Active Directory (GET/PUT
+// /api/settings/ad + POST /api/ad/test): the form edits a draft, only
+// the changed fields travel, the password is write-only and the honest
+// states mirror the directory view (501 not armed -> candidate can be
+// probed but not saved; 403 -> the family is closed; 409 -> the -ad file
+// drifted on disk). Cuentas, for administrators of a console with
+// accounts (accounts-manager.tsx, /api/console/accounts). Every other
+// section shows the real signal the console already has (engine stats,
+// enrollment, session) and declares that its configuration has no write
+// API yet — nothing is invented.
 
 import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle, Globe, Monitor, Moon, Sun, Warning } from '@phosphor-icons/react'
 import { Switch } from '@/components/ui/switch'
+import { AccountsManager } from './accounts-manager'
 import { useEngine } from './engine-provider'
 import { useFleet } from './fleet-provider'
 import { useI18n } from './i18n-provider'
@@ -234,8 +237,10 @@ function NotificationsPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Cuentas: who the console service says the operator is; management
-// (TEAM-2) has no API and the page says so.
+// Cuentas: who the console service says the operator is, links to their
+// own password and two-step pages, and for administrators the account
+// management of TEAM-2 (accounts-manager.tsx). Without per-person
+// accounts there is nothing to manage and the panel says how to start.
 
 function AccountsPanel({ onOpenOnboarding }: { onOpenOnboarding: () => void }) {
   const { dict } = useI18n()
@@ -268,10 +273,29 @@ function AccountsPanel({ onOpenOnboarding }: { onOpenOnboarding: () => void }) {
       ) : (
         <p className="mb-3 text-xs text-zinc-500">{dict.settings.cuentas.accountLabel}: …</p>
       )}
-      <p className="mb-3 text-xs leading-relaxed text-zinc-500">{dict.settings.cuentas.manageProse}</p>
-      <button type="button" onClick={onOpenOnboarding} className="rounded-md border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-xs text-zinc-300 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        {dict.settings.cuentas.openOnboarding}
-      </button>
+      {me?.mode === 'users' ? (
+        <>
+          {/* server pages, like /login: plain links */}
+          <div className="flex flex-wrap gap-2">
+            <a href="/cuenta/contrasena" className="rounded-md border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-xs text-zinc-300 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              {dict.settings.cuentas.changePassword}
+            </a>
+            <a href="/cuenta/dos-pasos" className="rounded-md border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-xs text-zinc-300 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              {dict.settings.cuentas.twoStep}
+            </a>
+          </div>
+          {me.role === 'admin'
+            ? <AccountsManager me={me.name} />
+            : <p className="mt-3 text-xs text-zinc-500">{dict.settings.cuentas.nonAdminProse}</p>}
+        </>
+      ) : (
+        <>
+          <p className="mb-3 text-xs leading-relaxed text-zinc-500">{dict.settings.cuentas.manageProse}</p>
+          <button type="button" onClick={onOpenOnboarding} className="rounded-md border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-xs text-zinc-300 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            {dict.settings.cuentas.openOnboarding}
+          </button>
+        </>
+      )}
     </Panel>
   )
 }

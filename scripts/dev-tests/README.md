@@ -209,8 +209,12 @@ dialog works, and a password change sends the open console back to the
 form on its next poll. An analyst account, whose role requires two-step
 sign-in, then enrolls right after its password (the script computes the
 TOTP code from the key the page shows), saves its recovery codes, and
-signs in again with a wrong code, then a recovery code. Every attempt
-must be in the audit file.
+signs in again with a wrong code, then a recovery code. Last, the
+administrator creates an account in Ajustes → Cuentas, its owner signs in
+with the temporary password and must choose their own, and disabling the
+account ends its session. The browser runs in Spanish (`es-ES`), the
+console's language for these checks. Every attempt must be in the audit
+file, the account actions with the account they targeted.
 
 `CONSOLE_TEST_TOOLS` selects another absolute tooling directory.
 `CONSOLE_BROWSER_URL=http://127.0.0.1:3000` uses an already running console,

@@ -102,7 +102,7 @@ function AuditTable() {
                 <tr key={`${e.at}-${i}`} className="border-t border-white/[0.04] text-zinc-300">
                   <td className="whitespace-nowrap px-2 py-1.5 font-mono tabular-nums text-zinc-400">{e.at.replace('T', ' ').slice(0, 19)}</td>
                   <td className="px-2 py-1.5">{e.user}{e.role && <span className="text-zinc-500"> · {ROLE_TEXT[e.role] ?? e.role}</span>}</td>
-                  <td className="px-2 py-1.5" title={`${e.method} ${e.path}`}>{describeAction(e)}</td>
+                  <td className="px-2 py-1.5" title={`${e.method} ${e.path}`}>{describeAction(e)}{e.target && <span className="text-zinc-500"> · {e.target}</span>}</td>
                   <td className={`whitespace-nowrap px-2 py-1.5 ${OUTCOME_CLASS[e.outcome] ?? ''}`}>{outcomeText(e)} <span className="text-zinc-500">({e.status})</span></td>
                 </tr>
               ))}
@@ -157,6 +157,11 @@ export function UserChip() {
           </ul>
           {me.mode === 'users' && <p className="mt-3 text-[11px] text-zinc-500">Tus cambios quedan firmados en el motor con tu nombre de cuenta.</p>}
           {me.mode === 'users' && me.mfa && <TwoStepCard mfa={me.mfa} />}
+          {me.mode === 'users' && (
+            <a href="/cuenta/contrasena" className="mt-2 inline-block text-[11px] text-zinc-400 underline-offset-4 hover:text-zinc-100 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              Cambiar contraseña
+            </a>
+          )}
           {me.mode !== 'open' && (
             // a plain form: the server clears the cookie and redirects to /login
             <form method="post" action="/api/console/logout" className="mt-4">
