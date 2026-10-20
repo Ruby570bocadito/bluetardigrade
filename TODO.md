@@ -69,11 +69,8 @@ y cuentas: [OPERATIONS](docs/OPERATIONS.md#console-accounts-roles-and-audit).
   pasos (sección 7 de PRUEBAS-PENDIENTES): primera cuenta desde `sf-start`,
   `sf-console -AddUser` y `-RemoveUser`, caducidad al cambiar la contraseña,
   activar la verificación con una app real, código de recuperación,
-  `-RequireMfa` y `-ResetMfa`.
-- [ ] **Cuentas desde la consola** (TEAM-2): alta, baja, rol, deshabilitar y
-  restablecer contraseña, con cambio obligatorio en el primer acceso. Solo
-  administradores y auditado. Hoy se gestionan desde la terminal con
-  `sf-console -AddUser` / `-RemoveUser`.
+  `-RequireMfa` y `-ResetMfa`, y las cuentas desde Ajustes → Cuentas (crear,
+  contraseña temporal, deshabilitar) y «Cambiar contraseña».
 - [ ] **ACL de máquinas y servicios:**
   - grupos y etiquetas de equipos (sede, departamento, OU de AD, servidores o
     puestos);

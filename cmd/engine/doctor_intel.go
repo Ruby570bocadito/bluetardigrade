@@ -126,8 +126,14 @@ func doctorConsoleUsers(root string) doctorCheck {
 			detail += fmt.Sprintf(" (%d la configuraran al entrar)", mfa.pending)
 		}
 	}
-	if counts["admin"] == 0 {
-		return doctorCheck{name, "warn", detail + ": ningun administrador", "Sin administrador nadie ve la auditoria ni puede usar la respuesta activa"}
+	if counts["disabled"] > 0 {
+		detail += fmt.Sprintf("; deshabilitadas %d", counts["disabled"])
+	}
+	if counts["must_change"] > 0 {
+		detail += fmt.Sprintf("; con contrasena temporal %d", counts["must_change"])
+	}
+	if counts["enabled_admin"] == 0 {
+		return doctorCheck{name, "warn", detail + ": ningun administrador habilitado", "Sin administrador nadie ve la auditoria, gestiona las cuentas ni puede usar la respuesta activa (sf-console -AddUser <nombre> crea uno)"}
 	}
 	return doctorCheck{name, "ok", detail, ""}
 }
@@ -156,6 +162,9 @@ func validateConsoleUsers(data []byte) (map[string]int, consoleMFA, string) {
 			Password string    `json:"password"`
 			TOTP     *string   `json:"totp"`
 			Recovery *[]string `json:"recovery"`
+			// raw, so a non-boolean is named like the console names it
+			Disabled   json.RawMessage `json:"disabled"`
+			MustChange json.RawMessage `json:"must_change"`
 		} `json:"users"`
 	}
 	if err := json.Unmarshal(data, &doc); err != nil {
@@ -200,6 +209,19 @@ func validateConsoleUsers(data []byte) (map[string]int, consoleMFA, string) {
 		if !validPasswordHash(u.Password) {
 			return nil, mfa, fmt.Sprintf("Cuenta %s: contrasena con formato invalido", user)
 		}
+		disabled, ok1 := consoleFlag(u.Disabled)
+		mustChange, ok2 := consoleFlag(u.MustChange)
+		if !ok1 || !ok2 {
+			return nil, mfa, fmt.Sprintf("Cuenta %s: disabled y must_change deben ser true o false", user)
+		}
+		if disabled {
+			counts["disabled"]++
+		} else if u.Role == "admin" {
+			counts["enabled_admin"]++
+		}
+		if mustChange {
+			counts["must_change"]++
+		}
 		if u.TOTP != nil {
 			if !validTOTPSecret(*u.TOTP) {
 				return nil, mfa, fmt.Sprintf("Cuenta %s: secreto de verificacion en dos pasos invalido", user)
@@ -221,6 +243,14 @@ func validateConsoleUsers(data []byte) (map[string]int, consoleMFA, string) {
 		counts[u.Role]++
 	}
 	return counts, mfa, ""
+}
+
+// consoleFlag reads an optional boolean field: absent or null is false.
+func consoleFlag(raw json.RawMessage) (value, ok bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return false, true
+	}
+	return string(raw) == "true", string(raw) == "true" || string(raw) == "false"
 }
 
 // validTOTPSecret applies the console's rule: base32 (any case, spaces

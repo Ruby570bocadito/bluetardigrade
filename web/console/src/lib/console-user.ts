@@ -25,6 +25,8 @@ export type ConsoleAuditEntry = {
   path: string
   status: number
   outcome: 'ok' | 'error' | 'denied'
+  // the account an administrator acted on
+  target?: string
 }
 
 export const ROLE_TEXT: Record<ConsoleRole, string> = { admin: 'Administrador', analyst: 'Analista', viewer: 'Lector' }
@@ -55,6 +57,15 @@ const ACTIONS: [RegExp, string][] = [
   [/^POST \/login\/codigo$/, 'Código del segundo paso'],
   [/^POST \/login\/activar$/, 'Activación del segundo paso al entrar'],
   [/^POST \/login\/recuperacion$/, 'Entrada con código de recuperación'],
+  [/^POST \/login\/contrasena$/, 'Contraseña propia tras un restablecimiento'],
+  [/^POST \/cuenta\/contrasena$/, 'Cambio de contraseña'],
+  [/^POST \/accounts\/crear$/, 'Cuenta creada'],
+  [/^POST \/accounts\/rol$/, 'Rol de cuenta cambiado'],
+  [/^POST \/accounts\/deshabilitar$/, 'Cuenta deshabilitada'],
+  [/^POST \/accounts\/habilitar$/, 'Cuenta habilitada'],
+  [/^POST \/accounts\/restablecer$/, 'Contraseña restablecida'],
+  [/^POST \/accounts\/quitar-mfa$/, 'Dos pasos quitados a una cuenta'],
+  [/^POST \/accounts\/eliminar$/, 'Cuenta eliminada'],
   [/^POST \/logout$/, 'Cierre de sesión'],
   [/^POST \/mfa\/activar$/, 'Verificación en dos pasos activada'],
   [/^POST \/mfa\/recuperacion$/, 'Nuevos códigos de recuperación'],
@@ -80,7 +91,9 @@ export const OUTCOME_TEXT: Record<ConsoleAuditEntry['outcome'], string> = { ok: 
 // outcomeText: a refused sign-in is a credential problem, not a role one.
 export function outcomeText(entry: Pick<ConsoleAuditEntry, 'outcome' | 'path'>): string {
   if (entry.path === '/login' && entry.outcome === 'denied') return 'Credenciales rechazadas'
+  if ((entry.path === '/login/contrasena' || entry.path === '/cuenta/contrasena') && entry.outcome === 'denied') return 'Contraseña rechazada'
   if ((entry.path.startsWith('/login/') || entry.path.startsWith('/mfa/')) && entry.outcome === 'denied') return 'Código rechazado'
+  if (entry.path.startsWith('/accounts/') && entry.outcome === 'denied') return 'Rechazado'
   return OUTCOME_TEXT[entry.outcome] ?? entry.outcome
 }
 

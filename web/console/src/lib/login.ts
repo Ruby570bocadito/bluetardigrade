@@ -1,6 +1,7 @@
-// The sign-in pages (app/login/route.ts, app/cuenta/dos-pasos) and the
-// helpers their routes share: password, second step, enrollment with
-// its QR code, recovery codes and the account's two-step settings. They
+// The sign-in pages (app/login/route.ts, app/cuenta/*) and the helpers
+// their routes share: password, second step, enrollment with its QR
+// code, recovery codes, the account's two-step settings and password
+// changes (forced after an administrator's reset, or the operator's own). They
 // are plain server-rendered HTML with inline styles and no script: the
 // console bundle under /_next stays behind the access gate until the
 // operator has signed in, and nothing on these pages runs code.
@@ -50,6 +51,11 @@ const MESSAGES: Record<string, string> = {
   caducado: 'El inicio de sesión ha caducado (5 minutos o 5 códigos incorrectos). Vuelve a escribir tu contraseña.',
   escritura: 'No se pudo guardar el cambio en el fichero de cuentas. Revisa que la consola pueda escribirlo.',
   desactivada: 'Has desactivado la verificación en dos pasos. Vuelve a iniciar sesión.',
+  corta: 'La contraseña nueva debe tener al menos 12 caracteres.',
+  larga: 'La contraseña nueva es demasiado larga (1024 caracteres como mucho).',
+  distintas: 'Las dos contraseñas nuevas no coinciden.',
+  igual: 'La contraseña nueva debe ser distinta de la actual.',
+  actual: 'La contraseña actual no es correcta.',
 }
 
 export function messageFor(key: string | null | undefined): string {
@@ -225,8 +231,42 @@ ${codeField('Código actual de la app o de recuperación', 'code-new')}
   <a class="back" href="/">Volver a la consola</a>`, true)
 }
 
-export function unavailablePage(): string {
-  return shell('Verificación en dos pasos', `  <h1>Verificación en dos pasos</h1>
-  <p class="sub">Solo las cuentas de la consola (CONSOLE_USERS_FILE) la tienen. Con el token compartido o sin cuentas no hay a quién asociarla.</p>
+// passwordPage: "forced" is the step of a sign-in after an administrator
+// reset the password (no current password: the temporary one was just
+// typed); "self" is a signed-in operator changing their own.
+export function passwordPage(opts: { user: string; mode: 'forced' | 'self'; next?: string; error?: string | null }): string {
+  const forced = opts.mode === 'forced'
+  const fields = `${forced ? `    <input type="hidden" name="step" value="password">
+    <input type="hidden" name="next" value="${escapeHtml(opts.next ?? '/')}">
+` : `    <label for="current">Contraseña actual</label>
+    <input id="current" name="current" type="password" autocomplete="current-password" maxlength="1024" required autofocus>
+`}    <label for="new_password">Contraseña nueva (12 caracteres o más)</label>
+    <input id="new_password" name="new_password" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required${forced ? ' autofocus' : ''}>
+    <label for="repeat">Repite la contraseña nueva</label>
+    <input id="repeat" name="repeat" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required>`
+  return shell(forced ? 'Elige tu contraseña' : 'Cambiar contraseña', `  <h1>${forced ? 'Elige tu contraseña' : 'Cambiar contraseña'}</h1>
+  <p class="sub">${escapeHtml(opts.user)}${forced ? ': entraste con una contraseña temporal de un administrador. Elige la tuya para continuar; nadie más la conocerá.' : ''}</p>
+${alert(messageFor(opts.error))}  <form method="post" action="${forced ? '/api/console/login' : '/api/console/password'}">
+${fields}
+    <button type="submit">${forced ? 'Guardar y entrar' : 'Cambiar contraseña'}</button>
+  </form>
+  ${forced ? `<a class="back" href="/login?next=${encodeURIComponent(opts.next ?? '/')}">Empezar de nuevo</a>` : '<a class="back" href="/">Volver a la consola</a>'}`)
+}
+
+export function passwordChangedPage(): string {
+  return shell('Contraseña cambiada', `  <h1>Contraseña cambiada</h1>
+  <p class="sub">Tus otras sesiones abiertas se han cerrado. Esta sigue abierta.</p>
+  <a class="button" href="/">Volver a la consola</a>`)
+}
+
+// unavailablePage: the account pages without accounts (shared token or
+// loopback): there is nobody to attach a password or a second step to.
+export function unavailablePage(what: 'dos-pasos' | 'contrasena'): string {
+  const title = what === 'dos-pasos' ? 'Verificación en dos pasos' : 'Cambiar contraseña'
+  const text = what === 'dos-pasos'
+    ? 'Solo las cuentas de la consola (CONSOLE_USERS_FILE) la tienen. Con el token compartido o sin cuentas no hay a quién asociarla.'
+    : 'Solo las cuentas de la consola (CONSOLE_USERS_FILE) tienen contraseña propia. Con el token compartido o sin cuentas no hay ninguna que cambiar.'
+  return shell(title, `  <h1>${title}</h1>
+  <p class="sub">${text}</p>
   <a class="button" href="/">Volver a la consola</a>`)
 }
