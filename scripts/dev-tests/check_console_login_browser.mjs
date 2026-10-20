@@ -3,7 +3,11 @@
 // going, a wrong password stays on the form, the session cookie is
 // HttpOnly + SameSite=Strict, the console signs its operator out, and a
 // session ended on the server (password changed) sends the open console
-// back to /login on its next poll. The engine is not running: the
+// back to /login on its next poll. Then the two-step sign-in: an account
+// whose role requires it enrolls right after its password (the secret
+// typed out next to the QR code, the code computed here), saves its
+// recovery codes, signs in again with a code and with a recovery code,
+// and finds it in the session panel. The engine is not running: the
 // console's engine calls fail as they would with the engine down, which
 // must not be mistaken for an ended session.
 //
@@ -17,7 +21,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { pbkdf2Sync, randomBytes } from 'node:crypto'
+import { createHmac, pbkdf2Sync, randomBytes } from 'node:crypto'
 import { spawn } from 'node:child_process'
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -36,7 +40,29 @@ function account(user, role, password) {
   const hash = pbkdf2Sync(password, salt, 100_000, 32, 'sha256')
   return { user, role, password: `pbkdf2-sha256$100000$${salt.toString('base64url')}$${hash.toString('base64url')}` }
 }
-const writeUsers = (password) => writeFileSync(usersFile, JSON.stringify({ users: [account('ana', 'admin', password)] }))
+// luis is an analyst and analysts must use the second step
+const luis = account('luis', 'analyst', 'contraseña-de-luis')
+const writeUsers = (password) => {
+  // keep what the console wrote for luis (his secret, his recovery codes)
+  let current = luis
+  try { current = JSON.parse(readFileSync(usersFile, 'utf8')).users.find((u) => u.user === 'luis') ?? luis } catch {}
+  writeFileSync(usersFile, JSON.stringify({ mfa_required: ['analyst'], users: [account('ana', 'admin', password), current] }))
+}
+
+// RFC 6238 with the authenticator defaults (SHA-1, 6 digits, 30 s)
+function base32(text) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+  let bits = ''
+  for (const c of text.replace(/\s/g, '')) bits += alphabet.indexOf(c).toString(2).padStart(5, '0')
+  return Buffer.from(bits.match(/.{8}/g).map((b) => parseInt(b, 2)))
+}
+function totp(secret, ahead = 0) {
+  const counter = Buffer.alloc(8)
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000) + ahead))
+  const mac = createHmac('sha1', base32(secret)).update(counter).digest()
+  const o = mac[mac.length - 1] & 15
+  return String((mac.readUInt32BE(o) & 0x7fffffff) % 1_000_000).padStart(6, '0')
+}
 
 async function check(name, fn) {
   await fn()
@@ -71,8 +97,8 @@ async function startServer() {
   throw new Error('Console server did not become ready. Build web/console first.\n' + serverLog)
 }
 
-async function signIn(page, password) {
-  await page.getByLabel('Usuario').fill('ana')
+async function signIn(page, password, user = 'ana') {
+  await page.getByLabel('Usuario').fill(user)
   await page.getByLabel('Contraseña').fill(password)
   await page.getByRole('button', { name: 'Entrar' }).click()
 }
@@ -84,9 +110,10 @@ try {
   const context = await browser.newContext()
   const page = await context.newPage()
   const cspErrors = []
-  page.on('console', (message) => {
+  const watchCsp = (p) => p.on('console', (message) => {
     if (/Content Security Policy/i.test(message.text())) cspErrors.push(message.text())
   })
+  watchCsp(page)
 
   await check('a console page without a session lands on the sign-in form, keeping its destination', async () => {
     const loginRequests = []
@@ -142,11 +169,57 @@ try {
     await page.getByRole('alert').filter({ hasText: 'Tu sesión ha terminado' }).waitFor()
   })
 
-  await check('the sign-in page and the console raise no CSP violation; every attempt is audited', async () => {
+  let recovery = []
+  await check('a role that requires the second step enrolls right after the password', async () => {
+    const fresh = await browser.newContext()
+    const luisPage = await fresh.newPage()
+    watchCsp(luisPage)
+    await luisPage.goto(base + '/?view=alertas')
+    await signIn(luisPage, 'contraseña-de-luis', 'luis')
+    await luisPage.getByRole('heading', { name: 'Activa la verificación en dos pasos' }).waitFor()
+    assert.equal(await luisPage.locator('.qr svg').count(), 1)
+    assert.equal(await luisPage.locator('script').count(), 0)
+    assert.equal((await fresh.cookies()).map((c) => c.name).join(), 'sf_mfa', 'no session before the second step')
+    const secret = (await luisPage.locator('code.secret').textContent()).trim()
+    await luisPage.getByLabel(/código de 6 cifras/).fill(totp(secret))
+    await luisPage.getByRole('button', { name: 'Activar' }).click()
+    await luisPage.getByRole('heading', { name: 'Verificación en dos pasos activada' }).waitFor()
+    recovery = (await luisPage.locator('ol.codes li').allTextContents()).map((c) => c.trim())
+    assert.equal(recovery.length, 10)
+    await luisPage.getByRole('link', { name: /continuar/ }).click()
+    await luisPage.waitForURL(base + '/?view=alertas')
+    await luisPage.getByRole('button', { name: /^Sesión: luis/ }).waitFor({ timeout: 15000 })
+    await fresh.close()
+  })
+
+  await check('signing in again asks for the code; a wrong one says so, a recovery code works once', async () => {
+    const fresh = await browser.newContext()
+    const luisPage = await fresh.newPage()
+    watchCsp(luisPage)
+    await luisPage.goto(base + '/')
+    await signIn(luisPage, 'contraseña-de-luis', 'luis')
+    await luisPage.getByRole('heading', { name: 'Verificación en dos pasos' }).waitFor()
+    await luisPage.getByLabel('Código').fill('000000')
+    await luisPage.getByRole('button', { name: 'Verificar' }).click()
+    await luisPage.getByRole('alert').filter({ hasText: 'Código incorrecto' }).waitFor()
+    await luisPage.getByLabel('Código').fill(recovery[0].toUpperCase())
+    await luisPage.getByRole('button', { name: 'Verificar' }).click()
+    await luisPage.waitForURL(base + '/')
+    await luisPage.getByRole('button', { name: /^Sesión: luis/ }).click()
+    await luisPage.getByRole('heading', { name: /Verificación en dos pasos: Activada/ }).waitFor()
+    await luisPage.getByText('9 códigos de recuperación').waitFor()
+    await luisPage.getByRole('link', { name: 'Gestionar' }).click()
+    await luisPage.waitForURL(base + '/cuenta/dos-pasos')
+    await luisPage.getByText('Te quedan 9 códigos de recuperación.').waitFor()
+    await fresh.close()
+  })
+
+  await check('the sign-in pages and the console raise no CSP violation; every attempt is audited', async () => {
     assert.deepEqual(cspErrors, [])
     const audit = readFileSync(auditFile, 'utf8').trim().split('\n').map((line) => JSON.parse(line))
-    const sessions = audit.filter((e) => e.path === '/login' || e.path === '/logout').map((e) => `${e.path} ${e.outcome}`)
-    assert.deepEqual(sessions, ['/login denied', '/login ok', '/logout ok', '/login ok'])
+    const of = (user) => audit.filter((e) => e.user === user && (e.path.startsWith('/login') || e.path.startsWith('/logout') || e.path.startsWith('/mfa'))).map((e) => `${e.path} ${e.outcome}`)
+    assert.deepEqual(of('ana'), ['/login denied', '/login ok', '/logout ok', '/login ok'])
+    assert.deepEqual(of('luis'), ['/mfa/activar ok', '/login ok', '/login/codigo denied', '/login/recuperacion ok', '/login ok'])
   })
 
   console.log(`${passed} login browser checks passed`)

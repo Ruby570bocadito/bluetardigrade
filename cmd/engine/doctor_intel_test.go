@@ -86,7 +86,20 @@ func TestDoctorConsoleUsers(t *testing.T) {
 	if c := doctorConsoleUsers(root); c.Status != "ok" || !strings.Contains(c.Detail, "2 cuentas (administradores 1, analistas 1") {
 		t.Fatalf("valid: %+v", c)
 	}
+	// two-step sign-in: one enrolled admin, an analyst still to enroll
+	enrolled := strings.Replace(admin, `"role"`, `"totp":"JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP","recovery":["`+strings.Repeat("a", 64)+`"],"role"`, 1)
+	write(`{"mfa_required":["admin","analyst"],"users":[` + sampleAccount + `,` + enrolled + `]}`)
+	if c := doctorConsoleUsers(root); c.Status != "ok" || !strings.Contains(c.Detail, "verificacion en dos pasos: 1 de 2, obligatoria para admin, analyst (1 la configuraran al entrar)") {
+		t.Fatalf("mfa: %+v", c)
+	}
+	withMFA := func(field string) string {
+		return `{"users":[` + strings.Replace(sampleAccount, `"role"`, field+`,"role"`, 1) + `]}`
+	}
 	for body, want := range map[string]string{
+		`{"mfa_required":["root"],"users":[` + sampleAccount + `]}`:     "mfa_required",
+		withMFA(`"totp":"ABCDEFGH"`):                                    "secreto",
+		withMFA(`"totp":"no es base32"`):                                "secreto",
+		withMFA(`"recovery":["abc"]`):                                   "recuperacion",
 		`{"users":[` + sampleAccount + `,` + sampleAccount + `]}`:       "repetida",
 		`{"users":[{"user":"ana","role":"root","password":"x"}]}`:       "rol invalido",
 		`{"users":[{"user":"ana","role":"viewer","password":"plain"}]}`: "formato invalido",

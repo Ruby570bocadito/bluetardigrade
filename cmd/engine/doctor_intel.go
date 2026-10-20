@@ -7,6 +7,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base32"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -109,7 +110,7 @@ func doctorConsoleUsers(root string) doctorCheck {
 	if err != nil || len(data) > 256*1024 {
 		return doctorCheck{name, "error", "No se puede leer el fichero de cuentas: la consola quedaria bloqueada", "Revisa la ruta y los permisos de " + path}
 	}
-	counts, problem := validateConsoleUsers(data)
+	counts, mfa, problem := validateConsoleUsers(data)
 	if problem != "" {
 		return doctorCheck{name, "error", problem + ": la consola quedaria bloqueada", "Corrige " + path + " (cada entrada se genera con web/console/scripts/console-user.mjs)"}
 	}
@@ -118,56 +119,116 @@ func doctorConsoleUsers(root string) doctorCheck {
 	if total == 1 {
 		noun = "cuenta"
 	}
-	detail := fmt.Sprintf("%d %s (administradores %d, analistas %d, lectores %d)", total, noun, counts["admin"], counts["analyst"], counts["viewer"])
+	detail := fmt.Sprintf("%d %s (administradores %d, analistas %d, lectores %d); verificacion en dos pasos: %d de %d", total, noun, counts["admin"], counts["analyst"], counts["viewer"], mfa.enrolled, total)
+	if len(mfa.required) > 0 {
+		detail += fmt.Sprintf(", obligatoria para %s", strings.Join(mfa.required, ", "))
+		if mfa.pending > 0 {
+			detail += fmt.Sprintf(" (%d la configuraran al entrar)", mfa.pending)
+		}
+	}
 	if counts["admin"] == 0 {
 		return doctorCheck{name, "warn", detail + ": ningun administrador", "Sin administrador nadie ve la auditoria ni puede usar la respuesta activa"}
 	}
 	return doctorCheck{name, "ok", detail, ""}
 }
 
-func validateConsoleUsers(data []byte) (map[string]int, string) {
+// consoleMFA summarizes two-step sign-in: accounts that have it, the
+// roles that require it, and accounts of those roles still to enroll.
+type consoleMFA struct {
+	enrolled int
+	required []string
+	pending  int
+}
+
+var recoveryHash = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+func validConsoleRole(r string) bool { return r == "admin" || r == "analyst" || r == "viewer" }
+
+func validateConsoleUsers(data []byte) (map[string]int, consoleMFA, string) {
+	var mfa consoleMFA
 	// Notepad and PowerShell 5 may save a UTF-8 BOM; the console strips it too
 	data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
 	var doc struct {
-		Users []struct {
-			User     string `json:"user"`
-			Role     string `json:"role"`
-			Password string `json:"password"`
+		MFARequired *[]string `json:"mfa_required"`
+		Users       []struct {
+			User     string    `json:"user"`
+			Role     string    `json:"role"`
+			Password string    `json:"password"`
+			TOTP     *string   `json:"totp"`
+			Recovery *[]string `json:"recovery"`
 		} `json:"users"`
 	}
 	if err := json.Unmarshal(data, &doc); err != nil {
 		var list []json.RawMessage
 		if json.Unmarshal(data, &list) != nil {
-			return nil, "El fichero de cuentas no es JSON valido"
+			return nil, mfa, "El fichero de cuentas no es JSON valido"
 		}
 		wrapped, _ := json.Marshal(map[string]any{"users": list})
 		if err := json.Unmarshal(wrapped, &doc); err != nil {
-			return nil, "El fichero de cuentas no es JSON valido"
+			return nil, mfa, "El fichero de cuentas no es JSON valido"
 		}
 	}
 	if len(doc.Users) == 0 {
-		return nil, "El fichero de cuentas no tiene cuentas"
+		return nil, mfa, "El fichero de cuentas no tiene cuentas"
+	}
+	required := map[string]bool{}
+	if doc.MFARequired != nil {
+		for _, r := range *doc.MFARequired {
+			if !validConsoleRole(r) {
+				return nil, mfa, "mfa_required debe ser una lista de roles (admin, analyst, viewer)"
+			}
+			if !required[r] {
+				mfa.required = append(mfa.required, r)
+			}
+			required[r] = true
+		}
 	}
 	counts := map[string]int{}
 	seen := map[string]bool{}
 	for i, u := range doc.Users {
 		user := strings.TrimSpace(u.User)
 		if !consoleUserName.MatchString(user) {
-			return nil, fmt.Sprintf("Cuenta %d: nombre de usuario invalido", i+1)
+			return nil, mfa, fmt.Sprintf("Cuenta %d: nombre de usuario invalido", i+1)
 		}
 		if seen[strings.ToLower(user)] {
-			return nil, fmt.Sprintf("Cuenta %s: repetida", user)
+			return nil, mfa, fmt.Sprintf("Cuenta %s: repetida", user)
 		}
 		seen[strings.ToLower(user)] = true
-		if u.Role != "admin" && u.Role != "analyst" && u.Role != "viewer" {
-			return nil, fmt.Sprintf("Cuenta %s: rol invalido (admin, analyst o viewer)", user)
+		if !validConsoleRole(u.Role) {
+			return nil, mfa, fmt.Sprintf("Cuenta %s: rol invalido (admin, analyst o viewer)", user)
 		}
 		if !validPasswordHash(u.Password) {
-			return nil, fmt.Sprintf("Cuenta %s: contrasena con formato invalido", user)
+			return nil, mfa, fmt.Sprintf("Cuenta %s: contrasena con formato invalido", user)
+		}
+		if u.TOTP != nil {
+			if !validTOTPSecret(*u.TOTP) {
+				return nil, mfa, fmt.Sprintf("Cuenta %s: secreto de verificacion en dos pasos invalido", user)
+			}
+			mfa.enrolled++
+		} else if required[u.Role] {
+			mfa.pending++
+		}
+		if u.Recovery != nil {
+			if len(*u.Recovery) > 20 {
+				return nil, mfa, fmt.Sprintf("Cuenta %s: codigos de recuperacion invalidos", user)
+			}
+			for _, h := range *u.Recovery {
+				if !recoveryHash.MatchString(h) {
+					return nil, mfa, fmt.Sprintf("Cuenta %s: codigos de recuperacion invalidos", user)
+				}
+			}
 		}
 		counts[u.Role]++
 	}
-	return counts, ""
+	return counts, mfa, ""
+}
+
+// validTOTPSecret applies the console's rule: base32 (any case, spaces
+// and padding allowed) of 16 to 64 bytes.
+func validTOTPSecret(s string) bool {
+	clean := strings.ToUpper(strings.NewReplacer(" ", "", "=", "", "\t", "", "\n", "", "\r", "").Replace(s))
+	key, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(clean)
+	return err == nil && len(key) >= 16 && len(key) <= 64
 }
 
 func validPasswordHash(p string) bool {

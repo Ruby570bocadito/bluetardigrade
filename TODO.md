@@ -65,11 +65,11 @@ punto, con el CI en verde (incluidos los jobs de Windows) antes de fusionar.
 Base de todo lo que abre lectura o escritura sensible (F3). Diseño de sesiones
 y cuentas: [OPERATIONS](docs/OPERATIONS.md#console-accounts-roles-and-audit).
 
-- [ ] Probar en Windows real el inicio de sesión (sección 7 de
-  PRUEBAS-PENDIENTES): primera cuenta desde `sf-start`, `sf-console -AddUser`
-  y `-RemoveUser`, caducidad al cambiar la contraseña.
-- [ ] **MFA opcional por TOTP**, con códigos de recuperación y obligatorio por
-  rol si se configura. Sin servicios externos.
+- [ ] Probar en Windows real el inicio de sesión y la verificación en dos
+  pasos (sección 7 de PRUEBAS-PENDIENTES): primera cuenta desde `sf-start`,
+  `sf-console -AddUser` y `-RemoveUser`, caducidad al cambiar la contraseña,
+  activar la verificación con una app real, código de recuperación,
+  `-RequireMfa` y `-ResetMfa`.
 - [ ] **Cuentas desde la consola** (TEAM-2): alta, baja, rol, deshabilitar y
   restablecer contraseña, con cambio obligatorio en el primer acceso. Solo
   administradores y auditado. Hoy se gestionan desde la terminal con

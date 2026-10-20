@@ -9,6 +9,10 @@
 #                           (default role admin), or reset its password
 #                           and role; the console then asks to sign in
 #   sf-console -RemoveUser ana                remove one
+#   sf-console -RequireMfa admin,analyst      roles that must use two-step
+#                           sign-in (none: optional for everyone)
+#   sf-console -ResetMfa ana                  remove an account's two-step
+#                           sign-in (a lost phone)
 # ======================================================================
 param(
     [switch]$Stop,
@@ -23,7 +27,9 @@ param(
     [string]$AddUser,
     [ValidateSet('admin', 'analyst', 'viewer')]
     [string]$Role = 'admin',
-    [string]$RemoveUser
+    [string]$RemoveUser,
+    [string]$ResetMfa,
+    [string]$RequireMfa
 )
 
 # 'Continue' (the default the script used to override away): failures
@@ -92,7 +98,7 @@ function Write-SignInMode {
     else { Write-Host '  sign-in:  none, anyone on this machine opens the console (add an account: sf-console -AddUser <name>)' }
 }
 
-if ($AddUser -or $RemoveUser) {
+if ($AddUser -or $RemoveUser -or $ResetMfa -or $RequireMfa) {
     # the tool asks for the password (not echoed) and stores only its
     # PBKDF2 hash; it writes the file in one rename, and the console
     # re-reads it on its own
@@ -103,7 +109,9 @@ if ($AddUser -or $RemoveUser) {
     }
     $hadFile = Test-Path -LiteralPath $usersFile
     if ($AddUser) { & $nodeExe $userTool --file $usersFile $AddUser $Role }
-    else { & $nodeExe $userTool --file $usersFile --remove $RemoveUser }
+    elseif ($RemoveUser) { & $nodeExe $userTool --file $usersFile --remove $RemoveUser }
+    elseif ($ResetMfa) { & $nodeExe $userTool --file $usersFile --reset-mfa $ResetMfa }
+    else { & $nodeExe $userTool --file $usersFile --require-mfa $RequireMfa }
     if ($LASTEXITCODE -ne 0) { return }
     # a console started without the file never looks for it
     if (-not $hadFile -and (Test-PortLocal $ConsolePort)) {

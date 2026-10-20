@@ -689,7 +689,9 @@ gets in acts as administrator. That stays unchanged unless
 - File: JSON `{"users": [{"user": "ana", "role": "analyst",
   "password": "pbkdf2-sha256$..."}]}`. Elsewhere, manage it with
   `node scripts/console-user.mjs --file <path> <user> <admin|analyst|viewer>`
-  (or `--file <path> --remove <user>`) from `web/console`. It asks for
+  (or `--remove <user>`, `--reset-mfa <user>`,
+  `--require-mfa <roles|none>`, each after `--file <path>`) from
+  `web/console`. A new password keeps the account's second step. It asks for
   the password (at least 12 characters, not echoed) and stores only its
   PBKDF2-SHA256 hash, replacing the file in one rename. Without `--file`
   it prints the entry instead. The console re-reads the file when it
@@ -712,6 +714,30 @@ gets in acts as administrator. That stays unchanged unless
   malformed locks the console instead of opening it, and the sign-in
   page says why. Put TLS in front when the console leaves the machine;
   behind it the console sends HSTS.
+- Two-step sign-in (TOTP, optional per account): in the session panel,
+  **Verificación en dos pasos → Activar** shows a QR code, and the key
+  typed out, for any authenticator app (RFC 6238: 6 digits, 30 seconds).
+  The code the app then shows confirms it, and the console hands over
+  10 single-use recovery codes, shown once and stored hashed. From then
+  on the account signs in with its password and a code, or a recovery
+  code instead of the code. The same page makes new recovery codes or
+  turns the second step off, both against a current code.
+  `sf-console -RequireMfa admin,analyst` (`"mfa_required": [...]` in the
+  file; `none` makes it optional again) makes it compulsory for those
+  roles: an account of such a role without it is asked to set it up
+  right after its password, and its open sessions end when the rule is
+  set. `sf-console -ResetMfa ana` removes an account's second step (a
+  lost phone); with a required role, the next sign-in sets it up again.
+  Five wrong codes for an account within 15 minutes lock its second
+  step for the rest of that window, and each code is accepted once.
+  Accounts with the second step, or of a role that requires it, cannot
+  use HTTP Basic: scripts need an account of a role without it. The
+  secret sits in the users file next to the password hash, so the
+  second step protects against a stolen or guessed password, not against
+  a copy of the file: keep the file readable only by its owner (the
+  tools write it with mode 0600). The console writes the file itself
+  when an account sets up the second step or spends a recovery code, so
+  the console process must be able to write it.
 - Sign-in and sign-out only accept requests from the console's own page
   (host pinning plus an Origin and `Sec-Fetch-Site` check), so another
   site can neither sign the browser in to an account of its choosing

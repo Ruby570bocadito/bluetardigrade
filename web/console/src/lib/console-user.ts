@@ -11,6 +11,8 @@ export type ConsoleMe = {
   can_triage: boolean
   can_respond: boolean
   audit: boolean
+  // two-step sign-in, accounts of the users file only
+  mfa?: { enrolled: boolean; required: boolean; recovery_left: number }
 }
 
 export type ConsoleAuditEntry = {
@@ -50,7 +52,13 @@ export function permissions(me: ConsoleMe): { label: string; allowed: boolean }[
 
 const ACTIONS: [RegExp, string][] = [
   [/^POST \/login$/, 'Inicio de sesión'],
+  [/^POST \/login\/codigo$/, 'Código del segundo paso'],
+  [/^POST \/login\/activar$/, 'Activación del segundo paso al entrar'],
+  [/^POST \/login\/recuperacion$/, 'Entrada con código de recuperación'],
   [/^POST \/logout$/, 'Cierre de sesión'],
+  [/^POST \/mfa\/activar$/, 'Verificación en dos pasos activada'],
+  [/^POST \/mfa\/recuperacion$/, 'Nuevos códigos de recuperación'],
+  [/^POST \/mfa\/desactivar$/, 'Verificación en dos pasos desactivada'],
   [/^POST \/api\/alerts\/[0-9a-f]{16}\/status$/, 'Triaje de alerta'],
   [/^POST \/api\/incidents$/, 'Nuevo incidente'],
   [/^PATCH \/api\/incidents\/[0-9a-f]{16}$/, 'Cambio en incidente'],
@@ -72,7 +80,22 @@ export const OUTCOME_TEXT: Record<ConsoleAuditEntry['outcome'], string> = { ok: 
 // outcomeText: a refused sign-in is a credential problem, not a role one.
 export function outcomeText(entry: Pick<ConsoleAuditEntry, 'outcome' | 'path'>): string {
   if (entry.path === '/login' && entry.outcome === 'denied') return 'Credenciales rechazadas'
+  if ((entry.path.startsWith('/login/') || entry.path.startsWith('/mfa/')) && entry.outcome === 'denied') return 'Código rechazado'
   return OUTCOME_TEXT[entry.outcome] ?? entry.outcome
+}
+
+// mfaText describes the account's two-step sign-in for the session panel.
+export function mfaText(mfa: NonNullable<ConsoleMe['mfa']>): { label: string; detail: string; warn: boolean } {
+  if (mfa.enrolled) {
+    const n = mfa.recovery_left
+    return {
+      label: 'Activada',
+      detail: `${n} código${n === 1 ? '' : 's'} de recuperación${n <= 2 ? ': genera nuevos antes de quedarte sin ninguno' : ''}`,
+      warn: n <= 2,
+    }
+  }
+  if (mfa.required) return { label: 'Pendiente', detail: 'Tu rol la exige: configúrala ahora o en tu próximo inicio de sesión', warn: true }
+  return { label: 'Desactivada', detail: 'Entras solo con la contraseña', warn: false }
 }
 
 export async function fetchMe(): Promise<ConsoleMe | null> {

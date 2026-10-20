@@ -5,7 +5,7 @@
 // shapes the UI here; the engine proxy enforces it on every write.
 
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { ArrowClockwise, Check, Eye, Prohibit, SignOut, UserCircle, X } from '@phosphor-icons/react'
+import { ArrowClockwise, Check, Eye, Prohibit, ShieldCheck, ShieldWarning, SignOut, UserCircle, X } from '@phosphor-icons/react'
 import { ConsoleDialog } from './console-dialog'
 import {
   DEFAULT_ME,
@@ -13,6 +13,7 @@ import {
   describeAction,
   fetchAudit,
   fetchMe,
+  mfaText,
   modeText,
   outcomeText,
   permissions,
@@ -40,6 +41,27 @@ const OUTCOME_CLASS: Record<ConsoleAuditEntry['outcome'], string> = {
   ok: 'text-emerald-300',
   error: 'text-amber-300',
   denied: 'text-rose-300',
+}
+
+// TwoStepCard links to /cuenta/dos-pasos, a server page like /login: a
+// plain link, so enrolling never depends on the console bundle.
+function TwoStepCard({ mfa }: { mfa: NonNullable<ConsoleMe['mfa']> }) {
+  const text = mfaText(mfa)
+  const Icon = mfa.enrolled ? ShieldCheck : ShieldWarning
+  return (
+    <section aria-labelledby="two-step-title" className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] px-3 py-2.5">
+      <div className="flex min-w-0 items-start gap-2">
+        <Icon size={16} aria-hidden className={`mt-0.5 shrink-0 ${mfa.enrolled ? 'text-emerald-400' : text.warn ? 'text-amber-300' : 'text-zinc-500'}`} />
+        <div className="min-w-0">
+          <h3 id="two-step-title" className="text-xs font-medium text-zinc-100">Verificación en dos pasos: {text.label}</h3>
+          <p className={`text-[11px] ${text.warn ? 'text-amber-300' : 'text-zinc-500'}`}>{text.detail}</p>
+        </div>
+      </div>
+      <a href="/cuenta/dos-pasos" className="chip shrink-0 px-2.5 py-1.5 text-xs text-zinc-300 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        {mfa.enrolled ? 'Gestionar' : 'Activar'}
+      </a>
+    </section>
+  )
 }
 
 function AuditTable() {
@@ -134,6 +156,7 @@ export function UserChip() {
             ))}
           </ul>
           {me.mode === 'users' && <p className="mt-3 text-[11px] text-zinc-500">Tus cambios quedan firmados en el motor con tu nombre de cuenta.</p>}
+          {me.mode === 'users' && me.mfa && <TwoStepCard mfa={me.mfa} />}
           {me.mode !== 'open' && (
             // a plain form: the server clears the cookie and redirects to /login
             <form method="post" action="/api/console/logout" className="mt-4">
