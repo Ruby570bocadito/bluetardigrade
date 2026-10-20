@@ -5,16 +5,16 @@
 // shapes the UI here; the engine proxy enforces it on every write.
 
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { ArrowClockwise, Check, Eye, Prohibit, UserCircle, X } from '@phosphor-icons/react'
+import { ArrowClockwise, Check, Eye, Prohibit, SignOut, UserCircle, X } from '@phosphor-icons/react'
 import { ConsoleDialog } from './console-dialog'
 import {
   DEFAULT_ME,
-  OUTCOME_TEXT,
   ROLE_TEXT,
   describeAction,
   fetchAudit,
   fetchMe,
   modeText,
+  outcomeText,
   permissions,
   type ConsoleAuditEntry,
   type ConsoleMe,
@@ -79,9 +79,9 @@ function AuditTable() {
               {state.entries.map((e, i) => (
                 <tr key={`${e.at}-${i}`} className="border-t border-white/[0.04] text-zinc-300">
                   <td className="whitespace-nowrap px-2 py-1.5 font-mono tabular-nums text-zinc-400">{e.at.replace('T', ' ').slice(0, 19)}</td>
-                  <td className="px-2 py-1.5">{e.user} <span className="text-zinc-500">· {ROLE_TEXT[e.role] ?? e.role}</span></td>
+                  <td className="px-2 py-1.5">{e.user}{e.role && <span className="text-zinc-500"> · {ROLE_TEXT[e.role] ?? e.role}</span>}</td>
                   <td className="px-2 py-1.5" title={`${e.method} ${e.path}`}>{describeAction(e)}</td>
-                  <td className={`whitespace-nowrap px-2 py-1.5 ${OUTCOME_CLASS[e.outcome] ?? ''}`}>{OUTCOME_TEXT[e.outcome] ?? e.outcome} <span className="text-zinc-500">({e.status})</span></td>
+                  <td className={`whitespace-nowrap px-2 py-1.5 ${OUTCOME_CLASS[e.outcome] ?? ''}`}>{outcomeText(e)} <span className="text-zinc-500">({e.status})</span></td>
                 </tr>
               ))}
             </tbody>
@@ -134,6 +134,14 @@ export function UserChip() {
             ))}
           </ul>
           {me.mode === 'users' && <p className="mt-3 text-[11px] text-zinc-500">Tus cambios quedan firmados en el motor con tu nombre de cuenta.</p>}
+          {me.mode !== 'open' && (
+            // a plain form: the server clears the cookie and redirects to /login
+            <form method="post" action="/api/console/logout" className="mt-4">
+              <button type="submit" className="chip gap-1.5 px-2.5 py-1.5 text-xs text-zinc-300 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <SignOut size={14} aria-hidden /> Cerrar sesión
+              </button>
+            </form>
+          )}
           {me.role === 'admin' && <AuditTable />}
         </div>
       </ConsoleDialog>

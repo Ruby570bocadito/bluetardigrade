@@ -200,6 +200,14 @@ without browser libraries can install them with:
 node tools/console-tests/node_modules/playwright/cli.js install --with-deps chromium
 ```
 
+`check_console_login_browser.mjs` (same target, port 3104) starts the
+console with a throwaway accounts file and signs in through the real form:
+a page without a session lands on `/login` and comes back to where it was
+going, a wrong password stays on the form, the session cookie is HttpOnly,
+SameSite=Strict and ends with the browser, signing out from the session
+dialog works, and a password change sends the open console back to the
+form on its next poll. Every attempt must be in the audit file.
+
 `CONSOLE_TEST_TOOLS` selects another absolute tooling directory.
 `CONSOLE_BROWSER_URL=http://127.0.0.1:3000` uses an already running console,
 and `CONSOLE_CHROMIUM_PATH` selects an existing Chromium executable. External

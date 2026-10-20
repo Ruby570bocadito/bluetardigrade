@@ -26,6 +26,31 @@
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import { authorized, unauthorizedResponse } from './lib/access'
+import { safeNext } from './lib/login'
+import { requestIsHttps } from './lib/sessions'
+
+// Reachable without a session: the sign-in page, its form target and
+// the favicon. Everything else, the bundle under /_next included, stays
+// behind the gate.
+const PUBLIC_PATHS = new Set(['/login', '/api/console/login', '/icon.svg'])
+
+// A browser opening a console page without a session is sent to the
+// sign-in page (keeping where it was going); API calls, assets and
+// non-browser clients get the 401 JSON instead of a redirect.
+function refuse(request: NextRequest): Response | NextResponse {
+  const { pathname, search } = request.nextUrl
+  const page = request.method === 'GET' && !pathname.startsWith('/api/') && !pathname.startsWith('/_next/') &&
+    (request.headers.get('accept') ?? '').includes('text/html')
+  if (!page) return unauthorizedResponse()
+  // the proxy must answer with an absolute Location (a relative one is
+  // a 500 here, unlike in route handlers): built on the request's own URL
+  const target = request.nextUrl.clone()
+  target.pathname = '/login'
+  target.search = `?next=${encodeURIComponent(safeNext(pathname + search))}`
+  const res = NextResponse.redirect(target, 303)
+  res.headers.set('cache-control', 'no-store')
+  return res
+}
 
 const isDev = process.env.NODE_ENV !== 'production'
 
@@ -52,8 +77,19 @@ function contentSecurityPolicy(nonce: string): string {
   ].join('; ')
 }
 
+// HSTS only when the console is reached over HTTPS (a TLS front end
+// sets X-Forwarded-Proto): browsers ignore it over plain HTTP, and a
+// loopback console has no certificate to pin. No includeSubDomains:
+// the console does not own its parent domain.
+function withTransportSecurity<T extends Response>(request: NextRequest, response: T): T {
+  if (requestIsHttps(request)) response.headers.set('Strict-Transport-Security', 'max-age=31536000')
+  return response
+}
+
 export async function proxy(request: NextRequest) {
-  if (!(await authorized(request))) return unauthorizedResponse()
+  if (!PUBLIC_PATHS.has(request.nextUrl.pathname) && !(await authorized(request))) {
+    return withTransportSecurity(request, refuse(request))
+  }
   // 122 bits of entropy from randomUUID, base64url-free ASCII (48 chars,
   // no padding): safe inside a header and a quoted CSP source list.
   const nonce = btoa(crypto.randomUUID())
@@ -65,7 +101,7 @@ export async function proxy(request: NextRequest) {
   requestHeaders.set('Content-Security-Policy', policy)
   const response = NextResponse.next({ request: { headers: requestHeaders } })
   response.headers.set('Content-Security-Policy', policy)
-  return response
+  return withTransportSecurity(request, response)
 }
 
 export const config = {

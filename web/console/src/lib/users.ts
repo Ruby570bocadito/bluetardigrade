@@ -171,16 +171,13 @@ export function basicCredentials(header: string | null): { user: string; passwor
   return sep < 0 ? null : { user: decoded.slice(0, sep), password: decoded.slice(sep + 1) }
 }
 
-// accountPrincipal checks Basic credentials against the users file.
-export async function accountPrincipal(header: string | null, now = Date.now()): Promise<Principal | null> {
+// verifyAccount checks one user name and password against the users
+// file: the login form and Basic credentials share it, and with it the
+// per-account lockout.
+export async function verifyAccount(user: string, password: string, now = Date.now()): Promise<Principal | null> {
   const { accounts, error } = loadAccounts()
   if (error || accounts.length === 0) return null
-  const creds = basicCredentials(header)
-  if (!creds || !header) return null
-  const digest = await headerDigest(header)
-  const hit = verified.get(digest)
-  if (hit && hit.until > now) return hit.principal
-  const account = accounts.find((a) => a.user.toLowerCase() === creds.user.trim().toLowerCase())
+  const account = accounts.find((a) => a.user.toLowerCase() === user.trim().toLowerCase())
   // failures are tracked for real accounts only: invented names cannot
   // grow the table (or flush it to reset a real account's lockout)
   const failKey = account?.user.toLowerCase() ?? ''
@@ -188,7 +185,7 @@ export async function accountPrincipal(header: string | null, now = Date.now()):
   if (fails && now - fails.since < FAIL_WINDOW_MS && fails.count >= FAIL_LIMIT) return null
   // unknown accounts cost the same derivation as known ones
   const probe = account ?? accounts[0]
-  const derived = await pbkdf2(creds.password, probe.salt, probe.iterations)
+  const derived = await pbkdf2(password, probe.salt, probe.iterations)
   if (!account || !sameBytes(derived, account.hash)) {
     if (account) {
       const current = fails && now - fails.since < FAIL_WINDOW_MS ? fails : { count: 0, since: now }
@@ -197,10 +194,35 @@ export async function accountPrincipal(header: string | null, now = Date.now()):
     return null
   }
   failures.delete(failKey)
-  const principal: Principal = { name: account.user, role: account.role, mode: 'users' }
+  return { name: account.user, role: account.role, mode: 'users' }
+}
+
+// accountPrincipal checks Basic credentials against the users file.
+export async function accountPrincipal(header: string | null, now = Date.now()): Promise<Principal | null> {
+  const creds = basicCredentials(header)
+  if (!creds || !header) return null
+  const digest = await headerDigest(header)
+  const hit = verified.get(digest)
+  if (hit && hit.until > now) return hit.principal
+  const principal = await verifyAccount(creds.user, creds.password, now)
+  if (!principal) return null
   if (verified.size >= MAX_VERIFIED) verified.clear()
   verified.set(digest, { principal, until: now + VERIFIED_TTL_MS })
   return principal
+}
+
+// accountStamp fingerprints an account as the users file holds it now
+// (role and password hash), or null when it is gone or the file is
+// broken. A session remembers the stamp it was opened with: changing
+// the password or the role, or removing the account, ends it.
+export async function accountStamp(user: string): Promise<string | null> {
+  const { accounts, error } = loadAccounts()
+  if (error) return null
+  const account = accounts.find((a) => a.user.toLowerCase() === user.toLowerCase())
+  if (!account) return null
+  const material = new Uint8Array([...new TextEncoder().encode(account.role + '\n'), ...account.hash])
+  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', material))
+  return Array.from(d, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
 // ---- attribution and audit ---------------------------------------------------------------
@@ -223,7 +245,8 @@ export function attribute(body: string, principal: Principal): string {
 export type AuditEntry = {
   at: string
   user: string
-  role: Role
+  // '' for a rejected sign-in: the caller holds no role
+  role: Role | ''
   mode: Principal['mode']
   method: string
   path: string

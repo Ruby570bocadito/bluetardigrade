@@ -26,12 +26,26 @@ export async function readEngineJson<T>(base: string, path: string, lifetime: Ab
   const timer = setTimeout(() => controller.abort(), ENGINE_REQUEST_TIMEOUT_MS)
   try {
     const response = await fetch(base + path, { signal: controller.signal, cache: 'no-store' })
+    if (response.status === 401) await signInAgainIfSessionEnded(response)
     if (!response.ok) throw new EngineHttpError(path, response.status)
     return (await response.json()) as T
   } finally {
     clearTimeout(timer)
     lifetime.removeEventListener('abort', abort)
   }
+}
+
+// signInAgainIfSessionEnded sends the browser to the sign-in page when
+// the CONSOLE refused the call (its session expired or was closed). A
+// 401 of the engine itself (a token mismatch behind the proxy) carries
+// another error code and stays an ordinary failure: redirecting on it
+// would loop, since /login sends an open console straight back.
+async function signInAgainIfSessionEnded(response: Response): Promise<void> {
+  if (typeof window === 'undefined') return
+  const body = (await response.clone().json().catch(() => null)) as { error?: unknown } | null
+  if (body?.error !== 'console_auth_required') return
+  const next = window.location.pathname + window.location.search
+  window.location.assign(`/login?error=sesion&next=${encodeURIComponent(next)}`)
 }
 
 export class EngineHttpError extends Error {
