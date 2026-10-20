@@ -313,6 +313,25 @@ sesión y queda registrado quién hace cada cosa.
 - [ ] La consola vuelve a abrir sin pedir contraseña y la cabecera dice «local · Administrador».
   `sf-status` dice «sign-in: none».
 
+## 7b. Grupos de equipos
+
+- [ ] **[normal]** `sf-stop` y `sf-start` (el lanzador pasa ahora `-host-groups`).
+  `sf-engine doctor` dice «Grupos de equipos: Sin grupos de equipos…».
+- [ ] Entra como administrador. En Ajustes → Grupos, «Nuevo grupo»: etiqueta
+  `Este equipo` y como patrón el nombre de tu equipo (o el principio seguido de `*`).
+  Al guardar dice «Grupos guardados.» y «1 equipo».
+- [ ] En Equipos aparece el selector «Grupo». Al elegir el grupo solo queda tu
+  equipo, que lleva la etiqueta del grupo. «Sin grupo» muestra el resto.
+- [ ] Un patrón mal escrito, por ejemplo `pc-[`, no se guarda y dice
+  «patrón mal formado».
+- [ ] Si tienes el conector de Active Directory: un grupo con la OU de tu equipo,
+  por ejemplo `OU=Equipos,DC=empresa,DC=local`, incluye tu equipo.
+- [ ] Con una cuenta de analista, Ajustes → Grupos muestra los grupos pero dice
+  «Solo un administrador cambia los grupos.».
+- [ ] **[normal]** `sf-engine doctor` dice «Grupos de equipos: 1 grupo de equipos».
+- [ ] Si tienes AD: en Ajustes → Active Directory, «Probar conexión» y «Guardar»
+  responden. Antes la consola los rechazaba con «read_only».
+
 ## 8. Reputación por hash (solo si tienes clave de VirusTotal)
 
 - [ ] Con `SF_VT_API_KEY` configurada, abre una alerta de un proceso del sensor ETW.

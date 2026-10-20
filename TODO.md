@@ -71,12 +71,17 @@ y cuentas: [OPERATIONS](docs/OPERATIONS.md#console-accounts-roles-and-audit).
   activar la verificación con una app real, código de recuperación,
   `-RequireMfa` y `-ResetMfa`, y las cuentas desde Ajustes → Cuentas (crear,
   contraseña temporal, deshabilitar) y «Cambiar contraseña».
-- [ ] **ACL de máquinas y servicios:**
-  - grupos y etiquetas de equipos (sede, departamento, OU de AD, servidores o
-    puestos);
-  - permisos por grupo: qué equipos ve cada operador y qué puede hacer en ellos;
-  - por concretar: auditar en los endpoints los servicios de Windows con
-    permisos débiles (escritura para usuarios no administradores).
+- [ ] **ACL de máquinas y servicios.** Los grupos de equipos ya existen
+  (Ajustes → Grupos); falta:
+  - probar los grupos en Windows real (sección 7b de PRUEBAS-PENDIENTES);
+  - permisos por grupo: las cuentas con grupos solo ven y actúan sobre sus
+    equipos, filtrado en el motor (alertas, eventos, incidentes, informes,
+    flota, exportaciones, forense y el directo); sin grupos se ve todo; un
+    incidente solo lo ve quien tiene todos sus equipos; el analista IA, apagado
+    para cuentas con grupos hasta filtrarlo también;
+  - auditar en los equipos los servicios de Windows con permisos débiles (el
+    sensor, solo lectura: DACL del servicio, del ejecutable y rutas sin
+    comillas), con alerta y su sección en la ficha del equipo.
 - [ ] **Login con cuentas del dominio** (AD-7): bind LDAPS con las credenciales
   del usuario y grupos de AD que dan cada rol; las cuentas locales siguen como
   respaldo.
