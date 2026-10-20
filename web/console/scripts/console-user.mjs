@@ -5,7 +5,8 @@
 //       prints one account entry, to paste into the "users" list
 //   node scripts/console-user.mjs --file <path> <user> <admin|analyst|viewer>
 //       creates the account in the file (and the file), or replaces the
-//       password and role of an existing one (its two-step sign-in stays)
+//       password and role of an existing one (its two-step sign-in stays,
+//       a password change an administrator asked for is no longer due)
 //   node scripts/console-user.mjs --file <path> --remove <user>
 //   node scripts/console-user.mjs --file <path> --reset-mfa <user>
 //       removes the account's two-step sign-in (a lost phone); with a
@@ -159,9 +160,12 @@ try {
     const doc = readDoc()
     const entry = entryFor(await readPassword())
     const at = doc.users.findIndex(same)
-    // a new password keeps the account's two-step sign-in
-    if (at >= 0) doc.users[at] = { ...doc.users[at], ...entry, user: doc.users[at].user }
-    else doc.users.push(entry)
+    // a new password keeps the account's two-step sign-in; whoever typed
+    // it at the terminal chose it, so a pending change is no longer due
+    if (at >= 0) {
+      doc.users[at] = { ...doc.users[at], ...entry, user: doc.users[at].user }
+      delete doc.users[at].must_change
+    } else doc.users.push(entry)
     writeDoc(doc)
     console.error(at >= 0 ? `cuenta ${doc.users[at].user} actualizada (${role}); sus sesiones abiertas terminan` : `cuenta ${user} creada (${role})`)
   }

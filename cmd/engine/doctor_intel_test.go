@@ -92,6 +92,13 @@ func TestDoctorConsoleUsers(t *testing.T) {
 	if c := doctorConsoleUsers(root); c.Status != "ok" || !strings.Contains(c.Detail, "verificacion en dos pasos: 1 de 2, obligatoria para admin, analyst (1 la configuraran al entrar)") {
 		t.Fatalf("mfa: %+v", c)
 	}
+	// account management: a disabled administrator does not count
+	disabledAdmin := strings.Replace(admin, `"role"`, `"disabled":true,"role"`, 1)
+	temp := strings.Replace(sampleAccount, `"role"`, `"must_change":true,"role"`, 1)
+	write(`{"users":[` + temp + `,` + disabledAdmin + `]}`)
+	if c := doctorConsoleUsers(root); c.Status != "warn" || !strings.Contains(c.Detail, "deshabilitadas 1; con contrasena temporal 1: ningun administrador habilitado") {
+		t.Fatalf("disabled admin: %+v", c)
+	}
 	withMFA := func(field string) string {
 		return `{"users":[` + strings.Replace(sampleAccount, `"role"`, field+`,"role"`, 1) + `]}`
 	}
@@ -100,6 +107,8 @@ func TestDoctorConsoleUsers(t *testing.T) {
 		withMFA(`"totp":"ABCDEFGH"`):                                    "secreto",
 		withMFA(`"totp":"no es base32"`):                                "secreto",
 		withMFA(`"recovery":["abc"]`):                                   "recuperacion",
+		withMFA(`"disabled":"yes"`):                                     "disabled y must_change",
+		withMFA(`"must_change":1`):                                      "disabled y must_change",
 		`{"users":[` + sampleAccount + `,` + sampleAccount + `]}`:       "repetida",
 		`{"users":[{"user":"ana","role":"root","password":"x"}]}`:       "rol invalido",
 		`{"users":[{"user":"ana","role":"viewer","password":"plain"}]}`: "formato invalido",
