@@ -802,7 +802,9 @@ func (h *Hub) RecordAlert(a alert.Alert) {
 	if a.ID == "" {
 		a.ID = alert.NewID()
 	}
+	now := time.Now()
 	h.mu.Lock()
+	at := h.alertTimeLocked(a, now)
 	h.alerts = append(h.alerts, a)
 	h.alertsTotal++
 	h.bySeverity[a.Severity]++
@@ -817,9 +819,37 @@ func (h *Hub) RecordAlert(a alert.Alert) {
 	h.mu.Unlock()
 	// The tracker owns its mutex — like every other manager's lock,
 	// it is only ever taken after h.mu.Unlock (uniform lock rule).
-	h.risk.Observe(a.Host, a.Severity, time.Now())
+	h.risk.Observe(a.Host, a.Severity, at)
 	h.persistAlert(a)
 	h.broadcast("alert", a)
+}
+
+// alertEventScan bounds how far back RecordAlert looks for the event
+// that raised an alert: the engine publishes each event right before
+// evaluating it, so the trigger is the newest entry or very close.
+const alertEventScan = 64
+
+// alertTimeLocked is the instant the risk score charges an alert to:
+// the triggering event's detection time (model.Event.DetectionTime,
+// the rule the correlator, beaconing and thresholds already follow),
+// never later than now. Without it a sensor replaying the backlog it
+// queued while the engine was down turned hours of activity into one
+// burst of fresh points on the host. Alerts with no event in the
+// recent ring (sensor-silence, synthetic) keep the wall clock.
+// Caller holds h.mu.
+func (h *Hub) alertTimeLocked(a alert.Alert, now time.Time) time.Time {
+	if a.EventID == "" {
+		return now
+	}
+	for i, n := len(h.events)-1, 0; i >= 0 && n < alertEventScan; i, n = i-1, n+1 {
+		if ev := h.events[i]; ev.ID == a.EventID {
+			if t := ev.DetectionTime(now); t.Before(now) {
+				return t
+			}
+			return now
+		}
+	}
+	return now
 }
 
 // broadcast marshals once and ships to every subscriber; slow clients

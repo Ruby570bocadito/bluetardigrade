@@ -35,6 +35,29 @@ func TestWeightsAccumulatePerHost(t *testing.T) {
 	}
 }
 
+func TestLateObservationAddsDecayedWeight(t *testing.T) {
+	tr := New()
+	tr.Observe("PC-1", rules.SevHigh, base)
+	// a replayed backlog alert from one half-life earlier arrives after
+	// the live one: it adds half its weight and does not rewind the
+	// host's reference instant
+	tr.Observe("PC-1", rules.SevHigh, base.Add(-HalfLife))
+	got := tr.Snapshot(base, 10)
+	if len(got) != 1 || got[0].Score != 7.5 || got[0].Alerts != 2 {
+		t.Fatalf("got %+v, want score 7.5 over 2 alerts", got)
+	}
+	if got[0].LastSeen != base.UTC().Format(time.RFC3339Nano) {
+		t.Errorf("last_seen = %q, want the newest alert %q", got[0].LastSeen, base.UTC().Format(time.RFC3339Nano))
+	}
+	// order does not matter: the same two alerts in time order score the same
+	inOrder := New()
+	inOrder.Observe("PC-1", rules.SevHigh, base.Add(-HalfLife))
+	inOrder.Observe("PC-1", rules.SevHigh, base)
+	if s := inOrder.Snapshot(base, 10); s[0].Score != got[0].Score {
+		t.Errorf("in-order score = %v, late-arrival score = %v: want equal", s[0].Score, got[0].Score)
+	}
+}
+
 func TestInfoSeverityAddsNoScore(t *testing.T) {
 	tr := New()
 	tr.Observe("PC-1", rules.SevInfo, base)

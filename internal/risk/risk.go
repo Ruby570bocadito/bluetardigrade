@@ -102,6 +102,14 @@ func New() *Tracker {
 // ignored: an alert without a host has nothing to attach risk to,
 // and a shared "(unknown)" bucket would let unhosted alerts add up
 // into a phantom hotspot.
+//
+// now is when the activity HAPPENED (the API passes the triggering
+// event's detection time), so it may be older than the host's last
+// observation: a sensor replaying the backlog it queued while the
+// engine was down delivers hours of activity in minutes. A late alert
+// adds its weight already decayed to the host's reference instant
+// instead of rewinding it, so the backlog weighs what it would have
+// weighed live — not a burst of "fresh" points.
 func (t *Tracker) Observe(host, severity string, now time.Time) {
 	if host == "" {
 		return
@@ -115,7 +123,10 @@ func (t *Tracker) Observe(host, severity string, now time.Time) {
 	defer t.mu.Unlock()
 
 	st, ok := t.hosts[host]
-	if ok {
+	if ok && now.Before(st.lastSeen) {
+		st.score += w * math.Pow(0.5, st.lastSeen.Sub(now).Hours()/HalfLife.Hours())
+		st.alerts++
+	} else if ok {
 		st.score = decay(st, now) + w
 		st.alerts++
 		st.lastSeen = now

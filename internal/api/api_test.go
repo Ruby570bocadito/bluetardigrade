@@ -723,6 +723,40 @@ func TestStatsHotHostsRanking(t *testing.T) {
 	}
 }
 
+// A sensor that outlived an engine stop replays its queue and spool on
+// reconnect: hours of activity arrive in minutes. The risk score charges
+// each alert to its event's time, so the replayed backlog decays like it
+// would have live instead of landing as one burst of fresh points.
+func TestStatsHotHostsChargeTheEventTime(t *testing.T) {
+	h, addr := newTestHub(t)
+	now := time.Now().UTC()
+	raise := func(id string, at time.Time) {
+		h.PublishEvent(&model.Event{ID: id, Type: model.TypeProcessCreate, Host: "PC-A", Timestamp: at})
+		h.RecordAlert(alert.Alert{
+			Timestamp: now.Format(time.RFC3339Nano), RuleID: "r-" + id, RuleName: "rule " + id,
+			Severity: "high", Host: "PC-A", EventID: id, EventType: model.TypeProcessCreate,
+			Summary: "s", MatchedOn: []string{"process.name"},
+		})
+	}
+	for i := 0; i < 20; i++ {
+		raise(fmt.Sprintf("old-%d", i), now.Add(-6*time.Hour)) // 12 half-lives ago
+	}
+	raise("live", now)
+
+	var stats map[string]any
+	getJSON(t, fmt.Sprintf("http://%s/api/stats", addr), &stats)
+	hot, ok := stats["hot_hosts"].([]any)
+	if !ok || len(hot) != 1 {
+		t.Fatalf("hot_hosts = %#v, want 1 entry", stats["hot_hosts"])
+	}
+	first, _ := hot[0].(map[string]any)
+	// 20 high alerts at arrival time would score 105; charged to their
+	// event time they add 20*5*0.5^12 = 0.02 to the live alert's 5
+	if score, _ := first["score"].(float64); score < 5 || score > 5.1 || first["alerts"] != 21.0 {
+		t.Fatalf("top host = %#v, want score ~5 over 21 alerts", first)
+	}
+}
+
 func TestMetricsParityWithStats(t *testing.T) {
 	h, addr := newTestHub(t)
 	h.SetCounters(func() (uint64, uint64, uint64) { return 7, 2, 1 })
