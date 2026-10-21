@@ -35,19 +35,28 @@ export function fetchIntel(): Promise<EngineResult<IntelPayload>> {
   return engineCall<IntelPayload>('GET', '/api/intel')
 }
 
-/** "IP 120 · Dominios 3" in a fixed order, kinds without indicators left out. */
-export function kindBreakdown(list: Pick<IntelList, 'by_kind'>): { kind: IntelKind; label: string; count: number }[] {
-  return KIND_ORDER.filter((k) => (list.by_kind[k] ?? 0) > 0).map((k) => ({ kind: k, label: INTEL_KIND_LABEL[k], count: list.by_kind[k] ?? 0 }))
+/** "IP 120 · Dominios 3" in a fixed order, kinds without indicators left
+ * out. Labels default to the shipped ES copy; a bilingual caller passes
+ * its own map (dict.intel.kindLabels). */
+export function kindBreakdown(
+  list: Pick<IntelList, 'by_kind'>,
+  labels: Record<IntelKind, string> = INTEL_KIND_LABEL,
+): { kind: IntelKind; label: string; count: number }[] {
+  return KIND_ORDER.filter((k) => (list.by_kind[k] ?? 0) > 0).map((k) => ({ kind: k, label: labels[k], count: list.by_kind[k] ?? 0 }))
 }
 
-/** 86400 -> "24 h", 5400 -> "1 h 30 min", 0 -> "desactivada". */
-export function learnText(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return 'desactivada'
+/** 86400 -> "24 h", 5400 -> "1 h 30 min", 0 -> "desactivada". Unit words
+ * default to the shipped ES copy; a bilingual caller passes its own. */
+export function learnText(
+  seconds: number,
+  units: { disabled: string; day: string; days: string } = { disabled: 'desactivada', day: 'día', days: 'días' },
+): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return units.disabled
   const days = Math.floor(seconds / 86400)
   const hours = Math.floor((seconds % 86400) / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
   const parts: string[] = []
-  if (days) parts.push(days === 1 ? '1 día' : `${days} días`)
+  if (days) parts.push(days === 1 ? `1 ${units.day}` : `${days} ${units.days}`)
   if (hours) parts.push(`${hours} h`)
   if (minutes && !days) parts.push(`${minutes} min`)
   if (!parts.length) parts.push(`${seconds} s`)

@@ -11,21 +11,23 @@
 
 import { CheckCircle, FlowArrow, Siren, Timer, UsersThree } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
+import { useI18n } from './i18n-provider'
 import { EmptyState, SeverityBadge, StatTile } from './ui-bits'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
 import type { SfSequence } from '@/lib/console-types'
 import { isUserScoped, scopeText, stepStatus, unarmedSteps } from '@/lib/sequences'
 
-function formatWindow(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return 'ventana n/d'
-  if (seconds % 60 !== 0) return `ventana ${seconds}s`
+function formatWindow(seconds: number, window: (rest: string) => string, nd: string): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return nd
+  if (seconds % 60 !== 0) return window(`${seconds}s`)
   const min = seconds / 60
-  if (min % 60 !== 0) return `ventana ${min} min`
+  if (min % 60 !== 0) return window(`${min} min`)
   const h = min / 60
-  return `ventana ${h}h`
+  return window(`${h}h`)
 }
 
 export function SequencesView() {
+  const { dict } = useI18n()
   const { sequences, rules, alerts, status } = useEngine()
 
   const liveRules = new Set(rules.map((r) => r.name))
@@ -36,26 +38,24 @@ export function SequencesView() {
   const completed = sequences.reduce((sum, seq) => sum + campaigns(seq), 0)
 
   return (
-    <section aria-label="Cadenas de kill chain" className="space-y-4">
+    <section aria-label={dict.sequences.sectionAria} className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-3">
-        <StatTile icon={FlowArrow} label="Cadenas cargadas" value={sequences.length} hint="sequences/*.yaml, recarga en caliente" />
+        <StatTile icon={FlowArrow} label={dict.sequences.loadedLabel} value={sequences.length} hint={dict.sequences.loadedHint} />
         <StatTile
           icon={CheckCircle}
-          label="Cadenas armadas"
+          label={dict.sequences.armedLabel}
           value={armed}
-          hint={sequences.length === 0 ? 'sin cadenas' : armed === sequences.length ? 'todos los pasos tienen regla' : `${sequences.length - armed} con pasos sin regla`}
+          hint={sequences.length === 0 ? dict.sequences.noChains : armed === sequences.length ? dict.sequences.allArmed : dict.sequences.unarmedCount(sequences.length - armed)}
           warn={armed < sequences.length}
         />
-        <StatTile icon={Siren} label="Campañas en la ventana" value={completed} hint={`alertas de correlación entre las ${alerts.length} recibidas`} />
+        <StatTile icon={Siren} label={dict.sequences.campaignsLabel} value={completed} hint={dict.sequences.campaignsHint(alerts.length)} />
       </div>
 
       <p className="max-w-[90ch] text-xs leading-relaxed text-zinc-500">
-        Cuando todos los pasos de una cadena se observan en el <span className="text-zinc-300">mismo host dentro de la ventana</span>,
-        el correlador levanta una sola alerta de campaña (el orden de los pasos no importa). Las cadenas{' '}
-        <span className="text-zinc-300">por cuenta</span> siguen a un mismo usuario por varios equipos (movimiento lateral) y
-        solo se completan cuando lo ven en el número mínimo de equipos. Un paso con alternativas se cumple con cualquiera de
-        ellas. Cada paso muestra las alertas de sus reglas en la ventana recibida. Edite{' '}
-        <code className="rounded bg-white/[0.06] px-1 font-mono text-[11px] text-zinc-300">sequences/*.yaml</code>; esta vista es de solo lectura.
+        {dict.sequences.proseA}<span className="text-zinc-300">{dict.sequences.proseBoldA}</span>{dict.sequences.proseB}
+        <span className="text-zinc-300">{dict.sequences.proseBoldB}</span>{dict.sequences.proseC}
+        <code className="rounded bg-white/[0.06] px-1 font-mono text-[11px] text-zinc-300">sequences/*.yaml</code>
+        {dict.sequences.proseD}
       </p>
 
       {status !== 'live' && sequences.length === 0 ? (
@@ -64,8 +64,8 @@ export function SequencesView() {
         <div className="panel">
           <EmptyState
             icon={FlowArrow}
-            title="Sin secuencias cargadas"
-            hint="El correlador está apagado: el motor no encontró un directorio sequences/ con YAML válido. Crea sequences/kill-chains.yaml y se cargará en el próximo hot-reload."
+            title={dict.sequences.emptyTitle}
+            hint={dict.sequences.emptyHint}
           />
         </div>
       ) : (
@@ -90,6 +90,7 @@ function FlowConnector({ flowing }: { flowing: boolean }) {
 }
 
 function SequenceCard({ seq, index, live, hits, campaigns }: { seq: SfSequence; index: number; live: Set<string>; hits: Map<string, number>; campaigns: number }) {
+  const { dict } = useI18n()
   const steps = seq.steps.map((_, i) => stepStatus(seq, i, live, hits))
   const missing = unarmedSteps(seq, live).map((i) => seq.steps[i])
   // armed = every step has at least one live rule in the engine: the
@@ -108,30 +109,30 @@ function SequenceCard({ seq, index, live, hits, campaigns }: { seq: SfSequence; 
           <h2 className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-100" title={seq.name}>{seq.name}</h2>
           <SeverityBadge severity={seq.severity} />
           {userScoped && (
-            <span title="Cadena por cuenta: sigue al mismo usuario por varios equipos" className="flex items-center gap-1 rounded-md border border-zinc-700 bg-white/[0.04] px-1.5 py-0.5 text-[11px] text-zinc-300">
+            <span title={dict.sequences.userScopeTitle} className="flex items-center gap-1 rounded-md border border-zinc-700 bg-white/[0.04] px-1.5 py-0.5 text-[11px] text-zinc-300">
               <UsersThree size={12} aria-hidden />
-              {scopeText(seq)}
+              {scopeText(seq, dict.sequences)}
             </span>
           )}
-          <span title={`ventana: ${seq.window_seconds}s`} className="flex items-center gap-1 rounded-md border border-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-400">
+          <span title={dict.sequences.windowTitle(seq.window_seconds)} className="flex items-center gap-1 rounded-md border border-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-400">
             <Timer size={12} aria-hidden />
-            {formatWindow(seq.window_seconds)}
+            {formatWindow(seq.window_seconds, dict.sequences.window, dict.sequences.windowNd)}
           </span>
         </div>
 
         <p className="mt-2 text-xs leading-relaxed text-zinc-400">{seq.description}</p>
 
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-zinc-500">
-          <span className={armed ? 'text-emerald-300' : 'text-amber-300'}>{armed ? 'Armada' : `${missing.length} paso(s) sin regla`}</span>
-          <span>{observed} de {seq.steps.length} pasos observados en la ventana</span>
-          <span className={campaigns > 0 ? 'font-medium text-red-300' : ''}>{campaigns} {campaigns === 1 ? 'campaña completada' : 'campañas completadas'}</span>
+          <span className={armed ? 'text-emerald-300' : 'text-amber-300'}>{armed ? dict.sequences.armed : dict.sequences.stepsWithoutRule(missing.length)}</span>
+          <span>{dict.sequences.stepsObserved(observed, seq.steps.length)}</span>
+          <span className={campaigns > 0 ? 'font-medium text-red-300' : ''}>{dict.sequences.campaignsDone(campaigns)}</span>
         </div>
 
         {/* Grafo de flujo: un nodo por paso y un nodo final de campaña. El
             conector fluye (animado) cuando los dos pasos que une ya se
             observaron en la ventana; azul = la regla del paso disparó,
             ámbar = la regla no está cargada, neutro = cargada sin alertas. */}
-        <ol aria-label={`Pasos de ${seq.name}`} className="mt-3 flex flex-1 flex-col gap-2 sm:flex-row sm:items-stretch">
+        <ol aria-label={dict.sequences.stepsAria(seq.name)} className="mt-3 flex flex-1 flex-col gap-2 sm:flex-row sm:items-stretch">
           {steps.map((st, i) => {
             const step = seq.steps[i]
             const ok = st.loaded.length > 0
@@ -144,8 +145,8 @@ function SequenceCard({ seq, index, live, hits, campaigns }: { seq: SfSequence; 
                 <div
                   title={
                     alternatives
-                      ? `Cualquiera de: ${st.rules.join(', ')}${st.loaded.length < st.rules.length ? ` (cargadas ${st.loaded.length} de ${st.rules.length})` : ''}`
-                      : ok ? 'regla cargada en el motor' : 'regla NO cargada: la cadena no puede completar con este paso'
+                      ? dict.sequences.alternativesAny(st.rules.join(', '), st.loaded.length < st.rules.length ? dict.sequences.loadedOf(st.loaded.length, st.rules.length) : '')
+                      : ok ? dict.sequences.ruleLoaded : dict.sequences.ruleNotLoaded
                   }
                   className={`min-w-0 flex-1 rounded-lg border px-2.5 py-2 transition-colors ${
                     !ok ? 'border-amber-300/30 bg-amber-300/[0.06]' : count > 0 ? 'border-primary/40 bg-primary-tint/[0.10]' : 'border-zinc-800 bg-zinc-900/60'
@@ -153,13 +154,13 @@ function SequenceCard({ seq, index, live, hits, campaigns }: { seq: SfSequence; 
                 >
                   <span className="flex items-center gap-1.5 text-[10px] text-zinc-500">
                     <span aria-hidden className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-semibold ${count > 0 ? 'bg-primary-strong text-white' : 'bg-zinc-800 text-zinc-400'}`}>{i + 1}</span>
-                    {!ok ? (alternatives ? 'ninguna regla cargada' : 'regla no cargada') : count > 0 ? `${count} ${count === 1 ? 'alerta' : 'alertas'}` : 'sin alertas'}
-                    {alternatives && <span className="rounded bg-white/[0.06] px-1 text-[9px] text-zinc-400">{st.rules.length} alternativas</span>}
+                    {!ok ? (alternatives ? dict.sequences.noRuleLoaded : dict.sequences.stepNotLoaded) : count > 0 ? dict.sequences.alertsCount(count) : dict.sequences.noAlerts}
+                    {alternatives && <span className="rounded bg-white/[0.06] px-1 text-[9px] text-zinc-400">{dict.sequences.alternatives(st.rules.length)}</span>}
                   </span>
                   {alternatives ? (
                     <ul className="mt-1 space-y-0.5">
                       {st.rules.map((r) => (
-                        <li key={r} className={`truncate text-[11px] leading-snug ${live.has(r) ? ((hits.get(r) ?? 0) > 0 ? 'text-zinc-100' : 'text-zinc-300') : 'text-zinc-500 line-through'}`} title={live.has(r) ? r : `${r} (no cargada)`}>
+                        <li key={r} className={`truncate text-[11px] leading-snug ${live.has(r) ? ((hits.get(r) ?? 0) > 0 ? 'text-zinc-100' : 'text-zinc-300') : 'text-zinc-500 line-through'}`} title={live.has(r) ? r : `${r}${dict.sequences.notLoadedSuffix}`}>
                           {r}
                         </li>
                       ))}
@@ -180,7 +181,7 @@ function SequenceCard({ seq, index, live, hits, campaigns }: { seq: SfSequence; 
             >
               <span className="flex items-center gap-1.5 text-[10px] text-zinc-500">
                 <Siren size={12} weight={campaigns > 0 ? 'fill' : 'regular'} aria-hidden className={campaigns > 0 ? 'text-red-300' : ''} />
-                campaña
+                {dict.sequences.campaignNode}
               </span>
               <span className={`mt-0.5 text-lg font-semibold leading-none ${campaigns > 0 ? 'text-red-200' : 'text-zinc-500'}`}>{campaigns}</span>
             </div>
@@ -189,7 +190,7 @@ function SequenceCard({ seq, index, live, hits, campaigns }: { seq: SfSequence; 
 
         {missing.length > 0 && (
           <p className="mt-2 text-[11px] text-amber-300/90">
-            Pasos sin regla cargada: {missing.join(', ')}. La campaña nunca se disparará hasta que esas reglas existan en rules/.
+            {dict.sequences.missingSteps(missing.join(', '))}
           </p>
         )}
 

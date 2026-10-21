@@ -37,8 +37,17 @@ export function isUserScoped(seq: SfSequence): boolean {
 }
 
 /** "mismo equipo" / "misma cuenta en 3 equipos o más". */
-export function scopeText(seq: SfSequence): string {
-  if (!isUserScoped(seq)) return 'mismo equipo'
+/** Scope badge of a sequence; the words default to the shipped ES copy,
+ * a bilingual caller passes its own (dict.sequences). */
+export function scopeText(
+  seq: SfSequence,
+  words: { sameHost: string; sameAccount: string; sameAccountHosts: (n: number) => string } = {
+    sameHost: 'mismo equipo',
+    sameAccount: 'misma cuenta',
+    sameAccountHosts: (n: number) => `misma cuenta en ${n} equipos o más`,
+  },
+): string {
+  if (!isUserScoped(seq)) return words.sameHost
   const n = Math.max(1, seq.min_hosts ?? 1)
-  return n > 1 ? `misma cuenta en ${n} equipos o más` : 'misma cuenta'
+  return n > 1 ? words.sameAccountHosts(n) : words.sameAccount
 }

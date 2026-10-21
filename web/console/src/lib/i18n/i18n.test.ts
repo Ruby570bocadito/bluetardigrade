@@ -378,6 +378,29 @@ describe('i18n dictionaries', () => {
     expect(DICTS.en.tester.examples).toHaveLength(7)
     expect(DICTS.en.tester.examples[6]).toBe('Benign (must not fire)')
   })
+
+  test('phase 9 sweep (intel + suppressions + sequences) keeps the spanish copy byte-identical', () => {
+    expect(dictEs.intel.sectionAria).toBe('Inteligencia de amenazas')
+    expect(dictEs.intel.noveltiesHint).toBe('nunca vistos en su equipo tras el aprendizaje')
+    expect(dictEs.intel.listTag('spamhaus')).toBe('lista spamhaus')
+    expect(dictEs.suppressions.sectionAria).toBe('Supresiones del operador')
+    expect(dictEs.suppressions.expired).toBe('expirada')
+    expect(dictEs.suppressions.allHosts).toBe('todos los hosts')
+    expect(dictEs.sequences.sectionAria).toBe('Cadenas de kill chain')
+    expect(dictEs.sequences.armed).toBe('Armada')
+    expect(dictEs.sequences.stepsWithoutRule(2)).toBe('2 paso(s) sin regla')
+    expect(dictEs.sequences.campaignsDone(1)).toBe('1 campaña completada')
+  })
+
+  test('phase 9 english copy is a real translation of intel, suppressions and sequences', () => {
+    expect(DICTS.en.intel.sectionAria).toBe('Threat intelligence')
+    expect(DICTS.en.intel.kindLabels.cidr).toBe('Ranges')
+    expect(DICTS.en.suppressions.noReason).toBe('no reason given')
+    expect(DICTS.en.suppressions.expired).toBe('expired')
+    expect(DICTS.en.sequences.armed).toBe('Armed')
+    expect(DICTS.en.sequences.campaignsDone(2)).toBe('2 campaigns completed')
+    expect(DICTS.en.sequences.sameAccount).toBe('same account')
+  })
 })
 
 describe('language resolution', () => {
