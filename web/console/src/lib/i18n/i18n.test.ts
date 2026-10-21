@@ -351,6 +351,33 @@ describe('i18n dictionaries', () => {
     expect(DICTS.en.directory.findings.emptyTitle).toBe('No findings recorded')
     expect(DICTS.en.directory.sevLabels.critical).toBe('critical')
   })
+
+  test('phase 8 sweep (detection validation + rule tester) keeps the spanish copy byte-identical', () => {
+    expect(dictEs.validation.sectionAria).toBe('Validación de detecciones')
+    expect(dictEs.validation.unarmedNotice).toBe('El motor no tiene la batería armada: arráncalo con -scenarios <dir>.')
+    expect(dictEs.validation.lastHint(3, 10, '30 %')).toBe('3/10 detectados · 30 % sin contar errores de catálogo')
+    expect(dictEs.validation.launchAll).toBe('Lanzar batería completa')
+    expect(dictEs.validation.history.cols.rate).toBe('Tasa')
+    expect(dictEs.validation.resultLabels.missing).toBe('sin detección')
+    expect(dictEs.validation.list.searchPlaceholder).toBe('Buscar por nombre, id, técnica o host')
+    expect(dictEs.tester.sectionAria).toBe('Probador de reglas')
+    expect(dictEs.tester.missingType).toBe('Falta "type" (por ejemplo "process.create").')
+    expect(dictEs.tester.matchedOn).toBe('Coincide en: ')
+    // the example buttons stay bound to their events by index
+    expect(dictEs.tester.examples).toHaveLength(7)
+    expect(dictEs.tester.examples[6]).toBe('Benigno (no debe saltar)')
+  })
+
+  test('phase 8 english copy is a real translation of validation and the tester', () => {
+    expect(DICTS.en.validation.launchAll).toBe('Launch the full battery')
+    expect(DICTS.en.validation.history.cols.rate).toBe('Rate')
+    expect(DICTS.en.validation.resultLabels.missing).toBe('no detection')
+    expect(DICTS.en.validation.list.title).toBe('Scenario library')
+    expect(DICTS.en.tester.sectionAria).toBe('Rule tester')
+    expect(DICTS.en.tester.openRule).toBe('Open rule')
+    expect(DICTS.en.tester.examples).toHaveLength(7)
+    expect(DICTS.en.tester.examples[6]).toBe('Benign (must not fire)')
+  })
 })
 
 describe('language resolution', () => {
