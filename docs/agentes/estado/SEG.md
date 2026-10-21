@@ -13,10 +13,9 @@
 - Revisión del resto del flujo de asignación sin más hallazgos:
   alert_assign (cap 8 KiB, patrón hex, scope check antes de escribir, 200
   con fallos por id), lifecycle (persistencia atómica 0600, validación
-  estricta, evict FIFO), rule_tester (evalúa un evento contra el catálogo,
-  32 KiB, sin parsear YAML del cliente), auth del motor centralizada
-  (bearer + write-origin + scope) y del proxy (host pinning, cross-site,
-  sesión, X-SF-Scope nunca del navegador).
+  estricta, evict FIFO), rule_tester (solo evalúa eventos, 32 KiB) y auth
+  centralizada en motor (bearer + write-origin + scope) y proxy (host
+  pinning, cross-site, sesión, X-SF-Scope nunca del navegador).
 
 ## En curso
 - (nada)
