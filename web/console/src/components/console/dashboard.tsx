@@ -16,6 +16,9 @@ import { OperationsOverview } from './operations-overview'
 import { ActivityChart, useActivity } from './activity-chart'
 import { AlertsView } from './alerts-view'
 import { EmptyState, OfflineNotice, SkeletonRows, MonoTag } from './ui-bits'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeadRow, TableHeader, TableRow } from '@/components/ui/table'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
 import { AnimatedContent } from '@/components/reactbits/animated-content'
 import { EntityGraphView, GraphLegend, NODE_KIND } from '@/components/charts/entity-graph'
@@ -951,14 +954,16 @@ function AlertHeatmapPanel({ down }: { down: boolean }) {
       subtitle="Rejilla de los últimos 7 días en tu hora local: cuándo aprieta la flota, para dimensionar turnos y ventanas de mantenimiento"
       icon={CalendarDots}
       actions={
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
+          className="text-[11px] text-zinc-400 hover:text-zinc-100"
           onClick={windowFetch.reload}
           disabled={windowFetch.loading}
-          className="chip px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
         >
           Actualizar
-        </button>
+        </Button>
       }
       table={table}
       footer={
@@ -992,41 +997,54 @@ function RecentTelemetry({ onNavigate }: { onNavigate: (view: ConsoleView) => vo
   const { events, status } = useEngine()
   return (
     <section aria-label="Telemetría reciente" className="panel min-w-0 px-4 pb-3 pt-3.5">
-      <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
-        <div className="flex items-baseline gap-2">
-          <h2 className="text-sm font-medium text-zinc-100">Telemetría reciente</h2>
-          <span className="text-xs tabular-nums text-zinc-500">{events.length}</span>
-        </div>
-        <button
-          type="button"
+      {/* Misma cabecera que el resto de paneles manuales del panel
+          (icon-tile + título + contador); el enlace vive a la derecha. */}
+      <div className="flex flex-wrap items-center gap-2.5 pb-3">
+        <span className="icon-tile"><Waveform size={14} aria-hidden /></span>
+        <h2 className="text-sm font-medium text-zinc-100">Telemetría reciente</h2>
+        <span className="font-mono text-xs tabular-nums text-zinc-500">{events.length}</span>
+        <Button
+          variant="link"
+          size="sm"
+          className="ml-auto h-auto px-0 py-0 text-xs"
           onClick={() => onNavigate('flujo')}
-          className="rounded-sm text-xs text-primary-link underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           Ver flujo completo
-        </button>
+        </Button>
       </div>
       {status === 'connecting' ? (
         <SkeletonRows rows={6} className="border-y border-zinc-800 py-6" />
       ) : status === 'down' ? (
         <EmptyState icon={Waveform} title="Telemetría no disponible" hint="Esperando la reconexión con el motor." />
       ) : events.length === 0 ? (
-        <div className="border-y border-zinc-800">
-          <EmptyState icon={Waveform} title="Sin eventos todavía" hint="El búfer del cliente se llena en cuanto el motor emite telemetría por /api/stream." />
-        </div>
+        <EmptyState icon={Waveform} title="Sin eventos todavía" hint="El búfer del cliente se llena en cuanto el motor emite telemetría por /api/stream." />
       ) : (
-        <ul className="divide-y divide-zinc-800/70 border-y border-zinc-800">
-          {events.slice(0, 8).map((ev, i) => (
-            <li key={ev.id}>
-              {/* AnimatedItem (React Bits): entrada escalonada en la carga
-                  inicial; las keys estables evitan re-animar filas visibles. */}
-              <AnimatedItem index={i} className="grid grid-cols-[64px_120px_minmax(0,1fr)] items-center gap-3 px-1 py-2 md:grid-cols-[72px_150px_minmax(0,1fr)]">
-                <span className="font-mono text-xs tabular-nums text-zinc-500">{formatTime(ev.timestamp)}</span>
-                <span className="truncate font-mono text-xs text-primary-link">{ev.type}</span>
-                <span className="truncate font-mono text-xs text-zinc-400" title={eventDetail(ev)}>{eventDetail(ev)}</span>
-              </AnimatedItem>
-            </li>
-          ))}
-        </ul>
+        <div className="overflow-hidden rounded-lg border border-zinc-800">
+          {/* Primera tabla del panel sobre la primitiva compartida (POL-7
+              fase B): superficie, caption sr-only, cabecera compacta y filas
+              con hairline salen del kit; aquí solo columnas y densidad. Las
+              filas dejan la entrada escalonada de AnimatedItem: un motion.div
+              no puede envolver un <tr> sin romper el DOM de tabla. */}
+          <Table>
+            <TableCaption>Últimos 8 eventos del búfer del cliente: hora, tipo y detalle</TableCaption>
+            <TableHeader>
+              <TableHeadRow>
+                <TableHead compact className="w-20">Hora</TableHead>
+                <TableHead compact className="w-40">Tipo</TableHead>
+                <TableHead compact>Detalle</TableHead>
+              </TableHeadRow>
+            </TableHeader>
+            <TableBody>
+              {events.slice(0, 8).map((ev) => (
+                <TableRow key={ev.id}>
+                  <TableCell compact className="w-20 whitespace-nowrap font-mono text-xs tabular-nums text-zinc-500">{formatTime(ev.timestamp)}</TableCell>
+                  <TableCell compact className="w-40 max-w-40 truncate font-mono text-xs text-primary-link" title={ev.type}>{ev.type}</TableCell>
+                  <TableCell compact className="max-w-0 truncate font-mono text-xs text-zinc-400" title={eventDetail(ev)}>{eventDetail(ev)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
       <p className="pt-2 text-xs text-zinc-500">Muestra de los últimos 8 eventos del búfer</p>
     </section>
@@ -1068,16 +1086,29 @@ function EngineSummary({ status }: { status: EngineStatus }) {
       <div className="flex flex-wrap items-center gap-2.5 px-4 pt-3.5">
         <span className="icon-tile"><Cpu size={14} aria-hidden /></span>
         <h2 className="text-sm font-medium text-zinc-100">Salud del pipeline</h2>
-        <span className="flex items-center gap-1.5 text-[11px] text-zinc-500">
-          <span aria-hidden className={`h-2 w-2 rounded-full ${status === 'live' ? 'bg-emerald-500' : status === 'connecting' ? 'bg-amber-400' : 'bg-red-500'}`} />
+        {/* Estado de conexión como insignia del kit (POL-7): la forma es la
+            píldora compartida y el color semántico viaja en className (dato,
+            no variante), igual que hace SeverityBadge con la severidad. */}
+        <Badge
+          variant="neutral"
+          className={status === 'live' ? 'text-emerald-300' : status === 'connecting' ? 'text-amber-300' : 'text-red-300'}
+        >
+          <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${status === 'live' ? 'bg-emerald-500' : status === 'connecting' ? 'bg-amber-400' : 'bg-red-500'}`} />
           {status === 'live' ? 'en vivo' : status === 'connecting' ? 'conectando' : 'sin conexión'}
-        </span>
+        </Badge>
         <p className="ml-auto hidden max-w-[60ch] truncate text-[11px] text-zinc-500 lg:block">{statusLine}</p>
       </div>
-      <dl className="grid grid-cols-2 gap-px p-4 sm:grid-cols-4 xl:grid-cols-8">
+      {/* Hoja de especificación: 2×4 dentro de la tarjeta (antes 8 columnas
+          apretadas en la mitad de la pantalla), etiqueta en micro-mayúsculas
+          como las cabeceras de tabla y marcador ámbar a la izquierda cuando
+          la fila pide atención (descartes, webhooks fallidos, SQLite). */}
+      <dl className="grid grid-cols-2 gap-2 p-4 pt-3 sm:grid-cols-4">
         {rows.map((row) => (
-          <div key={row.label} className={`min-w-0 rounded-lg px-3 py-2.5 ${row.bad ? 'bg-amber-400/[0.06]' : 'bg-white/[0.02]'}`}>
-            <dt className="truncate text-[11px] text-zinc-500" title={row.label}>{row.label}</dt>
+          <div
+            key={row.label}
+            className={`min-w-0 rounded-md border-l-2 px-3 py-2 ${row.bad ? 'border-l-amber-400/60 bg-amber-400/[0.06]' : 'border-l-transparent bg-white/[0.02]'}`}
+          >
+            <dt className="truncate text-[10px] uppercase tracking-wider text-zinc-500" title={row.label}>{row.label}</dt>
             <dd className={`mt-1 truncate font-mono text-xs tabular-nums ${row.bad ? 'text-amber-300' : 'text-zinc-200'}`} title={String(row.value)}>{row.value}</dd>
           </div>
         ))}
