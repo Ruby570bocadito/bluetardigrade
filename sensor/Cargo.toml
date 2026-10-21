@@ -11,6 +11,38 @@ getrandom = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 time = { version = "0.3", features = ["formatting"] }
+# YARA scanning (S-2): pure Rust (VirusTotal), so the Windows cross-check
+# stays a plain cargo check with no C toolchain. All the standard modules
+# are enabled except `crx` (the sensor never parses Chrome extensions).
+# pe-module and macho-module enable yara-x's `crypto` feature, which
+# pulls `rsa` 0.10.0-rc.19 carrying RUSTSEC-2023-0071 (Marvin Attack, no
+# patched release exists): parse-only Authenticode use on the host is
+# outside that advisory's network-timing surface, and the reviewed
+# exception lives in .cargo/audit.toml. The WASM runtime below the module
+# system is part of yara-x and comes with it (compile time grows
+# accordingly, measured in the round report). Rules load from a directory
+# the engine manages (contract S-2<->M-3); the scanner only runs when
+# --yara-rules is given.
+yara-x = { version = "1.22", default-features = false, features = [
+    "constant-folding",
+    "exact-atoms",
+    "fast-regexp",
+    "generate-proto-code",
+    "console-module",
+    "cuckoo-module",
+    "dex-module",
+    "dotnet-module",
+    "elf-module",
+    "lnk-module",
+    "macho-module",
+    "math-module",
+    "hash-module",
+    "pe-module",
+    "string-module",
+    "time-module",
+    "vt-module",
+    "zip-module",
+] }
 
 # ETW consumption is Windows-only. The crate still builds anywhere
 # (argument parsing, normalization and transport compile on any OS),

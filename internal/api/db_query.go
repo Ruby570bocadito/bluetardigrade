@@ -1,4 +1,4 @@
-// POST /api/db/query — read-only SQL console over the -store SQLite
+// Package api: POST /api/db/query — read-only SQL console over the -store SQLite
 // database (M-4, TODO.md F3). The evidence is append-only; this surface
 // only reads it, with hard row and time budgets per query and an audit
 // row for every attempt (ok, rejected or error) written through the

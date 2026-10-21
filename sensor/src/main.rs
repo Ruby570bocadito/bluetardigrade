@@ -1,10 +1,13 @@
 // security-sensor: ETW sensor for the bluetardigrade engine.
 //
-// Single operating mode: native (Windows). Opens ETW real-time sessions
-// over the Microsoft-Windows-Kernel-* providers and streams normalized
-// events to the engine (NDJSON over TCP). There is no simulated mode:
-// on any other platform the sensor refuses to run instead of making
-// data up.
+// Operating modes: native ETW capture (Windows) and, since S-2, the
+// on-demand `scan` subcommand (YARA over files, no ETW, no engine).
+// Native mode opens ETW real-time sessions over the Microsoft-Windows-
+// Kernel-* providers and streams normalized events to the engine (NDJSON
+// over TCP). There is no simulated mode: on any other platform the
+// capture refuses to run instead of making data up (the `scan`
+// subcommand runs wherever the binary compiles: it reads what it is
+// given, it invents nothing).
 //
 // Usage:
 //   security-sensor --addr 127.0.0.1:7777 [--token <shared-token>]
@@ -12,8 +15,10 @@
 //                   [--spool <file>] [--spool-max-mb <MiB>]
 //                   [--no-network] [--no-registry] [--registry-all]
 //                   [--no-dns] [--no-hash] [--debug-registry <fragment>]
+//                   [--yara-rules <dir>] [--yara-max-mb <MiB>]
 //                   [--service] [--log <file>] [--token-file <file>]
 //                   [--enroll-token <token> | --enroll-token-file <file>]
+//   security-sensor scan <PATH>... --rules <dir> [--max-mb <MiB>]
 //
 // --service runs the sensor under the Windows service manager (installed
 // once with 'sf-etw -Install', which asks for administrator rights; after
@@ -40,6 +45,18 @@
 // starts carry the full image path and, unless --no-hash, its SHA-256
 // (computed off the ETW threads, cached, files over 100 MiB skipped).
 //
+// YARA (S-2): with --yara-rules <dir> the sensor compiles every
+// *.yar/*.yara file under the directory (a rule the engine distributed
+// there; an optional bundle.json names the bundle version) and scans
+// every file written on the host (Microsoft-Windows-Kernel-File), with
+// a size cap (--yara-max-mb, default 16 MiB) and a bounded queue: what
+// the scanner cannot take is counted in the heartbeat (yara_dropped),
+// never waited on. Hits go out as yara.match events with the file's
+// path, size and SHA-256. The rules directory is re-checked every
+// minute, so a new bundle lands without restarting the sensor. The
+// `scan` subcommand runs the same rules on demand over files or
+// directories and prints the same yara.match events as NDJSON.
+//
 // Delivery never runs on the ETW thread: events wait in a bounded
 // in-memory queue (--queue, default 50000) while the engine is
 // unreachable, then in the optional on-disk spool (--spool or
@@ -57,10 +74,12 @@
 // there is no skip-verification mode: an unverifiable engine is a
 // refused connection, not a trusted one.
 
-// Normalization and transport are exercised only by the ETW collector,
-// which is Windows-only; gating the modules keeps non-Windows builds
-// warning-free without a single #[allow(dead_code)].
-#[cfg(target_os = "windows")]
+// Transport is exercised only by the ETW collector (Windows-only).
+// normalize moves with the YARA scanner below: the yara.match event is
+// built outside Windows too (tests, and the scan subcommand in the
+// Windows binary). Gating keeps non-Windows builds warning-free without
+// a single #[allow(dead_code)].
+#[cfg(any(target_os = "windows", test))]
 mod normalize;
 #[cfg(target_os = "windows")]
 mod transport;
@@ -91,11 +110,36 @@ mod procinfo;
 mod queue;
 #[cfg(any(target_os = "windows", test))]
 mod regnames;
+// YARA scanning (S-2): rule loading, the scan worker and the yara.match
+// event. Platform-independent (the scanner runs off the ETW callbacks),
+// exercised on any host through its tests and, in the Windows binary,
+// through the `scan` subcommand.
+#[cfg(any(target_os = "windows", test))]
+mod yara;
+#[cfg(any(target_os = "windows", test))]
+mod scan;
 
 use anyhow::Result;
 use std::path::PathBuf;
 
 fn main() -> Result<()> {
+    // The `scan` subcommand (S-2, on demand) does not share the capture
+    // flags: it parses its own, works wherever the binary compiles, and
+    // never opens ETW or connects to the engine.
+    let mut raw: Vec<String> = std::env::args().skip(1).collect();
+    if raw.first().map(String::as_str) == Some("scan") {
+        let rest = raw.split_off(1);
+        #[cfg(any(target_os = "windows", test))]
+        {
+            std::process::exit(scan::run(rest));
+        }
+        #[cfg(not(any(target_os = "windows", test)))]
+        {
+            let _ = rest;
+            eprintln!("scan: only the Windows binary carries the YARA scanner");
+            std::process::exit(2);
+        }
+    }
     let mut addr = String::from("127.0.0.1:7777");
     let mut token: Option<String> = None;
     let mut tls_ca: Option<PathBuf> = None;
@@ -115,6 +159,8 @@ fn main() -> Result<()> {
     let mut enroll_token_file: Option<PathBuf> = None;
     let mut dns = true;
     let mut hash = true;
+    let mut yara_rules: Option<PathBuf> = None;
+    let mut yara_max_mb: u64 = 16; // MiB; yara::MAX_FILE_BYTES_DEFAULT pins this in a test
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -181,13 +227,22 @@ fn main() -> Result<()> {
             }
             "--no-dns" => dns = false,
             "--no-hash" => hash = false,
+            "--yara-rules" => {
+                yara_rules = Some(PathBuf::from(args.next().unwrap_or_else(|| {
+                    eprintln!("--yara-rules requires a directory");
+                    std::process::exit(2);
+                })));
+            }
+            "--yara-max-mb" => {
+                yara_max_mb = parse_number(args.next(), "--yara-max-mb");
+            }
             "--spool-max-mb" => {
                 spool_max_mb = parse_number(args.next(), "--spool-max-mb");
             }
             other => {
                 eprintln!("unknown argument: {other}");
                 eprintln!(
-                    "usage: security-sensor --addr <ip:port> [--token <shared-token>] [--tls-ca <ca.pem>] [--queue <events>] [--spool <file>] [--spool-max-mb <MiB>] [--no-network] [--no-registry] [--registry-all] [--no-dns] [--no-hash] [--debug-registry <fragment>] [--service] [--log <file>] [--token-file <file>] [--enroll-token <token> | --enroll-token-file <file>]"
+                    "usage: security-sensor [--addr <ip:port>] [--token <shared-token>] [--tls-ca <ca.pem>] [--queue <events>] [--spool <file>] [--spool-max-mb <MiB>] [--no-network] [--no-registry] [--registry-all] [--no-dns] [--no-hash] [--debug-registry <fragment>] [--yara-rules <dir>] [--yara-max-mb <MiB>] [--service] [--log <file>] [--token-file <file>] [--enroll-token <token> | --enroll-token-file <file>] | scan <PATH>... --rules <dir> [--max-mb <MiB>]"
                 );
                 std::process::exit(2);
             }
@@ -203,7 +258,7 @@ fn main() -> Result<()> {
         eprintln!("[SENSOR] started {} (pid {}){}", normalize::now_rfc3339(), std::process::id(), if service_mode { " as a Windows service" } else { "" });
     }
     #[cfg(not(target_os = "windows"))]
-    let _ = (&log, service_mode);
+    let _ = (&log, service_mode, yara_max_mb);
     // the credential: --token, then --token-file; an enrollment token
     // only matters while --token-file holds nothing yet
     if enroll_token.is_none() {
@@ -263,6 +318,7 @@ fn main() -> Result<()> {
         (network, "network"),
         (dns, "dns"),
         (registry, if registry_all { "registry-all" } else { "registry" }),
+        (yara_rules.is_some(), "yara"),
     ]
         .iter()
         .filter(|(on, _)| *on)
@@ -296,12 +352,29 @@ fn main() -> Result<()> {
             eprintln!("[SENSOR] the sensor already runs as a Windows service ({}); see 'sf-etw -Status', or stop it with 'sf-etw -Stop' before starting one by hand", service::SERVICE_NAME);
             std::process::exit(1);
         }
+        // The scanner never touches the sensor's own files: the spool and
+        // log it writes, the token it holds, and the rules directory it
+        // reads (a match there would only echo the sensor's insides back
+        // to the engine). Built before the spool moves into Delivery.
+        let yara = yara_rules.map(|rules_dir| {
+            let mut exclude = vec![rules_dir.clone()];
+            if let Some(path) = &token_file {
+                exclude.push(path.clone());
+            }
+            if let Some(path) = &log {
+                exclude.push(path.clone());
+            }
+            if let Some(path) = &spool {
+                exclude.push(path.clone());
+            }
+            crate::yara::YaraConfig { rules_dir, max_file_bytes: yara_max_mb.saturating_mul(1 << 20), exclude }
+        });
         let delivery = collector::Delivery {
             queue_cap,
             spool,
             spool_max_bytes: spool_max_mb.saturating_mul(1 << 20),
         };
-        let capture = collector::Capture { network, registry, registry_all, dns, hash, debug_registry, as_service: service_mode };
+        let capture = collector::Capture { network, registry, registry_all, dns, hash, yara, debug_registry, as_service: service_mode };
         let start = move || -> Result<()> {
             let token = match (token, enroll_with, token_file) {
                 (Some(token), _, _) => Some(token),

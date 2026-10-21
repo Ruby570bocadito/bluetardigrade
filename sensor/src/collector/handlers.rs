@@ -13,12 +13,13 @@ use ferrisetw::parser::{Parser, Pointer};
 use ferrisetw::schema_locator::SchemaLocator;
 use ferrisetw::EventRecord;
 use std::net::IpAddr;
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 use super::config::{
-    DNS_STATUS_INVALID_PARAMETER, EVENT_DNS_QUERY_COMPLETED, EVENT_KP_PROCESS_START, EVENT_REG_CLOSE_KEY,
-    EVENT_REG_CREATE_KEY, EVENT_REG_OPEN_KEY, EVENT_REG_SET_VALUE, EVENT_TCP4_CONNECT, EVENT_TCP6_CONNECT,
-    OPCODE_PROCESS_DC_END, OPCODE_PROCESS_DC_START, OPCODE_PROCESS_END, OPCODE_PROCESS_START,
+    DNS_STATUS_INVALID_PARAMETER, EVENT_DNS_QUERY_COMPLETED, EVENT_FILE_CREATE, EVENT_FILE_WRITE, EVENT_KP_PROCESS_START,
+    EVENT_REG_CLOSE_KEY, EVENT_REG_CREATE_KEY, EVENT_REG_OPEN_KEY, EVENT_REG_SET_VALUE, EVENT_TCP4_CONNECT,
+    EVENT_TCP6_CONNECT, OPCODE_PROCESS_DC_END, OPCODE_PROCESS_DC_START, OPCODE_PROCESS_END, OPCODE_PROCESS_START,
 };
 use super::shared::Shared;
 use super::winimage::image_path;
@@ -103,6 +104,7 @@ pub(super) fn handle_process(record: &EventRecord, schema_locator: &SchemaLocato
         }),
         network: None,
         registry: None,
+        file: None,
         attributes: None,
         tags: vec!["sensor:etw".into()],
     };
@@ -178,6 +180,7 @@ pub(super) fn handle_network(record: &EventRecord, schema_locator: &SchemaLocato
             domain: ctx.domain_for(&daddr),
         }),
         registry: None,
+        file: None,
         attributes: None,
         tags: vec!["sensor:etw".into()],
     });
@@ -245,9 +248,64 @@ pub(super) fn handle_dns(record: &EventRecord, schema_locator: &SchemaLocator, c
             domain: Some(name),
         }),
         registry: None,
+        file: None,
         attributes: (!attributes.is_empty()).then_some(attributes),
         tags: vec!["sensor:etw".into()],
     });
+}
+
+/// Kernel-File: Create (12) names a file object; Write (16) says bytes
+/// landed on one. Together they are the "file written" signal the YARA
+/// scanner (S-2) scans: the write hands the Win32 path to the worker
+/// through a bounded channel. A write whose object was opened before the
+/// session started (or on a device the sensor cannot map to a drive) is
+/// skipped rather than guessed, and a write the worker cannot take is
+/// counted (yara_dropped), never blocked on: this runs in an ETW callback.
+pub(super) fn handle_file(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &Shared) {
+    let id = record.event_id();
+    if !matches!(id, EVENT_FILE_CREATE | EVENT_FILE_WRITE) {
+        return;
+    }
+    let Ok(schema) = schema_locator.event_schema(record) else {
+        return;
+    };
+    let parser = Parser::create(record, &schema);
+    let pointer = |name: &str| parser.try_parse::<Pointer>(name).map(|p| *p).unwrap_or(0);
+    if id == EVENT_FILE_CREATE {
+        let file_object = pointer("FileObject");
+        let name = parser.try_parse::<String>("FileName").unwrap_or_default();
+        let name = name.trim_matches(char::from(0)).trim();
+        if let Ok(mut names) = ctx.filenames.lock() {
+            names.opened(file_object, name.to_string());
+        }
+        return;
+    }
+    // Write: name the object, map the NT device path to its drive, and
+    // hand the file to the scanner (unless it is the sensor's own).
+    let Some((config, stats)) = ctx.yara_config.as_ref().zip(ctx.yara_stats.as_ref()) else {
+        return; // no scanner on this run (the session should not be either)
+    };
+    let file_object = pointer("FileObject");
+    let nt_name = ctx.filenames.lock().ok().and_then(|names| names.name_of(file_object).map(str::to_string));
+    let Some(nt_name) = nt_name else {
+        return; // opened before the session started: no name, no scan
+    };
+    let Some(path) = ctx.devices.to_dos(&nt_name) else {
+        return; // a volume the sensor could not map to a drive letter
+    };
+    if crate::yara::is_excluded(&path, &config.exclude) {
+        return;
+    }
+    let handed = match ctx.yara.lock() {
+        Ok(guard) => match guard.as_ref() {
+            Some(tx) => tx.try_send(path).is_ok(),
+            None => false,
+        },
+        Err(_) => false,
+    };
+    if !handed {
+        stats.dropped.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 /// Kernel-Registry: OpenKey/CreateKey/CloseKey name the key handles, and
@@ -365,6 +423,7 @@ pub(super) fn handle_registry(record: &EventRecord, schema_locator: &SchemaLocat
                     value,
                     operation: "SetValue".into(),
                 }),
+                file: None,
                 attributes: None,
                 tags: vec!["sensor:etw".into()],
             };

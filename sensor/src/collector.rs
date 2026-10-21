@@ -31,6 +31,15 @@
 // behind, events go out without the hash rather than wait, and the
 // heartbeat reports how many went out that way.
 //
+// With --yara-rules (S-2), a third session consumes Microsoft-Windows-
+// Kernel-File (Create names a file object, Write says bytes landed on
+// it) and hands the written file's Win32 path to a scanner thread
+// (yara.rs), which reads, hashes and scans it off the ETW callbacks;
+// hits go out as yara.match events through the same pipeline. The write
+// handler never blocks: what the scanner cannot take is counted
+// (yara_dropped) and left unscanned. Off means off: without rules no
+// file telemetry is consumed at all.
+//
 // Every minute the heartbeat (heartbeat.rs) also asks both sessions what
 // ETW lost (EventsLost, RealTimeBuffersLost, via ControlTraceW) and sends
 // the totals to the engine, so a sensor that is silently losing telemetry
@@ -77,18 +86,20 @@ use crate::ntpath::RecentImages;
 use crate::queue::{Pipeline, Spool};
 use crate::regnames::KeyNames;
 use crate::transport::Sender;
+use crate::yara::{self, YaraStats};
 
 use self::config::{
-    ENRICH_QUEUE, EVENT_DNS_QUERY_COMPLETED, EVENT_KP_PROCESS_START, EVENT_REG_CLOSE_KEY, EVENT_REG_CREATE_KEY,
-    EVENT_REG_OPEN_KEY, EVENT_REG_SET_VALUE, EVENT_TCP4_CONNECT, EVENT_TCP6_CONNECT, KERNEL_NETWORK,
+    ENRICH_QUEUE, EVENT_DNS_QUERY_COMPLETED, EVENT_FILE_CREATE, EVENT_FILE_WRITE, EVENT_KP_PROCESS_START,
+    EVENT_REG_CLOSE_KEY, EVENT_REG_CREATE_KEY, EVENT_REG_OPEN_KEY, EVENT_REG_SET_VALUE, EVENT_TCP4_CONNECT,
+    EVENT_TCP6_CONNECT, FILE_NAMES_CAP, FILE_SESSION_NAME, KERNEL_FILE, KERNEL_FILE_KEYWORDS, KERNEL_NETWORK,
     KERNEL_NETWORK_KEYWORDS, KERNEL_PROCESS, KERNEL_PROCESS_KEYWORD, KERNEL_REGISTRY, KERNEL_REGISTRY_KEYWORDS,
     NETREG_SESSION_NAME, PROCESS_TABLE_CAP, REGISTRY_NAMES_CAP, REGISTRY_PARKED_CAP, RECENT_IMAGES_CAP,
-    RECENT_IMAGES_KEEP, SESSION_NAME,
+    RECENT_IMAGES_KEEP, SESSION_NAME, YARA_QUEUE,
 };
 use self::enrich::start_enricher;
-use self::handlers::{handle_dns, handle_network, handle_process, handle_process_image, handle_registry};
+use self::handlers::{handle_dns, handle_file, handle_network, handle_process, handle_process_image, handle_registry};
 use self::health::start_heartbeat;
-use self::shared::Shared;
+use self::shared::{emit_to, Shared, FileNames};
 use self::winimage::device_map;
 
 /// Runs the blocking ETW event loop. It returns only on fatal errors.
@@ -134,6 +145,30 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
     } else {
         (None, None)
     };
+    // YARA (S-2): the worker owns the compiled rules and every file read;
+    // the write handler only names files. Nothing here without
+    // --yara-rules: no rules directory, no worker, no file session.
+    let (yara_tx, yara_stats, yara_thread) = match &capture.yara {
+        Some(config) => {
+            let stats = Arc::new(YaraStats::default());
+            let (tx, rx) = sync_channel(YARA_QUEUE);
+            let pipeline_for_yara = Arc::clone(&pipeline);
+            match yara::start_worker(
+                hostname(),
+                config.clone(),
+                rx,
+                Arc::clone(&stats),
+                move |event| emit_to(&pipeline_for_yara, &event),
+            ) {
+                Some(thread) => (Some(tx), Some(stats), Some(thread)),
+                None => {
+                    eprintln!("[SENSOR] warning: YARA scanning unavailable (thread could not start)");
+                    (None, None, None)
+                }
+            }
+        }
+        None => (None, None, None),
+    };
     let ctx = Arc::new(Shared {
         host: hostname(),
         own_pid: std::process::id(),
@@ -149,6 +184,10 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
         debug_registry: capture.debug_registry.as_ref().map(|f| (f.to_ascii_lowercase(), Mutex::new(HashSet::new()))),
         hash_dropped: AtomicU64::new(0),
         hash_enabled: capture.hash,
+        filenames: Mutex::new(FileNames::new(FILE_NAMES_CAP)),
+        yara: Mutex::new(yara_tx),
+        yara_stats: yara_stats.clone(),
+        yara_config: capture.yara.clone(),
     });
 
     // The provider is rebuilt for each start attempt (a stale session
@@ -198,12 +237,18 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
     if !live && (capture.network || capture.registry || capture.dns) {
         eprintln!("[SENSOR] warning: continuing with process events only");
     }
+    // The file session (YARA): independent from netreg on purpose - a
+    // chatty file provider cannot starve DNS or registry, and neither
+    // session's failure costs the other.
+    let filewatch = if yara_stats.is_some() { start_filewatch(&ctx) } else { None };
+    let yara_live = filewatch.is_some();
     let streams = [
         (true, "process", "process starts"),
         (capture.hash, "sha256", "image hashes"),
         (live && capture.network, "network", "TCP connections"),
         (live && dns_live, "dns", "DNS queries"),
         (live && capture.registry, "registry", "registry writes"),
+        (yara_live, "yara", "YARA file scans"),
     ];
     let what = streams.iter().filter(|s| s.0).map(|s| s.2).collect::<Vec<_>>().join(", ");
     eprintln!("[SENSOR] ETW sessions active - streaming {what}");
@@ -217,6 +262,9 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
     if live {
         sessions.push(String::from(NETREG_SESSION_NAME));
     }
+    if yara_live {
+        sessions.push(String::from(FILE_SESSION_NAME));
+    }
     let run_mode = if capture.as_service { "service" } else { "console" };
     let heartbeat_thread = start_heartbeat(Arc::clone(&ctx), capture_label.to_string(), run_mode, queue_cap, sessions, Arc::clone(&heartbeat_stop));
 
@@ -229,15 +277,25 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
         drop(netreg_trace); // stops the session, ProcessTrace returns
         let _ = netreg_thread.join();
     }
+    if let Some((file_trace, file_thread)) = filewatch {
+        drop(file_trace); // stops the session, ProcessTrace returns
+        let _ = file_thread.join();
+    }
     heartbeat_stop.store(true, Ordering::Relaxed);
     if let Some(thread) = heartbeat_thread {
         let _ = thread.join();
     }
-    // closing the hand-off lets the hash thread drain and finish
+    // closing the hand-offs lets both worker threads drain and finish
     if let Ok(mut tx) = ctx.enrich.lock() {
         tx.take();
     }
     if let Some(thread) = enricher {
+        let _ = thread.join();
+    }
+    if let Ok(mut tx) = ctx.yara.lock() {
+        tx.take();
+    }
+    if let Some(thread) = yara_thread {
         let _ = thread.join();
     }
     // hand everything still in memory to the engine or the spool
@@ -347,6 +405,44 @@ fn start_netreg(ctx: &Arc<Shared>, network: bool, dns: bool, registry: bool, ima
     }
 }
 
+/// Starts the file-write session (Microsoft-Windows-Kernel-File, the
+/// YARA lane) on its own thread. Best effort: a failure is reported and
+/// None returned; the sensor keeps every other stream.
+fn start_filewatch(ctx: &Arc<Shared>) -> Option<(UserTrace, std::thread::JoinHandle<()>)> {
+    let build = || {
+        let ctx = Arc::clone(ctx);
+        UserTrace::new()
+            .named(String::from(FILE_SESSION_NAME))
+            .enable(
+                Provider::by_guid(KERNEL_FILE)
+                    .any(KERNEL_FILE_KEYWORDS)
+                    .add_filter(EventFilter::ByEventIds(vec![EVENT_FILE_CREATE, EVENT_FILE_WRITE]))
+                    .add_callback(move |record: &EventRecord, schema_locator: &SchemaLocator| {
+                        handle_file(record, schema_locator, &ctx)
+                    })
+                    .build(),
+            )
+            .start()
+    };
+    match start_with_recovery(FILE_SESSION_NAME, build) {
+        Ok((trace, handle)) => {
+            let thread = std::thread::Builder::new()
+                .name("etw-filewatch".into())
+                .spawn(move || {
+                    if let Err(e) = UserTrace::process_from_handle(handle) {
+                        eprintln!("[SENSOR] file session ended: {e:?}");
+                    }
+                })
+                .ok()?;
+            Some((trace, thread))
+        }
+        Err(err) => {
+            eprintln!("[SENSOR] warning: the file session could not start ({err})");
+            None
+        }
+    }
+}
+
 /// Set by stop_sessions: a stop asked for before the sessions exist
 /// (the first-start enrollment) is seen too.
 pub static STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
@@ -361,6 +457,7 @@ pub fn hostname() -> String {
 pub fn stop_sessions() {
     STOP_REQUESTED.store(true, Ordering::Release);
     let _ = ferrisetw::trace::stop_trace_by_name(NETREG_SESSION_NAME);
+    let _ = ferrisetw::trace::stop_trace_by_name(FILE_SESSION_NAME);
     let _ = ferrisetw::trace::stop_trace_by_name(SESSION_NAME);
 }
 
@@ -377,6 +474,6 @@ fn install_console_handler() {
     // the handler only calls ControlTrace through ferrisetw.
     let ok = unsafe { windows_sys::Win32::System::Console::SetConsoleCtrlHandler(Some(on_console_event), 1) };
     if ok == 0 {
-        eprintln!("[SENSOR] warning: could not install the Ctrl+C handler; stop the sessions with 'logman stop {SESSION_NAME} -ets' and 'logman stop {NETREG_SESSION_NAME} -ets' after exiting");
+        eprintln!("[SENSOR] warning: could not install the Ctrl+C handler; stop the sessions with 'logman stop {SESSION_NAME} -ets' and 'logman stop {NETREG_SESSION_NAME} -ets' and 'logman stop {FILE_SESSION_NAME} -ets' after exiting");
     }
 }

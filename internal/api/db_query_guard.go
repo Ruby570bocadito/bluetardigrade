@@ -1,4 +1,4 @@
-// Guard for the db query surface (M-4): turns a client statement into
+// Package api: guard for the db query surface (M-4): turns a client statement into
 // either a single read-only SELECT or a rejection that names the rule
 // it broke. It is the FIRST layer; the read-only handle in internal/store
 // is the last one, and neither may be trusted alone.

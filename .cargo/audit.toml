@@ -1,0 +1,38 @@
+# cargo-audit configuration for the sensor's lockfile.
+#
+# CI runs `cargo audit --file sensor/Cargo.lock` from sensor/ (see
+# .github/workflows/deps-audit.yml), which reads this file. Every ignore
+# here is a reviewed exception with its reason spelled out; the day the
+# reason stops holding, the entry goes away.
+#
+# Reviewed by: Implementaciones B (IMPL-B), ronda 2026-10-21 (S-2, PR #48).
+
+[advisories]
+ignore = [
+    # yara-x 1.22 (the YARA engine this sensor uses, S-2) enables its
+    # `crypto` feature through pe-module and macho-module (Authenticode
+    # signature parsing), which pulls `rsa` 0.10.0-rc.19. RUSTSEC-2023-0071
+    # (Marvin Attack) has NO patched release (`patched = []` in the
+    # advisory: latest stable 0.9.10 and rc 0.10.0-rc.19 are both still
+    # affected), so no version bump can clear it.
+    #
+    # Why the exception holds for this codebase: the sensor never performs
+    # RSA key operations on secrets. The crate is only reached while
+    # PARSING Authenticode blobs found inside files the YARA scanner
+    # reads, on the host itself. The advisory's own workaround states the
+    # risk is a TIMING sidechannel observable over the network by an
+    # attacker with access to many decryptions/signed operations; local
+    # parse-only use on a non-compromised host is outside the attack
+    # surface. Tracking upstream: https://github.com/RustCrypto/RSA/issues/626
+    "RUSTSEC-2023-0071",
+    # Informational (unmaintained, NOT vulnerable): bincode 2.0.1 is a
+    # hard dependency of yara-x's own internals — not this sensor's
+    # choice, and there is no version to pick that clears it. Tracked in
+    # this ignore so the audit report stays empty; rustsec/audit-check
+    # cannot publish a non-empty report with this workflow's token
+    # (contents: read) and exits 1 on the failed publish, which would
+    # keep the lane red for an informational warning. Revisit when
+    # yara-x drops bincode or OPS gives the audit job a token that can
+    # publish (checks: write), whichever comes first.
+    "RUSTSEC-2025-0141",
+]

@@ -8,7 +8,8 @@ use crate::ntpath::{DeviceMap, RecentImages};
 use crate::normalize::EventJson;
 use crate::queue::Pipeline;
 use crate::regnames::KeyNames;
-use std::collections::HashSet;
+use crate::yara::{YaraConfig, YaraStats};
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{SyncSender, TrySendError};
@@ -42,6 +43,17 @@ pub(super) struct Shared {
     /// hashing was requested for this run: the counter only counts the
     /// events denied enrichment when hashing was wanted at all
     pub(super) hash_enabled: bool,
+    /// file objects -> names from Kernel-File Create, so a Write event
+    /// can name the file it wrote
+    pub(super) filenames: Mutex<FileNames>,
+    /// hand-off of written files to the YARA worker (None: scanning off
+    /// or the worker stopped)
+    pub(super) yara: Mutex<Option<SyncSender<String>>>,
+    /// the scan worker's counters, read by the heartbeat (None: off)
+    pub(super) yara_stats: Option<Arc<YaraStats>>,
+    /// the run's YARA settings: the handler pre-filters the excluded
+    /// paths before a queue slot is spent on them
+    pub(super) yara_config: Option<YaraConfig>,
 }
 
 impl Shared {
@@ -103,5 +115,55 @@ pub(super) fn emit_to(pipeline: &Pipeline, event: &EventJson) {
     match serde_json::to_string(event) {
         Ok(line) => pipeline.push(line),
         Err(err) => eprintln!("[SENSOR] serialize failed: {err}"),
+    }
+}
+
+/// File objects remembered by name: Kernel-File Create (12) carries the
+/// name, Write (16) only the object. Bounded the same way as the
+/// registry's key names: forget everything when full (objects are opened
+/// again and named again).
+pub(super) struct FileNames {
+    names: HashMap<usize, String>,
+    cap: usize,
+}
+
+impl FileNames {
+    pub(super) fn new(cap: usize) -> Self {
+        FileNames { names: HashMap::new(), cap }
+    }
+
+    pub(super) fn opened(&mut self, object: usize, name: String) {
+        if object == 0 || name.is_empty() {
+            return;
+        }
+        if self.names.len() >= self.cap && !self.names.contains_key(&object) {
+            self.names.clear();
+        }
+        self.names.insert(object, name);
+    }
+
+    pub(super) fn name_of(&self, object: usize) -> Option<&str> {
+        self.names.get(&object).map(String::as_str)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_names_are_remembered_and_stay_bounded() {
+        let mut names = FileNames::new(4);
+        names.opened(0, r"C:\zero-object-is-ignored".into());
+        names.opened(0x10, r"C:\a.bin".into());
+        assert_eq!(names.name_of(0x10), Some(r"C:\a.bin"));
+        assert_eq!(names.name_of(0), None);
+        names.opened(0x11, String::new());
+        assert_eq!(names.name_of(0x11), None, "unnamed opens are not remembered");
+        for obj in 0x20..0x30usize {
+            names.opened(obj, format!("C:\\{obj:x}.bin"));
+        }
+        assert!(names.names.len() <= 4, "bounded");
+        assert_eq!(names.name_of(0x10), None, "everything was forgotten when full");
     }
 }
