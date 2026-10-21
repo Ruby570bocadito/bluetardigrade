@@ -333,7 +333,7 @@ The engine serves a small read-only API used by the web console and handy for SI
 | `GET /api/noise?window=24h&host=&limit=10` | the noise report: processes, DNS domains and rules that most generate events or alerts, each with its triage overlay; JSON only, fleet-wide by default, `host=` narrows to one machine — see [SOC reports and noise](#soc-reports-and-noise-rep-1) |
 
 <!-- BEGIN API REFERENCE -->
-Complete operation index generated from `api/openapi.yaml` (POL-5): **48 routes, 53 operations**. The guard `scripts/dev-tests/check_api_reference.py` fails CI when the spec and this index drift; regenerate in the same round as the spec change with `python3 scripts/dev-tests/check_api_reference.py --write`.
+Complete operation index generated from `api/openapi.yaml` (POL-5): **49 routes, 54 operations**. The guard `scripts/dev-tests/check_api_reference.py` fails CI when the spec and this index drift; regenerate in the same round as the spec change with `python3 scripts/dev-tests/check_api_reference.py --write`.
 
 | Method | Route | Summary | Tags |
 |--------|-------|---------|------|
@@ -349,6 +349,7 @@ Complete operation index generated from `api/openapi.yaml` (POL-5): **48 routes,
 | POST | /api/alerts/{id}/assign | Assign (or unassign) the operator who owns one alert's triage (TEAM-3) | telemetry |
 | GET | /api/alerts/{id}/forensics | Frozen evidence bundle of one alert (timeline + summary) | telemetry |
 | POST | /api/alerts/{id}/status | Record the operator triage decision for one alert | telemetry |
+| POST | /api/auth/domain | Verify domain credentials and resolve the console role (AD-7, -domain-auth) | status |
 | GET | /api/baseline | What the per-host process baseline knows about one machine (read-only) | status |
 | POST | /api/db/query | Read-only SQL over the evidence database (M-4) | telemetry |
 | GET | /api/enroll | Sensor enrollment state - tokens and enrolled hosts (read-only) | status |
