@@ -1,33 +1,35 @@
 # PUL — estado
 
 ## Hecho (últimas 24 h)
-- POL-5: guard nuevo `scripts/dev-tests/check_api_reference.py`
-  (check por defecto, --write, --self-test; mismo patrón que el guard del
-  inventario de reglas) y bloque generado en OPERATIONS.md (sección Local
-  HTTP API): 48 rutas, 53 operaciones, índice completo junto a la tabla
-  curada. Invocado en ci.yml junto a los demás guards.
-- Dos defectos de YAML invalido en `docs/api/openapi.yaml` (lineas 1878 y
-  1927, entrados con 5e0eeea de M-4: ": " dentro de escalares planos
-  multilínea). Ningún guard parseaba el spec con un parser real, por eso
-  sobrevivieron; corregidos sin cambio de semántica y check_openapi.py en
-  verde después (48 rutas, 280 $refs).
+- **higiene-postmigracion** (verificación completa, sin cambios necesarios):
+  - `docs/agentes/` contiene exactamente los cinco artefactos v2
+    (PROTOCOLO, OWNERSHIP, ROADMAP, claims/, estado/); cero restos v1.
+  - Raíz limpia: TASKS.md y WORKLOG.md retirados (historial de git),
+    AGENTS.md queda como puntero a PROTOCOLO.md.
+  - `.agent-tmp/` presente en .gitignore (línea 78); sin ficheros con
+    patrones de borrador/backup/ronda en el árbol.
+  - Dependencias Go: `go mod tidy` sin cambios (go.mod/go.sum sincronizados
+    con el código). Manifiestos bun de `web/` y `website/` sin deriva
+    detectable; los checks de consola del target `ci` los cubren.
+- **Petición de PUL a IMP-1 servida** (a través de IMP-1 en esta misma
+  sesión): `check_api_reference.py` en el target `ci` del Makefile
+  (self-test + deriva), commit 0e20698; OPERATIONS.md regenerado para
+  incluir POST /api/auth/domain (AD-7).
 
 ## En curso
 - (nada)
 
 ## Bloqueado
-- pol1b-dividir-run-go: cmd/engine con claims activos (m2-ad7).
+- (nada)
 
 ## Peticiones a otras zonas
-- IMP-1: replicar la invocación de check_api_reference.py en el target
-  `ci` del Makefile (zona IMP-1; en CI ya corre).
+- (ninguna)
 
 ## Propuestas para el roadmap
-- Al reescribirse la sección Local HTTP API, sustituir la tabla manual por
-  el índice generado (hoy se complementan: tabla curada + índice completo).
-- Literales antiguos de check_openapi.py (internal/api/api.go -> hub.go)
-  siguen pendientes con pol1b.
+- `pol1b-dividir-run-go` quedó desbloqueada por el release de M-2; es la
+  siguiente tarea PUL con más valor (refactor sin cambio de comportamiento,
+  suite verde antes y después).
+- La próxima pasada de dependencias puede añadir `bun install --frozen-lockfile`
+  como check explícito si el equipo quiere blindar los manifiestos bun.
 
-## Estado: VERDE — riesgos
-- Riesgo: el spec OpenAPI no tiene guard de validez YAML per se; mi guard
-  lo parsea, asi que la deriva de sintaxis ahora si rompe CI.
+## Estado: VERDE

@@ -35,3 +35,7 @@
   declarado en la config.
 - H-4/F2: probar el login de dominio en Windows real cuando exista la
   integración de consola (mismo lote que las pruebas de login del humano).
+- **Petición de PUL/DIR servida**: `check_api_reference.py` en el target
+  `ci` del Makefile (self-test + deriva; 0e20698) y OPERATIONS.md
+  regenerado con POST /api/auth/domain — el guard destapó la deriva de mi
+  propio M-2 en cuanto entró en el spec, que es justo lo que debe hacer.
