@@ -321,8 +321,6 @@ Detalle en [docs/PRUEBAS-PENDIENTES.md](docs/PRUEBAS-PENDIENTES.md).
   (POL-5).
 - [ ] Release con SBOM (CycloneDX) y el sensor firmado entre los artefactos
   (POL-6).
-- [ ] Entradas (SEC-3): rutas de descarga sin traversal, URLs de integraciones
-  validadas y ningún `dangerouslySetInnerHTML` con datos de eventos.
 - [ ] Cadena de suministro (SEC-6): auditar los componentes de terceros copiados
   en la consola.
 - [ ] Privacidad (SEC-9): minimizar datos personales en inicios de sesión y
