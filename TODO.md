@@ -167,6 +167,10 @@ y cuentas: [OPERATIONS](docs/OPERATIONS.md#console-accounts-roles-and-audit).
   - detecciones: rociado de contraseñas (4625), Kerberoasting (4769 con RC4),
     DCSync (4662), altas en grupos privilegiados (4728/4732/4756), servicios
     nuevos (7045);
+    *(mitad endpoint entregada el 2026-10-22: tooling de Kerberoast, DCSync,
+    rociado, alta en grupo y servicio-intérprete en
+    `rules/windows/active-directory.yaml`; los IDs de evento del controlador
+    de dominio llegan con WEF — M-7.)*
   - AD-3 inicios de sesión (fuera de horario, cuentas privilegiadas en puestos,
     primer inicio en un equipo) y AD-4 cambios (cuentas, grupos, GPO), con
     retención configurable y acceso por rol (RGPD).

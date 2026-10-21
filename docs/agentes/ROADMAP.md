@@ -6,16 +6,16 @@ DIR; el resto propone cambios en la sección «Propuestas» de su
 [TODO.md](../../TODO.md); la dirección del producto por horizontes,
 [docs/ROADMAP.md](../ROADMAP.md). Ante cualquier choque, manda TODO.md.
 
-Última actualización: 2026-10-22 (DIR, ronda de migración v1→v2).
+Última actualización: 2026-10-22 (DIR, cierre de la hornada TEAM-3).
 
 ## Fase actual
 
-La hornada 1 está cerrada en lo esencial: M-1 (backend de asignación),
-S-1, S-4, S-5, P-3, C-1 y O-1 fusionados en main. Arranca el sistema de
-agentes v2: `PROTOCOLO.md` es la única fuente de reglas, `claims/` es el
-cerrojo y `estado/<ID>.md` el único informe (se sobrescribe). Prioridades:
-cerrar TEAM-3 con la vista de consola (C-2), cerrar F1 y entrar en hornada
-2 (reglas AD, login de dominio).
+TEAM-3 completo de punta a punta: motor (PR #45) y consola (C-2, «Mis
+alertas», cola sin asignar, reasignación y lote). F1 cerrada con fix real
+(sumideros de aviso sin redirecciones). SEC-3 verificada sin cambios de
+código. O-2 mitad endpoint entregada (119 reglas). En vuelo con claim
+activo: M-2 (AD-7 login LDAPS) y M-4 (consulta BD solo lectura), dos
+instancias IMP-1 sobre ficheros disjuntos. Siguiente carril consola: F5.
 
 ## Decisiones vigentes que obligan a todos
 
@@ -23,73 +23,80 @@ Las de TODO.md («Decisiones vigentes») siguen en pie: validación de
 detecciones solo con telemetría sintética e inerte; AD en solo lectura;
 ninguna acción en equipos es «ejecutar un comando» (conjunto cerrado,
 firmado, auditado y con lista de protegidos); nada de feeds ni herramientas
-de terceros descargadas solos; CI en verde antes de cada push; punto
-completado = fuera de TODO.md + entrada en `changelog.d/`.
+de terceros descargadas solos; CI en verde antes de dar una tarea por
+cerrada (en día movido la run que manda es la de la cabeza de main —
+cancelar por supersesión NO es fallo); punto completado = fuera de TODO.md
++ entrada propia en `changelog.d/`.
 
-## ALTA (primero, dirigidas a un ID concreto)
+## ALTA
 
-- [ ] (IMP-2) c2-team3-frontend — Vista «Mis alertas», cola sin asignar, reasignación y asignación en lote según el contrato M-1→C-2 (abajo) — `web/console/src/`
-- [ ] (SEG) f1-aviso-alerta-critica — Cerrar F1 «alerta crítica sin aviso»: reproducir y verificar las tres vías (notificación del navegador, aviso en consola, canales externos) con fix mínimo y test de regresión donde toque; la entrega real de correo/Telegram queda para el humano en Windows — transversal (`cmd/engine/`, `web/console/`, `docs/`)
-- [ ] (PUL) pol1b-dividir-run-go — POL-1b: dividir `cmd/engine/run.go` sin cambio de comportamiento (suite verde antes y después) y actualizar los literales de `check_openapi.py` que aún citan `internal/api/api.go` — `cmd/engine/`, `scripts/dev-tests/`
+- Sin ALTA abierta. `pol1b-dividir-run-go` sigue prioritaria para PUL pero
+  BLOQUEADA hasta que m2-ad7 y m4-consulta-bd liberen `cmd/engine/`.
 
 ## Tareas por rol
 
 ### IMP-1 (motor Go + sensor Rust)
-- [ ] (IMP-1) o2-reglas-ad — Reglas AD: 4625 rociado, 4769 Kerberoasting, 4662 DCSync, 4728/4732/4756 altas en grupos privilegiados, 7045 servicios nuevos, cada una con evidencia sintética de disparo y silencio — `rules/`, `scenarios/`, `internal/rules/`
-- [ ] (IMP-1) m2-ad7-login-ldaps — AD-7: login con cuentas del dominio (bind LDAPS, grupos de AD → roles); las cuentas locales siguen como respaldo — `internal/ad/`, `internal/api/`, `cmd/engine/`
+- [ ] (IMP-1) m2-ad7-login-ldaps — EN VUELO (claim activo): bind LDAPS con credenciales del usuario, grupos AD → roles — `internal/ad/`, `internal/api/`, `cmd/engine/`
+- [ ] (IMP-1) m4-consulta-bd — EN VUELO (claim activo): consulta SQLite SOLO lectura, límites de filas/tiempo, auditada; habilita C-4 — `internal/store/`, `internal/api/`
+- [ ] (IMP-1) s2-yara-sensor — YARA en sensor con yara-x: escaneo de ficheros escritos y bajo demanda; el contrato con M-3 se define al arrancar — `sensor/`
 
 ### IMP-2 (consola Next.js)
 - [ ] (IMP-2) f5-kit-resto-vistas — Continuar el kit POL-7 en el resto de vistas (cabeceras con indicadores, estados vacíos útiles, tema claro) — `web/console/src/`
+- [ ] (IMP-2) c5-aviso-sensores-desactualizados — Aviso en Equipos de sensores desactualizados (la versión ya viaja en el latido, S-4 en main) — `web/console/src/`
 
 ### PUL (pulimiento)
-- [ ] (PUL) pol5-openapi-operations — Referencia de la API en OPERATIONS generada desde `docs/api/openapi.yaml` (POL-5) — `docs/`
-- [ ] (PUL) higiene-postmigracion — Primera pasada de higiene v2: `docs/agentes/` solo con PROTOCOLO/OWNERSHIP/ROADMAP/claims/estado, `.agent-tmp/` en uso, dependencias sincronizadas con el código — `docs/agentes/`, `.gitignore`, manifiestos de dependencias
+- [ ] (PUL) pol1b-dividir-run-go — Dividir `cmd/engine/run.go` sin cambio de comportamiento; BLOQUEADA por claims activos en `cmd/engine/` — `cmd/engine/`, `scripts/dev-tests/`
+- [ ] (PUL) pol5-openapi-operations — Referencia de la API en OPERATIONS generada desde `docs/api/openapi.yaml` — `docs/`
+- [ ] (PUL) higiene-postmigracion — `docs/agentes/` solo con los cinco artefactos, `.agent-tmp/` en uso, dependencias sincronizadas — `docs/agentes/`, `.gitignore`, manifiestos
 
 ### SEG (seguridad y bugs)
-- [ ] (SEG) sec3-entradas — SEC-3: revisión de entradas — traversal en descargas, URLs de integraciones validadas, ningún `dangerouslySetInnerHTML` con datos de eventos — transversal
+- Sin tarea activa. Siguientes candidatas del backlog de TODO.md
+  (regresión PR #28, reconexiones/spool del sensor) necesitan Windows real
+  — ver «Esperando al humano». Proponer la siguiente en «Propuestas».
+
+## Cerradas (últimas 24 h)
+
+- C-2 TEAM-3 consola — 6d29f9c + 9b86d8b (IMP-2; 572 tests, tsc, next build)
+- F1 aviso de alerta crítica — 0dddc28 (sumideros de salida sin redirecciones) + 934c80f (SEG)
+- SEC-3 entradas — c6e4248 (verificada sin cambios de código, evidencia en estado/SEG.md)
+- O-2 mitad endpoint — 21468d7 (pack AD, 5 reglas + evidencia, inventario 119)
+- M-1 backend de asignación — PR #45 (cerrada con C-2)
+- deps-audit sin cancelación — concurrency propio (fix DIR tras «Peticiones» de IMP-2)
+
+## Propuestas en el tablero (de los estados)
+
+- Filtro de asignación en `GET /api/alerts/search` + lente persistida en
+  URL (IMP-2; tras M-4, para no pisar `internal/api/`).
+- Migrar el ciclo de vida a SQLite: cola sin asignar paginada exacta (IMP-2,
+  hornada 2 prevista).
+- Señal para binarios con nombre propio que envuelvan intérpretes (IMP-1).
 
 ## Esperando al humano (no reclamables)
 
-- Fusionar o cerrar Dependabot #24–#27 con CI en verde; borrar las ramas
-  `100agentes`, `audit/mejoras-2026-10-08` e `integracion/rondas-2-3`;
-  activar «Automatically delete head branches»; decidir tags sueltos y
-  About/topics (F0 en TODO.md).
-- Pruebas en Windows real: `sf-start`/`sf-stop`/`-KeepSensor`/`sf-status` e
-  instalador silencioso (F1); login, MFA y cuentas (F2, sección 7); grupos y
-  permisos (secciones 7b/7c).
-- Visto bueno al contrato del canal servidor→sensor ANTES de empezar la
-  épica de respuesta ampliada (E-1..E-4).
+- Fusionar o cerrar Dependabot #24–#27 con CI en verde; borrar ramas
+  `100agentes`, `audit/mejoras-2026-10-08`, `integracion/rondas-2-3`;
+  «Automatically delete head branches»; tags sueltos y About/topics (F0).
+- Pruebas en Windows real: `sf-start`/`sf-stop`/instalador (F1 ya necesita
+  re-verificación con el fix de sumideros), login/MFA/cuentas (sección 7),
+  grupos y permisos (7b/7c), prueba de uso 24–48 h.
+- Visto bueno al contrato del canal servidor→sensor ANTES de la épica
+  E-1..E-4.
 
 ## Contratos entre componentes
 
 | Contrato | Estado | Detalle |
 |---|---|---|
-| M-1 → C-2 (TEAM-3) | **Publicado y fusionado (PR #45)** — C-2 ya puede empezar | Resumen abajo; fuente de verdad: `docs/api/openapi.yaml` |
-| S-2 ↔ M-3 (YARA) | Pendiente | Se definirá al arrancar S-2: distribución firmada de reglas y formato |
+| M-1 → C-2 (TEAM-3) | **CERRADO** (motor PR #45 + consola C-2 en main) | Resumen abajo; fuente de verdad: `docs/api/openapi.yaml` |
+| S-2 ↔ M-3 (YARA) | Pendiente | Se define al arrancar S-2: distribución firmada de reglas y formato |
 | E-1 → E-2/E-3/E-4 | **Bloqueado por visto bueno del humano** | Canal firmado servidor→sensor: se aprueba ANTES de empezar la épica |
-| S-1 (cerrado) | Decisión vigente | El dato escrito viaja en `registry.value`; raíz resuelta con `user` + `attributes["registry_root_inferred"]`; NO existe `registry.value_data` |
+| S-1 (cerrado) | Decisión vigente | El dato escrito viaja en `registry.value`; raíz con `user` + `attributes["registry_root_inferred"]`; NO existe `registry.value_data` |
 
-### Contrato M-1→C-2 (resumen operativo)
+### Contrato M-1→C-2 (referencia, cerrado)
 
-- La asignación vive en la MISMA entrada de ciclo de vida que el triaje
-  (`internal/lifecycle`): trío `assignee`/`assigned_by`/`assigned_at`
-  (RFC 3339). Se reemplaza SIEMPRE en bloque; vacío = sin asignar;
-  reconocer o cerrar NUNCA desasigna. Sin estados nuevos de triaje.
-- Escritura: `POST /api/alerts/{id}/assign` con cuerpo
-  `{"assignee":"nombre"|"", "by":"quien"}` y `POST /api/alerts/assign-batch`
-  con `{"ids":[...], "assignee":..., "by":...}` (tope 500 ids, 8 KiB;
-  SIEMPRE 200 con `assigned`/`failed` por id; NO atómico a propósito;
-  todos los ids deben existir).
-- Lectura en `GET /api/alerts`: `assignee=<nombre>` (coincidencia sin
-  mayúsculas) y `unassigned=true` (no combinables → 400); combinables con
-  los filtros previos. Trío `omitempty` en cada alerta: ausente = sin
-  asignar.
-- En vivo: tema SSE `alert_lifecycle` (la consola ya lo consume; el payload
-  ahora incluye el trío). Sin temas ni suscripciones nuevas.
-- Límites: 200 caracteres por `assignee` y `by`; 10.000 entradas de ciclo de
-  vida con expulsión FIFO.
-- En modo tienda (`-store`) el filtro se aplica sobre la ventana consultada:
-  una página puede volver más corta que `limit` (declarado; será exacto al
-  migrar el ciclo de vida a SQLite, ya previsto).
-- C-2 NO necesita: eco del assignee al triar, estados nuevos, suscripciones
-  nuevas ni paginación especial.
+- Asignación = trío `assignee`/`assigned_by`/`assigned_at` en la misma
+  entrada de ciclo de vida que el triaje; en bloque; vacío = sin asignar;
+  triar nunca desasigna. `POST /api/alerts/{id}/assign`,
+  `POST /api/alerts/assign-batch` (500 ids, no atómico, ids existentes),
+  `GET /api/alerts?assignee=&unassigned=`, SSE `alert_lifecycle` con el
+  trío. En modo tienda el filtro se aplica sobre la ventana consultada
+  (será exacto al migrar el ciclo de vida a SQLite).
