@@ -818,7 +818,14 @@ paths:
         (`false_positive`, `authorized_activity` or
         `confirmed_incident`, present once a verdict is recorded), and
         `status_note`, `status_by` and `status_at` when the alert has
-        been triaged via `POST /api/alerts/{id}/status`. When the engine
+        been triaged via `POST /api/alerts/{id}/status`. Each alert also
+        carries its assignment (TEAM-3): `assignee`, `assigned_by` and
+        `assigned_at` when it has an owner (set via
+        `POST /api/alerts/{id}/assign`). The `assignee` query parameter
+        selects one owner case-insensitively, or `none` for the
+        unassigned queue; in ring mode the filter is exact, in store
+        mode it narrows the returned page (for a complete queue use
+        `/api/alerts/search`, which scans for it). When the engine
         runs with `-store`, this list reads the persistent SQLite store
         (full history, subject to the configured retention) instead of the
         in-memory ring — the overlay applies in both modes.
@@ -830,6 +837,11 @@ paths:
         - $ref: '#/components/parameters/Since'
         - $ref: '#/components/parameters/Until'
         - $ref: '#/components/parameters/Q'
+        - name: assignee
+          in: query
+          description: exact owner (case-insensitive) or `none` for the
+            unassigned queue (TEAM-3)
+          schema: { type: string, maxLength: 200 }
       responses:
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -881,6 +893,12 @@ paths:
             type: string
             enum: [all, open, new, acknowledged, closed]
             default: all
+        - name: assignee
+          in: query
+          description: exact owner (case-insensitive) or `none` for the
+            unassigned queue (TEAM-3); evaluated during the scan, so the
+            queue views are complete within the scan cap
+          schema: { type: string, maxLength: 200 }
         - $ref: '#/components/parameters/Host'
         - $ref: '#/components/parameters/Severity'
         - $ref: '#/components/parameters/RuleId'
@@ -1055,6 +1073,152 @@ paths:
             Malformed alert id, invalid JSON body, unknown status,
             unknown decision, or note/by over their length limits. The
             JSON body names the problem (`{"error":"..."}`).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /api/alerts/{id}/assign:
+    post:
+      tags: [telemetry]
+      operationId: assignAlert
+      summary: Assign, reassign or unassign one alert (TEAM-3)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The assignment surface of the alert lifecycle. The assignee is
+        the account name the console states (`assignee`, max 200 chars)
+        and `by` names who performed it (max 200 chars; the API has a
+        single shared bearer token, so both are informational and NOT
+        authenticated). An EMPTY `assignee` unassigns; assigning over
+        an assigned alert reassigns.
+
+        Assignment is a PARTIAL update by design: status, decision,
+        note and their attribution are preserved, because assigning is
+        not triaging — a batch assignment from a selection bar must not
+        wipe a triage form. An alert never triaged gains an entry with
+        the implicit status `new`; unassigning an alert that was never
+        assigned and never triaged writes nothing.
+
+        The lifecycle store is the source of truth (same persistence as
+        `POST /api/alerts/{id}/status`): the alert does not need to be
+        in the 256-entry ring. Success broadcasts an `alert_lifecycle`
+        SSE frame (the SAME topic the status endpoint uses, with the
+        assignment fields in the entry) so live consumers update
+        without polling.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: alert id (16 lowercase hex characters, the `id` field of the alert)
+          schema:
+            type: string
+            pattern: '^[0-9a-f]{16}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertAssign'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Native API writes reject a foreign or malformed browser Origin
+            and Sec-Fetch-Site cross-site. Originless CLI clients remain supported.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: The full updated lifecycle entry (status fields included)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertLifecycle'
+        '400':
+          description: |
+            Malformed alert id, invalid JSON body, or assignee/by over
+            their length limits. The JSON body names the problem
+            (`{"error":"..."}`).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
+          description: A caller limited to host groups (X-SF-Scope) named an
+            alert outside its machines; it answers like an unknown id.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: The assignment was recorded in memory but persistence
+            failed; the generic body never names local paths (details go to
+            the engine log).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /api/alerts/assign:
+    post:
+      tags: [telemetry]
+      operationId: assignAlertsBulk
+      summary: Assign, reassign or unassign a batch of alerts (TEAM-3)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The batch form of `POST /api/alerts/{id}/assign`, for the
+        console selection bar. At most 200 ids per request; ids are
+        deduplicated in order (the same alert twice is one write). The
+        same assignment semantics apply per id, INCLUDING the host-group
+        scope: an id outside the caller's groups fails as
+        "unknown alert id" without blocking the rest.
+
+        HTTP status stays 200 whenever the request itself is well
+        formed — the outcome is per id in the body (`assigned`,
+        `failed`, `results[]` with `ok` and either the updated `entry`
+        or an `error`). Every successful assignment broadcasts its own
+        `alert_lifecycle` SSE frame and audit log line.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertAssignBulk'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Native API writes reject a foreign or malformed browser Origin
+            and Sec-Fetch-Site cross-site. Originless CLI clients remain supported.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Per-id results (some may have failed; see assigned/failed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertAssignBulkResult'
+        '400':
+          description: |
+            Invalid JSON body, no ids, more than 200 ids, or
+            assignee/by over their length limits.
           content:
             application/json:
               schema:
@@ -1386,8 +1550,11 @@ paths:
         `id`, `status`, `timestamp`, `severity`, `rule_id`, `rule_name`,
         `event_type`, `host`, `user`, `summary`, `matched_on`
         (space-joined), `tags` (space-joined), `message`, `notify`,
-        `status_note`, `status_by`, `decision` (appended at the end;
-        positional consumers keep their columns). When the engine runs
+        `status_note`, `status_by`, `decision`, `assignee`,
+        `assigned_by` (assignment columns appended at the end;
+        positional consumers keep their columns). The `assignee` query
+        parameter filters by owner (case-insensitive) or `none` for the
+        unassigned queue. When the engine runs
         with `-store`, the export reads the persistent SQLite store
         (full history, subject to the configured retention) instead of
         the alert ring.
@@ -1399,6 +1566,11 @@ paths:
         - $ref: '#/components/parameters/Since'
         - $ref: '#/components/parameters/Until'
         - $ref: '#/components/parameters/Q'
+        - name: assignee
+          in: query
+          description: exact owner (case-insensitive) or `none` for the
+            unassigned queue (TEAM-3)
+          schema: { type: string, maxLength: 200 }
       responses:
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -3818,6 +3990,61 @@ components:
           type: string
           maxLength: 200
           description: operator name, informational only
+    AlertAssign:
+      type: object
+      description: body of both assign endpoints (single and batch)
+      properties:
+        assignee:
+          type: string
+          maxLength: 200
+          description: account that owns the alert; EMPTY unassigns
+        by:
+          type: string
+          maxLength: 200
+          description: who performed the assignment, informational only
+    AlertAssignBulk:
+      type: object
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          items:
+            type: string
+            pattern: '^[0-9a-f]{16}$'
+          maxItems: 200
+          description: alert ids to assign (deduplicated in order)
+        assignee:
+          type: string
+          maxLength: 200
+          description: account that owns the alerts; EMPTY unassigns the batch
+        by:
+          type: string
+          maxLength: 200
+          description: who performed the assignment, informational only
+    AlertAssignBulkResult:
+      type: object
+      description: per-id outcome of a batch assignment (HTTP 200 even with failures)
+      required: [assigned, failed, results]
+      properties:
+        assigned:
+          type: integer
+        failed:
+          type: integer
+        results:
+          type: array
+          items:
+            type: object
+            required: [alert_id, ok]
+            properties:
+              alert_id:
+                type: string
+                pattern: '^[0-9a-f]{16}$'
+              ok:
+                type: boolean
+              entry:
+                $ref: '#/components/schemas/AlertLifecycle'
+              error:
+                type: string
     ForensicBundle:
       type: object
       description: |
@@ -3899,6 +4126,16 @@ components:
           type: string
           format: date-time
           description: RFC 3339 UTC timestamp of the decision
+        assignee:
+          type: string
+          description: account that owns the alert (TEAM-3); absent = unassigned
+        assigned_by:
+          type: string
+          description: who performed the assignment, informational only
+        assigned_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC timestamp of the assignment
     Rule:
       type: object
       required:
