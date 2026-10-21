@@ -1,39 +1,43 @@
 # DIR — estado
 
 ## Hecho (últimas 24 h)
-- Reparado el CI roto por la regla SIM-2: el pack AD entró sin escenarios
-  (3d3ca80) — IMP-1 lo arregló en paralelo (a6df346) y ambos quedaron
-  documentados sin duplicados; internal/scenario y internal/rules en verde
-  local sobre el árbol final.
-- Segunda pasada DIR: ROADMAP al día (cerradas O-2 completa, M-4, POL-5,
-  gofmt de sumideros; en vuelo M-2, F5 y segunda ronda SEG).
-- PUL (misma sesión): POL-5 con guard nuevo check_api_reference.py,
-  índice 48 rutas/53 operaciones en OPERATIONS y paso en ci.yml; corregidos
-  dos YAML inválidos del spec OpenAPI (entrados con M-4, nunca detectados
-  porque nada parseaba el spec).
+
+Sesión st1000 (§2, build roto para todos): tras el st100x de IMP-1 la
+cabeza siguió roja — el pase ST1000 de staticcheck leía los comentarios
+de fichero M-4 (db_query, db_query_guard, query_ro) como docs de paquete
+malformados; la run de fd29623 quedó cancelada por supersesión y nadie
+juzgó ese pase. Comentario despegado de `package` (cc8419e), ambos
+pases verificados con el toolchain de CI.
+
+Sesión proxy-db-query (instancia IMP-2, claim y release): petición de
+SEG al aterrizar M-2/M-4 — POST /api/db/query en el WRITES del proxy
+(admin, 64 KiB = dbQueryBodyCap, cuerpo verbatim), hint del 405 al día,
+tope de lote 500→400 (el cap de 8 KiB mata los lotes de ~430-500 con
+413; regresión nueva: cuerpo completo bajo 8192). 581 tests, tsc y
+next build en verde (919db63).
+
+PRs: #47 (P-4) y #48 (S-2) fusionados tras merge de main en cada
+branch — el #47 traía ficheros v1 (TASKS, WORKLOG, informe): resuelto
+hacia la retirada; el #48 traía sus ST1003/ST1000 propios: convergió
+con st100x sin duplicado; estado de IMP-1 fusionado dentro del tope.
+PR #46 cerrado sin fusionar (informe v1). Tablero al día: ROADMAP
+reescrito (M-3 parte del contrato del PR #48; C-4 y AD7-consola en el
+carril de IMP-2; pol1b desbloqueada; deps-audit checks:write para PUL)
+y TODO.md sincronizado (C-5 fuera; AD-7 y POL-5 anotados parciales).
 
 ## En curso
-- Verificación CI de la cabeza (supersesiones normales con el enjambre
-  empujando; manda la última run). Claims vivos: m2-ad7, f5-kit,
-  seg-redirects.
+- (nada) — el enjambre sigue: idea10 (IMP-2) con claim activo.
 
-## Bloqueado
-- pol1b-dividir-run-go (cmd/engine con claims activos).
-
-## Peticiones a otras zonas
-- IMP-1: replicar check_api_reference.py en el target `ci` del Makefile
-  (petición de PUL).
+## Peticiones
+- Próxima ronda: verificar CI en verde de la cabeza tras las fusiones.
 
 ## Propuestas para el roadmap
-- Guard de validez YAML del spec es ya implícito vía check_api_reference
-  (parsea el spec); valorar un self-test dedicado si el spec crece.
+- AD-7 consola: sesión de diseño con DIR antes de hornada (proxy exige
+  principal; ruta pre-sesión).
+- La web anuncia «YARA memory scanning»: alinearla cuando aterrice
+  s2-yara-memoria.
 
-## Estado: VERDE — riesgos y decisiones
-- Riesgo: doble arreglo paralelo del mismo defecto (ocurrió con los
-  escenarios); el claim lo habría evitado si el defecto hubiese estado en
-  el ROADMAP — anotado: los fixes de build roto van con claim salvo
-  emergencia declarada.
-- Desliz de protocolo propio: el claim de POL-5 se creó pero no se pusheó
-  antes de trabajar; corregido en el release (el trabajo no colisionó).
-- Decisiones: SIM-2 obliga — nueva regla = regla + escenario + inventario
-  en la MISMA entrega.
+## Estado: VERDE — riesgos
+- Cuatro instancias compartiendo IDs; claims y rebase evitaron los
+  tres solapes (st100x, proxy, idea10).
+- Higiene: el PAT volvió a pasar por el chat — rotarlo al cerrar.

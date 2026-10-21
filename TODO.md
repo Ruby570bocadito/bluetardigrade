@@ -86,6 +86,10 @@ y cuentas: [OPERATIONS](docs/OPERATIONS.md#console-accounts-roles-and-audit).
 - [ ] **Login con cuentas del dominio** (AD-7): bind LDAPS con las credenciales
   del usuario y grupos de AD que dan cada rol; las cuentas locales siguen como
   respaldo.
+  *(mitad motor entregada el 2026-10-22: `POST /api/auth/domain` con bind
+  LDAPS y grupos→roles en `internal/ad/` + `internal/api/domain_auth.go`;
+  falta la hornada de consola — su entrada en el WRITES del proxy aterriza
+  con esa UI, no antes.)*
 
 ## F3 — Funciones
 
@@ -257,8 +261,6 @@ Detalle en [docs/PRUEBAS-PENDIENTES.md](docs/PRUEBAS-PENDIENTES.md).
 
 ### Sensor
 
-- [ ] Aviso en Equipos de sensores desactualizados (la versión ya va en el
-  latido).
 - [ ] Credencial del sensor (`ingest.token`) cifrada con DPAPI (SEC-2).
 
 ### Forense
@@ -321,6 +323,9 @@ Detalle en [docs/PRUEBAS-PENDIENTES.md](docs/PRUEBAS-PENDIENTES.md).
 - [ ] Logs estructurados con `log/slog` en el motor (POL-2).
 - [ ] OPERATIONS por capítulos y referencia de la API generada desde OpenAPI
   (POL-5).
+  *(referencia de la API ya entregada el 2026-10-22: índice generado con
+  guard de deriva `scripts/dev-tests/check_api_reference.py`; quedan los
+  capítulos de OPERATIONS.)*
 - [ ] Release con SBOM (CycloneDX) y el sensor firmado entre los artefactos
   (POL-6).
 - [ ] Cadena de suministro (SEC-6): auditar los componentes de terceros copiados
