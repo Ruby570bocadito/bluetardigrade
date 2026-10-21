@@ -36,6 +36,4 @@ desbloqueada; deps-audit checks:write para PUL) y TODO.md sincronizado
   s2-yara-memoria.
 
 ## Estado: VERDE — riesgos
-- Cuatro instancias compartiendo IDs; claims y rebase evitaron los
-  tres solapes (st100x, proxy, idea10).
-- Higiene: el PAT volvió a pasar por el chat — rotarlo al cerrar.
+- Cuatro instancias compartiendo IDs; claims y rebase evitaron los tres solapes (st100x, proxy, idea10). Higiene: el PAT volvió al chat — rotarlo al cerrar.
