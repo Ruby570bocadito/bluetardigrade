@@ -12,7 +12,7 @@ import { useEngine } from './engine-provider'
 import { HeaderPopover } from './header-popover'
 import { useI18n } from './i18n-provider'
 import { alertKey } from '@/lib/engine-client'
-import { currentPermission, newCriticalAlerts, notificationText, playNotifyTone, readNotifyPrefs, writeNotifyPrefs, type NotifyPermission, type NotifyPrefs } from '@/lib/alert-notify'
+import { currentPermission, newCriticalAlerts, notifyNeedsPermission, notificationText, playNotifyTone, readNotifyPrefs, writeNotifyPrefs, type NotifyPermission, type NotifyPrefs } from '@/lib/alert-notify'
 
 export function NotifyMenu() {
   const { alerts, status } = useEngine()
@@ -88,6 +88,9 @@ export function NotifyMenu() {
             <span className="flex items-center gap-2"><SpeakerHigh size={14} aria-hidden className="text-zinc-400" /> {dict.notify.soundToggle}</span>
             <Switch checked={prefs.sound} onCheckedChange={(v) => void update({ ...prefs, sound: v })} aria-label={dict.notify.soundToggleAria} />
           </label>
+          {prefs.enabled && notifyNeedsPermission(prefs, permission) && (
+            <p role="alert" className="mt-2.5 text-[11px] text-amber-300">{dict.notify.pending}</p>
+          )}
           {prefs.enabled && permission === 'denied' && (
             <p role="alert" className="mt-2.5 text-[11px] text-amber-300">{dict.notify.denied}</p>
           )}

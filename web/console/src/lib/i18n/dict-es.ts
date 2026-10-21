@@ -502,6 +502,7 @@ export const dictEs = {
     soundToggle: 'Sonido',
     soundToggleAria: 'Sonido para alertas críticas',
     denied: 'El navegador bloqueó las notificaciones para este sitio: permítelas en el icono del candado de la barra de direcciones.',
+    pending: 'El navegador todavía no ha concedido el permiso (el diálogo se descartó o no llegó a aparecer): las notificaciones no saldrán hasta que lo aceptes ahí o en el candado de la barra de direcciones.',
     unsupported: 'Este navegador no admite notificaciones; el sonido sí funciona.',
     storageError: 'No se pudo guardar la preferencia en este navegador; dura hasta recargar.',
     testSound: 'Probar sonido',

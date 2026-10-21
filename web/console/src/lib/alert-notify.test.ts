@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { DEFAULT_NOTIFY_PREFS, newCriticalAlerts, notificationText, NOTIFY_KEY, readNotifyPrefs, writeNotifyPrefs, type NotifyPhrases } from './alert-notify'
+import { DEFAULT_NOTIFY_PREFS, newCriticalAlerts, notifyNeedsPermission, notificationText, NOTIFY_KEY, readNotifyPrefs, writeNotifyPrefs, type NotifyPhrases } from './alert-notify'
 import { dictEs } from './i18n/dict-es'
 import { dictEn } from './i18n/dict-en'
 import type { SfAlert } from './console-types'
@@ -28,6 +28,26 @@ describe('notification preference', () => {
     expect(readNotifyPrefs(storage)).toEqual({ enabled: true, sound: false })
     const full = { getItem: () => null, setItem: () => { throw new Error('quota') } }
     expect(writeNotifyPrefs(full, { enabled: true, sound: true })).toBe(false)
+  })
+})
+
+describe('pending permission hint', () => {
+  test('only a browser toggle left in default asks for the prompt', () => {
+    // A dismissed prompt leaves 'default': the avisos will never fire and
+    // both preference panels must say so instead of looking armed.
+    expect(notifyNeedsPermission({ enabled: true, sound: false }, 'default')).toBe(true)
+    // Granted or explicitly denied have their own, already-shown states;
+    // sound-only setups do not involve the browser permission at all.
+    expect(notifyNeedsPermission({ enabled: true, sound: false }, 'granted')).toBe(false)
+    expect(notifyNeedsPermission({ enabled: true, sound: false }, 'denied')).toBe(false)
+    expect(notifyNeedsPermission({ enabled: true, sound: true }, 'default')).toBe(true)
+    expect(notifyNeedsPermission({ enabled: false, sound: false }, 'default')).toBe(false)
+    expect(notifyNeedsPermission(DEFAULT_NOTIFY_PREFS, 'default')).toBe(false)
+  })
+
+  test('both dictionaries carry the pending wording', () => {
+    expect(dictEs.notify.pending).toContain('permiso')
+    expect(dictEn.notify.pending).toContain('permission')
   })
 })
 

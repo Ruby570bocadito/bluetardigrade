@@ -24,7 +24,7 @@ import { useEngine } from './engine-provider'
 import { useFleet } from './fleet-provider'
 import { useI18n } from './i18n-provider'
 import type { Lang } from '@/lib/i18n'
-import { currentPermission, playNotifyTone, readNotifyPrefs, writeNotifyPrefs, type NotifyPermission, type NotifyPrefs } from '@/lib/alert-notify'
+import { currentPermission, notifyNeedsPermission, playNotifyTone, readNotifyPrefs, writeNotifyPrefs, type NotifyPermission, type NotifyPrefs } from '@/lib/alert-notify'
 import { fetchMe, type ConsoleMe } from '@/lib/console-user'
 import {
   adDirtyFields,
@@ -229,6 +229,7 @@ function NotificationsPanel() {
           <Switch checked={prefs.sound} onCheckedChange={(v) => void update({ ...prefs, sound: v })} aria-label={dict.notify.soundToggleAria} />
         </div>
       </div>
+      {notifyNeedsPermission(prefs, permission) && <p role="alert" className="mt-2.5 text-[11px] text-amber-300">{dict.notify.pending}</p>}
       {permission === 'denied' && <p role="alert" className="mt-2.5 text-[11px] text-amber-300">{dict.notify.denied}</p>}
       {permission === 'unsupported' && <p className="mt-2.5 text-[11px] text-zinc-500">{dict.notify.unsupported}</p>}
       {storageError && <p role="alert" className="mt-2.5 text-[11px] text-amber-300">{dict.notify.storageError}</p>}
