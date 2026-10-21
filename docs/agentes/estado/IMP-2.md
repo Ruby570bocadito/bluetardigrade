@@ -1,44 +1,39 @@
 # IMP-2 — estado
 
 ## Hecho (últimas 24 h)
-- C-2 (TEAM-3 consola) completa y en main: lente de asignación en la cola
-  («Mis alertas» / «Sin asignar»), chip de responsable en filas, bloque de
-  asignación en el detalle (asignármela, asignar a otro, reasignar, quitar)
-  y «Asignar» en lote desde la barra de selección con fallos por id.
-  Commits 6d29f9c + 9b86d8b; validación local: 572 tests, tsc, next build.
-- Decisión de diseño (contrato permitía ambas): los filtros de asignación
-  se aplican en consola sobre el anillo en vivo y las páginas del histórico
-  (el objeto Alert lleva el trío por REST y por SSE); así la cola se
-  actualiza en tiempo real con `alert_lifecycle` y no hay segundas
-  suscripciones. El merge del trío en `applyAlertLifecycle` es seguro con
-  el guard de frescura: `Assign()` no mueve `at`, y ausencia de trío =
-  sin asignar (omitempty del motor).
-- Ritual: punto TEAM-3 fuera de TODO.md + entrada changelog.d/
-  (console-alert-assignment.md). Claim liberado.
+- F5, hornada kit-resto-vistas en main (fc8e478..f570245): Incidentes,
+  Equipos, Directorio, Informes, Supresiones, Intel y Ruido montan sus
+  controles sobre el kit POL-7. El kit gana la variante Button `solid`
+  (THEME-2: el relleno de acento que las vistas repetían a mano) y el
+  primitivo Textarea; el selector de tipo del explorador AD pasa a
+  ConsoleTablist (roving tabindex); las 9 tablas de datos restantes
+  usan los primitivos Table con caption propio. Sin cambios de
+  comportamiento. Validación: 574 tests, tsc, next build; CI de la
+  cabeza verde en consola (hub tests, tsc, next build).
+- Claim liberado; entrada changelog.d/console-kit-resto-vistas.md.
 
 ## En curso
-- (nada — siguiente tarea tras DIR)
+- C-5, aviso de sensores desactualizados (la versión viaja en el
+  latido, S-4 en main): siguiente tarea de mi carril.
 
 ## Bloqueado
 - (nada)
 
 ## Peticiones a otras zonas
-- PUL: el job `govulncheck, osv-scanner, cargo audit` aparece «cancelled»
-  en tres corridas seguidas (superseded por pushes rápidos, p. ej.
-  9b86d8b → 3bc9167). Con concurrency cancel-in-progress el escaneo de
-  dependencias nunca llega a terminar en días movidos; conviene grupo de
-  concurrency propio o cola sin cancelación (`.github/workflows/`).
+- IMP-1: la CI Go de la cabeza (927f069) falla en vet ST1003 dentro de
+  las rutas del claim m4-consulta-bd: apiDbQuery → apiDBQuery
+  (cmd/engine/flags.go:56 y run_api.go:234) y EnableDbQuery,
+  handleDbQuery, auditDbQuery → EnableDBQuery, handleDBQuery,
+  auditDBQuery (internal/api/db_query.go:60, 66 y 132). No lo toco:
+  rutas bajo tu claim activo.
 
 ## Propuestas para el roadmap
-- F5 (siguiente en mi carril): seguir el kit POL-7 en el resto de vistas y
-  tema claro, como apunta el ROADMAP.
-- Añadir el filtro de asignación al lenguaje de búsqueda
-  (`GET /api/alerts/search`, propuesta ya apuntada por M-1) y con ello
-  lente de asignación persistida en la URL y compartible.
-- Página más corta que `limit` en modo tienda con filtro de asignación:
-  cuando el ciclo de vida migre a SQLite (hornada 2), la cola sin asignar
-  puede paginar exacta sin ventana.
+- Login de dominio en la consola: AD-7 aterrizó con «contrato
+  declarado para IMP-2» (POST /api/auth/domain); propongo la hornada
+  de consola (pantalla de login con cuenta del dominio) cuando DIR la
+  dé de alta.
+- Tema claro (resto de F5): rework de contraste, superficies y
+  gráficas como hornada propia del mismo carril.
 
 ## Estado: VERDE
-- CI de main vigilada en el push de C-2; suite local completa en verde
-  antes de cada push (PROTOCOLO §1.6).
+- Suite local completa en verde antes de cada push (PROTOCOLO §1.6).
