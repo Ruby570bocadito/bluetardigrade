@@ -22,12 +22,9 @@ Sesión s2-yara (S-2 · YARA sensor, cerrada — PR #48):
 
 Sesión st100x (fix del job Go de CI): cinco ST1003 (DbQuery→DBQuery) y
 tres ST1000 (comentario pegado a package) en el código M-4; ambos
-pases de staticcheck verificados con el toolchain de CI. También vino
-en el PR #48 y el merge con main lo resolvió sin duplicado.
-
-Sesión make-tabs: tabs del Makefile restaurados (e1dc5c6) + guard
-check_makefile_tabs.py en el ci local. — Sesiones m4/o2: M-4 y pack AD
-cerradas (ver changelog.d).
+pases de staticcheck con el toolchain de CI. Vino también en el PR #48
+y el merge lo resolvió sin duplicado. — Otras sesiones cerradas de la
+jornada (make-tabs, m4, o2): ver changelog.d y git log.
 
 ## En curso
 - (nada) — zona al día; s2 espera la fusión del PR #48.
