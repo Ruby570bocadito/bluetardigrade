@@ -130,6 +130,13 @@ type Hub struct {
 	adReloadPending atomic.Bool
 	adReloadRecord  atomic.Pointer[adReloadRecord]
 
+	// AD-7 domain sign-in (domain_auth.go): armed only with
+	// -domain-auth. domainAuthMu guards the per-remote failure
+	// boxes of the endpoint, independent from the bearer throttle.
+	domainAuth      *ad.DomainAuthConfig
+	domainAuthMu    sync.Mutex
+	domainAuthFails map[string]*domainFailBox
+
 	// active response (C3, armed only with -allow-kill + token + an
 	// open audit file; see respond_write.go). nil = the route answers
 	// a real 404: the surface does not exist for probing clients.
@@ -222,16 +229,17 @@ func NewTLS(addr, certFile, keyFile string) (*Hub, error) {
 // listener; reloader nil means plain text.
 func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	h := &Hub{
-		listener:   ln,
-		subs:       make(map[chan frame]struct{}),
-		started:    time.Now(),
-		bySeverity: map[string]int{},
-		lifecycle:  mustMemoryLifecycle(),
-		incidents:  mustMemoryIncidents(),
-		risk:       risk.New(),
-		authFails:  map[string]*authFailBox{},
-		reloader:   reloader,
-		tls:        reloader != nil,
+		listener:        ln,
+		subs:            make(map[chan frame]struct{}),
+		started:         time.Now(),
+		bySeverity:      map[string]int{},
+		lifecycle:       mustMemoryLifecycle(),
+		incidents:       mustMemoryIncidents(),
+		risk:            risk.New(),
+		authFails:       map[string]*authFailBox{},
+		domainAuthFails: map[string]*domainFailBox{},
+		reloader:        reloader,
+		tls:             reloader != nil,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/stats", h.handleStats)
@@ -277,6 +285,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	h.registerReports(mux)
 	h.registerNoise(mux)
 	h.registerAD(mux)
+	h.registerDomainAuth(mux)
 	mux.HandleFunc("GET /api/intel", h.handleIntel)
 	mux.HandleFunc("GET /api/baseline", h.handleBaselineHost)
 	mux.HandleFunc("GET /api/stream", h.handleStream)
