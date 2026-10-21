@@ -279,3 +279,59 @@ func waitFor(t *testing.T, cond func() bool) {
 	}
 	t.Fatal("condition not reached within 2s")
 }
+
+// budgetProbe simulates a channel whose transport honors a context
+// deadline the way the email channel does (ctx.Deadline becomes the
+// socket deadline): with one, the attempt fails fast when the budget
+// expires; without one, it blocks for its full internal timeout — the
+// old drain handed out context.Background(), so its between-frames
+// budget check could not stop the first frame from hanging.
+type budgetProbe struct {
+	name     string
+	internal time.Duration // the channel's own (long) timeout without a ctx deadline
+}
+
+func (p *budgetProbe) Name() string             { return p.name }
+func (p *budgetProbe) Retryable(err error) bool { return false }
+
+func (p *budgetProbe) Deliver(ctx context.Context, _ alert.Alert) error {
+	if _, ok := ctx.Deadline(); ok {
+		<-ctx.Done() // the budget expires: the socket deadline fires
+		return ctx.Err()
+	}
+	time.Sleep(p.internal)
+	return nil
+}
+
+// TestServiceShutdownDrainBudgetIsEnforcedPerFrame pins the shutdown
+// latency contract: the drain budget bounds EACH delivery attempt, not
+// just the gaps between them. Regression for the soft deadline, where
+// the first queued frame ran without any ceiling and one wedged SMTP
+// server stretched the engine shutdown to ~17s (2s budget + one full
+// 15s smtpTimeout).
+func TestServiceShutdownDrainBudgetIsEnforcedPerFrame(t *testing.T) {
+	p := &budgetProbe{name: "slow-smtp", internal: 10 * time.Second}
+	s := New(p)
+	s.drainBudget = 300 * time.Millisecond
+	for i := 0; i < 5; i++ {
+		s.Handle(sampleAlert())
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // shutdown before the worker runs: the queue drains
+	start := time.Now()
+	s.Run(ctx)
+	s.Wait()
+	elapsed := time.Since(start)
+
+	stats := s.Stats()[0]
+	// Old behavior: the first frame ran without a deadline, slept the
+	// full 10s and counted sent; the drain took ~10s. New behavior: the
+	// first attempt expires with the budget (failed), the rest are
+	// dropped without attempt, and shutdown stays near the budget.
+	if elapsed > 5*time.Second {
+		t.Fatalf("drain took %v; the per-frame budget must bound shutdown latency", elapsed)
+	}
+	if stats.Sent != 0 || stats.Failed != 1 || stats.Dropped != 4 {
+		t.Fatalf("stats = %+v, want sent=0 failed=1 dropped=4 (first frame attempted and expired, rest never tried)", stats)
+	}
+}

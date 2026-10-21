@@ -45,6 +45,12 @@ const (
 	backoff     = 400 * time.Millisecond
 	httpTimeout = 5 * time.Second
 	smtpTimeout = 15 * time.Second
+
+	// drainDefault is the whole shutdown budget per worker: every
+	// queued frame gets one best-effort attempt inside it, and the
+	// budget is ENFORCED per attempt (the delivery context expires
+	// with the remaining time), not just checked between frames.
+	drainDefault = 2 * time.Second
 )
 
 // Channel is one delivery target. Deliver must be safe for the single
@@ -90,6 +96,11 @@ type worker struct {
 type Service struct {
 	workers []*worker
 	backoff time.Duration // overridable in tests
+
+	// drainBudget bounds the post-cancel drain of each worker. The
+	// zero value means drainDefault; tests shrink it to keep the
+	// deadline behavior fast and deterministic.
+	drainBudget time.Duration
 }
 
 // New builds a Service delivering to the given channels without a
@@ -131,9 +142,13 @@ func (s *Service) Handle(a alert.Alert) {
 // (single attempt per frame) under a bounded deadline so graceful
 // shutdown loses as little as possible.
 func (s *Service) Run(ctx context.Context) {
+	budget := s.drainBudget
+	if budget <= 0 {
+		budget = drainDefault
+	}
 	for _, w := range s.workers {
 		w.running.Add(1)
-		go w.loop(ctx, s.backoff)
+		go w.loop(ctx, s.backoff, budget)
 	}
 }
 
@@ -177,7 +192,7 @@ func (s *Service) Summary() []string {
 	return out
 }
 
-func (w *worker) loop(ctx context.Context, backoff time.Duration) {
+func (w *worker) loop(ctx context.Context, backoff, drainBudget time.Duration) {
 	defer w.running.Done()
 	for {
 		// Shutdown check BEFORE the select: once the context is
@@ -190,12 +205,12 @@ func (w *worker) loop(ctx context.Context, backoff time.Duration) {
 		// of the drain the package contract promises. Same
 		// shutdown contract as internal/webhook.
 		if ctx.Err() != nil {
-			w.drain()
+			w.drain(drainBudget)
 			return
 		}
 		select {
 		case <-ctx.Done():
-			w.drain()
+			w.drain(drainBudget)
 			return
 		case a := <-w.queue:
 			w.deliver(ctx, a, backoff)
@@ -241,21 +256,40 @@ func (w *worker) deliver(ctx context.Context, a alert.Alert, backoff time.Durati
 }
 
 // drain empties the queue after cancellation with one attempt per
-// frame under a global 2s deadline; anything left over is counted as
-// dropped. Same shutdown contract as internal/webhook.
-func (w *worker) drain() {
-	deadline := time.Now().Add(2 * time.Second)
+// frame inside the budget; anything left over is counted as dropped.
+// Same shutdown contract as internal/webhook.
+//
+// The budget is enforced PER ATTEMPT, not just checked between frames:
+// each delivery runs under a context that expires with the time the
+// drain has left, so one slow frame cannot stretch the engine shutdown
+// far past the promised bound (the email channel applies ctx.Deadline
+// to its socket and fails fast; a channel that ignores the context —
+// the webhook post — still caps itself with its own client timeout).
+// With the previous between-frames check the first frame ran without
+// any ceiling, and a wedged SMTP server turned the 2s drain into a
+// ~17s shutdown (2s budget + one full 15s smtpTimeout).
+func (w *worker) drain(budget time.Duration) {
+	deadline := time.Now().Add(budget)
 	for {
 		select {
 		case a := <-w.queue:
-			if err := w.ch.Deliver(context.Background(), a); err != nil {
+			remaining := time.Until(deadline)
+			if remaining <= 0 {
+				// Budget spent: this frame was popped but never
+				// attempted (failed means the receiver said no,
+				// dropped means we never tried), and neither was
+				// anything still queued.
+				w.dropped.Add(1)
+				w.dropRemaining()
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), remaining)
+			err := w.ch.Deliver(ctx, a)
+			cancel()
+			if err != nil {
 				w.failed.Add(1)
 			} else {
 				w.sent.Add(1)
-			}
-			if time.Now().After(deadline) {
-				w.dropRemaining()
-				return
 			}
 		default:
 			return
