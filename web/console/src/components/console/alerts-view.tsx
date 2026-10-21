@@ -21,6 +21,9 @@ import {
   MagnifyingGlass,
   Sparkle,
   Tray,
+  UserCircle,
+  UserPlus,
+  X,
   XCircle,
 } from '@phosphor-icons/react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -37,9 +40,9 @@ import { ReportLibrary } from './report-library'
 import { observationSearch } from '@/lib/source-observation'
 import { SavedSearches } from './saved-searches'
 import { alertSearchLens, searchForSavedLens, type SavedLens } from '@/lib/saved-searches'
-import { postAlertStatus } from '@/lib/lifecycle'
+import { postAlertAssign, postAlertStatus } from '@/lib/lifecycle'
 import { alertKey } from '@/lib/engine-client'
-import { matchesAlertState, alertStateFromParam, type AlertScope, type AlertStateFilter } from '@/lib/alert-search'
+import { matchesAlertState, alertStateFromParam, matchesAssignee, type AlertScope, type AlertStateFilter, type AssigneeLens } from '@/lib/alert-search'
 import { useAlertHistory } from '@/hooks/use-alert-history'
 import { Meter } from '@/components/charts/bars'
 import { EntityGraphView, GraphLegend } from '@/components/charts/entity-graph'
@@ -65,7 +68,8 @@ import {
   type SfAlert,
   type SfAlertStatus,
 } from '@/lib/console-types'
-import { AlertActionBar, AlertQuickActions, useAlertSelection } from './alert-actions'
+import { AlertActionBar, AlertQuickActions, AssignDialog, useAlertSelection } from './alert-actions'
+import { useConsoleUser } from './user-session'
 
 type Props = {
   compact?: boolean
@@ -78,10 +82,16 @@ type Props = {
 export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost, onOpenIncident }: Props) {
   const { alerts, status, lifecycleUpdates } = useEngine()
   const { dict } = useI18n()
+  const me = useConsoleUser()
   const reduce = useReducedMotion()
   const [sevFilter, setSevFilterState] = useState<SeverityFilter>('all')
   const [query, setQueryState] = useState('')
   const [stateFilter, setStateFilter] = useState<AlertStateFilter>('all')
+  // Assignment lens (TEAM-3/C-2): «Mis alertas» and the unassigned queue.
+  // Deliberately ephemeral (NOT in the URL lens): the assignment state of
+  // a live queue is volatile and the URL contract stays untouched;
+  // shareable links wait for the search language to grow the filter.
+  const [assigneeLens, setAssigneeLensState] = useState<AssigneeLens>('all')
   const [scope, setScope] = useState<AlertScope>('live')
   const [lensReady, setLensReady] = useState(false)
   const history = useAlertHistory(!compact && scope === 'history' && lensReady, { severity: sevFilter, state: stateFilter, q: query }, status, lifecycleUpdates)
@@ -169,6 +179,13 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
       writeFilters()
     }
   }
+  // Ephemeral lens: no URL write, just drop the linked selection so the
+  // panel never shows a row the operator filtered away.
+  const changeAssignee = (next: string) => {
+    const lens: AssigneeLens = next === 'mine' || next === 'unassigned' ? next : 'all'
+    setAssigneeLensState(lens)
+    if (!compact) clearLinkedSelection()
+  }
   const changeScope = (scope: AlertScope) => {
     filterRef.current = { ...filterRef.current, scope }
     setScope(scope)
@@ -235,26 +252,27 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (historyMode) return displayedAlerts
+    if (historyMode) return displayedAlerts.filter((a) => matchesAssignee(a, assigneeLens, me.name))
     const list = alerts.filter((a) => {
       if (!matchesAlertState(a, stateFilter)) return false
+      if (!matchesAssignee(a, assigneeLens, me.name)) return false
       if (sevFilter !== 'all' && a.severity !== sevFilter) return false
       if (!q) return true
       // triage search: anything an analyst remembers about the alert
       const haystack = [
         a.rule_name, a.rule_id, a.summary, a.host, a.user ?? '',
-        a.event_type, a.source ?? '', a.status_note ?? '', ...a.tags ?? [], ...a.matched_on, ...observationSearch(a.attributes, a.network),
+        a.event_type, a.source ?? '', a.status_note ?? '', a.assignee ?? '', ...a.tags ?? [], ...a.matched_on, ...observationSearch(a.attributes, a.network),
       ].join(' ').toLowerCase()
       return haystack.includes(q)
     })
     return compact ? list.slice(0, 6) : list
-  }, [alerts, displayedAlerts, sevFilter, stateFilter, query, compact, historyMode])
+  }, [alerts, displayedAlerts, sevFilter, stateFilter, assigneeLens, me.name, query, compact, historyMode])
 
   // Multi-select (full mode): the picked set is pruned to what is on
   // screen, so a lens change never acts on rows the analyst cannot see.
   const selection = useAlertSelection(useMemo(() => visible.map(alertKey), [visible]))
   const pickedAlerts = visible.filter((a) => selection.picked.has(alertKey(a)))
-  const filtering = sevFilter !== 'all' || stateFilter !== 'all' || query.trim() !== ''
+  const filtering = sevFilter !== 'all' || stateFilter !== 'all' || assigneeLens !== 'all' || query.trim() !== ''
   // With the detail panel open the queue loses ~400px: the host column
   // steps aside so the alert name keeps room.
   const hostColumn = selected ? '2xl:table-cell' : 'lg:table-cell'
@@ -267,11 +285,21 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
         [
           sevFilter !== 'all' ? dict.alerts.filterSev(sevFilter) : null,
           stateFilter !== 'all' ? dict.alerts.filterState(stateFilter) : null,
+          assigneeLens === 'mine' ? dict.alerts.filterAssigneeMine : assigneeLens === 'unassigned' ? dict.alerts.filterAssigneeUnassigned : null,
           query.trim() !== '' ? dict.alerts.filterQuery(query.trim()) : null,
         ]
           .filter(Boolean)
           .join(' + ') || undefined
       : undefined
+  // Dedicated empty states for the assignment lenses: a queue with zero
+  // alerts is the engine's business («Sin alertas todavía»), but a queue
+  // whose alerts all left the lens deserves its own sentence.
+  const assigneeEmpty =
+    alerts.length > 0 && assigneeLens !== 'all' && visible.length === 0
+      ? assigneeLens === 'mine'
+        ? { title: dict.alerts.emptyMineTitle, hint: dict.alerts.emptyMineHint }
+        : { title: dict.alerts.emptyUnassignedTitle, hint: dict.alerts.emptyUnassignedHint }
+      : null
   const hiddenByFilter = filtering && !compact && !historyMode ? alerts.length - visible.length : undefined
 
   const header = (
@@ -321,6 +349,12 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
               <option value="acknowledged">{dict.alerts.stateOptions.acknowledged}</option>
               <option value="closed">{dict.alerts.stateOptions.closed}</option>
             </select>
+            <select value={assigneeLens} onChange={(e) => changeAssignee(e.target.value)} aria-label={dict.alerts.assigneeFilterAria}
+              className="h-8 rounded-md border border-zinc-800 bg-zinc-900 px-2 font-mono text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <option value="all">{dict.alerts.assigneeOptions.all}</option>
+              <option value="mine">{dict.alerts.assigneeOptions.mine}</option>
+              <option value="unassigned">{dict.alerts.assigneeOptions.unassigned}</option>
+            </select>
             <ExportButtons kind="alerts" filterLabel={activeFilterLabel} hiddenCount={hiddenByFilter} />
           </div>
         )
@@ -361,6 +395,7 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
                       <span className="flex flex-wrap items-center gap-2">
                         <SeverityBadge severity={al.severity} />
                         <StatusChip status={al.status} />
+                        {al.assignee && <AssignChip who={al.assignee} />}
                         <span className="truncate text-sm text-zinc-100">{al.rule_name}</span>
                         {al.notify && <BellRinging size={13} weight="fill" aria-label={dict.alerts.notifyIconAria} className="shrink-0 text-amber-400" />}
                       </span>
@@ -442,8 +477,8 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
         <div className="panel">
           <EmptyState
             icon={MagnifyingGlass}
-            title={dict.alerts.noResultsTitle}
-            hint={history.page?.scan_limited ? dict.alerts.noResultsHintScan : dict.alerts.noResultsHintLens}
+            title={assigneeEmpty?.title ?? dict.alerts.noResultsTitle}
+            hint={assigneeEmpty ? assigneeEmpty.hint : history.page?.scan_limited ? dict.alerts.noResultsHintScan : dict.alerts.noResultsHintLens}
             action={
               <Button
                 variant="outline"
@@ -453,6 +488,7 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
                   setQuery('')
                   setSevFilter('all')
                   changeState('all')
+                  changeAssignee('all')
                 }}
               >
                 {dict.alerts.clearFilters}
@@ -524,17 +560,20 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
                           </span>
                         </td>
                         <td className="max-w-0 px-3 py-2.5 align-middle">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              selectAlert(isSelected ? null : key)
-                            }}
-                            className="block w-full max-w-full truncate text-left text-[13px] font-medium text-zinc-100 focus-visible:outline-none"
-                            title={`${al.rule_name}: ${al.summary}`}
-                          >
-                            {al.rule_name}
-                          </button>
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                selectAlert(isSelected ? null : key)
+                              }}
+                              className="min-w-0 flex-1 truncate text-left text-[13px] font-medium text-zinc-100 focus-visible:outline-none"
+                              title={`${al.rule_name}: ${al.summary}`}
+                            >
+                              {al.rule_name}
+                            </button>
+                            {al.assignee && <AssignChip who={al.assignee} />}
+                          </span>
                           <span className="block truncate font-mono text-xs text-zinc-500">{al.summary}</span>
                         </td>
                         <td className={`hidden px-3 py-2.5 align-middle ${hostColumn}`}>
@@ -762,6 +801,7 @@ export function AlertDetailBody({ alert, onAnalyze, onHost, onOpenIncident }: { 
       )}
 
       <TriagePanel alert={alert} />
+      <AssignPanel alert={alert} />
       <AlertQuickActions alert={alert} onHost={onHost} onOpenIncident={onOpenIncident} />
       <ForensicPanel alertId={alert.id} />
       <ReportPanel alert={alert} />
@@ -900,6 +940,106 @@ function TriagePanel({ alert }: { alert: SfAlert }) {
         </p>
       )}
     </div>
+  )
+}
+
+// Assignment block of the detail panel (TEAM-3/C-2): who owns the triage
+// now, who assigned it and when, and the one-click moves — take it
+// yourself, hand it to another analyst (dialog), or release it. The row
+// and this panel re-render from the same patched alert: the assign
+// ack entry and the alert_lifecycle SSE frame travel through the same
+// applyAlertLifecycle merge, so only the in-flight and error states are
+// tracked locally.
+function AssignPanel({ alert }: { alert: SfAlert }) {
+  const { applyTriage } = useEngine()
+  const { dict } = useI18n()
+  const me = useConsoleUser()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [dialog, setDialog] = useState(false)
+
+  // In accounts mode the write is signed with the session account, the
+  // same identity the engine proxy stamps on triage; open/token mode
+  // keeps the shared 'consola' signer.
+  const by = me.mode === 'users' ? me.name : 'consola'
+
+  async function run(assignee: string) {
+    if (!alert.id || busy) return
+    setBusy(true)
+    setError(null)
+    const ack = await postAlertAssign({ alert_id: alert.id, assignee, by })
+    setBusy(false)
+    if (!ack.ok) {
+      setError(ack.error)
+      return
+    }
+    applyTriage(ack.entry)
+  }
+
+  return (
+    <div className="mt-5 rounded-md border border-zinc-800 bg-zinc-950/60 p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[10px] uppercase tracking-wider text-zinc-500">{dict.alerts.assignHeading}</p>
+        {alert.assignee && alert.assigned_at && (
+          <p className="font-mono text-[10px] text-zinc-500">{formatDateTime(alert.assigned_at)}</p>
+        )}
+      </div>
+      {alert.assignee ? (
+        <p className="mb-2 text-xs leading-relaxed text-zinc-300">
+          {dict.alerts.assigneeLine(alert.assignee, alert.assigned_by ?? dict.alerts.nd, alert.assigned_at ? formatDateTime(alert.assigned_at) : dict.alerts.nd)}
+        </p>
+      ) : (
+        <p className="mb-2 text-xs leading-relaxed text-zinc-500">{dict.alerts.unassignedProse}</p>
+      )}
+      {!alert.id ? null : (
+        <div className="flex flex-wrap items-center gap-2">
+          {alert.assignee ? (
+            <>
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => setDialog(true)} className="gap-1.5 rounded-md">
+                {busy ? <CircleNotch size={13} className="animate-spin" aria-hidden /> : <UserPlus size={13} aria-hidden />}
+                {dict.alerts.reassign}
+              </Button>
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => void run('')} className="gap-1.5 rounded-md">
+                <X size={13} aria-hidden />
+                {dict.alerts.unassign}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(me.name)} className="gap-1.5 rounded-md">
+                {busy ? <CircleNotch size={13} className="animate-spin" aria-hidden /> : <UserPlus size={13} aria-hidden />}
+                {dict.alerts.assignMine}
+              </Button>
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => setDialog(true)} className="gap-1.5 rounded-md">
+                <UserCircle size={13} aria-hidden />
+                {dict.alerts.assignOther}
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+      {dialog && <AssignDialog alerts={[alert]} onClose={() => setDialog(false)} />}
+      {error && (
+        <p role="alert" className="mt-2 rounded-md border border-red-400/30 bg-red-400/10 px-2 py-1.5 text-xs text-red-300">
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+
+// Row chip of the current owner: a quiet pill so an assigned queue reads
+// at a glance; the detail panel carries the full audit line.
+function AssignChip({ who }: { who: string }) {
+  const { dict } = useI18n()
+  return (
+    <span
+      className="inline-flex max-w-[8.5rem] shrink-0 items-center gap-1 rounded-md border border-primary/20 bg-primary-tint/[0.08] px-1.5 py-0.5 text-[10px] text-primary-soft"
+      title={dict.alerts.assignChipTitle(who)}
+    >
+      <UserCircle size={10} weight="fill" aria-hidden />
+      <span className="truncate">{who}</span>
+    </span>
   )
 }
 

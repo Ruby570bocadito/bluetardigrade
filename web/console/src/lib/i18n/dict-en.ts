@@ -461,6 +461,43 @@ export const dictEn: Dict = {
     filterSev: (sev): string => `severity ${sev}`,
     filterState: (state): string => `status ${state}`,
     filterQuery: (q): string => `search «${q}»`,
+
+    // assignment (TEAM-3/C-2): the queue lens, the row chip and the
+    // assignment block of the detail panel. Names (assignee, assigned_by)
+    // are engine data and stay untranslated.
+    assigneeFilterAria: 'Filter by assignee',
+    assigneeOptions: {
+      all: 'Any assignment',
+      mine: 'My alerts',
+      unassigned: 'Unassigned',
+    },
+    filterAssigneeMine: 'assigned to me',
+    filterAssigneeUnassigned: 'unassigned',
+    emptyMineTitle: 'Nothing assigned to you',
+    emptyMineHint: 'When someone assigns an alert to you, it shows up here.',
+    emptyUnassignedTitle: 'The unassigned queue is empty',
+    emptyUnassignedHint: 'Every alert in the window has an owner — exactly how it should be.',
+    assignChipTitle: (who: string): string => `Assigned to ${who}`,
+    assignHeading: 'Assignment',
+    unassignedProse: 'No owner yet: anyone with triage permission can take it.',
+    assigneeLine: (who: string, by: string, when: string): string => `Owner ${who} · assigned by ${by} · ${when}`,
+    assignMine: 'Assign to me',
+    assignOther: 'Assign to…',
+    reassign: 'Reassign…',
+    unassign: 'Remove assignment',
+    bulkAssign: 'Assign',
+    assignDialogTitle: (n: number): string => (n === 1 ? 'Assign alert' : `Assign ${n} alerts`),
+    assignDialogIntro: 'The owner sees it under «My alerts». The engine records who assigned it and when.',
+    mineOption: (me: string): string => `Me (${me})`,
+    otherOption: 'Another analyst',
+    noneOption: 'Remove the assignment',
+    nameAria: 'Analyst name',
+    namePlaceholder: 'analyst name',
+    submitAssign: 'Assign',
+    submitUnassign: 'Remove',
+    assignResultOk: (n: number): string => (n === 1 ? '1 assigned' : `${n} assigned`),
+    assignResultFailed: (n: number): string => (n === 1 ? '1 failed' : `${n} failed`),
+    failedListAria: 'Alerts that could not be assigned',
   },
 
   // Critical-alert notifier (header bell). Preference prose, switches and
