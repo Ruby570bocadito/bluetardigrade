@@ -95,6 +95,12 @@ const WRITES: WriteRoute[] = [
   { method: 'POST', path: /^\/api\/enroll\/tokens\/[0-9a-f]{8}\/revoke$/, limit: 4 * KIB, role: 'admin', attributed: true },
   { method: 'POST', path: /^\/api\/enroll\/hosts\/enr-[a-z0-9._-]{1,48}-[0-9a-f]{6}\/(approve|reject|revoke)$/, limit: 4 * KIB, role: 'admin', attributed: true },
   { method: 'POST', path: /^\/api\/respond\/kill$/, limit: 8 * KIB, role: 'admin', operatorToken: true },
+  // the M-4 SQL console: read-only over the -store database, but still
+  // a POST on the closed list — only an administrator may send it, the
+  // body cap mirrors the engine's own dbQueryBodyCap (64 KiB, the JSON
+  // envelope has room for nothing else) and the engine refuses the
+  // route unless armed with -api-db-query and audits every attempt
+  { method: 'POST', path: /^\/api\/db\/query$/, limit: 64 * KIB, role: 'admin' },
   // settings an administrator edits in Ajustes: the Active Directory
   // connector (and its read-only connection test) and the host groups
   { method: 'PUT', path: /^\/api\/settings\/ad$/, limit: 8 * KIB, role: 'admin' },
@@ -278,7 +284,7 @@ async function write(request: Request): Promise<Response> {
     return Response.json(
       {
         error: 'read_only',
-        hint: 'La consola solo reenvía al motor el triaje y la asignación de alertas, los incidentes, el probador de reglas, las supresiones, la batería de validación, el alta de equipos, la respuesta activa y los ajustes de Active Directory y de grupos de equipos.',
+        hint: 'La consola solo reenvía al motor el triaje y la asignación de alertas, los incidentes, el probador de reglas, las supresiones, la batería de validación, la consulta SQL de la base de datos, el alta de equipos, la respuesta activa y los ajustes de Active Directory y de grupos de equipos.',
       },
       { status: 405 },
     )

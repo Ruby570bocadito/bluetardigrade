@@ -167,6 +167,19 @@ describe('isAssignBatchValid', () => {
     expect(isAssignBatchValid(['0123456789abcdef'], 'x'.repeat(201), 'carlos')).toBe(false)
     expect(isAssignBatchValid(['0123456789abcdef'], 'ana', 'x'.repeat(201))).toBe(false)
   })
+
+  test('a full batch stays under the engine 8 KiB body cap (SEG regression)', () => {
+    // the engine caps assign bodies at 8192 bytes BEFORE its 500-id
+    // check, so the contract number only holds if the serialized batch
+    // fits; the client cap (400) must keep the worst case inside it,
+    // by/assignee at their own 200-char maxima included
+    const worst = JSON.stringify({
+      assignee: 'x'.repeat(200),
+      by: 'x'.repeat(200),
+      ids: Array.from({ length: MAX_ASSIGN_BATCH_IDS }, () => '0123456789abcdef'),
+    })
+    expect(worst.length).toBeLessThanOrEqual(8192)
+  })
 })
 
 describe('postAlertAssign', () => {

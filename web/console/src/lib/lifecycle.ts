@@ -82,9 +82,11 @@ export type AssignBatchResult = {
 
 export type AssignBatchAck = { ok: true; result: AssignBatchResult } | { ok: false; error: string }
 
-// Same cap as the engine's assign-batch route; the client slices so a
-// giant selection degrades into two batches instead of a 400.
-export const MAX_ASSIGN_BATCH_IDS = 500
+// The engine's own batchMaxIDs is 500, but its 8 KiB body cap is the
+// real ceiling (~19 bytes per id): a batch between ~430 and 500 ids
+// dies in 413 before the 500 check even runs. The client slices at 400
+// so a giant selection degrades into two batches that always fit.
+export const MAX_ASSIGN_BATCH_IDS = 400
 
 export function isAssignActionValid(a: AssignAction): boolean {
   return ID_PATTERN.test(a.alert_id) && a.assignee.length <= 200 && (a.by?.length ?? 0) <= 200
