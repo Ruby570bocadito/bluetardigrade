@@ -47,9 +47,10 @@ Reglas rápidas:
   en las listas no-tabla (Hosts calientes). Los botones-fila de listas
   (abrir host) NO se convierten a Button: son filas interactivas, no
   acciones; el kit es para acciones.
-- Pendiente: abrir el PR desde `agent/consola/c-1` (esta sesión corre sin
-  credenciales de push: parches y comandos exactos entregados al humano, y
-  el humano abre el PR; NO fusionar hasta CI verde). Capturas oficiales del
-  escaparate (F5) después, en VM de laboratorio real.
+- Cierre: PR #38 abierto (`agent/consola/c-1` → `main`, 5 commits). La
+  sesión continuó con credenciales de push y rebase sobre main @ 7d99cb7
+  (PR #37 fusionado antes: solo TODO.md, sin conflictos). NO fusionar
+  hasta CI verde. Capturas oficiales del escaparate (F5) después, en VM
+  de laboratorio real.
 - Bloqueos: ninguno.
-- Estado en TASKS.md: en revisión (PR por abrir desde `agent/consola/c-1`)
+- Estado en TASKS.md: en revisión (PR #38)
