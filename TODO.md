@@ -334,7 +334,6 @@ Detalle en [docs/PRUEBAS-PENDIENTES.md](docs/PRUEBAS-PENDIENTES.md).
 - [ ] Dividir ficheros grandes sin cambiar comportamiento (POL-1):
   `internal/api/api.go`, `cmd/engine/run.go`, `sensor/src/collector.rs`.
 - [ ] Logs estructurados con `log/slog` en el motor (POL-2).
-- [ ] Perfiles `pprof` del camino caliente en el benchmark nocturno (POL-3).
 - [ ] OPERATIONS por capítulos y referencia de la API generada desde OpenAPI
   (POL-5).
 - [ ] Release con SBOM (CycloneDX) y el sensor firmado entre los artefactos
