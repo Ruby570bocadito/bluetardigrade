@@ -36,14 +36,22 @@ Instancia: 04-seguridad [B] · Primera ronda: 2026-10-21.
     estados con `reclaimLocked`, refresco solo con hits más nuevos).
     Dejo constancia para A: el «colador» ya tiene esta pasada estática.
   - Fragmento `changelog.d/sensor-transport-write-ceiling.md`.
-  Ver informe `ronda_2026-10-21_19h35_B.md`.
+  - **Bloqueo de main diagnosticado**: la CI del push mostró `Go
+    engine` en fallo ya presente en `9130a45` (merge PR #42): `err
+    redeclared` por conflicto semántico split POL-1 x brazo profiling.
+    Reproducido con Go local y fix preparado; el merge de M-1
+    (`a51108a`, Implementaciones A) aterrizó la misma corrección, así
+    que mi commit se retiró como duplicado y verifiqué el main
+    resultante: build, vet, `test -count=1`, GOOS=windows y gofmt en
+    verde. Ver informe (adenda del cierre).
+  Ver informe `ronda_2026-10-21_19h35_B.md` (con adenda del cierre).
 
 ## A medias
 
-- Nada a medias: ambos fixes entraron completos y con la batería Rust
+- Nada a medias: ambos fixes entraron completos con la batería Rust
   replicada en local (check+clippy host y cross Windows, 38/38 tests).
-  La suite Go no se corrió en esta sesión (toolchain no disponible;
-  código Go sin tocar — CI la cubre en el push).
+  La suite Go se corrió al cierre tras instalar el toolchain (no estaba
+  disponible al empezar): verde sobre el main resultante.
 
 ## Siguiente en mi backlog
 
