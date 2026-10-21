@@ -28,7 +28,13 @@
 // the user trace also consumes) and its SHA-256,
 // computed on a separate enrichment thread with a cache (imagehash.rs)
 // so file reads never stall the ETW consumers. When that thread falls
-// behind, events go out without the hash rather than wait.
+// behind, events go out without the hash rather than wait, and the
+// heartbeat reports how many went out that way.
+//
+// Every minute the heartbeat (heartbeat.rs) also asks both sessions what
+// ETW lost (EventsLost, RealTimeBuffersLost, via ControlTraceW) and sends
+// the totals to the engine, so a sensor that is silently losing telemetry
+// shows up in the machine inventory instead of only in a log line.
 //
 // The network/registry session is best effort: if it cannot start, the
 // sensor says so and keeps streaming process events. On Windows 8+ both
@@ -60,7 +66,7 @@ use ferrisetw::trace::{KernelTrace, TraceTrait, UserTrace};
 use ferrisetw::EventRecord;
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -141,6 +147,8 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
         images_live: AtomicBool::new(false),
         regkeys: Mutex::new(KeyNames::new(REGISTRY_NAMES_CAP, REGISTRY_PARKED_CAP)),
         debug_registry: capture.debug_registry.as_ref().map(|f| (f.to_ascii_lowercase(), Mutex::new(HashSet::new()))),
+        hash_dropped: AtomicU64::new(0),
+        hash_enabled: capture.hash,
     });
 
     // The provider is rebuilt for each start attempt (a stale session
@@ -203,8 +211,14 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
     // health report for the engine's machine inventory, every minute
     let capture_label = streams.iter().filter(|s| s.0).map(|s| s.1).collect::<Vec<_>>().join("+");
     let heartbeat_stop = Arc::new(AtomicBool::new(false));
+    // the sessions whose ETW loss the heartbeat reports: the kernel one
+    // always runs, the network/registry one only when it started
+    let mut sessions = vec![String::from(SESSION_NAME)];
+    if live {
+        sessions.push(String::from(NETREG_SESSION_NAME));
+    }
     let run_mode = if capture.as_service { "service" } else { "console" };
-    let heartbeat_thread = start_heartbeat(Arc::clone(&ctx), capture_label.to_string(), run_mode, queue_cap, Arc::clone(&heartbeat_stop));
+    let heartbeat_thread = start_heartbeat(Arc::clone(&ctx), capture_label.to_string(), run_mode, queue_cap, sessions, Arc::clone(&heartbeat_stop));
 
     // The kernel session must stay alive while events are processed;
     // dropping `trace` stops it. process_from_handle blocks on this

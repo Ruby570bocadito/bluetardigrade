@@ -10,7 +10,7 @@ use crate::queue::Pipeline;
 use crate::regnames::KeyNames;
 use std::collections::HashSet;
 use std::net::IpAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -36,6 +36,12 @@ pub(super) struct Shared {
     pub(super) regkeys: Mutex<KeyNames<EventJson>>,
     /// --debug-registry: lowercase fragment and the handles it matched
     pub(super) debug_registry: Option<(String, Mutex<HashSet<usize>>)>,
+    /// process starts that went out without their SHA-256 because the
+    /// enrichment thread could not take them; the heartbeat reports it
+    pub(super) hash_dropped: AtomicU64,
+    /// hashing was requested for this run: the counter only counts the
+    /// events denied enrichment when hashing was wanted at all
+    pub(super) hash_enabled: bool,
 }
 
 impl Shared {
@@ -75,6 +81,12 @@ impl Shared {
             },
             Err(_) => pending,
         };
+        // a denial here means the hash thread is behind, already stopped
+        // or never started: the event still goes out, just without its
+        // hash, and the heartbeat counts it (hash_dropped)
+        if self.hash_enabled {
+            self.hash_dropped.fetch_add(1, Ordering::Relaxed);
+        }
         self.emit(&rejected.event);
     }
 

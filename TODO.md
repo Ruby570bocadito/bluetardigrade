@@ -266,12 +266,6 @@ Detalle en [docs/PRUEBAS-PENDIENTES.md](docs/PRUEBAS-PENDIENTES.md).
 
 ### Sensor
 
-- [ ] Registro, raíz `?`: resolverla con el usuario del proceso (`HKU\<SID>`) o
-  por las claves vistas bajo esa base.
-- [ ] Registro, valor escrito: enviar `registry.value_data` para que reglas y
-  supresiones puedan exigirlo (caso real: Chrome y Copilot en la clave Run).
-- [ ] El latido informa de los eventos ETW perdidos (EventsLost, BuffersLost) y
-  de los descartes del hilo de hashes.
 - [ ] Aviso en Equipos de sensores desactualizados (la versión ya va en el
   latido).
 - [ ] Credencial del sensor (`ingest.token`) cifrada con DPAPI (SEC-2).
@@ -334,7 +328,6 @@ Detalle en [docs/PRUEBAS-PENDIENTES.md](docs/PRUEBAS-PENDIENTES.md).
 - [ ] Dividir ficheros grandes sin cambiar comportamiento (POL-1):
   `internal/api/api.go`, `cmd/engine/run.go`, `sensor/src/collector.rs`.
 - [ ] Logs estructurados con `log/slog` en el motor (POL-2).
-- [ ] Perfiles `pprof` del camino caliente en el benchmark nocturno (POL-3).
 - [ ] OPERATIONS por capítulos y referencia de la API generada desde OpenAPI
   (POL-5).
 - [ ] Release con SBOM (CycloneDX) y el sensor firmado entre los artefactos

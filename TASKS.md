@@ -53,7 +53,8 @@ elige otra libre de tu rol. Al fusionarse el PR, el humano la marca `hecha`.
 | M-5 | ML beta de triaje (`-ml-beta`, explicable, aprende de veredictos) | AG-1 | M-1 y C-2 | F4 | libre |
 | M-6 | Analista IA con alcance por grupos (el hub lee el motor con el alcance de quien pregunta) | AG-1 | — | F2 | libre |
 | S-3 | Auditoría de servicios Windows con permisos débiles (DACL, rutas sin comillas), solo lectura | AG-2 | — | F2 | libre |
-| S-4 | Latido informa EventsLost/BuffersLost y descartes; `ingest.token` cifrada con DPAPI (SEC-2) | AG-2 | — | Backlog | libre |
+| S-4 | Latido informa EventsLost/BuffersLost y descartes del hilo de hashes | AG-2 | — | Backlog | en revisión (PR #42) |
+| SEC-2 | Credencial del sensor (`ingest.token`) cifrada con DPAPI | AG-2 | — | Backlog | libre |
 | C-5 | Aviso de sensores desactualizados en Equipos (versión ya va en el latido) | AG-3 | S-4 | Backlog | libre |
 | M-7 | WEF: registro de Seguridad de DC y servidores; AD-3 inicios de sesión y AD-4 cambios, retención configurable | AG-1 | O-2 | F3 | libre |
 
@@ -67,7 +68,8 @@ elige otra libre de tu rol. Al fusionarse el PR, el humano la marca `hecha`.
 | O-4 | POL-6: release con SBOM (CycloneDX) y sensor firmado entre artefactos | AG-4 | — | Calidad | libre |
 | O-5 | SEC-3/SEC-6/SEC-9: revisión de entradas, cadena de suministro y privacidad (informe + parches mínimos) | AG-4 | — | Calidad | libre |
 | M-9 | POL-1: dividir `internal/api/api.go` y `cmd/engine/run.go`; POL-2 logs con `log/slog` | AG-1 | — | Calidad | libre |
-| S-5 | POL-1: dividir `sensor/src/collector.rs` sin cambiar comportamiento | AG-2 | — | Calidad | en progreso (Pulimiento B, 2026-10-21) |
+| S-5 | POL-1: dividir `sensor/src/collector.rs` sin cambiar comportamiento | AG-2 | — | Calidad | en revisión (PR #43) |
+| P-3 | POL-3: perfiles `pprof` del camino caliente en el benchmark nocturno (flag `-pprof-dir` del motor + artefactos del bench) | Pulimiento B (backend) | — | Calidad | en revisión (PR #41) |
 | H-6 | Pruebas de resistencia en Windows real: 24–48 h, suspensión, spool, semana de CPU/memoria | HUMANO | varias hechas | Pruebas | libre |
 | H-7 | Entrada `[v1.0.0]` del CHANGELOG, insignia del README y etiqueta `v1.0.0` | HUMANO | todo lo anterior | Pruebas | libre |
 
