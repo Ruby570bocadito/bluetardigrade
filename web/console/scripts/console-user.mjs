@@ -21,7 +21,9 @@
 // The password is read from the terminal (or from stdin when piped) and
 // only its PBKDF2-SHA256 hash is stored. On a terminal the rules come
 // first and a mistyped pair (or a too-short password) is asked again,
-// up to three times, instead of failing the whole command; piped, one
+// up to three times, instead of failing the whole command; every
+// question is a whole line of its own, because a prompt left mid-line
+// can stay invisible until Enter under Windows PowerShell. Piped, one
 // password is read, no repetition. The console re-reads the file
 // on its own; changing a password, a role, the groups or the two-step
 // sign-in, or removing an account, ends that account's open sessions. Account names
@@ -85,10 +87,10 @@ const same = (u) => typeof u?.user === 'string' && u.user.trim().toLowerCase() =
 async function readPassword() {
   const tty = Boolean(process.stdin.isTTY)
   const rl = createInterface({ input: process.stdin, output: process.stderr, terminal: tty })
-  // on a terminal, prompts are written here and the typed characters
-  // are not echoed
-  let muted = false
-  if (tty) rl._writeToOutput = (s) => { if (!muted) process.stderr.write(s) }
+  // on a terminal every readline drawing — the echo of what is typed,
+  // the line redraws — is swallowed: what reaches the screen are only
+  // the whole lines ask() writes, never a piece of the password
+  if (tty) rl._writeToOutput = () => {}
   // input closed before an answer (Ctrl+Z / Ctrl+D, an empty pipe):
   // fail instead of waiting on a question nobody can answer
   let closed = false
@@ -101,19 +103,20 @@ async function readPassword() {
     new Promise((resolve, reject) => {
       if (closed) return reject(new Error('no se recibió ninguna contraseña'))
       pending.add(reject)
-      process.stderr.write(prompt)
-      muted = true
+      // a whole line of its own, on screen before the blind typing: a
+      // prompt without its newline can stay buffered until Enter under
+      // Windows PowerShell, which wraps a native command's stderr line
+      // by line — the operator typed without even seeing the question
+      process.stderr.write(`${prompt}\n`)
       rl.question('', (answer) => {
         pending.delete(reject)
-        muted = false
-        process.stderr.write('\n')
         resolve(answer)
       })
     })
   try {
     // piped: one password, no repetition (a script knows what it sends)
     if (!tty) {
-      const only = await ask(`Contraseña para ${user}: `)
+      const only = await ask(`Contraseña para ${user}:`)
       if (only.length < MIN_PASSWORD) throw new Error(`usa al menos ${MIN_PASSWORD} caracteres`)
       return only
     }
@@ -123,8 +126,8 @@ async function readPassword() {
     process.stderr.write(`mínimo ${MIN_PASSWORD} caracteres; no se ve mientras la escribes\n`)
     let problem = 'las contraseñas no coinciden'
     for (let attempt = 1; attempt <= PASSWORD_TRIES; attempt++) {
-      const first = await ask(`Contraseña para ${user}: `)
-      const second = await ask('Repite la contraseña: ')
+      const first = await ask(`Contraseña para ${user}:`)
+      const second = await ask('Repite la contraseña:')
       if (first === second && first.length >= MIN_PASSWORD) return first
       problem = first !== second ? 'las contraseñas no coinciden' : `usa al menos ${MIN_PASSWORD} caracteres`
       if (attempt < PASSWORD_TRIES) {
