@@ -1,85 +1,95 @@
-# ROADMAP — coordinación de agentes (docs/agentes/)
+# ROADMAP — bluetardigrade (coordinación de agentes v2)
 
-Archivo vivo **mantenido solo por los Directores A y B**: fase actual,
-próximos hitos, backlog priorizado por rol y estado de los contratos entre
-componentes. El resto de instancias lo lee y **propone cambios en sus
-informes**; no lo edita.
-
-Relación con otros documentos: el QUÉ con todo el detalle sigue siendo
+Fase actual, próximas tareas y contratos entre componentes. Lo edita SOLO
+DIR; el resto propone cambios en la sección «Propuestas» de su
+`estado/<ID>.md`. El QUÉ con todo el detalle sigue siendo
 [TODO.md](../../TODO.md); la dirección del producto por horizontes,
-[docs/ROADMAP.md](../ROADMAP.md); la asignación transitoria del kit
-previo, TASKS.md (mientras exista, solo material de consulta). Ante
-cualquier choque, manda TODO.md.
+[docs/ROADMAP.md](../ROADMAP.md). Ante cualquier choque, manda TODO.md.
 
-Última actualización: 2026-10-21 (Director A, ronda bootstrap).
+Última actualización: 2026-10-22 (DIR, ronda de migración v1→v2).
 
----
+## Fase actual
 
-## Fase actual — hornada 1 (arranque del sistema)
+La hornada 1 está cerrada en lo esencial: M-1 (backend de asignación),
+S-1, S-4, S-5, P-3, C-1 y O-1 fusionados en main. Arranca el sistema de
+agentes v2: `PROTOCOLO.md` es la única fuente de reglas, `claims/` es el
+cerrojo y `estado/<ID>.md` el único informe (se sobrescribe). Prioridades:
+cerrar TEAM-3 con la vista de consola (C-2), cerrar F1 y entrar en hornada
+2 (reglas AD, login de dominio).
 
-El kit previo (AG-1..AG-4) fusionó hoy tres PRs que ya adelantan esta
-hornada; el sistema nuevo arranca con lo siguiente en marcha:
+## Decisiones vigentes que obligan a todos
 
-| Punto | Estado | Notas |
-|---|---|---|
-| S-1 registro (raíz «?» + valor escrito) | **Entregado** (PR #40) | Ritual pendiente: borrar de TODO.md, entrada en changelog.d/ y reflejar la decisión de esquema (`registry.value` + `user` + `attributes["registry_root_inferred"]`, NO `registry.value_data`) |
-| C-1 dashboard con kit POL-7 | **Parcial** (PR #38) | Panel y Operaciones pasan por el kit; faltan el resto de vistas, tema claro, adaptación y grafo (épica F5) |
-| O-1 OPERATIONS por capítulos + guía WEF | **Parcial** (PR #39) | Ocho capítulos + esqueleto WEF (docs/AD-WEF-SUSCRIPCION.md); falta referencia de API desde OpenAPI (POL-5) |
-| M-1 TEAM-3 backend | **Libre — siguiente pieza grande** | El que llegue primero al carril motor lo reclama con plan publicado; al definir el contrato de asignación de alertas, lo DECLARA en su informe para C-2 |
-| POL-1a/1b dividir api.go y run.go | **En curso** (Pulimiento A, plan publicado) | Refactor sin cambio de comportamiento |
-| F1 «alerta crítica sin aviso» | **En curso** (Seguridad B, plan publicado) | Causa raíz identificada en TODO.md: `sf-start` no pasa `-notify` |
+Las de TODO.md («Decisiones vigentes») siguen en pie: validación de
+detecciones solo con telemetría sintética e inerte; AD en solo lectura;
+ninguna acción en equipos es «ejecutar un comando» (conjunto cerrado,
+firmado, auditado y con lista de protegidos); nada de feeds ni herramientas
+de terceros descargadas solos; CI en verde antes de cada push; punto
+completado = fuera de TODO.md + entrada en `changelog.d/`.
 
-Sesiones publicadas hoy en `docs/agentes/`: 03-pulimiento/plan_A_actual.md,
-04-seguridad/plan_B_actual.md, 01-director/plan_A_actual.md y
-01-director/plan_B_actual.md.
+## ALTA (primero, dirigidas a un ID concreto)
 
-## Próximos hitos (hornadas 2–4)
+- [ ] (IMP-2) c2-team3-frontend — Vista «Mis alertas», cola sin asignar, reasignación y asignación en lote según el contrato M-1→C-2 (abajo) — `web/console/src/`
+- [ ] (SEG) f1-aviso-alerta-critica — Cerrar F1 «alerta crítica sin aviso»: reproducir y verificar las tres vías (notificación del navegador, aviso en consola, canales externos) con fix mínimo y test de regresión donde toque; la entrega real de correo/Telegram queda para el humano en Windows — transversal (`cmd/engine/`, `web/console/`, `docs/`)
+- [ ] (PUL) pol1b-dividir-run-go — POL-1b: dividir `cmd/engine/run.go` sin cambio de comportamiento (suite verde antes y después) y actualizar los literales de `check_openapi.py` que aún citan `internal/api/api.go` — `cmd/engine/`, `scripts/dev-tests/`
 
-1. **Hornada 2**: C-2 TEAM-3 frontend (tras el contrato de M-1) · M-2
-   AD-7 login de dominio LDAPS · S-2 YARA en sensor (yara-x) · M-3 YARA
-   en motor (contrato con S-2) · O-2 reglas AD (4625, 4769, 4662,
-   4728/4732/4756, 7045).
-2. **Hornada 3**: épica «respuesta ampliada» E-1..E-4 (**requiere visto
-   bueno del humano al contrato del canal servidor→sensor antes de
-   empezar**) · M-4 consulta BD solo lectura · M-6 analista IA por
-   grupos · S-3 servicios con permisos débiles · S-4 latido/DPAPI ·
-   C-5 aviso de sensores desactualizados · M-7 WEF + AD-3/AD-4.
-3. **Hornada 4**: F5 escaparate (C-6 forense UI, O-3 idiomas; capturas
-   y vídeo → humano) · calidad (M-9 dividir api.go/run.go — revisar
-   solape con POL-1 ya hecho — + log/slog, S-5 dividir collector.rs,
-   O-4 SBOM, O-5 SEC-3/6/9) · M-5 ML beta de triaje (solo tras M-1 y C-2).
+## Tareas por rol
 
-## Backlog priorizado por rol (IDs de TODO.md)
+### IMP-1 (motor Go + sensor Rust)
+- [ ] (IMP-1) o2-reglas-ad — Reglas AD: 4625 rociado, 4769 Kerberoasting, 4662 DCSync, 4728/4732/4756 altas en grupos privilegiados, 7045 servicios nuevos, cada una con evidencia sintética de disparo y silencio — `rules/`, `scenarios/`, `internal/rules/`
+- [ ] (IMP-1) m2-ad7-login-ldaps — AD-7: login con cuentas del dominio (bind LDAPS, grupos de AD → roles); las cuentas locales siguen como respaldo — `internal/ad/`, `internal/api/`, `cmd/engine/`
 
-| Carril | Puntos (en orden sugerido) |
-|---|---|
-| Implementaciones A (motor) | M-1 → M-2 → M-3 → M-4 → M-7 → M-6 → E-1/E-3 → M-5 |
-| Implementaciones B (sensor) | ritual S-1 → S-2 → S-4 → S-3 → E-2 → E-1 (con A) |
-| Implementaciones C/D (consola) | continuar C-1 → C-2 (tras contrato) → C-5 → C-3 → C-4 → C-6 → E-4 |
-| Pulimiento A/B (backend) | POL-1 (api.go, run.go, collector.rs) → POL-2 slog → POL-3 pprof → consistencia rules/ |
-| Pulimiento C/D (frontend/docs) | kit POL-7 en todas las vistas → IDEA-10 idiomas → README/árbol → POL-5 OpenAPI → dependencias |
-| Seguridad A/B (bugs funcionales) | F1 alerta crítica (en curso) → regresión PR #28 → reconexiones/spool sensor → falsos positivos de reglas |
-| Seguridad C/D (vulnerabilidades) | SEC-3 entradas → SEC-6 cadena de suministro → SEC-9 privacidad → SEC-2 DPAPI → auditoría de instalaciones npx/npm del carril frontend |
+### IMP-2 (consola Next.js)
+- [ ] (IMP-2) f5-kit-resto-vistas — Continuar el kit POL-7 en el resto de vistas (cabeceras con indicadores, estados vacíos útiles, tema claro) — `web/console/src/`
+
+### PUL (pulimiento)
+- [ ] (PUL) pol5-openapi-operations — Referencia de la API en OPERATIONS generada desde `docs/api/openapi.yaml` (POL-5) — `docs/`
+- [ ] (PUL) higiene-postmigracion — Primera pasada de higiene v2: `docs/agentes/` solo con PROTOCOLO/OWNERSHIP/ROADMAP/claims/estado, `.agent-tmp/` en uso, dependencias sincronizadas con el código — `docs/agentes/`, `.gitignore`, manifiestos de dependencias
+
+### SEG (seguridad y bugs)
+- [ ] (SEG) sec3-entradas — SEC-3: revisión de entradas — traversal en descargas, URLs de integraciones validadas, ningún `dangerouslySetInnerHTML` con datos de eventos — transversal
+
+## Esperando al humano (no reclamables)
+
+- Fusionar o cerrar Dependabot #24–#27 con CI en verde; borrar las ramas
+  `100agentes`, `audit/mejoras-2026-10-08` e `integracion/rondas-2-3`;
+  activar «Automatically delete head branches»; decidir tags sueltos y
+  About/topics (F0 en TODO.md).
+- Pruebas en Windows real: `sf-start`/`sf-stop`/`-KeepSensor`/`sf-status` e
+  instalador silencioso (F1); login, MFA y cuentas (F2, sección 7); grupos y
+  permisos (secciones 7b/7c).
+- Visto bueno al contrato del canal servidor→sensor ANTES de empezar la
+  épica de respuesta ampliada (E-1..E-4).
 
 ## Contratos entre componentes
 
 | Contrato | Estado | Detalle |
 |---|---|---|
-| M-1 → C-2 (TEAM-3) | **Pendiente de definir** | M-1 define API/estados/cola sin asignar y lo declara en su informe; C-2 NO empieza hasta leerlo |
-| S-2 ↔ M-3 (YARA) | **Pendiente** | Se definirá al arrancar S-2 (distribución firmada de reglas, formato) |
-| E-1 → E-2/E-3/E-4 | **Bloqueado por visto bueno del humano** | Canal firmado servidor→sensor: el humano aprueba el contrato ANTES de que empiece la épica |
-| S-1 (cerrado) | **Decisión vigente** | El dato escrito viaja en `registry.value`; raíz resuelta con `user` + `attributes["registry_root_inferred"]`; no existe `registry.value_data` — respetarlo en reglas y supresiones y actualizar TODO.md |
+| M-1 → C-2 (TEAM-3) | **Publicado y fusionado (PR #45)** — C-2 ya puede empezar | Resumen abajo; fuente de verdad: `docs/api/openapi.yaml` |
+| S-2 ↔ M-3 (YARA) | Pendiente | Se definirá al arrancar S-2: distribución firmada de reglas y formato |
+| E-1 → E-2/E-3/E-4 | **Bloqueado por visto bueno del humano** | Canal firmado servidor→sensor: se aprueba ANTES de empezar la épica |
+| S-1 (cerrado) | Decisión vigente | El dato escrito viaja en `registry.value`; raíz resuelta con `user` + `attributes["registry_root_inferred"]`; NO existe `registry.value_data` |
 
-## Decisiones vigentes que obligan a todas las instancias
+### Contrato M-1→C-2 (resumen operativo)
 
-Las de TODO.md («Decisiones vigentes») más: telemetría sintética e inerte
-para validar detecciones; AD solo lectura; acciones cerradas, firmadas y
-auditadas; nada de feeds de terceros automáticos; CI en verde antes de
-cada push; punto completado = fuera de TODO.md + entrada en changelog.d/.
-
-## Reglas de este archivo
-
-- Lo editan SOLO los Directores (uno por ronda, según su plan de ronda).
-- Se actualiza al cerrar cada ronda: fase, hitos, estados y contratos.
-- Las propuestas del resto de instancias viajan por sus informes; el
-  Director que edita decide si las sube aquí.
+- La asignación vive en la MISMA entrada de ciclo de vida que el triaje
+  (`internal/lifecycle`): trío `assignee`/`assigned_by`/`assigned_at`
+  (RFC 3339). Se reemplaza SIEMPRE en bloque; vacío = sin asignar;
+  reconocer o cerrar NUNCA desasigna. Sin estados nuevos de triaje.
+- Escritura: `POST /api/alerts/{id}/assign` con cuerpo
+  `{"assignee":"nombre"|"", "by":"quien"}` y `POST /api/alerts/assign-batch`
+  con `{"ids":[...], "assignee":..., "by":...}` (tope 500 ids, 8 KiB;
+  SIEMPRE 200 con `assigned`/`failed` por id; NO atómico a propósito;
+  todos los ids deben existir).
+- Lectura en `GET /api/alerts`: `assignee=<nombre>` (coincidencia sin
+  mayúsculas) y `unassigned=true` (no combinables → 400); combinables con
+  los filtros previos. Trío `omitempty` en cada alerta: ausente = sin
+  asignar.
+- En vivo: tema SSE `alert_lifecycle` (la consola ya lo consume; el payload
+  ahora incluye el trío). Sin temas ni suscripciones nuevas.
+- Límites: 200 caracteres por `assignee` y `by`; 10.000 entradas de ciclo de
+  vida con expulsión FIFO.
+- En modo tienda (`-store`) el filtro se aplica sobre la ventana consultada:
+  una página puede volver más corta que `limit` (declarado; será exacto al
+  migrar el ciclo de vida a SQLite, ya previsto).
+- C-2 NO necesita: eco del assignee al triar, estados nuevos, suscripciones
+  nuevas ni paginación especial.
