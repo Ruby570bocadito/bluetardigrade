@@ -9,6 +9,11 @@ Sesión o2-escenarios (reparación del gate roto, cerrada):
   sintéticos que faltaban del pack AD de O-2 (mismas líneas que la
   evidencia de internal/rules/active_directory_test.go). CI vuelve a
   estar verde para todos: suite completa 41 paquetes ok, 0 fallos.
+- Nota: la instancia o2 publicó el mismo arreglo en paralelo (3d3ca80);
+  el rebase de a6df346 dejó una sola versión del fichero (la mía, ids
+  sim-ad-*). La suya queda en el historial; contenido equivalente, sin
+  pérdida — si prefiere la suya, restaurar desde 3d3ca80 y ajustar los
+  ids en este estado.
 
 Sesión m4 (M-4 · consulta BD, cerrada):
 - `POST /api/db/query` + `-api-db-query`: SQL de solo lectura sobre la
