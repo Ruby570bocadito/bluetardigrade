@@ -14,8 +14,9 @@ import { TABLIST_CLASS, tabButtonClass } from './ui-tabs'
 import { useFleet } from './fleet-provider'
 import { EnrollmentRow, TokenEnrollment } from './enroll-parts'
 import { enrolledFor } from '@/lib/enroll'
-import { enrollmentPlan, FLEET_STATUS_LABEL, formatDuration, isValidHostName, runModeText, secondsSince, type FleetHost, type FleetStatus } from '@/lib/fleet'
+import { enrollmentPlan, FLEET_STATUS_LABEL, formatDuration, isValidHostName, outdatedCount, outdatedSensor, runModeText, secondsSince, type FleetHost, type FleetStatus } from '@/lib/fleet'
 import { formatDateTime } from '@/lib/console-types'
+import { useEngine } from './engine-provider'
 
 const STATUS_STYLE: Record<FleetStatus, { dot: string; text: string; ring: string }> = {
   online: { dot: 'bg-emerald-500', text: 'text-emerald-300', ring: 'border-emerald-400/30 bg-emerald-400/10' },
@@ -36,13 +37,36 @@ export function FleetStatusPill({ host }: { host?: FleetHost }) {
   )
 }
 
+/**
+ * C-5: chip for a sensor whose build does not match the engine's own
+ * (both versions travel in the heartbeat and /api/stats). Renders
+ * nothing when the versions match or when either side is unknown —
+ * an honest signal never guesses from missing data.
+ */
+export function SensorVersionChip({ host, engineVersion, className }: { host?: FleetHost; engineVersion?: string; className?: string }) {
+  if (!outdatedSensor(engineVersion, host?.sensor)) return null
+  const sensorVersion = host!.sensor!.version
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-md border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-[10px] text-amber-200 ${className ?? ''}`}
+      title={`El sensor informa la versión ${sensorVersion} y el motor va por ${engineVersion}: no coinciden. Actualiza el sensor del equipo con el security-sensor.exe de esta instalación.`}
+    >
+      <WarningCircle size={10} weight="fill" aria-hidden />
+      sensor {sensorVersion}
+    </span>
+  )
+}
+
 /** Summary of the inventory with the enrollment entry point. */
 export function FleetSummary({ onEnroll }: { onEnroll: () => void }) {
   const { fleet, available, loaded } = useFleet()
+  const { stats } = useEngine()
+  const engineVersion = stats?.version
   const withSensor = fleet?.hosts.filter((h) => h.sensor).length ?? 0
+  const outdated = fleet ? outdatedCount(fleet.hosts, engineVersion) : 0
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto]">
-      <StatTile icon={Desktop} label="Equipos en el inventario" value={fleet ? fleet.hosts.length : '—'} hint={!loaded ? 'consultando el motor' : available ? `${withSensor} con sensor que envía latido` : 'este motor no ofrece inventario: actualízalo'} />
+      <StatTile icon={Desktop} label="Equipos en el inventario" value={fleet ? fleet.hosts.length : '—'} hint={!loaded ? 'consultando el motor' : available ? `${withSensor} con sensor que envía latido${outdated ? ` · ${outdated} con versión distinta a la del motor` : ''}` : 'este motor no ofrece inventario: actualízalo'} warn={outdated > 0} />
       <StatTile icon={PlugsConnected} label="En línea" value={fleet ? fleet.online : '—'} hint="latido o telemetría reciente" />
       <StatTile icon={WifiSlash} label="Sin señal" value={fleet ? fleet.silent : '—'} hint={fleet?.silent ? 'su sensor dejó de enviar latido' : 'ningún sensor callado'} warn={(fleet?.silent ?? 0) > 0} />
       <StatTile icon={Timer} label="Inactivos" value={fleet ? fleet.idle : '—'} hint="sin latido y sin datos en 10 min" />
@@ -60,6 +84,8 @@ export function FleetSummary({ onEnroll }: { onEnroll: () => void }) {
 /** Health of the sensor on one host. */
 export function SensorCard({ host }: { host?: FleetHost }) {
   const { enroll } = useFleet()
+  const { stats } = useEngine()
+  const engineVersion = stats?.version
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 5000)
@@ -96,9 +122,21 @@ export function SensorCard({ host }: { host?: FleetHost }) {
           </span>
         </div>
       )}
+      {outdatedSensor(engineVersion, s) && (
+        <div role="status" className="flex items-start gap-2 border-b border-amber-400/20 bg-amber-400/[0.06] px-5 py-3 text-xs text-amber-200">
+          <WarningCircle size={16} weight="fill" aria-hidden className="mt-0.5 shrink-0" />
+          <span>
+            El sensor informa la versión <b className="font-semibold">{s!.version}</b> y el motor va por{' '}
+            <b className="font-semibold">{engineVersion}</b>: no coinciden. El equipo sigue reportando con normalidad, pero
+            actualiza su sensor con el <code className="font-mono">security-sensor.exe</code> de esta instalación
+            (cómo copiarlo: «Añadir equipos», paso 2) para que reciba las mejoras de detección.
+          </span>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-3 px-5 pt-4">
         <h3 className="text-sm font-medium text-zinc-100">Sensor y conexión</h3>
         <FleetStatusPill host={host} />
+        <SensorVersionChip host={host} engineVersion={engineVersion} />
         <span className="ml-auto text-[11px] text-zinc-500">en el inventario desde {formatDateTime(host.first_seen)}</span>
       </div>
       <dl className="grid gap-x-6 gap-y-2.5 px-5 py-4 sm:grid-cols-2">

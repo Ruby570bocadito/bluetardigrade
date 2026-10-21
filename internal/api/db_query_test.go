@@ -67,7 +67,7 @@ func dbQueryTestHub(t *testing.T) (*Hub, string, *store.Store) {
 	return h, addr, st
 }
 
-func TestDbQueryDisabledByDefault(t *testing.T) {
+func TestDBQueryDisabledByDefault(t *testing.T) {
 	h, addr, _ := dbQueryTestHub(t)
 	_ = h
 	code, body := dbQueryPost(t, addr, dbQueryRequest{SQL: "SELECT 1"})
@@ -79,7 +79,7 @@ func TestDbQueryDisabledByDefault(t *testing.T) {
 	}
 }
 
-func TestDbQueryRequiresStore(t *testing.T) {
+func TestDBQueryRequiresStore(t *testing.T) {
 	h, addr, _ := dbQueryTestHub(t)
 	h.store = nil
 	h.EnableDBQuery()
@@ -89,7 +89,7 @@ func TestDbQueryRequiresStore(t *testing.T) {
 	}
 }
 
-func TestDbQueryRoundTrip(t *testing.T) {
+func TestDBQueryRoundTrip(t *testing.T) {
 	h, addr, _ := dbQueryTestHub(t)
 	h.EnableDBQuery()
 
@@ -122,7 +122,7 @@ func TestDbQueryRoundTrip(t *testing.T) {
 	}
 }
 
-func TestDbQueryRejectsWritesAndAuditsThem(t *testing.T) {
+func TestDBQueryRejectsWritesAndAuditsThem(t *testing.T) {
 	h, addr, st := dbQueryTestHub(t)
 	h.EnableDBQuery()
 
@@ -148,7 +148,7 @@ func TestDbQueryRejectsWritesAndAuditsThem(t *testing.T) {
 	}
 }
 
-func TestDbQueryAuditSuccessToo(t *testing.T) {
+func TestDBQueryAuditSuccessToo(t *testing.T) {
 	h, addr, st := dbQueryTestHub(t)
 	h.EnableDBQuery()
 
@@ -167,7 +167,7 @@ func TestDbQueryAuditSuccessToo(t *testing.T) {
 	}
 }
 
-func TestDbQueryClampsRowsAndTimeout(t *testing.T) {
+func TestDBQueryClampsRowsAndTimeout(t *testing.T) {
 	h, addr, st := dbQueryTestHub(t)
 	h.EnableDBQuery()
 	for i := 2; i <= 4; i++ {
@@ -204,7 +204,7 @@ func TestDbQueryClampsRowsAndTimeout(t *testing.T) {
 	}
 }
 
-func TestDbQueryRuntimeErrorIsABadRequest(t *testing.T) {
+func TestDBQueryRuntimeErrorIsABadRequest(t *testing.T) {
 	h, addr, _ := dbQueryTestHub(t)
 	h.EnableDBQuery()
 
@@ -217,7 +217,7 @@ func TestDbQueryRuntimeErrorIsABadRequest(t *testing.T) {
 	}
 }
 
-func TestDbQueryBadJSON(t *testing.T) {
+func TestDBQueryBadJSON(t *testing.T) {
 	h, addr, _ := dbQueryTestHub(t)
 	h.EnableDBQuery()
 

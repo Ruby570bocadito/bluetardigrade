@@ -123,12 +123,16 @@ func listening(addr string) bool {
 
 // apiHealthy does a one-shot GET /api/health with a short timeout, to
 // confirm that whatever occupies the ingest port is really this engine.
+// Same redirect posture as every outbound client (report, doctor, the
+// sinks): a 3xx is a definitive failure, never a follow — a redirect
+// would turn the health probe into a GET at a URL the engine never chose.
 func apiHealthy(addr string) bool {
 	host := addr
 	if strings.HasPrefix(host, ":") {
 		host = "127.0.0.1" + host
 	}
-	cl := &http.Client{Timeout: 700 * time.Millisecond}
+	cl := &http.Client{Timeout: 700 * time.Millisecond,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := cl.Get("http://" + host + "/api/health")
 	if err != nil {
 		return false

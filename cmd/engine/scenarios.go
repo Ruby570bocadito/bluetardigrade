@@ -534,7 +534,11 @@ func getJSONInto(o replayOptions, path string, into func([]byte) error) error {
 	if tok != "" {
 		req.Header.Set("Authorization", "Bearer "+tok)
 	}
-	client := &http.Client{Timeout: 10 * time.Second}
+	// Same redirect posture as every other outbound client (report,
+	// doctor, the sinks): a 3xx is a definitive failure, never a follow —
+	// the bearer token must not ride a redirect to another port or host.
+	client := &http.Client{Timeout: 10 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err

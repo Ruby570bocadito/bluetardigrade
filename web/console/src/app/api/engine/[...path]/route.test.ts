@@ -501,6 +501,24 @@ describe('engine proxy with analyst accounts', () => {
     const huge = JSON.stringify({ groups: [{ name: 'a', hosts: ['x'.repeat(300 * 1024)] }] })
     expect((await PUT(new Request(base + '/api/settings/groups', { method: 'PUT', headers: as('jefa'), body: huge }))).status).toBe(413)
   })
+
+  test('only an administrator sends the M-4 SQL console, body verbatim', async () => {
+    const { POST } = await loadRoute()
+    const body = JSON.stringify({ sql: 'SELECT alert_id FROM alerts LIMIT 1' })
+    // analyst is refused before the engine sees anything; admin travels
+    expect((await POST(new Request(base + '/api/db/query', { method: 'POST', headers: as('ana'), body }))).status).toBe(403)
+    expect(captured).toHaveLength(0)
+    expect((await POST(new Request(base + '/api/db/query', { method: 'POST', headers: as('jefa'), body }))).status).toBe(200)
+    expect(captured).toHaveLength(1)
+    // the query surface has no by/assignee to attribute: verbatim body
+    expect(String(captured[0].init.body)).toBe(body)
+    expect(new URL(captured[0].url).pathname).toBe('/api/db/query')
+    // the body cap mirrors the engine's dbQueryBodyCap (64 KiB)
+    const huge = JSON.stringify({ sql: `SELECT '${'x'.repeat(65 * 1024)}'` })
+    expect((await POST(new Request(base + '/api/db/query', { method: 'POST', headers: as('jefa'), body: huge }))).status).toBe(413)
+    // near-miss shapes stay closed
+    expect((await POST(new Request(base + '/api/db/query/all', { method: 'POST', headers: as('jefa'), body: '{}' }))).status).toBe(405)
+  })
 })
 
 describe('engine proxy with accounts limited to host groups', () => {

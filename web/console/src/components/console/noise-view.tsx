@@ -13,11 +13,12 @@ import { ArrowClockwise, Prohibit, SpeakerHigh, X } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { useFleet } from './fleet-provider'
 import { EmptyState, SkeletonRows } from './ui-bits'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeadRow, TableHeader, TableRow } from '@/components/ui/table'
 import { SuppressionDialog, type SuppressionTarget } from './alert-actions'
 import { fetchNoise, NOISE_LIMITS, NOISE_WINDOWS, noiseLimit, noiseWindowPreset, type NoiseReport, type NoiseWindow } from '@/lib/noise'
-
-const chip =
-  'rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
 export function NoiseView() {
   const { status } = useEngine()
@@ -62,23 +63,29 @@ export function NoiseView() {
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
-        <label className="flex items-center gap-1.5 text-xs text-zinc-400">
+        <label className="flex items-center gap-1.5 text-xs text-zinc-400" htmlFor="ruido-ventana">
           Ventana
-          <select value={windowPreset} onChange={(e) => setWindowPreset(noiseWindowPreset(e.target.value))} className={chip}>
-            {NOISE_WINDOWS.map((w) => (
-              <option key={w} value={w}>{w}</option>
-            ))}
-          </select>
+          <Select value={windowPreset} onValueChange={(v) => setWindowPreset(noiseWindowPreset(v))}>
+            <SelectTrigger id="ruido-ventana" className="h-8 rounded-md text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {NOISE_WINDOWS.map((w) => (
+                <SelectItem key={w} value={w}>{w}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </label>
-        <label className="flex items-center gap-1.5 text-xs text-zinc-400">
+        <label className="flex items-center gap-1.5 text-xs text-zinc-400" htmlFor="ruido-equipo">
           Equipo
-          <input
+          <Input
+            id="ruido-equipo"
             value={host}
             onChange={(e) => setHost(e.target.value)}
             placeholder="(toda la flota)"
             list="ruido-hosts"
             spellCheck={false}
-            className={`${chip} w-44`}
+            className="h-8 w-44 text-xs"
           />
           <datalist id="ruido-hosts">
             {hostOptions.map((h) => (
@@ -86,23 +93,30 @@ export function NoiseView() {
             ))}
           </datalist>
         </label>
-        <label className="flex items-center gap-1.5 text-xs text-zinc-400">
+        <label className="flex items-center gap-1.5 text-xs text-zinc-400" htmlFor="ruido-filas">
           Filas por lista
-          <select value={limit} onChange={(e) => setLimit(noiseLimit(e.target.value))} className={chip}>
-            {NOISE_LIMITS.map((l) => (
-              <option key={l} value={l}>{l}</option>
-            ))}
-          </select>
+          <Select value={String(limit)} onValueChange={(v) => setLimit(noiseLimit(v))}>
+            <SelectTrigger id="ruido-filas" className="h-8 rounded-md text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {NOISE_LIMITS.map((l) => (
+                <SelectItem key={l} value={String(l)}>{l}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </label>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
           onClick={() => setReload((n) => n + 1)}
           disabled={loading}
-          className="chip px-2 py-1.5 text-zinc-400 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          className="text-zinc-400 hover:text-zinc-100"
           aria-label="Actualizar el informe de ruido"
         >
           <ArrowClockwise size={13} aria-hidden className={loading ? 'animate-spin motion-reduce:hidden' : ''} /> Actualizar
-        </button>
+        </Button>
         {report && (
           <span className="ml-auto flex flex-wrap gap-x-3 text-[11px] text-zinc-500">
             <span>origen: {report.source === 'store' ? 'almacén SQLite' : 'anillos en memoria'}</span>
@@ -162,28 +176,28 @@ function NoiseProcesses({ processes }: { processes: NoiseReport['processes'] }) 
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-left text-sm">
-            <caption className="sr-only">Procesos que más eventos generan en la ventana</caption>
-            <thead>
-              <tr className="bg-zinc-900">
+          <Table>
+            <TableCaption>Procesos que más eventos generan en la ventana</TableCaption>
+            <TableHeader>
+              <TableHeadRow>
                 {['Imagen', 'Eventos', 'Equipos', 'Visto por última vez', 'Padre', 'Software conocido'].map((h) => (
-                  <th key={h} scope="col" className="border-b border-zinc-800 px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">{h}</th>
+                  <TableHead key={h}>{h}</TableHead>
                 ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800/70">
+              </TableHeadRow>
+            </TableHeader>
+            <TableBody>
               {processes.map((p) => (
-                <tr key={p.image} className="align-top transition-colors hover:bg-zinc-900/60">
-                  <td className="max-w-[340px] px-4 py-3">
+                <TableRow key={p.image} className="align-top">
+                  <TableCell className="max-w-[340px] px-4 py-3">
                     <span className="block truncate font-mono text-xs text-zinc-100" title={p.image}>{p.image}</span>
                     {p.command_line && <span className="mt-0.5 block truncate font-mono text-[11px] text-zinc-500" title={p.command_line}>{p.command_line}</span>}
                     {p.sha256 && <span className="mt-0.5 block truncate font-mono text-[10px] text-zinc-600" title={p.sha256}>sha256 {p.sha256.slice(0, 16)}…</span>}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 tabular-nums text-zinc-200">{p.count.toLocaleString('es-ES')}</td>
-                  <td className="whitespace-nowrap px-4 py-3 tabular-nums text-zinc-400">{p.distinct_hosts}</td>
-                  <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500">{p.last_seen.replace('T', ' ').slice(0, 19)}</td>
-                  <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500" title={p.parent}>{p.parent ?? '—'}</td>
-                  <td className="whitespace-nowrap px-4 py-3">
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap px-4 py-3 tabular-nums text-zinc-200">{p.count.toLocaleString('es-ES')}</TableCell>
+                  <TableCell className="whitespace-nowrap px-4 py-3 tabular-nums text-zinc-400">{p.distinct_hosts}</TableCell>
+                  <TableCell className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500">{p.last_seen.replace('T', ' ').slice(0, 19)}</TableCell>
+                  <TableCell className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500" title={p.parent}>{p.parent ?? '—'}</TableCell>
+                  <TableCell className="whitespace-nowrap px-4 py-3">
                     <span
                       title="El motor todavía no publica la lista de software conocido (v1.1): el botón se activa cuando aterrice."
                       className="inline-flex cursor-not-allowed items-center gap-1 rounded-md border border-zinc-700 px-2 py-1 text-[11px] text-zinc-600"
@@ -191,11 +205,11 @@ function NoiseProcesses({ processes }: { processes: NoiseReport['processes'] }) 
                     >
                       <Prohibit size={11} aria-hidden /> añadir
                     </span>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>
@@ -215,26 +229,26 @@ function NoiseDomains({ domains }: { domains: NoiseReport['domains'] }) {
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-left text-sm">
-            <caption className="sr-only">Dominios DNS que más consultas generan en la ventana</caption>
-            <thead>
-              <tr className="bg-zinc-900">
+          <Table>
+            <TableCaption>Dominios DNS que más consultas generan en la ventana</TableCaption>
+            <TableHeader>
+              <TableHeadRow>
                 {['Dominio', 'Consultas', 'Equipos', 'Visto por última vez'].map((h) => (
-                  <th key={h} scope="col" className="border-b border-zinc-800 px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">{h}</th>
+                  <TableHead key={h}>{h}</TableHead>
                 ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800/70">
+              </TableHeadRow>
+            </TableHeader>
+            <TableBody>
               {domains.map((d) => (
-                <tr key={d.domain} className="transition-colors hover:bg-zinc-900/60">
-                  <td className="max-w-[340px] truncate px-4 py-3 font-mono text-xs text-zinc-100" title={d.domain}>{d.domain}</td>
-                  <td className="whitespace-nowrap px-4 py-3 tabular-nums text-zinc-200">{d.count.toLocaleString('es-ES')}</td>
-                  <td className="whitespace-nowrap px-4 py-3 tabular-nums text-zinc-400">{d.distinct_hosts}</td>
-                  <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500">{d.last_seen.replace('T', ' ').slice(0, 19)}</td>
-                </tr>
+                <TableRow key={d.domain}>
+                  <TableCell className="max-w-[340px] truncate px-4 py-3 font-mono text-xs text-zinc-100" title={d.domain}>{d.domain}</TableCell>
+                  <TableCell className="whitespace-nowrap px-4 py-3 tabular-nums text-zinc-200">{d.count.toLocaleString('es-ES')}</TableCell>
+                  <TableCell className="whitespace-nowrap px-4 py-3 tabular-nums text-zinc-400">{d.distinct_hosts}</TableCell>
+                  <TableCell className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-zinc-500">{d.last_seen.replace('T', ' ').slice(0, 19)}</TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>
@@ -256,39 +270,41 @@ function NoiseRules({ rules, onSuppress }: { rules: NoiseReport['rules']; onSupp
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-left text-sm">
-            <caption className="sr-only">Reglas que más alertas generan en la ventana</caption>
-            <thead>
-              <tr className="bg-zinc-900">
+          <Table>
+            <TableCaption>Reglas que más alertas generan en la ventana</TableCaption>
+            <TableHeader>
+              <TableHeadRow>
                 {['Regla', 'Alertas', 'Equipos', 'Reconocidas', 'Cerradas', 'Ajuste'].map((h) => (
-                  <th key={h} scope="col" className="border-b border-zinc-800 px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">{h}</th>
+                  <TableHead key={h}>{h}</TableHead>
                 ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800/70">
+              </TableHeadRow>
+            </TableHeader>
+            <TableBody>
               {rules.map((r) => (
-                <tr key={r.rule_id} className="transition-colors hover:bg-zinc-900/60">
-                  <td className="max-w-[300px] px-4 py-3">
+                <TableRow key={r.rule_id}>
+                  <TableCell className="max-w-[300px] px-4 py-3">
                     <span className="block truncate text-[13px] text-zinc-100" title={r.rule_name}>{r.rule_name}</span>
                     <span className="block truncate font-mono text-[11px] text-zinc-500">{r.rule_id}</span>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 tabular-nums text-zinc-200">{r.count.toLocaleString('es-ES')}</td>
-                  <td className="whitespace-nowrap px-4 py-3 tabular-nums text-zinc-400">{r.distinct_hosts}</td>
-                  <td className="whitespace-nowrap px-4 py-3 tabular-nums text-zinc-300">{Math.round(r.acknowledged_pct)} %</td>
-                  <td className="whitespace-nowrap px-4 py-3 tabular-nums text-zinc-300">{Math.round(r.closed_pct)} %</td>
-                  <td className="whitespace-nowrap px-4 py-3">
-                    <button
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap px-4 py-3 tabular-nums text-zinc-200">{r.count.toLocaleString('es-ES')}</TableCell>
+                  <TableCell className="whitespace-nowrap px-4 py-3 tabular-nums text-zinc-400">{r.distinct_hosts}</TableCell>
+                  <TableCell className="whitespace-nowrap px-4 py-3 tabular-nums text-zinc-300">{Math.round(r.acknowledged_pct)} %</TableCell>
+                  <TableCell className="whitespace-nowrap px-4 py-3 tabular-nums text-zinc-300">{Math.round(r.closed_pct)} %</TableCell>
+                  <TableCell className="whitespace-nowrap px-4 py-3">
+                    <Button
                       type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={() => onSuppress({ rule_id: r.rule_id, rule_name: r.rule_name, host: '' })}
-                      className="inline-flex items-center gap-1 rounded-md border border-white/10 px-2 py-1 text-[11px] text-zinc-200 transition-colors hover:border-white/20 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="h-7 gap-1 px-2 text-[11px]"
                     >
                       <X size={11} aria-hidden /> crear supresión
-                    </button>
-                  </td>
-                </tr>
+                    </Button>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>

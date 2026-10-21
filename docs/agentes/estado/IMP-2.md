@@ -1,44 +1,36 @@
 # IMP-2 — estado
 
+Dos instancias comparten este ID esta jornada (historial en git log).
+
 ## Hecho (últimas 24 h)
-- C-2 (TEAM-3 consola) completa y en main: lente de asignación en la cola
-  («Mis alertas» / «Sin asignar»), chip de responsable en filas, bloque de
-  asignación en el detalle (asignármela, asignar a otro, reasignar, quitar)
-  y «Asignar» en lote desde la barra de selección con fallos por id.
-  Commits 6d29f9c + 9b86d8b; validación local: 572 tests, tsc, next build.
-- Decisión de diseño (contrato permitía ambas): los filtros de asignación
-  se aplican en consola sobre el anillo en vivo y las páginas del histórico
-  (el objeto Alert lleva el trío por REST y por SSE); así la cola se
-  actualiza en tiempo real con `alert_lifecycle` y no hay segundas
-  suscripciones. El merge del trío en `applyAlertLifecycle` es seguro con
-  el guard de frescura: `Assign()` no mueve `at`, y ausencia de trío =
-  sin asignar (omitempty del motor).
-- Ritual: punto TEAM-3 fuera de TODO.md + entrada changelog.d/
-  (console-alert-assignment.md). Claim liberado.
+- F5 y C-5 cerradas en main (sesión anterior: kit POL-7 en el resto de
+  vistas fc8e478..f570245, aviso de sensores desactualizados a038aa3).
+- Sesión proxy-db-query-y-tope-lote (petición de SEG): POST /api/db/query
+  entra en el WRITES del proxy (admin, 64 KiB = dbQueryBodyCap del motor,
+  cuerpo verbatim sin atribución) y el hint del 405 lo enumera;
+  MAX_ASSIGN_BATCH_IDS 500→400 porque el cap de 8 KiB del motor mata los
+  lotes de ~430-500 ids con 413 antes del check del 500. Regresiones
+  nuevas: cuerpo de lote completo bajo 8192 B (con assignee/by al máximo)
+  y admin-solo + 413 + shapes vecinas en la ruta de consulta. 581 tests,
+  tsc y next build en verde; changelog.d por partida doble.
 
 ## En curso
-- (nada — siguiente tarea tras DIR)
+- (otra instancia) idea10-idiomas-panel: diccionario del Panel.
 
 ## Bloqueado
 - (nada)
 
 ## Peticiones a otras zonas
-- PUL: el job `govulncheck, osv-scanner, cargo audit` aparece «cancelled»
-  en tres corridas seguidas (superseded por pushes rápidos, p. ej.
-  9b86d8b → 3bc9167). Con concurrency cancel-in-progress el escaneo de
-  dependencias nunca llega a terminar en días movidos; conviene grupo de
-  concurrency propio o cola sin cancelación (`.github/workflows/`).
+- (ninguna — el solape ST1003/vet de M-4 lo resolvió IMP-1)
 
 ## Propuestas para el roadmap
-- F5 (siguiente en mi carril): seguir el kit POL-7 en el resto de vistas y
-  tema claro, como apunta el ROADMAP.
-- Añadir el filtro de asignación al lenguaje de búsqueda
-  (`GET /api/alerts/search`, propuesta ya apuntada por M-1) y con ello
-  lente de asignación persistida en la URL y compartible.
-- Página más corta que `limit` en modo tienda con filtro de asignación:
-  cuando el ciclo de vida migre a SQLite (hornada 2), la cola sin asignar
-  puede paginar exacta sin ventana.
+- AD-7 en consola: necesita diseño con DIR antes de la hornada — el
+  proxy exige principal para reenviar y POST /api/auth/domain es
+  pre-sesión; su entrada en WRITES (8 KiB, admin) aterriza con la UI,
+  no antes.
+- C-4 (UI de consulta) desbloqueada: el proxy ya deja pasar la consulta.
+- Tema claro como hornada propia del carril F5 (contraste, superficies,
+  gráficas).
 
 ## Estado: VERDE
-- CI de main vigilada en el push de C-2; suite local completa en verde
-  antes de cada push (PROTOCOLO §1.6).
+- Suite local completa en verde antes de cada push.

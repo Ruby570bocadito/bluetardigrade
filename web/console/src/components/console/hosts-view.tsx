@@ -12,11 +12,14 @@ import { ArrowSquareOut, Desktop, FolderPlus, Gear, Globe, Lightning, Magnifying
 import { useEngine } from './engine-provider'
 import { useIncidents } from './incidents-provider'
 import { useFleet } from './fleet-provider'
-import { EnrollDialog, FleetStatusPill, FleetSummary, SensorCard } from './fleet-parts'
+import { EnrollDialog, FleetStatusPill, FleetSummary, SensorCard, SensorVersionChip } from './fleet-parts'
 import { BaselineCard } from './baseline-card'
 import { PendingHosts } from './enroll-parts'
 import type { FleetHost, FleetStatus } from '@/lib/fleet'
 import { EmptyState, SeverityBadge, StatTile } from './ui-bits'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
 import { ChartCard } from '@/components/charts/chart-frame'
 import { BarList, Meter } from '@/components/charts/bars'
@@ -35,6 +38,8 @@ type HostRow = { host: string; score: number; alerts: number; critical: number; 
 // the group filter's value for machines in no group (group names never
 // contain spaces, so this cannot collide with one)
 const NO_GROUP = ' sin grupo'
+// the Radix Select needs a non-empty value for "every group" too
+const ALL_GROUPS = ' todos los grupos'
 
 const RANK: Record<Severity, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 }
 
@@ -96,7 +101,8 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
   onOpenIncident: (id: string) => void
 }) {
   const rows = useHostIndex()
-  const { status } = useEngine()
+  const { status, stats } = useEngine()
+  const engineVersion = stats?.version
   const [selected, setSelectedState] = useState('')
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | FleetStatus>('all')
@@ -138,9 +144,9 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
             <span className="text-xs tabular-nums text-zinc-500">{rows.length}</span>
           </div>
           <div className="relative">
-            <MagnifyingGlass size={13} aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Buscar equipo" placeholder="buscar equipo"
-              className="h-8 w-40 rounded-md border border-zinc-800 bg-zinc-900 pl-7 pr-2 text-xs text-zinc-200 placeholder:text-zinc-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+            <MagnifyingGlass size={13} aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 z-10 text-zinc-500" />
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Buscar equipo" placeholder="buscar equipo"
+              className="h-8 w-40 pl-7 pr-2 text-xs" />
           </div>
         </div>
         <div role="group" aria-label="Filtrar equipos por estado" className="flex gap-1 border-b border-white/[0.05] px-3 py-2">
@@ -155,12 +161,16 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
         {groupNames.length > 0 && (
           <div className="flex items-center gap-2 border-b border-white/[0.05] px-3 py-2">
             <label htmlFor="hosts-group-filter" className="text-[11px] text-zinc-400">Grupo</label>
-            <select id="hosts-group-filter" value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)}
-              className="h-7 min-w-0 flex-1 rounded-md border border-zinc-800 bg-zinc-900 px-2 text-[11px] text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              <option value="">Todos los grupos</option>
-              {groupNames.map((g) => <option key={g} value={g}>{g}</option>)}
-              <option value={NO_GROUP}>Sin grupo</option>
-            </select>
+            <Select value={groupFilter === '' ? ALL_GROUPS : groupFilter} onValueChange={(v) => setGroupFilter(v === ALL_GROUPS ? '' : v)}>
+              <SelectTrigger id="hosts-group-filter" className="h-7 min-w-0 flex-1 rounded-md text-[11px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_GROUPS}>Todos los grupos</SelectItem>
+                {groupNames.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                <SelectItem value={NO_GROUP}>Sin grupo</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         )}
         {visible.length === 0 ? (
@@ -179,6 +189,7 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
                         <Desktop size={15} aria-hidden className="text-primary" />
                         <span className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-100">{r.host}</span>
                         <FleetStatusPill host={r.fleet} />
+                        <SensorVersionChip host={r.fleet} engineVersion={engineVersion} />
                         {r.score > 0 && (
                           <span className="flex items-center gap-1 text-[11px] text-zinc-400">
                             <SeverityIcon severity={lv.severity} size={11} />
@@ -272,14 +283,14 @@ function HostPage({ row, onHunt, onOpenAlert, onOpenIncident }: {
             <p className="text-xs text-zinc-500">{row.lastSeen ? `Última actividad ${formatTime(row.lastSeen)}` : 'Sin actividad en la ventana'}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => onHunt(row.host)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary-tint/10 px-3 py-1.5 text-xs font-medium text-primary-soft hover:bg-primary-tint/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <Button type="button" variant="outline" size="sm" onClick={() => onHunt(row.host)}
+              className="gap-1.5 rounded-lg border-primary/30 bg-primary-tint/10 text-xs font-medium text-primary-soft hover:bg-primary-tint/20">
               <ArrowSquareOut size={13} aria-hidden /> Ver alertas del equipo
-            </button>
-            <button type="button" onClick={() => void openIncident()} disabled={hostAlerts.length === 0}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/[0.04] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => void openIncident()} disabled={hostAlerts.length === 0}
+              className="gap-1.5 rounded-lg text-xs text-zinc-200">
               <FolderPlus size={13} aria-hidden /> Abrir incidente con sus alertas
-            </button>
+            </Button>
           </div>
         </div>
         {message && <p role="alert" className="mt-2 text-xs text-red-300">{message}</p>}

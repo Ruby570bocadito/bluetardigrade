@@ -16,6 +16,7 @@ type options struct {
 	scenariosDir     string
 	rulesDir         string
 	adConfig         string
+	domainAuth       string
 	hostGroupsFile   string
 	seqDir           string
 	beaconsFile      string
@@ -81,6 +82,8 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 		"directory with the detection-validation scenarios (SIM-4: arms GET/POST /api/scenarios* to replay the inert library against the live rules and keep the run history); empty disables")
 	fs.StringVar(&o.adConfig, "ad", "",
 		"YAML config for the read-only Active Directory connector (AD-1: LDAPS or explicit StartTLS with a configured CA, a least-privilege service account, RFC 2696 paging and an object cap; the password lives in its own file; requires -store); empty disables")
+	fs.StringVar(&o.domainAuth, "domain-auth", "",
+		"YAML config for domain account sign-in (AD-7: POST /api/auth/domain verifies the user's own LDAPS bind and maps AD groups to console roles admin/analyst/viewer; local console accounts keep working; the password is never logged; empty disables)")
 	fs.StringVar(&o.hostGroupsFile, "host-groups", "",
 		"YAML file of host groups (F2: host-name patterns, AD OUs, ingest identities; GET /api/groups, and PUT /api/settings/groups with -api-write); a missing file is an empty list the console can fill, a malformed one stops the engine; empty disables")
 	fs.StringVar(&o.rulesDir, "rules", "./rules", "directory with YAML rules")

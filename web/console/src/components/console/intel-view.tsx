@@ -11,6 +11,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { ArrowClockwise, Fingerprint, ListMagnifyingGlass, Sparkle, Timer } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { EmptyState, SeverityBadge, StatTile } from './ui-bits'
+import { Button } from '@/components/ui/button'
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeadRow, TableHeader, TableRow } from '@/components/ui/table'
 import { formatDateTime, formatTime } from '@/lib/console-types'
 import { BASELINE_RULE_ID, fetchIntel, intelAlerts, kindBreakdown, learnText, listOfAlert, type IntelPayload } from '@/lib/intel'
 
@@ -67,9 +69,9 @@ export function IntelView() {
       <div className="panel min-w-0">
         <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] px-4 py-3">
           <h2 className="text-sm font-medium text-zinc-100">Listas de indicadores</h2>
-          <button type="button" onClick={() => { setLoading(true); void load() }} className="chip gap-1.5 px-2 py-1 text-[11px] text-zinc-400 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <Button type="button" variant="ghost" size="sm" onClick={() => { setLoading(true); void load() }} className="h-7 gap-1.5 px-2 text-[11px] text-zinc-400 hover:text-zinc-100">
             <ArrowClockwise size={12} aria-hidden className={loading ? 'animate-spin motion-reduce:animate-none' : ''} /> Actualizar
-          </button>
+          </Button>
         </div>
         {loading && !intel ? (
           <div className="m-4 h-16 animate-pulse rounded-lg bg-white/5" />
@@ -85,25 +87,26 @@ export function IntelView() {
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left text-xs">
-              <thead className="text-[11px] text-zinc-500">
-                <tr>
-                  <th scope="col" className="px-4 py-2 font-medium">Lista</th>
-                  <th scope="col" className="px-4 py-2 font-medium">Indicadores</th>
-                  <th scope="col" className="px-4 py-2 font-medium">Por tipo</th>
-                  <th scope="col" className="px-4 py-2 font-medium">Descartadas</th>
-                  <th scope="col" className="px-4 py-2 font-medium">Modificada</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table className="min-w-[640px] text-xs">
+              <TableCaption>Listas de indicadores cargadas por el motor</TableCaption>
+              <TableHeader>
+                <TableHeadRow className="border-b-0">
+                  <TableHead compact className="px-4 py-2">Lista</TableHead>
+                  <TableHead compact className="px-4 py-2">Indicadores</TableHead>
+                  <TableHead compact className="px-4 py-2">Por tipo</TableHead>
+                  <TableHead compact className="px-4 py-2">Descartadas</TableHead>
+                  <TableHead compact className="px-4 py-2">Modificada</TableHead>
+                </TableHeadRow>
+              </TableHeader>
+              <TableBody className="divide-white/[0.04]">
                 {intel.lists.map((l) => (
-                  <tr key={l.file} className="border-t border-white/[0.04] text-zinc-300">
-                    <td className="px-4 py-2">
+                  <TableRow key={l.file} className="text-zinc-300">
+                    <TableCell className="px-4 py-2">
                       <span className="font-medium text-zinc-100">{l.name}</span>
                       <span className="ml-2 font-mono text-[10px] text-zinc-500">{l.file}</span>
-                    </td>
-                    <td className="px-4 py-2 tabular-nums">{l.indicators.toLocaleString('es-ES')}</td>
-                    <td className="px-4 py-2">
+                    </TableCell>
+                    <TableCell className="px-4 py-2 tabular-nums">{l.indicators.toLocaleString('es-ES')}</TableCell>
+                    <TableCell className="px-4 py-2">
                       <div className="flex flex-wrap gap-1">
                         {kindBreakdown(l).map((k) => (
                           <span key={k.kind} className="rounded-md border border-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
@@ -111,15 +114,15 @@ export function IntelView() {
                           </span>
                         ))}
                       </div>
-                    </td>
-                    <td className={`px-4 py-2 tabular-nums ${l.skipped > 0 ? 'text-amber-300' : 'text-zinc-500'}`} title={l.skipped > 0 ? 'Líneas que no son comentarios ni un indicador utilizable (loopback, multicast, texto suelto...)' : undefined}>
+                    </TableCell>
+                    <TableCell className={`px-4 py-2 tabular-nums ${l.skipped > 0 ? 'text-amber-300' : 'text-zinc-500'}`} title={l.skipped > 0 ? 'Líneas que no son comentarios ni un indicador utilizable (loopback, multicast, texto suelto...)' : undefined}>
                       {l.skipped}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2 text-zinc-500">{formatDateTime(l.modified)}</td>
-                  </tr>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap px-4 py-2 text-zinc-500">{formatDateTime(l.modified)}</TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
       </div>

@@ -151,6 +151,8 @@ jobs:
           python3 scripts/dev-tests/check_openapi.py --self-test
           # Keep the full operator inventory/counts in sync with rule packs.
           python3 scripts/dev-tests/check_rule_inventory.py
+          # Keep the generated API reference in sync with the OpenAPI spec.
+          python3 scripts/dev-tests/check_api_reference.py
 
   # Behavioral smoke of active response on real Windows: until this
   # job existed, the kill path only had BUILD certification (the

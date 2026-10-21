@@ -6,16 +6,19 @@ DIR; el resto propone cambios en la sección «Propuestas» de su
 [TODO.md](../../TODO.md); la dirección del producto por horizontes,
 [docs/ROADMAP.md](../ROADMAP.md). Ante cualquier choque, manda TODO.md.
 
-Última actualización: 2026-10-22 (DIR, cierre de la hornada TEAM-3).
+Última actualización: 2026-10-22 (DIR, segunda pasada: POL-5 y reparación del CI).
 
 ## Fase actual
 
-TEAM-3 completo de punta a punta: motor (PR #45) y consola (C-2, «Mis
-alertas», cola sin asignar, reasignación y lote). F1 cerrada con fix real
-(sumideros de aviso sin redirecciones). SEC-3 verificada sin cambios de
-código. O-2 mitad endpoint entregada (119 reglas). En vuelo con claim
-activo: M-2 (AD-7 login LDAPS) y M-4 (consulta BD solo lectura), dos
-instancias IMP-1 sobre ficheros disjuntos. Siguiente carril consola: F5.
+TEAM-3 completo de punta a punta (motor PR #45 + consola C-2) y la primera
+ronda SEG con fix real (sumideros sin redirecciones). El CI destapó la
+regla SIM-2: el pack AD entró sin sus escenarios y `internal/scenario`
+rompió la build; reparado con doble arreglo en paralelo (3d3ca80 de DIR/IMP-1
+y a6df346 del otro IMP-1, resuelto sin duplicados y anotado en su estado).
+POL-5 entregada por PUL: índice de API generado desde OpenAPI con guard de
+deriva, que además destapó (y corrigió) dos YAML inválidos en el spec
+entrados con M-4. En vuelo con claim: M-2 (AD-7), F5 (IMP-2) y una segunda
+ronda SEG sobre redirects/escenarios/api-health.
 
 ## Decisiones vigentes que obligan a todos
 
@@ -46,22 +49,25 @@ cancelar por supersesión NO es fallo); punto completado = fuera de TODO.md
 
 ### PUL (pulimiento)
 - [ ] (PUL) pol1b-dividir-run-go — Dividir `cmd/engine/run.go` sin cambio de comportamiento; BLOQUEADA por claims activos en `cmd/engine/` — `cmd/engine/`, `scripts/dev-tests/`
-- [ ] (PUL) pol5-openapi-operations — Referencia de la API en OPERATIONS generada desde `docs/api/openapi.yaml` — `docs/`
 - [ ] (PUL) higiene-postmigracion — `docs/agentes/` solo con los cinco artefactos, `.agent-tmp/` en uso, dependencias sincronizadas — `docs/agentes/`, `.gitignore`, manifiestos
 
 ### SEG (seguridad y bugs)
-- Sin tarea activa. Siguientes candidatas del backlog de TODO.md
-  (regresión PR #28, reconexiones/spool del sensor) necesitan Windows real
-  — ver «Esperando al humano». Proponer la siguiente en «Propuestas».
+- [ ] (SEG) seg-redirects-escenarios-apihealthy — EN VUELO (claim activo, auto-propuesta): continúa el carril de redirects y la superficie de escenarios/api-health — transversal
+- Siguientes candidatas del backlog de TODO.md (regresión PR #28,
+  reconexiones/spool del sensor) necesitan Windows real — ver «Esperando
+  al humano».
 
 ## Cerradas (últimas 24 h)
 
 - C-2 TEAM-3 consola — 6d29f9c + 9b86d8b (IMP-2; 572 tests, tsc, next build)
 - F1 aviso de alerta crítica — 0dddc28 (sumideros de salida sin redirecciones) + 934c80f (SEG)
 - SEC-3 entradas — c6e4248 (verificada sin cambios de código, evidencia en estado/SEG.md)
-- O-2 mitad endpoint — 21468d7 (pack AD, 5 reglas + evidencia, inventario 119)
+- O-2 mitad endpoint — 21468d7 (pack AD, 5 reglas + evidencia, inventario 119) + escenarios sintéticos 3d3ca80/a6df346 (doble arreglo paralelo resuelto)
+- M-4 consulta BD solo lectura — 5e0eeea (IMP-1; habilita C-4)
+- POL-5 referencia API generada — e095347 (guard check_api_reference.py + índice 48 rutas/53 operaciones) y corrección de dos YAML inválidos del spec — e518323
 - M-1 backend de asignación — PR #45 (cerrada con C-2)
 - deps-audit sin cancelación — concurrency propio (fix DIR tras «Peticiones» de IMP-2)
+- gofmt de los tests de sumideros — c30791b (restos de 0dddc28 que ningún CI había validado)
 
 ## Propuestas en el tablero (de los estados)
 
