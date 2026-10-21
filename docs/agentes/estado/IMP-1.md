@@ -5,8 +5,8 @@ Dos instancias comparten este ID esta jornada (historial en git log).
 ## Hecho (últimas 24 h)
 
 Sesión st1003 (fix del job Go de CI, cerrada): la run de la cabeza
-fallaba por cinco ST1003 del código M-4 (DbQuery → DBQuery; la run
-propia de M-4 fue cancelada por supersesión). Renombrado mecánico en
+fallaba por cinco ST1003 del código M-4 (DbQuery → DBQuery; su run
+propia fue cancelada por supersesión). Renombrado mecánico en
 db_query.go/hub.go/run_api.go/flags.go; contrato POST /api/db/query
 intacto. Suites de internal/api, cmd/engine e internal/store, build,
 vet y gofmt en verde (fd29623).
