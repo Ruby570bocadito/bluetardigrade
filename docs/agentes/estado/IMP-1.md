@@ -8,8 +8,7 @@ Sesión st1003 (fix del job Go de CI, cerrada): la run de la cabeza
 fallaba por cinco ST1003 del código M-4 (DbQuery → DBQuery; su run
 propia fue cancelada por supersesión). Renombrado mecánico en
 db_query.go/hub.go/run_api.go/flags.go; contrato POST /api/db/query
-intacto. Suites de internal/api, cmd/engine e internal/store, build,
-vet y gofmt en verde (fd29623).
+intacto; suites de api/engine/store, build, vet y gofmt en verde (fd29623).
 
 Sesión make-tabs (emergencia de build, cerrada): 0e20698 dejó las
 recetas del Makefile con 8 espacios; sin .RECIPEPREFIX, `make` moría
