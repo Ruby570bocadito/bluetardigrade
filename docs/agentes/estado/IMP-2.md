@@ -36,6 +36,5 @@
   de consola cuando DIR la dé de alta.
 - Tema claro (resto de F5): rework de contraste, superficies y
   gráficas como hornada propia del mismo carril.
-
 ## Estado: VERDE
 - Suite local completa en verde antes de cada push.
