@@ -26,6 +26,7 @@ import {
 } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { useFleet } from './fleet-provider'
+import { useI18n } from './i18n-provider'
 import { EmptyState, SkeletonRows } from './ui-bits'
 import { ConsoleTablist } from './ui-tabs'
 import { Button } from '@/components/ui/button'
@@ -64,11 +65,11 @@ import {
   type ADStatus,
 } from '@/lib/directory'
 
-const KIND_TABS: { kind: ADKind; label: string; icon: React.ElementType }[] = [
-  { kind: 'user', label: 'Usuarios', icon: UserCircle },
-  { kind: 'group', label: 'Grupos', icon: UsersThree },
-  { kind: 'computer', label: 'Equipos', icon: Desktop },
-  { kind: 'ou', label: 'Unidades org.', icon: FolderOpen },
+const KIND_TABS: { kind: ADKind; icon: React.ElementType }[] = [
+  { kind: 'user', icon: UserCircle },
+  { kind: 'group', icon: UsersThree },
+  { kind: 'computer', icon: Desktop },
+  { kind: 'ou', icon: FolderOpen },
 ]
 
 const TONE_COLOR: Record<'ok' | 'warn' | 'bad', string> = {
@@ -77,8 +78,8 @@ const TONE_COLOR: Record<'ok' | 'warn' | 'bad', string> = {
   bad: 'var(--status-critical)',
 }
 
-function unixToText(sec: number): string {
-  if (!sec) return 'nunca / desconocido'
+function unixToText(sec: number, neverKnown: string): string {
+  if (!sec) return neverKnown
   try {
     return new Date(sec * 1000).toLocaleString('es-ES', { hour12: false })
   } catch {
@@ -88,6 +89,7 @@ function unixToText(sec: number): string {
 
 /** One finding as an expandable row: severity-marked summary, engine text verbatim. */
 function FindingItem({ finding }: { finding: ADFinding }) {
+  const { dict } = useI18n()
   const { id, title, severity, description, remediation, count, objects, objects_truncated: truncated } = finding
   const Icon = SEV_ICON[severity as keyof typeof SEV_ICON] ?? Warning
   const color = SEV_COLOR[severity as keyof typeof SEV_COLOR] ?? 'var(--sev-info)'
@@ -102,18 +104,18 @@ function FindingItem({ finding }: { finding: ADFinding }) {
         {description && <p className="max-w-[90ch] text-xs leading-relaxed text-zinc-400">{description}</p>}
         {remediation && (
           <p className="mt-2 max-w-[90ch] text-xs leading-relaxed text-zinc-300">
-            <span className="font-medium text-zinc-100">Remediación: </span>{remediation}
+            <span className="font-medium text-zinc-100">{dict.directory.remediationLabel}</span>{remediation}
           </p>
         )}
         {objects.length > 0 && (
           <div className="mt-3 overflow-x-auto">
             <Table className="min-w-[560px] text-xs">
-              <TableCaption>Objetos afectados por el hallazgo</TableCaption>
+              <TableCaption>{dict.directory.affectedCaption}</TableCaption>
               <TableHeader>
                 <TableHeadRow className="border-b border-zinc-800/60">
-                  <TableHead className="py-1.5 pr-3">Objeto</TableHead>
-                  <TableHead className="py-1.5 pr-3">DN</TableHead>
-                  <TableHead className="py-1.5">Detalle</TableHead>
+                  <TableHead className="py-1.5 pr-3">{dict.directory.affectedCols.object}</TableHead>
+                  <TableHead className="py-1.5 pr-3">{dict.directory.affectedCols.dn}</TableHead>
+                  <TableHead className="py-1.5">{dict.directory.affectedCols.detail}</TableHead>
                 </TableHeadRow>
               </TableHeader>
               <TableBody className="divide-zinc-800/40">
@@ -127,7 +129,7 @@ function FindingItem({ finding }: { finding: ADFinding }) {
               </TableBody>
             </Table>
             {truncated && (
-              <p className="mt-2 text-[11px] text-zinc-600">La lista de objetos está truncada; el recuento de arriba es el total real.</p>
+              <p className="mt-2 text-[11px] text-zinc-600">{dict.directory.truncatedList}</p>
             )}
           </div>
         )}
@@ -138,6 +140,7 @@ function FindingItem({ finding }: { finding: ADFinding }) {
 
 /** The snapshot explorer: kind tabs, free-text search, real pagination. */
 function ObjectExplorer() {
+  const { dict } = useI18n()
   const [kind, setKind] = useState<ADKind>('user')
   const [queryInput, setQueryInput] = useState('')
   const [query, setQuery] = useState('')
@@ -175,17 +178,17 @@ function ObjectExplorer() {
       <div className="panel-head flex-wrap gap-2">
         <span className="flex items-center gap-2 text-sm font-medium text-zinc-200">
           <TreeStructure size={16} aria-hidden className="text-zinc-500" />
-          Objetos del snapshot
+          {dict.directory.explorer.title}
         </span>
-        <span className="text-[11px] text-zinc-600">búsqueda de texto sobre el snapshot local · el motor nunca recibe filtros LDAP</span>
+        <span className="text-[11px] text-zinc-600">{dict.directory.explorer.headHint}</span>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800/60 px-4 py-2.5">
         <ConsoleTablist
-          tabs={KIND_TABS.map(({ kind, label, icon }) => ({ id: kind, label, icon }))}
+          tabs={KIND_TABS.map(({ kind: k, icon }) => ({ id: k, label: dict.directory.kinds[k], icon }))}
           value={kind}
           onSelect={setKind}
-          ariaLabel="Tipo de objeto"
+          ariaLabel={dict.directory.explorer.kindAria}
           idPrefix="ad-kind"
         />
         <div className="relative min-w-[200px] flex-1">
@@ -194,13 +197,13 @@ function ObjectExplorer() {
             type="search"
             value={queryInput}
             onChange={(e) => setQueryInput(e.target.value)}
-            placeholder="Buscar por nombre, DN o OS…"
-            aria-label={`Buscar objetos de tipo ${KIND_TABS.find((t) => t.kind === kind)?.label ?? kind}`}
+            placeholder={dict.directory.explorer.searchPlaceholder}
+            aria-label={dict.directory.explorer.searchAria(dict.directory.kinds[kind])}
             className="h-8 rounded-lg pl-8 pr-3 text-xs"
           />
         </div>
         <label className="flex items-center gap-1.5 text-[11px] text-zinc-500" htmlFor="ad-page-size">
-          Página
+          {dict.directory.explorer.pageSize}
           <Select value={String(pageSize)} onValueChange={(v) => setPageSize(adPageSize(Number(v)))}>
             <SelectTrigger id="ad-page-size" className="h-8 w-16 rounded-md px-1.5 text-xs">
               <SelectValue />
@@ -214,7 +217,7 @@ function ObjectExplorer() {
 
       {error ? (
         <div className="px-4 py-8">
-          <EmptyState icon={TreeStructure} title="El snapshot no está disponible" hint={`${error} — sin datos no se dibuja un directorio inventado.`} />
+          <EmptyState icon={TreeStructure} title={dict.directory.explorer.snapshotDownTitle} hint={`${error}${dict.directory.explorer.snapshotDownHintB}`} />
         </div>
       ) : loading ? (
         <SkeletonRows rows={6} className="px-4 py-2" />
@@ -222,20 +225,20 @@ function ObjectExplorer() {
         <div className="px-4 py-8">
           <EmptyState
             icon={TreeStructure}
-            title={query ? 'Sin coincidencias' : 'Sin objetos de este tipo'}
-            hint={query ? 'Ningún objeto del snapshot contiene el texto buscado (nombre, DN o OS).' : 'El snapshot completo llega con la siguiente sincronización del conector.'}
+            title={query ? dict.directory.explorer.noMatchesTitle : dict.directory.explorer.emptyTitle}
+            hint={query ? dict.directory.explorer.noMatchesHint : dict.directory.explorer.emptyHint}
           />
         </div>
       ) : (
         <>
           <div className="overflow-x-auto">
             <Table className="min-w-[640px] text-xs">
-              <TableCaption>Objetos del snapshot de directorio</TableCaption>
+              <TableCaption>{dict.directory.explorer.tableCaption}</TableCaption>
               <TableHeader>
                 <TableHeadRow className="border-b border-zinc-800/60">
-                  <TableHead className="px-4 py-2">Nombre</TableHead>
-                  <TableHead className="px-4 py-2">Detalle</TableHead>
-                  <TableHead className="px-4 py-2">Último cambio</TableHead>
+                  <TableHead className="px-4 py-2">{dict.directory.explorer.cols.name}</TableHead>
+                  <TableHead className="px-4 py-2">{dict.directory.explorer.cols.detail}</TableHead>
+                  <TableHead className="px-4 py-2">{dict.directory.explorer.cols.changed}</TableHead>
                 </TableHeadRow>
               </TableHeader>
               <TableBody className="divide-zinc-800/40">
@@ -244,13 +247,13 @@ function ObjectExplorer() {
             </Table>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800/60 px-4 py-2.5 text-[11px] text-zinc-500">
-            <span className="tabular-nums">{from}–{to} de {total.toLocaleString('es-ES')} objetos</span>
+            <span className="tabular-nums">{dict.directory.explorer.range(from, to, total.toLocaleString('es-ES'))}</span>
             <span className="flex gap-1.5">
               <Button type="button" variant="ghost" size="sm" className="px-2.5 text-xs text-zinc-300" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
-                Anterior
+                {dict.directory.explorer.prev}
               </Button>
               <Button type="button" variant="ghost" size="sm" className="px-2.5 text-xs text-zinc-300" disabled={to >= total} onClick={() => setPage((p) => p + 1)}>
-                Siguiente
+                {dict.directory.explorer.next}
               </Button>
             </span>
           </div>
@@ -261,17 +264,18 @@ function ObjectExplorer() {
 }
 
 function ObjectRow({ obj }: { obj: ADObject }) {
-  const flags = uacFlagLabels(obj.user_account_control)
+  const { dict } = useI18n()
+  const flags = uacFlagLabels(obj.user_account_control, dict.directory.flags)
   const details: string[] = []
   if (obj.kind === 'user') {
     const upn = obj.attributes?.userPrincipalName
     if (upn) details.push(upn)
     if (obj.spn_count > 0) details.push(`${obj.spn_count} SPN`)
-    details.push(`pwd: ${unixToText(obj.pwd_last_set_unix)}`)
-    details.push(`último acceso: ${unixToText(obj.last_logon_unix)}`)
+    details.push(`${dict.directory.pwdLabel}${unixToText(obj.pwd_last_set_unix, dict.directory.neverKnown)}`)
+    details.push(`${dict.directory.lastLogon}${unixToText(obj.last_logon_unix, dict.directory.neverKnown)}`)
   } else if (obj.kind === 'group') {
     const members = obj.attributes?.member_count
-    if (members !== undefined) details.push(`${members} miembros directos`)
+    if (members !== undefined) details.push(dict.directory.members(members))
     if (obj.admin_count > 0) details.push('adminCount=1')
     const desc = obj.attributes?.description
     if (desc) details.push(desc)
@@ -279,7 +283,7 @@ function ObjectRow({ obj }: { obj: ADObject }) {
     if (obj.os) details.push(obj.os)
     const dns = obj.attributes?.dNSHostName
     if (dns) details.push(dns)
-    details.push(`último acceso: ${unixToText(obj.last_logon_unix)}`)
+    details.push(`${dict.directory.lastLogon}${unixToText(obj.last_logon_unix, dict.directory.neverKnown)}`)
   } else {
     const desc = obj.attributes?.description
     if (desc) details.push(desc)
@@ -303,7 +307,7 @@ function ObjectRow({ obj }: { obj: ADObject }) {
       <td className="max-w-[320px] px-4 py-2 text-zinc-500">
         {details.map((d, i) => <span key={i} className="block truncate" title={d}>{d}</span>)}
       </td>
-      <td className="whitespace-nowrap px-4 py-2 tabular-nums text-zinc-500">{unixToText(obj.when_changed_unix)}</td>
+      <td className="whitespace-nowrap px-4 py-2 tabular-nums text-zinc-500">{unixToText(obj.when_changed_unix, dict.directory.neverKnown)}</td>
     </tr>
   )
 }
@@ -320,6 +324,7 @@ function SyncRow({ label, text }: { label: string; text: string }) {
 type LoadState = 'loading' | 'unarmed' | 'error' | 'ok'
 
 export function DirectoryView() {
+  const { dict } = useI18n()
   const { fleet } = useFleet()
   const [status, setStatus] = useState<ADStatus | null>(null)
   const [posture, setPosture] = useState<ADPosture | null>(null)
@@ -354,7 +359,7 @@ export function DirectoryView() {
 
   const findings = posture?.ready ? posture.findings : []
   const privileged = findingById(findings, PRIVILEGED_FINDING_ID)
-  const donutEntries = severityEntries(posture?.summary ?? {})
+  const donutEntries = severityEntries(posture?.summary ?? {}, dict.directory.sevLabels)
   const donutModel = buildDonut(donutEntries, { maxNamed: 4 })
   const trendSlots: LineSlot[] = (history ?? [])
     .slice()
@@ -362,38 +367,36 @@ export function DirectoryView() {
   const score = posture?.ready ? posture.score ?? 0 : 0
 
   return (
-    <section aria-label="Directorio activo">
+    <section aria-label={dict.views.directorio.title}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-lg font-medium text-zinc-100">Directorio activo</h1>
-          <p className="mt-0.5 text-xs text-zinc-500">lectura de /api/ad · sin escrituras al motor</p>
+          <h1 className="text-lg font-medium text-zinc-100">{dict.views.directorio.title}</h1>
+          <p className="mt-0.5 text-xs text-zinc-500">{dict.directory.hint}</p>
         </div>
         <Button type="button" variant="ghost" size="sm" onClick={refresh} aria-busy={state === 'loading'} disabled={state === 'loading'}
           className="px-2.5 text-xs text-zinc-300 disabled:cursor-wait">
           <ArrowClockwise size={13} aria-hidden className={state === 'loading' ? 'animate-spin motion-reduce:animate-none' : ''} />
-          Actualizar
+          {dict.directory.refresh}
         </Button>
       </div>
 
       <p className="mt-3 max-w-[80ch] text-xs leading-relaxed text-zinc-500">
-        El snapshot del directorio que el motor sincroniza por LDAPS y la postura defensiva que calcula sobre
-        él — membresías privilegiadas, KRBTGT, delegaciones, criptografía Kerberos, cuentas obsoletas y
-        cobertura de sensores. Nada viaja al controlador de dominio desde esta página.
+        {dict.directory.prose}
       </p>
 
       {state === 'unarmed' && (
         <div className="panel mt-5 px-4 py-10">
           <EmptyState
             icon={PlugsConnected}
-            title="El conector de Active Directory no está armado"
-            hint={`${hint} — mientras el motor arranque sin -ad no hay directorio que mostrar, y esta página no lo va a inventar.`}
+            title={dict.directory.unarmedTitle}
+            hint={`${hint}${dict.directory.unarmedHintB}`}
           />
         </div>
       )}
 
       {state === 'error' && (
         <div className="panel mt-5 px-4 py-10">
-          <EmptyState icon={PlugsConnected} title="El directorio no está disponible" hint={`${errorText} — el detalle completo queda en el log del motor.`} />
+          <EmptyState icon={PlugsConnected} title={dict.directory.errorTitle} hint={`${errorText}${dict.directory.errorHintB}`} />
         </div>
       )}
 
@@ -410,32 +413,32 @@ export function DirectoryView() {
             <div className="panel-head flex-wrap gap-2">
               <span className="flex items-center gap-2 text-sm font-medium text-zinc-200">
                 <PlugsConnected size={16} aria-hidden className="text-zinc-500" />
-                Conector
+                {dict.directory.connector.title}
               </span>
               <span className={'flex items-center gap-1.5 text-[11px] ' + (status.connected ? 'text-emerald-300' : 'text-red-300')}>
                 <span aria-hidden className={'inline-block h-1.5 w-1.5 rounded-full ' + (status.connected ? 'bg-emerald-400' : 'bg-red-400')} />
-                {status.connected ? 'conectado' : 'sin conexión en el último intento'}
+                {status.connected ? dict.directory.connector.connected : dict.directory.connector.disconnected}
               </span>
             </div>
             <dl className="grid gap-y-0 sm:grid-cols-2">
               <div>
-                <SyncRow label="Último intento de sincronización" text={status.last_sync_at ? formatDateTime(status.last_sync_at) : '—'} />
-                <SyncRow label="Última sincronización completada" text={status.last_success_at ? formatDateTime(status.last_success_at) : 'aún ninguna'} />
+                <SyncRow label={dict.directory.connector.lastAttempt} text={status.last_sync_at ? formatDateTime(status.last_sync_at) : '—'} />
+                <SyncRow label={dict.directory.connector.lastSuccess} text={status.last_success_at ? formatDateTime(status.last_success_at) : dict.directory.connector.noneYet} />
               </div>
               <div>
-                <SyncRow label="Próxima sincronización" text={status.next_sync_at ? formatDateTime(status.next_sync_at) : 'detenida'} />
-                <SyncRow label="Intentos desde el arranque" text={status.syncs.toLocaleString('es-ES')} />
+                <SyncRow label={dict.directory.connector.next} text={status.next_sync_at ? formatDateTime(status.next_sync_at) : dict.directory.connector.stopped} />
+                <SyncRow label={dict.directory.connector.attempts} text={status.syncs.toLocaleString('es-ES')} />
               </div>
             </dl>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-zinc-800/60 px-4 py-2.5 text-[11px] tabular-nums text-zinc-500">
-              <span>usuarios: {status.objects.users.toLocaleString('es-ES')}</span>
-              <span>grupos: {status.objects.groups.toLocaleString('es-ES')}</span>
-              <span>equipos: {status.objects.computers.toLocaleString('es-ES')}</span>
-              <span>UOs: {status.objects.ous.toLocaleString('es-ES')}</span>
-              {status.truncated && <span className="rounded border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-amber-200">snapshot truncado por el límite de objetos</span>}
+              <span>{dict.directory.connector.users}{status.objects.users.toLocaleString('es-ES')}</span>
+              <span>{dict.directory.connector.groups}{status.objects.groups.toLocaleString('es-ES')}</span>
+              <span>{dict.directory.connector.computers}{status.objects.computers.toLocaleString('es-ES')}</span>
+              <span>{dict.directory.connector.ous}{status.objects.ous.toLocaleString('es-ES')}</span>
+              {status.truncated && <span className="rounded border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-amber-200">{dict.directory.connector.truncatedBadge}</span>}
             </div>
             {status.last_error && (
-              <p role="alert" className="border-t border-zinc-800/60 px-4 py-2.5 text-xs text-red-300">Último error: {status.last_error}</p>
+              <p role="alert" className="border-t border-zinc-800/60 px-4 py-2.5 text-xs text-red-300">{dict.directory.connector.lastError}{status.last_error}</p>
             )}
             {status.warnings.length > 0 && (
               <ul className="space-y-1 border-t border-zinc-800/60 px-4 py-2.5">
@@ -453,8 +456,8 @@ export function DirectoryView() {
             <div className="panel px-4 py-10">
               <EmptyState
                 icon={ChartPie}
-                title="Aún sin análisis de postura"
-                hint="El conector está armado pero la primera sincronización no ha terminado; el análisis aparece en cuanto el motor congela su primer snapshot."
+                title={dict.directory.posturePending.title}
+                hint={dict.directory.posturePending.hint}
               />
             </div>
           ) : (
@@ -467,12 +470,12 @@ export function DirectoryView() {
                   <div className="panel flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3" role="status">
                     <span className="flex items-center gap-2 text-xs text-zinc-400">
                       <Desktop size={15} aria-hidden className="text-zinc-500" />
-                      Cobertura de sensores:
+                      {dict.directory.coverage.title}
                     </span>
-                    <span className="text-xs tabular-nums text-zinc-300">equipos en el directorio: <b className="font-semibold text-zinc-100">{cov.inDirectory.toLocaleString('es-ES')}</b></span>
-                    {cov.withSensor !== null && <span className="text-xs tabular-nums text-zinc-300">equipos que reportan al motor: <b className="font-semibold text-emerald-300">{cov.withSensor.toLocaleString('es-ES')}</b></span>}
-                    <span className="text-xs tabular-nums text-zinc-300">sin telemetría del sensor: <b className="font-semibold text-amber-200">{cov.withoutSensor.toLocaleString('es-ES')}</b></span>
-                    <span className="text-[11px] text-zinc-600">el detalle, equipo a equipo, está en el hallazgo «Equipos del dominio sin sensor»</span>
+                    <span className="text-xs tabular-nums text-zinc-300">{dict.directory.coverage.inDirectory}<b className="font-semibold text-zinc-100">{cov.inDirectory.toLocaleString('es-ES')}</b></span>
+                    {cov.withSensor !== null && <span className="text-xs tabular-nums text-zinc-300">{dict.directory.coverage.withSensor}<b className="font-semibold text-emerald-300">{cov.withSensor.toLocaleString('es-ES')}</b></span>}
+                    <span className="text-xs tabular-nums text-zinc-300">{dict.directory.coverage.withoutSensor}<b className="font-semibold text-amber-200">{cov.withoutSensor.toLocaleString('es-ES')}</b></span>
+                    <span className="text-[11px] text-zinc-600">{dict.directory.coverage.detail}</span>
                   </div>
                 )
               })()}
@@ -480,60 +483,60 @@ export function DirectoryView() {
               <div className="grid gap-5 xl:grid-cols-2">
                 {/* score + donut, the two overview numbers */}
                 <ChartCard
-                  title="Puntuación de postura"
-                  subtitle={`análisis del ${formatDateTime(posture.generated_at)} · ${posture.objects_checked.toLocaleString('es-ES')} objetos revisados`}
+                  title={dict.directory.score.title}
+                  subtitle={dict.directory.score.subtitle(formatDateTime(posture.generated_at), posture.objects_checked.toLocaleString('es-ES'))}
                   icon={ChartPie}
-                  label="Puntuación de postura y hallazgos por severidad"
+                  label={dict.directory.score.label}
                   legend={donutEntries.map((e) => ({ key: e.key, label: e.label, color: SEV_COLOR[e.key as keyof typeof SEV_COLOR] ?? 'var(--sev-info)' }))}
                   table={{
-                    caption: 'Hallazgos por severidad',
-                    columns: ['Severidad', 'Clases de hallazgo'],
+                    caption: dict.directory.score.tableCaption,
+                    columns: [dict.directory.score.colSeverity, dict.directory.score.colClasses],
                     rows: donutEntries.map((e) => [e.label, e.value]),
                   }}
                 >
                   <div className="flex flex-1 flex-wrap items-center justify-around gap-4 py-2">
                     <div className="text-center">
                       <p className={'text-4xl font-semibold tabular-nums ' + (scoreTone(score) === 'ok' ? 'text-emerald-300' : scoreTone(score) === 'warn' ? 'text-amber-300' : 'text-red-300')}>{score}</p>
-                      <p className="mt-1 text-[11px] text-zinc-600">de 100</p>
+                      <p className="mt-1 text-[11px] text-zinc-600">{dict.directory.score.of}</p>
                       <span className="mt-2 block w-40"><Meter value={score} max={100} color={TONE_COLOR[scoreTone(score)]} /></span>
                     </div>
                     <DonutChart
                       model={donutModel}
                       colors={Object.fromEntries(donutEntries.map((e) => [e.key, SEV_COLOR[e.key as keyof typeof SEV_COLOR] ?? 'var(--sev-info)']))}
-                      unit="clases de hallazgo"
-                      ariaLabel="Hallazgos de postura por severidad"
+                      unit={dict.directory.score.unit}
+                      ariaLabel={dict.directory.score.donutAria}
                       size={170}
                       thickness={24}
                     />
                   </div>
                   <p className="px-1 text-[11px] text-zinc-600">
-                    umbrales del análisis: cuenta inactiva a partir de {posture.inactive_days} días · KRBTGT con rotación recomendada cada {posture.krbtgt_max_age_days} días
+                    {dict.directory.score.thresholds(posture.inactive_days, posture.krbtgt_max_age_days)}
                   </p>
                 </ChartCard>
 
                 {/* trend: one point per completed sync */}
                 <ChartCard
-                  title="Tendencia de la puntuación"
-                  subtitle="un punto por sincronización completada"
+                  title={dict.directory.trend.title}
+                  subtitle={dict.directory.trend.subtitle}
                   icon={ChartLineUp}
-                  label="Tendencia de la puntuación de postura"
+                  label={dict.directory.trend.label}
                   table={{
-                    caption: 'Historial de puntuación',
-                    columns: ['Momento', 'Puntuación'],
+                    caption: dict.directory.trend.tableCaption,
+                    columns: [dict.directory.trend.colAt, dict.directory.trend.colScore],
                     rows: trendSlots.map((s) => [new Date(s.t).toLocaleString('es-ES', { hour12: false }), s.values.score ?? '']),
                   }}
                 >
                   {trendSlots.length >= 2 ? (
                     <LineChart
-                      series={[{ key: 'score', label: 'Puntuación', color: 'var(--series-1)' }]}
+                      series={[{ key: 'score', label: dict.directory.trend.series, color: 'var(--series-1)' }]}
                       slots={trendSlots}
-                      ariaLabel="Puntuación de postura por sincronización"
-                      valueLabel="puntuación"
+                      ariaLabel={dict.directory.trend.aria}
+                      valueLabel={dict.directory.trend.valueLabel}
                       formatT={(t) => new Date(t).toLocaleString('es-ES', { hour12: false })}
                     />
                   ) : (
                     <div className="flex flex-1 items-center justify-center px-4 py-10">
-                      <EmptyState icon={ChartLineUp} title="Todavía no hay tendencia" hint="Con una sola sincronización completada no se dibuja una línea; el histórico crece con cada sync del conector." />
+                      <EmptyState icon={ChartLineUp} title={dict.directory.trend.emptyTitle} hint={dict.directory.trend.emptyHint} />
                     </div>
                   )}
                 </ChartCard>
@@ -545,17 +548,17 @@ export function DirectoryView() {
                   <div className="panel-head flex-wrap gap-2">
                     <span className="flex items-center gap-2 text-sm font-medium text-zinc-200">
                       <Key size={16} aria-hidden className="text-zinc-500" />
-                      Cuentas privilegiadas efectivas
+                      {dict.directory.privileged.title}
                     </span>
-                    <span className="text-[11px] tabular-nums text-zinc-600">{privileged.count} cuentas</span>
+                    <span className="text-[11px] tabular-nums text-zinc-600">{dict.directory.privileged.count(privileged.count)}</span>
                   </div>
                   <div className="overflow-x-auto">
                     <Table className="min-w-[560px] text-xs">
-                      <TableCaption>Cuentas con caminos de privilegio efectivos</TableCaption>
+                      <TableCaption>{dict.directory.privileged.caption}</TableCaption>
                       <TableHeader>
                         <TableHeadRow className="border-b border-zinc-800/60">
-                          <TableHead className="px-4 py-2">Cuenta</TableHead>
-                          <TableHead className="px-4 py-2">Caminos de privilegio</TableHead>
+                          <TableHead className="px-4 py-2">{dict.directory.privileged.colAccount}</TableHead>
+                          <TableHead className="px-4 py-2">{dict.directory.privileged.colPaths}</TableHead>
                         </TableHeadRow>
                       </TableHeader>
                       <TableBody className="divide-zinc-800/40">
@@ -569,8 +572,7 @@ export function DirectoryView() {
                     </Table>
                   </div>
                   <p className="border-t border-zinc-800/60 px-4 py-2.5 text-[11px] text-zinc-600">
-                    Los caminos (directos y anidados) los calcula el motor sobre el snapshot; la API todavía no expone
-                    las aristas de membresía completas, así que el árbol de grupos se mostrará cuando exista esa ruta.
+                    {dict.directory.privileged.footnote}
                   </p>
                 </div>
               )}
@@ -580,13 +582,13 @@ export function DirectoryView() {
                 <div className="panel-head flex-wrap gap-2">
                   <span className="flex items-center gap-2 text-sm font-medium text-zinc-200">
                     <TreeStructure size={16} aria-hidden className="text-zinc-500" />
-                    Hallazgos
+                    {dict.directory.findings.title}
                   </span>
-                  <span className="text-[11px] text-zinc-600">texto del motor, sin reescribir · el recuento es el total aunque la lista venga truncada</span>
+                  <span className="text-[11px] text-zinc-600">{dict.directory.findings.headHint}</span>
                 </div>
                 {posture.findings.length === 0 ? (
                   <div className="px-4 py-8">
-                    <EmptyState icon={ChartPie} title="Sin hallazgos registrados" hint="El análisis completó sin clases de hallazgo: dominio limpio según los controles implementados." />
+                    <EmptyState icon={ChartPie} title={dict.directory.findings.emptyTitle} hint={dict.directory.findings.emptyHint} />
                   </div>
                 ) : (
                   <div>

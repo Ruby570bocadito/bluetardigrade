@@ -324,6 +324,33 @@ describe('i18n dictionaries', () => {
     expect(DICTS.en.operations.issues.ingestDropped(3)).toBe('3 events dropped or rejected')
     expect(DICTS.en.kpi.noData).toBe('No data')
   })
+
+  test('phase 7 sweep (active directory) keeps the spanish copy byte-identical', () => {
+    expect(dictEs.directory.hint).toBe('lectura de /api/ad · sin escrituras al motor')
+    expect(dictEs.directory.kinds.ou).toBe('Unidades org.')
+    expect(dictEs.directory.explorer.searchPlaceholder).toBe('Buscar por nombre, DN o OS…')
+    expect(dictEs.directory.explorer.range(1, 50, '1.234')).toBe('1–50 de 1.234 objetos')
+    expect(dictEs.directory.connector.disconnected).toBe('sin conexión en el último intento')
+    expect(dictEs.directory.connector.noneYet).toBe('aún ninguna')
+    expect(dictEs.directory.members(3)).toBe('3 miembros directos')
+    expect(dictEs.directory.unarmedTitle).toBe('El conector de Active Directory no está armado')
+    expect(dictEs.directory.flags.disabled).toBe('deshabilitada')
+    expect(dictEs.directory.privileged.title).toBe('Cuentas privilegiadas efectivas')
+    expect(dictEs.directory.findings.headHint).toBe('texto del motor, sin reescribir · el recuento es el total aunque la lista venga truncada')
+  })
+
+  test('phase 7 english copy is a real translation of the active directory view', () => {
+    expect(DICTS.en.directory.hint).toBe('reads /api/ad · no writes to the engine')
+    expect(DICTS.en.directory.kinds.user).toBe('Users')
+    expect(DICTS.en.directory.explorer.searchPlaceholder).toBe('Search by name, DN or OS…')
+    expect(DICTS.en.directory.connector.disconnected).toBe('no connection on the last attempt')
+    expect(DICTS.en.directory.members(3)).toBe('3 direct members')
+    expect(DICTS.en.directory.unarmedTitle).toBe('The Active Directory connector is not armed')
+    expect(DICTS.en.directory.flags.noExpiry).toBe('never expires')
+    expect(DICTS.en.directory.privileged.colPaths).toBe('Privilege paths')
+    expect(DICTS.en.directory.findings.emptyTitle).toBe('No findings recorded')
+    expect(DICTS.en.directory.sevLabels.critical).toBe('critical')
+  })
 })
 
 describe('language resolution', () => {

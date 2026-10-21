@@ -122,9 +122,26 @@ export const UAC_FLAG_LABELS: { bit: number; label: string }[] = [
   { bit: UAC_DONT_REQUIRE_PREAUTH, label: 'sin preauth' },
 ]
 
-/** Spanish labels of the UAC bits the console annotates, in stable order. */
-export function uacFlagLabels(uac: number): string[] {
-  return UAC_FLAG_LABELS.filter((f) => (uac & f.bit) !== 0).map((f) => f.label)
+/** Spanish labels of the UAC bits the console annotates, in stable order.
+ * A caller speaking another language passes its own label table
+ * (dict.directory.flags); the default keeps the shipped ES copy. */
+export function uacFlagLabels(
+  uac: number,
+  labels: { disabled: string; noExpiry: string; delegation: string; noPreauth: string } = {
+    disabled: 'deshabilitada',
+    noExpiry: 'sin caducidad',
+    delegation: 'delegación',
+    noPreauth: 'sin preauth',
+  },
+): string[] {
+  return [
+    { bit: UAC_DISABLED, label: labels.disabled },
+    { bit: UAC_DONT_EXPIRE_PASSWORD, label: labels.noExpiry },
+    { bit: UAC_TRUSTED_FOR_DELEGATION, label: labels.delegation },
+    { bit: UAC_DONT_REQUIRE_PREAUTH, label: labels.noPreauth },
+  ]
+    .filter((f) => (uac & f.bit) !== 0)
+    .map((f) => f.label)
 }
 
 // ─── donut + coverage derivations (pure, tested) ────────────────────────
@@ -138,10 +155,15 @@ export const AD_SEVERITY_LABELS: Record<string, string> = {
   low: 'baja',
 }
 
-/** Donut entries (findings by severity), engine order, zero rows dropped. */
-export function severityEntries(summary: Record<string, number>): { key: string; label: string; value: number }[] {
+/** Donut entries (findings by severity), engine order, zero rows dropped.
+ * Labels default to the shipped ES copy; a bilingual caller passes its
+ * own map (dict.directory.sevLabels). */
+export function severityEntries(
+  summary: Record<string, number>,
+  labels: Record<string, string> = AD_SEVERITY_LABELS,
+): { key: string; label: string; value: number }[] {
   return AD_SEVERITY_ORDER
-    .map((sev) => ({ key: sev, label: AD_SEVERITY_LABELS[sev] ?? sev, value: summary[sev] ?? 0 }))
+    .map((sev) => ({ key: sev, label: labels[sev] ?? sev, value: summary[sev] ?? 0 }))
     .filter((e) => e.value > 0)
 }
 
