@@ -67,7 +67,7 @@ elige otra libre de tu rol. Al fusionarse el PR, el humano la marca `hecha`.
 | O-4 | POL-6: release con SBOM (CycloneDX) y sensor firmado entre artefactos | AG-4 | — | Calidad | libre |
 | O-5 | SEC-3/SEC-6/SEC-9: revisión de entradas, cadena de suministro y privacidad (informe + parches mínimos) | AG-4 | — | Calidad | libre |
 | M-9 | POL-1: dividir `internal/api/api.go` y `cmd/engine/run.go`; POL-2 logs con `log/slog` | AG-1 | — | Calidad | libre |
-| S-5 | POL-1: dividir `sensor/src/collector.rs` sin cambiar comportamiento | AG-2 | — | Calidad | en progreso (Pulimiento B, 2026-10-21) |
+| S-5 | POL-1: dividir `sensor/src/collector.rs` sin cambiar comportamiento | AG-2 | — | Calidad | en revisión (PR #43) |
 | H-6 | Pruebas de resistencia en Windows real: 24–48 h, suspensión, spool, semana de CPU/memoria | HUMANO | varias hechas | Pruebas | libre |
 | H-7 | Entrada `[v1.0.0]` del CHANGELOG, insignia del README y etiqueta `v1.0.0` | HUMANO | todo lo anterior | Pruebas | libre |
 
