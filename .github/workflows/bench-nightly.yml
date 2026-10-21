@@ -64,6 +64,20 @@ jobs:
           go-version-file: go.mod
       - name: nightly bench (real engine over loopback, advisory)
         run: bash scripts/dev-tests/bench_nightly.sh
+      # POL-3: the profiles of both passes travel with the run. The
+      # script writes them into runner.temp, which survives past the
+      # script's own cleanup, so this step can pick them up after it
+      # exits. always(): the profiles of a bad run are exactly the ones
+      # worth reading. Pinned SHA: same upload-artifact pin the rest of
+      # this workflow already uses.
+      - name: upload pprof profiles (advisory)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bench-pprof
+          path: ${{ runner.temp }}/pprof/
+          retention-days: 14
+          if-no-files-found: warn
 
   discover-fuzz-targets:
     name: Discover fuzz targets

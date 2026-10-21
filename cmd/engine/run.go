@@ -23,6 +23,17 @@ import (
 // panel (a TUI that renders what the engine is already doing; when
 // stdout is not a TTY the request degrades to the classic flat run).
 func runEngine(o *options, interactive bool) error {
+	// Profiling (POL-3, opt-in via -pprof-dir) is armed before
+	// anything else so the CPU profile covers the whole run; the
+	// heap/goroutine snapshots land on the deferred stop, after the
+	// queue drained. An explicitly requested profile session that
+	// cannot start fails the run here, loudly.
+	stopProfiles, err := startProfiling(o.pprofDir)
+	if err != nil {
+		return err
+	}
+	defer stopProfiles()
+
 	if o.webhookURL == "" {
 		o.webhookURL = os.Getenv("SF_WEBHOOK_URL")
 	}

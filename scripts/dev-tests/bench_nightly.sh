@@ -48,6 +48,16 @@ TMP="$(mktemp -d)"
 # defaulting to 0: a build failure must exit cleanly, not signal.
 trap '[ -n "${ENGINE_PID:-}" ] && { kill "$ENGINE_PID" 2>/dev/null || true; }; rm -rf "$TMP"' EXIT
 
+# POL-3: profiles of the hot path. The engine takes -pprof-dir (opt-in
+# flag; off in every other launch path) and this script profiles BOTH
+# passes. RUNNER_TEMP keeps the files alive across workflow steps (the
+# upload step runs after this script exits and $TMP is gone); locally,
+# set BENCH_PPROF_DIR to keep them where the operator wants - without
+# it they land under $TMP and die with the trap, which keeps a local
+# run self-cleaning.
+PPROF_DIR="${BENCH_PPROF_DIR:-${RUNNER_TEMP:-$TMP}/pprof}"
+mkdir -p "$PPROF_DIR/rings" "$PPROF_DIR/sqlite"
+
 # Pre-flight: the health wait below would happily answer if a PREVIOUS
 # engine (a dev stack left running, yesterday's binary) already owns
 # 7778 — the bench would then measure the WRONG engine and attribute
@@ -78,8 +88,8 @@ run_pass() {
         exit 1
     fi
 
-    echo "[bench-nightly] starting engine [$label] (loopback defaults, pidfile)..."
-    "$TMP/engine" run -pidfile "$TMP/engine.pid" "$@" >"$TMP/engine-$label.log" 2>&1 &
+    echo "[bench-nightly] starting engine [$label] (loopback defaults, pidfile, pprof)..."
+    "$TMP/engine" run -pidfile "$TMP/engine.pid" -pprof-dir "$PPROF_DIR/$label" "$@" >"$TMP/engine-$label.log" 2>&1 &
     ENGINE_PID=$!
 
     local ready=""
@@ -225,6 +235,20 @@ verdict_for() { # verdict_for <p99_us>
     fi
 }
 
+# POL-3: an explicitly profiled run that produces no profiles is an
+# instrumentation defect of the measurement itself (same class as the
+# no-samples gate below): the profiles are part of the nightly
+# contract, never a silent green.
+for pass in rings sqlite; do
+    for f in cpu.pb.gz heap.pb.gz; do
+        if [ ! -s "$PPROF_DIR/$pass/$f" ]; then
+            echo "[bench-nightly] FAIL: profile missing or empty: $PPROF_DIR/$pass/$f (profiling is part of the nightly contract, POL-3; engine log: $TMP/engine-$pass.log)" >&2
+            tail -5 "$TMP/engine-$pass.log" >&2 || true
+            exit 1
+        fi
+    done
+done
+
 # ---- summary (step summary on CI, stdout locally) ----------------------
 SUMMARY="$TMP/summary.md"
 {
@@ -245,6 +269,7 @@ SUMMARY="$TMP/summary.md"
     echo "| README contract | p99 < 10 ms (each pass, independently) |"
     echo "| runner | ${RUNNER_NAME:-$(uname -n)} ($(uname -sr)) |"
     echo "| fsync 4k dsync (sqlite pass medium) | $FSYNC_ROW |"
+    echo "| pprof profiles | cpu+heap+goroutine per pass (uploaded as bench-pprof on CI; local: BENCH_PPROF_DIR) |"
 } > "$SUMMARY"
 
 echo
@@ -291,3 +316,7 @@ for pair in "rings:$RINGS_P99_US" "sqlite:$SQL_P99_US"; do
 done
 
 echo "[bench-nightly] OK (advisory bench recorded, both passes)"
+case "$PPROF_DIR" in
+    "$TMP"/*) echo "[bench-nightly] profiles were written under the temp dir and are removed with it; export BENCH_PPROF_DIR=<dir> to keep a local copy" ;;
+    *) echo "[bench-nightly] profiles kept in: $PPROF_DIR (rings/, sqlite/; go tool pprof <file> to read them)" ;;
+esac
