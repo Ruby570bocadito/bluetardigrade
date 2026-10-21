@@ -317,4 +317,9 @@ Reglas rápidas:
   están revocados; el push funciona por el askpass del contenedor y la API
   quedó sin cuota — PR abierto vía web/URL de compare si la API sigue
   limitada.)
+- Auditoría de dependencias: yara-x trae `rsa` (RUSTSEC-2023-0071, sin
+  parche) vía pe/macho → feature crypto. Excepción revisada en
+  `.cargo/audit.toml` (raíz — deps-audit corre cargo audit desde la raíz;
+  cargo-audit 0.22 lee .cargo/ del CWD o padres; verificado localmente
+  exit 0). DECISIÓN ABIERTA A VETO de OPS/humano; módulo `crx` fuera.
 - Estado en TASKS.md: S-2 en revisión (PR #48)
