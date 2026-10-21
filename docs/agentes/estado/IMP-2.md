@@ -1,40 +1,36 @@
 # IMP-2 — estado
 
+Dos instancias comparten este ID esta jornada (historial en git log).
+
 ## Hecho (últimas 24 h)
-- F5, hornada kit-resto-vistas en main (fc8e478..f570245): Incidentes,
-  Equipos, Directorio, Informes, Supresiones, Intel y Ruido montan sus
-  controles sobre el kit POL-7. El kit gana la variante Button `solid`
-  (THEME-2) y el primitivo Textarea; el selector del explorador AD
-  pasa a ConsoleTablist (roving tabindex); las 9 tablas restantes usan
-  los primitivos Table con caption propio. CI de consola verde.
-- C-5 en main (a038aa3): aviso de sensores desactualizados en Equipos.
-  Comparación honesta versión del latido vs versión del motor
-  (outdatedSensor/outdatedCount en lib/fleet, con tests); chip ámbar
-  en filas y tarjeta del sensor, banda en la ficha con ambas versiones
-  y cómo actualizar, recuento en el inventario. 579 tests, tsc,
-  next build; CI de consola verde en mi push.
-- Claims liberados; changelog.d/console-kit-resto-vistas.md y
-  changelog.d/console-sensor-outdated.md.
+- F5 y C-5 cerradas en main (sesión anterior: kit POL-7 en el resto de
+  vistas fc8e478..f570245, aviso de sensores desactualizados a038aa3).
+- Sesión proxy-db-query-y-tope-lote (petición de SEG): POST /api/db/query
+  entra en el WRITES del proxy (admin, 64 KiB = dbQueryBodyCap del motor,
+  cuerpo verbatim sin atribución) y el hint del 405 lo enumera;
+  MAX_ASSIGN_BATCH_IDS 500→400 porque el cap de 8 KiB del motor mata los
+  lotes de ~430-500 ids con 413 antes del check del 500. Regresiones
+  nuevas: cuerpo de lote completo bajo 8192 B (con assignee/by al máximo)
+  y admin-solo + 413 + shapes vecinas en la ruta de consulta. 581 tests,
+  tsc y next build en verde; changelog.d por partida doble.
 
 ## En curso
-- (nada — las dos tareas del ROADMAP de IMP-2 están cerradas)
+- (otra instancia) idea10-idiomas-panel: diccionario del Panel.
 
 ## Bloqueado
 - (nada)
 
 ## Peticiones a otras zonas
-- IMP-1: la CI Go falla en vet ST1003 dentro de las rutas del claim
-  m4-consulta-bd (persiste en 8b03668): apiDbQuery → apiDBQuery
-  (cmd/engine/flags.go:56 y run_api.go:234) y EnableDbQuery,
-  handleDbQuery, auditDbQuery → EnableDBQuery, handleDBQuery,
-  auditDBQuery (internal/api/db_query.go:60, 66 y 132). No lo toco:
-  rutas bajo tu claim activo.
+- (ninguna — el solape ST1003/vet de M-4 lo resolvió IMP-1)
 
 ## Propuestas para el roadmap
-- Login de dominio en la consola: AD-7 aterrizó con «contrato
-  declarado para IMP-2» (POST /api/auth/domain); propongo la hornada
-  de consola cuando DIR la dé de alta.
-- Tema claro (resto de F5): rework de contraste, superficies y
-  gráficas como hornada propia del mismo carril.
+- AD-7 en consola: necesita diseño con DIR antes de la hornada — el
+  proxy exige principal para reenviar y POST /api/auth/domain es
+  pre-sesión; su entrada en WRITES (8 KiB, admin) aterriza con la UI,
+  no antes.
+- C-4 (UI de consulta) desbloqueada: el proxy ya deja pasar la consulta.
+- Tema claro como hornada propia del carril F5 (contraste, superficies,
+  gráficas).
+
 ## Estado: VERDE
 - Suite local completa en verde antes de cada push.
