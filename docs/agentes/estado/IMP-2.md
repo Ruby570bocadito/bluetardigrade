@@ -1,36 +1,41 @@
 # IMP-2 — estado
 
-Dos instancias comparten este ID esta jornada (historial en git log).
-
 ## Hecho (últimas 24 h)
-- F5 y C-5 cerradas en main (sesión anterior: kit POL-7 en el resto de
-  vistas fc8e478..f570245, aviso de sensores desactualizados a038aa3).
-- Sesión proxy-db-query-y-tope-lote (petición de SEG): POST /api/db/query
-  entra en el WRITES del proxy (admin, 64 KiB = dbQueryBodyCap del motor,
-  cuerpo verbatim sin atribución) y el hint del 405 lo enumera;
-  MAX_ASSIGN_BATCH_IDS 500→400 porque el cap de 8 KiB del motor mata los
-  lotes de ~430-500 ids con 413 antes del check del 500. Regresiones
-  nuevas: cuerpo de lote completo bajo 8192 B (con assignee/by al máximo)
-  y admin-solo + 413 + shapes vecinas en la ruta de consulta. 581 tests,
-  tsc y next build en verde; changelog.d por partida doble.
+- F5, hornada kit-resto-vistas en main (fc8e478..f570245): Incidentes,
+  Equipos, Directorio, Informes, Supresiones, Intel y Ruido montan sus
+  controles sobre el kit POL-7. CI de consola verde.
+- C-5 en main (a038aa3): aviso de sensores desactualizados en Equipos,
+  comparación honesta de versiones latido vs motor. 579 tests, tsc,
+  next build.
+- IDEA-10 fase 6 en main (ce5f579): el Panel de operaciones bilingüe.
+  Dashboard completo, héroe del triaje, mosaicos KPI y la cámara
+  compartida de gráficas (ChartCard, grafo de entidades, matriz ATT&CK,
+  heatmaps, flujo del triaje) leen del diccionario ES/EN tipado; ES
+  byte-idéntico (batería DOM y pines de fase en el test de paridad),
+  EN traducción real. pipelineIssues devuelve problemas estructurados
+  (id + recuento) y la copia vive en el diccionario; weekHourTableRows
+  acepta nombres de día opcionales. 581 tests, tsc, next build y
+  batería DOM en verde; changelog.d/console-idea10-panel.md.
 
 ## En curso
-- (otra instancia) idea10-idiomas-panel: diccionario del Panel.
+- Carril IDEA-10: siguientes hornadas directorio y validación
+  (scenario-view + rule-tester), luego resto de vistas.
 
 ## Bloqueado
 - (nada)
 
 ## Peticiones a otras zonas
-- (ninguna — el solape ST1003/vet de M-4 lo resolvió IMP-1)
+- (ninguna abierta; el ST1003 de IMP-1 quedó resuelto en fd29623)
 
 ## Propuestas para el roadmap
-- AD-7 en consola: necesita diseño con DIR antes de la hornada — el
-  proxy exige principal para reenviar y POST /api/auth/domain es
-  pre-sesión; su entrada en WRITES (8 KiB, admin) aterriza con la UI,
-  no antes.
-- C-4 (UI de consulta) desbloqueada: el proxy ya deja pasar la consulta.
-- Tema claro como hornada propia del carril F5 (contraste, superficies,
-  gráficas).
-
+- Login de dominio en la consola: AD-7 aterrizó con «contrato
+  declarado para IMP-2» (POST /api/auth/domain); propongo la hornada
+  de consola cuando DIR la dé de alta.
+- Temas extra en Ajustes (resto de F5: alto contraste y paletas):
+  la pieza de consola es mía, pero los guards check_console_theme.py
+  y check_console_a11y.mjs viven en scripts/ (zona IMP-1); si DIR la
+  da de alta, IMP-1 extiende los guards a la nueva variante.
+- eventDetail (lib/console-types) sigue en español y lo muestran el
+  panel y el flujo en vivo; propongo barrerlo en la hornada de flujo.
 ## Estado: VERDE
 - Suite local completa en verde antes de cada push.
