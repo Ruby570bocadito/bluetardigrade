@@ -153,10 +153,6 @@ y cuentas: [OPERATIONS](docs/OPERATIONS.md#console-accounts-roles-and-audit).
 - [ ] **Editor de reglas en la consola** (IDEA-5): reglas YAML con validación,
   el probador que ya existe e historial de versiones; importar Sigma desde la
   consola (hoy solo por CLI).
-- [ ] **Consulta de la base de datos:** solo lectura (la evidencia es
-  append-only), límites de tiempo y filas, solo administradores y cada consulta
-  auditada. Puede apoyarse en el lenguaje de búsqueda (IDEA-4: `campo:valor`,
-  `AND`/`OR`/`NOT`, rangos).
 - [ ] **Active Directory:**
   - mejorar la vista Directorio: ficha de usuario y de equipo (grupos, OU,
     último inicio de sesión, estado de la cuenta), árbol de OU, cobertura
