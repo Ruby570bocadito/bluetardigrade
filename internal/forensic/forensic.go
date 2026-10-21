@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -40,6 +41,21 @@ type Recorder struct {
 	dir   string // bundle output directory; "" disables disk writes
 	hosts map[string][]*model.Event
 	order []string // LRU order of hosts, order[0] = coldest
+
+	// Expiración de bundles (noteBundle corre fuera de mu, tras la
+	// escritura del bundle). Un FIFO en memoria con el orden de
+	// escritura de este proceso hace cumplir la cota del directorio
+	// con un solo unlink por alerta en régimen estacionario; el
+	// disco solo se escanea una vez por vida del recorder para
+	// sembrarlo (el primer purge tras un arranque sobre un
+	// directorio con bundles de ejecuciones anteriores). Antes,
+	// cada escritura en la cota pagaba un ReadDir completo, un
+	// stat por fichero y una ordenación — el hotspot que el primer
+	// perfil real del nightly señaló (≈29 % de la CPU del camino
+	// de alertas).
+	evMu    sync.Mutex
+	written []string // FIFO: written[0] es el bundle más antiguo vivo
+	seeded  bool     // el FIFO ya refleja el estado real del directorio
 }
 
 // Bounds and constants. See the package comment: each one caps a
@@ -215,7 +231,7 @@ func (r *Recorder) Capture(a alert.Alert, now time.Time) (string, bool, error) {
 	if err := writeAtomic(path, b); err != nil {
 		return "", false, err
 	}
-	r.evictOldFiles()
+	r.noteBundle(path)
 	return path, true, nil
 }
 
@@ -287,13 +303,55 @@ func writeAtomic(path string, b *Bundle) error {
 	return nil
 }
 
-// evictOldFiles enforces maxBundleFiles by removing the oldest
-// bundles (mtime order). Called after each successful write; it is
-// best-effort by design — a failed unlink retries on the next write.
-func (r *Recorder) evictOldFiles() {
+// noteBundle registra el bundle recién escrito y hace cumplir la cota
+// del directorio. El orden de expiración es el FIFO de escritura de
+// este proceso, que coincide con el orden por mtime para todo lo que
+// escribe el motor: los bundles se crean secuencialmente (temp +
+// rename) y sus mtimes son monótonos. Con el FIFO, el régimen
+// estacionario en la cota cuesta un unlink por alerta en vez de un
+// ReadDir más un stat por fichero más la ordenación.
+//
+// El disco se escanea exactamente una vez (la primera expiración de la
+// vida del recorder): esa pasada siembra el FIFO desde el estado real
+// del directorio, así los bundles de ejecuciones anteriores y los
+// ficheros .json ajenos participan en la expiración igual que antes.
+// La diferencia residual frente al escaneo por escritura es pequeña y
+// acotada: un fichero ajeno añadido a mitad de vida con mtime más
+// viejo no salta la cola hasta el siguiente arranque. A cambio la
+// cota sigue cumpliéndose tras cada escritura y el coste por alerta
+// pasa a ser O(1).
+//
+// Sigue siendo best-effort por diseño: un unlink que falla reintenta
+// en la siguiente escritura, y un fichero borrado por fuera
+// (ErrNotExist) se descuenta de la cola sin drama.
+func (r *Recorder) noteBundle(path string) {
+	r.evMu.Lock()
+	defer r.evMu.Unlock()
+	if !r.seeded {
+		r.written = r.seedLocked(path)
+		r.seeded = true
+	}
+	// El bundle recién escrito entra siempre: seedLocked lo excluye
+	// del escaneo (skip) para no contarlo dos veces.
+	r.written = append(r.written, path)
+	for len(r.written) > maxBundleFiles {
+		if err := os.Remove(r.written[0]); err != nil && !errors.Is(err, os.ErrNotExist) {
+			break // reintento en la siguiente escritura
+		}
+		r.written = r.written[1:]
+	}
+}
+
+// seedLocked siembra el FIFO desde el directorio real: la misma pasada
+// ReadDir + stat ordenada por mtime que hacía la expiración antigua,
+// con dos diferencias — ordena con sort.Slice en vez de inserción y
+// excluye el bundle recién escrito (skip), que el llamante añade al
+// FIFO después. Solo se llama una vez por vida del recorder, con
+// evMu tomado; devuelve los supervivientes más antiguos primero.
+func (r *Recorder) seedLocked(skip string) []string {
 	entries, err := os.ReadDir(r.dir)
-	if err != nil || len(entries) <= maxBundleFiles {
-		return
+	if err != nil {
+		return nil
 	}
 	type aged struct {
 		path string
@@ -308,21 +366,24 @@ func (r *Recorder) evictOldFiles() {
 		if err != nil {
 			continue
 		}
-		files = append(files, aged{filepath.Join(r.dir, e.Name()), info.ModTime()})
-	}
-	excess := len(files) - maxBundleFiles
-	if excess <= 0 {
-		return
-	}
-	// insertion sort by mtime: excess is a handful per write in practice
-	for i := 1; i < len(files); i++ {
-		for j := i; j > 0 && files[j].at.Before(files[j-1].at); j-- {
-			files[j], files[j-1] = files[j-1], files[j]
+		p := filepath.Join(r.dir, e.Name())
+		if p == skip {
+			continue
 		}
+		files = append(files, aged{p, info.ModTime()})
 	}
-	for i := 0; i < excess && i < len(files); i++ {
-		_ = os.Remove(files[i].path)
+	sort.Slice(files, func(i, j int) bool { return files[i].at.Before(files[j].at) })
+	if len(files) > maxBundleFiles {
+		for _, f := range files[:len(files)-maxBundleFiles] {
+			_ = os.Remove(f.path)
+		}
+		files = files[len(files)-maxBundleFiles:]
 	}
+	out := make([]string, len(files))
+	for i, f := range files {
+		out[i] = f.path
+	}
+	return out
 }
 
 // Load reads a bundle back by alert id. The id is validated before it
