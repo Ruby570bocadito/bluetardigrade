@@ -49,7 +49,7 @@ elige otra libre de tu rol. Al fusionarse el PR, el humano la marca `hecha`.
 | E-3 | Niveles por grupo, aprobación 1–2 personas, equipos protegidos, límites por hora, interruptor general | AG-1 | E-1 | F3 | libre |
 | E-4 | Opción opt-in en el instalador (apagada por defecto) + UI de niveles y aprobaciones | AG-3 + AG-4 | E-3 | F3 | libre |
 | C-3 | Editor de reglas YAML en consola con validación, probador e historial; importar Sigma | AG-3 | M-3 | F3 | libre |
-| M-4 | Consulta BD solo lectura: límites de tiempo/filas, admin, auditada | AG-1 | — | F3 | libre |
+| M-4 | Consulta BD solo lectura: límites de tiempo/filas, admin, auditada | AG-1 | — | F3 | hecha (a51108a + PR #45) |
 | C-4 | UI de consulta BD + lenguaje de búsqueda `campo:valor`, AND/OR/NOT (IDEA-4) | AG-3 | M-4 | F3 | libre |
 | M-5 | ML beta de triaje (`-ml-beta`, explicable, aprende de veredictos) | AG-1 | M-1 y C-2 | F4 | libre |
 | M-6 | Analista IA con alcance por grupos (el hub lee el motor con el alcance de quien pregunta) | AG-1 | — | F2 | libre |
