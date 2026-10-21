@@ -16,7 +16,14 @@ type httpTimeoutClient struct {
 }
 
 func newTimeoutClient(timeout time.Duration) *httpTimeoutClient {
-	return &httpTimeoutClient{hc: &http.Client{Timeout: timeout}}
+	// No transparent redirects: the Slack hook URL carries the channel
+	// secret in its path and the Telegram token rides the request URL,
+	// so a 3xx would hand the rendered alert (and a same-host token)
+	// to whatever host the Location names. The 3xx itself fails the
+	// delivery through the shared classification.
+	return &httpTimeoutClient{hc: &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}}
 }
 
 func (c *httpTimeoutClient) post(ctx context.Context, url string, payload []byte) error {

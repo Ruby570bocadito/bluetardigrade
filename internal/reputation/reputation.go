@@ -75,8 +75,13 @@ func New(vtKey, abuseKey string) *Client {
 	return &Client{
 		vtKey: strings.TrimSpace(vtKey), abuseKey: strings.TrimSpace(abuseKey),
 		VTBase: "https://www.virustotal.com", AbuseBase: "https://api.abuseipdb.com",
-		HTTP: &http.Client{Timeout: 8 * time.Second},
-		now:  time.Now, cache: map[string]Report{}, buckets: map[string][]time.Time{},
+		// No transparent redirects: the provider keys travel in custom
+		// headers (x-apikey, Key) that Go does not strip on cross-host
+		// redirects, and the queried indicator would leak with them.
+		HTTP: &http.Client{Timeout: 8 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}},
+		now: time.Now, cache: map[string]Report{}, buckets: map[string][]time.Time{},
 	}
 }
 
