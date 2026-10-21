@@ -53,7 +53,7 @@ elige otra libre de tu rol. Al fusionarse el PR, el humano la marca `hecha`.
 | M-5 | ML beta de triaje (`-ml-beta`, explicable, aprende de veredictos) | AG-1 | M-1 y C-2 | F4 | libre |
 | M-6 | Analista IA con alcance por grupos (el hub lee el motor con el alcance de quien pregunta) | AG-1 | — | F2 | libre |
 | S-3 | Auditoría de servicios Windows con permisos débiles (DACL, rutas sin comillas), solo lectura | AG-2 | — | F2 | libre |
-| S-4 | Latido informa EventsLost/BuffersLost y descartes del hilo de hashes | AG-2 | — | Backlog | en progreso (AG-2 IMPL-B, 2026-10-21) |
+| S-4 | Latido informa EventsLost/BuffersLost y descartes del hilo de hashes | AG-2 | — | Backlog | en revisión (PR #42) |
 | SEC-2 | Credencial del sensor (`ingest.token`) cifrada con DPAPI | AG-2 | — | Backlog | libre |
 | C-5 | Aviso de sensores desactualizados en Equipos (versión ya va en el latido) | AG-3 | S-4 | Backlog | libre |
 | M-7 | WEF: registro de Seguridad de DC y servidores; AD-3 inicios de sesión y AD-4 cambios, retención configurable | AG-1 | O-2 | F3 | libre |
