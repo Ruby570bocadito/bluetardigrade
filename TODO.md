@@ -158,10 +158,12 @@ y cuentas: [OPERATIONS](docs/OPERATIONS.md#console-accounts-roles-and-audit).
     hora e interruptor general que devuelve todo a «observar».
   - Playbooks de respuesta automática solo donde el SOC los active, y simulación
     previa («qué habría pasado en los últimos 30 días»).
-- [ ] **YARA:**
-  - escaneo en el sensor Rust con `yara-x`: ficheros escritos y bajo demanda;
-    memoria después;
-  - reglas guardadas en el motor y distribuidas firmadas a los sensores;
+- [ ] **YARA:** (el sensor ya escanea ficheros escritos y bajo demanda con
+  `yara-x`; queda:)
+  - memoria: escaneo del contenido de procesos en el sensor;
+  - reglas guardadas en el motor y distribuidas firmadas a los sensores (el
+    sensor ya carga un directorio de reglas con manifiesto y lo recalca cada
+    minuto: contrato S-2↔M-3 en docs/agentes);
   - en la consola: ver, añadir y eliminar reglas con validación al compilar,
     solo administradores y con auditoría;
   - la web ya anuncia «YARA memory scanning»: alinearla con lo que se entregue.

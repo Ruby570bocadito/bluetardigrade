@@ -283,3 +283,38 @@ Reglas rápidas:
 - Bloqueos: ninguno.
 - Estado en TASKS.md: P-3 en revisión (PR #41) · S-5 en revisión
   (PR #43)
+
+---
+## 2026-10-21 · AG-2 SENSOR · S-2 · sesión 1
+- Hecho: S-2 completa en su alcance de ficheros. Tercera sesión ETW
+  (Microsoft-Windows-Kernel-File 12/16) que nombra objetos fichero y
+  entrega al scanner los escritos; worker propio fuera de los callbacks
+  (cola 512, dedupe ruta+tamaño+mtime, tope --yara-max-mb 16 MiB, drops
+  contados); reglas por directorio (--yara-rules) con compilación por
+  fichero (roto = se salta y se reporta), bundle.json opcional con versión
+  y recarga por fingerprint cada minuto; eventos `yara.match`
+  (model.File + atributos yara_*) y bloque yara_* en el latido
+  (yara_rules/yara_rules_sha/yara_scans/yara_matches/yara_dropped/
+  yara_errors); subcomando `scan` bajo demanda (NDJSON, exit 2).
+- Ficheros: `sensor/Cargo.toml` (+yara-x 1.22, trae wasmtime — coste
+  medido en el informe), `sensor/Cargo.lock`, `sensor/src/yara.rs`,
+  `sensor/src/scan.rs`, `sensor/src/{main,normalize,heartbeat}.rs`,
+  `sensor/src/collector{.rs,/config.rs,/handlers.rs,/health.rs,/shared.rs}`,
+  `TODO.md`, `TASKS.md`, `changelog.d/sensor-yara-file-scan.md`,
+  `docs/agentes/02-implementaciones/{ronda_2026-10-21_20h15_B,roadmap_B}.md`.
+- Contratos/decisiones para otros: **contrato S-2↔M-3 propuesto y vigente**
+  en el informe de ronda: distribución = directorio (`--yara-rules`) con
+  `*.yar/*.yara` + `bundle.json` opcional; verificación de llegada por
+  `yara_rules_sha` (16 hex del lote cargado) en el latido; recarga sin
+  reinicio; una regla rota no tumba el paquete (replicar en la validación
+  de consola de M-3/C-3). Evento `yara.match` con `source: "etw"` y SIN
+  proceso/usuario (Kernel-File no trae PID; hueco declarado, no simulado;
+  la atribución exigiría Kernel-Thread — decisión para la parte de
+  memoria). El ingest ya acepta el tipo; reglas/vista/avisos: AG-1/AG-3.
+- Pendiente: prueba en Windows real (humano): `--yara-rules` con un lote de
+  prueba, `scan` sobre una carpeta, `yara_*` en Equipos; CI del PR.
+- Bloqueos: ninguno. (Nota de sesión: los tokens GitHub aportados al inicio
+  están revocados; el push funciona por el askpass del contenedor y la API
+  quedó sin cuota — PR abierto vía web/URL de compare si la API sigue
+  limitada.)
+- Estado en TASKS.md: S-2 en revisión (rama agent/sensor/s-2-yara)

@@ -3,6 +3,18 @@
 Archivo vivo de mi carril: lo hecho, lo a medias y lo siguiente. El QUÉ con
 detalle vive en TODO.md; la prioridad, en docs/agentes/ROADMAP.md.
 
+## Estado tras la ronda 2026-10-21 (20h15)
+
+- **S-2 (YARA, ficheros escritos + bajo demanda) — entregada** (rama
+  `agent/sensor/s-2-yara`): sesión Kernel-File propia, worker de escaneo
+  fuera de los callbacks, reglas por directorio con recarga por
+  fingerprint, `yara.match` + bloque `yara_*` en el latido, subcomando
+  `scan`. CONTRATO S-2↔M-3 propuesto en
+  `ronda_2026-10-21_20h15_B.md` (directorio + bundle.json + sha del lote
+  en el latido); M-3 lo consume o lo ajusta antes de su PR.
+- S-4 y el ritual S-1 ya fusionados (PR #42 y #40); S-5 (collector split,
+  ajena) fusionada en PR #43.
+
 ## Estado tras la ronda 2026-10-21 (19h10)
 
 - **S-4 (parte latido) — entregada** (PR #42): `etw_events_lost`,
@@ -16,11 +28,10 @@ detalle vive en TODO.md; la prioridad, en docs/agentes/ROADMAP.md.
 
 ## Siguiente en mi backlog (orden del ROADMAP general)
 
-1. **S-2 YARA con yara-x**: ficheros escritos y bajo demanda; memoria
-   después. Condición: definir con M-3 el contrato de distribución firmada
-   de reglas antes de implementar contra nada inventado. Propongo arrancar
-   cuando Implementaciones A publique intención de M-3.
-2. **S-3** auditoría de servicios con permisos débiles (solo lectura).
+1. **S-3** auditoría de servicios con permisos débiles (solo lectura).
+2. **YARA memoria** (quedó abierta en TODO.md): escaneo del contenido de
+   procesos; antes conviene el visto bueno al hueco declarado de
+   atribución de proceso en `yara.match` (Kernel-File no trae PID).
 3. **E-2** acciones cerradas en sensor — bloqueada por el visto bueno del
    humano al contrato de E-1.
 4. **E-1** junto a Implementaciones A cuando el humano apruebe.
