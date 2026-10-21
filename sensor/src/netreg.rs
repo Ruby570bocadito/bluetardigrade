@@ -9,13 +9,18 @@
 //     to the hive names Sysmon uses (HKLM\..., HKU\<SID>\...), so the
 //     same rules match both sensors. The per-user classes hive
 //     (<SID>_Classes) is shown as HKU\<SID>\Software\Classes, the view
-//     every HKCU\Software\Classes rule is written against.
+//     every HKCU\Software\Classes rule is written against. A key whose
+//     base handle predates the sensor comes under an unknown root
+//     (regnames.rs: "?\..."); when the writing process's user is known
+//     the root resolves to that user's hive (HKU\<SID>), and the caller
+//     marks the event as inferred instead of asserting a seen path.
 //   - registry values: rendered like Sysmon's Details field
 //     ("DWORD (0x00000001)", strings as text, "Binary Data").
 //   - the registry filter: SetValueKey fires thousands of times per
 //     second on a busy host; only the keys detections look at are
 //     forwarded (persistence, defense evasion, privilege escalation).
 
+use crate::regnames::UNKNOWN_ROOT;
 use std::collections::HashMap;
 use std::net::IpAddr;
 
@@ -71,6 +76,29 @@ fn strip_suffix_ci<'a>(s: &'a str, suffix: &str) -> Option<&'a str> {
     let cut = s.len().checked_sub(suffix.len())?;
     let tail = s.get(cut..)?;
     tail.eq_ignore_ascii_case(suffix).then(|| &s[..cut])
+}
+
+/// Normalized hive path of a kernel key, with the unknown root
+/// ("?" from regnames.rs: the key was opened relative to a handle the
+/// sensor never saw opened) resolved to the writing process's user hive
+/// when its SID is known — the sanctioned reading of "?\Software\..." is
+/// that user's HKU\<SID>. Returns the path and, when the root was
+/// inferred from the user, the root that was used (the caller marks the
+/// event); without a SID the unknown root stays in the path rather than
+/// being invented.
+pub fn registry_path_resolved(kernel: &str, user_sid: Option<&str>) -> (String, Option<String>) {
+    let path = kernel.trim_end_matches('\\');
+    let rooted = path == UNKNOWN_ROOT || path.starts_with(&format!("{UNKNOWN_ROOT}\\"));
+    if !rooted {
+        return (registry_path(kernel), None);
+    }
+    match user_sid {
+        Some(sid) if !sid.trim().is_empty() => {
+            let tail = &path[UNKNOWN_ROOT.len()..]; // "" or "\..."
+            (registry_path(&format!("\\REGISTRY\\USER\\{sid}{tail}")), Some(format!("HKU\\{sid}")))
+        }
+        _ => (registry_path(kernel), None),
+    }
 }
 
 const REG_SZ: u32 = 1;
@@ -152,50 +180,57 @@ pub fn interesting_registry(key: &str, value_name: &str) -> bool {
     value == "userinitmprlogonscript"
 }
 
-/// PID -> process name, fed by the kernel process start and rundown
-/// events, so network and registry events (which only carry a PID) get
-/// a name. Bounded: past the cap the oldest half is forgotten.
+/// PID -> (process name, user SID), fed by the kernel process start and
+/// rundown events, so network and registry events (which only carry a
+/// PID) get a name and, for the registry, the writer's hive. Bounded:
+/// past the cap the oldest half is forgotten.
 pub struct ProcessTable {
     cap: usize,
-    names: HashMap<u32, (u64, String)>,
+    entries: HashMap<u32, (u64, String, Option<String>)>,
     tick: u64,
 }
 
 impl ProcessTable {
     pub fn new(cap: usize) -> Self {
-        Self { cap: cap.max(16), names: HashMap::new(), tick: 0 }
+        Self { cap: cap.max(16), entries: HashMap::new(), tick: 0 }
     }
 
-    pub fn insert(&mut self, pid: u32, name: String) {
-        if name.is_empty() {
+    pub fn insert(&mut self, pid: u32, name: String, user: Option<String>) {
+        if name.is_empty() && user.is_none() {
             return;
         }
         self.tick += 1;
-        self.names.insert(pid, (self.tick, name));
-        if self.names.len() > self.cap {
-            let mut ticks: Vec<u64> = self.names.values().map(|(t, _)| *t).collect();
+        self.entries.insert(pid, (self.tick, name, user));
+        if self.entries.len() > self.cap {
+            let mut ticks: Vec<u64> = self.entries.values().map(|(t, _, _)| *t).collect();
             ticks.sort_unstable();
             let cutoff = ticks[ticks.len() / 2];
-            self.names.retain(|_, (t, _)| *t > cutoff);
+            self.entries.retain(|_, (t, _, _)| *t > cutoff);
         }
     }
 
     pub fn remove(&mut self, pid: u32) {
-        self.names.remove(&pid);
+        self.entries.remove(&pid);
     }
 
     /// Known name, or "pid <n>" so the event still reads.
     pub fn name(&self, pid: u32) -> String {
-        match self.names.get(&pid) {
-            Some((_, name)) => name.clone(),
-            None if pid == 4 => "System".to_string(),
-            None => format!("pid {pid}"),
+        match self.entries.get(&pid) {
+            Some((_, name, _)) if !name.is_empty() => name.clone(),
+            _ if pid == 4 => "System".to_string(),
+            _ => format!("pid {pid}"),
         }
+    }
+
+    /// The owner SID of the process, when a start or rundown event
+    /// carried it (the writer's hive for registry events).
+    pub fn user(&self, pid: u32) -> Option<String> {
+        self.entries.get(&pid).and_then(|(_, _, user)| user.clone())
     }
 
     #[cfg(test)]
     fn len(&self) -> usize {
-        self.names.len()
+        self.entries.len()
     }
 }
 
@@ -278,21 +313,66 @@ mod tests {
         // a key opened under a base the sensor never saw (regnames.rs)
         assert!(interesting_registry(r"?\Software\Microsoft\Windows\CurrentVersion\Run", "x"));
         assert_eq!(registry_path(r"?\Software\Microsoft\Windows\CurrentVersion\Run"), r"?\Software\Microsoft\Windows\CurrentVersion\Run");
+        // ...and it stays detectable after the user-side resolution
+        let (resolved, inferred) = registry_path_resolved(
+            r"?\Software\Microsoft\Windows\CurrentVersion\Run",
+            Some("S-1-5-21-1-2-3-1001"),
+        );
+        assert!(inferred.is_some());
+        assert!(interesting_registry(&resolved, "x"), "{resolved}");
+    }
+
+    #[test]
+    fn the_unknown_root_resolves_through_the_writers_user() {
+        const RUN: &str = r"?\Software\Microsoft\Windows\CurrentVersion\Run";
+        const SID: &str = "S-1-5-21-1-2-3-1001";
+        const ROOT: &str = "HKU\\S-1-5-21-1-2-3-1001";
+        // the sanctioned reading: the writer's own hive, HKU\<SID>
+        assert_eq!(
+            registry_path_resolved(RUN, Some(SID)),
+            (
+                "HKU\\S-1-5-21-1-2-3-1001\\Software\\Microsoft\\Windows\\CurrentVersion\\Run".to_string(),
+                Some(ROOT.to_string())
+            )
+        );
+        // the hive root itself, with no relative part
+        assert_eq!(registry_path_resolved("?", Some(SID)), (ROOT.to_string(), Some(ROOT.to_string())));
+        // without a user the "?" stays: the hive is not invented
+        assert_eq!(registry_path_resolved(RUN, None), (RUN.to_string(), None));
+        assert_eq!(registry_path_resolved(RUN, Some("")), (RUN.to_string(), None));
+        assert_eq!(registry_path_resolved(RUN, Some("  ")), (RUN.to_string(), None));
+        // keys with a known root are untouched (and not marked)
+        assert_eq!(
+            registry_path_resolved("\\REGISTRY\\USER\\S-1-5-18\\Software", Some(SID)),
+            ("HKU\\S-1-5-18\\Software".to_string(), None)
+        );
+        // a "?" that is not the root is not a resolution candidate
+        assert_eq!(registry_path_resolved("HKLM\\?\\Run", Some(SID)), ("HKLM\\?\\Run".to_string(), None));
     }
 
     #[test]
     fn the_process_table_names_and_stays_bounded() {
         let mut table = ProcessTable::new(16);
-        table.insert(100, "powershell.exe".into());
+        table.insert(100, "powershell.exe".into(), Some("S-1-5-21-1-2-3-1001".into()));
         assert_eq!(table.name(100), "powershell.exe");
+        assert_eq!(table.user(100).as_deref(), Some("S-1-5-21-1-2-3-1001"));
         assert_eq!(table.name(4), "System");
         assert_eq!(table.name(7), "pid 7");
-        table.insert(101, String::new());
+        assert_eq!(table.user(7), None);
+        // a process whose name is unknown but whose user is known is
+        // kept: the user is what resolves its registry writes
+        table.insert(101, String::new(), Some("S-1-5-18".into()));
         assert_eq!(table.name(101), "pid 101", "an empty name is not recorded");
+        assert_eq!(table.user(101).as_deref(), Some("S-1-5-18"));
+        table.insert(102, String::new(), None);
+        assert_eq!(table.user(102), None, "nothing known about it: not recorded");
+        // a later start replaces both name and user
+        table.insert(100, "powershell.exe".into(), None);
+        assert_eq!(table.user(100), None);
         table.remove(100);
         assert_eq!(table.name(100), "pid 100");
         for pid in 0..100 {
-            table.insert(1000 + pid, format!("p{pid}.exe"));
+            table.insert(1000 + pid, format!("p{pid}.exe"), None);
         }
         assert!(table.len() <= 16);
         assert_eq!(table.name(1099), "p99.exe", "the newest entries survive");
