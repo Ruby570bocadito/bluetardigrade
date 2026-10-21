@@ -20,6 +20,7 @@ conserva la trazabilidad completa.
 | [PHISHING.md](PHISHING.md) | Señales observables en correo EML y límites de la detección offline |
 | [WINDOWS-SERVER.md](WINDOWS-SERVER.md) | Despliegue persistente sin sesión gráfica y configuración del servidor |
 | [FLOTA-REMOTA.md](FLOTA-REMOTA.md) | Vigilar varios equipos desde un servidor: alta de equipos, identidades, TLS, cortafuegos, tarea de arranque y alerta de sensor sin señal |
+| [AD-WEF-SUSCRIPCION.md](AD-WEF-SUSCRIPCION.md) | Esqueleto de la guía de suscripción WEF: registro de Seguridad de DC y servidores sin instalarles nada (F3, AD; contrato pendiente en M-7) |
 | [PRUEBAS-PENDIENTES.md](PRUEBAS-PENDIENTES.md) | Lista de pruebas que necesitan un Windows real (sensor, Sysmon, flota remota, inteligencia, línea base, cuentas de la consola) |
 | [../intel/README.md](../intel/README.md) | Listas de inteligencia offline: formato de los ficheros, qué se compara, recarga y límites |
 | [SMART-APP-CONTROL.md](SMART-APP-CONTROL.md) | Diagnóstico de bloqueos de ejecución y distribución con firmas Authenticode |
