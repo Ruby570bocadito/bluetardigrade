@@ -19,7 +19,10 @@
 //       see every machine)
 //
 // The password is read from the terminal (or from stdin when piped) and
-// only its PBKDF2-SHA256 hash is stored. The console re-reads the file
+// only its PBKDF2-SHA256 hash is stored. On a terminal the rules come
+// first and a mistyped pair (or a too-short password) is asked again,
+// up to three times, instead of failing the whole command; piped, one
+// password is read, no repetition. The console re-reads the file
 // on its own; changing a password, a role, the groups or the two-step
 // sign-in, or removing an account, ends that account's open sessions. Account names
 // compare without case, as in the console.
@@ -30,6 +33,10 @@ import { dirname } from 'node:path'
 import { createInterface } from 'node:readline'
 
 const ITERATIONS = 310_000
+// the console's own minimum (lib/login.ts, lib/accounts.ts)
+const MIN_PASSWORD = 12
+// how many times a terminal attempt is repeated before giving up
+const PASSWORD_TRIES = 3
 const USER_RE = /^[\p{L}\p{N}._@-]{1,64}$/u
 const ROLES = ['admin', 'analyst', 'viewer']
 // the engine's group names (internal/hostgroup) and the console's cap
@@ -103,12 +110,33 @@ async function readPassword() {
         resolve(answer)
       })
     })
-  const first = await ask(`Contraseña para ${user}: `)
-  const second = tty ? await ask('Repite la contraseña: ') : first
-  rl.close()
-  if (first !== second) throw new Error('las contraseñas no coinciden')
-  if (first.length < 12) throw new Error('usa al menos 12 caracteres')
-  return first
+  try {
+    // piped: one password, no repetition (a script knows what it sends)
+    if (!tty) {
+      const only = await ask(`Contraseña para ${user}: `)
+      if (only.length < MIN_PASSWORD) throw new Error(`usa al menos ${MIN_PASSWORD} caracteres`)
+      return only
+    }
+    // interactive: the rules up front, then up to PASSWORD_TRIES
+    // attempts — a slip must not fail the whole command (sf-start's
+    // first-account flow would re-ask the name otherwise)
+    process.stderr.write(`mínimo ${MIN_PASSWORD} caracteres; no se ve mientras la escribes\n`)
+    let problem = 'las contraseñas no coinciden'
+    for (let attempt = 1; attempt <= PASSWORD_TRIES; attempt++) {
+      const first = await ask(`Contraseña para ${user}: `)
+      const second = await ask('Repite la contraseña: ')
+      if (first === second && first.length >= MIN_PASSWORD) return first
+      problem = first !== second ? 'las contraseñas no coinciden' : `usa al menos ${MIN_PASSWORD} caracteres`
+      if (attempt < PASSWORD_TRIES) {
+        process.stderr.write(problem === 'las contraseñas no coinciden'
+          ? 'no coinciden: escríbela de nuevo\n'
+          : `demasiado corta (${first.length} de ${MIN_PASSWORD}): escríbela de nuevo\n`)
+      }
+    }
+    throw new Error(problem)
+  } finally {
+    rl.close()
+  }
 }
 
 function entryFor(password) {
