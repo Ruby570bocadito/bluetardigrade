@@ -322,4 +322,10 @@ Reglas rápidas:
   `.cargo/audit.toml` (raíz — deps-audit corre cargo audit desde la raíz;
   cargo-audit 0.22 lee .cargo/ del CWD o padres; verificado localmente
   exit 0). DECISIÓN ABIERTA A VETO de OPS/humano; módulo `crx` fuera.
+  Además: audit-check no puede publicar un informe NO vacío con el token
+  actual (contents: read) y sale 1 aunque el contenido esté limpio; el
+  aviso informativo de bincode (unmaintained, transitivo de yara-x) entra
+  en la excepción para que el informe quede vacío. AG-4: un `checks:
+  write` en deps-audit.yml devolvería estos avisos a la vista sin la
+  excepción.
 - Estado en TASKS.md: S-2 en revisión (PR #48)
