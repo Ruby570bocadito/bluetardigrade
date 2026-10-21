@@ -16,6 +16,7 @@ pub(super) const OPCODE_PROCESS_DC_END: u8 = 4;
 /// Session names (Windows 8+; older systems force "NT Kernel Logger").
 pub(super) const SESSION_NAME: &str = "bluetardigrade-sensor";
 pub(super) const NETREG_SESSION_NAME: &str = "bluetardigrade-sensor-netreg";
+pub(super) const FILE_SESSION_NAME: &str = "bluetardigrade-sensor-file";
 
 pub(super) const KERNEL_NETWORK: &str = "7dd42a49-5329-4832-8dfd-43d979153a88";
 /// KERNEL_NETWORK_KEYWORD_IPV4 | KERNEL_NETWORK_KEYWORD_IPV6
@@ -48,6 +49,23 @@ pub(super) const KERNEL_PROCESS: &str = "22fb2cd6-0e7b-422b-a0c7-2fad1fd0e716";
 /// WINEVENT_KEYWORD_PROCESS
 pub(super) const KERNEL_PROCESS_KEYWORD: u64 = 0x10;
 pub(super) const EVENT_KP_PROCESS_START: u16 = 1;
+
+/// Microsoft-Windows-Kernel-File (S-2): file writes for the YARA scanner.
+/// Event 12 (Create) carries the FileName the write event (16) only
+/// references by FileObject, exactly like the registry writes above.
+pub(super) const KERNEL_FILE: &str = "edd08927-9cc4-4e65-b970-c2560fb5c289";
+/// FILEIO | CREATE | WRITE: the events that name file objects and the
+/// writes on them. Nothing else of the provider is enabled.
+pub(super) const KERNEL_FILE_KEYWORDS: u64 = 0x20 | 0x80 | 0x200;
+pub(super) const EVENT_FILE_CREATE: u16 = 12;
+pub(super) const EVENT_FILE_WRITE: u16 = 16;
+/// File objects remembered by name (a busy host churns through file
+/// objects; the map forgets everything once this is exceeded, the same
+/// policy as the registry key names).
+pub(super) const FILE_NAMES_CAP: usize = 65_536;
+/// File writes waiting for the YARA worker (files, not bytes: the worker
+/// stats and dedupes before reading anything).
+pub(super) const YARA_QUEUE: usize = 512;
 /// Images kept per PID, for how long, and how long the enrichment thread
 /// waits for the image of a process that exited before it was read.
 pub(super) const RECENT_IMAGES_CAP: usize = 8192;
@@ -85,6 +103,9 @@ pub struct Capture {
     pub dns: bool,
     /// SHA-256 of the image of each process start
     pub hash: bool,
+    /// YARA scanning of written files (Some: on, with its rules
+    /// directory, size cap and exclusions; None: no file session at all)
+    pub yara: Option<crate::yara::YaraConfig>,
     /// print how registry keys containing this fragment are named
     /// (diagnostics for the key-name resolution)
     pub debug_registry: Option<String>,

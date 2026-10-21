@@ -34,6 +34,15 @@ pub struct Health {
     /// image-hash thread could not take them (behind, stopped or
     /// unavailable; hashing off by --no-hash does not count)
     pub hash_dropped: u64,
+    /// YARA scanning (S-2): rules in memory (0 = off), the sha256 prefix
+    /// of the loaded rules (empty while off), files scanned, rules that
+    /// matched, writes the worker could not take, and read/scan failures
+    pub yara_rules: u64,
+    pub yara_rules_sha: String,
+    pub yara_scans: u64,
+    pub yara_matches: u64,
+    pub yara_dropped: u64,
+    pub yara_errors: u64,
     /// "service" (Windows service manager) or "console" (started by hand)
     pub run_mode: &'static str,
 }
@@ -57,6 +66,17 @@ pub fn attributes(h: &Health) -> BTreeMap<String, String> {
     out.insert("etw_events_lost".into(), h.etw_events_lost.to_string());
     out.insert("etw_buffers_lost".into(), h.etw_buffers_lost.to_string());
     out.insert("hash_dropped".into(), h.hash_dropped.to_string());
+    // the YARA block follows the same rule as the loss counters: the
+    // numeric fields always travel (0 = off or idle), the sha only when
+    // rules are in memory (it names the loaded bundle, contract S-2<->M-3)
+    out.insert("yara_rules".into(), h.yara_rules.to_string());
+    if !h.yara_rules_sha.is_empty() {
+        out.insert("yara_rules_sha".into(), h.yara_rules_sha.clone());
+    }
+    out.insert("yara_scans".into(), h.yara_scans.to_string());
+    out.insert("yara_matches".into(), h.yara_matches.to_string());
+    out.insert("yara_dropped".into(), h.yara_dropped.to_string());
+    out.insert("yara_errors".into(), h.yara_errors.to_string());
     out.insert("run_mode".into(), h.run_mode.into());
     out
 }
@@ -112,7 +132,7 @@ mod tests {
             kind: "etw",
             version: "1.0.0",
             os: "Windows 11 Pro 24H2 (26100)".into(),
-            capture: "process+network+registry".into(),
+            capture: "process+network+registry+yara".into(),
             interval_s: 60,
             uptime_s: 3600,
             queue_cap: 50_000,
@@ -121,6 +141,12 @@ mod tests {
             etw_events_lost: 7,
             etw_buffers_lost: 2,
             hash_dropped: 11,
+            yara_rules: 42,
+            yara_rules_sha: "abcdef0123456789".into(),
+            yara_scans: 9,
+            yara_matches: 1,
+            yara_dropped: 4,
+            yara_errors: 0,
             run_mode: "service",
         });
         assert_eq!(a["sensor_kind"], "etw");
@@ -132,7 +158,13 @@ mod tests {
         assert_eq!(a["etw_events_lost"], "7");
         assert_eq!(a["etw_buffers_lost"], "2");
         assert_eq!(a["hash_dropped"], "11");
-        assert_eq!(a.len(), 13);
+        assert_eq!(a["yara_rules"], "42");
+        assert_eq!(a["yara_rules_sha"], "abcdef0123456789");
+        assert_eq!(a["yara_scans"], "9");
+        assert_eq!(a["yara_matches"], "1");
+        assert_eq!(a["yara_dropped"], "4");
+        assert_eq!(a["yara_errors"], "0");
+        assert_eq!(a.len(), 19);
     }
 
     #[test]
@@ -152,16 +184,26 @@ mod tests {
             etw_events_lost: 0,
             etw_buffers_lost: 0,
             hash_dropped: 0,
+            yara_rules: 0,
+            yara_rules_sha: String::new(),
+            yara_scans: 0,
+            yara_matches: 0,
+            yara_dropped: 0,
+            yara_errors: 0,
             run_mode: "console",
         });
         assert_eq!(a["etw_events_lost"], "0");
         assert_eq!(a["etw_buffers_lost"], "0");
         assert_eq!(a["hash_dropped"], "0");
+        // YARA off: numeric counters at zero, no sha to name a bundle
+        assert_eq!(a["yara_rules"], "0");
+        assert_eq!(a["yara_scans"], "0");
+        assert!(!a.contains_key("yara_rules_sha"));
     }
 
     #[test]
     fn empty_os_is_omitted() {
-        let a = attributes(&Health { kind: "etw", version: "x", os: String::new(), capture: "process".into(), interval_s: 60, uptime_s: 0, queue_cap: 1, spooled: 0, dropped: 0, etw_events_lost: 0, etw_buffers_lost: 0, hash_dropped: 0, run_mode: "console" });
+        let a = attributes(&Health { kind: "etw", version: "x", os: String::new(), capture: "process".into(), interval_s: 60, uptime_s: 0, queue_cap: 1, spooled: 0, dropped: 0, etw_events_lost: 0, etw_buffers_lost: 0, hash_dropped: 0, yara_rules: 0, yara_rules_sha: String::new(), yara_scans: 0, yara_matches: 0, yara_dropped: 0, yara_errors: 0, run_mode: "console" });
         assert!(!a.contains_key("os"));
     }
 

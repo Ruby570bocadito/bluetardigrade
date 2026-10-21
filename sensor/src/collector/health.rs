@@ -27,6 +27,13 @@ pub(super) fn start_heartbeat(ctx: Arc<Shared>, capture: String, run_mode: &'sta
         .spawn(move || loop {
             let stats = ctx.pipeline.stats();
             let (etw_events_lost, etw_buffers_lost) = etw_lost_counts(&sessions, &mut warned);
+            // the YARA worker's counters (zeros and no bundle sha while
+            // scanning is off — YaraStats::get is the only reader)
+            let (yara_rules, yara_scans, yara_matches, yara_errors, yara_dropped, yara_rules_sha) = ctx
+                .yara_stats
+                .as_ref()
+                .map(|s| s.get())
+                .unwrap_or((0, 0, 0, 0, 0, String::new()));
             let health = Health {
                 kind: "etw",
                 version: env!("CARGO_PKG_VERSION"),
@@ -40,6 +47,12 @@ pub(super) fn start_heartbeat(ctx: Arc<Shared>, capture: String, run_mode: &'sta
                 etw_events_lost,
                 etw_buffers_lost,
                 hash_dropped: ctx.hash_dropped.load(Ordering::Relaxed),
+                yara_rules,
+                yara_rules_sha,
+                yara_scans,
+                yara_matches,
+                yara_dropped,
+                yara_errors,
                 run_mode,
             };
             ctx.emit(&EventJson {
@@ -52,6 +65,7 @@ pub(super) fn start_heartbeat(ctx: Arc<Shared>, capture: String, run_mode: &'sta
                 process: None,
                 network: None,
                 registry: None,
+                file: None,
                 attributes: Some(heartbeat::attributes(&health)),
                 tags: vec!["sensor:etw".into()],
             });

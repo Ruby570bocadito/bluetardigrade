@@ -48,6 +48,19 @@ pub struct NetworkJson {
     pub domain: Option<String>,
 }
 
+// Filled by the YARA scanner (yara.rs); same shape as model.File and
+// the engine's file-write events.
+#[derive(Serialize, Clone, Debug)]
+pub struct FileJson {
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extension: Option<String>,
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub size_bytes: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hashes: Option<HashesJson>,
+}
+
 // Filled from Microsoft-Windows-Kernel-Registry (collector.rs); same
 // shape as model.Registry and the Sysmon sensor's registry events.
 #[derive(Serialize, Clone, Debug)]
@@ -80,6 +93,9 @@ pub struct EventJson {
     pub network: Option<NetworkJson>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub registry: Option<RegistryJson>,
+    // populated by the YARA scanner (yara.rs, type yara.match)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file: Option<FileJson>,
     // declared observations (heartbeat health fields), model.Event attributes
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attributes: Option<std::collections::BTreeMap<String, String>>,
@@ -87,12 +103,22 @@ pub struct EventJson {
     pub tags: Vec<String>,
 }
 
+// The collector's event vocabulary (Windows-only: the handlers are the
+// only writers of those types).
+#[cfg(target_os = "windows")]
 pub const TYPE_PROCESS_CREATE: &str = "process.create";
 // phase 1: emitted by the ProcessStop callback of the collector
+#[cfg(target_os = "windows")]
 #[allow(dead_code)]
 pub const TYPE_PROCESS_TERMINATE: &str = "process.terminate";
+#[cfg(target_os = "windows")]
 pub const TYPE_NETWORK_CONNECT: &str = "network.connect";
+#[cfg(target_os = "windows")]
 pub const TYPE_REGISTRY_SET: &str = "registry.set";
+// YARA hit on a file written on the host (or scanned on demand with the
+// `scan` subcommand). The engine stores it as evidence; its detections,
+// severity and view are the consuming side's work (contract S-2<->M-3).
+pub const TYPE_YARA_MATCH: &str = "yara.match";
 
 pub fn now_rfc3339() -> String {
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
@@ -167,5 +193,9 @@ fn clock_prng_uuid() -> String {
 }
 
 fn is_zero(v: &i32) -> bool {
+    *v == 0
+}
+
+fn is_zero_i64(v: &i64) -> bool {
     *v == 0
 }

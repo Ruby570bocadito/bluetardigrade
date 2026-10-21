@@ -11,6 +11,14 @@ getrandom = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 time = { version = "0.3", features = ["formatting"] }
+# YARA scanning (S-2): pure Rust (VirusTotal), so the Windows cross-check
+# stays a plain cargo check with no C toolchain. Default features keep the
+# standard modules (pe, elf, hash, math...) usable by rule authors; the
+# WASM runtime below them is part of yara-x's module architecture and
+# comes with it (compile time grows accordingly, measured in the round
+# report). Rules load from a directory the engine manages (contract
+# S-2<->M-3); the scanner only runs when --yara-rules is given.
+yara-x = "1.22"
 
 # ETW consumption is Windows-only. The crate still builds anywhere
 # (argument parsing, normalization and transport compile on any OS),
