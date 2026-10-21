@@ -110,6 +110,12 @@ type Hub struct {
 	writeEnabled bool
 	suppressPath string
 
+	// read-only SQL console over the store (armed only with
+	// -api-db-query; see db_query.go): the flag IS the admin gate
+	// until the engine has a role model, and the handler refuses
+	// everything the store cannot answer read-only.
+	dbQueryArmed bool
+
 	// AD-6 settings surface (ad_settings.go): armed only with -ad,
 	// handlers additionally demand -api-write. adWriteMu serializes
 	// the config-file read-merge-write (and with it the engine's
@@ -258,6 +264,10 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	mux.HandleFunc("POST /api/respond/kill", h.handleRespondKill)
 	mux.HandleFunc("GET /api/respond/state", h.handleRespondState)
 	mux.HandleFunc("GET /api/respond/audit", h.handleRespondAudit)
+	// read-only SQL console (M-4): admin surface, armed with
+	// -api-db-query; scoped accounts never reach it (a raw SELECT
+	// cannot honor host-group scoping)
+	mux.HandleFunc("POST /api/db/query", unscopedOnly("La consulta SQL de la base de datos", h.handleDbQuery))
 	mux.HandleFunc("GET /api/sequences", h.handleSequences)
 	mux.HandleFunc("GET /api/fleet", h.handleFleet)
 	mux.HandleFunc("GET /api/groups", h.handleGroups)
