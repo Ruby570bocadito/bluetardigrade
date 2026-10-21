@@ -59,14 +59,6 @@ punto, con el CI en verde (incluidos los jobs de Windows) antes de fusionar.
 - [ ] Probar el instalador silencioso: salida en una pantalla, log en
   `%TEMP%\bluetardigrade-install.log`, `-ShowBuildOutput` y un fallo de
   compilación que siga mostrando el motivo.
-- [ ] **Alerta crítica sin aviso** (visto en las pruebas): tras una alerta
-  crítica no salta ningún aviso. Reproducirlo y revisar cada vía:
-  - la notificación del navegador y el sonido de Ajustes → Notificaciones
-    (solo con una pestaña abierta y el permiso del navegador concedido);
-  - el aviso dentro de la consola;
-  - los canales externos: `sf-start` ya pasa `tools\config\notify.yaml` al
-    motor y `sf-engine doctor` lo valida; queda probar la entrega real de
-    correo y Telegram en Windows real.
 
 ## F2 — Acceso
 
@@ -97,13 +89,6 @@ y cuentas: [OPERATIONS](docs/OPERATIONS.md#console-accounts-roles-and-audit).
 
 ## F3 — Funciones
 
-- [ ] **Asignar alertas** (TEAM-3): responsable en el ciclo de vida del motor,
-  vista «Mis alertas», cola sin asignar, reasignación y asignación en lote desde
-  la barra de selección.
-  *(Motor listo: `POST /api/alerts/{id}/assign`, `POST /api/alerts/assign-batch`,
-  filtros `assignee=`/`unassigned=` en `GET /api/alerts` y contrato M-1→C-2
-  publicado en `docs/agentes/02-implementaciones/ronda_2026-10-21_19h50_A.md`.
-  Falta la consola — C-2.)*
 - [ ] **Avisos al correo y al móvil.** El motor ya envía las alertas a Slack,
   Telegram y correo (`-notify`); `sf-start` ya pasa el fichero
   (`tools\config\notify.yaml`, con `notify.example.yaml` de plantilla) y
@@ -170,10 +155,6 @@ y cuentas: [OPERATIONS](docs/OPERATIONS.md#console-accounts-roles-and-audit).
 - [ ] **Editor de reglas en la consola** (IDEA-5): reglas YAML con validación,
   el probador que ya existe e historial de versiones; importar Sigma desde la
   consola (hoy solo por CLI).
-- [ ] **Consulta de la base de datos:** solo lectura (la evidencia es
-  append-only), límites de tiempo y filas, solo administradores y cada consulta
-  auditada. Puede apoyarse en el lenguaje de búsqueda (IDEA-4: `campo:valor`,
-  `AND`/`OR`/`NOT`, rangos).
 - [ ] **Active Directory:**
   - mejorar la vista Directorio: ficha de usuario y de equipo (grupos, OU,
     último inicio de sesión, estado de la cuenta), árbol de OU, cobertura
@@ -184,6 +165,10 @@ y cuentas: [OPERATIONS](docs/OPERATIONS.md#console-accounts-roles-and-audit).
   - detecciones: rociado de contraseñas (4625), Kerberoasting (4769 con RC4),
     DCSync (4662), altas en grupos privilegiados (4728/4732/4756), servicios
     nuevos (7045);
+    *(mitad endpoint entregada el 2026-10-22: tooling de Kerberoast, DCSync,
+    rociado, alta en grupo y servicio-intérprete en
+    `rules/windows/active-directory.yaml`; los IDs de evento del controlador
+    de dominio llegan con WEF — M-7.)*
   - AD-3 inicios de sesión (fuera de horario, cuentas privilegiadas en puestos,
     primer inicio en un equipo) y AD-4 cambios (cuentas, grupos, GPO), con
     retención configurable y acceso por rol (RGPD).
@@ -338,8 +323,6 @@ Detalle en [docs/PRUEBAS-PENDIENTES.md](docs/PRUEBAS-PENDIENTES.md).
   (POL-5).
 - [ ] Release con SBOM (CycloneDX) y el sensor firmado entre los artefactos
   (POL-6).
-- [ ] Entradas (SEC-3): rutas de descarga sin traversal, URLs de integraciones
-  validadas y ningún `dangerouslySetInnerHTML` con datos de eventos.
 - [ ] Cadena de suministro (SEC-6): auditar los componentes de terceros copiados
   en la consola.
 - [ ] Privacidad (SEC-9): minimizar datos personales en inicios de sesión y

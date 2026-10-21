@@ -1415,7 +1415,7 @@ every change. Artifact rules have positive/negative fixtures; Windows lab
 validation and environment-specific noise tuning remain separate checks.
 
 <!-- BEGIN RULE INVENTORY -->
-The enabled pack contains **114 rules across 12 event types**: 25 critical / 55 high / 28 medium / 3 low / 3 info.
+The enabled pack contains **119 rules across 12 event types**: 26 critical / 59 high / 28 medium / 3 low / 3 info.
 Full IDs are retained because different rules in a pack can share a UUID prefix.
 
 | ID | Rule | Severity | Event type | ATT&CK | Tactic |
@@ -1434,6 +1434,7 @@ Full IDs are retained because different rules in a pack can share a UUID prefix.
 | `75793606-cc2c-4eab-92d5-c9f0c6806290` | Escalada por suplantacion de token (Potato, PrintSpoofer) | critical | `process.create` | T1134.001 | privilege-escalation |
 | `deba0967-c92e-4d74-bd95-a8eebdff7d1a` | Exfiltracion con rclone | critical | `process.create` | T1567.002 | exfiltration |
 | `f518432f-f5f4-403b-8e13-d4f40f183dd3` | Exploit de Office via Equation Editor | critical | `process.create` | T1203 | execution, initial-access |
+| `39d340d0-d264-4581-ad14-0d6e4886b658` | Herramienta de replicacion de directorio (DCSync) | critical | `process.create` | T1003.006 | credential-access |
 | `a1b2c3d4-0001-4a01-9e01-010101010101` | Herramienta de volcado Mimikatz | critical | `process.create` | T1003.001 | credential-access |
 | `a7c4e5f1-9d28-4b36-8f47-1e5a9c3d6b33` | Manipulacion de Windows Defender | critical | `process.create` | T1562.001 | defense-evasion |
 | `b9531063-662b-4159-9b37-21bc52655ba1` | Nota de rescate escrita en disco | critical | `file.write` | T1486 | impact |
@@ -1446,6 +1447,7 @@ Full IDs are retained because different rules in a pack can share a UUID prefix.
 | `c3d4e5f6-0006-4c06-9e06-060606060606` | Volcado de ntds.dit con ntdsutil | critical | `process.create` | T1003.003 | credential-access |
 | `3e6a9c15-8d47-4b2e-9f01-5a8c3d7e2b55` | Volcado del registro SAM | critical | `process.create` | T1003.002 | credential-access |
 | `839b58d4-e21c-4184-ad3e-8ec277fa5d46` | Acceso a contrasenas y cookies del navegador | high | `process.create` | T1555.003 | collection, credential-access |
+| `f9486d99-a3cc-48f7-9b4f-f9e0dffcf822` | Alta en grupo con net.exe | high | `process.create` | T1098 | persistence |
 | `d4e5f607-1006-4a00-8000-000000000006` | Artefacto de volcado de LSASS escrito en disco | high | `file.write` | T1003.001 | credential-access |
 | `8dbf416a-d29c-4073-a556-afd182cd70aa` | Borrado de registros de eventos | high | `process.create` | T1070.001 | defense-evasion |
 | `c3d4e5f6-0005-4c05-9e05-050505050505` | Borrado del diario USN con fsutil | high | `process.create` | T1070.005 | defense-evasion |
@@ -1492,9 +1494,12 @@ Full IDs are retained because different rules in a pack can share a UUID prefix.
 | `9f31c2a4-5d7b-4e18-8a02-3b9c6d1e7f40` | PowerShell con comando codificado | high | `process.create` | T1059.001 | execution |
 | `6a6b145f-34d4-440e-8041-238dde766981` | Reconocimiento lanzado desde un proceso sospechoso | high | `process.create` | T1033, T1082 | discovery |
 | `f000c873-4dbe-485e-8328-120a9e3e8339` | Registro de bloques de PowerShell desactivado | high | `registry.set` | T1562.002 | defense-evasion |
+| `47051c0e-e898-4601-89b6-3c2c0d763883` | Rociado de contrasenas desde el endpoint | high | `process.create` | T1110.003 | credential-access |
 | `c3d4e5f6-0004-4c04-9e04-040404040404` | Sabotaje de recuperacion de arranque con bcdedit | high | `process.create` | T1490 | impact |
+| `ce2a2bf1-6ab3-4a99-8c97-e2777f2a3b37` | Servicio de Windows con interprete como binario | high | `process.create` | T1543.003 | persistence |
 | `b75edbba-b156-4c8b-9619-323fdb019781` | Servicio nuevo con binario en ruta de usuario | high | `process.create` | T1543.003 | persistence, privilege-escalation |
 | `4160fe22-e519-486c-91f2-779c5b814869` | Servicio remoto creado o arrancado con sc | high | `process.create` | T1021.002, T1569.002 | lateral-movement |
+| `0d23b539-0df4-49c9-b43e-3b78964a54cc` | Solicitud de tickets Kerberos para un SPN | high | `process.create` | T1558.003 | credential-access |
 | `909287cd-287a-4336-8109-a3e946334e61` | Subida de ficheros con bitsadmin | high | `process.create` | T1048, T1197 | exfiltration |
 | `53eeff7e-dd36-4321-b468-b2ff0365b223` | Subida de ficheros con curl o PowerShell | high | `process.create` | T1048.003 | exfiltration |
 | `soc-ids-priority-high` | Suricata: firma de prioridad alta | high | `network.alert` |  |  |

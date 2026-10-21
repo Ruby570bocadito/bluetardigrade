@@ -62,8 +62,14 @@ func New(url string) *Client {
 
 func newClient(url string, queue int) *Client {
 	return &Client{
-		url:     url,
-		hc:      &http.Client{Timeout: postTimeout},
+		url: url,
+		// No transparent redirects: a 3xx would re-POST the alert
+		// payload (Bearer token included, same host) wherever the
+		// receiver's Location points. The 3xx itself falls through to
+		// the definitive-failure branch of post().
+		hc: &http.Client{Timeout: postTimeout, CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}},
 		queue:   make(chan alert.Alert, queue),
 		backoff: 400 * time.Millisecond,
 	}

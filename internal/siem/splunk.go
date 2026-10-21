@@ -59,9 +59,14 @@ func newSplunk(url string, queue int) (*Splunk, error) {
 		return nil, err
 	}
 	return &Splunk{
-		spool:       newSpool(queue),
-		url:         trimTrailingSlash(url),
-		hc:          &http.Client{Timeout: splunkPostTimeout},
+		spool: newSpool(queue),
+		url:   trimTrailingSlash(url),
+		// No transparent redirects: the HEC token rides the
+		// Authorization header and the body is alert evidence; a 3xx
+		// must not carry either to the Location host.
+		hc: &http.Client{Timeout: splunkPostTimeout, CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}},
 		backoff:     400 * time.Millisecond,
 		nowFallback: time.Now,
 	}, nil

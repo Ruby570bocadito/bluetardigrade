@@ -52,6 +52,7 @@ type options struct {
 	pidFile          string
 	pprofDir         string
 	apiWrite         bool
+	apiDbQuery       bool
 	allowKill        bool
 	respondOperators string
 	respondProtected string
@@ -117,6 +118,8 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 		"TLS private key (PEM) for the HTTP API listener; requires -api-cert; empty keeps plain HTTP")
 	fs.BoolVar(&o.apiWrite, "api-write", false,
 		"arm POST/DELETE /api/suppressions (writes land on the -suppressions file; refused at startup when the API has no token beyond loopback; falls back to SF_API_WRITE=1)")
+	fs.BoolVar(&o.apiDbQuery, "api-db-query", false,
+		"arm POST /api/db/query: read-only SQL over the -store SQLite database (one SELECT statement, max 5000 rows and 30 s per query, every attempt audited in the store; requires -store; refused at startup when the API has no token beyond loopback; falls back to SF_API_DB_QUERY=1)")
 	fs.BoolVar(&o.allowKill, "allow-kill", false,
 		"arm POST /api/respond/kill (active response, kill_process, SIGKILL fixed); REQUIRES -api-token/SF_API_TOKEN even on loopback; requires -respond-audit to open, or the surface stays disabled; the process-name check protects against killing the wrong PID, not against malware disguising its identity - the kill decision belongs to a human operator (falls back to SF_ALLOW_KILL=1)")
 	fs.StringVar(&o.respondOperators, "respond-operators", "./respond-operators.yaml",

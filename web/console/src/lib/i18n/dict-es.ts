@@ -486,6 +486,43 @@ export const dictEs = {
     filterSev: (sev: string): string => `severidad ${sev}`,
     filterState: (state: string): string => `estado ${state}`,
     filterQuery: (q: string): string => `búsqueda «${q}»`,
+
+    // assignment (TEAM-3/C-2): the queue lens, the row chip and the
+    // assignment block of the detail panel. Names (assignee, assigned_by)
+    // are engine data and stay untranslated.
+    assigneeFilterAria: 'Filtrar por responsable',
+    assigneeOptions: {
+      all: 'Toda asignación',
+      mine: 'Mis alertas',
+      unassigned: 'Sin asignar',
+    },
+    filterAssigneeMine: 'asignadas a mí',
+    filterAssigneeUnassigned: 'sin asignar',
+    emptyMineTitle: 'Nada asignado a ti',
+    emptyMineHint: 'Cuando alguien te asigne una alerta, aparecerá aquí.',
+    emptyUnassignedTitle: 'La cola sin asignar está vacía',
+    emptyUnassignedHint: 'Cada alerta de la ventana tiene responsable: así debe estar.',
+    assignChipTitle: (who: string): string => `Asignada a ${who}`,
+    assignHeading: 'Asignación',
+    unassignedProse: 'Sin responsable: cualquiera con permiso de triaje puede tomársela.',
+    assigneeLine: (who: string, by: string, when: string): string => `Responsable ${who} · asignó ${by} · ${when}`,
+    assignMine: 'Asignármela',
+    assignOther: 'Asignar a…',
+    reassign: 'Reasignar…',
+    unassign: 'Quitar asignación',
+    bulkAssign: 'Asignar',
+    assignDialogTitle: (n: number): string => (n === 1 ? 'Asignar alerta' : `Asignar ${n} alertas`),
+    assignDialogIntro: 'El responsable la ve en «Mis alertas». El motor firma quién la asignó y cuándo.',
+    mineOption: (me: string): string => `A mí (${me})`,
+    otherOption: 'A otro analista',
+    noneOption: 'Quitar la asignación',
+    nameAria: 'Nombre del analista',
+    namePlaceholder: 'nombre del analista',
+    submitAssign: 'Asignar',
+    submitUnassign: 'Quitar',
+    assignResultOk: (n: number): string => (n === 1 ? '1 asignada' : `${n} asignadas`),
+    assignResultFailed: (n: number): string => (n === 1 ? '1 con error' : `${n} con error`),
+    failedListAria: 'Alertas que no se pudieron asignar',
   },
 
   // Critical-alert notifier (header bell). Preference prose, switches and

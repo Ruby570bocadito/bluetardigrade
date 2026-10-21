@@ -351,3 +351,39 @@ func (b *syncBuffer) String() string {
 	defer b.mu.Unlock()
 	return b.buf.String()
 }
+
+// A 3xx from the receiver must end the attempt where it is: following
+// it would re-POST the alert payload (and the Bearer token, same host)
+// to whatever host the Location names. The 3xx counts as one failed
+// delivery, and the redirect target must never see a byte.
+func TestRedirectIsNotFollowed(t *testing.T) {
+	var targetHits atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		targetHits.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer target.Close()
+
+	seen := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusFound)
+		seen <- struct{}{}
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+	ctx, cancel := context.WithCancel(context.Background())
+	go c.Run(ctx)
+	c.Handle(testAlert())
+	<-seen
+	cancel()
+	c.Wait()
+
+	if n := targetHits.Load(); n != 0 {
+		t.Fatalf("redirect target received %d deliveries, want 0", n)
+	}
+	sent, failed, dropped := c.Stats()
+	if sent != 0 || failed != 1 || dropped != 0 {
+		t.Fatalf("stats = sent=%d failed=%d dropped=%d, want 0/1/0", sent, failed, dropped)
+	}
+}

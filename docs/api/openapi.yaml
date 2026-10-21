@@ -1812,6 +1812,123 @@ paths:
               schema:
                 type: string
 
+  /api/db/query:
+    post:
+      tags: [telemetry]
+      operationId: dbQuery
+      summary: Read-only SQL over the evidence database (M-4)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        One SELECT statement against the SQLite database the engine
+        keeps with `-store`, for administrators doing analysis the
+        curated endpoints do not cover (C-4 builds its search on top of
+        this contract). The surface is opt-in: it answers 403 unless
+        the engine started with `-api-db-query` (or SF_API_DB_QUERY=1),
+        and 501 when there is no `-store` database at all.
+
+        Hard limits, all server-side: exactly one statement, it must
+        start with SELECT/WITH/VALUES and it may not contain any write
+        or side-effect verb (INSERT, UPDATE, DELETE, DROP, PRAGMA,
+        ATTACH, load_extension, ...) — comments included; `max_rows` is
+        clamped to 5000 (default 500) and `timeout_ms` to 30000
+        (default 10000), with the reader running on a dedicated
+        `mode=ro` + `query_only` connection, so the evidence stays
+        append-only no matter what the statement says. Every attempt —
+        ok, rejected or error — lands in the store's `query_audit`
+        table (ts, remote address, statement up to 4 KiB, status, rows,
+        duration, error), pruned to the last 1000 rows.
+
+        WITH-led statements are safe under the same verb ban: SQLite
+        cannot write from inside a subquery, so `WITH ... DELETE` is
+        caught by the verb scan. `REPLACE()` the string function is
+        banned along with `REPLACE INTO`; substitute `IFNULL`-shaped
+        expressions. Values come back as JSON scalars (text columns as
+        strings, never base64); a statement yielding more rows than
+        `max_rows` answers `truncated: true` with the first rows.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sql]
+              properties:
+                sql:
+                  type: string
+                  maxLength: 32768
+                  description: one SELECT (or WITH/VALUES) statement; one optional trailing semicolon
+                  example: "SELECT host, severity, COUNT(*) AS n FROM alerts WHERE ts > strftime('%s','now') - 86400 GROUP BY host, severity ORDER BY n DESC"
+                max_rows:
+                  type: integer
+                  minimum: 1
+                  maximum: 5000
+                  default: 500
+                timeout_ms:
+                  type: integer
+                  minimum: 100
+                  maximum: 30000
+                  default: 10000
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The surface is not armed (`-api-db-query` missing), or the caller
+            is scoped to host groups (X-SF-Scope): a raw SELECT cannot honor
+            group scoping, so scoped accounts never reach it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: |
+            Statement results with the server-side budgets echoed. The
+            query was also audited. `truncated` true means the statement
+            yields more rows than `max_rows` and the rest was not read.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  columns:
+                    type: array
+                    items: { type: string }
+                  rows:
+                    type: array
+                    items:
+                      type: array
+                      items: {}
+                  row_count:
+                    type: integer
+                  truncated:
+                    type: boolean
+                  duration_ms:
+                    type: integer
+        '400':
+          description: |
+            Invalid JSON body; a statement the guard refuses (not a
+            SELECT/WITH/VALUES, more than one statement, a write or
+            side-effect verb, control characters, over 32 KiB); or a
+            statement that fails at runtime (unknown table/column). The
+            JSON body names the problem (`{"error":"..."}`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '408':
+          description: The statement exceeded its time budget without finishing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '501':
+          description: The engine runs without `-store`: there is no database to query.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /api/incidents:
     get:
       tags: [incidents]
