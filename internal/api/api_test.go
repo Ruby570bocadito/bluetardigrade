@@ -757,6 +757,52 @@ func TestStatsHotHostsChargeTheEventTime(t *testing.T) {
 	}
 }
 
+// Same replay as above, sized past the view ring: a full spool snapshot
+// (events and their alerts interleaved) rotates the events ring while
+// the alerts charge the risk score. The score must stay anchored to the
+// events' time through the rotation, every alert must still find its
+// triggering event (published right before it, never rotated out under
+// it) and the rotation must stay visible in the per-host drop counters.
+func TestStatsHotHostsStayHonestThroughRingRotatingReplay(t *testing.T) {
+	h, addr := newTestHub(t)
+	now := time.Now().UTC()
+	raise := func(id string, at time.Time) {
+		h.PublishEvent(&model.Event{ID: id, Type: model.TypeProcessCreate, Host: "PC-A", Timestamp: at})
+		h.RecordAlert(alert.Alert{
+			Timestamp: now.Format(time.RFC3339Nano), RuleID: "r-" + id, RuleName: "rule " + id,
+			Severity: "high", Host: "PC-A", EventID: id, EventType: model.TypeProcessCreate,
+			Summary: "s", MatchedOn: []string{"process.name"},
+		})
+	}
+	const burst = maxEvents + 200
+	for i := 0; i < burst; i++ {
+		raise(fmt.Sprintf("old-%d", i), now.Add(-6*time.Hour)) // 12 half-lives ago
+	}
+	raise("live", now)
+
+	var stats map[string]any
+	getJSON(t, fmt.Sprintf("http://%s/api/stats", addr), &stats)
+	hot, ok := stats["hot_hosts"].([]any)
+	if !ok || len(hot) != 1 {
+		t.Fatalf("hot_hosts = %#v, want 1 entry", stats["hot_hosts"])
+	}
+	first, _ := hot[0].(map[string]any)
+	// The burst charged at arrival time would score (burst+1)*5 = 6005;
+	// charged to the events' time the whole backlog decays to
+	// burst*5*0.5^12 = 1.46 on top of the live alert's 5.
+	if score, _ := first["score"].(float64); score < 5 || score > 6.6 {
+		t.Fatalf("top host = %#v, want score ~6.5 through the rotating replay (a wall-clock burst would score ~6005)", first)
+	}
+	if alerts, _ := first["alerts"].(float64); alerts != float64(burst+1) {
+		t.Fatalf("alerts = %v, want %d", alerts, burst+1)
+	}
+	// 1200 backlog events + the live one rotate the 1000-slot ring 201
+	// times out.
+	if got := stats["ring_dropped_events"].(float64); got != 201 {
+		t.Fatalf("ring_dropped_events = %v, want 201", got)
+	}
+}
+
 func TestMetricsParityWithStats(t *testing.T) {
 	h, addr := newTestHub(t)
 	h.SetCounters(func() (uint64, uint64, uint64) { return 7, 2, 1 })
