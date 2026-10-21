@@ -83,6 +83,19 @@ func (h *Hub) handleAlertsExport(w http.ResponseWriter, r *http.Request) {
 	for _, a := range alerts {
 		views = append(views, h.withLifecycle(a))
 	}
+	// Assignment filter (TEAM-3), same overlay contract as the list:
+	// exact in ring mode (the whole ring was scanned), page-level in
+	// store mode (the store page was fetched already; the full
+	// history filter is /api/alerts/search's job).
+	if f.assignee != "" {
+		filtered := views[:0]
+		for _, v := range views {
+			if assigneeFilterMatches(v, f.assignee) {
+				filtered = append(filtered, v)
+			}
+		}
+		views = filtered
+	}
 
 	stamp := time.Now().UTC().Format("20060102-150405")
 	switch format {
@@ -96,7 +109,10 @@ func (h *Hub) handleAlertsExport(w http.ResponseWriter, r *http.Request) {
 		// carries the same field as a plain JSON key.
 		_ = cw.Write([]string{"id", "status", "timestamp", "severity", "rule_id", "rule_name",
 			"event_type", "host", "user", "summary", "matched_on", "tags",
-			"message", "notify", "status_note", "status_by", "decision"})
+			"message", "notify", "status_note", "status_by", "decision",
+			// assignment (TEAM-3) APPENDED at the end: positional
+			// consumers keep their columns
+			"assignee", "assigned_by"})
 		for _, v := range views {
 			_ = cw.Write([]string{
 				csvSafe(v.ID), csvSafe(v.Status), csvSafe(v.Timestamp), csvSafe(v.Severity),
@@ -105,6 +121,7 @@ func (h *Hub) handleAlertsExport(w http.ResponseWriter, r *http.Request) {
 				csvSafe(strings.Join(v.MatchedOn, " ")), csvSafe(strings.Join(v.Tags, " ")),
 				csvSafe(v.Message), strconv.FormatBool(v.Notify),
 				csvSafe(v.StatusNote), csvSafe(v.StatusBy), csvSafe(v.Decision),
+				csvSafe(v.Assignee), csvSafe(v.AssignedBy),
 			})
 		}
 		cw.Flush()

@@ -195,7 +195,11 @@ func (h *Hub) handleAlertSearch(w http.ResponseWriter, r *http.Request) {
 			}
 			page.Scanned++
 			view := h.withLifecycle(row.Alert)
-			if searchStatusMatches(view.Status, state) {
+			// Status AND assignment (TEAM-3) both live on the lifecycle
+			// overlay: both filters run on the view, and the scan keeps
+			// going past misses until the page fills, so a queue view is
+			// complete (within the scan cap), never one truncated page.
+			if searchStatusMatches(view.Status, state) && assigneeFilterMatches(view, f.assignee) {
 				if len(page.Items) == limit {
 					page.HasMore = true
 					before = lastResult // preserve the lookahead for the next page

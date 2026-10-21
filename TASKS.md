@@ -23,10 +23,11 @@ elige otra libre de tu rol. Al fusionarse el PR, el humano la marca `hecha`.
 | H-2 | Decidir tags sueltos `console-v1`/`v0.1.0`; descripción «About» y topics | HUMANO | — | F0 | libre |
 | H-3 | Fusionar o cerrar Dependabot #24–#27 con CI en verde | HUMANO | — | F0 | libre |
 | H-4 | Probar `sf-start`/`sf-stop`/`-KeepSensor`/`sf-status` y el instalador silencioso en Windows real | HUMANO | — | F1 | libre |
-| M-1 | TEAM-3 backend: asignación de alertas en el ciclo de vida del motor (API, estados, cola sin asignar) | AG-1 | — | F3 | libre |
+| M-1 | TEAM-3 backend: asignación de alertas en el ciclo de vida del motor (API, estados, cola sin asignar) | AG-1 | — | F3 | hecha (a51108a + PR #45) |
 | S-1 | Registro: resolver raíz `?` por usuario del proceso (`HKU\`) y enviar `registry.value_data` | AG-2 | — | Backlog/Sensor | en revisión (PR #40) |
 | C-1 | Rediseño del dashboard con el kit de componentes POL-7 en todas las vistas | AG-3 | — | F5 | hecha (PR #38) |
 | O-1 | POL-5: OPERATIONS por capítulos + esqueleto de la guía de suscripción WEF | AG-4 | — | Calidad + F3 | hecha (PR #39) |
+(motor: claim M-1 (TEAM-3 backend) + round plan (A))
 
 ## Hornada 2 — en cuanto la 1 esté en revisión/avanzada
 
@@ -68,5 +69,5 @@ elige otra libre de tu rol. Al fusionarse el PR, el humano la marca `hecha`.
 | O-4 | POL-6: release con SBOM (CycloneDX) y sensor firmado entre artefactos | AG-4 | — | Calidad | libre |
 | O-5 | SEC-3/SEC-6/SEC-9: revisión de entradas, cadena de suministro y privacidad (informe + parches mínimos) | AG-4 | — | Calidad | libre |
 | M-9 | POL-1: dividir `internal/api/api.go` y `cmd/engine/run.go`; POL-2 logs con `log/slog` | AG-1 | — | Calidad | libre |
-| S-5 | POL-1: dividir `sensor/src/collector.rs` sin cambiar comportamiento | AG-2 | — | Calidad | en revisión (PR #43) |
-| P-3 | POL-3: perfiles `pprof` del camino caliente en el benchmark nocturno (flag `-pprof-dir` del motor + artefactos del bench) | Pulimiento B (backend) | — | Calidad | en revisión (PR #41) |
+| S-5 | POL-1: dividir `sensor/src/collector.rs` sin cambiar comportamiento | AG-2 | — | Calidad | hecha (PR #43) |
+| P-3 | POL-3: perfiles `pprof` del camino caliente en el benchmark nocturno (flag `-pprof-dir` del motor + artefactos del bench) | Pulimiento B (backend) | — | Calidad | hecha (directo a main, PR #41 cerrado) |
