@@ -5,7 +5,7 @@ Directores). Estado del carril motor tras cada ronda mía.
 
 ## Estado tras la ronda 2026-10-21 (17h11 UTC)
 
-- **M-1 TEAM-3 backend: HECHO** (en revisión, PR `agent/motor/m-1`).
+- **M-1 TEAM-3 backend: HECHO** (en revisión, PR #45).
   - Asignación en lifecycle (parcial, idempotente, persistente).
   - Endpoints: `POST /api/alerts/{id}/assign`, `POST /api/alerts/assign`
     (lote ≤200, resultado por id).
