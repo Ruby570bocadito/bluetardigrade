@@ -1,0 +1,91 @@
+# Escenarios de validacion de deteccion del pack de tecnica AD desde el
+# endpoint (O-2). Telemetria sintetica e inerte: el mismo esquema de
+# eventos que envia el sensor, sin ejecutar nada en ningun equipo. Cada
+# escenario declara la alerta que el motor DEBE disparar (shipped rule
+# id); el test de CI falla si una deja de detectarse.
+
+- name: Kerberoasting con token de SPN (sintetico)
+  id: sim-ps-kerberos-spn-token
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: peticion de un
+    ticket Kerberos por SPN con KerberosRequestorSecurityToken. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1558.003
+  host: LAB-SIM-KERBEROAST-SPN
+  user: CORP\sim
+  expected:
+  - rule: 0d23b539-0df4-49c9-b43e-3b78964a54cc
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4200
+      name: powershell.exe
+      command_line: powershell.exe -c "New-Object System.IdentityModel.Tokens.KerberosRequestorSecurityToken -ArgumentList MSSQLSvc/sql01:1433"
+- name: DCSync con herramienta propia (sintetico)
+  id: sim-ps-dcsync-drsuapi
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: replicacion de
+    directorio via DRSUAPI con una herramienta generica. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1003.006
+  host: LAB-SIM-DCSYNC-DRSUAPI
+  user: CORP\sim
+  expected:
+  - rule: 39d340d0-d264-4581-ad14-0d6e4886b658
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4201
+      name: powershell.exe
+      command_line: powershell.exe -c "Invoke-DCSync -Domain corp.local -All"
+- name: Rociado de contrasenas desde el puesto (sintetico)
+  id: sim-ps-password-spray
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: rociado de
+    contrasenas contra el dominio con DomainPasswordSpray. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1110.003
+  host: LAB-SIM-PASSWORD-SPRAY
+  user: CORP\sim
+  expected:
+  - rule: 47051c0e-e898-4601-89b6-3c2c0d763883
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4202
+      name: powershell.exe
+      command_line: powershell.exe -c "Invoke-DomainPasswordSpray -UserList users.txt -Password P@ssw0rd"
+- name: Alta en grupo privilegiado con net.exe (sintetico)
+  id: sim-net-group-add
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: alta de una
+    cuenta en el grupo de administradores locales con net.exe. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1098
+  host: LAB-SIM-NET-GROUP-ADD
+  user: CORP\sim
+  expected:
+  - rule: f9486d99-a3cc-48f7-9b4f-f9e0dffcf822
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4203
+      name: net.exe
+      command_line: net.exe localgroup administrators eviluser /add
+- name: Servicio que arranca un interprete (sintetico)
+  id: sim-sc-create-interpreter
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: creacion de un
+    servicio cuyo binPath es un interprete de comandos. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1543.003
+  host: LAB-SIM-SVC-INTERPRETER
+  user: CORP\sim
+  expected:
+  - rule: ce2a2bf1-6ab3-4a99-8c97-e2777f2a3b37
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4204
+      name: sc.exe
+      command_line: sc.exe create UpdaterSvc binpath= "cmd.exe /c C:\Windows\Temp\updater.exe" start= auto
