@@ -6,6 +6,7 @@
 // queue it counts.
 
 import { ArrowClockwise, ArrowRight, CheckCircle, WarningCircle, WarningOctagon } from '@phosphor-icons/react'
+import { Button } from '@/components/ui/button'
 import { useEngine } from './engine-provider'
 import type { ConsoleView } from './dashboard'
 import { SegmentBar } from '@/components/charts/bars'
@@ -52,20 +53,21 @@ export function OperationsOverview({ onNavigate, onTriage }: {
           <span className="text-[11px] tabular-nums text-zinc-500">
             {lastSyncAt ? 'Última lectura ' + formatTime(new Date(lastSyncAt).toISOString()) : 'Esperando primera lectura'}
           </span>
-          <button
-            type="button" onClick={() => onNavigate('estado')}
-            className="chip px-2.5 py-1.5 text-xs text-zinc-300 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          {/* Acciones del héroe sobre el kit POL-7 (Button): la forma la pone
+              el kit y el color de datos (rojo) viaja en className, nunca como
+              variante nueva. El CTA principal es el único sólido. */}
+          <Button
+            type="button" variant="outline" size="sm" className="text-xs" onClick={() => onNavigate('estado')}
             title="Contadores de runtime del motor: ingesta, colas, almacén y entrega"
           >
             Estado
-          </button>
-          <button
-            type="button" onClick={refresh} disabled={refreshing} aria-busy={refreshing}
-            className="chip px-2.5 py-1.5 text-xs text-zinc-300 transition-colors hover:text-primary-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
+          </Button>
+          <Button
+            type="button" variant="outline" size="sm" className="text-xs" onClick={refresh} disabled={refreshing} aria-busy={refreshing}
           >
             <ArrowClockwise size={13} aria-hidden className={refreshing ? 'animate-spin motion-reduce:animate-none' : ''} />
             {refreshing ? 'Actualizando' : 'Actualizar'}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -115,18 +117,20 @@ export function OperationsOverview({ onNavigate, onTriage }: {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 lg:flex-col lg:items-stretch">
-          <button type="button" onClick={() => onTriage('critical')} disabled={!available}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-400/30 bg-red-500/10 px-3.5 py-2 text-xs font-medium text-red-200 transition-colors hover:bg-red-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-50">
+          {/* Jerarquía de la columna: los dos tintes (rojo de datos y acento
+              primario) pesan igual que antes; la telemetría queda terciaria
+              en ghost. La forma la pone el kit, el color viaja en className. */}
+          <Button type="button" variant="ghost" size="sm" onClick={() => onTriage('critical')} disabled={!available}
+            className="border border-red-400/30 bg-red-500/10 text-xs font-medium text-red-200 hover:bg-red-500/20 dark:bg-red-500/10 dark:hover:bg-red-500/20">
             Ver críticas sin cerrar <ArrowRight size={14} aria-hidden />
-          </button>
-          <button type="button" onClick={() => onNavigate('alertas')}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-primary/30 bg-primary-tint/10 px-3.5 py-2 text-xs font-medium text-primary-soft transition-colors hover:bg-primary-tint/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => onNavigate('alertas')}
+            className="border border-primary/30 bg-primary-tint/10 text-xs font-medium text-primary-soft hover:bg-primary-tint/20">
             Abrir cola de alertas <ArrowRight size={14} aria-hidden />
-          </button>
-          <button type="button" onClick={() => onNavigate('flujo')}
-            className="chip justify-center px-3.5 py-2 text-xs text-zinc-300 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => onNavigate('flujo')} className="text-xs">
             Inspeccionar telemetría
-          </button>
+          </Button>
         </div>
       </div>
       {available && (attention || streamStatus === 'connecting') && (
