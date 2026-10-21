@@ -50,6 +50,7 @@ type options struct {
 	forensic         bool
 	forensicDir      string
 	pidFile          string
+	pprofDir         string
 	apiWrite         bool
 	allowKill        bool
 	respondOperators string
@@ -154,6 +155,8 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 		"directory for forensic evidence bundles (default: <forensics> resolved next to the rules directory)")
 	fs.StringVar(&o.pidFile, "pidfile", "",
 		"write the process PID here at startup and remove it on shutdown (lets sf-console -Stop stop an engine it did not start)")
+	fs.StringVar(&o.pprofDir, "pprof-dir", "",
+		"write CPU, heap and goroutine profiles of the run into this directory (off when empty; the nightly bench passes it to profile the hot path, POL-3)")
 	// CLI additions: single panel over the running engine.
 	fs.BoolVar(interactive, "i", false, "interactive panel (TUI) on top of the running engine; needs a TTY")
 	fs.BoolVar(interactive, "interactive", false, "alias of -i")

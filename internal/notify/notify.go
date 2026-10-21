@@ -180,6 +180,19 @@ func (s *Service) Summary() []string {
 func (w *worker) loop(ctx context.Context, backoff time.Duration) {
 	defer w.running.Done()
 	for {
+		// Shutdown check BEFORE the select: once the context is
+		// cancelled, every queued frame must get drain()'s
+		// best-effort attempt (Background context, bounded), never
+		// deliver() with a context that is already dead. Go's
+		// select picks uniformly between ready cases, so without
+		// this check a cancel landing on a busy queue sent half of
+		// it into instant doomed attempts (counted failed) instead
+		// of the drain the package contract promises. Same
+		// shutdown contract as internal/webhook.
+		if ctx.Err() != nil {
+			w.drain()
+			return
+		}
 		select {
 		case <-ctx.Done():
 			w.drain()
@@ -195,6 +208,16 @@ func (w *worker) loop(ctx context.Context, backoff time.Duration) {
 // rejection (bad URL, refused mailbox, 4xx) fails immediately because
 // retrying it would only delay the rest of the queue.
 func (w *worker) deliver(ctx context.Context, a alert.Alert, backoff time.Duration) {
+	// The cancel can land between the loop's check and this pop
+	// (select arbitration): a frame consumed that way was never
+	// really attempted, so it counts as dropped (shutdown owns it)
+	// instead of failed — failed means the receiver said no, dropped
+	// means we never tried. The drain that follows gives the rest of
+	// the queue its single best-effort attempt.
+	if ctx.Err() != nil {
+		w.dropped.Add(1)
+		return
+	}
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		err := w.ch.Deliver(ctx, a)

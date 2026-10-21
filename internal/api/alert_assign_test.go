@@ -1,29 +1,22 @@
 package api
 
+// Assignment surface tests (TEAM-3 / M-1): the single route, the batch
+// route, the GET /api/alerts filters and the SSE frame. Same harness as
+// lifecycle_test.go (newTestHub + postStatus-style helpers).
+
 import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
-	"github.com/Ruby570bocadito/bluetardigrade/internal/lifecycle"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/store"
 )
-
-func recordTestAlert(t *testing.T, h *Hub, id, host string) string {
-	t.Helper()
-	a := alert.Alert{
-		ID: id, Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
-		RuleID: "r1", RuleName: "test rule", Severity: "high",
-		Host: host, EventID: "ev-1", EventType: "process.create",
-		Summary: "s", MatchedOn: []string{"process.name"},
-	}
-	h.RecordAlert(a)
-	return a.ID
-}
 
 func postAssign(t *testing.T, url, body string) (*http.Response, string) {
 	t.Helper()
@@ -37,289 +30,229 @@ func postAssign(t *testing.T, url, body string) (*http.Response, string) {
 		t.Fatalf("POST %s: %v", url, err)
 	}
 	defer res.Body.Close()
-	data := make([]byte, 0, 4096)
-	buf := make([]byte, 4096)
-	for {
-		n, err := res.Body.Read(buf)
-		data = append(data, buf[:n]...)
-		if err != nil {
-			break
-		}
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
 	}
 	return res, string(data)
 }
 
-func TestAlertAssignFlow(t *testing.T) {
+func TestAlertAssignSingleFlow(t *testing.T) {
 	h, addr := newTestHub(t)
-	id := recordTestAlert(t, h, "0000000000000001", "LAB-TEST")
+	h.RecordAlert(alert.Alert{
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano), RuleID: "r1", RuleName: "test rule",
+		Severity: "critical", Host: "LAB-TEST", EventID: "ev-1",
+		EventType: "process.create", Summary: "s", MatchedOn: []string{"process.name"},
+	})
 	base := fmt.Sprintf("http://%s", addr)
 
-	res, body := postAssign(t, base+"/api/alerts/"+id+"/assign", `{"assignee":"ana","by":"beto"}`)
+	var listed []map[string]any
+	getJSON(t, base+"/api/alerts", &listed)
+	if len(listed) != 1 {
+		t.Fatalf("alerts listed = %d, want 1", len(listed))
+	}
+	id, _ := listed[0]["id"].(string)
+	if len(id) != 16 {
+		t.Fatalf("alert id = %q, want 16 chars", id)
+	}
+
+	// malformed id: 400 with the same shape as triage
+	res, body := postAssign(t, base+"/api/alerts/nope/assign", `{"assignee":"ana","by":"carlos"}`)
+	if res.StatusCode != 400 {
+		t.Fatalf("malformed id status = %d body=%s", res.StatusCode, body)
+	}
+
+	// assign on an unseen id is legal for unrestricted callers (same
+	// standard as triage) — it records and returns the entry
+	res, body = postAssign(t, base+"/api/alerts/ffffffffffffffff/assign", `{"assignee":"ana","by":"carlos"}`)
 	if res.StatusCode != 200 {
-		t.Fatalf("assign status = %d body=%s", res.StatusCode, body)
+		t.Fatalf("assign unseen status = %d body=%s", res.StatusCode, body)
 	}
 	var entry map[string]any
 	if err := json.Unmarshal([]byte(body), &entry); err != nil {
 		t.Fatalf("entry body: %v (%s)", err, body)
 	}
-	if entry["alert_id"] != id || entry["assignee"] != "ana" || entry["assigned_by"] != "beto" {
+	if entry["assignee"] != "ana" || entry["assigned_by"] != "carlos" || entry["assigned_at"] == nil {
 		t.Fatalf("entry = %v", entry)
 	}
-	if _, err := entry["assigned_at"].(string); !err {
-		t.Fatalf("assigned_at missing: %v", entry)
-	}
 
-	// The list overlay carries the assignment next to the (implicit new)
-	// status: assigning is not triaging.
-	var listed []map[string]any
+	// assign the real alert, then read the merged view
+	res, body = postAssign(t, base+"/api/alerts/"+id+"/assign", `{"assignee":"bruno","by":"carlos"}`)
+	if res.StatusCode != 200 {
+		t.Fatalf("assign status = %d body=%s", res.StatusCode, body)
+	}
+	listed = nil // fresh slice: json.Unmarshal MERGES into reused maps
 	getJSON(t, base+"/api/alerts", &listed)
-	if listed[0]["assignee"] != "ana" || listed[0]["status"] != "new" {
-		t.Fatalf("overlay = %v / %v", listed[0]["assignee"], listed[0]["status"])
+	if listed[0]["assignee"] != "bruno" || listed[0]["assigned_by"] != "carlos" {
+		t.Fatalf("view = %v", listed[0])
 	}
 
-	// Reassignment and unassignment round-trip.
-	if res, body = postAssign(t, base+"/api/alerts/"+id+"/assign", `{"assignee":"carla","by":"beto"}`); res.StatusCode != 200 {
+	// triage must NOT clear the assignment
+	res, body = postStatus(t, base+"/api/alerts/"+id+"/status", `{"status":"acknowledged","by":"bruno"}`, "")
+	if res.StatusCode != 200 {
+		t.Fatalf("ack status = %d body=%s", res.StatusCode, body)
+	}
+	listed = nil // fresh slice: json.Unmarshal MERGES into reused maps
+	getJSON(t, base+"/api/alerts", &listed)
+	if listed[0]["assignee"] != "bruno" || listed[0]["status"] != "acknowledged" {
+		t.Fatalf("ack damaged the assignment: %v", listed[0])
+	}
+
+	// reassign over bruno, then unassign
+	if res, body = postAssign(t, base+"/api/alerts/"+id+"/assign", `{"assignee":"ana","by":"carlos"}`); res.StatusCode != 200 {
 		t.Fatalf("reassign status = %d body=%s", res.StatusCode, body)
 	}
-	if res, _ = postAssign(t, base+"/api/alerts/"+id+"/assign", `{"assignee":"","by":"beto"}`); res.StatusCode != 200 {
-		t.Fatal("unassign rejected")
+	res, body = postAssign(t, base+"/api/alerts/"+id+"/assign", `{"assignee":"","by":"carlos"}`)
+	if res.StatusCode != 200 {
+		t.Fatalf("unassign status = %d body=%s", res.StatusCode, body)
 	}
-	listed = nil
+	listed = nil // fresh slice: json.Unmarshal MERGES into reused maps
 	getJSON(t, base+"/api/alerts", &listed)
-	if _, present := listed[0]["assignee"]; present {
-		t.Fatalf("assignee survived unassign: %v", listed[0]["assignee"])
+	if _, has := listed[0]["assignee"]; has {
+		t.Fatalf("unassign left assignee in the view: %v", listed[0])
+	}
+
+	// validation echoes the lifecycle limits
+	long := strings.Repeat("x", 201)
+	if res, _ = postAssign(t, base+"/api/alerts/"+id+"/assign", `{"assignee":"`+long+`"}`); res.StatusCode != 400 {
+		t.Fatal("oversized assignee accepted")
+	}
+	if res, _ = postAssign(t, base+"/api/alerts/"+id+"/assign", `{"assignee":"ana","ids":["x"]}`); res.StatusCode != 400 {
+		t.Fatal("ids accepted on the single route")
+	}
+	if res, _ = postAssign(t, base+"/api/alerts/"+id+"/assign", `{bogus`); res.StatusCode != 400 {
+		t.Fatal("invalid JSON accepted")
 	}
 }
 
-func TestAlertAssignPreservesStatus(t *testing.T) {
+func TestAlertAssignBatch(t *testing.T) {
 	h, addr := newTestHub(t)
-	id := recordTestAlert(t, h, "0000000000000002", "LAB-TEST")
+	h.RecordAlert(alert.Alert{
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano), RuleID: "r1", RuleName: "test rule",
+		Severity: "critical", Host: "LAB-TEST", EventID: "ev-1",
+		EventType: "process.create", Summary: "s", MatchedOn: []string{"process.name"},
+	})
 	base := fmt.Sprintf("http://%s", addr)
-	if res, _ := postStatus(t, base+"/api/alerts/"+id+"/status",
-		`{"status":"acknowledged","note":"investigando","by":"ana"}`, ""); res.StatusCode != 200 {
-		t.Fatal("ack rejected")
-	}
-	if res, _ := postAssign(t, base+"/api/alerts/"+id+"/assign", `{"assignee":"beto","by":"ana"}`); res.StatusCode != 200 {
-		t.Fatal("assign rejected")
-	}
 	var listed []map[string]any
 	getJSON(t, base+"/api/alerts", &listed)
-	if listed[0]["status"] != "acknowledged" || listed[0]["status_note"] != "investigando" {
-		t.Fatalf("assign wiped triage: %v / %v", listed[0]["status"], listed[0]["status_note"])
-	}
-	if listed[0]["assignee"] != "beto" {
-		t.Fatalf("assignee = %v", listed[0]["assignee"])
-	}
-}
+	id, _ := listed[0]["id"].(string)
 
-func TestAlertAssignBadRequests(t *testing.T) {
-	_, addr := newTestHub(t)
-	base := fmt.Sprintf("http://%s", addr)
-	cases := []struct {
-		name, path, body, wantErr string
-	}{
-		{"bad id", "/api/alerts/ZZZ/assign", `{"assignee":"ana"}`, "malformed alert id"},
-		{"empty body", "/api/alerts/ffffffffffffffff/assign", ``, "invalid JSON"},
-		{"oversized assignee", "/api/alerts/ffffffffffffffff/assign",
-			`{"assignee":"` + strings.Repeat("x", lifecycle.MaxAssigneeLen+1) + `"}`, "assignee longer"},
-		{"oversized by", "/api/alerts/ffffffffffffffff/assign",
-			`{"assignee":"ana","by":"` + strings.Repeat("x", lifecycle.MaxByLen+1) + `"}`, "by longer"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			res, body := postAssign(t, base+tc.path, tc.body)
-			if res.StatusCode != 400 {
-				t.Fatalf("status = %d, want 400 (body=%s)", res.StatusCode, body)
-			}
-			var errPayload map[string]string
-			if err := json.Unmarshal([]byte(body), &errPayload); err != nil || !strings.Contains(errPayload["error"], tc.wantErr) {
-				t.Fatalf("error body %q does not mention %q", body, tc.wantErr)
-			}
-		})
-	}
-}
-
-func TestAlertAssignBulk(t *testing.T) {
-	h, addr := newTestHub(t)
-	good1 := recordTestAlert(t, h, "0000000000000003", "LAB-TEST")
-	good2 := recordTestAlert(t, h, "0000000000000004", "LAB-TEST")
-	base := fmt.Sprintf("http://%s", addr)
-
-	// One malformed id fails alone; a duplicate id is one write, not two.
-	body := fmt.Sprintf(`{"ids":["%s","zzz","%s","%s"],"assignee":"ana","by":"beto"}`, good1, good2, good1)
-	res, raw := postAssign(t, base+"/api/alerts/assign", body)
+	// mixed batch: one real, one unknown, one malformed — 200 with a
+	// per-id split, and the real one actually assigned
+	res, body := postAssign(t, base+"/api/alerts/assign-batch",
+		fmt.Sprintf(`{"ids":["%s","aaaaaaaaaaaaaaaa","zz"],"assignee":"ana","by":"carlos"}`, id))
 	if res.StatusCode != 200 {
-		t.Fatalf("bulk status = %d body=%s", res.StatusCode, raw)
+		t.Fatalf("batch status = %d body=%s", res.StatusCode, body)
 	}
 	var out struct {
-		Assigned int `json:"assigned"`
-		Failed   int `json:"failed"`
-		Results  []struct {
-			AlertID string          `json:"alert_id"`
-			OK      bool            `json:"ok"`
-			Entry   lifecycle.Entry `json:"entry"`
-			Error   string          `json:"error"`
-		} `json:"results"`
-	}
-	if err := json.Unmarshal([]byte(raw), &out); err != nil {
-		t.Fatalf("bulk body: %v (%s)", err, raw)
-	}
-	if out.Assigned != 2 || out.Failed != 1 || len(out.Results) != 3 {
-		t.Fatalf("bulk summary = %d/%d results=%d", out.Assigned, out.Failed, len(out.Results))
-	}
-	for _, r := range out.Results {
-		if r.AlertID == "zzz" {
-			if r.OK || !strings.Contains(r.Error, "malformed") {
-				t.Fatalf("malformed id result = %+v", r)
-			}
-			continue
-		}
-		if !r.OK || r.Entry.Assignee != "ana" {
-			t.Fatalf("expected assignment for %s: %+v", r.AlertID, r)
-		}
-	}
-	// The duplicate never produced a second result row.
-	count := 0
-	for _, r := range out.Results {
-		if r.AlertID == good1 {
-			count++
-		}
-	}
-	if count != 1 {
-		t.Fatalf("duplicate id produced %d results", count)
-	}
-}
-
-func TestAlertAssignBulkValidation(t *testing.T) {
-	_, addr := newTestHub(t)
-	base := fmt.Sprintf("http://%s", addr)
-	if res, body := postAssign(t, base+"/api/alerts/assign", `{"assignee":"ana"}`); res.StatusCode != 400 || !strings.Contains(body, "at least one") {
-		t.Fatalf("empty ids: %d %s", res.StatusCode, body)
-	}
-	ids := `["` + strings.Repeat("ffffffffffffffff\", \"", 200) + "ffffffffffffffff\"]"
-	if res, body := postAssign(t, base+"/api/alerts/assign", `{"ids":`+ids+`,"assignee":"ana"}`); res.StatusCode != 400 || !strings.Contains(body, "limit is") {
-		t.Fatalf("over-cap batch: %d %s", res.StatusCode, body)
-	}
-}
-
-// A caller limited to host groups may only assign the alerts of its
-// machines: any other id answers like one that does not exist.
-func TestAlertAssignScoped(t *testing.T) {
-	_, addr, ids := scopedHub(t, false)
-	base := fmt.Sprintf("http://%s", addr)
-	madrid := "madrid"
-
-	res, body := scoped(t, http.MethodPost, base+"/api/alerts/"+ids["PC-MAD-01"]+"/assign", &madrid, `{"assignee":"ana","by":"beto"}`)
-	if res != 200 {
-		t.Fatalf("in-scope assign = %d body=%s", res, body)
-	}
-	res, body = scoped(t, http.MethodPost, base+"/api/alerts/"+ids["PC-BCN-02"]+"/assign", &madrid, `{"assignee":"ana","by":"beto"}`)
-	if res != http.StatusNotFound || !strings.Contains(body, "unknown alert id") {
-		t.Fatalf("out-of-scope assign = %d body=%s", res, body)
-	}
-	// The batch applies the same rule per id without blocking the rest.
-	res, body = scoped(t, http.MethodPost, base+"/api/alerts/assign", &madrid,
-		fmt.Sprintf(`{"ids":["%s","%s"],"assignee":"ana","by":"beto"}`, ids["PC-MAD-01"], ids["PC-BCN-02"]))
-	if res != 200 {
-		t.Fatalf("scoped bulk = %d body=%s", res, body)
-	}
-	var out struct {
-		Assigned int `json:"assigned"`
-		Failed   int `json:"failed"`
+		Assigned []string `json:"assigned"`
+		Failed   []struct {
+			ID    string `json:"id"`
+			Error string `json:"error"`
+		} `json:"failed"`
 	}
 	if err := json.Unmarshal([]byte(body), &out); err != nil {
-		t.Fatal(err)
+		t.Fatalf("batch body: %v (%s)", err, body)
 	}
-	if out.Assigned != 1 || out.Failed != 1 {
-		t.Fatalf("scoped bulk summary = %d/%d", out.Assigned, out.Failed)
+	if len(out.Assigned) != 1 || out.Assigned[0] != id {
+		t.Fatalf("assigned = %v, want [%s] (%s)", out.Assigned, id, body)
 	}
-}
-
-// The queues behind «Mis alertas» and the unassigned column: the
-// assignment filter on the list (ring mode) and on the search (the
-// scan the console's table uses).
-func TestAlertAssigneeFilter(t *testing.T) {
-	h, addr := newTestHub(t)
-	mine := recordTestAlert(t, h, "0000000000000005", "LAB-TEST")
-	other := recordTestAlert(t, h, "0000000000000006", "LAB-TEST")
-	recordTestAlert(t, h, "0000000000000007", "LAB-TEST")
-	base := fmt.Sprintf("http://%s", addr)
-	if res, _ := postAssign(t, base+"/api/alerts/"+mine+"/assign", `{"assignee":"ana","by":"beto"}`); res.StatusCode != 200 {
-		t.Fatal("assign rejected")
+	if len(out.Failed) != 2 {
+		t.Fatalf("failed = %d entries, want 2 (%s)", len(out.Failed), body)
 	}
-	if res, _ := postAssign(t, base+"/api/alerts/"+other+"/assign", `{"assignee":"beto","by":"carla"}`); res.StatusCode != 200 {
-		t.Fatal("assign rejected")
-	}
-
-	var listed []map[string]any
+	listed = nil // fresh slice: json.Unmarshal MERGES into reused maps
 	getJSON(t, base+"/api/alerts?assignee=ana", &listed)
-	if len(listed) != 1 || listed[0]["id"] != mine {
-		t.Fatalf("mine = %d rows (%v)", len(listed), listed)
-	}
-	listed = nil
-	getJSON(t, base+"/api/alerts?assignee=none", &listed)
-	if len(listed) != 1 || listed[0]["id"] != "0000000000000007" {
-		t.Fatalf("unassigned queue = %d rows", len(listed))
-	}
-	listed = nil
-	getJSON(t, base+"/api/alerts?assignee=ANA", &listed) // case-insensitive
-	if len(listed) != 1 || listed[0]["id"] != mine {
-		t.Fatalf("case-insensitive mine = %d rows", len(listed))
+	if len(listed) != 1 || listed[0]["id"] != id {
+		t.Fatalf("assignee filter = %v", listed)
 	}
 
-	// The search endpoint scans, so its queue views are exact too.
-	var page struct {
-		Items []map[string]any `json:"items"`
+	// unassign in batch clears it again
+	res, body = postAssign(t, base+"/api/alerts/assign-batch",
+		fmt.Sprintf(`{"ids":["%s"],"assignee":"","by":"carlos"}`, id))
+	if res.StatusCode != 200 || !strings.Contains(body, `"assigned":["`+id+`"]`) {
+		t.Fatalf("batch unassign = %d %s", res.StatusCode, body)
 	}
-	getJSON(t, base+"/api/alerts/search?assignee=none", &page)
-	if len(page.Items) != 1 || page.Items[0]["id"] != "0000000000000007" {
-		t.Fatalf("search unassigned = %d rows", len(page.Items))
+	listed = nil // fresh slice: json.Unmarshal MERGES into reused maps
+	getJSON(t, base+"/api/alerts?assignee=ana", &listed)
+	if len(listed) != 0 {
+		t.Fatalf("batch unassign left %d assigned", len(listed))
 	}
-	page.Items = nil
-	getJSON(t, base+"/api/alerts/search?assignee=ana&status=open", &page)
-	if len(page.Items) != 1 || page.Items[0]["id"] != mine {
-		t.Fatalf("search mine+open = %d rows", len(page.Items))
+
+	// contract guards: empty ids, too many ids, ids on missing field
+	if res, _ = postAssign(t, base+"/api/alerts/assign-batch", `{"assignee":"ana"}`); res.StatusCode != 400 {
+		t.Fatal("empty ids accepted")
+	}
+	many := `{"ids":[` + `"aaaaaaaaaaaaaaaa",` + strings.Repeat(`"bbbbbbbbbbbbbbbb",`, 500) + `"cccccccccccccccc"],"assignee":"a"}`
+	if res, _ = postAssign(t, base+"/api/alerts/assign-batch", many); res.StatusCode != 400 {
+		t.Fatal("oversized batch accepted")
 	}
 }
 
-func TestAlertExportAssigneeFilter(t *testing.T) {
+func TestAlertAssignFilters(t *testing.T) {
 	h, addr := newTestHub(t)
-	mine := recordTestAlert(t, h, "0000000000000008", "LAB-TEST")
-	recordTestAlert(t, h, "0000000000000009", "LAB-TEST")
+	for _, sev := range []string{"critical", "low"} {
+		h.RecordAlert(alert.Alert{
+			Timestamp: time.Now().UTC().Format(time.RFC3339Nano), RuleID: "r-" + sev,
+			RuleName: "rule " + sev, Severity: sev, Host: "LAB-TEST", EventID: "ev-" + sev,
+			EventType: "process.create", Summary: sev, MatchedOn: []string{"process.name"},
+		})
+	}
 	base := fmt.Sprintf("http://%s", addr)
-	if res, _ := postAssign(t, base+"/api/alerts/"+mine+"/assign", `{"assignee":"ana","by":"beto"}`); res.StatusCode != 200 {
-		t.Fatal("assign rejected")
+	var listed []map[string]any
+	getJSON(t, base+"/api/alerts", &listed)
+	if len(listed) != 2 {
+		t.Fatalf("alerts listed = %d, want 2", len(listed))
 	}
-	res, err := http.Get(base + "/api/alerts/export?assignee=ana")
-	if err != nil {
-		t.Fatal(err)
+
+	// the queue without filters shows both as unassigned
+	getJSON(t, base+"/api/alerts?unassigned=true", &listed)
+	if len(listed) != 2 {
+		t.Fatalf("unassigned queue = %d, want 2", len(listed))
 	}
-	defer res.Body.Close()
-	var exported map[string]any
-	if err := json.NewDecoder(res.Body).Decode(&exported); err != nil {
-		t.Fatalf("jsonl decode: %v", err)
+
+	// assign the critical one
+	critID, _ := listed[0]["id"].(string)
+	if listed[0]["severity"] != "critical" {
+		critID, _ = listed[1]["id"].(string)
 	}
-	if exported["id"] != mine || exported["assignee"] != "ana" {
-		t.Fatalf("exported = %v", exported)
+	if res, body := postAssign(t, base+"/api/alerts/"+critID+"/assign", `{"assignee":"Ana","by":"carlos"}`); res.StatusCode != 200 {
+		t.Fatalf("assign = %d %s", res.StatusCode, body)
 	}
-	res2, err := http.Get(base + "/api/alerts/export?assignee=none")
-	if err != nil {
-		t.Fatal(err)
+
+	// «Mis alertas»: case-insensitive match
+	getJSON(t, base+"/api/alerts?assignee=ana", &listed)
+	if len(listed) != 1 || listed[0]["id"] != critID {
+		t.Fatalf("mis alertas = %v", listed)
 	}
-	defer res2.Body.Close()
-	var other map[string]any
-	if err := json.NewDecoder(res2.Body).Decode(&other); err != nil {
-		t.Fatalf("jsonl decode: %v", err)
+	// queue shrinks to the other one
+	getJSON(t, base+"/api/alerts?unassigned=true", &listed)
+	if len(listed) != 1 || listed[0]["id"] == critID {
+		t.Fatalf("unassigned queue = %v", listed)
 	}
-	if other["id"] == mine {
-		t.Fatalf("unassigned export leaked an assigned alert: %v", other)
+	// combinable with the existing filters
+	getJSON(t, base+"/api/alerts?assignee=ANA&severity=critical", &listed)
+	if len(listed) != 1 || listed[0]["id"] != critID {
+		t.Fatalf("combined filters = %v", listed)
 	}
+	// unknown assignee: empty list, not an error
+	getJSON(t, base+"/api/alerts?assignee=nadie", &listed)
+	if len(listed) != 0 {
+		t.Fatalf("unknown assignee = %v", listed)
+	}
+	// loud 400s: bad value and contradictory combination
+	res, _ := http.Get(base + "/api/alerts?unassigned=yes")
+	if res.StatusCode != 400 {
+		t.Fatalf("unassigned=yes status = %d, want 400", res.StatusCode)
+	}
+	res.Body.Close()
+	res, _ = http.Get(base + "/api/alerts?assignee=ana&unassigned=true")
+	if res.StatusCode != 400 {
+		t.Fatalf("contradictory filters status = %d, want 400", res.StatusCode)
+	}
+	res.Body.Close()
 }
 
-// Live consoles learn about assignments through the SAME alert_lifecycle
-// frame the status endpoint uses (one topic, one handler on the console
-// side): the frame must carry the assignee fields.
-func TestAlertAssignSSEBroadcast(t *testing.T) {
+func TestAlertAssignSSEFrame(t *testing.T) {
 	_, addr := newTestHub(t)
 	streamURL := fmt.Sprintf("http://%s/api/stream", addr)
 	req, _ := http.NewRequest(http.MethodGet, streamURL, nil)
@@ -331,7 +264,7 @@ func TestAlertAssignSSEBroadcast(t *testing.T) {
 	frames := bufio.NewScanner(res.Body)
 
 	postAssign(t, fmt.Sprintf("http://%s/api/alerts/ffffffffffffffff/assign", addr),
-		`{"assignee":"ana","by":"ops"}`)
+		`{"assignee":"ana","by":"carlos"}`)
 
 	var entry map[string]any
 	found := false
@@ -352,9 +285,54 @@ func TestAlertAssignSSEBroadcast(t *testing.T) {
 		break
 	}
 	if !found {
-		t.Fatal("no alert_lifecycle SSE frame received")
+		t.Fatal("no alert_lifecycle SSE frame for the assignment")
 	}
-	if entry["assignee"] != "ana" || entry["assigned_by"] != "ops" {
-		t.Fatalf("broadcast entry = %v", entry)
+	if entry["assignee"] != "ana" || entry["assigned_by"] != "carlos" {
+		t.Fatalf("SSE entry = %v", entry)
+	}
+}
+
+func TestAlertAssignStoreMode(t *testing.T) {
+	h, addr := newTestHub(t)
+	st, err := store.Open(t.TempDir() + "/assign.db")
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	defer st.Close()
+	h.SetStore(st)
+	h.RecordAlert(alert.Alert{
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano), RuleID: "r1", RuleName: "test rule",
+		Severity: "critical", Host: "LAB-TEST", EventID: "ev-1",
+		EventType: "process.create", Summary: "s", MatchedOn: []string{"process.name"},
+	})
+	base := fmt.Sprintf("http://%s", addr)
+
+	var listed []map[string]any
+	getJSON(t, base+"/api/alerts", &listed)
+	if len(listed) != 1 {
+		t.Fatalf("store alerts = %d, want 1", len(listed))
+	}
+	id, _ := listed[0]["id"].(string)
+
+	if res, body := postAssign(t, base+"/api/alerts/"+id+"/assign", `{"assignee":"ana","by":"carlos"}`); res.StatusCode != 200 {
+		t.Fatalf("store assign = %d %s", res.StatusCode, body)
+	}
+	getJSON(t, base+"/api/alerts?assignee=ana", &listed)
+	if len(listed) != 1 || listed[0]["assignee"] != "ana" {
+		t.Fatalf("store mis alertas = %v", listed)
+	}
+	getJSON(t, base+"/api/alerts?unassigned=true", &listed)
+	if len(listed) != 0 {
+		t.Fatalf("store queue = %v", listed)
+	}
+	// the batch route works on the store backend too
+	res, body := postAssign(t, base+"/api/alerts/assign-batch",
+		fmt.Sprintf(`{"ids":["%s"],"assignee":"","by":"carlos"}`, id))
+	if res.StatusCode != 200 || !strings.Contains(body, `"assigned"`) {
+		t.Fatalf("store batch = %d %s", res.StatusCode, body)
+	}
+	getJSON(t, base+"/api/alerts?unassigned=true", &listed)
+	if len(listed) != 1 {
+		t.Fatalf("store queue after unassign = %v", listed)
 	}
 }

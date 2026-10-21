@@ -176,6 +176,60 @@ func TestServiceRetriesRetryableAndCountsPermanent(t *testing.T) {
 	}
 }
 
+// shutdownProbe makes the shutdown contract observable: a delivery
+// "attempt" with an already-cancelled context is a doomed one (the
+// transport fails immediately), so the drain's Background attempt is
+// the only honest try a queued frame can get at shutdown.
+type shutdownProbe struct {
+	name        string
+	mu          sync.Mutex
+	attempts    int
+	deadCtxSeen int
+}
+
+func (p *shutdownProbe) Name() string { return p.name }
+
+func (p *shutdownProbe) Deliver(ctx context.Context, a alert.Alert) error {
+	p.mu.Lock()
+	p.attempts++
+	if ctx.Err() != nil {
+		p.deadCtxSeen++
+	}
+	p.mu.Unlock()
+	return nil
+}
+
+func (p *shutdownProbe) Retryable(err error) bool { return isRetryable(err) }
+
+// A cancel landing on a busy queue must end in the documented drain:
+// every queued frame gets exactly one best-effort attempt under a live
+// (Background) context, and none is wasted on a doomed attempt with the
+// cancelled one. Before the loop checked the context BEFORE the select,
+// Go's select arbitration sent about half of a queued backlog into
+// instant failed attempts at shutdown instead of the drain.
+func TestServiceShutdownDrainsQueueBestEffort(t *testing.T) {
+	probe := &shutdownProbe{name: "probe"}
+	s := New(probe)
+	for i := 0; i < queueSize; i++ { // fill the queue completely
+		s.Handle(sampleAlert())
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // shutdown BEFORE the worker ever runs: worst case for the old race
+	s.Run(ctx)
+	s.Wait()
+
+	if probe.deadCtxSeen != 0 {
+		t.Fatalf("%d delivery attempt(s) ran with an already-cancelled context; the drain must attempt frames with a live one", probe.deadCtxSeen)
+	}
+	if got := probe.attempts; got != queueSize {
+		t.Fatalf("drain attempted %d of %d queued frames", got, queueSize)
+	}
+	stats := s.Stats()[0]
+	if stats.Sent != queueSize || stats.Failed != 0 || stats.Dropped != 0 {
+		t.Fatalf("stats = %+v, want sent=%d failed=0 dropped=0", stats, queueSize)
+	}
+}
+
 func TestServiceConcurrentHandleNeverBlocks(t *testing.T) {
 	c := &stubChannel{name: "c"}
 	s := New(c)

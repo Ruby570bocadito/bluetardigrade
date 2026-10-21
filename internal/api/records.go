@@ -61,10 +61,9 @@ type alertView struct {
 	StatusNote string `json:"status_note,omitempty"` // operator free-text triage note
 	StatusBy   string `json:"status_by,omitempty"`   // who set it (unauthenticated free text)
 	StatusAt   string `json:"status_at,omitempty"`   // RFC 3339 when the status was set
-	// Assignment (TEAM-3): who owns the alert, independent of the
-	// status. AssignedBy is the account that performed the assignment
-	// (free text, same trust model as StatusBy); an absent assignee
-	// means the alert sits in the unassigned queue.
+	// Assignment trio (TEAM-3): present only when the alert is
+	// assigned. assigned_by/assigned_at are the audit trail of the
+	// (re)assignment, not of the triage.
 	Assignee   string `json:"assignee,omitempty"`
 	AssignedBy string `json:"assigned_by,omitempty"`
 	AssignedAt string `json:"assigned_at,omitempty"`
@@ -95,6 +94,14 @@ func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return // 400 already written
 	}
+	// Assignment filters (TEAM-3): applied AFTER the lifecycle
+	// overlay, so they work identically on both backends. A bad
+	// value is a 400, like every other query filter here.
+	af, err := parseAssignFilter(r)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	h.mu.Lock()
 	st := h.store
 	// Snapshot under the lock: same ring-race argument as
@@ -117,24 +124,18 @@ func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 			out = []alert.Alert{}
 		}
 		// store mode serves the same lifecycle overlay as ring mode:
-		// triage state must not depend on which backend answered
+		// triage state must not depend on which backend answered.
+		// The assignment filter narrows the overlay window: a page
+		// may come back shorter than limit when assigned alerts fall
+		// outside the newest `limit` rows (window semantics —
+		// documented in the OpenAPI operation and the contract).
 		views := make([]alertView, 0, len(out))
 		for _, a := range out {
-			views = append(views, h.withLifecycle(a))
-		}
-		// Assignment filter (TEAM-3): the assignment lives in the
-		// lifecycle overlay, not in the store columns, so it runs on the
-		// overlaid page. Page-level by design: for a COMPLETE queue (the
-		// whole history, cursor included) the console uses
-		// /api/alerts/search, which scans for the assignment instead.
-		if f.assignee != "" {
-			filtered := views[:0]
-			for _, v := range views {
-				if assigneeFilterMatches(v, f.assignee) {
-					filtered = append(filtered, v)
-				}
+			v := h.withLifecycle(a)
+			if !af.match(v) {
+				continue
 			}
-			views = filtered
+			views = append(views, v)
 		}
 		writeJSON(w, views)
 		return
@@ -147,10 +148,9 @@ func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 		// prerequisite when the query actually filters by time.
 		if ts, ok := f.alertTime(a); ok && f.matchAlert(a, ts) {
 			v := h.withLifecycle(a)
-			// The ring is scanned whole, so the assignment filter is
-			// exact here: a mine or unassigned-queue view never hides a
-			// matching alert behind the limit.
-			if assigneeFilterMatches(v, f.assignee) {
+			// assignment filters count against limit only when they
+			// match, so the ring serves exactly `limit` hits
+			if af.match(v) {
 				out = append(out, v)
 			}
 		}

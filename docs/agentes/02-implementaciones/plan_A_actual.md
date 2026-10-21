@@ -1,52 +1,68 @@
-# Plan de ronda — Implementaciones A (motor Go)
+# Plan de ronda — Implementaciones A
 
-Fecha: 2026-10-22 · Instancia: Implementaciones A · Carril: motor Go
-(`cmd/`, `internal/`, `pkg/`, `configs/`, `thresholds.yaml`, `Makefile`)
+Fecha: 2026-10-21 (CEST). Carril: motor Go (`internal/`, `cmd/engine/`,
+`pkg/`). Pareja de carril: Implementaciones B (sensor Rust) — su ritual
+S-1 es independiente de este plan; no comparten ficheros.
 
-## Tarea elegida
+## Qué voy a atacar esta ronda
 
-**M-1 — TEAM-3 backend: asignación de alertas en el ciclo de vida del motor**
-(hornada 1 del backlog del CONTEXTO; `libre` en TASKS.md, rol AG-1 MOTOR).
-Es la prioridad más alta del carril: C-2 (consola) espera este contrato y
-M-5 (ML de triaje) depende de que exista historial de triaje con responsable.
+**M-1 — backend de «Asignar alertas» (TEAM-3)**, la siguiente pieza grande
+según el ROADMAP de los Directores. La parte de consola («Mis alertas»,
+barra de selección) es C-2 y NO empieza aquí: esta ronda deja el motor
+listo y el contrato publicado.
 
-## Alcance de la implementación
+1. **Estado de asignación en el ciclo de vida** (`internal/lifecycle`):
+   la entrada de triaje gana `assignee` + `assigned_by` + `assigned_at`.
+   La asignación se conserva en las escrituras de triaje (reconocer o
+   cerrar no desasigna) y se limpia con la desasignación explícita.
+   Mismo fichero JSON, misma persistencia atómica y mismo tope que hoy.
+2. **Superficie API** (fichero nuevo `internal/api/alert_assign.go`;
+   en `hub.go` solo las dos líneas de registro):
+   - `POST /api/alerts/{id}/assign` — asignar, reasignar (asignar
+     encima) o desasignar (`assignee: ""`), con `by` para la auditoría;
+   - `POST /api/alerts/assign-batch` — lote desde la barra de selección:
+     `{ids, assignee, by}`, resultado por id (`assigned` / `failed`),
+     no atómico a propósito: una alerta desconocida no tira el lote.
+   Mismas garantías que el triaje: cuerpo de 8 KiB máximo, filtro de
+   origen en escritura, alcance por grupos (X-SF-Scope) y difusión SSE
+   por el tema `alert_lifecycle` que ya consume la consola.
+3. **Cola sin asignar y «Mis alertas» en el backend**: parámetros
+   `assignee=` y `unassigned=true` en `GET /api/alerts`, aplicados tras
+   el overlay del ciclo de vida, combinables con los filtros que ya
+   existen (host, severidad, regla, texto, desde/hasta). En modo tienda
+   el filtro se aplica sobre la ventana consultada; el contrato lo dice
+   explícitamente (la migración de ciclo de vida a SQLite es hornada 2).
 
-1. `internal/lifecycle`: campo `assignee` (+ `assigned_by`, `assigned_at`)
-   en la entrada de triaje, con método `Assign` de actualización parcial
-   (asignar/reasignar/desasignar SIN tocar estado, decisión ni nota; entrada
-   implícita `new` si la alerta no estaba triada). Persistencia atómica igual
-   que el resto del store.
-2. `internal/api`:
-   - `POST /api/alerts/{id}/assign` — asignar/reasignar/desasignar una alerta.
-   - `POST /api/alerts/assign` — asignación en lote (la barra de selección de
-     la consola), con resultado por id y tope de ids por petición.
-   - `alertView` ampliado (`assignee`, `assigned_by`, `assigned_at`) y marcos
-     SSE `alert_lifecycle` tras cada asignación para que la consola viva sin
-     sondear.
-   - Filtro `assignee=` en `GET /api/alerts`: `none` = cola sin asignar,
-     nombre = «Mis alertas».
-3. Tests de ciclo de vida y de API (asignar, reasignar, desasignar, lote con
-   fallos parciales, filtro, ámbito por grupos, validaciones).
-4. Sin tocar TODO.md ni changelog.d: el punto del TODO se completa cuando
-   C-2 aterrice la parte de consola; el backend no lo cierra solo.
+## Contrato M-1 → C-2
 
-## Contrato M-1 → C-2 (resumen; detalle en el informe de ronda)
+Se DECLARA completo en el informe de esta ronda: rutas, cuerpos,
+respuestas, campos nuevos de la vista de alerta, semántica de la cola
+sin asignar, límites y errores. C-2 no empieza hasta leerlo, como dice
+el ROADMAP. Adelanto: la consola solo necesita `GET /api/alerts`
+(con los dos filtros nuevos), los dos POST de arriba y el tema SSE
+`alert_lifecycle`, cuyo payload ahora incluye la asignación.
 
-- Asignación independiente del estado: `assignee` viaja en la misma entrada
-  de `alert_lifecycle`; la consola puede seguir usando su manejador SSE
-  actual y solo añade los campos nuevos.
-- `by` sigue siendo texto libre del cliente (mismo modelo de confianza que
-  el triaje actual): la consola envía la cuenta con sesión.
-- Cola sin asignar: `GET /api/alerts?assignee=none` (sin entrada de triaje o
-  con asignación vacía). Mis alertas: `GET /api/alerts?assignee=<cuenta>`.
+## Qué NO toco
 
-## Coordinación
+- `sensor/`, `web/`, `website/`, `tools/`: carriles de B y C/D.
+- `cmd/engine/run.go`: POL-1b (división sin cambiar comportamiento) es
+  de Pulimiento A — esta ronda no necesita tocarlo.
+- `internal/api/alert_search.go`: el lenguaje de búsqueda no gana el
+  filtro de asignación en esta ronda; la cola y «Mis alertas» usan
+  `GET /api/alerts` (va al informe como propuesta futura).
+- Bugs funcionales (Seguridad) y refactor de calidad (Pulimiento):
+  si veo algo, va al informe, no lo corrijo.
 
-- Pareja de carril (Implementaciones B, sensor Rust): sin plan publicado en
-  el repo todavía (`docs/agentes/` se estrena esta ronda); no hay solape —
-  mi carril no toca `sensor/`.
-- Dejo la reclamación de M-1 en TASKS.md (kit vigente en el repo) además de
-  este plan, para que ninguna instancia del kit antiguo la tome.
-- Trabajo en rama `agent/motor/m-1` y PR pequeño: main está protegida (los
-  merges los hace el humano), según la convención del repo y los PR #34–#38.
+## Ritual
+
+Punto completado = fuera de TODO.md + entrada en changelog.d/. El punto
+TEAM-3 NO se completa aquí (falta la consola de C-2): entra en
+changelog.d/ como entrega del motor y TODO.md queda anotado con lo que
+falta, para que el humano vea el estado real de un vistazo.
+
+## Verificación antes de cada push
+
+gofmt, `go build ./...`, `go vet ./...`, `go test ./...` (con `-race` en
+los paquetes tocados), guard de OpenAPI (`check_openapi.py`), y
+`git pull --rebase` inmediatamente antes de cada push. CI de main en
+verde antes de dar la ronda por cerrada.

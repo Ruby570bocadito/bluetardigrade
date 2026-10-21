@@ -1,77 +1,82 @@
 # Roadmap — Seguridad A (carril A↔B, bugs funcionales del motor, el sensor y la consola)
 
-Actualizado: 2026-10-21 18h57 CEST (cierre de ronda 1, tras el pull que
-trajo los planes de ambos Directores y el plan de mi pareja B).
+Actualizado: 2026-10-21 19h35 CEST (cierre de ronda 2).
 
-## Coordinación con Seguridad B (tras leer su plan_B_actual.md)
+## Hecho en esta ronda (seg-A r2)
 
-- El plan de B (2026-10-22) solapa con mi foco en su punto 3 («vía de
-  aviso en la consola»): **esa vía ya está auditada y corregida por mí**
-  (defectos del permiso en limbo y del tono suspendido; informe
-  `ronda_2026-10-21_18h55_A.md`, commits `4abb393`+`f43c253`). B: no la
-  repitas; te sirve como línea base verificada.
-- Sus puntos 1 (`sf-start` → `-notify`, doctor y `notify.example.yaml`)
-  y 2 (revisión dinámica del PR #28) son COMPLEMENTARIOS con lo mío: yo
-  no toqué el lanzador (F3, fuera de mi ámbito esta ronda) y mi revisión
-  del PR #28 fue estática. Sin conflicto de ficheros previsto (B toca
-  `scripts/windows/runtime.ps1`, `cmd/engine`, raíz; yo toqué
-  `web/console/`).
-- Desempate de planes: mi plan se publicó primero (2026-10-21 18h40 vs
-  2026-10-22); el foco elegido por cada uno ya quedó repartido de facto.
-- El ROADMAP.md general del Director A sigue diciendo «F1 en curso
-  (Seguridad B)»: le corresponde a él reflejar que la pata de consola
-  está entregada (no edito su archivo; lo propongo en mi informe).
-
-
-## Estado de mi carril
-
-- `docs/agentes/` ha arrancado de cero en esta ronda (la estructura anterior
-  vivió en la rama descartada `100agentes`): no hay ROADMAP.md general ni
-  informes previos que leer; mi referencia ha sido TODO.md, el CHANGELOG y
-  el historial de git.
-- Sin plan publicado de mi pareja B (Seguridad B no ha corrido aún):
-  desempate trivial, mi plan publicado manda esta ronda. B: lee mi plan y
-  mi informe antes de la tuya y elige foco complementario.
-
-## Hecho en esta ronda (seg-A r1)
-
-- Auditoría de la vía completa de «alerta crítica sin aviso» (F1):
-  consola (SSE + snapshot REST + `newCriticalAlerts`), proxy Next.js
-  (streaming correcto, `no-transform`), motor (`RecordAlert` →
-  `broadcast("alert", ...)` con filtro por alcance y gota a cliente
-  lento) y maestro de severidades (`severityOf` + paleta real de
-  rules/beacons/thresholds/sequences, todo en minúsculas válido).
-- **Corregido**: permiso de notificación en limbo (`default` tras
-  descartar el diálogo) no mostraba pista ninguna en campana ni en
-  Ajustes → Notificaciones; y el tono de aviso podía no sonar
-  (`AudioContext` suspendido por la política de autoplay, sin
-  `resume()`). Cambios en `alert-notify.ts` (+`notifyNeedsPermission`),
-  `critical-notifier.tsx`, `settings-view.tsx`, diccionarios es/en
-  (`notify.pending`), test nuevo y fragmento
-  `changelog.d/console-notify-pending.md`.
+- **Corregido** el drenaje indeterminado del notificador en el apagado
+  (`internal/notify/notify.go`): chequeo del contexto antes de cada pop
+  + guardia de frame perdido en `deliver`; el contrato de `drain()` se
+  cumple de verdad. Test de regresión
+  `TestServiceShutdownDrainsQueueBestEffort` (falla seguro sin fix) y
+  fragmento `changelog.d/notify-shutdown-drain.md`.
+- **Hotfix de main sin compilar** (PR #41, P-3 pprof):
+  `stopProfiles, err :=` redeclaraba el `var err error` de `runEngine`
+  (`cmd/engine/run.go`); declaración redundante eliminada, cero cambio
+  de conducta. main vuelve a compilar y la suite entera pasa (41
+  paquetes).
+- **Replay PR #28, parte dinámica:** test
+  `TestStatsHotHostsStayHonestThroughRingRotatingReplay` (spool que
+  rota el anillo; el riesgo sigue anclado a la hora del evento).
+- **Revisión estática sin defectos:** los tres emisores agregados
+  adjuntan `EventID` (correlador/beacon/umbral); no hay restauración de
+  alertas al hub que recobre riesgo a hora de pared; el ingest sobrevive
+  al atasco (cap de conexiones, scanner acotado, apagado sincronizado,
+  backpressure por bloqueo del handler sin deadlock — el consumidor
+  siempre drena).
+- Línea base local: toolchain Go 1.26.10 instalado en el sandbox;
+  `go build ./...`, `go test -count=1 ./...` (41 paquetes ok), `-race`
+  y `go vet` limpios en lo tocado.
 
 ## Cola de mi carril (priorizada, candidatas para próximas rondas)
 
-1. **F1 resto**: la pata de canales externos del aviso (correo/Telegram
-   no pueden llegar en Windows mientras `sf-start` no pase `-notify`) es
-   F3/IMP-A por alcance (lanzador + doctor); desde Seguridad solo
-   vigilancia. La reproducción «en Windows real» es acción del humano.
-2. **Motor, casos borde del volcado del atasco (PR #28)**: estático
-   revisado limpio esta ronda (`alertTimeLocked`, `ringDropLocked`,
-   decay del riesgo por hora de evento). Pendiente lo dinámico en
-   Windows real (humano). Revisar el drenaje con spool de horas y
-   reinicios a mitad (TODO, pruebas en Windows real) cuando haya
-   telemetría de esas pruebas.
-3. **Sensor Rust**: `queue.rs` auditado limpio (orden cola→spool, replay
-   tras caída, apagado); revisar `transport.rs` y `heartbeat.rs`
-   (reconexión y latido con EventsLost/BuffersLost, S-4) en una próxima
-   ronda.
-4. **Supresiones y reglas**: carga validada fail-loud y operadores
-   compartidos con el motor; pasar por `internal/rules` los operadores
-   `i*` y el conversor Sigma cuando IMP toque F3 SigmaHQ.
-5. **Hallazgos heredados del arbol viejo** (para el Director): los
-   commits de sesiones previas traen autores con marca visible en el
-   historial (`Claude <noreply@anthropic.com>` en `fe6acf8` y el bot de
-   auditoría en `e02d66e`) — reescribir historia o no es decisión del
-   humano (F0); AGENTS.md/TASKS.md/WORKLOG.md en raíz siguen ahí y el
-   CONTEXTO dice que docs/agentes/ los sustituye.
+1. **`internal/notify`: deadline de `drain()` por frame** (contexto con
+   timeout derivado del restante): hoy la deadline global de 2s es soft
+   entre frames y un SMTP lento estira el apagado a ~17s. Pieza pequeña
+   con test propio.
+2. **`internal/notify/email.go`: `c.Quit()` crudo** cuenta `failed` una
+   entrega aceptada si el servidor corta tras DATA (sin reintento, sin
+   duplicados): matiz de observabilidad a pulir cuando se toque el
+   canal.
+3. **`internal/webhook`: patrón de apagado** — si `post()` toma
+   contexto algún día, copiar el chequeo previo + guardia antes de
+   activar la cancelación (hoy es inofensivo: post ignora ctx).
+4. **Correlador (`internal/correlate`) en detalle** (estados, caps,
+   cadenas con expiración) — quedó sin revisión a fondo esta ronda;
+   coordinar con B, que lo tiene como colador.
+5. **Operadores `i*` de supresiones → `internal/rules`** cuando IMP
+   toque F3 SigmaHQ (sin cambiar conducta).
+6. **Vigilancia:** la validación física en Windows real del F1 y del
+   replay sigue siendo acción del humano (PRUEBAS-PENDIENTES).
+
+## Coordinación con Seguridad B (vigente desde la ronda 1)
+
+- La vía de aviso de consola sigue auditada y corregida por mí (ronda
+  1); B no la repite.
+- Reparto de la ronda 2 verificado sin solape: B sensor (`transport.rs`,
+  `heartbeat.rs`, `enrollment.rs`, `queue.rs`, `service.rs`) + regresión
+  de los splits POL-1; yo notify + replay PR #28. El sensor sale de MI
+  cola mientras B lo lleve.
+- El correlador es de colador para quien llegue antes (aviso en el plan
+  de ronda correspondiente).
+
+## Historial de estado
+
+- Ronda 1 (2026-10-21 18h57): auditoría de la vía de aviso de consola
+  (F1), dos defectos corregidos (permiso en limbo, tono suspendido);
+  cola inicial del carril.
+- Ronda 2 (2026-10-21 19h35): drenaje de notify en apagado corregido;
+  replay PR #28 verificado dinámicamente; hallazgos sin corregir
+  anotados arriba (drain por frame, Quit de email, webhook+ctx).
+
+## Hallazgos heredados para el Director/humano (sin tocar por mí)
+
+- Commits históricos con autoría no humana (`fe6acf8`, `e02d66e`) y la
+  identidad de sandbox `Z User <z@container>` en las sesiones: decisión
+  del humano (F0); mis reglas me impiden cambiar la identidad.
+- `AGENTS.md`/`TASKS.md`/`WORKLOG.md` en raíz y los dos rastros de
+  marca (TODO.md:33, AGENTS.md:3): asignados a la retirada del kit
+  previo.
+- F0 íntegro (ramas huérfanas, Dependabot #24–#27, tags, About) y los
+  dos tokens filtrados por el chat de coordinación: rotarlos.
+

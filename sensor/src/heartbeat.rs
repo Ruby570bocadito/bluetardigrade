@@ -24,6 +24,16 @@ pub struct Health {
     pub queue_cap: usize,
     pub spooled: u64,
     pub dropped: u64,
+    /// ETW events the capture sessions lost since they started
+    /// (EventsLost; PLAN-DETALLADO §2.5)
+    pub etw_events_lost: u64,
+    /// ETW real-time buffers the consumer never received
+    /// (RealTimeBuffersLost)
+    pub etw_buffers_lost: u64,
+    /// process starts that went out without their SHA-256 because the
+    /// image-hash thread could not take them (behind, stopped or
+    /// unavailable; hashing off by --no-hash does not count)
+    pub hash_dropped: u64,
     /// "service" (Windows service manager) or "console" (started by hand)
     pub run_mode: &'static str,
 }
@@ -42,6 +52,11 @@ pub fn attributes(h: &Health) -> BTreeMap<String, String> {
     out.insert("queue_cap".into(), h.queue_cap.to_string());
     out.insert("spooled".into(), h.spooled.to_string());
     out.insert("dropped".into(), h.dropped.to_string());
+    // the loss counters always travel, even at zero: a heartbeat that
+    // stops carrying them is indistinguishable from an old sensor
+    out.insert("etw_events_lost".into(), h.etw_events_lost.to_string());
+    out.insert("etw_buffers_lost".into(), h.etw_buffers_lost.to_string());
+    out.insert("hash_dropped".into(), h.hash_dropped.to_string());
     out.insert("run_mode".into(), h.run_mode.into());
     out
 }
@@ -103,6 +118,9 @@ mod tests {
             queue_cap: 50_000,
             spooled: 3,
             dropped: 0,
+            etw_events_lost: 7,
+            etw_buffers_lost: 2,
+            hash_dropped: 11,
             run_mode: "service",
         });
         assert_eq!(a["sensor_kind"], "etw");
@@ -111,12 +129,39 @@ mod tests {
         assert_eq!(a["spooled"], "3");
         assert_eq!(a["os"], "Windows 11 Pro 24H2 (26100)");
         assert_eq!(a["run_mode"], "service");
-        assert_eq!(a.len(), 10);
+        assert_eq!(a["etw_events_lost"], "7");
+        assert_eq!(a["etw_buffers_lost"], "2");
+        assert_eq!(a["hash_dropped"], "11");
+        assert_eq!(a.len(), 13);
+    }
+
+    #[test]
+    fn loss_counters_always_travel_even_at_zero() {
+        // the engine alerts on these rising: an absent counter would
+        // look like an old sensor instead of a healthy one
+        let a = attributes(&Health {
+            kind: "etw",
+            version: "1.0.0",
+            os: String::new(),
+            capture: "process".into(),
+            interval_s: 60,
+            uptime_s: 60,
+            queue_cap: 1,
+            spooled: 0,
+            dropped: 0,
+            etw_events_lost: 0,
+            etw_buffers_lost: 0,
+            hash_dropped: 0,
+            run_mode: "console",
+        });
+        assert_eq!(a["etw_events_lost"], "0");
+        assert_eq!(a["etw_buffers_lost"], "0");
+        assert_eq!(a["hash_dropped"], "0");
     }
 
     #[test]
     fn empty_os_is_omitted() {
-        let a = attributes(&Health { kind: "etw", version: "x", os: String::new(), capture: "process".into(), interval_s: 60, uptime_s: 0, queue_cap: 1, spooled: 0, dropped: 0, run_mode: "console" });
+        let a = attributes(&Health { kind: "etw", version: "x", os: String::new(), capture: "process".into(), interval_s: 60, uptime_s: 0, queue_cap: 1, spooled: 0, dropped: 0, etw_events_lost: 0, etw_buffers_lost: 0, hash_dropped: 0, run_mode: "console" });
         assert!(!a.contains_key("os"));
     }
 
