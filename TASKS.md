@@ -23,7 +23,7 @@ elige otra libre de tu rol. Al fusionarse el PR, el humano la marca `hecha`.
 | H-2 | Decidir tags sueltos `console-v1`/`v0.1.0`; descripción «About» y topics | HUMANO | — | F0 | libre |
 | H-3 | Fusionar o cerrar Dependabot #24–#27 con CI en verde | HUMANO | — | F0 | libre |
 | H-4 | Probar `sf-start`/`sf-stop`/`-KeepSensor`/`sf-status` y el instalador silencioso en Windows real | HUMANO | — | F1 | libre |
-| M-1 | TEAM-3 backend: asignación de alertas en el ciclo de vida del motor (API, estados, cola sin asignar) | AG-1 | — | F3 | en revisión (PR #45) |
+| M-1 | TEAM-3 backend: asignación de alertas en el ciclo de vida del motor (API, estados, cola sin asignar) | AG-1 | — | F3 | hecha (a51108a + PR #45) |
 | S-1 | Registro: resolver raíz `?` por usuario del proceso (`HKU\`) y enviar `registry.value_data` | AG-2 | — | Backlog/Sensor | en revisión (PR #40) |
 | C-1 | Rediseño del dashboard con el kit de componentes POL-7 en todas las vistas | AG-3 | — | F5 | hecha (PR #38) |
 | O-1 | POL-5: OPERATIONS por capítulos + esqueleto de la guía de suscripción WEF | AG-4 | — | Calidad + F3 | hecha (PR #39) |
@@ -49,7 +49,7 @@ elige otra libre de tu rol. Al fusionarse el PR, el humano la marca `hecha`.
 | E-3 | Niveles por grupo, aprobación 1–2 personas, equipos protegidos, límites por hora, interruptor general | AG-1 | E-1 | F3 | libre |
 | E-4 | Opción opt-in en el instalador (apagada por defecto) + UI de niveles y aprobaciones | AG-3 + AG-4 | E-3 | F3 | libre |
 | C-3 | Editor de reglas YAML en consola con validación, probador e historial; importar Sigma | AG-3 | M-3 | F3 | libre |
-| M-4 | Consulta BD solo lectura: límites de tiempo/filas, admin, auditada | AG-1 | — | F3 | hecha (a51108a + PR #45) |
+| M-4 | Consulta BD solo lectura: límites de tiempo/filas, admin, auditada | AG-1 | — | F3 | libre |
 | C-4 | UI de consulta BD + lenguaje de búsqueda `campo:valor`, AND/OR/NOT (IDEA-4) | AG-3 | M-4 | F3 | libre |
 | M-5 | ML beta de triaje (`-ml-beta`, explicable, aprende de veredictos) | AG-1 | M-1 y C-2 | F4 | libre |
 | M-6 | Analista IA con alcance por grupos (el hub lee el motor con el alcance de quien pregunta) | AG-1 | — | F2 | libre |
