@@ -1874,7 +1874,8 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: The surface is not armed (`-api-db-query` missing), or the caller
+          description: >-
+            The surface is not armed (`-api-db-query` missing), or the caller
             is scoped to host groups (X-SF-Scope): a raw SELECT cannot honor
             group scoping, so scoped accounts never reach it.
           content:
@@ -1923,7 +1924,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '501':
-          description: The engine runs without `-store`: there is no database to query.
+          description: 'The engine runs without `-store`: there is no database to query.'
           content:
             application/json:
               schema:
