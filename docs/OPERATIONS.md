@@ -332,6 +332,66 @@ The engine serves a small read-only API used by the web console and handy for SI
 | `GET /api/reports/{kind}?window=7d&format=json` | one report on demand, JSON or CSV; the `incident` kind takes `?id=` (16-hex case id) instead of a window — see [SOC reports and noise](#soc-reports-and-noise-rep-1) |
 | `GET /api/noise?window=24h&host=&limit=10` | the noise report: processes, DNS domains and rules that most generate events or alerts, each with its triage overlay; JSON only, fleet-wide by default, `host=` narrows to one machine — see [SOC reports and noise](#soc-reports-and-noise-rep-1) |
 
+<!-- BEGIN API REFERENCE -->
+Complete operation index generated from `api/openapi.yaml` (POL-5): **48 routes, 53 operations**. The guard `scripts/dev-tests/check_api_reference.py` fails CI when the spec and this index drift; regenerate in the same round as the spec change with `python3 scripts/dev-tests/check_api_reference.py --write`.
+
+| Method | Route | Summary | Tags |
+|--------|-------|---------|------|
+| GET | /api/ad/objects/{kind} | One page of the directory snapshot (users, groups, computers or OUs) | ad |
+| GET | /api/ad/posture | Domain posture analysis with the 0-100 score (AD-2) | ad |
+| GET | /api/ad/posture/history | Past posture scores, one point per completed sync (AD-2 trend) | ad |
+| GET | /api/ad/status | Read-only Active Directory connector state (AD-1) | ad |
+| POST | /api/ad/test | Probar conexión — one bounded, read-only probe of a candidate configuration (AD-6) | ad |
+| GET | /api/alerts | Recent alerts (newest first) with triage status | telemetry |
+| POST | /api/alerts/assign-batch | Assign (or unassign) a list of alerts in one request (TEAM-3) | telemetry |
+| GET | /api/alerts/export | Bulk download of the alert ring | export |
+| GET | /api/alerts/search | Stable pages of alert history with lifecycle filters | telemetry |
+| POST | /api/alerts/{id}/assign | Assign (or unassign) the operator who owns one alert's triage (TEAM-3) | telemetry |
+| GET | /api/alerts/{id}/forensics | Frozen evidence bundle of one alert (timeline + summary) | telemetry |
+| POST | /api/alerts/{id}/status | Record the operator triage decision for one alert | telemetry |
+| GET | /api/baseline | What the per-host process baseline knows about one machine (read-only) | status |
+| POST | /api/db/query | Read-only SQL over the evidence database (M-4) | telemetry |
+| GET | /api/enroll | Sensor enrollment state - tokens and enrolled hosts (read-only) | status |
+| POST | /api/enroll/hosts/{name}/{action} | Approve, reject or revoke an enrolled host | status |
+| POST | /api/enroll/tokens | Create an enrollment token (the secret is returned once) | status |
+| POST | /api/enroll/tokens/{id}/revoke | Stop a token from enrolling more hosts | status |
+| GET | /api/events | Recent events (newest first) | telemetry |
+| GET | /api/events/export | Bulk download of the event ring | export |
+| GET | /api/fleet | Inventory of the machines reporting to the engine (read-only) | status |
+| GET | /api/groups | Host groups, their criteria and the inventory machines in each (read-only) | status |
+| GET | /api/health | Liveness probe | status |
+| GET | /api/incidents | Investigation cases, most recently updated first | incidents |
+| POST | /api/incidents | Open an incident | incidents |
+| GET | /api/incidents/{id} | One incident with its timeline | incidents |
+| PATCH | /api/incidents/{id} | Change status, severity, owner, title or summary | incidents |
+| POST | /api/incidents/{id}/alerts | Link alerts to an incident | incidents |
+| POST | /api/incidents/{id}/notes | Append an analyst note to the timeline | incidents |
+| GET | /api/intel | Offline threat-intel lists and per-host baseline state (read-only) | status |
+| GET | /api/noise | Processes, DNS domains and rules that most generate events or alerts (§2.4) | noise |
+| GET | /api/reports | REP-1 report catalog (kinds, parameters, formats) | reports |
+| GET | /api/reports/{kind} | One report of the catalog (JSON or CSV) | reports |
+| GET | /api/reputation | Configured providers, or one indicator's reputation | reputation |
+| GET | /api/respond/audit | Most recent active-response attempts from the audit JSONL (newest first) | respond |
+| POST | /api/respond/kill | Kill one verified local process (-allow-kill, operator-invoked) | respond |
+| GET | /api/respond/state | Armed state of the active-response surface (flags, live counters, audit file health) | respond |
+| GET | /api/rules | Live rule set | rules |
+| POST | /api/rules/test | Dry-run one event against the loaded rules | rules |
+| GET | /api/scenarios | Loaded detection-validation scenario library (SIM-4) | scenarios |
+| POST | /api/scenarios/run | Launch the detection-validation battery (202, asynchronous) | scenarios |
+| GET | /api/scenarios/runs | Run history, newest first (trend source for the console) | scenarios |
+| GET | /api/scenarios/runs/{id} | One battery run with its per-scenario results | scenarios |
+| GET | /api/sequences | Loaded kill-chain sequences (read-only view) | status |
+| GET | /api/settings/ad | Effective Active Directory connector configuration (AD-6) | ad |
+| PUT | /api/settings/ad | Validate, commit and hot-reload the AD connector settings (AD-6) | ad |
+| PUT | /api/settings/groups | Replace every host group (console editor) | status |
+| GET | /api/stats | Runtime counters | status |
+| GET | /api/stream | Server-Sent Events feed of live events and alerts | stream |
+| GET | /api/suppressions | Operator allowlist | status |
+| POST | /api/suppressions | Add (or update) one suppression entry (-api-write) | status |
+| DELETE | /api/suppressions | Remove entries matching the exact (rule_id, host) pair (-api-write) | status |
+| GET | /metrics | Prometheus scrape endpoint (text exposition 0.0.4) | status |
+<!-- END API REFERENCE -->
+
 All four telemetry endpoints (`/api/events`, `/api/alerts` and both `/export` variants) accept the same filter parameters, applied BEFORE `limit`: `host=<name>` (exact, case-insensitive), `since=`/`until=` (RFC 3339 timestamp or positive duration like `90m`/`24h`), `q=<free text>` (case-insensitive across ids, summaries, tags and context), plus `severity=a,b` and `rule_id=` on the alert endpoints and `type=` on the event ones. Invalid values answer 400 with an actionable message. When `-store` is attached, all four read the full stored history — not just the in-memory rings — subject to the configured retention (what that mode changes in [Persistent storage](#persistent-storage-sqlite-opt-in)). Examples: `/api/alerts/export?host=lab-wks-01&since=24h` for "that box, today", `/api/events?type=network.connect&q=suspicious.tld` to chase one domain.
 
 Exports are for SIEM import, offline analysis and the forensic store: JSONL round-trips the full records, CSV flattens them to stable columns and neutralizes spreadsheet formula injection on attacker-controlled fields. When `-webhook` is set, `/api/stats` additionally reports `webhook_sent` / `webhook_failed` / `webhook_dropped` so the delivery pipeline can be sized from the outside; the same delivery triple is reported per SIEM platform when its sink is configured (`elastic_*` via `-elastic`, `splunk_*` via `-splunk`, semantics in [SIEM sinks](#siem-sinks-elasticsearch--splunk)); when `-notify` is set, one `notify_channels` row per configured channel reports the same four-state accounting (sent / failed / dropped / filtered) with the channel name and type; with ingest auth active (`-token`), `ingest_rejected` counts connections rejected by the shared-token handshake; when a `sequences/` directory is loaded, `correlator_states` / `correlator_sequences` / `correlator_cap` expose the kill-chain correlator's in-flight (sequence, host) chains against its hard cap (what the numbers mean and how the console surfaces them in [Kill-chain correlation](#kill-chain-correlation)); and with `-store` attached, `store_enabled` / `store_events` / `store_alerts` report the persisted history size (semantics in [Persistent storage](#persistent-storage-sqlite-opt-in)); `risk_hosts_tracked` / `hot_hosts` always report the per-host risk surface (semantics in [Host risk scoring](#host-risk-scoring-hot-hosts)), and `beacons_tracked` / `beacons_cap` / `beacons_fired` the beaconing detector's live signal (semantics in [Beaconing detection](#beaconing-detection-c2-call-home)). The machine-readable contract for the whole surface lives in OpenAPI 3.0 at [`api/openapi.yaml`](api/openapi.yaml).
