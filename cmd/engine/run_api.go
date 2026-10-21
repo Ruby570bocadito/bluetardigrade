@@ -225,6 +225,23 @@ func startAPIHub(b apiBoot) (*api.Hub, string, string, func()) {
 				hub.EnableSuppressionsWrite(b.supPath)
 				fmt.Printf("[ENGINE] api write: ENABLED (POST/DELETE /api/suppressions -> %s)\n", b.supPath)
 			}
+			// read-only SQL console (M-4): opt-in like the write
+			// surface, inherits the bearer gate, and refused under
+			// the same no-token-beyond-loopback rule — whoever
+			// reaches the port could read every row of the
+			// evidence database, which is exactly what the token
+			// exists to prevent.
+			apiDBQuery := b.o.apiDBQuery || os.Getenv("SF_API_DB_QUERY") == "1"
+			switch {
+			case !apiDBQuery:
+			case b.st == nil:
+				fmt.Println("[ENGINE] api db query: -api-db-query ignored, -store is disabled (no database to query)")
+			case apiTok == "" && !isLoopback(hub.Addr()):
+				fmt.Println("[ENGINE] WARNING: -api-db-query refused: the API has no bearer token and is bound beyond loopback - unauthenticated queries would expose the whole evidence database. Set -api-token or SF_API_TOKEN.")
+			default:
+				hub.EnableDBQuery()
+				fmt.Println("[ENGINE] api db query: ENABLED (POST /api/db/query; read-only SELECT, max 5000 rows and 30 s per query, every attempt audited)")
+			}
 			// detection-validation battery (SIM-4): armed only
 			// with -scenarios. The battery replays the inert
 			// library against the LIVE rule set through the
@@ -260,6 +277,24 @@ func startAPIHub(b apiBoot) (*api.Hub, string, string, func()) {
 			hub.SetAlertLatency(b.latTracker.snapshot)
 			hub.SetIngestCertExpiry(b.server.CertExpiry)
 
+			// AD-7 domain sign-in (M-2): armed only with
+			// -domain-auth. The config loads fail-loud at startup
+			// (a malformed mapping must not half-arm the login);
+			// the endpoint itself answers 501 while disarmed, and
+			// the console's login page stays the only caller.
+			if b.o.domainAuth != "" {
+				daCfg, derr := ad.LoadDomainAuth(b.o.domainAuth)
+				if derr != nil {
+					log.Fatalf("[ENGINE] %v", derr)
+				}
+				hub.SetDomainAuth(daCfg)
+				mode := "LDAPS"
+				if daCfg.StartTLS {
+					mode = "StartTLS"
+				}
+				fmt.Printf("[ENGINE] inicio de sesión de dominio armado (%s://%s:%d; POST /api/auth/domain)\n",
+					mode, redact.EndpointLabel(daCfg.Server), daCfg.Port)
+			}
 			// Read-only Active Directory connector (AD-1/AD-2):
 			// armed only with -ad AND a store (the snapshot is
 			// persisted, never memory-only). The connector is

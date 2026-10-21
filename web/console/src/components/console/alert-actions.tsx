@@ -18,6 +18,7 @@ import {
   Prohibit,
   Skull,
   Sparkle,
+  UserPlus,
   X,
   XCircle,
   ArrowCounterClockwise,
@@ -25,9 +26,11 @@ import {
 import { ConsoleDialog } from './console-dialog'
 import { useEngine } from './engine-provider'
 import { useIncidents } from './incidents-provider'
+import { useI18n } from './i18n-provider'
+import { useConsoleUser } from './user-session'
 import { SeverityBadge } from './ui-bits'
 import { Meter } from '@/components/charts/bars'
-import { postAlertStatus } from '@/lib/lifecycle'
+import { postAlertAssignBatch, postAlertStatus, type AssignBatchResult } from '@/lib/lifecycle'
 import { alertKey } from '@/lib/engine-client'
 import { csvCell } from '@/lib/chart-export'
 import {
@@ -105,6 +108,9 @@ export function AlertActionBar({ alerts, onClear, onAnalyze, onAnalyzeGroup, onO
     setMessage(errors.length ? `${ok} actualizadas, ${errors.length} con error: ${errors[0]}` : `${ok} alertas actualizadas.`)
   }
 
+  const { dict } = useI18n()
+  const [assignOpen, setAssignOpen] = useState(false)
+
   function exportSelection(format: 'jsonl' | 'csv') {
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
     if (format === 'jsonl') {
@@ -134,6 +140,9 @@ export function AlertActionBar({ alerts, onClear, onAnalyze, onAnalyzeGroup, onO
           <ArrowCounterClockwise size={13} aria-hidden /> Reabrir ({withId.length})
         </button>
         <span aria-hidden className="mx-1 h-5 w-px bg-white/10" />
+        <button type="button" className={btn} disabled={busy || withId.length === 0} onClick={() => setAssignOpen(true)}>
+          <UserPlus size={13} aria-hidden /> {dict.alerts.bulkAssign} ({withId.length})
+        </button>
         <button type="button" className={btn} disabled={withId.length === 0} onClick={() => setDialog('incident')}>
           <FolderPlus size={13} aria-hidden /> Añadir a incidente
         </button>
@@ -166,9 +175,117 @@ export function AlertActionBar({ alerts, onClear, onAnalyze, onAnalyzeGroup, onO
         </button>
       </div>
       {message && <p role="status" className="mt-1.5 text-[11px] text-zinc-300">{message}</p>}
+      {assignOpen && <AssignDialog alerts={withId} onClose={() => setAssignOpen(false)} />}
       {dialog === 'incident' && <IncidentDialog alerts={withId} onClose={() => setDialog(null)} onOpenIncident={onOpenIncident} />}
       {dialog === 'suppress' && <SuppressDialog alerts={alerts} onClose={() => setDialog(null)} />}
     </div>
+  )
+}
+
+// ---- assignment (TEAM-3/C-2) -----------------------------------------------
+
+/** Bulk assignment: to me, to another analyst, or unassign. One batch
+ * POST per submit; per-id failures (a stale selection hits unknown ids)
+ * are listed instead of hiding the ones that made it. The ring updates
+ * live through the alert_lifecycle echo; the explicit refresh covers a
+ * stream that is temporarily down. */
+export function AssignDialog({ alerts, onClose }: {
+  alerts: SfAlert[]
+  onClose: () => void
+}) {
+  const { dict } = useI18n()
+  const { refresh } = useEngine()
+  const me = useConsoleUser()
+  const id = useId()
+  const first = useRef<HTMLInputElement>(null)
+  const [target, setTarget] = useState<'me' | 'other' | 'none'>('me')
+  const [name, setName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [result, setResult] = useState<AssignBatchResult | null>(null)
+
+  const ids = alerts.map((a) => a.id!).filter(Boolean)
+  const needsName = target === 'other' && !name.trim()
+
+  async function submit() {
+    setBusy(true)
+    setError('')
+    // In accounts mode the write is signed with the session account, the
+    // same identity the engine proxy stamps on triage; open/token mode
+    // keeps the shared 'consola' signer.
+    const by = me.mode === 'users' ? me.name : 'consola'
+    const assignee = target === 'me' ? me.name : target === 'other' ? name.trim() : ''
+    const ack = await postAlertAssignBatch(ids, assignee, by)
+    setBusy(false)
+    if (!ack.ok) {
+      setError(ack.error)
+      return
+    }
+    setResult(ack.result)
+    refresh()
+  }
+
+  return (
+    <ConsoleDialog open onClose={onClose} titleId={`${id}-t`} initialFocus={first}>
+      <div className="border-b border-zinc-800 px-5 py-4">
+        <h2 id={`${id}-t`} className="text-sm font-semibold text-zinc-100">{dict.alerts.assignDialogTitle(alerts.length)}</h2>
+        <p className="mt-0.5 text-xs text-zinc-500">{dict.alerts.assignDialogIntro}</p>
+      </div>
+      <div className="space-y-2 px-5 py-4">
+        <fieldset className="space-y-1.5">
+          <legend className="sr-only">{dict.alerts.assignHeading}</legend>
+          <label className="flex items-center gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-xs text-zinc-200">
+            <input ref={first} type="radio" name={`${id}-target`} checked={target === 'me'} onChange={() => setTarget('me')} />
+            {dict.alerts.mineOption(me.name)}
+          </label>
+          <label className="flex items-center gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-xs text-zinc-200">
+            <input type="radio" name={`${id}-target`} checked={target === 'other'} onChange={() => setTarget('other')} />
+            {dict.alerts.otherOption}
+          </label>
+          {target === 'other' && (
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={200}
+              aria-label={dict.alerts.nameAria}
+              placeholder={dict.alerts.namePlaceholder}
+              className={field}
+            />
+          )}
+          <label className="flex items-center gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-xs text-zinc-200">
+            <input type="radio" name={`${id}-target`} checked={target === 'none'} onChange={() => setTarget('none')} />
+            {dict.alerts.noneOption}
+          </label>
+        </fieldset>
+        {error && <p role="alert" className="text-xs text-red-300">{error}</p>}
+        {result && (
+          <div className="space-y-1.5">
+            <p role="status" className="flex items-center gap-2 text-xs text-emerald-300">
+              <CheckCircle size={14} weight="fill" aria-hidden />
+              {dict.alerts.assignResultOk(result.assigned.length)}
+              {result.failed.length > 0 && <span className="text-amber-300"> · {dict.alerts.assignResultFailed(result.failed.length)}</span>}
+            </p>
+            {result.failed.length > 0 && (
+              <ul aria-label={dict.alerts.failedListAria} className="max-h-32 space-y-1 overflow-auto rounded-lg border border-zinc-800 p-2">
+                {result.failed.map((f) => (
+                  <li key={f.id} className="font-mono text-[11px] text-zinc-400">
+                    <span className="text-zinc-300">{f.id.slice(0, 8)}…</span> — {f.error}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="flex justify-end gap-2 border-t border-zinc-800 px-5 py-3">
+        <button type="button" onClick={onClose} className="rounded-md px-3 py-2 text-xs text-zinc-400 hover:text-zinc-100">{result ? 'Hecho' : 'Cancelar'}</button>
+        {!result && (
+          <button type="button" className={primary} disabled={busy || needsName || ids.length === 0} onClick={() => void submit()}>
+            {busy ? '…' : target === 'none' ? dict.alerts.submitUnassign : dict.alerts.submitAssign}
+          </button>
+        )}
+      </div>
+    </ConsoleDialog>
   )
 }
 

@@ -51,6 +51,12 @@ type Store struct {
 	alerts int64
 
 	conflicts int64 // event ids re-sent with a DIFFERENT payload (first copy kept)
+
+	path string // file path of the database (read-only handle DSN)
+
+	roOnce sync.Once // lazy read-only handle for the query surface
+	roDB   *sql.DB
+	roErr  error
 }
 
 // ErrIDConflict reports an event whose id is already stored with a
@@ -168,7 +174,7 @@ CREATE INDEX IF NOT EXISTS alerts_id_idx ON alerts(CASE WHEN json_valid(json) TH
 		db.Close()
 		return nil, fmt.Errorf("store: schema: %w", err)
 	}
-	s := &Store{db: db}
+	s := &Store{db: db, path: path}
 	if err := s.migrateSearchIndex(); err != nil {
 		db.Close()
 		return nil, err
@@ -182,6 +188,10 @@ CREATE INDEX IF NOT EXISTS alerts_id_idx ON alerts(CASE WHEN json_valid(json) TH
 		return nil, err
 	}
 	if err := s.migrateAD(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := s.migrateQueryAudit(); err != nil {
 		db.Close()
 		return nil, err
 	}

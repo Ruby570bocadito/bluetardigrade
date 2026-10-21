@@ -68,10 +68,14 @@ func newElastic(url, index string, queue int) (*Elastic, error) {
 		index = elasticDefaultIndex
 	}
 	return &Elastic{
-		spool:     newSpool(queue),
-		url:       trimTrailingSlash(url),
-		index:     index,
-		hc:        &http.Client{Timeout: elasticPostTimeout},
+		spool: newSpool(queue),
+		url:   trimTrailingSlash(url),
+		index: index,
+		// No transparent redirects: the bulk body is alert evidence
+		// and the ApiKey header must never land on a redirect target.
+		hc: &http.Client{Timeout: elasticPostTimeout, CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}},
 		backoff:   400 * time.Millisecond,
 		flushEver: elasticFlushEvery,
 		maxBatch:  elasticMaxBatch,

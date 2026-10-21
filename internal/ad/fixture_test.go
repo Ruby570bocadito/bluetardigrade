@@ -71,6 +71,11 @@ type fixtureServer struct {
 	password string
 	entries  []fixtureEntry
 
+	// extraBinds holds USER credentials the fixture accepts on top of
+	// the service account (bind name -> password), so the AD-7 domain
+	// sign-in tests can bind as a domain user. Guarded by bindMu.
+	extraBinds map[string]string
+
 	// pageSize is the fixture's own server-side maximum page (a real
 	// DC enforces MaxPageSize no matter what the client asks for).
 	pageSize int
@@ -101,15 +106,16 @@ func newFixtureServer(t *testing.T, entries []fixtureEntry, ldaps bool) (*fixtur
 		t.Fatalf("fixture: listen: %v", err)
 	}
 	s := &fixtureServer{
-		listener: ln,
-		tlsOn:    ldaps,
-		tlsCfg:   tlsCfg,
-		bindDN:   "CN=soc-reader,OU=Service Accounts," + fixtureBase,
-		password: "correct horse battery staple",
-		pageSize: 2, // force real pagination: the tests load 5+ entries
-		entries:  entries,
-		t:        t,
-		closed:   make(chan struct{}),
+		listener:   ln,
+		tlsOn:      ldaps,
+		tlsCfg:     tlsCfg,
+		bindDN:     "CN=soc-reader,OU=Service Accounts," + fixtureBase,
+		password:   "correct horse battery staple",
+		pageSize:   2, // force real pagination: the tests load 5+ entries
+		entries:    entries,
+		extraBinds: map[string]string{},
+		t:          t,
+		closed:     make(chan struct{}),
 	}
 	go s.acceptLoop()
 	return s, caPath, ln.Addr().String()
@@ -119,6 +125,14 @@ func (s *fixtureServer) bindAttempts() [][2]string {
 	s.bindMu.Lock()
 	defer s.bindMu.Unlock()
 	return append([][2]string{}, s.bindLog...)
+}
+
+// allowBind registers one USER credential the fixture accepts on top
+// of the service account (AD-7 domain sign-in tests).
+func (s *fixtureServer) allowBind(name, password string) {
+	s.bindMu.Lock()
+	defer s.bindMu.Unlock()
+	s.extraBinds[name] = password
 }
 
 func (s *fixtureServer) close() {
@@ -335,6 +349,14 @@ func (s *fixtureServer) handleBind(conn net.Conn, msgID int64, op *ber.Packet, r
 		password = pw
 	}
 	ok := name == s.bindDN && password == s.password
+	if !ok {
+		s.bindMu.Lock()
+		want, known := s.extraBinds[name]
+		s.bindMu.Unlock()
+		if known && want == password {
+			ok = true
+		}
+	}
 	code := int64(0)
 	if !ok {
 		code = 49 // invalidCredentials (anonymous or wrong password alike)

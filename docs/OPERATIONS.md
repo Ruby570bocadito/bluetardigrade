@@ -332,6 +332,67 @@ The engine serves a small read-only API used by the web console and handy for SI
 | `GET /api/reports/{kind}?window=7d&format=json` | one report on demand, JSON or CSV; the `incident` kind takes `?id=` (16-hex case id) instead of a window — see [SOC reports and noise](#soc-reports-and-noise-rep-1) |
 | `GET /api/noise?window=24h&host=&limit=10` | the noise report: processes, DNS domains and rules that most generate events or alerts, each with its triage overlay; JSON only, fleet-wide by default, `host=` narrows to one machine — see [SOC reports and noise](#soc-reports-and-noise-rep-1) |
 
+<!-- BEGIN API REFERENCE -->
+Complete operation index generated from `api/openapi.yaml` (POL-5): **49 routes, 54 operations**. The guard `scripts/dev-tests/check_api_reference.py` fails CI when the spec and this index drift; regenerate in the same round as the spec change with `python3 scripts/dev-tests/check_api_reference.py --write`.
+
+| Method | Route | Summary | Tags |
+|--------|-------|---------|------|
+| GET | /api/ad/objects/{kind} | One page of the directory snapshot (users, groups, computers or OUs) | ad |
+| GET | /api/ad/posture | Domain posture analysis with the 0-100 score (AD-2) | ad |
+| GET | /api/ad/posture/history | Past posture scores, one point per completed sync (AD-2 trend) | ad |
+| GET | /api/ad/status | Read-only Active Directory connector state (AD-1) | ad |
+| POST | /api/ad/test | Probar conexión — one bounded, read-only probe of a candidate configuration (AD-6) | ad |
+| GET | /api/alerts | Recent alerts (newest first) with triage status | telemetry |
+| POST | /api/alerts/assign-batch | Assign (or unassign) a list of alerts in one request (TEAM-3) | telemetry |
+| GET | /api/alerts/export | Bulk download of the alert ring | export |
+| GET | /api/alerts/search | Stable pages of alert history with lifecycle filters | telemetry |
+| POST | /api/alerts/{id}/assign | Assign (or unassign) the operator who owns one alert's triage (TEAM-3) | telemetry |
+| GET | /api/alerts/{id}/forensics | Frozen evidence bundle of one alert (timeline + summary) | telemetry |
+| POST | /api/alerts/{id}/status | Record the operator triage decision for one alert | telemetry |
+| POST | /api/auth/domain | Verify domain credentials and resolve the console role (AD-7, -domain-auth) | status |
+| GET | /api/baseline | What the per-host process baseline knows about one machine (read-only) | status |
+| POST | /api/db/query | Read-only SQL over the evidence database (M-4) | telemetry |
+| GET | /api/enroll | Sensor enrollment state - tokens and enrolled hosts (read-only) | status |
+| POST | /api/enroll/hosts/{name}/{action} | Approve, reject or revoke an enrolled host | status |
+| POST | /api/enroll/tokens | Create an enrollment token (the secret is returned once) | status |
+| POST | /api/enroll/tokens/{id}/revoke | Stop a token from enrolling more hosts | status |
+| GET | /api/events | Recent events (newest first) | telemetry |
+| GET | /api/events/export | Bulk download of the event ring | export |
+| GET | /api/fleet | Inventory of the machines reporting to the engine (read-only) | status |
+| GET | /api/groups | Host groups, their criteria and the inventory machines in each (read-only) | status |
+| GET | /api/health | Liveness probe | status |
+| GET | /api/incidents | Investigation cases, most recently updated first | incidents |
+| POST | /api/incidents | Open an incident | incidents |
+| GET | /api/incidents/{id} | One incident with its timeline | incidents |
+| PATCH | /api/incidents/{id} | Change status, severity, owner, title or summary | incidents |
+| POST | /api/incidents/{id}/alerts | Link alerts to an incident | incidents |
+| POST | /api/incidents/{id}/notes | Append an analyst note to the timeline | incidents |
+| GET | /api/intel | Offline threat-intel lists and per-host baseline state (read-only) | status |
+| GET | /api/noise | Processes, DNS domains and rules that most generate events or alerts (§2.4) | noise |
+| GET | /api/reports | REP-1 report catalog (kinds, parameters, formats) | reports |
+| GET | /api/reports/{kind} | One report of the catalog (JSON or CSV) | reports |
+| GET | /api/reputation | Configured providers, or one indicator's reputation | reputation |
+| GET | /api/respond/audit | Most recent active-response attempts from the audit JSONL (newest first) | respond |
+| POST | /api/respond/kill | Kill one verified local process (-allow-kill, operator-invoked) | respond |
+| GET | /api/respond/state | Armed state of the active-response surface (flags, live counters, audit file health) | respond |
+| GET | /api/rules | Live rule set | rules |
+| POST | /api/rules/test | Dry-run one event against the loaded rules | rules |
+| GET | /api/scenarios | Loaded detection-validation scenario library (SIM-4) | scenarios |
+| POST | /api/scenarios/run | Launch the detection-validation battery (202, asynchronous) | scenarios |
+| GET | /api/scenarios/runs | Run history, newest first (trend source for the console) | scenarios |
+| GET | /api/scenarios/runs/{id} | One battery run with its per-scenario results | scenarios |
+| GET | /api/sequences | Loaded kill-chain sequences (read-only view) | status |
+| GET | /api/settings/ad | Effective Active Directory connector configuration (AD-6) | ad |
+| PUT | /api/settings/ad | Validate, commit and hot-reload the AD connector settings (AD-6) | ad |
+| PUT | /api/settings/groups | Replace every host group (console editor) | status |
+| GET | /api/stats | Runtime counters | status |
+| GET | /api/stream | Server-Sent Events feed of live events and alerts | stream |
+| GET | /api/suppressions | Operator allowlist | status |
+| POST | /api/suppressions | Add (or update) one suppression entry (-api-write) | status |
+| DELETE | /api/suppressions | Remove entries matching the exact (rule_id, host) pair (-api-write) | status |
+| GET | /metrics | Prometheus scrape endpoint (text exposition 0.0.4) | status |
+<!-- END API REFERENCE -->
+
 All four telemetry endpoints (`/api/events`, `/api/alerts` and both `/export` variants) accept the same filter parameters, applied BEFORE `limit`: `host=<name>` (exact, case-insensitive), `since=`/`until=` (RFC 3339 timestamp or positive duration like `90m`/`24h`), `q=<free text>` (case-insensitive across ids, summaries, tags and context), plus `severity=a,b` and `rule_id=` on the alert endpoints and `type=` on the event ones. Invalid values answer 400 with an actionable message. When `-store` is attached, all four read the full stored history — not just the in-memory rings — subject to the configured retention (what that mode changes in [Persistent storage](#persistent-storage-sqlite-opt-in)). Examples: `/api/alerts/export?host=lab-wks-01&since=24h` for "that box, today", `/api/events?type=network.connect&q=suspicious.tld` to chase one domain.
 
 Exports are for SIEM import, offline analysis and the forensic store: JSONL round-trips the full records, CSV flattens them to stable columns and neutralizes spreadsheet formula injection on attacker-controlled fields. When `-webhook` is set, `/api/stats` additionally reports `webhook_sent` / `webhook_failed` / `webhook_dropped` so the delivery pipeline can be sized from the outside; the same delivery triple is reported per SIEM platform when its sink is configured (`elastic_*` via `-elastic`, `splunk_*` via `-splunk`, semantics in [SIEM sinks](#siem-sinks-elasticsearch--splunk)); when `-notify` is set, one `notify_channels` row per configured channel reports the same four-state accounting (sent / failed / dropped / filtered) with the channel name and type; with ingest auth active (`-token`), `ingest_rejected` counts connections rejected by the shared-token handshake; when a `sequences/` directory is loaded, `correlator_states` / `correlator_sequences` / `correlator_cap` expose the kill-chain correlator's in-flight (sequence, host) chains against its hard cap (what the numbers mean and how the console surfaces them in [Kill-chain correlation](#kill-chain-correlation)); and with `-store` attached, `store_enabled` / `store_events` / `store_alerts` report the persisted history size (semantics in [Persistent storage](#persistent-storage-sqlite-opt-in)); `risk_hosts_tracked` / `hot_hosts` always report the per-host risk surface (semantics in [Host risk scoring](#host-risk-scoring-hot-hosts)), and `beacons_tracked` / `beacons_cap` / `beacons_fired` the beaconing detector's live signal (semantics in [Beaconing detection](#beaconing-detection-c2-call-home)). The machine-readable contract for the whole surface lives in OpenAPI 3.0 at [`api/openapi.yaml`](api/openapi.yaml).
@@ -1415,7 +1476,7 @@ every change. Artifact rules have positive/negative fixtures; Windows lab
 validation and environment-specific noise tuning remain separate checks.
 
 <!-- BEGIN RULE INVENTORY -->
-The enabled pack contains **114 rules across 12 event types**: 25 critical / 55 high / 28 medium / 3 low / 3 info.
+The enabled pack contains **119 rules across 12 event types**: 26 critical / 59 high / 28 medium / 3 low / 3 info.
 Full IDs are retained because different rules in a pack can share a UUID prefix.
 
 | ID | Rule | Severity | Event type | ATT&CK | Tactic |
@@ -1434,6 +1495,7 @@ Full IDs are retained because different rules in a pack can share a UUID prefix.
 | `75793606-cc2c-4eab-92d5-c9f0c6806290` | Escalada por suplantacion de token (Potato, PrintSpoofer) | critical | `process.create` | T1134.001 | privilege-escalation |
 | `deba0967-c92e-4d74-bd95-a8eebdff7d1a` | Exfiltracion con rclone | critical | `process.create` | T1567.002 | exfiltration |
 | `f518432f-f5f4-403b-8e13-d4f40f183dd3` | Exploit de Office via Equation Editor | critical | `process.create` | T1203 | execution, initial-access |
+| `39d340d0-d264-4581-ad14-0d6e4886b658` | Herramienta de replicacion de directorio (DCSync) | critical | `process.create` | T1003.006 | credential-access |
 | `a1b2c3d4-0001-4a01-9e01-010101010101` | Herramienta de volcado Mimikatz | critical | `process.create` | T1003.001 | credential-access |
 | `a7c4e5f1-9d28-4b36-8f47-1e5a9c3d6b33` | Manipulacion de Windows Defender | critical | `process.create` | T1562.001 | defense-evasion |
 | `b9531063-662b-4159-9b37-21bc52655ba1` | Nota de rescate escrita en disco | critical | `file.write` | T1486 | impact |
@@ -1446,6 +1508,7 @@ Full IDs are retained because different rules in a pack can share a UUID prefix.
 | `c3d4e5f6-0006-4c06-9e06-060606060606` | Volcado de ntds.dit con ntdsutil | critical | `process.create` | T1003.003 | credential-access |
 | `3e6a9c15-8d47-4b2e-9f01-5a8c3d7e2b55` | Volcado del registro SAM | critical | `process.create` | T1003.002 | credential-access |
 | `839b58d4-e21c-4184-ad3e-8ec277fa5d46` | Acceso a contrasenas y cookies del navegador | high | `process.create` | T1555.003 | collection, credential-access |
+| `f9486d99-a3cc-48f7-9b4f-f9e0dffcf822` | Alta en grupo con net.exe | high | `process.create` | T1098 | persistence |
 | `d4e5f607-1006-4a00-8000-000000000006` | Artefacto de volcado de LSASS escrito en disco | high | `file.write` | T1003.001 | credential-access |
 | `8dbf416a-d29c-4073-a556-afd182cd70aa` | Borrado de registros de eventos | high | `process.create` | T1070.001 | defense-evasion |
 | `c3d4e5f6-0005-4c05-9e05-050505050505` | Borrado del diario USN con fsutil | high | `process.create` | T1070.005 | defense-evasion |
@@ -1492,9 +1555,12 @@ Full IDs are retained because different rules in a pack can share a UUID prefix.
 | `9f31c2a4-5d7b-4e18-8a02-3b9c6d1e7f40` | PowerShell con comando codificado | high | `process.create` | T1059.001 | execution |
 | `6a6b145f-34d4-440e-8041-238dde766981` | Reconocimiento lanzado desde un proceso sospechoso | high | `process.create` | T1033, T1082 | discovery |
 | `f000c873-4dbe-485e-8328-120a9e3e8339` | Registro de bloques de PowerShell desactivado | high | `registry.set` | T1562.002 | defense-evasion |
+| `47051c0e-e898-4601-89b6-3c2c0d763883` | Rociado de contrasenas desde el endpoint | high | `process.create` | T1110.003 | credential-access |
 | `c3d4e5f6-0004-4c04-9e04-040404040404` | Sabotaje de recuperacion de arranque con bcdedit | high | `process.create` | T1490 | impact |
+| `ce2a2bf1-6ab3-4a99-8c97-e2777f2a3b37` | Servicio de Windows con interprete como binario | high | `process.create` | T1543.003 | persistence |
 | `b75edbba-b156-4c8b-9619-323fdb019781` | Servicio nuevo con binario en ruta de usuario | high | `process.create` | T1543.003 | persistence, privilege-escalation |
 | `4160fe22-e519-486c-91f2-779c5b814869` | Servicio remoto creado o arrancado con sc | high | `process.create` | T1021.002, T1569.002 | lateral-movement |
+| `0d23b539-0df4-49c9-b43e-3b78964a54cc` | Solicitud de tickets Kerberos para un SPN | high | `process.create` | T1558.003 | credential-access |
 | `909287cd-287a-4336-8109-a3e946334e61` | Subida de ficheros con bitsadmin | high | `process.create` | T1048, T1197 | exfiltration |
 | `53eeff7e-dd36-4321-b468-b2ff0365b223` | Subida de ficheros con curl o PowerShell | high | `process.create` | T1048.003 | exfiltration |
 | `soc-ids-priority-high` | Suricata: firma de prioridad alta | high | `network.alert` |  |  |

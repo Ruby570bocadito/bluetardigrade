@@ -73,6 +73,9 @@ captures/
 # round). agent/ must not come back as a product-tree path.
 .agents/
 agent/
+# Agent drafts, dumps and scratch files (docs/agentes/PROTOCOLO.md §3):
+# never committed.
+.agent-tmp/
 
 # Engine runtime state (alert triage, r6): operator-owned, never committed
 alert-lifecycle.json

@@ -298,6 +298,39 @@ describe('engine proxy boundary', () => {
     expect(captured[7].url).toBe('http://127.0.0.1:7778/api/scenarios/run')
   })
 
+  test('assignment writes (TEAM-3) travel the proxy like the status route', async () => {
+    const { POST } = await loadRoute()
+    const res = await POST(
+      new Request('http://127.0.0.1:3000/api/engine/api/alerts/0123456789abcdef/assign', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:3000' },
+        body: JSON.stringify({ assignee: 'luis', by: 'consola' }),
+      }),
+    )
+    expect(res.status).toBe(200)
+    expect(captured[0].url).toBe('http://127.0.0.1:7778/api/alerts/0123456789abcdef/assign')
+    expect(captured[0].init.body).toBe(JSON.stringify({ assignee: 'luis', by: 'consola' }))
+    const batch = await POST(
+      new Request('http://127.0.0.1:3000/api/engine/api/alerts/assign-batch', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:3000' },
+        body: JSON.stringify({ ids: ['0123456789abcdef', 'fedcba9876543210'], assignee: '', by: 'consola' }),
+      }),
+    )
+    expect(batch.status).toBe(200)
+    expect(captured[1].url).toBe('http://127.0.0.1:7778/api/alerts/assign-batch')
+    // the same 8 KiB cap as the engine stops oversized batches here
+    const big = await POST(
+      new Request('http://127.0.0.1:3000/api/engine/api/alerts/assign-batch', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:3000' },
+        body: 'x'.repeat(8193),
+      }),
+    )
+    expect(big.status).toBe(413)
+    expect(captured).toHaveLength(2)
+  })
+
   test('the operator credential is forwarded on the kill route only', async () => {
     const { POST } = await loadRoute()
     const headers = { 'content-type': 'application/json', 'x-sf-operator-token': 'operator-secret' }
@@ -393,6 +426,24 @@ describe('engine proxy with analyst accounts', () => {
     expect(JSON.parse(String(captured[1].init.body)).by).toBe('ana')
   })
 
+  test('assignment is analyst-only and attributed like triage', async () => {
+    const { POST } = await loadRoute()
+    // a viewer cannot assign, single or batch
+    const denied = await POST(new Request(base + '/api/alerts/0123456789abcdef/assign', { method: 'POST', headers: as('luis'), body: '{"assignee":"luis"}' }))
+    expect(denied.status).toBe(403)
+    expect(((await denied.json()) as { error: string }).error).toBe('role_forbidden')
+    expect((await POST(new Request(base + '/api/alerts/assign-batch', { method: 'POST', headers: as('luis'), body: '{"ids":["0123456789abcdef"],"assignee":"luis"}' }))).status).toBe(403)
+    expect(captured).toHaveLength(0)
+    // the analyst's account name replaces "by"; the assignee (the
+    // recipient) survives untouched, including the empty unassign
+    const ok = await POST(new Request(base + '/api/alerts/0123456789abcdef/assign', { method: 'POST', headers: as('ana'), body: JSON.stringify({ assignee: 'luis', by: 'otra persona' }) }))
+    expect(ok.status).toBe(200)
+    expect(JSON.parse(String(captured[0].init.body))).toEqual({ assignee: 'luis', by: 'ana' })
+    const batch = await POST(new Request(base + '/api/alerts/assign-batch', { method: 'POST', headers: as('ana'), body: JSON.stringify({ ids: ['0123456789abcdef'], assignee: '', by: 'otra' }) }))
+    expect(batch.status).toBe(200)
+    expect(JSON.parse(String(captured[1].init.body))).toEqual({ ids: ['0123456789abcdef'], assignee: '', by: 'ana' })
+  })
+
   test('a viewer cannot triage, an analyst cannot kill, and both are audited', async () => {
     const { POST, DELETE } = await loadRoute()
     const denied = await POST(new Request(base + '/api/alerts/0123456789abcdef/status', { method: 'POST', headers: as('luis'), body: '{"status":"closed"}' }))
@@ -449,6 +500,24 @@ describe('engine proxy with analyst accounts', () => {
     // the groups body may be large, but not unbounded
     const huge = JSON.stringify({ groups: [{ name: 'a', hosts: ['x'.repeat(300 * 1024)] }] })
     expect((await PUT(new Request(base + '/api/settings/groups', { method: 'PUT', headers: as('jefa'), body: huge }))).status).toBe(413)
+  })
+
+  test('only an administrator sends the M-4 SQL console, body verbatim', async () => {
+    const { POST } = await loadRoute()
+    const body = JSON.stringify({ sql: 'SELECT alert_id FROM alerts LIMIT 1' })
+    // analyst is refused before the engine sees anything; admin travels
+    expect((await POST(new Request(base + '/api/db/query', { method: 'POST', headers: as('ana'), body }))).status).toBe(403)
+    expect(captured).toHaveLength(0)
+    expect((await POST(new Request(base + '/api/db/query', { method: 'POST', headers: as('jefa'), body }))).status).toBe(200)
+    expect(captured).toHaveLength(1)
+    // the query surface has no by/assignee to attribute: verbatim body
+    expect(String(captured[0].init.body)).toBe(body)
+    expect(new URL(captured[0].url).pathname).toBe('/api/db/query')
+    // the body cap mirrors the engine's dbQueryBodyCap (64 KiB)
+    const huge = JSON.stringify({ sql: `SELECT '${'x'.repeat(65 * 1024)}'` })
+    expect((await POST(new Request(base + '/api/db/query', { method: 'POST', headers: as('jefa'), body: huge }))).status).toBe(413)
+    // near-miss shapes stay closed
+    expect((await POST(new Request(base + '/api/db/query/all', { method: 'POST', headers: as('jefa'), body: '{}' }))).status).toBe(405)
   })
 })
 

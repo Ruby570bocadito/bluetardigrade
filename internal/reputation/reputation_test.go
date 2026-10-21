@@ -123,3 +123,34 @@ func TestOnlyConfiguredProvidersAndRateLimit(t *testing.T) {
 		t.Fatal("no keys = disabled")
 	}
 }
+
+// The provider keys ride custom headers (x-apikey, Key) that Go does
+// not strip on cross-host redirects, and the queried indicator would
+// leak with them: a 3xx must end the lookup, not follow it.
+func TestLookupsDoNotFollowRedirects(t *testing.T) {
+	var targetHits atomic.Int64
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		targetHits.Add(1)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer target.Close()
+
+	var redirectHits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		redirectHits.Add(1)
+		http.Redirect(w, r, target.URL, http.StatusFound)
+	}))
+	defer srv.Close()
+
+	c := New("vt-key", "abuse-key")
+	c.VTBase, c.AbuseBase = srv.URL, srv.URL
+
+	_ = c.LookupIP(context.Background(), "185.220.101.47")
+
+	if n := redirectHits.Load(); n < 1 {
+		t.Fatalf("redirector received %d lookups, want at least 1", n)
+	}
+	if n := targetHits.Load(); n != 0 {
+		t.Fatalf("redirect target received %d lookups, want 0", n)
+	}
+}

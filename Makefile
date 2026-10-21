@@ -12,7 +12,8 @@
 #   make ci               the same suite CI runs on every push (gofmt,
 #                         build, vet, staticcheck, test -race, Go+Rust
 #                         Windows cross-checks, bun, OpenAPI guard +
-#                         self-test)
+#                         self-test, API reference and Makefile tab
+#                         guards)
 
 GO      ?= go
 CARGO   ?= cargo
@@ -118,6 +119,10 @@ ci:
 	GOOS=windows $(GO) vet ./...
 	python3 scripts/dev-tests/check_openapi.py
 	python3 scripts/dev-tests/check_openapi.py --self-test
+	python3 scripts/dev-tests/check_api_reference.py --self-test
+	python3 scripts/dev-tests/check_api_reference.py
+	python3 scripts/dev-tests/check_makefile_tabs.py --self-test
+	python3 scripts/dev-tests/check_makefile_tabs.py
 	python3 scripts/dev-tests/check_rule_inventory.py
 	python3 scripts/dev-tests/check_package_lifecycle.py --self-test
 	python3 scripts/dev-tests/check_package_lifecycle.py

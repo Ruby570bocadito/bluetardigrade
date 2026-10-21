@@ -501,3 +501,66 @@ func TestSplunkLogNamesActualAttempts(t *testing.T) {
 		t.Fatalf("log must name the single attempt that ran, got %q", out)
 	}
 }
+
+// A 3xx from the cluster must end the flush where it is: the bulk body
+// is alert evidence and the ApiKey header must never land on the
+// Location host. The batch counts as rejected, the target stays silent.
+func TestElasticDoesNotFollowRedirects(t *testing.T) {
+	var targetHits atomic.Int64
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		targetHits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusFound)
+	}))
+	defer srv.Close()
+
+	e, err := NewElastic(srv.URL, "sf-alerts")
+	if err != nil {
+		t.Fatalf("NewElastic: %v", err)
+	}
+	e.backoff = time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	e.Handle(sampleAlert())
+	waitForCounter(t, 1, func() uint64 { _, failed, _ := e.Stats(); return failed })
+	if n := targetHits.Load(); n != 0 {
+		t.Fatalf("redirect target received %d batches, want 0", n)
+	}
+}
+
+// Same discipline for the Splunk HEC sink: the token rides the
+// Authorization header and the body is alert evidence.
+func TestSplunkDoesNotFollowRedirects(t *testing.T) {
+	var targetHits atomic.Int64
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		targetHits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusFound)
+	}))
+	defer srv.Close()
+
+	s, err := NewSplunk(srv.URL)
+	if err != nil {
+		t.Fatalf("NewSplunk: %v", err)
+	}
+	s.backoff = time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go s.Run(ctx)
+
+	s.Handle(sampleAlert())
+	waitForCounter(t, 1, func() uint64 { _, failed, _ := s.Stats(); return failed })
+	if n := targetHits.Load(); n != 0 {
+		t.Fatalf("redirect target received %d batches, want 0", n)
+	}
+}

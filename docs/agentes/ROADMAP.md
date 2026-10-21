@@ -1,85 +1,108 @@
-# ROADMAP — coordinación de agentes (docs/agentes/)
+# ROADMAP — bluetardigrade (coordinación de agentes v2)
 
-Archivo vivo **mantenido solo por los Directores A y B**: fase actual,
-próximos hitos, backlog priorizado por rol y estado de los contratos entre
-componentes. El resto de instancias lo lee y **propone cambios en sus
-informes**; no lo edita.
-
-Relación con otros documentos: el QUÉ con todo el detalle sigue siendo
+Fase actual, próximas tareas y contratos entre componentes. Lo edita SOLO
+DIR; el resto propone cambios en la sección «Propuestas» de su
+`estado/<ID>.md`. El QUÉ con todo el detalle sigue siendo
 [TODO.md](../../TODO.md); la dirección del producto por horizontes,
-[docs/ROADMAP.md](../ROADMAP.md); la asignación transitoria del kit
-previo, TASKS.md (mientras exista, solo material de consulta). Ante
-cualquier choque, manda TODO.md.
+[docs/ROADMAP.md](../ROADMAP.md). Ante cualquier choque, manda TODO.md.
 
-Última actualización: 2026-10-21 (Director A, ronda bootstrap).
+Última actualización: 2026-10-22 (DIR, segunda pasada: POL-5 y reparación del CI).
 
----
+## Fase actual
 
-## Fase actual — hornada 1 (arranque del sistema)
+TEAM-3 completo de punta a punta (motor PR #45 + consola C-2) y la primera
+ronda SEG con fix real (sumideros sin redirecciones). El CI destapó la
+regla SIM-2: el pack AD entró sin sus escenarios y `internal/scenario`
+rompió la build; reparado con doble arreglo en paralelo (3d3ca80 de DIR/IMP-1
+y a6df346 del otro IMP-1, resuelto sin duplicados y anotado en su estado).
+POL-5 entregada por PUL: índice de API generado desde OpenAPI con guard de
+deriva, que además destapó (y corrigió) dos YAML inválidos en el spec
+entrados con M-4. En vuelo con claim: M-2 (AD-7), F5 (IMP-2) y una segunda
+ronda SEG sobre redirects/escenarios/api-health.
 
-El kit previo (AG-1..AG-4) fusionó hoy tres PRs que ya adelantan esta
-hornada; el sistema nuevo arranca con lo siguiente en marcha:
+## Decisiones vigentes que obligan a todos
 
-| Punto | Estado | Notas |
-|---|---|---|
-| S-1 registro (raíz «?» + valor escrito) | **Entregado** (PR #40) | Ritual pendiente: borrar de TODO.md, entrada en changelog.d/ y reflejar la decisión de esquema (`registry.value` + `user` + `attributes["registry_root_inferred"]`, NO `registry.value_data`) |
-| C-1 dashboard con kit POL-7 | **Parcial** (PR #38) | Panel y Operaciones pasan por el kit; faltan el resto de vistas, tema claro, adaptación y grafo (épica F5) |
-| O-1 OPERATIONS por capítulos + guía WEF | **Parcial** (PR #39) | Ocho capítulos + esqueleto WEF (docs/AD-WEF-SUSCRIPCION.md); falta referencia de API desde OpenAPI (POL-5) |
-| M-1 TEAM-3 backend | **Libre — siguiente pieza grande** | El que llegue primero al carril motor lo reclama con plan publicado; al definir el contrato de asignación de alertas, lo DECLARA en su informe para C-2 |
-| POL-1a/1b dividir api.go y run.go | **En curso** (Pulimiento A, plan publicado) | Refactor sin cambio de comportamiento |
-| F1 «alerta crítica sin aviso» | **En curso** (Seguridad B, plan publicado) | Causa raíz identificada en TODO.md: `sf-start` no pasa `-notify` |
+Las de TODO.md («Decisiones vigentes») siguen en pie: validación de
+detecciones solo con telemetría sintética e inerte; AD en solo lectura;
+ninguna acción en equipos es «ejecutar un comando» (conjunto cerrado,
+firmado, auditado y con lista de protegidos); nada de feeds ni herramientas
+de terceros descargadas solos; CI en verde antes de dar una tarea por
+cerrada (en día movido la run que manda es la de la cabeza de main —
+cancelar por supersesión NO es fallo); punto completado = fuera de TODO.md
++ entrada propia en `changelog.d/`.
 
-Sesiones publicadas hoy en `docs/agentes/`: 03-pulimiento/plan_A_actual.md,
-04-seguridad/plan_B_actual.md, 01-director/plan_A_actual.md y
-01-director/plan_B_actual.md.
+## ALTA
 
-## Próximos hitos (hornadas 2–4)
+- Sin ALTA abierta. `pol1b-dividir-run-go` sigue prioritaria para PUL pero
+  BLOQUEADA hasta que m2-ad7 y m4-consulta-bd liberen `cmd/engine/`.
 
-1. **Hornada 2**: C-2 TEAM-3 frontend (tras el contrato de M-1) · M-2
-   AD-7 login de dominio LDAPS · S-2 YARA en sensor (yara-x) · M-3 YARA
-   en motor (contrato con S-2) · O-2 reglas AD (4625, 4769, 4662,
-   4728/4732/4756, 7045).
-2. **Hornada 3**: épica «respuesta ampliada» E-1..E-4 (**requiere visto
-   bueno del humano al contrato del canal servidor→sensor antes de
-   empezar**) · M-4 consulta BD solo lectura · M-6 analista IA por
-   grupos · S-3 servicios con permisos débiles · S-4 latido/DPAPI ·
-   C-5 aviso de sensores desactualizados · M-7 WEF + AD-3/AD-4.
-3. **Hornada 4**: F5 escaparate (C-6 forense UI, O-3 idiomas; capturas
-   y vídeo → humano) · calidad (M-9 dividir api.go/run.go — revisar
-   solape con POL-1 ya hecho — + log/slog, S-5 dividir collector.rs,
-   O-4 SBOM, O-5 SEC-3/6/9) · M-5 ML beta de triaje (solo tras M-1 y C-2).
+## Tareas por rol
 
-## Backlog priorizado por rol (IDs de TODO.md)
+### IMP-1 (motor Go + sensor Rust)
+- [ ] (IMP-1) m2-ad7-login-ldaps — EN VUELO (claim activo): bind LDAPS con credenciales del usuario, grupos AD → roles — `internal/ad/`, `internal/api/`, `cmd/engine/`
+- [ ] (IMP-1) m4-consulta-bd — EN VUELO (claim activo): consulta SQLite SOLO lectura, límites de filas/tiempo, auditada; habilita C-4 — `internal/store/`, `internal/api/`
+- [ ] (IMP-1) s2-yara-sensor — YARA en sensor con yara-x: escaneo de ficheros escritos y bajo demanda; el contrato con M-3 se define al arrancar — `sensor/`
 
-| Carril | Puntos (en orden sugerido) |
-|---|---|
-| Implementaciones A (motor) | M-1 → M-2 → M-3 → M-4 → M-7 → M-6 → E-1/E-3 → M-5 |
-| Implementaciones B (sensor) | ritual S-1 → S-2 → S-4 → S-3 → E-2 → E-1 (con A) |
-| Implementaciones C/D (consola) | continuar C-1 → C-2 (tras contrato) → C-5 → C-3 → C-4 → C-6 → E-4 |
-| Pulimiento A/B (backend) | POL-1 (api.go, run.go, collector.rs) → POL-2 slog → POL-3 pprof → consistencia rules/ |
-| Pulimiento C/D (frontend/docs) | kit POL-7 en todas las vistas → IDEA-10 idiomas → README/árbol → POL-5 OpenAPI → dependencias |
-| Seguridad A/B (bugs funcionales) | F1 alerta crítica (en curso) → regresión PR #28 → reconexiones/spool sensor → falsos positivos de reglas |
-| Seguridad C/D (vulnerabilidades) | SEC-3 entradas → SEC-6 cadena de suministro → SEC-9 privacidad → SEC-2 DPAPI → auditoría de instalaciones npx/npm del carril frontend |
+### IMP-2 (consola Next.js)
+- [ ] (IMP-2) f5-kit-resto-vistas — Continuar el kit POL-7 en el resto de vistas (cabeceras con indicadores, estados vacíos útiles, tema claro) — `web/console/src/`
+- [ ] (IMP-2) c5-aviso-sensores-desactualizados — Aviso en Equipos de sensores desactualizados (la versión ya viaja en el latido, S-4 en main) — `web/console/src/`
+
+### PUL (pulimiento)
+- [ ] (PUL) pol1b-dividir-run-go — Dividir `cmd/engine/run.go` sin cambio de comportamiento; BLOQUEADA por claims activos en `cmd/engine/` — `cmd/engine/`, `scripts/dev-tests/`
+- [ ] (PUL) higiene-postmigracion — `docs/agentes/` solo con los cinco artefactos, `.agent-tmp/` en uso, dependencias sincronizadas — `docs/agentes/`, `.gitignore`, manifiestos
+
+### SEG (seguridad y bugs)
+- [ ] (SEG) seg-redirects-escenarios-apihealthy — EN VUELO (claim activo, auto-propuesta): continúa el carril de redirects y la superficie de escenarios/api-health — transversal
+- Siguientes candidatas del backlog de TODO.md (regresión PR #28,
+  reconexiones/spool del sensor) necesitan Windows real — ver «Esperando
+  al humano».
+
+## Cerradas (últimas 24 h)
+
+- C-2 TEAM-3 consola — 6d29f9c + 9b86d8b (IMP-2; 572 tests, tsc, next build)
+- F1 aviso de alerta crítica — 0dddc28 (sumideros de salida sin redirecciones) + 934c80f (SEG)
+- SEC-3 entradas — c6e4248 (verificada sin cambios de código, evidencia en estado/SEG.md)
+- O-2 mitad endpoint — 21468d7 (pack AD, 5 reglas + evidencia, inventario 119) + escenarios sintéticos 3d3ca80/a6df346 (doble arreglo paralelo resuelto)
+- M-4 consulta BD solo lectura — 5e0eeea (IMP-1; habilita C-4)
+- POL-5 referencia API generada — e095347 (guard check_api_reference.py + índice 48 rutas/53 operaciones) y corrección de dos YAML inválidos del spec — e518323
+- M-1 backend de asignación — PR #45 (cerrada con C-2)
+- deps-audit sin cancelación — concurrency propio (fix DIR tras «Peticiones» de IMP-2)
+- gofmt de los tests de sumideros — c30791b (restos de 0dddc28 que ningún CI había validado)
+
+## Propuestas en el tablero (de los estados)
+
+- Filtro de asignación en `GET /api/alerts/search` + lente persistida en
+  URL (IMP-2; tras M-4, para no pisar `internal/api/`).
+- Migrar el ciclo de vida a SQLite: cola sin asignar paginada exacta (IMP-2,
+  hornada 2 prevista).
+- Señal para binarios con nombre propio que envuelvan intérpretes (IMP-1).
+
+## Esperando al humano (no reclamables)
+
+- Fusionar o cerrar Dependabot #24–#27 con CI en verde; borrar ramas
+  `100agentes`, `audit/mejoras-2026-10-08`, `integracion/rondas-2-3`;
+  «Automatically delete head branches»; tags sueltos y About/topics (F0).
+- Pruebas en Windows real: `sf-start`/`sf-stop`/instalador (F1 ya necesita
+  re-verificación con el fix de sumideros), login/MFA/cuentas (sección 7),
+  grupos y permisos (7b/7c), prueba de uso 24–48 h.
+- Visto bueno al contrato del canal servidor→sensor ANTES de la épica
+  E-1..E-4.
 
 ## Contratos entre componentes
 
 | Contrato | Estado | Detalle |
 |---|---|---|
-| M-1 → C-2 (TEAM-3) | **Pendiente de definir** | M-1 define API/estados/cola sin asignar y lo declara en su informe; C-2 NO empieza hasta leerlo |
-| S-2 ↔ M-3 (YARA) | **Pendiente** | Se definirá al arrancar S-2 (distribución firmada de reglas, formato) |
-| E-1 → E-2/E-3/E-4 | **Bloqueado por visto bueno del humano** | Canal firmado servidor→sensor: el humano aprueba el contrato ANTES de que empiece la épica |
-| S-1 (cerrado) | **Decisión vigente** | El dato escrito viaja en `registry.value`; raíz resuelta con `user` + `attributes["registry_root_inferred"]`; no existe `registry.value_data` — respetarlo en reglas y supresiones y actualizar TODO.md |
+| M-1 → C-2 (TEAM-3) | **CERRADO** (motor PR #45 + consola C-2 en main) | Resumen abajo; fuente de verdad: `docs/api/openapi.yaml` |
+| S-2 ↔ M-3 (YARA) | Pendiente | Se define al arrancar S-2: distribución firmada de reglas y formato |
+| E-1 → E-2/E-3/E-4 | **Bloqueado por visto bueno del humano** | Canal firmado servidor→sensor: se aprueba ANTES de empezar la épica |
+| S-1 (cerrado) | Decisión vigente | El dato escrito viaja en `registry.value`; raíz con `user` + `attributes["registry_root_inferred"]`; NO existe `registry.value_data` |
 
-## Decisiones vigentes que obligan a todas las instancias
+### Contrato M-1→C-2 (referencia, cerrado)
 
-Las de TODO.md («Decisiones vigentes») más: telemetría sintética e inerte
-para validar detecciones; AD solo lectura; acciones cerradas, firmadas y
-auditadas; nada de feeds de terceros automáticos; CI en verde antes de
-cada push; punto completado = fuera de TODO.md + entrada en changelog.d/.
-
-## Reglas de este archivo
-
-- Lo editan SOLO los Directores (uno por ronda, según su plan de ronda).
-- Se actualiza al cerrar cada ronda: fase, hitos, estados y contratos.
-- Las propuestas del resto de instancias viajan por sus informes; el
-  Director que edita decide si las sube aquí.
+- Asignación = trío `assignee`/`assigned_by`/`assigned_at` en la misma
+  entrada de ciclo de vida que el triaje; en bloque; vacío = sin asignar;
+  triar nunca desasigna. `POST /api/alerts/{id}/assign`,
+  `POST /api/alerts/assign-batch` (500 ids, no atómico, ids existentes),
+  `GET /api/alerts?assignee=&unassigned=`, SSE `alert_lifecycle` con el
+  trío. En modo tienda el filtro se aplica sobre la ventana consultada
+  (será exacto al migrar el ciclo de vida a SQLite).

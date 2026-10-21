@@ -5,13 +5,14 @@
 // exactly as the engine serves them.
 //
 // Surface policy: everything the engine serves as GET is forwarded as
-// is. Writes go through a closed allowlist (WRITES below): alert triage,
-// incidents, the rule tester dry run, suppressions (the engine refuses
-// them unless started with -api-write), sensor enrollment (tokens and the
-// approval of new machines, administrators only) and kill_process (armed
-// only by -allow-kill, and it still demands the operator's own
-// credential, the one header forwarded on that path alone). Any other
-// method or path is rejected here, before the engine sees it.
+// is. Writes go through a closed allowlist (WRITES below): alert triage
+// and assignment, incidents, the rule tester dry run, suppressions (the
+// engine refuses them unless started with -api-write), sensor enrollment
+// (tokens and the approval of new machines, administrators only) and
+// kill_process (armed only by -allow-kill, and it still demands the
+// operator's own credential, the one header forwarded on that path
+// alone). Any other method or path is rejected here, before the engine
+// sees it.
 //
 // Boundary posture (mirrors the engine's own: loopback friction-free,
 // beyond loopback loud): this route is the one listener that bridges a
@@ -70,6 +71,12 @@ type WriteRoute = { method: string; path: RegExp; limit: number; role: Role; att
 const KIB = 1024
 const WRITES: WriteRoute[] = [
   { method: 'POST', path: /^\/api\/alerts\/[0-9a-f]{16}\/status$/, limit: 8 * KIB, role: 'analyst', attributed: true },
+  // assignment (TEAM-3/M-1): hand an alert to an operator or clear it —
+  // same family as the status route (analyst, attributed "by", the
+  // engine's own 8 KiB body cap); assignee "" unassigns and the assignee
+  // name is the recipient, never rewritten by attribute()
+  { method: 'POST', path: /^\/api\/alerts\/[0-9a-f]{16}\/assign$/, limit: 8 * KIB, role: 'analyst', attributed: true },
+  { method: 'POST', path: /^\/api\/alerts\/assign-batch$/, limit: 8 * KIB, role: 'analyst', attributed: true },
   { method: 'POST', path: /^\/api\/incidents$/, limit: 32 * KIB, role: 'analyst', attributed: true },
   { method: 'PATCH', path: /^\/api\/incidents\/[0-9a-f]{16}$/, limit: 32 * KIB, role: 'analyst', attributed: true },
   { method: 'POST', path: /^\/api\/incidents\/[0-9a-f]{16}\/(alerts|notes)$/, limit: 32 * KIB, role: 'analyst', attributed: true },
@@ -88,6 +95,12 @@ const WRITES: WriteRoute[] = [
   { method: 'POST', path: /^\/api\/enroll\/tokens\/[0-9a-f]{8}\/revoke$/, limit: 4 * KIB, role: 'admin', attributed: true },
   { method: 'POST', path: /^\/api\/enroll\/hosts\/enr-[a-z0-9._-]{1,48}-[0-9a-f]{6}\/(approve|reject|revoke)$/, limit: 4 * KIB, role: 'admin', attributed: true },
   { method: 'POST', path: /^\/api\/respond\/kill$/, limit: 8 * KIB, role: 'admin', operatorToken: true },
+  // the M-4 SQL console: read-only over the -store database, but still
+  // a POST on the closed list — only an administrator may send it, the
+  // body cap mirrors the engine's own dbQueryBodyCap (64 KiB, the JSON
+  // envelope has room for nothing else) and the engine refuses the
+  // route unless armed with -api-db-query and audits every attempt
+  { method: 'POST', path: /^\/api\/db\/query$/, limit: 64 * KIB, role: 'admin' },
   // settings an administrator edits in Ajustes: the Active Directory
   // connector (and its read-only connection test) and the host groups
   { method: 'PUT', path: /^\/api\/settings\/ad$/, limit: 8 * KIB, role: 'admin' },
@@ -271,7 +284,7 @@ async function write(request: Request): Promise<Response> {
     return Response.json(
       {
         error: 'read_only',
-        hint: 'La consola solo reenvía al motor el triaje, los incidentes, el probador de reglas, las supresiones, la batería de validación, el alta de equipos, la respuesta activa y los ajustes de Active Directory y de grupos de equipos.',
+        hint: 'La consola solo reenvía al motor el triaje y la asignación de alertas, los incidentes, el probador de reglas, las supresiones, la batería de validación, la consulta SQL de la base de datos, el alta de equipos, la respuesta activa y los ajustes de Active Directory y de grupos de equipos.',
       },
       { status: 405 },
     )

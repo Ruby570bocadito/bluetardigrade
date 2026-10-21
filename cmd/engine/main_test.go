@@ -88,6 +88,28 @@ func TestAPIHealthy(t *testing.T) {
 	}
 }
 
+// apiHealthy must refuse to follow redirects: a 3xx from the ingest port
+// is an unhealthy answer, and the probe must never fetch another URL.
+func TestAPIHealthyRefusesRedirects(t *testing.T) {
+	hits := 0
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+"/api/health", http.StatusFound)
+	}))
+	defer srv.Close()
+
+	if apiHealthy(srv.Listener.Addr().String()) {
+		t.Fatal("apiHealthy must not follow a 302 to an endpoint that answers 200")
+	}
+	if hits != 0 {
+		t.Fatalf("redirect target received %d requests, want 0", hits)
+	}
+}
+
 // resolveDataDir prefers an existing flag path; when the flag path is
 // missing it falls back to <exe dir>/../<name> (installed layout), and
 // when nothing exists it returns the flag path unchanged so the load

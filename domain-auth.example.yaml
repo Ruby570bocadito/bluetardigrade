@@ -1,0 +1,46 @@
+# Inicio de sesión con cuentas del dominio (AD-7) — configuración de
+# ejemplo.
+#
+#   Copia este fichero a tools\config\domain-auth.yaml, rellena tu
+#   despliegue y arranca el motor con -domain-auth <fichero>. La
+#   consola llama a POST /api/auth/domain (puntea el token del puente
+#   como siempre) y abre su sesión con el rol que los grupos AD del
+#   usuario conceden. Las cuentas locales de la consola
+#   (CONSOLE_USERS_FILE) siguen funcionando como respaldo: esta vía no
+#   las sustituye, se suma.
+#
+# Cómo funciona: el motor verifica las credenciales con un bind LDAP
+# simple COMO EL USUARIO sobre el mismo transporte del conector de
+# solo lectura (CA de la organización, nombre de servidor fijado,
+# LDAPS o StartTLS explícito, suelo TLS 1.2) y después lee la entrada
+# del propio usuario (memberOf). No hace falta ninguna cuenta de
+# servicio para el login: el usuario autenticado puede leerse a sí
+# mismo. Solo bind y búsqueda: nada se escribe en el directorio.
+#
+# El mapeo de grupos determina el rol de consola con precedencia
+# admin > analyst > viewer. Escribe los grupos por CN ("SOC-Analistas")
+# o por DN completo; la comparación no distingue mayúsculas. Un grupo
+# en dos roles es un error de configuración (el motor no arranca).
+# Los grupos anidados (pertenencia indirecta) no se resuelven:
+# declarado, no es un fallo.
+#
+# Formas de nombre que acepta el usuario en el formulario: ana (sam),
+# CORP\ana y ana@corp.example. Contraseñas incorrectas y usuarios
+# inexistentes dan la misma respuesta (no se filtra la existencia);
+# los fallos por IP se limitan con un presupuesto propio (429).
+
+server: dc01.corp.example     # hostname del DC (también el ServerName del certificado)
+port: 636                     # 0 = 636 con LDAPS, 389 con start_tls
+base_dn: DC=corp,DC=example,DC=com
+ca_file: /etc/sf/dc-ca.pem    # PEM de la CA que firmó los certificados LDAPS de los DC
+# start_tls: false            # true solo con ldap:// en el 389
+domain: CORP                  # etiqueta opcional que la respuesta devuelve para mostrarla
+# timeout_ms: 8000            # presupuesto completo de un intento (1000..20000)
+
+roles:
+  admin:
+    - SOC-Admins
+  analyst:
+    - SOC-Analistas
+  viewer:
+    - SOC-Lectores

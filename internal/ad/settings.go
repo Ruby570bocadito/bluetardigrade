@@ -145,6 +145,26 @@ func Probe(ctx context.Context, cfg *Config, password []byte) *ProbeResult {
 // Both Connector.connect and the AD-6 probe go through here: one
 // handshake policy, audited once.
 func openLDAP(ctx context.Context, cfg *Config, password string) (*ldap.Conn, *tls.ConnectionState, error) {
+	conn, state, err := dialTLS(ctx, cfg)
+	if err != nil {
+		return conn, state, err
+	}
+	if err := conn.Bind(cfg.BindDN, password); err != nil {
+		conn.Close()
+		return nil, state, fmt.Errorf("bind as the configured service account failed: %w", err)
+	}
+	return conn, state, nil
+}
+
+// dialTLS opens the TLS-protected transport WITHOUT binding: implicit
+// LDAPS or explicit StartTLS, always with the config's CA pool and
+// pinned ServerName. openLDAP (service-account sync and probe) and the
+// AD-7 domain sign-in (domainauth.go, which binds as the logging-in
+// user) share this path, so both callers get one audited handshake
+// policy. The TLS connection state is returned for the probe (nil for
+// StartTLS, whose handshake the LDAP client library performs
+// internally without exposing it).
+func dialTLS(ctx context.Context, cfg *Config) (*ldap.Conn, *tls.ConnectionState, error) {
 	tlsCfg, err := tlsConfigFor(cfg)
 	if err != nil {
 		return nil, nil, err
@@ -169,10 +189,6 @@ func openLDAP(ctx context.Context, cfg *Config, password string) (*ldap.Conn, *t
 			return nil, nil, fmt.Errorf("start TLS on %s: %w", addr, err)
 		}
 		conn.SetTimeout(30 * time.Second)
-		if err := conn.Bind(cfg.BindDN, password); err != nil {
-			conn.Close()
-			return nil, nil, fmt.Errorf("bind as the configured service account failed: %w", err)
-		}
 		return conn, nil, nil
 	}
 	tc := tls.Client(raw, tlsCfg)
@@ -184,10 +200,6 @@ func openLDAP(ctx context.Context, cfg *Config, password string) (*ldap.Conn, *t
 	conn := ldap.NewConn(tc, true)
 	conn.Start() // the background reader DialURL would have started
 	conn.SetTimeout(30 * time.Second)
-	if err := conn.Bind(cfg.BindDN, password); err != nil {
-		conn.Close()
-		return nil, &state, fmt.Errorf("bind as the configured service account failed: %w", err)
-	}
 	return conn, &state, nil
 }
 

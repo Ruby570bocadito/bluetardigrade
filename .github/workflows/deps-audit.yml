@@ -38,7 +38,12 @@ on:
 
 concurrency:
   group: deps-audit-${{ github.ref }}
-  cancel-in-progress: true
+  # A dependency scan must never be cancelled by the next push: a green
+  # result is only meaningful when the scan COMPLETES, and on a busy
+  # day cancel-in-progress meant it never did (three consecutive
+  # cancelled scans on 2026-10-22, see estado/IMP-2.md). Queue the run
+  # instead; the weekly schedule stays the backstop for quiet weeks.
+  cancel-in-progress: false
 
 permissions:
   contents: read

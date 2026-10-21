@@ -16,6 +16,7 @@ type options struct {
 	scenariosDir     string
 	rulesDir         string
 	adConfig         string
+	domainAuth       string
 	hostGroupsFile   string
 	seqDir           string
 	beaconsFile      string
@@ -52,6 +53,7 @@ type options struct {
 	pidFile          string
 	pprofDir         string
 	apiWrite         bool
+	apiDBQuery       bool
 	allowKill        bool
 	respondOperators string
 	respondProtected string
@@ -80,6 +82,8 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 		"directory with the detection-validation scenarios (SIM-4: arms GET/POST /api/scenarios* to replay the inert library against the live rules and keep the run history); empty disables")
 	fs.StringVar(&o.adConfig, "ad", "",
 		"YAML config for the read-only Active Directory connector (AD-1: LDAPS or explicit StartTLS with a configured CA, a least-privilege service account, RFC 2696 paging and an object cap; the password lives in its own file; requires -store); empty disables")
+	fs.StringVar(&o.domainAuth, "domain-auth", "",
+		"YAML config for domain account sign-in (AD-7: POST /api/auth/domain verifies the user's own LDAPS bind and maps AD groups to console roles admin/analyst/viewer; local console accounts keep working; the password is never logged; empty disables)")
 	fs.StringVar(&o.hostGroupsFile, "host-groups", "",
 		"YAML file of host groups (F2: host-name patterns, AD OUs, ingest identities; GET /api/groups, and PUT /api/settings/groups with -api-write); a missing file is an empty list the console can fill, a malformed one stops the engine; empty disables")
 	fs.StringVar(&o.rulesDir, "rules", "./rules", "directory with YAML rules")
@@ -117,6 +121,8 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 		"TLS private key (PEM) for the HTTP API listener; requires -api-cert; empty keeps plain HTTP")
 	fs.BoolVar(&o.apiWrite, "api-write", false,
 		"arm POST/DELETE /api/suppressions (writes land on the -suppressions file; refused at startup when the API has no token beyond loopback; falls back to SF_API_WRITE=1)")
+	fs.BoolVar(&o.apiDBQuery, "api-db-query", false,
+		"arm POST /api/db/query: read-only SQL over the -store SQLite database (one SELECT statement, max 5000 rows and 30 s per query, every attempt audited in the store; requires -store; refused at startup when the API has no token beyond loopback; falls back to SF_API_DB_QUERY=1)")
 	fs.BoolVar(&o.allowKill, "allow-kill", false,
 		"arm POST /api/respond/kill (active response, kill_process, SIGKILL fixed); REQUIRES -api-token/SF_API_TOKEN even on loopback; requires -respond-audit to open, or the surface stays disabled; the process-name check protects against killing the wrong PID, not against malware disguising its identity - the kill decision belongs to a human operator (falls back to SF_ALLOW_KILL=1)")
 	fs.StringVar(&o.respondOperators, "respond-operators", "./respond-operators.yaml",

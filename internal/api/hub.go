@@ -110,6 +110,12 @@ type Hub struct {
 	writeEnabled bool
 	suppressPath string
 
+	// read-only SQL console over the store (armed only with
+	// -api-db-query; see db_query.go): the flag IS the admin gate
+	// until the engine has a role model, and the handler refuses
+	// everything the store cannot answer read-only.
+	dbQueryArmed bool
+
 	// AD-6 settings surface (ad_settings.go): armed only with -ad,
 	// handlers additionally demand -api-write. adWriteMu serializes
 	// the config-file read-merge-write (and with it the engine's
@@ -123,6 +129,13 @@ type Hub struct {
 	adTestMu        sync.Mutex
 	adReloadPending atomic.Bool
 	adReloadRecord  atomic.Pointer[adReloadRecord]
+
+	// AD-7 domain sign-in (domain_auth.go): armed only with
+	// -domain-auth. domainAuthMu guards the per-remote failure
+	// boxes of the endpoint, independent from the bearer throttle.
+	domainAuth      *ad.DomainAuthConfig
+	domainAuthMu    sync.Mutex
+	domainAuthFails map[string]*domainFailBox
 
 	// active response (C3, armed only with -allow-kill + token + an
 	// open audit file; see respond_write.go). nil = the route answers
@@ -216,16 +229,17 @@ func NewTLS(addr, certFile, keyFile string) (*Hub, error) {
 // listener; reloader nil means plain text.
 func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	h := &Hub{
-		listener:   ln,
-		subs:       make(map[chan frame]struct{}),
-		started:    time.Now(),
-		bySeverity: map[string]int{},
-		lifecycle:  mustMemoryLifecycle(),
-		incidents:  mustMemoryIncidents(),
-		risk:       risk.New(),
-		authFails:  map[string]*authFailBox{},
-		reloader:   reloader,
-		tls:        reloader != nil,
+		listener:        ln,
+		subs:            make(map[chan frame]struct{}),
+		started:         time.Now(),
+		bySeverity:      map[string]int{},
+		lifecycle:       mustMemoryLifecycle(),
+		incidents:       mustMemoryIncidents(),
+		risk:            risk.New(),
+		authFails:       map[string]*authFailBox{},
+		domainAuthFails: map[string]*domainFailBox{},
+		reloader:        reloader,
+		tls:             reloader != nil,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/stats", h.handleStats)
@@ -258,6 +272,10 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	mux.HandleFunc("POST /api/respond/kill", h.handleRespondKill)
 	mux.HandleFunc("GET /api/respond/state", h.handleRespondState)
 	mux.HandleFunc("GET /api/respond/audit", h.handleRespondAudit)
+	// read-only SQL console (M-4): admin surface, armed with
+	// -api-db-query; scoped accounts never reach it (a raw SELECT
+	// cannot honor host-group scoping)
+	mux.HandleFunc("POST /api/db/query", unscopedOnly("La consulta SQL de la base de datos", h.handleDBQuery))
 	mux.HandleFunc("GET /api/sequences", h.handleSequences)
 	mux.HandleFunc("GET /api/fleet", h.handleFleet)
 	mux.HandleFunc("GET /api/groups", h.handleGroups)
@@ -267,6 +285,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	h.registerReports(mux)
 	h.registerNoise(mux)
 	h.registerAD(mux)
+	h.registerDomainAuth(mux)
 	mux.HandleFunc("GET /api/intel", h.handleIntel)
 	mux.HandleFunc("GET /api/baseline", h.handleBaselineHost)
 	mux.HandleFunc("GET /api/stream", h.handleStream)

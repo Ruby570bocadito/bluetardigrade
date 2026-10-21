@@ -8,6 +8,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -72,6 +73,69 @@ func parseRecordFilter(w http.ResponseWriter, r *http.Request) (*recordFilter, b
 			http.Error(w, "assignee exceeds 200 characters", http.StatusBadRequest)
 			return nil, false
 		}
+	}
+	// unassigned=true is the LIST's documented spelling of the unassigned
+	// queue (OpenAPI): parsed at this shared chokepoint so search and the
+	// alerts export honor it too, mapped onto the same "none" marker.
+	// Invalid values are loud 400s, like every filter here — never a
+	// silent "false" the caller reads as an empty queue. The contradiction
+	// check mirrors the old list-only rule: a named owner AND no owner at
+	// once is a caller bug, while assignee=none plus unassigned=true asks
+	// for the same queue twice and is allowed.
+	switch v := q.Get("unassigned"); v {
+	case "":
+		// absent: no queue filter
+	case "true", "1":
+		if f.assignee != "" && f.assignee != "none" {
+			http.Error(w, "contradictory filters: assignee and unassigned=true cannot combine (drop one)", http.StatusBadRequest)
+			return nil, false
+		}
+		f.assignee = "none"
+	default:
+		http.Error(w, fmt.Sprintf("invalid unassigned value %q: valid values are true or 1", v), http.StatusBadRequest)
+		return nil, false
+	}
+	// unassigned=true is the LIST's documented spelling of the unassigned
+	// queue (OpenAPI): parsed at this shared chokepoint so search and the
+	// alerts export honor it too, mapped onto the same "none" marker.
+	// Invalid values are loud 400s, like every filter here — never a
+	// silent "false" the caller reads as an empty queue. The contradiction
+	// check mirrors the old list-only rule: a named owner AND no owner at
+	// once is a caller bug, while assignee=none plus unassigned=true asks
+	// for the same queue twice and is allowed.
+	switch v := q.Get("unassigned"); v {
+	case "":
+		// absent: no queue filter
+	case "true", "1":
+		if f.assignee != "" && f.assignee != "none" {
+			http.Error(w, "contradictory filters: assignee and unassigned=true cannot combine (drop one)", http.StatusBadRequest)
+			return nil, false
+		}
+		f.assignee = "none"
+	default:
+		http.Error(w, fmt.Sprintf("invalid unassigned value %q: valid values are true or 1", v), http.StatusBadRequest)
+		return nil, false
+	}
+	// unassigned=true is the LIST's documented spelling of the unassigned
+	// queue (OpenAPI): parsed at this shared chokepoint so search and the
+	// alerts export honor it too, mapped onto the same "none" marker.
+	// Invalid values are loud 400s, like every filter here — never a
+	// silent "false" the caller reads as an empty queue. The contradiction
+	// check mirrors the old list-only rule: a named owner AND no owner at
+	// once is a caller bug, while assignee=none plus unassigned=true asks
+	// for the same queue twice and is allowed.
+	switch v := q.Get("unassigned"); v {
+	case "":
+		// absent: no queue filter
+	case "true", "1":
+		if f.assignee != "" && f.assignee != "none" {
+			http.Error(w, "contradictory filters: assignee and unassigned=true cannot combine (drop one)", http.StatusBadRequest)
+			return nil, false
+		}
+		f.assignee = "none"
+	default:
+		http.Error(w, fmt.Sprintf("invalid unassigned value %q: valid values are true or 1", v), http.StatusBadRequest)
+		return nil, false
 	}
 	for _, s := range splitCSV(q.Get("severity")) {
 		switch s {

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -73,5 +76,32 @@ func TestScenariosReplayRejectsNonLoopbackBeforeAnythingElse(t *testing.T) {
 		t.Fatal("non-loopback replay must fail")
 	} else if !strings.Contains(err.Error(), "loopback") {
 		t.Fatalf("error must name the loopback rule: %v", err)
+	}
+}
+
+// getJSONInto must refuse to follow redirects: the bearer token must not
+// ride a 3xx to another port or host, and a 302 is a definitive failure.
+func TestScenarioClientRefusesRedirects(t *testing.T) {
+	hits := 0
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer target.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+"/api/stats", http.StatusFound)
+	}))
+	defer srv.Close()
+
+	o := replayOptions{api: srv.URL, apiToken: "token-de-prueba"}
+	var out map[string]any
+	err := getJSONInto(o, "/api/stats", func(data []byte) error {
+		return json.Unmarshal(data, &out)
+	})
+	if err == nil || !strings.Contains(err.Error(), "HTTP 302") {
+		t.Fatalf("getJSONInto must fail loud on a 302, got %v", err)
+	}
+	if hits != 0 {
+		t.Fatalf("redirect target received %d requests, want 0", hits)
 	}
 }

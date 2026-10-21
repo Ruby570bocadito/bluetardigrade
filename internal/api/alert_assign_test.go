@@ -336,3 +336,89 @@ func TestAlertAssignStoreMode(t *testing.T) {
 		t.Fatalf("store queue after unassign = %v", listed)
 	}
 }
+
+// TestAlertAssignFilterParityAcrossEndpoints pins the ONE-parser-ONE-
+// matcher contract: assignee=none and unassigned=true are the same
+// queue filter on the list, the search and the alerts export. Regression
+// for the PR #45 merge divergence, where assignee=none was a literal
+// name on the list while search and export silently ignored
+// unassigned=true — a "Mis alertas"/queue view built on one endpoint
+// answered a different question than the same query on another.
+func TestAlertAssignFilterParityAcrossEndpoints(t *testing.T) {
+	h, addr := newTestHub(t)
+	for _, sev := range []string{"critical", "low"} {
+		h.RecordAlert(alert.Alert{
+			Timestamp: time.Now().UTC().Format(time.RFC3339Nano), RuleID: "r-" + sev,
+			RuleName: "rule " + sev, Severity: sev, Host: "LAB-TEST", EventID: "ev-" + sev,
+			EventType: "process.create", Summary: sev, MatchedOn: []string{"process.name"},
+		})
+	}
+	base := fmt.Sprintf("http://%s", addr)
+	var listed []map[string]any
+	getJSON(t, base+"/api/alerts", &listed)
+	if len(listed) != 2 {
+		t.Fatalf("alerts listed = %d, want 2", len(listed))
+	}
+	critID, _ := listed[0]["id"].(string)
+	if listed[0]["severity"] != "critical" {
+		critID, _ = listed[1]["id"].(string)
+	}
+	if res, body := postAssign(t, base+"/api/alerts/"+critID+"/assign", `{"assign":"x","assignee":"ana","by":"carlos"}`); res.StatusCode != 200 {
+		t.Fatalf("assign = %d %s", res.StatusCode, body)
+	}
+
+	// search honors unassigned=true (the old silent no-op) and
+	// assignee=none (the search/export spelling)
+	var page alertSearchPage
+	getJSON(t, base+"/api/alerts/search?unassigned=true", &page)
+	if len(page.Items) != 1 || page.Items[0].ID == critID {
+		t.Fatalf("search unassigned=true = %d items, want the low alert only", len(page.Items))
+	}
+	page = alertSearchPage{}
+	getJSON(t, base+"/api/alerts/search?assignee=none", &page)
+	if len(page.Items) != 1 || page.Items[0].ID == critID {
+		t.Fatalf("search assignee=none = %d items, want the low alert only", len(page.Items))
+	}
+	page = alertSearchPage{}
+	getJSON(t, base+"/api/alerts/search?assignee=ANA", &page)
+	if len(page.Items) != 1 || page.Items[0].ID != critID {
+		t.Fatalf("search assignee=ANA = %d items, want the critical alert only", len(page.Items))
+	}
+	// the contradiction is loud on search too, and the redundant combo
+	// (same queue asked twice) is allowed
+	res, _ := http.Get(base + "/api/alerts/search?assignee=ana&unassigned=true")
+	res.Body.Close()
+	if res.StatusCode != 400 {
+		t.Fatalf("search contradictory filters = %d, want 400", res.StatusCode)
+	}
+	page = alertSearchPage{}
+	getJSON(t, base+"/api/alerts/search?assignee=none&unassigned=true", &page)
+	if len(page.Items) != 1 {
+		t.Fatalf("search none+unassigned = %d items, want 1", len(page.Items))
+	}
+
+	// the alerts export honors both spellings: one data row, the low alert
+	res, csvOut := fetchBody(t, base+"/api/alerts/export?unassigned=true&format=csv")
+	if res.StatusCode != 200 {
+		t.Fatalf("export unassigned=true = %d", res.StatusCode)
+	}
+	rows := strings.Count(strings.TrimRight(csvOut, "\r\n"), "\n") // header + data
+	if rows != 1 || strings.Contains(csvOut, critID) {
+		t.Fatalf("export unassigned rows = %d, want exactly the low alert (%s)", rows, csvOut)
+	}
+	res, csvOut = fetchBody(t, base+"/api/alerts/export?assignee=ana&format=csv")
+	if res.StatusCode != 200 || !strings.Contains(csvOut, critID) {
+		t.Fatalf("export assignee=ana = %d, want the critical row", res.StatusCode)
+	}
+
+	// the list answers assignee=none with the same queue the search sees
+	listed = nil // fresh slice: json.Unmarshal MERGES into reused maps
+	getJSON(t, base+"/api/alerts?assignee=none", &listed)
+	if len(listed) != 1 || listed[0]["id"] == critID {
+		t.Fatalf("list assignee=none = %v, want the low alert only", listed)
+	}
+	// and events still list fine with the shared parser (assignment
+	// filters are meaningless there, but a valid combo must not 400)
+	var events []*map[string]any
+	getJSON(t, base+"/api/events?unassigned=true", &events)
+}

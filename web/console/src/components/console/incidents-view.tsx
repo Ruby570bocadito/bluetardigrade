@@ -30,6 +30,10 @@ import { useIncidents } from './incidents-provider'
 import { useI18n } from './i18n-provider'
 import { IncidentPlaybook } from './incident-playbook'
 import { EmptyState, SeverityBadge, StatTile } from './ui-bits'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
 import { EntityGraphView, GraphLegend } from '@/components/charts/entity-graph'
 import { buildEntityGraph } from '@/lib/entity-graph'
@@ -122,14 +126,16 @@ export function IncidentsView({ onHost, onOpenAlert, onAnalyze, onOpenEngineRepo
               <h2 className="text-sm font-medium text-zinc-100">{dict.incidents.casesTitle}</h2>
               <span className="text-xs tabular-nums text-zinc-500">{visible.length}</span>
             </div>
-            <button
+            <Button
               type="button"
               onClick={() => setCreating((v) => !v)}
               aria-expanded={creating}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary-tint/10 px-2.5 py-1.5 text-xs font-medium text-primary-soft hover:bg-primary-tint/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              variant="outline"
+              size="sm"
+              className="gap-1.5 rounded-lg border-primary/30 bg-primary-tint/10 px-2.5 py-1.5 text-xs font-medium text-primary-soft hover:bg-primary-tint/20"
             >
               <Plus size={13} aria-hidden /> {dict.incidents.newButton}
-            </button>
+            </Button>
           </div>
           {creating && (
             <NewIncidentForm
@@ -225,26 +231,30 @@ function NewIncidentForm({ onDone }: { onDone: (incident: Incident | null) => vo
       }}
     >
       <label className="block text-xs text-zinc-400" htmlFor="incident-title">{dict.incidents.form.titleLabel}</label>
-      <input id="incident-title" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} required
-        className="h-8 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 text-sm text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+      <Input id="incident-title" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} required
+        className="h-8 px-2 text-sm" />
       <div className="flex gap-2">
-        <label className="flex-1 text-xs text-zinc-400">
+        <label className="flex-1 text-xs text-zinc-400" htmlFor="incident-severity">
           {dict.incidents.form.severityLabel}
-          <select value={severity} onChange={(e) => setSeverity(e.target.value as Severity)}
-            className="mt-1 block h-8 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 text-xs text-zinc-100">
-            {SEVERITIES.map((s) => <option key={s} value={s}>{dict.incidents.sevOptions[s]}</option>)}
-          </select>
+          <Select value={severity} onValueChange={(v) => setSeverity(v as Severity)}>
+            <SelectTrigger id="incident-severity" className="mt-1 h-8 w-full rounded-md text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SEVERITIES.map((s) => <SelectItem key={s} value={s}>{dict.incidents.sevOptions[s]}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </label>
       </div>
       <label className="block text-xs text-zinc-400" htmlFor="incident-summary">{dict.incidents.form.summaryLabel}</label>
-      <textarea id="incident-summary" value={summary} onChange={(e) => setSummary(e.target.value)} rows={2} maxLength={4000}
-        className="w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+      <Textarea id="incident-summary" value={summary} onChange={(e) => setSummary(e.target.value)} rows={2} maxLength={4000}
+        className="min-h-0 px-2 py-1.5 text-xs" />
       {error && <p role="alert" className="text-xs text-red-300">{error}</p>}
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={() => onDone(null)} className="rounded-md px-2.5 py-1.5 text-xs text-zinc-400 hover:text-zinc-100">{dict.incidents.form.cancel}</button>
-        <button type="submit" disabled={busy || !title.trim()} className="rounded-md bg-primary-strong px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
+        <Button type="button" variant="ghost" size="sm" onClick={() => onDone(null)} className="px-2.5 text-xs text-zinc-400 hover:bg-transparent hover:text-zinc-100">{dict.incidents.form.cancel}</Button>
+        <Button type="submit" variant="solid" size="sm" disabled={busy || !title.trim()} className="text-xs">
           {busy ? dict.incidents.form.creating : dict.incidents.form.submit}
-        </button>
+        </Button>
       </div>
     </form>
   )
@@ -269,9 +279,6 @@ function downloadFile(filename: string, contents: string, mime: string) {
   link.remove()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
-
-const exportCls =
-  'inline-flex h-7 items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900 px-2 text-[11px] text-zinc-300 transition-colors hover:border-zinc-700 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
 function IncidentDetail({
   incident,
@@ -331,9 +338,11 @@ function IncidentDetail({
           <span className="font-mono text-[11px] text-zinc-500">{incident.id}</span>
           <div role="group" aria-label={dict.incidents.exportAria} className="ml-auto flex items-center gap-1.5">
             {onAnalyze && (
-              <button
+              <Button
                 type="button"
-                className={exportCls}
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1.5 px-2 text-[11px] font-normal"
                 disabled={caseAlerts.length === 0}
                 title={dict.incidents.analyzeTitle}
                 onClick={() =>
@@ -355,33 +364,39 @@ function IncidentDetail({
                 }
               >
                 <Sparkle size={13} weight="fill" aria-hidden /> {dict.incidents.analyze}
-              </button>
+              </Button>
             )}
-            <button
+            <Button
               type="button"
-              className={exportCls}
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5 px-2 text-[11px] font-normal"
               title={dict.incidents.reportMdTitle}
               onClick={() => downloadFile(reportFilename(incident, 'md', lang), buildIncidentMarkdown({ incident, alerts: caseAlerts, graph, playbook: plan ?? undefined, lang }), 'text/markdown;charset=utf-8')}
             >
               <FileText size={13} aria-hidden /> {dict.incidents.reportMd}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className={exportCls}
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1.5 px-2 text-[11px] font-normal"
               title={dict.incidents.reportPrintTitle}
               onClick={() => downloadFile(reportFilename(incident, 'html', lang), buildIncidentHtml({ incident, alerts: caseAlerts, graph, playbook: plan ?? undefined, lang }), 'text/html;charset=utf-8')}
             >
               <FileHtml size={13} aria-hidden /> {dict.incidents.reportPrint}
-            </button>
+            </Button>
             {onOpenEngineReport && (
-              <button
+              <Button
                 type="button"
-                className={exportCls}
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1.5 px-2 text-[11px] font-normal"
                 title={dict.incidents.reportEngineTitle}
                 onClick={() => onOpenEngineReport(incident.id)}
               >
                 <Files size={13} aria-hidden /> {dict.incidents.reportEngine}
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -390,51 +405,61 @@ function IncidentDetail({
           {dict.incidents.openedUpdated(formatDateTime(incident.created_at), formatDateTime(incident.updated_at), incident.closed_at ? formatDateTime(incident.closed_at) : null)}
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <label className="text-xs text-zinc-400">
+          <label className="text-xs text-zinc-400" htmlFor="incident-status">
             {dict.incidents.statusField}
-            <select
+            <Select
               value={incident.status}
               disabled={busy}
-              onChange={(e) => void patch({ status: e.target.value as IncidentStatus })}
-              className="mt-1 block h-8 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 text-xs text-zinc-100"
+              onValueChange={(v) => void patch({ status: v as IncidentStatus })}
             >
-              {(Object.keys(dict.incidents.statusLabels) as IncidentStatus[]).map((s) => <option key={s} value={s}>{dict.incidents.statusLabels[s]}</option>)}
-            </select>
+              <SelectTrigger id="incident-status" className="mt-1 h-8 w-full rounded-md text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(dict.incidents.statusLabels) as IncidentStatus[]).map((s) => <SelectItem key={s} value={s}>{dict.incidents.statusLabels[s]}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </label>
-          <label className="text-xs text-zinc-400">
+          <label className="text-xs text-zinc-400" htmlFor="incident-severity-field">
             {dict.incidents.severityField}
-            <select
+            <Select
               value={incident.severity}
               disabled={busy}
-              onChange={(e) => void patch({ severity: e.target.value as Severity })}
-              className="mt-1 block h-8 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 text-xs text-zinc-100"
+              onValueChange={(v) => void patch({ severity: v as Severity })}
             >
-              {SEVERITIES.map((s) => <option key={s} value={s}>{dict.incidents.sevOptions[s]}</option>)}
-            </select>
+              <SelectTrigger id="incident-severity-field" className="mt-1 h-8 w-full rounded-md text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SEVERITIES.map((s) => <SelectItem key={s} value={s}>{dict.incidents.sevOptions[s]}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </label>
-          <label className="text-xs text-zinc-400">
+          <label className="text-xs text-zinc-400" htmlFor="incident-owner">
             {dict.incidents.ownerField}
-            <input
+            <Input
+              id="incident-owner"
               value={owner}
               onChange={(e) => setOwner(e.target.value)}
               onBlur={() => owner !== (incident.owner ?? '') && void patch({ owner })}
               onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLInputElement).blur()}
               maxLength={200}
               placeholder={dict.incidents.ownerPlaceholder}
-              className="mt-1 block h-8 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 text-xs text-zinc-100 placeholder:text-zinc-600"
+              className="mt-1 h-8 px-2 text-xs"
             />
           </label>
         </div>
-        <label className="mt-3 block text-xs text-zinc-400">
+        <label className="mt-3 block text-xs text-zinc-400" htmlFor="incident-summary-field">
           {dict.incidents.summaryField}
-          <textarea
+          <Textarea
+            id="incident-summary-field"
             value={summary}
             onChange={(e) => setSummary(e.target.value)}
             onBlur={() => summary !== (incident.summary ?? '') && void patch({ summary })}
             rows={2}
             maxLength={4000}
             placeholder={dict.incidents.summaryPlaceholder}
-            className="mt-1 block w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600"
+            className="mt-1 min-h-0 px-2 py-1.5 text-xs"
           />
         </label>
         {error && <p role="alert" className="mt-2 text-xs text-red-300">{error}</p>}
@@ -515,12 +540,12 @@ function IncidentDetail({
             }}
           >
             <label htmlFor={`note-${incident.id}`} className="sr-only">{dict.incidents.noteLabel}</label>
-            <textarea id={`note-${incident.id}`} value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={4000}
+            <Textarea id={`note-${incident.id}`} value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={4000}
               placeholder={dict.incidents.notePlaceholder}
-              className="block w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-            <button type="submit" disabled={busy || !note.trim()} className="rounded-md bg-primary-strong px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
+              className="min-h-0 px-2 py-1.5 text-xs" />
+            <Button type="submit" variant="solid" size="sm" disabled={busy || !note.trim()} className="self-start text-xs">
               {dict.incidents.addNote}
-            </button>
+            </Button>
           </form>
           <ol className="relative space-y-3 border-l border-zinc-800 pl-4">
             {[...incident.timeline].reverse().map((entry, i) => {

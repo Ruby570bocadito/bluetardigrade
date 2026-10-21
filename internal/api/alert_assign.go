@@ -34,7 +34,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strings"
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/lifecycle"
@@ -293,46 +292,12 @@ func (h *Hub) handleAlertAssignBatch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
-// assignFilter is the parsed form of the assignment query filters of
-// GET /api/alerts: assignee=<name> («Mis alertas» when the console
-// passes the account) and unassigned=true (the unassigned queue).
-type assignFilter struct {
-	assignee   string
-	unassigned bool
-}
-
-// parseAssignFilter reads the two lifecycle-level filters. Strict on
-// values, like every query filter of this API: an unknown unassigned
-// value is a 400, never a silent "false". assignee + unassigned at
-// once is contradictory (a named owner AND no owner): loud 400 instead
-// of an empty page the caller would read as "nothing to do".
-func parseAssignFilter(r *http.Request) (assignFilter, error) {
-	q := r.URL.Query()
-	af := assignFilter{assignee: q.Get("assignee")}
-	switch v := q.Get("unassigned"); v {
-	case "":
-		af.unassigned = false
-	case "true", "1":
-		af.unassigned = true
-	default:
-		return af, fmt.Errorf("invalid unassigned value %q: valid values are true or 1", v)
-	}
-	if af.assignee != "" && af.unassigned {
-		return af, errors.New("contradictory filters: assignee and unassigned=true cannot combine (drop one)")
-	}
-	return af, nil
-}
-
-// match reports whether an overlaid alert satisfies the filter. The
-// assignee compares case-insensitively, like host names everywhere else
-// in this API (hosts and account names come from the same Windows
-// world where the case is not significant).
-func (af assignFilter) match(v alertView) bool {
-	if af.assignee != "" && !strings.EqualFold(v.Assignee, af.assignee) {
-		return false
-	}
-	if af.unassigned && v.Assignee != "" {
-		return false
-	}
-	return true
-}
+// The assignment READ filters (assignee=, unassigned=) moved to the
+// shared parser (internal/api/filters.go parseRecordFilter) and matcher
+// (assigneeFilterMatches): after PR #45 landed assignee=none on search
+// and export while this file kept unassigned=true on the list, the two
+// implementations disagreed on the same query parameter (none was a
+// literal name on the list and the unassigned queue on search, and
+// unassigned=true was silently ignored outside the list). One parser
+// and one matcher now serve every alert-bearing endpoint;
+// unassigned=true and assignee=none are the same filter everywhere.

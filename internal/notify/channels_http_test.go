@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -230,5 +231,37 @@ func TestPostJSONRedactsCredentialURLFromBuildErrors(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), secret) {
 		t.Fatalf("build error leaks the credential-bearing URL: %v", err)
+	}
+}
+
+// The chat channels carry the channel secret in the URL (the Slack hook
+// path, the Telegram bot token) and the rendered alert in the body: a
+// 3xx must fail the delivery instead of handing either to the Location
+// host.
+func TestChatChannelsDoNotFollowRedirects(t *testing.T) {
+	var targetHits atomic.Int64
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		targetHits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusFound)
+	}))
+	defer srv.Close()
+
+	a := sampleAlert()
+	for _, ch := range []Channel{NewSlack("s", srv.URL), NewTelegram("t", "bot-token", "-100", srv.URL)} {
+		err := ch.Deliver(context.Background(), a)
+		if err == nil {
+			t.Fatalf("%s: a redirect answer must not count as delivered", ch.Name())
+		}
+		if isRetryable(err) {
+			t.Fatalf("%s: a redirect refusal must be permanent: %v", ch.Name(), err)
+		}
+	}
+	if n := targetHits.Load(); n != 0 {
+		t.Fatalf("redirect target received %d deliveries, want 0", n)
 	}
 }

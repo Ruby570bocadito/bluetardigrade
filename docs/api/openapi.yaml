@@ -127,6 +127,90 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Health'
+  /api/auth/domain:
+    post:
+      tags: [status]
+      operationId: domainLogin
+      summary: Verify domain credentials and resolve the console role (AD-7, -domain-auth)
+      # The CONSOLE (server side) is the caller: it forwards the login
+      # form's credentials over its engine bridge and uses the returned
+      # role to open its own session. Local accounts keep working as the
+      # fallback and never touch this endpoint. Like every data path the
+      # bearer requirement applies when -api-token is set (the console
+      # bridge injects it); a probing client without the arming flag
+      # gets 501, never a 404, so "exists but off" stays visible.
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        One sign-in attempt against the domain: a LDAPS simple bind AS
+        THE USER (transport identical to the read-only AD connector:
+        organization CA, pinned server name, TLS 1.2 floor), then a
+        search of the user's own entry for `memberOf`, mapped to the
+        console role with precedence admin > analyst > viewer. Bad
+        password and unknown user are the same verdict (no account
+        existence leak); failures are throttled per source address
+        (429 past the budget). The password crosses once, is never
+        logged and never echoed. Disarmed engines answer `501`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user, password]
+              properties:
+                user:
+                  type: string
+                  maxLength: 256
+                  description: Login name as typed (UPN, DOMINIO\usuario or sAMAccountName); the DC resolves the form.
+                password:
+                  type: string
+                  maxLength: 1024
+                  format: password
+      responses:
+        '200':
+          description: Credentials verified; the role comes from the user's AD groups
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainLoginVerdict'
+        '400':
+          description: Body not JSON (`peticion`) or login-name shape refused (`formato`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainLoginVerdict'
+        '401':
+          description: Bad password or unknown user, same verdict `credenciales`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainLoginVerdict'
+        '403':
+          description: Valid user with no mapped AD group (`sin_rol`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainLoginVerdict'
+        '429':
+          description: The address exhausted its failed-attempt budget for the window
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainLoginVerdict'
+        '501':
+          description: The engine runs without -domain-auth (arming hint in the body)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '502':
+          description: Domain controller unreachable, TLS refused or search failed (`dominio`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainLoginVerdict'
   /api/stats:
     get:
       tags: [status]
@@ -844,13 +928,17 @@ paths:
         - name: assignee
           in: query
           description: exact (case-insensitive) assignee name — «Mis alertas» for the
-            account the console forwards
+            account the console forwards; the reserved value `none` selects the
+            unassigned queue (the same spelling search and the export take)
           schema:
             type: string
+            maxLength: 200
         - name: unassigned
           in: query
           description: only alerts with no assignee (the unassigned queue); cannot
-            combine with assignee
+            combine with an assignee NAME (`assignee=none` plus `unassigned=true`
+            is allowed — the same queue asked twice). Honored by the search and
+            the alerts export too.
           schema:
             type: string
             enum: ['true', '1']
@@ -913,6 +1001,21 @@ paths:
         - name: q
           in: query
           schema: { type: string, maxLength: 120 }
+        - name: assignee
+          in: query
+          description: exact (case-insensitive) assignee name; the reserved value
+            `none` selects the unassigned queue — the same filter the list and
+            the export take
+          schema:
+            type: string
+            maxLength: 200
+        - name: unassigned
+          in: query
+          description: only alerts with no assignee (the unassigned queue); cannot
+            combine with an assignee NAME
+          schema:
+            type: string
+            enum: ['true', '1']
       responses:
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -1535,8 +1638,11 @@ paths:
         `id`, `status`, `timestamp`, `severity`, `rule_id`, `rule_name`,
         `event_type`, `host`, `user`, `summary`, `matched_on`
         (space-joined), `tags` (space-joined), `message`, `notify`,
-        `status_note`, `status_by`, `decision` (appended at the end;
-        positional consumers keep their columns). When the engine runs
+        `status_note`, `status_by`, `decision`, `assignee`, `assigned_by`
+        (appended at the end; positional consumers keep their columns).
+        The assignment filters (`assignee`, with `none` as the unassigned
+        queue, and `unassigned=true`) narrow the exported set with the
+        same semantics as `GET /api/alerts`. When the engine runs
         with `-store`, the export reads the persistent SQLite store
         (full history, subject to the configured retention) instead of
         the alert ring.
@@ -1548,6 +1654,20 @@ paths:
         - $ref: '#/components/parameters/Since'
         - $ref: '#/components/parameters/Until'
         - $ref: '#/components/parameters/Q'
+        - name: assignee
+          in: query
+          description: exact (case-insensitive) assignee name; the reserved value
+            `none` selects the unassigned queue
+          schema:
+            type: string
+            maxLength: 200
+        - name: unassigned
+          in: query
+          description: only alerts with no assignee (the unassigned queue); cannot
+            combine with an assignee NAME
+          schema:
+            type: string
+            enum: ['true', '1']
       responses:
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -1775,6 +1895,124 @@ paths:
             text/plain:
               schema:
                 type: string
+
+  /api/db/query:
+    post:
+      tags: [telemetry]
+      operationId: dbQuery
+      summary: Read-only SQL over the evidence database (M-4)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        One SELECT statement against the SQLite database the engine
+        keeps with `-store`, for administrators doing analysis the
+        curated endpoints do not cover (C-4 builds its search on top of
+        this contract). The surface is opt-in: it answers 403 unless
+        the engine started with `-api-db-query` (or SF_API_DB_QUERY=1),
+        and 501 when there is no `-store` database at all.
+
+        Hard limits, all server-side: exactly one statement, it must
+        start with SELECT/WITH/VALUES and it may not contain any write
+        or side-effect verb (INSERT, UPDATE, DELETE, DROP, PRAGMA,
+        ATTACH, load_extension, ...) — comments included; `max_rows` is
+        clamped to 5000 (default 500) and `timeout_ms` to 30000
+        (default 10000), with the reader running on a dedicated
+        `mode=ro` + `query_only` connection, so the evidence stays
+        append-only no matter what the statement says. Every attempt —
+        ok, rejected or error — lands in the store's `query_audit`
+        table (ts, remote address, statement up to 4 KiB, status, rows,
+        duration, error), pruned to the last 1000 rows.
+
+        WITH-led statements are safe under the same verb ban: SQLite
+        cannot write from inside a subquery, so `WITH ... DELETE` is
+        caught by the verb scan. `REPLACE()` the string function is
+        banned along with `REPLACE INTO`; substitute `IFNULL`-shaped
+        expressions. Values come back as JSON scalars (text columns as
+        strings, never base64); a statement yielding more rows than
+        `max_rows` answers `truncated: true` with the first rows.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sql]
+              properties:
+                sql:
+                  type: string
+                  maxLength: 32768
+                  description: one SELECT (or WITH/VALUES) statement; one optional trailing semicolon
+                  example: "SELECT host, severity, COUNT(*) AS n FROM alerts WHERE ts > strftime('%s','now') - 86400 GROUP BY host, severity ORDER BY n DESC"
+                max_rows:
+                  type: integer
+                  minimum: 1
+                  maximum: 5000
+                  default: 500
+                timeout_ms:
+                  type: integer
+                  minimum: 100
+                  maximum: 30000
+                  default: 10000
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >-
+            The surface is not armed (`-api-db-query` missing), or the caller
+            is scoped to host groups (X-SF-Scope): a raw SELECT cannot honor
+            group scoping, so scoped accounts never reach it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: |
+            Statement results with the server-side budgets echoed. The
+            query was also audited. `truncated` true means the statement
+            yields more rows than `max_rows` and the rest was not read.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  columns:
+                    type: array
+                    items: { type: string }
+                  rows:
+                    type: array
+                    items:
+                      type: array
+                      items: {}
+                  row_count:
+                    type: integer
+                  truncated:
+                    type: boolean
+                  duration_ms:
+                    type: integer
+        '400':
+          description: |
+            Invalid JSON body; a statement the guard refuses (not a
+            SELECT/WITH/VALUES, more than one statement, a write or
+            side-effect verb, control characters, over 32 KiB); or a
+            statement that fails at runtime (unknown table/column). The
+            JSON body names the problem (`{"error":"..."}`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '408':
+          description: The statement exceeded its time budget without finishing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '501':
+          description: 'The engine runs without `-store`: there is no database to query.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /api/incidents:
     get:
@@ -2840,6 +3078,37 @@ components:
         mode:
           type: string
           enum: [engine]
+    DomainLoginVerdict:
+      type: object
+      required: [ok]
+      description: |
+        Verdict of POST /api/auth/domain. `ok: true` carries the
+        identity (role resolved from the user's AD groups); `ok: false`
+        carries exactly one `reason` (credenciales, sin_rol, dominio,
+        formato, peticion, bloqueado, interno). Bad password and
+        unknown user share `credenciales` on purpose.
+      properties:
+        ok:
+          type: boolean
+        reason:
+          type: string
+          enum: [credenciales, sin_rol, dominio, formato, peticion, bloqueado, interno]
+        user:
+          type: string
+          description: Canonical sAMAccountName (only with ok true)
+        display_name:
+          type: string
+        role:
+          type: string
+          enum: [admin, analyst, viewer]
+        groups:
+          type: array
+          items:
+            type: string
+          description: Direct memberOf groups of the account, as CN labels
+        domain:
+          type: string
+          description: The configured domain label, when set
     Stats:
       type: object
       required:
