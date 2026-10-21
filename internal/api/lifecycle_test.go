@@ -385,8 +385,10 @@ func TestAlertDecisionEndpointFlow(t *testing.T) {
 	defer res3.Body.Close()
 	csvData, _ := io.ReadAll(res3.Body)
 	header := strings.SplitN(string(csvData), "\n", 2)[0]
-	if !strings.HasSuffix(strings.TrimRight(header, "\r"), ",decision") {
-		t.Fatalf("csv header = %q, want a trailing decision column", header)
+	// assignment columns (TEAM-3) were APPENDED after decision:
+	// positional consumers keep their columns, new ones go last
+	if !strings.HasSuffix(strings.TrimRight(header, "\r"), ",assignee,assigned_by") {
+		t.Fatalf("csv header = %q, want trailing assignment columns", header)
 	}
 	if !strings.Contains(string(csvData), ",false_positive") {
 		t.Fatalf("csv row misses the decision: %q", string(csvData))
