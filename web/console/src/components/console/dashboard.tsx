@@ -1108,7 +1108,7 @@ function EngineSummary({ status }: { status: EngineStatus }) {
             key={row.label}
             className={`min-w-0 rounded-md border-l-2 px-3 py-2 ${row.bad ? 'border-l-amber-400/60 bg-amber-400/[0.06]' : 'border-l-transparent bg-white/[0.02]'}`}
           >
-            <dt className="truncate text-[10px] uppercase tracking-wider text-zinc-500" title={row.label}>{row.label}</dt>
+            <dt className="text-[10px] uppercase leading-tight tracking-wide text-zinc-500" title={row.label}>{row.label}</dt>
             <dd className={`mt-1 truncate font-mono text-xs tabular-nums ${row.bad ? 'text-amber-300' : 'text-zinc-200'}`} title={String(row.value)}>{row.value}</dd>
           </div>
         ))}
