@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react'
 import { Prohibit, Timer, Warning } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { EmptyState, StatTile } from './ui-bits'
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeadRow, TableHeader, TableRow } from '@/components/ui/table'
 import type { SfSuppression } from '@/lib/console-types'
 
 /** Re-renders every 30 s so the expiry countdowns stay truthful. */
@@ -76,21 +77,21 @@ export function SuppressionsView() {
       ) : (
         <div className="panel overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-sm">
-              <caption className="sr-only">Supresiones activas: regla, alcance, motivo y caducidad</caption>
-              <thead>
-                <tr className="bg-zinc-900">
+            <Table>
+              <TableCaption>Supresiones activas: regla, alcance, motivo y caducidad</TableCaption>
+              <TableHeader>
+                <TableHeadRow>
                   {['Regla', 'Alcance', 'Motivo', 'Caducidad'].map((h) => (
-                    <th key={h} scope="col" className="border-b border-zinc-800 px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">{h}</th>
+                    <TableHead key={h}>{h}</TableHead>
                   ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-800/70">
+                </TableHeadRow>
+              </TableHeader>
+              <TableBody>
                 {suppressions.map((s, i) => (
                   <SuppressionRow key={`${s.rule_id}:${s.host ?? '*'}:${i}`} entry={s} ruleName={ruleName(s.rule_id)} now={now} />
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         </div>
       )}
@@ -101,8 +102,8 @@ export function SuppressionsView() {
 function SuppressionRow({ entry, ruleName, now }: { entry: SfSuppression; ruleName?: string; now: Date }) {
   const left = countdown(entry.expires, now)
   return (
-    <tr className="align-top transition-colors hover:bg-zinc-900/60">
-      <td className="max-w-[320px] px-4 py-3">
+    <TableRow className="align-top">
+      <TableCell className="max-w-[320px] px-4 py-3">
         <span className="flex items-center gap-2">
           <Prohibit size={14} weight="fill" aria-hidden className="shrink-0 text-zinc-500" />
           <span className="min-w-0">
@@ -110,8 +111,8 @@ function SuppressionRow({ entry, ruleName, now }: { entry: SfSuppression; ruleNa
             {entry.rule_id && <span className="block truncate font-mono text-[11px] text-zinc-500">{entry.rule_id}</span>}
           </span>
         </span>
-      </td>
-      <td className="whitespace-nowrap px-4 py-3">
+      </TableCell>
+      <TableCell className="whitespace-nowrap px-4 py-3">
         <span
           className={`rounded-md border px-1.5 py-0.5 font-mono text-[11px] ${
             entry.host ? 'border-zinc-700 text-zinc-300' : 'border-amber-300/30 bg-amber-300/10 text-amber-200'
@@ -119,9 +120,9 @@ function SuppressionRow({ entry, ruleName, now }: { entry: SfSuppression; ruleNa
         >
           {entry.host ? entry.host : 'todos los hosts'}
         </span>
-      </td>
-      <td className="min-w-[220px] px-4 py-3 text-xs leading-relaxed text-zinc-400">{entry.reason || <span className="text-zinc-500">sin motivo declarado</span>}</td>
-      <td className="whitespace-nowrap px-4 py-3">
+      </TableCell>
+      <TableCell className="min-w-[220px] px-4 py-3 text-xs leading-relaxed text-zinc-400">{entry.reason || <span className="text-zinc-500">sin motivo declarado</span>}</TableCell>
+      <TableCell className="whitespace-nowrap px-4 py-3">
         {left ? (
           <span
             title={entry.expires}
@@ -135,7 +136,7 @@ function SuppressionRow({ entry, ruleName, now }: { entry: SfSuppression; ruleNa
         ) : (
           <span className="text-[11px] text-zinc-500">sin caducidad</span>
         )}
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   )
 }
