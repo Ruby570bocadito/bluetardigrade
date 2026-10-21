@@ -271,8 +271,6 @@ Detalle en [docs/PRUEBAS-PENDIENTES.md](docs/PRUEBAS-PENDIENTES.md).
   por las claves vistas bajo esa base.
 - [ ] Registro, valor escrito: enviar `registry.value_data` para que reglas y
   supresiones puedan exigirlo (caso real: Chrome y Copilot en la clave Run).
-- [ ] El latido informa de los eventos ETW perdidos (EventsLost, BuffersLost) y
-  de los descartes del hilo de hashes.
 - [ ] Aviso en Equipos de sensores desactualizados (la versión ya va en el
   latido).
 - [ ] Credencial del sensor (`ingest.token`) cifrada con DPAPI (SEC-2).
