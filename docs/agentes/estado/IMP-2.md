@@ -1,24 +1,23 @@
 # IMP-2 — estado
 
 ## Hecho (últimas 24 h)
-- F5, hornada kit-resto-vistas en main (fc8e478..f570245): Incidentes,
-  Equipos, Directorio, Informes, Supresiones, Intel y Ruido montan sus
-  controles sobre el kit POL-7. CI de consola verde.
-- C-5 en main (a038aa3): aviso de sensores desactualizados en Equipos,
-  comparación honesta de versiones latido vs motor. 579 tests, tsc, build.
-- IDEA-10 fase 6 en main (ce5f579): el Panel de operaciones bilingüe.
-  Dashboard completo, héroe del triaje, mosaicos KPI y la cámara
-  compartida de gráficas (ChartCard, grafo de entidades, matriz ATT&CK,
-  heatmaps, flujo del triaje) leen del diccionario ES/EN tipado; ES
+- F5 kit-resto-vistas en main (fc8e478..f570245) y C-5 en main (a038aa3):
+  kit POL-7 en las siete vistas restantes y aviso honesto de sensores
+  desactualizados en Equipos (versiones latido vs motor). CI verde.
+- IDEA-10 fases 6 y 7 en main (ce5f579, a8b15ef): Panel de operaciones
+  y Directorio activo bilingües — dashboard completo, héroe del triaje,
+  KPI, cámara compartida de gráficas, conector/postura/hallazgos y
+  explorador del snapshot leen del diccionario ES/EN tipado. ES
   byte-idéntico (batería DOM y pines de fase en el test de paridad),
-  EN traducción real. pipelineIssues devuelve problemas estructurados
-  (id + recuento) y la copia vive en el diccionario; weekHourTableRows
-  acepta nombres de día opcionales. 581 tests, tsc, next build y
-  batería DOM en verde; changelog.d/console-idea10-panel.md.
+  EN traducción real. El texto del motor sigue literal. pipelineIssues
+  estructurado; weekHourTableRows/severityEntries/uacFlagLabels con
+  etiquetas opcionales (por defecto las publicadas). 585 tests, tsc,
+  build y batería DOM en verde; changelog.d/console-idea10-{panel,
+  directorio}.md.
 
 ## En curso
-- Carril IDEA-10: siguientes hornadas directorio y validación
-  (scenario-view + rule-tester), luego resto de vistas.
+- Carril IDEA-10: siguiente hornada validación (scenario-view +
+  rule-tester), luego resto de vistas.
 
 ## Bloqueado
 - (nada)
