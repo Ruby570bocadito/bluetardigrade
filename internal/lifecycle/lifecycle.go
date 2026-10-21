@@ -1,7 +1,9 @@
 // Package lifecycle tracks the operator triage state of alerts
 // (new -> acknowledged -> closed, with an optional note and an
-// optional decision). It is the persistence behind
-// POST /api/alerts/{id}/status and the status overlay merged into
+// optional decision) and the assignment of each alert to an operator
+// (TEAM-3, independent of the status). It is the persistence behind
+// POST /api/alerts/{id}/status, POST /api/alerts/{id}/assign,
+// POST /api/alerts/assign and the status overlay merged into
 // GET /api/alerts.
 //
 // Design notes:
@@ -97,17 +99,21 @@ func DecisionValid(d Decision) bool {
 
 // Limits for the free-text fields: enough for a real investigation
 // note, small enough that one hostile request cannot fatten the file.
+// MaxAssigneeLen shares MaxByLen's reasoning: the assignee is the
+// account name the console states (free text, like by), capped so a
+// hostile request cannot fatten the store.
 const (
-	MaxNoteLen = 2000
-	MaxByLen   = 200
+	MaxNoteLen     = 2000
+	MaxByLen       = 200
+	MaxAssigneeLen = 200
 )
 
-// ErrPersistFailed marks the Set errors that mean "in-memory state
-// updated but the file write failed": the API turns them into 500s
-// while every other Set error is a client-side 400. Classification
-// goes through errors.Is, never through message text — a message-
-// matching router would let error wording (present or future) decide
-// status codes.
+// ErrPersistFailed marks the Set/Assign errors that mean "in-memory
+// state updated but the file write failed": the API turns them into
+// 500s while every other Set/Assign error is a client-side 400.
+// Classification goes through errors.Is, never through message text —
+// a message-matching router would let error wording (present or
+// future) decide status codes.
 var ErrPersistFailed = errors.New("lifecycle: persisted state NOT saved")
 
 // Valid reports whether s is a status the API accepts. "new" is
@@ -126,13 +132,21 @@ func Valid(s Status) bool {
 // one alert, not a delta: every Set replaces the entry for its alert,
 // so omitted optional fields (decision, note, by) clear. At is
 // RFC 3339 UTC (Nano precision).
+//
+// Assignment (TEAM-3) travels in the same record but is written only
+// by Assign, which preserves the triage fields: assigning an alert is
+// not triaging it. An alert with an assignee but no explicit status
+// keeps Status new (the implicit default the API renders).
 type Entry struct {
-	AlertID  string   `json:"alert_id"`
-	Status   Status   `json:"status"`
-	Decision Decision `json:"decision,omitempty"`
-	Note     string   `json:"note,omitempty"`
-	By       string   `json:"by,omitempty"`
-	At       string   `json:"at"`
+	AlertID    string   `json:"alert_id"`
+	Status     Status   `json:"status"`
+	Decision   Decision `json:"decision,omitempty"`
+	Note       string   `json:"note,omitempty"`
+	By         string   `json:"by,omitempty"`
+	At         string   `json:"at"`
+	Assignee   string   `json:"assignee,omitempty"`
+	AssignedBy string   `json:"assigned_by,omitempty"`
+	AssignedAt string   `json:"assigned_at,omitempty"`
 }
 
 type fileFormat struct {
@@ -233,6 +247,78 @@ func (s *Store) Set(id string, st Status, decision Decision, note, by string) (E
 		return e, fmt.Errorf("%w: %w", ErrPersistFailed, err)
 	}
 	return e, nil
+}
+
+// Assign records who owns an alert (TEAM-3) and preserves every other
+// triage field: status, decision, note and their attribution stay as
+// they were, because assigning is not triaging. assignee "" unassigns
+// (reassignment is just another Assign over the current entry).
+//
+// Unlike Set, this is a PARTIAL update on purpose: the console assigns
+// from the selection bar while an operator may hold the triage form
+// open, and one action must never wipe the other's fields. For an
+// alert with no entry yet, one is created with the implicit status new
+// (made explicit so the record stays self-describing); unassigning an
+// alert that was never assigned and never triaged writes nothing —
+// there is nothing to remember. A no-op assign (same assignee) skips
+// the write too, so a retry or a double click cannot churn the file.
+func (s *Store) Assign(id, assignee, by string) (Entry, error) {
+	if id == "" {
+		return Entry{}, errors.New("lifecycle: empty alert id")
+	}
+	if len(assignee) > MaxAssigneeLen {
+		return Entry{}, fmt.Errorf("lifecycle: assignee longer than %d characters", MaxAssigneeLen)
+	}
+	if len(by) > MaxByLen {
+		return Entry{}, fmt.Errorf("lifecycle: by longer than %d characters", MaxByLen)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, exists := s.entries[id]
+	if assignee == "" {
+		// Unassign: nothing to record for an alert nobody owns and
+		// nobody triaged; a stored entry keeps its triage fields and
+		// only loses the assignment.
+		if !exists {
+			return Entry{AlertID: id, Status: StatusNew, At: time.Now().UTC().Format(time.RFC3339Nano)}, nil
+		}
+		if current.Assignee == "" {
+			return current, nil // already unassigned: no write
+		}
+		next := current
+		next.Assignee, next.AssignedBy, next.AssignedAt = "", "", ""
+		s.entries[id] = next
+		if err := s.persistLocked(); err != nil {
+			return next, fmt.Errorf("%w: %w", ErrPersistFailed, err)
+		}
+		return next, nil
+	}
+	if !exists {
+		current = Entry{AlertID: id, Status: StatusNew, At: time.Now().UTC().Format(time.RFC3339Nano)}
+	}
+	if current.Assignee == assignee {
+		return current, nil // idempotent: the same owner again, no write
+	}
+	next := current
+	next.Assignee = assignee
+	next.AssignedBy = by
+	next.AssignedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	if !exists {
+		s.order = append(s.order, id)
+	}
+	s.entries[id] = next
+	// Same eviction contract as Set: the cap holds before the file is
+	// written, whatever the operation that added the entry.
+	for len(s.order) > MaxEntries {
+		oldest := s.order[0]
+		s.order = s.order[1:]
+		delete(s.entries, oldest)
+	}
+	if err := s.persistLocked(); err != nil {
+		return next, fmt.Errorf("%w: %w", ErrPersistFailed, err)
+	}
+	return next, nil
 }
 
 // Get returns the entry for an alert, if any. No entry = the alert is
