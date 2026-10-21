@@ -37,5 +37,4 @@ cerradas de la jornada (make-tabs, m4, o2): ver changelog.d y git log.
   4756/7045). Alta de C-4 sobre POST /api/db/query.
 
 ## Estado: VERDE — riesgos
-- Cuatro solapamientos de instancia paralela; re-check del claim antes
-  de cada push. `yara.match` sin PID: irá con la parte de memoria.
+- Cuatro solapamientos de instancia paralela; re-check del claim antes de cada push. `yara.match` sale sin PID: la atribución irá con la parte de memoria.
