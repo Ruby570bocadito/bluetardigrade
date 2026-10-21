@@ -20,6 +20,7 @@ import (
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/beacon"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/correlate"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/notify"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/rules"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/threshold"
 	"github.com/spf13/cobra"
@@ -142,6 +143,7 @@ func runDoctor(ctx context.Context, o *doctorOptions) *doctorReport {
 	root := doctorRoot(o.root)
 	r.add(doctorContentChecks(root)...)
 	r.add(doctorIntelChecks(root)...)
+	r.add(doctorNotifyChecks(root)...)
 	if f, err := os.CreateTemp(root, ".doctor-write-"); err != nil {
 		r.add(doctorCheck{"Directorio de estado", "error", "No se puede crear estado en el directorio seleccionado", "Selecciona una instalacion escribible con -root; revisa sus permisos"})
 	} else {
@@ -247,6 +249,31 @@ func doctorContentChecks(root string) []doctorCheck {
 		}
 	}
 	return checks
+}
+
+// doctorNotifyChecks validates the external notification config the
+// launchers pass to the engine (-notify, tools/config/notify.yaml).
+// The check never sends anything: notify.Load only parses the YAML and
+// builds the channels, so a wrong file is named here instead of stopping
+// the engine at startup. Load applies the same redaction standard as the
+// engine (a webhook URL can embed its own secret; only scheme://host or
+// an <endpoint> placeholder ever reaches the report).
+func doctorNotifyChecks(root string) []doctorCheck {
+	path := filepath.Join(root, "tools", "config", "notify.yaml")
+	if !fileExists(path) {
+		return []doctorCheck{{"Avisos externos", "skip",
+			"Sin tools/config/notify.yaml; el motor arranca sin canales de correo o chat",
+			"Copia notify.example.yaml a tools/config/notify.yaml y rellena tus canales"}}
+	}
+	svc, err := notify.Load(path)
+	if err != nil {
+		return []doctorCheck{{"Avisos externos", "error",
+			"El fichero de notificaciones no carga y el motor lo rechazaria al arrancar: " + err.Error(),
+			"Corrige tools/config/notify.yaml; los detalles no incluyen credenciales"}}
+	}
+	return []doctorCheck{{"Avisos externos", "ok",
+		fmt.Sprintf("%d canal(es) de notificacion validos", len(svc.Summary())),
+		""}}
 }
 
 func doctorSetting(root, envName, fileName string) (string, error) {

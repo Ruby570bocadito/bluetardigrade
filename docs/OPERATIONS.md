@@ -612,6 +612,8 @@ The webhook speaks JSON to machines; `-notify` speaks human to the on-call. One 
 bin/engine -notify /etc/bluetardigrade/notify.yaml
 ```
 
+On a Windows install the launchers arm it for you: `sf-start`, `sf-console` and `start-engine` pass `-notify tools\config\notify.yaml` to the engine whenever that file exists (copy `notify.example.yaml` from the repository root and fill in your channels), and `sf-engine doctor` validates the file — with the same fail-loud loader the engine uses, without sending anything and without disclosing secrets — so a wrong channel is named before the engine ever refuses to start on it.
+
 ```yaml
 channels:
   - type: slack

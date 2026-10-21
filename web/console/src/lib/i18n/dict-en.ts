@@ -477,6 +477,7 @@ export const dictEn: Dict = {
     soundToggle: 'Sound',
     soundToggleAria: 'Sound for critical alerts',
     denied: 'The browser blocked notifications for this site: allow them from the padlock icon in the address bar.',
+    pending: 'The browser has not granted permission yet (the prompt was dismissed or never appeared): notifications will not show until you accept it there or from the padlock icon in the address bar.',
     unsupported: 'This browser does not support notifications; sound still works.',
     storageError: 'The preference could not be saved in this browser; it lasts until reload.',
     testSound: 'Test sound',

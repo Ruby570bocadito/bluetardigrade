@@ -1,0 +1,61 @@
+# External notification channels — example configuration.
+#
+#   Copy me to tools\config\notify.yaml and fill in your channels; the
+#   Windows launchers (sf-start, sf-console, start-engine) pass the file
+#   to the engine (-notify) automatically once it exists, and
+#   `sf-engine doctor` validates it without sending anything.
+#
+# Every raised alert — the same stream the webhook and the console see —
+# fans out to each channel below without ever blocking detection. Each
+# channel is one bounded queue with three attempts and linear backoff; a
+# dead channel is counted (sent / failed / dropped / filtered on
+# /api/stats and sf_notify_* on /metrics), never a detection failure.
+#
+# The config is fail-loud: an unknown type, a missing endpoint or an
+# unresolved secret STOPS the engine at startup, because a channel that
+# silently never fires is a silent control. Keep the file out of git
+# (tools/config is operator-local) and keep secrets in *_env variables
+# when you can: literals in this file work, but they live on disk.
+#
+# Optional min_severity per channel (info, low, medium, high, critical):
+# a floor is a deliberate silence, reported as the channel's "filtered"
+# counter rather than hidden. Cap: 8 channels per file.
+
+channels:
+  # Slack incoming webhook: create it under your workspace's
+  # Apps -> Incoming Webhooks. The URL embeds its own secret.
+  - type: slack
+    name: soc-slack
+    min_severity: high
+    url: https://hooks.slack.com/services/T000/B000/XXXX
+
+  # Telegram bot: create the bot with BotFather, then send one message
+  # to the chat and read the chat id from
+  # https://api.telegram.org/bot<token>/getUpdates. The token can stay
+  # out of this file: token_env names an environment variable resolved
+  # at startup (fail-loud when empty). api_url only for self-hosted
+  # Bot API servers.
+  - type: telegram
+    name: soc-oncall
+    min_severity: critical
+    token_env: SF_TELEGRAM_TOKEN
+    chat_id: "-1001234567890"
+    # api_url: https://telegram.internal.example.com/bot
+
+  # Email over SMTP (submission port 587 with StartTLS by default).
+  # username/password must be configured together, or both omitted for
+  # auth-free internal relays; secrets accept the same *_env
+  # indirection as telegram (password_env). hello is the EHLO domain,
+  # only needed when the relay requires a specific one.
+  - type: email
+    name: soc-mail
+    min_severity: medium
+    server: smtp.internal.example.com:587
+    from: bluetardigrade@internal.example.com
+    to:
+      - soc@internal.example.com
+      - oncall@internal.example.com
+    username_env: SF_SMTP_USER
+    password_env: SF_SMTP_PASSWORD
+    # starttls: true
+    # hello: internal.example.com

@@ -40,12 +40,28 @@ export function currentPermission(): NotifyPermission {
   return typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'
 }
 
+/** True when the operator wants browser notifications but the permission
+ * is still 'default': the prompt was dismissed or never answered, and a
+ * browser shows nothing in that state. Both preference panels show the
+ * pending hint for it — the 'denied' warning alone let the operator
+ * believe the avisos were armed while no notification could ever fire. */
+export function notifyNeedsPermission(prefs: NotifyPrefs, permission: NotifyPermission): boolean {
+  return prefs.enabled && permission === 'default'
+}
+
 /** Two short descending tones through WebAudio (no audio asset). */
 export function playNotifyTone(): void {
   try {
     const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
     if (!Ctx) return
     const ctx = new Ctx()
+    // An autoplay policy starts the context suspended when the arrival
+    // (or the reload) carried no user gesture: without an explicit
+    // resume the two tones are scheduled and never heard — the sound
+    // toggle reads on while nothing plays. With sticky activation
+    // (the operator once interacted with this page) the resume runs;
+    // without it the rejection is swallowed and the state stays honest.
+    if (ctx.state === 'suspended') void ctx.resume().catch(() => {})
     const at = ctx.currentTime
     for (const [i, freq] of [880, 660].entries()) {
       const osc = ctx.createOscillator()
