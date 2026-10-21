@@ -28,7 +28,13 @@
 // the user trace also consumes) and its SHA-256,
 // computed on a separate enrichment thread with a cache (imagehash.rs)
 // so file reads never stall the ETW consumers. When that thread falls
-// behind, events go out without the hash rather than wait.
+// behind, events go out without the hash rather than wait, and the
+// heartbeat reports how many went out that way.
+//
+// Every minute the heartbeat (heartbeat.rs) also asks both sessions what
+// ETW lost (EventsLost, RealTimeBuffersLost, via ControlTraceW) and sends
+// the totals to the engine, so a sensor that is silently losing telemetry
+// shows up in the machine inventory instead of only in a log line.
 //
 // The network/registry session is best effort: if it cannot start, the
 // sensor says so and keeps streaming process events. On Windows 8+ both
@@ -52,7 +58,7 @@ use anyhow::{Context, Result};
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -181,6 +187,12 @@ struct Shared {
     regkeys: Mutex<KeyNames<EventJson>>,
     /// --debug-registry: lowercase fragment and the handles it matched
     debug_registry: Option<(String, Mutex<HashSet<usize>>)>,
+    /// process starts that went out without their SHA-256 because the
+    /// enrichment thread could not take them; the heartbeat reports it
+    hash_dropped: AtomicU64,
+    /// hashing was requested for this run: the counter only counts the
+    /// events denied enrichment when hashing was wanted at all
+    hash_enabled: bool,
 }
 
 impl Shared {
@@ -220,6 +232,12 @@ impl Shared {
             },
             Err(_) => pending,
         };
+        // a denial here means the hash thread is behind, already stopped
+        // or never started: the event still goes out, just without its
+        // hash, and the heartbeat counts it (hash_dropped)
+        if self.hash_enabled {
+            self.hash_dropped.fetch_add(1, Ordering::Relaxed);
+        }
         self.emit(&rejected.event);
     }
 
@@ -397,6 +415,8 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
         images_live: AtomicBool::new(false),
         regkeys: Mutex::new(KeyNames::new(REGISTRY_NAMES_CAP, REGISTRY_PARKED_CAP)),
         debug_registry: capture.debug_registry.as_ref().map(|f| (f.to_ascii_lowercase(), Mutex::new(HashSet::new()))),
+        hash_dropped: AtomicU64::new(0),
+        hash_enabled: capture.hash,
     });
 
     // The provider is rebuilt for each start attempt (a stale session
@@ -459,8 +479,14 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
     // health report for the engine's machine inventory, every minute
     let capture_label = streams.iter().filter(|s| s.0).map(|s| s.1).collect::<Vec<_>>().join("+");
     let heartbeat_stop = Arc::new(AtomicBool::new(false));
+    // the sessions whose ETW loss the heartbeat reports: the kernel one
+    // always runs, the network/registry one only when it started
+    let mut sessions = vec![String::from(SESSION_NAME)];
+    if live {
+        sessions.push(String::from(NETREG_SESSION_NAME));
+    }
     let run_mode = if capture.as_service { "service" } else { "console" };
-    let heartbeat_thread = start_heartbeat(Arc::clone(&ctx), capture_label.to_string(), run_mode, queue_cap, Arc::clone(&heartbeat_stop));
+    let heartbeat_thread = start_heartbeat(Arc::clone(&ctx), capture_label.to_string(), run_mode, queue_cap, sessions, Arc::clone(&heartbeat_stop));
 
     // The kernel session must stay alive while events are processed;
     // dropping `trace` stops it. process_from_handle blocks on this
@@ -591,47 +617,116 @@ fn start_netreg(ctx: &Arc<Shared>, network: bool, dns: bool, registry: bool, ima
 
 /// Sends a sensor.heartbeat now and every heartbeat::INTERVAL_SECS until
 /// `stop` is set. Heartbeats travel the same queue and spool as events.
-fn start_heartbeat(ctx: Arc<Shared>, capture: String, run_mode: &'static str, queue_cap: usize, stop: Arc<AtomicBool>) -> Option<JoinHandle<()>> {
+/// Each beat also asks the named ETW sessions what they lost (EventsLost,
+/// RealTimeBuffersLost; PLAN-DETALLADO §2.5) and carries it with the
+/// image-hash thread's denials.
+fn start_heartbeat(ctx: Arc<Shared>, capture: String, run_mode: &'static str, queue_cap: usize, sessions: Vec<String>, stop: Arc<AtomicBool>) -> Option<JoinHandle<()>> {
     let os = os_label();
     let started = Instant::now();
     std::thread::Builder::new()
         .name("heartbeat".into())
-        .spawn(move || loop {
-            let stats = ctx.pipeline.stats();
-            let health = Health {
-                kind: "etw",
-                version: env!("CARGO_PKG_VERSION"),
-                os: os.clone(),
-                capture: capture.clone(),
-                interval_s: heartbeat::INTERVAL_SECS,
-                uptime_s: started.elapsed().as_secs(),
-                queue_cap,
-                spooled: stats.spooled,
-                dropped: stats.dropped,
-                run_mode,
-            };
-            ctx.emit(&EventJson {
-                id: normalize::new_uuid(),
-                timestamp: normalize::now_rfc3339(),
-                r#type: heartbeat::TYPE_HEARTBEAT.into(),
-                source: "etw".into(),
-                host: ctx.host.clone(),
-                user: None,
-                process: None,
-                network: None,
-                registry: None,
-                attributes: Some(heartbeat::attributes(&health)),
-                tags: vec!["sensor:etw".into()],
-            });
-            // sleep in one-second steps so shutdown stays prompt
-            for _ in 0..heartbeat::INTERVAL_SECS {
-                if stop.load(Ordering::Relaxed) {
-                    return;
+        .spawn(move || {
+            let mut warned: HashSet<String> = HashSet::new();
+            loop {
+                let stats = ctx.pipeline.stats();
+                let (etw_events_lost, etw_buffers_lost) = etw_lost_counts(&sessions, &mut warned);
+                let health = Health {
+                    kind: "etw",
+                    version: env!("CARGO_PKG_VERSION"),
+                    os: os.clone(),
+                    capture: capture.clone(),
+                    interval_s: heartbeat::INTERVAL_SECS,
+                    uptime_s: started.elapsed().as_secs(),
+                    queue_cap,
+                    spooled: stats.spooled,
+                    dropped: stats.dropped,
+                    etw_events_lost,
+                    etw_buffers_lost,
+                    hash_dropped: ctx.hash_dropped.load(Ordering::Relaxed),
+                    run_mode,
+                };
+                ctx.emit(&EventJson {
+                    id: normalize::new_uuid(),
+                    timestamp: normalize::now_rfc3339(),
+                    r#type: heartbeat::TYPE_HEARTBEAT.into(),
+                    source: "etw".into(),
+                    host: ctx.host.clone(),
+                    user: None,
+                    process: None,
+                    network: None,
+                    registry: None,
+                    attributes: Some(heartbeat::attributes(&health)),
+                    tags: vec!["sensor:etw".into()],
+                });
+                // sleep in one-second steps so shutdown stays prompt
+                for _ in 0..heartbeat::INTERVAL_SECS {
+                    if stop.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    std::thread::sleep(Duration::from_secs(1));
                 }
-                std::thread::sleep(Duration::from_secs(1));
             }
         })
         .ok()
+}
+
+/// Events and real-time buffers ETW lost, summed over the named capture
+/// sessions (PLAN-DETALLADO §2.5). A session that cannot answer (it was
+/// stopped a moment ago, or the query failed) contributes zero the same
+/// way a just-restarted session does: the counters are cumulative per
+/// session instance, so a recovery resets them to a lower number.
+fn etw_lost_counts(sessions: &[String], warned: &mut HashSet<String>) -> (u64, u64) {
+    let mut events = 0u64;
+    let mut buffers = 0u64;
+    for name in sessions {
+        match session_lost_counts(name) {
+            Some((lost, buffers_lost)) => {
+                events += lost;
+                buffers += buffers_lost;
+            }
+            None => {
+                // the query failing on our own live session is
+                // pathological: say it once per session, never spam
+                if warned.insert(name.clone()) {
+                    eprintln!("[SENSOR] warning: ETW session {name} did not report its loss counters");
+                }
+            }
+        }
+    }
+    (events, buffers)
+}
+
+/// EventsLost and RealTimeBuffersLost of one named session, via the
+/// session query (ControlTraceW, EVENT_TRACE_CONTROL_QUERY). The session
+/// is real-time (no log file), so LogBuffersLost does not apply.
+fn session_lost_counts(name: &str) -> Option<(u64, u64)> {
+    use windows_sys::Win32::System::Diagnostics::Etw::{
+        ControlTraceW, CONTROLTRACE_HANDLE, EVENT_TRACE_CONTROL_QUERY, EVENT_TRACE_PROPERTIES, WNODE_FLAG_TRACED_GUID,
+    };
+    let wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+    // the query writes the session name and the log file name behind the
+    // struct: a quarter KiB for each, far above any name this sensor uses
+    const NAME_ROOM: usize = 256;
+    let struct_size = std::mem::size_of::<EVENT_TRACE_PROPERTIES>();
+    // u64 words keep the 8-byte alignment the struct's GUIDs need
+    let mut buf = vec![0u64; (struct_size + 2 * NAME_ROOM).div_ceil(8)];
+    let total = (buf.len() * std::mem::size_of::<u64>()) as u32;
+    let props = buf.as_mut_ptr().cast::<EVENT_TRACE_PROPERTIES>();
+    // SAFETY: props points at the zeroed, correctly aligned front of buf;
+    // the offsets below leave room inside buf for both names, and
+    // ControlTraceW writes only within Wnode.BufferSize bytes of it.
+    let err = unsafe {
+        (*props).Wnode.BufferSize = total;
+        (*props).Wnode.Flags = WNODE_FLAG_TRACED_GUID;
+        (*props).LoggerNameOffset = struct_size as u32;
+        (*props).LogFileNameOffset = (struct_size + NAME_ROOM) as u32;
+        ControlTraceW(CONTROLTRACE_HANDLE::default(), wide.as_ptr(), props, EVENT_TRACE_CONTROL_QUERY)
+    };
+    if err != 0 {
+        return None;
+    }
+    // SAFETY: props is still the front of buf and the call succeeded.
+    unsafe { Some(((*props).EventsLost as u64, (*props).RealTimeBuffersLost as u64)) }
 }
 
 /// Windows version from HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion.

@@ -44,7 +44,10 @@
 // in-memory queue (--queue, default 50000) while the engine is
 // unreachable, then in the optional on-disk spool (--spool or
 // SF_SENSOR_SPOOL, capped by --spool-max-mb, default 256); past both
-// they are dropped and the drops are reported.
+// they are dropped and the drops are reported. The heartbeat also
+// reports what ETW itself lost (events and real-time buffers) and how
+// many process starts went out without their hash because the hashing
+// thread could not keep up.
 //
 // The token can also come from the SF_INGEST_TOKEN environment
 // variable (same var the engine and the other sensors honor); the
