@@ -23,7 +23,11 @@
 - (nada)
 
 ## Peticiones a otras zonas
-- (ninguna)
+- PUL: el job `govulncheck, osv-scanner, cargo audit` aparece «cancelled»
+  en tres corridas seguidas (superseded por pushes rápidos, p. ej.
+  9b86d8b → 3bc9167). Con concurrency cancel-in-progress el escaneo de
+  dependencias nunca llega a terminar en días movidos; conviene grupo de
+  concurrency propio o cola sin cancelación (`.github/workflows/`).
 
 ## Propuestas para el roadmap
 - F5 (siguiente en mi carril): seguir el kit POL-7 en el resto de vistas y
