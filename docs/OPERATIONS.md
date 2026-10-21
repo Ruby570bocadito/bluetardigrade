@@ -2,7 +2,76 @@
 
 Everything needed to install, configure and operate the framework: the one-command Windows install, Docker and source builds, the full configuration surface, the HTTP API and Prometheus metrics, storage, ingest authentication, alert delivery (webhook, SIEM sinks, chat/mail), alert-noise control, triage, the detection content and the CLI reference. The project overview lives in the [README](README.md); the architecture deep-dive in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## One-command install (Windows)
+## Contents
+
+**[Part 1: Installation and builds](#part-1-installation-and-builds)**
+
+- [One-command install (Windows)](#one-command-install-windows)
+- [Real telemetry with Sysmon (recommended)](#real-telemetry-with-sysmon-recommended)
+- [Docker](#docker)
+- [Build from source](#build-from-source)
+- [Building the real sensor (Windows)](#building-the-real-sensor-windows)
+
+**[Part 2: Configuration, API and storage](#part-2-configuration-api-and-storage)**
+
+- [Configuration reference](#configuration-reference)
+- [Local HTTP API](#local-http-api)
+- [Prometheus metrics](#prometheus-metrics)
+- [Per-team memory quotas (noisy-host protection)](#per-team-memory-quotas-noisy-host-protection)
+- [Persistent storage (SQLite, opt-in)](#persistent-storage-sqlite-opt-in)
+
+**[Part 3: Ingest security and fleet](#part-3-ingest-security-and-fleet)**
+
+- [Ingest authentication (shared token)](#ingest-authentication-shared-token)
+- [Machine inventory and sensor heartbeats](#machine-inventory-and-sensor-heartbeats)
+- [Per-sensor ingest identities](#per-sensor-ingest-identities)
+- [Sensor enrollment (tokens and approval)](#sensor-enrollment-tokens-and-approval)
+- [Ingest TLS (encryption in transit)](#ingest-tls-encryption-in-transit)
+
+**[Part 4: Alert delivery](#part-4-alert-delivery)**
+
+- [Alert webhook (SIEM/SOAR connector)](#alert-webhook-siemsoar-connector)
+- [SIEM sinks (Elasticsearch / Splunk)](#siem-sinks-elasticsearch--splunk)
+- [External notifications (Slack, Telegram, email)](#external-notifications-slack-telegram-email)
+
+**[Part 5: Noise control, triage and reports](#part-5-noise-control-triage-and-reports)**
+
+- [Alert suppressions (operator allowlist)](#alert-suppressions-operator-allowlist)
+- [Alert triage (lifecycle)](#alert-triage-lifecycle)
+- [Incidents (cases)](#incidents-cases)
+- [SOC reports and noise (REP-1)](#soc-reports-and-noise-rep-1)
+- [Console accounts, roles and audit](#console-accounts-roles-and-audit)
+- [Host groups](#host-groups)
+
+**[Part 6: Detection content](#part-6-detection-content)**
+
+- [Rule tester](#rule-tester)
+- [Detection validation (synthetic scenarios)](#detection-validation-synthetic-scenarios)
+- [Active Directory connector (read-only)](#active-directory-connector-read-only)
+- [Reputation lookups (opt-in)](#reputation-lookups-opt-in)
+- [Offline threat intelligence](#offline-threat-intelligence)
+- [Per-host process baseline](#per-host-process-baseline)
+- [Known software (§2.2, `-known-software`)](#known-software-22--known-software)
+- [Host risk scoring (hot hosts)](#host-risk-scoring-hot-hosts)
+- [Beaconing detection (C2 call-home)](#beaconing-detection-c2-call-home)
+- [Active response (kill_process, opt-in)](#active-response-kill_process-opt-in)
+- [Detection rules](#detection-rules)
+
+**[Part 7: CLI reference](#part-7-cli-reference)**
+
+- [Engine CLI reference](#engine-cli-reference)
+
+**[Part 8: Development, CI and performance](#part-8-development-ci-and-performance)**
+
+- [Development & CI](#development--ci)
+- [Measured performance](#measured-performance)
+- [SOC imports and analyst reports](#soc-imports-and-analyst-reports)
+
+---
+
+## Part 1: Installation and builds
+
+### One-command install (Windows)
 
 Installer fixes, update preservation, recovery and current SOC limitations: [INSTALACION-Y-ESTADO-SOC.md](INSTALACION-Y-ESTADO-SOC.md).
 
@@ -29,7 +98,7 @@ The installer downloads the repository, provisions portable Go, Node and Bun und
 | `sf-update`     | updates the code and rebuilds                  |
 | `sf-uninstall`  | removes everything                             |
 
-## Real telemetry with Sysmon (recommended)
+### Real telemetry with Sysmon (recommended)
 
 
 Product installs contain no demo generator. Set up Sysmon to observe actual host activity; its installation asks for elevation:
@@ -69,7 +138,7 @@ irm https://raw.githubusercontent.com/Ruby570bocadito/bluetardigrade/main/uninst
 
 The uninstaller stops the processes, removes the logon entries (HKCU Run and any legacy scheduled tasks), the firewall rule, the PATH entry and the whole install folder, including the portable toolchains it created. Toolchains you had before are left alone.
 
-## Docker
+### Docker
 
 
 ```bash
@@ -86,7 +155,7 @@ host can reach it). Connect actual sensors or import provider logs using
 For anything beyond a local lab, set a token and publish the ports
 deliberately: see [Ingest authentication](#ingest-authentication-shared-token).
 
-## Build from source
+### Build from source
 
 
 ```bash
@@ -100,7 +169,7 @@ Other Makefile targets: `make test` (Go unit tests), `make vet`,
 sensor), `make docker-build`, `make console-install`,
 `make console-service` and `make console`.
 
-## Building the real sensor (Windows)
+### Building the real sensor (Windows)
 
 
 Requirements: Rust stable with the `x86_64-pc-windows-msvc` target. Use **1.85 or newer**: the committed `Cargo.lock` resolves `time-core 0.1.9`, which needs the edition-2024 Cargo feature — older toolchains fail to parse that dependency's manifest even though this crate itself is edition 2021.
@@ -158,7 +227,11 @@ Delivery never runs on the ETW thread. Events wait in a bounded in-memory queue 
 
 With `--tls-ca` the engine's certificate must chain to that bundle and nothing else: the system trust store is disabled, so a certificate issued for the engine's name by a public or enterprise CA is refused.
 
-## Configuration reference
+---
+
+## Part 2: Configuration, API and storage
+
+### Configuration reference
 
 
 Everything the engine does is a flag with a safe default; everything secret can also come from the environment. This is the full surface — there are no other knobs:
@@ -229,7 +302,7 @@ The AI analyst is optional: without the three `ANALYST_*` variables the
 analyst panel says so clearly and the rest of the console keeps working.
 Details in [`web/console/README.md`](../web/console/README.md).
 
-## Local HTTP API
+### Local HTTP API
 
 
 The engine serves a small read-only API used by the web console and handy for SIEM taps. Both the ingest port and the API bind to `127.0.0.1` by default: the feed carries sensitive host data (users, command lines) and the NDJSON ingest must stay unauthenticated only on loopback, so nothing should be reachable from other machines unless you decide so. To accept sensors running on different hosts, start the engine with `-addr 0.0.0.0:7777` (and `-api 0.0.0.0:7778` if the console is remote too), enable the shared-token auth ([next section](#ingest-authentication-shared-token)), open the port with the installer's `-Firewall` switch, and plan a network-level restriction to the sensor segment. The API can be disabled entirely with `-api 0`:
@@ -269,7 +342,7 @@ For an encrypted API listener — the same posture the ingest listener has had s
 
 Native API writes also reject foreign or malformed browser `Origin` headers and `Sec-Fetch-Site: cross-site` with `403`, including when a bearer token is valid. CLI clients without these browser headers remain supported. Reverse proxies must preserve a consistent public Host/scheme or route console writes through the existing console proxy; forwarded headers are not used to relax this boundary.
 
-## Prometheus metrics
+### Prometheus metrics
 
 
 `GET /metrics` serves the same counters as `/api/stats` in the Prometheus text exposition format (`text/plain; version=0.0.4`), one `sf_*` family per numeric stats field — engine lifetime and throughput (`sf_uptime_seconds`, `sf_events_total`, `sf_events_dropped_total`, `sf_events_per_minute`, `sf_events_buffered`), ingest auth (`sf_ingest_rejected_total`, `sf_ingest_identities`, `sf_ingest_identity_violations_total`), detection content (`sf_rules`), alerts (`sf_alerts_total` plus the labeled `sf_alerts_by_severity{severity=...}`), delivery sinks (`sf_webhook_*_total`, `sf_elastic_*_total`, `sf_splunk_*_total`, and `sf_notify_{sent,failed,dropped,filtered}_total{channel=...}` for external notifications, emitted only when at least one channel is configured), noise control and storage (`sf_suppressions_active`; `sf_store_enabled` always reports 0/1, `sf_store_events`, `sf_store_alerts` and `sf_store_id_conflicts_total` appear only when the store is attached, and `sf_store_write_failures_total` is always present), kill-chain correlation (`sf_correlator_states`, `sf_correlator_sequences`, `sf_correlator_cap`), the behavioral detectors (`sf_beacon_keys_tracked` / `sf_beacon_cap` / `sf_beacons_fired_total`, `sf_threshold_rules` / `sf_threshold_keys_tracked` / `sf_thresholds_fired_total` — note the plural in that last name, `sf_threshold_*` globs do not match it —, `sf_intel_indicators` / `sf_intel_lists` / `sf_intel_hits_total`, `sf_baseline_hosts` / `sf_baseline_hosts_learning` / `sf_baseline_novelties_total`) and host risk (`sf_risk_hosts_tracked` plus the labeled `sf_host_risk_score{host=...}`, top-5 host risk; both label families are sorted and escaped like the severity series). It is rendered from the same snapshot struct the JSON endpoint serves (a parity test pins both views together), so it reveals nothing `/api/stats` does not, and the non-numeric fields (`rules_types`, `mode`) are deliberately omitted to keep series cardinality out of operator-file control. Scraping a token-protected engine works with the standard `authorization` scrape option:
@@ -286,7 +359,7 @@ scrape_configs:
 
 Worth alerting on: `sf_ingest_rejected_total` climbing (a probe against the ingest port), `sf_webhook_failed_total` climbing (a down SIEM connector), `sf_elastic_failed_total` / `sf_splunk_failed_total` climbing (a misconfigured or saturated SIEM sink), `sf_notify_failed_total` climbing (a dead chat or mail channel — the alert still fires, the operator just stops seeing it), `sf_store_write_failures_total` climbing (event or alert writes to SQLite are failing — affected records may exist only in memory and are lost on restart), and `sf_correlator_states` reaching `sf_correlator_cap` (a feed problem flooding the kill-chain tracker — see [Kill-chain correlation](#kill-chain-correlation)).
 
-## Per-team memory quotas (noisy-host protection)
+### Per-team memory quotas (noisy-host protection)
 
 
 Every bounded in-memory structure the detectors share is partitioned per host with an admission ceiling of 25% of the table (v1.1 "cuotas por equipo"): a noisy machine — a scanner, a misbehaving agent, a hostile feed — cannot fill the shared tables and wash out the evidence the other hosts are accumulating.
@@ -298,7 +371,7 @@ Every bounded in-memory structure the detectors share is partitioned per host wi
 
 All refusals are honest counters, never silent drops: `/api/stats` serves the totals (`beacon_quota_rejected`, `threshold_quota_rejected`) and a bounded top-8 `quota_top_hosts` list that merges ring rotation and per-host refusals; `/metrics` serves the same totals as `sf_beacon_quota_rejected_total` / `sf_threshold_quota_rejected_total` / `sf_ring_dropped_events_total` / `sf_ring_dropped_alerts_total` (no host labels — series cardinality must not depend on telemetry). If one of these counters climbs, look at what that host is doing before considering caps: the quota doing its job is the symptom of a noisy machine, not a tuning bug.
 
-## Persistent storage (SQLite, opt-in)
+### Persistent storage (SQLite, opt-in)
 
 
 By default the engine keeps recent telemetry in bounded in-memory rings (1000 events / 256 alerts) and that is all the API serves. Start it with `-store` to persist every event and alert to a SQLite database (pure-Go driver, WAL journalling — the Docker image and every CI job stay cgo-free):
@@ -317,7 +390,11 @@ While the store is attached:
 - The database (and its WAL side files) is created `0600` — full telemetry (users, command lines, file paths) must not be readable by other local users. A file that already exists keeps its mode (no surprise permission changes; tighten it yourself if it predates this change).
 - A store that cannot be opened is a FATAL startup error, by the same standard as a malformed suppressions file: persistence you believe is armed must not silently stay off. Write failures at runtime are logged with a throttle and never stop detection.
 
-## Ingest authentication (shared token)
+---
+
+## Part 3: Ingest security and fleet
+
+### Ingest authentication (shared token)
 
 
 The NDJSON ingest supports a shared-token handshake for deployments where sensors connect over the network. Start the engine with `-token` or the `SF_INGEST_TOKEN` environment variable (flag wins):
@@ -356,7 +433,7 @@ During the window the startup banner says `rotation window OPEN` so an operator 
 
 On Windows the installer can persist the token for you (`install.ps1 -IngestToken '...'`, stored under `tools\config\ingest.token`, cleared with an empty value): the autostart entry, `sf-console` and `sf-sensor` then all start the engine with that token enforced. The installer's `-Firewall` switch **requires** a configured token — it refuses to open TCP 7777 otherwise (and removes a rule left behind by a pre-gate install), because a reachable ingest without a token is an open event-injection channel for the whole network segment.
 
-## Machine inventory and sensor heartbeats
+### Machine inventory and sensor heartbeats
 
 The engine keeps an inventory of every machine that reports to it
 (`GET /api/fleet`, console **Equipos**). Each record holds:
@@ -397,7 +474,7 @@ exists, so every remote sensor authenticates with its own identity. A
 enables ingest TLS. The full enrollment walkthrough, in Spanish, is in
 [FLOTA-REMOTA.md](FLOTA-REMOTA.md).
 
-## Per-sensor ingest identities
+### Per-sensor ingest identities
 
 The shared token proves "some sensor of this deployment": every endpoint holds the same secret, so one compromised host can report events in the name of any other machine — fabricate alerts for it, inflate its risk score, feed its kill chains. `-ingest-identities <file>` (or `SF_INGEST_IDENTITIES`) gives each sensor its own credential, bound to the hosts it may report for:
 
@@ -414,7 +491,7 @@ Each sensor sends its own token in the usual `AUTH <token>` handshake. The engin
 
 While the handshake is pending the first line is capped at 4 KiB: an unauthenticated connection can no longer make the engine buffer up to 1 MiB before presenting a credential.
 
-## Sensor enrollment (tokens and approval)
+### Sensor enrollment (tokens and approval)
 
 `-enroll <file>` (or `SF_ENROLL`) lets a new sensor join without a hand-made identity. The Windows launcher turns it on together with ingest TLS, when `tools\config\ingest-cert.pem` and `ingest-key.pem` exist; the state goes to `data\enrollment.json`.
 
@@ -440,7 +517,7 @@ Rules:
 - **Caps.** 1,000 tokens, 10,000 hosts, 1,000 hosts pending at once.
 - **API.** `GET /api/enroll` returns tokens (never their secret) and hosts. The write routes need an API token even on loopback. Every write is logged as `[API] WRITE enroll …` with the `by` the console attributes, and enrollments as `[ENROLL] …`.
 
-## Ingest TLS (encryption in transit)
+### Ingest TLS (encryption in transit)
 
 The shared token authenticates the sender but does not encrypt the channel: with `-addr 0.0.0.0:7777` the feed travels in clear text and carries sensitive host data (users, command lines). For remote-sensor deployments the ingest speaks native TLS — standard library only, no extra dependencies:
 
@@ -478,7 +555,11 @@ openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
 
 The scripted path covering all of the above lives in `scripts/dev-tests/smoke_ingest_tls.sh` (seven scenarios: round trip, plain-vs-TLS rejection, wrong-CA rejection, TLS+token, half-set flags, missing cert, hot rotation). The Rust sensor (`sf-sensor`) speaks the same scheme with `--tls-ca <ca.pem>` (or the `SF_INGEST_CA` environment variable): every (re)connection is upgraded to TLS and the engine's certificate must chain to the given bundle — pinned CA only, no skip-verification mode, and no relay needed anymore. The host part of `--addr` is the server name the certificate is validated against (IP-SAN certificates work; the handshake phase is bounded by the same 10 s deadline as AUTH). After an engine certificate rotation a sensor pinned to the old CA is rejected exactly like its Go siblings — redeploy it with the new CA bundle.
 
-## Alert webhook (SIEM/SOAR connector)
+---
+
+## Part 4: Alert delivery
+
+### Alert webhook (SIEM/SOAR connector)
 
 
 The engine can push every raised alert as JSON to an external HTTP collector — a SIEM, a SOAR playbook, a chat-ops relay:
@@ -499,7 +580,7 @@ bin/engine -webhook http://siem.internal:8080/ingest \
 
 The receiver then validates the `Authorization: Bearer` header, so a receiver reachable from more than the engine's host can reject unauthenticated or spoofed posts instead of ingesting fake alerts into the SIEM. Per-rule `actions.webhook` entries keep their own independent `secret` config (see [Rule actions](#rule-actions)); when both are set the per-action secret applies to that action only and the global token to the engine-level connector. A webhook running without any token prints a startup reminder listing the flag and the env var.
 
-## SIEM sinks (Elasticsearch / Splunk)
+### SIEM sinks (Elasticsearch / Splunk)
 
 
 For teams that run their detections straight into a SIEM platform — no relay endpoint of their own to build — the engine ships native sinks for Elasticsearch and Splunk:
@@ -522,7 +603,7 @@ The Splunk sink speaks the HTTP Event Collector: one event per POST to `/service
 
 Delivery semantics are at-least-once on both paths (the Elasticsearch `_id` makes them effectively deduplicated; HEC has no client-side event key, so downstream dedup can key on the alert `id` every event carries). The end-to-end delivery contract — wire shapes, auth enforcement, negative control and wrong-credential visibility — is pinned by `scripts/dev-tests/e2e_siem.sh` with its labeled lab receivers.
 
-## External notifications (Slack, Telegram, email)
+### External notifications (Slack, Telegram, email)
 
 
 The webhook speaks JSON to machines; `-notify` speaks human to the on-call. One YAML config file arms any combination of chat and mail channels, and every raised alert — the same stream the webhook and the console see — fans out to each channel without ever blocking detection:
@@ -553,7 +634,11 @@ Delivery follows the same discipline as the SIEM webhook: one bounded queue (256
 
 Email transport is deliberate about plaintext: STARTTLS defaults to **on** and a relay that does not offer it is a loud startup-and-delivery refusal, not a silent downgrade; AUTH PLAIN never sends credentials over an unencrypted connection (the net/smtp loopback exception is what makes local relays testable). Chat message bodies carry the rendered human line `[SEVERITY] rule @ host — summary`; email additionally carries the full structured alert in the body so the mailbox doubles as a forensic record. The config loader is fail-loud at startup (unknown channel type, missing endpoint, unresolved secret env var, duplicate names, more than 8 channels, file above 4 MiB all stop the engine), because a notification channel that silently never fires is a silent control. The same deliberateness has a boundary the operator should know: the loader accepts `http://` for Slack and Telegram endpoints (self-hosted relays and lab LANs are legitimate), but a Slack hook URL *is* the credential and the Telegram token travels inside the request path — on any network you do not control, keep both on `https://` (their public defaults already are) so the secret never crosses the wire in cleartext.
 
-## Alert suppressions (operator allowlist)
+---
+
+## Part 5: Noise control, triage and reports
+
+### Alert suppressions (operator allowlist)
 
 
 Maintenance windows and accepted exceptions happen: sometimes an alert is correct and still unwanted. `suppressions.yaml` (see `suppressions.example.yaml` for the annotated format) silences a rule, a host, or a rule+host pair, with optional RFC 3339 expiration. The full operator guide to alert noise — dedup semantics, suppression recipes, correlation volume, receiver-side filtering and the pipeline's abuse-resistance caps — lives in [`false-positive-control.md`](false-positive-control.md):
@@ -586,7 +671,7 @@ Point the engine at it with `-suppressions <path>` (default `./suppressions.yaml
 
   A different `Get-Clipboard` command line keeps firing. Caps: 8 conditions per entry, field 128 and value 2000 characters, value lists up to 16 items; an unknown operator or a bad regex fails the load LOUDLY (the same standard as a rule). An event without the field never matches a condition on it. **Where conditions apply:** they are evaluated where the triggering event exists — rule hits, threat-intel matches and baseline novelties. Aggregated alerts (kill-chain completions, beaconing, volumetric) carry no single event, so a conditional entry never silences one; the failure direction is an alert you still see, never a lost signal. Unconditional entries keep silencing aggregates exactly as before.
 
-## Alert triage (lifecycle)
+### Alert triage (lifecycle)
 
 
 Detecting is only half of the job — the other half is working the queue. Every alert carries a unique engine-assigned `id`, and the operator triage state travels with it:
@@ -605,13 +690,13 @@ curl -X POST http://127.0.0.1:7778/api/alerts/<id>/status \
   -d '{"status":"closed","decision":"false_positive","note":"tarea programada","by":"ana"}'
 ```
 
-The `decision` field is the operator's verdict: `false_positive` (benign — the rule fired on activity it does not exist to catch), `authorized_activity` (real but sanctioned: a pentest window, a change ticket) or `confirmed_incident`. It is optional and carries no workflow coupling — it may be recorded on any status, before or with the close. The POST body is the FULL triage record, never a partial patch: omitting `decision` (or `note`, or `by`) clears it. The verdict feeds the triage flow's «falso positivo» state in the console and the `false_positive_pct` of the [noise report](#alert-noise-control) — the real per-rule false-positive rate, no longer a proxy.
+The `decision` field is the operator's verdict: `false_positive` (benign — the rule fired on activity it does not exist to catch), `authorized_activity` (real but sanctioned: a pentest window, a change ticket) or `confirmed_incident`. It is optional and carries no workflow coupling — it may be recorded on any status, before or with the close. The POST body is the FULL triage record, never a partial patch: omitting `decision` (or `note`, or `by`) clears it. The verdict feeds the triage flow's «falso positivo» state in the console and the `false_positive_pct` of the [noise report](#soc-reports-and-noise-rep-1) — the real per-rule false-positive rate, no longer a proxy.
 
 `GET /api/alerts` merges the current status into every alert (`status`, `decision`, `status_note`, `status_by`, `status_at`), a `alert_lifecycle` SSE frame announces each decision live, and the web console renders the status chips plus the reconocer/cerrar/reabrir actions in the alert panel (the write goes console → same-origin Next.js proxy → engine; the API token stays on the server). The API token gates the write endpoint exactly like every read endpoint.
 
 Statuses persist across engine restarts with `-lifecycle <file>` (default `./alert-lifecycle.json`, falling back to the install root; `-lifecycle ""` keeps them in memory only). The file is written atomically on every decision and is FATAL to load if malformed — the same fail-loud standard as suppressions: triage work silently resetting to "new" would be a lie. One honest note on restarts: without `-store` the alert ring is in-memory, so after a restart the file preserves the audit record while the alerts it refers to are gone. With the SQLite store attached, alerts are served from the persisted history after a restart (see [Persistent storage](#persistent-storage-sqlite-opt-in)), so alert and lifecycle persist together and the triage status stays visible end to end.
 
-## Incidents (cases)
+### Incidents (cases)
 
 An incident groups related alerts into one case with a title, severity,
 status (`open`, `investigating`, `contained`, `closed`), an owner, the
@@ -636,7 +721,7 @@ case carries its own audit trail.
   browser from what the console holds; alerts that already left the
   live window are counted, not invented.
 
-## SOC reports and noise (REP-1)
+### SOC reports and noise (REP-1)
 
 The engine computes SOC reports on demand as read-only aggregations of
 records it already holds — no new capture, no side effects. With the
@@ -670,7 +755,7 @@ proxy until a triage decision field exists; the JSON names exactly
 what it measures. It answers JSON only because the console renders it
 and adds the tuning buttons (known software, suppressions).
 
-## Console accounts, roles and audit
+### Console accounts, roles and audit
 
 By default the console has no accounts: on loopback, or behind
 `CONSOLE_ACCESS_TOKEN` (any user name, the token as password), whoever
@@ -791,7 +876,7 @@ gets in acts as administrator. That stays unchanged unless
   for 10 minutes so the slow key derivation does not run on every
   request.
 
-## Host groups
+### Host groups
 
 Host groups name sets of machines: a site, a department, an AD OU,
 servers or workstations. Equipos filters by them, and console accounts
@@ -823,7 +908,7 @@ can be limited to them (see "Access by host group").
   Directory settings in Ajustes through the console's own proxy, which
   used to refuse them.
 
-### Access by host group
+#### Access by host group
 
 A console account can be limited to some host groups. It then sees and
 acts on the machines of those groups only.
@@ -880,7 +965,11 @@ acts on the machines of those groups only.
   Without them, anyone who reaches those ports on the machine sees
   everything, as before.
 
-## Rule tester
+---
+
+## Part 6: Detection content
+
+### Rule tester
 
 `POST /api/rules/test` with `{"event": {...}}` evaluates one event in the
 ingest wire format against the live rule set and returns the matching
@@ -888,7 +977,7 @@ rules and the fields they matched on. Nothing is ingested, stored,
 alerted, correlated or forwarded: it is a dry run for writing and tuning
 rules. The console exposes it in **Detección -> Probador**.
 
-## Detection validation (synthetic scenarios)
+### Detection validation (synthetic scenarios)
 
 The `scenarios/` directory ships a detection-validation library (one
 inert, synthetic scenario per shipped rule and per kill-chain, 127
@@ -939,7 +1028,7 @@ rule and chain must keep its scenario, and every raised alert must
 carry the `simulation` tag. A scenario that stops detecting breaks the
 build, so detection regressions cannot land silently.
 
-## Active Directory connector (read-only)
+### Active Directory connector (read-only)
 
 Start the engine with `-ad <config.yaml>` (and `-store`, which holds
 the snapshot — see the example file [`ad.example.yaml`](../ad.example.yaml))
@@ -993,7 +1082,7 @@ other `/api` route and answer `501` with an arming hint while the
 engine runs without `-ad`. The machine-readable contract lives in
 OpenAPI 3.0 at [`api/openapi.yaml`](api/openapi.yaml).
 
-### The service-account credential (SEC-2)
+#### The service-account credential (SEC-2)
 
 `password_file` accepts two formats:
 
@@ -1026,7 +1115,7 @@ the secret, its base64/hex forms and its length from every `/api/ad/*`
 response) and is zeroed from memory right after each bind attempt; a
 failed bind reports server and result code, never the credential.
 
-### Settings over the API (AD-6)
+#### Settings over the API (AD-6)
 
 The settings the console's AD-6 screen edits live in three routes —
 all admin business, so the whole family answers `403` while the engine
@@ -1083,7 +1172,7 @@ The machine-readable contract (including the `ADSettingsUpdate` field
 list and the `ADTestResult` verdict shape) lives in
 [`api/openapi.yaml`](api/openapi.yaml).
 
-## Reputation lookups (opt-in)
+### Reputation lookups (opt-in)
 
 Set `SF_VT_API_KEY` (VirusTotal) and/or `SF_ABUSEIPDB_API_KEY`
 (AbuseIPDB) in the engine environment to enable on-demand lookups:
@@ -1100,7 +1189,7 @@ Set `SF_VT_API_KEY` (VirusTotal) and/or `SF_ABUSEIPDB_API_KEY`
 - Keys are read from the environment only, never from flags (flags show
   in the process list).
 
-## Offline threat intelligence
+### Offline threat intelligence
 
 `-intel <dir>` (default `./intel`, resolved next to the executable like
 the rules) points the engine at a folder of indicator lists that the
@@ -1141,7 +1230,7 @@ downloads lists or contacts a feed.
   with a Spanish README ([intel/README.md](../intel/README.md)) and no
   lists.
 
-## Per-host process baseline
+### Per-host process baseline
 
 The engine learns which processes each host runs and flags the first
 one a host never ran before: the tool nobody wrote a rule for (an
@@ -1182,7 +1271,7 @@ when no account is an administrator) and `ingest-identities.yaml`
 on a malformed one). Files saved by Windows tools with a UTF-8 BOM or as
 UTF-16 are read correctly.
 
-## Known software (§2.2, `-known-software`)
+### Known software (§2.2, `-known-software`)
 
 `known-software.yaml` (see `known-software.example.yaml` for the annotated format) names software the whole deployment is expected to run — the Lenovo Vantage on every laptop, the corporate VPN, an internal agent pinned by hash. Events whose process matches an entry carry the enrichment `known_software: <name>`. The event is NEVER deleted, downgraded or hidden — known software is also compromised software — but three honest effects apply:
 
@@ -1202,12 +1291,12 @@ software:
 
 Matching is case-insensitive and backslash-normalized (write the path exactly like the sensor reports it); `*` does not cross a directory separator — one star per path level. An entry needs `image`, `sha256` or both. Point the engine at it with `-known-software <path>` (default `./known-software.yaml`, falling back to the install root); empty disables. The file hot-reloads on the same 15 s ticker as rules and suppressions; a malformed file is FATAL at startup and keeps the previous list on hot reload, loudly. The live count is visible at `GET /api/stats` (`known_software_active`).
 
-## Host risk scoring (hot hosts)
+### Host risk scoring (hot hosts)
 
 
 Running alongside triage, the engine keeps a per-host risk score: every alert adds a fixed severity weight to its host's score — critical 10, high 5, medium 2, low 1, info 0 — and the total halves every 30 minutes without new alerts (a one-critical host is gone from the board in about three hours). Each alert is charged to the time of the event that raised it, the same clock the correlator, beaconing and thresholds use: a sensor that kept capturing while the engine was stopped replays its backlog on the next start, and those hours-old alerts weigh what they would have weighed live instead of landing as one burst of fresh points (alerts without a triggering event, such as a silent sensor, use the engine clock). `/api/stats` serves the top five as `hot_hosts` (host, score rounded to 2 decimals, alert count, last-seen) plus a `risk_hosts_tracked` count, `/metrics` renders `sf_host_risk_score{host=...}` next to `sf_risk_hosts_tracked`, and the console dashboard shows the leaders with their decay. Two deliberate design lines: the tracker's state is bounded (`MaxHosts`, coldest-evicted-first — a hostile feed inventing hostnames cannot wash out a genuinely hot one), and the score models what the engine SAW, never what the operator decided — acknowledging or closing an alert does not refund points, because queue priority and detection heat answer different questions.
 
-## Beaconing detection (C2 call-home)
+### Beaconing detection (C2 call-home)
 
 
 The engine also ships a behavioral detector that no single-event rule can express: beaconing. For every (profile, host, destination) triple it keeps the last 64 connection timestamps inside the profile's sliding window and measures the regularity of the inter-arrival intervals with the coefficient of variation (stddev/mean): implants sleep on a schedule, human browsing does not. When at least `min_count` connections show a CV at or under `max_jitter` with a mean interval of at least `min_interval`, exactly one alert fires — naming the destination, the observed cadence and the measured jitter, so an analyst can reproduce the verdict by hand.
@@ -1216,7 +1305,7 @@ The engine also ships a behavioral detector that no single-event rule can expres
 
 Profiles live in `beacons.yaml` (committed and loaded by default; `-beacons ""` turns the detector off; a file that exists but does not parse is FATAL at startup — the same fail-loud standard as suppressions). DNS query events (`protocol: dns`) never take part — applications re-resolve names on a timer (record TTLs, connectivity checks), which reads as a perfect cadence; the connection that follows a lookup carries the domain and is what counts — and neither do loopback, link-local or multicast destinations (local plumbing such as a router answering DNS on `fe80::`), nor the Windows DNS Client service (`svchost.exe`) talking to the configured resolver on port 53 or 853, which it does at a steady pace for every process on the host (DNS tunnels show in the query events; any other process talking to port 53 is still tracked). Each profile can list `exclude_domains`: services whose keep-alives are regular by design. An entry covers the domain and its subdomains (`whatsapp.com` covers `web.whatsapp.com`, never `evilwhatsapp.com`), connections known only by IP are never excluded, and a bare TLD is refused. The shipped profiles exclude WhatsApp (`whatsapp.com`, `whatsapp.net`), whose app keeps its connection alive every ~60 s. The shipped pack is deliberately conservative: the web profile needs 12 regular connections inside a 15-minute window with a mean interval of at least 2 s — CDNs, load balancers and NTP pools are regular too, but at sub-second cadences the `min_interval` floor keeps that chatter out by construction. Detections honor the rest of the pipeline for free: profile+host suppressions, triage lifecycle, store, webhook and console, because a beacon alert is just another alert (its `rule_id` is the profile's id). The tracker's state is bounded (8192 keys, weakest-evicted-first — a flood of one-connection fake destinations can only evict other flood entries, never wash out evidence that is building), and re-fires are throttled per key by the profile's `cooldown`. `/api/stats` exposes the live signal (`beacons_tracked` / `beacons_cap` / `beacons_fired`) and `/metrics` the same families as `sf_beacon_keys_tracked` / `sf_beacon_cap` / `sf_beacons_fired_total`. The console header summarizes every behavioral detector in one **detectores** chip (correlator, beaconing, thresholds, threat intel and process baseline, each row hidden while its detector is off): it turns red the moment a tracker reaches its cap (new destinations or hosts silently stop being tracked, which is detection loss on a flooded feed) and amber when the intel lists matched; the drop-down shows each detector's numbers (`beacons_tracked` / `beacons_cap`, `threshold_rules` / `threshold_keys` / `threshold_fired`, ...).
 
-## Active response (kill_process, opt-in)
+### Active response (kill_process, opt-in)
 
 
 The engine can act, not just detect — and the action is the most
@@ -1295,7 +1384,7 @@ spawns, the protected set denied via a decoy `csrss.exe` in temp
 and the audit JSONL asserted end to end. The Windows handle path is
 verified in conduct, not just in compilation.
 
-## Detection rules
+### Detection rules
 
 
 Rules live in `rules/` as YAML, are validated at load, and hot-reload every 15 seconds by default (disable with `-reload-every 0`). The loader carries the same house caps as every other config surface: 4 MiB per file (checked before reading), a nesting-depth pre-scan and a 2048 enabled-rules ceiling — enforced fail-loud on startup and on every hot-reload tick, so an oversized or hostile file aborts startup, or keeps the previous set on reload, instead of degrading a running engine. The shipped pack uses 114 of those 2048 slots. The shared guard also rejects cyclic aliases and caps projected expansion and composed flow depth before typed decoding.
@@ -1449,7 +1538,7 @@ Nota: los nombres de reglas y secuencias se mantienen en espanol, tal
 como viven en los YAML del repositorio; no se traducen en la doc.
 
 
-### Kill-chain correlation
+#### Kill-chain correlation
 
 Beyond per-event rules, the engine ships a sequence correlator: `sequences/*.yaml` lists named steps (exact rule names) that, when all observed on the same host inside a `window` (e.g. `5m`), raise a single high-signal alert describing the campaign. Each step remembers the event time of its latest hit on that host; the chain fires when every step is present and the spread between the oldest and the newest fits in the window, so a stale early hit cannot anchor the window and an out-of-order event cannot stitch steps days apart. Chains whose window elapses without progress are reclaimed on the maintenance cadence. The shipped packs model credential-dump campaigns, full intrusion chains, defensive shutdown and registry-based persistence (`kill-chains.yaml`), broader adversary playbooks like data exfiltration, ransomware preparation, webshell reconnaissance and credential-to-lateral movement (`campaigns.yaml`), and account-scoped lateral movement across hosts (`lateral.yaml`). Sequences hot-reload together with the rules. Load-time caps keep the config surface bounded (4 MiB/file, nesting depth 512, 512 sequences, 64 steps/chain, window ≤ 7 days, id/name/tag length caps, no control runes in strings that reach logs or alerts): an oversized or hostile file fails the load loudly instead of degrading a running engine. Steps naming rules that do not exist are reported as a WARNING at startup and on every reload, because a chain waiting on a ghost rule can never complete. Note: suppressing a rule also removes it from every chain it feeds on that host (accepted-state semantics — see [docs/false-positive-control.md](false-positive-control.md)).
 
@@ -1507,7 +1596,7 @@ The shipped pack (`sequences/kill-chains.yaml`) defines 4 sequences, all
 
 The correlator is observable from the outside: `/api/sequences` lists the armed chains (steps, window, tags) as loaded right now, and `/api/stats` carries `correlator_states` (chains in flight, one per sequence/host pair), `correlator_sequences` (loaded sequences) and `correlator_cap` (hard tracking cap, 8192). A hostile feed inventing hostnames drives `correlator_states` toward the cap — past it, NEW hosts silently stop being tracked, so a value climbing on a small fleet is a feed problem, not popularity. The console surfaces both: the correlator row of the header's **detectores** chip turns it red the moment the cap is reached, and the Cadenas view renders each chain as its step sequence and flags any step whose rule is not loaded (a chain that can never complete).
 
-### Rule actions
+#### Rule actions
 
 Rules can declare an `actions` list; the engine executes it every time the rule fires (message rendering happens before the alert is written, so the console and the JSON log line carry the rendered text):
 
@@ -1532,7 +1621,7 @@ Rules can declare an `actions` list; the engine executes it every time the rule 
 
 Delivery failures are logged on stderr and never surface as detection errors; a dead webhook endpoint degrades to log noise, not data loss in the engine.
 
-### Converting Sigma rules
+#### Converting Sigma rules
 
 `engine sigma` converts [Sigma](https://sigma.is) YAML rules into the native format above, so the community corpus can feed `rules/` without hand-transcription. The converter is **deterministic** (same corpus → byte-identical output) and **fail-loud**: a rule using a construct the engine cannot express faithfully is skipped with an explicit reason in the report, never translated approximately — a broken YAML file aborts the run instead of silently converting the rest.
 
@@ -1555,7 +1644,11 @@ What converts (v1 scope):
 
 Provenance travels in the converted rule: author, status, date, references and declared false positives are folded into the description (`[Sigma] …` line), the Sigma UUID stays as the rule `id`, and a `sigma` tag is prepended so imported rules are identifiable in `engine rules`, the console and the API. Bounds apply to the whole run (4 MiB per file, 512 emitted rules, per-rule caps on selections/fields/condition length). The E2E (`scripts/dev-tests/e2e_sigma.sh`) converts a committed fixture corpus and proves the converted rules fire on real telemetry through the engine's TCP feed.
 
-## Engine CLI reference
+---
+
+## Part 7: CLI reference
+
+### Engine CLI reference
 
 
 The engine binary is `engine` (`make build` puts it in `bin/`; the
@@ -1575,7 +1668,7 @@ Windows installer installs it as `sf-engine`). Subcommands:
 | `engine scenarios replay [-dir dir] [-ingest addr] [-api url] [-only ids] [-token t] [-tls] [-ca file] [-interval d] [-timeout d] [-host-suffix s]` | replay the library against a LABORATORY engine (loopback literal only) and verify every expected alert fires; exit 0 only when all expectations fire |
 | `engine version` | print the engine version and exit |
 
-### Interactive terminal
+#### Interactive terminal
 
 Run `engine run -i` in a terminal. `1` / `2` / `Tab` switch between alerts
 and the rule catalogue; `/` searches, `s` cycles severity, `Enter` opens
@@ -1589,7 +1682,7 @@ Human output neutralizes telemetry control characters; structured evidence
 is preserved. Webhook banners expose only scheme and host. Routed commands
 reject unexpected positional arguments; the classic invocation is preserved.
 
-### `engine run` flags
+#### `engine run` flags
 
 Every runtime flag below works identically on the classic single-dash
 path (no subcommand) and on `engine run`.
@@ -1637,7 +1730,7 @@ path (no subcommand) and on `engine run`.
 | `-pidfile path` | empty | write the process PID at startup and remove it on shutdown (lets `sf-console -Stop` stop an engine it did not start) |
 | `-i`, `--interactive` | off | interactive TUI: live stats and alert feed in the terminal (degrades to the classic flat run when stdout is not a TTY) |
 
-### Backward compatibility
+#### Backward compatibility
 
 Invoking the binary without a subcommand keeps the historical behavior:
 the single-dash flags above apply directly, exactly as in `engine run`:
@@ -1647,7 +1740,11 @@ bin/engine -addr :7777 -v    # same as: bin/engine run -addr :7777 -v
 bin/engine run -i            # interactive TUI
 ```
 
-## Development & CI
+---
+
+## Part 8: Development, CI and performance
+
+### Development & CI
 
 
 Every push and pull request runs the same checks the maintainers run locally (`.github/workflows/ci.yml`, three jobs):
@@ -1668,7 +1765,7 @@ make ci
 
 Runtime telemetry is received from sensors/providers. Automated unit, DOM and browser checks use isolated fixtures; native smokes run actual binaries. These checks do not certify a live provider deployment.
 
-## Measured performance
+### Measured performance
 
 
 The phase-1 promise (p99 < 10 ms) is now measured, not assumed. `scripts/dev-tests/bench` is a load and latency harness: it streams process.create events that deterministically fire one seeded rule, listens on the engine SSE stream and measures every alert on the same clock — from the NDJSON line leaving the client to the alert frame arriving, i.e. the full pipeline (ingest parse, rule evaluation, alert build, broadcast) plus the SSE hop the console experiences.
@@ -1696,6 +1793,6 @@ bin/bench -addr 127.0.0.1:7777 -api 127.0.0.1:7778 -n 2000 -rate 1000
 bin/bench -addr 127.0.0.1:7777 -api 127.0.0.1:7778 -api-token <token> -n 2000
 ```
 
-## SOC imports and analyst reports
+### SOC imports and analyst reports
 
 See [SOC-INTEGRACIONES-E-INFORMES.md](SOC-INTEGRACIONES-E-INFORMES.md) for the six collector formats, TLS/auth requirements, osquery schedule, Windows firewall timezone and offline phishing analysis. Reports contain analyst statements plus a frozen alert snapshot; they do not execute actions or change triage. Browser drafts are local to this origin, with ten report slots and explicit save/export/delete.
