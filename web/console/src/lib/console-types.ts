@@ -94,18 +94,29 @@ export type SfAlert = {
   status_note?: string
   status_by?: string
   status_at?: string
+  // assignment trio (TEAM-3/M-1): who owns the triage now. The engine
+  // omits the three fields together, so absent = unassigned.
+  assignee?: string
+  assigned_by?: string
+  assigned_at?: string
 }
 
 export type SfAlertStatus = 'new' | 'acknowledged' | 'closed'
 
-// One lifecycle record (engine POST /api/alerts/{id}/status response
-// and the alert_lifecycle SSE frame).
+// One lifecycle record (engine POST /api/alerts/{id}/status and
+// /assign responses, and the alert_lifecycle SSE frame). The assignment
+// trio travels with every frame: present when the alert is assigned,
+// absent (omitempty) when it is not — a triage write echoes the trio it
+// preserved, so a frame is always the full current state.
 export type SfAlertLifecycle = {
   alert_id: string
   status: SfAlertStatus
   note?: string
   by?: string
   at: string
+  assignee?: string
+  assigned_by?: string
+  assigned_at?: string
 }
 
 export type LifecycleAck =

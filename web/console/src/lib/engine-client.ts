@@ -147,5 +147,10 @@ export function mapAlert(raw: Record<string, unknown>): SfAlert {
     status_note: raw.status_note ? String(raw.status_note) : undefined,
     status_by: raw.status_by ? String(raw.status_by) : undefined,
     status_at: raw.status_at ? String(raw.status_at) : undefined,
+    // assignment trio (TEAM-3/M-1): engines without it never send these
+    // keys, so the mapped alert stays unassigned — same shape either way.
+    assignee: raw.assignee ? String(raw.assignee) : undefined,
+    assigned_by: raw.assigned_by ? String(raw.assigned_by) : undefined,
+    assigned_at: raw.assigned_at ? String(raw.assigned_at) : undefined,
   }
 }
