@@ -283,3 +283,40 @@ Reglas rápidas:
 - Bloqueos: ninguno.
 - Estado en TASKS.md: P-3 en revisión (PR #41) · S-5 en revisión
   (PR #43)
+
+---
+## 2026-10-22 · Pulimiento B (backend) · P-4 · sesión 2
+- Hecho: expiración de bundles forenses O(1) por alerta (P-4). El FIFO
+  en memoria del orden de escritura sustituye al escaneo de directorio
+  por escritura que el primer perfil real del nightly señaló
+  (`evictOldFiles` ≈29 % CPU rings). El disco se escanea una sola vez
+  por vida del recorder (siembra del FIFO, con expiración por mtime de
+  restos de ejecuciones anteriores y ficheros ajenos, igual que antes).
+  Cota (256), orden de expiración (más viejo primero para lo escrito
+  por el motor) y contrato best-effort sin cambios:
+  `TestBundleDirEviction` pasa tal cual.
+- Evidencia: microbench nuevo en `internal/forensic/bench_test.go`;
+  en la cota 430 µs → 85 µs por Capture (160 KB → 3,8 KB, 1584 → 27
+  allocs en el sandbox de 2 vCPU); bajo la cota 233 µs → 82 µs. Perfil
+  después: `writeAtomic` concentra el coste y la expiración desaparece
+  del top (antes 64,5 % cum en el microbench).
+- Ficheros: `internal/forensic/forensic.go`,
+  `internal/forensic/bench_test.go`, `changelog.d/polish-evict-fifo.md`,
+  kit (`TASKS.md`, `WORKLOG.md`,
+  `docs/agentes/03-pulimiento/plan_B_ronda2.md`).
+- Contratos/decisiones para otros: la semántica de expiración para
+  ficheros ajenos añadidos a mitad de vida cambia de forma acotada (un
+  .json externo con mtime más viejo no salta la cola hasta el
+  siguiente arranque; el escaneo por escritura anterior lo habría
+  visto) — documentado en el código; M-8 (cadena de custodia) no se
+  ve afectado: Load/CountBundles no cambian. POL-2 (M-9, carril A):
+  el artefacto bench-pprof sigue disponible como referencia de coste
+  del camino caliente.
+- Pendiente: rama `agent/pulimiento/p-4` preparada localmente (3
+  commits: claim TASKS.md, fix+bench+changelog, docs de ronda); push y
+  PR cuando el humano restaure credenciales de forma segura. Confirmar
+  la caída del hotspot en el próximo nightly (runner estable).
+- Bloqueos: sin token en el entorno (los PAT del chat anterior quedaron
+  fuera de la sesión por higiene) — push bloqueado, nada más.
+- Estado en TASKS.md: P-4 en progreso (rama local
+  `agent/pulimiento/p-4`).
