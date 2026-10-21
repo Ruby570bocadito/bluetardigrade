@@ -59,14 +59,6 @@ punto, con el CI en verde (incluidos los jobs de Windows) antes de fusionar.
 - [ ] Probar el instalador silencioso: salida en una pantalla, log en
   `%TEMP%\bluetardigrade-install.log`, `-ShowBuildOutput` y un fallo de
   compilación que siga mostrando el motivo.
-- [ ] **Alerta crítica sin aviso** (visto en las pruebas): tras una alerta
-  crítica no salta ningún aviso. Reproducirlo y revisar cada vía:
-  - la notificación del navegador y el sonido de Ajustes → Notificaciones
-    (solo con una pestaña abierta y el permiso del navegador concedido);
-  - el aviso dentro de la consola;
-  - los canales externos: `sf-start` ya pasa `tools\config\notify.yaml` al
-    motor y `sf-engine doctor` lo valida; queda probar la entrega real de
-    correo y Telegram en Windows real.
 
 ## F2 — Acceso
 
