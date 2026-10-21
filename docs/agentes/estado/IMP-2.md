@@ -5,8 +5,7 @@
   Equipos, Directorio, Informes, Supresiones, Intel y Ruido montan sus
   controles sobre el kit POL-7. CI de consola verde.
 - C-5 en main (a038aa3): aviso de sensores desactualizados en Equipos,
-  comparación honesta de versiones latido vs motor. 579 tests, tsc,
-  next build.
+  comparación honesta de versiones latido vs motor. 579 tests, tsc, build.
 - IDEA-10 fase 6 en main (ce5f579): el Panel de operaciones bilingüe.
   Dashboard completo, héroe del triaje, mosaicos KPI y la cámara
   compartida de gráficas (ChartCard, grafo de entidades, matriz ATT&CK,
