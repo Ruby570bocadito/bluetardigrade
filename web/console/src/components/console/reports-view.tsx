@@ -13,6 +13,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DownloadSimple, Files, ListBullets, Printer, X, ChartPie, Desktop, Pulse } from '@phosphor-icons/react'
 import { useIncidents } from './incidents-provider'
 import { EmptyState, SkeletonRows, SeverityBadge } from './ui-bits'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeadRow, TableHeader, TableRow } from '@/components/ui/table'
 import { ChartCard } from '@/components/charts/chart-frame'
 import { DonutChart } from '@/components/charts/donut'
 import { BarList } from '@/components/charts/bars'
@@ -39,14 +43,6 @@ import { readLensState, currentSearch, pushOperatorState, writeReportLensToSearc
 import styles from './reports-print.module.css'
 import { useI18n } from './i18n-provider'
 import type { Lang } from '@/lib/i18n'
-
-const chip =
-  'rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-
-const primaryBtn =
-  'inline-flex items-center gap-1.5 rounded-lg bg-primary-strong px-3.5 py-2 text-xs font-medium text-white transition-colors hover:bg-primary-tint disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-
-const th = 'border-b border-zinc-800 px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500'
 
 /** Number presentation follows the console language (data stays verbatim). */
 function numberLocale(lang: Lang): string {
@@ -157,48 +153,56 @@ export function ReportsView() {
       <p className="max-w-[100ch] text-xs leading-relaxed text-zinc-500">{dict.reports.prose}</p>
 
       <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-xs text-zinc-400">
+        <label className="flex flex-col gap-1 text-xs text-zinc-400" htmlFor="informes-tipo">
           {dict.reports.kindLabel}
-          <select
+          <Select
             value={kind}
-            onChange={(e) => {
-              setKind(e.target.value)
+            onValueChange={(v) => {
+              setKind(v)
               setReport(null)
               setError('')
-              persistLens(e.target.value, windowPreset, caseId)
+              persistLens(v, windowPreset, caseId)
             }}
-            className={chip}
           >
-            {catalog.reports.map((r) => (
-              <option key={r.kind} value={r.kind}>{r.title}</option>
-            ))}
-          </select>
+            <SelectTrigger id="informes-tipo" className="h-8 rounded-md text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {catalog.reports.map((r) => (
+                <SelectItem key={r.kind} value={r.kind}>{r.title}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </label>
 
         {entry && kind !== 'incident' && (
-          <label className="flex flex-col gap-1 text-xs text-zinc-400">
+          <label className="flex flex-col gap-1 text-xs text-zinc-400" htmlFor="informes-ventana">
             {dict.reports.windowLabel}
-            <select
+            <Select
               value={windowPreset}
-              onChange={(e) => {
-                const next = reportWindowPreset(e.target.value)
+              onValueChange={(v) => {
+                const next = reportWindowPreset(v)
                 setWindowPreset(next)
                 setReport(null)
                 persistLens(kind, next, caseId)
               }}
-              className={chip}
             >
-              {REPORT_WINDOWS.map((w) => (
-                <option key={w} value={w}>{w}</option>
-              ))}
-            </select>
+              <SelectTrigger id="informes-ventana" className="h-8 w-24 rounded-md text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {REPORT_WINDOWS.map((w) => (
+                  <SelectItem key={w} value={w}>{w}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </label>
         )}
 
         {needsId && (
-          <label className="flex flex-col gap-1 text-xs text-zinc-400">
+          <label className="flex flex-col gap-1 text-xs text-zinc-400" htmlFor="informes-caso">
             {dict.reports.caseLabel}
-            <input value={caseId} onChange={(e) => setCaseId(e.target.value.trim().toLowerCase())} placeholder="0123abcdef012345" spellCheck={false} maxLength={16} className={`${chip} w-56 font-mono`} list="informes-casos" />
+            <Input id="informes-caso" value={caseId} onChange={(e) => setCaseId(e.target.value.trim().toLowerCase())} placeholder="0123abcdef012345" spellCheck={false} maxLength={16} className="h-8 w-56 font-mono text-xs" list="informes-casos" />
             <datalist id="informes-casos">
               {openIncidents.slice(0, 20).map((i) => (
                 <option key={i.id} value={i.id}>{i.title}</option>
@@ -207,21 +211,21 @@ export function ReportsView() {
           </label>
         )}
 
-        <button type="button" className={primaryBtn} disabled={!canGenerate || loading} onClick={() => void generate()}>
+        <Button type="button" variant="solid" size="sm" disabled={!canGenerate || loading} onClick={() => void generate()}>
           {loading ? dict.reports.generating : dict.reports.generate}
-        </button>
+        </Button>
 
         {report && (
           <div className="ml-auto flex flex-wrap gap-2">
-            <button type="button" className="chip px-2.5 py-1.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => void share('csv')}>
+            <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5 px-2.5 text-xs" onClick={() => void share('csv')}>
               <DownloadSimple size={13} aria-hidden /> CSV
-            </button>
-            <button type="button" className="chip px-2.5 py-1.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => void share('json')}>
+            </Button>
+            <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5 px-2.5 text-xs" onClick={() => void share('json')}>
               <DownloadSimple size={13} aria-hidden /> JSON
-            </button>
-            <button type="button" className="chip px-2.5 py-1.5 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => window.print()}>
+            </Button>
+            <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5 px-2.5 text-xs" onClick={() => window.print()}>
               <Printer size={13} aria-hidden /> {dict.reports.printPdf}
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -453,14 +457,16 @@ function ReportSheet({ report, onClose }: { report: ReportData; onClose: () => v
             {report.truncated ? dict.reports.sheet.truncated : ''}
           </p>
         </div>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
           onClick={onClose}
-          className={`ml-auto rounded p-1 text-zinc-500 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${styles.noPrint}`}
+          className={`ml-auto text-zinc-500 hover:text-zinc-200 ${styles.noPrint}`}
           aria-label={dict.reports.closeReportAria}
         >
           <X size={14} aria-hidden />
-        </button>
+        </Button>
       </div>
       <div className="pt-3">
         <KindBody report={report} />
@@ -494,25 +500,26 @@ function KpiTiles({ tiles }: { tiles: { label: string; value: string; warn?: boo
 function SheetTable({ caption, columns, rows }: { caption: string; columns: string[]; rows: (string | number)[][] }) {
   if (rows.length === 0) return null
   return (
-    <table className="w-full border-collapse text-left text-sm">
-      <caption className="pb-1.5 text-left text-[11px] uppercase tracking-wider text-zinc-500">{caption}</caption>
-      <thead>
-        <tr className="bg-zinc-900">
+    <Table>
+      {/* the printed sheet keeps its caption visible: it labels the table on paper */}
+      <TableCaption className="not-sr-only pb-1.5 text-left text-[11px] uppercase tracking-wider text-zinc-500">{caption}</TableCaption>
+      <TableHeader>
+        <TableHeadRow>
           {columns.map((c) => (
-            <th key={c} scope="col" className={th}>{c}</th>
+            <TableHead key={c}>{c}</TableHead>
           ))}
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-zinc-800/70">
+        </TableHeadRow>
+      </TableHeader>
+      <TableBody>
         {rows.map((row, i) => (
-          <tr key={i}>
+          <TableRow key={i}>
             {row.map((cell, j) => (
-              <td key={j} className="px-4 py-2 text-xs tabular-nums text-zinc-200">{cell}</td>
+              <TableCell key={j} className="px-4 py-2 text-xs tabular-nums text-zinc-200">{cell}</TableCell>
             ))}
-          </tr>
+          </TableRow>
         ))}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   )
 }
 
