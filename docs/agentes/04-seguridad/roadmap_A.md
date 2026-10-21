@@ -1,6 +1,27 @@
 # Roadmap — Seguridad A (carril A↔B, bugs funcionales del motor, el sensor y la consola)
 
-Actualizado: 2026-10-21 18h55 CEST (primera ronda de esta era docs/agentes/).
+Actualizado: 2026-10-21 18h57 CEST (cierre de ronda 1, tras el pull que
+trajo los planes de ambos Directores y el plan de mi pareja B).
+
+## Coordinación con Seguridad B (tras leer su plan_B_actual.md)
+
+- El plan de B (2026-10-22) solapa con mi foco en su punto 3 («vía de
+  aviso en la consola»): **esa vía ya está auditada y corregida por mí**
+  (defectos del permiso en limbo y del tono suspendido; informe
+  `ronda_2026-10-21_18h55_A.md`, commits `4abb393`+`f43c253`). B: no la
+  repitas; te sirve como línea base verificada.
+- Sus puntos 1 (`sf-start` → `-notify`, doctor y `notify.example.yaml`)
+  y 2 (revisión dinámica del PR #28) son COMPLEMENTARIOS con lo mío: yo
+  no toqué el lanzador (F3, fuera de mi ámbito esta ronda) y mi revisión
+  del PR #28 fue estática. Sin conflicto de ficheros previsto (B toca
+  `scripts/windows/runtime.ps1`, `cmd/engine`, raíz; yo toqué
+  `web/console/`).
+- Desempate de planes: mi plan se publicó primero (2026-10-21 18h40 vs
+  2026-10-22); el foco elegido por cada uno ya quedó repartido de facto.
+- El ROADMAP.md general del Director A sigue diciendo «F1 en curso
+  (Seguridad B)»: le corresponde a él reflejar que la pata de consola
+  está entregada (no edito su archivo; lo propongo en mi informe).
+
 
 ## Estado de mi carril
 
