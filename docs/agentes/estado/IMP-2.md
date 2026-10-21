@@ -25,7 +25,7 @@
 - (nada)
 
 ## Peticiones a otras zonas
-- (ninguna abierta; el ST1003 de IMP-1 quedó resuelto en fd29623)
+- (ninguna; el ST1003 de IMP-1 quedó resuelto en fd29623)
 
 ## Propuestas para el roadmap
 - Login de dominio en la consola: AD-7 aterrizó con «contrato
