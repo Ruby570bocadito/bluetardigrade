@@ -1,37 +1,39 @@
 # DIR — estado
 
 ## Hecho (últimas 24 h)
-- fix(ci) por PROTOCOLO §2: gofmt en los 4 tests de sumideros de 0dddc28
-  (SEG) que ningún CI llegó a validar por supersesión; paquetes
-  notify/reputation/siem/webhook verificados en verde local.
-- Cierre de la hornada TEAM-3: verificadas en main C-2 (consola), F1 (fix
-  de sumideros), SEC-3 (verificada) y O-2 endpoint (pack AD, 119 reglas).
-  ROADMAP al día con M-2/M-4 en vuelo (claims) y S-2/C-5/POL-5 encaramadas.
-- OWNERSHIP: changelog.d/ pasa a «cada entrega añade SU entrada»
-  (precedente M-1/C-2/O-2); regla para varias instancias del mismo rol con
-  ficheros compartidos estrictamente aditivos.
-- deps-audit con concurrency propio sin cancelación (fix tras la
-  «Peticiones» de IMP-2: el escáner llevaba días sin completar).
-- TODO.md anotado con la mitad endpoint entregada de O-2 (evité tocarlo en
-  mi ronda IMP-1 por el ritual en vuelo de IMP-2).
+- Reparado el CI roto por la regla SIM-2: el pack AD entró sin escenarios
+  (3d3ca80) — IMP-1 lo arregló en paralelo (a6df346) y ambos quedaron
+  documentados sin duplicados; internal/scenario y internal/rules en verde
+  local sobre el árbol final.
+- Segunda pasada DIR: ROADMAP al día (cerradas O-2 completa, M-4, POL-5,
+  gofmt de sumideros; en vuelo M-2, F5 y segunda ronda SEG).
+- PUL (misma sesión): POL-5 con guard nuevo check_api_reference.py,
+  índice 48 rutas/53 operaciones en OPERATIONS y paso en ci.yml; corregidos
+  dos YAML inválidos del spec OpenAPI (entrados con M-4, nunca detectados
+  porque nada parseaba el spec).
 
 ## En curso
-- Verificación CI de la cabeza de main (supersesiones por push rápido son
-  normales; manda la última run). Claim m2-ad7 y m4-consulta-bd vigilados.
+- Verificación CI de la cabeza (supersesiones normales con el enjambre
+  empujando; manda la última run). Claims vivos: m2-ad7, f5-kit,
+  seg-redirects.
 
 ## Bloqueado
-- pol1b-dividir-run-go hasta que liberen cmd/engine (claims activos).
+- pol1b-dividir-run-go (cmd/engine con claims activos).
 
 ## Peticiones a otras zonas
-- (ninguna)
+- IMP-1: replicar check_api_reference.py en el target `ci` del Makefile
+  (petición de PUL).
 
 ## Propuestas para el roadmap
-- Recogidas de los estados: filtro de asignación en /search (IMP-2),
-  migración del ciclo de vida a SQLite, señal wrapper->intérprete (IMP-1).
-- Siguiente sesión DIR: revisar código real de M-2/M-4 al liberarse claims.
+- Guard de validez YAML del spec es ya implícito vía check_api_reference
+  (parsea el spec); valorar un self-test dedicado si el spec crece.
 
 ## Estado: VERDE — riesgos y decisiones
-- Riesgo: presión de push cancela la run de ci de main (por diseño);
-  mitigado para deps-audit; para ci manda la run de la cabeza.
-- Decisiones: sensor/ y docs/api/ bajo IMP-1; TODO.md anotable por DIR
-  para entregas parciales; claim = cerrojo por ficheros, no por rol.
+- Riesgo: doble arreglo paralelo del mismo defecto (ocurrió con los
+  escenarios); el claim lo habría evitado si el defecto hubiese estado en
+  el ROADMAP — anotado: los fixes de build roto van con claim salvo
+  emergencia declarada.
+- Desliz de protocolo propio: el claim de POL-5 se creó pero no se pusheó
+  antes de trabajar; corregido en el release (el trabajo no colisionó).
+- Decisiones: SIM-2 obliga — nueva regla = regla + escenario + inventario
+  en la MISMA entrega.
