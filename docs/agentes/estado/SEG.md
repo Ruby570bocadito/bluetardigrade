@@ -15,9 +15,12 @@
   sin credencial, seguía un 3xx del puerto de ingest a URL ajena.
   Regresión: 302 es fallo definitivo y el destino recibe 0 peticiones.
   Suite Go completa verde (41 paquetes), vet y gofmt limpios.
-- Sin más hallazgos en el flujo de asignación: alert_assign (cap 8 KiB,
-  patrón hex, scope check antes de escribir), lifecycle (persistencia
-  atómica 0600, validación estricta) y rule_tester (solo evalúa eventos).
+- Sin hallazgos en la revisión extra de la ronda: flujo de asignación
+  (alert_assign: cap 8 KiB, patrón hex, scope check antes de escribir;
+  lifecycle: persistencia atómica 0600 y validación estricta; rule_tester:
+  solo evalúa eventos contra el catálogo) y respond/kill (404 real si no
+  armada, credencial del operador en constant-time con crypto/subtle,
+  scope indistinguible entre host fuera de alcance e inexistente).
 
 ## En curso
 - (nada)
