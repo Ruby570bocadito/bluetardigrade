@@ -10,6 +10,11 @@ Actualizado: 2026-10-21 19h35 CEST (cierre de ronda 2).
   cumple de verdad. Test de regresión
   `TestServiceShutdownDrainsQueueBestEffort` (falla seguro sin fix) y
   fragmento `changelog.d/notify-shutdown-drain.md`.
+- **Hotfix de main sin compilar** (PR #41, P-3 pprof):
+  `stopProfiles, err :=` redeclaraba el `var err error` de `runEngine`
+  (`cmd/engine/run.go`); declaración redundante eliminada, cero cambio
+  de conducta. main vuelve a compilar y la suite entera pasa (41
+  paquetes).
 - **Replay PR #28, parte dinámica:** test
   `TestStatsHotHostsStayHonestThroughRingRotatingReplay` (spool que
   rota el anillo; el riesgo sigue anclado a la hora del evento).

@@ -57,9 +57,8 @@ func runEngine(o *options, interactive bool) error {
 		}
 	}
 
-	// err carries the remaining startup assignments, exactly as the
-	// inline original declared it.
-	var err error
+	// err comes from the profiling arm above and carries the remaining
+	// startup assignments, exactly as the inline original declared it.
 
 	// rules dir: explicit flag > rules next to the executable (so
 	// the installed sf-engine.exe needs no wrapper); the resolved
