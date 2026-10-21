@@ -64,9 +64,9 @@ punto, con el CI en verde (incluidos los jobs de Windows) antes de fusionar.
   - la notificación del navegador y el sonido de Ajustes → Notificaciones
     (solo con una pestaña abierta y el permiso del navegador concedido);
   - el aviso dentro de la consola;
-  - los canales externos: `sf-start` no pasa `-notify` al motor, así que en
-    Windows el correo y Telegram no pueden llegar nunca (ver «Avisos al correo
-    y al móvil» en F3).
+  - los canales externos: `sf-start` ya pasa `tools\config\notify.yaml` al
+    motor y `sf-engine doctor` lo valida; queda probar la entrega real de
+    correo y Telegram en Windows real.
 
 ## F2 — Acceso
 
@@ -101,12 +101,11 @@ y cuentas: [OPERATIONS](docs/OPERATIONS.md#console-accounts-roles-and-audit).
   vista «Mis alertas», cola sin asignar, reasignación y asignación en lote desde
   la barra de selección.
 - [ ] **Avisos al correo y al móvil.** El motor ya envía las alertas a Slack,
-  Telegram y correo (`-notify`), pero solo con un fichero YAML y el lanzador de
-  Windows no lo pasa. Falta:
+  Telegram y correo (`-notify`); `sf-start` ya pasa el fichero
+  (`tools\config\notify.yaml`, con `notify.example.yaml` de plantilla) y
+  `sf-engine doctor` lo valida sin enviar nada. Falta:
   - configurarlo en Ajustes → Notificaciones: canales, gravedad mínima y botón
     «Enviar prueba», sin reiniciar el motor;
-  - que `sf-start` pase el fichero (`tools\config\notify.yaml`) y
-    `sf-engine doctor` lo valide;
   - avisos push al móvil con un servicio que se pueda alojar uno mismo (ntfy),
     además de Telegram;
   - en cada aviso, el enlace a la alerta en la consola; enrutado y silencios

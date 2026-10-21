@@ -53,6 +53,13 @@ function Get-SfEngineArguments {
     # the service account's password file).
     $ad = Join-Path $Root 'tools\config\ad.yaml'
     if (Test-Path -LiteralPath $ad) { $arguments += " -ad `"$ad`"" }
+    # External notifications (Slack, Telegram, email): armed only when the
+    # operator wrote tools\config\notify.yaml (copy of notify.example.yaml).
+    # Without it the engine starts without channels and mail or Telegram can
+    # never arrive; a broken file stops the engine fail-loud at startup
+    # (sf-engine doctor names the exact problem before that).
+    $notify = Join-Path $Root 'tools\config\notify.yaml'
+    if (Test-Path -LiteralPath $notify) { $arguments += " -notify `"$notify`"" }
     # Host groups (sites, departments, OUs): always armed, so the console
     # can create the file from Ajustes -> Grupos; a missing file is an
     # empty list, a broken one stops the engine (sf-engine doctor names it).
