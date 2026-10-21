@@ -17,9 +17,20 @@
 // HKCU/HKLM handles a process opens at startup, before the sensor ran:
 // seen on a real host, BaseName and the CloseKey KeyName were empty too)
 // keeps the part that is known, under an unknown root: "?\Software\
-// Microsoft\Windows\CurrentVersion\Run". Detections read the end of the
-// path, so a Run-key write is still caught, and the "?" tells the analyst
-// the hive could not be resolved.
+// Microsoft\Windows\CurrentVersion\Run". Two clues shrink that case:
+//
+//   - whenever another key names the base (its open carries BaseName),
+//     the base itself is remembered, so later opens under it resolve
+//     fully;
+//   - the collector resolves the rest with the writing process's user
+//     (netreg.rs registry_path_resolved): a write through a handle
+//     rooted in the user hive lands in HKU\<SID>, and the event says so
+//     (attributes.registry_root_inferred) instead of asserting a seen
+//     path.
+//
+// Detections read the end of the path, so a Run-key write is still
+// caught either way; the "?" only survives when the writer's user is
+// unknown too (a process the sensor never saw start).
 //
 // Platform-independent so it is unit-tested on any host; the collector
 // feeds it from the ETW callbacks.
@@ -46,19 +57,34 @@ impl<T> KeyNames<T> {
     }
 
     /// A handle was created or opened: remembers its full kernel path.
+    /// A base named in the event (BaseName, a full kernel path) is
+    /// remembered too: keys opened under the same base — one that
+    /// predates the sensor, say — then resolve against it instead of
+    /// falling back to the unknown root.
     pub fn opened(&mut self, key_object: usize, base_object: usize, base_name: &str, relative_name: &str) {
         if key_object == 0 {
             return;
         }
+        let base = clean(base_name);
+        if base_object != 0 && base.starts_with("\\REGISTRY\\") {
+            self.remember(base_object, base.to_string());
+        }
         let Some(full) = self.resolve(base_object, base_name, relative_name) else {
             return;
         };
-        if self.names.len() >= self.cap && !self.names.contains_key(&key_object) {
+        self.remember(key_object, full);
+    }
+
+    fn remember(&mut self, object: usize, name: String) {
+        if object == 0 || name.is_empty() {
+            return;
+        }
+        if self.names.len() >= self.cap && !self.names.contains_key(&object) {
             // forget everything rather than track recency: keys opened
             // again are named again
             self.names.clear();
         }
-        self.names.insert(key_object, full);
+        self.names.insert(object, name);
     }
 
     fn resolve(&self, base_object: usize, base_name: &str, relative_name: &str) -> Option<String> {
@@ -182,6 +208,35 @@ mod tests {
         k.opened(0x42, 0x77, "", "");
         assert_eq!(k.name_of(0x42), None);
         assert_eq!(k.name_of(0), None);
+    }
+
+    #[test]
+    fn a_base_named_by_a_key_opened_under_it_is_remembered() {
+        let mut k: KeyNames<u8> = KeyNames::new(100, 10);
+        // the base (0x77) predates the sensor: this one stays under "?"
+        k.opened(0x40, 0x77, "", r"Software\Microsoft\Windows\CurrentVersion\Run");
+        assert_eq!(k.name_of(0x40), Some(r"?\Software\Microsoft\Windows\CurrentVersion\Run"));
+        // another key opened under the same base names it: the base is
+        // remembered from that event...
+        k.opened(0x50, 0x77, r"\REGISTRY\USER\S-1-5-21-1-2-3-1001", r"Software\Explorer");
+        assert_eq!(k.name_of(0x50), Some(r"\REGISTRY\USER\S-1-5-21-1-2-3-1001\Software\Explorer"));
+        // ...and the first handle now resolves through it
+        k.opened(0x60, 0x77, "", r"Software\Microsoft\Windows\CurrentVersion\RunOnce");
+        assert_eq!(
+            k.name_of(0x60),
+            Some(r"\REGISTRY\USER\S-1-5-21-1-2-3-1001\Software\Microsoft\Windows\CurrentVersion\RunOnce")
+        );
+        // a relative BaseName is no evidence of the base's identity
+        k.opened(0x70, 0x88, "SOFTWARE", "Microsoft");
+        assert_eq!(k.name_of(0x70), Some(r"SOFTWARE\Microsoft"));
+        k.opened(0x80, 0x88, "", "Windows NT");
+        assert_eq!(k.name_of(0x80), Some(r"?\Windows NT"));
+        // closing the base forgets it: a stale pointer must not revive
+        // an old name
+        k.closed(0x77, "");
+        assert_eq!(k.name_of(0x77), None);
+        k.opened(0x90, 0x77, "", "Software");
+        assert_eq!(k.name_of(0x90), Some(r"?\Software"));
     }
 
     #[test]
