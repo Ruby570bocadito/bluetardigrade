@@ -14,6 +14,7 @@
 // unknown token) is final and says why.
 
 use anyhow::{bail, Context, Result};
+use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -69,14 +70,25 @@ pub fn obtain_credential(
 }
 
 /// Writes the credential (one line) through a temporary file and a
-/// rename, so a crash never leaves half a credential behind.
+/// rename, so a crash never leaves half a credential behind. The
+/// temporary file is flushed to the disk before the rename: the
+/// credential is the sensor's identity, and a torn write here (power
+/// loss in the enrollment window) would brick every later start with
+/// an unreadable token — the enrollment token file is already gone by
+/// then, so recovery would need a new token from the operator.
 fn store_credential(path: &Path, credential: &str) -> Result<()> {
     if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(".new");
-    std::fs::write(&tmp, format!("{credential}\n")).with_context(|| format!("writing the credential to {}", path.display()))?;
+    let mut f = std::fs::File::create(&tmp)
+        .with_context(|| format!("writing the credential to {}", path.display()))?;
+    f.write_all(credential.as_bytes())
+        .and_then(|()| f.write_all(b"\n"))
+        .with_context(|| format!("writing the credential to {}", path.display()))?;
+    f.sync_all()
+        .with_context(|| format!("flushing the credential to {}", path.display()))?;
     std::fs::rename(&tmp, path).with_context(|| format!("storing the credential in {}", path.display()))?;
     Ok(())
 }

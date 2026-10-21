@@ -30,6 +30,21 @@ use std::time::Duration;
 
 const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Ceiling for one event write on the live stream. A healthy engine
+/// drains a LAN write in milliseconds, so a write that sits this long
+/// means the peer stopped reading (zero window) or the path is
+/// silently dead. The stream keeps pure blocking READS (the sensor
+/// never reads after the handshake), but a bounded WRITE is what lets
+/// `send_line` honor the stop flag: without it, a wedged connection
+/// blocks the delivery thread inside `write_all` forever, shutdown
+/// can no longer spill the queue to the spool (the drain thread never
+/// reaches its stop check), and the heartbeats share the same stalled
+/// queue — the engine would declare "sensor sin señal" for a sensor
+/// that is alive. 30 s leaves headroom over the 10 s handshake
+/// timeout for a large burst over a slow link while still bounding
+/// the stall.
+const STREAM_WRITE_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// The wire to the engine: plain TCP, or TLS with a verified CA when
 /// the operator configured one. TLS lives below the AUTH handshake
 /// and the NDJSON protocol — neither changes, only the transport
@@ -41,19 +56,21 @@ enum Stream {
 }
 
 impl Stream {
-    /// Socket-level timeouts for the handshake phase: the TLS
-    /// handshake and the AUTH exchange inherit them from the raw
-    /// socket, so a hung engine cannot stall the sensor forever.
-    /// Cleared again for the event stream (blocking semantics).
-    fn set_timeouts(&mut self, timeout: Option<Duration>) -> std::io::Result<()> {
+    /// Timeouts for the live event stream: reads back to blocking
+    /// (nothing reads the socket again), writes bounded by
+    /// STREAM_WRITE_TIMEOUT so a wedged peer cannot hold the delivery
+    /// thread past the stop flag. The handshake phase ran on the
+    /// AUTH_TIMEOUT the raw socket got in `open`; this profile
+    /// replaces it once the wire is ready for events.
+    fn set_stream_timeouts(&mut self) -> std::io::Result<()> {
         match self {
             Stream::Plain(s) => {
-                s.set_read_timeout(timeout)?;
-                s.set_write_timeout(timeout)?;
+                s.set_read_timeout(None)?;
+                s.set_write_timeout(Some(STREAM_WRITE_TIMEOUT))?;
             }
             Stream::Tls(s) => {
-                s.get_mut().set_read_timeout(timeout)?;
-                s.get_mut().set_write_timeout(timeout)?;
+                s.get_mut().set_read_timeout(None)?;
+                s.get_mut().set_write_timeout(Some(STREAM_WRITE_TIMEOUT))?;
             }
         }
         Ok(())
@@ -283,8 +300,8 @@ pub fn enroll(addr: &str, token: &str, host: &str, tls_ca: Option<&Path>) -> Res
 fn dial(addr: &str, token: Option<&str>, tls_ca: Option<&Path>) -> Result<Stream> {
     let mut stream = open(addr, tls_ca)?;
     let Some(token) = token else {
-        // no AUTH: back to blocking semantics for the event stream
-        stream.set_timeouts(None)?;
+        // no AUTH: the stream profile still bounds event writes
+        stream.set_stream_timeouts()?;
         return Ok(stream);
     };
     stream
@@ -298,9 +315,9 @@ fn dial(addr: &str, token: Option<&str>, tls_ca: Option<&Path>) -> Result<Stream
     if !ack.contains("\"ack\":\"ok\"") {
         bail!("engine {addr} rejected the ingest token: {ack}");
     }
-    // back to blocking semantics for the event stream: clears both the
-    // read and write timeouts set for the handshake
-    stream.set_timeouts(None)?;
+    // the stream profile: blocking reads, bounded writes (see
+    // STREAM_WRITE_TIMEOUT for why the write keeps a ceiling)
+    stream.set_stream_timeouts()?;
     Ok(stream)
 }
 
