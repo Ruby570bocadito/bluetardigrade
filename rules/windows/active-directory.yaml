@@ -1,0 +1,155 @@
+# Active Directory techniques seen from the endpoint (O-2). The
+# Security-log event IDs behind the same techniques (4625 password
+# spray, 4769 Kerberoasting, 4662 DCSync, 4728/4732/4756 group changes,
+# 7045 new services) live on the domain controller and reach the engine
+# with WEF ingestion (M-7). Until then, the tooling that performs those
+# techniques runs ON an endpoint this sensor already covers: these rules
+# close that gap with the same pack schema (one YAML list per file,
+# indexed by event_type, hot-reloaded every 15s). Deliberate overlaps
+# with hacktools.yaml (Rubeus, mimikatz, impacket) and
+# privilege-escalation.yaml (unsafe binPath) are listed in
+# internal/rules/active_directory_test.go.
+
+# T1558.003 - raw Kerberos ticket request for an SPN (Kerberoasting
+# without Rubeus; the .NET one-liner PowerSploit-family scripts use).
+# Validated in lab: fires on New-Object
+# System.IdentityModel.Tokens.KerberosRequestorSecurityToken.
+- name: "Solicitud de tickets Kerberos para un SPN"
+  id: "0d23b539-0df4-49c9-b43e-3b78964a54cc"
+  description: >
+    Detecta la peticion de un ticket Kerberos cifrado con el hash de una
+    cuenta de servicio mediante KerberosRequestorSecurityToken, la via
+    de Kerberoasting que no depende de Rubeus: el atacante pide el
+    ticket para crackear la contrasena del servicio sin tocar el
+    controlador de dominio desde este equipo.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: icontains
+      value: "kerberosrequestorsecuritytoken"
+  actions:
+    - type: alert
+      config:
+        message: "Ticket Kerberos solicitado por SPN en {host} - tecnica de Kerberoasting"
+        notify: "true"
+  tags: ["attack.t1558.003", "attack.credential-access"]
+  enabled: true
+
+# T1003.006 - DCSync via tooling that speaks DRSUAPI. hacktools.yaml
+# already covers mimikatz (lsadump::) and impacket-secretsdump by name;
+# this technique-level rule also catches custom or renamed tooling that
+# prints dcsync/drsuapi in its invocation.
+- name: "Herramienta de replicacion de directorio (DCSync)"
+  id: "39d340d0-d264-4581-ad14-0d6e4886b658"
+  description: >
+    Detecta la invocacion de herramientas que replican credenciales del
+    directorio activo con el protocolo DRSUAPI (dcsync o drsuapi en la
+    linea de comandos). La replicacion es un derecho de solo los
+    controladores de dominio: pedirla desde un puesto es robo de
+    credenciales de dominio completo.
+  severity: critical
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: icontains_any
+      value: ["dcsync", "drsuapi"]
+  actions:
+    - type: alert
+      config:
+        message: "Replicacion de directorio (DCSync) solicitada en {host} por {user}"
+        notify: "true"
+  tags: ["attack.t1003.006", "attack.credential-access"]
+  enabled: true
+
+# T1110.003 - password spray launched from an endpoint script
+# (Invoke-DomainPasswordSpray, MSOLSpray and relatives). The 4625 burst
+# happens on the DC, but the spray tooling runs here.
+- name: "Rociado de contrasenas desde el endpoint"
+  id: "47051c0e-e898-4601-89b6-3c2c0d763883"
+  description: >
+    Detecta las herramientas de rociado de contrasenas contra el dominio
+    que se ejecutan desde un puesto de la red (DomainPasswordSpray,
+    MSOLSpray y variantes). Un solo intento por cuenta y miles de
+    cuentas: el rociado no dispara el bloqueo del dominio y solo deja
+    huella en el equipo desde el que se lanza.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: icontains_any
+      value: ["passwordspray", "spray-password", "msolspray"]
+  actions:
+    - type: alert
+      config:
+        message: "Rociado de contrasenas lanzado desde {host} por {user} - revisar destino y cuenta usada"
+        notify: "true"
+  tags: ["attack.t1110.003", "attack.credential-access"]
+  enabled: true
+
+# T1098 - account/group manipulation via net.exe. hacktools.yaml covers
+# the ENUMERATION of privileged groups; this one fires on the CHANGE
+# (add) to global, domain-local and universal groups plus local groups.
+- name: "Alta en grupo con net.exe"
+  id: "f9486d99-a3cc-48f7-9b4f-f9e0dffcf822"
+  description: >
+    Detecta la modificacion de grupos con net.exe o net1.exe (net group
+    ... /add, net localgroup ... /add): anadir una cuenta a un grupo
+    privilegiado es el paso clasico de persistencia con privilegios
+    elevados, y en el equipo donde corre deja la unica traza local si el
+    registro de Seguridad del dominio no esta centralizado.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: iin
+      value: ["net.exe", "net1.exe"]
+    - field: process.command_line
+      operator: icontains_any
+      value: ["localgroup", " group "]
+    - field: process.command_line
+      operator: icontains_any
+      value: [" /add", " add "]
+  actions:
+    - type: alert
+      config:
+        message: "Alta en grupo con net.exe en {host} por {user} - verificar objetivo y cuenta anadida"
+        notify: "true"
+  tags: ["attack.t1098", "attack.persistence"]
+  enabled: true
+
+# T1543.003 - persistence via a service whose binary IS an interpreter
+# (cmd/powershell/rundll32/mshta/wscript/cscript as binPath). The broad
+# 7045-equivalent "any new service" signal is deliberately NOT here:
+# legit installers create services constantly (false-positive-control)
+# and privilege-escalation.yaml already covers the unsafe-binPath
+# variant. A service that boots an interpreter into SYSTEM on every
+# start is the high-precision core of the technique.
+- name: "Servicio de Windows con interprete como binario"
+  id: "ce2a2bf1-6ab3-4a99-8c97-e2777f2a3b37"
+  description: >
+    Detecta la creacion de un servicio (sc.exe create o New-Service)
+    cuyo binPath apunta a un interprete de comandos o scripts (cmd,
+    powershell, rundll32, mshta, wscript, cscript) en lugar de a un
+    binario propio. Un servicio legitimo apunta a su ejecutable; un
+    interprete como binario de servicio se ejecuta como SYSTEM en cada
+    arranque y es persistencia clasica con carga de segunda fase.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.command_line
+      operator: icontains_any
+      value: ["sc.exe create", "sc create", "new-service"]
+    - field: process.command_line
+      operator: icontains_any
+      value: ["binpath=", "binarypathname"]
+    - field: process.command_line
+      operator: regex
+      value: '(?i)(binpath=|-binarypathname)\s*["'']?[^"'']*(cmd\.exe|cmd /c|cmd /k|powershell|pwsh|rundll32|mshta|wscript|cscript)'
+  actions:
+    - type: alert
+      config:
+        message: "Servicio de Windows arranca un interprete en {host} - persistencia con ejecucion como SYSTEM"
+        notify: "true"
+  tags: ["attack.t1543.003", "attack.persistence"]
+  enabled: true
