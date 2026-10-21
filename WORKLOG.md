@@ -317,4 +317,4 @@ Reglas rápidas:
   están revocados; el push funciona por el askpass del contenedor y la API
   quedó sin cuota — PR abierto vía web/URL de compare si la API sigue
   limitada.)
-- Estado en TASKS.md: S-2 en revisión (rama agent/sensor/s-2-yara)
+- Estado en TASKS.md: S-2 en revisión (PR #48)

@@ -35,7 +35,7 @@ elige otra libre de tu rol. Al fusionarse el PR, el humano la marca `hecha`.
 |----|-----------------|-----|-----------|-----------|--------|
 | C-2 | TEAM-3 frontend: vista «Mis alertas», cola sin asignar, reasignación y lote | AG-3 | M-1 (contrato API) | F3 | libre |
 | M-2 | AD-7: login con cuentas del dominio (bind LDAPS, grupos AD → roles) | AG-1 | — | F2 | libre |
-| S-2 | YARA en sensor: escaneo con `yara-x` de ficheros escritos y bajo demanda | AG-2 | — | F3 | en revisión (rama agent/sensor/s-2-yara) |
+| S-2 | YARA en sensor: escaneo con `yara-x` de ficheros escritos y bajo demanda | AG-2 | — | F3 | en revisión (PR #48) |
 | M-3 | YARA en motor: reglas guardadas y distribución firmada a sensores | AG-1 | contrato con S-2 | F3 | libre |
 | O-2 | Reglas AD: 4625 rociado, 4769 Kerberoasting, 4662 DCSync, 4728/4732/4756, 7045 | AG-4 | — | F3 | libre |
 | H-5 | Probar login, MFA y cuentas en Windows real (secciones 7/7b/7c) | HUMANO | H-1 | F2 | libre |
