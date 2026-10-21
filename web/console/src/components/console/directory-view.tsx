@@ -27,6 +27,11 @@ import {
 import { useEngine } from './engine-provider'
 import { useFleet } from './fleet-provider'
 import { EmptyState, SkeletonRows } from './ui-bits'
+import { ConsoleTablist } from './ui-tabs'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeadRow, TableHeader, TableRow } from '@/components/ui/table'
 import { ChartCard } from '@/components/charts/chart-frame'
 import { DonutChart } from '@/components/charts/donut'
 import { Meter } from '@/components/charts/bars'
@@ -58,9 +63,6 @@ import {
   type ADPosturePoint,
   type ADStatus,
 } from '@/lib/directory'
-
-const primaryBtn =
-  'inline-flex items-center gap-1.5 rounded-lg bg-primary-strong px-3.5 py-2 text-xs font-medium text-white transition-colors hover:bg-primary-tint disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
 const KIND_TABS: { kind: ADKind; label: string; icon: React.ElementType }[] = [
   { kind: 'user', label: 'Usuarios', icon: UserCircle },
@@ -105,24 +107,25 @@ function FindingItem({ finding }: { finding: ADFinding }) {
         )}
         {objects.length > 0 && (
           <div className="mt-3 overflow-x-auto">
-            <table className="w-full min-w-[560px] border-collapse text-left text-xs">
-              <thead>
-                <tr className="border-b border-zinc-800/60 text-[11px] uppercase tracking-wide text-zinc-600">
-                  <th scope="col" className="py-1.5 pr-3 font-medium">Objeto</th>
-                  <th scope="col" className="py-1.5 pr-3 font-medium">DN</th>
-                  <th scope="col" className="py-1.5 font-medium">Detalle</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-800/40">
+            <Table className="min-w-[560px] text-xs">
+              <TableCaption>Objetos afectados por el hallazgo</TableCaption>
+              <TableHeader>
+                <TableHeadRow className="border-b border-zinc-800/60">
+                  <TableHead className="py-1.5 pr-3">Objeto</TableHead>
+                  <TableHead className="py-1.5 pr-3">DN</TableHead>
+                  <TableHead className="py-1.5">Detalle</TableHead>
+                </TableHeadRow>
+              </TableHeader>
+              <TableBody className="divide-zinc-800/40">
                 {objects.map((o) => (
-                  <tr key={o.dn} className="align-top">
-                    <td className="py-1.5 pr-3 font-medium text-zinc-200">{o.name || '—'}</td>
-                    <td className="max-w-[260px] truncate py-1.5 pr-3 font-mono text-[11px] text-zinc-500" title={o.dn}>{o.dn}</td>
-                    <td className="py-1.5 text-zinc-400">{o.detail || '—'}</td>
-                  </tr>
+                  <TableRow key={o.dn}>
+                    <TableCell className="py-1.5 pr-3 font-medium text-zinc-200">{o.name || '—'}</TableCell>
+                    <TableCell className="max-w-[260px] truncate py-1.5 pr-3 font-mono text-[11px] text-zinc-500" title={o.dn}>{o.dn}</TableCell>
+                    <TableCell className="py-1.5 text-zinc-400">{o.detail || '—'}</TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
             {truncated && (
               <p className="mt-2 text-[11px] text-zinc-600">La lista de objetos está truncada; el recuento de arriba es el total real.</p>
             )}
@@ -178,38 +181,34 @@ function ObjectExplorer() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800/60 px-4 py-2.5">
-        <div role="group" aria-label="Tipo de objeto" className="flex rounded-lg border border-zinc-800 p-0.5">
-          {KIND_TABS.map(({ kind: k, label, icon: Icon }) => (
-            <button
-              key={k} type="button" onClick={() => setKind(k)} aria-pressed={kind === k}
-              className={'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ' +
-                (kind === k ? 'bg-white/[0.06] text-zinc-100' : 'text-zinc-400 hover:text-zinc-200')}
-            >
-              <Icon size={13} aria-hidden />
-              {label}
-            </button>
-          ))}
-        </div>
+        <ConsoleTablist
+          tabs={KIND_TABS.map(({ kind, label, icon }) => ({ id: kind, label, icon }))}
+          value={kind}
+          onSelect={setKind}
+          ariaLabel="Tipo de objeto"
+          idPrefix="ad-kind"
+        />
         <div className="relative min-w-[200px] flex-1">
-          <MagnifyingGlass size={13} aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-600" />
-          <input
+          <MagnifyingGlass size={13} aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 z-10 -translate-y-1/2 text-zinc-600" />
+          <Input
             type="search"
             value={queryInput}
             onChange={(e) => setQueryInput(e.target.value)}
             placeholder="Buscar por nombre, DN o OS…"
             aria-label={`Buscar objetos de tipo ${KIND_TABS.find((t) => t.kind === kind)?.label ?? kind}`}
-            className="w-full rounded-lg border border-zinc-800 bg-transparent py-1.5 pl-8 pr-3 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-8 rounded-lg pl-8 pr-3 text-xs"
           />
         </div>
-        <label className="flex items-center gap-1.5 text-[11px] text-zinc-500">
+        <label className="flex items-center gap-1.5 text-[11px] text-zinc-500" htmlFor="ad-page-size">
           Página
-          <select
-            value={pageSize}
-            onChange={(e) => setPageSize(adPageSize(Number(e.target.value)))}
-            className="rounded-md border border-zinc-800 bg-transparent px-1.5 py-1 text-xs text-zinc-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {AD_PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
-          </select>
+          <Select value={String(pageSize)} onValueChange={(v) => setPageSize(adPageSize(Number(v)))}>
+            <SelectTrigger id="ad-page-size" className="h-8 w-16 rounded-md px-1.5 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {AD_PAGE_SIZES.map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </label>
       </div>
 
@@ -230,28 +229,29 @@ function ObjectExplorer() {
       ) : (
         <>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] border-collapse text-left text-xs">
-              <thead>
-                <tr className="border-b border-zinc-800/60 text-[11px] uppercase tracking-wide text-zinc-600">
-                  <th scope="col" className="px-4 py-2 font-medium">Nombre</th>
-                  <th scope="col" className="px-4 py-2 font-medium">Detalle</th>
-                  <th scope="col" className="px-4 py-2 font-medium">Último cambio</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-800/40">
+            <Table className="min-w-[640px] text-xs">
+              <TableCaption>Objetos del snapshot de directorio</TableCaption>
+              <TableHeader>
+                <TableHeadRow className="border-b border-zinc-800/60">
+                  <TableHead className="px-4 py-2">Nombre</TableHead>
+                  <TableHead className="px-4 py-2">Detalle</TableHead>
+                  <TableHead className="px-4 py-2">Último cambio</TableHead>
+                </TableHeadRow>
+              </TableHeader>
+              <TableBody className="divide-zinc-800/40">
                 {data.objects.map((o) => <ObjectRow key={o.dn} obj={o} />)}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800/60 px-4 py-2.5 text-[11px] text-zinc-500">
             <span className="tabular-nums">{from}–{to} de {total.toLocaleString('es-ES')} objetos</span>
             <span className="flex gap-1.5">
-              <button type="button" className="chip px-2.5 py-1.5 text-zinc-300 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
+              <Button type="button" variant="ghost" size="sm" className="px-2.5 text-xs text-zinc-300" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
                 Anterior
-              </button>
-              <button type="button" className="chip px-2.5 py-1.5 text-zinc-300 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40" disabled={to >= total} onClick={() => setPage((p) => p + 1)}>
+              </Button>
+              <Button type="button" variant="ghost" size="sm" className="px-2.5 text-xs text-zinc-300" disabled={to >= total} onClick={() => setPage((p) => p + 1)}>
                 Siguiente
-              </button>
+              </Button>
             </span>
           </div>
         </>
@@ -286,7 +286,7 @@ function ObjectRow({ obj }: { obj: ADObject }) {
     details.push(obj.dn)
   }
   return (
-    <tr className="align-top transition-colors hover:bg-white/[0.02]">
+    <tr className="transition-colors hover:bg-white/[0.02]">
       <td className="max-w-[220px] px-4 py-2">
         <span className="block truncate font-medium text-zinc-200" title={obj.name}>{obj.name}</span>
         {flags.length > 0 && (
@@ -368,11 +368,11 @@ export function DirectoryView() {
           <h1 className="text-lg font-medium text-zinc-100">Directorio activo</h1>
           <p className="mt-0.5 text-xs text-zinc-500">lectura de /api/ad · sin escrituras al motor</p>
         </div>
-        <button type="button" onClick={refresh} aria-busy={state === 'loading'}
-          className="chip px-2.5 py-1.5 text-xs text-zinc-300 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60">
+        <Button type="button" variant="ghost" size="sm" onClick={refresh} aria-busy={state === 'loading'} disabled={state === 'loading'}
+          className="px-2.5 text-xs text-zinc-300 disabled:cursor-wait">
           <ArrowClockwise size={13} aria-hidden className={state === 'loading' ? 'animate-spin motion-reduce:animate-none' : ''} />
           Actualizar
-        </button>
+        </Button>
       </div>
 
       <p className="mt-3 max-w-[80ch] text-xs leading-relaxed text-zinc-500">
@@ -550,22 +550,23 @@ export function DirectoryView() {
                     <span className="text-[11px] tabular-nums text-zinc-600">{privileged.count} cuentas</span>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[560px] border-collapse text-left text-xs">
-                      <thead>
-                        <tr className="border-b border-zinc-800/60 text-[11px] uppercase tracking-wide text-zinc-600">
-                          <th scope="col" className="px-4 py-2 font-medium">Cuenta</th>
-                          <th scope="col" className="px-4 py-2 font-medium">Caminos de privilegio</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-800/40">
+                    <Table className="min-w-[560px] text-xs">
+                      <TableCaption>Cuentas con caminos de privilegio efectivos</TableCaption>
+                      <TableHeader>
+                        <TableHeadRow className="border-b border-zinc-800/60">
+                          <TableHead className="px-4 py-2">Cuenta</TableHead>
+                          <TableHead className="px-4 py-2">Caminos de privilegio</TableHead>
+                        </TableHeadRow>
+                      </TableHeader>
+                      <TableBody className="divide-zinc-800/40">
                         {privileged.objects.map((o) => (
-                          <tr key={o.dn} className="align-top transition-colors hover:bg-white/[0.02]">
-                            <td className="px-4 py-2 font-medium text-zinc-200">{o.name || o.dn}</td>
-                            <td className="px-4 py-2 text-zinc-400">{o.detail || '—'}</td>
-                          </tr>
+                          <TableRow key={o.dn}>
+                            <TableCell className="px-4 py-2 font-medium text-zinc-200">{o.name || o.dn}</TableCell>
+                            <TableCell className="px-4 py-2 text-zinc-400">{o.detail || '—'}</TableCell>
+                          </TableRow>
                         ))}
-                      </tbody>
-                    </table>
+                      </TableBody>
+                    </Table>
                   </div>
                   <p className="border-t border-zinc-800/60 px-4 py-2.5 text-[11px] text-zinc-600">
                     Los caminos (directos y anidados) los calcula el motor sobre el snapshot; la API todavía no expone
