@@ -4,20 +4,19 @@
 - F5 kit-resto-vistas en main (fc8e478..f570245) y C-5 en main (a038aa3):
   kit POL-7 en las siete vistas restantes y aviso honesto de sensores
   desactualizados en Equipos (versiones latido vs motor). CI verde.
-- IDEA-10 fases 6 y 7 en main (ce5f579, a8b15ef): Panel de operaciones
-  y Directorio activo bilingües — dashboard completo, héroe del triaje,
-  KPI, cámara compartida de gráficas, conector/postura/hallazgos y
-  explorador del snapshot leen del diccionario ES/EN tipado. ES
-  byte-idéntico (batería DOM y pines de fase en el test de paridad),
-  EN traducción real. El texto del motor sigue literal. pipelineIssues
-  estructurado; weekHourTableRows/severityEntries/uacFlagLabels con
-  etiquetas opcionales (por defecto las publicadas). 585 tests, tsc,
-  build y batería DOM en verde; changelog.d/console-idea10-{panel,
-  directorio}.md.
+- IDEA-10 fases 6-8 en main (ce5f579, a8b15ef, 38040e2): Panel de
+  operaciones, Directorio activo y Validación de detecciones + probador
+  de reglas bilingües — todo el chrome lee del diccionario ES/EN tipado.
+  ES byte-idéntico (batería DOM y pines de fase en el test de paridad),
+  EN traducción real; el texto del motor sigue literal. Libs con
+  etiquetas opcionales (weekHourTableRows, severityEntries,
+  uacFlagLabels) y pipelineIssues estructurado. 587 tests, tsc, build
+  y batería DOM en verde; changelog.d/console-idea10-{panel,directorio,
+  validacion}.md.
 
 ## En curso
-- Carril IDEA-10: siguiente hornada validación (scenario-view +
-  rule-tester), luego resto de vistas.
+- Carril IDEA-10: siguientes hornadas equipos/flota y flujo en vivo,
+  luego detección (ruido, intel, supresiones, cadenas) y respuesta.
 
 ## Bloqueado
 - (nada)
