@@ -206,7 +206,10 @@ hover, `selected` takes the `--primary*` tint), `TableCell` and a
 full-width `TableEmpty` row. Like `Badge`, it bakes in no DATA color —
 cell accents ride on `className`; the API was extracted verbatim from
 the markup the views already ship, so the phase-B migration is
-mechanical. New views consume the kit
+mechanical. The operations panel (C-1) is the first migrated surface:
+its recent-telemetry list renders through the table primitive and its
+actions (hero CTAs, reloads) through the kit button, with DATA tints
+riding on `className`. New views consume the kit
 instead of restyling pills inline; anything missing goes through POL-7
 coordination before growing the kit.
 

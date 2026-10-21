@@ -25,7 +25,7 @@ elige otra libre de tu rol. Al fusionarse el PR, el humano la marca `hecha`.
 | H-4 | Probar `sf-start`/`sf-stop`/`-KeepSensor`/`sf-status` y el instalador silencioso en Windows real | HUMANO | — | F1 | libre |
 | M-1 | TEAM-3 backend: asignación de alertas en el ciclo de vida del motor (API, estados, cola sin asignar) | AG-1 | — | F3 | libre |
 | S-1 | Registro: resolver raíz `?` por usuario del proceso (`HKU\`) y enviar `registry.value_data` | AG-2 | — | Backlog/Sensor | libre |
-| C-1 | Rediseño del dashboard con el kit de componentes POL-7 en todas las vistas | AG-3 | — | F5 | en progreso (AG-3, 2026-10-21) |
+| C-1 | Rediseño del dashboard con el kit de componentes POL-7 en todas las vistas | AG-3 | — | F5 | en revisión (PR por abrir desde `agent/consola/c-1`) |
 | O-1 | POL-5: OPERATIONS por capítulos + esqueleto de la guía de suscripción WEF | AG-4 | — | Calidad + F3 | libre |
 
 ## Hornada 2 — en cuanto la 1 esté en revisión/avanzada
