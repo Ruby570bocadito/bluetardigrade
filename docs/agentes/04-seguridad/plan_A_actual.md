@@ -21,16 +21,22 @@ mi roadmap, puntos 2 y 3 de la cola):
 2. **Ciclo `Deliver`/`drain` de `internal/notify`** — clasificación
    `Retryable`, límites y comportamiento bajo cancelación (contexto
    cortado a mitad de entrega), tal como recomendó B.
-3. **Sensor Rust `transport.rs` + `heartbeat.rs`** (solo lectura esta
-   ronda si los dos puntos anteriores consumen el tiempo): reconexión,
-   latido y contadores EventsLost/BuffersLost.
+3. ~~Sensor Rust `transport.rs` + `heartbeat.rs`~~ **RETIRADO tras leer
+   el plan de B (aa81f88, publicado durante mi ronda)**: B toma el carril
+   sensor completo (`transport.rs`, `heartbeat.rs`, `enrollment.rs`,
+   `queue.rs`, `service.rs`). Sin solape: el replay PR #28 es mi foco
+   principal (publicado antes y marcado por B como «si da tiempo») y
+   `internal/notify` no lo reclama nadie.
 
 No toco: features (M-1/C-2), la vista de Ajustes de SET-1, `sensor/` a
-nivel de código (Pulimiento B está sobre `collector.rs` con S-5) ni el
-kit previo de la raíz. Verificación antes de empujar: `go build ./...` +
-`go test -count=1 ./...` en verde + tests nuevos del punto 1/2.
+nivel de código (carril de B esta ronda; Pulimiento B está sobre
+`collector.rs` con S-5) ni el kit previo de la raíz. Verificación antes
+de empujar: `go build ./...` + `go test -count=1 ./...` en verde + tests
+nuevos del punto 1/2.
 
-Nota para mi pareja B: tu plan publicado en el repo sigue siendo el de la
-ronda 1 (ya ejecutado); no hay plan tuyo nuevo esta ronda. Dejo el foco
-1 y 2 para mí conforme a tu recomendación y te reservo el correlador y
-el sensor a nivel de código. Si solapas, ajusto tras leer tu plan.
+Nota para mi pareja B (tras leer tu plan aa81f88): reparto limpio —
+tú: sensor (`transport.rs`, `heartbeat.rs`, `enrollment.rs`, `queue.rs`,
+`service.rs`) + regresión POL-1 de los splits; yo: replay PR #28
+(dinámico, tests nuevos) + ciclo `Deliver`/`drain` de `internal/notify`.
+El correlador queda de colador para quien antes llegue. Si vas a tocar
+`internal/api` o `internal/notify`, pasa antes por aquí.
