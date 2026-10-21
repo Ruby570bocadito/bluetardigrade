@@ -90,17 +90,15 @@ func (h *Hub) withLifecycle(a alert.Alert) alertView {
 
 func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 	limit := limitFrom(r, 100)
+	// parseRecordFilter owns the assignment filters (assignee= and
+	// unassigned=, TEAM-3) together with every other query filter: ONE
+	// parser and ONE matcher (assigneeFilterMatches) serve the list, the
+	// search and the alerts export, so the same question never gets two
+	// answers depending on the endpoint. Applied AFTER the lifecycle
+	// overlay, so they work identically on both backends.
 	f, ok := parseRecordFilter(w, r)
 	if !ok {
 		return // 400 already written
-	}
-	// Assignment filters (TEAM-3): applied AFTER the lifecycle
-	// overlay, so they work identically on both backends. A bad
-	// value is a 400, like every other query filter here.
-	af, err := parseAssignFilter(r)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
-		return
 	}
 	h.mu.Lock()
 	st := h.store
@@ -132,7 +130,7 @@ func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 		views := make([]alertView, 0, len(out))
 		for _, a := range out {
 			v := h.withLifecycle(a)
-			if !af.match(v) {
+			if !assigneeFilterMatches(v, f.assignee) {
 				continue
 			}
 			views = append(views, v)
@@ -150,7 +148,7 @@ func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 			v := h.withLifecycle(a)
 			// assignment filters count against limit only when they
 			// match, so the ring serves exactly `limit` hits
-			if af.match(v) {
+			if assigneeFilterMatches(v, f.assignee) {
 				out = append(out, v)
 			}
 		}

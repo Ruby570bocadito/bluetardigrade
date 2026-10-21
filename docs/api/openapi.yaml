@@ -844,13 +844,17 @@ paths:
         - name: assignee
           in: query
           description: exact (case-insensitive) assignee name — «Mis alertas» for the
-            account the console forwards
+            account the console forwards; the reserved value `none` selects the
+            unassigned queue (the same spelling search and the export take)
           schema:
             type: string
+            maxLength: 200
         - name: unassigned
           in: query
           description: only alerts with no assignee (the unassigned queue); cannot
-            combine with assignee
+            combine with an assignee NAME (`assignee=none` plus `unassigned=true`
+            is allowed — the same queue asked twice). Honored by the search and
+            the alerts export too.
           schema:
             type: string
             enum: ['true', '1']
@@ -913,6 +917,21 @@ paths:
         - name: q
           in: query
           schema: { type: string, maxLength: 120 }
+        - name: assignee
+          in: query
+          description: exact (case-insensitive) assignee name; the reserved value
+            `none` selects the unassigned queue — the same filter the list and
+            the export take
+          schema:
+            type: string
+            maxLength: 200
+        - name: unassigned
+          in: query
+          description: only alerts with no assignee (the unassigned queue); cannot
+            combine with an assignee NAME
+          schema:
+            type: string
+            enum: ['true', '1']
       responses:
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -1535,8 +1554,11 @@ paths:
         `id`, `status`, `timestamp`, `severity`, `rule_id`, `rule_name`,
         `event_type`, `host`, `user`, `summary`, `matched_on`
         (space-joined), `tags` (space-joined), `message`, `notify`,
-        `status_note`, `status_by`, `decision` (appended at the end;
-        positional consumers keep their columns). When the engine runs
+        `status_note`, `status_by`, `decision`, `assignee`, `assigned_by`
+        (appended at the end; positional consumers keep their columns).
+        The assignment filters (`assignee`, with `none` as the unassigned
+        queue, and `unassigned=true`) narrow the exported set with the
+        same semantics as `GET /api/alerts`. When the engine runs
         with `-store`, the export reads the persistent SQLite store
         (full history, subject to the configured retention) instead of
         the alert ring.
@@ -1548,6 +1570,20 @@ paths:
         - $ref: '#/components/parameters/Since'
         - $ref: '#/components/parameters/Until'
         - $ref: '#/components/parameters/Q'
+        - name: assignee
+          in: query
+          description: exact (case-insensitive) assignee name; the reserved value
+            `none` selects the unassigned queue
+          schema:
+            type: string
+            maxLength: 200
+        - name: unassigned
+          in: query
+          description: only alerts with no assignee (the unassigned queue); cannot
+            combine with an assignee NAME
+          schema:
+            type: string
+            enum: ['true', '1']
       responses:
         '401':
           $ref: '#/components/responses/Unauthorized'
