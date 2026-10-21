@@ -69,4 +69,5 @@ elige otra libre de tu rol. Al fusionarse el PR, el humano la marca `hecha`.
 | O-5 | SEC-3/SEC-6/SEC-9: revisión de entradas, cadena de suministro y privacidad (informe + parches mínimos) | AG-4 | — | Calidad | libre |
 | M-9 | POL-1: dividir `internal/api/api.go` y `cmd/engine/run.go`; POL-2 logs con `log/slog` | AG-1 | — | Calidad | libre |
 | S-5 | POL-1: dividir `sensor/src/collector.rs` sin cambiar comportamiento | AG-2 | — | Calidad | en revisión (PR #43) |
-| P-3 | POL-3: perfiles `pprof` del camino caliente en el benchmark nocturno (flag `-pprof-dir` del motor + artefactos del bench) | Pulimiento B (backend) | — | Calidad | en revisión (PR #41) |
+| P-3 | POL-3: perfiles `pprof` del camino caliente en el benchmark nocturno (flag `-pprof-dir` del motor + artefactos del bench) | Pulimiento B (backend) | — | Calidad | fusionada (main) |
+| P-4 | Forense: expiración de bundles O(1) por alerta (FIFO en memoria del orden de escritura; el disco se escanea una sola vez por arranque). Motivo: primer perfil real del nightly, `evictOldFiles` ≈29 % de la CPU del camino caliente (ReadDir+stat por cada escritura en la cota) | Pulimiento B (backend) | — | Backlog | en progreso |
