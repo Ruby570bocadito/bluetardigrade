@@ -93,3 +93,36 @@ Reglas rápidas:
   (entrega tipo parche, escenario B del kit).
 - Estado en TASKS.md: en revisión (PR pendiente de abrir: rama
   `agent/sensor/s-1`)
+
+---
+## 2026-10-21 · AG-2 SENSOR · S-1 · sesión 2
+
+- Hecho:
+  - **PR abierto**: [#40 — sensor: resolve the unknown registry root via
+    the writer's user; value data (S-1)](https://github.com/Ruby570bocadito/bluetardigrade/pull/40)
+    (rama `agent/sensor/s-1`, 5 commits, rebasada sobre main 7d99cb7 —
+    sesión 1 terminó sin credenciales de git; esta sesión las tuvo).
+  - Verificación previa al push, todo verde otra vez sobre la rama tal
+    cual va al PR: `cargo test` 38/38 y `cargo clippy --all-targets`
+    limpio en host.
+  - Revisión del contrato con el código fusionado en main: el campo del
+    esquema sigue siendo `registry.value` (pkg/model/model.go,
+    internal/sigma/convert.go «Details» → `registry.value`) y las reglas
+    lo usan; se confirma la decisión de la sesión 1 de NO crear
+    `registry.value_data`.
+  - TASKS.md: S-1 pasa de «PR pendiente de abrir» a «en revisión (PR
+    #40)».
+- Ficheros: `TASKS.md`, `WORKLOG.md` (este commit de coordinación va
+  dentro del PR #40). El código no cambió respecto a la sesión 1.
+- Contratos/decisiones para otros: sin cambios respecto a la sesión 1
+  (`user` + `registry_root_inferred` en registry.set; `registry.value`
+  para el dato escrito; ejemplo de supresión Chrome/Copilot en la
+  entrada anterior).
+- Pendiente (sin cambios, lo hereda de la sesión 1):
+  - Verificar en un Windows real: `--debug-registry run`, escritura en
+    la clave Run y arranque de Chrome/Copilot, confirmar
+    `captured=Some(n)>0`, `value=[...]` y la resolución
+    `HKU\<SID>\...` con `registry_root_inferred`.
+  - El humano revisa y fusiona el PR #40 (AG-2 no fusiona el suyo).
+- Bloqueos: ninguno.
+- Estado en TASKS.md: en revisión (PR #40)
