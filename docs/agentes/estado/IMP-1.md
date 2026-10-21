@@ -14,8 +14,7 @@ guard ya atrapó esta misma expansión en mi propia sesión antes del push.
   chocó con su entrega (19:54:08); solo aporté cabecera y el guard local.
 
 Sesión m4 (M-4, cerrada): POST /api/db/query + -api-db-query, SQL de solo
-lectura con topes de filas/tiempo, handle ro + query_audit; contrato en
-docs/api/openapi.yaml.
+lectura con topes de filas/tiempo, handle ro + query_audit; contrato en openapi.
 
 Sesión o2 (O-2, cerrada): pack AD de 5 reglas (119) + 5 escenarios
 sintéticos; gate verde (doble arreglo 3d3ca80/a6df346 resuelto).
