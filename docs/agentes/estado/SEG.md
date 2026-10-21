@@ -33,10 +33,8 @@
 - (ninguna)
 
 ## Propuestas para el roadmap
-- (SEG) sec9-privacidad — minimizar PII en inicios de sesión y líneas de
-  tiempo, retención configurable, auditoría de quién consulta fichas.
-- (SEG) sec2-dpapi — requiere Windows real; plan conjunto con
-  Implementación A cuando haya entorno de pruebas.
+- (SEG) sec9-privacidad — minimizar PII en logins y líneas de tiempo, retención y auditoría de fichas.
+- (SEG) sec2-dpapi — requiere Windows real; plan con Implementación A.
 - Detectado sin corregir (baja, sin credenciales en juego): apiHealthy
   (cmd/engine/runtime.go) y el cliente de escenarios mantienen la política
   de redirects por defecto; unificar si se tocan.
