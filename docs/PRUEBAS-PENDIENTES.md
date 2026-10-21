@@ -332,6 +332,23 @@ sesión y queda registrado quién hace cada cosa.
 - [ ] Si tienes AD: en Ajustes → Active Directory, «Probar conexión» y «Guardar»
   responden. Antes la consola los rechazaba con «read_only».
 
+## 7c. Permisos por grupo
+
+Necesitas cuentas en la consola (sección 7) y un grupo con tu equipo (7b).
+
+- [ ] Como administrador, en Ajustes → Cuentas crea una cuenta de analista y
+  marca en «Grupos (opcional)» un grupo que **no** tenga tu equipo. La columna
+  «Equipos» de esa cuenta muestra el grupo.
+- [ ] Entra con esa cuenta en otra ventana privada. La ficha de sesión (tu
+  nombre, arriba) dice «Ves solo los equipos del grupo …». Alertas, Equipos y
+  el panel no muestran tu equipo, y el analista IA dice que no está disponible.
+- [ ] Con el administrador, «Cambiar» en esa cuenta y marca el grupo de tu
+  equipo. La ventana de la cuenta vuelve al inicio de sesión. Al entrar de
+  nuevo ya ve tu equipo y sus alertas.
+- [ ] **[normal]** `sf-console -SetGroups <cuenta> -Groups none` quita el
+  límite. `sf-engine doctor` lo cuenta en «Cuentas de la consola» mientras
+  tenga grupos, y avisa si nombra un grupo que el motor no tiene.
+
 ## 8. Reputación por hash (solo si tienes clave de VirusTotal)
 
 - [ ] Con `SF_VT_API_KEY` configurada, abre una alerta de un proceso del sensor ETW.

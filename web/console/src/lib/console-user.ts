@@ -48,7 +48,7 @@ export function modeText(me: ConsoleMe): string {
 export function scopeText(me: ConsoleMe): string {
   if (!me.scope?.length) return 'Ves todos los equipos.'
   const list = me.scope.join(', ')
-  return `Ves solo los equipos de ${me.scope.length === 1 ? 'el grupo' : 'los grupos'} ${list}: alertas, eventos, incidentes e informes de los demás no te aparecen, y el analista IA no está disponible.`
+  return `Ves solo los equipos ${me.scope.length === 1 ? 'del grupo' : 'de los grupos'} ${list}: alertas, eventos, incidentes e informes de los demás no te aparecen, y el analista IA no está disponible.`
 }
 
 // permissions lists what the role allows, for the session panel.
@@ -71,6 +71,7 @@ const ACTIONS: [RegExp, string][] = [
   [/^POST \/cuenta\/contrasena$/, 'Cambio de contraseña'],
   [/^POST \/accounts\/crear$/, 'Cuenta creada'],
   [/^POST \/accounts\/rol$/, 'Rol de cuenta cambiado'],
+  [/^POST \/accounts\/grupos$/, 'Grupos de equipos de una cuenta cambiados'],
   [/^POST \/accounts\/deshabilitar$/, 'Cuenta deshabilitada'],
   [/^POST \/accounts\/habilitar$/, 'Cuenta habilitada'],
   [/^POST \/accounts\/restablecer$/, 'Contraseña restablecida'],

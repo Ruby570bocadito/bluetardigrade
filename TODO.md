@@ -71,14 +71,15 @@ y cuentas: [OPERATIONS](docs/OPERATIONS.md#console-accounts-roles-and-audit).
   activar la verificación con una app real, código de recuperación,
   `-RequireMfa` y `-ResetMfa`, y las cuentas desde Ajustes → Cuentas (crear,
   contraseña temporal, deshabilitar) y «Cambiar contraseña».
-- [ ] **ACL de máquinas y servicios.** Los grupos de equipos ya existen
-  (Ajustes → Grupos); falta:
-  - probar los grupos en Windows real (sección 7b de PRUEBAS-PENDIENTES);
-  - permisos por grupo: las cuentas con grupos solo ven y actúan sobre sus
-    equipos, filtrado en el motor (alertas, eventos, incidentes, informes,
-    flota, exportaciones, forense y el directo); sin grupos se ve todo; un
-    incidente solo lo ve quien tiene todos sus equipos; el analista IA, apagado
-    para cuentas con grupos hasta filtrarlo también;
+- [ ] **ACL de máquinas y servicios.** Ya existen los grupos de equipos
+  (Ajustes → Grupos) y los permisos por grupo: una cuenta con grupos solo ve
+  y toca sus equipos, filtrado en el motor; sin grupos ve todo; un incidente
+  solo lo ve quien tiene todos sus equipos; el analista IA no está disponible
+  para cuentas con grupos. Falta:
+  - probar grupos y permisos en Windows real (secciones 7b y 7c de
+    PRUEBAS-PENDIENTES);
+  - el analista IA para cuentas con grupos (que el hub lea el motor con el
+    alcance de quien pregunta);
   - auditar en los equipos los servicios de Windows con permisos débiles (el
     sensor, solo lectura: DACL del servicio, del ejecutable y rutas sin
     comillas), con alerta y su sección en la ficha del equipo.

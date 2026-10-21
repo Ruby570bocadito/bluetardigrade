@@ -684,6 +684,9 @@ gets in acts as administrator. That stays unchanged unless
   console. While there is no account, `sf-start` offers to
   create the administrator account first; declining is remembered in
   `tools\config\no-console-accounts` (delete it to be asked again).
+  `sf-console -SetGroups ana -Groups madrid,servidores` limits an
+  account to host groups (`-Groups none` lifts the limit), and
+  `-AddUser` takes `-Groups` too (see "Access by host group").
   The first account only takes effect after restarting a console that
   was already running (`sf-stop`, then `sf-start`); later changes are
   picked up on their own.
@@ -691,7 +694,8 @@ gets in acts as administrator. That stays unchanged unless
   "password": "pbkdf2-sha256$..."}]}`. Elsewhere, manage it with
   `node scripts/console-user.mjs --file <path> <user> <admin|analyst|viewer>`
   (or `--remove <user>`, `--reset-mfa <user>`,
-  `--require-mfa <roles|none>`, each after `--file <path>`) from
+  `--require-mfa <roles|none>`, `--groups <user> <groups|none>`, each
+  after `--file <path>`) from
   `web/console`. A new password keeps the account's second step and
   cancels a pending forced change: whoever typed it chose it. It asks for
   the password (at least 12 characters, not echoed) and stores only its
@@ -705,8 +709,8 @@ gets in acts as administrator. That stays unchanged unless
   30 minutes without activity (`CONSOLE_SESSION_IDLE_MINUTES`) or after
   12 hours whatever the activity (`CONSOLE_SESSION_MAX_HOURS`).
   Sessions live in the console's memory: restarting it signs everyone
-  out. Changing an account's password or role, removing it, or rotating
-  the shared token ends its open sessions. **Cerrar sesión** in the
+  out. Changing an account's password, role or host groups, removing it,
+  or rotating the shared token ends its open sessions. **Cerrar sesión** in the
   session panel (the account chip) signs out. A page opened without a
   session goes to `/login` and back to where it was heading after
   signing in; an open console whose session ends returns to the
@@ -769,6 +773,9 @@ gets in acts as administrator. That stays unchanged unless
   for the operator credential). The engine proxy enforces the role on
   every write; the UI shows the account and role in the header and a
   read-only banner for viewers.
+- Host groups: an account that is not an administrator may be limited
+  to some host groups; it then sees and acts on their machines only.
+  See "Access by host group" below.
 - Attribution: the proxy overwrites the `by` field of triage, incident
   and note writes with the account name, so the engine's timeline says
   who did it whatever the browser sent.
@@ -787,8 +794,8 @@ gets in acts as administrator. That stays unchanged unless
 ## Host groups
 
 Host groups name sets of machines: a site, a department, an AD OU,
-servers or workstations. They are the base of per-account permissions.
-Groups only organize machines: nobody sees less because of them yet.
+servers or workstations. Equipos filters by them, and console accounts
+can be limited to them (see "Access by host group").
 
 - Where: the engine reads them from `-host-groups <file.yaml>`. The
   Windows launcher always passes `tools\config\host-groups.yaml`. A
@@ -815,6 +822,63 @@ Groups only organize machines: nobody sees less because of them yet.
 - The same console change lets administrators save and test the Active
   Directory settings in Ajustes through the console's own proxy, which
   used to refuse them.
+
+### Access by host group
+
+A console account can be limited to some host groups. It then sees and
+acts on the machines of those groups only.
+
+- Who: accounts of the users file that are not administrators.
+  Administrators always see every machine, whatever groups they hold,
+  and so do accounts without groups, the shared token and a console
+  without accounts.
+- Setting it: in **Ajustes → Cuentas**, the **Equipos** column has
+  **Cambiar**, with one box per engine group; the new-account form has
+  the same boxes. From a terminal, use `sf-console -SetGroups ana
+  -Groups madrid,servidores` or `console-user.mjs --file <path> --groups
+  ana madrid,servidores`. Use `none` to lift the limit. The file keeps
+  `"groups": ["madrid", "servidores"]` in the account. Changing an
+  account's groups ends its open sessions.
+- What a limited account sees: alerts, events, the alert search,
+  exports, reports, noise, Equipos, the risk list, baselines, forensic
+  bundles, the response audit, suppressions and the live stream show its
+  groups' machines only.
+  - Dashboard totals count its machines among the records the engine
+    holds in memory ("recientes de tus grupos").
+  - Suppressions that apply to every machine stay listed.
+  - **Ajustes → Grupos** shows only its own groups.
+- Incidents: a limited account sees an incident only when **all** its
+  machines are in the account's groups. An incident spanning another
+  group's machines, or with no machine at all, stays with the accounts
+  that see every machine.
+- Writes: triage, incident changes, notes, suppressions and active
+  response only reach the account's own machines.
+  - An alert, incident or bundle outside its groups answers 404, as if
+    it did not exist.
+  - A suppression must name one of its machines: silencing a rule on
+    every machine would silence it for the other groups too.
+  - A new incident must start from its own alerts or machines.
+- Not available to limited accounts: Active Directory (domain-wide),
+  `/metrics`, enrollment and the AI analyst, because the analyst hub
+  reads every machine. They answer 403, and the analyst view says why.
+- Membership is decided as in Equipos (name patterns, AD OUs, ingest
+  credentials) at each request. A group edited in **Ajustes → Grupos**
+  applies at once, and within a minute on an open live stream. A group
+  name the engine does not have matches nothing: an account whose
+  groups were all deleted sees nothing, not everything.
+  `sf-engine doctor` names accounts that use groups the engine does not
+  have.
+- How it travels: the console proxy adds the account's groups to every
+  engine request in the `X-SF-Scope` header. It builds the header from
+  the session, never from the browser, and the engine filters on it.
+  The header only narrows: whoever holds the engine's API token can ask
+  without it. The limit therefore holds only when:
+  - the engine requires a token (`-api-token` / `SF_API_TOKEN`) that
+    stays with the console;
+  - the analyst hub requires `HUB_ACCESS_TOKEN`.
+
+  Without them, anyone who reaches those ports on the machine sees
+  everything, as before.
 
 ## Rule tester
 

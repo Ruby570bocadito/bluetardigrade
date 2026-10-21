@@ -990,7 +990,7 @@ type statsPayload struct {
 	// fields and quota_top_hosts then count its machines only, over the
 	// records the engine keeps in memory; the platform counters stay
 	// engine-wide.
-	Scoped bool `json:"scoped,omitempty"`
+	Scoped bool `json:"scoped"`
 }
 
 // quotaHostRow is one host's row of the per-host pressure view: how

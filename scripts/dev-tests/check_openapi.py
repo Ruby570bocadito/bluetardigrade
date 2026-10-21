@@ -179,9 +179,11 @@ def run_checks(spec: dict, go_src: str) -> tuple[list[str], dict]:
     # the bearer middleware, optionally inside the DNS-rebinding guard
     # (h.guardRebinding: Host check for the tokenless loopback API) and an
     # outermost response-header wrapper (securityHeaders: nosniff + no-referrer
-    # on every answer, including 401/403 rejections).
+    # on every answer, including 401/403 rejections). Inside it the mux may
+    # sit behind the host-group scope (h.withScope, scope.go), which only
+    # runs for authenticated requests.
     has_mw = bool(re.search(
-        r"\bHandler:\s*(?:securityHeaders\(\s*)?(?:h\.guardRebinding\(\s*)?h\.auth\(\s*(?:mux\s*|guardWriteOrigin\(\s*mux\s*\))\s*\)(?:\s*\))?",
+        r"\bHandler:\s*(?:securityHeaders\(\s*)?(?:h\.guardRebinding\(\s*)?h\.auth\(\s*(?:mux\s*|guardWriteOrigin\(\s*(?:h\.withScope\(\s*mux\s*\)|mux)\s*\))\s*\)(?:\s*\))?",
         go_src,
     ))
     exempt: set[str] = set()
@@ -600,6 +602,14 @@ def self_test() -> int:
     if findings:
         print(f"self-test: header-wrapped authenticated handler produced findings: {findings}", file=sys.stderr)
         return 1
+    scoped = GO_FIXTURE.replace(
+        'Handler: h.auth(mux)',
+        'Handler: securityHeaders(h.guardRebinding(h.auth(guardWriteOrigin(h.withScope(mux)))))',
+    )
+    findings, _ = run_checks(good_spec(), scoped)
+    if findings:
+        print(f"self-test: scope-wrapped authenticated handler produced findings: {findings}", file=sys.stderr)
+        return 1
     unguarded = GO_FIXTURE.replace('Handler: h.auth(mux)', 'Handler: mux')
     findings, _ = run_checks(good_spec(), unguarded)
     if not any('no auth middleware' in finding for finding in findings):
@@ -704,7 +714,7 @@ def self_test() -> int:
             return 1
 
     print(
-        f"self-test: OK — 4 positive fixtures + {len(variants) + 1} negative variants, "
+        f"self-test: OK — 5 positive fixtures + {len(variants) + 1} negative variants, "
         "the guard catches its own class of drift"
     )
     return 0

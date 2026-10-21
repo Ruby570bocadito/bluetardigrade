@@ -266,6 +266,7 @@ export function AccountsManager({ me }: { me: string }) {
             {ROLE_ORDER.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}
           </select>
         </div>
+        <p id={hintId} className="w-full text-[10px] text-zinc-500">{t.newNameHint}</p>
         {role !== 'admin' && (
           <div className="w-full">
             <GroupPicker legend={t.newGroups} available={engineGroups} selected={newGroups} onChange={setNewGroups} />
@@ -275,7 +276,6 @@ export function AccountsManager({ me }: { me: string }) {
         <button type="submit" disabled={busy || !name.trim()} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-zinc-100 px-3 text-xs font-medium text-zinc-900 hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           <UserPlus size={14} aria-hidden /> {t.create}
         </button>
-        <p id={hintId} className="w-full text-[10px] text-zinc-500">{t.newNameHint}</p>
       </form>
     </div>
   )

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { DEFAULT_ME, describeAction, modeText, permissions } from './console-user'
+import { DEFAULT_ME, describeAction, modeText, permissions, scopeText } from './console-user'
 
 test('audit actions are described in words, unknown ones verbatim', () => {
   expect(describeAction({ method: 'POST', path: '/api/alerts/0123456789abcdef/status' })).toBe('Triaje de alerta')
@@ -15,4 +15,11 @@ test('permissions follow the role flags', () => {
   expect(permissions(DEFAULT_ME).every((p) => p.allowed)).toBe(true)
   expect(modeText(viewer)).toContain('CONSOLE_USERS_FILE')
   expect(modeText(DEFAULT_ME)).toContain('loopback')
+})
+
+test('the session panel says which machines the account sees', () => {
+  expect(scopeText(DEFAULT_ME)).toBe('Ves todos los equipos.')
+  expect(scopeText({ ...DEFAULT_ME, scope: null })).toBe('Ves todos los equipos.')
+  expect(scopeText({ ...DEFAULT_ME, role: 'analyst', mode: 'users', scope: ['madrid'] })).toStartWith('Ves solo los equipos del grupo madrid:')
+  expect(scopeText({ ...DEFAULT_ME, role: 'viewer', mode: 'users', scope: ['madrid', 'servidores'] })).toStartWith('Ves solo los equipos de los grupos madrid, servidores:')
 })

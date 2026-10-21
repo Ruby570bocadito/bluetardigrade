@@ -1,0 +1,7 @@
+- **Access by host group.** A console account that is not an administrator can be limited to some host groups. It then sees and acts on the machines of those groups only.
+  - Setting it: Ajustes → Cuentas, the "Equipos" column, also on account creation; `sf-console -SetGroups <account> -Groups <groups|none>`; `console-user.mjs --groups`. The users file keeps `"groups"` per account, and changing them ends the account's sessions.
+  - Enforcement: the console proxy sends the groups to the engine in `X-SF-Scope`, and the engine narrows alerts, events, search, exports, reports, noise, the fleet, stats, baselines, forensic bundles, the response audit, suppressions and the live stream.
+  - Incidents are visible only when all their machines are in the account's groups. Anything outside answers 404, and writes naming other machines are refused.
+  - Active Directory, `/metrics`, enrollment and the AI analyst are not available to limited accounts.
+  - `sf-engine doctor` names accounts that use groups the engine does not have.
+- **Alert lookups by id.** The store adds an index on the alert id. On the first start with an existing database it is built once, which can take a few seconds on a large store.
