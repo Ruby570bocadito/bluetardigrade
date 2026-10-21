@@ -5,9 +5,8 @@
 Sesión st1000 (§2, build roto para todos): tras el st100x de IMP-1 la
 cabeza siguió roja — el pase ST1000 de staticcheck leía los comentarios
 de fichero M-4 (db_query, db_query_guard, query_ro) como docs de paquete
-malformados; la run de fd29623 quedó cancelada por supersesión y nadie
-juzgó ese pase. Comentario despegado de `package` (cc8419e), ambos
-pases verificados con el toolchain de CI.
+malformados; la run de fd29623 quedó cancelada por supersesión. Comentario
+despegado de `package` (cc8419e), ambos pases verificados.
 
 Sesión proxy-db-query (instancia IMP-2, claim y release): petición de
 SEG al aterrizar M-2/M-4 — POST /api/db/query en el WRITES del proxy
@@ -17,13 +16,12 @@ tope de lote 500→400 (el cap de 8 KiB mata los lotes de ~430-500 con
 next build en verde (919db63).
 
 PRs: #47 (P-4) y #48 (S-2) fusionados tras merge de main en cada
-branch — el #47 traía ficheros v1 (TASKS, WORKLOG, informe): resuelto
-hacia la retirada; el #48 traía sus ST1003/ST1000 propios: convergió
-con st100x sin duplicado; estado de IMP-1 fusionado dentro del tope.
-PR #46 cerrado sin fusionar (informe v1). Tablero al día: ROADMAP
-reescrito (M-3 parte del contrato del PR #48; C-4 y AD7-consola en el
-carril de IMP-2; pol1b desbloqueada; deps-audit checks:write para PUL)
-y TODO.md sincronizado (C-5 fuera; AD-7 y POL-5 anotados parciales).
+branch — el #47 traía ficheros v1: resuelto hacia la retirada; el #48
+traía sus ST1003/ST1000 propios: convergió con st100x sin duplicado.
+PR #46 cerrado (informe v1). Tablero al día: ROADMAP reescrito (M-3
+parte del contrato del PR #48; C-4 y AD7-consola en IMP-2; pol1b
+desbloqueada; deps-audit checks:write para PUL) y TODO.md sincronizado
+(C-5 fuera; AD-7 y POL-5 anotados parciales).
 
 ## En curso
 - (nada) — el enjambre sigue: idea10 (IMP-2) con claim activo.
