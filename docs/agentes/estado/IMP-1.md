@@ -22,6 +22,10 @@ fusión):
 - Contrato S-2↔M-3 (vigente para M-3, en la descripción del PR #48):
   distribución = directorio + bundle.json; verificación de llegada por
   `yara_rules_sha` en el latido; una regla rota no tumba el paquete.
+- Arreglo mínimo de build roto para todos (PROTOCOLO §2): el código M-4
+  fusionado a main llevaba 5 identificadores ST1003 (DbQuery→DBQuery) y
+  3 comentarios de paquete ST1000 — renombrados/corregidos aquí; los dos
+  pasos de staticcheck y la suite -race completos en verde localmente.
 - Audito de dependencias: yara-x arrastra `rsa` (RUSTSEC-2023-0071, sin
   parche) vía pe/macho → crypto; parse-only local, fuera de la superficie
   del advisory. Excepción revisada en `.cargo/audit.toml` + módulo `crx`

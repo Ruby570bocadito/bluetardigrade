@@ -38,7 +38,7 @@ func dbQueryPost(t *testing.T, addr string, body any) (int, string) {
 }
 
 // dbQueryTestHub starts a hub with an armed-free store seeded with one
-// event and one alert; arming is per-test via h.EnableDbQuery().
+// event and one alert; arming is per-test via h.EnableDBQuery().
 func dbQueryTestHub(t *testing.T) (*Hub, string, *store.Store) {
 	t.Helper()
 	h, addr := newTestHub(t)
@@ -82,7 +82,7 @@ func TestDbQueryDisabledByDefault(t *testing.T) {
 func TestDbQueryRequiresStore(t *testing.T) {
 	h, addr, _ := dbQueryTestHub(t)
 	h.store = nil
-	h.EnableDbQuery()
+	h.EnableDBQuery()
 	code, _ := dbQueryPost(t, addr, dbQueryRequest{SQL: "SELECT 1"})
 	if code != http.StatusNotImplemented {
 		t.Fatalf("status %d, want 501 without -store", code)
@@ -91,7 +91,7 @@ func TestDbQueryRequiresStore(t *testing.T) {
 
 func TestDbQueryRoundTrip(t *testing.T) {
 	h, addr, _ := dbQueryTestHub(t)
-	h.EnableDbQuery()
+	h.EnableDBQuery()
 
 	code, body := dbQueryPost(t, addr, dbQueryRequest{
 		SQL: "SELECT host, COUNT(*) AS n FROM events GROUP BY host ORDER BY host",
@@ -124,7 +124,7 @@ func TestDbQueryRoundTrip(t *testing.T) {
 
 func TestDbQueryRejectsWritesAndAuditsThem(t *testing.T) {
 	h, addr, st := dbQueryTestHub(t)
-	h.EnableDbQuery()
+	h.EnableDBQuery()
 
 	code, _ := dbQueryPost(t, addr, dbQueryRequest{SQL: "DELETE FROM events"})
 	if code != http.StatusBadRequest {
@@ -150,7 +150,7 @@ func TestDbQueryRejectsWritesAndAuditsThem(t *testing.T) {
 
 func TestDbQueryAuditSuccessToo(t *testing.T) {
 	h, addr, st := dbQueryTestHub(t)
-	h.EnableDbQuery()
+	h.EnableDBQuery()
 
 	if code, body := dbQueryPost(t, addr, dbQueryRequest{SQL: "SELECT 1"}); code != http.StatusOK {
 		t.Fatalf("status %d: %s", code, body)
@@ -169,7 +169,7 @@ func TestDbQueryAuditSuccessToo(t *testing.T) {
 
 func TestDbQueryClampsRowsAndTimeout(t *testing.T) {
 	h, addr, st := dbQueryTestHub(t)
-	h.EnableDbQuery()
+	h.EnableDBQuery()
 	for i := 2; i <= 4; i++ {
 		if err := st.InsertEvent(&model.Event{
 			ID: fmt.Sprintf("ev-%d", i), Timestamp: time.Now().UTC(), Type: model.TypeProcessCreate,
@@ -206,7 +206,7 @@ func TestDbQueryClampsRowsAndTimeout(t *testing.T) {
 
 func TestDbQueryRuntimeErrorIsABadRequest(t *testing.T) {
 	h, addr, _ := dbQueryTestHub(t)
-	h.EnableDbQuery()
+	h.EnableDBQuery()
 
 	code, body := dbQueryPost(t, addr, dbQueryRequest{SQL: "SELECT * FROM no_such_table"})
 	if code != http.StatusBadRequest {
@@ -219,7 +219,7 @@ func TestDbQueryRuntimeErrorIsABadRequest(t *testing.T) {
 
 func TestDbQueryBadJSON(t *testing.T) {
 	h, addr, _ := dbQueryTestHub(t)
-	h.EnableDbQuery()
+	h.EnableDBQuery()
 
 	res, err := http.Post("http://"+addr+"/api/db/query", "application/json", strings.NewReader("{not json"))
 	if err != nil {

@@ -1,4 +1,4 @@
-// Read-only query surface over the evidence database (M-4): the API's
+// Package store: read-only query surface over the evidence database (M-4): the API's
 // db-query handler runs ONE statement per request through a dedicated
 // handle opened mode=ro with query_only on top, so nothing that reaches
 // SQLite from this path can write, whatever the statement says. The
