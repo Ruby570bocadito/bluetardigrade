@@ -38,4 +38,4 @@
   gráficas como hornada propia del mismo carril.
 
 ## Estado: VERDE
-- Suite local completa en verde antes de cada push (PROTOCOLO §1.6).
+- Suite local completa en verde antes de cada push.
