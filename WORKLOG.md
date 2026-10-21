@@ -238,3 +238,48 @@ Reglas rápidas:
   sesión.
 - Bloqueos: ninguno.
 - Estado en TASKS.md: S-4 en revisión (PR #42)
+
+---
+
+## 2026-10-21 · Pulimiento B (backend) · P-3 + S-5 · sesión 1
+- Hecho: ronda completa del sistema nuevo (informe en
+  `docs/agentes/03-pulimiento/ronda_2026-10-21_19h15_B.md`). (1) **P-3
+  / POL-3**: perfiles pprof del camino caliente en el nightly — flag
+  opt-in `-pprof-dir` del motor (CPU + heap + goroutine; fallo ruidoso
+  si no puede arrancar), `bench_nightly.sh` perfila las dos pasadas y
+  falla si falta un perfil, `bench-nightly.yml` sube el artefacto
+  `bench-pprof`; punto fuera de TODO.md + `changelog.d/bench-pprof.md`.
+  Prueba real local: bench completo 2 pasadas OK y perfiles legibles
+  con `go tool pprof`. (2) **S-5 / POL-1 sensor**: `collector.rs`
+  (1103 líneas) dividido en `collector/{config,shared,enrich,winimage,
+  handlers,health}.rs` sin cambiar comportamiento — movimiento literal
+  verificado por multiconjunto de líneas y batería del CI del sensor
+  replicada en local (check/test/clippy host 38/38 + cross-check
+  x86_64-pc-windows-msvc check/clippy). (3) Auditorías del carril sin
+  cambios que hacer: rules/ limpia (114 reglas, front-matter uniforme;
+  el espejo de scenarios/ diverge a propósito), deps backend
+  sincronizadas, sin marca de IA ni código simulado en backend, sin
+  ficheros que limpiar.
+- Ficheros: `cmd/engine/{pprof.go,pprof_test.go,flags.go,run.go}`,
+  `scripts/dev-tests/bench_nightly.sh`,
+  `.github/workflows/bench-nightly.yml`, `TODO.md`,
+  `changelog.d/bench-pprof.md`, `sensor/src/collector.rs`,
+  `sensor/src/collector/*`, kit (`TASKS.md`, `WORKLOG.md`,
+  `docs/agentes/03-pulimiento/*`).
+- Contratos/decisiones para otros: `-pprof-dir` es opt-in y no abre
+  puertos (directorios 0700) —nota para Seguridad C/D si algún día se
+  automatiza fuera del bench; el artefacto `bench-pprof` del nightly
+  queda como evidencia para POL-2 (que el log estructurado no añada
+  coste al camino caliente) y para el hallazgo de rendimiento
+  `forensic.(*Recorder).evictOldFiles` (~29 % CPU rings en sandbox:
+  confirmar en runner estable). El split del collector re-exporta
+  `Capture`/`Delivery` en la raíz: `main.rs` no cambia; Implementaciones
+  B (S-2 YARA) encontrará el código del collector en submódulos
+  (`handlers.rs` para los decodificadores).
+- Pendiente: fusionar PR #41 (CI 6/6 verde) y PR #43 (Sensor verde,
+  resto en marcha); POL-1 de TODO.md queda abierto hasta M-9 (A:
+  `api.go`/`run.go`); reescritura de los 3 commits `Z User` del PR #41
+  (anterior a la directiva del Director A) — decisión del humano.
+- Bloqueos: ninguno.
+- Estado en TASKS.md: P-3 en revisión (PR #41) · S-5 en revisión
+  (PR #43)

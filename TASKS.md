@@ -70,20 +70,3 @@ elige otra libre de tu rol. Al fusionarse el PR, el humano la marca `hecha`.
 | M-9 | POL-1: dividir `internal/api/api.go` y `cmd/engine/run.go`; POL-2 logs con `log/slog` | AG-1 | — | Calidad | libre |
 | S-5 | POL-1: dividir `sensor/src/collector.rs` sin cambiar comportamiento | AG-2 | — | Calidad | en revisión (PR #43) |
 | P-3 | POL-3: perfiles `pprof` del camino caliente en el benchmark nocturno (flag `-pprof-dir` del motor + artefactos del bench) | Pulimiento B (backend) | — | Calidad | en revisión (PR #41) |
-| H-6 | Pruebas de resistencia en Windows real: 24–48 h, suspensión, spool, semana de CPU/memoria | HUMANO | varias hechas | Pruebas | libre |
-| H-7 | Entrada `[v1.0.0]` del CHANGELOG, insignia del README y etiqueta `v1.0.0` | HUMANO | todo lo anterior | Pruebas | libre |
-
-## Más adelante (no arrancar sin decisión del humano)
-
-- **Ediciones lite/full** (F4): perfiles de instalación sobre un único código — AG-1 (build) + AG-4 (CI).
-- **Despliegue**: instalador MSI/EXE desde consola con CA y token, GPO/Intune — AG-4 + AG-1.
-- **Plataforma** (SET-1/SET-2, notificaciones, VIZ-4/VIZ-5, TEAM-4/5/6, IDEA-1/6/7/8/9/12): repartir entre AG-1 y AG-3 según el punto, cuando las hornadas 1–3 estén fusionadas.
-- **Escala fases A–D y varios motores**: AG-1, con diseño de PLAN-DETALLADO §4 y §7; decisión humana antes de empezar.
-
----
-
-**Nota de coordinación**: M-1 + C-2 (TEAM-3) y S-2 + M-3 (YARA) son pares
-backend↔frontend que comparten contrato. El backend abre PR primero y anota
-el contrato en WORKLOG.md; el frontend espera a ese PR. E-1..E-4 es la épica
-grande: no se empieza hasta que el humano dé el visto bueno al contrato del
-canal servidor→sensor.
