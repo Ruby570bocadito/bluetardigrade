@@ -97,9 +97,13 @@ func DecisionValid(d Decision) bool {
 
 // Limits for the free-text fields: enough for a real investigation
 // note, small enough that one hostile request cannot fatten the file.
+// MaxAssigneeLen matches MaxByLen on purpose: the assignee is the
+// same kind of value (a console account name forwarded by the proxy),
+// and two limits mean one more thing to explain for no extra safety.
 const (
-	MaxNoteLen = 2000
-	MaxByLen   = 200
+	MaxNoteLen     = 2000
+	MaxByLen       = 200
+	MaxAssigneeLen = MaxByLen
 )
 
 // ErrPersistFailed marks the Set errors that mean "in-memory state
@@ -126,13 +130,25 @@ func Valid(s Status) bool {
 // one alert, not a delta: every Set replaces the entry for its alert,
 // so omitted optional fields (decision, note, by) clear. At is
 // RFC 3339 UTC (Nano precision).
+//
+// The assignment trio (Assignee, AssignedBy, AssignedAt) is the one
+// exception to the replace doctrine, on purpose: assignment is a
+// DIFFERENT concern from triage (TEAM-3). Recognizing or closing an
+// alert must never silently unassign it — a mixed replace would make
+// every triage write echo an assignee it does not know, which is the
+// exact accidental-merge the replace semantics exist to prevent. The
+// trio changes only through Assign (the /assign endpoints), which
+// replaces all three together; assignee "" clears them.
 type Entry struct {
-	AlertID  string   `json:"alert_id"`
-	Status   Status   `json:"status"`
-	Decision Decision `json:"decision,omitempty"`
-	Note     string   `json:"note,omitempty"`
-	By       string   `json:"by,omitempty"`
-	At       string   `json:"at"`
+	AlertID    string   `json:"alert_id"`
+	Status     Status   `json:"status"`
+	Decision   Decision `json:"decision,omitempty"`
+	Note       string   `json:"note,omitempty"`
+	By         string   `json:"by,omitempty"`
+	At         string   `json:"at"`
+	Assignee   string   `json:"assignee,omitempty"`
+	AssignedBy string   `json:"assigned_by,omitempty"`
+	AssignedAt string   `json:"assigned_at,omitempty"`
 }
 
 type fileFormat struct {
@@ -192,9 +208,10 @@ func New(path string) (*Store, error) {
 // store. The entry REPLACES whatever the alert had before: omitted
 // optional fields (decision, note, by) clear — the request is the
 // full new state, never a partial patch, so two operators cannot
-// accidentally merge their views. Validation errors (status,
-// decision, field lengths) are returned, not swallowed: the API turns
-// them into 400s.
+// accidentally merge their views. The assignment trio is the
+// documented exception: it survives untouched (see Entry). Validation
+// errors (status, decision, field lengths) are returned, not
+// swallowed: the API turns them into 400s.
 func (s *Store) Set(id string, st Status, decision Decision, note, by string) (Entry, error) {
 	if id == "" {
 		return Entry{}, errors.New("lifecycle: empty alert id")
@@ -215,6 +232,11 @@ func (s *Store) Set(id string, st Status, decision Decision, note, by string) (E
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Assignment outlives triage writes: carry the trio over (see
+	// Entry for why this is replace-safe rather than a patch).
+	if prev, ok := s.entries[id]; ok {
+		e.Assignee, e.AssignedBy, e.AssignedAt = prev.Assignee, prev.AssignedBy, prev.AssignedAt
+	}
 	if _, exists := s.entries[id]; !exists {
 		s.order = append(s.order, id)
 	}
@@ -230,6 +252,54 @@ func (s *Store) Set(id string, st Status, decision Decision, note, by string) (E
 		// The in-memory state is already updated: serving the new
 		// status is still correct while the process lives, but the
 		// operator must know it will NOT survive a restart.
+		return e, fmt.Errorf("%w: %w", ErrPersistFailed, err)
+	}
+	return e, nil
+}
+
+// Assign sets the assignment trio of one alert and persists the
+// store: assignee is who owns the triage now, by is who performed the
+// (re)assignment, at is the engine clock. An empty assignee CLEARS the
+// assignment (unassign); the triage fields of the entry (status,
+// decision, note, by) survive untouched — assigning is not triaging.
+// An alert with no entry yet gets one with the implicit status "new",
+// so an assignment is visible in List()-based reports without a
+// triage write. Validation errors are returned, not swallowed: the
+// API turns them into 400s.
+func (s *Store) Assign(id, assignee, by string) (Entry, error) {
+	if id == "" {
+		return Entry{}, errors.New("lifecycle: empty alert id")
+	}
+	if len(assignee) > MaxAssigneeLen {
+		return Entry{}, fmt.Errorf("lifecycle: assignee longer than %d characters", MaxAssigneeLen)
+	}
+	if len(by) > MaxByLen {
+		return Entry{}, fmt.Errorf("lifecycle: by longer than %d characters", MaxByLen)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.entries[id]
+	if !ok {
+		e = Entry{AlertID: id, Status: StatusNew, At: time.Now().UTC().Format(time.RFC3339Nano)}
+		s.order = append(s.order, id)
+	}
+	if assignee == "" {
+		// unassign clears the WHOLE trio: an audit by/at without an
+		// assignee would be a stale reference to an owner that is gone
+		e.Assignee, e.AssignedBy, e.AssignedAt = "", "", ""
+	} else {
+		e.Assignee, e.AssignedBy, e.AssignedAt = assignee, by, time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	s.entries[id] = e
+	// FIFO eviction BEFORE writing keeps the file at or under the cap
+	// even when entries churn (same rationale as Set).
+	for len(s.order) > MaxEntries {
+		oldest := s.order[0]
+		s.order = s.order[1:]
+		delete(s.entries, oldest)
+	}
+	if err := s.persistLocked(); err != nil {
 		return e, fmt.Errorf("%w: %w", ErrPersistFailed, err)
 	}
 	return e, nil

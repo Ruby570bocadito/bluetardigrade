@@ -255,3 +255,116 @@ func TestDecisionPersistenceAndBackwardsCompat(t *testing.T) {
 		t.Fatal("file with an invalid decision accepted")
 	}
 }
+
+func TestAssignFlow(t *testing.T) {
+	s, _ := New("") // memory-only
+	id := "abcdef0123456789"
+
+	// assign on an alert with no entry: an implicit-new entry is born
+	// so the assignment is visible to List()-based reporting
+	e, err := s.Assign(id, "ana", "carlos")
+	if err != nil {
+		t.Fatalf("Assign: %v", err)
+	}
+	if e.Assignee != "ana" || e.AssignedBy != "carlos" || e.AssignedAt == "" {
+		t.Fatalf("assignment trio incomplete: %+v", e)
+	}
+	if e.Status != StatusNew || e.Decision != "" || e.Note != "" || e.By != "" {
+		t.Fatalf("assign must not triage: %+v", e)
+	}
+	got, ok := s.Get(id)
+	if !ok || got.Assignee != "ana" {
+		t.Fatalf("Get after assign = %+v ok=%v", got, ok)
+	}
+
+	// triage write: replaces the triage fields AND KEEPS the trio
+	// (recognizing must never silently unassign)
+	if _, err := s.Set(id, StatusAcknowledged, "", "mirando", "ana"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	got, _ = s.Get(id)
+	if got.Status != StatusAcknowledged || got.Note != "mirando" {
+		t.Fatalf("triage lost: %+v", got)
+	}
+	if got.Assignee != "ana" || got.AssignedBy != "carlos" || got.AssignedAt == "" {
+		t.Fatalf("assignment did not survive the triage write: %+v", got)
+	}
+
+	// reassign: the trio is replaced together
+	e, err = s.Assign(id, "bruno", "carlos")
+	if err != nil {
+		t.Fatalf("reassign: %v", err)
+	}
+	if e.Assignee != "bruno" || e.Status != StatusAcknowledged || e.Note != "mirando" {
+		t.Fatalf("reassign damaged triage: %+v", e)
+	}
+
+	// unassign: trio cleared, triage intact
+	e, err = s.Assign(id, "", "carlos")
+	if err != nil {
+		t.Fatalf("unassign: %v", err)
+	}
+	if e.Assignee != "" || e.AssignedBy != "" || e.AssignedAt != "" {
+		t.Fatalf("unassign left traces: %+v", e)
+	}
+	got, _ = s.Get(id)
+	if got.Assignee != "" || got.Status != StatusAcknowledged {
+		t.Fatalf("unassign state = %+v", got)
+	}
+
+	// validation: lengths and empty id
+	if _, err := s.Assign("", "ana", "carlos"); err == nil {
+		t.Fatal("empty id accepted")
+	}
+	if _, err := s.Assign(id, strings.Repeat("x", MaxAssigneeLen+1), ""); err == nil {
+		t.Fatal("oversized assignee accepted")
+	}
+	if _, err := s.Assign(id, "ana", strings.Repeat("x", MaxByLen+1)); err == nil {
+		t.Fatal("oversized by accepted")
+	}
+}
+
+func TestAssignPersistsAndReloads(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lifecycle.json")
+	s, err := New(path)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	id := "abcdef0123456789"
+	if _, err := s.Set(id, StatusClosed, DecisionFalsePositive, "fp", "ana"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if _, err := s.Assign(id, "bruno", "carlos"); err != nil {
+		t.Fatalf("Assign: %v", err)
+	}
+	reloaded, err := New(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	e, ok := reloaded.Get(id)
+	if !ok {
+		t.Fatal("entry lost after reload")
+	}
+	if e.Assignee != "bruno" || e.AssignedBy != "carlos" || e.AssignedAt == "" {
+		t.Fatalf("assignment did not survive the file: %+v", e)
+	}
+	if e.Status != StatusClosed || e.Decision != DecisionFalsePositive {
+		t.Fatalf("triage did not survive the file: %+v", e)
+	}
+
+	// a PRE-ASSIGNMENT file (entries without the trio) loads untouched:
+	// the format stays version 1 and old engines can still read what
+	// this one writes
+	old := `{"version":1,"entries":[{"alert_id":"0123456789abcdef","status":"closed","by":"ops","at":"2026-10-05T10:00:00Z"}]}`
+	oldPath := filepath.Join(t.TempDir(), "old.json")
+	if err := os.WriteFile(oldPath, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s2, err := New(oldPath)
+	if err != nil {
+		t.Fatalf("pre-assignment file rejected: %v", err)
+	}
+	if e, ok := s2.Get("0123456789abcdef"); !ok || e.Assignee != "" {
+		t.Fatalf("pre-assignment entry = %+v ok=%v", e, ok)
+	}
+}

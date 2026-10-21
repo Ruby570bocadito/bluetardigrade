@@ -100,6 +100,10 @@ y cuentas: [OPERATIONS](docs/OPERATIONS.md#console-accounts-roles-and-audit).
 - [ ] **Asignar alertas** (TEAM-3): responsable en el ciclo de vida del motor,
   vista «Mis alertas», cola sin asignar, reasignación y asignación en lote desde
   la barra de selección.
+  *(Motor listo: `POST /api/alerts/{id}/assign`, `POST /api/alerts/assign-batch`,
+  filtros `assignee=`/`unassigned=` en `GET /api/alerts` y contrato M-1→C-2
+  publicado en `docs/agentes/02-implementaciones/ronda_2026-10-21_19h50_A.md`.
+  Falta la consola — C-2.)*
 - [ ] **Avisos al correo y al móvil.** El motor ya envía las alertas a Slack,
   Telegram y correo (`-notify`); `sf-start` ya pasa el fichero
   (`tools\config\notify.yaml`, con `notify.example.yaml` de plantilla) y
