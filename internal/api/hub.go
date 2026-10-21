@@ -275,7 +275,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	// read-only SQL console (M-4): admin surface, armed with
 	// -api-db-query; scoped accounts never reach it (a raw SELECT
 	// cannot honor host-group scoping)
-	mux.HandleFunc("POST /api/db/query", unscopedOnly("La consulta SQL de la base de datos", h.handleDbQuery))
+	mux.HandleFunc("POST /api/db/query", unscopedOnly("La consulta SQL de la base de datos", h.handleDBQuery))
 	mux.HandleFunc("GET /api/sequences", h.handleSequences)
 	mux.HandleFunc("GET /api/fleet", h.handleFleet)
 	mux.HandleFunc("GET /api/groups", h.handleGroups)

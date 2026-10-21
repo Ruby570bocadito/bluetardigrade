@@ -55,15 +55,15 @@ type dbQueryReply struct {
 	DurationMS int64    `json:"duration_ms"`
 }
 
-// EnableDbQuery arms POST /api/db/query. Opt-in like the write surface;
+// EnableDBQuery arms POST /api/db/query. Opt-in like the write surface;
 // call before Run (only the startup path in cmd/engine arms it).
-func (h *Hub) EnableDbQuery() {
+func (h *Hub) EnableDBQuery() {
 	h.mu.Lock()
 	h.dbQueryArmed = true
 	h.mu.Unlock()
 }
 
-func (h *Hub) handleDbQuery(w http.ResponseWriter, r *http.Request) {
+func (h *Hub) handleDBQuery(w http.ResponseWriter, r *http.Request) {
 	if !h.dbQueryArmed {
 		writeErr(w, http.StatusForbidden, "the SQL query surface is disabled: restart the engine with -api-db-query (or SF_API_DB_QUERY=1) to allow database queries")
 		return
@@ -80,7 +80,7 @@ func (h *Hub) handleDbQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	statement, err := guardSQL(req.SQL)
 	if err != nil {
-		h.auditDbQuery(r, req.SQL, "rejected", 0, 0, err.Error())
+		h.auditDBQuery(r, req.SQL, "rejected", 0, 0, err.Error())
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -106,15 +106,15 @@ func (h *Hub) handleDbQuery(w http.ResponseWriter, r *http.Request) {
 	ms := time.Since(start).Milliseconds()
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
-			h.auditDbQuery(r, statement, "error", 0, ms, "timeout")
+			h.auditDBQuery(r, statement, "error", 0, ms, "timeout")
 			writeErr(w, http.StatusRequestTimeout, "query exceeded its time budget: add filters, narrow the range or raise timeout_ms (max 30000)")
 			return
 		}
-		h.auditDbQuery(r, statement, "error", 0, ms, oneLine(err.Error()))
+		h.auditDBQuery(r, statement, "error", 0, ms, oneLine(err.Error()))
 		writeErr(w, http.StatusBadRequest, "query failed: "+oneLine(err.Error()))
 		return
 	}
-	h.auditDbQuery(r, statement, "ok", len(rows), ms, "")
+	h.auditDBQuery(r, statement, "ok", len(rows), ms, "")
 	writeJSON(w, dbQueryReply{
 		Columns:    cols,
 		Rows:       rows,
@@ -124,12 +124,12 @@ func (h *Hub) handleDbQuery(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// auditDbQuery records one attempt. Rejections and failures are audited
+// auditDBQuery records one attempt. Rejections and failures are audited
 // like successes — the trail answers "who ran what" including attempts.
 // The statement text is trimmed to the audit cap; a store that cannot
 // take the row is a log line, never a reason to fail a query that
 // already ran.
-func (h *Hub) auditDbQuery(r *http.Request, statement, status string, rows int, ms int64, failure string) {
+func (h *Hub) auditDBQuery(r *http.Request, statement, status string, rows int, ms int64, failure string) {
 	st := h.store
 	if st == nil {
 		return
