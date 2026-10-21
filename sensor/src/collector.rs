@@ -16,7 +16,10 @@
 //     event itself carries no key name), then limited to the keys
 //     detections read (netreg.rs) and repeated
 //     DNS queries are reported once a minute (dns.rs). They only carry a
-//     PID, named through the table; DNS answers also name the domain of
+//     PID, named through the table; registry writes also carry the
+//     writer's user (its process's owner, same table) — which is what
+//     resolves a key rooted in an unseen base ("?") to that user's
+//     HKU\<SID>, and DNS answers also name the domain of
 //     the TCP connections that follow.
 //
 // Process starts carry the full image path (queried from the live
@@ -186,6 +189,12 @@ impl Shared {
             Ok(table) => table.name(pid),
             Err(_) => format!("pid {pid}"),
         }
+    }
+
+    /// The owner SID of a process, when a start or rundown event
+    /// carried it — the writer's hive for registry events.
+    fn process_user(&self, pid: u32) -> Option<String> {
+        self.processes.lock().ok().and_then(|table| table.user(pid))
     }
 
     fn emit(&self, event: &EventJson) {
@@ -720,16 +729,18 @@ fn handle_process(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &Sh
         Some((path, name)) => (Some(path), name),
         None => (None, procinfo::process_name(&short_name, command_line.as_deref().unwrap_or(""))),
     };
+    // owner of the process (the kernel's WBEM SID), not the account
+    // that runs the sensor; starts and the rundown both carry it (the
+    // rundown covers the processes already running, whose registry
+    // writes the netreg session still reports)
+    let user = parser.try_parse::<Vec<u8>>("UserSID").ok().and_then(|b| procinfo::sid_from_wbem(&b));
     if let Ok(mut table) = ctx.processes.lock() {
-        table.insert(pid, name.clone());
+        table.insert(pid, name.clone(), user.clone());
     }
     if opcode != OPCODE_PROCESS_START {
         return; // rundown: names only, these processes did not just start
     }
     let ppid = parser.try_parse::<u32>("ParentId").unwrap_or(0);
-    // owner of the NEW process (the kernel's WBEM SID), not the account
-    // that runs the sensor
-    let user = parser.try_parse::<Vec<u8>>("UserSID").ok().and_then(|b| procinfo::sid_from_wbem(&b));
     let event = EventJson {
         id: normalize::new_uuid(),
         timestamp: record_time(record),
@@ -957,8 +968,19 @@ fn handle_registry(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &S
             let key_object = pointer("KeyObject");
             let key_name = parser.try_parse::<String>("KeyName").unwrap_or_default();
             let value_name = parser.try_parse::<String>("ValueName").unwrap_or_default();
-            let value = match (parser.try_parse::<u32>("Type"), parser.try_parse::<Vec<u8>>("CapturedData")) {
-                (Ok(reg_type), Ok(data)) => netreg::registry_value(reg_type, &data),
+            // The provider's template prefixes the data (stable since
+            // Windows 7): DataSize is the value's real size and
+            // CapturedDataSize how many bytes the event carries, so a
+            // capture of zero means the data did not make it into the
+            // event — no value is invented from an empty capture.
+            let reg_type = parser.try_parse::<u32>("Type").ok();
+            let data_size = parser.try_parse::<u32>("DataSize").ok();
+            let captured_size = parser.try_parse::<u16>("CapturedDataSize").ok();
+            let captured = parser.try_parse::<Vec<u8>>("CapturedData").ok();
+            let captured_len = captured.as_ref().map(Vec::len);
+            let value = match (reg_type, captured_size, captured) {
+                (Some(_), Some(0), _) => None,
+                (Some(reg_type), _, Some(data)) => netreg::registry_value(reg_type, &data),
                 _ => None,
             };
             let known = if !key_name.trim_matches(char::from(0)).trim().is_empty() {
@@ -970,7 +992,10 @@ fn handle_registry(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &S
                 let hit = watched.lock().is_ok_and(|w| w.contains(&key_object))
                     || known.as_deref().is_some_and(|k| k.to_ascii_lowercase().contains(fragment.as_str()));
                 if hit {
-                    eprintln!("[REG] set pid={pid} obj={key_object:#x} key_name=[{key_name}] resolved=[{}] value_name=[{value_name}]", known.as_deref().unwrap_or("(waits for close)"));
+                    eprintln!(
+                        "[REG] set pid={pid} obj={key_object:#x} key_name=[{key_name}] resolved=[{}] value_name=[{value_name}] type={reg_type:?} data_size={data_size:?} captured={captured_len:?} value=[{value:?}]",
+                        known.as_deref().unwrap_or("(waits for close)"),
+                    );
                 }
             }
             let event = EventJson {
@@ -1010,10 +1035,16 @@ fn handle_registry(record: &EventRecord, schema_locator: &SchemaLocator, ctx: &S
     }
     // writes whose handle was not closed in time: without a key they
     // cannot pass the filter; --registry-all forwards them as they are
+    // (with the writer's user, when it is known)
     let expired = ctx.regkeys.lock().map(|mut names| names.expire(now)).unwrap_or_default();
     if ctx.registry_all {
-        for event in &expired {
-            ctx.emit(event);
+        for mut event in expired {
+            if event.user.is_none() {
+                if let Some(process) = &event.process {
+                    event.user = ctx.process_user(process.pid as u32);
+                }
+            }
+            ctx.emit(&event);
         }
     }
 }
@@ -1024,7 +1055,20 @@ fn finish_registry(ctx: &Shared, mut event: EventJson, kernel_key: &str) {
     let Some(registry) = event.registry.as_mut() else {
         return;
     };
-    registry.key = netreg::registry_path(kernel_key);
+    // A key rooted in a base the sensor never saw ("?\...") reads as the
+    // writing process's own hive: the root resolves to HKU\<SID> from
+    // the process's owner. The inference is declared on the event (and
+    // the writer's user rides on it), so rules and suppressions can
+    // demand it and an analyst can tell it from a seen path.
+    let user = event.process.as_ref().and_then(|p| ctx.process_user(p.pid as u32));
+    let (key, inferred_root) = netreg::registry_path_resolved(kernel_key, user.as_deref());
+    registry.key = key;
+    if let Some(root) = inferred_root {
+        event.attributes.get_or_insert_with(Default::default).insert(String::from("registry_root_inferred"), root);
+    }
+    if event.user.is_none() {
+        event.user = user;
+    }
     let value_name = registry.value_name.clone().unwrap_or_default();
     if !ctx.registry_all && !netreg::interesting_registry(&registry.key, &value_name) {
         return;
