@@ -100,6 +100,10 @@ y cuentas: [OPERATIONS](docs/OPERATIONS.md#console-accounts-roles-and-audit).
 - [ ] **Asignar alertas** (TEAM-3): responsable en el ciclo de vida del motor,
   vista «Mis alertas», cola sin asignar, reasignación y asignación en lote desde
   la barra de selección.
+  *(Motor listo: `POST /api/alerts/{id}/assign`, `POST /api/alerts/assign-batch`,
+  filtros `assignee=`/`unassigned=` en `GET /api/alerts` y contrato M-1→C-2
+  publicado en `docs/agentes/02-implementaciones/ronda_2026-10-21_19h50_A.md`.
+  Falta la consola — C-2.)*
 - [ ] **Avisos al correo y al móvil.** El motor ya envía las alertas a Slack,
   Telegram y correo (`-notify`); `sf-start` ya pasa el fichero
   (`tools\config\notify.yaml`, con `notify.example.yaml` de plantilla) y
@@ -266,12 +270,6 @@ Detalle en [docs/PRUEBAS-PENDIENTES.md](docs/PRUEBAS-PENDIENTES.md).
 
 ### Sensor
 
-- [ ] Registro, raíz `?`: resolverla con el usuario del proceso (`HKU\<SID>`) o
-  por las claves vistas bajo esa base.
-- [ ] Registro, valor escrito: enviar `registry.value_data` para que reglas y
-  supresiones puedan exigirlo (caso real: Chrome y Copilot en la clave Run).
-- [ ] El latido informa de los eventos ETW perdidos (EventsLost, BuffersLost) y
-  de los descartes del hilo de hashes.
 - [ ] Aviso en Equipos de sensores desactualizados (la versión ya va en el
   latido).
 - [ ] Credencial del sensor (`ingest.token`) cifrada con DPAPI (SEC-2).
@@ -334,7 +332,6 @@ Detalle en [docs/PRUEBAS-PENDIENTES.md](docs/PRUEBAS-PENDIENTES.md).
 - [ ] Dividir ficheros grandes sin cambiar comportamiento (POL-1):
   `internal/api/api.go`, `cmd/engine/run.go`, `sensor/src/collector.rs`.
 - [ ] Logs estructurados con `log/slog` en el motor (POL-2).
-- [ ] Perfiles `pprof` del camino caliente en el benchmark nocturno (POL-3).
 - [ ] OPERATIONS por capítulos y referencia de la API generada desde OpenAPI
   (POL-5).
 - [ ] Release con SBOM (CycloneDX) y el sensor firmado entre los artefactos

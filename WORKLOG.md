@@ -204,6 +204,43 @@ Reglas rápidas:
 - Estado en TASKS.md: en revisión (PR #40)
 
 ---
+## 2026-10-21 · AG-2 SENSOR · S-4 (parte latido) + ritual S-1 · sesión 1 (IMPL-B)
+- Hecho: el `sensor.heartbeat` informa de lo que ETW pierde (`etw_events_lost`,
+  `etw_buffers_lost` vía `ControlTraceW(EVENT_TRACE_CONTROL_QUERY)` sobre las
+  sesiones vivas, PLAN-DETALLADO §2.5) y de los descartes del hilo de hashes
+  (`hash_dropped`); contador en `emit_enriched` solo cuando el hashing estaba
+  pedido. Ritual de fusión de S-1 (el ROADMAP lo tenía pendiente de mi
+  carril): líneas fuera de TODO.md + fragmento en changelog.d/ con la
+  decisión de esquema (`registry.value`, no `value_data`).
+- Ficheros: `sensor/src/heartbeat.rs`, `sensor/src/collector.rs`,
+  `sensor/src/main.rs`, `sensor/Cargo.toml` (feature
+  `Win32_System_Diagnostics_Etw`, `Cargo.lock` intacto), `TODO.md`,
+  `changelog.d/sensor-heartbeat-loss.md`,
+  `changelog.d/sensor-registry-root.md`, `TASKS.md` (S-4 dividida: la parte
+  DPAPI/SEC-2 queda en fila propia, carril Seguridad C/D),
+  `docs/agentes/02-implementaciones/{plan_B_actual,roadmap_B,ronda_*_B}.md`.
+- Contratos/decisiones para otros: tres atributos nuevos en
+  `sensor.heartbeat`, texto decimal, SIEMPRE presentes aunque sean 0
+  (un latido que deja de llevarlos se confunde con un sensor viejo).
+  `etw_events_lost`/`etw_buffers_lost` son acumulativos por instancia de
+  sesión: una recuperación de sesión reinicia su contador (mejora futura:
+  acumular en el sensor). El motor hoy los ignora (consumo retrocompatible);
+  el aviso de subidas (severidad baja) y su vista en Equipos: AG-1/AG-3.
+  Reglas y supresiones: el valor escrito es `registry.value` (no existe
+  `registry.value_data`).
+- Pendiente: verificación conductual en Windows real (acción del humano):
+  atributos nuevos en Equipos y cruce con `logman query
+  bluetardigrade-sensor -ets`. Hallazgo para AG-4/OPS: `ci.yml` tiene
+  `on.push.branches: ain]` (los pushes a main no disparan CI). Directores:
+  commits de los PRs #34–#38 con autor `Z User <z@container>` — decisión
+  sobre su tratamiento; esta ronda firma con la identidad del historial del
+  repositorio (declarado en el informe). Sin `DISCORD_WEBHOOK_URL` en esta
+  sesión.
+- Bloqueos: ninguno.
+- Estado en TASKS.md: S-4 en revisión (PR #42)
+
+---
+
 ## 2026-10-21 · Pulimiento B (backend) · P-3 + S-5 · sesión 1
 - Hecho: ronda completa del sistema nuevo (informe en
   `docs/agentes/03-pulimiento/ronda_2026-10-21_19h15_B.md`). (1) **P-3

@@ -818,7 +818,18 @@ paths:
         (`false_positive`, `authorized_activity` or
         `confirmed_incident`, present once a verdict is recorded), and
         `status_note`, `status_by` and `status_at` when the alert has
-        been triaged via `POST /api/alerts/{id}/status`. When the engine
+        been triaged via `POST /api/alerts/{id}/status`. The assignment
+        overlay (TEAM-3) adds `assignee`, `assigned_by` and
+        `assigned_at` once the alert is owned via
+        `POST /api/alerts/{id}/assign`.
+
+        Two assignment filters narrow the list AFTER the overlay, so
+        they behave identically on both backends: `assignee=<name>`
+        («Mis alertas» — case-insensitive exact match) and
+        `unassigned=true` (the unassigned queue; the two cannot
+        combine). In `-store` mode the filter applies to the window the
+        query returns: a page may come back shorter than `limit` when
+        assigned alerts fall outside the newest `limit` rows. When the engine
         runs with `-store`, this list reads the persistent SQLite store
         (full history, subject to the configured retention) instead of the
         in-memory ring — the overlay applies in both modes.
@@ -830,6 +841,19 @@ paths:
         - $ref: '#/components/parameters/Since'
         - $ref: '#/components/parameters/Until'
         - $ref: '#/components/parameters/Q'
+        - name: assignee
+          in: query
+          description: exact (case-insensitive) assignee name — «Mis alertas» for the
+            account the console forwards
+          schema:
+            type: string
+        - name: unassigned
+          in: query
+          description: only alerts with no assignee (the unassigned queue); cannot
+            combine with assignee
+          schema:
+            type: string
+            enum: ['true', '1']
       responses:
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -1062,6 +1086,131 @@ paths:
                 properties:
                   error:
                     type: string
+  /api/alerts/{id}/assign:
+    post:
+      tags: [telemetry]
+      operationId: assignAlert
+      summary: Assign (or unassign) the operator who owns one alert's triage (TEAM-3)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The write surface of the assignment half of the lifecycle:
+        WHO owns the triage, as opposed to status (WHERE the triage
+        sits). `assignee` is the operator name; the empty string
+        UNASSIGNS. Reassigning is assigning over — no separate
+        operation. Assigning does NOT triage: the status, decision,
+        note and by of the entry survive untouched, and a closed alert
+        can be handed back for review.
+
+        The target alert does not need to be in the 256-entry ring
+        (same standard as the triage endpoint): an unseen id records
+        its assignment for when the alert shows up. The lifecycle
+        store is the source of truth; without `-lifecycle` assignments
+        live in memory only. Success broadcasts an `alert_lifecycle`
+        SSE frame (the payload now carries the assignment fields), so
+        «Mis alertas» and the unassigned queue update without polling.
+
+        Assignment trio is preserved across triage writes:
+        POST /api/alerts/{id}/status never clears it.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: alert id (16 lowercase hex characters, the `id` field of the alert)
+          schema:
+            type: string
+            pattern: '^[0-9a-f]{16}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertAssign'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Native API writes reject a foreign or malformed browser Origin
+            and Sec-Fetch-Site cross-site. Originless CLI clients remain supported.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: The stored lifecycle entry with the new assignment trio
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertLifecycle'
+        '404':
+          description: A scoped caller (X-SF-Scope) naming an alert outside its groups
+            — answered like an unknown id, so scope does not leak existence.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '400':
+          description: |
+            Malformed alert id, invalid JSON body, or assignee/by over
+            their length limits. The JSON body names the problem
+            (`{"error":"..."}`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/alerts/assign-batch:
+    post:
+      tags: [telemetry]
+      operationId: assignAlertsBatch
+      summary: Assign (or unassign) a list of alerts in one request (TEAM-3)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The console's selection-bar write: up to 500 alert ids with one
+        assignee. Deliberately NOT atomic — the result splits per id
+        (`assigned` / `failed`) and the status stays 200 either way, so
+        one stale id never voids the selection. Unlike the single
+        route, EVERY id must name a real alert (ring or store): a bulk
+        write that succeeded on garbage ids would fill the store with
+        phantom assignments; the per-id `failed` entries are the
+        console's signal that its selection went stale. Scoped callers
+        (X-SF-Scope) additionally cannot touch alerts outside their
+        groups; those ids fail as `unknown alert id`, the same answer
+        the single route gives, so scope does not leak existence.
+        Every successful id broadcasts its own `alert_lifecycle` frame.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertAssignBatch'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Native API writes reject a foreign or malformed browser Origin
+            and Sec-Fetch-Site cross-site. Originless CLI clients remain supported.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: Per-id outcome (assigned ids and per-id failures)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertAssignBatchResult'
+        '400':
+          description: |
+            Invalid JSON body, empty `ids`, more than 500 ids, or
+            assignee/by over their length limits. The JSON body names
+            the problem (`{"error":"..."}`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/scenarios:
     get:
       tags: [scenarios]
@@ -3699,7 +3848,10 @@ components:
         The `status*` fields are the lifecycle overlay merged by
         GET /api/alerts (and the alerts export): `status` is always
         present there (`new` when no operator decision exists), the
-        rest appear once the alert has been triaged. The raw payloads
+        rest appear once the alert has been triaged. The assignment
+        overlay (TEAM-3) adds `assignee`, `assigned_by` and
+        `assigned_at` on the same merge once the alert has been owned
+        via POST /api/alerts/{id}/assign. The raw payloads
         (log line, webhook, SSE alert frames) carry no status fields —
         an alert raised seconds ago is new by definition.
       required:
@@ -3794,6 +3946,83 @@ components:
           type: string
           format: date-time
           description: when the status was recorded
+        assignee:
+          type: string
+          description: |
+            operator who owns the triage of this alert (assignment
+            overlay, present once assigned via
+            POST /api/alerts/{id}/assign). Assignment is WHO owns the
+            triage, status is WHERE the triage sits: recognizing or
+            closing never clears it, and unassigning removes all three
+            assignment fields at once.
+        assigned_by:
+          type: string
+          description: who performed the (re)assignment (free text, informational)
+        assigned_at:
+          type: string
+          format: date-time
+          description: when the (re)assignment was recorded
+    AlertAssign:
+      type: object
+      description: |
+        Body of POST /api/alerts/{id}/assign. An empty `assignee`
+        UNASSIGNS; the same body shape without `ids` is the single
+        route. `by` names who performed the action (informational —
+        the API has a single shared bearer token).
+      properties:
+        assignee:
+          type: string
+          maxLength: 200
+          description: assignee name, or the empty string to unassign
+        by:
+          type: string
+          maxLength: 200
+          description: who performed the (un)assignment
+    AlertAssignBatch:
+      type: object
+      description: |
+        Body of POST /api/alerts/assign-batch: up to 500 alert ids with
+        the same assignee semantics as the single route. Every id must
+        name a real alert (no phantom assignments in bulk); the result
+        splits per id and is never atomic.
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          maxItems: 500
+          minItems: 1
+          items:
+            type: string
+            pattern: '^[0-9a-f]{16}$'
+        assignee:
+          type: string
+          maxLength: 200
+          description: assignee name, or the empty string to unassign
+        by:
+          type: string
+          maxLength: 200
+          description: who performed the (un)assignment
+    AlertAssignBatchResult:
+      type: object
+      description: Per-id outcome of a batch assignment. HTTP 200 either
+        way — the caller asked for independent writes, not a transaction.
+      required: [assigned, failed]
+      properties:
+        assigned:
+          type: array
+          items:
+            type: string
+            pattern: '^[0-9a-f]{16}$'
+        failed:
+          type: array
+          items:
+            type: object
+            required: [id, error]
+            properties:
+              id:
+                type: string
+              error:
+                type: string
     AlertStatusUpdate:
       type: object
       required: [status]
@@ -3899,6 +4128,17 @@ components:
           type: string
           format: date-time
           description: RFC 3339 UTC timestamp of the decision
+        assignee:
+          type: string
+          description: operator who owns the triage; the assignment trio changes only
+            through the /assign routes and survives triage writes
+        assigned_by:
+          type: string
+          description: who performed the (re)assignment
+        assigned_at:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC timestamp of the (re)assignment
     Rule:
       type: object
       required:

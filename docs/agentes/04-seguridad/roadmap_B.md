@@ -12,21 +12,58 @@ Instancia: 04-seguridad [B] · Primera ronda: 2026-10-21.
   `alert-notify.ts`, `use-engine-stream.ts`, replay del PR #28 en
   `internal/api`/`internal/risk` (nivel código; la prueba física es del
   humano). Ver informe `ronda_2026-10-21_18h54_B.md`.
+- Ronda 2 (2026-10-21): carril sensor completo (reparto confirmado con A,
+  que retiró su punto 3 tras leer mi plan `aa81f88`):
+  - **Corregido** `transport.rs`: el stream de eventos restauraba
+    «blocking semantics» tras el handshake → un motor que acepta TCP y
+    deja de leer bloqueaba el hilo de entrega indefinidamente (el stop
+    no se consultaba: el apagado perdía la cola en vez de volcarla al
+    spool y los latidos se congelaban → falsos «sin señal»). Ahora los
+    writes llevan techo de 30 s (`STREAM_WRITE_TIMEOUT`), reads siguen
+    en bloqueo; `set_stream_timeouts` sustituye al `set_timeouts(None)`
+    (método retirado por dead code).
+  - **Corregido** `enrollment.rs`: la credencial ahora se limpia a disco
+    (`sync_all`) antes del rename atómico — un corte de luz en la
+    ventana de enrolamiento dejaba una credencial rota que inutilizaba
+    cada arranque posterior con el token de enrolamiento ya borrado.
+  - Regresión POL-1 (splits `877e378`/`088eaaa`): revisados orquestador
+    `run.go`, `run_pipeline.go` (drain fiel al original), `run_background.go`
+    (shutdown watch, sweeps, watcher de flota con reloj de suspensión) y
+    `run_ingest.go` (credenciales/identidades/enrolamiento) — sin
+    desviaciones funcionales halladas.
+  - Correlador (`internal/correlate/observe.go`): pase estático sin
+    defectos (re-arm con `delete`, entrega fuera del mutex, tope de
+    estados con `reclaimLocked`, refresco solo con hits más nuevos).
+    Dejo constancia para A: el «colador» ya tiene esta pasada estática.
+  - Fragmento `changelog.d/sensor-transport-write-ceiling.md`.
+  Ver informe `ronda_2026-10-21_19h35_B.md`.
 
 ## A medias
 
-- Nada a medias: el cambio entró completo y con la suite en verde.
+- Nada a medias: ambos fixes entraron completos y con la batería Rust
+  replicada en local (check+clippy host y cross Windows, 38/38 tests).
+  La suite Go no se corrió en esta sesión (toolchain no disponible;
+  código Go sin tocar — CI la cubre en el push).
 
 ## Siguiente en mi backlog
 
-1. Carril sensor (reparto acordado con Seguridad A, que deja auditada la
-   vía de aviso de consola): `transport.rs`, `heartbeat.rs` y
-   `enrollment.rs` desde bugs funcionales — reconexiones, spool, alta.
-2. Revisión de bugs funcionales del merge S-1 (sensor) respetando el
-   esquema decidido (`registry.value` + `user` +
-   `attributes["registry_root_inferred"]`; NO `registry.value_data`) y del
-   ritual pendiente que le toca cerrar a Implementaciones B.
-3. Correlador (`internal/correlate`) y replay del atasco con spool largo si
-   A no lo toma antes (regresión PR #28).
-4. Si C/D entrega Ajustes → Notificaciones (F3): auditar el flujo de
+1. **Pérdida silenciosa en conexión medio-muerta (detectado, no
+   corregido)**: writes que el kernel acepta en el buffer de una
+   conexión sin RST se dan por entregados y se pierden — el protocolo
+   NDJSON no tiene ack por evento. El arreglo real es de protocolo
+   (ack del motor o keepalive + ventanas): propuesta para
+   Directores/Implementaciones, no cabe en una ronda de bugs sin
+   cambiar el wire. Detalle en mi informe de ronda 2.
+2. **Pérdidas ETW invisibles**: los contadores EventsLost/BuffersLost
+   de las sesiones no llegan al latido (ferrisetw no los expone) — un
+   desborde de buffer del kernel se vería como hueco de telemetría sin
+   aviso. Terreno natural de S-4 (latido) o de una extensión de
+   ferrisetw; propuesto en el informe.
+3. `Sender::connect` trata un timeout de handshake como fatal mientras
+   `send_line` lo reintenta en runtime: inconsistente (mitigado por la
+   recuperación del servicio de Windows, restart 5s/10s/60s). Candidato
+   a normalizarse como transitorio en una próxima ronda.
+4. Correlador: la parte dinámica (tests con ventanas al límite, re-arm
+   bajo tope de estados) sigue abierta para A o para mí si A no llega.
+5. Si C/D entrega Ajustes → Notificaciones (F3): auditar el flujo de
    validación y el botón «Enviar prueba» desde bugs.

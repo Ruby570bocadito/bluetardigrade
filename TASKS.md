@@ -53,7 +53,8 @@ elige otra libre de tu rol. Al fusionarse el PR, el humano la marca `hecha`.
 | M-5 | ML beta de triaje (`-ml-beta`, explicable, aprende de veredictos) | AG-1 | M-1 y C-2 | F4 | libre |
 | M-6 | Analista IA con alcance por grupos (el hub lee el motor con el alcance de quien pregunta) | AG-1 | — | F2 | libre |
 | S-3 | Auditoría de servicios Windows con permisos débiles (DACL, rutas sin comillas), solo lectura | AG-2 | — | F2 | libre |
-| S-4 | Latido informa EventsLost/BuffersLost y descartes; `ingest.token` cifrada con DPAPI (SEC-2) | AG-2 | — | Backlog | libre |
+| S-4 | Latido informa EventsLost/BuffersLost y descartes del hilo de hashes | AG-2 | — | Backlog | en revisión (PR #42) |
+| SEC-2 | Credencial del sensor (`ingest.token`) cifrada con DPAPI | AG-2 | — | Backlog | libre |
 | C-5 | Aviso de sensores desactualizados en Equipos (versión ya va en el latido) | AG-3 | S-4 | Backlog | libre |
 | M-7 | WEF: registro de Seguridad de DC y servidores; AD-3 inicios de sesión y AD-4 cambios, retención configurable | AG-1 | O-2 | F3 | libre |
 
@@ -68,20 +69,4 @@ elige otra libre de tu rol. Al fusionarse el PR, el humano la marca `hecha`.
 | O-5 | SEC-3/SEC-6/SEC-9: revisión de entradas, cadena de suministro y privacidad (informe + parches mínimos) | AG-4 | — | Calidad | libre |
 | M-9 | POL-1: dividir `internal/api/api.go` y `cmd/engine/run.go`; POL-2 logs con `log/slog` | AG-1 | — | Calidad | libre |
 | S-5 | POL-1: dividir `sensor/src/collector.rs` sin cambiar comportamiento | AG-2 | — | Calidad | en revisión (PR #43) |
-| H-6 | Pruebas de resistencia en Windows real: 24–48 h, suspensión, spool, semana de CPU/memoria | HUMANO | varias hechas | Pruebas | libre |
-| H-7 | Entrada `[v1.0.0]` del CHANGELOG, insignia del README y etiqueta `v1.0.0` | HUMANO | todo lo anterior | Pruebas | libre |
-
-## Más adelante (no arrancar sin decisión del humano)
-
-- **Ediciones lite/full** (F4): perfiles de instalación sobre un único código — AG-1 (build) + AG-4 (CI).
-- **Despliegue**: instalador MSI/EXE desde consola con CA y token, GPO/Intune — AG-4 + AG-1.
-- **Plataforma** (SET-1/SET-2, notificaciones, VIZ-4/VIZ-5, TEAM-4/5/6, IDEA-1/6/7/8/9/12): repartir entre AG-1 y AG-3 según el punto, cuando las hornadas 1–3 estén fusionadas.
-- **Escala fases A–D y varios motores**: AG-1, con diseño de PLAN-DETALLADO §4 y §7; decisión humana antes de empezar.
-
----
-
-**Nota de coordinación**: M-1 + C-2 (TEAM-3) y S-2 + M-3 (YARA) son pares
-backend↔frontend que comparten contrato. El backend abre PR primero y anota
-el contrato en WORKLOG.md; el frontend espera a ese PR. E-1..E-4 es la épica
-grande: no se empieza hasta que el humano dé el visto bueno al contrato del
-canal servidor→sensor.
+| P-3 | POL-3: perfiles `pprof` del camino caliente en el benchmark nocturno (flag `-pprof-dir` del motor + artefactos del bench) | Pulimiento B (backend) | — | Calidad | en revisión (PR #41) |

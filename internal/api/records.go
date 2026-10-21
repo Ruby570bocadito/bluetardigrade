@@ -61,6 +61,12 @@ type alertView struct {
 	StatusNote string `json:"status_note,omitempty"` // operator free-text triage note
 	StatusBy   string `json:"status_by,omitempty"`   // who set it (unauthenticated free text)
 	StatusAt   string `json:"status_at,omitempty"`   // RFC 3339 when the status was set
+	// Assignment trio (TEAM-3): present only when the alert is
+	// assigned. assigned_by/assigned_at are the audit trail of the
+	// (re)assignment, not of the triage.
+	Assignee   string `json:"assignee,omitempty"`
+	AssignedBy string `json:"assigned_by,omitempty"`
+	AssignedAt string `json:"assigned_at,omitempty"`
 }
 
 // withLifecycle merges the store's entry (when any) into an alert.
@@ -75,6 +81,9 @@ func (h *Hub) withLifecycle(a alert.Alert) alertView {
 		v.StatusNote = e.Note
 		v.StatusBy = e.By
 		v.StatusAt = e.At
+		v.Assignee = e.Assignee
+		v.AssignedBy = e.AssignedBy
+		v.AssignedAt = e.AssignedAt
 	}
 	return v
 }
@@ -84,6 +93,14 @@ func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 	f, ok := parseRecordFilter(w, r)
 	if !ok {
 		return // 400 already written
+	}
+	// Assignment filters (TEAM-3): applied AFTER the lifecycle
+	// overlay, so they work identically on both backends. A bad
+	// value is a 400, like every other query filter here.
+	af, err := parseAssignFilter(r)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	h.mu.Lock()
 	st := h.store
@@ -107,10 +124,18 @@ func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 			out = []alert.Alert{}
 		}
 		// store mode serves the same lifecycle overlay as ring mode:
-		// triage state must not depend on which backend answered
+		// triage state must not depend on which backend answered.
+		// The assignment filter narrows the overlay window: a page
+		// may come back shorter than limit when assigned alerts fall
+		// outside the newest `limit` rows (window semantics —
+		// documented in the OpenAPI operation and the contract).
 		views := make([]alertView, 0, len(out))
 		for _, a := range out {
-			views = append(views, h.withLifecycle(a))
+			v := h.withLifecycle(a)
+			if !af.match(v) {
+				continue
+			}
+			views = append(views, v)
 		}
 		writeJSON(w, views)
 		return
@@ -122,7 +147,12 @@ func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 		// the requested time bounds (see its doc): the parse is only a
 		// prerequisite when the query actually filters by time.
 		if ts, ok := f.alertTime(a); ok && f.matchAlert(a, ts) {
-			out = append(out, h.withLifecycle(a))
+			v := h.withLifecycle(a)
+			// assignment filters count against limit only when they
+			// match, so the ring serves exactly `limit` hits
+			if af.match(v) {
+				out = append(out, v)
+			}
 		}
 	}
 	writeJSON(w, out)

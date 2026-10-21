@@ -241,6 +241,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	mux.HandleFunc("GET /api/alerts", h.handleAlerts)
 	mux.HandleFunc("GET /api/alerts/search", h.handleAlertSearch)
 	mux.HandleFunc("POST /api/alerts/{id}/status", h.handleAlertStatus)
+	h.registerAssign(mux)
 	mux.HandleFunc("GET /api/alerts/{id}/forensics", h.handleAlertForensics)
 	mux.HandleFunc("GET /api/rules", h.handleRules)
 	mux.HandleFunc("POST /api/rules/test", h.handleRuleTest)
