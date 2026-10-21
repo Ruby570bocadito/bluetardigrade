@@ -22,28 +22,36 @@ describe('operations summary', () => {
       dropped: 2, ingest_rejected: 1, webhook_failed: 1, webhook_dropped: 2,
       correlator_cap: 10, correlator_states: 10, beacons_cap: 20, beacons_tracked: 20,
     } as EngineStats
-    expect(pipelineIssues(stats)).toHaveLength(4)
-    expect(pipelineIssues({ ...stats, correlator_states: 9, beacons_tracked: 19 })).toHaveLength(2)
+    expect(pipelineIssues(stats)).toEqual([
+      { id: 'ingestDropped', count: 3 },
+      { id: 'webhookFailing', count: 3 },
+      { id: 'correlatorCap', count: 0 },
+      { id: 'beaconsCap', count: 0 },
+    ])
+    expect(pipelineIssues({ ...stats, correlator_states: 9, beacons_tracked: 19 })).toEqual([
+      { id: 'ingestDropped', count: 3 },
+      { id: 'webhookFailing', count: 3 },
+    ])
   })
   test('surfaces cumulative SQLite loss without manufacturing errors for old engines', () => {
     const stats = { dropped: 0, ingest_rejected: 0, webhook_failed: 0, webhook_dropped: 0, correlator_cap: 0 } as EngineStats
     expect(pipelineIssues(stats)).toEqual([])
     expect(pipelineIssues({ ...stats, store_enabled: true, store_write_failures: 2 })).toEqual([
-      '2 escrituras SQLite fallidas desde el arranque; revisa la evidencia persistida',
+      { id: 'storeFailures', count: 2 },
     ])
   })
   test('flags sensors reporting hosts outside their ingest identity', () => {
     const stats = { dropped: 0, ingest_rejected: 0, webhook_failed: 0, webhook_dropped: 0, correlator_cap: 0 } as EngineStats
     expect(pipelineIssues({ ...stats, ingest_identities: 4, ingest_identity_violations: 0 })).toEqual([])
     expect(pipelineIssues({ ...stats, ingest_identities: 4, ingest_identity_violations: 2 })).toEqual([
-      '2 eventos rechazados: un sensor informó de un host fuera de su identidad (posible equipo comprometido)',
+      { id: 'identityViolations', count: 2 },
     ])
   })
   test('flags evidence id conflicts (first copy kept) and stays silent at zero', () => {
     const stats = { dropped: 0, ingest_rejected: 0, webhook_failed: 0, webhook_dropped: 0, correlator_cap: 0 } as EngineStats
     expect(pipelineIssues({ ...stats, store_enabled: true, store_id_conflicts: 0 })).toEqual([])
     expect(pipelineIssues({ ...stats, store_enabled: true, store_id_conflicts: 3 })).toEqual([
-      '3 eventos reenviados con un id ya guardado y contenido distinto; se conservó la copia original (posible falsificación)',
+      { id: 'idConflicts', count: 3 },
     ])
   })
 })

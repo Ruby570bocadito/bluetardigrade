@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDots, ChartLineUp, ChartPie, Cpu, Crosshair, Desktop, FlowArrow, Flame, Graph, GridFour, ListBullets, Pulse, ShieldWarning, SquaresFour, Stack, Waveform } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
+import { useI18n } from './i18n-provider'
 import type { EngineStatus } from '@/hooks/use-engine-stream'
 import { KpiRow } from './kpi-row'
 import { OperationsOverview } from './operations-overview'
@@ -21,7 +22,7 @@ import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeadRow, TableHeader, TableRow } from '@/components/ui/table'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
 import { AnimatedContent } from '@/components/reactbits/animated-content'
-import { EntityGraphView, GraphLegend, NODE_KIND } from '@/components/charts/entity-graph'
+import { EntityGraphView, GraphLegend } from '@/components/charts/entity-graph'
 import { ConsoleTablist } from './ui-tabs'
 import { HostTacticHeatmap } from '@/components/charts/heatmap'
 import { WeekHourHeatmap } from '@/components/charts/week-hour-heatmap'
@@ -40,7 +41,7 @@ import { SEV_COLOR, SeverityIcon } from '@/components/charts/severity'
 import { eventDetail, formatTime, type EngineStats, type SfAlert, type Severity } from '@/lib/console-types'
 import { engineApiBase, readEngineJson } from '@/lib/engine-client'
 import { weekHourGrid, weekHourTableRows, weekStart, WEEK_HOUR_DAYS } from '@/lib/alert-heatmap'
-import { eventTypeMix, formatAgo, hostTacticMatrix, lifecycleTacticColumns, SEVERITIES, SEVERITY_LABEL, severityBuckets, severityCounts, tacticCoverage, topCounts, alertTactic, ATTACK_TACTICS, type LifecycleState } from '@/lib/soc-metrics'
+import { eventTypeMix, hostTacticMatrix, lifecycleTacticColumns, SEVERITIES, severityBuckets, severityCounts, tacticCoverage, topCounts, alertTactic, ATTACK_TACTICS, type LifecycleState } from '@/lib/soc-metrics'
 import { pushRiskSample, riskSeriesView, RISK_SLOT_MS, RISK_SLOTS, type RiskSample } from '@/lib/risk-history'
 import { pushOperatorState, currentSearch, dashboardTabFromParam, writeDashboardTabToSearch, DASHBOARD_TABS, type DashboardTab, type SeverityFilter } from '@/lib/url-state'
 import { scenarioCountsByTactic, fetchScenarioSurface, type ScenarioView } from '@/lib/simulation'
@@ -53,18 +54,17 @@ export type ConsoleView =
 export type HuntLens = { q?: string; sev?: SeverityFilter }
 
 const TAB_ICONS: Record<DashboardTab, React.ElementType> = { resumen: SquaresFour, deteccion: ShieldWarning, actividad: Pulse }
-const TAB_LABELS: Record<DashboardTab, string> = { resumen: 'Resumen', deteccion: 'Detección', actividad: 'Equipos y actividad' }
 
 const TIMELINE_WINDOW_MS = 60 * 60 * 1000
 const TIMELINE_BUCKET_MS = 5 * 60 * 1000
 
 // Triage lifecycle series in workflow order; categorical hues from the
 // validated palette (no severity colors: lifecycle is a workflow state,
-// not a magnitude).
-const LIFECYCLE_SERIES: { key: LifecycleState; label: string; color: string }[] = [
-  { key: 'nuevas', label: 'Nuevas', color: 'var(--series-1)' },
-  { key: 'reconocidas', label: 'Reconocidas', color: 'var(--series-3)' },
-  { key: 'cerradas', label: 'Cerradas', color: 'var(--series-2)' },
+// not a magnitude). Labels travel in the dictionary (panel.lifecycle).
+const LIFECYCLE_SERIES: { key: LifecycleState; color: string }[] = [
+  { key: 'nuevas', color: 'var(--series-1)' },
+  { key: 'reconocidas', color: 'var(--series-3)' },
+  { key: 'cerradas', color: 'var(--series-2)' },
 ]
 
 // Categorical palette order for the risk lines (capped at 4 series).
@@ -73,9 +73,10 @@ const RISK_SERIES_COLORS = ['var(--series-1)', 'var(--series-2)', 'var(--series-
 // VIZ-1 — the validated categorical palette: four named slices plus the
 // muted «Otros». More named hues would need new tokens (Pulimiento B).
 
-/** Same thresholds the engine publishes for hot hosts (A1 weights). */
-function riskLevelLabel(score: number) {
-  return score >= 20 ? 'crítico' : score >= 5 ? 'elevado' : 'bajo'
+/** Same thresholds the engine publishes for hot hosts (A1 weights); the
+ * level word travels in the dictionary (panel.risk.levels). */
+function riskLevel(score: number): 'critical' | 'elevated' | 'low' {
+  return score >= 20 ? 'critical' : score >= 5 ? 'elevated' : 'low'
 }
 
 export function Dashboard({
@@ -95,6 +96,7 @@ export function Dashboard({
   /** open the Validación view filtered by an ATT&CK tactic (SIM-3 click-through) */
   onScenarioTactic?: (slug: string) => void
 }) {
+  const { dict } = useI18n()
   const hostLens = onHost ?? (onHunt ? (host: string) => onHunt({ q: host }) : undefined)
   const { events, alerts, status, stats } = useEngine()
   const activity = useActivity(events, alerts)
@@ -118,12 +120,7 @@ export function Dashboard({
 
   return (
     <div className="space-y-5">
-      {down && (
-        <OfflineNotice
-          title="Motor offline"
-          hint="La consola no muestra datos inventados. Arranca el motor (cmd/engine) con su API en 127.0.0.1:7778 y esta pantalla se recupera sola."
-        />
-      )}
+      {down && <OfflineNotice title={dict.panel.offlineTitle} hint={dict.panel.offlineHint} />}
 
       <DashboardTabs tab={tab} onTab={setTab} />
 
@@ -210,38 +207,48 @@ export function Dashboard({
  * Uses the shared tab kit (Pulimiento B, POL-7): same look and the same
  * roving-tabindex keyboard pattern as the Detección tablist. */
 function DashboardTabs({ tab, onTab }: { tab: DashboardTab; onTab: (tab: DashboardTab) => void }) {
-  const tabs = DASHBOARD_TABS.map((id) => ({ id, label: TAB_LABELS[id], icon: TAB_ICONS[id] }))
-  return <ConsoleTablist idPrefix="panel" ariaLabel="Secciones del panel" tabs={tabs} value={tab} onSelect={onTab} />
+  const { dict } = useI18n()
+  const tabs = DASHBOARD_TABS.map((id) => ({ id, label: dict.panel.tabs[id], icon: TAB_ICONS[id] }))
+  return <ConsoleTablist idPrefix="panel" ariaLabel={dict.panel.tabsAria} tabs={tabs} value={tab} onSelect={onTab} />
 }
 
 /** Sensor activity of the received window (full-width card of the
  * Equipos y actividad tab). */
 function ActivityCard({ activity, eventsCount, down }: { activity: ReturnType<typeof useActivity>; eventsCount: number; down: boolean }) {
+  const { dict } = useI18n()
+  const ago = (ms: number) => {
+    if (ms < 1000) return dict.panel.ago.now
+    const s = Math.round(ms / 1000)
+    if (s < 60) return dict.panel.ago.s(s)
+    const m = Math.round(s / 60)
+    if (m < 60) return dict.panel.ago.m(m)
+    return dict.panel.ago.h(Math.round(m / 60))
+  }
   return (
     <ChartCard
-      title="Actividad del sensor"
-      subtitle="Eventos por intervalo de 5 s en los últimos 4 minutos, con las alertas del periodo en la franja inferior"
+      title={dict.panel.activity.title}
+      subtitle={dict.panel.activity.subtitle}
       icon={Pulse}
       legend={[
-        { key: 'events', label: 'Eventos', color: 'var(--series-1)', shape: 'line' },
+        { key: 'events', label: dict.panel.activity.legendEvents, color: 'var(--series-1)', shape: 'line' },
         ...SEVERITIES.filter((s) => activity.markers.some((m) => m.color === SEV_COLOR[s])).map((s) => ({
-          key: s, label: 'Alerta ' + SEVERITY_LABEL[s].toLowerCase(), color: SEV_COLOR[s],
+          key: s, label: dict.panel.activity.legendAlert(dict.panel.sevLower[s]), color: SEV_COLOR[s],
         })),
       ]}
       table={{
-        caption: 'Eventos y alertas por intervalo de 5 segundos',
-        columns: ['Intervalo', 'Eventos', 'Alertas'],
+        caption: dict.panel.activity.tableCaption,
+        columns: [dict.panel.activity.colInterval, dict.panel.activity.colEvents, dict.panel.activity.colAlerts],
         rows: activity.points.slice().reverse().map((p) => [
-          formatAgo(activity.now - p.end),
+          ago(activity.now - p.end),
           p.value,
           activity.markers.filter((m) => m.t >= p.start && m.t < p.end).length,
         ]),
       }}
       footer={
         <span className="flex flex-wrap gap-x-4">
-          <span>Muestra del búfer del cliente (últimos {eventsCount} eventos recibidos)</span>
-          <span>pico <span className="font-medium tabular-nums text-zinc-300">{activity.peak}</span> por intervalo</span>
-          <span>total <span className="font-medium tabular-nums text-zinc-300">{activity.total}</span> en 4 min</span>
+          <span>{dict.panel.activity.bufferA}{eventsCount}{dict.panel.activity.bufferB}</span>
+          <span>{dict.panel.activity.peakA}<span className="font-medium tabular-nums text-zinc-300">{activity.peak}</span>{dict.panel.activity.peakB}</span>
+          <span>{dict.panel.activity.totalA}<span className="font-medium tabular-nums text-zinc-300">{activity.total}</span>{dict.panel.activity.totalB}</span>
         </span>
       }
     >
@@ -255,24 +262,25 @@ function ActivityCard({ activity, eventsCount, down }: { activity: ReturnType<ty
  * searching for that entity (a destination searches its address).
  */
 function InvestigationGraphPanel({ onHunt, onHost }: { onHunt?: (lens: HuntLens) => void; onHost?: (host: string) => void }) {
+  const { dict } = useI18n()
   const { alerts, events, status } = useEngine()
   const graph = useMemo(() => buildEntityGraph(alerts, events), [alerts, events])
   const degree = (id: string) => graph.edges.filter((e) => e.source === id || e.target === id).length
   return (
     <ChartCard
       className="xl:col-span-2"
-      title="Grafo de investigación"
-      subtitle="Equipos, usuarios, procesos, detecciones y destinos de red de la ventana. Pulsa un nodo para ver sus alertas"
+      title={dict.panel.graph.title}
+      subtitle={dict.panel.graph.subtitle}
       icon={Graph}
       table={{
-        caption: 'Entidades del grafo de investigación',
-        columns: ['Entidad', 'Tipo', 'Conexiones', 'Alertas o eventos'],
-        rows: graph.nodes.map((n) => [n.label, NODE_KIND[n.kind].label, degree(n.id), n.weight]),
+        caption: dict.panel.graph.tableCaption,
+        columns: [dict.panel.graph.colEntity, dict.panel.graph.colType, dict.panel.graph.colConnections, dict.panel.graph.colWeight],
+        rows: graph.nodes.map((n) => [n.label, dict.charts.graph.kinds[n.kind], degree(n.id), n.weight]),
       }}
-      footer={graph.folded > 0 ? `${graph.folded} entidades menos activas quedan fuera del grafo; búscalas en la cola o en el flujo.` : 'Aristas animadas: detecciones críticas abiertas y conexiones de red observadas.'}
+      footer={graph.folded > 0 ? dict.panel.graph.footerFolded(graph.folded) : dict.panel.graph.footerPlain}
     >
       {status === 'down' ? <Unavailable /> : graph.nodes.length === 0 ? (
-        <EmptyState icon={Graph} title="Sin entidades todavía" hint="El grafo se dibuja con la primera alerta o conexión de red recibida." />
+        <EmptyState icon={Graph} title={dict.panel.graph.emptyTitle} hint={dict.panel.graph.emptyHint} />
       ) : (
         <div className="space-y-2">
           <GraphLegend graph={graph} />
@@ -280,7 +288,7 @@ function InvestigationGraphPanel({ onHunt, onHost }: { onHunt?: (lens: HuntLens)
             graph={graph}
             live
             height={430}
-            ariaLabel={`Grafo de investigación: ${graph.nodes.length} entidades y ${graph.edges.length} relaciones`}
+            ariaLabel={dict.panel.graph.aria(graph.nodes.length, graph.edges.length)}
             onSelect={onHunt ? (node) => (node.kind === 'host' && onHost ? onHost(node.label) : onHunt({ q: node.kind === 'destination' ? node.label.replace(/:\d+$/, '') : node.label })) : undefined}
           />
         </div>
@@ -291,16 +299,17 @@ function InvestigationGraphPanel({ onHunt, onHost }: { onHunt?: (lens: HuntLens)
 
 /** Alerts per host and ATT&CK tactic. */
 function HeatmapPanel({ onHost }: { onHost?: (host: string) => void }) {
+  const { dict } = useI18n()
   const { alerts, status } = useEngine()
   const matrix = useMemo(() => hostTacticMatrix(alerts), [alerts])
   return (
     <ChartCard
-      title="Equipos por táctica"
-      subtitle="Alertas de la ventana por equipo y táctica de ATT&CK"
+      title={dict.panel.heat.title}
+      subtitle={dict.panel.heat.subtitle}
       icon={GridFour}
     >
       {status === 'down' ? <Unavailable /> : matrix.hosts.length === 0 ? (
-        <EmptyState icon={GridFour} title="Sin tácticas observadas" hint="Las alertas con etiqueta de táctica ATT&CK llenan esta matriz." />
+        <EmptyState icon={GridFour} title={dict.panel.heat.emptyTitle} hint={dict.panel.heat.emptyHint} />
       ) : (
         <HostTacticHeatmap matrix={matrix} onHost={onHost} />
       )}
@@ -309,26 +318,28 @@ function HeatmapPanel({ onHost }: { onHost?: (host: string) => void }) {
 }
 
 function Unavailable() {
-  return <EmptyState icon={ChartLineUp} title="Sin conexión con el motor" hint="El gráfico vuelve en cuanto el motor responda; no se dibujan datos antiguos." />
+  const { dict } = useI18n()
+  return <EmptyState icon={ChartLineUp} title={dict.panel.unavailableTitle} hint={dict.panel.unavailableHint} />
 }
 
 /** Alerts per severity in the received window: magnitude by category. */
 function SeverityPanel({ alerts, down, onHunt }: { alerts: SfAlert[]; down: boolean; onHunt?: (lens: HuntLens) => void }) {
+  const { dict } = useI18n()
   const counts = severityCounts(alerts)
   const total = alerts.length
   return (
     <ChartCard
-      title="Alertas por severidad"
-      subtitle={`Ventana de ${total} alertas recibidas por la consola`}
+      title={dict.panel.severity.title}
+      subtitle={dict.panel.severity.subtitle(total)}
       icon={ShieldWarning}
       table={{
-        caption: 'Alertas por severidad en la ventana recibida',
-        columns: ['Severidad', 'Alertas', '% de la ventana'],
-        rows: SEVERITIES.map((s) => [SEVERITY_LABEL[s], counts[s], total ? Math.round((counts[s] / total) * 100) + ' %' : '—']),
+        caption: dict.panel.severity.tableCaption,
+        columns: [dict.panel.severity.colSeverity, dict.panel.severity.colAlerts, dict.panel.severity.colShare],
+        rows: SEVERITIES.map((s) => [dict.panel.sevLabels[s], counts[s], total ? Math.round((counts[s] / total) * 100) + ' %' : '—']),
       }}
     >
       {down ? <Unavailable /> : total === 0 ? (
-        <EmptyState icon={ShieldWarning} title="Sin alertas en la ventana" hint="Las detecciones aparecen aquí en cuanto una regla dispara." />
+        <EmptyState icon={ShieldWarning} title={dict.panel.severity.emptyTitle} hint={dict.panel.severity.emptyHint} />
       ) : (
         <BarList
           rows={SEVERITIES.map((s: Severity) => ({
@@ -336,14 +347,14 @@ function SeverityPanel({ alerts, down, onHunt }: { alerts: SfAlert[]; down: bool
             label: (
               <span className="flex items-center gap-2">
                 <SeverityIcon severity={s} size={14} />
-                {SEVERITY_LABEL[s]}
+                {dict.panel.sevLabels[s]}
               </span>
             ),
             value: counts[s],
             hint: total ? Math.round((counts[s] / total) * 100) + ' %' : undefined,
             color: SEV_COLOR[s],
             onSelect: onHunt && counts[s] > 0 ? () => onHunt({ sev: s }) : undefined,
-            selectLabel: `Ver ${counts[s]} alertas de severidad ${SEVERITY_LABEL[s].toLowerCase()}`,
+            selectLabel: dict.panel.severity.selectLabel(counts[s], dict.panel.sevLower[s]),
           }))}
         />
       )}
@@ -367,10 +378,10 @@ function donutLegend(model: ReturnType<typeof buildDonut>, colors: Record<string
   return model.slices.map((s) => ({ key: s.key, label: s.label, color: colors[s.key], value: s.value }))
 }
 
-function donutTable(model: ReturnType<typeof buildDonut>, caption: string, kind: string) {
+function donutTable(model: ReturnType<typeof buildDonut>, caption: string, kind: string, alertsCol: string, shareCol: string) {
   return {
     caption,
-    columns: [kind, 'Alertas', '% de la ventana'],
+    columns: [kind, alertsCol, shareCol],
     rows: model.entries.map((e) => [e.label, e.value, model.total ? Math.round((e.value / model.total) * 100) + ' %' : '—']),
   }
 }
@@ -378,6 +389,7 @@ function donutTable(model: ReturnType<typeof buildDonut>, caption: string, kind:
 /** VIZ-1 — donut of the received window per ATT&CK tactic (≤ 4 named
  * slices + «Otros»; the exact unfolded breakdown lives in the table). */
 function TacticDonutPanel({ alerts, down }: { alerts: SfAlert[]; down: boolean }) {
+  const { dict } = useI18n()
   const model = useMemo(() => {
     const counts = new Map<string, number>()
     for (const alert of alerts) {
@@ -387,23 +399,23 @@ function TacticDonutPanel({ alerts, down }: { alerts: SfAlert[]; down: boolean }
     }
     return buildDonut([...counts.entries()].map(([key, value]) => {
       const tactic = ATTACK_TACTICS.find((t) => t.slug === key)
-      return { key, label: tactic ? tactic.short : 'Sin táctica', value }
+      return { key, label: tactic ? tactic.short : dict.panel.sinTactica, value }
     }))
-  }, [alerts])
+  }, [alerts, dict])
   const colors = donutColors(model)
   return (
     <ChartCard
-      title="Alertas por táctica"
-      subtitle={`Composición de la ventana de ${alerts.length} alertas recibidas`}
+      title={dict.panel.donutTactic.title}
+      subtitle={dict.panel.donutTactic.subtitle(alerts.length)}
       icon={ChartPie}
       legend={donutLegend(model, colors)}
-      table={donutTable(model, 'Alertas por táctica ATT&CK (desglose completo)', 'Táctica')}
-      footer={model.fold ? `«Otros» agrupa ${model.fold.count} tácticas con ${model.fold.value} alertas; el desglose exacto está en la tabla.` : undefined}
+      table={donutTable(model, dict.panel.donutTactic.tableCaption, dict.panel.donutTactic.colKind, dict.panel.severity.colAlerts, dict.panel.severity.colShare)}
+      footer={model.fold ? dict.panel.donutTactic.footerFold(model.fold.count, model.fold.value) : undefined}
     >
       {down ? <Unavailable /> : model.total === 0 ? (
-        <EmptyState icon={ChartPie} title="Sin alertas en la ventana" hint="El donut se pinta en cuanto la consola recibe detecciones." />
+        <EmptyState icon={ChartPie} title={dict.panel.donutTactic.emptyTitle} hint={dict.panel.donutTactic.emptyHint} />
       ) : (
-        <DonutChart model={model} colors={colors} unit="alertas" ariaLabel={`Alertas por táctica: ${model.total} alertas en ${model.entries.length} tácticas`} />
+        <DonutChart model={model} colors={colors} unit={dict.panel.unitAlerts} ariaLabel={dict.panel.donutTactic.aria(model.total, model.entries.length)} />
       )}
     </ChartCard>
   )
@@ -411,28 +423,29 @@ function TacticDonutPanel({ alerts, down }: { alerts: SfAlert[]; down: boolean }
 
 /** VIZ-1 — donut of the received window per declared source. */
 function SourceDonutPanel({ alerts, down }: { alerts: SfAlert[]; down: boolean }) {
+  const { dict } = useI18n()
   const model = useMemo(() => {
     const counts = new Map<string, number>()
     for (const alert of alerts) {
       const key = alert.source?.trim() || '__sin-fuente'
       counts.set(key, (counts.get(key) ?? 0) + 1)
     }
-    return buildDonut([...counts.entries()].map(([key, value]) => ({ key, label: key === '__sin-fuente' ? 'Sin fuente' : key, value })))
-  }, [alerts])
+    return buildDonut([...counts.entries()].map(([key, value]) => ({ key, label: key === '__sin-fuente' ? dict.panel.sinFuente : key, value })))
+  }, [alerts, dict])
   const colors = donutColors(model)
   return (
     <ChartCard
-      title="Alertas por fuente"
-      subtitle={`Origen declarado en la ventana de ${alerts.length} alertas`}
+      title={dict.panel.donutSource.title}
+      subtitle={dict.panel.donutSource.subtitle(alerts.length)}
       icon={ChartPie}
       legend={donutLegend(model, colors)}
-      table={donutTable(model, 'Alertas por fuente declarada (desglose completo)', 'Fuente')}
-      footer={model.fold ? `«Otros» agrupa ${model.fold.count} fuentes con ${model.fold.value} alertas; el desglose exacto está en la tabla.` : 'La fuente la declara el sensor; «Sin fuente» son alertas sin origen declarado.'}
+      table={donutTable(model, dict.panel.donutSource.tableCaption, dict.panel.donutSource.colKind, dict.panel.severity.colAlerts, dict.panel.severity.colShare)}
+      footer={model.fold ? dict.panel.donutSource.footerFold(model.fold.count, model.fold.value) : dict.panel.donutSource.footerPlain}
     >
       {down ? <Unavailable /> : model.total === 0 ? (
-        <EmptyState icon={ChartPie} title="Sin alertas en la ventana" hint="El donut se pinta en cuanto la consola recibe detecciones." />
+        <EmptyState icon={ChartPie} title={dict.panel.donutSource.emptyTitle} hint={dict.panel.donutSource.emptyHint} />
       ) : (
-        <DonutChart model={model} colors={colors} unit="alertas" ariaLabel={`Alertas por fuente: ${model.total} alertas en ${model.entries.length} fuentes`} />
+        <DonutChart model={model} colors={colors} unit={dict.panel.unitAlerts} ariaLabel={dict.panel.donutSource.aria(model.total, model.entries.length)} />
       )}
     </ChartCard>
   )
@@ -441,34 +454,35 @@ function SourceDonutPanel({ alerts, down }: { alerts: SfAlert[]; down: boolean }
 /** VIZ-1 — donut of the machine inventory by connection state, from
  * the engine fleet endpoint the Equipos view already polls. */
 function FleetDonutPanel() {
+  const { dict } = useI18n()
   const { fleet, available, loaded } = useFleet()
   const model = useMemo(() => fleet
     ? buildDonut([
-      { key: 'online', label: 'En línea', value: fleet.online },
-      { key: 'silent', label: 'Sin señal', value: fleet.silent },
-      { key: 'idle', label: 'Inactivos', value: fleet.idle },
+      { key: 'online', label: dict.panel.donutFleet.online, value: fleet.online },
+      { key: 'silent', label: dict.panel.donutFleet.silent, value: fleet.silent },
+      { key: 'idle', label: dict.panel.donutFleet.idle, value: fleet.idle },
     ])
-    : null, [fleet])
+    : null, [fleet, dict])
   const colors: Record<string, string> = { online: 'var(--series-2)', silent: 'var(--sev-critical)', idle: 'var(--series-other)' }
   return (
     <ChartCard
-      title="Flota por estado"
-      subtitle={fleet ? `${fleet.hosts.length} equipos en el inventario del motor` : 'Inventario del motor (GET /api/fleet)'}
+      title={dict.panel.donutFleet.title}
+      subtitle={fleet ? dict.panel.donutFleet.subtitleHosts(fleet.hosts.length) : dict.panel.donutFleet.subtitleApi}
       icon={Desktop}
       legend={model ? donutLegend(model, colors) : undefined}
       table={model ? {
-        caption: 'Equipos por estado de inventario',
-        columns: ['Estado', 'Equipos', '% de la flota'],
+        caption: dict.panel.donutFleet.tableCaption,
+        columns: [dict.panel.donutFleet.colState, dict.panel.donutFleet.colHosts, dict.panel.donutFleet.colShare],
         rows: model.entries.map((e) => [e.label, e.value, model.total ? Math.round((e.value / model.total) * 100) + ' %' : '—']),
       } : undefined}
-      footer="«Sin señal» significa que el sensor dejó de enviar latido; «Inactivos», sin latido ni datos en 10 min."
+      footer={dict.panel.donutFleet.footer}
     >
       {!loaded ? (
         <SkeletonRows rows={3} />
       ) : !available || !model || model.total === 0 ? (
-        <EmptyState icon={Desktop} title="Inventario no disponible" hint="Este motor no publica la flota (GET /api/fleet) o todavía no tiene equipos; el donut aparece en cuanto haya inventario." />
+        <EmptyState icon={Desktop} title={dict.panel.donutFleet.emptyTitle} hint={dict.panel.donutFleet.emptyHint} />
       ) : (
-        <DonutChart model={model} colors={colors} unit="equipos" ariaLabel={`Flota por estado: ${model.total} equipos en el inventario`} />
+        <DonutChart model={model} colors={colors} unit={dict.panel.unitHosts} ariaLabel={dict.panel.donutFleet.aria(model.total)} />
       )}
     </ChartCard>
   )
@@ -479,35 +493,37 @@ function FleetDonutPanel() {
  * publishes three lifecycle states, so no false-positive band is drawn;
  * the footer says so instead of inventing data. */
 function TriageFlowPanel({ alerts, down }: { alerts: SfAlert[]; down: boolean }) {
+  const { dict } = useI18n()
   const model = useMemo(() => buildTriageFlow(alerts), [alerts])
+  const series = LIFECYCLE_SERIES.map((s) => ({ key: s.key, label: dict.panel.lifecycle[s.key], color: s.color }))
   return (
     <ChartCard
-      title="Flujo del triaje"
-      subtitle="Origen declarado → táctica ATT&CK → estado de triaje, en la ventana recibida"
+      title={dict.panel.triageFlow.title}
+      subtitle={dict.panel.triageFlow.subtitle}
       icon={FlowArrow}
-      legend={LIFECYCLE_SERIES.map((s) => ({ key: s.key, label: s.label, color: s.color, shape: 'rect' as const }))}
+      legend={series.map((s) => ({ key: s.key, label: s.label, color: s.color, shape: 'rect' as const }))}
       table={{
-        caption: 'Flujo del triaje: combinaciones exactas de origen, táctica y estado',
-        columns: ['Fuente', 'Táctica', 'Estado', 'Alertas'],
+        caption: dict.panel.triageFlow.tableCaption,
+        columns: [dict.panel.triageFlow.colSource, dict.panel.triageFlow.colTactic, dict.panel.triageFlow.colState, dict.panel.triageFlow.colAlerts],
         rows: model.triples.map((t) => [t.source, t.tactic, t.state, t.value]),
       }}
       footer={
         <span className="flex flex-wrap gap-x-4">
-          <span>Muestra del búfer del cliente ({model.total} alertas recibidas{model.foldedSources ? ` · ${model.foldedSources} fuentes en «Otras fuentes»` : ''}{model.foldedTactics ? ` · ${model.foldedTactics} tácticas en «Otras tácticas»` : ''})</span>
-          <span>El motor solo publica tres estados (nueva, reconocida, cerrada); el falso positivo llegará cuando la API exponga la decisión de triaje.</span>
+          <span>{dict.panel.triageFlow.bufferA}{dict.panel.triageFlow.received(model.total)}{model.foldedSources ? dict.panel.triageFlow.foldSources(model.foldedSources) : ''}{model.foldedTactics ? dict.panel.triageFlow.foldTactics(model.foldedTactics) : ''}{dict.panel.triageFlow.bufferB}</span>
+          <span>{dict.panel.triageFlow.statesNote}</span>
         </span>
       }
     >
       {down ? <Unavailable /> : model.total === 0 ? (
-        <EmptyState icon={FlowArrow} title="Sin alertas en la ventana" hint="El flujo se dibuja en cuanto la consola recibe detecciones." />
+        <EmptyState icon={FlowArrow} title={dict.panel.triageFlow.emptyTitle} hint={dict.panel.triageFlow.emptyHint} />
       ) : model.states.filter((st) => st.value > 0).length < 2 ? (
         <EmptyState
           icon={FlowArrow}
-          title={`Las ${model.total} alertas están en «${model.states.find((st) => st.value > 0)?.label ?? 'Nuevas'}»`}
-          hint="El flujo enseña cómo avanza el triaje: se dibuja cuando haya alertas en al menos dos estados. El desglose por fuente y táctica está en la tabla."
+          title={dict.panel.triageFlow.singleTitle(model.total, model.states.find((st) => st.value > 0)?.label ?? dict.panel.lifecycle.nuevas)}
+          hint={dict.panel.triageFlow.singleHint}
         />
       ) : (
-        <TriageFlowChart model={model} unit="alertas" ariaLabel={`Flujo del triaje: ${model.total} alertas desde ${model.sources.length} fuentes hacia ${model.tactics.length} tácticas y ${model.states.filter((s) => s.value > 0).length} estados`} />
+        <TriageFlowChart model={model} unit={dict.panel.unitAlerts} ariaLabel={dict.panel.triageFlow.aria(model.total, model.sources.length, model.tactics.length, model.states.filter((s) => s.value > 0).length)} />
       )}
     </ChartCard>
   )
@@ -515,6 +531,7 @@ function TriageFlowPanel({ alerts, down }: { alerts: SfAlert[]; down: boolean })
 
 /** Detections of the last hour by severity, 5-minute columns. */
 function TimelinePanel({ alerts, down }: { alerts: SfAlert[]; down: boolean }) {
+  const { dict } = useI18n()
   const [now, setNow] = useState<number | null>(null)
   useEffect(() => {
     setNow(Date.now())
@@ -528,16 +545,16 @@ function TimelinePanel({ alerts, down }: { alerts: SfAlert[]; down: boolean }) {
   return (
     <ChartCard
       className="xl:col-span-2"
-      title="Detecciones de la última hora"
-      subtitle="Alertas por severidad en intervalos de 5 minutos"
+      title={dict.panel.timeline.title}
+      subtitle={dict.panel.timeline.subtitle}
       icon={Stack}
-      legend={SEVERITIES.map((s, i) => ({ key: s, label: SEVERITY_LABEL[s], color: SEV_COLOR[s], value: counts[i] }))}
+      legend={SEVERITIES.map((s, i) => ({ key: s, label: dict.panel.sevLabels[s], color: SEV_COLOR[s], value: counts[i] }))}
       table={{
-        caption: 'Alertas por severidad en intervalos de 5 minutos durante la última hora',
-        columns: ['Intervalo', ...SEVERITIES.map((s) => SEVERITY_LABEL[s]), 'Total'],
+        caption: dict.panel.timeline.tableCaption,
+        columns: [dict.panel.timeline.colInterval, ...SEVERITIES.map((s) => dict.panel.sevLabels[s]), dict.panel.timeline.colTotal],
         rows: buckets.slice().reverse().map((b) => [`${clock(b.start)}–${clock(b.end)}`, ...SEVERITIES.map((s) => b.counts[s]), b.total]),
       }}
-      footer={`${inWindow} de ${alerts.length} alertas de la ventana caen en la última hora. Las más antiguas siguen en la cola y en el histórico.`}
+      footer={dict.panel.timeline.footer(inWindow, alerts.length)}
     >
       {down ? <Unavailable /> : now === null ? <div style={{ height: 176 }} /> : (
         <StackedColumns
@@ -547,9 +564,9 @@ function TimelinePanel({ alerts, down }: { alerts: SfAlert[]; down: boolean }) {
             detail: `${clock(b.start)} – ${clock(b.end)}`,
             values: b.counts,
           }))}
-          series={SEVERITIES.map((s) => ({ key: s, label: SEVERITY_LABEL[s], color: SEV_COLOR[s] }))}
-          ariaLabel={`Detecciones de la última hora: ${inWindow} alertas en 12 intervalos de 5 minutos`}
-          unit="alertas en total"
+          series={SEVERITIES.map((s) => ({ key: s, label: dict.panel.sevLabels[s], color: SEV_COLOR[s] }))}
+          ariaLabel={dict.panel.timeline.aria(inWindow)}
+          unit={dict.panel.unitTotal}
         />
       )}
     </ChartCard>
@@ -563,32 +580,33 @@ function TimelinePanel({ alerts, down }: { alerts: SfAlert[]; down: boolean }) {
  * weights (critical alert = 10 points): >= 20 critical, >= 5 elevated.
  */
 function HotHostsPanel({ onHost }: { onHost?: (host: string) => void }) {
+  const { dict } = useI18n()
   const { stats } = useEngine()
   const hot = stats?.hot_hosts ?? []
   const max = hot.reduce((m, h) => Math.max(m, h.score), 0)
   const level = (score: number) =>
     score >= 20
-      ? { label: 'crítico', color: 'var(--status-critical)', severity: 'critical' as const }
+      ? { label: dict.panel.hot.levels.critical, color: 'var(--status-critical)', severity: 'critical' as const }
       : score >= 5
-        ? { label: 'elevado', color: 'var(--status-warning)', severity: 'medium' as const }
-        : { label: 'bajo', color: 'var(--series-1)', severity: 'low' as const }
+        ? { label: dict.panel.hot.levels.elevated, color: 'var(--status-warning)', severity: 'medium' as const }
+        : { label: dict.panel.hot.levels.low, color: 'var(--series-1)', severity: 'low' as const }
 
   return (
     <ChartCard
-      title="Hosts calientes"
-      subtitle={`${stats?.risk_hosts_tracked ?? '—'} hosts con riesgo activo · vida media 30 min`}
+      title={dict.panel.hot.title}
+      subtitle={dict.panel.hot.subtitle(String(stats?.risk_hosts_tracked ?? '—'))}
       icon={Flame}
       table={hot.length ? {
-        caption: 'Puntuación de riesgo por host',
-        columns: ['Host', 'Puntuación', 'Alertas', 'Nivel'],
+        caption: dict.panel.hot.tableCaption,
+        columns: [dict.panel.hot.colHost, dict.panel.hot.colScore, dict.panel.hot.colAlerts, dict.panel.hot.colLevel],
         rows: hot.map((h) => [h.host, h.score.toFixed(2), h.alerts, level(h.score).label]),
       } : undefined}
-      footer="critical 10 · high 5 · medium 2 · low 1 punto por alerta. Señal de priorización, no un veredicto de compromiso."
+      footer={dict.panel.hot.footer}
     >
       {stats && hot.length === 0 ? (
-        <EmptyState icon={Flame} title="Sin riesgo activo" hint="Ningún host acumula riesgo ahora: las puntuaciones decaen solas y solo las alertas recientes las alimentan." />
+        <EmptyState icon={Flame} title={dict.panel.hot.emptyTitle} hint={dict.panel.hot.emptyHint} />
       ) : !stats ? (
-        <EmptyState icon={Flame} title="Sin datos" hint="La puntuación de riesgo llega con la telemetría del motor; sin conexión no se muestra nada." />
+        <EmptyState icon={Flame} title={dict.panel.hot.noDataTitle} hint={dict.panel.hot.noDataHint} />
       ) : (
         <ul className="space-y-1">
           {hot.map((h, i) => {
@@ -604,7 +622,7 @@ function HotHostsPanel({ onHost }: { onHost?: (host: string) => void }) {
                   <span className="w-12 text-right text-xs font-semibold tabular-nums text-zinc-50">{h.score.toFixed(1)}</span>
                 </span>
                 <Meter className="mt-1.5" value={h.score} max={max} color={lv.color} />
-                <span className="mt-1 block text-[11px] text-zinc-500">{h.alerts} alertas · visto {formatTime(h.last_seen)}</span>
+                <span className="mt-1 block text-[11px] text-zinc-500">{dict.panel.hot.seen(h.alerts, formatTime(h.last_seen))}</span>
               </>
             )
             return (
@@ -615,7 +633,7 @@ function HotHostsPanel({ onHost }: { onHost?: (host: string) => void }) {
                     <button
                       type="button"
                       onClick={() => onHost(h.host)}
-                      aria-label={`Abrir la ficha de ${h.host}: riesgo ${lv.label}, ${h.score.toFixed(1)} puntos`}
+                      aria-label={dict.panel.hot.openAria(h.host, lv.label, h.score.toFixed(1))}
                       className="block w-full rounded-md px-1.5 py-1.5 text-left transition-colors hover:bg-zinc-800/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {body}
@@ -640,6 +658,7 @@ function HotHostsPanel({ onHost }: { onHost?: (host: string) => void }) {
  * view filtered by tactic; the rest keep the alert hunt click-through.
  */
 function AttackPanel({ onHunt, onScenarioTactic }: { onHunt?: (lens: HuntLens) => void; onScenarioTactic?: (slug: string) => void }) {
+  const { dict } = useI18n()
   const { rules, alerts, status, sequences } = useEngine()
   const cells = useMemo(() => tacticCoverage(rules, alerts), [rules, alerts])
   // the library lives on disk and reloads on every engine call: fetched
@@ -663,19 +682,19 @@ function AttackPanel({ onHunt, onScenarioTactic }: { onHunt?: (lens: HuntLens) =
   const validatedScenarios = validation ? [...validation.values()].reduce((sum, n) => sum + n, 0) : 0
   return (
     <ChartCard
-      title="Cobertura MITRE ATT&CK"
-      subtitle={`${coveredOf(cells)} de 14 tácticas con reglas cargadas · intensidad = alertas de la ventana${validation ? ` · ${validatedScenarios} escenarios de laboratorio validan ${validatedTactics} tácticas` : ''}`}
+      title={dict.panel.attack.title}
+      subtitle={dict.panel.attack.subtitle(coveredOf(cells), validation ? dict.panel.attack.subtitleValidated(validatedScenarios, validatedTactics) : '')}
       icon={Crosshair}
       table={{
-        caption: 'Reglas, alertas y escenarios de validación por táctica de MITRE ATT&CK',
-        columns: ['Táctica', 'Reglas', 'Alertas', 'Escenarios'],
+        caption: dict.panel.attack.tableCaption,
+        columns: [dict.panel.attack.colTactic, dict.panel.attack.colRules, dict.panel.attack.colAlerts, dict.panel.attack.colScenarios],
         rows: cells.map((c) => [c.label, c.rules, c.alerts, validation?.get(c.slug) ?? 0]),
       }}
       footer={
         validation
-          ? 'Las celdas «N esc.» cuentan escenarios del laboratorio (telemetría inerte) que validan la táctica; pulsa una táctica validada para verlos en Validación.'
+          ? dict.panel.attack.footerValidated
           : scenarios === 'off'
-            ? 'La validación por escenario no está disponible: el motor corre sin -scenarios, la matriz muestra cobertura y alertas.'
+            ? dict.panel.attack.footerOff
             : undefined
       }
     >
@@ -697,24 +716,25 @@ function coveredOf(cells: ReturnType<typeof tacticCoverage>): number {
 }
 
 function TopRulesPanel({ alerts, down, onHunt }: { alerts: SfAlert[]; down: boolean; onHunt?: (lens: HuntLens) => void }) {
+  const { dict } = useI18n()
   const ranked = useMemo(() => topCounts(alerts, (a) => a.rule_name, 6), [alerts])
   return (
     <ChartCard
       className="flex-1"
-      title="Reglas más activas"
-      subtitle={`${ranked.distinct} reglas distintas en la ventana`}
+      title={dict.panel.topRules.title}
+      subtitle={dict.panel.topRules.subtitle(ranked.distinct)}
       icon={ListBullets}
-      table={{ caption: 'Alertas por regla en la ventana', columns: ['Regla', 'Alertas'], rows: ranked.top.map((r) => [r.key, r.count]) }}
-      footer={ranked.rest > 0 ? `${ranked.rest} alertas más en otras reglas.` : undefined}
+      table={{ caption: dict.panel.topRules.tableCaption, columns: [dict.panel.topRules.colRule, dict.panel.topRules.colAlerts], rows: ranked.top.map((r) => [r.key, r.count]) }}
+      footer={ranked.rest > 0 ? dict.panel.topRules.footer(ranked.rest) : undefined}
     >
       {down ? <Unavailable /> : (
         <BarList
           rows={ranked.top.map((r) => ({
             key: r.key, label: r.key, title: r.key, value: r.count,
             onSelect: onHunt ? () => onHunt({ q: r.key }) : undefined,
-            selectLabel: `Ver ${r.count} alertas de la regla ${r.key}`,
+            selectLabel: dict.panel.topRules.selectLabel(r.count, r.key),
           }))}
-          empty={<EmptyState icon={ListBullets} title="Sin detecciones" hint="El ranking aparece con la primera alerta." />}
+          empty={<EmptyState icon={ListBullets} title={dict.panel.topRules.emptyTitle} hint={dict.panel.topRules.emptyHint} />}
         />
       )}
     </ChartCard>
@@ -722,21 +742,22 @@ function TopRulesPanel({ alerts, down, onHunt }: { alerts: SfAlert[]; down: bool
 }
 
 function TelemetryMixPanel({ down }: { down: boolean }) {
+  const { dict } = useI18n()
   const { events } = useEngine()
   const mix = useMemo(() => eventTypeMix(events, 6), [events])
   return (
     <ChartCard
-      title="Mezcla de telemetría"
-      subtitle={`Tipos de evento en el búfer (${events.length} eventos)`}
+      title={dict.panel.mix.title}
+      subtitle={dict.panel.mix.subtitle(events.length)}
       icon={Waveform}
-      table={{ caption: 'Eventos por tipo en el búfer del cliente', columns: ['Tipo', 'Eventos'], rows: mix.top.map((r) => [r.key, r.count]) }}
-      footer={mix.rest > 0 ? `${mix.rest} eventos más de otros ${mix.distinct - mix.top.length} tipos.` : undefined}
+      table={{ caption: dict.panel.mix.tableCaption, columns: [dict.panel.mix.colType, dict.panel.mix.colEvents], rows: mix.top.map((r) => [r.key, r.count]) }}
+      footer={mix.rest > 0 ? dict.panel.mix.footer(mix.rest, mix.distinct - mix.top.length) : undefined}
     >
       {down ? <Unavailable /> : (
         <BarList
           color="var(--series-2)"
           rows={mix.top.map((r) => ({ key: r.key, label: <span className="font-mono">{r.key}</span>, value: r.count }))}
-          empty={<EmptyState icon={Waveform} title="Sin eventos todavía" hint="Conecta un sensor para ver qué tipos de telemetría llegan." />}
+          empty={<EmptyState icon={Waveform} title={dict.panel.mix.emptyTitle} hint={dict.panel.mix.emptyHint} />}
         />
       )}
     </ChartCard>
@@ -749,31 +770,33 @@ function TelemetryMixPanel({ down }: { down: boolean }) {
  * the timeline (when): this one answers "what is still open".
  */
 function LifecycleTacticPanel({ alerts, down }: { alerts: SfAlert[]; down: boolean }) {
+  const { dict } = useI18n()
   const { columns, total } = useMemo(() => lifecycleTacticColumns(alerts), [alerts])
   const byState = (s: LifecycleState) => columns.reduce((sum, c) => sum + c.values[s], 0)
   const counts = LIFECYCLE_SERIES.map((s) => byState(s.key))
+  const series = LIFECYCLE_SERIES.map((s) => ({ key: s.key, label: dict.panel.lifecycle[s.key], color: s.color }))
   return (
     <ChartCard
       className="xl:col-span-2"
-      title="Ciclo de vida por táctica"
-      subtitle="Estado de triage de las alertas de la ventana, agrupadas por táctica ATT&CK"
+      title={dict.panel.lifecycleTactic.title}
+      subtitle={dict.panel.lifecycleTactic.subtitle}
       icon={ListBullets}
-      legend={LIFECYCLE_SERIES.map((s, i) => ({ key: s.key, label: s.label, color: s.color, value: counts[i] }))}
+      legend={series.map((s, i) => ({ key: s.key, label: s.label, color: s.color, value: counts[i] }))}
       table={{
-        caption: 'Alertas por táctica ATT&CK y estado de triage',
-        columns: ['Táctica', 'Nuevas', 'Reconocidas', 'Cerradas', 'Total'],
+        caption: dict.panel.lifecycleTactic.tableCaption,
+        columns: [dict.panel.lifecycleTactic.colTactic, dict.panel.lifecycle.nuevas, dict.panel.lifecycle.reconocidas, dict.panel.lifecycle.cerradas, dict.panel.timeline.colTotal],
         rows: columns.map((c) => [c.label, c.values.nuevas, c.values.reconocidas, c.values.cerradas, c.total]),
       }}
-      footer={`${counts[0]} alertas nuevas esperan operador. Las alertas sin etiqueta de táctica aparecen como «Sin táctica»; las cerradas salen de la cola pero siguen contadas aquí.`}
+      footer={dict.panel.lifecycleTactic.footer(counts[0])}
     >
       {down ? <Unavailable /> : total === 0 ? (
-        <EmptyState icon={ListBullets} title="Sin alertas en la ventana" hint="En cuanto una regla dispare, sus alertas se apilan aquí por táctica y estado de triage." />
+        <EmptyState icon={ListBullets} title={dict.panel.lifecycleTactic.emptyTitle} hint={dict.panel.lifecycleTactic.emptyHint} />
       ) : (
         <StackedColumns
           buckets={columns.map((c) => ({ key: c.key, label: c.short, detail: c.label, values: c.values }))}
-          series={LIFECYCLE_SERIES.map((s) => ({ key: s.key, label: s.label, color: s.color }))}
-          ariaLabel={`Ciclo de vida por táctica: ${total} alertas de la ventana repartidas en ${columns.length} tácticas`}
-          unit="alertas en total"
+          series={series}
+          ariaLabel={dict.panel.lifecycleTactic.aria(total, columns.length)}
+          unit={dict.panel.unitTotal}
         />
       )}
     </ChartCard>
@@ -807,6 +830,7 @@ function useRiskHistory(stats: EngineStats | null, down: boolean): RiskSample[] 
  * is down or a host leaves the top-5: not observed is not cold.
  */
 function RiskEvolutionPanel({ down }: { down: boolean }) {
+  const { dict } = useI18n()
   const { stats, status } = useEngine()
   const history = useRiskHistory(stats, status === 'down')
   const view = useMemo(() => riskSeriesView(history), [history])
@@ -820,21 +844,21 @@ function RiskEvolutionPanel({ down }: { down: boolean }) {
     [history, view.series],
   )
   const clock = (t: number) => new Date(t).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false })
-  const tableRows = [...view.series, ...view.folded].map((h) => [h.host, h.last.toFixed(2), riskLevelLabel(h.last), h.samples])
+  const tableRows = [...view.series, ...view.folded].map((h) => [h.host, h.last.toFixed(2), dict.panel.risk.levels[riskLevel(h.last)], h.samples])
   return (
     <ChartCard
-      title="Evolución del riesgo por equipo"
-      subtitle={`Riesgo decaído del motor, muestra cada ${RISK_SLOT_MS / 1000} s · ventana de ${(RISK_SLOTS * RISK_SLOT_MS) / 60000} min`}
+      title={dict.panel.risk.title}
+      subtitle={dict.panel.risk.subtitle(RISK_SLOT_MS / 1000, (RISK_SLOTS * RISK_SLOT_MS) / 60000)}
       icon={ChartLineUp}
       legend={series.map((s) => ({ key: s.key, label: s.label, color: s.color, shape: 'line' as const }))}
       table={
         tableRows.length
-          ? { caption: 'Riesgo decaído por equipo (última muestra observada)', columns: ['Equipo', 'Último riesgo', 'Nivel', 'Muestras'], rows: tableRows }
+          ? { caption: dict.panel.risk.tableCaption, columns: [dict.panel.risk.colHost, dict.panel.risk.colLast, dict.panel.risk.colLevel, dict.panel.risk.colSamples], rows: tableRows }
           : undefined
       }
       footer={
-        (view.folded.length ? `${view.folded.length} equipos más observados quedan fuera del gráfico y están en la tabla. ` : '') +
-        'La línea se corta si el motor no publica o el equipo sale del top-5: no se interpola. Muestreo desde la apertura de la consola.'
+        (view.folded.length ? dict.panel.risk.footerFolded(view.folded.length) : '') +
+        dict.panel.risk.footerPlain
       }
     >
       {down ? (
@@ -842,16 +866,16 @@ function RiskEvolutionPanel({ down }: { down: boolean }) {
       ) : view.series.length === 0 ? (
         <EmptyState
           icon={ChartLineUp}
-          title="Sin riesgo observado aún"
-          hint="El motor publica el top-5 de riesgo decaído en /api/stats; cuando un equipo entre en la lista, su línea empieza aquí."
+          title={dict.panel.risk.emptyTitle}
+          hint={dict.panel.risk.emptyHint}
         />
       ) : (
         <LineChart
           series={series}
           slots={slots}
           height={196}
-          ariaLabel={`Evolución del riesgo por equipo: ${view.series.map((s) => s.host).join(', ')} en ${view.observed} muestras`}
-          valueLabel="riesgo"
+          ariaLabel={dict.panel.risk.aria(view.series.map((s) => s.host).join(', '), view.observed)}
+          valueLabel={dict.panel.risk.valueLabel}
           formatT={clock}
         />
       )}
@@ -931,6 +955,7 @@ function localTimeZone(): string {
  * nothing is interpolated or invented.
  */
 function AlertHeatmapPanel({ down }: { down: boolean }) {
+  const { dict } = useI18n()
   const windowFetch = useAlertWindow(down)
   const [timeZone] = useState(localTimeZone)
   const grid = useMemo(
@@ -940,9 +965,9 @@ function AlertHeatmapPanel({ down }: { down: boolean }) {
   const table =
     windowFetch.fetchedAt && grid.total > 0
       ? {
-          caption: 'Alertas por día y franja de 6 horas (hora local)',
-          columns: ['Día', '00-05', '06-11', '12-17', '18-23', 'Total'],
-          rows: weekHourTableRows(grid),
+          caption: dict.panel.weekHeat.tableCaption,
+          columns: [dict.panel.weekHeat.colDay, '00-05', '06-11', '12-17', '18-23', dict.panel.timeline.colTotal],
+          rows: weekHourTableRows(grid, dict.charts.week.daysLong, dict.panel.timeline.colTotal),
         }
       : undefined
   const fetchedClock = windowFetch.fetchedAt
@@ -950,8 +975,8 @@ function AlertHeatmapPanel({ down }: { down: boolean }) {
     : null
   return (
     <ChartCard
-      title="Carga de alertas por hora y día"
-      subtitle="Rejilla de los últimos 7 días en tu hora local: cuándo aprieta la flota, para dimensionar turnos y ventanas de mantenimiento"
+      title={dict.panel.weekHeat.title}
+      subtitle={dict.panel.weekHeat.subtitle}
       icon={CalendarDots}
       actions={
         <Button
@@ -962,17 +987,17 @@ function AlertHeatmapPanel({ down }: { down: boolean }) {
           onClick={windowFetch.reload}
           disabled={windowFetch.loading}
         >
-          Actualizar
+          {dict.panel.weekHeat.reload}
         </Button>
       }
       table={table}
       footer={
         <span className="flex flex-wrap gap-x-4">
-          <span>ventana de {WEEK_HOUR_DAYS} días · zona {timeZone}</span>
-          <span><span className="font-medium tabular-nums text-zinc-300">{grid.total}</span> alertas en la rejilla</span>
-          {windowFetch.truncated && <span className="text-zinc-400">respuesta en el tope de {HEATMAP_ALERT_LIMIT} alertas: puede haber más de las que caben aquí</span>}
-          {grid.unreadable > 0 && <span>{grid.unreadable} alertas con fecha ilegible quedan fuera</span>}
-          {fetchedClock && <span>consulta a las {fetchedClock}</span>}
+          <span>{dict.panel.weekHeat.footerWindow(WEEK_HOUR_DAYS, timeZone)}</span>
+          <span><span className="font-medium tabular-nums text-zinc-300">{grid.total}</span>{dict.panel.weekHeat.totalSuffix}</span>
+          {windowFetch.truncated && <span className="text-zinc-400">{dict.panel.weekHeat.footerTruncated(HEATMAP_ALERT_LIMIT)}</span>}
+          {grid.unreadable > 0 && <span>{dict.panel.weekHeat.footerUnreadable(grid.unreadable)}</span>}
+          {fetchedClock && <span>{dict.panel.weekHeat.footerFetched(fetchedClock)}</span>}
         </span>
       }
     >
@@ -983,8 +1008,8 @@ function AlertHeatmapPanel({ down }: { down: boolean }) {
       ) : grid.total === 0 ? (
         <EmptyState
           icon={CalendarDots}
-          title="Sin alertas en la ventana"
-          hint="El motor no devolvió alertas para los últimos 7 días; en cuanto las haya, la rejilla se dibuja sola."
+          title={dict.panel.weekHeat.emptyTitle}
+          hint={dict.panel.weekHeat.emptyHint}
         />
       ) : (
         <WeekHourHeatmap grid={grid} />
@@ -994,14 +1019,15 @@ function AlertHeatmapPanel({ down }: { down: boolean }) {
 }
 
 function RecentTelemetry({ onNavigate }: { onNavigate: (view: ConsoleView) => void }) {
+  const { dict } = useI18n()
   const { events, status } = useEngine()
   return (
-    <section aria-label="Telemetría reciente" className="panel min-w-0 px-4 pb-3 pt-3.5">
+    <section aria-label={dict.panel.recent.sectionAria} className="panel min-w-0 px-4 pb-3 pt-3.5">
       {/* Misma cabecera que el resto de paneles manuales del panel
           (icon-tile + título + contador); el enlace vive a la derecha. */}
       <div className="flex flex-wrap items-center gap-2.5 pb-3">
         <span className="icon-tile"><Waveform size={14} aria-hidden /></span>
-        <h2 className="text-sm font-medium text-zinc-100">Telemetría reciente</h2>
+        <h2 className="text-sm font-medium text-zinc-100">{dict.panel.recent.title}</h2>
         <span className="font-mono text-xs tabular-nums text-zinc-500">{events.length}</span>
         <Button
           variant="link"
@@ -1009,15 +1035,15 @@ function RecentTelemetry({ onNavigate }: { onNavigate: (view: ConsoleView) => vo
           className="ml-auto h-auto px-0 py-0 text-xs"
           onClick={() => onNavigate('flujo')}
         >
-          Ver flujo completo
+          {dict.panel.recent.openFeed}
         </Button>
       </div>
       {status === 'connecting' ? (
         <SkeletonRows rows={6} className="border-y border-zinc-800 py-6" />
       ) : status === 'down' ? (
-        <EmptyState icon={Waveform} title="Telemetría no disponible" hint="Esperando la reconexión con el motor." />
+        <EmptyState icon={Waveform} title={dict.panel.recent.downTitle} hint={dict.panel.recent.downHint} />
       ) : events.length === 0 ? (
-        <EmptyState icon={Waveform} title="Sin eventos todavía" hint="El búfer del cliente se llena en cuanto el motor emite telemetría por /api/stream." />
+        <EmptyState icon={Waveform} title={dict.panel.recent.emptyTitle} hint={dict.panel.recent.emptyHint} />
       ) : (
         <div className="overflow-hidden rounded-lg border border-zinc-800">
           {/* Primera tabla del panel sobre la primitiva compartida (POL-7
@@ -1026,12 +1052,12 @@ function RecentTelemetry({ onNavigate }: { onNavigate: (view: ConsoleView) => vo
               filas dejan la entrada escalonada de AnimatedItem: un motion.div
               no puede envolver un <tr> sin romper el DOM de tabla. */}
           <Table>
-            <TableCaption>Últimos 8 eventos del búfer del cliente: hora, tipo y detalle</TableCaption>
+            <TableCaption>{dict.panel.recent.tableCaption}</TableCaption>
             <TableHeader>
               <TableHeadRow>
-                <TableHead compact className="w-20">Hora</TableHead>
-                <TableHead compact className="w-40">Tipo</TableHead>
-                <TableHead compact>Detalle</TableHead>
+                <TableHead compact className="w-20">{dict.panel.recent.colTime}</TableHead>
+                <TableHead compact className="w-40">{dict.panel.recent.colType}</TableHead>
+                <TableHead compact>{dict.panel.recent.colDetail}</TableHead>
               </TableHeadRow>
             </TableHeader>
             <TableBody>
@@ -1046,46 +1072,47 @@ function RecentTelemetry({ onNavigate }: { onNavigate: (view: ConsoleView) => vo
           </Table>
         </div>
       )}
-      <p className="pt-2 text-xs text-zinc-500">Muestra de los últimos 8 eventos del búfer</p>
+      <p className="pt-2 text-xs text-zinc-500">{dict.panel.recent.footerSample}</p>
     </section>
   )
 }
 
 /** Pipeline health: identity, counters and rule types. */
 function EngineSummary({ status }: { status: EngineStatus }) {
+  const { dict } = useI18n()
   const { stats, rules, endpoint } = useEngine()
 
   const statusLine =
     status === 'live'
-      ? 'Conectada a la API del motor Go: eventos, alertas y reglas llegan del pipeline real.'
+      ? dict.panel.engine.statusLive
       : status === 'connecting'
-        ? 'Consultando la API del motor por primera vez.'
-        : 'Sin conexión con la API del motor: no se muestra ningún dato.'
+        ? dict.panel.engine.statusConnecting
+        : dict.panel.engine.statusDown
   const ingestIssues = stats ? stats.dropped + stats.ingest_rejected : 0
   const webhookIssues = stats ? stats.webhook_failed + stats.webhook_dropped : 0
   const storeFailures = stats?.store_write_failures ?? 0
 
   const rows: { label: string; value: React.ReactNode; bad?: boolean }[] = [
-    { label: 'Modo', value: stats?.mode ?? (stats ? 'engine' : 'sin datos') },
-    { label: 'API', value: endpoint },
-    { label: 'Eventos totales', value: stats?.events_total.toLocaleString('es-ES') ?? '—' },
-    { label: 'Descartados / rechazados', value: stats ? `${stats.dropped} / ${stats.ingest_rejected}` : '— / —', bad: ingestIssues > 0 },
-    { label: 'Webhooks', value: stats ? `${stats.webhook_sent} enviados · ${stats.webhook_failed} fallidos` : '—', bad: webhookIssues > 0 },
+    { label: dict.panel.engine.labels.mode, value: stats?.mode ?? (stats ? 'engine' : dict.panel.engine.noStats) },
+    { label: dict.panel.engine.labels.api, value: endpoint },
+    { label: dict.panel.engine.labels.events, value: stats?.events_total.toLocaleString('es-ES') ?? '—' },
+    { label: dict.panel.engine.labels.dropped, value: stats ? `${stats.dropped} / ${stats.ingest_rejected}` : '— / —', bad: ingestIssues > 0 },
+    { label: dict.panel.engine.labels.webhooks, value: stats ? dict.panel.engine.webhooksValue(stats.webhook_sent, stats.webhook_failed) : '—', bad: webhookIssues > 0 },
     {
       // opt-in SQLite persistence (engine -store): undefined = engine
       // predating the store or hub offline snapshot; said, not guessed.
-      label: 'Persistencia',
-      value: stats?.store_enabled ? `SQLite · ${stats.store_events} eventos · ${stats.store_alerts} alertas` : stats ? 'sin store (-store off)' : 'sin datos',
+      label: dict.panel.engine.labels.persistence,
+      value: stats?.store_enabled ? dict.panel.engine.storeValue(stats.store_events ?? 0, stats.store_alerts ?? 0) : stats ? dict.panel.engine.storeOff : dict.panel.engine.noStats,
     },
-    { label: 'Fallos SQLite', value: stats?.store_write_failures ?? '—', bad: storeFailures > 0 },
-    { label: 'Reglas cargadas', value: stats ? rules.length : '—' },
+    { label: dict.panel.engine.labels.storeFailures, value: stats?.store_write_failures ?? '—', bad: storeFailures > 0 },
+    { label: dict.panel.engine.labels.rules, value: stats ? rules.length : '—' },
   ]
 
   return (
-    <section aria-label="Resumen del motor" className="panel min-w-0">
+    <section aria-label={dict.panel.engine.sectionAria} className="panel min-w-0">
       <div className="flex flex-wrap items-center gap-2.5 px-4 pt-3.5">
         <span className="icon-tile"><Cpu size={14} aria-hidden /></span>
-        <h2 className="text-sm font-medium text-zinc-100">Salud del pipeline</h2>
+        <h2 className="text-sm font-medium text-zinc-100">{dict.panel.engine.title}</h2>
         {/* Estado de conexión como insignia del kit (POL-7): la forma es la
             píldora compartida y el color semántico viaja en className (dato,
             no variante), igual que hace SeverityBadge con la severidad. */}
@@ -1094,7 +1121,7 @@ function EngineSummary({ status }: { status: EngineStatus }) {
           className={status === 'live' ? 'text-emerald-300' : status === 'connecting' ? 'text-amber-300' : 'text-red-300'}
         >
           <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${status === 'live' ? 'bg-emerald-500' : status === 'connecting' ? 'bg-amber-400' : 'bg-red-500'}`} />
-          {status === 'live' ? 'en vivo' : status === 'connecting' ? 'conectando' : 'sin conexión'}
+          {status === 'live' ? dict.panel.engine.badgeLive : status === 'connecting' ? dict.panel.engine.badgeConnecting : dict.panel.engine.badgeDown}
         </Badge>
         <p className="ml-auto hidden max-w-[60ch] truncate text-[11px] text-zinc-500 lg:block">{statusLine}</p>
       </div>
@@ -1114,9 +1141,9 @@ function EngineSummary({ status }: { status: EngineStatus }) {
         ))}
       </dl>
       <div className="flex flex-wrap items-center gap-1.5 border-t border-white/[0.06] px-4 py-3">
-        <span className="mr-1 text-[11px] text-zinc-500">Tipos de evento con reglas</span>
+        <span className="mr-1 text-[11px] text-zinc-500">{dict.panel.engine.rulesTypesLabel}</span>
         {(stats?.rules_types ?? []).map((t) => <MonoTag key={t}>{t}</MonoTag>)}
-        {(stats?.rules_types ?? []).length === 0 && <span className="text-xs text-zinc-500">sin catálogo todavía</span>}
+        {(stats?.rules_types ?? []).length === 0 && <span className="text-xs text-zinc-500">{dict.panel.engine.noCatalog}</span>}
       </div>
     </section>
   )

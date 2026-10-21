@@ -9,8 +9,8 @@
 
 import { useState } from 'react'
 import type { WeekHourGrid } from '@/lib/alert-heatmap'
-import { WEEKDAYS_LONG, WEEKDAYS_SHORT } from '@/lib/alert-heatmap'
 import { cn } from '@/lib/utils'
+import { useI18n } from '../console/i18n-provider'
 
 const RAMP = ['var(--seq-1)', 'var(--seq-2)', 'var(--seq-3)', 'var(--seq-4)', 'var(--seq-5)']
 
@@ -24,17 +24,18 @@ function hh(hour: number): string {
 }
 
 export function WeekHourHeatmap({ grid }: { grid: WeekHourGrid }) {
+  const { dict } = useI18n()
+  const daysShort = dict.charts.week.daysShort
+  const daysLong = dict.charts.week.daysLong
   const [hover, setHover] = useState<string | null>(null)
   return (
     <div className="min-w-0 overflow-x-auto">
       <table className="w-full border-separate text-xs" style={{ borderSpacing: 2 }}>
-        <caption className="sr-only">
-          Alertas por día de la semana y hora local en la ventana recibida
-        </caption>
+        <caption className="sr-only">{dict.charts.week.caption}</caption>
         <thead>
           <tr>
             <th scope="col" className="w-8 px-1 pb-1.5 text-left text-[11px] font-medium text-zinc-500">
-              Día
+              {dict.charts.week.colDay}
             </th>
             {Array.from({ length: 24 }, (_, hour) => (
               <th
@@ -55,9 +56,9 @@ export function WeekHourHeatmap({ grid }: { grid: WeekHourGrid }) {
           {grid.grid.map((row, day) => {
             const dayTotal = row.reduce((sum, value) => sum + value, 0)
             return (
-              <tr key={WEEKDAYS_SHORT[day]}>
-                <th scope="row" title={WEEKDAYS_LONG[day]} className="px-1 text-left text-[11px] font-normal text-zinc-400">
-                  {WEEKDAYS_SHORT[day]}
+              <tr key={daysShort[day]}>
+                <th scope="row" title={daysLong[day]} className="px-1 text-left text-[11px] font-normal text-zinc-400">
+                  {daysShort[day]}
                 </th>
                 {row.map((value, hour) => {
                   const s = step(value, grid.max)
@@ -65,7 +66,7 @@ export function WeekHourHeatmap({ grid }: { grid: WeekHourGrid }) {
                   return (
                     <td
                       key={hour}
-                      title={`${WEEKDAYS_LONG[day]} ${hh(hour)}:00–${hh(hour)}:59 · ${value} ${value === 1 ? 'alerta' : 'alertas'}`}
+                      title={`${daysLong[day]} ${hh(hour)}:00–${hh(hour)}:59 · ${dict.charts.week.cellAlerts(value)}`}
                       onPointerEnter={() => setHover(key)}
                       onPointerLeave={() => setHover(null)}
                       className={cn(
@@ -86,13 +87,13 @@ export function WeekHourHeatmap({ grid }: { grid: WeekHourGrid }) {
         </tbody>
       </table>
       <div className="mt-2 flex items-center gap-2 text-[11px] text-zinc-500">
-        <span>menos</span>
+        <span>{dict.charts.week.less}</span>
         <span aria-hidden className="inline-flex gap-[2px]">
           {RAMP.map((c) => (
             <span key={c} className="h-2.5 w-5 rounded-sm" style={{ background: c }} />
           ))}
         </span>
-        <span>más alertas (máximo {grid.max} por celda)</span>
+        <span>{dict.charts.week.scale(grid.max)}</span>
       </div>
     </div>
   )

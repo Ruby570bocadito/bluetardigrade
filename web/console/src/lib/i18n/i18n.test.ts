@@ -289,6 +289,41 @@ describe('i18n dictionaries', () => {
     expect(DICTS.en.settings.ad.invalidFields(1)).toBe('1 numeric field carries a value that cannot be applied: review it before sending.')
     expect(DICTS.en.settings.ad.invalidFields(2)).toBe('2 numeric fields carry a value that cannot be applied: review them before sending.')
   })
+
+  test('phase 6 sweep (operations panel) keeps the spanish copy byte-identical', () => {
+    // Strings the browser batteries pin as selectors — they must not move.
+    expect(dictEs.operations.ok).toBe('Motor operativo')
+    expect(dictEs.operations.sectionAria).toBe('Resumen de operación')
+    expect(dictEs.operations.ctaCritical).toBe('Ver críticas sin cerrar')
+    expect(dictEs.operations.ctaQueue).toBe('Abrir cola de alertas')
+    expect(dictEs.operations.triageAria('nuevas', '3')).toBe('Ver alertas nuevas 3')
+    expect(dictEs.operations.reconnecting).toBe('El canal en vivo está reconectando; la última lectura del motor sigue disponible.')
+    expect(dictEs.panel.tabs.resumen).toBe('Resumen')
+    expect(dictEs.panel.tabs.actividad).toBe('Equipos y actividad')
+    expect(dictEs.panel.tabsAria).toBe('Secciones del panel')
+    expect(dictEs.kpi.sectionAria).toBe('Indicadores del motor')
+    expect(dictEs.kpi.noData).toBe('Sin datos')
+    expect(dictEs.panel.recent.downTitle).toBe('Telemetría no disponible')
+    expect(dictEs.panel.activity.aria(0, 0)).toBe('Muestra de actividad en los últimos 4 minutos: 0 eventos del búfer, máximo 0 por intervalo de 5 segundos')
+    // the pipeline issue copy moved from lib/operations into the dict, ES intact
+    expect(dictEs.operations.issues.ingestDropped(3)).toBe('3 eventos descartados o rechazados')
+    expect(dictEs.operations.issues.identityViolations(2)).toBe('2 eventos rechazados: un sensor informó de un host fuera de su identidad (posible equipo comprometido)')
+    expect(dictEs.operations.issues.correlatorCap).toBe('Correlador al límite de capacidad')
+  })
+
+  test('phase 6 english copy is a real translation of the operations panel', () => {
+    expect(DICTS.en.operations.ok).toBe('Engine operational')
+    expect(DICTS.en.panel.tabs.actividad).toBe('Hosts and activity')
+    expect(DICTS.en.panel.hot.title).toBe('Hot hosts')
+    expect(DICTS.en.panel.engine.title).toBe('Pipeline health')
+    expect(DICTS.en.panel.donutFleet.silent).toBe('No signal')
+    expect(DICTS.en.panel.sevLabels.critical).toBe('Critical')
+    expect(DICTS.en.charts.graph.kinds.destination).toBe('Network destination')
+    expect(DICTS.en.charts.matrix.validBadge(2)).toBe('2 valid scenarios')
+    expect(DICTS.en.charts.week.daysLong[0]).toBe('Monday')
+    expect(DICTS.en.operations.issues.ingestDropped(3)).toBe('3 events dropped or rejected')
+    expect(DICTS.en.kpi.noData).toBe('No data')
+  })
 })
 
 describe('language resolution', () => {

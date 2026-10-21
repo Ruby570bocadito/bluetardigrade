@@ -14,8 +14,8 @@ import { Desktop, Globe, Gear, ShieldWarning, User, type Icon } from '@phosphor-
 import { useElementWidth } from './chart-frame'
 import { SEV_COLOR } from './severity'
 import { layoutGraph, type EntityGraph, type GraphNode, type NodeKind, type Point } from '@/lib/entity-graph'
-import { SEVERITY_STYLE } from '@/lib/console-types'
 import { useThrottledValue } from '@/hooks/use-throttled-value'
+import { useI18n } from '../console/i18n-provider'
 
 // A live graph (host, dashboard) is rebuilt from the event buffer as
 // telemetry flows; it is redrawn at most this often.
@@ -38,12 +38,14 @@ function scaledTo(prev: { pos: Map<string, Point>; width: number; height: number
   return new Map([...prev.pos].map(([id, p]) => [id, { x: p.x * sx, y: p.y * sy }]))
 }
 
-export const NODE_KIND: Record<NodeKind, { label: string; color: string; icon: Icon }> = {
-  host: { label: 'Equipo', color: 'var(--series-1)', icon: Desktop },
-  rule: { label: 'Detección', color: 'var(--sev-high)', icon: ShieldWarning },
-  process: { label: 'Proceso', color: 'var(--series-3)', icon: Gear },
-  user: { label: 'Usuario', color: 'var(--series-2)', icon: User },
-  destination: { label: 'Destino de red', color: 'var(--series-4)', icon: Globe },
+// Kind look and feel (shape/icon/color); the kind NAME travels in the
+// dictionary (dict.charts.graph.kinds) so the graph speaks both languages.
+export const NODE_KIND: Record<NodeKind, { color: string; icon: Icon }> = {
+  host: { color: 'var(--series-1)', icon: Desktop },
+  rule: { color: 'var(--sev-high)', icon: ShieldWarning },
+  process: { color: 'var(--series-3)', icon: Gear },
+  user: { color: 'var(--series-2)', icon: User },
+  destination: { color: 'var(--series-4)', icon: Globe },
 }
 
 function colorOf(node: GraphNode): string {
@@ -74,7 +76,7 @@ export function EntityGraphView({
   height = 360,
   ariaLabel,
   onSelect,
-  selectHint = 'Ver alertas relacionadas',
+  selectHint,
   live = false,
 }: {
   graph: EntityGraph
@@ -85,6 +87,8 @@ export function EntityGraphView({
   /** rebuilt from the live buffer: redraw at most every LIVE_GRAPH_MS */
   live?: boolean
 }) {
+  const { dict } = useI18n()
+  const hint = selectHint ?? dict.charts.graph.selectHint
   const [ref, width] = useElementWidth<HTMLDivElement>()
   const reduce = useReducedMotion()
   const [active, setActive] = useState<string | null>(null)
@@ -176,7 +180,7 @@ export function EntityGraphView({
                 transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 70, damping: 16, delay: Math.min(i * 0.02, 0.4), opacity: { duration: 0.2 } }}
                 tabIndex={0}
                 role={onSelect ? 'button' : 'img'}
-                aria-label={`${NODE_KIND[node.kind].label}: ${labelText}${node.severity ? `, severidad ${SEVERITY_STYLE[node.severity].label}` : ''}, ${neighbours.get(node.id)?.size ?? 0} conexiones${onSelect ? `. ${selectHint}` : ''}`}
+                aria-label={`${dict.charts.graph.kinds[node.kind]}: ${labelText}${node.severity ? `, ${dict.charts.graph.sevWord} ${dict.charts.graph.sevLabels[node.severity]}` : ''}, ${dict.charts.graph.connections(neighbours.get(node.id)?.size ?? 0)}${onSelect ? `. ${hint}` : ''}`}
                 onPointerEnter={() => setActive(node.id)}
                 onPointerLeave={() => setActive(null)}
                 onFocus={() => setActive(node.id)}
@@ -205,14 +209,14 @@ export function EntityGraphView({
       )}
       {activeNode && activePos && (
         <div className="viz-tooltip" style={{ left: Math.min(activePos.x + 18, Math.max(0, width - 230)), top: Math.max(0, activePos.y - 54) }}>
-          <p className="mb-0.5 text-[11px] text-zinc-500">{NODE_KIND[activeNode.kind].label}</p>
+          <p className="mb-0.5 text-[11px] text-zinc-500">{dict.charts.graph.kinds[activeNode.kind]}</p>
           <p className="break-all font-medium text-zinc-50">{activeNode.label}</p>
           <p className="mt-1 text-[11px] text-zinc-400">
-            {neighbours.get(activeNode.id)?.size ?? 0} conexiones
-            {activeNode.kind === 'rule' && ` · ${activeNode.weight} alertas`}
-            {activeNode.severity && ` · ${SEVERITY_STYLE[activeNode.severity].label}`}
+            {dict.charts.graph.connections(neighbours.get(activeNode.id)?.size ?? 0)}
+            {activeNode.kind === 'rule' && ` · ${activeNode.weight} ${dict.charts.graph.alertsWord}`}
+            {activeNode.severity && ` · ${dict.charts.graph.sevLabels[activeNode.severity]}`}
           </p>
-          {onSelect && <p className="mt-1 text-[11px] text-primary-link">{selectHint}</p>}
+          {onSelect && <p className="mt-1 text-[11px] text-primary-link">{hint}</p>}
         </div>
       )}
     </div>
@@ -220,6 +224,7 @@ export function EntityGraphView({
 }
 
 export function GraphLegend({ graph }: { graph: EntityGraph }) {
+  const { dict } = useI18n()
   const kinds = (Object.keys(NODE_KIND) as NodeKind[]).filter((k) => graph.nodes.some((n) => n.kind === k))
   return (
     <ul className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-zinc-400">
@@ -234,11 +239,11 @@ export function GraphLegend({ graph }: { graph: EntityGraph }) {
             >
               <KindIcon size={9} weight="bold" className={k === 'rule' ? '-rotate-45' : ''} />
             </span>
-            {NODE_KIND[k].label}
+            {dict.charts.graph.kinds[k]}
           </li>
         )
       })}
-      {graph.nodes.some((n) => n.kind === 'rule') && <li className="text-[11px] text-zinc-500">las detecciones toman el color de su severidad</li>}
+      {graph.nodes.some((n) => n.kind === 'rule') && <li className="text-[11px] text-zinc-500">{dict.charts.graph.sevNote}</li>}
     </ul>
   )
 }

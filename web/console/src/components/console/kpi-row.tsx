@@ -3,12 +3,13 @@
 // Stat tiles of the operations panel (dataviz stat-tile contract): label,
 // value, a delta or context line and a sparkline of the /api/stats polls
 // kept by the engine provider. Values are proportional sans figures; an
-// unavailable metric shows "—" with an accessible "Sin datos", never 0.
+// unavailable metric shows "—" with an accessible "No data", never 0.
 
 import { ActivityIcon, Flame, ShieldCheck, TrendDown, TrendUp, UploadSimple, WebhooksLogo, Siren } from '@phosphor-icons/react'
 import { CountUp } from '@/components/reactbits/count-up'
 import { GlareHover } from '@/components/reactbits/glare-hover'
 import { useStatsHistory } from './engine-provider'
+import { useI18n } from './i18n-provider'
 import { SpotlightCard } from '@/components/reactbits/spotlight-card'
 import { Sparkline } from '@/components/charts/bars'
 import { counterDelta, type StatsSample } from '@/lib/soc-metrics'
@@ -48,15 +49,16 @@ function Tile({
 }
 
 function KpiNumber({ value }: { value: number | undefined }) {
+  const { dict } = useI18n()
   const className = 'block text-[26px] font-semibold leading-none tracking-tight text-zinc-50'
   return value === undefined
-    ? <span className={className} aria-label="Sin datos">—</span>
+    ? <span className={className} aria-label={dict.kpi.noData}>—</span>
     : <CountUp to={value} className={className} />
 }
 
-function Delta({ value, span: label }: { value: number | null; span: string }) {
-  if (value === null) return <span>tendencia tras dos lecturas</span>
-  if (value === 0) return <span>sin cambios {label}</span>
+function Delta({ value, span: label, pending, flat }: { value: number | null; span: string; pending: string; flat: (label: string) => string }) {
+  if (value === null) return <span>{pending}</span>
+  if (value === 0) return <span>{flat(label)}</span>
   const Up = value > 0 ? TrendUp : TrendDown
   return (
     <span className="inline-flex items-center gap-1">
@@ -70,37 +72,38 @@ function Delta({ value, span: label }: { value: number | null; span: string }) {
 const pick = (history: StatsSample[], f: (s: StatsSample) => number) => history.map(f)
 
 export function KpiRow({ stats }: { stats: EngineStats | null }) {
+  const { dict } = useI18n()
   const history = useStatsHistory()
   const webhookIssues = (stats?.webhook_failed ?? 0) + (stats?.webhook_dropped ?? 0)
   const ingestIssues = (stats?.dropped ?? 0) + (stats?.ingest_rejected ?? 0)
   const top = stats?.hot_hosts?.[0]
   const span = history.length > 1 ? Math.max(1, Math.round((history[history.length - 1].t - history[0].t) / 60_000)) : 0
-  const spanLabel = span ? `en ${span} min` : ''
+  const spanLabel = span ? dict.kpi.spanLabel(span) : ''
 
   return (
-    <div aria-label="Indicadores del motor" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-      <Tile label="Eventos por minuto" icon={ActivityIcon} value={stats?.events_per_min} trend={pick(history, (s) => s.eventsPerMin)}>
-        {stats ? `${stats.events_total.toLocaleString('es-ES')} ${stats.scoped ? 'recientes de tus grupos' : 'desde el arranque'}` : 'sin datos'}
+    <div aria-label={dict.kpi.sectionAria} className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <Tile label={dict.kpi.eventsMin} icon={ActivityIcon} value={stats?.events_per_min} trend={pick(history, (s) => s.eventsPerMin)}>
+        {stats ? dict.kpi.eventsTotal(stats.events_total.toLocaleString('es-ES'), !!stats.scoped) : dict.kpi.noDataLower}
       </Tile>
 
-      <Tile label="Alertas" icon={Siren} value={stats?.alerts_total} trend={pick(history, (s) => s.alertsTotal)}>
-        {!stats ? 'sin datos' : <Delta value={counterDelta(history, (s) => s.alertsTotal)} span={spanLabel} />}
+      <Tile label={dict.kpi.alerts} icon={Siren} value={stats?.alerts_total} trend={pick(history, (s) => s.alertsTotal)}>
+        {!stats ? dict.kpi.noDataLower : <Delta value={counterDelta(history, (s) => s.alertsTotal)} span={spanLabel} pending={dict.kpi.trendPending} flat={dict.kpi.trendFlat} />}
       </Tile>
 
-      <Tile label="Hosts en riesgo" icon={Flame} value={stats?.risk_hosts_tracked} trend={pick(history, (s) => s.riskHosts)}>
-        {top ? <span title={top.host}>máx {top.host} · {top.score.toFixed(1)}</span> : stats ? 'sin riesgo activo' : 'sin datos'}
+      <Tile label={dict.kpi.hostsRisk} icon={Flame} value={stats?.risk_hosts_tracked} trend={pick(history, (s) => s.riskHosts)}>
+        {top ? <span title={top.host}>{dict.kpi.maxHost(top.host, top.score.toFixed(1))}</span> : stats ? dict.kpi.noRisk : dict.kpi.noDataLower}
       </Tile>
 
-      <Tile label="Reglas activas" icon={ShieldCheck} value={stats?.rules_count}>
-        {stats ? `${stats.rules_types.length} tipos de evento cubiertos` : 'sin datos'}
+      <Tile label={dict.kpi.rulesActive} icon={ShieldCheck} value={stats?.rules_count}>
+        {stats ? dict.kpi.rulesCovered(stats.rules_types.length) : dict.kpi.noDataLower}
       </Tile>
 
-      <Tile label="Búfer de eventos" icon={UploadSimple} value={stats?.events_buffered}>
-        {!stats ? 'sin datos' : ingestIssues > 0 ? <span className="text-orange-300">{ingestIssues} descartados o rechazados</span> : 'sin rechazos de ingesta'}
+      <Tile label={dict.kpi.buffer} icon={UploadSimple} value={stats?.events_buffered}>
+        {!stats ? dict.kpi.noDataLower : ingestIssues > 0 ? <span className="text-orange-300">{dict.kpi.bufferIssues(ingestIssues)}</span> : dict.kpi.bufferOk}
       </Tile>
 
-      <Tile label="Entregas webhook" icon={WebhooksLogo} value={stats?.webhook_sent} trend={pick(history, (s) => s.webhookSent)}>
-        {!stats ? 'sin datos' : webhookIssues > 0 ? <span className="text-orange-300">{webhookIssues} con fallo</span> : 'sin fallos de entrega'}
+      <Tile label={dict.kpi.webhookDeliveries} icon={WebhooksLogo} value={stats?.webhook_sent} trend={pick(history, (s) => s.webhookSent)}>
+        {!stats ? dict.kpi.noDataLower : webhookIssues > 0 ? <span className="text-orange-300">{dict.kpi.webhookIssues(webhookIssues)}</span> : dict.kpi.webhookOk}
       </Tile>
     </div>
   )

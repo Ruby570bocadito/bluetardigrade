@@ -11,6 +11,7 @@
 import { useState, type KeyboardEvent } from 'react'
 import { ChartTooltip, useElementWidth } from './chart-frame'
 import type { TriageFlowLink, TriageFlowModel, TriageFlowNode } from '@/lib/triage-flow'
+import { useI18n } from '../console/i18n-provider'
 
 const NODE_W = 12
 const NODE_GAP = 4
@@ -57,6 +58,7 @@ export function TriageFlowChart({
   unit: string
   height?: number
 }) {
+  const { dict } = useI18n()
   const [ref, width] = useElementWidth<HTMLDivElement>()
   const [activeNode, setActiveNode] = useState<{ level: number; key: string } | null>(null)
   const [activeLink, setActiveLink] = useState<number | null>(null)
@@ -158,9 +160,9 @@ export function TriageFlowChart({
         <svg width={width} height={height} aria-hidden className="block">
           {/* column headers */}
           {([
-            { x: nodeX[0], anchor: 'start', text: 'Fuente' },
-            { x: nodeX[1] + NODE_W / 2, anchor: 'middle', text: 'Táctica' },
-            { x: nodeX[2] + NODE_W, anchor: 'end', text: 'Estado' },
+            { x: nodeX[0], anchor: 'start', text: dict.charts.flowSource },
+            { x: nodeX[1] + NODE_W / 2, anchor: 'middle', text: dict.charts.flowTactic },
+            { x: nodeX[2] + NODE_W, anchor: 'end', text: dict.charts.flowState },
           ] as const).map((h) => (
             <text key={h.text} x={h.x} y={12} textAnchor={h.anchor} className="fill-zinc-500 text-[9px] uppercase tracking-wider">
               {h.text}

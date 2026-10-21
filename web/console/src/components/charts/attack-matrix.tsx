@@ -10,6 +10,7 @@
 
 import type { TacticCell } from '@/lib/soc-metrics'
 import { cn } from '@/lib/utils'
+import { useI18n } from '../console/i18n-provider'
 
 const RAMP = ['var(--seq-1)', 'var(--seq-2)', 'var(--seq-3)', 'var(--seq-4)', 'var(--seq-5)']
 
@@ -31,6 +32,7 @@ export function AttackMatrix({
   /** scenario count per tactic slug; absent = validation not available */
   validations?: Map<string, number>
 }) {
+  const { dict } = useI18n()
   const max = Math.max(0, ...cells.map((c) => c.alerts))
   return (
     <div>
@@ -40,7 +42,7 @@ export function AttackMatrix({
           // light ramp steps carry dark ink, dark steps white ink (contrast)
           const darkInk = s >= 3
           const scenarios = validations?.get(cell.slug) ?? 0
-          const name = `${cell.label}: ${cell.alerts} alertas en la ventana, ${cell.rules} reglas${scenarios ? `, ${scenarios} escenarios de validación` : ''}`
+          const name = dict.charts.matrix.cellAria(cell.label, cell.alerts, cell.rules, scenarios ? dict.charts.matrix.cellScenarios(scenarios) : '')
           const body = (
             <>
               <span className={cn('block truncate text-[11px]', s < 0 ? 'text-zinc-400' : darkInk ? 'text-[#07111f]/80' : 'text-white/80')} title={cell.label}>
@@ -50,11 +52,11 @@ export function AttackMatrix({
                 {cell.alerts}
               </span>
               <span className={cn('mt-1.5 block truncate text-[10px]', s < 0 ? (cell.rules ? 'text-zinc-500' : 'text-amber-300/80') : darkInk ? 'text-[#07111f]/75' : 'text-white/75')}>
-                {cell.rules ? `${cell.rules} ${cell.rules === 1 ? 'regla' : 'reglas'}` : 'sin cobertura'}
+                {cell.rules ? dict.charts.matrix.rulesCount(cell.rules) : dict.charts.matrix.noCoverage}
               </span>
               {scenarios > 0 && (
                 <span className={cn('mt-0.5 block truncate text-[10px] font-medium', darkInk ? 'text-[#07111f]' : 'text-white')}>
-                  {scenarios} {scenarios === 1 ? 'escenario válido' : 'escenarios válidos'}
+                  {dict.charts.matrix.validBadge(scenarios)}
                 </span>
               )}
             </>
@@ -68,7 +70,7 @@ export function AttackMatrix({
                 <button
                   type="button"
                   onClick={() => (openValidated ? onSelectValidated?.(cell) : onSelect?.(cell))}
-                  aria-label={scenarios > 0 ? `${name}. Ver sus escenarios de validación` : `${name}. Ver alertas de esta táctica`}
+                  aria-label={scenarios > 0 ? `${name}. ${dict.charts.matrix.openValidated}` : `${name}. ${dict.charts.matrix.openAlerts}`}
                   title={cell.label}
                   style={style}
                   className={cn(base, 'transition-[filter] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--viz-surface)]')}
@@ -86,7 +88,7 @@ export function AttackMatrix({
       </ul>
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-zinc-500">
         <span className="flex items-center gap-1.5">
-          <span>Alertas por táctica</span>
+          <span>{dict.charts.matrix.legend}</span>
           <span aria-hidden className="inline-flex gap-[2px]">
             <span className="h-2.5 w-4 rounded-sm border border-zinc-800 bg-zinc-900/60" />
             {RAMP.map((c) => (
@@ -95,8 +97,8 @@ export function AttackMatrix({
           </span>
           <span className="tabular-nums">0 – {max}</span>
         </span>
-        <span>Las celdas sin reglas muestran «sin cobertura».</span>
-        {validations && <span>«N escenarios válidos» = batería de telemetría inerte que valida la táctica en el laboratorio.</span>}
+        <span>{dict.charts.matrix.noRulesNote}</span>
+        {validations && <span>{dict.charts.matrix.footnote}</span>}
       </div>
     </div>
   )

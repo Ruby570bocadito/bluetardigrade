@@ -8,6 +8,7 @@
 import { useState } from 'react'
 import type { HostTacticMatrix } from '@/lib/soc-metrics'
 import { cn } from '@/lib/utils'
+import { useI18n } from '../console/i18n-provider'
 
 const RAMP = ['var(--seq-1)', 'var(--seq-2)', 'var(--seq-3)', 'var(--seq-4)', 'var(--seq-5)']
 
@@ -17,14 +18,15 @@ function step(value: number, max: number): number {
 }
 
 export function HostTacticHeatmap({ matrix, onHost }: { matrix: HostTacticMatrix; onHost?: (host: string) => void }) {
+  const { dict } = useI18n()
   const [hover, setHover] = useState<string | null>(null)
   return (
     <div className="min-w-0 overflow-x-auto">
       <table className="w-full border-separate text-xs" style={{ borderSpacing: 2 }}>
-        <caption className="sr-only">Alertas por equipo y táctica de MITRE ATT&CK en la ventana recibida</caption>
+        <caption className="sr-only">{dict.charts.heat.caption}</caption>
         <thead>
           <tr>
-            <th scope="col" className="w-40 px-2 pb-1.5 text-left text-[11px] font-medium text-zinc-500">Equipo</th>
+            <th scope="col" className="w-40 px-2 pb-1.5 text-left text-[11px] font-medium text-zinc-500">{dict.charts.heat.colHost}</th>
             {matrix.tactics.map((t) => (
               <th key={t.slug} scope="col" title={t.label} className="min-w-14 px-1 pb-1.5 text-center text-[11px] font-medium text-zinc-500">
                 {t.short}
@@ -77,13 +79,13 @@ export function HostTacticHeatmap({ matrix, onHost }: { matrix: HostTacticMatrix
         </tbody>
       </table>
       <div className="mt-2 flex items-center gap-2 text-[11px] text-zinc-500">
-        <span>menos</span>
+        <span>{dict.charts.heat.less}</span>
         <span aria-hidden className="inline-flex gap-[2px]">
           {RAMP.map((c) => (
             <span key={c} className="h-2.5 w-5 rounded-sm" style={{ background: c }} />
           ))}
         </span>
-        <span>más alertas (máximo {matrix.max} por celda)</span>
+        <span>{dict.charts.heat.scale(matrix.max)}</span>
       </div>
     </div>
   )

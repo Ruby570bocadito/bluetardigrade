@@ -9,8 +9,8 @@ import type { SfAlert, SfEvent } from '@/lib/console-types'
 import { activityBuckets, ACTIVITY_BUCKET_MS, ACTIVITY_WINDOW_MS } from '@/lib/activity'
 import { AreaChart, type AreaPoint, type RailMarker } from '@/components/charts/area-chart'
 import { SEV_COLOR } from '@/components/charts/severity'
-import { formatAgo } from '@/lib/soc-metrics'
 import { formatTime, SEVERITY_STYLE } from '@/lib/console-types'
+import { useI18n } from './i18n-provider'
 
 const NO_ALERTS: SfAlert[] = []
 
@@ -53,15 +53,26 @@ export function useActivity(events: SfEvent[], alerts: SfAlert[] = NO_ALERTS) {
 export type Activity = ReturnType<typeof useActivity>
 
 export function ActivityChart({ activity, withMarkers = false, height = 196 }: { activity: Activity; withMarkers?: boolean; height?: number }) {
+  const { dict } = useI18n()
   const { now, points, markers, peak, total } = activity
+  // Axis label: a short relative mark in the operator's language; the
+  // numbers keep the ES shape (-5 min) that the chart layout sizes for.
+  const axis = (ms: number) => {
+    if (ms < 1000) return dict.panel.activity.axis.now
+    const s = Math.round(ms / 1000)
+    if (s < 60) return dict.panel.activity.axis.s(s)
+    const m = Math.round(s / 60)
+    if (m < 60) return dict.panel.activity.axis.m(m)
+    return dict.panel.activity.axis.h(Math.round(m / 60))
+  }
   return (
     <AreaChart
       points={points}
       now={now}
       height={height}
-      ariaLabel={`Muestra de actividad en los últimos 4 minutos: ${total} eventos del búfer, máximo ${peak} por intervalo de 5 segundos`}
-      valueLabel="eventos"
-      formatX={(p) => (now - p.end < 1000 ? 'ahora' : formatAgo(now - p.end).replace('hace ', '-'))}
+      ariaLabel={dict.panel.activity.aria(total, peak)}
+      valueLabel={dict.panel.activity.valueLabel}
+      formatX={(p) => axis(now - p.end)}
       markers={withMarkers ? markers : undefined}
     />
   )

@@ -20,33 +20,41 @@ export function triageSummary(alerts: readonly SfAlert[]) {
   }
 }
 
-export function pipelineIssues(stats: EngineStats | null): string[] {
+export type PipelineIssueId =
+  | 'ingestDropped'
+  | 'webhookFailing'
+  | 'storeFailures'
+  | 'identityViolations'
+  | 'idConflicts'
+  | 'correlatorCap'
+  | 'beaconsCap'
+
+/** One noticed pipeline problem: the id keys the dictionary copy
+ * (dict.operations.issues) and `count` is the number the copy cites.
+ * The saturation ids carry no count (their copy is a fixed sentence). */
+export type PipelineIssue = { id: PipelineIssueId; count: number }
+
+export function pipelineIssues(stats: EngineStats | null): PipelineIssue[] {
   if (!stats) return []
-  const issues: string[] = []
+  const issues: PipelineIssue[] = []
   const ingest = stats.dropped + stats.ingest_rejected
   const webhook = stats.webhook_failed + stats.webhook_dropped
-  if (ingest) issues.push(ingest + ' eventos descartados o rechazados')
-  if (webhook) issues.push(webhook + ' entregas de webhook con fallo')
+  if (ingest) issues.push({ id: 'ingestDropped', count: ingest })
+  if (webhook) issues.push({ id: 'webhookFailing', count: webhook })
   if ((stats.store_write_failures ?? 0) > 0) {
-    issues.push(stats.store_write_failures + ' escrituras SQLite fallidas desde el arranque; revisa la evidencia persistida')
+    issues.push({ id: 'storeFailures', count: stats.store_write_failures ?? 0 })
   }
   if ((stats.ingest_identity_violations ?? 0) > 0) {
-    issues.push(
-      stats.ingest_identity_violations +
-        ' eventos rechazados: un sensor informó de un host fuera de su identidad (posible equipo comprometido)',
-    )
+    issues.push({ id: 'identityViolations', count: stats.ingest_identity_violations ?? 0 })
   }
   if ((stats.store_id_conflicts ?? 0) > 0) {
-    issues.push(
-      stats.store_id_conflicts +
-        ' eventos reenviados con un id ya guardado y contenido distinto; se conservó la copia original (posible falsificación)',
-    )
+    issues.push({ id: 'idConflicts', count: stats.store_id_conflicts ?? 0 })
   }
   if (stats.correlator_cap > 0 && stats.correlator_states >= stats.correlator_cap) {
-    issues.push('Correlador al límite de capacidad')
+    issues.push({ id: 'correlatorCap', count: 0 })
   }
   if ((stats.beacons_cap ?? 0) > 0 && (stats.beacons_tracked ?? 0) >= stats.beacons_cap!) {
-    issues.push('Detector de beaconing al límite de capacidad')
+    issues.push({ id: 'beaconsCap', count: 0 })
   }
   return issues
 }

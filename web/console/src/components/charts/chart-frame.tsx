@@ -9,6 +9,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { ChartBar, DownloadSimple, Table } from '@phosphor-icons/react'
 import { cn } from '@/lib/utils'
+import { useI18n } from '../console/i18n-provider'
 import {
   chartToPngDataUrl,
   downloadDataUrl,
@@ -113,18 +114,7 @@ export function ChartCard({
         <div className="flex shrink-0 items-center gap-2">
           {actions}
           <ChartExportMenu title={title} table={table} sectionRef={sectionRef} bodyRef={bodyRef} />
-          {table && (
-            <button
-              type="button"
-              onClick={() => setTableView((v) => !v)}
-              aria-pressed={tableView}
-              title={tableView ? 'Ver gráfico' : 'Ver como tabla'}
-              className="chip px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {tableView ? <ChartBar size={13} aria-hidden /> : <Table size={13} aria-hidden />}
-              <span>{tableView ? 'Gráfico' : 'Tabla'}</span>
-            </button>
-          )}
+          {table && <ViewToggle tableView={tableView} setTableView={setTableView} />}
         </div>
       </div>
       {legend && legend.length > 0 && !tableView && <Legend items={legend} className="px-4 pt-3" />}
@@ -173,6 +163,24 @@ export type TooltipRow = { key: string; color: string; value: ReactNode; label: 
 /** Fallback ink when the panel background cannot be read (alpha 0). */
 const EXPORT_FALLBACK_BG = '#0c0c0e'
 
+/** Chart/table toggle of the card chrome; the copy travels in the
+ * dictionary (dict.charts.frame) so every view speaks both languages. */
+function ViewToggle({ tableView, setTableView }: { tableView: boolean; setTableView: (next: boolean) => void }) {
+  const { dict } = useI18n()
+  return (
+    <button
+      type="button"
+      onClick={() => setTableView(!tableView)}
+      aria-pressed={tableView}
+      title={tableView ? dict.charts.frame.viewChart : dict.charts.frame.viewTable}
+      className="chip px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {tableView ? <ChartBar size={13} aria-hidden /> : <Table size={13} aria-hidden />}
+      <span>{tableView ? dict.charts.frame.chart : dict.charts.frame.table}</span>
+    </button>
+  )
+}
+
 function panelBackground(section: HTMLElement | null): string {
   if (typeof getComputedStyle !== 'function' || !section) return EXPORT_FALLBACK_BG
   const color = getComputedStyle(section).backgroundColor
@@ -197,6 +205,7 @@ function ChartExportMenu({
   sectionRef: RefObject<HTMLElement | null>
   bodyRef: RefObject<HTMLDivElement | null>
 }) {
+  const { dict } = useI18n()
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -242,7 +251,7 @@ function ChartExportMenu({
       setError(null)
       close()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'No se pudo exportar el CSV.')
+      setError(cause instanceof Error ? cause.message : dict.charts.frame.csvError)
     }
   }
 
@@ -254,7 +263,7 @@ function ChartExportMenu({
       setError(null)
       close()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'No se pudo exportar el SVG.')
+      setError(cause instanceof Error ? cause.message : dict.charts.frame.svgError)
     }
   }
 
@@ -266,7 +275,7 @@ function ChartExportMenu({
       setError(null)
       close()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'No se pudo exportar el PNG.')
+      setError(cause instanceof Error ? cause.message : dict.charts.frame.pngError)
     }
   }
 
@@ -281,37 +290,37 @@ function ChartExportMenu({
         }}
         aria-haspopup="menu"
         aria-expanded={open}
-        title="Exportar la gráfica o sus datos"
+        title={dict.charts.frame.exportTitle}
         className="chip flex items-center gap-1 px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <DownloadSimple size={13} aria-hidden />
-        <span>Exportar</span>
+        <span>{dict.charts.frame.exportOpen}</span>
       </button>
       {open && (
         <div
           ref={menuRef}
           role="menu"
-          aria-label={`Exportar ${title}`}
+          aria-label={dict.charts.frame.exportMenu(title)}
           tabIndex={-1}
           className="absolute right-0 top-full z-30 mt-1.5 min-w-44 rounded-lg border border-zinc-800 bg-zinc-900 p-1 shadow-xl focus:outline-none"
         >
           {table && (
             <button role="menuitem" type="button" onClick={exportCsv} className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs text-zinc-200 hover:bg-zinc-800 focus-visible:bg-zinc-800 focus-visible:outline-none">
-              Datos en CSV
+              {dict.charts.frame.exportCsv}
             </button>
           )}
           {svg && (
             <button role="menuitem" type="button" onClick={exportSvg} className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs text-zinc-200 hover:bg-zinc-800 focus-visible:bg-zinc-800 focus-visible:outline-none">
-              Gráfica en SVG
+              {dict.charts.frame.exportSvg}
             </button>
           )}
           {svg && (
             <button role="menuitem" type="button" onClick={() => void exportPng()} className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs text-zinc-200 hover:bg-zinc-800 focus-visible:bg-zinc-800 focus-visible:outline-none">
-              Gráfica en PNG
+              {dict.charts.frame.exportPng}
             </button>
           )}
           {!table && !svg && (
-            <p className="px-2.5 py-2 text-[11px] leading-relaxed text-zinc-500">Este panel todavía no tiene gráfica ni tabla que exportar.</p>
+            <p className="px-2.5 py-2 text-[11px] leading-relaxed text-zinc-500">{dict.charts.frame.exportEmpty}</p>
           )}
           {error && (
             <p role="alert" className="px-2.5 py-2 text-[11px] leading-relaxed text-red-300">{error}</p>

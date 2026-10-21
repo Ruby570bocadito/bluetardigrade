@@ -51,13 +51,19 @@ function quarterTotals(row: readonly number[]): [number, number, number, number]
   return quarters
 }
 
-/** Rows for the table twin (and its CSV): per-day quarters, not 24 cells. */
-export function weekHourTableRows(grid: WeekHourGrid): (string | number)[][] {
+/** Rows for the table twin (and its CSV): per-day quarters, not 24 cells.
+ * The day names and the totals label default to the Spanish source; a
+ * caller speaking another language passes its own (dict.charts.week). */
+export function weekHourTableRows(
+  grid: WeekHourGrid,
+  dayNames: readonly string[] = WEEKDAYS_LONG,
+  totalLabel = 'Total',
+): (string | number)[][] {
   const rows: (string | number)[][] = grid.grid.map((row, day) => {
     const quarters = quarterTotals(row)
-    return [WEEKDAYS_LONG[day], ...quarters, quarters[0] + quarters[1] + quarters[2] + quarters[3]]
+    return [dayNames[day], ...quarters, quarters[0] + quarters[1] + quarters[2] + quarters[3]]
   })
-  const totals: (string | number)[] = ['Total', 0, 0, 0, 0, 0]
+  const totals: (string | number)[] = [totalLabel, 0, 0, 0, 0, 0]
   for (const row of rows) {
     for (let i = 1; i <= 4; i++) totals[i] = (totals[i] as number) + (row[i] as number)
   }
