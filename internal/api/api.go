@@ -81,7 +81,7 @@ type Hub struct {
 	mu          sync.Mutex
 	events      []*model.Event // oldest first, trimmed to maxEvents
 	alerts      []alert.Alert  // oldest first, trimmed to maxAlerts
-	subs        map[chan []byte]struct{}
+	subs        map[chan frame]struct{}
 	started     time.Time
 	alertsTotal int
 	bySeverity  map[string]int
@@ -180,6 +180,8 @@ type Hub struct {
 	hostGroupsSum  [sha256.Size]byte
 	hostGroupsMu   sync.Mutex
 	computerDN     adDNCache
+	// hosts a scoped store query may name (scope.go), cached briefly
+	hostsSeen knownHosts
 
 	// known-software list (§2.2, read-only count in /api/stats): nil =
 	// off (no -known-software file or an empty one).
@@ -234,7 +236,7 @@ func NewTLS(addr, certFile, keyFile string) (*Hub, error) {
 func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	h := &Hub{
 		listener:   ln,
-		subs:       make(map[chan []byte]struct{}),
+		subs:       make(map[chan frame]struct{}),
 		started:    time.Now(),
 		bySeverity: map[string]int{},
 		lifecycle:  mustMemoryLifecycle(),
@@ -253,7 +255,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	// Bearer credential here too (Prometheus sends `authorization` from
 	// its scrape config). Registered OUTSIDE the /api/ prefix on
 	// purpose: scrapers look for /metrics by convention.
-	mux.HandleFunc("GET /metrics", h.handleMetrics)
+	mux.HandleFunc("GET /metrics", unscopedOnly("/metrics", h.handleMetrics))
 	mux.HandleFunc("GET /api/events", h.handleEvents)
 	mux.HandleFunc("GET /api/alerts", h.handleAlerts)
 	mux.HandleFunc("GET /api/alerts/search", h.handleAlertSearch)
@@ -277,7 +279,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	mux.HandleFunc("GET /api/sequences", h.handleSequences)
 	mux.HandleFunc("GET /api/fleet", h.handleFleet)
 	mux.HandleFunc("GET /api/groups", h.handleGroups)
-	mux.HandleFunc("PUT /api/settings/groups", h.handleGroupsPut)
+	mux.HandleFunc("PUT /api/settings/groups", unscopedOnly("Editar los grupos de equipos", h.handleGroupsPut))
 	h.registerEnroll(mux)
 	h.registerScenarios(mux)
 	h.registerReports(mux)
@@ -290,7 +292,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	mux.HandleFunc("GET /api/alerts/export", h.handleAlertsExport)
 	mux.HandleFunc("GET /api/events/export", h.handleEventsExport)
 	h.srv = &http.Server{
-		Handler:           securityHeaders(h.guardRebinding(h.auth(guardWriteOrigin(mux)))),
+		Handler:           securityHeaders(h.guardRebinding(h.auth(guardWriteOrigin(h.withScope(mux))))),
 		ReadHeaderTimeout: 5 * time.Second,
 		// idle keep-alive connections are reclaimed instead of pinning
 		// a goroutine and a socket each for as long as a client likes;
@@ -767,7 +769,7 @@ func (h *Hub) Shutdown() {
 	for ch := range h.subs {
 		close(ch)
 	}
-	h.subs = make(map[chan []byte]struct{})
+	h.subs = make(map[chan frame]struct{})
 	h.mu.Unlock()
 	_ = h.srv.Close()
 }
@@ -803,7 +805,7 @@ func (h *Hub) PublishEvent(ev *model.Event) {
 		h.events = h.events[n:]
 	}
 	h.mu.Unlock()
-	h.broadcast("event", ev)
+	h.broadcast("event", ev, ev.Host)
 }
 
 // RecordAlert stores an alert in the ring, persists it (store attached)
@@ -834,7 +836,7 @@ func (h *Hub) RecordAlert(a alert.Alert) {
 	// it is only ever taken after h.mu.Unlock (uniform lock rule).
 	h.risk.Observe(a.Host, a.Severity, at)
 	h.persistAlert(a)
-	h.broadcast("alert", a)
+	h.broadcast("alert", a, a.Host)
 }
 
 // alertEventScan bounds how far back RecordAlert looks for the event
@@ -865,19 +867,29 @@ func (h *Hub) alertTimeLocked(a alert.Alert, now time.Time) time.Time {
 	return now
 }
 
+// frame is one SSE message and the machines it is about: a subscriber
+// limited to host groups (scope.go) gets it only when all of them are
+// in its groups, so a frame about no machine reaches unrestricted
+// subscribers only.
+type frame struct {
+	msg   []byte
+	hosts []string
+}
+
 // broadcast marshals once and ships to every subscriber; slow clients
 // with a full buffer miss messages instead of blocking the engine.
-func (h *Hub) broadcast(topic string, payload any) {
+// hosts are the machines the payload is about.
+func (h *Hub) broadcast(topic string, payload any, hosts ...string) {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return
 	}
-	msg := fmt.Sprintf("event: %s\ndata: %s\n\n", topic, data)
+	f := frame{msg: []byte(fmt.Sprintf("event: %s\ndata: %s\n\n", topic, data)), hosts: hosts}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for ch := range h.subs {
 		select {
-		case ch <- []byte(msg):
+		case ch <- f:
 		default: // subscriber too slow: drop the frame
 		}
 	}
@@ -972,6 +984,13 @@ type statsPayload struct {
 	RingDroppedEvents      uint64         `json:"ring_dropped_events"`
 	RingDroppedAlerts      uint64         `json:"ring_dropped_alerts"`
 	QuotaTopHosts          []quotaHostRow `json:"quota_top_hosts"`
+
+	// Scoped is true for a caller limited to host groups (scope.go):
+	// events_total, events_per_min, alerts_total, by_severity, the risk
+	// fields and quota_top_hosts then count its machines only, over the
+	// records the engine keeps in memory; the platform counters stay
+	// engine-wide.
+	Scoped bool `json:"scoped"`
 }
 
 // quotaHostRow is one host's row of the per-host pressure view: how
@@ -1328,8 +1347,57 @@ func (h *Hub) statsSnapshot() statsPayload {
 	}
 }
 
-func (h *Hub) handleStats(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, h.statsSnapshot())
+func (h *Hub) handleStats(w http.ResponseWriter, r *http.Request) {
+	s := h.statsSnapshot()
+	if sc := scopeFrom(r); sc != nil {
+		s = h.scopedStats(s, sc, time.Now())
+	}
+	writeJSON(w, s)
+}
+
+// scopedStats recounts the per-machine fields of s for a caller limited
+// to host groups, from the in-memory rings and the risk tracker.
+func (h *Hub) scopedStats(s statsPayload, sc *scope, now time.Time) statsPayload {
+	h.mu.Lock()
+	events, alerts := h.events, h.alerts
+	h.mu.Unlock()
+	s.Scoped = true
+	s.EventsTotal, s.EventsPerMin = 0, 0
+	for i := len(events) - 1; i >= 0; i-- {
+		if !sc.allows(events[i].Host) {
+			continue
+		}
+		s.EventsTotal++
+		if now.Sub(events[i].Timestamp) <= time.Minute {
+			s.EventsPerMin++
+		}
+	}
+	s.AlertsTotal, s.BySeverity = 0, map[string]int{}
+	for _, a := range alerts {
+		if sc.allows(a.Host) {
+			s.AlertsTotal++
+			s.BySeverity[a.Severity]++
+		}
+	}
+	hot := []risk.HostRisk{}
+	for _, hr := range h.risk.Snapshot(now, -1) {
+		if sc.allows(hr.Host) {
+			hot = append(hot, hr)
+		}
+	}
+	s.RiskHostsTracked = len(hot)
+	if len(hot) > 5 {
+		hot = hot[:5]
+	}
+	s.HotHosts = hot
+	quota := []quotaHostRow{}
+	for _, row := range s.QuotaTopHosts {
+		if sc.allows(row.Host) {
+			quota = append(quota, row)
+		}
+	}
+	s.QuotaTopHosts = quota
+	return s
 }
 
 func (h *Hub) handleEvents(w http.ResponseWriter, r *http.Request) {
@@ -1350,10 +1418,12 @@ func (h *Hub) handleEvents(w http.ResponseWriter, r *http.Request) {
 	if st != nil {
 		// store attached: serve the FULL history (retention
 		// applies), same filters, newest first
-		out, err := st.QueryEvents(store.EventQuery{
-			Host: f.host, Type: f.evType, Q: f.q,
-			Since: f.since, Until: f.until, Limit: limit,
-		})
+		q, err := h.eventQuery(r.Context(), f, limit)
+		if err != nil {
+			h.storeQueryError(w, err)
+			return
+		}
+		out, err := st.QueryEvents(q)
 		if err != nil {
 			h.storeQueryError(w, err)
 			return
@@ -1416,10 +1486,12 @@ func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 	ring := h.alerts
 	h.mu.Unlock()
 	if st != nil {
-		out, err := st.QueryAlerts(store.AlertQuery{
-			Host: f.host, Severities: f.sevs, RuleID: f.ruleID, Q: f.q,
-			Since: f.since, Until: f.until, Limit: limit,
-		})
+		q, err := h.alertQuery(r.Context(), f, limit)
+		if err != nil {
+			h.storeQueryError(w, err)
+			return
+		}
+		out, err := st.QueryAlerts(q)
 		if err != nil {
 			h.storeQueryError(w, err)
 			return
@@ -1504,6 +1576,23 @@ func (h *Hub) handleAlertStatus(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("invalid decision %q: valid values are false_positive, authorized_activity, confirmed_incident (omit the field for no verdict)", req.Decision))
 		return
 	}
+	// the alert's machine tags the SSE frame (scope.go), and a scoped
+	// caller may only triage the alerts of its groups: any other id
+	// answers like one that does not exist
+	sc := scopeFrom(r)
+	target, found, err := h.alertByID(r.Context(), id)
+	if err != nil {
+		if sc != nil {
+			h.storeQueryError(w, err)
+			return
+		}
+		// unrestricted triage never depended on finding the alert
+		log.Printf("[API] alert %s: lookup for the stream failed: %v", id, err)
+	}
+	if sc != nil && (!found || !sc.allows(target.Host)) {
+		writeErr(w, http.StatusNotFound, "unknown alert id")
+		return
+	}
 	e, err := h.lifecycle.Set(id, st, decision, req.Note, req.By)
 	if err != nil {
 		// Persistence failures are the server's fault: 500 with a
@@ -1530,7 +1619,11 @@ func (h *Hub) handleAlertStatus(w http.ResponseWriter, r *http.Request) {
 	} else {
 		log.Printf("[API] alert %s -> %s (by=%s)", id, e.Status, oneLine(e.By))
 	}
-	h.broadcast("alert_lifecycle", e)
+	if found {
+		h.broadcast("alert_lifecycle", e, target.Host)
+	} else {
+		h.broadcast("alert_lifecycle", e)
+	}
 	writeJSON(w, e)
 }
 
@@ -1608,7 +1701,7 @@ func (h *Hub) handleRules(w http.ResponseWriter, _ *http.Request) {
 // handleSuppressions lists the operator allowlist as it stands right
 // now (expired entries excluded). Read-only: entries are edited in the
 // suppressions.yaml file and hot-reloaded by the engine.
-func (h *Hub) handleSuppressions(w http.ResponseWriter, _ *http.Request) {
+func (h *Hub) handleSuppressions(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	sup := h.suppress
 	h.mu.Unlock()
@@ -1616,11 +1709,7 @@ func (h *Hub) handleSuppressions(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, suppressPayload{Entries: []suppress.Entry{}})
 		return
 	}
-	now := time.Now()
-	writeJSON(w, suppressPayload{
-		Active:  sup.Count(now),
-		Entries: sup.Snapshot(now),
-	})
+	writeJSON(w, scopedSuppressions(scopeFrom(r), sup, time.Now()))
 }
 
 type suppressPayload struct {
@@ -1678,7 +1767,11 @@ func (h *Hub) handleStream(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
-	ch := make(chan []byte, sseBuffer)
+	// a scoped subscriber (scope.go) re-reads its scope now and then:
+	// groups edited in Ajustes and the AD computers apply without a
+	// reconnect
+	sc := scopeFrom(r)
+	ch := make(chan frame, sseBuffer)
 	h.mu.Lock()
 	// subscriber cap: every SSE client pins a channel and a goroutine
 	// for as long as it stays connected, so an unbounded stream route
@@ -1721,11 +1814,19 @@ func (h *Hub) handleStream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			fl.Flush()
-		case msg, ok := <-ch:
+		case f, ok := <-ch:
 			if !ok {
 				return
 			}
-			if _, err := w.Write(msg); err != nil {
+			if sc != nil {
+				if now := time.Now(); now.Sub(sc.built) >= scopeRefresh {
+					sc = h.newScope(sc.names, now)
+				}
+				if !sc.allowsAll(f.hosts) {
+					continue
+				}
+			}
+			if _, err := w.Write(f.msg); err != nil {
 				return
 			}
 			fl.Flush()

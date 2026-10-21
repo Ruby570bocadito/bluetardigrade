@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pbkdf2Sync } from 'node:crypto'
 import { accountAction, listAccounts, newPasswordProblem } from './accounts'
-import { accountStamp, parseUsers, resetUsersCache, verifyAccount, type Principal } from './users'
+import { accountStamp, parseUsers, resetUsersCache, scopeOf, verifyAccount, type Principal } from './users'
 
 let dir = ''
 let file = ''
@@ -137,4 +137,38 @@ test('a new password is long enough, typed twice the same, and not the current o
   expect(await newPasswordProblem('luis', 'una-contraseña-nueva', 'otra-contraseña-nueva')).toBe('distintas')
   expect(await newPasswordProblem('luis', 'contraseña-de-luis', 'contraseña-de-luis')).toBe('igual')
   expect(await newPasswordProblem('luis', 'una-contraseña-nueva', 'una-contraseña-nueva')).toBeNull()
+})
+
+test('host groups: kept in the file, cleaned, shown, and changing them ends the sessions', async () => {
+  team()
+  const stamp = await accountStamp('luis')
+  expect(await accountAction(jefa, 'grupos', { user: 'luis', groups: ['Madrid', 'servidores', 'madrid'] })).toEqual({ ok: true, user: 'luis' })
+  expect(stored().users[1].groups).toEqual(['madrid', 'servidores'])
+  expect(await accountStamp('luis')).not.toBe(stamp)
+  expect(await verifyAccount('luis', 'contraseña-de-luis')).toEqual({ name: 'luis', role: 'analyst', mode: 'users', groups: ['madrid', 'servidores'] })
+  const list = listAccounts()
+  if ('error' in list) throw new Error(list.error)
+  expect(list.accounts.map((a) => a.groups)).toEqual([[], ['madrid', 'servidores']])
+  for (const groups of [['con espacio'], 'madrid', Array.from({ length: 65 }, (_, i) => `g${i}`)]) {
+    expect(await accountAction(jefa, 'grupos', { user: 'luis', groups })).toMatchObject({ ok: false, error: 'grupos' })
+  }
+  expect(await accountAction(jefa, 'grupos', { user: 'luis', groups: [] })).toMatchObject({ ok: true })
+  expect(stored().users[1].groups).toBeUndefined()
+  expect(await accountStamp('luis')).toBe(stamp)
+  const res = await accountAction(jefa, 'crear', { user: 'marta', role: 'viewer', groups: ['madrid'] })
+  expect(res.ok && stored().users[2].groups).toEqual(['madrid'])
+})
+
+test('who is limited: accounts with groups that are not administrators', () => {
+  expect(scopeOf({ name: 'a', role: 'analyst', mode: 'users', groups: ['madrid'] })).toEqual(['madrid'])
+  expect(scopeOf({ name: 'a', role: 'viewer', mode: 'users', groups: ['madrid'] })).toEqual(['madrid'])
+  expect(scopeOf({ name: 'a', role: 'admin', mode: 'users', groups: ['madrid'] })).toBeNull()
+  expect(scopeOf({ name: 'a', role: 'analyst', mode: 'users' })).toBeNull()
+  expect(scopeOf({ name: 'a', role: 'analyst', mode: 'users', groups: [] })).toBeNull()
+  expect(scopeOf({ name: 'local', role: 'admin', mode: 'open' })).toBeNull()
+  const base = entry('ana', 'analyst', 'x')
+  expect(parseUsers(JSON.stringify({ users: [{ ...base, groups: ['Madrid', 'madrid'] }] })).accounts[0].groups).toEqual(['madrid'])
+  for (const groups of ['madrid', [1], ['-madrid'], ['a'.repeat(33)]]) {
+    expect(parseUsers(JSON.stringify({ users: [{ ...base, groups }] })).error).toContain('groups')
+  }
 })

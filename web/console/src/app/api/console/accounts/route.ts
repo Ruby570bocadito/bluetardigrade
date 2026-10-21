@@ -1,7 +1,8 @@
 // /api/console/accounts: account management for administrators
 // (lib/accounts.ts). GET lists the accounts of the users file; POST
-// {action, user, role?} creates, changes the role, disables or enables,
-// resets the password, removes the two-step sign-in or deletes one.
+// {action, user, role?, groups?} creates, changes the role or the host
+// groups, disables or enables, resets the password, removes the two-step
+// sign-in or deletes one.
 // A creation or a reset answers with the temporary password, once.
 //
 // Only a signed-in administrator of the users file; writes are
@@ -15,7 +16,8 @@ import { audit, type Principal } from '@/lib/users'
 
 export const dynamic = 'force-dynamic'
 
-const MAX_BODY = 2048
+// 64 group names of up to 32 characters fit with room to spare
+const MAX_BODY = 4096
 const NO_STORE = { 'cache-control': 'no-store' }
 
 async function administrator(request: Request): Promise<Principal | Response> {
@@ -43,7 +45,7 @@ export async function POST(request: Request): Promise<Response> {
   const actor = await administrator(request)
   if (actor instanceof Response) return actor
   if (Number(request.headers.get('content-length') ?? 0) > MAX_BODY) return Response.json({ error: 'accion' }, { status: 413, headers: NO_STORE })
-  let body: { action?: unknown; user?: unknown; role?: unknown }
+  let body: { action?: unknown; user?: unknown; role?: unknown; groups?: unknown }
   try {
     body = JSON.parse((await request.text()).slice(0, MAX_BODY))
   } catch {

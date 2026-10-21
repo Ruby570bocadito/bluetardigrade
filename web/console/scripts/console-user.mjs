@@ -13,11 +13,15 @@
 //       role that requires it, the next sign-in enrolls again
 //   node scripts/console-user.mjs --file <path> --require-mfa <roles|none>
 //       roles that must use two-step sign-in, e.g. admin,analyst
+//   node scripts/console-user.mjs --file <path> --groups <user> <groups|none>
+//       the engine host groups the account is limited to, e.g.
+//       madrid,servidores (none: every machine; administrators always
+//       see every machine)
 //
 // The password is read from the terminal (or from stdin when piped) and
 // only its PBKDF2-SHA256 hash is stored. The console re-reads the file
-// on its own; changing a password, a role or the two-step sign-in, or
-// removing an account, ends that account's open sessions. Account names
+// on its own; changing a password, a role, the groups or the two-step
+// sign-in, or removing an account, ends that account's open sessions. Account names
 // compare without case, as in the console.
 
 import { pbkdf2Sync, randomBytes } from 'node:crypto'
@@ -28,12 +32,16 @@ import { createInterface } from 'node:readline'
 const ITERATIONS = 310_000
 const USER_RE = /^[\p{L}\p{N}._@-]{1,64}$/u
 const ROLES = ['admin', 'analyst', 'viewer']
+// the engine's group names (internal/hostgroup) and the console's cap
+const GROUP_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/
+const MAX_GROUPS = 64
 const USAGE = [
   'uso: node scripts/console-user.mjs <usuario> <admin|analyst|viewer>',
   '     node scripts/console-user.mjs --file <ruta> <usuario> <admin|analyst|viewer>',
   '     node scripts/console-user.mjs --file <ruta> --remove <usuario>',
   '     node scripts/console-user.mjs --file <ruta> --reset-mfa <usuario>',
   '     node scripts/console-user.mjs --file <ruta> --require-mfa <admin,analyst,viewer|none>',
+  '     node scripts/console-user.mjs --file <ruta> --groups <usuario> <grupo,grupo|none>',
 ].join('\n')
 
 function usage() {
@@ -48,9 +56,17 @@ if (args[0] === '--file') {
   args.splice(0, 2)
   if (!file) usage()
 }
-const command = ['--remove', '--reset-mfa', '--require-mfa'].includes(args[0]) ? args.shift() : 'set'
-if (command !== 'set' && (!file || args.length !== 1)) usage()
+const command = ['--remove', '--reset-mfa', '--require-mfa', '--groups'].includes(args[0]) ? args.shift() : 'set'
+if (command !== 'set' && (!file || args.length !== (command === '--groups' ? 2 : 1))) usage()
 const [user, role] = args
+let groups = []
+if (command === '--groups') {
+  groups = role === 'none' ? [] : [...new Set(role.split(',').map((g) => g.trim().toLowerCase()))]
+  if ((!groups.length && role !== 'none') || groups.length > MAX_GROUPS || !groups.every((g) => GROUP_RE.test(g))) {
+    console.error('grupos no válidos: nombres en minúsculas, cifras, - y _ separados por comas (o none)')
+    process.exit(2)
+  }
+}
 let required = []
 if (command === '--require-mfa') {
   required = user === 'none' ? [] : user.split(',').map((r) => r.trim())
@@ -146,6 +162,16 @@ try {
     writeDoc(doc)
     const enrolls = (doc.mfa_required ?? []).includes(account.role)
     console.error(`verificación en dos pasos de ${account.user} quitada; sus sesiones abiertas terminan${enrolls ? ' y al entrar la configurará de nuevo' : ''}`)
+  } else if (command === '--groups') {
+    const doc = readDoc()
+    const account = doc.users.find(same)
+    if (!account) throw new Error(`no hay ninguna cuenta ${user}`)
+    if (groups.length) account.groups = groups
+    else delete account.groups
+    writeDoc(doc)
+    console.error(groups.length
+      ? `${account.user} ve solo los equipos de: ${groups.join(', ')}${account.role === 'admin' ? ' (es admin: seguirá viéndolos todos mientras lo sea)' : ''}; sus sesiones abiertas terminan`
+      : `${account.user} ve todos los equipos; sus sesiones abiertas terminan`)
   } else if (command === '--require-mfa') {
     const doc = readDoc()
     if (doc.users.length === 0) throw new Error(`${file} no tiene cuentas`)

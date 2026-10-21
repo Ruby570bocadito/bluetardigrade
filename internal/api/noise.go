@@ -36,7 +36,7 @@ func (h *Hub) handleNoise(w http.ResponseWriter, r *http.Request) {
 		limit = report.NoiseTopMax
 	}
 
-	events, evTrunc, source, ok := h.windowedEvents(w, window, host)
+	events, evTrunc, source, ok := h.windowedEvents(w, r, window, host)
 	if !ok {
 		return
 	}
@@ -48,7 +48,7 @@ func (h *Hub) handleNoise(w http.ResponseWriter, r *http.Request) {
 	// cap (same scan-honesty rule the reports serve — truncation
 	// belongs to each scan, and the report says truncated when ANY of
 	// its scans hit the cap).
-	alertRows, alTrunc, _, ok := h.windowedAlerts(w, window)
+	alertRows, alTrunc, _, ok := h.windowedAlerts(w, r, window)
 	if !ok {
 		return
 	}

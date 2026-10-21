@@ -61,5 +61,11 @@ func (h *Hub) handleAlertForensics(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	// a caller limited to host groups (scope.go) reads the bundles of
+	// its machines only; any other answers like a missing one
+	if sc := scopeFrom(r); sc != nil && !sc.allows(b.Alert.Host) {
+		writeErr(w, http.StatusNotFound, forensic.ErrNotFound.Error())
+		return
+	}
 	writeJSON(w, b)
 }

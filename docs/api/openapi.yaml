@@ -48,6 +48,25 @@ info:
       a `WWW-Authenticate: Bearer` challenge and a JSON error body
       naming the flag to set; the scheme is matched case-insensitively
       (RFC 7235) and the token comparison is constant-time.
+    - **Access by host group**: a request carrying `X-SF-Scope:
+      <group>,<group>` (the console proxy sends it for accounts
+      limited to host groups, see `/api/groups`) sees and acts on the
+      machines of those groups only. Without the header nothing
+      changes.
+      - Lists, search, exports, reports, noise, `/api/fleet`,
+        `/api/stats` (with `scoped: true`), baselines, forensic
+        bundles, the response audit, suppressions and the stream are
+        narrowed.
+      - Incidents are visible only when all their machines are in
+        scope.
+      - An alert, incident or bundle outside the scope answers `404`,
+        and writes naming foreign machines are refused.
+      - Active Directory, `/metrics`, enrollment writes and group edits
+        answer `403`.
+      - A group name the engine does not have matches nothing.
+
+      The header only narrows: whoever holds the token can always ask
+      without it.
 
     The alert webhook (engine `-webhook` flag) pushes the same `Alert`
     object defined here as JSON to an external collector.
@@ -2681,6 +2700,7 @@ components:
         - ingest_rejected
         - ingest_identities
         - ingest_identity_violations
+        - scoped
         - events_per_min
         - alerts_total
         - by_severity
@@ -3036,6 +3056,13 @@ components:
             to keep series cardinality bounded.
           items:
             $ref: '#/components/schemas/QuotaHostRow'
+        scoped:
+          type: boolean
+          description: true when the request carried X-SF-Scope.
+            events_total, events_per_min, alerts_total, by_severity, the
+            risk fields and quota_top_hosts then count the machines of
+            those groups only, over the records the engine keeps in
+            memory; the platform counters stay engine-wide.
     QuotaHostRow:
       type: object
       required: [host, ring_events, ring_alerts, beacon, threshold]

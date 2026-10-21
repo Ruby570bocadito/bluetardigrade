@@ -30,7 +30,8 @@ type fleetPayload struct {
 	GraceMinS int `json:"heartbeat_grace_min_s"`
 }
 
-func (h *Hub) handleFleet(w http.ResponseWriter, _ *http.Request) {
+func (h *Hub) handleFleet(w http.ResponseWriter, r *http.Request) {
+	sc := scopeFrom(r)
 	h.mu.Lock()
 	t := h.fleet
 	h.mu.Unlock()
@@ -42,6 +43,10 @@ func (h *Hub) handleFleet(w http.ResponseWriter, _ *http.Request) {
 		set, _ := h.currentHostGroups()
 		dnByHost := h.computerDNByHost(now)
 		for _, host := range t.Snapshot(now) {
+			// a caller limited to host groups lists its machines only
+			if !sc.allows(host.Host) {
+				continue
+			}
 			host.Groups = set.Of(groupMember(host, dnByHost))
 			out.Hosts = append(out.Hosts, host)
 			switch host.Status {

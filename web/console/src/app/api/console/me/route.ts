@@ -5,7 +5,7 @@
 
 import { principalFor, unauthorizedResponse } from '@/lib/access'
 import { mfaState } from '@/lib/mfa'
-import { auditFile, roleAtLeast } from '@/lib/users'
+import { auditFile, roleAtLeast, scopeOf } from '@/lib/users'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +19,8 @@ export async function GET(request: Request): Promise<Response> {
       ...principal,
       can_triage: roleAtLeast(principal.role, 'analyst'),
       can_respond: roleAtLeast(principal.role, 'admin'),
+      // the host groups the account is limited to, or null for all
+      scope: scopeOf(principal),
       audit: auditFile() !== '',
       ...(mfa ? { mfa: { enrolled: mfa.enrolled, required: mfa.required, recovery_left: mfa.recoveryLeft } } : {}),
     },

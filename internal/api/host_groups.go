@@ -116,7 +116,9 @@ type groupsPayload struct {
 	Ungrouped []string `json:"ungrouped"`
 }
 
-func (h *Hub) groupsPayload(now time.Time) groupsPayload {
+// A caller limited to host groups (scope.go) gets its own groups only,
+// and no list of the machines outside every group.
+func (h *Hub) groupsPayload(now time.Time, sc *scope) groupsPayload {
 	set, path := h.currentHostGroups()
 	h.mu.Lock()
 	writable, t := h.writeEnabled, h.fleet
@@ -136,7 +138,13 @@ func (h *Hub) groupsPayload(now time.Time) groupsPayload {
 		}
 	}
 	sort.Strings(out.Ungrouped)
+	if sc != nil {
+		out.Ungrouped = []string{}
+	}
 	for _, g := range set.Groups() {
+		if sc != nil && !sc.groups[g.Name] {
+			continue
+		}
 		m := members[g.Name]
 		sort.Strings(m)
 		if m == nil {
@@ -147,8 +155,8 @@ func (h *Hub) groupsPayload(now time.Time) groupsPayload {
 	return out
 }
 
-func (h *Hub) handleGroups(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, h.groupsPayload(time.Now()))
+func (h *Hub) handleGroups(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, h.groupsPayload(time.Now(), scopeFrom(r)))
 }
 
 type groupsUpdate struct {
@@ -214,5 +222,5 @@ func (h *Hub) handleGroupsPut(w http.ResponseWriter, r *http.Request) {
 	}
 	h.SetHostGroups(path, next, sum)
 	log.Printf("[API] WRITE host-groups groups=%d (was %d) by=api (file %s)", len(next.Names()), len(set.Names()), oneLine(path))
-	writeJSON(w, h.groupsPayload(time.Now()))
+	writeJSON(w, h.groupsPayload(time.Now(), nil))
 }

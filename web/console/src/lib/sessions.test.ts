@@ -135,3 +135,12 @@ test('cookies are HttpOnly and SameSite=Strict, Secure only over HTTPS', () => {
   expect(readSessionCookie(new Request('http://x/', { headers: { cookie: 'a=1; sf_session=XYZ ; b=2' } }))).toBe('XYZ')
   expect(readSessionCookie(new Request('http://x/', { headers: { cookie: 'xsf_session=1' } }))).toBeUndefined()
 })
+
+test('a session carries the account host groups, and changing them ends it', async () => {
+  writeUsers([{ ...entry('ana', 'analyst', 'contraseña-de-ana'), groups: ['madrid'] }])
+  const scoped = { ...ana, groups: ['madrid'] }
+  const id = await openSession(scoped, (await accountStamp('ana'))!, T0)
+  expect(await sessionPrincipal(id, T0 + 60_000)).toEqual(scoped)
+  writeUsers([{ ...entry('ana', 'analyst', 'contraseña-de-ana'), groups: ['madrid', 'servidores'] }])
+  expect(await sessionPrincipal(id, T0 + 2 * 60_000)).toBeNull()
+})

@@ -78,11 +78,11 @@ func (h *Hub) handleReport(w http.ResponseWriter, r *http.Request) {
 	generated := time.Now()
 	switch kind {
 	case report.KindExecutive:
-		h.reportExecutive(w, window, generated, format)
+		h.reportExecutive(w, r, window, generated, format)
 	case report.KindFleet:
-		h.reportFleet(w, window, generated, format)
+		h.reportFleet(w, r, window, generated, format)
 	case report.KindSoc:
-		h.reportSoc(w, window, generated, format)
+		h.reportSoc(w, r, window, generated, format)
 	}
 }
 
@@ -92,7 +92,11 @@ func (h *Hub) handleReport(w http.ResponseWriter, r *http.Request) {
 // oldest record it still holds, so the consumer can see whether the
 // window is actually covered. On a store failure the 500 is written
 // and ok comes back false.
-func (h *Hub) windowedAlerts(w http.ResponseWriter, window report.Window) (rows []report.AlertInput, truncated bool, oldest string, ok bool) {
+//
+// A caller limited to host groups (scope.go) gets its machines only,
+// here and in windowedEvents.
+func (h *Hub) windowedAlerts(w http.ResponseWriter, r *http.Request, window report.Window) (rows []report.AlertInput, truncated bool, oldest string, ok bool) {
+	sc := scopeFrom(r)
 	h.mu.Lock()
 	st := h.store
 	ring := h.alerts
@@ -104,7 +108,7 @@ func (h *Hub) windowedAlerts(w http.ResponseWriter, window report.Window) (rows 
 		for i := range ring {
 			a := ring[i]
 			ts, parsed := alertTimestamp(a)
-			if !parsed || ts.Before(window.From) || ts.After(window.Until) {
+			if !parsed || ts.Before(window.From) || ts.After(window.Until) || !sc.allows(a.Host) {
 				continue
 			}
 			rows = append(rows, h.alertInput(a))
@@ -117,9 +121,14 @@ func (h *Hub) windowedAlerts(w http.ResponseWriter, window report.Window) (rows 
 		}
 		return rows, false, oldest, true
 	}
-	got, err := st.QueryAlerts(store.AlertQuery{
+	q, err := h.scopeAlertQuery(r.Context(), sc, store.AlertQuery{
 		Since: window.From, Until: window.Until, Limit: reportScanLimit,
 	})
+	if err != nil {
+		h.storeQueryError(w, err)
+		return nil, false, "", false
+	}
+	got, err := st.QueryAlerts(q)
 	if err != nil {
 		h.storeQueryError(w, err)
 		return nil, false, "", false
@@ -134,7 +143,8 @@ func (h *Hub) windowedAlerts(w http.ResponseWriter, window report.Window) (rows 
 // windowedEvents gathers the window's events for aggregation (fleet
 // coverage counts, noise). Same store/ring duality and the same 500
 // path as the alerts.
-func (h *Hub) windowedEvents(w http.ResponseWriter, window report.Window, host string) (events []*model.Event, truncated bool, source string, ok bool) {
+func (h *Hub) windowedEvents(w http.ResponseWriter, r *http.Request, window report.Window, host string) (events []*model.Event, truncated bool, source string, ok bool) {
+	sc := scopeFrom(r)
 	h.mu.Lock()
 	st := h.store
 	ring := h.events
@@ -150,13 +160,21 @@ func (h *Hub) windowedEvents(w http.ResponseWriter, window report.Window, host s
 			if host != "" && strings.ToLower(ev.Host) != host {
 				continue
 			}
+			if !sc.allows(ev.Host) {
+				continue
+			}
 			out = append(out, ev)
 		}
 		return out, false, report.SourceRing, true
 	}
-	got, err := st.QueryEvents(store.EventQuery{
+	q, err := h.scopeEventQuery(r.Context(), sc, store.EventQuery{
 		Since: window.From, Until: window.Until, Limit: reportScanLimit,
 	})
+	if err != nil {
+		h.storeQueryError(w, err)
+		return nil, false, "", false
+	}
+	got, err := st.QueryEvents(q)
 	if err != nil {
 		h.storeQueryError(w, err)
 		return nil, false, "", false
@@ -201,15 +219,24 @@ func (h *Hub) alertInput(a alert.Alert) report.AlertInput {
 // reportExecutive builds the executive summary. Incidents and the
 // fleet snapshot are read outside the data lock: both stores take
 // their own locking.
-func (h *Hub) reportExecutive(w http.ResponseWriter, window report.Window, generated time.Time, format string) {
-	rows, truncated, oldest, ok := h.windowedAlerts(w, window)
+func (h *Hub) reportExecutive(w http.ResponseWriter, r *http.Request, window report.Window, generated time.Time, format string) {
+	rows, truncated, oldest, ok := h.windowedAlerts(w, r, window)
 	if !ok {
 		return
 	}
+	sc := scopeFrom(r)
 	incStore := h.incidentStore()
-	incidents := incStore.List()
+	incidents := sc.visibleIncidents(incStore.List())
 	open, _ := incStore.Counts()
-	enabled, fleetHosts := h.fleetSnapshot()
+	if sc != nil {
+		open = 0
+		for _, inc := range incidents {
+			if inc.Status != incident.StatusClosed {
+				open++
+			}
+		}
+	}
+	enabled, fleetHosts := h.fleetSnapshot(sc)
 	e := report.BuildExecutive(report.ExecutiveInputs{
 		Alerts:          rows,
 		Truncated:       truncated,
@@ -226,8 +253,8 @@ func (h *Hub) reportExecutive(w http.ResponseWriter, window report.Window, gener
 
 // reportFleet builds the coverage report: tracker snapshot plus the
 // windowed per-host event counts from one scan.
-func (h *Hub) reportFleet(w http.ResponseWriter, window report.Window, generated time.Time, format string) {
-	events, truncated, source, ok := h.windowedEvents(w, window, "")
+func (h *Hub) reportFleet(w http.ResponseWriter, r *http.Request, window report.Window, generated time.Time, format string) {
+	events, truncated, source, ok := h.windowedEvents(w, r, window, "")
 	if !ok {
 		return
 	}
@@ -235,7 +262,7 @@ func (h *Hub) reportFleet(w http.ResponseWriter, window report.Window, generated
 	for _, ev := range events {
 		counts[ev.Host]++
 	}
-	enabled, hosts := h.fleetSnapshot()
+	enabled, hosts := h.fleetSnapshot(scopeFrom(r))
 	f := report.BuildFleetCoverage(report.FleetInputs{
 		Enabled:        enabled,
 		Hosts:          hosts,
@@ -249,14 +276,26 @@ func (h *Hub) reportFleet(w http.ResponseWriter, window report.Window, generated
 // reportSoc builds the triage-throughput report from the windowed
 // alerts and the lifecycle entries (the store's latest action per
 // alert; the builder documents that bound).
-func (h *Hub) reportSoc(w http.ResponseWriter, window report.Window, generated time.Time, format string) {
-	rows, truncated, _, ok := h.windowedAlerts(w, window)
+func (h *Hub) reportSoc(w http.ResponseWriter, r *http.Request, window report.Window, generated time.Time, format string) {
+	rows, truncated, _, ok := h.windowedAlerts(w, r, window)
 	if !ok {
 		return
+	}
+	// a scoped caller counts the triage of its own alerts only: those of
+	// the window, the ones it can name
+	var inScope map[string]bool
+	if scopeFrom(r) != nil {
+		inScope = make(map[string]bool, len(rows))
+		for _, a := range rows {
+			inScope[a.ID] = true
+		}
 	}
 	entries := h.lifecycle.List()
 	lc := make([]report.LifecycleEvent, 0, len(entries))
 	for _, e := range entries {
+		if inScope != nil && !inScope[e.AlertID] {
+			continue
+		}
 		lc = append(lc, report.LifecycleEvent{AlertID: e.AlertID, Status: string(e.Status), At: e.At, By: e.By})
 	}
 	s := report.BuildSocActivity(report.SocInputs{
@@ -278,6 +317,9 @@ func (h *Hub) reportIncident(w http.ResponseWriter, r *http.Request, format stri
 	}
 	incStore := h.incidentStore()
 	inc, err := incStore.Get(id)
+	if err == nil && !scopeFrom(r).seesIncident(inc) {
+		err = incident.ErrNotFound
+	}
 	if err != nil {
 		if err == incident.ErrNotFound {
 			http.Error(w, "no such incident: "+id, http.StatusNotFound)
@@ -307,8 +349,9 @@ func (h *Hub) reportIncident(w http.ResponseWriter, r *http.Request, format stri
 	}
 
 	rows := make([]report.IncidentAlert, 0, len(inc.AlertIDs))
+	sc := scopeFrom(r)
 	for _, aid := range inc.AlertIDs {
-		if a, found := byID[aid]; found {
+		if a, found := byID[aid]; found && sc.allows(a.Host) {
 			rows = append(rows, report.IncidentAlert{AlertInput: h.alertInput(a), Found: true})
 			continue
 		}
@@ -366,7 +409,9 @@ func alertTimestamp(a alert.Alert) (time.Time, bool) {
 }
 
 // fleetSnapshot copies the tracker view the reports run on.
-func (h *Hub) fleetSnapshot() (bool, []report.FleetHostInput) {
+//
+// A caller limited to host groups gets its machines only.
+func (h *Hub) fleetSnapshot(sc *scope) (bool, []report.FleetHostInput) {
 	h.mu.Lock()
 	t := h.fleet
 	h.mu.Unlock()
@@ -376,6 +421,9 @@ func (h *Hub) fleetSnapshot() (bool, []report.FleetHostInput) {
 	snap := t.Snapshot(time.Now())
 	out := make([]report.FleetHostInput, 0, len(snap))
 	for _, host := range snap {
+		if !sc.allows(host.Host) {
+			continue
+		}
 		version := ""
 		if host.Sensor != nil {
 			version = host.Sensor.Version

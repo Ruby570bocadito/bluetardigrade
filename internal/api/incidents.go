@@ -60,9 +60,62 @@ type incidentList struct {
 	Persistent bool                `json:"persistent"`
 }
 
-func (h *Hub) handleIncidentList(w http.ResponseWriter, _ *http.Request) {
+func (h *Hub) handleIncidentList(w http.ResponseWriter, r *http.Request) {
 	s := h.incidentStore()
-	writeJSON(w, incidentList{Incidents: s.List(), Persistent: s.Persistent()})
+	writeJSON(w, incidentList{Incidents: scopeFrom(r).visibleIncidents(s.List()), Persistent: s.Persistent()})
+}
+
+// visibleIncident checks that a caller limited to host groups
+// (scope.go) sees the incident: all its machines are in its groups. Any
+// other answers like an unknown id.
+func (h *Hub) visibleIncident(w http.ResponseWriter, r *http.Request, id string) bool {
+	sc := scopeFrom(r)
+	if sc == nil {
+		return true
+	}
+	inc, err := h.incidentStore().Get(id)
+	if err != nil {
+		h.incidentError(w, id, err)
+		return false
+	}
+	if !sc.seesIncident(inc) {
+		h.incidentError(w, id, incident.ErrNotFound)
+		return false
+	}
+	return true
+}
+
+// scopedIncidentInput checks, for a caller limited to host groups, the
+// alerts and machines it puts in an incident: all of them must be its
+// own, and it returns the machines of the alerts (from the ring or the
+// store) so the incident stays visible to it. Unrestricted callers get
+// (nil, true).
+func (h *Hub) scopedIncidentInput(w http.ResponseWriter, r *http.Request, alertIDs, hosts []string) ([]string, bool) {
+	sc := scopeFrom(r)
+	if sc == nil {
+		return nil, true
+	}
+	found, all, err := h.alertHosts(r.Context(), alertIDs)
+	if err != nil {
+		h.storeQueryError(w, err)
+		return nil, false
+	}
+	for _, host := range found {
+		if !sc.allows(host) {
+			all = false
+		}
+	}
+	if !all {
+		writeErr(w, http.StatusNotFound, "unknown alert id")
+		return nil, false
+	}
+	for _, host := range hosts {
+		if !sc.allows(host) {
+			writeErr(w, http.StatusForbidden, "una cuenta limitada a grupos de equipos solo pone en un incidente equipos de sus grupos")
+			return nil, false
+		}
+	}
+	return found, true
 }
 
 func (h *Hub) handleIncidentGet(w http.ResponseWriter, r *http.Request) {
@@ -75,6 +128,10 @@ func (h *Hub) handleIncidentGet(w http.ResponseWriter, r *http.Request) {
 		h.incidentError(w, id, err)
 		return
 	}
+	if !scopeFrom(r).seesIncident(inc) {
+		h.incidentError(w, id, incident.ErrNotFound)
+		return
+	}
 	writeJSON(w, inc)
 }
 
@@ -83,10 +140,20 @@ func (h *Hub) handleIncidentCreate(w http.ResponseWriter, r *http.Request) {
 	if !readIncidentBody(w, r, &in) {
 		return
 	}
+	scoped, ok := h.scopedIncidentInput(w, r, in.AlertIDs, in.Hosts)
+	if !ok {
+		return
+	}
 	hosts, severity := h.alertContext(in.AlertIDs)
-	in.Hosts = append(in.Hosts, hosts...)
+	in.Hosts = append(append(in.Hosts, hosts...), scoped...)
 	if in.Severity == "" {
 		in.Severity = severity
+	}
+	if scopeFrom(r) != nil && len(in.Hosts) == 0 {
+		// an incident with no machine is visible to unrestricted
+		// accounts only: its author would lose it at once
+		writeErr(w, http.StatusBadRequest, "una cuenta limitada a grupos de equipos abre incidentes sobre alertas o equipos de sus grupos")
+		return
 	}
 	inc, err := h.incidentStore().Create(in)
 	if err != nil && !errors.Is(err, incident.ErrPersistFailed) {
@@ -98,7 +165,7 @@ func (h *Hub) handleIncidentCreate(w http.ResponseWriter, r *http.Request) {
 		h.incidentError(w, inc.ID, err)
 		return
 	}
-	h.broadcast("incident", inc)
+	h.broadcast("incident", inc, inc.Hosts...)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(inc)
@@ -111,6 +178,9 @@ func (h *Hub) handleIncidentPatch(w http.ResponseWriter, r *http.Request) {
 	}
 	var p incident.Patch
 	if !readIncidentBody(w, r, &p) {
+		return
+	}
+	if !h.visibleIncident(w, r, id) {
 		return
 	}
 	inc, err := h.incidentStore().Update(id, p)
@@ -133,11 +203,18 @@ func (h *Hub) handleIncidentAlerts(w http.ResponseWriter, r *http.Request) {
 	if !readIncidentBody(w, r, &req) {
 		return
 	}
+	if !h.visibleIncident(w, r, id) {
+		return
+	}
+	scoped, ok := h.scopedIncidentInput(w, r, req.AlertIDs, req.Hosts)
+	if !ok {
+		return
+	}
 	hosts, severity := h.alertContext(req.AlertIDs)
 	if req.Severity == "" {
 		req.Severity = severity
 	}
-	inc, err := h.incidentStore().AddAlerts(id, req.AlertIDs, append(req.Hosts, hosts...), req.Severity, req.By)
+	inc, err := h.incidentStore().AddAlerts(id, req.AlertIDs, append(append(req.Hosts, hosts...), scoped...), req.Severity, req.By)
 	h.finishIncident(w, id, inc, err, "alerts added", req.By)
 }
 
@@ -155,6 +232,9 @@ func (h *Hub) handleIncidentNote(w http.ResponseWriter, r *http.Request) {
 	if !readIncidentBody(w, r, &req) {
 		return
 	}
+	if !h.visibleIncident(w, r, id) {
+		return
+	}
 	inc, err := h.incidentStore().AddNote(id, req.Text, req.By)
 	h.finishIncident(w, id, inc, err, "note added", req.By)
 }
@@ -169,7 +249,7 @@ func (h *Hub) finishIncident(w http.ResponseWriter, id string, inc incident.Inci
 		h.incidentError(w, id, err)
 		return
 	}
-	h.broadcast("incident", inc)
+	h.broadcast("incident", inc, inc.Hosts...)
 	writeJSON(w, inc)
 }
 

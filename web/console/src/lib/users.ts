@@ -24,6 +24,12 @@
 // changes. A file that is configured but unreadable or empty locks the
 // console (fail closed) instead of opening it.
 //
+// Host groups (F2) add "groups": the engine host groups the account
+// sees (names of Ajustes -> Grupos). An account without groups, and any
+// administrator, sees every machine; one with groups sees and acts on
+// the machines of those groups only (scopeOf, enforced by the engine
+// from the X-SF-Scope header route.ts sends).
+//
 // Two-step sign-in (lib/mfa.ts) adds, per account, "totp" (the base32
 // secret of the authenticator app) and "recovery" (SHA-256 of each
 // unused recovery code), and at the top level "mfa_required" (the roles
@@ -49,11 +55,15 @@ export type Principal = {
   // users: an account of CONSOLE_USERS_FILE; token: the shared
   // CONSOLE_ACCESS_TOKEN; open: loopback without credentials
   mode: 'users' | 'token' | 'open'
+  // the account's host groups (accounts of the users file only)
+  groups?: string[]
 }
 
 type Account = {
   user: string
   role: Role
+  // engine host groups the account is limited to ([] = every machine)
+  groups: string[]
   iterations: number
   salt: Uint8Array
   hash: Uint8Array
@@ -92,6 +102,37 @@ function b64url(s: string): Uint8Array | null {
 
 const MAX_RECOVERY = 20
 const RECOVERY_HASH_RE = /^[0-9a-f]{64}$/
+// the engine's group names (internal/hostgroup) and its group cap
+export const GROUP_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/
+export const MAX_ACCOUNT_GROUPS = 64
+
+// cleanGroups validates a "groups" value: a list of group names (any
+// case), returned lowercased and without repeats, or null when invalid.
+export function cleanGroups(value: unknown): string[] | null {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value) || value.length > MAX_ACCOUNT_GROUPS) return null
+  const out: string[] = []
+  for (const raw of value) {
+    const name = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
+    if (!GROUP_NAME_RE.test(name)) return null
+    if (!out.includes(name)) out.push(name)
+  }
+  return out
+}
+
+// principalOf is who an account of the users file acts as (groups only
+// when it has some).
+export function principalOf(account: { user: string; role: Role; groups: string[] }): Principal {
+  return { name: account.user, role: account.role, mode: 'users', ...(account.groups.length ? { groups: account.groups } : {}) }
+}
+
+// scopeOf is the list of host groups a principal is limited to, or null
+// when it sees every machine: administrators, accounts without groups
+// and consoles without accounts.
+export function scopeOf(principal: Principal): string[] | null {
+  if (principal.mode !== 'users' || principal.role === 'admin' || !principal.groups?.length) return null
+  return principal.groups
+}
 
 function isRole(value: unknown): value is Role {
   return value === 'admin' || value === 'analyst' || value === 'viewer'
@@ -117,7 +158,7 @@ export function parseUsers(text: string): Parsed {
   const accounts: Account[] = []
   const seen = new Set<string>()
   for (const [i, raw] of list.entries()) {
-    const entry = raw as { user?: unknown; role?: unknown; password?: unknown; totp?: unknown; recovery?: unknown; disabled?: unknown; must_change?: unknown }
+    const entry = raw as { user?: unknown; role?: unknown; password?: unknown; totp?: unknown; recovery?: unknown; disabled?: unknown; must_change?: unknown; groups?: unknown }
     const user = typeof entry?.user === 'string' ? entry.user.trim() : ''
     if (!NAME_RE.test(user)) return fail(`cuenta ${i + 1}: nombre de usuario inválido`)
     if (seen.has(user.toLowerCase())) return fail(`cuenta ${user}: repetida`)
@@ -144,7 +185,9 @@ export function parseUsers(text: string): Parsed {
     for (const flag of ['disabled', 'must_change'] as const) {
       if (entry[flag] !== undefined && typeof entry[flag] !== 'boolean') return fail(`cuenta ${user}: ${flag} debe ser true o false`)
     }
-    accounts.push({ user, role, iterations, salt, hash, totp, recovery: recovery as string[], disabled: entry.disabled === true, mustChange: entry.must_change === true })
+    const groups = cleanGroups(entry.groups)
+    if (!groups) return fail(`cuenta ${user}: groups debe ser una lista de nombres de grupo (minúsculas, cifras, - y _; hasta ${MAX_ACCOUNT_GROUPS})`)
+    accounts.push({ user, role, groups, iterations, salt, hash, totp, recovery: recovery as string[], disabled: entry.disabled === true, mustChange: entry.must_change === true })
   }
   return { accounts, mfaRequired: (required as Role[] | undefined) ?? [] }
 }
@@ -248,7 +291,7 @@ export async function verifyAccount(user: string, password: string, now = Date.n
   // a failure against it
   if (account.disabled) return null
   failures.delete(failKey)
-  return { name: account.user, role: account.role, mode: 'users' }
+  return principalOf(account)
 }
 
 // findAccount returns the account as the users file holds it now.
@@ -282,10 +325,10 @@ export async function accountPrincipal(header: string | null, now = Date.now()):
 }
 
 // accountStamp fingerprints an account as the users file holds it now
-// (role, password hash and two-step secret), or null when it is gone,
-// disabled, or the file is broken. A session remembers the stamp it was
-// opened with: changing the password, the role or the authenticator,
-// disabling or removing the account, ends it. Spending a recovery code does not. Neither does a
+// (role, host groups, password hash and two-step secret), or null when
+// it is gone, disabled, or the file is broken. A session remembers the
+// stamp it was opened with: changing the password, the role, the groups
+// or the authenticator, disabling or removing the account, ends it. Spending a recovery code does not. Neither does a
 // new mfa_required for an account that already has the second step;
 // one that has not loses its sessions and enrolls at the next sign-in.
 export async function accountStamp(user: string): Promise<string | null> {
@@ -294,7 +337,8 @@ export async function accountStamp(user: string): Promise<string | null> {
   if (account.disabled) return null
   const second = account.totp ?? (mfaRequiredFor(account.role) ? 'required' : '')
   const encoder = new TextEncoder()
-  const material = new Uint8Array([...encoder.encode(account.role + '\n'), ...account.hash, ...encoder.encode('\n' + second)])
+  const groups = [...account.groups].sort().join(',')
+  const material = new Uint8Array([...encoder.encode(account.role + '\n' + groups + '\n'), ...account.hash, ...encoder.encode('\n' + second)])
   const d = new Uint8Array(await crypto.subtle.digest('SHA-256', material))
   return Array.from(d, (b) => b.toString(16).padStart(2, '0')).join('')
 }

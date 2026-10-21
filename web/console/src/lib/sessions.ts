@@ -13,8 +13,8 @@
 // A session ends when it sits idle (CONSOLE_SESSION_IDLE_MINUTES,
 // default 30), reaches its absolute lifetime (CONSOLE_SESSION_MAX_HOURS,
 // default 12), the operator signs out, or the credential that opened it
-// changes: a new password or role in the users file, a removed account
-// or a rotated shared token.
+// changes: a new password, role or host groups in the users file, a
+// removed account or a rotated shared token.
 
 import { accountStamp, type Principal, type Role } from './users'
 
@@ -24,6 +24,7 @@ type Session = {
   name: string
   role: Role
   mode: 'users' | 'token'
+  groups: string[]
   stamp: string
   created: number
   lastSeen: number
@@ -86,7 +87,7 @@ export async function openSession(principal: Principal, stamp: string, now = Dat
     sessions.delete(oldest)
   }
   const id = newId()
-  sessions.set(await sha256Hex(id), { name: principal.name, role: principal.role, mode: principal.mode, stamp, created: now, lastSeen: now })
+  sessions.set(await sha256Hex(id), { name: principal.name, role: principal.role, mode: principal.mode, groups: principal.groups ?? [], stamp, created: now, lastSeen: now })
   return id
 }
 
@@ -109,7 +110,8 @@ export async function sessionPrincipal(id: string | undefined, now = Date.now())
     return null
   }
   s.lastSeen = now
-  return { name: s.name, role: s.role, mode: s.mode }
+  // the stamp covers the groups: they are still the account's
+  return { name: s.name, role: s.role, mode: s.mode, ...(s.groups.length ? { groups: s.groups } : {}) }
 }
 
 export async function closeSession(id: string | undefined): Promise<void> {

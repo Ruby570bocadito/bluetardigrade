@@ -451,3 +451,58 @@ describe('engine proxy with analyst accounts', () => {
     expect((await PUT(new Request(base + '/api/settings/groups', { method: 'PUT', headers: as('jefa'), body: huge }))).status).toBe(413)
   })
 })
+
+describe('engine proxy with accounts limited to host groups', () => {
+  const SALT = Buffer.from('fedcba9876543210')
+  const account = (user: string, role: string, groups?: string[]) => ({
+    user,
+    role,
+    password: `pbkdf2-sha256$100000$${SALT.toString('base64url')}$${pbkdf2Sync(`clave-de-${user}`, SALT, 100_000, 32, 'sha256').toString('base64url')}`,
+    ...(groups ? { groups } : {}),
+  })
+  const as = (user: string, extra: Record<string, string> = {}) => ({ authorization: basic(`clave-de-${user}`, user), 'content-type': 'application/json', ...extra })
+  const base = 'http://127.0.0.1:3000/api/engine'
+  const scopeSent = (): (string | null)[] => captured.map((c) => (c.init.headers as Record<string, string>)['x-sf-scope'] ?? null)
+
+  beforeEach(() => {
+    captured = []
+    for (const k of ENV_KEYS) {
+      savedEnv[k] = process.env[k]
+      delete process.env[k]
+    }
+    const dir = mkdtempSync(join(tmpdir(), 'sf-route-scope-'))
+    const users = join(dir, 'users.json')
+    writeFileSync(users, JSON.stringify({ users: [
+      account('ana', 'analyst', ['madrid', 'servidores']),
+      account('luis', 'viewer'),
+      // groups on an administrator change nothing
+      account('jefa', 'admin', ['madrid']),
+    ] }))
+    process.env.CONSOLE_USERS_FILE = users
+    resetUsersCache()
+    stubFetch()
+  })
+  afterEach(() => {
+    globalThis.fetch = realFetch
+    for (const k of ENV_KEYS) {
+      if (savedEnv[k] === undefined) delete process.env[k]
+      else process.env[k] = savedEnv[k]
+    }
+  })
+
+  test('reads and writes of a limited account carry its groups; the others carry none', async () => {
+    const { GET, POST } = await loadRoute()
+    for (const user of ['ana', 'luis', 'jefa']) {
+      expect((await GET(new Request(base + '/api/alerts', { headers: as(user) }))).status).toBe(200)
+    }
+    expect((await POST(new Request(base + '/api/alerts/0123456789abcdef/status', { method: 'POST', headers: as('ana'), body: '{"status":"closed"}' }))).status).toBe(200)
+    expect(scopeSent()).toEqual(['madrid,servidores', null, null, 'madrid,servidores'])
+  })
+
+  test('the browser cannot choose the scope', async () => {
+    const { GET } = await loadRoute()
+    await GET(new Request(base + '/api/alerts', { headers: as('ana', { 'x-sf-scope': 'todo' }) }))
+    await GET(new Request(base + '/api/alerts', { headers: as('luis', { 'x-sf-scope': 'madrid' }) }))
+    expect(scopeSent()).toEqual(['madrid,servidores', null])
+  })
+})

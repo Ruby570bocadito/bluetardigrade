@@ -17,7 +17,6 @@ import (
 	"unicode"
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
-	"github.com/Ruby570bocadito/bluetardigrade/internal/store"
 	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
@@ -42,10 +41,12 @@ func (h *Hub) handleAlertsExport(w http.ResponseWriter, r *http.Request) {
 	h.mu.Unlock()
 	var alerts []alert.Alert
 	if st != nil {
-		got, err := st.QueryAlerts(store.AlertQuery{
-			Host: f.host, Severities: f.sevs, RuleID: f.ruleID, Q: f.q,
-			Since: f.since, Until: f.until, Limit: limit,
-		})
+		q, err := h.alertQuery(r.Context(), f, limit)
+		if err != nil {
+			h.storeQueryError(w, err)
+			return
+		}
+		got, err := st.QueryAlerts(q)
 		if err != nil {
 			h.storeQueryError(w, err)
 			return
@@ -137,10 +138,12 @@ func (h *Hub) handleEventsExport(w http.ResponseWriter, r *http.Request) {
 	h.mu.Unlock()
 	var events []*model.Event
 	if st != nil {
-		got, err := st.QueryEvents(store.EventQuery{
-			Host: f.host, Type: f.evType, Q: f.q,
-			Since: f.since, Until: f.until, Limit: limit,
-		})
+		q, err := h.eventQuery(r.Context(), f, limit)
+		if err != nil {
+			h.storeQueryError(w, err)
+			return
+		}
+		got, err := st.QueryEvents(q)
 		if err != nil {
 			h.storeQueryError(w, err)
 			return

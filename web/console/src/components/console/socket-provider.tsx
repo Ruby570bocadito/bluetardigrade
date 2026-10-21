@@ -5,13 +5,15 @@
 // this bus: events, alerts, rules and stats come straight from the
 // engine API via use-engine-stream. If console-service is not running
 // the rest of the console keeps working; the analyst view shows a real
-// offline state.
+// offline state. An account limited to host groups gets no hub
+// credential (app/api/hub-token): the hub reads every machine, so the
+// provider does not connect and the view says why ('scoped').
 
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react'
 import type { Socket } from 'socket.io-client'
 import { io } from 'socket.io-client'
 
-export type AnalystConnStatus = 'connecting' | 'live' | 'down'
+export type AnalystConnStatus = 'connecting' | 'live' | 'down' | 'scoped'
 
 type AnalystState = {
   status: AnalystConnStatus
@@ -48,6 +50,10 @@ export function AnalystProvider({ children }: { children: React.ReactNode }) {
       try {
         const res = await fetch('/api/hub-token', { cache: 'no-store' })
         if (res.ok) token = ((await res.json()) as { token?: string }).token ?? ''
+        else if (res.status === 403 && ((await res.json()) as { error?: string }).error === 'scoped_account') {
+          if (!cancelled) setStatus('scoped')
+          return
+        }
       } catch {
         // offline console or older server: connect without credentials
       }

@@ -19,7 +19,7 @@ func TestStoreQueryErrorHidesInternals(t *testing.T) {
 	}
 	defer func() {
 		h.mu.Lock()
-		h.subs = map[chan []byte]struct{}{}
+		h.subs = map[chan frame]struct{}{}
 		h.mu.Unlock()
 		_ = h.srv.Close()
 	}()

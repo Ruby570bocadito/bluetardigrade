@@ -289,10 +289,17 @@ export function AnalystPanel({
           </div>
           <span className={`ml-auto flex shrink-0 items-center gap-1.5 text-[11px] ${channelLive ? 'text-emerald-300' : 'text-zinc-500'}`}>
             <span aria-hidden className={`h-2 w-2 rounded-full ${channelLive ? 'bg-emerald-500' : 'bg-zinc-600'}`} />
-            {channelLive ? (running ? 'analizando' : 'conectado') : 'sin conexión'}
+            {channelLive ? (running ? 'analizando' : 'conectado') : channelStatus === 'scoped' ? 'no disponible' : 'sin conexión'}
           </span>
         </div>
-        {!channelLive ? (
+        {channelStatus === 'scoped' ? (
+          <div className="p-4">
+            <OfflineNotice
+              title="El analista IA no está disponible para tu cuenta"
+              hint="Tu cuenta ve solo los equipos de sus grupos, y el analista IA lee todos los equipos del motor. Pide a un administrador que lo use por ti."
+            />
+          </div>
+        ) : !channelLive ? (
           <div className="p-4">
             <OfflineNotice
               title="Servicio del analista sin conexión"

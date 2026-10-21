@@ -12,9 +12,12 @@ export type AccountRow = {
   mfa: boolean
   mfa_required: boolean
   recovery_left: number
+  // host groups the account is limited to ([] = every machine; absent
+  // from older servers)
+  groups?: string[]
 }
 
-export type AccountActionName = 'crear' | 'rol' | 'deshabilitar' | 'habilitar' | 'restablecer' | 'quitar-mfa' | 'eliminar'
+export type AccountActionName = 'crear' | 'rol' | 'grupos' | 'deshabilitar' | 'habilitar' | 'restablecer' | 'quitar-mfa' | 'eliminar'
 
 export type AccountsList = { ok: true; accounts: AccountRow[]; mfaRequired: ConsoleRole[] } | { ok: false; error: string }
 
@@ -31,12 +34,12 @@ export async function fetchAccounts(): Promise<AccountsList> {
 
 export type AccountActionResult = { ok: true; user: string; password?: string } | { ok: false; error: string }
 
-export async function postAccountAction(action: AccountActionName, user: string, role?: ConsoleRole): Promise<AccountActionResult> {
+export async function postAccountAction(action: AccountActionName, user: string, role?: ConsoleRole, groups?: string[]): Promise<AccountActionResult> {
   try {
     const res = await fetch('/api/console/accounts', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ action, user, ...(role ? { role } : {}) }),
+      body: JSON.stringify({ action, user, ...(role ? { role } : {}), ...(groups ? { groups } : {}) }),
       cache: 'no-store',
       // a creation or a reset derives a password hash on the server
       signal: AbortSignal.timeout(15000),

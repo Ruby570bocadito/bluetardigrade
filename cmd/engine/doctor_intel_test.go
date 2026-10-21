@@ -99,6 +99,20 @@ func TestDoctorConsoleUsers(t *testing.T) {
 	if c := doctorConsoleUsers(root); c.Status != "warn" || !strings.Contains(c.Detail, "deshabilitadas 1; con contrasena temporal 1: ningun administrador habilitado") {
 		t.Fatalf("disabled admin: %+v", c)
 	}
+	// host groups: limited accounts are counted, and a group the engine
+	// does not have is named
+	scoped := strings.Replace(sampleAccount, `"role"`, `"groups":["Madrid","norte"],"role"`, 1)
+	write(`{"users":[` + scoped + `,` + admin + `]}`)
+	// without a host-groups file the engine has no group at all
+	if c := doctorConsoleUsers(root); c.Status != "warn" || !strings.Contains(c.Detail, "limitadas a grupos de equipos 1: la cuenta ana nombra grupos que el motor no tiene (madrid, norte)") {
+		t.Fatalf("scoped, no host-groups file: %+v", c)
+	}
+	if err := os.WriteFile(filepath.Join(cfg, "host-groups.yaml"), []byte("version: 1\ngroups:\n  - name: madrid\n    hosts: [\"pc-mad-*\"]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c := doctorConsoleUsers(root); c.Status != "warn" || !strings.Contains(c.Detail, "la cuenta ana nombra grupos que el motor no tiene (norte)") {
+		t.Fatalf("unknown group: %+v", c)
+	}
 	withMFA := func(field string) string {
 		return `{"users":[` + strings.Replace(sampleAccount, `"role"`, field+`,"role"`, 1) + `]}`
 	}
@@ -109,6 +123,8 @@ func TestDoctorConsoleUsers(t *testing.T) {
 		withMFA(`"recovery":["abc"]`):                                   "recuperacion",
 		withMFA(`"disabled":"yes"`):                                     "disabled y must_change",
 		withMFA(`"must_change":1`):                                      "disabled y must_change",
+		withMFA(`"groups":"madrid"`):                                    "groups debe ser",
+		withMFA(`"groups":["con espacio"]`):                             "groups debe ser",
 		`{"users":[` + sampleAccount + `,` + sampleAccount + `]}`:       "repetida",
 		`{"users":[{"user":"ana","role":"root","password":"x"}]}`:       "rol invalido",
 		`{"users":[{"user":"ana","role":"viewer","password":"plain"}]}`: "formato invalido",

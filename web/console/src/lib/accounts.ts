@@ -11,9 +11,11 @@
 // A new account, or a reset password, gets a temporary password shown
 // once to the administrator and "must_change": its owner sets their own
 // at the next sign-in. A reset keeps the account's two-step sign-in.
+// "grupos" sets the host groups an account is limited to (none = every
+// machine; administrators see every machine whatever it holds).
 
 import {
-  MAX_PASSWORD, MIN_PASSWORD, ROLES, editUsers, loadAccounts, mfaRequiredFor, passwordHash, passwordMatches, sameUser,
+  MAX_PASSWORD, MIN_PASSWORD, ROLES, cleanGroups, editUsers, loadAccounts, mfaRequiredFor, passwordHash, passwordMatches, sameUser,
   temporaryPassword, type Principal, type Role, type UsersDoc,
 } from './users'
 
@@ -27,6 +29,8 @@ export type AccountView = {
   mfa: boolean
   mfa_required: boolean
   recovery_left: number
+  // host groups the account is limited to ([] = every machine)
+  groups: string[]
 }
 
 export function listAccounts(): { accounts: AccountView[]; mfa_required: Role[] } | { error: string } {
@@ -41,18 +45,19 @@ export function listAccounts(): { accounts: AccountView[]; mfa_required: Role[] 
       mfa: a.totp !== null,
       mfa_required: mfaRequiredFor(a.role),
       recovery_left: a.recovery.length,
+      groups: a.groups,
     })),
     mfa_required: mfaRequired,
   }
 }
 
-export const ACCOUNT_ACTIONS = ['crear', 'rol', 'deshabilitar', 'habilitar', 'restablecer', 'quitar-mfa', 'eliminar'] as const
+export const ACCOUNT_ACTIONS = ['crear', 'rol', 'grupos', 'deshabilitar', 'habilitar', 'restablecer', 'quitar-mfa', 'eliminar'] as const
 export type AccountAction = (typeof ACCOUNT_ACTIONS)[number]
 
 // Error codes the console translates (lib/i18n): the API never sends
 // prose, so the page shows them in the operator's language.
 export type AccountError =
-  | 'accion' | 'nombre' | 'existe' | 'no-existe' | 'rol' | 'propia' | 'ultimo-admin' | 'sin-mfa' | 'escritura'
+  | 'accion' | 'nombre' | 'existe' | 'no-existe' | 'rol' | 'grupos' | 'propia' | 'ultimo-admin' | 'sin-mfa' | 'escritura'
 
 export type AccountResult =
   | { ok: true; user: string; password?: string }
@@ -62,13 +67,15 @@ function enabledAdmins(doc: UsersDoc): number {
   return doc.users.filter((u) => u.role === 'admin' && u.disabled !== true).length
 }
 
-export async function accountAction(actor: Principal, action: string, input: { user?: unknown; role?: unknown }): Promise<AccountResult> {
+export async function accountAction(actor: Principal, action: string, input: { user?: unknown; role?: unknown; groups?: unknown }): Promise<AccountResult> {
   const fail = (error: AccountError, status = 400): AccountResult => ({ ok: false, error, status })
   if (!(ACCOUNT_ACTIONS as readonly string[]).includes(action)) return fail('accion')
   const user = typeof input.user === 'string' ? input.user.trim() : ''
   if (!NAME_RE.test(user)) return fail('nombre')
   const role = input.role
   if ((action === 'crear' || action === 'rol') && !(typeof role === 'string' && (ROLES as string[]).includes(role))) return fail('rol')
+  const groups = action === 'crear' || action === 'grupos' ? cleanGroups(input.groups) : []
+  if (!groups) return fail('grupos')
   if (action !== 'crear' && user.toLowerCase() === actor.name.toLowerCase()) return fail('propia', 403)
 
   // the slow derivation runs before the file is read, never inside the
@@ -83,7 +90,7 @@ export async function accountAction(actor: Principal, action: string, input: { u
     const entry = doc.users[at]
     if (action === 'crear') {
       if (entry) return (code = 'existe')
-      doc.users.push({ user, role, password: hash, must_change: true })
+      doc.users.push({ user, role, password: hash, must_change: true, ...(groups.length ? { groups } : {}) })
       return null
     }
     if (!entry) return (code = 'no-existe')
@@ -91,6 +98,10 @@ export async function accountAction(actor: Principal, action: string, input: { u
     switch (action as Exclude<AccountAction, 'crear'>) {
       case 'rol':
         entry.role = role
+        break
+      case 'grupos':
+        if (groups.length) entry.groups = groups
+        else delete entry.groups
         break
       case 'deshabilitar':
         entry.disabled = true

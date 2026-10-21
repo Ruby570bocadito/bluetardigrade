@@ -233,6 +233,9 @@ export type EngineStats = {
   events_per_min: number
   alerts_total: number
   by_severity: Record<string, number>
+  // the caller's account is limited to host groups: the per-machine
+  // counts above cover its machines, over the records in memory
+  scoped?: boolean
   rules_count: number
   rules_types: string[]
   events_buffered: number
