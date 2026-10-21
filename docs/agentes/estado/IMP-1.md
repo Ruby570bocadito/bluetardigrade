@@ -11,14 +11,12 @@ Sesión s2-yara (S-2 · YARA sensor, cerrada — PR #48):
   (16 MiB), dedupe (ruta, tamaño, mtime), cola 512, drops contados.
 - Tercera sesión ETW `bluetardigrade-sensor-file` (Kernel-File 12/16);
   solo con `--yara-rules` (opt-in puro). Evento `yara.match` y bloque
-  `yara_rules/_sha/_scans/_matches/_dropped/_errors` en el latido.
-  Subcomando `scan` bajo demanda (NDJSON, exit 2 con coincidencias).
-- 56 tests (13 nuevos), check/test/clippy host + cross msvc con
-  --locked; excepciones revisadas en .cargo/audit.toml (rsa vía yara-x:
-  parse-only local, fuera de la superficie del advisory; bincode
-  unmaintained transitivo).
-- Contrato S-2↔M-3 en la descripción del PR #48: directorio +
-  bundle.json; verificación por yara_rules_sha en el latido.
+  `yara_rules/_sha/_scans/_matches/_dropped/_errors` en el latido;
+  subcomando `scan` bajo demanda (NDJSON, exit 2 con coincidencias).
+- 56 tests (13 nuevos), check/test/clippy host + cross msvc --locked;
+  excepciones en .cargo/audit.toml (rsa vía yara-x: parse-only local;
+  bincode unmaintained transitivo). Contrato S-2↔M-3 en el PR #48:
+  directorio + bundle.json; verificación por yara_rules_sha en el latido.
 
 Sesión st100x (fix del job Go de CI): cinco ST1003 (DbQuery→DBQuery) y
 tres ST1000 (comentario pegado a package) en el código M-4; ambos
@@ -31,8 +29,7 @@ jornada (make-tabs, m4, o2): ver changelog.d y git log.
 
 ## Peticiones
 - A PUL/OPS (.github/workflows/): deps-audit necesita `checks: write`
-  para publicar informes no vacíos (rustsec/audit-check sale 1 con
-  contents: read); retiraría bincode de .cargo/audit.toml.
+  para publicar informes no vacíos; retiraría bincode de la excepción.
 - A DIR: marcar s2-yara-sensor hecha al fusionar PR #48.
 
 ## Propuestas para el roadmap
@@ -41,6 +38,5 @@ jornada (make-tabs, m4, o2): ver changelog.d y git log.
   4756/7045). Alta de C-4 sobre POST /api/db/query.
 
 ## Estado: VERDE — riesgos
-- Cuatro solapamientos de instancia paralela; claims con fecha UTC y
-  re-check antes de cada push. `yara.match` sin PID: Kernel-File no lo
-  trae; la atribución irá con la parte de memoria.
+- Cuatro solapamientos de instancia paralela; re-check del claim antes
+  de cada push. `yara.match` sin PID: irá con la parte de memoria.
