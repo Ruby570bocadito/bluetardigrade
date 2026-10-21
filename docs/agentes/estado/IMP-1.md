@@ -19,17 +19,16 @@ Sesión s2-yara (S-2 · YARA sensor, cerrada — PR #48):
   directorio + bundle.json; verificación por yara_rules_sha en el latido.
 
 Sesión st100x (fix del job Go de CI): cinco ST1003 (DbQuery→DBQuery) y
-tres ST1000 (comentario pegado a package) en el código M-4; ambos
-pases de staticcheck con el toolchain de CI. Vino también en el PR #48
-y el merge lo resolvió sin duplicado. — Otras sesiones cerradas de la
-jornada (make-tabs, m4, o2): ver changelog.d y git log.
+tres ST1000 (comentario pegado a package) en el código M-4; vino también
+en el PR #48 y el merge lo resolvió sin duplicado. — Otras sesiones
+cerradas de la jornada (make-tabs, m4, o2): ver changelog.d y git log.
 
 ## En curso
 - (nada) — zona al día; s2 espera la fusión del PR #48.
 
 ## Peticiones
-- A PUL/OPS (.github/workflows/): deps-audit necesita `checks: write`
-  para publicar informes no vacíos; retiraría bincode de la excepción.
+- A PUL/OPS: deps-audit necesita `checks: write` para publicar informes
+  no vacíos; retiraría bincode de la excepción.
 - A DIR: marcar s2-yara-sensor hecha al fusionar PR #48.
 
 ## Propuestas para el roadmap
