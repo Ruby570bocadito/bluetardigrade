@@ -27,6 +27,12 @@ type recordFilter struct {
 	since  time.Time
 	until  time.Time
 	q      string // free-text substring, case-insensitive
+	// alert only: assignment filter (TEAM-3). "none" selects the
+	// unassigned queue (no entry or an empty assignee); any other
+	// value is an assignee name matched case-insensitively. The check
+	// runs on the lifecycle OVERLAY, so it lives with the handlers,
+	// not in matchAlert (matchAlert sees only the alert content).
+	assignee string
 	// scope is the request's host-group limit (scope.go), nil when
 	// unrestricted: the ring matchers apply it, and the store queries
 	// built by eventQuery/alertQuery carry it as a host list.
@@ -51,6 +57,21 @@ func parseRecordFilter(w http.ResponseWriter, r *http.Request) (*recordFilter, b
 		// legacy rows and direct callers.
 		q:     strings.ToLower(strings.ReplaceAll(q.Get("q"), "\x1f", "")),
 		scope: scopeFrom(r),
+	}
+	// assignee="none" is the unassigned queue; anything else is a name
+	// (matched case-insensitively at overlay time). Capped like the
+	// store field so one query parameter cannot smuggle an oversized
+	// needle; every alert-bearing endpoint that shares this parser
+	// honors it (list, search and both exports).
+	f.assignee = strings.TrimSpace(q.Get("assignee"))
+	if f.assignee != "" {
+		if strings.EqualFold(f.assignee, "none") {
+			f.assignee = "none"
+		}
+		if len(f.assignee) > 200 {
+			http.Error(w, "assignee exceeds 200 characters", http.StatusBadRequest)
+			return nil, false
+		}
 	}
 	for _, s := range splitCSV(q.Get("severity")) {
 		switch s {
@@ -192,6 +213,22 @@ func (f *recordFilter) matchEvent(ev *model.Event) bool {
 		return false
 	}
 	return true
+}
+
+// assigneeFilterMatches reports whether an alert view carries the
+// assignment the filter asks for. want=="none" is the unassigned
+// queue: no lifecycle entry at all, or one with an empty assignee.
+// A name matches case-insensitively — the console compares accounts
+// the way analysts type them, and triage attribution must not split
+// over "Ana" vs "ana".
+func assigneeFilterMatches(v alertView, want string) bool {
+	if want == "" {
+		return true
+	}
+	if want == "none" {
+		return v.Assignee == ""
+	}
+	return strings.EqualFold(v.Assignee, want)
 }
 
 // eventQuery and alertQuery are the store form of the filter, narrowed
