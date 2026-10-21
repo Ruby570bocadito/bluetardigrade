@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { enrollmentPlan, formatDuration, identityName, isValidHostName, secondsSince, runModeText } from './fleet'
+import { outdatedCount, outdatedSensor, enrollmentPlan, formatDuration, identityName, isValidHostName, secondsSince, runModeText, type FleetHost } from './fleet'
 
 describe('fleet formatting', () => {
   test('durations read naturally at every scale', () => {
@@ -51,4 +51,36 @@ test('run mode reads as the operator would say it', () => {
   expect(runModeText('service')).toContain('Servicio de Windows')
   expect(runModeText('console')).toContain('sf-etw -Install')
   expect(runModeText(undefined)).toBe('—')
+})
+
+describe('outdated sensor detection (C-5)', () => {
+  const sensor = (version?: string) => ({ interval_s: 60, uptime_s: 10, spooled: 0, dropped: 0, last_heartbeat: '2026-10-21T19:00:00Z', ...(version ? { version } : {}) })
+  const host = (version?: string): FleetHost => ({ host: 'PC-01', status: 'online', first_seen: '2026-10-20T19:00:00Z', last_seen: '2026-10-21T19:00:00Z', events: 1, events_last_5m: 0, sources: [], peers: [], ...(version !== undefined ? { sensor: sensor(version) } : {}) })
+
+  test('a match is never flagged', () => {
+    expect(outdatedSensor('v1.0.0', sensor('v1.0.0'))).toBe(false)
+  })
+
+  test('a different declared version is flagged, without ordering claims', () => {
+    expect(outdatedSensor('v1.0.0', sensor('0.3.0'))).toBe(true)
+    // the console cannot know which build is newer: any mismatch flags
+    expect(outdatedSensor('0.3.0', sensor('v1.0.0'))).toBe(true)
+  })
+
+  test('a sensor without a declared version is never called outdated', () => {
+    expect(outdatedSensor('v1.0.0', sensor(undefined))).toBe(false)
+    expect(outdatedSensor('v1.0.0', undefined)).toBe(false)
+  })
+
+  test('an engine without a published version silences the comparison', () => {
+    expect(outdatedSensor(undefined, sensor('0.3.0'))).toBe(false)
+    expect(outdatedSensor('', sensor('0.3.0'))).toBe(false)
+  })
+
+  test('the inventory count follows the same rule', () => {
+    const hosts = [host('v1.0.0'), host('0.3.0'), host('0.3.0'), host(undefined), host('v1.0.0')]
+    expect(outdatedCount(hosts, 'v1.0.0')).toBe(2)
+    expect(outdatedCount(hosts, undefined)).toBe(0)
+    expect(outdatedCount([], 'v1.0.0')).toBe(0)
+  })
 })

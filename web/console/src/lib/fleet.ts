@@ -84,6 +84,27 @@ export function secondsSince(iso: string | undefined, now: number): number | nul
   return Math.max(0, (now - t) / 1000)
 }
 
+/**
+ * Is this sensor's build behind the engine it reports to? The heartbeat
+ * carries the sensor's own version (C-5) and the engine publishes its
+ * own in /api/stats; a sensor is outdated when BOTH versions are known
+ * and they differ. There is no semver ordering here on purpose: the
+ * console cannot know which one is newer, only that the builds do not
+ * match — and it says exactly that. An engine without a published
+ * version or a sensor that does not declare one (older heartbeat,
+ * import) is never called outdated: nothing is fabricated.
+ */
+export function outdatedSensor(engineVersion: string | undefined | null, sensor: FleetSensor | undefined | null): boolean {
+  if (!engineVersion || !sensor?.version) return false
+  return sensor.version !== engineVersion
+}
+
+/** How many of the inventory's sensors do not match the engine's build. */
+export function outdatedCount(hosts: FleetHost[], engineVersion: string | undefined | null): number {
+  if (!engineVersion) return 0
+  return hosts.filter((h) => outdatedSensor(engineVersion, h.sensor)).length
+}
+
 /** Host names as Windows reports them: letters, digits and hyphens, max 15. */
 export function isValidHostName(name: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9-]{0,14}$/.test(name)

@@ -12,7 +12,7 @@ import { ArrowSquareOut, Desktop, FolderPlus, Gear, Globe, Lightning, Magnifying
 import { useEngine } from './engine-provider'
 import { useIncidents } from './incidents-provider'
 import { useFleet } from './fleet-provider'
-import { EnrollDialog, FleetStatusPill, FleetSummary, SensorCard } from './fleet-parts'
+import { EnrollDialog, FleetStatusPill, FleetSummary, SensorCard, SensorVersionChip } from './fleet-parts'
 import { BaselineCard } from './baseline-card'
 import { PendingHosts } from './enroll-parts'
 import type { FleetHost, FleetStatus } from '@/lib/fleet'
@@ -101,7 +101,8 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
   onOpenIncident: (id: string) => void
 }) {
   const rows = useHostIndex()
-  const { status } = useEngine()
+  const { status, stats } = useEngine()
+  const engineVersion = stats?.version
   const [selected, setSelectedState] = useState('')
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | FleetStatus>('all')
@@ -188,6 +189,7 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
                         <Desktop size={15} aria-hidden className="text-primary" />
                         <span className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-100">{r.host}</span>
                         <FleetStatusPill host={r.fleet} />
+                        <SensorVersionChip host={r.fleet} engineVersion={engineVersion} />
                         {r.score > 0 && (
                           <span className="flex items-center gap-1 text-[11px] text-zinc-400">
                             <SeverityIcon severity={lv.severity} size={11} />
