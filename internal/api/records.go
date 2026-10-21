@@ -61,6 +61,13 @@ type alertView struct {
 	StatusNote string `json:"status_note,omitempty"` // operator free-text triage note
 	StatusBy   string `json:"status_by,omitempty"`   // who set it (unauthenticated free text)
 	StatusAt   string `json:"status_at,omitempty"`   // RFC 3339 when the status was set
+	// Assignment (TEAM-3): who owns the alert, independent of the
+	// status. AssignedBy is the account that performed the assignment
+	// (free text, same trust model as StatusBy); an absent assignee
+	// means the alert sits in the unassigned queue.
+	Assignee   string `json:"assignee,omitempty"`
+	AssignedBy string `json:"assigned_by,omitempty"`
+	AssignedAt string `json:"assigned_at,omitempty"`
 }
 
 // withLifecycle merges the store's entry (when any) into an alert.
@@ -75,6 +82,9 @@ func (h *Hub) withLifecycle(a alert.Alert) alertView {
 		v.StatusNote = e.Note
 		v.StatusBy = e.By
 		v.StatusAt = e.At
+		v.Assignee = e.Assignee
+		v.AssignedBy = e.AssignedBy
+		v.AssignedAt = e.AssignedAt
 	}
 	return v
 }
@@ -112,6 +122,20 @@ func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 		for _, a := range out {
 			views = append(views, h.withLifecycle(a))
 		}
+		// Assignment filter (TEAM-3): the assignment lives in the
+		// lifecycle overlay, not in the store columns, so it runs on the
+		// overlaid page. Page-level by design: for a COMPLETE queue (the
+		// whole history, cursor included) the console uses
+		// /api/alerts/search, which scans for the assignment instead.
+		if f.assignee != "" {
+			filtered := views[:0]
+			for _, v := range views {
+				if assigneeFilterMatches(v, f.assignee) {
+					filtered = append(filtered, v)
+				}
+			}
+			views = filtered
+		}
 		writeJSON(w, views)
 		return
 	}
@@ -122,7 +146,13 @@ func (h *Hub) handleAlerts(w http.ResponseWriter, r *http.Request) {
 		// the requested time bounds (see its doc): the parse is only a
 		// prerequisite when the query actually filters by time.
 		if ts, ok := f.alertTime(a); ok && f.matchAlert(a, ts) {
-			out = append(out, h.withLifecycle(a))
+			v := h.withLifecycle(a)
+			// The ring is scanned whole, so the assignment filter is
+			// exact here: a mine or unassigned-queue view never hides a
+			// matching alert behind the limit.
+			if assigneeFilterMatches(v, f.assignee) {
+				out = append(out, v)
+			}
 		}
 	}
 	writeJSON(w, out)
