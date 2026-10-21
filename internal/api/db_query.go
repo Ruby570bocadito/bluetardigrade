@@ -12,6 +12,7 @@
 // at startup. Behind it, the request passes the guardSQL scanner and
 // runs on the store's dedicated mode=ro handle: two software layers
 // plus one that is SQLite itself must all agree before a row moves.
+
 package api
 
 import (

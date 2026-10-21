@@ -16,6 +16,7 @@
 // a word outside quoted regions — comments included, so a commented-out
 // verb never travels to the driver inside a "harmless" query; NUL and
 // other control bytes; statements over the size cap.
+
 package api
 
 import (

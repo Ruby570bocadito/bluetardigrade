@@ -5,6 +5,7 @@
 // handle is lazy (first query opens it) and never inherits the writer
 // pool: WAL lets the two coexist, so a long analysis query never
 // blocks the detection loop's inserts.
+
 package store
 
 import (
