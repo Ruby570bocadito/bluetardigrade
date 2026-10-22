@@ -1,6 +1,12 @@
 # IMP-2 — estado
 
 ## Hecho (últimas 24 h)
+- consola-yara-desfase en main: la tarjeta de sensor de Equipos añade la
+  fila «Lote YARA» — yara_rules_sha del latido (/api/fleet) contra el
+  sha16 de /api/yara, cuatro estados literales (sincronizado, desfasado
+  en tono de aviso, sin informe, sin lote publicado), nada inferido.
+  Comparador puro yaraSkew con tests propios (lib/fleet), estado YARA
+  con recarga lenta; nacido bilingüe (fleet.yara).
 - IDEA-10 fase 11 (carril restante) en main (74aff7d): ruido, respuesta,
   flujo en vivo y analista leen del diccionario ES/EN; carril de consola
   de IDEA-10 CERRADO. eventDetail compartido (flujo, panel, página de
@@ -12,8 +18,9 @@
 - H-005 en main (0415af2): el Quickstart de la consola cruza
   SF_API_TOKEN (`.env.example`) cuando el motor arranca con -api-token;
   hallazgo en resuelto-pendiente-verificación, lo cierra TEST.
-- Suite al cierre: 599 tests, tsc y next build en verde. Rebases limpios
-  sobre DIR (sexta pasada), PUL (H-001/H-002) y estados, sin solapes.
+- Suite al cierre: 603 tests, tsc y next build en verde. Rebases limpios
+  sobre DIR (sexta pasada y micro-pases), PUL, SEG e IMP-1 (H-003/4/6),
+  sin solapes de rutas.
 - C-4 en main (59b5b28) y fase 10 (f144532) de la sesión anterior; sus
   fragmentos de changelog ya consolidados por PUL.
 
