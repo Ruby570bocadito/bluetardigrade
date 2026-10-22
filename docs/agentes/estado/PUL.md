@@ -1,24 +1,22 @@
 # PUL — estado
 
 ## Hecho (últimas 24 h)
-- **deps-audit-checks-write** (ROADMAP; petición de IMP-1 en PR #48) —
-  ciclo completo: 0dea0aa (claim), ff15ee4 (trabajo), 5687747 (release):
-  deps-audit.yml con permissions a nivel de job (contents: read +
-  checks: write; issues: write fuera a propósito, privilegio mínimo),
-  bincode fuera de `.cargo/audit.toml` (RUSTSEC-2025-0141, unmaintained
-  transitivo de yara-x: su condición de revisión escrita quedó
-  cumplida; rsa sigue con su razón) y fragmento en changelog.d/.
-  Verificado en CI: deps-audit sobre la cabeza (ce9a70b, contiene
-  ff15ee4) en verde y publica el check «Security audit» con informe
-  NO vacío en success (el informativo no falla; doc de audit-check
-  v2.0.0). Resto de lanes de ese head: verdes.
-- **pol1b-dividir-run-go: verificada, ya servida — no rehacer.**
-  088eaaa (POL-1) dividió run.go de 1346 a ~330 líneas; lo restante es
-  un orquestador lineal de una función. Fragmentarlo más es churn sin
-  valor de lectura. Sin cambios en el código.
-- Higiene de sesión: `.agent-tmp/` en .gitignore (l78); `docs/agentes/`
-  con los seis artefactos sancionados (5 v2 + hallazgos/ de TEST);
-  raíz sin basura; manifiestos bun sin deriva desde e6e8a4f.
+- **changelog-consolidar-fragmentos** — 16 días sin agregación (desde
+  2026-10-06): 42 fragmentos de tres rondas (20/21/22-10) consolidados
+  en `[Unreleased]` como nueve secciones temáticas fechadas, en inglés
+  (idioma de la convención; había deriva ES), estilo Keep-a-Changelog.
+  Cobertura verificada 42/42 por token distintivo antes de borrar;
+  fragmentos retirados según `changelog.d/README.md`. Ciclo: 31c46a1
+  (claim), fb77898 (trabajo), 9812244 (release).
+- **deps-audit-checks-write** — cerrada antes en la jornada: `checks:
+  write` job-level en deps-audit.yml, bincode fuera de la excepción;
+  CI verde publicando el check «Security audit» no vacío en success.
+- **pol1b-dividir-run-go** — verificada, ya servida por 088eaaa (run.go
+  1346→~330, orquestador lineal); no rehacer.
+- **Barrido estático de higiene (sin cambios necesarios):** menciones a
+  IA = la funcionalidad propia del analista (endpoint del producto), no
+  rastros de agentes; TODOs en código = trazabilidad a TODO.md;
+  `.agent-tmp/` en .gitignore; raíz limpia; manifiestos bun sin deriva.
 
 ## En curso
 - (nada)
@@ -36,5 +34,7 @@
 - El comentario de concurrency en deps-audit.yml dice «queue the run»,
   pero GitHub cancela las runs PENDIENTES intermedias (solo sobrevive
   la más nueva; la intención se conserva); el comentario puede reflejarlo.
+- Consolidar changelog.d al cerrar CADA ronda (la convención lo dice):
+  los de las rondas en vuelo (m3, c4) no deben volver a acumularse 16 días.
 
 ## Estado: VERDE
