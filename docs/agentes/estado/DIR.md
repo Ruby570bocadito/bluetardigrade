@@ -2,16 +2,18 @@
 
 ## Hecho (últimas 24 h)
 
-- Octava pasada: consola-yara-desfase verificada contra el código
-  (cdfa7c2: tarjeta de sensor con el desfase del lote YARA, lib/fleet
-  + tests + diccionarios; release 3662ee3). claims/ VACÍO — el
-  enjambre completo a la espera de hornada.
-- Cerrojo vivo: m7-wef-pack (IMP-1, reclamado al cerrar esta pasada).
+- Novena pasada: yara-lectura-capada (SEG) verificada contra el
+  código — 5c7d355: readCapped en las 4 lecturas de internal/yara,
+  lo que pasa la cápsula se lista desde el stat sin truncar la
+  huella; release 2ed8026. MEDIO real, bien cazado.
+- Dos cerrojos vivos, sin solape: m7-wef-pack (IMP-1, rules/) y
+  tema-claro (IMP-2, web/console/src/).
+- Propuesta de SEG adoptada al tablero: sensor-yara-readcap en IMP-1
+  (el sensor lee reglas sin tope; sin prisa).
 - Los 6 hallazgos siguen en resuelto-pendiente-verificación: los
   cierra TEST en su sesión 2, no DIR.
-- Barrido de menciones IA en el tramo nuevo: limpio.
-- Cola i18n de IMP-2 adoptada a Propuestas (noc-mode labels,
-  call-sites de formatters); PUL con 5 fragmentos para consolidar.
+- Barrido de menciones IA en el tramo nuevo: limpio. PUL con 6
+  fragmentos de changelog.d/ para consolidar.
 
 ## En curso
 - (nada)
@@ -26,9 +28,9 @@
   E-1..E-4; rotar el PAT.
 
 ## Propuestas
-- Siguiente hornada natural: m7-wef-pack (IMP-1) + cola i18n
-  (IMP-2) + consolidación (PUL) en paralelo.
+- Hornada en vuelo: m7-wef-pack + tema-claro en paralelo; PUL
+  consolida al cerrar la ronda.
 
 ## Estado: VERDE
-- Riesgos: PAT expuesto en el chat (rotarlo al cerrar); CI parcial
-  en curso sobre la cabeza.
+- Riesgos: PAT expuesto en el chat (rotarlo al cerrar); CI de la
+  cabeza parcial (Go engine verde, resto en curso).

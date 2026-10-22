@@ -6,23 +6,26 @@ DIR; el resto propone cambios en la sección «Propuestas» de su
 [TODO.md](../../TODO.md); la dirección del producto por horizontes,
 [docs/ROADMAP.md](../ROADMAP.md). Ante cualquier choque, manda TODO.md.
 
-Última actualización: 2026-10-22 (DIR, octava pasada: consola-yara-
-desfase entregada, claims/ vacío — el enjambre a la espera de la
-siguiente hornada; IMP-1 reclamó m7-wef-pack (claim activo) y TEST 2
-está lista para lanzar).
+Última actualización: 2026-10-22 (DIR, novena pasada: SEG entregó
+yara-lectura-capada — MEDIO real corregido con readCapped, verificado
+por DIR — y dos claims viven sin solape: m7-wef-pack (IMP-1) y
+tema-claro (IMP-2). TEST 2 sigue lista para lanzar).
 
 ## Fase actual
 
-IMP-2 entregó consola-yara-desfase (cdfa7c2: la tarjeta de sensor en
-Equipos nombra el desfase del lote YARA contra el sha16 del motor;
-lib/fleet + tests + diccionarios) y liberó su claim: claims/ vacío.
-Nadie más tiene trabajo en vuelo: IMP-1 reclamó m7-wef-pack (claim
-9cb0181), IMP-2 tiene cola i18n propia propuesta (ver Propuestas),
-PUL acumula 5 fragmentos de changelog.d/ para consolidar y TEST 2
-(test-carga-volumetrica) sigue lista para lanzar — con los 6 hallazgos
-de la ronda 1 en resuelto-pendiente-verificación. CI de la cabeza:
-Console y Go engine en verde; govulncheck/Windows/sensor en curso al
-cerrar esta pasada.
+SEG cerró su ronda 5 con presa: lectura sin tope en internal/yara
+(cada .yar y el bundle.json se leían con os.ReadFile; un fichero de
+varios GiB en -yara-rules era un slurp OOM del motor en cada
+GET /api/yara y en el arranque) → readCapped en las 4 lecturas, lo
+que pasa la cápsula se lista desde el stat sin truncar la huella
+(5c7d355, release 2ed8026; verificado contra el código por DIR). Dos
+claims viven sin solape: m7-wef-pack (IMP-1, rules/) y tema-claro
+(IMP-2, web/console/src/). PUL acumula 6 fragmentos de changelog.d/
+y TEST 2 (test-carga-volumetrica) sigue lista para lanzar — con los 6
+hallazgos de la ronda 1 en resuelto-pendiente-verificación. CI: la
+run de d7fafab murió por supersesión (comportamiento conocido); la
+definitiva sobre 5b7da89 tiene Go engine en verde y el resto en curso
+al cerrar esta pasada.
 
 ## Decisiones vigentes que obligan a todos
 
@@ -58,11 +61,17 @@ semana y media después (lección de los 42 fragmentos).
 - [ ] (IMP-1) doctor-yara-check — `engine doctor` valida el directorio
   `-yara-rules` como ya hace con intel (propuesta de IMP-1 adoptada;
   pequeña) — `internal/`
+- [ ] (IMP-1) sensor-yara-readcap — el sensor lee las reglas sin tope
+  (collect_sources en sensor/src/yara.rs, fs::read entero): misma
+  disciplina read_capped que ya existe en su propio scan (propuesta
+  de SEG adoptada; sin prisa — lectura gated por fingerprint,
+  exposición menor) — `sensor/`
 
 ### IMP-2 (consola Next.js)
-- [ ] (IMP-2) tema-claro — rework de contraste, superficies y gráficas
-  (resto del carril F5); coordinar los guards con IMP-1 —
-  `web/console/src/`
+- [ ] (IMP-2) tema-claro — EN VUELO (claim activo, 5b7da89): rework de
+  contraste, superficies y gráficas (resto del carril F5); usa el
+  guard `scripts/dev-tests/check_console_theme.py` de IMP-1 tal cual
+  y pide reglas nuevas en su estado — `web/console/src/`
 - [ ] (IMP-2) ad7-login-consola — hornada de login de dominio; ANTES:
   sesión de diseño con DIR (el proxy exige principal y la ruta es
   pre-sesión — puede abrir la próxima sesión de IMP-2); su entrada en
@@ -78,10 +87,11 @@ semana y media después (lección de los 42 fragmentos).
   dict-es (analyst.errorLine) + su batería — `web/console/src/lib/
   i18n/`
 - Rutina en Decisiones: consolidar `changelog.d/` al cerrar cada ronda
-  (4 fragmentos nuevos a la espera).
+  (6 fragmentos a la espera, incluido el de SEG).
 
 ### SEG (seguridad y bugs)
-- Sin tarea reclamable: sec2-dpapi, regresión PR #28 y
+- Cerró yara-lectura-capada esta pasada (ver Cerradas). Sin tarea
+  reclamable: sec2-dpapi, regresión PR #28 y
   reconexiones/spool necesitan Windows real — ver «Esperando al
   humano». Nota menor viva: `is_excluded` compara prefijos en texto;
   un junction dentro del directorio de reglas escanearía el eco del
@@ -102,6 +112,10 @@ semana y media después (lección de los 42 fragmentos).
 
 ## Cerradas (últimas 24 h)
 
+- yara-lectura-capada — 5c7d355 + release 2ed8026 (SEG): MEDIO real —
+  lectura sin tope en internal/yara corregida con readCapped; lo que
+  pasa la cápsula se lista desde el stat con fila en Problems y peso
+  en TotalBytes, sin truncar la huella; 2 tests de regresión
 - consola-yara-desfase — cdfa7c2 + release 3662ee3 (IMP-2): la tarjeta
   de sensor nombra el desfase del lote YARA (sha del latido contra el
   sha16 del motor); lib/fleet + tests + diccionarios
