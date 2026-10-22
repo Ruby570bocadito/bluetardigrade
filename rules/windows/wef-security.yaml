@@ -1,0 +1,117 @@
+# Active Directory pack over Windows event log records (M-7, TODO F3):
+# the Security/System IDs the WEF subscription forwards from domain
+# controllers and servers (docs/AD-WEF-SUSCRIPCION.md). Records reach
+# the engine as type windows.event (contract in the guide, "Entrega al
+# motor"): host is the ORIGINATING computer, user the account the
+# record is about, and the semantic fields ride in attributes under
+# the win_* namespace. One YAML list per file, indexed by event_type,
+# hot-reloaded every 15s — the same pack schema as every other pack.
+#
+# Split of responsibilities with the endpoint pack
+# (rules/windows/active-directory.yaml): that one catches the tooling
+# running on a sensor-covered endpoint; this one catches the
+# domain-side records that only exist on the DC.
+#
+# Deliberate gaps, same false-positive doctrine as the endpoint pack:
+# - 4625 is NOT a per-event rule: every mistyped password is a 4625,
+#   so the password-spray detection lives in thresholds.yaml
+#   (thr-ad-spray: volumetric, grouped per source IP).
+# - 7045 is NOT an "any new service" rule: legit installers create
+#   services; the rule fires on interpreters or user-writable paths
+#   as the service binary — the high-precision core of T1543.003.
+# - 4769 fires on RC4 ticket encryption (0x17), the Kerberoastable
+#   request. Legacy services still negotiating RC4 surface here too:
+#   the message asks to check the service, not to page blindly.
+
+- name: "Replicacion DCSUAPI desde cuenta no-maquina (DCSync)"
+  id: "7f3a1c42-9b6d-4e08-a5d1-3c2f84b6e9a7"
+  description: >
+    Detecta la peticion de replicacion de directorio (DRSUAPI, evento
+    4662 con los GUID de DS-Replication-Get-Changes o Get-Changes-All)
+    hecha por una cuenta de usuario: la replicacion legitima entre
+    controladores la realizan cuentas maquina (terminadas en $), que
+    la regla excluye. Una cuenta de usuario pidiendo Get-Changes-All
+    es la firma de DCSync (T1003.006).
+  severity: critical
+  event_type: windows.event
+  conditions:
+    - {field: attributes.win_event_id, operator: eq, value: "4662"}
+    - {field: attributes.win_object_server, operator: eq, value: "DS"}
+    - {field: attributes.win_property, operator: icontains_any, value: ["1131f6ad", "1131f6aa", "89e95b76"]}
+    - {field: attributes.win_subject_is_machine, operator: neq, value: "true"}
+  actions:
+    - type: alert
+      config:
+        message: "Replicacion DCSUAPI solicitada en {host} por {user} - posible DCSync: verificar origen y derechos"
+        notify: "true"
+  tags: ["attack.t1003.006", "attack.credential-access"]
+  enabled: true
+
+- name: "Ticket Kerberos con cifrado RC4 (Kerberoasting)"
+  id: "a91d5e83-2f47-4b6c-8d3e-6b0a95c1f2d8"
+  description: >
+    Detecta la concesion de un ticket de servicio Kerberos cifrado con
+    RC4 (evento 4769, TicketEncryptionType 0x17): el tipo que piden las
+    herramientas de Kerberoasting (T1558.003) porque su hash se
+    crackea offline. Servicios legados que aun negocian RC4 disparan
+    la regla tambien: el mensaje pide revisar el servicio pedido, no
+    pagarlo a ciegas.
+  severity: high
+  event_type: windows.event
+  conditions:
+    - {field: attributes.win_event_id, operator: eq, value: "4769"}
+    - {field: attributes.win_ticket_encryption, operator: eq, value: "0x17"}
+  actions:
+    - type: alert
+      config:
+        message: "Ticket RC4 concedido en {host} a {user} - revisar servicio Kerberos y posible kerberoasting"
+        notify: "true"
+  tags: ["attack.t1558.003", "attack.credential-access"]
+  enabled: true
+
+- name: "Alta en grupo privilegiado del dominio"
+  id: "c58e20f7-4d91-46ab-b3e7-91f0a7d84c52"
+  description: >
+    Detecta el alta de una cuenta en un grupo privilegiado (eventos
+    4728/4732/4756: global, local de dominio y universal) cuyo nombre
+    casa con la familia de administracion (Domain Admins, Enterprise
+    Admins, Schema Admins, builtin Administrators y operadores, en
+    ingles o espanol). El alta de cuentas maquina (promociones de DC,
+    grupo de controladores de dominio) queda excluida: es gestion
+    normal del dominio.
+  severity: high
+  event_type: windows.event
+  conditions:
+    - {field: attributes.win_event_id, operator: icontains_any, value: ["4728", "4732", "4756"]}
+    - {field: attributes.win_group, operator: icontains_any, value: ["admins", "administrator", "administrador", "operator", "operador"]}
+    - {field: attributes.win_member_is_machine, operator: neq, value: "true"}
+  actions:
+    - type: alert
+      config:
+        message: "Alta en grupo privilegiado en {host} por {user} - verificar grupo y cuenta anadida"
+        notify: "true"
+  tags: ["attack.t1098", "attack.persistence"]
+  enabled: true
+
+- name: "Servicio nuevo con interprete o ruta escribible (7045)"
+  id: "e27b93a4-6c15-4f8d-9a2b-58d4e1f7c06b"
+  description: >
+    Detecta la instalacion de un servicio en un DC o servidor (evento
+    7045, canal System) cuyo binPath apunta a un interprete de
+    comandos o scripts, a tokens de ejecucion encadenada, o a una ruta
+    escribible por usuarios (temp, appdata, programdata, public). Es
+    la persistencia clasica (T1543.003): un servicio legitimo apunta a
+    su binario firmado, no a un interprete ni a una carpeta de
+    usuarios.
+  severity: high
+  event_type: windows.event
+  conditions:
+    - {field: attributes.win_event_id, operator: eq, value: "7045"}
+    - {field: attributes.win_image_path, operator: icontains_any, value: ["powershell", "cmd.exe", "mshta", "rundll32", "wscript", "cscript", "%comspec%", "-enc", "\\temp\\", "\\appdata\\", "\\programdata\\", "\\users\\public\\"]}
+  actions:
+    - type: alert
+      config:
+        message: "Servicio nuevo con binario sospechoso en {host} por {user} - revisar ImagePath"
+        notify: "true"
+  tags: ["attack.t1543.003", "attack.persistence"]
+  enabled: true

@@ -4054,9 +4054,10 @@ components:
             - honeypot.command
             - network.firewall
             - email.message
+            - windows.event
         source:
           type: string
-          description: declared sender, e.g. sysmon, etw, simulate, suricata, zeek, osquery, cowrie, windows-firewall or eml
+          description: declared sender, e.g. sysmon, etw, simulate, suricata, zeek, osquery, cowrie, windows-firewall, eml or wef
         host:
           type: string
         user:

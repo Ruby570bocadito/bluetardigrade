@@ -128,8 +128,9 @@ en Windows real; no improvisarlo desde aquí):
 
 ## Entrega al motor
 
-**Contrato pendiente (regla 7 de AGENTS.md): lo define AG-1 en M-7.** Este
-apartado no fija formato ni campos; solo deja anotadas las restricciones.
+**Contrato definido por M-7** (abajo); lo que sigue pendiente es el lado
+transportista que lo produzca (decisión abierta 7). Las restricciones
+anotadas siguen en pie.
 
 - El transportista del recolector debe reutilizar el protocolo de ingesta
   vigente (NDJSON sobre TCP, autenticación con token compartido o identidad
@@ -137,10 +138,41 @@ apartado no fija formato ni campos; solo deja anotadas las restricciones.
   parte de ingesta de [OPERATIONS.md](OPERATIONS.md)).
 - Dado que el registro `ForwardedEvents` es un único flujo compartido por
   todas las fuentes, la identidad de ingesta y el nombre de equipo reportado
-  deben permitir al motor distinguir la fuente real de cada evento. Cómo se
-  representa eso en el esquema de eventos es parte del contrato M-7.
-- El mapeo de cada ID de Windows al esquema de eventos del motor (campos,
-  usuario, host, mensaje) lo define M-7 y se documentará aquí cuando exista.
+  deben permitir al motor distinguir la fuente real de cada evento; el
+  mapeo de abajo lo fija: `host` es el equipo origen.
+- **Mapeo M-7 (definido).** Cada registro llega como un evento del
+  esquema con `type: windows.event` (tipo nuevo del wire contract,
+  `pkg/model`) y `source: wef`. El resto del contrato:
+
+  | Campo del evento | Qué lleva |
+  |---|---|
+  | `host` | el equipo ORIGEN del registro (campo `Computer` de `ForwardedEvents`), nunca el recolector |
+  | `user` | la cuenta sujeto del registro (la que inicia sesión, pide el ticket o instala el servicio) |
+  | `id` | digerido estable de 32 hex sobre (equipo + canal + `EventRecordID`), la misma convención que el OpenAPI describe para colectores |
+  | `timestamp` | el `TimeGenerated` del registro en RFC 3339 |
+  | `attributes` | campos `win_*` en minúscula, uno por campo semántico del XML del registro |
+
+  `win_*` comunes a todo registro: `win_channel` (Security o System) y
+  `win_event_id` (el ID como texto: `4625`). Por ID: 4625 lleva
+  `win_target_user`, `win_target_domain`, `win_ip`, `win_logon_type`,
+  `win_sub_status`, `win_workstation`; 4769 lleva `win_service`,
+  `win_target_user`, `win_ip`, `win_ticket_encryption` (hex en
+  minúscula: `0x17`), `win_status`; 4662 lleva `win_object_server`,
+  `win_object_type`, `win_object_name`, `win_property` (los GUID del
+  XML concatenados) y `win_subject_is_machine` (`true` cuando la
+  cuenta sujeto termina en `$`, derivado por el transportista igual
+  que las `mail_*` de phishing); 4728/4732/4756 llevan `win_group`,
+  `win_member`, `win_member_is_machine`, `win_actor`; 7045 lleva
+  `win_service`, `win_image_path`, `win_service_type`,
+  `win_start_mode`, `win_actor`.
+
+- Las detecciones que consumen estos IDs ya viven en el motor: el pack
+  `rules/windows/wef-security.yaml` (DCSync sobre 4662, Kerberoasting
+  RC4 sobre 4769, altas en grupos privilegiados sobre
+  4728/4732/4756, servicios con intérprete o ruta escribible sobre
+  7045) y el umbral `thr-ad-spray` (rociado de 4625 agrupado por IP)
+  en `thresholds.yaml`. La lista final de IDs del filtro sigue
+  pendiente de O-2 (decisión abierta 4).
 - Pendiente del transportista: tolerancia a caídas del motor (cola local),
   límite de envío, arranque como tarea programada similar a
   [WINDOWS-SERVER.md](WINDOWS-SERVER.md), y qué telemetría de estado expone
@@ -182,7 +214,7 @@ cuando el esqueleto se redacte en firme):
 | 3 | Transporte WinRM 5985 (Kerberos) frente a 5986 (certificados) | abierta | humano + AG-4 |
 | 4 | Lista final de IDs del filtro (la de arriba es provisional) | pendiente de O-2 | AG-4 |
 | 5 | Identidad de reenvío y grupo Event Log Readers por GPO | abierta | humano |
-| 6 | Contrato transportista → motor (formato, identidad, fuente real) | pendiente de M-7 | AG-1 |
+| 6 | Contrato transportista → motor (formato, identidad, fuente real) | lado motor definido (M-7, «Entrega al motor»); falta el lado transportista | AG-1 |
 | 7 | Transportista: PowerShell en `scripts/` (ámbito AG-4) u otra pieza | propuesta | humano |
 
 ## Referencias

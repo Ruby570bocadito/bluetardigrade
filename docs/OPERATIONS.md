@@ -1478,7 +1478,7 @@ every change. Artifact rules have positive/negative fixtures; Windows lab
 validation and environment-specific noise tuning remain separate checks.
 
 <!-- BEGIN RULE INVENTORY -->
-The enabled pack contains **119 rules across 12 event types**: 26 critical / 59 high / 28 medium / 3 low / 3 info.
+The enabled pack contains **123 rules across 13 event types**: 27 critical / 62 high / 28 medium / 3 low / 3 info.
 Full IDs are retained because different rules in a pack can share a UUID prefix.
 
 | ID | Rule | Severity | Event type | ATT&CK | Tactic |
@@ -1503,6 +1503,7 @@ Full IDs are retained because different rules in a pack can share a UUID prefix.
 | `b9531063-662b-4159-9b37-21bc52655ba1` | Nota de rescate escrita en disco | critical | `file.write` | T1486 | impact |
 | `ca55c08b-ae3e-4e55-a2b0-32bc8c383187` | Proceso hijo de un servidor web o de base de datos | critical | `process.create` | T1190, T1505.003 | initial-access, persistence |
 | `c3d4e5f6-0003-4c03-9e03-030303030303` | Reduccion de almacenamiento VSS con vssadmin o PowerShell | critical | `process.create` | T1490 | impact |
+| `7f3a1c42-9b6d-4e08-a5d1-3c2f84b6e9a7` | Replicacion DCSUAPI desde cuenta no-maquina (DCSync) | critical | `windows.event` | T1003.006 | credential-access |
 | `a1b2c3d4-0008-4a08-9e08-080808080808` | Stager de Meterpreter o Metasploit | critical | `process.create` | T1059 | execution |
 | `97da41f5-351c-4aa2-8e63-f47bd144a6f5` | Sustitucion de binarios de accesibilidad | critical | `file.write` | T1546.008 | persistence, privilege-escalation |
 | `4f7b0d26-9e58-4c3f-a112-6b9d4e8f3c66` | Volcado de LSASS con procdump | critical | `process.create` | T1003.001 | credential-access |
@@ -1511,6 +1512,7 @@ Full IDs are retained because different rules in a pack can share a UUID prefix.
 | `3e6a9c15-8d47-4b2e-9f01-5a8c3d7e2b55` | Volcado del registro SAM | critical | `process.create` | T1003.002 | credential-access |
 | `839b58d4-e21c-4184-ad3e-8ec277fa5d46` | Acceso a contrasenas y cookies del navegador | high | `process.create` | T1555.003 | collection, credential-access |
 | `f9486d99-a3cc-48f7-9b4f-f9e0dffcf822` | Alta en grupo con net.exe | high | `process.create` | T1098 | persistence |
+| `c58e20f7-4d91-46ab-b3e7-91f0a7d84c52` | Alta en grupo privilegiado del dominio | high | `windows.event` | T1098 | persistence |
 | `d4e5f607-1006-4a00-8000-000000000006` | Artefacto de volcado de LSASS escrito en disco | high | `file.write` | T1003.001 | credential-access |
 | `8dbf416a-d29c-4073-a556-afd182cd70aa` | Borrado de registros de eventos | high | `process.create` | T1070.001 | defense-evasion |
 | `c3d4e5f6-0005-4c05-9e05-050505050505` | Borrado del diario USN con fsutil | high | `process.create` | T1070.005 | defense-evasion |
@@ -1561,12 +1563,14 @@ Full IDs are retained because different rules in a pack can share a UUID prefix.
 | `c3d4e5f6-0004-4c04-9e04-040404040404` | Sabotaje de recuperacion de arranque con bcdedit | high | `process.create` | T1490 | impact |
 | `ce2a2bf1-6ab3-4a99-8c97-e2777f2a3b37` | Servicio de Windows con interprete como binario | high | `process.create` | T1543.003 | persistence |
 | `b75edbba-b156-4c8b-9619-323fdb019781` | Servicio nuevo con binario en ruta de usuario | high | `process.create` | T1543.003 | persistence, privilege-escalation |
+| `e27b93a4-6c15-4f8d-9a2b-58d4e1f7c06b` | Servicio nuevo con interprete o ruta escribible (7045) | high | `windows.event` | T1543.003 | persistence |
 | `4160fe22-e519-486c-91f2-779c5b814869` | Servicio remoto creado o arrancado con sc | high | `process.create` | T1021.002, T1569.002 | lateral-movement |
 | `0d23b539-0df4-49c9-b43e-3b78964a54cc` | Solicitud de tickets Kerberos para un SPN | high | `process.create` | T1558.003 | credential-access |
 | `909287cd-287a-4336-8109-a3e946334e61` | Subida de ficheros con bitsadmin | high | `process.create` | T1048, T1197 | exfiltration |
 | `53eeff7e-dd36-4321-b468-b2ff0365b223` | Subida de ficheros con curl o PowerShell | high | `process.create` | T1048.003 | exfiltration |
 | `soc-ids-priority-high` | Suricata: firma de prioridad alta | high | `network.alert` |  |  |
 | `87f5f6c7-1ce0-4d07-b2f9-c1732e3e7163` | Suscripcion permanente de eventos WMI | high | `process.create` | T1546.003 | persistence |
+| `a91d5e83-2f47-4b6c-8d3e-6b0a95c1f2d8` | Ticket Kerberos con cifrado RC4 (Kerberoasting) | high | `windows.event` | T1558.003 | credential-access |
 | `b360548f-35ee-4a5a-be3c-26b4ad06181b` | Tunel o proxy inverso hacia el exterior | high | `process.create` | T1572 | command-and-control |
 | `2a01df90-a2e0-4a97-a01e-55f2a2c6360c` | Borrado del historial de PowerShell | medium | `process.create` | T1070.003 | defense-evasion |
 | `c3d4e5f6-0008-4c08-9e08-080808080808` | Borrado dirigido de artefactos forenses de Windows | medium | `process.create` | T1070.004 | defense-evasion |

@@ -99,6 +99,12 @@ const (
 	TypeHoneypotCommand  = "honeypot.command"
 	TypeNetworkFirewall  = "network.firewall"
 	TypeEmailMessage     = "email.message"
+	// TypeWindowsEvent carries Windows event log records that reach the
+	// engine without an endpoint sensor (M-7, WEF): DC Security/System
+	// records forwarded by the collector. The semantic payload rides in
+	// attributes under the win_* namespace; docs/AD-WEF-SUSCRIPCION.md
+	// ("Entrega al motor") owns the mapping per event ID.
+	TypeWindowsEvent = "windows.event"
 )
 
 // Encode serializes the event as a single NDJSON line (no trailing

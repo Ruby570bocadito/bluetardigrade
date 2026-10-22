@@ -1,0 +1,99 @@
+# Escenarios de validacion de deteccion del pack AD por WEF (M-7).
+# Telemetria sintetica e inerte: registros windows.event con el mismo
+# contrato que define docs/AD-WEF-SUSCRIPCION.md ("Entrega al motor")
+# — host = equipo origen, campos semanticos en attributes bajo el
+# espacio win_*, igual que producira el transportista del recolector.
+# Cada escenario declara la alerta que el motor DEBE disparar (rule id
+# del pack rules/windows/wef-security.yaml); el test de CI falla si
+# una deja de detectarse. Nada se ejecuta en ningun equipo.
+
+- name: DCSync por cuenta de usuario (sintetico)
+  id: sim-wef-dcsync
+  description: 'Registro 4662 sintetico que valida la regla DCSync del pack WEF: operacion DRSUAPI con los GUID de
+    DS-Replication-Get-Changes-All pedida por una cuenta de usuario (T1003.006). La replica legitima de los DC usa
+    cuentas maquina y queda excluida. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1003.006
+  host: LAB-SIM-WEF-DC
+  user: CORP\sim.jsmith
+  expected:
+  - rule: 7f3a1c42-9b6d-4e08-a5d1-3c2f84b6e9a7
+  events:
+  - type: windows.event
+    source: wef
+    user: CORP\sim.jsmith
+    attributes:
+      win_channel: Security
+      win_event_id: "4662"
+      win_object_server: DS
+      win_object_type: '%{19195a5b-52da-4cc4-a2c4-9e00e954c8bb}'
+      win_subject_user: sim.jsmith
+      win_access_mask: "0x100"
+      win_property: '{1131f6ad-4c08-4eab-a6d3-9e5a6b0e3c5c}'
+      win_subject_is_machine: "false"
+- name: Ticket Kerberos RC4 (sintetico)
+  id: sim-wef-kerberoast-rc4
+  description: 'Registro 4769 sintetico que valida la regla de Kerberoasting del pack WEF: concesion de un ticket de
+    servicio cifrado con RC4 (T1558.003), el tipo que piden las herramientas de kerberoast para crackear offline.
+    Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1558.003
+  host: LAB-SIM-WEF-DC
+  user: CORP\sim.jsmith
+  expected:
+  - rule: a91d5e83-2f47-4b6c-8d3e-6b0a95c1f2d8
+  events:
+  - type: windows.event
+    source: wef
+    user: CORP\sim.jsmith
+    attributes:
+      win_channel: Security
+      win_event_id: "4769"
+      win_service: MSSQLSvc/sql01.corp.local:1433
+      win_ticket_encryption: "0x17"
+      win_ip: ::ffff:10.0.0.50
+- name: Alta en grupo privilegiado del dominio (sintetico)
+  id: sim-wef-group-add
+  description: 'Registro 4728 sintetico que valida la regla de altas en grupos privilegiados del pack WEF: cuenta de
+    usuario anadida a Domain Admins (T1098). Las altas de cuentas maquina (promociones de DC) quedan excluidas por la
+    regla. Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1098
+  host: LAB-SIM-WEF-DC
+  user: CORP\sim.admin
+  expected:
+  - rule: c58e20f7-4d91-46ab-b3e7-91f0a7d84c52
+  events:
+  - type: windows.event
+    source: wef
+    user: CORP\sim.admin
+    attributes:
+      win_channel: Security
+      win_event_id: "4728"
+      win_group: Domain Admins
+      win_member: sim.cuenta.nueva
+      win_member_is_machine: "false"
+      win_actor: sim.admin
+- name: Servicio nuevo con interprete en binPath (sintetico)
+  id: sim-wef-service-7045
+  description: 'Registro 7045 sintetico que valida la regla de servicios del pack WEF: instalacion de un servicio cuyo
+    ImagePath es un interprete con token de ejecucion encadenada (T1543.003), la persistencia que arranca como SYSTEM.
+    Telemetria inerte; nada se ejecuta en ningun equipo.'
+  attack:
+  - t1543.003
+  host: LAB-SIM-WEF-DC
+  user: SYSTEM
+  expected:
+  - rule: e27b93a4-6c15-4f8d-9a2b-58d4e1f7c06b
+  events:
+  - type: windows.event
+    source: wef
+    user: SYSTEM
+    attributes:
+      win_channel: System
+      win_event_id: "7045"
+      win_service: SimUpdater
+      win_image_path: '%COMSPEC% /c powershell.exe -enc SQBFAFgA'
+      win_service_type: own process
+      win_start_mode: auto start
+      win_actor: SYSTEM

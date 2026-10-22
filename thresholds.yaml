@@ -78,3 +78,19 @@
   threshold: {count: 50, window: 5m, group_by: network.source_ip}
   cooldown: 15m
   tags: ["attack.t1046", "sensor:firewall", "threshold"]
+
+# Active Directory password spray (M-7, WEF): 4625 failures are
+# volumetric by nature — every mistyped password is one, so a
+# per-event rule would be pure noise. Grouped per source IP so one
+# noisy workstation does not mask another's burst. Conservative
+# default, same doctrine as the shipped pack above.
+- name: "AD: rociado de contrasenas (4625)"
+  id: thr-ad-spray
+  description: "25 fallos de inicio de sesion (4625) en 5 minutos desde la misma IP contra el dominio: rociado de credenciales o fuerza bruta (T1110.003). Conservador: 25 en 5m."
+  severity: medium
+  event_type: windows.event
+  conditions:
+    - {field: attributes.win_event_id, operator: eq, value: "4625"}
+  threshold: {count: 25, window: 5m, group_by: attributes.win_ip}
+  cooldown: 15m
+  tags: ["attack.t1110.003", "credential-access", "threshold"]
