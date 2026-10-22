@@ -2,21 +2,22 @@
 
 ## Hecho (últimas 24 h)
 
-- Novena pasada: yara-lectura-capada (SEG) verificada contra el
-  código — 5c7d355: readCapped en las 4 lecturas de internal/yara,
-  lo que pasa la cápsula se lista desde el stat sin truncar la
-  huella; release 2ed8026. MEDIO real, bien cazado.
-- Dos cerrojos vivos, sin solape: m7-wef-pack (IMP-1, rules/) y
-  tema-claro (IMP-2, web/console/src/).
-- Propuesta de SEG adoptada al tablero: sensor-yara-readcap en IMP-1
-  (el sensor lee reglas sin tope; sin prisa).
-- Los 6 hallazgos siguen en resuelto-pendiente-verificación: los
-  cierra TEST en su sesión 2, no DIR.
-- Barrido de menciones IA en el tramo nuevo: limpio. PUL con 6
-  fragmentos de changelog.d/ para consolidar.
+- Décima pasada: m7-wef-pack (IMP-1) verificado contra el código
+  (f752040: windows.event, pack WEF de 4 reglas + umbral de rociado,
+  309 líneas de tests, OpenAPI/inventario/guía; release 90606e5).
+- ALTA detectada y tratada: carril Go en rojo sobre c04980c — gofmt
+  de scenario.go tras el rework de 467 líneas. Fix mecánico publicado
+  por DIR (d187d45) con build/vet/test 42/42 en local; m7 no se da
+  por cerrada hasta run verde sobre la cabeza nueva.
+- SEG ronda 6 read-only sin hallazgos (desfase consola y M-4 a
+  fondo); su petición a IMP-2 (poll useYaraStatus) adoptada.
+- Un cerrojo vivo: tema-claro (IMP-2). IMP-1 apunta a pol1c.
+- TODO.md: detecciones AD salen del tablero (mitad endpoint + mitad
+  WEF entregadas). PUL con 7 fragmentos de changelog.d/.
+- Barrido de menciones IA en el tramo nuevo: limpio.
 
 ## En curso
-- (nada)
+- Vigilar la run de CI sobre la cabeza nueva (cierre del ALTA).
 
 ## Bloqueado
 - ad7-login-consola: sesión de diseño DIR↔IMP-2 pendiente. SEG sin
@@ -28,9 +29,9 @@
   E-1..E-4; rotar el PAT.
 
 ## Propuestas
-- Hornada en vuelo: m7-wef-pack + tema-claro en paralelo; PUL
-  consolida al cerrar la ronda.
+- Próxima hornada natural: pol1c (IMP-1) + tema-claro/cola i18n
+  (IMP-2) + consolidación de changelog (PUL).
 
-## Estado: VERDE
-- Riesgos: PAT expuesto en el chat (rotarlo al cerrar); CI de la
-  cabeza parcial (Go engine verde, resto en curso).
+## Estado: AMARILLO
+- Riesgo: carril Go en rojo en la última run verificada; el fix está
+  en la cabeza y la run nueva decide el cierre del ALTA.

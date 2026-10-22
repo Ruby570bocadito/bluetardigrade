@@ -6,26 +6,27 @@ DIR; el resto propone cambios en la sección «Propuestas» de su
 [TODO.md](../../TODO.md); la dirección del producto por horizontes,
 [docs/ROADMAP.md](../ROADMAP.md). Ante cualquier choque, manda TODO.md.
 
-Última actualización: 2026-10-22 (DIR, novena pasada: SEG entregó
-yara-lectura-capada — MEDIO real corregido con readCapped, verificado
-por DIR — y dos claims viven sin solape: m7-wef-pack (IMP-1) y
-tema-claro (IMP-2). TEST 2 sigue lista para lanzar).
+Última actualización: 2026-10-22 (DIR, décima pasada: m7-wef-pack
+entregado por IMP-1 y verificado contra el código; detectado el carril
+Go en rojo sobre la hornada — gofmt en scenario.go, corregido por DIR
+con build/vet/test 42/42 en local; cierre de m7 pendiente de run
+verde sobre la cabeza).
 
 ## Fase actual
 
-SEG cerró su ronda 5 con presa: lectura sin tope en internal/yara
-(cada .yar y el bundle.json se leían con os.ReadFile; un fichero de
-varios GiB en -yara-rules era un slurp OOM del motor en cada
-GET /api/yara y en el arranque) → readCapped en las 4 lecturas, lo
-que pasa la cápsula se lista desde el stat sin truncar la huella
-(5c7d355, release 2ed8026; verificado contra el código por DIR). Dos
-claims viven sin solape: m7-wef-pack (IMP-1, rules/) y tema-claro
-(IMP-2, web/console/src/). PUL acumula 6 fragmentos de changelog.d/
-y TEST 2 (test-carga-volumetrica) sigue lista para lanzar — con los 6
-hallazgos de la ronda 1 en resuelto-pendiente-verificación. CI: la
-run de d7fafab murió por supersesión (comportamiento conocido); la
-definitiva sobre 5b7da89 tiene Go engine en verde y el resto en curso
-al cerrar esta pasada.
+IMP-1 entregó m7-wef-pack (f752040: contrato windows.event en
+pkg/model — host origen, id estable 32-hex —, pack de 4 reglas WEF
+(4625 por umbral; 4769 RC4; 4662; 4728/4732/4756; 7045 intérprete),
+309 líneas de tests, OpenAPI e inventario vía guards, guía AD-WEF con
+el mapeo real; release 90606e5) y apunta a pol1c. SEG cerró ronda 6
+read-only: desfase consola y M-4 /api/db/query auditados a fondo SIN
+hallazgos (guardSQL + caps + QueryRO en mode=ro: tres capas
+independientes), con petición a IMP-2 adoptada a Propuestas. Un claim
+vivo: tema-claro (IMP-2). ALTA viva: el carril Go de la cabeza
+c04980c murió en fmt (scenario.go sin gofmt tras el rework de 467
+líneas); DIR aplicó la normalización mecánica con build/vet/test
+42/42 en local (d187d45) — m7-wef-pack no se da por cerrada hasta run
+verde sobre la nueva cabeza. PUL con 7 fragmentos de changelog.d/.
 
 ## Decisiones vigentes que obligan a todos
 
@@ -36,28 +37,34 @@ firmado, auditado y con lista de protegidos); nada de feeds ni
 herramientas de terceros descargadas solos; CI en verde antes de dar
 una tarea por cerrada (la run que manda es la de la cabeza de main —
 cancelar por supersesión NO es fallo, pero verifica AMBOS pases de
-staticcheck antes de dar una entrega de motor por verde); punto
+staticcheck antes de dar una entrega de motor por verde); el carril
+Go muere en fmt con cualquier fichero sin gofmt — pasar `gofmt -l .`
+antes de cada release de motor (lección de m7-wef-pack: rework de
+467 líneas en scenario.go sin normalizar); punto
 completado = fuera de TODO.md + entrada propia en `changelog.d/`;
 `changelog.d/` se consolida en CHANGELOG.md AL CERRAR CADA RONDA, no
 semana y media después (lección de los 42 fragmentos).
 
 ## ALTA
 
-- Sin ALTA abierta.
+- CI en rojo sobre la entrega m7-wef-pack: la run definitiva de la
+  cabeza c04980c murió en el paso fmt (gofmt: internal/scenario/
+  scenario.go; build/vet/test no llegaron a correr en remoto).
+  Causa corregida por DIR (d187d45, normalización mecánica — no es
+  funcionalidad — con gofmt/build/vet/test 42/42 en verde local).
+  PENDIENTE de cierre: run verde sobre la cabeza nueva; m7-wef-pack
+  sigue pendiente de verificación hasta entonces.
 
 ## Tareas por rol
 
 ### IMP-1 (motor Go + sensor Rust)
-- [ ] (IMP-1) m7-wef-pack — EN VUELO (claim activo, 9cb0181): pack AD
-  por ID de evento (4625/4769/4662/4728/4732/4756/7045); la guía
-  existe: `docs/AD-WEF-SUSCRIPCION.md` — `rules/`
+- [ ] (IMP-1) pol1c-collector — SIGUIENTE (declarada por IMP-1 al
+  soltar m7): dividir `sensor/src/collector.rs` (479 líneas) sin
+  cambio de comportamiento, si el análogo POL-1 de run.go aplica aquí
+  (propuesta de PUL tras verificar pol1b) — `sensor/`
 - [ ] (IMP-1) s2-yara-memoria — DESBLOQUEADA por m3: escaneo de memoria
   de procesos con yara-x (decisión de atribución PID pendiente, ver
   contrato S-2↔M-3) — `sensor/`
-- [ ] (IMP-1) pol1c-collector — dividir `sensor/src/collector.rs`
-  (479 líneas) sin cambio de comportamiento, si el análogo POL-1 de
-  run.go aplica aquí (propuesta de PUL tras verificar pol1b) —
-  `sensor/`
 - [ ] (IMP-1) doctor-yara-check — `engine doctor` valida el directorio
   `-yara-rules` como ya hace con intel (propuesta de IMP-1 adoptada;
   pequeña) — `internal/`
@@ -87,11 +94,12 @@ semana y media después (lección de los 42 fragmentos).
   dict-es (analyst.errorLine) + su batería — `web/console/src/lib/
   i18n/`
 - Rutina en Decisiones: consolidar `changelog.d/` al cerrar cada ronda
-  (6 fragmentos a la espera, incluido el de SEG).
+  (7 fragmentos a la espera, incluidos el de SEG y el de m7).
 
 ### SEG (seguridad y bugs)
-- Cerró yara-lectura-capada esta pasada (ver Cerradas). Sin tarea
-  reclamable: sec2-dpapi, regresión PR #28 y
+- Ronda 6 read-only SIN hallazgos: desfase consola (yara status) y
+  M-4 /api/db/query auditados a fondo; su petición a IMP-2 adoptada a
+  Propuestas. Sin tarea reclamable: sec2-dpapi, regresión PR #28 y
   reconexiones/spool necesitan Windows real — ver «Esperando al
   humano». Nota menor viva: `is_excluded` compara prefijos en texto;
   un junction dentro del directorio de reglas escanearía el eco del
@@ -112,6 +120,12 @@ semana y media después (lección de los 42 fragmentos).
 
 ## Cerradas (últimas 24 h)
 
+- m7-wef-pack — f752040 + release 90606e5 (IMP-1): pack AD sobre
+  eventos WEF — contrato windows.event (host origen, id 32-hex),
+  DCSync / Kerberoasting RC4 / altas en privilegio / servicio
+  intérprete, rociado 4625 vía thresholds; 4 reglas + 309 líneas de
+  tests, OpenAPI e inventario vía guards, guía AD-WEF con el mapeo
+  real. CIERRE PENDIENTE de run verde (ver ALTA)
 - yara-lectura-capada — 5c7d355 + release 2ed8026 (SEG): MEDIO real —
   lectura sin tope en internal/yara corregida con readCapped; lo que
   pasa la cápsula se lista desde el stat con fila en Problems y peso
@@ -161,6 +175,11 @@ semana y media después (lección de los 42 fragmentos).
 
 ## Propuestas en el tablero (de los estados)
 
+- Subir el poll de useYaraStatus() al nivel de la vista (hoy dentro
+  de SensorCard: N sensores = N polls paralelos de GET /api/yara con
+  walk cada 60 s — carga que crece con la flota) y avisar en UI
+  cuando un fetch falla manteniendo el status viejo en silencio
+  (petición de SEG, ronda 6) — `web/console/src/`.
 - Barrer los últimos SEVERITY_LABEL/ATTACK_TACTICS de noc-mode con el
   patrón ya listo en rules-view (IMP-2, cola i18n).
 - Pasar formatTime/formatDateTime con idioma en los call-sites ya
