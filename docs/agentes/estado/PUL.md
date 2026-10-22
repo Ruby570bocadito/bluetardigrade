@@ -1,20 +1,26 @@
 # PUL — estado
 
 ## Hecho (últimas 24 h)
-- **higiene-postmigracion** (verificación completa, sin cambios necesarios):
-  - `docs/agentes/` contiene exactamente los cinco artefactos v2
-    (PROTOCOLO, OWNERSHIP, ROADMAP, claims/, estado/); cero restos v1.
-  - Raíz limpia: TASKS.md y WORKLOG.md retirados (historial de git),
-    AGENTS.md queda como puntero a PROTOCOLO.md.
-  - `.agent-tmp/` presente en .gitignore (línea 78); sin ficheros con
-    patrones de borrador/backup/ronda en el árbol.
-  - Dependencias Go: `go mod tidy` sin cambios (go.mod/go.sum sincronizados
-    con el código). Manifiestos bun de `web/` y `website/` sin deriva
-    detectable; los checks de consola del target `ci` los cubren.
-- **Petición de PUL a IMP-1 servida** (a través de IMP-1 en esta misma
-  sesión): `check_api_reference.py` en el target `ci` del Makefile
-  (self-test + deriva), commit 0e20698; OPERATIONS.md regenerado para
-  incluir POST /api/auth/domain (AD-7).
+- **deps-audit-checks-write** (ROADMAP; petición de IMP-1 en PR #48) —
+  ciclo completo: 0dea0aa (claim), ff15ee4 (trabajo), 5687747 (release):
+  - deps-audit.yml: permissions a nivel de job (contents: read +
+    checks: write); issues: write fuera a propósito (privilegio mínimo,
+    la creación de issues del cron queda desactivada).
+  - `.cargo/audit.toml`: fuera bincode (RUSTSEC-2025-0141, unmaintained
+    transitivo de yara-x); su condición de revisión escrita quedó
+    cumplida. rsa (RUSTSEC-2023-0071) sigue con su razón documentada.
+  - Fragmento `changelog.d/deps-audit-checks-write.md`.
+  - Verificado en CI: deps-audit sobre la cabeza (ce9a70b, contiene
+    ff15ee4) en verde y publica el check «Security audit» con informe
+    NO vacío en success (el informativo no falla; doc de audit-check
+    v2.0.0). Resto de lanes de ese head: verdes.
+- **pol1b-dividir-run-go: verificada, ya servida — no rehacer.**
+  088eaaa (POL-1) dividió run.go de 1346 a ~330 líneas; lo restante es
+  un orquestador lineal de una función. Fragmentarlo más es churn sin
+  valor de lectura. Sin cambios en el código.
+- Higiene de sesión: `.agent-tmp/` en .gitignore (l78); `docs/agentes/`
+  con los seis artefactos sancionados (5 v2 + hallazgos/ de TEST);
+  raíz sin basura; manifiestos bun sin deriva desde e6e8a4f.
 
 ## En curso
 - (nada)
@@ -26,10 +32,13 @@
 - (ninguna)
 
 ## Propuestas para el roadmap
-- `pol1b-dividir-run-go` quedó desbloqueada por el release de M-2; es la
-  siguiente tarea PUL con más valor (refactor sin cambio de comportamiento,
-  suite verde antes y después).
-- La próxima pasada de dependencias puede añadir `bun install --frozen-lockfile`
-  como check explícito si el equipo quiere blindar los manifiestos bun.
+- Retirar pol1b-dividir-run-go del tablero (servida por 088eaaa). Si
+  POL-1 sigue viva en TODO.md, el objetivo restante es
+  `sensor/src/collector.rs` (479 líneas) — ticket para IMP-1.
+- El comentario de concurrency en deps-audit.yml dice «queue the run»,
+  pero GitHub cancela las runs PENDIENTES intermedias del grupo (solo
+  sobrevive la más nueva; observado hoy con 4 pushes seguidos). La
+  intención se conserva (la run que completa es la de la cabeza); el
+  comentario puede reflejarlo.
 
 ## Estado: VERDE
