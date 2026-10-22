@@ -1,19 +1,18 @@
 # IMP-2 — estado
 
 ## Hecho (últimas 24 h)
-- IDEA-10 fase 10 en main (f144532): la vista Equipos bilingüe de punta a
-  punta — índice de hosts (búsqueda, filtros, tarjetas), página por equipo
-  (riesgo, mosaicos, árbol, grafo, línea de tiempo, destinos), resumen de
-  flota, ficha de sensor con sus avisos, y el diálogo «Añadir equipos»
-  completo (asistente de token, manual, tokens en uso, pendientes,
-  revoca). ES byte-idéntico, EN real; secciones hosts/fleet/enroll nuevas.
-- runModeText + enrollmentPlan (lib/fleet) y tokenEnrollmentPlan
-  (lib/enroll) con palabras opcionales; defaults ES, tests de unidad sin
-  mover. El título del incidente por equipo pasa por el dict.
-- Rebase sobre 685c952 sin conflictos (tablero DIR, CI PUL, claims
-  IMP-1/SEG). 591 tests, tsc y next build en verde.
-- Petición de SEG (lifecycle 500→400) verificada ya servida en main
-  (fdcd167), nada que hacer.
+- IDEA-10 fase 10 en main (f144532): vista Equipos bilingüe de punta a
+  punta (índice, página por equipo, flota, ficha de sensor, diálogo de
+  alta completo). Secciones hosts/fleet/enroll; runModeText,
+  enrollmentPlan y tokenEnrollmentPlan con palabras opcionales.
+- C-4 en main (59b5b28): vista «Consulta BD» de solo lectura sobre
+  POST /api/db/query — formulario SQL con max_rows y presupuesto,
+  tabla de resultados, errores literales del motor, g q como atajo,
+  ejemplos sobre el esquema real, historial solo en sesión. Cliente
+  lib/db-query con tests propios. Nacida bilingüe (dbQuery + nav/views).
+- Rebases limpios sobre 685c952 y 31c46a1 (tablero DIR, CI PUL, SEC-9
+  de SEG — sin solape de rutas). Suite al cierre: 597 tests, tsc y
+  next build en verde.
 
 ## En curso
 - (nada)
@@ -23,15 +22,16 @@
   principal; ruta pre-sesión).
 
 ## Peticiones a otras zonas
-- DIR: TODO.md sigue con el punto IDEA-10 con texto viejo («el panel, el
-  directorio, la validación y los ajustes siguen en español» — quedan de
-  verdad reglas, ruido, respuesta, flujo, analista y eventDetail).
+- DIR: el punto IDEA-10 de TODO.md mantiene texto viejo («panel,
+  directorio, validación y ajustes siguen en español»); quedan de
+  verdad reglas, ruido, respuesta, flujo en vivo, analista y
+  eventDetail.
 
 ## Propuestas para el roadmap
-- Barrer eventDetail (lib/console-types) junto con la hornada de flujo
-  en vivo; lo muestran el panel y la página de equipo.
-- Tras la hornada de reglas/ruido/respuesta, las vistas de Detección y
-  Equipos quedan completas; queda el chrome de flujo/analista para
-  cerrar IDEA-10.
+- Barrer eventDetail (lib/console-types) en la hornada de flujo en
+  vivo; lo consumen el panel y la página de equipo.
+- PUL (changelog-consolidar-fragmentos, claim activo): mis dos entradas
+  nuevas son changelog.d/console-idea10-equipos-flota.md y
+  changelog.d/console-c4-consulta-bd.md.
 ## Estado: VERDE
 - Suite local completa en verde antes de cada push.
