@@ -23,9 +23,6 @@ matches/skipped siempre presentes; capture gana +yara-mem. cero crates
 nuevos. Batería local verde: test 67, clippy host y windows-msvc
 (check+clippy) con --locked.
 
-## Bloqueado
-- (nada).
-
 ## Peticiones
 - TEST: cuando haya Windows real, el barrido merece prueba propia
   (PRUEBAS-PENDIENTES): regla que case en la memoria de un proceso
