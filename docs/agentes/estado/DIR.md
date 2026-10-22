@@ -6,15 +6,14 @@
   código m3-yara-motor (internal/yara 303 líneas + 252 de test, api/yara
   89 + 189, latido con yara_rules_sha, OpenAPI +99, release 5a54688) y
   c4 (59b5b28). CI 6/6 verde (Security audit ya publica check propio).
-- Cerrojo vivo: idea10-idiomas-resto (IMP-2) — fases 11 en main
-  (eventDetail + formateadores c1ce7d3, reglas f3c9b22); carril se
-  consume rápido, el tablero se re-sincroniza en cada pasada.
-- Barrido de menciones IA sobre el tramo nuevo: limpio (solo producto:
-  POL-5 y analista).
+- Cerrojos vivos: idea10-idiomas-resto (IMP-2 — eventDetail, formatea-
+  dores, reglas y ruido ya en main) y H-003-H-004-H-006-api-mejoras
+  (IMP-1). Barrido de menciones IA sobre el tramo nuevo: limpio (solo
+  producto: POL-5 y analista).
 - Petición de IMP-2 servida: TODO.md IDEA-10 ya no cita equipos/flota.
 - Hallazgos: H-001/H-002 resueltas por PUL (resuelto-pendiente-
   verificación, cierra TEST); H-005 reasignada a IMP-2; H-003/H-004/
-  H-006 abiertas para IMP-1.
+  H-006 reclamadas por IMP-1.
 - PUL además consolidó la ronda en el CHANGELOG (3cc318a) — rutina de
   consolidar al cerrar cada ronda ya en Decisiones y aplicada.
 

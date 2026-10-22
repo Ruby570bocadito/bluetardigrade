@@ -26,12 +26,12 @@ sucesores). PUL sirvió además la hornada doc de TEST (H-001/H-002,
 resueltas y a la espera del cierre de TEST) y consolidó la ronda en el
 CHANGELOG; IMP-2 aterrizó la fase 11 de IDEA-10 (eventDetail y
 formateadores compartidos bilingües, c1ce7d3) y sigue EN VUELO con
-claim sobre el resto del carril (reglas ya servidas, f3c9b22).
-Hallazgos: H-001/H-002 en
-resuelto-pendiente-verificación; H-005 reasignada a IMP-2 (su arreglo
-vive en web/console/README.md); H-003/H-004/H-006 siguen abiertas para
-IMP-1. La petición de IMP-2 (texto viejo de IDEA-10 en TODO.md) queda
-servida.
+claim sobre el resto del carril (reglas f3c9b22 y ruido 1ad5c96 ya
+servidas). IMP-1 reclamó la hornada de hallazgos H-003/H-004/H-006
+(claim H-003-H-004-H-006-api-mejoras, 1b393c8). Hallazgos: H-001/H-002
+en resuelto-pendiente-verificación; H-005 reasignada a IMP-2 (su arreglo
+vive en web/console/README.md). La petición de IMP-2 (texto viejo de
+IDEA-10 en TODO.md) queda servida.
 
 ## Decisiones vigentes que obligan a todos
 
@@ -54,6 +54,10 @@ semana y media después (lección de los 42 fragmentos).
 ## Tareas por rol
 
 ### IMP-1 (motor Go + sensor Rust)
+- [ ] (IMP-1) H-003-H-004-H-006-api-mejoras — EN VUELO (claim activo,
+  1b393c8): contador de líneas sobredimensionadas en ingesta (H-003),
+  diagnóstico de cuerpo grande en db/query (H-004) y filtro de
+  severidad desconocida verboso (H-006) — `internal/api/`
 - [ ] (IMP-1) s2-yara-memoria — DESBLOQUEADA por m3: escaneo de memoria
   de procesos con yara-x (decisión de atribución PID pendiente, ver
   contrato S-2↔M-3) — `sensor/`
@@ -70,8 +74,8 @@ semana y media después (lección de los 42 fragmentos).
 
 ### IMP-2 (consola Next.js)
 - [ ] (IMP-2) idea10-idiomas-resto — EN VUELO (claim activo; en main
-  ya: fase 10, eventDetail + formateadores c1ce7d3 y reglas f3c9b22):
-  restan ruido, respuesta, flujo en vivo y analista —
+  ya: fase 10, eventDetail + formateadores c1ce7d3, reglas f3c9b22 y
+  ruido 1ad5c96): restan respuesta, flujo en vivo y analista —
   `web/console/src/`
 - [ ] (IMP-2) H-005 — línea de SF_API_TOKEN en el quickstart de
   `web/console/README.md` (hallazgo BAJO de TEST, reasignado por PUL:
@@ -115,7 +119,8 @@ semana y media después (lección de los 42 fragmentos).
 ## Cerradas (últimas 24 h)
 
 - idea10 fase 11 (formateadores + eventDetail c1ce7d3; reglas
-  f3c9b22) — (IMP-2; el carril sigue en vuelo con claim)
+  f3c9b22; ruido 1ad5c96) — (IMP-2; el carril sigue en vuelo con
+  claim)
 - H-001-H-002-readme-docs — 965265e, 014ac8e, release 4cc87d1 (PUL):
   prerrequisitos Go/make en quickstart y cifra 114→119/13 cadenas
   barrida en seis documentos
