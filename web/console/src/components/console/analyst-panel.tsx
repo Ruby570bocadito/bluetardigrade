@@ -17,48 +17,54 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAnalystChannel } from './socket-provider'
 import { useEngine } from './engine-provider'
+import { useI18n } from './i18n-provider'
 import { EmptyState, OfflineNotice, SeverityBadge } from './ui-bits'
 import { StarBorder } from '@/components/reactbits/star-border'
 import { digestBundle, pickBundleAlert, type BundleDigest, type PendingIncidentAnalysis } from '@/lib/incident-analysis'
 import { readForensicBundle } from '@/lib/forensic'
+import type { Dict } from '@/lib/i18n'
 import { formatTime, type AnalystMessage, type SfAlert, type SfSuppression } from '@/lib/console-types'
 
 type AskPayload = { alert: SfAlert; question?: string }
+
+type SuppressWords = Dict['analyst']['suppress']
 
 // Operator-suppression context for the alert being analyzed: an entry in
 // suppressions.yaml matching this rule means alerts from that host (or
 // every host) are being deliberately muted, which is exactly what an
 // analyst needs to know when the queue looks thinner than it should.
-function suppressionNote(alert: SfAlert, entries: SfSuppression[]): string | undefined {
+// The words travel in the dictionary (analyst.suppress); the suppression
+// reason is engine data and never translates.
+function suppressionNote(alert: SfAlert, entries: SfSuppression[], w: SuppressWords): string | undefined {
   const matches = entries.filter((s) => s.rule_id === alert.rule_id)
   if (matches.length === 0) return undefined
   const parts = matches.map((s) => {
     const scope = !s.host
-      ? 'todos los hosts'
+      ? w.allHosts
       : s.host.toLowerCase() === alert.host.toLowerCase()
-        ? `este host (${s.host})`
-        : `el host ${s.host}`
-    const until = s.expires ? `, hasta ${s.expires}` : ''
+        ? w.thisHost(s.host)
+        : w.thatHost(s.host)
+    const until = s.expires ? w.until(s.expires) : ''
     const why = s.reason ? ` — ${s.reason}` : ''
     return `${scope}${until}${why}`
   })
-  return `Supresiones activas para esta regla: ${parts.join('; ')}.`
+  return w.note(parts.join('; '))
 }
 
 // Same context for a multi-alert analysis: every suppression entry that
 // mutes any rule involved in the case, so a thin queue is explained.
-function incidentSuppressionNote(alerts: readonly SfAlert[], entries: SfSuppression[]): string | undefined {
+function incidentSuppressionNote(alerts: readonly SfAlert[], entries: SfSuppression[], w: SuppressWords): string | undefined {
   const ruleIds = new Set(alerts.map((a) => a.rule_id))
   const matches = entries.filter((s) => ruleIds.has(s.rule_id))
   if (matches.length === 0) return undefined
   const parts = matches.slice(0, 5).map((s) => {
-    const scope = !s.host ? 'todos los hosts' : `el host ${s.host}`
-    const until = s.expires ? `, hasta ${s.expires}` : ''
+    const scope = !s.host ? w.allHosts : w.thatHost(s.host)
+    const until = s.expires ? w.until(s.expires) : ''
     const why = s.reason ? ` — ${s.reason}` : ''
     return `${s.rule_id} (${scope}${until}${why})`
   })
-  const extra = matches.length > 5 ? ` y ${matches.length - 5} más` : ''
-  return `Supresiones activas para reglas del caso: ${parts.join('; ')}${extra}.`
+  const extra = matches.length > 5 ? w.andMore(matches.length - 5) : ''
+  return w.incidentNote(parts.join('; ') + extra)
 }
 
 export function AnalystPanel({
@@ -73,6 +79,7 @@ export function AnalystPanel({
   clearPendingIncident?: () => void
 }) {
   const { alerts, suppressions } = useEngine()
+  const { dict } = useI18n()
   const { status: channelStatus, getSocket } = useAnalystChannel()
   const reduce = useReducedMotion()
   const [messages, setMessages] = useState<AnalystMessage[]>([])
@@ -157,7 +164,7 @@ export function AnalystPanel({
         role: 'user',
         alertName: alert.rule_name,
         question: q,
-        suppressionNote: suppressionNote(alert, suppressions),
+        suppressionNote: suppressionNote(alert, suppressions, dict.analyst.suppress),
       },
       { id: crypto.randomUUID(), role: 'analyst', steps: [], text: '' },
     ])
@@ -177,12 +184,12 @@ export function AnalystPanel({
     setRunning(true)
     setPickerId(null)
     const p = pending.payload
-    const hosts = new Set(p.alerts.map((a) => a.host || '(sin equipo)')).size
+    const hosts = new Set(p.alerts.map((a) => a.host || dict.analyst.noHost)).size
     const meta = [
-      `${p.alerts.length} ${p.alerts.length === 1 ? 'alerta' : 'alertas'}`,
-      p.omitted_alerts ? `+${p.omitted_alerts} no incluidas` : null,
-      `${hosts} ${hosts === 1 ? 'equipo' : 'equipos'}`,
-      `${p.groups.length} ${p.groups.length === 1 ? 'ventana' : 'ventanas'}`,
+      dict.analyst.metaAlerts(p.alerts.length),
+      p.omitted_alerts ? dict.analyst.metaOmitted(p.omitted_alerts) : null,
+      dict.analyst.metaHosts(hosts),
+      dict.analyst.metaWindows(p.groups.length),
     ].filter(Boolean).join(' · ')
     setMessages((prev) => [
       ...prev,
@@ -192,7 +199,7 @@ export function AnalystPanel({
         incidentTitle: pending.label,
         incidentMeta: meta,
         question: q,
-        suppressionNote: incidentSuppressionNote(p.alerts, suppressions),
+        suppressionNote: incidentSuppressionNote(p.alerts, suppressions, dict.analyst.suppress),
         incidentPayload: p,
       },
       { id: crypto.randomUUID(), role: 'analyst', steps: [], text: '' },
@@ -237,14 +244,14 @@ export function AnalystPanel({
   const canRetry = Boolean(lastUser?.alertName || lastUser?.incidentPayload) && !running && channelLive
 
   return (
-    <section aria-label="Analista IA" className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+    <section aria-label={dict.analyst.sectionAria} className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
       <div className="panel flex min-w-0 flex-col overflow-hidden">
         <div className="panel-head">
           <Tray size={15} aria-hidden className="text-primary" />
-          <h2 className="text-sm font-medium text-zinc-100">Elige una alerta</h2>
+          <h2 className="text-sm font-medium text-zinc-100">{dict.analyst.queueTitle}</h2>
           <span className="ml-auto text-xs tabular-nums text-zinc-500">{alerts.length}</span>
         </div>
-        <div className="max-h-[64vh] flex-1 overflow-y-auto" tabIndex={0} aria-label="Cola de alertas del analista">
+        <div className="max-h-[64vh] flex-1 overflow-y-auto" tabIndex={0} aria-label={dict.analyst.queueAria}>
           <ul className="divide-y divide-zinc-800/70">
             {alerts.slice(0, 20).map((al) => (
               <li key={`${al.event_id}:${al.rule_id}`}>
@@ -270,7 +277,7 @@ export function AnalystPanel({
               </li>
             ))}
             {alerts.length === 0 && (
-              <li className="px-3 py-6 text-center text-xs text-zinc-500">Sin alertas en cola</li>
+              <li className="px-3 py-6 text-center text-xs text-zinc-500">{dict.analyst.queueEmpty}</li>
             )}
           </ul>
         </div>
@@ -284,26 +291,26 @@ export function AnalystPanel({
         <div className="panel-head">
           <span className="icon-tile"><Sparkle size={14} weight="fill" aria-hidden /></span>
           <div className="min-w-0">
-            <h2 className="text-sm font-medium text-zinc-100">Analista IA</h2>
-            <p className="truncate text-[11px] text-zinc-500">Modelo propio configurado en web/console-service · respuesta completa, sin streaming simulado</p>
+            <h2 className="text-sm font-medium text-zinc-100">{dict.analyst.title}</h2>
+            <p className="truncate text-[11px] text-zinc-500">{dict.analyst.subtitle}</p>
           </div>
           <span className={`ml-auto flex shrink-0 items-center gap-1.5 text-[11px] ${channelLive ? 'text-emerald-300' : 'text-zinc-500'}`}>
             <span aria-hidden className={`h-2 w-2 rounded-full ${channelLive ? 'bg-emerald-500' : 'bg-zinc-600'}`} />
-            {channelLive ? (running ? 'analizando' : 'conectado') : channelStatus === 'scoped' ? 'no disponible' : 'sin conexión'}
+            {channelLive ? (running ? dict.analyst.statusAnalyzing : dict.analyst.statusConnected) : channelStatus === 'scoped' ? dict.analyst.statusUnavailable : dict.analyst.statusOffline}
           </span>
         </div>
         {channelStatus === 'scoped' ? (
           <div className="p-4">
             <OfflineNotice
-              title="El analista IA no está disponible para tu cuenta"
-              hint="Tu cuenta ve solo los equipos de sus grupos, y el analista IA lee todos los equipos del motor. Pide a un administrador que lo use por ti."
+              title={dict.analyst.scopedTitle}
+              hint={dict.analyst.scopedHint}
             />
           </div>
         ) : !channelLive ? (
           <div className="p-4">
             <OfflineNotice
-              title="Servicio del analista sin conexión"
-              hint="El análisis IA vive en web/console-service (puerto 3003). Arrancalo con bun run dev en ese directorio; el resto de la consola sigue operativa."
+              title={dict.analyst.offlineTitle}
+              hint={dict.analyst.offlineHint}
             />
           </div>
         ) : (
@@ -311,8 +318,8 @@ export function AnalystPanel({
             {messages.length === 0 ? (
               <EmptyState
                 icon={Sparkle}
-                title="El analista espera una alerta"
-                hint="Elige una detección de la cola y el modelo la explicará: qué ha pasado, por qué importa, riesgo y primeros pasos"
+                title={dict.analyst.waitingTitle}
+                hint={dict.analyst.waitingHint}
               />
             ) : (
               <ul className="space-y-5">
@@ -321,14 +328,14 @@ export function AnalystPanel({
                     <li key={m.id} className="ml-auto w-fit max-w-[85%] rounded-xl rounded-br-sm border border-primary/20 bg-primary-tint/[0.08] px-3 py-2 text-xs">
                       {m.alertName && (
                         <span>
-                          <span className="text-zinc-400">Analizar </span>
+                          <span className="text-zinc-400">{dict.analyst.analyzePrefix}</span>
                           <span className="font-medium text-zinc-100">{m.alertName}</span>
                         </span>
                       )}
                       {m.incidentTitle && (
                         <span className="flex items-center gap-1.5">
                           <Stack size={12} aria-hidden className="shrink-0 text-primary-link" />
-                          <span className="text-zinc-400">Analizar incidente </span>
+                          <span className="text-zinc-400">{dict.analyst.analyzeIncidentPrefix}</span>
                           <span className="font-medium text-zinc-100">{m.incidentTitle}</span>
                         </span>
                       )}
@@ -380,7 +387,7 @@ export function AnalystPanel({
                         <div className="mt-2 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
                           <Warning size={14} className="mt-0.5 shrink-0" aria-hidden />
                           <span>
-                            El analista no pudo completar la respuesta: {m.error}. Comprueba la conexion y vuelve a intentarlo.
+                            {dict.analyst.errorLine(m.error)}
                           </span>
                         </div>
                       )}
@@ -405,14 +412,14 @@ export function AnalystPanel({
           <Input
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Pregunta opcional para el analista (p. ej. contenido recomendado)"
+            placeholder={dict.analyst.questionPlaceholder}
             className="h-9 flex-1 rounded-md border-zinc-800 bg-zinc-900 text-xs"
-            aria-label="Pregunta para el analista"
+            aria-label={dict.analyst.questionAria}
             disabled={!channelLive}
           />
           <Button type="submit" size="sm" disabled={running || alerts.length === 0 || !channelLive} className="gap-1.5 rounded-md">
             {running ? <CircleNotch size={14} className="animate-spin" aria-hidden /> : <Sparkle size={14} weight="fill" aria-hidden />}
-            {running ? 'Analizando' : 'Analizar'}
+            {running ? dict.analyst.analyzing : dict.analyst.analyze}
           </Button>
           {canRetry && (
             <Button
@@ -420,10 +427,10 @@ export function AnalystPanel({
               size="sm"
               variant="ghost"
               className="gap-1.5 rounded-md text-zinc-400 hover:text-zinc-100"
-              aria-label="Repetir el último análisis"
+              aria-label={dict.analyst.retryAria}
               onClick={() => {
                 if (lastUser?.incidentPayload) {
-                  void analyzeIncident({ payload: lastUser.incidentPayload, label: lastUser.incidentTitle ?? 'Análisis anterior' }, lastUser?.question)
+                  void analyzeIncident({ payload: lastUser.incidentPayload, label: lastUser.incidentTitle ?? dict.analyst.previousAnalysis }, lastUser?.question)
                   return
                 }
                 const al = alerts.find((a) => a.rule_name === lastUser?.alertName) ?? alerts[0]
@@ -431,7 +438,7 @@ export function AnalystPanel({
               }}
             >
               <ArrowsClockwise size={14} aria-hidden />
-              <span className="hidden sm:inline">Repetir</span>
+              <span className="hidden sm:inline">{dict.analyst.retry}</span>
             </Button>
           )}
         </form>
