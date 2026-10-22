@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { useEngine } from './engine-provider'
+import { useI18n } from './i18n-provider'
 import { EmptyState, LiveAnnouncer, SkeletonRows } from './ui-bits'
 import { ActivityChart, useActivity } from './activity-chart'
 import { ChartCard } from '@/components/charts/chart-frame'
@@ -36,6 +37,7 @@ import { eventDetail, formatTime, type SfEvent } from '@/lib/console-types'
 
 export function LiveFeed() {
   const { events, status } = useEngine()
+  const { dict, lang } = useI18n()
   const reduce = useReducedMotion()
   const [typeFilter, setTypeFilterState] = useState<string>('all')
   const [query, setQueryState] = useState('')
@@ -106,9 +108,9 @@ export function LiveFeed() {
     }
     if (knownTop.current !== top.id) {
       knownTop.current = top.id
-      setAnnouncement(`Evento nuevo: ${top.type} en ${top.host}`)
+      setAnnouncement(dict.feed.newEvent(top.type, top.host))
     }
-  }, [events, paused])
+  }, [events, paused, dict])
 
   const activity = useActivity(events)
   const mix = useMemo(() => eventTypeMix(events, 6), [events])
@@ -153,8 +155,8 @@ export function LiveFeed() {
     filtering
       ?
         [
-          typeFilter !== 'all' ? `tipo ${typeFilter}` : null,
-          query.trim() !== '' ? `búsqueda «${query.trim()}»` : null,
+          typeFilter !== 'all' ? dict.feed.typeLens(typeFilter) : null,
+          query.trim() !== '' ? dict.feed.searchLens(query.trim()) : null,
         ]
           .filter(Boolean)
           .join(' + ') || undefined
@@ -167,38 +169,38 @@ export function LiveFeed() {
   }
 
   return (
-    <section aria-label="Flujo de eventos en vivo" className="space-y-4">
+    <section aria-label={dict.feed.sectionAria} className="space-y-4">
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
         <ChartCard
           className="lg:col-span-2"
-          title="Ritmo de ingesta"
-          subtitle="Eventos por intervalo de 5 s en los últimos 4 minutos (búfer del cliente)"
+          title={dict.feed.pace.title}
+          subtitle={dict.feed.pace.subtitle}
           icon={Pulse}
           table={{
-            caption: 'Eventos por intervalo de 5 segundos',
-            columns: ['Intervalo', 'Eventos'],
-            rows: activity.points.slice().reverse().map((p) => [formatAgo(activity.now - p.end), p.value]),
+            caption: dict.feed.pace.caption,
+            columns: [dict.feed.pace.intervalCol, dict.feed.pace.eventsCol],
+            rows: activity.points.slice().reverse().map((p) => [formatAgo(activity.now - p.end, lang), p.value]),
           }}
           footer={
             <span className="flex flex-wrap gap-x-4">
-              <span>pico <span className="font-medium tabular-nums text-zinc-300">{activity.peak}</span> por intervalo</span>
-              <span>total <span className="font-medium tabular-nums text-zinc-300">{activity.total}</span> en 4 min</span>
-              {paused && <span className="text-primary-link">vista pausada: el gráfico sigue en vivo</span>}
+              <span>{dict.feed.pace.peak} <span className="font-medium tabular-nums text-zinc-300">{activity.peak}</span> {dict.feed.pace.perInterval}</span>
+              <span>{dict.feed.pace.total} <span className="font-medium tabular-nums text-zinc-300">{activity.total}</span> {dict.feed.pace.inWindow}</span>
+              {paused && <span className="text-primary-link">{dict.feed.pace.pausedNote}</span>}
             </span>
           }
         >
           {status === 'down' ? (
-            <EmptyState icon={ActivityIcon} title="Sin conexión con el motor" hint="El ritmo vuelve en cuanto el motor responda." />
+            <EmptyState icon={ActivityIcon} title={dict.feed.pace.downTitle} hint={dict.feed.pace.downHint} />
           ) : (
             <ActivityChart activity={activity} height={150} />
           )}
         </ChartCard>
         <ChartCard
-          title="Tipos de evento"
-          subtitle="Pulsa uno para filtrar"
+          title={dict.feed.types.title}
+          subtitle={dict.feed.types.subtitle}
           icon={Stack}
-          table={{ caption: 'Eventos por tipo en el búfer del cliente', columns: ['Tipo', 'Eventos'], rows: mix.top.map((r) => [r.key, r.count]) }}
-          footer={mix.rest > 0 ? `${mix.rest} eventos más de otros ${mix.distinct - mix.top.length} tipos.` : undefined}
+          table={{ caption: dict.feed.types.caption, columns: [dict.feed.types.typeCol, dict.feed.pace.eventsCol], rows: mix.top.map((r) => [r.key, r.count]) }}
+          footer={mix.rest > 0 ? dict.feed.types.restFooter(mix.rest, mix.distinct - mix.top.length) : undefined}
         >
           <BarList
             color="var(--series-2)"
@@ -207,17 +209,17 @@ export function LiveFeed() {
               label: <span className="font-mono">{r.key}</span>,
               value: r.count,
               onSelect: () => setTypeFilter(typeFilter === r.key ? 'all' : r.key),
-              selectLabel: typeFilter === r.key ? `Quitar el filtro de tipo ${r.key}` : `Filtrar el flujo por ${r.key}: ${r.count} eventos`,
+              selectLabel: typeFilter === r.key ? dict.feed.types.filterOff(r.key) : dict.feed.types.filterOn(r.key, r.count),
             }))}
-            empty={<EmptyState icon={ActivityIcon} title="Sin eventos todavía" hint="Los tipos aparecen con la primera telemetría." />}
+            empty={<EmptyState icon={ActivityIcon} title={dict.feed.types.emptyTitle} hint={dict.feed.types.emptyHint} />}
           />
         </ChartCard>
         <ChartCard
-          title="Destinos de red"
-          subtitle="Conexiones en el búfer"
+          title={dict.feed.destinations.title}
+          subtitle={dict.feed.destinations.subtitle}
           icon={Globe}
-          table={{ caption: 'Conexiones por destino en el búfer del cliente', columns: ['Destino', 'Conexiones'], rows: destinations.top.map((r) => [r.key, r.count]) }}
-          footer={destinations.rest > 0 ? `${destinations.rest} conexiones más a otros ${destinations.distinct - destinations.top.length} destinos.` : undefined}
+          table={{ caption: dict.feed.destinations.caption, columns: [dict.feed.destinations.destCol, dict.feed.destinations.connCol], rows: destinations.top.map((r) => [r.key, r.count]) }}
+          footer={destinations.rest > 0 ? dict.feed.destinations.restFooter(destinations.rest, destinations.distinct - destinations.top.length) : undefined}
         >
           <BarList
             color="var(--series-4)"
@@ -226,9 +228,9 @@ export function LiveFeed() {
               label: <span className="font-mono">{r.key}</span>,
               value: r.count,
               onSelect: () => setQuery(query === r.key.replace(/:\d+$/, '') ? '' : r.key.replace(/:\d+$/, '')),
-              selectLabel: `Buscar ${r.key} en el flujo: ${r.count} conexiones`,
+              selectLabel: dict.feed.destinations.searchOn(r.key, r.count),
             }))}
-            empty={<EmptyState icon={Globe} title="Sin conexiones" hint="Aparecen con los eventos network.connect del sensor." />}
+            empty={<EmptyState icon={Globe} title={dict.feed.destinations.emptyTitle} hint={dict.feed.destinations.emptyHint} />}
           />
         </ChartCard>
       </div>
@@ -236,9 +238,9 @@ export function LiveFeed() {
       <div className="panel overflow-hidden">
         <div className="panel-head justify-between">
           <div className="flex min-w-0 items-baseline gap-2">
-            <h2 className="text-sm font-medium text-zinc-100">Flujo de telemetría</h2>
+            <h2 className="text-sm font-medium text-zinc-100">{dict.feed.stream.title}</h2>
             <span className="text-xs tabular-nums text-zinc-500">{visible.length}</span>
-            {paused && <span className="rounded bg-primary-tint/10 px-1.5 text-[11px] text-primary-link">pausado para inspección</span>}
+            {paused && <span className="rounded bg-primary-tint/10 px-1.5 text-[11px] text-primary-link">{dict.feed.stream.pausedBadge}</span>}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
@@ -253,23 +255,23 @@ export function LiveFeed() {
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') setQuery('')
                 }}
-                placeholder="buscar en el flujo..."
-                aria-label="Buscar en el flujo de telemetría"
+                placeholder={dict.feed.stream.searchPlaceholder}
+                aria-label={dict.feed.stream.searchAria}
                 maxLength={MAX_QUERY_CHARS}
                 className="h-8 w-[220px] rounded-md border-zinc-800 bg-zinc-900 pl-7 text-xs text-zinc-200 placeholder:text-zinc-500"
               />
             </div>
             <label className="chip px-2.5 py-1.5 text-xs text-zinc-400">
               {paused ? <Play size={13} aria-hidden className="text-primary" /> : <Pause size={13} aria-hidden />}
-              <span className="hidden sm:inline">{paused ? 'Reanudar' : 'Pausar'}</span>
-              <Switch checked={paused} onCheckedChange={togglePause} aria-label="Pausar flujo en vivo" />
+              <span className="hidden sm:inline">{paused ? dict.feed.stream.resume : dict.feed.stream.pause}</span>
+              <Switch checked={paused} onCheckedChange={togglePause} aria-label={dict.feed.stream.pauseAria} />
             </label>
             <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="h-8 w-[180px] rounded-md border-zinc-800 bg-zinc-900 font-mono text-xs" aria-label="Filtrar por tipo de evento">
-                <SelectValue placeholder="Tipo de evento" />
+              <SelectTrigger className="h-8 w-[180px] rounded-md border-zinc-800 bg-zinc-900 font-mono text-xs" aria-label={dict.feed.stream.typeAria}>
+                <SelectValue placeholder={dict.feed.stream.typePlaceholder} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">todos los tipos</SelectItem>
+                <SelectItem value="all">{dict.feed.stream.allTypes}</SelectItem>
                 {types.map((t) => (
                   <SelectItem key={t} value={t}>
                     {t}
@@ -289,7 +291,7 @@ export function LiveFeed() {
         <div className="px-4 pt-3 [&>div]:mb-3">
           <SavedSearches kind="events" getLens={() => eventSearchLens(lensRef.current.tipo, lensRef.current.fq)} onApply={applySaved} />
         </div>
-        <div className="max-h-[64vh] overflow-y-auto" tabIndex={0} aria-label="Resultados del flujo en vivo">
+        <div className="max-h-[64vh] overflow-y-auto" tabIndex={0} aria-label={dict.feed.stream.resultsAria}>
           {status !== 'live' && source.length === 0 ? (
             <div className="px-4 py-8">
               <SkeletonRows rows={8} />
@@ -297,25 +299,25 @@ export function LiveFeed() {
           ) : source.length === 0 ? (
             <EmptyState
               icon={ActivityIcon}
-              title="Esperando eventos del sensor"
-              hint="Sin telemetría en el búfer. Arranca el motor y conecta Sysmon, el sensor ETW o sf-collector con logs observados para ver el flujo."
+              title={dict.feed.stream.waitingTitle}
+              hint={dict.feed.stream.waitingHint}
             />
           ) : visible.length === 0 ? (
             <EmptyState
               icon={MagnifyingGlass}
-              title="Sin resultados"
-              hint="Ningún evento coincide con la búsqueda o el filtro actual"
+              title={dict.feed.stream.noResultsTitle}
+              hint={dict.feed.stream.noResultsHint}
             />
           ) : (
             <table className="w-full table-fixed border-collapse text-left text-sm">
-              <caption className="sr-only">Flujo de eventos en vivo: hora, tipo, detalle, proceso y equipo</caption>
+              <caption className="sr-only">{dict.feed.stream.caption}</caption>
               <thead className="sticky top-0 z-10">
                 <tr className="bg-zinc-900">
-                  <th scope="col" className="w-[92px] border-b border-zinc-800 py-2 pl-4 pr-3 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Hora</th>
-                  <th scope="col" className="w-[150px] border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500 sm:w-[170px]">Tipo</th>
-                  <th scope="col" className="border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Detalle</th>
+                  <th scope="col" className="w-[92px] border-b border-zinc-800 py-2 pl-4 pr-3 text-[11px] font-medium uppercase tracking-wider text-zinc-500">{dict.feed.stream.colTime}</th>
+                  <th scope="col" className="w-[150px] border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500 sm:w-[170px]">{dict.feed.stream.colType}</th>
+                  <th scope="col" className="border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">{dict.feed.stream.colDetail}</th>
                   <th scope="col" className="hidden w-[80px] border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500 md:table-cell">PID</th>
-                  <th scope="col" className="hidden w-[170px] border-b border-zinc-800 px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-zinc-500 md:table-cell">Equipo</th>
+                  <th scope="col" className="hidden w-[170px] border-b border-zinc-800 px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-zinc-500 md:table-cell">{dict.feed.stream.colHost}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60">
@@ -333,8 +335,8 @@ export function LiveFeed() {
                       <span className="rounded border border-primary/20 bg-primary-tint/[0.08] px-1.5 py-0.5 font-mono text-[11px] text-primary-soft">{ev.type}</span>
                     </td>
                     <td className="max-w-0 px-3 py-2">
-                      <span className="block truncate font-mono text-xs text-zinc-300" title={eventDetail(ev)}>
-                        {eventDetail(ev)}
+                      <span className="block truncate font-mono text-xs text-zinc-300" title={eventDetail(ev, lang)}>
+                        {eventDetail(ev, lang)}
                       </span>
                     </td>
                     <td className="hidden px-3 py-2 font-mono text-xs tabular-nums text-zinc-500 md:table-cell">
@@ -351,7 +353,7 @@ export function LiveFeed() {
         </div>
         <p className="flex items-center gap-1.5 border-t border-zinc-800 px-4 py-2 text-[11px] text-zinc-500">
           <ActivityIcon size={12} aria-hidden />
-          Ventana mostrada: {visible.length} eventos de {source.length} en el búfer del cliente. El búfer completo vive en el motor.
+          {dict.feed.stream.windowShown(visible.length, source.length)}
         </p>
       </div>
       <LiveAnnouncer message={announcement} />

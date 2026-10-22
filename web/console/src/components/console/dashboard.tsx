@@ -1019,7 +1019,7 @@ function AlertHeatmapPanel({ down }: { down: boolean }) {
 }
 
 function RecentTelemetry({ onNavigate }: { onNavigate: (view: ConsoleView) => void }) {
-  const { dict } = useI18n()
+  const { dict, lang } = useI18n()
   const { events, status } = useEngine()
   return (
     <section aria-label={dict.panel.recent.sectionAria} className="panel min-w-0 px-4 pb-3 pt-3.5">
@@ -1065,7 +1065,7 @@ function RecentTelemetry({ onNavigate }: { onNavigate: (view: ConsoleView) => vo
                 <TableRow key={ev.id}>
                   <TableCell compact className="w-20 whitespace-nowrap font-mono text-xs tabular-nums text-zinc-500">{formatTime(ev.timestamp)}</TableCell>
                   <TableCell compact className="w-40 max-w-40 truncate font-mono text-xs text-primary-link" title={ev.type}>{ev.type}</TableCell>
-                  <TableCell compact className="max-w-0 truncate font-mono text-xs text-zinc-400" title={eventDetail(ev)}>{eventDetail(ev)}</TableCell>
+                  <TableCell compact className="max-w-0 truncate font-mono text-xs text-zinc-400" title={eventDetail(ev, lang)}>{eventDetail(ev, lang)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
