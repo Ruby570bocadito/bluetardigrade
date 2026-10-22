@@ -2,33 +2,38 @@
 
 ## Hecho (últimas 24 h)
 
-Quinta pasada, tras las tres sesiones cerradas: verificados sus commits
-en el log (sec9: 5dde23b/9d3da08/7ee5058; deps-audit:
-0dea0aa/ff15ee4/5687747; fase 10: f144532) y su contraste con los
-estados. pol1b confirmada como ya servida por 088eaaa — retirada del
-tablero, con la propuesta de PUL (collector.rs) apuntada como
-pol1c-collector para IMP-1. WEF desbloqueada: la guía
-docs/AD-WEF-SUSCRIPCION.md existe, m7-wef-pack ya no está bloqueada.
-Tablero reescrito: cerradas hornada SEG/PUL y fase 10; en vuelo m3
-(IMP-1) y c4 (IMP-2); PUL y SEG con tablero vacío y candidatas
-anotadas. CI de la cabeza 3adf07c visto en curso/cancelado por
-concurrency (matiz ya documentado por PUL); verificar la run de la
-cabeza al cerrar cada tarea.
+- Sexta pasada del tablero tras la hornada m3+c4: verificado contra el
+  código m3-yara-motor (internal/yara 303 líneas + 252 de test, api/yara
+  89 + 189, latido con yara_rules_sha, OpenAPI +99, release 5a54688) y
+  c4 (59b5b28). CI de la cabeza e4bd42a: 6/6 verde (Security audit ya
+  publica check propio tras el fix de PUL).
+- claims/ vacío; sin cerrojos caducados ni duplicados; sin solapes de
+  zona en la hornada; barrido de menciones IA sobre el tramo nuevo:
+  limpio (solo producto: POL-5 y analista).
+- Petición de IMP-2 servida: TODO.md IDEA-10 ya no cita equipos/flota
+  (fase 10 en main).
+- Hallazgos 6/6 abiertos (ninguno resuelto-pendiente-verificación);
+  colas repartidas en el tablero: doc → PUL (H-001/H-002/H-005),
+  mejora → IMP-1 (H-003/H-004/H-006).
+- s2-yara-memoria desbloqueada por m3; doctor-yara-check y
+  consola-yara-desfase adoptadas al tablero (propuestas de IMP-1).
 
 ## En curso
-- (nada) — TEST cerró test-arranque-hallazgo-cero: 6 hallazgos BAJO
-  en hallazgos/ (3 doc PUL, 3 mejora IMP-1), pipeline punta a punta
-  verde con 4 personas; primera sesión real del rol.
+- (nada)
+
+## Bloqueado
+- ad7-login-consola: sesión de diseño DIR↔IMP-2 pendiente (que abra su
+  próxima sesión). SEG sin tarea reclamable (Windows real).
 
 ## Peticiones
-- Humano (F0, no reclamable): Dependabot #24–#27 y borrado de ramas,
-  como en la pasada anterior.
+- Humano: F0 (Dependabot #24–#27, ramas), pruebas Windows real, visto
+  bueno E-1..E-4; rotar el PAT.
 
-## Propuestas para el roadmap
-- Sesión de diseño de ad7-login-consola cuando IMP-2 libere c4: el
-  proxy exige principal y la ruta es pre-sesión.
+## Propuestas
+- Lanzar test-carga-volumetrica (sesión TEST 2, ya descrita en el
+  tablero) cuando la hornada s2/m7 aterrice.
+- IMP-2: abrir su próxima sesión con la sesión de diseño de ad7.
 
-## Estado: VERDE — riesgos
-- Enjambre denso pero sin solapes: los tres releases del día llegaron
-  con su ciclo completo de claims. Higiene: el PAT sigue expuesto en
-  el chat — rotarlo al cerrar.
+## Estado: VERDE
+- Riesgos: PAT expuesto en el chat (rotarlo al cerrar la sesión);
+  6 hallazgos BAJO sin recoger (colas anotadas, no bloquean).
