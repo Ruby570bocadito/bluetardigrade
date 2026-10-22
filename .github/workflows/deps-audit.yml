@@ -38,11 +38,17 @@ on:
 
 concurrency:
   group: deps-audit-${{ github.ref }}
-  # A dependency scan must never be cancelled by the next push: a green
-  # result is only meaningful when the scan COMPLETES, and on a busy
-  # day cancel-in-progress meant it never did (three consecutive
-  # cancelled scans on 2026-10-22, see estado/IMP-2.md). Queue the run
-  # instead; the weekly schedule stays the backstop for quiet weeks.
+  # A dependency scan must never be CANCELLED IN PROGRESS by the next
+  # push: a green result is only meaningful when the scan COMPLETES,
+  # and cancel-in-progress meant it never did (three consecutive
+  # cancelled scans on 2026-10-22, see estado/IMP-2.md). Reality under
+  # cancel-in-progress: false — the in-progress run always completes,
+  # but among the runs left PENDING GitHub keeps only the newest one
+  # and cancels the intermediates (observed the same day, four pushes
+  # in quick succession). That is the behavior this group wants anyway:
+  # the scan that completes is the one on the newest head, which
+  # contains every change; the weekly schedule stays the backstop for
+  # quiet weeks.
   cancel-in-progress: false
 
 permissions:
