@@ -1,21 +1,21 @@
 # IMP-2 — estado
 
 ## Hecho (últimas 24 h)
-- yara-status-poll en main (f42dd8d): el poll de GET /api/yara salió de
-  SensorCard y vive a nivel de la vista Equipos (una petición al montar
-  + una por minuto, cueste lo que cueste la flota; antes cada ficha
-  montada disparaba la suya con un intervalo propio — recorrer la flota
-  era un walk del directorio de reglas por clic, y el equipo sin
-  inventario también pollaba). El refresco que falla ya no se traga en
-  silencio: la fila «Lote YARA» conserva el último valor bueno y añade
-  «refresco fallido» (la hora de ese valor, al pasar el ratón); si
-  nunca llegó respuesta dice «no se pudo consultar el lote» y no «el
-  motor no publica lote». Bilingüe (fleet.yara). Suite al cierre: 603
-  tests, tsc, next build, check_console_theme, DOM, navegador 23/23,
-  a11y 20/20 y motion, en verde.
-- tema-claro en main (8f823bf, changelog 0ef1211, release 02f9b1f):
-  rampas legibles sobre blanco, sev-media en oro validada CVD, chips de
-  código semánticos; verificada por DIR.
+- i18n-noc-mode en main (98ae51f): el NOC deja de colar español — la
+  fila de severidad lee alerts.sevLabels (muere SEVERITY_LABEL, sin
+  consumidores) y las gráficas compartidas attack-matrix y heatmap
+  sacan las tácticas del dict (tacticsShort nuevo para celdas chicas;
+  nombre completo en title/aria). El heatmap traduce también sus
+  strings duros («Ver alertas de», «N alertas» → charts.heat.hostAria/
+  cellTitle). Panel y reglas heredan el fix al compartir gráficas.
+  Suite al cierre: 603 tests, tsc, next build, tema, DOM, navegador
+  23/23, a11y 20/20 y motion, en verde.
+- yara-status-poll en main (f42dd8d): el poll de GET /api/yara subió a
+  nivel de la vista Equipos (una petición por minuto cueste lo que
+  cueste la flota) y el refresco fallido se nombra en la fila «Lote
+  YARA» con la hora del último valor bueno; sin respuesta nunca,
+  «no se pudo consultar el lote» y no «el motor no publica lote».
+- tema-claro en main (8f823bf, release 02f9b1f), verificada por DIR.
 
 ## En curso
 - (nada)
@@ -28,8 +28,10 @@
 - (ninguna)
 
 ## Propuestas para el roadmap
-- Barrer los últimos SEVERITY_LABEL/ATTACK_TACTICS de noc-mode (el patrón
-  quedó listo en rules-view).
+- Cola i18n restante: el donut de tácticas del panel (usa tactic.short)
+  y buildTriageFlow (TACTIC_LABEL/TACTIC_FULL/OTHER/NO en español a
+  nivel de módulo) siguen con etiquetas duras; necesitan pasar el dict
+  por parámetro (cambio de firma en lib).
 - Pasar formatTime/formatDateTime con idioma en los call-sites ya
   barridos (alerts, directory, intel, fleet, playbook, baseline).
 - Filtro de asignación en `GET /api/alerts/search` + lente en URL.
