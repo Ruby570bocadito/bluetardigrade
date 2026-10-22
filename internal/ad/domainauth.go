@@ -280,6 +280,21 @@ func splitUserLogin(raw string) (bindName, samPart string, err error) {
 // leaves the directory.
 var loginAttrs = []string{attrName, attrUPN, attrDisplayName, "memberOf"}
 
+// LoginAccount returns the account part of a typed login name — the
+// sAMAccountName candidate splitUserLogin derives — for audit lines
+// (SEC-9): a failure logs the account the attempt was addressed to,
+// never the raw input, so the domain half of a UPN, a stray
+// DOMINIO\ prefix or whatever else the reader typed (a credential
+// pasted into the wrong box among them) does not land verbatim in
+// the engine log. An unparseable name returns "".
+func LoginAccount(raw string) string {
+	_, sam, err := splitUserLogin(raw)
+	if err != nil {
+		return ""
+	}
+	return sam
+}
+
 // DomainLogin verifies one user's domain credentials and returns the
 // console identity their AD groups grant. The outcome is one of: the
 // identity, ErrLoginCredentials (bad password OR unknown user — the

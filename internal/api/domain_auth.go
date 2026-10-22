@@ -51,6 +51,8 @@ const (
 	// field caps mirroring the login form's own maxlengths.
 	domainMaxUser     = 256
 	domainMaxPassword = 1024
+	// audit cap of the account in the [AUTH] log lines (SEC-9)
+	domainAuditAccountCap = 64
 )
 
 const domainAuthOff = "el inicio de sesión de dominio no está armado: arranca el motor con -domain-auth <config.yaml>"
@@ -172,10 +174,14 @@ func (h *Hub) handleDomainAuth(w http.ResponseWriter, r *http.Request) {
 				fmt.Fprintln(w, `{"ok":false,"reason":"bloqueado"}`)
 				return
 			}
-			log.Printf("[AUTH] dominio: credenciales rechazadas usuario=%s desde=%s", oneLine(req.User), r.RemoteAddr)
+			// The audit line keeps the ACCOUNT the attempt was
+			// addressed to (SEC-9): capped, control-escaped, without
+			// the domain half of a UPN — the raw input never reaches
+			// the log verbatim.
+			log.Printf("[AUTH] dominio: credenciales rechazadas usuario=%s desde=%s", auditSafe(ad.LoginAccount(req.User), domainAuditAccountCap), r.RemoteAddr)
 			h.domainVerdict(w, http.StatusUnauthorized, domainLoginResponse{OK: false, Reason: "credenciales"})
 		case errors.Is(err, ad.ErrLoginNoRole):
-			log.Printf("[AUTH] dominio: usuario sin rol de consola usuario=%s desde=%s", oneLine(req.User), r.RemoteAddr)
+			log.Printf("[AUTH] dominio: usuario sin rol de consola usuario=%s desde=%s", auditSafe(ad.LoginAccount(req.User), domainAuditAccountCap), r.RemoteAddr)
 			h.domainVerdict(w, http.StatusForbidden, domainLoginResponse{OK: false, Reason: "sin_rol"})
 		case errors.Is(err, ad.ErrLoginDomainDown):
 			log.Printf("[AUTH] dominio: controlador no disponible desde=%s", r.RemoteAddr)
@@ -186,7 +192,7 @@ func (h *Hub) handleDomainAuth(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	log.Printf("[AUTH] dominio: sesión verificada usuario=%s rol=%s desde=%s", oneLine(identity.User), identity.Role, r.RemoteAddr)
+	log.Printf("[AUTH] dominio: sesión verificada usuario=%s rol=%s desde=%s", auditSafe(identity.User, domainAuditAccountCap), identity.Role, r.RemoteAddr)
 	h.domainVerdict(w, http.StatusOK, domainLoginResponse{
 		OK:          true,
 		User:        identity.User,

@@ -8,9 +8,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"testing"
@@ -210,5 +212,42 @@ func TestDomainAuthErrorsDoNotThrottle(t *testing.T) {
 		if res.StatusCode != http.StatusBadGateway {
 			t.Fatalf("intento %d: status = %d, want 502 estable (el fallo del dominio no cuenta al presupuesto)", i, res.StatusCode)
 		}
+	}
+}
+
+// SEC-9: the [AUTH] log lines keep the ACCOUNT the attempt was
+// addressed to — capped, without the domain half of a UPN and without
+// whatever else was typed — never the raw input verbatim.
+func TestDomainAuthLogKeepsTheAccountOnly(t *testing.T) {
+	h, addr := newTestHub(t)
+	h.SetDomainAuth(&ad.DomainAuthConfig{Server: "dc01", BaseDN: "DC=x", CAFile: "ca.pem"})
+	stubDomainLogin(t, func(_ context.Context, _ *ad.DomainAuthConfig, _ string, _ []byte) (*ad.DomainIdentity, error) {
+		return nil, ad.ErrLoginCredentials
+	})
+
+	prev := log.Writer()
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(prev)
+
+	// A UPN: the audit line names the account, the domain half stays out.
+	if res := postDomainLoginLive(t, addr, `{"user":"ana@corp.example","password":"mala"}`); res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", res.StatusCode)
+	}
+	if out := buf.String(); !strings.Contains(out, "usuario=ana desde=") || strings.Contains(out, "corp.example") {
+		t.Errorf("log = %q, want the bare account and no domain half", out)
+	}
+
+	// A bare name over the audit cap: the line holds the capped account.
+	buf.Reset()
+	if res := postDomainLoginLive(t, addr, `{"user":"`+strings.Repeat("c", 100)+`","password":"mala"}`); res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", res.StatusCode)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "usuario="+strings.Repeat("c", domainAuditAccountCap)+" desde=") {
+		t.Errorf("log = %q, want the account capped to %d runes", out, domainAuditAccountCap)
+	}
+	if strings.Contains(out, strings.Repeat("c", domainAuditAccountCap+1)) {
+		t.Errorf("log holds more than the %d-rune cap", domainAuditAccountCap)
 	}
 }
