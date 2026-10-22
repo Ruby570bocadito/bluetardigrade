@@ -67,6 +67,7 @@ export const CONSOLE_VIEWS = [
   'equipos',
   'directorio',
   'informes',
+  'consulta',
   'reglas',
   'cadenas',
   'inteligencia',

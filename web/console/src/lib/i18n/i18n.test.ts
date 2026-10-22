@@ -431,6 +431,25 @@ describe('i18n dictionaries', () => {
     expect(DICTS.en.enroll.pending.approve).toBe('Approve')
     expect(DICTS.en.enroll.row.revokeIdentity).toBe('Revoke identity')
   })
+
+  test('c4 db query view keeps the spanish copy byte-identical', () => {
+    expect(dictEs.views.consulta.title).toBe('Consulta de base de datos')
+    expect(dictEs.nav.consulta.label).toBe('Consulta BD')
+    expect(dictEs.dbQuery.sectionAria).toBe('Consulta de base de datos')
+    expect(dictEs.dbQuery.run).toBe('Ejecutar')
+    expect(dictEs.dbQuery.meta(12, 34)).toBe('12 filas · 34 ms')
+    expect(dictEs.dbQuery.examples[0]).toBe('SELECT host, COUNT(*) AS n FROM events GROUP BY host ORDER BY n DESC LIMIT 20')
+    expect(dictEs.dbQuery.examples.every((sql) => /^(SELECT|WITH|VALUES)/.test(sql))).toBe(true)
+  })
+
+  test('c4 db query english copy is a real translation', () => {
+    expect(DICTS.en.views.consulta.title).toBe('Database query')
+    expect(DICTS.en.nav.consulta.label).toBe('DB query')
+    expect(DICTS.en.dbQuery.run).toBe('Run')
+    expect(DICTS.en.dbQuery.meta(12, 34)).toBe('12 rows · 34 ms')
+    expect(DICTS.en.dbQuery.notAdminTitle).toBe('Administrators only')
+    expect(DICTS.en.dbQuery.examples).toEqual(dictEs.dbQuery.examples)
+  })
 })
 
 describe('language resolution', () => {

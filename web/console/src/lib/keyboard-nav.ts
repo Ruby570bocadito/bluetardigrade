@@ -7,8 +7,8 @@
 //
 // The map is mnemonic and collision-free across the shell's nav ids:
 //   p panel · f flujo · a alertas · i incidentes · e equipos
-//   d directorio (AD) · o informes · h estado (health) · r reglas · c cadenas
-//   l inteligencia (listas) · s supresiones · t probador (test)
+//   d directorio (AD) · o informes · q consulta (query) · h estado (health)
+//   r reglas · c cadenas · l inteligencia (listas) · s supresiones · t probador (test)
 //   u ruido · v validación (simulación)
 //   k respuesta (the view's own action: kill) · n analista · j ajustes
 // The help sheet (?) lists this map through shortcutRows(): keys come
@@ -32,6 +32,7 @@ const KEY_TO_VIEW: Record<string, ConsoleView> = {
   e: 'equipos',
   d: 'directorio',
   o: 'informes',
+  q: 'consulta',
   r: 'reglas',
   c: 'cadenas',
   l: 'inteligencia',

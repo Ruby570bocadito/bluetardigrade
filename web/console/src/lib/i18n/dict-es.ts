@@ -22,6 +22,7 @@ export const dictEs = {
     equipos: { title: 'Equipos' },
     directorio: { title: 'Directorio activo' },
     informes: { title: 'Informes' },
+    consulta: { title: 'Consulta de base de datos' },
     probador: { title: 'Probador de reglas' },
     ruido: { title: 'Informe de ruido' },
     simulacion: { title: 'Validación de detecciones' },
@@ -79,6 +80,12 @@ export const dictEs = {
       group: 'Operación',
       description: 'Catálogo de informes del motor con descarga CSV/JSON y vista imprimible',
       keywords: 'reports informe resumen ejecutivo cobertura flota actividad csv json imprimir pdf',
+    },
+    consulta: {
+      label: 'Consulta BD',
+      group: 'Operación',
+      description: 'SELECT de solo lectura sobre la base de datos de evidencia',
+      keywords: 'sql base de datos consulta bd query select evidencia administrador',
     },
     reglas: {
       label: 'Reglas',
@@ -2233,6 +2240,37 @@ export const dictEs = {
       revoke: 'Revocar',
       cancel: 'Cancelar',
     },
+  },
+
+  // Consulta BD (C-4): consola SQL de solo lectura sobre la base de
+  // datos de evidencia (-store). Los límites y la auditoría son del
+  // motor; los ejemplos usan el esquema real de la store.
+  dbQuery: {
+    sectionAria: 'Consulta de base de datos',
+    intro: 'SELECT de solo lectura sobre la base de datos de evidencia del motor (-store), para análisis que los endpoints curados no cubren. El motor limita la consulta y audita cada intento; solo la usan los administradores.',
+    sqlLabel: 'Instrucción SQL',
+    sqlPlaceholder: 'SELECT host, COUNT(*) FROM events GROUP BY host',
+    runHint: 'Ctrl+Intro ejecuta la consulta.',
+    run: 'Ejecutar',
+    running: 'Ejecutando…',
+    rowsLabel: 'Filas',
+    timeoutLabel: 'Tiempo máximo',
+    timeouts: ['1 s', '5 s', '10 s', '30 s'],
+    needSql: 'Escribe una instrucción SELECT para ejecutar.',
+    examplesLabel: 'Ejemplos',
+    historyLabel: 'Consultas recientes',
+    meta: (rows: number, ms: number): string => `${rows} filas · ${ms} ms`,
+    noRows: 'La consulta no devolvió filas.',
+    truncated: 'Recortado al tope de filas: añade filtros o sube max_rows.',
+    nullValue: 'NULL',
+    notAdminTitle: 'Solo para administradores',
+    notAdminHint: 'La consulta de base de datos es una superficie de administrador: pídeselo a quien administre la consola.',
+    examples: [
+      'SELECT host, COUNT(*) AS n FROM events GROUP BY host ORDER BY n DESC LIMIT 20',
+      'SELECT severity, COUNT(*) AS n FROM alerts GROUP BY severity ORDER BY n DESC',
+      'SELECT ts, remote, status, rows, duration_ms, error FROM query_audit ORDER BY ts DESC LIMIT 20',
+      'SELECT group_dn, COUNT(*) AS n FROM ad_group_edges GROUP BY group_dn ORDER BY n DESC LIMIT 10',
+    ],
   },
 }
 

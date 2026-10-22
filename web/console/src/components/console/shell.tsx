@@ -8,7 +8,7 @@ import { describeTelemetrySources } from '@/lib/telemetry-source'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { ActivityIcon, BatteryCharging, ChatsCircle, Desktop, Files, Flask, FlowArrow, FolderOpen, Gauge, Gear, Keyboard, Lightning, ListMagnifyingGlass, MagnifyingGlass, Prohibit, RocketLaunch, ShieldCheck, SpeakerHigh, SquaresFour, TreeStructure, Warning, CornersOut } from '@phosphor-icons/react'
+import { ActivityIcon, BatteryCharging, ChatsCircle, Database, Desktop, Files, Flask, FlowArrow, FolderOpen, Gauge, Gear, Keyboard, Lightning, ListMagnifyingGlass, MagnifyingGlass, Prohibit, RocketLaunch, ShieldCheck, SpeakerHigh, SquaresFour, TreeStructure, Warning, CornersOut } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { BlurText } from '@/components/reactbits/blur-text'
 import { ShinyText } from '@/components/reactbits/shiny-text'
@@ -36,6 +36,7 @@ import { OnboardingWizard } from './onboarding-wizard'
 import { readDismissed, shouldAutoOpen } from '@/lib/onboarding'
 import { ThemeToggle } from './theme-toggle'
 import { ReportsView } from './reports-view'
+import { DbQueryView } from './db-query-view'
 import { DirectoryView } from './directory-view'
 import { SettingsView } from './settings-view'
 import { buildConsoleCommands, buildDestinations, type ConsoleCommand } from '@/lib/console-commands'
@@ -60,6 +61,7 @@ import { writeTriageDestination, type TriageTarget } from '@/lib/operations'
 
 const NAV_ICONS: Record<ConsoleView, React.ElementType> = {
   panel: SquaresFour, estado: Gauge, flujo: ActivityIcon, alertas: Warning, incidentes: FolderOpen, equipos: Desktop, informes: Files,
+  consulta: Database,
   reglas: ShieldCheck, cadenas: FlowArrow, inteligencia: ListMagnifyingGlass, supresiones: Prohibit, probador: Flask,
   ruido: SpeakerHigh, simulacion: BatteryCharging,
   directorio: TreeStructure,
@@ -509,6 +511,7 @@ export function ConsoleShell() {
                 {view === 'equipos' && <HostsView onHunt={(q) => openHunt({ q })} onOpenAlert={openAlert} onOpenIncident={openIncident} />}
                 {view === 'directorio' && <DirectoryView />}
                 {view === 'informes' && <ReportsView />}
+                {view === 'consulta' && <DbQueryView />}
                 {isDetectionView(view) && <DetectionHub tab={view} onTab={setView} onOpenRule={openRule} />}
                 {view === 'respuesta' && <RespondView />}
                 {view === 'analista' && (

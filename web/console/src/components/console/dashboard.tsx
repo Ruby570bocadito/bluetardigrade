@@ -48,7 +48,7 @@ import { scenarioCountsByTactic, fetchScenarioSurface, type ScenarioView } from 
 import type { TriageTarget } from '@/lib/operations'
 
 export type ConsoleView =
-  | 'panel' | 'estado' | 'flujo' | 'alertas' | 'incidentes' | 'equipos' | 'directorio' | 'informes'
+  | 'panel' | 'estado' | 'flujo' | 'alertas' | 'incidentes' | 'equipos' | 'directorio' | 'informes' | 'consulta'
   | 'reglas' | 'cadenas' | 'inteligencia' | 'supresiones' | 'probador' | 'ruido' | 'simulacion'
   | 'respuesta' | 'analista' | 'ajustes'
 export type HuntLens = { q?: string; sev?: SeverityFilter }

@@ -15,6 +15,7 @@ export const dictEn: Dict = {
     equipos: { title: 'Hosts' },
     directorio: { title: 'Active Directory' },
     informes: { title: 'Reports' },
+    consulta: { title: 'Database query' },
     probador: { title: 'Rule tester' },
     ruido: { title: 'Noise report' },
     simulacion: { title: 'Detection validation' },
@@ -69,6 +70,12 @@ export const dictEn: Dict = {
       group: 'Operation',
       description: 'Engine report catalog with CSV/JSON download and printable view',
       keywords: 'reports executive summary coverage fleet activity csv json print pdf informes',
+    },
+    consulta: {
+      label: 'DB query',
+      group: 'Operation',
+      description: 'Read-only SELECT over the evidence database',
+      keywords: 'sql database query db select evidence admin',
     },
     reglas: {
       label: 'Rules',
@@ -2186,5 +2193,36 @@ export const dictEn: Dict = {
       revoke: 'Revoke',
       cancel: 'Cancel',
     },
+  },
+
+  // DB query (C-4): read-only SQL console over the evidence database
+  // (-store). The limits and the audit trail belong to the engine; the
+  // examples use the store's real schema.
+  dbQuery: {
+    sectionAria: 'Database query',
+    intro: 'Read-only SELECT over the engine’s evidence database (-store), for analysis the curated endpoints do not cover. The engine limits the query and audits every attempt; administrators only.',
+    sqlLabel: 'SQL statement',
+    sqlPlaceholder: 'SELECT host, COUNT(*) FROM events GROUP BY host',
+    runHint: 'Ctrl+Enter runs the query.',
+    run: 'Run',
+    running: 'Running…',
+    rowsLabel: 'Rows',
+    timeoutLabel: 'Time budget',
+    timeouts: ['1 s', '5 s', '10 s', '30 s'],
+    needSql: 'Write a SELECT statement to run.',
+    examplesLabel: 'Examples',
+    historyLabel: 'Recent queries',
+    meta: (rows: number, ms: number): string => `${rows} rows · ${ms} ms`,
+    noRows: 'The query returned no rows.',
+    truncated: 'Cut off at the row cap: add filters or raise max_rows.',
+    nullValue: 'NULL',
+    notAdminTitle: 'Administrators only',
+    notAdminHint: 'The database query surface is for administrators: ask whoever administers the console.',
+    examples: [
+      'SELECT host, COUNT(*) AS n FROM events GROUP BY host ORDER BY n DESC LIMIT 20',
+      'SELECT severity, COUNT(*) AS n FROM alerts GROUP BY severity ORDER BY n DESC',
+      'SELECT ts, remote, status, rows, duration_ms, error FROM query_audit ORDER BY ts DESC LIMIT 20',
+      'SELECT group_dn, COUNT(*) AS n FROM ad_group_edges GROUP BY group_dn ORDER BY n DESC LIMIT 10',
+    ],
   },
 }
