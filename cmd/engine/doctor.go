@@ -52,9 +52,9 @@ func (r *doctorReport) add(checks ...doctorCheck) {
 }
 
 type doctorOptions struct {
-	root, addr, apiURL, consoleURL, hubURL, sensor, apiCA, ingestCA string
-	timeout, recent                                                 time.Duration
-	json                                                            bool
+	root, addr, apiURL, consoleURL, hubURL, sensor, apiCA, ingestCA, yaraDir string
+	timeout, recent                                                          time.Duration
+	json                                                                     bool
 }
 
 func newDoctorFlagSet() (*flag.FlagSet, *doctorOptions) {
@@ -70,6 +70,7 @@ func newDoctorFlagSet() (*flag.FlagSet, *doctorOptions) {
 	fs.DurationVar(&o.recent, "recent-within", 5*time.Minute, "ventana para fechas declaradas de la muestra de eventos")
 	fs.StringVar(&o.apiCA, "api-ca", "", "CA PEM adicional para la API HTTPS; nunca omite verificar el certificado")
 	fs.StringVar(&o.ingestCA, "ingest-ca", "", "CA PEM para ingesta TLS (tambien SF_INGEST_CA)")
+	fs.StringVar(&o.yaraDir, "yara-rules", "./yara-rules", "directorio del pack de reglas YARA que usaria el motor (el mismo que -yara-rules de run)")
 	fs.BoolVar(&o.json, "json", false, "informe JSON; salida 1 si hay errores, 0 con solo avisos")
 	return fs, o
 }
@@ -142,6 +143,7 @@ func runDoctor(ctx context.Context, o *doctorOptions) *doctorReport {
 	r := &doctorReport{Checks: []doctorCheck{}}
 	root := doctorRoot(o.root)
 	r.add(doctorContentChecks(root)...)
+	r.add(doctorYaraChecks(o.yaraDir)...)
 	r.add(doctorIntelChecks(root)...)
 	r.add(doctorNotifyChecks(root)...)
 	if f, err := os.CreateTemp(root, ".doctor-write-"); err != nil {
