@@ -2,13 +2,11 @@
 
 ## Hecho (últimas 24 h)
 
-Sesión m3-yara-motor (cerrada, main 646869b): pack YARA del motor —
-internal/yara (huella de contenido espejo del sensor, zip
-determinista, tope 32 MiB), GET /api/yara y /api/yara/bundle,
-yara_rules(_sha) en fleet, -yara-rules con loadYara, OpenAPI +
-referencia, changelog. CI verde.
+Sesión m3-yara-motor (cerrada, main 646869b): pack YARA del motor
+completo — internal/yara, /api/yara + bundle, fleet yara_rules(_sha),
+-yara-rules, OpenAPI + referencia, changelog. CI verde.
 
-Sesión H-003+H-004+H-006 (cabeza 9f013cb): hornada de los tres
+Sesión H-003+H-004+H-006 (cabeza ef5ddbd): hornada de los tres
 hallazgos BAJO de TEST ronda 1 dirigidos a IMP-1:
 - H-003 (128e74b): la línea sobredimensionada en fase de datos del
   ingest cuenta como ingest_rejected y ackea la causa antes de
