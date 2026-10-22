@@ -6,26 +6,23 @@ DIR; el resto propone cambios en la sección «Propuestas» de su
 [TODO.md](../../TODO.md); la dirección del producto por horizontes,
 [docs/ROADMAP.md](../ROADMAP.md). Ante cualquier choque, manda TODO.md.
 
-Última actualización: 2026-10-22 (DIR, séptima pasada: carril IDEA-10
-CERRADO de punta a punta, 6/6 hallazgos resueltos y a la espera del
-cierre de TEST, consola-yara-desfase EN VUELO, IMP-1 apunta a
-m7-wef-pack).
+Última actualización: 2026-10-22 (DIR, octava pasada: consola-yara-
+desfase entregada, claims/ vacío — el enjambre a la espera de la
+siguiente hornada; m7-wef-pack declarado por IMP-1 y TEST 2 lista para
+lanzar).
 
 ## Fase actual
 
-La jornada cierra IDEA-10 por completo: IMP-2 aterrizó el resto del
-carril bilingüe (respuesta 9405404, flujo en vivo + eventDetail
-f51ad6a, analista 74aff7d, reglas f3c9b22, ruido 1ad5c96; release
-a48a81b) y retiró el punto de TODO.md. IMP-1 sirvió su hornada de
-hallazgos (H-003/H-004/H-006) e IMP-2 la H-005: los 6 hallazgos de la
-primera sesión TEST están en resuelto-pendiente-verificación, esperando
-el cierre de TEST. En vuelo: consola-yara-desfase (IMP-2, claim
-activo); IMP-1 declara m7-wef-pack como siguiente (sin claim aún).
-Cuatro fragmentos nuevos en changelog.d/ esperan la consolidación de
-PUL al cerrar la ronda. CI: la run de la cabeza estaba en curso al
-cerrar esta pasada (la anterior fue cancelada por supersesión;
-verificar la run definitiva antes de dar entregas de motor por
-verdes).
+IMP-2 entregó consola-yara-desfase (cdfa7c2: la tarjeta de sensor en
+Equipos nombra el desfase del lote YARA contra el sha16 del motor;
+lib/fleet + tests + diccionarios) y liberó su claim: claims/ vacío.
+Nadie tiene trabajo en vuelo: IMP-1 declaró m7-wef-pack como
+siguiente, IMP-2 tiene cola i18n propia propuesta (ver Propuestas),
+PUL acumula 5 fragmentos de changelog.d/ para consolidar y TEST 2
+(test-carga-volumetrica) sigue lista para lanzar — con los 6 hallazgos
+de la ronda 1 en resuelto-pendiente-verificación. CI de la cabeza:
+Console y Go engine en verde; govulncheck/Windows/sensor en curso al
+cerrar esta pasada.
 
 ## Decisiones vigentes que obligan a todos
 
@@ -63,17 +60,13 @@ semana y media después (lección de los 42 fragmentos).
   pequeña) — `internal/`
 
 ### IMP-2 (consola Next.js)
-- [ ] (IMP-2) consola-yara-desfase — EN VUELO (claim activo):
-  indicador de desfase del lote YARA (sha de `/api/fleet` contra
-  `/api/yara`), propuesta de IMP-1 adoptada en zona IMP-2 —
+- [ ] (IMP-2) tema-claro — rework de contraste, superficies y gráficas
+  (resto del carril F5); coordinar los guards con IMP-1 —
   `web/console/src/`
 - [ ] (IMP-2) ad7-login-consola — hornada de login de dominio; ANTES:
   sesión de diseño con DIR (el proxy exige principal y la ruta es
   pre-sesión — puede abrir la próxima sesión de IMP-2); su entrada en
   WRITES (8 KiB, admin) aterriza con la UI — `web/console/src/`
-- [ ] (IMP-2) tema-claro — rework de contraste, superficies y gráficas
-  (resto del carril F5); coordinar los guards con IMP-1 —
-  `web/console/src/`
 
 > El carril IDEA-10 de consola está CERRADO (release a48a81b): panel,
 > equipos, alertas, consulta BD, reglas, ruido, respuesta, flujo en
@@ -109,6 +102,9 @@ semana y media después (lección de los 42 fragmentos).
 
 ## Cerradas (últimas 24 h)
 
+- consola-yara-desfase — cdfa7c2 + release 3662ee3 (IMP-2): la tarjeta
+  de sensor nombra el desfase del lote YARA (sha del latido contra el
+  sha16 del motor); lib/fleet + tests + diccionarios
 - idea10-idiomas-resto — CARRIL IDEA-10 CERRADO: respuesta 9405404,
   flujo en vivo + eventDetail f51ad6a, analista 74aff7d, reglas
   f3c9b22, ruido 1ad5c96, release a48a81b (IMP-2; 599 tests, tsc y
@@ -151,6 +147,11 @@ semana y media después (lección de los 42 fragmentos).
 
 ## Propuestas en el tablero (de los estados)
 
+- Barrer los últimos SEVERITY_LABEL/ATTACK_TACTICS de noc-mode con el
+  patrón ya listo en rules-view (IMP-2, cola i18n).
+- Pasar formatTime/formatDateTime con idioma en los call-sites ya
+  barridos: alerts, directory, intel, fleet, playbook, baseline
+  (IMP-2, cola i18n).
 - Filtro de asignación en `GET /api/alerts/search` + lente persistida
   en URL (IMP-2; para no pisar `internal/api/` mientras IMP-1 trabaja
   allí).

@@ -2,23 +2,17 @@
 
 ## Hecho (últimas 24 h)
 
-- Séptima pasada: CARRIL IDEA-10 CERRADO de punta a punta (respuesta,
-  flujo en vivo, analista, reglas, ruido + eventDetail/formateadores;
-  release a48a81b; 599 tests en verde; punto retirado de TODO.md por
-  IMP-2).
-- Hornada de hallazgos verificada contra el código: H-003/H-004/H-006
-  (IMP-1, ef5ddbd: contador de ingesta, diagnóstico de tope en db/query,
-  sev alias validado con tests) y H-005 (IMP-2, 0415af2). Los 6
-  hallazgos de TEST ronda 1 en resuelto-pendiente-verificación: los
-  cierra TEST, no DIR.
-- CI: 6/6 en e4bd42a; la run de la cabeza 7b954b0 en curso al cerrar
-  (la de 8c6895e fue cancelada por supersesión — comportamiento
-  conocido; verificar la definitiva antes de dar motor por verde).
-- Cerrojos vivos: consola-yara-desfase (IMP-2). IMP-1 declara
-  m7-wef-pack como siguiente. Barrido menciones IA en el tramo nuevo:
-  limpio (el «AI analyst panel» es producto).
-- Petición nueva en el tablero: PUL puede arreglar «conexion» sin
-  tilde en dict-es (IMP-2 ofrece la zona).
+- Octava pasada: consola-yara-desfase verificada contra el código
+  (cdfa7c2: tarjeta de sensor con el desfase del lote YARA, lib/fleet
+  + tests + diccionarios; release 3662ee3). claims/ VACÍO — el
+  enjambre completo a la espera de hornada.
+- CI: Console y Go engine verdes en la cabeza; govulncheck/Windows/
+  sensor en curso al cerrar (la run anterior quedó en supersesión).
+- Los 6 hallazgos siguen en resuelto-pendiente-verificación: los
+  cierra TEST en su sesión 2, no DIR.
+- Barrido de menciones IA en el tramo nuevo: limpio.
+- Cola i18n de IMP-2 adoptada a Propuestas (noc-mode labels,
+  call-sites de formatters); PUL con 5 fragmentos para consolidar.
 
 ## En curso
 - (nada)
@@ -28,13 +22,14 @@
   tarea reclamable (Windows real).
 
 ## Peticiones
-- Humano: lanzar TEST 2 (condición cumplida: carril IDEA-10 cerrado);
-  F0 (Dependabot #24–#27, ramas); pruebas Windows real; visto bueno
+- Humano: lanzar TEST 2 (los 6 hallazgos esperan su cierre); F0
+  (Dependabot #24–#27, ramas); pruebas Windows real; visto bueno
   E-1..E-4; rotar el PAT.
 
 ## Propuestas
-- Tras consola-yara-desfase, la siguiente hornada natural de IMP-2 es tema-claro.
+- Siguiente hornada natural: m7-wef-pack (IMP-1) + cola i18n
+  (IMP-2) + consolidación (PUL) en paralelo.
 
 ## Estado: VERDE
-- Riesgos: PAT expuesto en el chat (rotarlo al cerrar); CI de la
-  cabeza pendiente de run definitiva.
+- Riesgos: PAT expuesto en el chat (rotarlo al cerrar); CI parcial
+  en curso sobre la cabeza.
