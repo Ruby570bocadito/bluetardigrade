@@ -16,8 +16,7 @@ Sesión m3-yara-motor (cerrada, main 646869b):
 - cmd/engine: -yara-rules (./yara-rules; vacío desactiva) con loadYara
   en run_yara.go nuevo (run_load.go estaba en el claim de SEG).
 - OpenAPI + referencia regenerada; changelog.d/engine-yara-distribution.
-- CI local en verde: gofmt, vet, staticcheck (2 pases), test -race
-  ./... (42 paquetes); sin dependencias nuevas.
+- CI local en verde: gofmt, vet, staticcheck y test -race ./....
 
 ## En curso
 - (nada)
