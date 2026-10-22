@@ -92,9 +92,14 @@ fn scan_file(loaded: &yara::LoadedRules, config: &YaraConfig, path: &str, host: 
 }
 
 fn read_file(path: &str, max: u64) -> Result<Vec<u8>, String> {
+    // The worker's read_capped discipline (yara.rs): read one byte PAST
+    // the cap and refuse when it is there. The stat guard above only saw
+    // the size at stat time; a file that grew in between is skipped, not
+    // scanned truncated (a partial scan would report hits it cannot
+    // vouch for).
     let mut data = Vec::new();
     std::fs::File::open(path)
-        .and_then(|f| f.take(max).read_to_end(&mut data))
+        .and_then(|f| f.take(max + 1).read_to_end(&mut data))
         .map_err(|e| e.to_string())?;
     if data.len() as u64 > max {
         return Err(format!("grew past the {max} byte cap while reading"));
@@ -241,5 +246,20 @@ rule scan_subcommand_hit {
         std::fs::write(rules.path().join("bad.yar"), "this file is definitely not YARA source").unwrap();
         let config = YaraConfig { rules_dir: rules.path().to_path_buf(), ..YaraConfig::default() };
         assert!(scan_paths(&config, &[PathBuf::from("whatever")], "LAB-01", |_| {}).is_err());
+    }
+
+    // SEG: the stat guard in scan_file only sees the size at stat time;
+    // the reader is the second line of defense (the same discipline the
+    // worker's read_capped enforces): anything over the cap is refused,
+    // never scanned truncated.
+    #[test]
+    fn a_file_over_the_cap_is_refused_by_the_reader() {
+        let tmp = TempDir::new("grow");
+        let sneaky = tmp.path().join("sneaky.bin");
+        std::fs::write(&sneaky, vec![0x41u8; 1025]).unwrap();
+        assert!(read_file(sneaky.to_string_lossy().as_ref(), 1024).is_err());
+        // exactly the cap scans fine
+        std::fs::write(&sneaky, vec![0x41u8; 1024]).unwrap();
+        assert!(read_file(sneaky.to_string_lossy().as_ref(), 1024).is_ok());
     }
 }
