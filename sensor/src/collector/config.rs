@@ -106,6 +106,10 @@ pub struct Capture {
     /// YARA scanning of written files (Some: on, with its rules
     /// directory, size cap and exclusions; None: no file session at all)
     pub yara: Option<crate::yara::YaraConfig>,
+    /// YARA memory sweeps on top of the file scanner (--yara-mem): the
+    /// cadence and the per-process budget (memscan.rs). Some needs yara
+    /// Some too — without rules nothing is ever loaded to scan with.
+    pub yara_mem: Option<crate::memscan::MemConfig>,
     /// print how registry keys containing this fragment are named
     /// (diagnostics for the key-name resolution)
     pub debug_registry: Option<String>,

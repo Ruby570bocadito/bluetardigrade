@@ -43,6 +43,14 @@ pub struct Health {
     pub yara_matches: u64,
     pub yara_dropped: u64,
     pub yara_errors: u64,
+    /// YARA memory scanning (S-2, per-process): sweeps completed, memory
+    /// regions read and scanned, rules matched in memory, regions skipped
+    /// over the per-process budget. All zeros while --yara-mem is off;
+    /// read failures share yara_errors (they are read failures either way)
+    pub yara_mem_sweeps: u64,
+    pub yara_mem_scans: u64,
+    pub yara_mem_matches: u64,
+    pub yara_mem_skipped: u64,
     /// "service" (Windows service manager) or "console" (started by hand)
     pub run_mode: &'static str,
 }
@@ -77,6 +85,13 @@ pub fn attributes(h: &Health) -> BTreeMap<String, String> {
     out.insert("yara_matches".into(), h.yara_matches.to_string());
     out.insert("yara_dropped".into(), h.yara_dropped.to_string());
     out.insert("yara_errors".into(), h.yara_errors.to_string());
+    // the memory block travels like the YARA one: numeric fields always
+    // present (0 = off or idle), so a fresh sensor never looks like an
+    // old one to the inventory
+    out.insert("yara_mem_sweeps".into(), h.yara_mem_sweeps.to_string());
+    out.insert("yara_mem_scans".into(), h.yara_mem_scans.to_string());
+    out.insert("yara_mem_matches".into(), h.yara_mem_matches.to_string());
+    out.insert("yara_mem_skipped".into(), h.yara_mem_skipped.to_string());
     out.insert("run_mode".into(), h.run_mode.into());
     out
 }
@@ -147,6 +162,10 @@ mod tests {
             yara_matches: 1,
             yara_dropped: 4,
             yara_errors: 0,
+            yara_mem_sweeps: 3,
+            yara_mem_scans: 2100,
+            yara_mem_matches: 2,
+            yara_mem_skipped: 1,
             run_mode: "service",
         });
         assert_eq!(a["sensor_kind"], "etw");
@@ -164,7 +183,11 @@ mod tests {
         assert_eq!(a["yara_matches"], "1");
         assert_eq!(a["yara_dropped"], "4");
         assert_eq!(a["yara_errors"], "0");
-        assert_eq!(a.len(), 19);
+        assert_eq!(a["yara_mem_sweeps"], "3");
+        assert_eq!(a["yara_mem_scans"], "2100");
+        assert_eq!(a["yara_mem_matches"], "2");
+        assert_eq!(a["yara_mem_skipped"], "1");
+        assert_eq!(a.len(), 23);
     }
 
     #[test]
@@ -190,6 +213,10 @@ mod tests {
             yara_matches: 0,
             yara_dropped: 0,
             yara_errors: 0,
+            yara_mem_sweeps: 0,
+            yara_mem_scans: 0,
+            yara_mem_matches: 0,
+            yara_mem_skipped: 0,
             run_mode: "console",
         });
         assert_eq!(a["etw_events_lost"], "0");
@@ -198,12 +225,14 @@ mod tests {
         // YARA off: numeric counters at zero, no sha to name a bundle
         assert_eq!(a["yara_rules"], "0");
         assert_eq!(a["yara_scans"], "0");
+        assert_eq!(a["yara_mem_sweeps"], "0");
+        assert_eq!(a["yara_mem_scans"], "0");
         assert!(!a.contains_key("yara_rules_sha"));
     }
 
     #[test]
     fn empty_os_is_omitted() {
-        let a = attributes(&Health { kind: "etw", version: "x", os: String::new(), capture: "process".into(), interval_s: 60, uptime_s: 0, queue_cap: 1, spooled: 0, dropped: 0, etw_events_lost: 0, etw_buffers_lost: 0, hash_dropped: 0, yara_rules: 0, yara_rules_sha: String::new(), yara_scans: 0, yara_matches: 0, yara_dropped: 0, yara_errors: 0, run_mode: "console" });
+        let a = attributes(&Health { kind: "etw", version: "x", os: String::new(), capture: "process".into(), interval_s: 60, uptime_s: 0, queue_cap: 1, spooled: 0, dropped: 0, etw_events_lost: 0, etw_buffers_lost: 0, hash_dropped: 0, yara_rules: 0, yara_rules_sha: String::new(), yara_scans: 0, yara_matches: 0, yara_dropped: 0, yara_errors: 0, yara_mem_sweeps: 0, yara_mem_scans: 0, yara_mem_matches: 0, yara_mem_skipped: 0, run_mode: "console" });
         assert!(!a.contains_key("os"));
     }
 

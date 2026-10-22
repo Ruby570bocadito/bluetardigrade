@@ -40,6 +40,14 @@
 // (yara_dropped) and left unscanned. Off means off: without rules no
 // file telemetry is consumed at all.
 //
+// With --yara-mem on top (S-2, per-process per DIR's decision), a sweep
+// thread (memscan.rs) reads the compiled rules from the worker's shared
+// slot — one compiler, two consumers — and every --yara-mem-every
+// minutes scans each running process's committed memory separately,
+// emitting the same yara.match events with the process attribution.
+// Like every heavy read it runs off the ETW callbacks, on its own
+// thread, with its own budget and counters.
+//
 // Every minute the heartbeat (heartbeat.rs) also asks both sessions what
 // ETW lost (EventsLost, RealTimeBuffersLost, via ControlTraceW) and sends
 // the totals to the engine, so a sensor that is silently losing telemetry
@@ -85,6 +93,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::dns::DnsState;
+use crate::memscan;
 use crate::netreg::ProcessTable;
 use crate::ntpath::RecentImages;
 use crate::queue::{Pipeline, Spool};
@@ -148,28 +157,52 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
         (None, None)
     };
     // YARA (S-2): the worker owns the compiled rules and every file read;
-    // the write handler only names files. Nothing here without
-    // --yara-rules: no rules directory, no worker, no file session.
-    let (yara_tx, yara_stats, yara_thread) = match &capture.yara {
+    // the write handler only names files. Every successful load is
+    // published to a shared slot the memory scanner consumes (one
+    // compiler, two consumers). Nothing here without --yara-rules: no
+    // rules directory, no worker, no file session, no memory sweeps.
+    let (yara_tx, yara_stats, yara_thread, yara_slot) = match &capture.yara {
         Some(config) => {
             let stats = Arc::new(YaraStats::default());
             let (tx, rx) = sync_channel(YARA_QUEUE);
             let pipeline_for_yara = Arc::clone(&pipeline);
+            let slot: yara::RulesSlot = Arc::new(Mutex::new(None));
             match yara::start_worker(
                 hostname(),
                 config.clone(),
                 rx,
                 Arc::clone(&stats),
                 move |event| emit_to(&pipeline_for_yara, &event),
+                Arc::clone(&slot),
             ) {
-                Some(thread) => (Some(tx), Some(stats), Some(thread)),
+                Some(thread) => (Some(tx), Some(stats), Some(thread), Some(slot)),
                 None => {
                     eprintln!("[SENSOR] warning: YARA scanning unavailable (thread could not start)");
-                    (None, None, None)
+                    (None, None, None, Some(slot))
                 }
             }
         }
-        None => (None, None, None),
+        None => (None, None, None, None),
+    };
+    // YARA memory sweeps (--yara-mem): the thread takes the rules from
+    // the worker's slot and sweeps on its own cadence, off the ETW
+    // callbacks like every other heavy read. Needs the file worker alive:
+    // no worker, no rules are ever loaded, so a sweep thread would idle.
+    let mem_thread = match (&capture.yara_mem, &yara_stats, &yara_thread, &yara_slot) {
+        (Some(mem), Some(stats), Some(_), Some(slot)) => {
+            let pipeline_for_mem = Arc::clone(&pipeline);
+            let mem_stop = Arc::new(AtomicBool::new(false));
+            let handle = memscan::start_memscan(
+                hostname(),
+                mem.clone(),
+                Arc::clone(slot),
+                Arc::clone(stats),
+                move |event| emit_to(&pipeline_for_mem, &event),
+                Arc::clone(&mem_stop),
+            );
+            handle.map(|thread| (thread, mem_stop))
+        }
+        _ => None,
     };
     let ctx = Arc::new(Shared {
         host: hostname(),
@@ -257,6 +290,9 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
 
     // health report for the engine's machine inventory, every minute
     let capture_label = streams.iter().filter(|s| s.0).map(|s| s.1).collect::<Vec<_>>().join("+");
+    // the memory sweep is not an ETW session, but the capture label
+    // names it so the inventory shows what the host really runs
+    let capture_label = if mem_thread.is_some() { format!("{capture_label}+yara-mem") } else { capture_label };
     let heartbeat_stop = Arc::new(AtomicBool::new(false));
     // the sessions whose ETW loss the heartbeat reports: the kernel one
     // always runs, the network/registry one only when it started
@@ -285,6 +321,12 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
     }
     heartbeat_stop.store(true, Ordering::Relaxed);
     if let Some(thread) = heartbeat_thread {
+        let _ = thread.join();
+    }
+    // the sweep thread wakes up once a second: it notices its stop flag
+    // within one tick
+    if let Some((thread, mem_stop)) = mem_thread {
+        mem_stop.store(true, Ordering::Relaxed);
         let _ = thread.join();
     }
     // closing the hand-offs lets both worker threads drain and finish

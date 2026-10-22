@@ -6,6 +6,13 @@
 // that does not need a Windows host to exercise a rule pack.
 //
 //   security-sensor scan <PATH>... [--rules <dir>] [--max-mb <MiB>]
+//   security-sensor scan --memory [--pid <N>]... --rules <dir> [--mem-max-mb <MiB>]
+//
+// --memory swaps the target: instead of paths, the committed readable
+// memory of the running processes (all of them, or only --pid repeats)
+// is scanned per process (memscan.rs), the same yara.match events with
+// the process attribution, NDJSON on stdout. Memory reading needs the
+// Windows binary: elsewhere the flag is refused, like the capture.
 //
 // Exit codes: 0 scanned with no matches, 2 matches found, 1 operational
 // failure (rules could not load). One line per match, one summary line
@@ -131,6 +138,9 @@ pub fn run(args: Vec<String>) -> i32 {
     let mut rules_dir: Option<PathBuf> = None;
     let mut max_mb: u64 = (yara::MAX_FILE_BYTES_DEFAULT >> 20).max(1);
     let mut paths: Vec<PathBuf> = Vec::new();
+    let mut memory = false;
+    let mut pids: Vec<u32> = Vec::new();
+    let mut mem_max_mb: u64 = crate::memscan::MAX_PROCESS_BYTES_DEFAULT >> 20;
     let mut iter = args.into_iter();
     while let Some(arg) = iter.next() {
         match arg.as_str() {
@@ -142,6 +152,15 @@ pub fn run(args: Vec<String>) -> i32 {
                 Some(Ok(mb)) if mb > 0 => max_mb = mb,
                 _ => return usage("--max-mb requires a positive integer"),
             },
+            "--memory" => memory = true,
+            "--pid" => match iter.next().map(|v| v.parse::<u32>()) {
+                Some(Ok(pid)) if pid > 0 => pids.push(pid),
+                _ => return usage("--pid requires a process id"),
+            },
+            "--mem-max-mb" => match iter.next().map(|v| v.parse::<u64>()) {
+                Some(Ok(mb)) if mb > 0 => mem_max_mb = mb,
+                _ => return usage("--mem-max-mb requires a positive integer"),
+            },
             other if other.starts_with('-') => return usage(&format!("unknown argument: {other}")),
             other => paths.push(PathBuf::from(other)),
         }
@@ -149,11 +168,17 @@ pub fn run(args: Vec<String>) -> i32 {
     let Some(rules_dir) = rules_dir else {
         return usage("--rules <dir> is required (the directory the engine's rule distribution fills)");
     };
-    if paths.is_empty() {
-        return usage("at least one file or directory to scan is required");
+    if !memory && paths.is_empty() {
+        return usage("at least one file or directory to scan is required (or --memory)");
+    }
+    if memory && !paths.is_empty() {
+        return usage("--memory scans live process memory: pass --pid repeats, not paths");
     }
     let config = YaraConfig { rules_dir, max_file_bytes: max_mb.saturating_mul(1 << 20), exclude: vec![] };
     let host = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "unknown-host".into());
+    if memory {
+        return run_memory(&config, &pids, mem_max_mb.saturating_mul(1 << 20), &host);
+    }
     let outcome = match scan_paths(&config, &paths, &host, |event| {
         if let Ok(line) = serde_json::to_string(event) {
             println!("{line}");
@@ -179,7 +204,48 @@ pub fn run(args: Vec<String>) -> i32 {
 fn usage(problem: &str) -> i32 {
     eprintln!("{problem}");
     eprintln!("usage: security-sensor scan <PATH>... --rules <dir> [--max-mb <MiB>]");
+    eprintln!("       security-sensor scan --memory [--pid <N>]... --rules <dir> [--mem-max-mb <MiB>]");
     1
+}
+
+/// The --memory half: load the rules once, sweep the (filtered) process
+/// list, print one NDJSON event per match. Windows-only: reading another
+/// process's memory is Win32 work, and elsewhere the flag is refused
+/// with the same honesty as the capture ("refuses to run instead of
+/// making data up").
+fn run_memory(config: &YaraConfig, pids: &[u32], max_process_bytes: u64, host: &str) -> i32 {
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (config, pids, max_process_bytes, host);
+        eprintln!("[YARA] --memory reads process memory, which only the Windows binary can do");
+        2
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let loaded = match yara::load(&config.rules_dir) {
+            Ok(loaded) => loaded,
+            Err(errors) => {
+                for err in &errors {
+                    eprintln!("[YARA] {err}");
+                }
+                eprintln!("[YARA] rules could not be loaded: nothing scanned");
+                return 1;
+            }
+        };
+        let mem_config = crate::memscan::MemConfig { every: std::time::Duration::ZERO, max_process_bytes };
+        let mut emit = |event: crate::normalize::EventJson| {
+            if let Ok(line) = serde_json::to_string(&event) {
+                println!("{line}");
+            }
+        };
+        let summary = crate::memscan::scan_on_demand(&loaded, &mem_config, host, pids, &mut emit);
+        eprintln!("[YARA] memory: {}", summary.line());
+        if summary.matches > 0 {
+            2
+        } else {
+            0
+        }
+    }
 }
 
 #[cfg(test)]

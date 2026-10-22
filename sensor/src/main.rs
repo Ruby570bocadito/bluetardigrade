@@ -16,9 +16,11 @@
 //                   [--no-network] [--no-registry] [--registry-all]
 //                   [--no-dns] [--no-hash] [--debug-registry <fragment>]
 //                   [--yara-rules <dir>] [--yara-max-mb <MiB>]
+//                   [--yara-mem] [--yara-mem-every <min>] [--yara-mem-max-mb <MiB>]
 //                   [--service] [--log <file>] [--token-file <file>]
 //                   [--enroll-token <token> | --enroll-token-file <file>]
 //   security-sensor scan <PATH>... --rules <dir> [--max-mb <MiB>]
+//   security-sensor scan --memory [--pid <N>]... --rules <dir> [--mem-max-mb <MiB>]
 //
 // --service runs the sensor under the Windows service manager (installed
 // once with 'sf-etw -Install', which asks for administrator rights; after
@@ -56,6 +58,18 @@
 // minute, so a new bundle lands without restarting the sensor. The
 // `scan` subcommand runs the same rules on demand over files or
 // directories and prints the same yara.match events as NDJSON.
+//
+// YARA memory scanning (S-2, per-process per DIR's decision): with
+// --yara-mem a sweep thread enumerates the running processes every
+// --yara-mem-every minutes (default 15, one minute to one day) and
+// scans each one's committed readable memory separately, so every match
+// names the PID and image name it was found in; there is no global
+// memory view and the correlation stays on the engine. Regions over the
+// per-process budget (--yara-mem-max-mb, default 512 MiB) are skipped,
+// never scanned truncated; guard pages are never read; the sensor never
+// scans itself. Hits are yara.match events with the process filled and
+// yara_mem_* attributes naming the region. `scan --memory [--pid N]...`
+// runs the same scan on demand and prints the events as NDJSON.
 //
 // Delivery never runs on the ETW thread: events wait in a bounded
 // in-memory queue (--queue, default 50000) while the engine is
@@ -113,11 +127,15 @@ mod regnames;
 // YARA scanning (S-2): rule loading, the scan worker and the yara.match
 // event. Platform-independent (the scanner runs off the ETW callbacks),
 // exercised on any host through its tests and, in the Windows binary,
-// through the `scan` subcommand.
+// through the `scan` subcommand. memscan.rs is the memory half: its
+// policy and event shape are portable (tested on any host), its Win32
+// calls are Windows-only.
 #[cfg(any(target_os = "windows", test))]
 mod yara;
 #[cfg(any(target_os = "windows", test))]
 mod scan;
+#[cfg(any(target_os = "windows", test))]
+mod memscan;
 
 use anyhow::Result;
 use std::path::PathBuf;
@@ -161,6 +179,12 @@ fn main() -> Result<()> {
     let mut hash = true;
     let mut yara_rules: Option<PathBuf> = None;
     let mut yara_max_mb: u64 = 16; // MiB; yara::MAX_FILE_BYTES_DEFAULT pins this in a test
+    let mut yara_mem = false;
+    // the literals 15 and 512 are pinned to memscan's SWEEP_EVERY_DEFAULT_MINUTES
+    // and MAX_PROCESS_BYTES_DEFAULT in a test (they cannot be named here: the
+    // module is Windows/test-only, like yara's own 16 above)
+    let mut yara_mem_every: u64 = 15;
+    let mut yara_mem_max_mb: u64 = 512;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -236,13 +260,20 @@ fn main() -> Result<()> {
             "--yara-max-mb" => {
                 yara_max_mb = parse_number(args.next(), "--yara-max-mb");
             }
+            "--yara-mem" => yara_mem = true,
+            "--yara-mem-every" => {
+                yara_mem_every = parse_number(args.next(), "--yara-mem-every");
+            }
+            "--yara-mem-max-mb" => {
+                yara_mem_max_mb = parse_number(args.next(), "--yara-mem-max-mb");
+            }
             "--spool-max-mb" => {
                 spool_max_mb = parse_number(args.next(), "--spool-max-mb");
             }
             other => {
                 eprintln!("unknown argument: {other}");
                 eprintln!(
-                    "usage: security-sensor [--addr <ip:port>] [--token <shared-token>] [--tls-ca <ca.pem>] [--queue <events>] [--spool <file>] [--spool-max-mb <MiB>] [--no-network] [--no-registry] [--registry-all] [--no-dns] [--no-hash] [--debug-registry <fragment>] [--yara-rules <dir>] [--yara-max-mb <MiB>] [--service] [--log <file>] [--token-file <file>] [--enroll-token <token> | --enroll-token-file <file>] | scan <PATH>... --rules <dir> [--max-mb <MiB>]"
+                    "usage: security-sensor [--addr <ip:port>] [--token <shared-token>] [--tls-ca <ca.pem>] [--queue <events>] [--spool <file>] [--spool-max-mb <MiB>] [--no-network] [--no-registry] [--registry-all] [--no-dns] [--no-hash] [--debug-registry <fragment>] [--yara-rules <dir>] [--yara-max-mb <MiB>] [--yara-mem] [--yara-mem-every <min>] [--yara-mem-max-mb <MiB>] [--service] [--log <file>] [--token-file <file>] [--enroll-token <token> | --enroll-token-file <file>] | scan <PATH>... --rules <dir> [--max-mb <MiB>] | scan --memory [--pid <N>]... --rules <dir> [--mem-max-mb <MiB>]"
                 );
                 std::process::exit(2);
             }
@@ -258,7 +289,7 @@ fn main() -> Result<()> {
         eprintln!("[SENSOR] started {} (pid {}){}", normalize::now_rfc3339(), std::process::id(), if service_mode { " as a Windows service" } else { "" });
     }
     #[cfg(not(target_os = "windows"))]
-    let _ = (&log, service_mode, yara_max_mb);
+    let _ = (&log, service_mode, yara_max_mb, yara_mem, yara_mem_every, yara_mem_max_mb);
     // the credential: --token, then --token-file; an enrollment token
     // only matters while --token-file holds nothing yet
     if enroll_token.is_none() {
@@ -319,6 +350,7 @@ fn main() -> Result<()> {
         (dns, "dns"),
         (registry, if registry_all { "registry-all" } else { "registry" }),
         (yara_rules.is_some(), "yara"),
+        (yara_rules.is_some() && yara_mem, "yara-mem"),
     ]
         .iter()
         .filter(|(on, _)| *on)
@@ -356,6 +388,14 @@ fn main() -> Result<()> {
         // log it writes, the token it holds, and the rules directory it
         // reads (a match there would only echo the sensor's insides back
         // to the engine). Built before the spool moves into Delivery.
+        // The memory sweep settings live with the capture (they make no
+        // sense without a rules directory: no rules, nothing to scan with).
+        let yara_mem_cfg = if yara_mem {
+            // MemConfig::new clamps the cadence to the sweep bounds
+            Some(crate::memscan::MemConfig::new(yara_mem_every, yara_mem_max_mb.saturating_mul(1 << 20)))
+        } else {
+            None
+        };
         let yara = yara_rules.map(|rules_dir| {
             let mut exclude = vec![rules_dir.clone()];
             if let Some(path) = &token_file {
@@ -374,7 +414,7 @@ fn main() -> Result<()> {
             spool,
             spool_max_bytes: spool_max_mb.saturating_mul(1 << 20),
         };
-        let capture = collector::Capture { network, registry, registry_all, dns, hash, yara, debug_registry, as_service: service_mode };
+        let capture = collector::Capture { network, registry, registry_all, dns, hash, yara, yara_mem: yara_mem_cfg, debug_registry, as_service: service_mode };
         let start = move || -> Result<()> {
             let token = match (token, enroll_with, token_file) {
                 (Some(token), _, _) => Some(token),

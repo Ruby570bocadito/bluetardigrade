@@ -85,13 +85,21 @@ impl Default for YaraConfig {
 
 /// Counters the handler, the worker and the heartbeat share. `dropped`
 /// is written by the ETW callback (the worker could not take the file);
-/// the rest by the worker; the heartbeat reads all of them.
+/// the rest by the worker; the heartbeat reads all of them. The mem_*
+/// counters belong to the memory scanner (memscan.rs): sweeps completed,
+/// regions read and scanned, rules matched in memory and regions skipped
+/// over the per-process budget (errors share the `errors` counter: they
+/// are read/scan failures either way).
 #[derive(Default)]
 pub struct YaraStats {
     pub scans: AtomicU64,
     pub matches: AtomicU64,
     pub errors: AtomicU64,
     pub dropped: AtomicU64,
+    pub sweeps: AtomicU64,
+    pub mem_scans: AtomicU64,
+    pub mem_matches: AtomicU64,
+    pub mem_skipped: AtomicU64,
     rules: AtomicU64,
     sha16: Mutex<String>,
 }
@@ -113,6 +121,18 @@ impl YaraStats {
             self.errors.load(Ordering::Relaxed),
             self.dropped.load(Ordering::Relaxed),
             self.sha16.lock().map(|s| s.clone()).unwrap_or_default(),
+        )
+    }
+
+    /// Memory scanner side (memscan.rs): (sweeps, regions scanned,
+    /// matches, regions skipped over budget). All zero while --yara-mem
+    /// is off.
+    pub fn get_mem(&self) -> (u64, u64, u64, u64) {
+        (
+            self.sweeps.load(Ordering::Relaxed),
+            self.mem_scans.load(Ordering::Relaxed),
+            self.mem_matches.load(Ordering::Relaxed),
+            self.mem_skipped.load(Ordering::Relaxed),
         )
     }
 }
@@ -138,6 +158,22 @@ pub struct LoadedRules {
     /// kept loading: reported, never silently skipped (the
     /// collect_sources contract).
     pub errors: Vec<String>,
+}
+
+/// The slot the file worker fills with the rules it just loaded or
+/// reloaded: one compiler, two consumers (the file worker and the
+/// memory scanner's sweep thread). The memory thread clones the Arc at
+/// sweep time, so a reload swaps in cleanly mid-run and a scan never
+/// holds the lock.
+pub type RulesSlot = Arc<Mutex<Option<Arc<LoadedRules>>>>;
+
+/// Wraps a freshly loaded set in an Arc and publishes it to the slot.
+fn publish(slot: &RulesSlot, loaded: LoadedRules) -> Arc<LoadedRules> {
+    let arc = Arc::new(loaded);
+    if let Ok(mut guard) = slot.lock() {
+        *guard = Some(Arc::clone(&arc));
+    }
+    arc
 }
 
 /// One YARA source file worth compiling: relative path (the origin the
@@ -420,21 +456,24 @@ impl ScanCache {
 /// once a minute re-checks the rules directory. One job = one file: stat,
 /// dedupe, read (capped, hashing while reading), scan, emit. Exits when
 /// the collector drops the channel (normal shutdown) and reports why.
+/// Every successful load or reload is published to the shared slot for
+/// the memory scanner (memscan.rs).
 pub fn start_worker(
     host: String,
     config: YaraConfig,
     rx: Receiver<String>,
     stats: Arc<YaraStats>,
     emit: impl Fn(EventJson) + Send + 'static,
+    slot: RulesSlot,
 ) -> Option<JoinHandle<()>> {
     std::thread::Builder::new()
         .name("yara-scan".into())
-        .spawn(move || worker(host, config, rx, stats, emit))
+        .spawn(move || worker(host, config, rx, stats, emit, slot))
         .ok()
 }
 
-fn worker(host: String, config: YaraConfig, rx: Receiver<String>, stats: Arc<YaraStats>, emit: impl Fn(EventJson)) {
-    let mut loaded: Option<LoadedRules> = match load(&config.rules_dir) {
+fn worker(host: String, config: YaraConfig, rx: Receiver<String>, stats: Arc<YaraStats>, emit: impl Fn(EventJson), slot: RulesSlot) {
+    let mut loaded: Option<Arc<LoadedRules>> = match load(&config.rules_dir) {
         Ok(loaded) => {
             eprintln!(
                 "[SENSOR] yara: {} rules loaded (sha {}, version '{}') from {}",
@@ -444,7 +483,7 @@ fn worker(host: String, config: YaraConfig, rx: Receiver<String>, stats: Arc<Yar
                 eprintln!("[SENSOR] yara: {err}");
             }
             stats.set_rules(loaded.count, &loaded.sha16);
-            Some(loaded)
+            Some(publish(&slot, loaded))
         }
         Err(errors) => {
             for err in &errors {
@@ -482,7 +521,7 @@ fn worker(host: String, config: YaraConfig, rx: Receiver<String>, stats: Arc<Yar
                                 eprintln!("[SENSOR] yara: {err}");
                             }
                             stats.set_rules(reloaded.count, &reloaded.sha16);
-                            loaded = Some(reloaded);
+                            loaded = Some(publish(&slot, reloaded));
                         }
                         Err(errors) => {
                             stats.errors.fetch_add(errors.len() as u64, Ordering::Relaxed);
@@ -661,6 +700,19 @@ rule bluetardigrade_test_hit : test_tag {
         let (rules, _, _, _, _, sha) = stats.get();
         assert_eq!(rules, 12);
         assert_eq!(sha, "abcdef0123456789");
+    }
+
+    #[test]
+    fn the_mem_counters_start_at_zero_and_read_back() {
+        // the memory scanner's shadow of the file counters (heartbeat.rs
+        // reads them through get_mem every minute)
+        let stats = YaraStats::default();
+        assert_eq!(stats.get_mem(), (0, 0, 0, 0));
+        stats.sweeps.fetch_add(2, Ordering::Relaxed);
+        stats.mem_scans.fetch_add(10, Ordering::Relaxed);
+        stats.mem_matches.fetch_add(1, Ordering::Relaxed);
+        stats.mem_skipped.fetch_add(3, Ordering::Relaxed);
+        assert_eq!(stats.get_mem(), (2, 10, 1, 3));
     }
     #[test]
     fn a_rule_directory_compiles_and_matches() {
@@ -870,12 +922,14 @@ rule meta_hit {
         let (tx, rx) = sync_channel::<String>(8);
         let events: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let sink = Arc::clone(&events);
+        let slot: RulesSlot = Arc::new(Mutex::new(None));
         let handle = start_worker(
             "LAB-01".into(),
             config,
             rx,
             Arc::clone(&stats),
             move |event| sink.lock().unwrap().push(serde_json::to_string(&event).unwrap()),
+            Arc::clone(&slot),
         )
         .unwrap();
         let path = sample.to_string_lossy().to_string();
@@ -896,6 +950,12 @@ rule meta_hit {
         assert_eq!(lines.len(), 1);
         assert!(lines[0].contains(&path));
         assert!(loaded.count == 1);
+        // the worker published what it loaded to the shared slot: the
+        // memory scanner (memscan.rs) consumes exactly this
+        let published = slot.lock().unwrap().clone();
+        let published = published.expect("the worker publishes its rules");
+        assert_eq!(published.count, 1);
+        assert_eq!(published.sha16.len(), 16);
     }
 
     #[test]

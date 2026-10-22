@@ -28,12 +28,16 @@ pub(super) fn start_heartbeat(ctx: Arc<Shared>, capture: String, run_mode: &'sta
             let stats = ctx.pipeline.stats();
             let (etw_events_lost, etw_buffers_lost) = etw_lost_counts(&sessions, &mut warned);
             // the YARA worker's counters (zeros and no bundle sha while
-            // scanning is off — YaraStats::get is the only reader)
+            // scanning is off — YaraStats::get is the only reader);
+            // get_mem is the memory scanner's shadow (all zeros while
+            // --yara-mem is off)
             let (yara_rules, yara_scans, yara_matches, yara_errors, yara_dropped, yara_rules_sha) = ctx
                 .yara_stats
                 .as_ref()
                 .map(|s| s.get())
                 .unwrap_or((0, 0, 0, 0, 0, String::new()));
+            let (yara_mem_sweeps, yara_mem_scans, yara_mem_matches, yara_mem_skipped) =
+                ctx.yara_stats.as_ref().map(|s| s.get_mem()).unwrap_or((0, 0, 0, 0));
             let health = Health {
                 kind: "etw",
                 version: env!("CARGO_PKG_VERSION"),
@@ -53,6 +57,10 @@ pub(super) fn start_heartbeat(ctx: Arc<Shared>, capture: String, run_mode: &'sta
                 yara_matches,
                 yara_dropped,
                 yara_errors,
+                yara_mem_sweeps,
+                yara_mem_scans,
+                yara_mem_matches,
+                yara_mem_skipped,
                 run_mode,
             };
             ctx.emit(&EventJson {
