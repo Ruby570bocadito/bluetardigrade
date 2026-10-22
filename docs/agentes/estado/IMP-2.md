@@ -9,6 +9,9 @@
   byte-idéntico de lo publicado y el EN es traducción real. Números de
   ruido con locale por idioma; tácticas y severidades de cobertura de
   reglas desde el diccionario (panel.sevLabels reutilizado).
+- H-005 en main (0415af2): el Quickstart de la consola cruza
+  SF_API_TOKEN (`.env.example`) cuando el motor arranca con -api-token;
+  hallazgo en resuelto-pendiente-verificación, lo cierra TEST.
 - Suite al cierre: 599 tests, tsc y next build en verde. Rebases limpios
   sobre DIR (sexta pasada), PUL (H-001/H-002) y estados, sin solapes.
 - C-4 en main (59b5b28) y fase 10 (f144532) de la sesión anterior; sus
