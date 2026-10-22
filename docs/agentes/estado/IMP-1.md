@@ -1,40 +1,42 @@
 # IMP-1 — estado
 
-Cuatro instancias comparten este ID esta jornada (historial en git log).
-
 ## Hecho (últimas 24 h)
 
-Sesión s2-yara (S-2 · YARA sensor, cerrada — PR #48):
-- `sensor/src/yara.rs` + `scan.rs`: carga de reglas por directorio
-  (fichero roto = se salta y se reporta; todo-roto = error), bundle.json
-  opcional, recarga por fingerprint cada minuto, tope --yara-max-mb
-  (16 MiB), dedupe (ruta, tamaño, mtime), cola 512, drops contados.
-- Tercera sesión ETW `bluetardigrade-sensor-file` (Kernel-File 12/16);
-  solo con `--yara-rules` (opt-in puro). Evento `yara.match` y bloque
-  `yara_rules/_sha/_scans/_matches/_dropped/_errors` en el latido;
-  subcomando `scan` bajo demanda (NDJSON, exit 2 con coincidencias).
-- 56 tests (13 nuevos), check/test/clippy host + cross msvc --locked;
-  excepciones en .cargo/audit.toml (rsa vía yara-x: parse-only local;
-  bincode unmaintained transitivo). Contrato S-2↔M-3 en el PR #48:
-  directorio + bundle.json; verificación por yara_rules_sha en el latido.
-
-Sesión st100x (fix del job Go de CI): cinco ST1003 (DbQuery→DBQuery) y
-tres ST1000 (comentario pegado a package) en el código M-4; vino también
-en el PR #48 y el merge lo resolvió sin duplicado. — Otras sesiones
-cerradas de la jornada (make-tabs, m4, o2): ver changelog.d y git log.
+Sesión m3-yara-motor (cerrada, main 646869b):
+- internal/yara: el lote del operario con la huella de contenido que
+  compila el sensor (rel+NUL+contenido ordenado, sha256 a 16 hex;
+  vectores dorados fijados en tests), versión del bundle.json, problems
+  (no UTF-8, ilegibles) y zip determinista con tope de 32 MiB; recarga
+  perezosa como intel (solo cuando cambia el directorio).
+- API: GET /api/yara (estado) y GET /api/yara/bundle (zip
+  yara-bundle-<sha16>.zip); 404 con lote vacío, 413 sobre el tope.
+- Fleet: yara_rules y yara_rules_sha por sensor en /api/fleet; la
+  llegada del lote es comparar el sha del latido con el sha16 del motor
+  (yara_errors>0 = fichero que el sensor no pudo compilar).
+- cmd/engine: -yara-rules (./yara-rules; vacío desactiva) con loadYara
+  en run_yara.go nuevo (run_load.go estaba en el claim de SEG).
+- OpenAPI + referencia regenerada; changelog.d/engine-yara-distribution.
+- CI local en verde: gofmt, build, vet, staticcheck (2 pases) y
+  test -race ./... (42 paquetes). Sin dependencias nuevas.
 
 ## En curso
-- (nada) — zona al día; s2 espera la fusión del PR #48.
+- (nada)
+
+## Bloqueado
+- Distribución firmada a sensores: espera E-1 (visto bueno del humano).
 
 ## Peticiones
-- A PUL/OPS: deps-audit necesita `checks: write` para publicar informes
-  no vacíos; retiraría bincode de la excepción.
-- A DIR: marcar s2-yara-sensor hecha al fusionar PR #48.
+- (ninguna)
 
 ## Propuestas para el roadmap
-- M-3 (YARA en motor) parte del contrato del PR #48; firma con E-1.
-- Con M-7 (WEF): pack AD por ID de evento (4625/4769/4662/4728/4732/
-  4756/7045). Alta de C-4 sobre POST /api/db/query.
+- Doctor: chequeo del directorio -yara-rules (como doctor_intel).
+- Consola: pintar el desfase del lote (sha de /api/fleet contra
+  /api/yara) — IMP-2, cuando cierre idea10.
+
+## Cola (hallazgos BAJO de TEST ronda 1 dirigidos a IMP-1)
+- H-003 ingest: línea sobredimensionada sin contador.
+- H-004 db query: cuerpo grande con diagnóstico engañoso.
+- H-006 filtro de severidad desconocida silencioso.
 
 ## Estado: VERDE — riesgos
-- Cuatro solapamientos de instancia paralela; re-check del claim antes de cada push. `yara.match` sale sin PID: la atribución irá con la parte de memoria.
+- Sin solapes: SEG (run_load.go) e IMP-2 (web/) no pisaron mis rutas.
