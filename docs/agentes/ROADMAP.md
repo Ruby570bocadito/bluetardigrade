@@ -6,11 +6,12 @@ DIR; el resto propone cambios en la sección «Propuestas» de su
 [TODO.md](../../TODO.md); la dirección del producto por horizontes,
 [docs/ROADMAP.md](../ROADMAP.md). Ante cualquier choque, manda TODO.md.
 
-Última actualización: 2026-10-22 (DIR, décima pasada: m7-wef-pack
-entregado por IMP-1 y verificado contra el código; detectado el carril
-Go en rojo sobre la hornada — gofmt en scenario.go, corregido por DIR
-con build/vet/test 42/42 en local; cierre de m7 pendiente de run
-verde sobre la cabeza).
+Última actualización: 2026-10-22 (DIR, décima pasada + micro-pase:
+m7-wef-pack y tema-claro entregados y verificados contra el código;
+el carril Go en rojo tenía la causa en gofmt de scenario.go — SEG la
+corrigió en paralelo (gofmt-scenario-ci, 1ebed41) y el fix idéntico
+de DIR se descartó como duplicado en el rebase. Cierre de la hornada
+pendiente de run verde sobre la cabeza).
 
 ## Fase actual
 
@@ -18,15 +19,16 @@ IMP-1 entregó m7-wef-pack (f752040: contrato windows.event en
 pkg/model — host origen, id estable 32-hex —, pack de 4 reglas WEF
 (4625 por umbral; 4769 RC4; 4662; 4728/4732/4756; 7045 intérprete),
 309 líneas de tests, OpenAPI e inventario vía guards, guía AD-WEF con
-el mapeo real; release 90606e5) y apunta a pol1c. SEG cerró ronda 6
-read-only: desfase consola y M-4 /api/db/query auditados a fondo SIN
-hallazgos (guardSQL + caps + QueryRO en mode=ro: tres capas
-independientes), con petición a IMP-2 adoptada a Propuestas. Un claim
-vivo: tema-claro (IMP-2). ALTA viva: el carril Go de la cabeza
-c04980c murió en fmt (scenario.go sin gofmt tras el rework de 467
-líneas); DIR aplicó la normalización mecánica con build/vet/test
-42/42 en local (d187d45) — m7-wef-pack no se da por cerrada hasta run
-verde sobre la nueva cabeza. PUL con 7 fragmentos de changelog.d/.
+el mapeo real; release 90606e5) y apunta a pol1c. IMP-2 entregó
+tema-claro (8f823bf: rampas del tema claro volteadas a legibles sobre
+blanco, sev-media en oro, chips de código semánticos, shell sobre
+--hairline; 603 tests, tsc, next build, a11y 20/20 escaneando ambos
+temas; release 02f9b1f): claims/ VACÍO. SEG hizo ronda 6 read-only
+SIN hallazgos (desfase consola y M-4 a fondo) y corrigió el gofmt de
+scenario.go (gofmt-scenario-ci, release 1ebed41) — la misma
+normalización que DIR aplicó en paralelo; el rebase descartó el
+duplicado de DIR sin conflicto. ALTA viva hasta run verde sobre la
+cabeza. PUL con 8 fragmentos de changelog.d/.
 
 ## Decisiones vigentes que obligan a todos
 
@@ -50,10 +52,12 @@ semana y media después (lección de los 42 fragmentos).
 - CI en rojo sobre la entrega m7-wef-pack: la run definitiva de la
   cabeza c04980c murió en el paso fmt (gofmt: internal/scenario/
   scenario.go; build/vet/test no llegaron a correr en remoto).
-  Causa corregida por DIR (d187d45, normalización mecánica — no es
-  funcionalidad — con gofmt/build/vet/test 42/42 en verde local).
-  PENDIENTE de cierre: run verde sobre la cabeza nueva; m7-wef-pack
-  sigue pendiente de verificación hasta entonces.
+  Causa corregida en main por SEG (gofmt-scenario-ci, release
+  1ebed41); DIR aplicó la misma normalización en paralelo y el rebase
+  descartó su commit como duplicado exacto — sin daño. PENDIENTE de
+  cierre: run verde sobre la cabeza nueva (en curso al cerrar esta
+  pasada); m7-wef-pack y tema-claro siguen pendientes de verificación
+  hasta entonces.
 
 ## Tareas por rol
 
@@ -75,10 +79,8 @@ semana y media después (lección de los 42 fragmentos).
   exposición menor) — `sensor/`
 
 ### IMP-2 (consola Next.js)
-- [ ] (IMP-2) tema-claro — EN VUELO (claim activo, 5b7da89): rework de
-  contraste, superficies y gráficas (resto del carril F5); usa el
-  guard `scripts/dev-tests/check_console_theme.py` de IMP-1 tal cual
-  y pide reglas nuevas en su estado — `web/console/src/`
+- Sin claim activo: tema-claro entregada (ver Cerradas); su cola i18n
+  y el poll de useYaraStatus viven en Propuestas.
 - [ ] (IMP-2) ad7-login-consola — hornada de login de dominio; ANTES:
   sesión de diseño con DIR (el proxy exige principal y la ruta es
   pre-sesión — puede abrir la próxima sesión de IMP-2); su entrada en
@@ -94,12 +96,12 @@ semana y media después (lección de los 42 fragmentos).
   dict-es (analyst.errorLine) + su batería — `web/console/src/lib/
   i18n/`
 - Rutina en Decisiones: consolidar `changelog.d/` al cerrar cada ronda
-  (7 fragmentos a la espera, incluidos el de SEG y el de m7).
+  (8 fragmentos a la espera).
 
 ### SEG (seguridad y bugs)
-- Ronda 6 read-only SIN hallazgos: desfase consola (yara status) y
-  M-4 /api/db/query auditados a fondo; su petición a IMP-2 adoptada a
-  Propuestas. Sin tarea reclamable: sec2-dpapi, regresión PR #28 y
+- Ronda 6 read-only SIN hallazgos (desfase consola y M-4 a fondo) y
+  gofmt-scenario-ci entregada en paralelo con DIR (ver Cerradas).
+  Sin tarea reclamable: sec2-dpapi, regresión PR #28 y
   reconexiones/spool necesitan Windows real — ver «Esperando al
   humano». Nota menor viva: `is_excluded` compara prefijos en texto;
   un junction dentro del directorio de reglas escanearía el eco del
@@ -120,6 +122,14 @@ semana y media después (lección de los 42 fragmentos).
 
 ## Cerradas (últimas 24 h)
 
+- tema-claro — 8f823bf + changelog 0ef1211 + release 02f9b1f (IMP-2):
+  rampas del claro volteadas a legibles sobre blanco, sev-media en
+  oro validada CVD, chips de código semánticos, shell sobre tokens;
+  603 tests, tsc, next build, a11y 20/20 ambos temas. CIERRE PENDIENTE
+  de run verde (ver ALTA)
+- gofmt-scenario-ci — claim b705490 + release 1ebed41 (SEG): gofmt de
+  internal/scenario/scenario.go; DIR aplicó el mismo fix en paralelo
+  y el rebase quedó con el de SEG
 - m7-wef-pack — f752040 + release 90606e5 (IMP-1): pack AD sobre
   eventos WEF — contrato windows.event (host origen, id 32-hex),
   DCSync / Kerberoasting RC4 / altas en privilegio / servicio
