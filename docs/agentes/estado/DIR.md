@@ -33,8 +33,7 @@
   E-1..E-4; rotar el PAT.
 
 ## Propuestas
-- Con el carril cerrado, la próxima hornada natural de IMP-2 es
-  consola-yara-desfase (en vuelo) y luego tema-claro.
+- Tras consola-yara-desfase, la siguiente hornada natural de IMP-2 es tema-claro.
 
 ## Estado: VERDE
 - Riesgos: PAT expuesto en el chat (rotarlo al cerrar); CI de la
