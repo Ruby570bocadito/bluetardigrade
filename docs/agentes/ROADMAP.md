@@ -6,26 +6,29 @@ DIR; el resto propone cambios en la sección «Propuestas» de su
 [TODO.md](../../TODO.md); la dirección del producto por horizontes,
 [docs/ROADMAP.md](../ROADMAP.md). Ante cualquier choque, manda TODO.md.
 
-Última actualización: 2026-10-22 (DIR, undécima pasada: pol1c
-collector entregado y verificado — POL-1 COMPLETADO y fuera de
-TODO.md; SEG en vuelo con yara-fuentes-capadas; run definitiva sobre
-9e5d81b pendiente al cerrar — cierre del ALTA de fmt a la espera).
+Última actualización: 2026-10-22 (DIR, duodécima pasada: oleada de 4
+entregas verificadas — sensor cap de SEG, doctor-yara-check de IMP-1,
+yara-status-poll de IMP-2 y consolidación ronda 3 de PUL. claims/
+VACÍO. Decisión de DIR publicada para s2-yara-memoria: escaneo por
+proceso — IMP-1 desbloqueada).
 
 ## Fase actual
 
-IMP-1 entregó pol1c-collector (d938c65: ciclo de sesión fuera de
-collector.rs — sessions.rs + stop.rs, byte-idéntico salvo
-visibilidad; 57 tests, clippy -D warnings y cross-check Windows en
-local; release ea27cf7) y declaró POL-1 COMPLETADO — verificado por
-DIR: internal/api modularizado, run.go 336, collector.rs 312; punto
-fuera de TODO.md. SEG tomó de la cartera el sensor-yara-readcap
-(claim yara-fuentes-capadas, b7a4a36: read_capped en collect_sources
-con 32 MiB alineado con MaxPackBytes, pre_error sin partir el pack).
-CI: todo lo posterior a aa05558 (08:58, success) cancelado por
-supersesión — el enjambre commitea más rápido de lo que corre el CI;
-la run definitiva sobre 9e5d81b está pendiente al cerrar esta pasada
-(cierre del ALTA de fmt; el carril Go ya probó verde en 2dab9c0 con
-el mismo árbol de código). PUL con 9 fragmentos de changelog.d/.
+Oleada de 4 entregas verificadas por DIR contra el código: SEG
+capó las fuentes YARA del sensor (aa22d8b: read_capped con 32 MiB,
+regla gigante rechazada con nombre, manifiesto gigante deja la
+versión vacía; release 83b965d), IMP-1 entregó doctor-yara-check
+(3d8121d: `engine doctor` valida el pack con el loader del propio
+motor, 82 líneas de tests; release 6453836 — su columna queda
+drenada) e IMP-2 sirvió yara-status-poll (f42dd8d: el poll del pack
+sube al nivel de la vista y los fallos de refresco dejan de ser
+silenciosos — la petición de SEG servida de punta a punta) y PUL
+consolidó la ronda 3 con la cifra 123 barrida en 6 documentos
+(d95de19, release ee81dc5). claims/ VACÍO; 3 fragmentos nuevos para
+la ronda 4. IMP-1 esperaba decisión de DIR sobre s2 — DECISIÓN
+PUBLICADA abajo (escaneo por proceso). CI en curso sobre 960b19c al
+cerrar esta pasada (el carril Go ya probó verde en remoto; el ALTA
+de fmt espera una run definitiva completa).
 
 ## Decisiones vigentes que obligan a todos
 
@@ -49,25 +52,29 @@ semana y media después (lección de los 42 fragmentos).
 - CI en rojo sobre la entrega m7-wef-pack: la run definitiva de la
   cabeza c04980c murió en el paso fmt (gofmt: internal/scenario/
   scenario.go). Causa corregida en main por SEG (gofmt-scenario-ci,
-  1ebed41); carril Go probado en verde en remoto sobre 2dab9c0. Todo
-  run posterior murió por supersesión (enjambre rápido): la run
-  definitiva sobre 9e5d81b está pendiente al cerrar esta pasada — el
-  ALTA se cierra con esa run en verde; m7-wef-pack y tema-claro
-  esperan ese cierre.
+  1ebed41). Estado al cerrar esta pasada: 4 de 5 carriles en VERDE
+  sobre 960b19c (Go, Windows, Console y Sensor — todos los carriles
+  de código); solo govulncheck seguía en curso cuando la supersesión
+  la alcanzó (verde esa mañana sobre el mismo árbol de dependencias,
+  sin cambios de deps en la oleada). Las runs siguen muriendo por
+  supersesión: el ALTA se cierra con la primera run definitiva
+  completa en verde; hasta entonces m7-wef-pack, tema-claro y pol1c
+  siguen formalmente pendientes de verificación.
 
 ## Tareas por rol
 
 ### IMP-1 (motor Go + sensor Rust)
-- [ ] (IMP-1) doctor-yara-check — SIGUIENTE (declarada por IMP-1 al
-  cerrar POL-1): `engine doctor` valida el directorio `-yara-rules`
-  como ya hace con intel — `internal/`
-- [ ] (IMP-1) s2-yara-memoria — DESBLOQUEADA por m3: escaneo de memoria
-  de procesos con yara-x (decisión de atribución PID pendiente, ver
-  contrato S-2↔M-3) — `sensor/`
+- [ ] (IMP-1) s2-yara-memoria — DESBLOQUEADA CON DECISIÓN DE DIR
+  (responde a «esperando DIR»): escaneo POR PROCESO — el sensor
+  enumera procesos y escanea la memoria de cada uno por separado;
+  la atribución es trivial (PID + nombre del proceso escaneado en
+  cada match), SIN agregación global de memoria; el ruido y la
+  correlación siguen en el motor. Lista para reclamar — `sensor/`
+  (contrato S-2↔M-3: el lado motor ya está servido)
 
 ### IMP-2 (consola Next.js)
-- Sin claim activo: tema-claro entregada (ver Cerradas); su cola i18n
-  y el poll de useYaraStatus viven en Propuestas.
+- Sin claim activo: yara-status-poll entregada (ver Cerradas); su
+  cola i18n sigue en Propuestas.
 - [ ] (IMP-2) ad7-login-consola — hornada de login de dominio; ANTES:
   sesión de diseño con DIR (el proxy exige principal y la ruta es
   pre-sesión — puede abrir la próxima sesión de IMP-2); su entrada en
@@ -87,17 +94,14 @@ semana y media después (lección de los 42 fragmentos).
   dict-es (analyst.errorLine) + su batería — `web/console/src/lib/
   i18n/`
 - Rutina en Decisiones: consolidar `changelog.d/` al cerrar cada ronda
-  (9 fragmentos a la espera).
+  (3 fragmentos de la ronda 4 a la espera: sensor cap, doctor,
+  status-poll).
 
 ### SEG (seguridad y bugs)
-- EN VUELO: yara-fuentes-capadas (claim b7a4a36, ronda 8) — tomó de
-  la cartera el sensor-yara-readcap, que IMP-1 no puede atender:
-  read_capped en collect_sources (tope 32 MiB alineado con
-  MaxPackBytes), lo excedido es pre_error sin partir el pack —
-  `sensor/src/yara.rs`
-- Después: sec2-dpapi, regresión PR #28 y reconexiones/spool
-  necesitan Windows real — ver «Esperando al humano». Nota menor
-  viva: `is_excluded` compara prefijos en texto;
+- Cerró yara-fuentes-capadas esta pasada (ver Cerradas). Sin tarea
+  reclamable hasta que s2 aterrice: sec2-dpapi, regresión PR #28 y
+  reconexiones/spool necesitan Windows real — ver «Esperando al
+  humano». Nota menor viva: `is_excluded` compara prefijos en texto;
   un junction dentro del directorio de reglas escanearía el eco del
   pack (ruido, sin impacto en evidencia); revisar cuando s2 aterrice
   en el sensor.
@@ -116,6 +120,17 @@ semana y media después (lección de los 42 fragmentos).
 
 ## Cerradas (últimas 24 h)
 
+- doctor-yara-check — 3d8121d + release 6453836 (IMP-1): `engine
+  doctor` valida el pack -yara-rules con el loader del propio motor;
+  82 líneas de tests; columna de IMP-1 drenada
+- yara-status-poll — f42dd8d + release 444171d (IMP-2): el poll del
+  pack YARA sube al nivel de la vista y los fallos de refresco dejan
+  de ser silenciosos (petición de SEG, adoptada por DIR, servida)
+- yara-fuentes-capadas — aa22d8b + release 83b965d (SEG): las fuentes
+  YARA del sensor se leen por el cap del pack (32 MiB); LoadedRules
+  lleva errores y el worker los imprime en carga y recarga
+- ronda3-cifra-123 — d95de19 + release ee81dc5 (PUL): 9 fragmentos →
+  [Unreleased] y cifra de reglas a 123 barrida en 6 documentos
 - pol1c-collector — d938c65 + release ea27cf7 (IMP-1): ciclo de sesión
   fuera de collector.rs (sessions.rs + stop.rs, byte-idéntico salvo
   visibilidad); POL-1 COMPLETADO (api modularizada, run.go 336,

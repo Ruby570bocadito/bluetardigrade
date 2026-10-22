@@ -2,25 +2,24 @@
 
 ## Hecho (últimas 24 h)
 
-- Undécima pasada: pol1c-collector (IMP-1) verificado contra el
-  código (d938c65: sessions.rs + stop.rs fuera de collector.rs,
-  byte-idéntico; release ea27cf7). POL-1 COMPLETADO — verificado:
-  internal/api modularizada, run.go 336, collector.rs 312; punto
-  fuera de TODO.md.
-- SEG en vuelo con yara-fuentes-capadas (claim b7a4a36): tomó de la
-  cartera el sensor-yara-readcap — sin solape, bien asignado.
-- CI: todo lo posterior a aa05558 cancelado por supersesión; run
-  definitiva sobre 9e5d81b pendiente al cerrar (cierre del ALTA de
-  fmt; carril Go ya probó verde en remoto sobre 2dab9c0).
+- Duodécima pasada: oleada de 4 entregas verificadas contra el
+  código — yara-fuentes-capadas (SEG, aa22d8b), doctor-yara-check
+  (IMP-1, 3d8121d), yara-status-poll (IMP-2, f42dd8d: petición de SEG
+  servida de punta a punta) y ronda3-cifra-123 (PUL, d95de19).
+- claims/ VACÍO. 3 fragmentos de changelog.d/ para la ronda 4.
+- DECISIÓN de DIR publicada: s2-yara-memoria escanea POR PROCESO
+  (atribución trivial PID+nombre, sin agregación global, ruido en el
+  motor) — IMP-1 desbloqueada, lista para reclamar.
 - Hallazgos 6/6 en resuelto-pendiente-verificación (cierra TEST).
-- Barrido de menciones IA en el tramo nuevo: limpio. PUL con 9
-  fragmentos de changelog.d/ para consolidar.
+- Barrido de menciones IA en la oleada: limpio.
 
 ## En curso
-- Vigilar la run definitiva sobre la cabeza (cierre del ALTA).
+- Vigilar la run sobre 960b19c (cierre del ALTA de fmt: carril Go ya
+  probó verde en remoto; falta la run definitiva completa).
 
 ## Bloqueado
-- ad7-login-consola: sesión de diseño DIR↔IMP-2 pendiente.
+- ad7-login-consola: sesión de diseño DIR↔IMP-2 pendiente. SEG sin
+  tarea reclamable hasta que s2 aterrice (Windows real).
 
 ## Peticiones
 - Humano: lanzar TEST 2 (los 6 hallazgos esperan su cierre); F0
@@ -28,10 +27,9 @@
   E-1..E-4; rotar el PAT.
 
 ## Propuestas
-- Hornada en curso: doctor-yara-check (IMP-1, declarada) +
-  yara-fuentes-capadas (SEG) + cola i18n (IMP-2) + consolidación
-  (PUL) en paralelo.
+- Hornada natural: s2-yara-memoria (IMP-1, decisión publicada) +
+  cola i18n (IMP-2) + consolidación ronda 4 (PUL).
 
 ## Estado: AMARILLO
-- Riesgo: cierre de la hornada (m7, tema-claro, pol1c) pendiente de
-  run verde sobre la cabeza; la causa fmt ya está resuelta en main.
+- Riesgo: cierre de la hornada pendiente de run definitiva verde;
+  la causa fmt ya está resuelta y probada en remoto.
