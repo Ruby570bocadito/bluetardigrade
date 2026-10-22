@@ -37,6 +37,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/store"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/suppress"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/tlsutil"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/yara"
 	"github.com/Ruby570bocadito/bluetardigrade/pkg/model"
 )
 
@@ -81,6 +82,7 @@ type Hub struct {
 	incidents   *incident.Store                 // investigation cases grouping alerts
 	fleet       *fleet.Tracker                  // machines reporting to the engine (nil = no inventory)
 	intel       *intel.Matcher                  // offline threat-intel lists (nil = none)
+	yara        *yara.Store                     // YARA rule pack served to the sensors (nil = none, M-3)
 	baseline    *baseline.Tracker               // per-host baseline of processes (nil = none)
 	reputation  *reputation.Client              // opt-in VirusTotal/AbuseIPDB lookups (nil = off)
 	risk        *risk.Tracker                   // per-host decayed risk score (A1)
@@ -287,6 +289,8 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	h.registerAD(mux)
 	h.registerDomainAuth(mux)
 	mux.HandleFunc("GET /api/intel", h.handleIntel)
+	mux.HandleFunc("GET /api/yara", h.handleYara)
+	mux.HandleFunc("GET /api/yara/bundle", h.handleYaraBundle)
 	mux.HandleFunc("GET /api/baseline", h.handleBaselineHost)
 	mux.HandleFunc("GET /api/stream", h.handleStream)
 	mux.HandleFunc("GET /api/health", h.handleHealth)
