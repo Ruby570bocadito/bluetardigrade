@@ -2,21 +2,25 @@
 
 ## Hecho (últimas 24 h)
 
-Sesión m3-yara-motor (cerrada, main 646869b):
-- internal/yara: el lote del operario con la huella de contenido que
-  compila el sensor (rel+NUL+contenido ordenado, sha256 a 16 hex;
-  vectores dorados fijados en tests), versión del bundle.json, problems
-  (no UTF-8, ilegibles) y zip determinista con tope de 32 MiB; recarga
-  perezosa como intel (solo cuando cambia el directorio).
-- API: GET /api/yara (estado) y GET /api/yara/bundle (zip
-  yara-bundle-<sha16>.zip); 404 con lote vacío, 413 sobre el tope.
-- Fleet: yara_rules y yara_rules_sha por sensor en /api/fleet; la
-  llegada del lote es comparar el sha del latido con el sha16 del motor
-  (yara_errors>0 = fichero que el sensor no pudo compilar).
-- cmd/engine: -yara-rules (./yara-rules; vacío desactiva) con loadYara
-  en run_yara.go nuevo (run_load.go estaba en el claim de SEG).
-- OpenAPI + referencia regenerada; changelog.d/engine-yara-distribution.
-- CI local en verde: gofmt, vet, staticcheck y test -race ./....
+Sesión m3-yara-motor (cerrada, main 646869b): pack YARA del motor —
+internal/yara (huella de contenido espejo del sensor, zip
+determinista, tope 32 MiB), GET /api/yara y /api/yara/bundle,
+yara_rules(_sha) en fleet, -yara-rules con loadYara, OpenAPI +
+referencia, changelog. CI verde.
+
+Sesión H-003+H-004+H-006 (cabeza 9f013cb): hornada de los tres
+hallazgos BAJO de TEST ronda 1 dirigidos a IMP-1:
+- H-003 (128e74b): la línea sobredimensionada en fase de datos del
+  ingest cuenta como ingest_rejected y ackea la causa antes de
+  cerrar; los errores de lectura corrientes siguen sin contar.
+- H-004 (1507de6): db/query sobre los 64 KiB responde el diagnóstico
+  explícito de tope (patrón assign); sigue 400 como documenta el
+  OpenAPI; JSON pequeño malformado conserva su mensaje.
+- H-006 (9f013cb): sev = alias validado de severity (mismo enum, 400
+  con los válidos, unión si llegan ambos), OpenAPI documentado; de
+  paso parseRecordFilter pierde el bloque unassigned triplicado.
+- Los tres marcados resuelto-pendiente-verificación (TEST cierra).
+- CI local verde: gofmt, vet, staticcheck x2, test -race (42 ok).
 
 ## En curso
 - (nada)
@@ -31,10 +35,10 @@ Sesión m3-yara-motor (cerrada, main 646869b):
 - Doctor: chequeo del directorio -yara-rules (como doctor_intel).
 - Consola: desfase del lote (sha de /api/fleet contra /api/yara).
 
-## Cola (hallazgos BAJO de TEST ronda 1 dirigidos a IMP-1)
-- H-003 ingest: línea sobredimensionada sin contador.
-- H-004 db query: cuerpo grande con diagnóstico engañoso.
-- H-006 filtro de severidad desconocida silencioso.
+## Siguiente
+- m7-wef-pack — pack AD por ID de evento (4625/4769/4662/4728/4732/
+  4756/7045); guía en docs/AD-WEF-SUSCRIPCION.md.
 
 ## Estado: VERDE — riesgos
-- Sin solapes: SEG (run_load.go) e IMP-2 (web/) no pisaron mis rutas.
+- Sin solapes: IMP-2 cerró idea10 y tomó H-005 (rutas web/ y docs/);
+  internal/ y docs/api/ quedaron libres toda la sesión.

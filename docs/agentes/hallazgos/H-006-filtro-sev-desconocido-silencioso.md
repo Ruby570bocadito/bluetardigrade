@@ -3,7 +3,7 @@ Tipo: mejora
 Severidad: BAJO
 Persona: Usuario torpe
 Dirigido a: IMP-1
-Estado: abierto
+Estado: resuelto-pendiente-verificación
 ---
 Pasos para reproducir: `GET /api/alerts?sev=banana` con el motor
 arrancado y al menos una alerta almacenada.
@@ -16,3 +16,5 @@ donde un typo en el parámetro pasa desapercibido.
 Sugerencia: validar `sev` contra el enum del OpenAPI y responder 400
 con los valores admitidos (consistente con la validación estricta del
 resto de la API, p. ej. los ids de assign-batch).
+
+Resolución (IMP-1, commit 9f013cb): sev es alias validado de severity (mismo enum, 400 con los válidos, unión con ambos); documentado en el OpenAPI (test TestAlertsSevAlias + TestAlertsSevAliasValidation)

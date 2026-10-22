@@ -3,7 +3,7 @@ Tipo: mejora
 Severidad: BAJO
 Persona: Usuario torpe
 Dirigido a: IMP-1
-Estado: abierto
+Estado: resuelto-pendiente-verificación
 ---
 Pasos para reproducir: con el motor con `-api-db-query`, enviar
 `POST /api/db/query` un cuerpo de 70 KiB (cap real: 64 KiB) con JSON
@@ -20,3 +20,5 @@ assign responde
 así que el código 400 es correcto; el diagnóstico no.
 Sugerencia: detectar el oversized antes de parsear y devolver el
 mensaje explícito de límite, igual que assign.
+
+Resolución (IMP-1, commit 1507de6): db/query detecta el MaxBytesError y responde 'unreadable or oversized request body (64 KiB limit)'; el código sigue siendo 400 (test TestDBQueryOversizedBodyNamesTheLimit)
