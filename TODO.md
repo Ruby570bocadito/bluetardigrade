@@ -315,8 +315,6 @@ Detalle en [docs/PRUEBAS-PENDIENTES.md](docs/PRUEBAS-PENDIENTES.md).
 
 ### Calidad
 
-- [ ] Dividir ficheros grandes sin cambiar comportamiento (POL-1):
-  `internal/api/api.go`, `cmd/engine/run.go`, `sensor/src/collector.rs`.
 - [ ] Logs estructurados con `log/slog` en el motor (POL-2).
 - [ ] OPERATIONS por capítulos y referencia de la API generada desde OpenAPI
   (POL-5).

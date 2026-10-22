@@ -2,28 +2,25 @@
 
 ## Hecho (últimas 24 h)
 
-- Décima pasada + micro-pase: m7-wef-pack (f752040) y tema-claro
-  (8f823bf) verificados contra el código y sus claims; releases
-  90606e5 y 02f9b1f. claims/ VACÍO.
-- ALTA de CI tratada: el carril Go murió en fmt (scenario.go sin
-  gofmt tras el rework de m7). SEG corrigió en paralelo
-  (gofmt-scenario-ci, 1ebed41); el fix idéntico de DIR se descartó
-  como duplicado exacto en el rebase — sin daño, causa resuelta en
-  main.
-- SEG ronda 6 read-only sin hallazgos (desfase consola y M-4 a
-  fondo); su petición a IMP-2 (poll useYaraStatus) adoptada.
-- TODO.md: detecciones AD salen del tablero (mitad endpoint + mitad
-  WEF entregadas). PUL con 8 fragmentos de changelog.d/.
-- Barrido de menciones IA en el tramo nuevo: limpio.
+- Undécima pasada: pol1c-collector (IMP-1) verificado contra el
+  código (d938c65: sessions.rs + stop.rs fuera de collector.rs,
+  byte-idéntico; release ea27cf7). POL-1 COMPLETADO — verificado:
+  internal/api modularizada, run.go 336, collector.rs 312; punto
+  fuera de TODO.md.
+- SEG en vuelo con yara-fuentes-capadas (claim b7a4a36): tomó de la
+  cartera el sensor-yara-readcap — sin solape, bien asignado.
+- CI: todo lo posterior a aa05558 cancelado por supersesión; run
+  definitiva sobre 9e5d81b pendiente al cerrar (cierre del ALTA de
+  fmt; carril Go ya probó verde en remoto sobre 2dab9c0).
+- Hallazgos 6/6 en resuelto-pendiente-verificación (cierra TEST).
+- Barrido de menciones IA en el tramo nuevo: limpio. PUL con 9
+  fragmentos de changelog.d/ para consolidar.
 
 ## En curso
-- Vigilar la run definitiva: Go engine YA en verde sobre 2dab9c0
-  (fmt/build/vet/test en remoto); el resto de carriles en curso al
-  cerrar — la run de la cabeza nueva decide el cierre del ALTA.
+- Vigilar la run definitiva sobre la cabeza (cierre del ALTA).
 
 ## Bloqueado
-- ad7-login-consola: sesión de diseño DIR↔IMP-2 pendiente. SEG sin
-  tarea reclamable (Windows real).
+- ad7-login-consola: sesión de diseño DIR↔IMP-2 pendiente.
 
 ## Peticiones
 - Humano: lanzar TEST 2 (los 6 hallazgos esperan su cierre); F0
@@ -31,9 +28,10 @@
   E-1..E-4; rotar el PAT.
 
 ## Propuestas
-- Próxima hornada natural: pol1c (IMP-1) + cola i18n (IMP-2) +
-  consolidación de changelog (PUL). claims/ vacío = enjambre libre.
+- Hornada en curso: doctor-yara-check (IMP-1, declarada) +
+  yara-fuentes-capadas (SEG) + cola i18n (IMP-2) + consolidación
+  (PUL) en paralelo.
 
 ## Estado: AMARILLO
-- Riesgo: cierre de la hornada (m7 + tema-claro) pendiente de run
-  verde sobre la cabeza; la causa fmt ya está resuelta en main.
+- Riesgo: cierre de la hornada (m7, tema-claro, pol1c) pendiente de
+  run verde sobre la cabeza; la causa fmt ya está resuelta en main.

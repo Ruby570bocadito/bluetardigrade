@@ -6,29 +6,26 @@ DIR; el resto propone cambios en la sección «Propuestas» de su
 [TODO.md](../../TODO.md); la dirección del producto por horizontes,
 [docs/ROADMAP.md](../ROADMAP.md). Ante cualquier choque, manda TODO.md.
 
-Última actualización: 2026-10-22 (DIR, décima pasada + micro-pase:
-m7-wef-pack y tema-claro entregados y verificados contra el código;
-el carril Go en rojo tenía la causa en gofmt de scenario.go — SEG la
-corrigió en paralelo (gofmt-scenario-ci, 1ebed41) y el fix idéntico
-de DIR se descartó como duplicado en el rebase. Cierre de la hornada
-pendiente de run verde sobre la cabeza).
+Última actualización: 2026-10-22 (DIR, undécima pasada: pol1c
+collector entregado y verificado — POL-1 COMPLETADO y fuera de
+TODO.md; SEG en vuelo con yara-fuentes-capadas; run definitiva sobre
+9e5d81b pendiente al cerrar — cierre del ALTA de fmt a la espera).
 
 ## Fase actual
 
-IMP-1 entregó m7-wef-pack (f752040: contrato windows.event en
-pkg/model — host origen, id estable 32-hex —, pack de 4 reglas WEF
-(4625 por umbral; 4769 RC4; 4662; 4728/4732/4756; 7045 intérprete),
-309 líneas de tests, OpenAPI e inventario vía guards, guía AD-WEF con
-el mapeo real; release 90606e5) y apunta a pol1c. IMP-2 entregó
-tema-claro (8f823bf: rampas del tema claro volteadas a legibles sobre
-blanco, sev-media en oro, chips de código semánticos, shell sobre
---hairline; 603 tests, tsc, next build, a11y 20/20 escaneando ambos
-temas; release 02f9b1f): claims/ VACÍO. SEG hizo ronda 6 read-only
-SIN hallazgos (desfase consola y M-4 a fondo) y corrigió el gofmt de
-scenario.go (gofmt-scenario-ci, release 1ebed41) — la misma
-normalización que DIR aplicó en paralelo; el rebase descartó el
-duplicado de DIR sin conflicto. ALTA viva hasta run verde sobre la
-cabeza. PUL con 8 fragmentos de changelog.d/.
+IMP-1 entregó pol1c-collector (d938c65: ciclo de sesión fuera de
+collector.rs — sessions.rs + stop.rs, byte-idéntico salvo
+visibilidad; 57 tests, clippy -D warnings y cross-check Windows en
+local; release ea27cf7) y declaró POL-1 COMPLETADO — verificado por
+DIR: internal/api modularizado, run.go 336, collector.rs 312; punto
+fuera de TODO.md. SEG tomó de la cartera el sensor-yara-readcap
+(claim yara-fuentes-capadas, b7a4a36: read_capped en collect_sources
+con 32 MiB alineado con MaxPackBytes, pre_error sin partir el pack).
+CI: todo lo posterior a aa05558 (08:58, success) cancelado por
+supersesión — el enjambre commitea más rápido de lo que corre el CI;
+la run definitiva sobre 9e5d81b está pendiente al cerrar esta pasada
+(cierre del ALTA de fmt; el carril Go ya probó verde en 2dab9c0 con
+el mismo árbol de código). PUL con 9 fragmentos de changelog.d/.
 
 ## Decisiones vigentes que obligan a todos
 
@@ -51,32 +48,22 @@ semana y media después (lección de los 42 fragmentos).
 
 - CI en rojo sobre la entrega m7-wef-pack: la run definitiva de la
   cabeza c04980c murió en el paso fmt (gofmt: internal/scenario/
-  scenario.go; build/vet/test no llegaron a correr en remoto).
-  Causa corregida en main por SEG (gofmt-scenario-ci, release
-  1ebed41); DIR aplicó la misma normalización en paralelo y el rebase
-  descartó su commit como duplicado exacto — sin daño. PENDIENTE de
-  cierre: run verde sobre la cabeza nueva (en curso al cerrar esta
-  pasada); m7-wef-pack y tema-claro siguen pendientes de verificación
-  hasta entonces.
+  scenario.go). Causa corregida en main por SEG (gofmt-scenario-ci,
+  1ebed41); carril Go probado en verde en remoto sobre 2dab9c0. Todo
+  run posterior murió por supersesión (enjambre rápido): la run
+  definitiva sobre 9e5d81b está pendiente al cerrar esta pasada — el
+  ALTA se cierra con esa run en verde; m7-wef-pack y tema-claro
+  esperan ese cierre.
 
 ## Tareas por rol
 
 ### IMP-1 (motor Go + sensor Rust)
-- [ ] (IMP-1) pol1c-collector — SIGUIENTE (declarada por IMP-1 al
-  soltar m7): dividir `sensor/src/collector.rs` (479 líneas) sin
-  cambio de comportamiento, si el análogo POL-1 de run.go aplica aquí
-  (propuesta de PUL tras verificar pol1b) — `sensor/`
+- [ ] (IMP-1) doctor-yara-check — SIGUIENTE (declarada por IMP-1 al
+  cerrar POL-1): `engine doctor` valida el directorio `-yara-rules`
+  como ya hace con intel — `internal/`
 - [ ] (IMP-1) s2-yara-memoria — DESBLOQUEADA por m3: escaneo de memoria
   de procesos con yara-x (decisión de atribución PID pendiente, ver
   contrato S-2↔M-3) — `sensor/`
-- [ ] (IMP-1) doctor-yara-check — `engine doctor` valida el directorio
-  `-yara-rules` como ya hace con intel (propuesta de IMP-1 adoptada;
-  pequeña) — `internal/`
-- [ ] (IMP-1) sensor-yara-readcap — el sensor lee las reglas sin tope
-  (collect_sources en sensor/src/yara.rs, fs::read entero): misma
-  disciplina read_capped que ya existe en su propio scan (propuesta
-  de SEG adoptada; sin prisa — lectura gated por fingerprint,
-  exposición menor) — `sensor/`
 
 ### IMP-2 (consola Next.js)
 - Sin claim activo: tema-claro entregada (ver Cerradas); su cola i18n
@@ -91,19 +78,26 @@ semana y media después (lección de los 42 fragmentos).
 > vivo, analista y la ficha de evento leen del diccionario ES/EN.
 
 ### PUL (pulimiento)
+- EN VUELO (claim ronda3-cifra-123, cd35127): consolidar los 9
+  fragmentos de changelog.d/ en CHANGELOG.md [Unreleased] (ronda 3)
+  y tercera deriva de la cifra de reglas (123 tras m7) — el fragmento
+  que SEG añada en vuelo queda para la ronda 4.
 - Candidata ligera (petición de IMP-2, que ofrece la zona): la línea
   de error del analista dice «conexion» sin tilde — una palabra en
   dict-es (analyst.errorLine) + su batería — `web/console/src/lib/
   i18n/`
 - Rutina en Decisiones: consolidar `changelog.d/` al cerrar cada ronda
-  (8 fragmentos a la espera).
+  (9 fragmentos a la espera).
 
 ### SEG (seguridad y bugs)
-- Ronda 6 read-only SIN hallazgos (desfase consola y M-4 a fondo) y
-  gofmt-scenario-ci entregada en paralelo con DIR (ver Cerradas).
-  Sin tarea reclamable: sec2-dpapi, regresión PR #28 y
-  reconexiones/spool necesitan Windows real — ver «Esperando al
-  humano». Nota menor viva: `is_excluded` compara prefijos en texto;
+- EN VUELO: yara-fuentes-capadas (claim b7a4a36, ronda 8) — tomó de
+  la cartera el sensor-yara-readcap, que IMP-1 no puede atender:
+  read_capped en collect_sources (tope 32 MiB alineado con
+  MaxPackBytes), lo excedido es pre_error sin partir el pack —
+  `sensor/src/yara.rs`
+- Después: sec2-dpapi, regresión PR #28 y reconexiones/spool
+  necesitan Windows real — ver «Esperando al humano». Nota menor
+  viva: `is_excluded` compara prefijos en texto;
   un junction dentro del directorio de reglas escanearía el eco del
   pack (ruido, sin impacto en evidencia); revisar cuando s2 aterrice
   en el sensor.
@@ -122,6 +116,11 @@ semana y media después (lección de los 42 fragmentos).
 
 ## Cerradas (últimas 24 h)
 
+- pol1c-collector — d938c65 + release ea27cf7 (IMP-1): ciclo de sesión
+  fuera de collector.rs (sessions.rs + stop.rs, byte-idéntico salvo
+  visibilidad); POL-1 COMPLETADO (api modularizada, run.go 336,
+  collector.rs 312); 57 tests, clippy -D warnings, cross-check
+  Windows en local. CIERRE PENDIENTE de run verde (ver ALTA)
 - tema-claro — 8f823bf + changelog 0ef1211 + release 02f9b1f (IMP-2):
   rampas del claro volteadas a legibles sobre blanco, sev-media en
   oro validada CVD, chips de código semánticos, shell sobre tokens;
