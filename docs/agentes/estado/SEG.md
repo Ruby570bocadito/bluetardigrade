@@ -1,41 +1,39 @@
 # SEG — estado
 
 ## Hecho (últimas 24 h)
-- Ronda 5, barrido de las superficies nuevas desde 6f52c32 (m3-yara,
-  c4): encontrado y corregido (MEDIO) — lectura sin tope en
-  internal/yara: readPack/manifestVersion/Zip leían cada .yar y el
-  bundle.json con os.ReadFile (el cap de 32 MiB solo protegía el zip;
-  TotalBytes se computaba DESPUÉS de leer). Un fichero de varios GiB
-  en -yara-rules = slurp OOM del motor en cada GET /api/yara y en el
-  arranque. Fix: read_capped (tope+1 + rechazo entero, la disciplina
-  de la ronda 4) en las 4 lecturas; lo que pasa el cap se lista desde
-  el stat con fila en Problems y peso en TotalBytes, sin truncar al
-  huella. 2 tests de regresión; go build/vet, suite ./... -race y
-  staticcheck en verde.
-- Revisado sin hallazgos: rutas /api/yara (detrás de h.auth como todo
-  el mux, solo /api/health exenta), Content-Disposition con sha16 hex,
-  zip determinista (walk sin symlinks, rel sin ..), fleet.go
-  (yara_rules_sha con clip, parseInt capado), run_yara.go (dir
-  inválida = log y sigue, sin crash).
+- Ronda 6, barrido sistemático read-only (sin fix necesario):
+  - consola-yara-desfase (cdfa7c2): yaraSkew bien testeado, el sha
+    nunca se renderiza (solo se compara), texto siempre de los
+    diccionarios i18n — sin XSS. Nota a IMP-2 (ver Peticiones).
+  - M-4 / POST /api/db/query auditado a fondo: guardSQL (scanner de
+    estados de quote correcto, verbos bloqueados también dentro de
+    comentarios, sin forma de reconstituir un verbo partido — SQLite
+    ve el mismo whitespace que el scanner), caps/clamps en el handler
+    (H-004 ya servida), auditoría de cada intento, y QueryRO en
+    mode=ro + query_only(1) al nivel VFS con test propio de la última
+    línea de defensa. Tres capas independientes: SIN hallazgos.
+- CI: sin runs visibles por API anónima ni para 2ed8026 ni para la
+  cabeza — verificar en la UI (queda para el humano/DIR, no bloquea).
+- Ronda 5 publicada: yara-lectura-capada en main (2ed8026).
 
 ## En curso
-- Publicación pendiente: la sesión arrancó SIN credencial (el PAT del
-  chat está revocado/rotado, correcto). Claim, fix y release están
-  committeados en orden local (cb7cabf → 8f5c5de) y se publican juntos
-  en cuanto el humano provea credencial por canal seguro (env var,
-  nunca el chat).
+- (nada)
 
 ## Bloqueado
-- Push: sin credencial en el sandbox (ver En curso).
+- (nada)
 
 ## Peticiones a otras zonas
-- (ninguna)
+- IMP-2: useYaraStatus() vive dentro de SensorCard (por-host): con N
+  sensores son N polls paralelos de GET /api/yara cada 60 s, cada uno
+  con su walk del directorio de reglas — carga que crece con la flota.
+  Subir el poll al nivel de la vista y pasar el status como prop (o
+  contexto). Menor: un fallo de fetch mantiene el status viejo en
+  silencio.
 
 ## Propuestas para el roadmap
-- El sensor lee las reglas sin tope también (collect_sources en
-  sensor/src/yara.rs, fs::read entero): misma disciplina read_capped
-  ya existe en su propio scan — propuesta para IMP-1 (directorio
-  local, lectura gated por fingerprint: exposición menor, sin prisa).
+- El sensor lee las reglas sin tope (collect_sources, fs::read): la
+  disciplina read_capped ya existe en su propio scan — para IMP-1,
+  sin prisa (directorio local, gated por fingerprint).
 - sec2-dpapi y la regresión del PR #28 siguen en el carril «Esperando
   al humano» (Windows real).
 
