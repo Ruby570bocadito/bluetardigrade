@@ -103,7 +103,7 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
 }) {
   const rows = useHostIndex()
   const { status, stats } = useEngine()
-  const { dict } = useI18n()
+  const { dict, lang } = useI18n()
   // one YARA pack poll per view: every sensor card below reads from it
   const yara = useYaraStatus()
   const engineVersion = stats?.version
@@ -203,7 +203,7 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
                       </span>
                       <Meter className="mt-2" value={r.score} max={maxScore} color={lv.color} />
                       <span className="mt-1.5 block text-[11px] text-zinc-500">
-                        {dict.hosts.cardMeta(r.alerts, r.critical, r.events, r.lastSeen ? formatTime(r.lastSeen) : '')}
+                        {dict.hosts.cardMeta(r.alerts, r.critical, r.events, r.lastSeen ? formatTime(r.lastSeen, lang) : '')}
                       </span>
                       {r.fleet?.groups?.length ? (
                         <span className="mt-1.5 flex flex-wrap gap-1" aria-label={dict.hosts.groupsAria(r.fleet.groups.join(', '))}>
@@ -286,7 +286,7 @@ function HostPage({ row, yara, onHunt, onOpenAlert, onOpenIncident }: {
           <span className="icon-tile h-10 w-10"><Desktop size={20} aria-hidden /></span>
           <div className="min-w-0 flex-1">
             <h2 className="truncate font-mono text-lg font-semibold text-zinc-50">{row.host}</h2>
-            <p className="text-xs text-zinc-500">{row.lastSeen ? dict.hosts.lastActivity(formatTime(row.lastSeen)) : dict.hosts.noActivity}</p>
+            <p className="text-xs text-zinc-500">{row.lastSeen ? dict.hosts.lastActivity(formatTime(row.lastSeen, lang)) : dict.hosts.noActivity}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" size="sm" onClick={() => onHunt(row.host)}
@@ -347,14 +347,14 @@ function HostPage({ row, yara, onHunt, onOpenAlert, onOpenIncident }: {
                   <li key={'a' + alertKey(item.alert)}>
                     <button type="button" onClick={() => item.alert.id && onOpenAlert(item.alert.id)}
                       className="grid w-full grid-cols-[64px_auto_minmax(0,1fr)] items-center gap-2 rounded-md border border-red-400/15 bg-red-500/[0.05] px-2 py-1.5 text-left hover:bg-red-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      <span className="font-mono text-[11px] tabular-nums text-zinc-500">{formatTime(item.at)}</span>
+                      <span className="font-mono text-[11px] tabular-nums text-zinc-500">{formatTime(item.at, lang)}</span>
                       <SeverityBadge severity={item.alert.severity} />
                       <span className="truncate text-xs text-zinc-100">{item.alert.rule_name}</span>
                     </button>
                   </li>
                 ) : (
                   <li key={'e' + item.event.id} className="grid grid-cols-[64px_120px_minmax(0,1fr)] items-center gap-2 px-2 py-1">
-                    <span className="font-mono text-[11px] tabular-nums text-zinc-500">{formatTime(item.at)}</span>
+                    <span className="font-mono text-[11px] tabular-nums text-zinc-500">{formatTime(item.at, lang)}</span>
                     <span className="truncate font-mono text-[11px] text-primary-link/80">{item.event.type}</span>
                     <span className="truncate font-mono text-[11px] text-zinc-400" title={eventDetail(item.event, lang)}>{eventDetail(item.event, lang)}</span>
                   </li>

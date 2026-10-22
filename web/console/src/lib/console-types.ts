@@ -452,8 +452,9 @@ export function severityOf(value: string | undefined): Severity {
 
 // Locale for the shared formatters: the console language chooses the
 // rendering, ES stays the default so existing call sites and the server
-// render keep today's output (IDEA-10 phase 11).
-function localeOf(lang: Lang): string {
+// render keep today's output (IDEA-10 phase 11). Exported for the
+// number call-sites (toLocaleString) that follow the same language.
+export function localeOf(lang: Lang): string {
   return lang === 'en' ? 'en-US' : 'es-ES'
 }
 

@@ -231,7 +231,7 @@ function EvidenceSection({
   const [kind, setKind] = useState<EvidenceKind>('note')
   const [label, setLabel] = useState('')
   const [detail, setDetail] = useState('')
-  const { dict } = useI18n()
+  const { dict, lang } = useI18n()
   const copy = template ? dict.playbook.templates[template.id] : null
 
   return (
@@ -293,7 +293,7 @@ function EvidenceSection({
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-xs text-zinc-200">{e.label}</span>
                 {e.detail && <span className="mt-0.5 block whitespace-pre-wrap text-[11px] leading-relaxed text-zinc-500">{e.detail}</span>}
-                <span className="mt-0.5 block text-[10px] text-zinc-600">{formatDateTime(e.at)}</span>
+                <span className="mt-0.5 block text-[10px] text-zinc-600">{formatDateTime(e.at, lang)}</span>
               </span>
               <button
                 type="button"
@@ -328,7 +328,7 @@ function ChronologySection({
 }) {
   const [at, setAt] = useState(localInputValue)
   const [text, setText] = useState('')
-  const { dict } = useI18n()
+  const { dict, lang } = useI18n()
   const chrono = [...state.chronology].sort((a, b) => a.at.localeCompare(b.at))
 
   return (
@@ -372,7 +372,7 @@ function ChronologySection({
               <span aria-hidden className="absolute -left-[21px] top-1 h-2 w-2 rounded-full border border-zinc-700 bg-zinc-900" />
               <p className="text-xs leading-relaxed text-zinc-200">{c.text}</p>
               <p className="mt-0.5 flex items-center gap-2 text-[10px] text-zinc-600">
-                {formatDateTime(c.at)}
+                {formatDateTime(c.at, lang)}
                 <button
                   type="button"
                   aria-label={dict.playbook.removeMilestoneAria(c.text)}

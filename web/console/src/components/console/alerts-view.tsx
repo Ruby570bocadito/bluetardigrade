@@ -81,7 +81,7 @@ type Props = {
 
 export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost, onOpenIncident }: Props) {
   const { alerts, status, lifecycleUpdates } = useEngine()
-  const { dict } = useI18n()
+  const { dict, lang } = useI18n()
   const me = useConsoleUser()
   const reduce = useReducedMotion()
   const [sevFilter, setSevFilterState] = useState<SeverityFilter>('all')
@@ -402,7 +402,7 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
                       <span className="mt-1 block truncate font-mono text-xs text-zinc-500">{al.summary}</span>
                     </span>
                     <span className="hidden shrink-0 font-mono text-xs tabular-nums text-zinc-500 sm:inline">
-                      {formatTime(al.timestamp)}
+                      {formatTime(al.timestamp, lang)}
                     </span>
                     <CaretDown size={13} aria-hidden className={`shrink-0 text-zinc-500 transition-transform ${open ? 'rotate-180' : ''}`} />
                   </button>
@@ -548,7 +548,7 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
                             type="checkbox"
                             checked={picked}
                             onChange={() => selection.toggle(key)}
-                            aria-label={dict.alerts.selectRowAria(al.rule_name, formatTime(al.timestamp))}
+                            aria-label={dict.alerts.selectRowAria(al.rule_name, formatTime(al.timestamp, lang))}
                             className="h-3.5 w-3.5 accent-primary-tint"
                           />
                         </td>
@@ -590,7 +590,7 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
                           )}
                         </td>
                         <td className="whitespace-nowrap px-3 py-2.5 text-right align-middle font-mono text-xs tabular-nums text-zinc-400">
-                          {formatTime(al.timestamp)}
+                          {formatTime(al.timestamp, lang)}
                         </td>
                         <td className="px-2 py-2.5 text-right align-middle">
                           <CaretDown
@@ -683,7 +683,7 @@ function AlertDetail({
   onHost?: (host: string) => void
   onOpenIncident?: (id: string) => void
 }) {
-  const { dict } = useI18n()
+  const { dict, lang } = useI18n()
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-start justify-between gap-3 border-b border-zinc-800 px-4 py-3">
@@ -692,7 +692,7 @@ function AlertDetail({
           <h3 className="mt-2 truncate text-sm font-medium text-zinc-100" title={alert.rule_name}>
             {alert.rule_name}
           </h3>
-          <p className="mt-0.5 font-mono text-[11px] text-zinc-500">{formatDateTime(alert.timestamp)}</p>
+          <p className="mt-0.5 font-mono text-[11px] text-zinc-500">{formatDateTime(alert.timestamp, lang)}</p>
         </div>
         <button
           type="button"
@@ -866,7 +866,7 @@ function StatusChip({ status }: { status?: SfAlertStatus }) {
 // error states are tracked locally.
 function TriagePanel({ alert }: { alert: SfAlert }) {
   const { applyTriage } = useEngine()
-  const { dict } = useI18n()
+  const { dict, lang } = useI18n()
   const status: SfAlertStatus = alert.status ?? 'new'
   const [noteDraft, setNoteDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -893,7 +893,7 @@ function TriagePanel({ alert }: { alert: SfAlert }) {
         <p className="font-mono text-[10px] text-zinc-500">
           {alert.id ? `id ${alert.id}` : dict.alerts.noEngineId}
           {alert.status_by ? ` · ${alert.status_by}` : ''}
-          {alert.status_at ? ` · ${formatTime(alert.status_at)}` : ''}
+          {alert.status_at ? ` · ${formatTime(alert.status_at, lang)}` : ''}
         </p>
       </div>
       {alert.status_note && status !== 'new' && (
@@ -952,7 +952,7 @@ function TriagePanel({ alert }: { alert: SfAlert }) {
 // tracked locally.
 function AssignPanel({ alert }: { alert: SfAlert }) {
   const { applyTriage } = useEngine()
-  const { dict } = useI18n()
+  const { dict, lang } = useI18n()
   const me = useConsoleUser()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -981,12 +981,12 @@ function AssignPanel({ alert }: { alert: SfAlert }) {
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <p className="text-[10px] uppercase tracking-wider text-zinc-500">{dict.alerts.assignHeading}</p>
         {alert.assignee && alert.assigned_at && (
-          <p className="font-mono text-[10px] text-zinc-500">{formatDateTime(alert.assigned_at)}</p>
+          <p className="font-mono text-[10px] text-zinc-500">{formatDateTime(alert.assigned_at, lang)}</p>
         )}
       </div>
       {alert.assignee ? (
         <p className="mb-2 text-xs leading-relaxed text-zinc-300">
-          {dict.alerts.assigneeLine(alert.assignee, alert.assigned_by ?? dict.alerts.nd, alert.assigned_at ? formatDateTime(alert.assigned_at) : dict.alerts.nd)}
+          {dict.alerts.assigneeLine(alert.assignee, alert.assigned_by ?? dict.alerts.nd, alert.assigned_at ? formatDateTime(alert.assigned_at, lang) : dict.alerts.nd)}
         </p>
       ) : (
         <p className="mb-2 text-xs leading-relaxed text-zinc-500">{dict.alerts.unassignedProse}</p>

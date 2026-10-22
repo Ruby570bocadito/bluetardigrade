@@ -128,7 +128,7 @@ export function useYaraStatus(): YaraStatusState {
 export function SensorCard({ host, yara }: { host?: FleetHost; yara: YaraStatusState }) {
   const { enroll } = useFleet()
   const { stats } = useEngine()
-  const { dict } = useI18n()
+  const { dict, lang } = useI18n()
   const engineVersion = stats?.version
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -167,7 +167,7 @@ export function SensorCard({ host, yara }: { host?: FleetHost; yara: YaraStatusS
               {yara.failed && (
                 <> · <span
                   className="text-amber-300"
-                  title={dict.fleet.yara.refreshFailedTitle(yara.asOf ? formatDateTime(yara.asOf) : '—')}
+                  title={dict.fleet.yara.refreshFailedTitle(yara.asOf ? formatDateTime(yara.asOf, lang) : '—')}
                 >{dict.fleet.yara.refreshFailed}</span></>
               )}
             </>,
@@ -208,7 +208,7 @@ export function SensorCard({ host, yara }: { host?: FleetHost; yara: YaraStatusS
         <h3 className="text-sm font-medium text-zinc-100">{dict.fleet.sensorCard.title}</h3>
         <FleetStatusPill host={host} />
         <SensorVersionChip host={host} engineVersion={engineVersion} />
-        <span className="ml-auto text-[11px] text-zinc-500">{dict.fleet.sensorCard.inInventorySince(formatDateTime(host.first_seen))}</span>
+        <span className="ml-auto text-[11px] text-zinc-500">{dict.fleet.sensorCard.inInventorySince(formatDateTime(host.first_seen, lang))}</span>
       </div>
       <dl className="grid gap-x-6 gap-y-2.5 px-5 py-4 sm:grid-cols-2">
         {rows.map((row) => (

@@ -20,7 +20,7 @@ import { BASELINE_RULE_ID, fetchIntel, intelAlerts, kindBreakdown, learnText, li
 const POLL_MS = 30_000
 
 export function IntelView() {
-  const { dict } = useI18n()
+  const { dict, lang } = useI18n()
   const { alerts } = useEngine()
   const [intel, setIntel] = useState<IntelPayload | null>(null)
   const [error, setError] = useState('')
@@ -117,7 +117,7 @@ export function IntelView() {
                     <TableCell className={`px-4 py-2 tabular-nums ${l.skipped > 0 ? 'text-amber-300' : 'text-zinc-500'}`} title={l.skipped > 0 ? dict.intel.skippedTitle : undefined}>
                       {l.skipped}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap px-4 py-2 text-zinc-500">{formatDateTime(l.modified)}</TableCell>
+                    <TableCell className="whitespace-nowrap px-4 py-2 text-zinc-500">{formatDateTime(l.modified, lang)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -140,7 +140,7 @@ export function IntelView() {
                   <span className="rounded-md border border-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">{list ? dict.intel.listTag(list) : dict.intel.baselineTag}</span>
                   <span className="min-w-0 flex-1 truncate text-zinc-200" title={a.summary}>{a.summary}</span>
                   <span className="font-mono text-[11px] text-zinc-500">{a.host}</span>
-                  <span className="text-[11px] tabular-nums text-zinc-500">{formatTime(a.timestamp)}</span>
+                  <span className="text-[11px] tabular-nums text-zinc-500">{formatTime(a.timestamp, lang)}</span>
                 </li>
               )
             })}

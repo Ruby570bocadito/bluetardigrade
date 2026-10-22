@@ -38,7 +38,7 @@ import { DonutChart } from '@/components/charts/donut'
 import { Meter } from '@/components/charts/bars'
 import { LineChart, type LineSlot } from '@/components/charts/line-chart'
 import { SEV_COLOR, SEV_ICON } from '@/components/charts/severity'
-import { formatDateTime } from '@/lib/console-types'
+import { formatDateTime, localeOf } from '@/lib/console-types'
 import { buildDonut } from '@/lib/donut'
 import {
   adKind,
@@ -140,7 +140,7 @@ function FindingItem({ finding }: { finding: ADFinding }) {
 
 /** The snapshot explorer: kind tabs, free-text search, real pagination. */
 function ObjectExplorer() {
-  const { dict } = useI18n()
+  const { dict, lang } = useI18n()
   const [kind, setKind] = useState<ADKind>('user')
   const [queryInput, setQueryInput] = useState('')
   const [query, setQuery] = useState('')
@@ -247,7 +247,7 @@ function ObjectExplorer() {
             </Table>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800/60 px-4 py-2.5 text-[11px] text-zinc-500">
-            <span className="tabular-nums">{dict.directory.explorer.range(from, to, total.toLocaleString('es-ES'))}</span>
+            <span className="tabular-nums">{dict.directory.explorer.range(from, to, total.toLocaleString(localeOf(lang)))}</span>
             <span className="flex gap-1.5">
               <Button type="button" variant="ghost" size="sm" className="px-2.5 text-xs text-zinc-300" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
                 {dict.directory.explorer.prev}
@@ -324,7 +324,7 @@ function SyncRow({ label, text }: { label: string; text: string }) {
 type LoadState = 'loading' | 'unarmed' | 'error' | 'ok'
 
 export function DirectoryView() {
-  const { dict } = useI18n()
+  const { dict, lang } = useI18n()
   const { fleet } = useFleet()
   const [status, setStatus] = useState<ADStatus | null>(null)
   const [posture, setPosture] = useState<ADPosture | null>(null)
@@ -422,19 +422,19 @@ export function DirectoryView() {
             </div>
             <dl className="grid gap-y-0 sm:grid-cols-2">
               <div>
-                <SyncRow label={dict.directory.connector.lastAttempt} text={status.last_sync_at ? formatDateTime(status.last_sync_at) : '—'} />
-                <SyncRow label={dict.directory.connector.lastSuccess} text={status.last_success_at ? formatDateTime(status.last_success_at) : dict.directory.connector.noneYet} />
+                <SyncRow label={dict.directory.connector.lastAttempt} text={status.last_sync_at ? formatDateTime(status.last_sync_at, lang) : '—'} />
+                <SyncRow label={dict.directory.connector.lastSuccess} text={status.last_success_at ? formatDateTime(status.last_success_at, lang) : dict.directory.connector.noneYet} />
               </div>
               <div>
-                <SyncRow label={dict.directory.connector.next} text={status.next_sync_at ? formatDateTime(status.next_sync_at) : dict.directory.connector.stopped} />
-                <SyncRow label={dict.directory.connector.attempts} text={status.syncs.toLocaleString('es-ES')} />
+                <SyncRow label={dict.directory.connector.next} text={status.next_sync_at ? formatDateTime(status.next_sync_at, lang) : dict.directory.connector.stopped} />
+                <SyncRow label={dict.directory.connector.attempts} text={status.syncs.toLocaleString(localeOf(lang))} />
               </div>
             </dl>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-zinc-800/60 px-4 py-2.5 text-[11px] tabular-nums text-zinc-500">
-              <span>{dict.directory.connector.users}{status.objects.users.toLocaleString('es-ES')}</span>
-              <span>{dict.directory.connector.groups}{status.objects.groups.toLocaleString('es-ES')}</span>
-              <span>{dict.directory.connector.computers}{status.objects.computers.toLocaleString('es-ES')}</span>
-              <span>{dict.directory.connector.ous}{status.objects.ous.toLocaleString('es-ES')}</span>
+              <span>{dict.directory.connector.users}{status.objects.users.toLocaleString(localeOf(lang))}</span>
+              <span>{dict.directory.connector.groups}{status.objects.groups.toLocaleString(localeOf(lang))}</span>
+              <span>{dict.directory.connector.computers}{status.objects.computers.toLocaleString(localeOf(lang))}</span>
+              <span>{dict.directory.connector.ous}{status.objects.ous.toLocaleString(localeOf(lang))}</span>
               {status.truncated && <span className="rounded border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-amber-200">{dict.directory.connector.truncatedBadge}</span>}
             </div>
             {status.last_error && (
@@ -472,9 +472,9 @@ export function DirectoryView() {
                       <Desktop size={15} aria-hidden className="text-zinc-500" />
                       {dict.directory.coverage.title}
                     </span>
-                    <span className="text-xs tabular-nums text-zinc-300">{dict.directory.coverage.inDirectory}<b className="font-semibold text-zinc-100">{cov.inDirectory.toLocaleString('es-ES')}</b></span>
-                    {cov.withSensor !== null && <span className="text-xs tabular-nums text-zinc-300">{dict.directory.coverage.withSensor}<b className="font-semibold text-emerald-300">{cov.withSensor.toLocaleString('es-ES')}</b></span>}
-                    <span className="text-xs tabular-nums text-zinc-300">{dict.directory.coverage.withoutSensor}<b className="font-semibold text-amber-200">{cov.withoutSensor.toLocaleString('es-ES')}</b></span>
+                    <span className="text-xs tabular-nums text-zinc-300">{dict.directory.coverage.inDirectory}<b className="font-semibold text-zinc-100">{cov.inDirectory.toLocaleString(localeOf(lang))}</b></span>
+                    {cov.withSensor !== null && <span className="text-xs tabular-nums text-zinc-300">{dict.directory.coverage.withSensor}<b className="font-semibold text-emerald-300">{cov.withSensor.toLocaleString(localeOf(lang))}</b></span>}
+                    <span className="text-xs tabular-nums text-zinc-300">{dict.directory.coverage.withoutSensor}<b className="font-semibold text-amber-200">{cov.withoutSensor.toLocaleString(localeOf(lang))}</b></span>
                     <span className="text-[11px] text-zinc-600">{dict.directory.coverage.detail}</span>
                   </div>
                 )
@@ -484,7 +484,7 @@ export function DirectoryView() {
                 {/* score + donut, the two overview numbers */}
                 <ChartCard
                   title={dict.directory.score.title}
-                  subtitle={dict.directory.score.subtitle(formatDateTime(posture.generated_at), posture.objects_checked.toLocaleString('es-ES'))}
+                  subtitle={dict.directory.score.subtitle(formatDateTime(posture.generated_at, lang), posture.objects_checked.toLocaleString(localeOf(lang)))}
                   icon={ChartPie}
                   label={dict.directory.score.label}
                   legend={donutEntries.map((e) => ({ key: e.key, label: e.label, color: SEV_COLOR[e.key as keyof typeof SEV_COLOR] ?? 'var(--sev-info)' }))}
