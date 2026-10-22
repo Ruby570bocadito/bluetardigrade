@@ -393,8 +393,7 @@ export const dictEs = {
       low: 'baja',
       info: 'info',
     },
-    // Severity names for the strip of this view. Views not swept yet keep
-    // the shared SEVERITY_LABEL until their own round.
+    // Severity names for the strip of this view.
     sevLabels: {
       critical: 'Crítica',
       high: 'Alta',
@@ -1623,6 +1622,8 @@ export const dictEs = {
     heat: {
       caption: 'Alertas por equipo y táctica de MITRE ATT&CK en la ventana recibida',
       colHost: 'Equipo',
+      hostAria: (host: string): string => `Ver alertas de ${host}`,
+      cellTitle: (host: string, tactic: string, value: number): string => `${host} · ${tactic}: ${value} alertas`,
       less: 'menos',
       scale: (max: number): string => `más alertas (máximo ${max} por celda)`,
     },
@@ -2321,6 +2322,24 @@ export const dictEs = {
       'lateral-movement': 'Movimiento lateral',
       collection: 'Recolección',
       'command-and-control': 'Mando y control',
+      exfiltration: 'Exfiltración',
+      impact: 'Impacto',
+    },
+    // Abreviaturas para las celdas pequeñas (matriz y mapa de calor);
+    // el nombre completo va en el title y en el aria.
+    tacticsShort: {
+      reconnaissance: 'Recon',
+      'resource-development': 'Recursos',
+      'initial-access': 'Acceso',
+      execution: 'Ejecución',
+      persistence: 'Persistencia',
+      'privilege-escalation': 'Escalada',
+      'defense-evasion': 'Evasión',
+      'credential-access': 'Credenciales',
+      discovery: 'Descubrim.',
+      'lateral-movement': 'Lateral',
+      collection: 'Recolección',
+      'command-and-control': 'C2',
       exfiltration: 'Exfiltración',
       impact: 'Impacto',
     },

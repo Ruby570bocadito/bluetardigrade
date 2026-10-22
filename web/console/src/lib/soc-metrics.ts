@@ -7,14 +7,6 @@ import type { EngineStats, RuleMeta, Severity, SfAlert, SfEvent } from './consol
 
 export const SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low', 'info']
 
-export const SEVERITY_LABEL: Record<Severity, string> = {
-  critical: 'Crítica',
-  high: 'Alta',
-  medium: 'Media',
-  low: 'Baja',
-  info: 'Info',
-}
-
 // MITRE ATT&CK Enterprise tactics in kill-chain order.
 export const ATTACK_TACTICS = [
   { slug: 'reconnaissance', label: 'Reconocimiento', short: 'Recon' },

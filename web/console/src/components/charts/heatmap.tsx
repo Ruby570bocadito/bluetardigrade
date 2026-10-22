@@ -28,8 +28,8 @@ export function HostTacticHeatmap({ matrix, onHost }: { matrix: HostTacticMatrix
           <tr>
             <th scope="col" className="w-40 px-2 pb-1.5 text-left text-[11px] font-medium text-zinc-500">{dict.charts.heat.colHost}</th>
             {matrix.tactics.map((t) => (
-              <th key={t.slug} scope="col" title={t.label} className="min-w-14 px-1 pb-1.5 text-center text-[11px] font-medium text-zinc-500">
-                {t.short}
+              <th key={t.slug} scope="col" title={dict.rules.tactics[t.slug]} className="min-w-14 px-1 pb-1.5 text-center text-[11px] font-medium text-zinc-500">
+                {dict.rules.tacticsShort[t.slug]}
               </th>
             ))}
             <th scope="col" className="w-14 px-2 pb-1.5 text-right text-[11px] font-medium text-zinc-500">Total</th>
@@ -43,7 +43,7 @@ export function HostTacticHeatmap({ matrix, onHost }: { matrix: HostTacticMatrix
                   <button
                     type="button"
                     onClick={() => onHost(host)}
-                    aria-label={`Ver alertas de ${host}`}
+                    aria-label={dict.charts.heat.hostAria(host)}
                     className="max-w-full truncate rounded-sm text-left hover:text-primary-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     {host}
@@ -59,7 +59,7 @@ export function HostTacticHeatmap({ matrix, onHost }: { matrix: HostTacticMatrix
                 return (
                   <td
                     key={t.slug}
-                    title={`${host} · ${t.label}: ${value} alertas`}
+                    title={dict.charts.heat.cellTitle(host, dict.rules.tactics[t.slug], value)}
                     onPointerEnter={() => setHover(key)}
                     onPointerLeave={() => setHover(null)}
                     className={cn(

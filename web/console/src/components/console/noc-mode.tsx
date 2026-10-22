@@ -22,7 +22,7 @@ import { BarList, Meter } from '@/components/charts/bars'
 import { SEV_COLOR, SeverityIcon } from '@/components/charts/severity'
 import { buildEntityGraph } from '@/lib/entity-graph'
 import { resolveTheme, THEME_EVENT, THEME_STORAGE_KEY } from '@/lib/theme'
-import { hostTacticMatrix, SEVERITIES, SEVERITY_LABEL, severityCounts, tacticCoverage, topCounts } from '@/lib/soc-metrics'
+import { hostTacticMatrix, SEVERITIES, severityCounts, tacticCoverage, topCounts } from '@/lib/soc-metrics'
 import { triageSummary } from '@/lib/operations'
 import { formatTime } from '@/lib/console-types'
 
@@ -229,7 +229,7 @@ function SituationSlide() {
             className="mt-4 space-y-4"
             rows={SEVERITIES.map((s) => ({
               key: s,
-              label: <span className="flex items-center gap-2 text-sm"><SeverityIcon severity={s} size={16} />{SEVERITY_LABEL[s]}</span>,
+              label: <span className="flex items-center gap-2 text-sm"><SeverityIcon severity={s} size={16} />{dict.alerts.sevLabels[s]}</span>,
               value: counts[s],
               color: SEV_COLOR[s],
             }))}

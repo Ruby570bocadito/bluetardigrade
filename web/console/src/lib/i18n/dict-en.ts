@@ -1580,6 +1580,8 @@ export const dictEn: Dict = {
     heat: {
       caption: 'Alerts by host and MITRE ATT&CK tactic in the received window',
       colHost: 'Host',
+      hostAria: (host: string): string => `View ${host}'s alerts`,
+      cellTitle: (host: string, tactic: string, value: number): string => `${host} · ${tactic}: ${value} alerts`,
       less: 'fewer',
       scale: (max: number): string => `more alerts (max ${max} per cell)`,
     },
@@ -2271,6 +2273,24 @@ export const dictEn: Dict = {
       'lateral-movement': 'Lateral Movement',
       collection: 'Collection',
       'command-and-control': 'Command and Control',
+      exfiltration: 'Exfiltration',
+      impact: 'Impact',
+    },
+    // Short names for the small cells (matrix and heatmap); the full
+    // name goes in the title and the aria.
+    tacticsShort: {
+      reconnaissance: 'Recon',
+      'resource-development': 'Resourcing',
+      'initial-access': 'Access',
+      execution: 'Execution',
+      persistence: 'Persistence',
+      'privilege-escalation': 'Escalation',
+      'defense-evasion': 'Evasion',
+      'credential-access': 'Credentials',
+      discovery: 'Discovery',
+      'lateral-movement': 'Lateral',
+      collection: 'Collection',
+      'command-and-control': 'C2',
       exfiltration: 'Exfiltration',
       impact: 'Impact',
     },

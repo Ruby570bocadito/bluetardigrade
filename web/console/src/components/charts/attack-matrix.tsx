@@ -42,11 +42,11 @@ export function AttackMatrix({
           // light ramp steps carry dark ink, dark steps white ink (contrast)
           const darkInk = s >= 3
           const scenarios = validations?.get(cell.slug) ?? 0
-          const name = dict.charts.matrix.cellAria(cell.label, cell.alerts, cell.rules, scenarios ? dict.charts.matrix.cellScenarios(scenarios) : '')
+          const name = dict.charts.matrix.cellAria(dict.rules.tactics[cell.slug], cell.alerts, cell.rules, scenarios ? dict.charts.matrix.cellScenarios(scenarios) : '')
           const body = (
             <>
-              <span className={cn('block truncate text-[11px]', s < 0 ? 'text-zinc-400' : darkInk ? 'text-[#07111f]/80' : 'text-white/80')} title={cell.label}>
-                {cell.short}
+              <span className={cn('block truncate text-[11px]', s < 0 ? 'text-zinc-400' : darkInk ? 'text-[#07111f]/80' : 'text-white/80')} title={dict.rules.tactics[cell.slug]}>
+                {dict.rules.tacticsShort[cell.slug]}
               </span>
               <span className={cn('mt-1 block text-xl font-semibold leading-none', s < 0 ? 'text-zinc-500' : darkInk ? 'text-[#07111f]' : 'text-white')}>
                 {cell.alerts}
@@ -71,7 +71,7 @@ export function AttackMatrix({
                   type="button"
                   onClick={() => (openValidated ? onSelectValidated?.(cell) : onSelect?.(cell))}
                   aria-label={scenarios > 0 ? `${name}. ${dict.charts.matrix.openValidated}` : `${name}. ${dict.charts.matrix.openAlerts}`}
-                  title={cell.label}
+                  title={dict.rules.tactics[cell.slug]}
                   style={style}
                   className={cn(base, 'transition-[filter] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--viz-surface)]')}
                 >
