@@ -195,6 +195,10 @@ CREATE INDEX IF NOT EXISTS alerts_id_idx ON alerts(CASE WHEN json_valid(json) TH
 		db.Close()
 		return nil, err
 	}
+	if err := s.migrateADReadAudit(); err != nil {
+		db.Close()
+		return nil, err
+	}
 	// seed the live counters with what is already on disk (a restart
 	// keeps serving history, so the stats must reflect it)
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM events`).Scan(&s.events); err != nil {
@@ -500,25 +504,45 @@ WITH RECURSIVE h(x) AS (
 }
 
 // Prune deletes rows older than the retention window and reports how
-// many were removed per table. A retention of 0 (keep forever) is a
-// no-op handled by the caller.
-func (s *Store) Prune(retention time.Duration) (events, alerts int64, err error) {
-	cutoff := time.Now().Add(-retention).UnixNano()
+// many were removed per family: events, alerts and the audit tables
+// (query_audit, ad_read_audit) plus the AD posture history, which
+// carries personal data and addresses and so ages out under the same
+// window (SEC-9: retention configurable for everything personal). A
+// retention of 0 (keep forever) is a no-op handled by the caller.
+func (s *Store) Prune(retention time.Duration) (events, alerts, auditRows int64, err error) {
+	// events/alerts store nanoseconds; the audit tables and the
+	// posture history store unix SECONDS (RecordQueryAudit and
+	// SaveADPostureJSON contract): two cutoffs, same window.
+	now := time.Now().Add(-retention)
+	cutoffNano := now.UnixNano()
+	cutoffSec := now.Unix()
 	s.wmu.Lock()
 	defer s.wmu.Unlock()
-	res, err := s.db.Exec(`DELETE FROM events WHERE ts < ?`, cutoff)
+	res, err := s.db.Exec(`DELETE FROM events WHERE ts < ?`, cutoffNano)
 	if err != nil {
-		return 0, 0, fmt.Errorf("store: prune events: %w", err)
+		return 0, 0, 0, fmt.Errorf("store: prune events: %w", err)
 	}
 	events, _ = res.RowsAffected()
-	res, err = s.db.Exec(`DELETE FROM alerts WHERE ts < ?`, cutoff)
+	res, err = s.db.Exec(`DELETE FROM alerts WHERE ts < ?`, cutoffNano)
 	if err != nil {
-		return events, 0, fmt.Errorf("store: prune alerts: %w", err)
+		return events, 0, 0, fmt.Errorf("store: prune alerts: %w", err)
 	}
 	alerts, _ = res.RowsAffected()
 	atomic.AddInt64(&s.events, -events)
 	atomic.AddInt64(&s.alerts, -alerts)
-	return events, alerts, nil
+	for _, stmt := range []string{
+		`DELETE FROM query_audit WHERE ts < ?`,
+		`DELETE FROM ad_read_audit WHERE ts < ?`,
+		`DELETE FROM ad_posture_history WHERE at < ?`,
+	} {
+		res, err := s.db.Exec(stmt, cutoffSec)
+		if err != nil {
+			return events, alerts, auditRows, fmt.Errorf("store: prune audit: %w", err)
+		}
+		n, _ := res.RowsAffected()
+		auditRows += n
+	}
+	return events, alerts, auditRows, nil
 }
 
 // ------------------------------------------------------------- where

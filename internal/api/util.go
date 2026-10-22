@@ -38,6 +38,22 @@ func oneLine(s string) string {
 	return b.String()
 }
 
+// auditSafe linearizes and caps a piece of user-controlled text for
+// an audit trail or log line (SEC-9): control bytes percent-escaped
+// by oneLine and a rune-safe ceiling, so a pasted credential or a
+// hostile header cannot pin unbounded data to the audit store or the
+// stderr every log shipper downstream.
+func auditSafe(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	r := []rune(oneLine(s))
+	if len(r) > max {
+		r = r[:max]
+	}
+	return string(r)
+}
+
 func limitFrom(r *http.Request, def int) int {
 	q := r.URL.Query().Get("limit")
 	if q == "" {

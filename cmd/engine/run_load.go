@@ -152,8 +152,8 @@ func openStore(o *options) *store.Store {
 	// first prune right away, then on a ticker; only loud
 	// when something was actually removed
 	if o.storeRetention > 0 {
-		if dEv, dAl, perr := st.Prune(o.storeRetention); perr == nil && dEv+dAl > 0 {
-			fmt.Printf("[ENGINE] store pruned %d events / %d alerts older than %s\n", dEv, dAl, o.storeRetention)
+		if dEv, dAl, dAu, perr := st.Prune(o.storeRetention); perr == nil && dEv+dAl+dAu > 0 {
+			fmt.Printf("[ENGINE] store pruned %d events / %d alerts / %d audit rows older than %s\n", dEv, dAl, dAu, o.storeRetention)
 		}
 	}
 	return st

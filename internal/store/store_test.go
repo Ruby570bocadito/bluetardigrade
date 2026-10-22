@@ -214,7 +214,7 @@ func TestPruneRespectsCutoffAndCounts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dEv, dAl, err := s.Prune(24 * time.Hour)
+	dEv, dAl, _, err := s.Prune(24 * time.Hour)
 	if err != nil {
 		t.Fatalf("Prune: %v", err)
 	}

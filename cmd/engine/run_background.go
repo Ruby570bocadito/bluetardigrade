@@ -275,8 +275,8 @@ func startStorePruner(ctx context.Context, st *store.Store, retention time.Durat
 				case <-ctx.Done():
 					return
 				case <-t.C:
-					if dEv, dAl, perr := st.Prune(retention); perr == nil && dEv+dAl > 0 {
-						fmt.Printf("[ENGINE] store pruned %d events / %d alerts older than %s\n", dEv, dAl, retention)
+					if dEv, dAl, dAu, perr := st.Prune(retention); perr == nil && dEv+dAl+dAu > 0 {
+						fmt.Printf("[ENGINE] store pruned %d events / %d alerts / %d audit rows older than %s\n", dEv, dAl, dAu, retention)
 					}
 				}
 			}

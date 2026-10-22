@@ -10,6 +10,7 @@ package api
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -99,7 +100,10 @@ func adPageOffset(r *http.Request) int {
 // handleADObjects serves GET /api/ad/objects/{kind}?q=&limit=&offset=
 // with kind in user|group|computer|ou. The free-text query runs
 // against the LOCAL snapshot (SQLite LIKE with escaped wildcards):
-// operator input never composes an LDAP filter.
+// operator input never composes an LDAP filter. Reads of kind=user
+// are audited (SEC-9): whoever consults the record of a person
+// leaves a trail of who, when and what they searched for; groups,
+// computers and OUs are not personal records and leave none.
 func (h *Hub) handleADObjects(w http.ResponseWriter, r *http.Request) {
 	c := h.adConnector()
 	if c == nil {
@@ -113,12 +117,51 @@ func (h *Hub) handleADObjects(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, fmt.Sprintf("unknown object kind %q: use user, group, computer or ou", kind))
 		return
 	}
-	page, err := c.Objects(kind, r.URL.Query().Get("q"), adPageLimit(r), adPageOffset(r))
+	needle := r.URL.Query().Get("q")
+	page, err := c.Objects(kind, needle, adPageLimit(r), adPageOffset(r))
+	if kind == store.ADKindUser {
+		if err != nil {
+			h.auditADUserRead(r, needle, "error", 0)
+		} else {
+			h.auditADUserRead(r, needle, "ok", len(page.Objects))
+		}
+	}
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "the AD snapshot query failed (see engine log)")
 		return
 	}
 	writeJSON(w, page)
+}
+
+// Caps of the user-read audit row: the account the console declares
+// is a login name (X-SF-Account), the needle a search term; neither
+// is worth unbounded disk.
+const (
+	adAuditAccountCap = 64
+	adAuditQCap       = 128
+)
+
+// auditADUserRead appends the SEC-9 audit row of one directory read
+// of kind=user. The account travels in X-SF-Account, built by the
+// console proxy from its session (the browser cannot choose it, the
+// same discipline as X-SF-Scope); a direct bearer caller carries no
+// header and the row keeps its remote address. A store that cannot
+// take the row is a log line, never a reason to fail the read.
+func (h *Hub) auditADUserRead(r *http.Request, needle, status string, rows int) {
+	st := h.store
+	if st == nil {
+		return
+	}
+	if err := st.RecordADReadAudit(store.ADReadAuditRow{
+		TS:      time.Now().UTC(),
+		Remote:  remoteIP(r.RemoteAddr),
+		Account: auditSafe(r.Header.Get("X-SF-Account"), adAuditAccountCap),
+		Q:       auditSafe(needle, adAuditQCap),
+		Status:  status,
+		Rows:    rows,
+	}); err != nil {
+		log.Printf("[API] ad read audit write failed: %v", err)
+	}
 }
 
 // postureWire is the response envelope: ready=false when the
