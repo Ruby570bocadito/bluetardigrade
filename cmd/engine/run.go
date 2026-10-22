@@ -72,6 +72,8 @@ func runEngine(o *options, interactive bool) error {
 
 	intelM, intelErr := loadIntel(o)
 
+	yaraStore := loadYara(o)
+
 	st := openStore(o)
 	if st != nil {
 		defer st.Close()
@@ -112,6 +114,7 @@ func runEngine(o *options, interactive bool) error {
 		st: st, supMgr: supMgr, supPath: supPath, knownMgr: knownMgr,
 		corr: corr, bcn: bcn, thr: thr, lifeStore: lifeStore, incStore: incStore,
 		fleetTracker: fleetTracker, enrollReg: enrollReg, intelM: intelM,
+		yaraStore:   yaraStore,
 		baseTracker: baseTracker, fore: fore, latTracker: latTracker,
 	})
 	if stopAD != nil {

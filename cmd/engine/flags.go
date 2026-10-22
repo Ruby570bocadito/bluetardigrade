@@ -22,6 +22,7 @@ type options struct {
 	beaconsFile      string
 	thresholdsFile   string
 	intelDir         string
+	yaraDir          string
 	baselineLearn    time.Duration
 	verbose          bool
 	reloadEvery      time.Duration
@@ -90,6 +91,8 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 	fs.StringVar(&o.seqDir, "sequences", "./sequences", "directory with YAML kill-chain sequences (correlator)")
 	fs.StringVar(&o.intelDir, "intel", "./intel",
 		"directory of offline threat-intelligence lists (*.txt/*.list: IPs, CIDRs, domains, URLs, file hashes), re-read when it changes; empty disables")
+	fs.StringVar(&o.yaraDir, "yara-rules", "./yara-rules",
+		"directory of YARA rule files (*.yar/*.yara) served as the distribution pack and verified via the sensors' heartbeat sha (contract S-2<->M-3); empty disables")
 	fs.DurationVar(&o.baselineLearn, "baseline-learn", envDuration("SF_BASELINE_LEARN", 24*time.Hour),
 		"per-host learning period before never-seen processes raise a low alert (0 disables; falls back to SF_BASELINE_LEARN)")
 	fs.StringVar(&o.beaconsFile, "beacons", "./beacons.yaml", "YAML file with beacon detector profiles (C2 call-home detection over network.connect); empty disables")

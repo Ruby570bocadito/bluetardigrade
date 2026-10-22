@@ -39,6 +39,7 @@ import (
 	"github.com/Ruby570bocadito/bluetardigrade/internal/store"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/suppress"
 	"github.com/Ruby570bocadito/bluetardigrade/internal/threshold"
+	"github.com/Ruby570bocadito/bluetardigrade/internal/yara"
 )
 
 // apiBoot carries the collaborators the API hub needs at wiring time —
@@ -61,6 +62,7 @@ type apiBoot struct {
 	fleetTracker *fleet.Tracker
 	enrollReg    *enroll.Registry
 	intelM       *intel.Matcher
+	yaraStore    *yara.Store
 	baseTracker  *baseline.Tracker
 	fore         *forensic.Recorder
 	latTracker   *alertLatencyTracker
@@ -188,6 +190,9 @@ func startAPIHub(b apiBoot) (*api.Hub, string, string, func()) {
 			}
 			if b.intelM != nil {
 				hub.SetIntel(b.intelM)
+			}
+			if b.yaraStore != nil {
+				hub.SetYara(b.yaraStore)
 			}
 			hub.SetBaseline(b.baseTracker)
 			// reputation lookups stay off unless the operator sets a
