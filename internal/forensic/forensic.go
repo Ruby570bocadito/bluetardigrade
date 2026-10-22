@@ -15,8 +15,12 @@
 // back through the API for the lifetime of the retention window.
 //
 // Every bound in this file is a deliberate worst-case cap: memory is
-// bounded by maxHosts x maxEventsPerHost pointers; disk by
-// maxBundleFiles x the serialized size of timelineCap events.
+// bounded by maxHosts x maxEventsPerHost pointers; disk by the bundle
+// retention cap (the -forensic-retention flag, default
+// defaultBundleFiles) x the serialized size of timelineCap events.
+// There is no unbounded mode on purpose: an evidence directory that
+// grows without limit fills the disk of the very host under
+// investigation.
 package forensic
 
 import (
@@ -41,6 +45,13 @@ type Recorder struct {
 	dir   string // bundle output directory; "" disables disk writes
 	hosts map[string][]*model.Event
 	order []string // LRU order of hosts, order[0] = coldest
+
+	// bundleCap is the bundle-directory retention cap: once this
+	// many .json files live in dir, the oldest is unlinked after
+	// each write (the -forensic-retention flag). Constructed with
+	// New or NewWithRetention; never mutated afterwards, so readers
+	// need no lock.
+	bundleCap int
 
 	// Expiración de bundles (noteBundle corre fuera de mu, tras la
 	// escritura del bundle). Un FIFO en memoria con el orden de
@@ -75,9 +86,12 @@ const (
 	// investigator reads first.
 	timelineCap = 200
 
-	// maxBundleFiles bounds the bundle directory: oldest files are
-	// evicted after a write crosses the cap.
-	maxBundleFiles = 256
+	// defaultBundleFiles is the default bundle-directory cap, the
+	// value -forensic-retention starts from: oldest files are
+	// evicted after a write crosses the configured cap. It trades
+	// disk for evidence depth; the engine validates the operator's
+	// number (>= 1) so a typo cannot turn retention off silently.
+	defaultBundleFiles = 256
 
 	// alertIDLen is the addressability contract of NewID (16 hex).
 	alertIDLen = 16
@@ -115,10 +129,23 @@ var ErrDisabled = errors.New("forensic capture disabled: start the engine withou
 // ErrNotFound is returned by Load when no bundle exists for the id.
 var ErrNotFound = errors.New("no forensic bundle for this alert id (severity below capture threshold, evicted by retention, or engine restarted before capture)")
 
-// New returns a Recorder writing bundles under dir. An empty dir
-// keeps the flight recorder in memory only (Load answers ErrDisabled).
+// New returns a Recorder writing bundles under dir, keeping the
+// default bundle retention (defaultBundleFiles). An empty dir keeps
+// the flight recorder in memory only (Load answers ErrDisabled).
 func New(dir string) *Recorder {
-	return &Recorder{dir: dir, hosts: make(map[string][]*model.Event)}
+	return NewWithRetention(dir, defaultBundleFiles)
+}
+
+// NewWithRetention is New with an explicit bundle-directory cap: the
+// operator trades disk for a deeper evidence window. A retention
+// below 1 falls back to the default instead of disabling eviction —
+// the engine rejects such a value loudly at startup; the library
+// tolerates it so a caller bug can never become unbounded disk.
+func NewWithRetention(dir string, retention int) *Recorder {
+	if retention < 1 {
+		retention = defaultBundleFiles
+	}
+	return &Recorder{dir: dir, bundleCap: retention, hosts: make(map[string][]*model.Event)}
 }
 
 // Dir reports the bundle directory ("" when disk capture is off).
@@ -334,7 +361,7 @@ func (r *Recorder) noteBundle(path string) {
 	// El bundle recién escrito entra siempre: seedLocked lo excluye
 	// del escaneo (skip) para no contarlo dos veces.
 	r.written = append(r.written, path)
-	for len(r.written) > maxBundleFiles {
+	for len(r.written) > r.bundleCap {
 		if err := os.Remove(r.written[0]); err != nil && !errors.Is(err, os.ErrNotExist) {
 			break // reintento en la siguiente escritura
 		}
@@ -373,11 +400,11 @@ func (r *Recorder) seedLocked(skip string) []string {
 		files = append(files, aged{p, info.ModTime()})
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].at.Before(files[j].at) })
-	if len(files) > maxBundleFiles {
-		for _, f := range files[:len(files)-maxBundleFiles] {
+	if len(files) > r.bundleCap {
+		for _, f := range files[:len(files)-r.bundleCap] {
 			_ = os.Remove(f.path)
 		}
-		files = files[len(files)-maxBundleFiles:]
+		files = files[len(files)-r.bundleCap:]
 	}
 	out := make([]string, len(files))
 	for i, f := range files {

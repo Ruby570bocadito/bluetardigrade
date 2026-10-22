@@ -7,7 +7,7 @@ import (
 )
 
 // BenchmarkCaptureEnLaCota mide el camino caliente en régimen
-// estacionario: el directorio ya está en la cota (maxBundleFiles), así
+// estacionario: el directorio ya está en la cota (defaultBundleFiles), así
 // que cada Capture escribe un bundle y expira el más viejo. Es el
 // régimen que el perfil del nightly señaló (evictOldFiles como una
 // fracción dominante de la CPU del camino de alertas): bajo la cota la
@@ -20,7 +20,7 @@ import (
 func BenchmarkCaptureEnLaCota(b *testing.B) {
 	dir := b.TempDir()
 	r := New(dir)
-	for i := 0; i < maxBundleFiles; i++ {
+	for i := 0; i < defaultBundleFiles; i++ {
 		a := mkAlert(fmt.Sprintf("%016x", i), "bench-01", "high", base.Format(time.RFC3339))
 		if _, ok, err := r.Capture(a, base.Add(time.Duration(i)*time.Second)); err != nil || !ok {
 			b.Fatalf("precarga %d: ok=%v err=%v", i, ok, err)
@@ -28,13 +28,13 @@ func BenchmarkCaptureEnLaCota(b *testing.B) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		a := mkAlert(fmt.Sprintf("%016x", maxBundleFiles+i), "bench-01", "high", base.Format(time.RFC3339))
+		a := mkAlert(fmt.Sprintf("%016x", defaultBundleFiles+i), "bench-01", "high", base.Format(time.RFC3339))
 		if _, ok, err := r.Capture(a, time.Now()); err != nil || !ok {
 			b.Fatalf("capture %d: ok=%v err=%v", i, ok, err)
 		}
 	}
-	if got := r.CountBundles(); got != maxBundleFiles {
-		b.Fatalf("bundles tras el bench = %d, want %d (la cota se cumple)", got, maxBundleFiles)
+	if got := r.CountBundles(); got != defaultBundleFiles {
+		b.Fatalf("bundles tras el bench = %d, want %d (la cota se cumple)", got, defaultBundleFiles)
 	}
 }
 
@@ -46,12 +46,12 @@ func BenchmarkCaptureEnLaCota(b *testing.B) {
 func BenchmarkCaptureBajoLaCota(b *testing.B) {
 	dir := b.TempDir()
 	r := New(dir)
-	for i := 0; i < b.N+maxBundleFiles/2; i++ {
+	for i := 0; i < b.N+defaultBundleFiles/2; i++ {
 		a := mkAlert(fmt.Sprintf("%016x", i), "bench-02", "high", base.Format(time.RFC3339))
 		if _, ok, err := r.Capture(a, base.Add(time.Duration(i)*time.Second)); err != nil || !ok {
 			b.Fatalf("capture %d: ok=%v err=%v", i, ok, err)
 		}
-		if i == maxBundleFiles/2-1 {
+		if i == defaultBundleFiles/2-1 {
 			b.ResetTimer()
 		}
 	}

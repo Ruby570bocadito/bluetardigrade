@@ -270,7 +270,6 @@ Detalle en [docs/PRUEBAS-PENDIENTES.md](docs/PRUEBAS-PENDIENTES.md).
   aparte y comprobado al exportar.
 - [ ] Más contexto: firmante de los ejecutables, conexiones del proceso, claves
   de registro tocadas y ventana configurable.
-- [ ] Retención configurable (`-forensic-retention`) en lugar del tope de 256.
 
 ### Despliegue
 

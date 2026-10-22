@@ -207,15 +207,18 @@ func loadKnownSoftware(o *options) (*known.Manager, string, int) {
 func newForensicRecorder(o *options) *forensic.Recorder {
 	var fore *forensic.Recorder
 	if o.forensic {
+		if o.forensicRetain < 1 {
+			log.Fatalf("[ENGINE] -forensic-retention=%d must be >= 1: there is no unbounded evidence mode (an ever-growing bundle directory fills the disk); use -forensic=false to turn capture off", o.forensicRetain)
+		}
 		foreDir := o.forensicDir
 		if foreDir == "" {
 			// same resolution order as rules/sequences: the installed
 			// engine finds <forensics> next to its own tree
 			foreDir = resolveDataDir("./forensics", "forensics")
 		}
-		fore = forensic.New(foreDir)
-		fmt.Printf("[ENGINE] forensic: evidence bundles for high/critical alerts -> %s (window %s, disk-capped)\n",
-			foreDir, forensic.CaptureWindow)
+		fore = forensic.NewWithRetention(foreDir, o.forensicRetain)
+		fmt.Printf("[ENGINE] forensic: evidence bundles for high/critical alerts -> %s (window %s, keeping %d, oldest evicted)\n",
+			foreDir, forensic.CaptureWindow, o.forensicRetain)
 	}
 	return fore
 }

@@ -246,7 +246,7 @@ func TestBundleDirEviction(t *testing.T) {
 	dir := t.TempDir()
 	r := New(dir)
 	old := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	for i := 0; i < maxBundleFiles+5; i++ {
+	for i := 0; i < defaultBundleFiles+5; i++ {
 		id := fmt.Sprintf("%016x", i)
 		a := mkAlert(id, "lab-01", "high", old.Format(time.RFC3339))
 		if _, ok, err := r.Capture(a, old.Add(time.Duration(i)*time.Second)); err != nil || !ok {
@@ -256,8 +256,8 @@ func TestBundleDirEviction(t *testing.T) {
 		// plain mtime tie is possible; force ordering explicitly
 		os.Chtimes(filepath.Join(dir, id+".json"), old.Add(time.Duration(i)*time.Second), old.Add(time.Duration(i)*time.Second))
 	}
-	if got := r.CountBundles(); got != maxBundleFiles {
-		t.Fatalf("bundles kept = %d, want %d", got, maxBundleFiles)
+	if got := r.CountBundles(); got != defaultBundleFiles {
+		t.Fatalf("bundles kept = %d, want %d", got, defaultBundleFiles)
 	}
 	// the oldest five are the ones gone
 	for i := 0; i < 5; i++ {
@@ -265,6 +265,86 @@ func TestBundleDirEviction(t *testing.T) {
 		if _, err := r.Load(id); err != ErrNotFound {
 			t.Fatalf("oldest bundle %d still present (err=%v)", i, err)
 		}
+	}
+}
+
+// -forensic-retention: the operator can trade disk for a deeper
+// evidence window. The FIFO enforces the configured cap, not the
+// hardcoded default: with room for 8, the four oldest of twelve are
+// the ones gone and the newest eight survive.
+func TestBundleDirEvictionCustomRetention(t *testing.T) {
+	if testing.Short() {
+		t.Skip("eviction writes 12 bundles")
+	}
+	dir := t.TempDir()
+	r := NewWithRetention(dir, 8)
+	old := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < 12; i++ {
+		id := fmt.Sprintf("%016x", i)
+		a := mkAlert(id, "lab-01", "high", old.Format(time.RFC3339))
+		if _, ok, err := r.Capture(a, old.Add(time.Duration(i)*time.Second)); err != nil || !ok {
+			t.Fatalf("capture %d: ok=%v err=%v", i, ok, err)
+		}
+		os.Chtimes(filepath.Join(dir, id+".json"), old.Add(time.Duration(i)*time.Second), old.Add(time.Duration(i)*time.Second))
+	}
+	if got := r.CountBundles(); got != 8 {
+		t.Fatalf("bundles kept = %d, want 8 (la retención configurada manda)", got)
+	}
+	for i := 0; i < 4; i++ {
+		id := fmt.Sprintf("%016x", i)
+		if _, err := r.Load(id); err != ErrNotFound {
+			t.Fatalf("oldest bundle %d still present (err=%v)", i, err)
+		}
+	}
+	for i := 4; i < 12; i++ {
+		id := fmt.Sprintf("%016x", i)
+		if _, err := r.Load(id); err != nil {
+			t.Fatalf("bundle %d evicted outside the configured cap (err=%v)", i, err)
+		}
+	}
+}
+
+// A retention below 1 at the library boundary falls back to the
+// default cap instead of disabling eviction: unbounded evidence disk
+// is not a mode. The engine rejects such a value loudly at startup
+// (newForensicRecorder); the library tolerates it for callers that
+// pass zero blindly.
+func TestRetentionBelowOneFallsBackToDefault(t *testing.T) {
+	for _, bad := range []int{0, -3} {
+		r := NewWithRetention(t.TempDir(), bad)
+		if r.bundleCap != defaultBundleFiles {
+			t.Fatalf("retention %d kept cap %d, want the default %d", bad, r.bundleCap, defaultBundleFiles)
+		}
+	}
+}
+
+// Seeding an existing directory honours a custom cap: bundles left by
+// previous runs beyond the configured retention are pruned at the
+// first write, and the bundle just written always survives.
+func TestSeedHonoursCustomRetention(t *testing.T) {
+	if testing.Short() {
+		t.Skip("seeding writes 11 bundles")
+	}
+	dir := t.TempDir()
+	old := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < 10; i++ {
+		id := fmt.Sprintf("%016x", i)
+		p := filepath.Join(dir, id+".json")
+		if err := os.WriteFile(p, []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		os.Chtimes(p, old.Add(time.Duration(i)*time.Second), old.Add(time.Duration(i)*time.Second))
+	}
+	r := NewWithRetention(dir, 4)
+	a := mkAlert("ffffffffffffffff", "lab-01", "high", old.Format(time.RFC3339))
+	if _, ok, err := r.Capture(a, old.Add(time.Minute)); err != nil || !ok {
+		t.Fatalf("capture: ok=%v err=%v", ok, err)
+	}
+	if got := r.CountBundles(); got != 4 {
+		t.Fatalf("bundles after seed = %d, want 4", got)
+	}
+	if _, err := r.Load("ffffffffffffffff"); err != nil {
+		t.Fatalf("the bundle just written must survive the seed (err=%v)", err)
 	}
 }
 

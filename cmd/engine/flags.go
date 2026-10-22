@@ -51,6 +51,7 @@ type options struct {
 	storeRetention   time.Duration
 	forensic         bool
 	forensicDir      string
+	forensicRetain   int
 	pidFile          string
 	pprofDir         string
 	apiWrite         bool
@@ -162,6 +163,8 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 		"freeze an evidence bundle (alert + 5m host timeline) for every high/critical alert; -forensic=false disables")
 	fs.StringVar(&o.forensicDir, "forensic-dir", "",
 		"directory for forensic evidence bundles (default: <forensics> resolved next to the rules directory)")
+	fs.IntVar(&o.forensicRetain, "forensic-retention", 256,
+		"how many forensic evidence bundles -forensic-dir keeps, oldest evicted first; disk grows with this number (>= 1; default 256)")
 	fs.StringVar(&o.pidFile, "pidfile", "",
 		"write the process PID here at startup and remove it on shutdown (lets sf-console -Stop stop an engine it did not start)")
 	fs.StringVar(&o.pprofDir, "pprof-dir", "",
