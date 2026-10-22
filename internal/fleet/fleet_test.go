@@ -261,3 +261,34 @@ func TestHeartbeatRunMode(t *testing.T) {
 		t.Fatalf("run modes: %+v / %+v", find(t, snap, "PC-SVC").Sensor, find(t, snap, "PC-ODD").Sensor)
 	}
 }
+
+func TestTheHeartbeatCarriesTheYaraPack(t *testing.T) {
+	tr := New()
+	hb := heartbeat("PC-01", 60)
+	hb.Attributes["yara_rules"] = "42"
+	hb.Attributes["yara_rules_sha"] = "a528402946b50be4"
+	tr.Observe(hb, "", t0)
+	host := find(t, tr.Snapshot(t0), "PC-01")
+	if host.Sensor.YaraRules != 42 || host.Sensor.YaraRulesSha != "a528402946b50be4" {
+		t.Fatalf("pack: %+v", host.Sensor)
+	}
+	// a beat without the pack replaces it: the sensor said nothing, the
+	// inventory must not remember a pack it no longer runs
+	tr.Observe(heartbeat("PC-01", 60), "", t0.Add(time.Minute))
+	host = find(t, tr.Snapshot(t0.Add(time.Minute)), "PC-01")
+	if host.Sensor.YaraRules != 0 || host.Sensor.YaraRulesSha != "" {
+		t.Fatalf("stale pack survived a beat without it: %+v", host.Sensor)
+	}
+}
+
+func TestRestoreAcceptsDocsFromBeforeTheYaraPack(t *testing.T) {
+	tr := New()
+	doc := `{"host":{"host":"PC-01","status":"online","first_seen":"2026-10-01T00:00:00Z","last_seen":"2026-10-01T00:01:00Z","events":1,"sources":["etw"],"sensor":{"kind":"etw","interval_s":60,"uptime_s":10,"spooled":0,"dropped":0,"last_heartbeat":"2026-10-01T00:01:00Z"}},"alerted":false}`
+	if n := tr.Restore(map[string][]byte{"pc-01": []byte(doc)}, t0); n != 1 {
+		t.Fatalf("restore: %d", n)
+	}
+	host := find(t, tr.Snapshot(t0), "PC-01")
+	if host.Sensor == nil || host.Sensor.YaraRules != 0 || host.Sensor.YaraRulesSha != "" {
+		t.Fatalf("restored sensor: %+v", host.Sensor)
+	}
+}

@@ -62,15 +62,21 @@ const (
 
 // Sensor is the last health report of the sensor on a host.
 type Sensor struct {
-	Kind          string    `json:"kind,omitempty"`
-	Version       string    `json:"version,omitempty"`
-	OS            string    `json:"os,omitempty"`
-	Capture       string    `json:"capture,omitempty"`
-	IntervalS     int       `json:"interval_s"`
-	UptimeS       int64     `json:"uptime_s"`
-	QueueCap      int64     `json:"queue_cap,omitempty"`
-	Spooled       uint64    `json:"spooled"`
-	Dropped       uint64    `json:"dropped"`
+	Kind      string `json:"kind,omitempty"`
+	Version   string `json:"version,omitempty"`
+	OS        string `json:"os,omitempty"`
+	Capture   string `json:"capture,omitempty"`
+	IntervalS int    `json:"interval_s"`
+	UptimeS   int64  `json:"uptime_s"`
+	QueueCap  int64  `json:"queue_cap,omitempty"`
+	Spooled   uint64 `json:"spooled"`
+	Dropped   uint64 `json:"dropped"`
+	// YaraRules is the number of rules the sensor compiled from its
+	// YARA pack (0 = scanning off or no pack loaded); YaraRulesSha
+	// is the content fingerprint of the rules it runs (contract
+	// S-2<->M-3), empty while it reports none.
+	YaraRules     uint64    `json:"yara_rules"`
+	YaraRulesSha  string    `json:"yara_rules_sha,omitempty"`
 	LastHeartbeat time.Time `json:"last_heartbeat"`
 	// RunMode is how the sensor runs: "service" (Windows service manager,
 	// starts with the machine) or "console" (started by hand); empty for
@@ -380,6 +386,8 @@ func sensorFrom(attrs map[string]string, now time.Time) *Sensor {
 		QueueCap:      parseInt(attrs["queue_cap"], 0),
 		Spooled:       uint64(parseInt(attrs["spooled"], 0)),
 		Dropped:       uint64(parseInt(attrs["dropped"], 0)),
+		YaraRules:     uint64(parseInt(attrs["yara_rules"], 0)),
+		YaraRulesSha:  clip(attrs["yara_rules_sha"]),
 		LastHeartbeat: now,
 	}
 	if mode := attrs["run_mode"]; mode == "service" || mode == "console" {
