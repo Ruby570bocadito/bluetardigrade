@@ -26,7 +26,8 @@ sucesores). PUL sirvió además la hornada doc de TEST (H-001/H-002,
 resueltas y a la espera del cierre de TEST) y consolidó la ronda en el
 CHANGELOG; IMP-2 aterrizó la fase 11 de IDEA-10 (eventDetail y
 formateadores compartidos bilingües, c1ce7d3) y sigue EN VUELO con
-claim sobre el resto del carril. Hallazgos: H-001/H-002 en
+claim sobre el resto del carril (reglas ya servidas, f3c9b22).
+Hallazgos: H-001/H-002 en
 resuelto-pendiente-verificación; H-005 reasignada a IMP-2 (su arreglo
 vive en web/console/README.md); H-003/H-004/H-006 siguen abiertas para
 IMP-1. La petición de IMP-2 (texto viejo de IDEA-10 en TODO.md) queda
@@ -68,9 +69,10 @@ semana y media después (lección de los 42 fragmentos).
   pequeña) — `internal/`
 
 ### IMP-2 (consola Next.js)
-- [ ] (IMP-2) idea10-idiomas-resto — EN VUELO (claim activo; fase 11
-  con eventDetail y formateadores ya en main, c1ce7d3): restan reglas,
-  ruido, respuesta, flujo en vivo y analista — `web/console/src/`
+- [ ] (IMP-2) idea10-idiomas-resto — EN VUELO (claim activo; en main
+  ya: fase 10, eventDetail + formateadores c1ce7d3 y reglas f3c9b22):
+  restan ruido, respuesta, flujo en vivo y analista —
+  `web/console/src/`
 - [ ] (IMP-2) H-005 — línea de SF_API_TOKEN en el quickstart de
   `web/console/README.md` (hallazgo BAJO de TEST, reasignado por PUL:
   la zona web/ no es suya)
@@ -112,8 +114,8 @@ semana y media después (lección de los 42 fragmentos).
 
 ## Cerradas (últimas 24 h)
 
-- idea10 fase 11 (formateadores compartidos + eventDetail bilingües) —
-  c1ce7d3 (IMP-2; el carril sigue en vuelo con claim)
+- idea10 fase 11 (formateadores + eventDetail c1ce7d3; reglas
+  f3c9b22) — (IMP-2; el carril sigue en vuelo con claim)
 - H-001-H-002-readme-docs — 965265e, 014ac8e, release 4cc87d1 (PUL):
   prerrequisitos Go/make en quickstart y cifra 114→119/13 cadenas
   barrida en seis documentos
