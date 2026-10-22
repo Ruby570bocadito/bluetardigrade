@@ -54,7 +54,7 @@ respond from a live web console.
 <td width="50%" valign="top">
 
 ### Detect
-- **119 YAML rules** covering 13 of the 14 ATT&CK tactics: initial access,
+- **123 YAML rules** covering 13 of the 14 ATT&CK tactics: initial access,
   LOLBAS, privilege escalation, credential access, lateral movement,
   collection, exfiltration, ransomware impact, hack tools and phishing.
 - **13 kill-chain correlations**: 11 across events of the same host

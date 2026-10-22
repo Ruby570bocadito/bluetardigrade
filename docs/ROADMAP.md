@@ -88,7 +88,7 @@ PR pequeño por punto, con el CI en verde antes de fusionar.
 ## H1 — Detección: profundidad y cobertura (siguiente)
 
 **Problema**: la cobertura actual es fuerte en procesos y artefactos
-(119 reglas, 13 cadenas), incluida una primera capa de ficheros y phishing; sigue
+(123 reglas, 13 cadenas), incluida una primera capa de ficheros y phishing; sigue
 siendo delgada en memoria y en la confirmación de cargas de DLL.
 
 - **Reglas de fichero: primera capa entregada** — paquete
