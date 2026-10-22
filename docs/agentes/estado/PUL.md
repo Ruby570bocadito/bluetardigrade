@@ -1,39 +1,38 @@
 # PUL — estado
 
 ## Hecho (últimas 24 h)
-- **changelog-consolidar-fragmentos** — 16 días sin agregación (desde
-  2026-10-06): 42 fragmentos de tres rondas (20/21/22-10) consolidados
-  en `[Unreleased]` como nueve secciones temáticas fechadas, en inglés
-  (idioma de la convención; había deriva ES). Cobertura verificada
-  42/42 por token distintivo antes de borrar; fragmentos retirados según
-  `changelog.d/README.md`. Ciclo: 31c46a1 / fb77898 / 9812244.
-- **deps-audit-checks-write** — `checks: write` job-level en
-  deps-audit.yml y bincode fuera de la excepción; CI verde publicando
-  el check «Security audit» no vacío en success.
-- **deps-audit-concurrency-comentario** — quinta pasada de DIR: el
-  comentario del bloque concurrency refleja la realidad (las EN CURSO
-  completan; de las PENDIENTES solo sobrevive la más nueva). Solo
-  comentario, guard en verde.
-- **pol1b-dividir-run-go** — verificada, ya servida por 088eaaa (run.go
-  1346→~330, orquestador lineal); no rehacer.
-- **Barrido estático de higiene (sin cambios necesarios):** menciones a
-  IA = la funcionalidad propia del analista (endpoint del producto), no
-  rastros de agentes; TODOs en código = trazabilidad a TODO.md;
-  `.agent-tmp/` en .gitignore; raíz limpia; manifiestos bun sin deriva.
+- **H-001 + H-002** (hornada doc de TEST) — claim 8222595, trabajo
+  965265e/014ac8e, release 4cc87d1: prerrequisitos Go 1.26.10+make con
+  enlace en el quickstart Linux/macOS/Docker del README (Docker queda
+  como vía sin prerrequisitos), y cifra de reglas 114→119 barrida en
+  README, PHISHING, INSTALACION-Y-ESTADO-SOC, ARCHITECTURE, OPERATIONS
+  y docs/ROADMAP (allí también cadenas 11→13); en SOC-INTEGRACIONES la
+  narración histórica queda intacta y se añade la cifra vigente con
+  remisión a `engine doctor`. Cifras replicadas por mi lado:
+  `rg -c '^- name:' rules/` = 119, cadenas 13. Un fragmento propio en
+  changelog.d/ por hallazgo. Ambos en resuelto-pendiente-verificación;
+  cierra TEST.
+- Sesión anterior, verificada en su día: deps-audit-checks-write (CI
+  publicando el check «Security audit»), comentario de concurrency
+  (servido por DIR, de266dd) y pol1b (ya servida por 088eaaa). Sin
+  nada que rehacer.
+- **Higiene de sesión** — sin cambios: `.agent-tmp/` ignorado, raíz
+  limpia, manifiestos bun sin deriva, sin claims solapados.
 
 ## En curso
 - (nada)
 
-## Bloqueado
-- (nada)
-
 ## Peticiones a otras zonas
-- (ninguna)
+- IMP-2 (H-005): en el Quickstart de `web/console/README.md` añadir
+  una línea tipo «si el motor arranca con -api-token, define
+  SF_API_TOKEN en web/console/.env». Zona `web/` no es mía; TEST
+  verificó que el proxy funciona con la variable puesta.
 
 ## Propuestas para el roadmap
-- Consolidar changelog.d al cerrar CADA ronda (la convención lo dice):
-  los de las rondas en vuelo (m3, c4) no deben volver a acumularse 16 días.
-- Si POL-1 sigue viva en TODO.md, el objetivo restante es
-  `sensor/src/collector.rs` (479 líneas) — ticket para IMP-1.
+- Las cifras hardcodeadas de reglas/cadenas derivan (segunda vez):
+  valorar citar solo `engine doctor` o un guard de CI que compare el
+  README con el pack.
+- Consolidar changelog.d al cerrar CADA ronda (los de m3/c4 no deben
+  volver a acumularse días).
 
 ## Estado: VERDE
