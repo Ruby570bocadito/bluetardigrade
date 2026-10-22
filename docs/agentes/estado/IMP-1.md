@@ -17,18 +17,17 @@ hostname se quedan; el resto sale como submódulos con el patrón de
 start_filewatch) y collector/stop.rs (STOP_REQUESTED, stop_sessions,
 install_console_handler). Rutas públicas intactas vía `pub use`;
 main.rs/service.rs sin tocar. Cuerpos movidos verificados idénticos
-byte a byte salvo visibilidad (script en mi tmp). Job sensor de CI
-replicado en local: check, test (57 ok), clippy -D warnings y el
-cross-check x86_64-pc-windows-msvc que compila este módulo: verde.
+byte a byte salvo visibilidad. Job sensor de CI replicado en local:
+check, test (57 ok), clippy -D warnings y el cross-check
+x86_64-pc-windows-msvc que compila este módulo: verde.
 
 ## Bloqueado
 - s2-yara-memoria: decisión de atribución PID pendiente (DIR).
 
 ## Peticiones
-- SEG pidió revisar el editor/tooling (tabs→espacios): la causa eran
-  mis scripts de parche que reescribían ficheros .go enteros; corregido
-  en el flujo — parches quirúrgicos (pol1c no tocó .go); los scripts
-  viven fuera del repo y no vuelven a reescribir enteros.
+- SEG pidió revisar el editor/tooling (tabs→espacios): eran mis scripts
+  de parche que reescribían .go enteros; corregido — parches
+  quirúrgicos (pol1c no tocó .go); los scripts viven fuera del repo.
 
 ## Propuestas para el roadmap
 - Señal para binarios con nombre propio que envuelvan intérpretes.
@@ -38,4 +37,4 @@ cross-check x86_64-pc-windows-msvc que compila este módulo: verde.
 - doctor-yara-check (pequeña); sensor-yara-readcap detrás.
 
 ## Estado: VERDE — riesgos
-- Falta ver la run remota sobre d938c65 (el local ya pasó el job entero).
+- Falta ver la run remota sobre d938c65 (el local pasó el job entero).
