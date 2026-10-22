@@ -214,6 +214,10 @@ Useful installer switches:
 <details>
 <summary><b>Linux, macOS or Docker (engine + collectors)</b></summary>
 
+Prerequisites for the source path: **Go 1.26.10 or newer** (the version
+`go.mod` requires — a 1.25 toolchain refuses to build it; download from
+<https://go.dev/dl/>) and **make**. The Docker path below needs neither.
+
 ```bash
 git clone https://github.com/Ruby570bocadito/bluetardigrade.git
 cd bluetardigrade
