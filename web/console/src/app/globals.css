@@ -147,6 +147,8 @@
   --viz-edge: rgba(255, 255, 255, 0.14);
   --viz-edge-strong: rgba(255, 255, 255, 0.25);
   --kbd-edge: rgba(0, 0, 0, 0.5);
+  --hairline: rgba(255, 255, 255, 0.1);
+  --inset-highlight: rgba(255, 255, 255, 0.06);
 }
 
 @layer base {
@@ -325,6 +327,14 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #71717a;
+}
+/* Inline code chip (commands, tokens, flags): dark inkwell in dark mode,
+   light gray inkwell in light mode — the text rides each theme's ink so
+   the pair never depends on one hard-coded surface. */
+.code-chip {
+  border-radius: 0.375rem;
+  background: rgba(0, 0, 0, 0.4);
+  color: var(--color-zinc-200, #e4e4e7);
 }
 .icon-tile {
   display: flex;
@@ -559,9 +569,9 @@ html.light {
   --input: #d4d4d8;
   --ring: #18181b;
   --chart-1: #2563eb;
-  --chart-2: #047857;
+  --chart-2: #059669;
   --chart-3: #7c3aed;
-  --chart-4: #be185d;
+  --chart-4: #db2777;
   --chart-5: #a1a1aa;
   --sidebar: #fafafa;
   --sidebar-foreground: #18181b;
@@ -586,20 +596,20 @@ html.light {
   --viz-muted: #6b6b74;
   --sev-critical: #991b1b;
   --sev-high: #c2410c;
-  --sev-medium: #a08c28;
+  --sev-medium: #ad850c;
   --sev-low: #2563eb;
   --sev-info: #52525b;
   --series-1: #2563eb;
-  --series-2: #047857;
+  --series-2: #059669;
   --series-3: #7c3aed;
-  --series-4: #be185d;
+  --series-4: #db2777;
   --series-other: #71717a;
   --seq-1: #1e3a8a;
   --seq-2: #2352b8;
   --seq-3: #2a6bd6;
   --seq-4: #4489e6;
   --seq-5: #60a5fa;
-  --status-good: #15803d;
+  --status-good: #16a34a;
   --status-warning: #a16207;
   --status-serious: #c2410c;
   --status-critical: #991b1b;
@@ -611,6 +621,8 @@ html.light {
   --viz-edge: rgba(9, 9, 11, 0.16);
   --viz-edge-strong: rgba(9, 9, 11, 0.3);
   --kbd-edge: rgba(9, 9, 11, 0.16);
+  --hairline: rgba(9, 9, 11, 0.1);
+  --inset-highlight: rgba(255, 255, 255, 0.8);
 
   /* zinc ramp flip: elevation inverts, text steps keep their roles */
   --color-zinc-50: #09090b;
@@ -630,6 +642,7 @@ html.light {
   --color-emerald-200: #065f46;
   --color-emerald-300: #047857;
   --color-emerald-400: #059669;
+  --color-amber-100: #78350f;
   --color-amber-200: #92400e;
   --color-amber-300: #b45309;
   --color-amber-400: #d97706;
@@ -641,6 +654,13 @@ html.light {
   --color-sky-300: #0369a1;
   --color-sky-400: #0284c7;
   --color-violet-300: #6d28d9;
+  /* yellow and rose are in the product only as the medium severity chip
+     (console-types SEVERITY_STYLE) and the denied session label; both
+     default steps fail on white, so they flip like the rest of the
+     text-step ramps */
+  --color-yellow-200: #854d0e;
+  --color-yellow-400: #ad850c;
+  --color-rose-300: #be123c;
 }
 
 /* Faint light ink over dark surfaces flips to faint dark ink over white.
@@ -706,6 +726,10 @@ html.light .star-border--active {
 }
 html.light .shiny-text { color: #047857; }
 html.light .kicker { color: #6b6b74; }
+html.light .code-chip {
+  background: rgba(9, 9, 11, 0.06);
+  color: var(--color-zinc-200, #27272a);
+}
 
 /* Cabin polish: one scrollbar and one selection per theme. */
 html.light * {

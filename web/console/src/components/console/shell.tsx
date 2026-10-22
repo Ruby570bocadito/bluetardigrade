@@ -328,7 +328,7 @@ export function ConsoleShell() {
                       {current && (
                         <motion.span
                           layoutId="nav-pill"
-                          className="pointer-events-none absolute inset-0 rounded-lg border border-primary/25 bg-gradient-to-r from-primary-tint/[0.16] via-primary-tint/[0.07] to-transparent shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]"
+                          className="pointer-events-none absolute inset-0 rounded-lg border border-primary/25 bg-gradient-to-r from-primary-tint/[0.16] via-primary-tint/[0.07] to-transparent shadow-[inset_0_1px_0_0_var(--inset-highlight)]"
                           transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 380, damping: 32 }}
                         />
                       )}
@@ -615,7 +615,7 @@ function BrandBlock({ live }: { live: boolean }) {
           <DecryptedText text="Security Operations Center" className="block text-[11px] text-zinc-500" />
         </span>
       </div>
-      <div aria-hidden className="mt-4 h-px bg-gradient-to-r from-primary/35 via-white/10 to-transparent" />
+      <div aria-hidden className="mt-4 h-px bg-gradient-to-r from-primary/35 via-[var(--hairline)] to-transparent" />
     </div>
   )
 }

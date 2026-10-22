@@ -45,7 +45,7 @@ export function CopyBox({ text, label }: { text: string; label: string }) {
   }
   return (
     <div className="mt-2 flex items-start gap-2">
-      <code className="min-w-0 flex-1 overflow-x-auto whitespace-pre rounded-md bg-black/40 px-2.5 py-2 font-mono text-[11px] text-zinc-200">{text}</code>
+      <code className="min-w-0 flex-1 overflow-x-auto whitespace-pre code-chip rounded-md px-2.5 py-2 font-mono text-[11px]">{text}</code>
       <button type="button" onClick={() => void copy()} aria-label={label} className="shrink-0 rounded-md border border-white/10 p-1.5 text-zinc-400 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         {done ? <CheckCircle size={14} weight="fill" aria-hidden className="text-emerald-400" /> : <Copy size={14} aria-hidden />}
       </button>

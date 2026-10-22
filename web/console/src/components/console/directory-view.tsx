@@ -73,7 +73,7 @@ const KIND_TABS: { kind: ADKind; icon: React.ElementType }[] = [
 ]
 
 const TONE_COLOR: Record<'ok' | 'warn' | 'bad', string> = {
-  ok: 'var(--status-ok)',
+  ok: 'var(--status-good)',
   warn: 'var(--status-warning)',
   bad: 'var(--status-critical)',
 }

@@ -140,11 +140,11 @@ export function OnboardingWizard({ open, onClose }: { open: boolean; onClose: ()
             {me.mode !== 'users' && (
               <p>
                 {dict.onboarding.acceso.usersProseA}
-                <code className="rounded bg-black/40 px-1 font-mono text-[11px] text-zinc-200">bun scripts/console-user.mjs &lt;usuario&gt; admin</code>
+                <code className="code-chip rounded px-1 font-mono text-[11px]">bun scripts/console-user.mjs &lt;usuario&gt; admin</code>
                 {dict.onboarding.acceso.usersProseB}
-                <code className="rounded bg-black/40 px-1 font-mono text-[11px] text-zinc-200">web/console</code>
+                <code className="code-chip rounded px-1 font-mono text-[11px]">web/console</code>
                 {dict.onboarding.acceso.usersProseC}
-                <code className="rounded bg-black/40 px-1 font-mono text-[11px] text-zinc-200">CONSOLE_USERS_FILE</code>
+                <code className="code-chip rounded px-1 font-mono text-[11px]">CONSOLE_USERS_FILE</code>
                 {dict.onboarding.acceso.usersProseD}
               </p>
             )}
@@ -158,7 +158,7 @@ export function OnboardingWizard({ open, onClose }: { open: boolean; onClose: ()
             {enroll?.enabled && (
               <p>
                 {dict.onboarding.certificado.enabledA}
-                <code className="rounded bg-black/40 px-1 font-mono text-[11px] text-zinc-200">-TlsCa</code>
+                <code className="code-chip rounded px-1 font-mono text-[11px]">-TlsCa</code>
                 {dict.onboarding.certificado.enabledB}
               </p>
             )}
