@@ -2343,6 +2343,7 @@ export const dictEn: Dict = {
       ' with a fixed SIGKILL, invoked by a human operator through the API (never by rules or automation). Every attempt —',
     introExecuted: ' executed',
     introDenied: 'denied',
+    introOr: ' or ',
     introC: '— lands in the audit JSONL ',
     introBefore: 'before',
     introD: ' the signal; this view is read-only.',

@@ -2393,6 +2393,7 @@ export const dictEs = {
       ' con SIGKILL fijo, invocada por un operador humano a través de la API (nunca por reglas ni automatismos). Cada intento —',
     introExecuted: ' ejecutado',
     introDenied: 'denegado',
+    introOr: ' o ',
     introC: '— queda en el audit JSONL ',
     introBefore: 'antes',
     introD: ' de la señal; esta vista es de solo lectura.',
