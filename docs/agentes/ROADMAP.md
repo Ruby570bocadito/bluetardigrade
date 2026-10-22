@@ -6,12 +6,11 @@ DIR; el resto propone cambios en la sección «Propuestas» de su
 [TODO.md](../../TODO.md); la dirección del producto por horizontes,
 [docs/ROADMAP.md](../ROADMAP.md). Ante cualquier choque, manda TODO.md.
 
-Última actualización: 2026-10-22 (DIR, decimocuarta pasada: oleada de
-3 entregas verificada — reglas-interpretes-envueltos (IMP-1) e
-i18n-fechas + i18n-baseline (IMP-2) — más la ronda 10 de SEG
-read-only, limpia; claims/ vacío y s2 lista; corrección de la pasada
-12: la run de b49e96e (#566) murió por supersesión, así que el ALTA
-sigue abierta con la #564 como última verde completa).
+Última actualización: 2026-10-22 (DIR, decimoquinta pasada — micro-pase:
+IMP-1 reclamó s2-yara-memoria (claim e877a2e, la decisión publicada
+se pone en obra) y SEG pasó ronda 11 read-only sobre i18n-baseline,
+limpia; la oleada de 3 entregas de la pasada 14 sigue verificada y
+el ALTA sigue abierta con la #564 como última verde completa).
 
 ## Fase actual
 
@@ -23,9 +22,9 @@ hallazgos) y el par de IMP-2: i18n-fechas (8c83ccb: fechas con idioma
 en las vistas barridas, localeOf exportada para los números de
 directory) e i18n-baseline (4574283: la tarjeta de línea base lee del
 dict con BaselineStatusWords tipado y ES por defecto, test EN
-nuevo). claims/ vacío; s2-yara-memoria sigue lista con la decisión
-publicada (por proceso) y es el turno natural de IMP-1. PUL acumula
-doble petición activa: deriva de cifra 123→125 en prosa y
+nuevo). 1 claim vivo, sin solape: s2-yara-memoria (IMP-1, sensor/,
+claim e877a2e — la decisión publicada de DIR se pone en obra). PUL
+acumula doble petición activa: deriva de cifra 123→125 en prosa y
 consolidación de SIETE fragmentos de la ronda 4. El ALTA sigue
 abierta: la última run completa verde es la #564 (sobre 960b19c) y
 cada cabeza nueva muere por supersesión.
@@ -68,13 +67,18 @@ semana y media después (lección de los 42 fragmentos).
 ## Tareas por rol
 
 ### IMP-1 (motor Go + sensor Rust)
-- [ ] (IMP-1) s2-yara-memoria — SIGUIENTE, lista con decisión de DIR
-  publicada: escaneo POR PROCESO — el sensor enumera procesos y
-  escanea la memoria de cada uno por separado; la atribución es
-  trivial (PID + nombre del proceso escaneado en cada match), SIN
-  agregación global de memoria; el ruido y la correlación siguen en
-  el motor — `sensor/` (columna drenada con
-  reglas-interpretes-envueltos; claims/ vacío)
+- [ ] (IMP-1) s2-yara-memoria — EN VUELO (claim e877a2e): lado sensor
+  del contrato S-2↔M-3 según la decisión publicada — escaneo POR
+  PROCESO con atribución trivial (PID + nombre en cada match), sin
+  agregación global. Rutas: memscan.rs NUEVO (enumeración + lectura
+  de regiones + yara.match; Windows-only en la API, lógica pura
+  testeable), yara.rs comparte el LoadedRules compilado vía Arc,
+  heartbeat con campos yara_mem_*, subcomando `scan --memory` con
+  banderas --yara-mem*, features windows-sys ToolHelp/Memory/Debug —
+  `sensor/`
+- SEG ya avisó su lente para la revisión: lectura de memoria
+  (regiones, caps, atribución PID) es superficie nueva real — y su
+  errors de la ronda 8 viaja con el Arc de yara.rs
 - Nota de SEG (3.ª ocurrencia del patrón tabs→espacios): el
   formateador del entorno de IMP-1 volvió a meter tabs en
   rules_test.go — corregido en vuelo con `gofmt -w` antes de
@@ -108,15 +112,18 @@ semana y media después (lección de los 42 fragmentos).
   ronda, no semana y media después (lección de los 42 fragmentos).
 
 ### SEG (seguridad y bugs)
-- Ronda 10 read-only: pasó reglas-interpretes-envueltos e
-  i18n-fechas sin hallazgos (regex lineales sin backtracking
-  catastrófico, blob mínimo tras -enc para no pisar -Encoding,
-  localeOf acotada). Sin tarea reclamable hasta que s2 aterrice:
-  sec2-dpapi, regresión PR #28 y reconexiones/spool necesitan
-  Windows real — ver «Esperando al humano». Nota menor viva:
-  `is_excluded` compara prefijos en texto; un junction dentro del
-  directorio de reglas escanearía el eco del pack (ruido, sin
-  impacto en evidencia); revisar cuando s2 aterrice en el sensor.
+- Ronda 11 read-only: pasó i18n-baseline sin hallazgos (refactor
+  mecánico, texto React escapado, learnText con unidades locales);
+  ronda 10 había pasado reglas-interpretes-envueltos e i18n-fechas
+  (regex lineales sin backtracking catastrófico, blob mínimo tras
+  -enc para no pisar -Encoding, localeOf acotada). Apuntado para la
+  próxima: barrer s2-yara-memoria con lente de seguridad cuando
+  libere. Sin tarea reclamable hasta entonces: sec2-dpapi, regresión
+  PR #28 y reconexiones/spool necesitan Windows real — ver
+  «Esperando al humano». Nota menor viva: `is_excluded` compara
+  prefijos en texto; un junction dentro del directorio de reglas
+  escanearía el eco del pack (ruido, sin impacto en evidencia);
+  revisar cuando s2 aterrice en el sensor.
 
 ### TEST (tester por personas)
 - [x] (TEST) test-arranque-hallazgo-cero — CERRADA: pipeline punta a
