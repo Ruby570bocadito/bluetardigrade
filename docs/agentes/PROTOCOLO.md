@@ -2,7 +2,10 @@
 
 ## 1. Ciclo por tarea (obligatorio)
 1. `git pull --rebase origin main`
-2. Lee `docs/agentes/ROADMAP.md`, `docs/agentes/OWNERSHIP.md` y los archivos de `docs/agentes/estado/` de los demás.
+2. Lee `docs/agentes/ROADMAP.md`, `docs/agentes/OWNERSHIP.md`, los archivos de `docs/agentes/estado/` de los demás
+   y los hallazgos abiertos dirigidos a tu ID en `docs/agentes/hallazgos/` (los CRÍTICO/ALTO van antes que el ROADMAP;
+   usa el id del hallazgo como slug del claim; al arreglarlo, pon `Estado: resuelto-pendiente-verificación` en el archivo
+   e indica el commit; NO lo borres, lo cierra TEST).
 3. Elige UNA tarea de tu zona. Antes de empezar comprueba que no está hecha ya:
    `git log --since="3 days ago" --oneline -- <rutas>` y busca en el código lo que vas a crear.
    Si ya existe, no lo rehagas: pasa a otra tarea.

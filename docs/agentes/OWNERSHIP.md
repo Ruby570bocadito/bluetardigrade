@@ -11,6 +11,7 @@ en «Peticiones»). Los claims viven en `docs/agentes/claims/` — ver
 | IMP-2 | `web/` (console y console-service), `website/`, `tools/console-tests/` |
 | PUL | `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`, `LICENSE`, `.gitignore`, `.github/`, `docs/` (fuera de `docs/agentes/` y `docs/api/`), manifiestos de dependencias de `web/` y `website/` (package.json, bun.lock) |
 | SEG | Transversal: fixes mínimos de bugs/vulnerabilidades en cualquier ruta, siempre con claim previo |
+| TEST | `tests/e2e/` (la crea TEST), `docs/agentes/hallazgos/` (crea y cierra hallazgos). NUNCA modifica código de producto |
 
 Reglas:
 
