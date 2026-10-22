@@ -11,11 +11,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { CaretDown, Crosshair, MagnifyingGlass, ShieldCheck, ShieldWarning, Stack } from '@phosphor-icons/react'
 import { Input } from '@/components/ui/input'
 import { useEngine } from './engine-provider'
+import { useI18n } from './i18n-provider'
 import { EmptyState, SeverityBadge } from './ui-bits'
 import { ChartCard } from '@/components/charts/chart-frame'
 import { BarList } from '@/components/charts/bars'
 import { SEV_COLOR, SeverityIcon } from '@/components/charts/severity'
-import { ATTACK_TACTICS, SEVERITIES, SEVERITY_LABEL, tacticSlug, topCounts } from '@/lib/soc-metrics'
+import { ATTACK_TACTICS, SEVERITIES, tacticSlug, topCounts } from '@/lib/soc-metrics'
 import {
   currentSearch,
   readLensState,
@@ -36,6 +37,7 @@ function ruleHaystack(r: RuleMeta): string {
 
 export function RulesView() {
   const { rules } = useEngine()
+  const { dict } = useI18n()
   const [query, setQueryState] = useState('')
   const [openId, setOpenIdState] = useState<string | null>(null)
 
@@ -91,14 +93,14 @@ export function RulesView() {
   const filtering = query.trim() !== ''
 
   return (
-    <section aria-label="Reglas de detección" className="space-y-4">
+    <section aria-label={dict.rules.sectionAria} className="space-y-4">
       {rules.length > 0 && <RuleCoverage rules={rules} onFilter={(text) => setQuery(query === text ? '' : text)} active={query} />}
 
       <div className="panel-head panel justify-between">
         <div className="flex min-w-0 flex-wrap items-baseline gap-2">
-          <h2 className="text-sm font-medium text-zinc-100">Reglas cargadas en el motor</h2>
+          <h2 className="text-sm font-medium text-zinc-100">{dict.rules.loadedTitle}</h2>
           <span className="text-xs tabular-nums text-zinc-500">{visible.length}</span>
-          <span className="text-xs text-zinc-500">{filtering ? `de ${rules.length} totales` : 'recarga en caliente cada 15 s'}</span>
+          <span className="text-xs text-zinc-500">{filtering ? dict.rules.ofTotal(rules.length) : dict.rules.hotReload}</span>
         </div>
         <div className="relative">
           <MagnifyingGlass
@@ -112,8 +114,8 @@ export function RulesView() {
             onKeyDown={(e) => {
               if (e.key === 'Escape') setQuery('')
             }}
-            placeholder="buscar regla, MITRE, táctica..."
-            aria-label="Buscar en reglas"
+            placeholder={dict.rules.searchPlaceholder}
+            aria-label={dict.rules.searchAria}
             className="h-8 w-[240px] rounded-md border-zinc-800 bg-zinc-900 pl-7 text-xs text-zinc-200 placeholder:text-zinc-500"
           />
         </div>
@@ -123,16 +125,16 @@ export function RulesView() {
         <div className="panel">
           <EmptyState
             icon={ShieldCheck}
-            title="Aún no hay reglas en el búfer"
-            hint="El catálogo se rellena con la primera sincronización contra la API del motor (GET /api/rules)."
+            title={dict.rules.emptyTitle}
+            hint={dict.rules.emptyHint}
           />
         </div>
       ) : visible.length === 0 ? (
         <div className="panel">
           <EmptyState
             icon={MagnifyingGlass}
-            title="Sin resultados"
-            hint="Ninguna regla coincide con la búsqueda actual"
+            title={dict.rules.noResultsTitle}
+            hint={dict.rules.noResultsHint}
           />
         </div>
       ) : (
@@ -155,14 +157,14 @@ export function RulesView() {
                     </span>
                     <span className="hidden min-w-0 md:block">
                       <span className="block truncate font-mono text-xs text-zinc-400">{r.event_type}</span>
-                      <span className="block truncate font-mono text-[11px] text-zinc-500">{r.tactic || 'sin táctica'}</span>
+                      <span className="block truncate font-mono text-[11px] text-zinc-500">{r.tactic || dict.rules.noTactic}</span>
                     </span>
                     {r.mitre ? (
                       <span className="hidden rounded-md border border-primary/20 bg-primary-tint/[0.08] px-1.5 py-0.5 font-mono text-[10px] text-primary-soft sm:inline">
                         {r.mitre}
                       </span>
                     ) : (
-                      <span className="hidden text-xs text-zinc-500 sm:inline">n/d</span>
+                      <span className="hidden text-xs text-zinc-500 sm:inline">{dict.rules.nd}</span>
                     )}
                     <CaretDown size={13} aria-hidden className={`text-zinc-500 transition-transform ${open ? 'rotate-180' : ''}`} />
                   </button>
@@ -170,8 +172,8 @@ export function RulesView() {
                   {open && (
                     <div className="grid gap-4 border-t border-zinc-800/80 bg-zinc-900/60 px-4 py-4 md:grid-cols-2">
                       <div className="min-w-0">
-                        <p className="text-[10px] uppercase tracking-wider text-zinc-500">Descripción</p>
-                        <p className="mt-1.5 max-w-[65ch] text-xs leading-relaxed text-zinc-400">{r.description || 'sin descripción'}</p>
+                        <p className="text-[10px] uppercase tracking-wider text-zinc-500">{dict.rules.description}</p>
+                        <p className="mt-1.5 max-w-[65ch] text-xs leading-relaxed text-zinc-400">{r.description || dict.rules.noDescription}</p>
                         <div className="mt-3 flex flex-wrap gap-1.5">
                           {r.tags.map((t) => (
                             <span key={t} className="rounded-md border border-zinc-800 bg-zinc-950 px-1.5 py-0.5 font-mono text-[10px] text-zinc-500">
@@ -182,11 +184,11 @@ export function RulesView() {
                       </div>
                       <div className="min-w-0 overflow-hidden rounded-md border border-zinc-800">
                         <div className="flex items-center justify-between border-b border-zinc-800 bg-zinc-950/60 px-3 py-1.5 text-[11px] text-zinc-500">
-                          <span>Condiciones de match</span>
+                          <span>{dict.rules.conditions}</span>
                           <span className="font-mono">{r.event_type}</span>
                         </div>
                         <table className="w-full text-left text-xs">
-                          <caption className="sr-only">Condiciones de la regla {r.name}</caption>
+                          <caption className="sr-only">{dict.rules.conditionsCaption(r.name)}</caption>
                           <tbody className="divide-y divide-zinc-800/60">
                             {r.conditions.map((c, i) => (
                               <tr key={i}>
@@ -209,7 +211,7 @@ export function RulesView() {
         </div>
       )}
       <p className="mt-3 text-xs text-zinc-500">
-        Formato YAML igual al del motor Go: internal/rules las indexa por event_type y las recarga en caliente cada 15s.
+        {dict.rules.yamlNote}
       </p>
     </section>
   )
@@ -221,6 +223,8 @@ export function RulesView() {
  * with the same free-text search (a second click clears it).
  */
 function RuleCoverage({ rules, onFilter, active }: { rules: RuleMeta[]; onFilter: (text: string) => void; active: string }) {
+  const { dict } = useI18n()
+  const cov = dict.rules.coverage
   const byTactic = ATTACK_TACTICS.map((t) => ({
     ...t,
     count: rules.filter((r) => (tacticSlug(r.tactic) ?? r.tags.map(tacticSlug).find(Boolean)) === t.slug).length,
@@ -232,50 +236,50 @@ function RuleCoverage({ rules, onFilter, active }: { rules: RuleMeta[]; onFilter
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       <ChartCard
-        title="Reglas por táctica ATT&CK"
-        subtitle={`${byTactic.length} de 14 tácticas cubiertas${uncovered ? ` · ${uncovered} sin reglas` : ''}`}
+        title={cov.tacticTitle}
+        subtitle={cov.tacticSubtitle(byTactic.length, ATTACK_TACTICS.length, uncovered)}
         icon={Crosshair}
-        table={{ caption: 'Reglas por táctica de MITRE ATT&CK', columns: ['Táctica', 'Reglas'], rows: ATTACK_TACTICS.map((t) => [t.label, byTactic.find((b) => b.slug === t.slug)?.count ?? 0]) }}
+        table={{ caption: cov.tacticCaption, columns: [cov.tacticCol, cov.rulesCol], rows: ATTACK_TACTICS.map((t) => [dict.rules.tactics[t.slug], byTactic.find((b) => b.slug === t.slug)?.count ?? 0]) }}
       >
         <BarList
           rows={byTactic.map((t) => {
             const label = rules.find((r) => tacticSlug(r.tactic) === t.slug)?.tactic || t.slug
             return {
-              key: t.slug, label: t.label, value: t.count,
+              key: t.slug, label: dict.rules.tactics[t.slug], value: t.count,
               onSelect: () => onFilter(label),
-              selectLabel: pressed(label) ? `Quitar el filtro ${t.label}` : `Filtrar reglas de ${t.label}: ${t.count}`,
+              selectLabel: pressed(label) ? cov.filterOff(dict.rules.tactics[t.slug]) : cov.filterOn(dict.rules.tactics[t.slug], t.count),
             }
           })}
         />
       </ChartCard>
       <ChartCard
-        title="Reglas por severidad"
-        subtitle="Severidad declarada en el YAML de cada regla"
+        title={cov.sevTitle}
+        subtitle={cov.sevSubtitle}
         icon={ShieldWarning}
-        table={{ caption: 'Reglas por severidad', columns: ['Severidad', 'Reglas'], rows: bySeverity.map((b) => [SEVERITY_LABEL[b.sev], b.count]) }}
+        table={{ caption: cov.sevCaption, columns: [cov.sevCol, cov.rulesCol], rows: bySeverity.map((b) => [dict.panel.sevLabels[b.sev], b.count]) }}
       >
         <BarList
           rows={bySeverity.map((b) => ({
             key: b.sev,
-            label: <span className="flex items-center gap-2"><SeverityIcon severity={b.sev} size={13} />{SEVERITY_LABEL[b.sev]}</span>,
+            label: <span className="flex items-center gap-2"><SeverityIcon severity={b.sev} size={13} />{dict.panel.sevLabels[b.sev]}</span>,
             value: b.count,
             color: SEV_COLOR[b.sev],
           }))}
         />
       </ChartCard>
       <ChartCard
-        title="Tipos de evento evaluados"
-        subtitle={`${byType.distinct} tipos de telemetría con reglas`}
+        title={cov.typeTitle}
+        subtitle={cov.typeSubtitle(byType.distinct)}
         icon={Stack}
-        table={{ caption: 'Reglas por tipo de evento', columns: ['Tipo de evento', 'Reglas'], rows: byType.top.map((r) => [r.key, r.count]) }}
-        footer={byType.rest > 0 ? `${byType.rest} reglas más en otros tipos.` : undefined}
+        table={{ caption: cov.typeCaption, columns: [cov.typeCol, cov.rulesCol], rows: byType.top.map((r) => [r.key, r.count]) }}
+        footer={byType.rest > 0 ? cov.restFooter(byType.rest) : undefined}
       >
         <BarList
           color="var(--series-2)"
           rows={byType.top.map((r) => ({
             key: r.key, label: <span className="font-mono">{r.key}</span>, value: r.count,
             onSelect: () => onFilter(r.key),
-            selectLabel: pressed(r.key) ? `Quitar el filtro ${r.key}` : `Filtrar reglas de ${r.key}: ${r.count}`,
+            selectLabel: pressed(r.key) ? cov.filterOff(r.key) : cov.filterOn(r.key, r.count),
           }))}
         />
       </ChartCard>
