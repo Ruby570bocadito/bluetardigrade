@@ -53,6 +53,17 @@ jobs:
     name: govulncheck, osv-scanner, cargo audit
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # rustsec/audit-check publishes its report as a check run on this
+    # job's head ref, and the Checks API requires checks: write: with
+    # the read-only token the publish failed and the step exited 1
+    # whenever the report was non-empty (which is why bincode had to be
+    # ignored in .cargo/audit.toml). Granted at job level so it covers
+    # exactly this job; issues: write is deliberately left out (the
+    # cron-triggered issue creation of the action stays disabled —
+    # least privilege, the run log carries the advisories).
+    permissions:
+      contents: read
+      checks: write
     steps:
       # Actions pinned by SHA: the commit hashes were verified with
       # git ls-remote against the official tags (same pins as ci.yml).

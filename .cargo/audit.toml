@@ -25,14 +25,4 @@ ignore = [
     # parse-only use on a non-compromised host is outside the attack
     # surface. Tracking upstream: https://github.com/RustCrypto/RSA/issues/626
     "RUSTSEC-2023-0071",
-    # Informational (unmaintained, NOT vulnerable): bincode 2.0.1 is a
-    # hard dependency of yara-x's own internals — not this sensor's
-    # choice, and there is no version to pick that clears it. Tracked in
-    # this ignore so the audit report stays empty; rustsec/audit-check
-    # cannot publish a non-empty report with this workflow's token
-    # (contents: read) and exits 1 on the failed publish, which would
-    # keep the lane red for an informational warning. Revisit when
-    # yara-x drops bincode or OPS gives the audit job a token that can
-    # publish (checks: write), whichever comes first.
-    "RUSTSEC-2025-0141",
 ]
