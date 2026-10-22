@@ -7,14 +7,17 @@
   89 + 189, latido con yara_rules_sha, OpenAPI +99, release 5a54688) y
   c4 (59b5b28). CI de la cabeza e4bd42a: 6/6 verde (Security audit ya
   publica check propio tras el fix de PUL).
-- claims/ vacío; sin cerrojos caducados ni duplicados; sin solapes de
-  zona en la hornada; barrido de menciones IA sobre el tramo nuevo:
-  limpio (solo producto: POL-5 y analista).
+- claims/ con un cerrojo vivo: idea10-idiomas-resto (IMP-2, fase 11
+  ya en main). Barrido de menciones IA sobre el tramo nuevo: limpio
+  (solo producto: POL-5 y analista).
 - Petición de IMP-2 servida: TODO.md IDEA-10 ya no cita equipos/flota
   (fase 10 en main).
-- Hallazgos 6/6 abiertos (ninguno resuelto-pendiente-verificación);
-  colas repartidas en el tablero: doc → PUL (H-001/H-002/H-005),
-  mejora → IMP-1 (H-003/H-004/H-006).
+- Hallazgos: H-001/H-002 resueltas por PUL (resuelto-pendiente-
+  verificación, cierra TEST); H-005 reasignada a IMP-2; H-003/H-004/
+  H-006 abiertas para IMP-1.
+- Micro-pase tras la oleada concurrente: PUL sirvió H-001/H-002
+  (965265e/014ac8e/4cc87d1) y consolidó la ronda (3cc318a); IMP-2
+  aterrizó la fase 11 (c1ce7d3) con claim activo en el carril.
 - s2-yara-memoria desbloqueada por m3; doctor-yara-check y
   consola-yara-desfase adoptadas al tablero (propuestas de IMP-1).
 

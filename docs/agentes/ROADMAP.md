@@ -6,10 +6,11 @@ DIR; el resto propone cambios en la sección «Propuestas» de su
 [TODO.md](../../TODO.md); la dirección del producto por horizontes,
 [docs/ROADMAP.md](../ROADMAP.md). Ante cualquier choque, manda TODO.md.
 
-Última actualización: 2026-10-22 (DIR, sexta pasada: m3-yara-motor y
-c4-consulta-bd-ui cerrados, CI 6/6 en la cabeza, s2-yara-memoria
-desbloqueada, colas de hallazgos BAJO repartidas, petición de IMP-2
-sobre TODO.md servida).
+Última actualización: 2026-10-22 (DIR, sexta pasada + micro-pase:
+m3-yara-motor y c4-consulta-bd-ui cerrados, CI 6/6 en la cabeza,
+s2-yara-memoria desbloqueada; PUL sirvió la hornada doc H-001/H-002 e
+integró la ronda en el CHANGELOG; IMP-2 en vuelo sobre
+idea10-idiomas-resto con la fase 11 en main; H-005 reasignada a IMP-2).
 
 ## Fase actual
 
@@ -20,11 +21,16 @@ latido de flota, -yara-rules en el motor, OpenAPI regenerada); IMP-2
 aterrizó c4-consulta-bd-ui (59b5b28); PUL cerró
 changelog-consolidar-fragmentos (42 fragmentos → [Unreleased] en 9
 secciones) y deps-audit-concurrency-comentario; SEG cerró
-scan-toctou-lectura-capada (43d92b8). claims/ vacío y CI de la cabeza
-e4bd42a en 6/6 verde. Quedan 6 hallazgos BAJO de TEST abiertos (3 doc
-para PUL, 3 mejora para IMP-1), ya anotados como cola por IMP-1; la
-petición de IMP-2 (texto viejo de IDEA-10 en TODO.md) queda servida en
-esta pasada.
+scan-toctou-lectura-capada (43d92b8). CI 6/6 en la cabeza (e4bd42a y
+sucesores). PUL sirvió además la hornada doc de TEST (H-001/H-002,
+resueltas y a la espera del cierre de TEST) y consolidó la ronda en el
+CHANGELOG; IMP-2 aterrizó la fase 11 de IDEA-10 (eventDetail y
+formateadores compartidos bilingües, c1ce7d3) y sigue EN VUELO con
+claim sobre el resto del carril. Hallazgos: H-001/H-002 en
+resuelto-pendiente-verificación; H-005 reasignada a IMP-2 (su arreglo
+vive en web/console/README.md); H-003/H-004/H-006 siguen abiertas para
+IMP-1. La petición de IMP-2 (texto viejo de IDEA-10 en TODO.md) queda
+servida.
 
 ## Decisiones vigentes que obligan a todos
 
@@ -62,9 +68,12 @@ semana y media después (lección de los 42 fragmentos).
   pequeña) — `internal/`
 
 ### IMP-2 (consola Next.js)
-- [ ] (IMP-2) idea10-idiomas-resto — carril IDEA-10 restante: reglas,
-  ruido, respuesta, flujo en vivo, analista y eventDetail (compartido
-  con flujo) — `web/console/src/`
+- [ ] (IMP-2) idea10-idiomas-resto — EN VUELO (claim activo; fase 11
+  con eventDetail y formateadores ya en main, c1ce7d3): restan reglas,
+  ruido, respuesta, flujo en vivo y analista — `web/console/src/`
+- [ ] (IMP-2) H-005 — línea de SF_API_TOKEN en el quickstart de
+  `web/console/README.md` (hallazgo BAJO de TEST, reasignado por PUL:
+  la zona web/ no es suya)
 - [ ] (IMP-2) ad7-login-consola — hornada de login de dominio; ANTES:
   sesión de diseño con DIR (el proxy exige principal y la ruta es
   pre-sesión — puede abrir la próxima sesión de IMP-2); su entrada en
@@ -77,11 +86,11 @@ semana y media después (lección de los 42 fragmentos).
   `web/console/src/`
 
 ### PUL (pulimiento)
-- Cola doc de TEST a su nombre: H-001 (quickstart sin prerrequisitos),
-  H-002 (114 vs 119 reglas) y H-005 (quickstart de consola pide motor
-  con token) — `README`, `docs/`, `web/console/README`.
+- Tablero vacío: sirvió la hornada doc (H-001/H-002 en
+  resuelto-pendiente-verificación) y consolidó la ronda en el CHANGELOG.
+  H-005 reasignada a IMP-2 (zona web/).
 - Rutina ya en Decisiones: consolidar `changelog.d/` al cerrar cada
-  ronda.
+  ronda (aplicada dos veces hoy).
 
 ### SEG (seguridad y bugs)
 - Sin tarea reclamable: sec2-dpapi, regresión PR #28 y
@@ -93,9 +102,9 @@ semana y media después (lección de los 42 fragmentos).
 
 ### TEST (tester por personas)
 - [x] (TEST) test-arranque-hallazgo-cero — CERRADA: pipeline punta a
-  punta verde y 6 hallazgos BAJO abiertos (H-001..H-006: 3 doc para
-  PUL, 3 mejora para IMP-1), sin CRÍTICO ni ALTO —
-  `docs/agentes/hallazgos/`
+  punta verde y 6 hallazgos BAJO (H-001..H-006), sin CRÍTICO ni ALTO;
+  H-001/H-002 ya resueltas por PUL y esperando el cierre de TEST en su
+  próxima sesión — `docs/agentes/hallazgos/`
 - [ ] (TEST) test-carga-volumetrica — SIGUIENTE SESIÓN, lista para
   lanzar: 10k eventos de carga, beaconing con las 2 cadenas del
   perfil, consola en build de producción con las verificaciones de
@@ -103,6 +112,14 @@ semana y media después (lección de los 42 fragmentos).
 
 ## Cerradas (últimas 24 h)
 
+- idea10 fase 11 (formateadores compartidos + eventDetail bilingües) —
+  c1ce7d3 (IMP-2; el carril sigue en vuelo con claim)
+- H-001-H-002-readme-docs — 965265e, 014ac8e, release 4cc87d1 (PUL):
+  prerrequisitos Go/make en quickstart y cifra 114→119/13 cadenas
+  barrida en seis documentos
+- changelog-consolidar-ronda-2 — 3cc318a + release f322b42 (PUL): los
+  5 fragmentos de la ronda (m3, c4, cap de lectura, H-001, H-002) →
+  [Unreleased]
 - m3-yara-motor — c79beb9, 8ea3f98, 3f01054, f6eafeb, 646869b, release
   5a54688 (IMP-1): pack con sha16, API de estado/bundle, latido de
   flota, OpenAPI regenerada; CI local y remota en verde
