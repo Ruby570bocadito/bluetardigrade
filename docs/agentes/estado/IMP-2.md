@@ -1,21 +1,23 @@
 # IMP-2 — estado
 
 ## Hecho (últimas 24 h)
-- i18n-noc-mode en main (98ae51f): el NOC deja de colar español — la
-  fila de severidad lee alerts.sevLabels (muere SEVERITY_LABEL, sin
-  consumidores) y las gráficas compartidas attack-matrix y heatmap
-  sacan las tácticas del dict (tacticsShort nuevo para celdas chicas;
-  nombre completo en title/aria). El heatmap traduce también sus
-  strings duros («Ver alertas de», «N alertas» → charts.heat.hostAria/
-  cellTitle). Panel y reglas heredan el fix al compartir gráficas.
-  Suite al cierre: 603 tests, tsc, next build, tema, DOM, navegador
-  23/23, a11y 20/20 y motion, en verde.
-- yara-status-poll en main (f42dd8d): el poll de GET /api/yara subió a
-  nivel de la vista Equipos (una petición por minuto cueste lo que
-  cueste la flota) y el refresco fallido se nombra en la fila «Lote
-  YARA» con la hora del último valor bueno; sin respuesta nunca,
-  «no se pudo consultar el lote» y no «el motor no publica lote».
-- tema-claro en main (8f823bf, release 02f9b1f), verificada por DIR.
+- i18n-fechas en main (8c83ccb): las fechas de formatTime/formatDateTime
+  viajan con el idioma en las vistas barridas — alerts (lista, aria de
+  selección, detalle, triaje y asignación), directory (filas de
+  sincronía y subtítulo de postura), intel, fleet (índice, línea de
+  tiempo y ficha del sensor) y playbook (evidencia y cronología). De
+  paso, 11 toLocaleString('es-ES') duros de directory pasan a localeOf
+  (exportada desde console-types): la consola en EN deja de imprimir
+  separador de miles español. baseline-card NO fue tocada: nunca pasó
+  por IDEA-10, su barrido completo va en Propuestas.
+- i18n-noc-mode en main (98ae51f): NOC sin español duro — sevLabels del
+  dict (SEVERITY_LABEL dada de baja) y tácticas de las gráficas
+  compartidas attack-matrix/heatmap desde el dict (tacticsShort nuevo;
+  aria/title del heatmap traducidos). Panel y reglas heredan el fix.
+- yara-status-poll en main (f42dd8d): poll de /api/yara a nivel de la
+  vista Equipos + refresco fallido nombrado en la fila «Lote YARA».
+- Suite al cierre de cada entrega: 603 tests, tsc, next build, tema,
+  DOM, navegador 23/23, a11y 20/20 y motion, en verde.
 
 ## En curso
 - (nada)
@@ -28,12 +30,13 @@
 - (ninguna)
 
 ## Propuestas para el roadmap
-- Cola i18n restante: el donut de tácticas del panel (usa tactic.short)
-  y buildTriageFlow (TACTIC_LABEL/TACTIC_FULL/OTHER/NO en español a
-  nivel de módulo) siguen con etiquetas duras; necesitan pasar el dict
+- Barrido i18n completo de baseline-card (títulos, estados, filtrado y
+  baselineStatus en lib/intel, todo en español) + sus fechas.
+- Cola i18n restante: donut de tácticas del panel (tactic.short) y
+  buildTriageFlow (labels españoles a nivel de módulo) — pasan el dict
   por parámetro (cambio de firma en lib).
-- Pasar formatTime/formatDateTime con idioma en los call-sites ya
-  barridos (alerts, directory, intel, fleet, playbook, baseline).
+- Fechas/números con idioma en el resto de vistas barridas que faltan:
+  noc, dashboard, incidents, respond, forense, onboarding, live-feed.
 - Filtro de asignación en `GET /api/alerts/search` + lente en URL.
 
 ## Estado: VERDE
