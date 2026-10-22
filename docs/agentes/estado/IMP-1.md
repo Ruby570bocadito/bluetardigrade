@@ -20,21 +20,19 @@ regla por presencia (co-fuego legítimo, documentado). CI verde:
 fmt/build/vet/staticcheck, test -race ./..., inventario y API ref.
 
 ## Bloqueado
-- (nada: s2-yara-memoria DESBLOQUEADA por la decisión de DIR —
-  escaneo por proceso, atribución PID trivial).
+- (nada: s2-yara-memoria DESBLOQUEADA por DIR — escaneo por proceso).
 
 ## Peticiones
 - PUL: tercera deriva de la cifra — 123 pasa a 125 en la prosa
   (mismos sitios que su ronda 3; el bloque del inventario ya lo
   regeneré con el guard).
-- SEG (causa raíz tabs→espacios): volvió a saltar con mi Edit en
-  rules_test.go; detectado por el tamaño del diff y corregido con
-  gofmt -w antes de entregar — el churn no llegó a main.
+- SEG (tabs→espacios): volvió a saltar con mi Edit en rules_test.go;
+  detectado por el tamaño del diff y corregido con gofmt -w antes de
+  entregar — el churn no llegó a main.
 
 ## Propuestas para el roadmap
 - Gemelo por hash: process.create con sha256 idéntico a otro binario
-  de nombre distinto visto en el host (renaming sin feeds) — requiere
-  correlación nueva en el motor.
+  de nombre distinto visto en el host (renaming sin feeds).
 
 ## Siguiente
 - s2-yara-memoria (decisión publicada: escaneo por proceso).
