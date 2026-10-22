@@ -235,3 +235,52 @@ func writeSuppressFile(t *testing.T, content string) string {
 	}
 	return p
 }
+
+// sev used to be silently ignored on the alert endpoints: the console
+// deep-link spelling of the severity filter got a 200 with the FULL
+// list while the caller believed it filtered (H-006, TEST ronda 1).
+// It is now a validated alias of severity; both keys together are a
+// union, matching the CSV semantics of either key alone.
+func TestAlertsSevAlias(t *testing.T) {
+	h, addr := newTestHub(t)
+	now := time.Now().UTC()
+	h.RecordAlert(alertAt("r-vss", "critical", "LAB-A", now))
+	h.RecordAlert(alertAt("r-lsa", "high", "LAB-B", now))
+
+	cases := []struct {
+		query string
+		want  []string
+	}{
+		{"sev=critical", []string{"r-vss"}},
+		{"sev=high,critical", []string{"r-lsa", "r-vss"}},
+		{"severity=high&sev=critical", []string{"r-lsa", "r-vss"}}, // union of both keys
+		{"severity=critical&sev=critical", []string{"r-vss"}},      // same value twice: still one filter
+	}
+	for _, c := range cases {
+		var got []map[string]any
+		getJSON(t, fmt.Sprintf("http://%s/api/alerts?%s", addr, c.query), &got)
+		ids := make([]string, 0, len(got))
+		for _, a := range got {
+			ids = append(ids, a["rule_id"].(string))
+		}
+		if strings.Join(ids, ",") != strings.Join(c.want, ",") {
+			t.Errorf("?%s: rule_ids = %v, want %v", c.query, ids, c.want)
+		}
+	}
+}
+
+func TestAlertsSevAliasValidation(t *testing.T) {
+	_, addr := newTestHub(t)
+	cases := []string{
+		"/api/alerts?sev=banana",            // the hallazgo's exact repro
+		"/api/alerts?sev=all",               // console's "all" spelling is not an API value
+		"/api/alerts/search?q=x&sev=banana", // search shares the parser
+		"/api/alerts/export?format=jsonl&sev=banana",
+	}
+	for _, path := range cases {
+		res, _ := fetchBody(t, "http://"+addr+path)
+		if res.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400", path, res.StatusCode)
+		}
+	}
+}

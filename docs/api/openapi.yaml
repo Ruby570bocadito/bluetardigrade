@@ -979,6 +979,7 @@ paths:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Host'
         - $ref: '#/components/parameters/Severity'
+        - $ref: '#/components/parameters/Sev'
         - $ref: '#/components/parameters/RuleId'
         - $ref: '#/components/parameters/Since'
         - $ref: '#/components/parameters/Until'
@@ -1053,6 +1054,7 @@ paths:
             default: all
         - $ref: '#/components/parameters/Host'
         - $ref: '#/components/parameters/Severity'
+        - $ref: '#/components/parameters/Sev'
         - $ref: '#/components/parameters/RuleId'
         - $ref: '#/components/parameters/Since'
         - $ref: '#/components/parameters/Until'
@@ -1708,6 +1710,7 @@ paths:
         - $ref: '#/components/parameters/ExportFormat'
         - $ref: '#/components/parameters/Host'
         - $ref: '#/components/parameters/Severity'
+        - $ref: '#/components/parameters/Sev'
         - $ref: '#/components/parameters/RuleId'
         - $ref: '#/components/parameters/Since'
         - $ref: '#/components/parameters/Until'
@@ -3035,6 +3038,18 @@ components:
       schema:
         type: string
         example: critical,high
+    Sev:
+      name: sev
+      in: query
+      required: false
+      description: |
+        Alert-only. Alias of `severity` (the console deep-link
+        spelling), validated against the same enum: values outside
+        info, low, medium, high, critical answer 400. Both keys at
+        once act as a union.
+      schema:
+        type: string
+        example: critical
     RuleId:
       name: rule_id
       in: query

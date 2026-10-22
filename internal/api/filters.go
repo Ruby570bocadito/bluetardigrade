@@ -95,55 +95,22 @@ func parseRecordFilter(w http.ResponseWriter, r *http.Request) (*recordFilter, b
 		http.Error(w, fmt.Sprintf("invalid unassigned value %q: valid values are true or 1", v), http.StatusBadRequest)
 		return nil, false
 	}
-	// unassigned=true is the LIST's documented spelling of the unassigned
-	// queue (OpenAPI): parsed at this shared chokepoint so search and the
-	// alerts export honor it too, mapped onto the same "none" marker.
-	// Invalid values are loud 400s, like every filter here — never a
-	// silent "false" the caller reads as an empty queue. The contradiction
-	// check mirrors the old list-only rule: a named owner AND no owner at
-	// once is a caller bug, while assignee=none plus unassigned=true asks
-	// for the same queue twice and is allowed.
-	switch v := q.Get("unassigned"); v {
-	case "":
-		// absent: no queue filter
-	case "true", "1":
-		if f.assignee != "" && f.assignee != "none" {
-			http.Error(w, "contradictory filters: assignee and unassigned=true cannot combine (drop one)", http.StatusBadRequest)
-			return nil, false
-		}
-		f.assignee = "none"
-	default:
-		http.Error(w, fmt.Sprintf("invalid unassigned value %q: valid values are true or 1", v), http.StatusBadRequest)
-		return nil, false
-	}
-	// unassigned=true is the LIST's documented spelling of the unassigned
-	// queue (OpenAPI): parsed at this shared chokepoint so search and the
-	// alerts export honor it too, mapped onto the same "none" marker.
-	// Invalid values are loud 400s, like every filter here — never a
-	// silent "false" the caller reads as an empty queue. The contradiction
-	// check mirrors the old list-only rule: a named owner AND no owner at
-	// once is a caller bug, while assignee=none plus unassigned=true asks
-	// for the same queue twice and is allowed.
-	switch v := q.Get("unassigned"); v {
-	case "":
-		// absent: no queue filter
-	case "true", "1":
-		if f.assignee != "" && f.assignee != "none" {
-			http.Error(w, "contradictory filters: assignee and unassigned=true cannot combine (drop one)", http.StatusBadRequest)
-			return nil, false
-		}
-		f.assignee = "none"
-	default:
-		http.Error(w, fmt.Sprintf("invalid unassigned value %q: valid values are true or 1", v), http.StatusBadRequest)
-		return nil, false
-	}
-	for _, s := range splitCSV(q.Get("severity")) {
-		switch s {
-		case rules.SevInfo, rules.SevLow, rules.SevMedium, rules.SevHigh, rules.SevCritical:
-			f.sevs = append(f.sevs, s)
-		default:
-			http.Error(w, "invalid severity "+s+": use info, low, medium, high or critical (comma separated)", http.StatusBadRequest)
-			return nil, false
+	// severity filters the ALERT endpoints; sev is its console deep-link
+	// spelling (README deep links are /?...&sev=critical) and used to be
+	// silently ignored on the API: a consumer filtering ?sev=banana got
+	// the FULL list and believed the filter applied (H-006, TEST ronda
+	// 1). sev is now a validated alias of severity — same enum, same
+	// 400-with-valid-values for anything else — and both keys together
+	// are a union, matching the CSV semantics of either key alone.
+	for _, key := range []string{"severity", "sev"} {
+		for _, s := range splitCSV(q.Get(key)) {
+			switch s {
+			case rules.SevInfo, rules.SevLow, rules.SevMedium, rules.SevHigh, rules.SevCritical:
+				f.sevs = append(f.sevs, s)
+			default:
+				http.Error(w, "invalid severity "+s+": use info, low, medium, high or critical (comma separated)", http.StatusBadRequest)
+				return nil, false
+			}
 		}
 	}
 	var err error
