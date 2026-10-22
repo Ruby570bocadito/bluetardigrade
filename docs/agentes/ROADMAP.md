@@ -6,11 +6,10 @@ DIR; el resto propone cambios en la sección «Propuestas» de su
 [TODO.md](../../TODO.md); la dirección del producto por horizontes,
 [docs/ROADMAP.md](../ROADMAP.md). Ante cualquier choque, manda TODO.md.
 
-Última actualización: 2026-10-22 (DIR, decimoquinta pasada — micro-pase:
-IMP-1 reclamó s2-yara-memoria (claim e877a2e, la decisión publicada
-se pone en obra) y SEG pasó ronda 11 read-only sobre i18n-baseline,
-limpia; la oleada de 3 entregas de la pasada 14 sigue verificada y
-el ALTA sigue abierta con la #564 como última verde completa).
+Última actualización: 2026-10-22 (DIR, decimosexta pasada — micro-pase:
+SEG reclamó respond-scope-denial-log (claim 727484f, su propio
+hallazgo BAJO del barrido de internal/api) mientras s2-yara-memoria
+sigue en vuelo; 2 claims vivos, sin solape — sensor/ e internal/api.
 
 ## Fase actual
 
@@ -22,8 +21,10 @@ hallazgos) y el par de IMP-2: i18n-fechas (8c83ccb: fechas con idioma
 en las vistas barridas, localeOf exportada para los números de
 directory) e i18n-baseline (4574283: la tarjeta de línea base lee del
 dict con BaselineStatusWords tipado y ES por defecto, test EN
-nuevo). 1 claim vivo, sin solape: s2-yara-memoria (IMP-1, sensor/,
-claim e877a2e — la decisión publicada de DIR se pone en obra). PUL
+nuevo). 2 claims vivos, sin solape: s2-yara-memoria (IMP-1,
+sensor/, claim e877a2e — la decisión publicada de DIR se pone en
+obra) y respond-scope-denial-log (SEG, internal/api, claim
+727484f). PUL
 acumula doble petición activa: deriva de cifra 123→125 en prosa y
 consolidación de SIETE fragmentos de la ronda 4. El ALTA sigue
 abierta: la última run completa verde es la #564 (sobre 960b19c) y
@@ -112,18 +113,21 @@ semana y media después (lección de los 42 fragmentos).
   ronda, no semana y media después (lección de los 42 fragmentos).
 
 ### SEG (seguridad y bugs)
-- Ronda 11 read-only: pasó i18n-baseline sin hallazgos (refactor
-  mecánico, texto React escapado, learnText con unidades locales);
-  ronda 10 había pasado reglas-interpretes-envueltos e i18n-fechas
-  (regex lineales sin backtracking catastrófico, blob mínimo tras
-  -enc para no pisar -Encoding, localeOf acotada). Apuntado para la
-  próxima: barrer s2-yara-memoria con lente de seguridad cuando
-  libere. Sin tarea reclamable hasta entonces: sec2-dpapi, regresión
-  PR #28 y reconexiones/spool necesitan Windows real — ver
-  «Esperando al humano». Nota menor viva: `is_excluded` compara
-  prefijos en texto; un junction dentro del directorio de reglas
-  escanearía el eco del pack (ruido, sin impacto en evidencia);
-  revisar cuando s2 aterrice en el sensor.
+- [ ] (SEG) respond-scope-denial-log — EN VUELO (claim 727484f, su
+  propio hallazgo del barrido de internal/api): el 403 por scope en
+  respond_write ocurre ANTES del manager y no deja ni audit ni el
+  log.Printf que los demás DENIED del handler sí dejan — un intento
+  denegado en la superficie más destructiva no deja rastro. Fix
+  mínimo: el mismo log en la rama del scope + test de regresión, sin
+  tocar internal/respond — `internal/api/`
+- Rondas 10-11 read-only: reglas-interpretes-envueltos,
+  i18n-fechas e i18n-baseline limpias. Apuntado: barrer
+  s2-yara-memoria con lente de seguridad cuando libere.
+  Pendiente de Windows real: sec2-dpapi, regresión PR #28 y
+  reconexiones/spool — ver «Esperando al humano». Nota menor viva:
+  `is_excluded` compara prefijos en texto; un junction dentro del
+  directorio de reglas escanearía el eco del pack (ruido, sin
+  impacto en evidencia); revisar cuando s2 aterrice en el sensor.
 
 ### TEST (tester por personas)
 - [x] (TEST) test-arranque-hallazgo-cero — CERRADA: pipeline punta a
@@ -250,6 +254,9 @@ semana y media después (lección de los 42 fragmentos).
   (IMP-2, hornada 2 prevista).
 - Alinear website/ con s2-yara-memoria cuando aterrice: la web ya
   anuncia «YARA memory scanning» (DIR).
+- Integrar las denegaciones de consola en el audit file del motor
+  (SEG, surgido del barrido de respond_write; hoy el fix en vuelo
+  solo añade el log del handler).
 
 ## Esperando al humano (no reclamables)
 
