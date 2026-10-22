@@ -9,7 +9,10 @@
 #      staging paths. The parent signal comes from the engine's
 #      pid->name flight recorder (enrichment.parent_name), so it
 #      degrades to no-match instead of false-matching when the parent
-#      already left the window.
+#      already left the window. The same class also covers wrapped
+#      interpreters: a binary of its own (a renamed interpreter, or a
+#      wrapper spawning one) betrays itself by the interpreter's
+#      argument grammar, not by a name from a list.
 #
 # Sources: LOLBAS project entries and the parent-child anomaly
 # references in ATT&CK (T1204 technique notes), re-expressed with
@@ -219,4 +222,75 @@
         message: "Navegador lanzo un interprete de comandos en {host} (posible drive-by)"
         notify: "true"
   tags: ["attack.t1203", "attack.execution"]
+  enabled: true
+
+# T1036.005 - a renamed (or hosted) interpreter betrays itself by its
+# own argument grammar, not by a name from a list
+- name: "Interprete renombrado por su gramatica de argumentos"
+  id: "b2c3d4e5-0009-4b09-9e09-090909090909"
+  description: >
+    Detecta un binario cuyo nombre NO es el de un interprete conocido
+    pero cuya linea de comandos lleva la gramatica propia de uno:
+    -EncodedCommand o un blob Base64 tras -enc (PowerShell renombrado
+    o alojado), hosting vbscript:/javascript: (mshta-like), o codigo
+    inline de Python tras -c. Es la firma del wrapper con nombre
+    propio y del interprete renombrado: wrapper.exe -enc no dispara
+    ninguna regla por nombre y esta si la caza. Los interpretes
+    canonicos quedan fuera (los cubren sus reglas propias); el alias
+    corto -enc se exige seguido de un blob Base64 largo para no
+    confundirlo con -Encoding de herramientas legitimas.
+  severity: high
+  event_type: process.create
+  conditions:
+    - field: process.name
+      operator: not_in
+      value: ["powershell.exe", "pwsh.exe", "cmd.exe", "wscript.exe", "cscript.exe", "mshta.exe", "rundll32.exe", "installutil.exe", "python.exe", "pythonw.exe", "python3.exe", "py.exe", "node.exe"]
+    - field: process.command_line
+      operator: regex
+      value: '(?i)(-encodedcommand(\s|=)|-enc\s+["'']?[A-Za-z0-9+/=]{20,}|\bvbscript:|\bjavascript:|-c\s*["'']?(import|from)\s+(os|sys|socket|subprocess|ctypes|base64)\b)'
+  actions:
+    - type: alert
+      config:
+        message: "Binario con nombre propio ejecutando un interprete (renombrado o alojado) en {host} por {user}"
+        notify: "true"
+  tags: ["attack.t1036.005", "attack.t1059", "attack.defense_evasion"]
+  enabled: true
+
+# T1059 - the wrapper behind the interpreter: a parent of its own
+# launching a canonical interpreter with covert flags
+- name: "Binario con nombre propio lanzando un interprete encubierto"
+  id: "b2c3d4e5-0010-4b10-9e10-101010101010"
+  description: >
+    Detecta el caso literal wrapper.exe -> powershell -enc: el padre
+    (resuelto por el grabador de vuelo del motor) tiene un nombre que
+    no es un lanzador canonico y el hijo es un interprete canonico
+    con marcadores encubiertos (-EncodedCommand, blob tras -enc, -w
+    hidden, vbscript:). Se empareja deliberadamente con la regla del
+    comando codificado (el angulo de esta es el PADRE, no el hijo) y
+    excluye los padres que ya tienen su propia regla dedicada
+    (navegadores, Office) para no duplicar alertas. Falsos positivos
+    documentados: agentes de despliegue legitimos (SCCM, GPO) que
+    lanzan PowerShell con -EncodedCommand desde un binario propio;
+    si existen en tu flota, anadelos a la exclusion en tu despliegue.
+  severity: medium
+  event_type: process.create
+  conditions:
+    - field: enrichment.parent_name
+      operator: neq
+      value: ""
+    - field: enrichment.parent_name
+      operator: not_in
+      value: ["cmd.exe", "powershell.exe", "pwsh.exe", "wscript.exe", "cscript.exe", "mshta.exe", "explorer.exe", "services.exe", "svchost.exe", "taskhostw.exe", "taskeng.exe", "wmiprvse.exe", "userinit.exe", "conhost.exe", "python.exe", "pythonw.exe", "node.exe", "rundll32.exe", "regsvr32.exe", "msiexec.exe", "chrome.exe", "msedge.exe", "firefox.exe", "winword.exe", "excel.exe", "powerpnt.exe", "w3wp.exe", "java.exe"]
+    - field: process.name
+      operator: in
+      value: ["powershell.exe", "pwsh.exe", "wscript.exe", "cscript.exe", "mshta.exe", "cmd.exe"]
+    - field: process.command_line
+      operator: regex
+      value: '(?i)(-encodedcommand(\s|=)|-enc\s+["'']?[A-Za-z0-9+/=]{20,}|-w\s+hidden\b|-windowstyle\s+hidden\b|\bvbscript:)'
+  actions:
+    - type: alert
+      config:
+        message: "Interprete encubierto lanzado por un binario con nombre propio en {host} por {user} (ver el padre en el detalle del evento)"
+        notify: "true"
+  tags: ["attack.t1059", "attack.t1036.005", "attack.defense_evasion"]
   enabled: true

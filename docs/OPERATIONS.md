@@ -1478,7 +1478,7 @@ every change. Artifact rules have positive/negative fixtures; Windows lab
 validation and environment-specific noise tuning remain separate checks.
 
 <!-- BEGIN RULE INVENTORY -->
-The enabled pack contains **123 rules across 13 event types**: 27 critical / 62 high / 28 medium / 3 low / 3 info.
+The enabled pack contains **125 rules across 13 event types**: 27 critical / 63 high / 29 medium / 3 low / 3 info.
 Full IDs are retained because different rules in a pack can share a UUID prefix.
 
 | ID | Rule | Severity | Event type | ATT&CK | Tactic |
@@ -1549,6 +1549,7 @@ Full IDs are retained because different rules in a pack can share a UUID prefix.
 | `f92d7cee-8ce6-4bf2-bd9a-dec05bcf0b54` | Interprete conectando a un puerto tipico de C2 | high | `network.connect` | T1571 | command-and-control |
 | `b2c3d4e5-0006-4b06-9e06-060606060606` | Interprete de script ejecutando desde staging de usuario | high | `process.create` | T1204.002 | execution |
 | `d4e5f607-1002-4a00-8000-000000000002` | Interprete escribe una DLL en una ruta temporal | high | `file.write` | T1574.001 | defense-evasion |
+| `b2c3d4e5-0009-4b09-9e09-090909090909` | Interprete renombrado por su gramatica de argumentos | high | `process.create` | T1036.005, T1059 | defense_evasion |
 | `a1b2c3d4-0005-4a05-9e05-050505050505` | Mapeo de dominio con SharpHound | high | `process.create` | T1087.002 | discovery |
 | `afd1638c-f4be-4295-c778-cfa36a4ef92c` | Movimiento lateral con PsExec | high | `process.create` | T1021.002 | lateral-movement |
 | `b2c3d4e5-0008-4b08-9e08-080808080808` | Navegador lanzando un interprete de comandos | high | `process.create` | T1203 | execution |
@@ -1572,6 +1573,7 @@ Full IDs are retained because different rules in a pack can share a UUID prefix.
 | `87f5f6c7-1ce0-4d07-b2f9-c1732e3e7163` | Suscripcion permanente de eventos WMI | high | `process.create` | T1546.003 | persistence |
 | `a91d5e83-2f47-4b6c-8d3e-6b0a95c1f2d8` | Ticket Kerberos con cifrado RC4 (Kerberoasting) | high | `windows.event` | T1558.003 | credential-access |
 | `b360548f-35ee-4a5a-be3c-26b4ad06181b` | Tunel o proxy inverso hacia el exterior | high | `process.create` | T1572 | command-and-control |
+| `b2c3d4e5-0010-4b10-9e10-101010101010` | Binario con nombre propio lanzando un interprete encubierto | medium | `process.create` | T1036.005, T1059 | defense_evasion |
 | `2a01df90-a2e0-4a97-a01e-55f2a2c6360c` | Borrado del historial de PowerShell | medium | `process.create` | T1070.003 | defense-evasion |
 | `c3d4e5f6-0008-4c08-9e08-080808080808` | Borrado dirigido de artefactos forenses de Windows | medium | `process.create` | T1070.004 | defense-evasion |
 | `f6cd9a23-7e15-4721-83e3-d8115583e6e4` | Busqueda de contrasenas en ficheros | medium | `process.create` | T1552.001 | credential-access |

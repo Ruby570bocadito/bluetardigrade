@@ -38,8 +38,8 @@ func loadTestEngine(t *testing.T) *Engine {
 	if err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
-	if e.Count() != 123 {
-		t.Fatalf("expected 123 shipped rules (23 seeded + 26 process pack + 6 file staging + 14 SOC + 6 phishing + 39 coverage pack + 5 AD endpoint pack + 4 AD WEF pack), got %d", e.Count())
+	if e.Count() != 125 {
+		t.Fatalf("expected 125 shipped rules (23 seeded + 26 process pack + 6 file staging + 14 SOC + 6 phishing + 39 coverage pack + 5 AD endpoint pack + 4 AD WEF pack + 2 interpreter wrappers), got %d", e.Count())
 	}
 	return e
 }
@@ -88,11 +88,73 @@ func TestBenignEventsDoNotFire(t *testing.T) {
 		testEvent("powershell.exe", "powershell.exe Get-ChildItem C:\\Logs"),
 		testEvent("certutil.exe", "certutil.exe -hashfile data.bin SHA256"),
 		testEvent("reg.exe", `reg.exe query HKLM\SOFTWARE\Microsoft /v Version`),
+		testEvent("update.exe", "update.exe -enc "),
+		testEvent("update.exe", `updater.exe -Encoding UTF8 input.txt`),
+		testEvent("python3.exe", `python3.exe -c "import json; print(1)"`),
 	} {
 		if hits := e.Evaluate(ev); len(hits) != 0 {
 			t.Errorf("benign event %s fired %d rule(s): %v",
 				ev.Process.Name, len(hits), hits[0].Rule.Name)
 		}
+	}
+}
+
+// interpreter-wrapper signal (lolbas 0009/0010): a binary of its own
+// hosting or launching an interpreter. Assertions are presence-based:
+// these events legitimately co-fire with sibling rules (the encoded
+// powershell rule sees the same child), so each test pins its own
+// rule rather than exclusivity.
+
+func firedRule(hits []Hit, name string) bool {
+	for _, h := range hits {
+		if h.Rule.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func TestWrapperPackDetectsRenamedInterpreter(t *testing.T) {
+	e := loadTestEngine(t)
+	// a renamed powershell: its own name, PowerShell's grammar
+	ev := testEvent("update.exe", `update.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAGMAbABpAGUAbgB0ACkAKQA=`)
+	if !firedRule(e.Evaluate(ev), "Interprete renombrado por su gramatica de argumentos") {
+		t.Fatal("renamed powershell (-enc with base64 blob) did not fire the renamed-interpreter rule")
+	}
+	// a wrapper hosting mshta-style script via its own binary
+	ev = testEvent("launcher.exe", `launcher.exe vbscript:CreateObject("WScript.Shell").Run("calc.exe")`)
+	if !firedRule(e.Evaluate(ev), "Interprete renombrado por su gramatica de argumentos") {
+		t.Fatal("vbscript hosting under its own name did not fire the renamed-interpreter rule")
+	}
+	// inline python under a vendor-named binary
+	ev = testEvent("agent.exe", `agent.exe -c "import socket; socket.create_connection(('10.0.0.1', 4444))"`)
+	if !firedRule(e.Evaluate(ev), "Interprete renombrado por su gramatica de argumentos") {
+		t.Fatal("inline python import under its own name did not fire the renamed-interpreter rule")
+	}
+}
+
+func TestWrapperPackDetectsWrapperParent(t *testing.T) {
+	const name = "Binario con nombre propio lanzando un interprete encubierto"
+	e := loadTestEngine(t)
+	ev := testEvent("powershell.exe", `powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAGMAbABpAGUAbgB0ACkAKQA=`)
+	ev.Enrichment = map[string]string{"parent_name": "wrapper.exe"}
+	if !firedRule(e.Evaluate(ev), name) {
+		t.Fatal("wrapper.exe parent did not fire the wrapper-parent rule")
+	}
+	// a canonical launcher (cmd) spawning the same powershell: no fire
+	ev.Enrichment = map[string]string{"parent_name": "cmd.exe"}
+	if firedRule(e.Evaluate(ev), name) {
+		t.Fatal("canonical parent fired the wrapper-parent rule")
+	}
+	// an unresolved parent (empty enrichment) must not fire either
+	ev.Enrichment = nil
+	if firedRule(e.Evaluate(ev), name) {
+		t.Fatal("unresolved parent fired the wrapper-parent rule")
+	}
+	// a browser parent has its own dedicated rule: excluded here too
+	ev.Enrichment = map[string]string{"parent_name": "chrome.exe"}
+	if firedRule(e.Evaluate(ev), name) {
+		t.Fatal("browser parent fired the wrapper-parent rule (double alert with its dedicated rule)")
 	}
 }
 

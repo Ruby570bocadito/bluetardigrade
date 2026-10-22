@@ -156,3 +156,49 @@
       name: cmd.exe
       ppid: 800
       command_line: cmd.exe /c powershell.exe -nop
+- name: Interprete renombrado por su gramatica de argumentos (sintetico)
+  id: sim-renamed-interpreter
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: un binario con
+    nombre propio (update.exe) cuya linea lleva la gramatica de PowerShell (-enc con blob Base64). Telemetria inerte;
+    nada se ejecuta en ningun equipo.'
+  attack:
+  - t1036.005
+  - t1059
+  host: LAB-SIM-RENAMED-INTERP
+  user: CORP\sim
+  expected:
+  - rule: b2c3d4e5-0009-4b09-9e09-090909090909
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4192
+      name: update.exe
+      command_line: update.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAGMAbABpAGUAbgB0ACkAKQA=
+- name: Binario con nombre propio lanzando un interprete encubierto (sintetico)
+  id: sim-wrapper-spawns-covert-interpreter
+  description: 'Invocacion sintetica que valida la regla con los mismos campos que envia el sensor: wrapper.exe (nombre
+    propio, fuera de los lanzadores canonicos) lanzando powershell.exe -enc. Telemetria inerte; nada se ejecuta en
+    ningun equipo.'
+  attack:
+  - t1059
+  - t1036.005
+  host: LAB-SIM-WRAPPER-SPAWNS-COV
+  user: CORP\sim
+  expected:
+  - rule: b2c3d4e5-0010-4b10-9e10-101010101010
+  events:
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 900
+      name: wrapper.exe
+      command_line: wrapper.exe --update-service
+      image: C:\Users\sim\AppData\Local\Temp\wrapper.exe
+  - type: process.create
+    user: CORP\sim
+    process:
+      pid: 4193
+      name: powershell.exe
+      ppid: 900
+      command_line: powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAGMAbABpAGUAbgB0ACkAKQA=
