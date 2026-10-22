@@ -2,10 +2,8 @@
 
 ## Hecho (últimas 24 h)
 
-Sesión m3-yara-motor (cerrada, main 646869b): pack YARA del motor.
-
-Sesión H-003/H-004/H-006 (128e74b/1507de6/9f013cb): hallazgos BAJO de
-TEST ronda 1 resueltos; resuelto-pendiente-verificación.
+Sesiones cerradas: m3-yara-motor (646869b, pack YARA del motor) y
+H-003/H-004/H-006 (128e74b/1507de6/9f013cb, hallazgos BAJO de TEST r1).
 
 Sesión m7-wef-pack (f752040, verificada por DIR): contrato
 windows.event, pack AD y umbral thr-ad-spray; 123 reglas.
