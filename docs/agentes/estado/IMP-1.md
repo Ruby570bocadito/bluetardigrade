@@ -11,8 +11,8 @@ y sev como alias validado de severity, más el bloque unassigned
 triplicado fuera de parseRecordFilter. Resuelto-pendiente-verificación;
 TEST cierra.
 
-Sesión m7-wef-pack (f752040): la mitad motor de M-7. Contrato
-windows.event definido en «Entrega al motor» de AD-WEF-SUSCRIPCION.md
+Sesión m7-wef-pack (f752040): la mitad motor de M-7. Contrato windows.event
+definido en «Entrega al motor» de AD-WEF-SUSCRIPCION.md
 (el hueco que la guía reservaba a M-7; aditivo, a revisión de DIR/PUL):
 host = equipo origen, id estable 32-hex, campos win_* por ID. Pack
 rules/windows/wef-security.yaml (DCSync 4662 critical, Kerberoasting
