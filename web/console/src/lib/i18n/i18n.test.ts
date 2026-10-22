@@ -401,6 +401,36 @@ describe('i18n dictionaries', () => {
     expect(DICTS.en.sequences.campaignsDone(2)).toBe('2 campaigns completed')
     expect(DICTS.en.sequences.sameAccount).toBe('same account')
   })
+
+  test('phase 10 sweep (hosts + fleet + enroll) keeps the spanish copy byte-identical', () => {
+    expect(dictEs.hosts.sectionAria).toBe('Equipos')
+    expect(dictEs.hosts.statusTabs.silent).toBe('Sin señal')
+    expect(dictEs.hosts.cardMeta(3, 1, 40, '12:05')).toBe('3 alertas (1 críticas) · 40 eventos · 12:05')
+    expect(dictEs.hosts.incidentTitle('PC-01')).toBe('Actividad sospechosa en PC-01')
+    expect(dictEs.fleet.status.online).toBe('en línea')
+    expect(dictEs.fleet.summary.withSensor(2)).toBe('2 con sensor que envía latido')
+    expect(dictEs.fleet.sensorCard.beatAgo('3 min', 60)).toBe('hace 3 min (cada 60 s)')
+    expect(dictEs.fleet.where.server).toBe('En este servidor · PowerShell normal')
+    expect(dictEs.fleet.plan.copy('PC-02', true)).toBe('Copia a PC-02 el archivo bin\\security-sensor.exe del servidor y tools\\config\\ingest-cert.pem en C:\\Program Files\\bluetardigrade.')
+    expect(dictEs.enroll.blocker.notAdmin).toBe('Solo un administrador puede crear tokens de alta. Pídeselo a quien administre la consola.')
+    expect(dictEs.enroll.created.usesWord(1)).toBe('un equipo')
+    expect(dictEs.enroll.pending.heading).toBe('Pendientes de aprobación')
+    expect(dictEs.enroll.row.revokeIdentity).toBe('Revocar identidad')
+  })
+
+  test('phase 10 english copy is a real translation of hosts, fleet and enroll', () => {
+    expect(DICTS.en.hosts.sectionAria).toBe('Hosts')
+    expect(DICTS.en.hosts.statusTabs.silent).toBe('No signal')
+    expect(DICTS.en.hosts.cardMeta(3, 1, 40, '12:05')).toBe('3 alerts (1 critical) · 40 events · 12:05')
+    expect(DICTS.en.hosts.incidentTitle('PC-01')).toBe('Suspicious activity on PC-01')
+    expect(DICTS.en.fleet.status.silent).toBe('no signal')
+    expect(DICTS.en.fleet.summary.add).toBe('Add hosts')
+    expect(DICTS.en.fleet.sensorCard.beatAgo('3 min', 60)).toBe('3 min ago (every 60 s)')
+    expect(DICTS.en.enroll.form.create).toBe('Create enrollment token')
+    expect(DICTS.en.enroll.created.usesWord(2)).toBe('2 hosts')
+    expect(DICTS.en.enroll.pending.approve).toBe('Approve')
+    expect(DICTS.en.enroll.row.revokeIdentity).toBe('Revoke identity')
+  })
 })
 
 describe('language resolution', () => {

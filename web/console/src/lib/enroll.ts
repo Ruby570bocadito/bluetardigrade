@@ -117,6 +117,16 @@ export type EnrollStep = {
 const SENSOR_DIR = 'C:\\Program Files\\bluetardigrade'
 const DATA_DIR = 'C:\\ProgramData\\bluetardigrade\\sensor'
 
+/** Wording of the token enrollment steps; the defaults keep the shipped
+ * ES copy, a bilingual caller passes its own (dict.enroll.plan). `copy`
+ * receives the tls flag because the extra cert mention is part of the
+ * sentence. */
+export type TokenEnrollmentPlanWords = {
+  firewall: string
+  copy: (tls: boolean) => string
+  start: string
+}
+
 /**
  * Commands that enroll a machine with a token. The sensor trades the token
  * for a credential of its own on its first start (kept in ingest.token,
@@ -124,22 +134,26 @@ const DATA_DIR = 'C:\\ProgramData\\bluetardigrade\\sensor'
  * up as pending until someone approves it here. Over the network the
  * engine only accepts enrollment through TLS.
  */
-export function tokenEnrollmentPlan(secret: string, server: string, tls: boolean): EnrollStep[] {
+export function tokenEnrollmentPlan(secret: string, server: string, tls: boolean, words: TokenEnrollmentPlanWords = {
+  firewall: 'Solo la primera vez: abre el puerto 7777 a la red local (perfiles de dominio y privado).',
+  copy: (t) => `Copia al equipo el archivo bin\\security-sensor.exe del servidor${t ? ' y tools\\config\\ingest-cert.pem' : ''} en ${SENSOR_DIR}, y crea la carpeta de datos del sensor solo para SYSTEM y Administradores.`,
+  start: 'Arranca el sensor con el token de alta. La primera vez lo cambia por una credencial propia y el equipo aparece en Equipos como pendiente; sus eventos esperan en el disco hasta que lo apruebes.',
+}): EnrollStep[] {
   const ca = tls ? ` --tls-ca "${SENSOR_DIR}\\ingest-cert.pem"` : ''
   return [
     {
       where: 'server-admin',
-      text: 'Solo la primera vez: abre el puerto 7777 a la red local (perfiles de dominio y privado).',
+      text: words.firewall,
       cmd: 'New-NetFirewallRule -DisplayName "bluetardigrade ingest" -Direction Inbound -Protocol TCP -LocalPort 7777 -Action Allow -Profile Domain,Private',
     },
     {
       where: 'remote-admin',
-      text: `Copia al equipo el archivo bin\\security-sensor.exe del servidor${tls ? ' y tools\\config\\ingest-cert.pem' : ''} en ${SENSOR_DIR}, y crea la carpeta de datos del sensor solo para SYSTEM y Administradores.`,
+      text: words.copy(tls),
       cmd: `New-Item -ItemType Directory -Force "${SENSOR_DIR}","${DATA_DIR}" | Out-Null; icacls "${DATA_DIR}" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F"`,
     },
     {
       where: 'remote-admin',
-      text: 'Arranca el sensor con el token de alta. La primera vez lo cambia por una credencial propia y el equipo aparece en Equipos como pendiente; sus eventos esperan en el disco hasta que lo apruebes.',
+      text: words.start,
       cmd: `& "${SENSOR_DIR}\\security-sensor.exe" --addr ${server}:7777 --enroll-token ${secret} --token-file "${DATA_DIR}\\ingest.token"${ca} --spool "${DATA_DIR}\\spool.ndjson"`,
     },
   ]

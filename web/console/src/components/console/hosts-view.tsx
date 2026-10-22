@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowSquareOut, Desktop, FolderPlus, Gear, Globe, Lightning, MagnifyingGlass, TreeStructure, UserCircle } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
+import { useI18n } from './i18n-provider'
 import { useIncidents } from './incidents-provider'
 import { useFleet } from './fleet-provider'
 import { EnrollDialog, FleetStatusPill, FleetSummary, SensorCard, SensorVersionChip } from './fleet-parts'
@@ -28,7 +29,7 @@ import { ProcessTree } from '@/components/charts/process-tree'
 import { SeverityIcon } from '@/components/charts/severity'
 import { buildEntityGraph, buildProcessTree } from '@/lib/entity-graph'
 import { createIncident } from '@/lib/engine-writes'
-import { topCounts, SEVERITY_LABEL } from '@/lib/soc-metrics'
+import { topCounts } from '@/lib/soc-metrics'
 import { alertKey } from '@/lib/engine-client'
 import { eventDetail, formatTime, type Severity, type SfAlert, type SfEvent } from '@/lib/console-types'
 import { currentSearch, readLensState, replaceOperatorState, writeHostToSearch } from '@/lib/url-state'
@@ -43,12 +44,12 @@ const ALL_GROUPS = ' todos los grupos'
 
 const RANK: Record<Severity, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 }
 
-export function riskLevel(score: number) {
+export function riskLevel(score: number, words: { critical: string; elevated: string; low: string } = { critical: 'crítico', elevated: 'elevado', low: 'bajo' }) {
   return score >= 20
-    ? { label: 'crítico', color: 'var(--status-critical)', severity: 'critical' as const }
+    ? { label: words.critical, color: 'var(--status-critical)', severity: 'critical' as const }
     : score >= 5
-      ? { label: 'elevado', color: 'var(--status-warning)', severity: 'medium' as const }
-      : { label: 'bajo', color: 'var(--series-1)', severity: 'low' as const }
+      ? { label: words.elevated, color: 'var(--status-warning)', severity: 'medium' as const }
+      : { label: words.low, color: 'var(--series-1)', severity: 'low' as const }
 }
 
 function useHostIndex(): HostRow[] {
@@ -102,6 +103,7 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
 }) {
   const rows = useHostIndex()
   const { status, stats } = useEngine()
+  const { dict } = useI18n()
   const engineVersion = stats?.version
   const [selected, setSelectedState] = useState('')
   const [query, setQuery] = useState('')
@@ -136,21 +138,21 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
     <FleetSummary onEnroll={() => setEnrolling(true)} />
     <PendingHosts />
     {enrolling && <EnrollDialog onClose={() => setEnrolling(false)} />}
-    <section aria-label="Equipos" className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
+    <section aria-label={dict.hosts.sectionAria} className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
       <div className="panel flex min-w-0 flex-col overflow-hidden">
         <div className="panel-head justify-between">
           <div className="flex items-baseline gap-2">
-            <h2 className="text-sm font-medium text-zinc-100">Equipos</h2>
+            <h2 className="text-sm font-medium text-zinc-100">{dict.hosts.heading}</h2>
             <span className="text-xs tabular-nums text-zinc-500">{rows.length}</span>
           </div>
           <div className="relative">
             <MagnifyingGlass size={13} aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 z-10 text-zinc-500" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Buscar equipo" placeholder="buscar equipo"
+            <Input value={query} onChange={(e) => setQuery(e.target.value)} aria-label={dict.hosts.searchAria} placeholder={dict.hosts.searchPlaceholder}
               className="h-8 w-40 pl-7 pr-2 text-xs" />
           </div>
         </div>
-        <div role="group" aria-label="Filtrar equipos por estado" className="flex gap-1 border-b border-white/[0.05] px-3 py-2">
-          {([['all', 'Todos'], ['online', 'En línea'], ['silent', 'Sin señal'], ['idle', 'Inactivos']] as const).map(([value, label]) => (
+        <div role="group" aria-label={dict.hosts.statusGroupAria} className="flex gap-1 border-b border-white/[0.05] px-3 py-2">
+          {([['all', dict.hosts.statusTabs.all], ['online', dict.hosts.statusTabs.online], ['silent', dict.hosts.statusTabs.silent], ['idle', dict.hosts.statusTabs.idle]] as const).map(([value, label]) => (
             <button key={value} type="button" aria-pressed={statusFilter === value} onClick={() => setStatusFilter(value)}
               className={`rounded-md px-2.5 py-1 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${statusFilter === value ? 'bg-primary-tint/15 text-primary-soft' : 'text-zinc-400 hover:text-zinc-100'}`}>
               {label}
@@ -160,25 +162,25 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
         {/* host groups (Ajustes -> Grupos): shown once any machine has one */}
         {groupNames.length > 0 && (
           <div className="flex items-center gap-2 border-b border-white/[0.05] px-3 py-2">
-            <label htmlFor="hosts-group-filter" className="text-[11px] text-zinc-400">Grupo</label>
+            <label htmlFor="hosts-group-filter" className="text-[11px] text-zinc-400">{dict.hosts.groupLabel}</label>
             <Select value={groupFilter === '' ? ALL_GROUPS : groupFilter} onValueChange={(v) => setGroupFilter(v === ALL_GROUPS ? '' : v)}>
               <SelectTrigger id="hosts-group-filter" className="h-7 min-w-0 flex-1 rounded-md text-[11px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={ALL_GROUPS}>Todos los grupos</SelectItem>
+                <SelectItem value={ALL_GROUPS}>{dict.hosts.allGroups}</SelectItem>
                 {groupNames.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
-                <SelectItem value={NO_GROUP}>Sin grupo</SelectItem>
+                <SelectItem value={NO_GROUP}>{dict.hosts.noGroup}</SelectItem>
               </SelectContent>
             </Select>
           </div>
         )}
         {visible.length === 0 ? (
-          <EmptyState icon={Desktop} title={status === 'down' ? 'Motor sin conexión' : 'Ningún equipo todavía'} hint="Los equipos aparecen con su primera telemetría o alerta." />
+          <EmptyState icon={Desktop} title={status === 'down' ? dict.hosts.emptyDown : dict.hosts.emptyNone} hint={dict.hosts.emptyHint} />
         ) : (
           <ul className="max-h-[72vh] divide-y divide-white/[0.05] overflow-y-auto">
             {visible.map((r, i) => {
-              const lv = riskLevel(r.score)
+              const lv = riskLevel(r.score, dict.hosts.riskWords)
               const active = current?.host.toLowerCase() === r.host.toLowerCase()
               return (
                 <li key={r.host}>
@@ -199,10 +201,10 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
                       </span>
                       <Meter className="mt-2" value={r.score} max={maxScore} color={lv.color} />
                       <span className="mt-1.5 block text-[11px] text-zinc-500">
-                        {r.alerts} alertas{r.critical ? ` (${r.critical} críticas)` : ''} · {r.events} eventos{r.lastSeen ? ` · ${formatTime(r.lastSeen)}` : ''}
+                        {dict.hosts.cardMeta(r.alerts, r.critical, r.events, r.lastSeen ? formatTime(r.lastSeen) : '')}
                       </span>
                       {r.fleet?.groups?.length ? (
-                        <span className="mt-1.5 flex flex-wrap gap-1" aria-label={`Grupos: ${r.fleet.groups.join(', ')}`}>
+                        <span className="mt-1.5 flex flex-wrap gap-1" aria-label={dict.hosts.groupsAria(r.fleet.groups.join(', '))}>
                           {r.fleet.groups.map((g) => (
                             <span key={g} className="rounded border border-white/[0.08] px-1.5 py-px text-[10px] text-zinc-400">{g}</span>
                           ))}
@@ -221,7 +223,7 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
         <HostPage key={current.host} row={current} onHunt={onHunt} onOpenAlert={onOpenAlert} onOpenIncident={onOpenIncident} />
       ) : (
         <div className="panel">
-          <EmptyState icon={Desktop} title="Selecciona un equipo" hint="Verás su riesgo, sus alertas, el árbol de procesos en vivo, sus conexiones y la línea de tiempo." />
+          <EmptyState icon={Desktop} title={dict.hosts.pickTitle} hint={dict.hosts.pickHint} />
         </div>
       )}
     </section>
@@ -237,6 +239,7 @@ function HostPage({ row, onHunt, onOpenAlert, onOpenIncident }: {
 }) {
   const { alerts, events } = useEngine()
   const { upsert } = useIncidents()
+  const { dict } = useI18n()
   const [message, setMessage] = useState('')
   const hostKey = row.host.toLowerCase()
   const hostAlerts = useMemo(() => alerts.filter((a) => a.host?.toLowerCase() === hostKey), [alerts, hostKey])
@@ -249,7 +252,7 @@ function HostPage({ row, onHunt, onOpenAlert, onOpenIncident }: {
   }, 6), [hostEvents])
   const users = new Set([...hostAlerts.map((a) => a.user), ...hostEvents.map((e) => e.user)].filter(Boolean))
   const processes = new Set(hostEvents.filter((e) => e.process?.name).map((e) => e.process!.name.toLowerCase()))
-  const lv = riskLevel(row.score)
+  const lv = riskLevel(row.score, dict.hosts.riskWords)
   const worst = hostAlerts.reduce<Severity | null>((w, a) => (w === null || RANK[a.severity] > RANK[w] ? a.severity : w), null)
 
   const timeline = useMemo(() => {
@@ -263,7 +266,7 @@ function HostPage({ row, onHunt, onOpenAlert, onOpenIncident }: {
   async function openIncident() {
     const ids = hostAlerts.map((a) => a.id).filter((id): id is string => Boolean(id))
     const res = await createIncident({
-      title: `Actividad sospechosa en ${row.host}`,
+      title: dict.hosts.incidentTitle(row.host),
       severity: worst ?? 'medium',
       alert_ids: ids.slice(0, 500),
       hosts: [row.host],
@@ -274,28 +277,28 @@ function HostPage({ row, onHunt, onOpenAlert, onOpenIncident }: {
   }
 
   return (
-    <article aria-label={`Equipo ${row.host}`} className="min-w-0 space-y-4">
+    <article aria-label={dict.hosts.pageAria(row.host)} className="min-w-0 space-y-4">
       <header className="panel px-5 py-4">
         <div className="flex flex-wrap items-center gap-3">
           <span className="icon-tile h-10 w-10"><Desktop size={20} aria-hidden /></span>
           <div className="min-w-0 flex-1">
             <h2 className="truncate font-mono text-lg font-semibold text-zinc-50">{row.host}</h2>
-            <p className="text-xs text-zinc-500">{row.lastSeen ? `Última actividad ${formatTime(row.lastSeen)}` : 'Sin actividad en la ventana'}</p>
+            <p className="text-xs text-zinc-500">{row.lastSeen ? dict.hosts.lastActivity(formatTime(row.lastSeen)) : dict.hosts.noActivity}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" size="sm" onClick={() => onHunt(row.host)}
               className="gap-1.5 rounded-lg border-primary/30 bg-primary-tint/10 text-xs font-medium text-primary-soft hover:bg-primary-tint/20">
-              <ArrowSquareOut size={13} aria-hidden /> Ver alertas del equipo
+              <ArrowSquareOut size={13} aria-hidden /> {dict.hosts.viewAlerts}
             </Button>
             <Button type="button" variant="outline" size="sm" onClick={() => void openIncident()} disabled={hostAlerts.length === 0}
               className="gap-1.5 rounded-lg text-xs text-zinc-200">
-              <FolderPlus size={13} aria-hidden /> Abrir incidente con sus alertas
+              <FolderPlus size={13} aria-hidden /> {dict.hosts.openIncident}
             </Button>
           </div>
         </div>
         {message && <p role="alert" className="mt-2 text-xs text-red-300">{message}</p>}
         <div className="mt-4 flex items-center gap-3">
-          <span className="flex items-center gap-1.5 text-xs text-zinc-400"><SeverityIcon severity={lv.severity} size={13} /> riesgo {lv.label}</span>
+          <span className="flex items-center gap-1.5 text-xs text-zinc-400"><SeverityIcon severity={lv.severity} size={13} /> {dict.hosts.riskWord(lv.label)}</span>
           <Meter className="max-w-sm flex-1" value={row.score} max={Math.max(20, row.score)} color={lv.color} />
           <span className="text-sm font-semibold tabular-nums text-zinc-50">{row.score.toFixed(1)}</span>
         </div>
@@ -304,36 +307,36 @@ function HostPage({ row, onHunt, onOpenAlert, onOpenIncident }: {
       <SensorCard host={row.fleet} />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatTile icon={Lightning} label="Alertas en la ventana" value={hostAlerts.length} hint={worst ? `la más grave: ${SEVERITY_LABEL[worst].toLowerCase()}` : 'ninguna'} warn={worst === 'critical'} />
-        <StatTile icon={Gear} label="Procesos distintos" value={processes.size} hint="en la telemetría recibida" />
-        <StatTile icon={Globe} label="Destinos de red" value={destinations.distinct} hint="conexiones salientes vistas" />
-        <StatTile icon={UserCircle} label="Usuarios" value={users.size} hint={[...users].slice(0, 2).join(', ') || 'sin usuario declarado'} />
+        <StatTile icon={Lightning} label={dict.hosts.worstTile.label} value={hostAlerts.length} hint={worst ? dict.hosts.worstTile.worst(dict.alerts.sevLabels[worst].toLowerCase()) : dict.hosts.worstTile.none} warn={worst === 'critical'} />
+        <StatTile icon={Gear} label={dict.hosts.processesTile.label} value={processes.size} hint={dict.hosts.processesTile.hint} />
+        <StatTile icon={Globe} label={dict.hosts.destinationsTile.label} value={destinations.distinct} hint={dict.hosts.destinationsTile.hint} />
+        <StatTile icon={UserCircle} label={dict.hosts.usersTile.label} value={users.size} hint={[...users].slice(0, 2).join(', ') || dict.hosts.usersTile.none} />
       </div>
 
       <div className="grid gap-4 2xl:grid-cols-2">
-        <ChartCard title="Árbol de procesos en vivo" subtitle="Procesos creados en el equipo según la telemetría recibida" icon={TreeStructure}>
+        <ChartCard title={dict.hosts.treeCard.title} subtitle={dict.hosts.treeCard.subtitle} icon={TreeStructure}>
           {tree.length === 0 ? (
-            <EmptyState icon={TreeStructure} title="Sin procesos en la ventana" hint="El árbol se forma con los eventos process.create del sensor." />
+            <EmptyState icon={TreeStructure} title={dict.hosts.treeCard.emptyTitle} hint={dict.hosts.treeCard.emptyHint} />
           ) : (
-            <div className="max-h-96 overflow-y-auto"><ProcessTree roots={tree} label={`Árbol de procesos de ${row.host}`} /></div>
+            <div className="max-h-96 overflow-y-auto"><ProcessTree roots={tree} label={dict.hosts.treeCard.aria(row.host)} /></div>
           )}
         </ChartCard>
-        <ChartCard title="Grafo del equipo" subtitle="Usuarios, procesos, detecciones y destinos de este equipo" icon={Desktop}>
+        <ChartCard title={dict.hosts.graphCard.title} subtitle={dict.hosts.graphCard.subtitle} icon={Desktop}>
           {graph.nodes.length < 2 ? (
-            <EmptyState icon={Desktop} title="Sin relaciones todavía" hint="El grafo aparece con alertas o conexiones del equipo." />
+            <EmptyState icon={Desktop} title={dict.hosts.graphCard.emptyTitle} hint={dict.hosts.graphCard.emptyHint} />
           ) : (
             <div className="space-y-2">
               <GraphLegend graph={graph} />
-              <EntityGraphView graph={graph} height={360} ariaLabel={`Grafo del equipo ${row.host}`} live />
+              <EntityGraphView graph={graph} height={360} ariaLabel={dict.hosts.graphCard.aria(row.host)} live />
             </div>
           )}
         </ChartCard>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <ChartCard title="Línea de tiempo del equipo" subtitle="Eventos y alertas recibidos, los más recientes primero" icon={Lightning}>
+        <ChartCard title={dict.hosts.timelineCard.title} subtitle={dict.hosts.timelineCard.subtitle} icon={Lightning}>
           {timeline.length === 0 ? (
-            <EmptyState icon={Lightning} title="Sin actividad" hint="La línea de tiempo usa la ventana en vivo de la consola." />
+            <EmptyState icon={Lightning} title={dict.hosts.timelineCard.emptyTitle} hint={dict.hosts.timelineCard.emptyHint} />
           ) : (
             <ol className="max-h-[28rem] space-y-0.5 overflow-y-auto">
               {timeline.map((item) =>
@@ -358,11 +361,11 @@ function HostPage({ row, onHunt, onOpenAlert, onOpenIncident }: {
           )}
         </ChartCard>
         <div className="min-w-0 space-y-4">
-          <ChartCard title="Destinos de red" subtitle="Conexiones salientes del equipo" icon={Globe}>
+          <ChartCard title={dict.hosts.netCard.title} subtitle={dict.hosts.netCard.subtitle} icon={Globe}>
             <BarList
               color="var(--series-4)"
               rows={destinations.top.map((r) => ({ key: r.key, label: <span className="font-mono">{r.key}</span>, value: r.count }))}
-              empty={<EmptyState icon={Globe} title="Sin conexiones" hint="Aparecen con los eventos network.connect." />}
+              empty={<EmptyState icon={Globe} title={dict.hosts.netCard.emptyTitle} hint={dict.hosts.netCard.emptyHint} />}
             />
           </ChartCard>
           <BaselineCard host={row.host} alerts={hostAlerts} onOpenAlert={onOpenAlert} />

@@ -56,11 +56,19 @@ export const FLEET_STATUS_LABEL: Record<FleetStatus, string> = {
   idle: 'inactivo',
 }
 
-/** How the sensor runs, for the host page. */
-export function runModeText(mode: FleetSensor['run_mode']): string {
-  if (mode === 'service') return 'Servicio de Windows (arranca con el equipo)'
-  if (mode === 'console') return 'Iniciado a mano en una ventana (sf-etw -Install lo deja como servicio)'
-  return '—'
+/** How the sensor runs, for the host page. The words default to the
+ * shipped ES copy; a bilingual caller passes its own (dict.fleet.modes). */
+export function runModeText(
+  mode: FleetSensor['run_mode'],
+  words: { service: string; console: string; none: string } = {
+    service: 'Servicio de Windows (arranca con el equipo)',
+    console: 'Iniciado a mano en una ventana (sf-etw -Install lo deja como servicio)',
+    none: '—',
+  },
+): string {
+  if (mode === 'service') return words.service
+  if (mode === 'console') return words.console
+  return words.none
 }
 
 /** 59 -> "59 s", 3600 -> "1 h", 90061 -> "1 d 1 h". */
@@ -124,6 +132,19 @@ export type EnrollmentStep = {
 
 const SENSOR_DIR = 'C:\\Program Files\\bluetardigrade'
 
+/** Wording of the enrollment steps; the defaults keep the shipped ES
+ * copy, a bilingual caller passes its own (dict.fleet.plan). `copy`
+ * receives the tls flag because the extra cert mention is part of the
+ * sentence. */
+export type EnrollmentPlanWords = {
+  identity: (host: string) => string
+  paste: string
+  restart: string
+  firewall: string
+  copy: (host: string, tls: boolean) => string
+  start: string
+}
+
 /**
  * Steps to enroll a remote Windows machine you administer: its own
  * ingest identity on the server (token bound to its host name), the
@@ -131,38 +152,45 @@ const SENSOR_DIR = 'C:\\Program Files\\bluetardigrade'
  * pointed at the server. The token is never part of the plan: the server
  * command prints it once and the operator types it on the machine.
  */
-export function enrollmentPlan(host: string, serverAddress: string, tls: boolean): EnrollmentStep[] {
+export function enrollmentPlan(host: string, serverAddress: string, tls: boolean, words: EnrollmentPlanWords = {
+  identity: (h) => `Crea la identidad de ${h}: el comando muestra su token una sola vez y la entrada YAML con su huella.`,
+  paste: 'Pega la entrada en el fichero de identidades (la primera vez, empieza el fichero con «version: 1» y «identities:»). El motor lo recarga solo.',
+  restart: 'Solo la primera vez: reinicia para que el motor escuche a los equipos de la red (siempre con identidad).',
+  firewall: 'Solo la primera vez: abre el puerto 7777 a la red local (perfiles de dominio y privado).',
+  copy: (h, t) => `Copia a ${h} el archivo bin\\security-sensor.exe del servidor${t ? ' y tools\\config\\ingest-cert.pem' : ''} en ${SENSOR_DIR}.`,
+  start: 'Arranca el sensor apuntando al servidor, con el token de su identidad. En menos de un minuto aparece aquí «en línea».',
+}): EnrollmentStep[] {
   const id = identityName(host)
   const tlsArg = tls ? ` --tls-ca "${SENSOR_DIR}\\ingest-cert.pem"` : ''
   const steps: EnrollmentStep[] = [
     {
       where: 'server',
-      text: `Crea la identidad de ${host}: el comando muestra su token una sola vez y la entrada YAML con su huella.`,
+      text: words.identity(host),
       cmd: `sf-engine ingest-identity --name ${id} --host ${host}`,
     },
     {
       where: 'server',
-      text: 'Pega la entrada en el fichero de identidades (la primera vez, empieza el fichero con «version: 1» y «identities:»). El motor lo recarga solo.',
+      text: words.paste,
       cmd: 'notepad "$env:LOCALAPPDATA\\bluetardigrade\\tools\\config\\ingest-identities.yaml"',
     },
     {
       where: 'server',
-      text: 'Solo la primera vez: reinicia para que el motor escuche a los equipos de la red (siempre con identidad).',
+      text: words.restart,
       cmd: 'sf-console -Stop; sf-console',
     },
     {
       where: 'server-admin',
-      text: 'Solo la primera vez: abre el puerto 7777 a la red local (perfiles de dominio y privado).',
+      text: words.firewall,
       cmd: 'New-NetFirewallRule -DisplayName "bluetardigrade ingest" -Direction Inbound -Protocol TCP -LocalPort 7777 -Action Allow -Profile Domain,Private',
     },
     {
       where: 'remote-admin',
-      text: `Copia a ${host} el archivo bin\\security-sensor.exe del servidor${tls ? ' y tools\\config\\ingest-cert.pem' : ''} en ${SENSOR_DIR}.`,
+      text: words.copy(host, tls),
       cmd: `New-Item -ItemType Directory -Force "${SENSOR_DIR}"`,
     },
     {
       where: 'remote-admin',
-      text: 'Arranca el sensor apuntando al servidor, con el token de su identidad. En menos de un minuto aparece aquí «en línea».',
+      text: words.start,
       cmd: `& "${SENSOR_DIR}\\security-sensor.exe" --addr ${serverAddress}:7777 --token "<token de ${id}>"${tlsArg} --spool "C:\\ProgramData\\bluetardigrade\\sensor-spool.ndjson"`,
     },
   ]

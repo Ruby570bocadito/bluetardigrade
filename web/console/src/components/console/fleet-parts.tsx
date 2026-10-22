@@ -12,9 +12,10 @@ import { ConsoleDialog } from './console-dialog'
 import { StatTile } from './ui-bits'
 import { TABLIST_CLASS, tabButtonClass } from './ui-tabs'
 import { useFleet } from './fleet-provider'
+import { useI18n } from './i18n-provider'
 import { EnrollmentRow, TokenEnrollment } from './enroll-parts'
 import { enrolledFor } from '@/lib/enroll'
-import { enrollmentPlan, FLEET_STATUS_LABEL, formatDuration, isValidHostName, outdatedCount, outdatedSensor, runModeText, secondsSince, type FleetHost, type FleetStatus } from '@/lib/fleet'
+import { enrollmentPlan, formatDuration, isValidHostName, outdatedCount, outdatedSensor, runModeText, secondsSince, type FleetHost, type FleetStatus } from '@/lib/fleet'
 import { formatDateTime } from '@/lib/console-types'
 import { useEngine } from './engine-provider'
 
@@ -25,14 +26,15 @@ const STATUS_STYLE: Record<FleetStatus, { dot: string; text: string; ring: strin
 }
 
 export function FleetStatusPill({ host }: { host?: FleetHost }) {
+  const { dict } = useI18n()
   if (!host) {
-    return <span className="rounded-md border border-white/10 px-1.5 py-0.5 text-[10px] text-zinc-500" title="El motor no tiene este equipo en su inventario (solo aparece en alertas o eventos antiguos)">sin inventario</span>
+    return <span className="rounded-md border border-white/10 px-1.5 py-0.5 text-[10px] text-zinc-500" title={dict.fleet.noInventoryTitle}>{dict.fleet.noInventory}</span>
   }
   const s = STATUS_STYLE[host.status]
   return (
     <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] ${s.ring} ${s.text}`}>
       <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${s.dot} ${host.status === 'online' ? 'animate-pulse motion-reduce:animate-none' : ''}`} />
-      {FLEET_STATUS_LABEL[host.status]}
+      {dict.fleet.status[host.status]}
     </span>
   )
 }
@@ -44,12 +46,13 @@ export function FleetStatusPill({ host }: { host?: FleetHost }) {
  * an honest signal never guesses from missing data.
  */
 export function SensorVersionChip({ host, engineVersion, className }: { host?: FleetHost; engineVersion?: string; className?: string }) {
+  const { dict } = useI18n()
   if (!outdatedSensor(engineVersion, host?.sensor)) return null
-  const sensorVersion = host!.sensor!.version
+  const sensorVersion = host!.sensor!.version!
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-md border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-[10px] text-amber-200 ${className ?? ''}`}
-      title={`El sensor informa la versión ${sensorVersion} y el motor va por ${engineVersion}: no coinciden. Actualiza el sensor del equipo con el security-sensor.exe de esta instalación.`}
+      title={dict.fleet.versionChipTitle(sensorVersion, engineVersion!)}
     >
       <WarningCircle size={10} weight="fill" aria-hidden />
       sensor {sensorVersion}
@@ -61,21 +64,22 @@ export function SensorVersionChip({ host, engineVersion, className }: { host?: F
 export function FleetSummary({ onEnroll }: { onEnroll: () => void }) {
   const { fleet, available, loaded } = useFleet()
   const { stats } = useEngine()
+  const { dict } = useI18n()
   const engineVersion = stats?.version
   const withSensor = fleet?.hosts.filter((h) => h.sensor).length ?? 0
   const outdated = fleet ? outdatedCount(fleet.hosts, engineVersion) : 0
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto]">
-      <StatTile icon={Desktop} label="Equipos en el inventario" value={fleet ? fleet.hosts.length : '—'} hint={!loaded ? 'consultando el motor' : available ? `${withSensor} con sensor que envía latido${outdated ? ` · ${outdated} con versión distinta a la del motor` : ''}` : 'este motor no ofrece inventario: actualízalo'} warn={outdated > 0} />
-      <StatTile icon={PlugsConnected} label="En línea" value={fleet ? fleet.online : '—'} hint="latido o telemetría reciente" />
-      <StatTile icon={WifiSlash} label="Sin señal" value={fleet ? fleet.silent : '—'} hint={fleet?.silent ? 'su sensor dejó de enviar latido' : 'ningún sensor callado'} warn={(fleet?.silent ?? 0) > 0} />
-      <StatTile icon={Timer} label="Inactivos" value={fleet ? fleet.idle : '—'} hint="sin latido y sin datos en 10 min" />
+      <StatTile icon={Desktop} label={dict.fleet.summary.inventoryLabel} value={fleet ? fleet.hosts.length : '—'} hint={!loaded ? dict.fleet.summary.consulting : available ? `${dict.fleet.summary.withSensor(withSensor)}${outdated ? dict.fleet.summary.outdatedSuffix(outdated) : ''}` : dict.fleet.summary.noInventoryHint} warn={outdated > 0} />
+      <StatTile icon={PlugsConnected} label={dict.fleet.summary.onlineLabel} value={fleet ? fleet.online : '—'} hint={dict.fleet.summary.onlineHint} />
+      <StatTile icon={WifiSlash} label={dict.fleet.summary.silentLabel} value={fleet ? fleet.silent : '—'} hint={fleet?.silent ? dict.fleet.summary.silentHint : dict.fleet.summary.silentNone} warn={(fleet?.silent ?? 0) > 0} />
+      <StatTile icon={Timer} label={dict.fleet.summary.idleLabel} value={fleet ? fleet.idle : '—'} hint={dict.fleet.summary.idleHint} />
       <button
         type="button"
         onClick={onEnroll}
         className="panel flex items-center justify-center gap-2 px-5 py-3 text-sm font-medium text-primary-soft transition-colors hover:border-primary/40 hover:bg-primary-tint/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <Plus size={16} aria-hidden /> Añadir equipos
+        <Plus size={16} aria-hidden /> {dict.fleet.summary.add}
       </button>
     </div>
   )
@@ -85,6 +89,7 @@ export function FleetSummary({ onEnroll }: { onEnroll: () => void }) {
 export function SensorCard({ host }: { host?: FleetHost }) {
   const { enroll } = useFleet()
   const { stats } = useEngine()
+  const { dict } = useI18n()
   const engineVersion = stats?.version
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -93,8 +98,8 @@ export function SensorCard({ host }: { host?: FleetHost }) {
   }, [])
   if (!host) {
     return (
-      <section aria-label="Sensor del equipo" className="panel px-5 py-4 text-xs text-zinc-500">
-        Este equipo no está en el inventario del motor: sus datos vienen de alertas o eventos antiguos, o de una importación sin sensor.
+      <section aria-label={dict.fleet.sensorCard.aria} className="panel px-5 py-4 text-xs text-zinc-500">
+        {dict.fleet.sensorCard.notInInventory}
       </section>
     )
   }
@@ -102,23 +107,22 @@ export function SensorCard({ host }: { host?: FleetHost }) {
   const beatAgo = secondsSince(s?.last_heartbeat, now)
   const silentFor = secondsSince(host.silent_since, now)
   const rows: { icon: React.ElementType; label: string; value: React.ReactNode }[] = [
-    { icon: Cpu, label: 'Sensor', value: s ? `${s.kind ?? 'desconocido'}${s.version ? ` · ${s.version}` : ''}` : 'sin latido (sensor antiguo o importación)' },
-    { icon: HardDrives, label: 'Sistema', value: s?.os || '—' },
-    { icon: ShieldCheck, label: 'Captura', value: s?.capture || host.sources.join(', ') || '—' },
-    { icon: Power, label: 'Modo', value: runModeText(s?.run_mode) },
-    { icon: Broadcast, label: 'Último latido', value: beatAgo === null ? '—' : `hace ${formatDuration(beatAgo)} (cada ${s?.interval_s ?? 60} s)` },
-    { icon: Timer, label: 'Sensor activo desde hace', value: s ? formatDuration(s.uptime_s) : '—' },
-    { icon: PlugsConnected, label: 'Conexión desde', value: host.peers.length ? host.peers.join(', ') : '—' },
-    { icon: Fingerprint, label: 'Identidad de ingesta', value: host.identity || 'token compartido o sin autenticación' },
+    { icon: Cpu, label: dict.fleet.sensorCard.rowSensor, value: s ? `${s.kind ?? dict.fleet.sensorCard.kindUnknown}${s.version ? ` · ${s.version}` : ''}` : dict.fleet.sensorCard.noBeat },
+    { icon: HardDrives, label: dict.fleet.sensorCard.rowOs, value: s?.os || '—' },
+    { icon: ShieldCheck, label: dict.fleet.sensorCard.rowCapture, value: s?.capture || host.sources.join(', ') || '—' },
+    { icon: Power, label: dict.fleet.sensorCard.rowMode, value: runModeText(s?.run_mode, dict.fleet.modes) },
+    { icon: Broadcast, label: dict.fleet.sensorCard.rowLastBeat, value: beatAgo === null ? '—' : dict.fleet.sensorCard.beatAgo(formatDuration(beatAgo), s?.interval_s ?? 60) },
+    { icon: Timer, label: dict.fleet.sensorCard.rowUptime, value: s ? formatDuration(s.uptime_s) : '—' },
+    { icon: PlugsConnected, label: dict.fleet.sensorCard.rowPeers, value: host.peers.length ? host.peers.join(', ') : '—' },
+    { icon: Fingerprint, label: dict.fleet.sensorCard.rowIdentity, value: host.identity || dict.fleet.sensorCard.identityFallback },
   ]
   return (
-    <section aria-label="Sensor del equipo" className="panel overflow-hidden">
+    <section aria-label={dict.fleet.sensorCard.aria} className="panel overflow-hidden">
       {host.status === 'silent' && (
         <div role="alert" className="flex items-start gap-2 border-b border-red-400/20 bg-red-500/[0.08] px-5 py-3 text-xs text-red-200">
           <WarningCircle size={16} weight="fill" aria-hidden className="mt-0.5 shrink-0" />
           <span>
-            Sin señal {silentFor !== null ? `desde hace ${formatDuration(silentFor)}` : ''}. Comprueba si el equipo está encendido y con red, y si el sensor sigue en marcha:
-            detenerlo es lo primero que hace un atacante para trabajar sin ser visto.
+            {dict.fleet.sensorCard.silentPrefix} {silentFor !== null ? dict.fleet.sensorCard.silentFor(formatDuration(silentFor)) : ''}{dict.fleet.sensorCard.silentRest}
           </span>
         </div>
       )}
@@ -126,18 +130,21 @@ export function SensorCard({ host }: { host?: FleetHost }) {
         <div role="status" className="flex items-start gap-2 border-b border-amber-400/20 bg-amber-400/[0.06] px-5 py-3 text-xs text-amber-200">
           <WarningCircle size={16} weight="fill" aria-hidden className="mt-0.5 shrink-0" />
           <span>
-            El sensor informa la versión <b className="font-semibold">{s!.version}</b> y el motor va por{' '}
-            <b className="font-semibold">{engineVersion}</b>: no coinciden. El equipo sigue reportando con normalidad, pero
-            actualiza su sensor con el <code className="font-mono">security-sensor.exe</code> de esta instalación
-            (cómo copiarlo: «Añadir equipos», paso 2) para que reciba las mejoras de detección.
+            {dict.fleet.sensorCard.outdatedLead}
+            <b className="font-semibold">{s!.version}</b>
+            {dict.fleet.sensorCard.outdatedBetween}
+            <b className="font-semibold">{engineVersion}</b>
+            {dict.fleet.sensorCard.outdatedAfter}
+            <code className="font-mono">security-sensor.exe</code>
+            {dict.fleet.sensorCard.outdatedTail}
           </span>
         </div>
       )}
       <div className="flex flex-wrap items-center gap-3 px-5 pt-4">
-        <h3 className="text-sm font-medium text-zinc-100">Sensor y conexión</h3>
+        <h3 className="text-sm font-medium text-zinc-100">{dict.fleet.sensorCard.title}</h3>
         <FleetStatusPill host={host} />
         <SensorVersionChip host={host} engineVersion={engineVersion} />
-        <span className="ml-auto text-[11px] text-zinc-500">en el inventario desde {formatDateTime(host.first_seen)}</span>
+        <span className="ml-auto text-[11px] text-zinc-500">{dict.fleet.sensorCard.inInventorySince(formatDateTime(host.first_seen))}</span>
       </div>
       <dl className="grid gap-x-6 gap-y-2.5 px-5 py-4 sm:grid-cols-2">
         {rows.map((row) => (
@@ -154,12 +161,12 @@ export function SensorCard({ host }: { host?: FleetHost }) {
       </dl>
       <div className="grid grid-cols-3 border-t border-white/[0.06] text-center">
         {[
-          { label: 'Eventos (5 min)', value: host.events_last_5m },
+          { label: dict.fleet.sensorCard.events5m, value: host.events_last_5m },
           // the sensor's counters are cumulative since it started, not the
           // backlog still pending: spooled lines may have been delivered
           // long ago (a sensor that outlived an engine stop replays them)
-          { label: 'Desbordados a disco', hint: 'acumulado desde que arrancó el sensor', value: s ? s.spooled : '—', warn: (s?.spooled ?? 0) > 0 },
-          { label: 'Descartados', hint: 'acumulado desde que arrancó el sensor', value: s ? s.dropped : '—', warn: (s?.dropped ?? 0) > 0 },
+          { label: dict.fleet.sensorCard.spooled, hint: dict.fleet.sensorCard.countersHint, value: s ? s.spooled : '—', warn: (s?.spooled ?? 0) > 0 },
+          { label: dict.fleet.sensorCard.dropped, hint: dict.fleet.sensorCard.countersHint, value: s ? s.dropped : '—', warn: (s?.dropped ?? 0) > 0 },
         ].map((cell) => (
           <div key={cell.label} className="px-3 py-3" title={cell.hint}>
             <p className={`text-lg font-semibold ${cell.warn ? 'text-amber-300' : 'text-zinc-50'}`}>{cell.value}</p>
@@ -176,37 +183,31 @@ export function SensorCard({ host }: { host?: FleetHost }) {
   )
 }
 
-const WHERE_LABEL = {
-  server: 'En este servidor · PowerShell normal',
-  'server-admin': 'En este servidor · PowerShell de administrador',
-  'remote-admin': 'En el equipo remoto · PowerShell de administrador',
-} as const
-
 /** The "Añadir equipos" dialog: enrollment by token, or the manual identity file. */
 export function EnrollDialog({ onClose }: { onClose: () => void }) {
+  const { dict } = useI18n()
   const id = useId()
   const first = useRef<HTMLButtonElement>(null)
   const [tab, setTab] = useState<'token' | 'manual'>('token')
   return (
     <ConsoleDialog open onClose={onClose} titleId={`${id}-t`} initialFocus={first} className="sm:max-w-3xl">
       <div className="border-b border-zinc-800 px-5 py-4">
-        <h2 id={`${id}-t`} className="text-sm font-semibold text-zinc-100">Añadir equipos</h2>
+        <h2 id={`${id}-t`} className="text-sm font-semibold text-zinc-100">{dict.fleet.dialog.title}</h2>
         <p className="mt-0.5 text-xs leading-relaxed text-zinc-500">
-          Cada equipo envía su telemetría a este servidor con una identidad propia, atada a su nombre, y un latido cada minuto.
-          La consola no se conecta a los equipos ni ejecuta nada en ellos. Guía completa: docs/FLOTA-REMOTA.md.
+          {dict.fleet.dialog.intro1} {dict.fleet.dialog.intro2}
         </p>
         {/* same tab kit as the detection hub (POL-7); the buttons stay
             plain tab stops so the dialog initial-focus ref keeps working */}
-        <div role="tablist" aria-label="Método de alta" className={`${TABLIST_CLASS} mt-3`}>
-          <button ref={first} type="button" role="tab" aria-selected={tab === 'token'} onClick={() => setTab('token')} className={tabButtonClass(tab === 'token')}>Con token de alta (recomendado)</button>
-          <button type="button" role="tab" aria-selected={tab === 'manual'} onClick={() => setTab('manual')} className={tabButtonClass(tab === 'manual')}>Manual: identidad en fichero</button>
+        <div role="tablist" aria-label={dict.fleet.dialog.tabsAria} className={`${TABLIST_CLASS} mt-3`}>
+          <button ref={first} type="button" role="tab" aria-selected={tab === 'token'} onClick={() => setTab('token')} className={tabButtonClass(tab === 'token')}>{dict.fleet.dialog.tabToken}</button>
+          <button type="button" role="tab" aria-selected={tab === 'manual'} onClick={() => setTab('manual')} className={tabButtonClass(tab === 'manual')}>{dict.fleet.dialog.tabManual}</button>
         </div>
       </div>
       <div className="max-h-[60vh] overflow-y-auto px-5 py-4" role="tabpanel" tabIndex={0}>
         {tab === 'token' ? <TokenEnrollment /> : <ManualEnrollment />}
       </div>
       <div className="flex justify-end border-t border-zinc-800 px-5 py-3">
-        <button type="button" onClick={onClose} className="rounded-md px-3 py-2 text-xs text-zinc-300 hover:text-zinc-100">Cerrar</button>
+        <button type="button" onClick={onClose} className="rounded-md px-3 py-2 text-xs text-zinc-300 hover:text-zinc-100">{dict.fleet.dialog.close}</button>
       </div>
     </ConsoleDialog>
   )
@@ -214,13 +215,14 @@ export function EnrollDialog({ onClose }: { onClose: () => void }) {
 
 /** Step-by-step manual enrollment: an identity in the identities file. */
 function ManualEnrollment() {
+  const { dict } = useI18n()
   const [host, setHost] = useState('')
   const [server, setServer] = useState('')
   const [tls, setTls] = useState(true)
   const [copied, setCopied] = useState<number | null>(null)
   const hostOk = isValidHostName(host.trim())
   const serverOk = /^[A-Za-z0-9.-]{1,253}$/.test(server.trim())
-  const steps = hostOk && serverOk ? enrollmentPlan(host.trim(), server.trim(), tls) : []
+  const steps = hostOk && serverOk ? enrollmentPlan(host.trim(), server.trim(), tls, dict.fleet.plan) : []
 
   async function copy(text: string, index: number) {
     try {
@@ -235,41 +237,41 @@ function ManualEnrollment() {
   return (
     <div>
       <p className="mb-3 text-xs leading-relaxed text-zinc-500">
-        Sin alta por token: creas a mano la identidad del equipo en el fichero de identidades y le pasas su token.
+        {dict.fleet.manual.intro}
       </p>
       <div className="grid gap-3 pb-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
         <label className="text-xs text-zinc-400">
-          Nombre del equipo remoto
+          {dict.fleet.manual.hostLabel}
           <input value={host} onChange={(e) => setHost(e.target.value)} placeholder="PC-CONTA-01" maxLength={15}
             className="mt-1 block w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 font-mono text-xs text-zinc-100 placeholder:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
         </label>
         <label className="text-xs text-zinc-400">
-          IP o nombre de este servidor en la red
+          {dict.fleet.manual.serverLabel}
           <input value={server} onChange={(e) => setServer(e.target.value)} placeholder="192.168.1.10" maxLength={253}
             className="mt-1 block w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 font-mono text-xs text-zinc-100 placeholder:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
         </label>
         <label className="flex items-center gap-2 pb-1.5 text-xs text-zinc-300">
           <input type="checkbox" checked={tls} onChange={(e) => setTls(e.target.checked)} />
-          Cifrar con TLS (recomendado)
+          {dict.fleet.manual.tlsLabel}
         </label>
       </div>
-      {host && !hostOk && <p className="pb-2 text-[11px] text-amber-300">El nombre de un equipo Windows tiene hasta 15 letras, números o guiones.</p>}
+      {host && !hostOk && <p className="pb-2 text-[11px] text-amber-300">{dict.fleet.manual.hostError}</p>}
       <div>
         {steps.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-zinc-800 px-4 py-6 text-center text-xs text-zinc-500">Escribe el nombre del equipo y la dirección del servidor para ver los pasos con los comandos ya preparados.</p>
+          <p className="rounded-lg border border-dashed border-zinc-800 px-4 py-6 text-center text-xs text-zinc-500">{dict.fleet.manual.stepsPlaceholder}</p>
         ) : (
           <ol className="space-y-3">
             {steps.map((step, i) => (
               <li key={i} className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
                 <p className="flex items-center gap-2 text-[11px] font-medium text-zinc-400">
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-tint/20 text-[10px] text-primary-soft">{i + 1}</span>
-                  {WHERE_LABEL[step.where]}
+                  {dict.fleet.where[step.where]}
                 </p>
                 <p className="mt-1.5 text-xs leading-relaxed text-zinc-300">{step.text}</p>
                 {step.cmd && (
                   <div className="mt-2 flex items-start gap-2">
                     <code className="min-w-0 flex-1 overflow-x-auto whitespace-pre rounded-md bg-zinc-950/60 px-2.5 py-2 font-mono text-[11px] text-zinc-200">{step.cmd}</code>
-                    <button type="button" onClick={() => void copy(step.cmd!, i)} aria-label={`Copiar el comando del paso ${i + 1}`}
+                    <button type="button" onClick={() => void copy(step.cmd!, i)} aria-label={dict.fleet.manual.copyStep(i + 1)}
                       className="shrink-0 rounded-md border border-white/10 p-1.5 text-zinc-400 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                       {copied === i ? <CheckCircle size={14} weight="fill" aria-hidden className="text-emerald-400" /> : <Copy size={14} aria-hidden />}
                     </button>
@@ -281,7 +283,7 @@ function ManualEnrollment() {
         )}
         {tls && steps.length > 0 && (
           <p className="mt-3 text-[11px] leading-relaxed text-zinc-500">
-            TLS necesita un certificado del servidor en tools\config\ingest-cert.pem e ingest-key.pem (cómo crearlo: docs/FLOTA-REMOTA.md). Sin él, el motor no activa TLS y el sensor rechazará conectar.
+            {dict.fleet.manual.tlsNote}
           </p>
         )}
       </div>
