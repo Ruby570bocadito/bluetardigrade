@@ -2,39 +2,42 @@
 
 ## Hecho (últimas 24 h)
 
-Sesiones cerradas: m3-yara-motor (646869b, pack YARA del motor) y
-H-003/H-004/H-006 (128e74b/1507de6/9f013cb, hallazgos BAJO de TEST r1).
+Sesiones cerradas y verificadas: m3-yara-motor (646869b), H-003/H-004/
+H-006, m7-wef-pack (f752040), pol1c-collector (d938c65, POL-1
+completo) y doctor-yara-check (3d8121d).
 
-Sesión m7-wef-pack (f752040, verificada por DIR): contrato
-windows.event, pack AD y umbral thr-ad-spray; 123 reglas.
-
-Sesión pol1c-collector (d938c65): POL-1 COMPLETADO — collector.rs
-479→313 líneas; sessions.rs y stop.rs nuevos; rutas públicas intactas.
-Verificado con el job sensor de CI entero en local (cross-check
-windows-msvc incluido).
-
-Sesión doctor-yara-check (3d8121d): engine doctor valida el pack
-yara-rules con el loader del motor (yara.Load), resuelto igual que
-loadYara y flag -yara-rules nuevo en doctor. Cubre pack ausente
-(skip), vacío (warn), ficheros que un sensor rechaza (warn por
-fichero), tope de 32 MiB (error) y pack sano (ok con sha16). Smoke
-real del binario verificado. CI local verde: gofmt, build, vet,
-staticcheck x2, test -race ./... y guard de inventario.
+Sesión reglas-interpretes-envueltos (96ad54b): mi propuesta del
+tablero aterrizada. Dos reglas en lolbas.yaml (0009/0010): «Intérprete
+renombrado por su gramática de argumentos» (high: nombre fuera de los
+intérpretes canónicos + gramática — -EncodedCommand, blob tras -enc
+con mínimo anti -Encoding, vbscript:/javascript:, python -c import) y
+«Binario con nombre propio lanzando un intérprete encubierto»
+(medium: el wrapper.exe -> powershell -enc por el padre — parent_name
+presente + not_in de lanzadores canónicos; navegadores y Office
+excluidos para no duplicar). Inventario 123→125 (contador + bloque de
+OPERATIONS vía guard); dos escenarios sim nuevos (SIM-2); tests de
+regla por presencia (co-fuego legítimo, documentado). CI verde:
+fmt/build/vet/staticcheck, test -race ./..., inventario y API ref.
 
 ## Bloqueado
-- s2-yara-memoria: decisión de atribución PID pendiente (DIR).
+- (nada: s2-yara-memoria DESBLOQUEADA por la decisión de DIR —
+  escaneo por proceso, atribución PID trivial).
 
 ## Peticiones
-- SEG (tabs→espacios): respondido en la sesión anterior — parches
-  quirúrgicos desde entonces; scripts fuera del repo.
+- PUL: tercera deriva de la cifra — 123 pasa a 125 en la prosa
+  (mismos sitios que su ronda 3; el bloque del inventario ya lo
+  regeneré con el guard).
+- SEG (causa raíz tabs→espacios): volvió a saltar con mi Edit en
+  rules_test.go; detectado por el tamaño del diff y corregido con
+  gofmt -w antes de entregar — el churn no llegó a main.
 
 ## Propuestas para el roadmap
-- Señal para binarios con nombre propio que envuelvan intérpretes.
-- Mi columna queda drenada tras doctor-yara-check (readcap lo tomó
-  SEG): si s2 sigue decidéndose, no tengo tarea reclamable.
+- Gemelo por hash: process.create con sha256 idéntico a otro binario
+  de nombre distinto visto en el host (renaming sin feeds) — requiere
+  correlación nueva en el motor.
 
 ## Siguiente
-- Esperando DIR: decisión de s2 o nueva alta en la columna.
+- s2-yara-memoria (decisión publicada: escaneo por proceso).
 
 ## Estado: VERDE — riesgos
-- Falta ver la run remota de 3d8121d (el local pasó el job entero).
+- Falta ver la run remota de 96ad54b (el local pasó la batería entera).
