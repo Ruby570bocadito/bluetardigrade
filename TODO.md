@@ -220,9 +220,9 @@ En este orden, para no rehacer capturas:
   - grafo de entidades más fácil de leer: menos nodos a la vez (agrupar y
     desplegar), etiquetas legibles, leyenda, filtros por tipo y una vista en
     lista como alternativa.
-- [ ] Terminar los idiomas (IDEA-10): restan equipos y flota (hosts-view,
-  fleet-parts, enroll-parts), reglas, ruido, respuesta, flujo en vivo,
-  analista y eventDetail; el chrome ya lee del diccionario ES/EN.
+- [ ] Terminar los idiomas (IDEA-10): restan reglas, ruido, respuesta,
+  flujo en vivo, analista y eventDetail; el chrome ya lee del diccionario
+  ES/EN y Panel, Equipos, Alertas y Consulta BD están bilingües.
 - [ ] Capturas de uso real en una VM de laboratorio, sin nombres de equipo,
   usuarios, SIDs ni dominios personales.
 - [ ] Vídeo para el README.
