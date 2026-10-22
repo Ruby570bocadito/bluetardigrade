@@ -221,8 +221,9 @@ En este orden, para no rehacer capturas:
     desplegar), etiquetas legibles, leyenda, filtros por tipo y una vista en
     lista como alternativa.
 - [ ] Terminar los idiomas (IDEA-10): restan reglas, ruido, respuesta,
-  flujo en vivo, analista y eventDetail; el chrome ya lee del diccionario
-  ES/EN y Panel, Equipos, Alertas y Consulta BD están bilingües.
+  flujo en vivo y analista; el chrome ya lee del diccionario ES/EN y
+  Panel, Equipos, Alertas, Consulta BD y la ficha de evento (eventDetail)
+  están bilingües.
 - [ ] Capturas de uso real en una VM de laboratorio, sin nombres de equipo,
   usuarios, SIDs ni dominios personales.
 - [ ] Vídeo para el README.
