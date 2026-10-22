@@ -450,6 +450,36 @@ describe('i18n dictionaries', () => {
     expect(DICTS.en.dbQuery.notAdminTitle).toBe('Administrators only')
     expect(DICTS.en.dbQuery.examples).toEqual(dictEs.dbQuery.examples)
   })
+
+  test('phase 11 sweep (rules, noise, respond, feed, analyst) keeps the spanish copy byte-identical', () => {
+    expect(dictEs.rules.loadedTitle).toBe('Reglas cargadas en el motor')
+    expect(dictEs.rules.coverage.tacticSubtitle(3, 14, 11)).toBe('3 de 14 tácticas cubiertas · 11 sin reglas')
+    expect(dictEs.rules.tactics['lateral-movement']).toBe('Movimiento lateral')
+    expect(dictEs.noise.introSuppress).toBe('crear supresión')
+    expect(dictEs.noise.scanned(120, 4)).toBe('120 eventos · 4 alertas examinados')
+    expect(dictEs.noise.processes.cols).toEqual(['Imagen', 'Eventos', 'Equipos', 'Visto por última vez', 'Padre', 'Software conocido'])
+    expect(dictEs.respond.summary.decisionsSubtitle(7)).toBe('7 intentos en la ventana del audit')
+    expect(dictEs.respond.feed.queue(500)).toBe('cola 500')
+    expect(dictEs.respond.feed.classEmptyHint(3)).toBe('El filtro actual no coincide con ninguno de los 3 intentos de la ventana.')
+    expect(dictEs.feed.newEvent('process.create', 'PC-01')).toBe('Evento nuevo: process.create en PC-01')
+    expect(dictEs.feed.stream.windowShown(80, 160)).toBe('Ventana mostrada: 80 eventos de 160 en el búfer del cliente. El búfer completo vive en el motor.')
+    expect(dictEs.analyst.metaAlerts(1)).toBe('1 alerta')
+    expect(dictEs.analyst.metaHosts(2)).toBe('2 equipos')
+    expect(dictEs.analyst.suppress.note('todos los hosts')).toBe('Supresiones activas para esta regla: todos los hosts.')
+  })
+
+  test('phase 11 english copy is a real translation of the remaining lane', () => {
+    expect(DICTS.en.rules.loadedTitle).toBe('Rules loaded in the engine')
+    expect(DICTS.en.rules.coverage.tacticSubtitle(3, 14, 11)).toBe('3 of 14 tactics covered · 11 with no rules')
+    expect(DICTS.en.rules.tactics['lateral-movement']).toBe('Lateral Movement')
+    expect(DICTS.en.noise.processes.title).toBe('Most repeated processes')
+    expect(DICTS.en.respond.armedTitle).toBe('Surface armed')
+    expect(DICTS.en.respond.feed.queue(100)).toBe('queue 100')
+    expect(DICTS.en.feed.pace.title).toBe('Ingest rate')
+    expect(DICTS.en.feed.stream.colDetail).toBe('Detail')
+    expect(DICTS.en.analyst.title).toBe('AI analyst')
+    expect(DICTS.en.analyst.metaHosts(2)).toBe('2 hosts')
+  })
 })
 
 describe('language resolution', () => {

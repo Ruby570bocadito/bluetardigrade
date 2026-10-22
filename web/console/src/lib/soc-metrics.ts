@@ -2,6 +2,7 @@
 // what the engine actually delivered (client buffers and /api/stats
 // polls): no projection, no interpolation, no invented baseline.
 
+import type { Lang } from './i18n'
 import type { EngineStats, RuleMeta, Severity, SfAlert, SfEvent } from './console-types'
 
 export const SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low', 'info']
@@ -261,11 +262,11 @@ export function formatCompact(value: number): string {
 }
 
 /** "hace 35 s", "hace 4 min", "hace 2 h". */
-export function formatAgo(ms: number): string {
-  if (ms < 1000) return 'ahora'
+export function formatAgo(ms: number, lang: Lang = 'es'): string {
+  if (ms < 1000) return lang === 'en' ? 'now' : 'ahora'
   const s = Math.round(ms / 1000)
-  if (s < 60) return `hace ${s} s`
+  if (s < 60) return lang === 'en' ? `${s} s ago` : `hace ${s} s`
   const m = Math.round(s / 60)
-  if (m < 60) return `hace ${m} min`
-  return `hace ${Math.round(m / 60)} h`
+  if (m < 60) return lang === 'en' ? `${m} min ago` : `hace ${m} min`
+  return lang === 'en' ? `${Math.round(m / 60)} h ago` : `hace ${Math.round(m / 60)} h`
 }

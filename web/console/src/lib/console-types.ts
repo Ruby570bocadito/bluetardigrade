@@ -4,6 +4,8 @@
 // and the SSE frames of /api/stream. The console never invents data:
 // when the engine is unreachable every view shows a real empty state.
 
+import type { Lang } from './i18n'
+
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info'
 
 // model.Event (pkg/model) as delivered by /api/events and /api/stream.
@@ -448,17 +450,24 @@ export function severityOf(value: string | undefined): Severity {
   return value === 'critical' || value === 'high' || value === 'medium' || value === 'low' || value === 'info' ? value : 'low'
 }
 
-export function formatTime(iso: string): string {
+// Locale for the shared formatters: the console language chooses the
+// rendering, ES stays the default so existing call sites and the server
+// render keep today's output (IDEA-10 phase 11).
+function localeOf(lang: Lang): string {
+  return lang === 'en' ? 'en-US' : 'es-ES'
+}
+
+export function formatTime(iso: string, lang: Lang = 'es'): string {
   try {
-    return new Date(iso).toLocaleTimeString('es-ES', { hour12: false })
+    return new Date(iso).toLocaleTimeString(localeOf(lang), { hour12: false })
   } catch {
     return iso
   }
 }
 
-export function formatDateTime(iso: string): string {
+export function formatDateTime(iso: string, lang: Lang = 'es'): string {
   try {
-    return new Date(iso).toLocaleString('es-ES', { hour12: false })
+    return new Date(iso).toLocaleString(localeOf(lang), { hour12: false })
   } catch {
     return iso
   }
@@ -475,17 +484,51 @@ export function formatUptime(s: number): string {
 
 // One-line human summary of an event, mirroring what the engine stores
 // per event type (process, network, file, registry, process.access).
-export function eventDetail(ev: SfEvent): string {
+// The handful of connective words travels with the function (same
+// pattern as lib/platform-status): the engine-provided tokens (Cowrie,
+// osquery, IDS, field values) never translate. ES is the default so
+// existing call sites keep today's output (IDEA-10 phase 11).
+const EV_DETAIL_WORDS = {
+  es: {
+    idsDetection: 'detección',
+    idsPriority: 'prioridad',
+    idsSignature: 'firma',
+    idsVerdict: 'veredicto',
+    idsNoVerdict: 'no declarado',
+    stdinOmitted: 'stdin omitido',
+    mail: 'Correo',
+    mailFrom: 'de',
+    noSubject: '(sin asunto)',
+    riskyAttachment: ' · adjunto activo',
+    nd: 'n/d',
+  },
+  en: {
+    idsDetection: 'detection',
+    idsPriority: 'priority',
+    idsSignature: 'signature',
+    idsVerdict: 'verdict',
+    idsNoVerdict: 'not declared',
+    stdinOmitted: 'stdin omitted',
+    mail: 'Email',
+    mailFrom: 'from',
+    noSubject: '(no subject)',
+    riskyAttachment: ' · risky attachment',
+    nd: 'n/a',
+  },
+} as const
+
+export function eventDetail(ev: SfEvent, lang: Lang = 'es'): string {
+  const w = EV_DETAIL_WORDS[lang]
   const a = ev.attributes ?? {}
-  if (ev.type === 'network.alert') return `IDS ${a.ids_signature ?? 'detección'} · prioridad ${a.ids_priority ?? '?'} · firma ${a.ids_action ?? '?'} · veredicto ${a.ids_verdict ?? 'no declarado'}`
+  if (ev.type === 'network.alert') return `IDS ${a.ids_signature ?? w.idsDetection} · ${w.idsPriority} ${a.ids_priority ?? '?'} · ${w.idsSignature} ${a.ids_action ?? '?'} · ${w.idsVerdict} ${a.ids_verdict ?? w.idsNoVerdict}`
   if (ev.type === 'host.query') return `osquery ${a.query_name ?? '?'} · ${a.query_action ?? '?'} · ${a.column_name ?? ''}`
-  if (ev.type.startsWith('honeypot.')) return `Cowrie ${a.honeypot_event ?? ev.type} · ${a.honeypot_input_kind === 'stdin' ? 'stdin omitido' : a.honeypot_input ?? ev.user ?? ''}`
+  if (ev.type.startsWith('honeypot.')) return `Cowrie ${a.honeypot_event ?? ev.type} · ${a.honeypot_input_kind === 'stdin' ? w.stdinOmitted : a.honeypot_input ?? ev.user ?? ''}`
   if (ev.type === 'network.firewall') return `Firewall ${a.firewall_action ?? '?'} ${a.firewall_direction ?? ''} · ${ev.network?.source_ip ?? '?'} -> ${ev.network?.destination_ip ?? '?'}:${ev.network?.destination_port ?? '?'}`
-  if (ev.type === 'email.message') return `Correo ${a.mail_subject ?? '(sin asunto)'} · de ${a.mail_from ?? '?'}${a.mail_risky_attachment === 'true' ? ' · adjunto activo' : ''}`
+  if (ev.type === 'email.message') return `${w.mail} ${a.mail_subject ?? w.noSubject} · ${w.mailFrom} ${a.mail_from ?? '?'}${a.mail_risky_attachment === 'true' ? w.riskyAttachment : ''}`
   if (ev.access) {
     const who = ev.process?.name ?? '?'
     const target = ev.target?.name ?? '?'
-    return `${who} -> ${target} (${ev.access.granted_access ?? 'n/d'})`
+    return `${who} -> ${target} (${ev.access.granted_access ?? w.nd})`
   }
   if (ev.registry) {
     const value = ev.registry.value_name ? ` \\${ev.registry.value_name}` : ''
