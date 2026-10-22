@@ -333,7 +333,7 @@ The engine serves a small read-only API used by the web console and handy for SI
 | `GET /api/noise?window=24h&host=&limit=10` | the noise report: processes, DNS domains and rules that most generate events or alerts, each with its triage overlay; JSON only, fleet-wide by default, `host=` narrows to one machine — see [SOC reports and noise](#soc-reports-and-noise-rep-1) |
 
 <!-- BEGIN API REFERENCE -->
-Complete operation index generated from `api/openapi.yaml` (POL-5): **49 routes, 54 operations**. The guard `scripts/dev-tests/check_api_reference.py` fails CI when the spec and this index drift; regenerate in the same round as the spec change with `python3 scripts/dev-tests/check_api_reference.py --write`.
+Complete operation index generated from `api/openapi.yaml` (POL-5): **51 routes, 56 operations**. The guard `scripts/dev-tests/check_api_reference.py` fails CI when the spec and this index drift; regenerate in the same round as the spec change with `python3 scripts/dev-tests/check_api_reference.py --write`.
 
 | Method | Route | Summary | Tags |
 |--------|-------|---------|------|
@@ -390,6 +390,8 @@ Complete operation index generated from `api/openapi.yaml` (POL-5): **49 routes,
 | GET | /api/suppressions | Operator allowlist | status |
 | POST | /api/suppressions | Add (or update) one suppression entry (-api-write) | status |
 | DELETE | /api/suppressions | Remove entries matching the exact (rule_id, host) pair (-api-write) | status |
+| GET | /api/yara | The YARA rule pack served to the sensors (read-only) | status |
+| GET | /api/yara/bundle | The rule pack as a zip to drop next to the sensor's rules | status |
 | GET | /metrics | Prometheus scrape endpoint (text exposition 0.0.4) | status |
 <!-- END API REFERENCE -->
 

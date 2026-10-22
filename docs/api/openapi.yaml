@@ -814,6 +814,64 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Intel'
+  /api/yara:
+    get:
+      tags: [status]
+      operationId: getYara
+      summary: The YARA rule pack served to the sensors (read-only)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The YARA rule pack the operator curates in the `-yara-rules`
+        directory (M-3): every `*.yar`/`*.yara` file under it, the
+        version its optional `bundle.json` names, and `sha16`, the
+        content fingerprint the sensors report in their heartbeat as
+        `yara_rules_sha` (contract S-2<->M-3). A sensor whose whole pack
+        compiles reports exactly this fingerprint, so arrival is the
+        comparison of `sha16` with the `yara_rules_sha` each host shows
+        in `/api/fleet`: a mismatch with `yara_errors == 0` means the
+        host still runs an older pack, a mismatch with `yara_errors > 0`
+        means a file it could not compile. `problems` names the files a
+        sensor will refuse. Delivery to the sensors is out of band until
+        the signed server-to-sensor channel (E-1) exists.
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '200':
+          description: The pack status; enabled false without -yara-rules
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Yara'
+  /api/yara/bundle:
+    get:
+      tags: [status]
+      operationId: getYaraBundle
+      summary: The rule pack as a zip to drop next to the sensor's rules
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The same pack as a deterministic zip (rule files plus
+        `bundle.json`, zeroed timestamps): an operator unzips it into the
+        sensor's `--yara-rules` directory and the sensor reloads it
+        within a minute without a restart. Refused with 404 while the
+        pack has no rule files and 413 over the 32 MiB distribution cap.
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '200':
+          description: The zip archive, named yara-bundle-<sha16>.zip
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: The engine runs without -yara-rules or the pack is empty
+        '413':
+          description: The pack exceeds the distribution cap
   /api/baseline:
     get:
       tags: [status]
@@ -5115,9 +5173,50 @@ components:
           type: integer
         dropped:
           type: integer
+        yara_rules:
+          type: integer
+          description: rules the sensor compiled from its YARA pack (0 = scanning off or none loaded)
+        yara_rules_sha:
+          type: string
+          description: content fingerprint of the rules the sensor runs (contract S-2<->M-3); absent while it reports none
         last_heartbeat:
           type: string
           format: date-time
+    Yara:
+      type: object
+      required: [enabled, files, total_bytes, problems]
+      properties:
+        enabled:
+          type: boolean
+          description: false when the engine runs without -yara-rules
+        dir:
+          type: string
+          description: the directory the pack lives in
+        version:
+          type: string
+          description: what the pack's bundle.json names, empty without one
+        sha16:
+          type: string
+          description: content fingerprint the sensors report as yara_rules_sha (contract S-2<->M-3); empty while the pack has no rule files
+        files:
+          type: array
+          description: the rule files the fingerprint covers, by relative path
+          items:
+            type: object
+            required: [name, bytes]
+            properties:
+              name:
+                type: string
+                description: relative path with / separators (what the sensor's compile errors use)
+              bytes:
+                type: integer
+        total_bytes:
+          type: integer
+        problems:
+          type: array
+          description: files a sensor would refuse (unreadable, not UTF-8) and a bundle.json without a readable version
+          items:
+            type: string
     Sequence:
       type: object
       description: |
