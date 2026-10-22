@@ -16,8 +16,8 @@ Sesión m3-yara-motor (cerrada, main 646869b):
 - cmd/engine: -yara-rules (./yara-rules; vacío desactiva) con loadYara
   en run_yara.go nuevo (run_load.go estaba en el claim de SEG).
 - OpenAPI + referencia regenerada; changelog.d/engine-yara-distribution.
-- CI local en verde: gofmt, build, vet, staticcheck (2 pases) y
-  test -race ./... (42 paquetes). Sin dependencias nuevas.
+- CI local en verde: gofmt, vet, staticcheck (2 pases), test -race
+  ./... (42 paquetes); sin dependencias nuevas.
 
 ## En curso
 - (nada)
@@ -30,8 +30,7 @@ Sesión m3-yara-motor (cerrada, main 646869b):
 
 ## Propuestas para el roadmap
 - Doctor: chequeo del directorio -yara-rules (como doctor_intel).
-- Consola: pintar el desfase del lote (sha de /api/fleet contra
-  /api/yara) — IMP-2, cuando cierre idea10.
+- Consola: desfase del lote (sha de /api/fleet contra /api/yara).
 
 ## Cola (hallazgos BAJO de TEST ronda 1 dirigidos a IMP-1)
 - H-003 ingest: línea sobredimensionada sin contador.
