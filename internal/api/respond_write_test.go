@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -237,5 +238,45 @@ func TestRespondKillOperatorCredentialHeader(t *testing.T) {
 	}
 	if code, out := post("ana-own-credential"); out["error"] == "operator_credential_invalid" || code == http.StatusOK {
 		t.Fatalf("right credential: got %d %v (want the process guard's verdict)", code, out)
+	}
+}
+
+// a group-scoped caller acting outside its groups is denied before the
+// manager: the audit file only sees what the manager saw, so the
+// handler itself leaves the DENIED line in the engine log — a
+// well-formed, authorization-denied kill attempt must not vanish
+// without a trace.
+func TestRespondKillScopedDenialLeavesATrace(t *testing.T) {
+	base := armedRespondHub(t)
+	body := map[string]any{
+		"host": respondHostNameForTest(), "pid": 4242, "process_name": "sleep",
+		"operator": "ana", "reason": "fuera de mis grupos",
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	req, err := http.NewRequest("POST", "http://"+base+"/api/respond/kill", bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// a well-formed name the engine does not have: the scope matches
+	// nothing (scope.go), so the host is outside it for sure
+	req.Header.Set("X-SF-Scope", "fuera-de-grupo")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	_, _ = io.Copy(io.Discard, res.Body)
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("out-of-scope kill must be 403, got %d", res.StatusCode)
+	}
+	if !strings.Contains(buf.String(), "code=host_scope") {
+		t.Fatalf("the scope denial must leave a DENIED trace in the engine log, got: %q", buf.String())
 	}
 }

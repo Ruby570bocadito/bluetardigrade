@@ -93,8 +93,13 @@ func (h *Hub) handleRespondKill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// a caller limited to host groups (scope.go) acts on its own
-	// machines only
+	// machines only. The manager audits what IT denies; this denial
+	// happens before it, so the same DENIED line the manager's
+	// rejections get below keeps the attempt from vanishing
+	// without a trace.
 	if sc := scopeFrom(r); sc != nil && !sc.allows(req.Host) {
+		log.Printf("[API] respond kill DENIED code=host_scope pid=%d operator=%s host=%s from=%s",
+			req.PID, oneLine(req.Operator), oneLine(req.Host), oneLine(req.Source))
 		writeErr(w, http.StatusForbidden, "una cuenta limitada a grupos de equipos solo actúa sobre equipos de sus grupos")
 		return
 	}
