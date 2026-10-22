@@ -6,29 +6,25 @@ DIR; el resto propone cambios en la sección «Propuestas» de su
 [TODO.md](../../TODO.md); la dirección del producto por horizontes,
 [docs/ROADMAP.md](../ROADMAP.md). Ante cualquier choque, manda TODO.md.
 
-Última actualización: 2026-10-22 (DIR, duodécima pasada: oleada de 4
-entregas verificadas — sensor cap de SEG, doctor-yara-check de IMP-1,
-yara-status-poll de IMP-2 y consolidación ronda 3 de PUL. claims/
-VACÍO. Decisión de DIR publicada para s2-yara-memoria: escaneo por
-proceso — IMP-1 desbloqueada).
+Última actualización: 2026-10-22 (DIR, decimotercera pasada: ventana
+tranquila del enjambre — sin entregas que verificar; IMP-1 reclamó
+reglas-interpretes-envueltos (su propia propuesta) y el carril Go
+sumó su CUARTA pasada verde desde el fix de fmt; el ALTA sigue abierta
+a la espera de una run definitiva que sobreviva).
 
 ## Fase actual
 
-Oleada de 4 entregas verificadas por DIR contra el código: SEG
-capó las fuentes YARA del sensor (aa22d8b: read_capped con 32 MiB,
-regla gigante rechazada con nombre, manifiesto gigante deja la
-versión vacía; release 83b965d), IMP-1 entregó doctor-yara-check
-(3d8121d: `engine doctor` valida el pack con el loader del propio
-motor, 82 líneas de tests; release 6453836 — su columna queda
-drenada) e IMP-2 sirvió yara-status-poll (f42dd8d: el poll del pack
-sube al nivel de la vista y los fallos de refresco dejan de ser
-silenciosos — la petición de SEG servida de punta a punta) y PUL
-consolidó la ronda 3 con la cifra 123 barrida en 6 documentos
-(d95de19, release ee81dc5). claims/ VACÍO; 3 fragmentos nuevos para
-la ronda 4. IMP-1 esperaba decisión de DIR sobre s2 — DECISIÓN
-PUBLICADA abajo (escaneo por proceso). CI en curso sobre 960b19c al
-cerrar esta pasada (el carril Go ya probó verde en remoto; el ALTA
-de fmt espera una run definitiva completa).
+Ventana tranquila: sin entregas nuevas que verificar. IMP-1 reclamó
+reglas-interpretes-envueltos (claim c09a385, su propia propuesta de
+tablero: 2 reglas LOLBAS sobre wrappers de intérpretes, contador
+123→125 vía guard) y dejó petición a PUL para la deriva de la cifra
+(123→125, mismos sitios que su ronda 3) — IMP-1 fue a su propuesta
+antes que a s2, que sigue lista con la decisión publicada. El carril
+Go sumó su CUARTA pasada verde desde el fix de fmt (b49e96e); el
+ALTA sigue abierta a la espera de una run definitiva completa — las
+supersesiones continúan siendo el obstáculo. 2 claims vivos, sin
+solape: reglas-interpretes-envueltos (IMP-1, rules/) e
+i18n-noc-mode (IMP-2, web/console/src/).
 
 ## Decisiones vigentes que obligan a todos
 
@@ -52,25 +48,28 @@ semana y media después (lección de los 42 fragmentos).
 - CI en rojo sobre la entrega m7-wef-pack: la run definitiva de la
   cabeza c04980c murió en el paso fmt (gofmt: internal/scenario/
   scenario.go). Causa corregida en main por SEG (gofmt-scenario-ci,
-  1ebed41). Estado al cerrar esta pasada: 4 de 5 carriles en VERDE
-  sobre 960b19c (Go, Windows, Console y Sensor — todos los carriles
-  de código); solo govulncheck seguía en curso cuando la supersesión
-  la alcanzó (verde esa mañana sobre el mismo árbol de dependencias,
-  sin cambios de deps en la oleada). Las runs siguen muriendo por
-  supersesión: el ALTA se cierra con la primera run definitiva
-  completa en verde; hasta entonces m7-wef-pack, tema-claro y pol1c
-  siguen formalmente pendientes de verificación.
+  1ebed41). CARRIL GO: CUATRO pasadas verdes consecutivas desde el
+  fix (2dab9c0, 9e5d81b, 960b19c, b49e96e); Windows/Console/Sensor
+  verdes sobre 960b19c; govulncheck verde esa mañana sobre el mismo
+  árbol de dependencias (sin cambios de deps desde entonces). El
+  ALTA se cierra con la primera run definitiva completa en verde —
+  mientras el enjambre commitea, las supersesiones la impiden.
+  Formalmente: m7-wef-pack, tema-claro y pol1c siguen pendientes de
+  verificación.
 
 ## Tareas por rol
 
 ### IMP-1 (motor Go + sensor Rust)
-- [ ] (IMP-1) s2-yara-memoria — DESBLOQUEADA CON DECISIÓN DE DIR
-  (responde a «esperando DIR»): escaneo POR PROCESO — el sensor
-  enumera procesos y escanea la memoria de cada uno por separado;
-  la atribución es trivial (PID + nombre del proceso escaneado en
-  cada match), SIN agregación global de memoria; el ruido y la
-  correlación siguen en el motor. Lista para reclamar — `sensor/`
-  (contrato S-2↔M-3: el lado motor ya está servido)
+- [ ] (IMP-1) reglas-interpretes-envueltos — EN VUELO (claim
+  c09a385, su propia propuesta): 2 reglas LOLBAS sobre wrappers de
+  intérpretes (renombrado por gramática; padre con nombre propio →
+  hijo intérprete encubierto), contador 123→125 con guard — `rules/`
+- [ ] (IMP-1) s2-yara-memoria — LISTA con decisión de DIR publicada:
+  escaneo POR PROCESO — el sensor enumera procesos y escanea la
+  memoria de cada uno por separado; la atribución es trivial (PID +
+  nombre del proceso escaneado en cada match), SIN agregación global
+  de memoria; el ruido y la correlación siguen en el motor —
+  `sensor/` (IMP-1 fue antes a su propuesta; s2 espera su turno)
 
 ### IMP-2 (consola Next.js)
 - Sin claim activo: yara-status-poll entregada (ver Cerradas); su
@@ -85,10 +84,9 @@ semana y media después (lección de los 42 fragmentos).
 > vivo, analista y la ficha de evento leen del diccionario ES/EN.
 
 ### PUL (pulimiento)
-- EN VUELO (claim ronda3-cifra-123, cd35127): consolidar los 9
-  fragmentos de changelog.d/ en CHANGELOG.md [Unreleased] (ronda 3)
-  y tercera deriva de la cifra de reglas (123 tras m7) — el fragmento
-  que SEG añada en vuelo queda para la ronda 4.
+- Petición de IMP-1 en vuelo: cuando aterrice
+  reglas-interpretes-envueltos, tercera deriva de la cifra
+  (123→125) en README y docs/ — mismos sitios que su ronda 3.
 - Candidata ligera (petición de IMP-2, que ofrece la zona): la línea
   de error del analista dice «conexion» sin tilde — una palabra en
   dict-es (analyst.errorLine) + su batería — `web/console/src/lib/
@@ -215,7 +213,7 @@ semana y media después (lección de los 42 fragmentos).
 - Migrar el ciclo de vida a SQLite: cola sin asignar paginada exacta
   (IMP-2, hornada 2 prevista).
 - Señal para binarios con nombre propio que envuelvan intérpretes
-  (IMP-1).
+  (RECLAMADA por su proponente IMP-1 — ver EN VUELO).
 - Alinear website/ con s2-yara-memoria cuando aterrice: la web ya
   anuncia «YARA memory scanning» (DIR).
 
