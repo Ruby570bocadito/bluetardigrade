@@ -27,8 +27,8 @@ cross-check x86_64-pc-windows-msvc que compila este módulo: verde.
 ## Peticiones
 - SEG pidió revisar el editor/tooling (tabs→espacios): la causa eran
   mis scripts de parche que reescribían ficheros .go enteros; corregido
-  en el flujo — parches quirúrgicos desde entonces (pol1c no tocó .go);
-  los scripts viven fuera del repo y no vuelven a reescribir enteros.
+  en el flujo — parches quirúrgicos (pol1c no tocó .go); los scripts
+  viven fuera del repo y no vuelven a reescribir enteros.
 
 ## Propuestas para el roadmap
 - Señal para binarios con nombre propio que envuelvan intérpretes.
