@@ -3,6 +3,8 @@ package ingest
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net"
 	"strings"
 	"testing"
@@ -272,6 +274,57 @@ func TestOversizedAuthLineDoesNotCrash(t *testing.T) {
 		t.Fatalf("server unusable after an oversized AUTH line: %s", ack)
 	}
 	var _ = json.Marshal
+}
+
+// An oversized line in the DATA phase (after AUTH) used to close the
+// connection without touching any counter — /api/stats showed the
+// same ingest_rejected before and after (H-003, TEST ronda 1). Now it
+// counts as rejected and acks the cause, like the AUTH cap does. The
+// client's write of the tail may fail with a reset once the server
+// gives up: that is the expected outcome, not a test failure.
+func TestOversizedDataLineCounted(t *testing.T) {
+	srv, events, addr := startTestServer(t, "s3cret")
+	conn, r := dialAndSend(t, addr, "AUTH s3cret")
+	if ack := readAck(t, r); !strings.Contains(ack, `"ok"`) {
+		t.Fatalf("auth ack: %s", ack)
+	}
+	conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	_, _ = conn.Write([]byte(strings.Repeat("x", maxLineSize+16) + "\n"))
+	deadline := time.Now().Add(2 * time.Second)
+	for srv.Rejected() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if srv.Rejected() != 1 {
+		t.Fatalf("oversized data line not rejected (rejected=%d)", srv.Rejected())
+	}
+	// best effort: the ack may or may not arrive before the reset,
+	// but when it does it must name the cause
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if buf, err := io.ReadAll(conn); err == nil && len(buf) > 0 {
+		if ack := string(buf); !strings.Contains(ack, "line too long") {
+			t.Fatalf("ack does not name the cause: %s", ack)
+		}
+	}
+	select {
+	case ev := <-events:
+		t.Fatalf("event delivered on an oversized-line connection: %v", ev)
+	default:
+	}
+	// the server stays healthy: a normal sensor still authenticates
+	// and delivers
+	conn2, r2 := dialAndSend(t, addr, "AUTH s3cret")
+	if ack := readAck(t, r2); !strings.Contains(ack, `"ok"`) {
+		t.Fatalf("server unusable after an oversized data line: %s", ack)
+	}
+	if _, err := fmt.Fprintf(conn2, "%s\n", sampleEvent(t)); err != nil {
+		t.Fatalf("write event: %v", err)
+	}
+	select {
+	case <-events:
+	case <-time.After(2 * time.Second):
+		t.Fatal("normal event not delivered after an oversized data line")
+	}
+	conn.Close()
 }
 
 // Rotation window: the PREVIOUS token still validates while sensors

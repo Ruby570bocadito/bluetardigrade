@@ -440,9 +440,20 @@ func (s *Server) handle(conn net.Conn) {
 		s.received.Add(1)
 		s.events <- ev
 	}
-	if errors.Is(scanner.Err(), errAuthLineTooLong) {
+	switch {
+	case errors.Is(scanner.Err(), errAuthLineTooLong):
 		s.rejected.Add(1)
 		writeAck(conn, `{"ack":"error","error":"auth failed: AUTH line too long"}`)
+	case errors.Is(scanner.Err(), bufio.ErrTooLong):
+		// A data-phase line over maxLineSize used to close the
+		// connection without touching any counter: /api/stats showed
+		// the same dropped/rejected numbers before and after, and the
+		// sender had no ack naming the cause. Same treatment as the
+		// AUTH cap now: counted as rejected and acked before the
+		// close. Plain read errors (idle deadline, reset) stay
+		// uncounted — a client that goes quiet is not a rejection.
+		s.rejected.Add(1)
+		writeAck(conn, fmt.Sprintf(`{"ack":"error","error":"line too long (limit %d bytes)"}`, maxLineSize))
 	}
 }
 
