@@ -2,37 +2,40 @@
 
 ## Hecho (últimas 24 h)
 
-- Sexta pasada del tablero tras la hornada m3+c4: verificado contra el
-  código m3-yara-motor (internal/yara 303 líneas + 252 de test, api/yara
-  89 + 189, latido con yara_rules_sha, OpenAPI +99, release 5a54688) y
-  c4 (59b5b28). CI 6/6 verde (Security audit ya publica check propio).
-- Cerrojos vivos: idea10-idiomas-resto (IMP-2 — eventDetail, formatea-
-  dores, reglas y ruido ya en main) y H-003-H-004-H-006-api-mejoras
-  (IMP-1). Barrido de menciones IA sobre el tramo nuevo: limpio (solo
-  producto: POL-5 y analista).
-- Petición de IMP-2 servida: TODO.md IDEA-10 ya no cita equipos/flota.
-- Hallazgos: H-001/H-002 resueltas por PUL (resuelto-pendiente-
-  verificación, cierra TEST); H-005 reasignada a IMP-2; H-003/H-004/
-  H-006 reclamadas por IMP-1.
-- PUL además consolidó la ronda en el CHANGELOG (3cc318a) — rutina de
-  consolidar al cerrar cada ronda ya en Decisiones y aplicada.
+- Séptima pasada: CARRIL IDEA-10 CERRADO de punta a punta (respuesta,
+  flujo en vivo, analista, reglas, ruido + eventDetail/formateadores;
+  release a48a81b; 599 tests en verde; punto retirado de TODO.md por
+  IMP-2).
+- Hornada de hallazgos verificada contra el código: H-003/H-004/H-006
+  (IMP-1, ef5ddbd: contador de ingesta, diagnóstico de tope en db/query,
+  sev alias validado con tests) y H-005 (IMP-2, 0415af2). Los 6
+  hallazgos de TEST ronda 1 en resuelto-pendiente-verificación: los
+  cierra TEST, no DIR.
+- CI: 6/6 en e4bd42a; la run de la cabeza 7b954b0 en curso al cerrar
+  (la de 8c6895e fue cancelada por supersesión — comportamiento
+  conocido; verificar la definitiva antes de dar motor por verde).
+- Cerrojos vivos: consola-yara-desfase (IMP-2). IMP-1 declara
+  m7-wef-pack como siguiente. Barrido menciones IA en el tramo nuevo:
+  limpio (el «AI analyst panel» es producto).
+- Petición nueva en el tablero: PUL puede arreglar «conexion» sin
+  tilde en dict-es (IMP-2 ofrece la zona).
 
 ## En curso
 - (nada)
 
 ## Bloqueado
-- ad7-login-consola: sesión de diseño DIR↔IMP-2 pendiente (que abra su
-  próxima sesión). SEG sin tarea reclamable (Windows real).
+- ad7-login-consola: sesión de diseño DIR↔IMP-2 pendiente. SEG sin
+  tarea reclamable (Windows real).
 
 ## Peticiones
-- Humano: F0 (Dependabot #24–#27, ramas), pruebas Windows real, visto
-  bueno E-1..E-4; rotar el PAT.
+- Humano: lanzar TEST 2 (condición cumplida: carril IDEA-10 cerrado);
+  F0 (Dependabot #24–#27, ramas); pruebas Windows real; visto bueno
+  E-1..E-4; rotar el PAT.
 
 ## Propuestas
-- Lanzar test-carga-volumetrica (sesión TEST 2, ya descrita en el
-  tablero) cuando la hornada s2/m7 aterrice.
-- IMP-2: abrir su próxima sesión con la sesión de diseño de ad7.
+- Con el carril cerrado, la próxima hornada natural de IMP-2 es
+  consola-yara-desfase (en vuelo) y luego tema-claro.
 
 ## Estado: VERDE
-- Riesgos: PAT expuesto en el chat (rotarlo al cerrar la sesión);
-  hallazgos BAJO sin recoger (colas anotadas, no bloquean).
+- Riesgos: PAT expuesto en el chat (rotarlo al cerrar); CI de la
+  cabeza pendiente de run definitiva.

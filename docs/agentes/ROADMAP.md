@@ -6,32 +6,26 @@ DIR; el resto propone cambios en la sección «Propuestas» de su
 [TODO.md](../../TODO.md); la dirección del producto por horizontes,
 [docs/ROADMAP.md](../ROADMAP.md). Ante cualquier choque, manda TODO.md.
 
-Última actualización: 2026-10-22 (DIR, sexta pasada + micro-pase:
-m3-yara-motor y c4-consulta-bd-ui cerrados, CI 6/6 en la cabeza,
-s2-yara-memoria desbloqueada; PUL sirvió la hornada doc H-001/H-002 e
-integró la ronda en el CHANGELOG; IMP-2 en vuelo sobre
-idea10-idiomas-resto con la fase 11 en main; H-005 reasignada a IMP-2).
+Última actualización: 2026-10-22 (DIR, séptima pasada: carril IDEA-10
+CERRADO de punta a punta, 6/6 hallazgos resueltos y a la espera del
+cierre de TEST, consola-yara-desfase EN VUELO, IMP-1 apunta a
+m7-wef-pack).
 
 ## Fase actual
 
-Cuatro entregas en main desde la quinta pasada: IMP-1 cerró
-m3-yara-motor (pack YARA con huella sha16 por contenido, recarga
-perezosa, GET /api/yara y /api/yara/bundle, `yara_rules_sha` en el
-latido de flota, -yara-rules en el motor, OpenAPI regenerada); IMP-2
-aterrizó c4-consulta-bd-ui (59b5b28); PUL cerró
-changelog-consolidar-fragmentos (42 fragmentos → [Unreleased] en 9
-secciones) y deps-audit-concurrency-comentario; SEG cerró
-scan-toctou-lectura-capada (43d92b8). CI 6/6 en la cabeza (e4bd42a y
-sucesores). PUL sirvió además la hornada doc de TEST (H-001/H-002,
-resueltas y a la espera del cierre de TEST) y consolidó la ronda en el
-CHANGELOG; IMP-2 aterrizó la fase 11 de IDEA-10 (eventDetail y
-formateadores compartidos bilingües, c1ce7d3) y sigue EN VUELO con
-claim sobre el resto del carril (reglas f3c9b22 y ruido 1ad5c96 ya
-servidas). IMP-1 reclamó la hornada de hallazgos H-003/H-004/H-006
-(claim H-003-H-004-H-006-api-mejoras, 1b393c8). Hallazgos: H-001/H-002
-en resuelto-pendiente-verificación; H-005 reasignada a IMP-2 (su arreglo
-vive en web/console/README.md). La petición de IMP-2 (texto viejo de
-IDEA-10 en TODO.md) queda servida.
+La jornada cierra IDEA-10 por completo: IMP-2 aterrizó el resto del
+carril bilingüe (respuesta 9405404, flujo en vivo + eventDetail
+f51ad6a, analista 74aff7d, reglas f3c9b22, ruido 1ad5c96; release
+a48a81b) y retiró el punto de TODO.md. IMP-1 sirvió su hornada de
+hallazgos (H-003/H-004/H-006) e IMP-2 la H-005: los 6 hallazgos de la
+primera sesión TEST están en resuelto-pendiente-verificación, esperando
+el cierre de TEST. En vuelo: consola-yara-desfase (IMP-2, claim
+activo); IMP-1 declara m7-wef-pack como siguiente (sin claim aún).
+Cuatro fragmentos nuevos en changelog.d/ esperan la consolidación de
+PUL al cerrar la ronda. CI: la run de la cabeza estaba en curso al
+cerrar esta pasada (la anterior fue cancelada por supersesión;
+verificar la run definitiva antes de dar entregas de motor por
+verdes).
 
 ## Decisiones vigentes que obligan a todos
 
@@ -54,16 +48,12 @@ semana y media después (lección de los 42 fragmentos).
 ## Tareas por rol
 
 ### IMP-1 (motor Go + sensor Rust)
-- [ ] (IMP-1) H-003-H-004-H-006-api-mejoras — EN VUELO (claim activo,
-  1b393c8): contador de líneas sobredimensionadas en ingesta (H-003),
-  diagnóstico de cuerpo grande en db/query (H-004) y filtro de
-  severidad desconocida verboso (H-006) — `internal/api/`
+- [ ] (IMP-1) m7-wef-pack — pack AD por ID de evento (4625/4769/4662/
+  4728/4732/4756/7045); la guía existe: `docs/AD-WEF-SUSCRIPCION.md`;
+  declarado «siguiente» por IMP-1 — `rules/`
 - [ ] (IMP-1) s2-yara-memoria — DESBLOQUEADA por m3: escaneo de memoria
   de procesos con yara-x (decisión de atribución PID pendiente, ver
   contrato S-2↔M-3) — `sensor/`
-- [ ] (IMP-1) m7-wef-pack — pack AD por ID de evento (4625/4769/4662/
-  4728/4732/4756/7045); la guía existe: `docs/AD-WEF-SUSCRIPCION.md` —
-  `rules/`
 - [ ] (IMP-1) pol1c-collector — dividir `sensor/src/collector.rs`
   (479 líneas) sin cambio de comportamiento, si el análogo POL-1 de
   run.go aplica aquí (propuesta de PUL tras verificar pol1b) —
@@ -73,30 +63,29 @@ semana y media después (lección de los 42 fragmentos).
   pequeña) — `internal/`
 
 ### IMP-2 (consola Next.js)
-- [ ] (IMP-2) idea10-idiomas-resto — EN VUELO (claim activo; en main
-  ya: fase 10, eventDetail + formateadores c1ce7d3, reglas f3c9b22 y
-  ruido 1ad5c96): restan respuesta, flujo en vivo y analista —
+- [ ] (IMP-2) consola-yara-desfase — EN VUELO (claim activo):
+  indicador de desfase del lote YARA (sha de `/api/fleet` contra
+  `/api/yara`), propuesta de IMP-1 adoptada en zona IMP-2 —
   `web/console/src/`
-- [ ] (IMP-2) H-005 — línea de SF_API_TOKEN en el quickstart de
-  `web/console/README.md` (hallazgo BAJO de TEST, reasignado por PUL:
-  la zona web/ no es suya)
 - [ ] (IMP-2) ad7-login-consola — hornada de login de dominio; ANTES:
   sesión de diseño con DIR (el proxy exige principal y la ruta es
   pre-sesión — puede abrir la próxima sesión de IMP-2); su entrada en
   WRITES (8 KiB, admin) aterriza con la UI — `web/console/src/`
-- [ ] (IMP-2) consola-yara-desfase — indicador de desfase del lote YARA
-  (sha de `/api/fleet` contra `/api/yara`), propuesta de IMP-1 adoptada
-  en zona IMP-2 — `web/console/src/`
 - [ ] (IMP-2) tema-claro — rework de contraste, superficies y gráficas
   (resto del carril F5); coordinar los guards con IMP-1 —
   `web/console/src/`
 
+> El carril IDEA-10 de consola está CERRADO (release a48a81b): panel,
+> equipos, alertas, consulta BD, reglas, ruido, respuesta, flujo en
+> vivo, analista y la ficha de evento leen del diccionario ES/EN.
+
 ### PUL (pulimiento)
-- Tablero vacío: sirvió la hornada doc (H-001/H-002 en
-  resuelto-pendiente-verificación) y consolidó la ronda en el CHANGELOG.
-  H-005 reasignada a IMP-2 (zona web/).
-- Rutina ya en Decisiones: consolidar `changelog.d/` al cerrar cada
-  ronda (aplicada dos veces hoy).
+- Candidata ligera (petición de IMP-2, que ofrece la zona): la línea
+  de error del analista dice «conexion» sin tilde — una palabra en
+  dict-es (analyst.errorLine) + su batería — `web/console/src/lib/
+  i18n/`
+- Rutina en Decisiones: consolidar `changelog.d/` al cerrar cada ronda
+  (4 fragmentos nuevos a la espera).
 
 ### SEG (seguridad y bugs)
 - Sin tarea reclamable: sec2-dpapi, regresión PR #28 y
@@ -109,18 +98,26 @@ semana y media después (lección de los 42 fragmentos).
 ### TEST (tester por personas)
 - [x] (TEST) test-arranque-hallazgo-cero — CERRADA: pipeline punta a
   punta verde y 6 hallazgos BAJO (H-001..H-006), sin CRÍTICO ni ALTO;
-  H-001/H-002 ya resueltas por PUL y esperando el cierre de TEST en su
-  próxima sesión — `docs/agentes/hallazgos/`
+  los 6 están resueltos por PUL/IMP-1/IMP-2 y esperan el cierre de
+  TEST en su próxima sesión — `docs/agentes/hallazgos/`
 - [ ] (TEST) test-carga-volumetrica — SIGUIENTE SESIÓN, lista para
-  lanzar: 10k eventos de carga, beaconing con las 2 cadenas del
-  perfil, consola en build de producción con las verificaciones de
-  Chromium de `tools/` — `.agent-tmp/`, `docs/agentes/hallazgos/`
+  lanzar (condición cumplida: carril IDEA-10 cerrado): 10k eventos de
+  carga, beaconing con las 2 cadenas del perfil, consola en build de
+  producción con las verificaciones de Chromium de `tools/`, y cierre
+  de los 6 hallazgos resueltos — `.agent-tmp/`,
+  `docs/agentes/hallazgos/`
 
 ## Cerradas (últimas 24 h)
 
-- idea10 fase 11 (formateadores + eventDetail c1ce7d3; reglas
-  f3c9b22; ruido 1ad5c96) — (IMP-2; el carril sigue en vuelo con
-  claim)
+- idea10-idiomas-resto — CARRIL IDEA-10 CERRADO: respuesta 9405404,
+  flujo en vivo + eventDetail f51ad6a, analista 74aff7d, reglas
+  f3c9b22, ruido 1ad5c96, release a48a81b (IMP-2; 599 tests, tsc y
+  next build en verde)
+- H-003-H-004-H-006-api-mejoras — 128e74b, 1507de6, 9f013cb, release
+  ef5ddbd (IMP-1): contador de ingesta, diagnóstico de tope en db/query
+  y sev como alias validado; staticcheck x2 y test -race en local
+- h-005-consola-quickstart-motor-con-token — 0415af2 + release
+  11c0a7f (IMP-2): el quickstart de la consola cruza SF_API_TOKEN
 - H-001-H-002-readme-docs — 965265e, 014ac8e, release 4cc87d1 (PUL):
   prerrequisitos Go/make en quickstart y cifra 114→119/13 cadenas
   barrida en seis documentos
@@ -177,6 +174,9 @@ semana y media después (lección de los 42 fragmentos).
   cuentas (sección 7), grupos y permisos (7b/7c), prueba de uso 24–48 h;
   YARA en ficheros ya pide su prueba propia en el sensor; sec2-dpapi y
   la regresión del PR #28 van aquí.
+- Lanzar la sesión TEST 2 (test-carga-volumetrica): la condición
+  «carril IDEA-10 cerrado» está cumplida y los 6 hallazgos resueltos
+  esperan su cierre.
 - Visto bueno al contrato del canal servidor→sensor ANTES de la épica
   E-1..E-4 (la distribución firmada de IMP-1 espera esto).
 
