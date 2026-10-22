@@ -6,24 +6,21 @@ DIR; el resto propone cambios en la sección «Propuestas» de su
 [TODO.md](../../TODO.md); la dirección del producto por horizontes,
 [docs/ROADMAP.md](../ROADMAP.md). Ante cualquier choque, manda TODO.md.
 
-Última actualización: 2026-10-22 (DIR, tercera pasada: fusión de PRs
-#47/#48, hornada proxy de la petición de SEG, sincronía de tablero).
+Última actualización: 2026-10-22 (DIR, cuarta pasada: CI de la cabeza
+verificado 5/5, IDEA-10 fases 6-9 a cerradas, carril restante al
+tablero, gobernanza preparada para TEST).
 
 ## Fase actual
 
-Jornada cerrada de punta a punta: M-2 (AD-7 motor) y M-4 (consulta BD
-solo lectura) en main; F5 y C-5 en la consola; segunda ronda SEG (WRITES
-de asignación en el proxy, redirects erradicados); PUL con la higiene
-postmigración verificada. El CI destapó dos pases de staticcheck que
-ninguna run juzgó (ST1003 y ST1000 en el código M-4): reparados en
-paralelo por IMP-1 (st100x) y dentro del PR #48, convergidos sin
-duplicado. Fusión de PRs: #47 (P-4, expiración de bundles O(1), con
-merge de main que mantiene retirada la coordinación v1) y #48 (S-2,
-YARA en el sensor: ficheros escritos y bajo demanda). DIR cerró la
-petición de SEG en la consola: POST /api/db/query en el allowlist
-WRITES (admin, 64 KiB) y tope de lote 500→400 (el cap de 8 KiB del
-motor mataba los lotes de ~430-500 ids con 413). En vuelo con claim:
-IDEA-10 fase 6 (IMP-2, diccionario del Panel).
+Jornada verificada de punta a punta: la cabeza de main (298b32c) pasa los
+cinco checks de CI (govulncheck/osv-scanner/cargo audit, sensor, motor
+Go, consola, conductual Windows). IDEA-10 fases 6-9 en main: Panel,
+Directorio, Validación + probador e Intel/Supresiones/Cadenas bilingües
+(ce5f579, a8b15ef, 38040e2, 298b32c); el texto del motor sigue literal.
+Claims vacíos, sin restos v1, higiene al día. Gobernanza ampliada para
+TEST: fila en OWNERSHIP, `docs/agentes/hallazgos/` y lectura de
+hallazgos en el paso 2 del PROTOCOLO — TEST aún no ha corrido ninguna
+sesión.
 
 ## Decisiones vigentes que obligan a todos
 
@@ -39,8 +36,7 @@ completado = fuera de TODO.md + entrada propia en `changelog.d/`.
 
 ## ALTA
 
-- Sin ALTA abierta. `pol1b-dividir-run-go` quedó DESBLOQUEADA por los
-  releases de M-2/M-4: primera tarea natural de PUL.
+- Sin ALTA abierta.
 
 ## Tareas por rol
 
@@ -52,19 +48,25 @@ completado = fuera de TODO.md + entrada propia en `changelog.d/`.
   yara-x (tras M-3; decisión de atribución PID pendiente) — `sensor/`
 - [ ] (IMP-1) m7-wef-pack — pack AD por ID de evento (4625/4769/4662/
   4728/4732/4756/7045); requiere la guía WEF — `rules/`
+- [ ] (IMP-1) tema-guards-variante — si aterriza tema-claro (IMP-2):
+  extender check_console_theme.py y check_console_a11y.mjs a la nueva
+  variante — `scripts/`
 
 ### IMP-2 (consola Next.js)
-- [ ] (IMP-2) idea10-idiomas-panel — EN VUELO (claim activo, fase 6:
-  diccionario del Panel) — `web/console/src/`
-- [ ] (IMP-2) c4-consulta-bd-ui — UI de consulta sobre POST /api/db/query
-  (el proxy ya la deja pasar; admin, resultados con tope de filas) —
-  `web/console/src/`
+- [ ] (IMP-2) idea10-idiomas-flota — carril IDEA-10 restante: equipos y
+  flota (hosts-view, fleet-parts, enroll-parts) y luego reglas, ruido,
+  respuesta, flujo en vivo, analista y eventDetail (compartido con
+  flujo) — `web/console/src/`
+- [ ] (IMP-2) c4-consulta-bd-ui — UI de consulta sobre POST
+  /api/db/query (el proxy ya la deja pasar; admin, resultados con tope
+  de filas) — `web/console/src/`
 - [ ] (IMP-2) ad7-login-consola — hornada de login de dominio; ANTES:
   diseño con DIR (el proxy exige principal y la ruta es pre-sesión); su
   entrada en WRITES (8 KiB, admin) aterriza con la UI —
   `web/console/src/`
 - [ ] (IMP-2) tema-claro — rework de contraste, superficies y gráficas
-  (resto del carril F5) — `web/console/src/`
+  (resto del carril F5); coordinar los guards con IMP-1 —
+  `web/console/src/`
 
 ### PUL (pulimiento)
 - [ ] (PUL) pol1b-dividir-run-go — dividir `cmd/engine/run.go` sin
@@ -80,27 +82,33 @@ completado = fuera de TODO.md + entrada propia en `changelog.d/`.
 - Candidatas de TODO.md que necesitan Windows real: sec2-dpapi,
   regresión PR #28, reconexiones/spool — ver «Esperando al humano».
 
+### TEST (tester por personas; zona nueva)
+- [ ] (TEST) test-arranque-hallazgo-cero — primera sesión: instalar y
+  arrancar desde SOLO el README con 4 personas rotando (nuevo,
+  avanzado, torpe, malintencionado); el README que falla es ya el
+  primer hallazgo, dirigido a PUL — `tests/e2e/`,
+  `docs/agentes/hallazgos/`
+
 ## Cerradas (últimas 24 h)
 
-- M-2 AD-7 motor — internal/ad + POST /api/auth/domain (IMP-1; PR #48
-  trae además el sensor YARA)
-- M-4 consulta BD — 5e0eeea + e518323 (YAML inválidos del spec) +
-  cc8419e (ST1000)
-- S-2 YARA ficheros — PR #48 fusionado (3ad96c5); contrato S-2↔M-3
-  definido en su descripción
-- P-4 expiración O(1) — PR #47 fusionado (0852ebf), bench nuevo
-- F5 kit-resto-vistas — fc8e478..f570245 (IMP-2) + variante solid y
-  Textarea en el kit
-- C-5 aviso sensores desactualizados — a038aa3 (IMP-2)
-- SEG ronda 2 — WRITES de asignación en el proxy + últimos redirects
-  (getJSONInto/apiHealth) (SEG)
-- st100x — ST1003/ST1000 del código M-4: fb1ff2d (IMP-1) + cc8419e
-  (DIR, §2); aprendizaje: verificar ambos pases de staticcheck
+- IDEA-10 fases 6-9 — Panel (ce5f579), Directorio (a8b15ef), Validación
+  y probador (38040e2), Intel/Supresiones/Cadenas (298b32c); ES
+  byte-idéntico, EN traducción real (IMP-2)
 - proxy-db-query-y-tope-lote — 919db63 (IMP-2/DIR): WRITES + hint 405 +
-  tope 400 con regresión del cuerpo bajo 8 KiB
-- make-tabs — e1dc5c6 (IMP-1): tabs del Makefile + guard local
-- higiene-postmigracion — 927f069 (PUL, verificación completa)
-- PR #46 cerrado sin fusionar (informe v1; retirada de v1 en vigor)
+  tope 400 con regresión del cuerpo bajo 8 KiB; resuelve la petición de
+  SEG sobre el techo real de asignación
+- M-2 AD-7 motor — internal/ad + POST /api/auth/domain (IMP-1; PR #48
+  trae además el sensor YARA S-2, 3ad96c5, contrato S-2↔M-3 definido)
+- M-4 consulta BD — 5e0eeea + e518323 + cc8419e (ST1000)
+- P-4 expiración O(1) — PR #47 fusionado (0852ebf), bench nuevo
+- F5 kit-resto-vistas + C-5 aviso sensores desactualizados —
+  fc8e478..f570245 y a038aa3 (IMP-2)
+- SEG ronda 2 — WRITES de asignación en el proxy + últimos redirects
+  (getJSONInto/apiHealth)
+- st100x — fb1ff2d (IMP-1) + cc8419e (DIR); aprendizaje: verificar
+  ambos pases de staticcheck
+- make-tabs — e1dc5c6 (IMP-1); higiene-postmigracion — 927f069 (PUL)
+- PR #46 cerrado sin fusionar (retirada de v1 en vigor)
 
 ## Propuestas en el tablero (de los estados)
 
@@ -110,12 +118,19 @@ completado = fuera de TODO.md + entrada propia en `changelog.d/`.
   (IMP-2, hornada 2 prevista).
 - Señal para binarios con nombre propio que envuelvan intérpretes
   (IMP-1).
+- Alinear website/ con s2-yara-memoria cuando aterrice: la web ya
+  anuncia «YARA memory scanning» (DIR).
 
 ## Esperando al humano (no reclamables)
 
-- Fusionar o cerrar Dependabot #24–#27 con CI en verde; borrar ramas
-  `100agentes`, `audit/mejoras-2026-10-08`, `integracion/rondas-2-3`;
-  «Automatically delete head branches»; tags sueltos y About/topics (F0).
+- Fusionar o cerrar Dependabot #24–#27 con CI en verde (los cuatro
+  siguen abiertos, verificado en esta pasada); borrar ramas
+  `100agentes`, `audit/mejoras-2026-10-08` (cierra el PR #22) e
+  `integracion/rondas-2-3`; borrar también las v1 ya fusionadas
+  (`agent/*`, `console/*`, `claude/trusting-fermat-ffz98u`) y
+  `agent/motor/informe-ronda` si no interesa conservar nada;
+  «Automatically delete head branches»; tags sueltos y About/topics
+  (F0).
 - Pruebas en Windows real: `sf-start`/`sf-stop`/instalador, login/MFA/
   cuentas (sección 7), grupos y permisos (7b/7c), prueba de uso 24–48 h;
   YARA en ficheros ya pide su prueba propia en el sensor.
