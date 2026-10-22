@@ -574,4 +574,14 @@ describe('engine proxy with accounts limited to host groups', () => {
     await GET(new Request(base + '/api/alerts', { headers: as('luis', { 'x-sf-scope': 'madrid' }) }))
     expect(scopeSent()).toEqual(['madrid,servidores', null])
   })
+
+  // SEC-9: the engine audits who consults a user's directory record,
+  // so every forwarded request declares the session account — built
+  // here, never copied from the browser.
+  test('every forwarded request declares the session account', async () => {
+    const { GET } = await loadRoute()
+    await GET(new Request(base + '/api/ad/objects/user?q=ana', { headers: as('ana', { 'x-sf-account': 'otro' }) }))
+    await GET(new Request(base + '/api/alerts', { headers: as('luis') }))
+    expect(captured.map((c) => (c.init.headers as Record<string, string>)['x-sf-account'])).toEqual(['ana', 'luis'])
+  })
 })

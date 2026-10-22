@@ -154,6 +154,10 @@ async function forward(request: Request, principal: Principal, body?: string, op
   if (token) headers.authorization = `Bearer ${token}`
   const scope = scopeOf(principal)
   if (scope) headers['x-sf-scope'] = scope.join(',')
+  // SEC-9: the engine audits who consults a user's directory record.
+  // The account is built here from the session — the browser cannot
+  // choose it, the same discipline as the scope above.
+  if (principal.name) headers['x-sf-account'] = principal.name
   let upstream: Response
   try {
     upstream = await fetch(engineTarget(request), {
