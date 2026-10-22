@@ -332,9 +332,6 @@ Detalle en [docs/PRUEBAS-PENDIENTES.md](docs/PRUEBAS-PENDIENTES.md).
   (POL-6).
 - [ ] Cadena de suministro (SEC-6): auditar los componentes de terceros copiados
   en la consola.
-- [ ] Privacidad (SEC-9): minimizar datos personales en inicios de sesión y
-  líneas de tiempo, retención configurable y auditoría de quién consulta la
-  ficha de un usuario.
 - [ ] Informe de la prueba de uso (`sf-engine report soak`) y notas de
   limitaciones conocidas de la v1.0.
 

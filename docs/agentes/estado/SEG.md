@@ -1,24 +1,24 @@
 # SEG — estado
 
 ## Hecho (últimas 24 h)
-- Ronda 2, tarea 1: el allowlist WRITES del proxy /api/engine no incluía
-  las rutas de asignación del M-1 — «Asignármela», reasignar, quitar y
-  «Asignar» en lote recibían 405 read_only antes de llegar al motor
-  (TEAM-3 roto de punta a punta). Fix mínimo: dos entradas (analyst, 8 KiB
-  espejo del motor, attributed) y hint read_only actualizado. Regresión:
-  reenvío de ambas rutas, 413, 403 a viewer, atribución server-side (by =
-  cuenta, assignee intacto). Consola verde: 574 tests, tsc, build.
-- Ronda 2, tarea 2: los dos últimos clientes salientes con redirects por
-  defecto pasan a ErrUseLastResponse (patrón report/doctor/sumideros):
-  getJSONInto envía el bearer del motor y Go solo limpia Authorization
-  entre dominios (misma máquina con otro puerto la reenvía); apiHealthy,
-  sin credencial, seguía un 3xx del puerto de ingest a URL ajena.
-  Regresión: 302 es fallo definitivo y el destino recibe 0 peticiones.
-  Suite Go completa verde (41 paquetes), vet y gofmt limpios.
-- Sin hallazgos en la revisión extra: flujo de asignación (alert_assign:
-  cap 8 KiB, hex, scope antes de escribir; lifecycle: persistencia 0600;
-  rule_tester) y respond/kill (404 real si no armada, credencial del
-  operador constant-time, scope indistinguible de host inexistente).
+- Ronda 3, sec9-privacidad completa (punto retirado de TODO.md;
+  changelog.d/sec9-privacidad.md):
+  - Fichas: GET /api/ad/objects/user audita en ad_read_audit (quién
+    vía X-SF-Account o remoto, aguja capada por runas, resultado);
+    grupos/equipos/OU sin fila. Regresión: con y sin cabecera,
+    cuenta capada a 64, kinds no personales y kind desconocido sin
+    fila.
+  - Proxy: x-sf-account en cada reenvío, construida en el servidor
+    (disciplina x-sf-scope); el navegador no la elige.
+  - Retención: Prune cubre query_audit, ad_read_audit y
+    ad_posture_history (cutoff en segundos frente al nano de
+    events/alerts); log del podador con las tres familias.
+  - Login: las líneas [AUTH] guardan la cuenta capada (64 runas,
+    auditSafe), sin el dominio del UPN ni la entrada cruda.
+  - Líneas de tiempo: sin cambios, ya mínimas por diseño (cuentas de
+    sesión en lifecycle y consola, sin nombres mostrados).
+- Suite: go build/vet/test ./... verde, staticcheck doble pase limpio;
+  consola 590 tests, tsc y next build en verde.
 
 ## En curso
 - (nada)
@@ -27,14 +27,12 @@
 - (nada)
 
 ## Peticiones a otras zonas
-- IMP-2: lifecycle.ts usa MAX_ASSIGN_BATCH_IDS=500, pero el cap de 8 KiB
-  del motor deja el techo real en ~400 ids: un lote mayor recibe 400. O el
-  cliente corta a 400, o petición a IMP-1 de subir el cap del batch.
-- IMP-1/IMP-2: cuando aterricen las rutas en vuelo (POST /api/auth/domain
-  de m2, POST /api/db/query de m4) harán falta entradas en el WRITES del
-  proxy (rol admin) — lo mismo que acaba de pasar con la asignación.
+- (ninguna)
 
 ## Propuestas para el roadmap
-- (SEG) sec9-privacidad — minimizar PII en logins y líneas de tiempo,
-  retención y auditoría de fichas.
-- (SEG) sec2-dpapi — requiere Windows real; plan con Implementación A.
+- sec2-dpapi y la regresión del PR #28 siguen esperando Windows real
+  (carril «Esperando al humano»).
+
+## Estado: VERDE
+- Peticiones de la ronda 2 resueltas por DIR/IMP-2 (919db63):
+  retiradas de esta memoria.
