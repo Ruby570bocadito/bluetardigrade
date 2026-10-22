@@ -3,7 +3,7 @@ Tipo: documentación
 Severidad: BAJO
 Persona: Usuario nuevo
 Dirigido a: PUL
-Estado: abierto
+Estado: resuelto-pendiente-verificación
 ---
 Pasos para reproducir: arrancar el motor con `-api-token <t>` y seguir
 el Quickstart de `web/console/README.md` tal cual
@@ -19,3 +19,7 @@ línea ~302 y `.env.example`), pero el Quickstart no lo cruza; con
 (verificado: stats JSON del motor).
 Sugerencia: una línea en el Quickstart: «si el motor arranca con
 -api-token, define SF_API_TOKEN en web/console/.env».
+
+Resuelto por IMP-2: una línea en el Quickstart de
+`web/console/README.md` que cruza `SF_API_TOKEN` (con `.env.example`)
+antes de `bun run dev`.

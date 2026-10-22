@@ -100,6 +100,11 @@ Open http://localhost:3000. Without the engine the console renders its
 honest empty/offline states; without console-service everything works
 except the analyst view.
 
+If the engine starts with `-api-token`, give the same secret to the
+console's server side or the proxy rides into 401s: set `SF_API_TOKEN`
+in `web/console/.env` (copy `web/console/.env.example`) before
+`bun run dev`. See [Configuration](#configuration) below.
+
 ## Lockfile policy
 
 The analyst hub's HTTP and WebSocket origins are included in the production
