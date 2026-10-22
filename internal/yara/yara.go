@@ -42,6 +42,8 @@ const ManifestName = "bundle.json"
 
 // MaxPackBytes caps the pack that ships as a bundle: 32 MiB of rule text
 // is a mistake (the sensor refuses to scan files over 16 MiB anyway).
+// It also caps every single read inside the pack (readCapped): nothing
+// under the rules directory is ever slurped whole into memory.
 const MaxPackBytes = 32 << 20
 
 // Zip failures the API maps to responses; everything else is I/O.
@@ -49,6 +51,11 @@ var (
 	ErrEmptyPack = errors.New("the rule pack has no rule files")
 	ErrTooLarge  = errors.New("the rule pack exceeds the distribution cap")
 )
+
+// errFileBeyondCap is readCapped's refusal of a single file: the pack
+// side lists it from the stat (its row in Problems, its size in
+// TotalBytes), it never joins the fingerprint.
+var errFileBeyondCap = errors.New("the file exceeds the distribution cap")
 
 // File is one rule file of the pack, by relative path with '/' separators
 // (the name the sensor's compile errors use for the same file).
@@ -154,7 +161,7 @@ func (s *Store) Zip(w io.Writer) error {
 	}
 	zw := zip.NewWriter(w)
 	for _, f := range st.Files {
-		data, err := os.ReadFile(filepath.Join(s.dir, filepath.FromSlash(f.Name)))
+		data, err := readCapped(filepath.Join(s.dir, filepath.FromSlash(f.Name)), MaxPackBytes)
 		if err != nil {
 			_ = zw.Close()
 			return err
@@ -164,7 +171,7 @@ func (s *Store) Zip(w io.Writer) error {
 			return err
 		}
 	}
-	if data, err := os.ReadFile(filepath.Join(s.dir, ManifestName)); err == nil {
+	if data, err := readCapped(filepath.Join(s.dir, ManifestName), MaxPackBytes); err == nil {
 		if err := writeEntry(zw, ManifestName, data); err != nil {
 			_ = zw.Close()
 			return err
@@ -250,6 +257,7 @@ func walkPack(dir string) ([]packRow, string, error) {
 func readPack(dir string, rows []packRow) Status {
 	st := Status{Dir: dir, Files: []File{}, Problems: []string{}}
 	h := sha256.New()
+	var hashed int64 // bytes that joined the fingerprint
 	for _, row := range rows {
 		if row.rel == ManifestName {
 			if v := manifestVersion(row.path, &st); v != "" {
@@ -257,8 +265,17 @@ func readPack(dir string, rows []packRow) Status {
 			}
 			continue
 		}
-		data, err := os.ReadFile(row.path)
+		data, err := readCapped(row.path, MaxPackBytes)
 		if err != nil {
+			if errors.Is(err, errFileBeyondCap) {
+				// listed from the stat, never read: the operator trims it,
+				// TotalBytes still says what the pack weighs so the zip
+				// refuses it with the cap's own error
+				st.Problems = append(st.Problems, fmt.Sprintf("%s: %d bytes, beyond the distribution cap (%d); not read", row.rel, row.size, MaxPackBytes))
+				st.Files = append(st.Files, File{Name: row.rel, Bytes: row.size})
+				st.TotalBytes += row.size
+				continue
+			}
 			st.Problems = append(st.Problems, fmt.Sprintf("%s: %v", row.rel, err))
 			continue
 		}
@@ -269,10 +286,11 @@ func readPack(dir string, rows []packRow) Status {
 		h.Write([]byte(row.rel))
 		h.Write([]byte{0})
 		h.Write(data)
+		hashed += int64(len(data))
 		st.Files = append(st.Files, File{Name: row.rel, Bytes: int64(len(data))})
 		st.TotalBytes += int64(len(data))
 	}
-	if len(st.Files) > 0 {
+	if hashed > 0 {
 		st.Sha16 = hex.EncodeToString(h.Sum(nil))[:16]
 	}
 	return st
@@ -282,7 +300,7 @@ func readPack(dir string, rows []packRow) Status {
 // manifest it cannot parse or one without a string version contributes
 // nothing — here the operator also gets a problem row for it.
 func manifestVersion(path string, st *Status) string {
-	data, err := os.ReadFile(path)
+	data, err := readCapped(path, MaxPackBytes)
 	if err != nil {
 		st.Problems = append(st.Problems, fmt.Sprintf("%s: %v", ManifestName, err))
 		return ""
@@ -295,6 +313,28 @@ func manifestVersion(path string, st *Status) string {
 		return ""
 	}
 	return m.Version
+}
+
+// readCapped reads a pack file under the cap: up to max+1 bytes, and a
+// refusal — never a truncation — when the real size exceeds max. The
+// sensor's own discipline (read_capped, sensor/src/yara.rs): a file
+// that grows between the stat and the read is refused whole, so a
+// multi-GiB file dropped in the rules directory costs the engine a
+// problem row per request, not its memory.
+func readCapped(path string, max int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, max+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > max {
+		return nil, errFileBeyondCap
+	}
+	return data, nil
 }
 
 func isRuleFile(name string) bool {

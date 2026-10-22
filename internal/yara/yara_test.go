@@ -250,3 +250,56 @@ func TestTheZipRefusesAPackBeyondTheCap(t *testing.T) {
 		t.Fatalf("zip over the cap: %v", err)
 	}
 }
+
+func TestAFileBeyondTheCapIsListedFromTheStatAndNeverRead(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "big.yar"), bytes.Repeat([]byte{0}, MaxPackBytes+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Refresh()
+	out := st.Snapshot()
+	if len(out.Files) != 1 || out.Files[0].Name != "big.yar" || out.Files[0].Bytes != MaxPackBytes+1 {
+		t.Fatalf("files: %+v", out.Files)
+	}
+	if out.TotalBytes != MaxPackBytes+1 {
+		t.Fatalf("total bytes: %d", out.TotalBytes)
+	}
+	if len(out.Problems) != 1 || !strings.Contains(out.Problems[0], "big.yar") || !strings.Contains(out.Problems[0], "cap") {
+		t.Fatalf("problems: %v", out.Problems)
+	}
+	if out.Sha16 != "" {
+		t.Fatalf("sha16: got %q, want empty (nothing joined the fingerprint)", out.Sha16)
+	}
+}
+
+func TestTheManifestBeyondTheCapIsAProblemWithTheVersionIgnored(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.yar"), []byte(ruleA), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ManifestName), bytes.Repeat([]byte("a"), MaxPackBytes+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Refresh()
+	out := st.Snapshot()
+	if out.Version != "" {
+		t.Fatalf("version: %q", out.Version)
+	}
+	if out.Sha16 != shaOneFile {
+		t.Fatalf("sha16: got %q, want %q (the manifest is not the fingerprint)", out.Sha16, shaOneFile)
+	}
+	if len(out.Files) != 1 {
+		t.Fatalf("files: %+v", out.Files)
+	}
+	if len(out.Problems) != 1 || !strings.Contains(out.Problems[0], ManifestName) {
+		t.Fatalf("problems: %v", out.Problems)
+	}
+}
