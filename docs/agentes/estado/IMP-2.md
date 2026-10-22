@@ -1,21 +1,21 @@
 # IMP-2 — estado
 
 ## Hecho (últimas 24 h)
-- i18n-fechas en main (8c83ccb): fechas de formatTime/formatDateTime
-  con idioma en las vistas barridas — alerts (lista, aria, detalle,
-  triaje, asignación), directory (sincronía, postura), intel, fleet
-  (índice, línea de tiempo, ficha del sensor) y playbook. De paso, 11
-  toLocaleString('es-ES') de directory pasan a localeOf (exportada en
-  console-types): EN deja de imprimir separador de miles español.
-  baseline-card NO fue tocada: nunca pasó por IDEA-10 (ver Propuestas).
+- i18n-baseline en main (4574283): la tarjeta «Línea base de procesos»
+  habla los dos idiomas — sección baseline nueva en los dicts (títulos,
+  estados, filtrado, error 404) y baselineStatus (lib/intel) acepta
+  palabras tipadas con copia ES por defecto, el mismo precedente de
+  enrollmentPlan/runModeText; test nuevo fija la redacción EN. Suite:
+  604 tests, tsc, next build, tema, DOM, navegador 23/23, a11y 20/20 y
+  motion, en verde.
+- i18n-fechas en main (8c83ccb): fechas con idioma en alerts, directory,
+  intel, fleet y playbook + 11 toLocaleString('es-ES') de directory a
+  localeOf (exportada en console-types).
 - i18n-noc-mode en main (98ae51f): NOC sin español duro — sevLabels del
   dict (SEVERITY_LABEL dada de baja) y tácticas de attack-matrix/
   heatmap desde el dict (tacticsShort nuevo; aria/title traducidos).
-  Panel y reglas heredan el fix al compartir gráficas.
 - yara-status-poll en main (f42dd8d): poll de /api/yara a nivel de la
   vista Equipos + refresco fallido nombrado en la fila «Lote YARA».
-- Suite al cierre de cada entrega: 603 tests, tsc, next build, tema,
-  DOM, navegador 23/23, a11y 20/20 y motion, en verde.
 
 ## En curso
 - (nada)
@@ -28,8 +28,6 @@
 - (ninguna)
 
 ## Propuestas para el roadmap
-- Barrido i18n completo de baseline-card (títulos, estados, filtrado y
-  baselineStatus en lib/intel, todo en español) + sus fechas.
 - Cola i18n restante: donut de tácticas del panel (tactic.short) y
   buildTriageFlow (labels españoles de módulo) — dict por parámetro.
 - Fechas/números con idioma en el resto de vistas barridas: noc,
