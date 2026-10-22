@@ -230,3 +230,46 @@ func TestDBQueryBadJSON(t *testing.T) {
 		t.Fatalf("status %d, want 400", res.StatusCode)
 	}
 }
+
+// An oversized body used to get the generic "body must be JSON..."
+// diagnosis, pointing at a malformed payload when the real problem was
+// the 64 KiB cap (H-004, TEST ronda 1). The assign route names the
+// limit; db/query now does the same. The status stays 400 — the
+// OpenAPI documents no 413 for this operation.
+func TestDBQueryOversizedBodyNamesTheLimit(t *testing.T) {
+	h, addr, _ := dbQueryTestHub(t)
+	h.EnableDBQuery()
+
+	// well-formed JSON, over the cap: the size is the diagnosis
+	big := `{"sql":"SELECT 1","note":"` + strings.Repeat("x", dbQueryBodyCap) + `"}`
+	res, err := http.Post("http://"+addr+"/api/db/query", "application/json", strings.NewReader(big))
+	if err != nil {
+		t.Fatalf("POST oversized: %v", err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	body := string(raw)
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("oversized status = %d, want 400 (body: %s)", res.StatusCode, body)
+	}
+	if !strings.Contains(body, "oversized request body") || !strings.Contains(body, "64 KiB limit") {
+		t.Fatalf("oversized body must name the limit: %s", body)
+	}
+	if strings.Contains(body, "body must be JSON") {
+		t.Fatalf("oversized body must not be diagnosed as malformed JSON: %s", body)
+	}
+
+	// a small malformed payload keeps the generic JSON message
+	res2, err := http.Post("http://"+addr+"/api/db/query", "application/json", strings.NewReader("{not json"))
+	if err != nil {
+		t.Fatalf("POST malformed: %v", err)
+	}
+	raw2, _ := io.ReadAll(res2.Body)
+	res2.Body.Close()
+	if res2.StatusCode != http.StatusBadRequest {
+		t.Fatalf("malformed status = %d, want 400", res2.StatusCode)
+	}
+	if !strings.Contains(string(raw2), "body must be JSON") {
+		t.Fatalf("malformed body keeps the JSON message: %s", raw2)
+	}
+}

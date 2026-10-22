@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -76,6 +77,16 @@ func (h *Hub) handleDBQuery(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, dbQueryBodyCap)
 	var req dbQueryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// An oversized body surfaces as *http.MaxBytesError from the
+		// reader: name the limit the way the write surfaces do, so a
+		// 70 KiB payload is not diagnosed as malformed JSON (H-004,
+		// TEST ronda 1). Still 400 — the OpenAPI documents no 413 for
+		// this operation.
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			writeErr(w, http.StatusBadRequest, fmt.Sprintf("unreadable or oversized request body (%d KiB limit)", dbQueryBodyCap>>10))
+			return
+		}
 		writeErr(w, http.StatusBadRequest, "body must be JSON {\"sql\": string, \"max_rows\"?: int, \"timeout_ms\"?: int}")
 		return
 	}
