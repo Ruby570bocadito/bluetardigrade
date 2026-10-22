@@ -31,13 +31,11 @@
   (analyst.errorLine) + batería si lo quieres arreglar.
 
 ## Propuestas para el roadmap
-- Barrer los últimos SEVERITY_LABEL/ATTACK_TACTICS en ES de noc-mode
-  (la fase 11 dejó el patrón listo en rules-view).
-- Pasar formatTime/formatDateTime con idioma en los call-sites de
-  vistas ya barridas (alerts, directory, intel, fleet, playbook,
-  baseline): las firmas ya lo aceptan, es un parámetro por llamada.
-- Filtro de asignación en `GET /api/alerts/search` + lente persistida
-  en URL (tras C-4, sigue en pie).
+- Barrer los últimos SEVERITY_LABEL/ATTACK_TACTICS de noc-mode (el
+  patrón quedó listo en rules-view).
+- Pasar formatTime/formatDateTime con idioma en los call-sites ya
+  barridos (alerts, directory, intel, fleet, playbook, baseline).
+- Filtro de asignación en `GET /api/alerts/search` + lente en URL.
 
 ## Estado: VERDE
 - Suite local completa en verde antes de cada push.
