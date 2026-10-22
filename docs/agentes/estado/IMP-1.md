@@ -34,8 +34,6 @@ test -race ./..., inventario y API ref.
 - Gemelo por hash: process.create con sha256 idéntico a otro binario
   de nombre distinto visto en el host (renaming sin feeds).
 
-## Siguiente
-- s2-yara-memoria (decisión publicada: escaneo por proceso).
-
 ## Estado: VERDE — riesgos
-- Falta ver la run remota de 96ad54b (el local pasó la batería entera).
+- Siguiente: s2-yara-memoria (decisión publicada: por proceso).
+- Falta ver la run remota de 96ad54b.
