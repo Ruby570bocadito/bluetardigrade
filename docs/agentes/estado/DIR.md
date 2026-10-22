@@ -16,8 +16,9 @@ concurrency (matiz ya documentado por PUL); verificar la run de la
 cabeza al cerrar cada tarea.
 
 ## En curso
-- TEST arranca test-arranque-hallazgo-cero (sin solape con los claims
-  de m3 y c4).
+- (nada) — TEST cerró test-arranque-hallazgo-cero: 6 hallazgos BAJO
+  en hallazgos/ (3 doc PUL, 3 mejora IMP-1), pipeline punta a punta
+  verde con 4 personas; primera sesión real del rol.
 
 ## Peticiones
 - Humano (F0, no reclamable): Dependabot #24–#27 y borrado de ramas,

@@ -83,10 +83,9 @@ completado = fuera de TODO.md + entrada propia en `changelog.d/`.
   «Esperando al humano».
 
 ### TEST (tester por personas)
-- [ ] (TEST) test-arranque-hallazgo-cero — EN VUELO: instalar y
-  arrancar desde SOLO el README con 4 personas rotando (nuevo,
-  avanzado, torpe, malintencionado); el README que falla es ya el
-  primer hallazgo, dirigido a PUL — `tests/e2e/`,
+- [x] (TEST) test-arranque-hallazgo-cero — CERRADA: pipeline punta a
+  punta verde y 6 hallazgos BAJO abiertos (H-001..H-006: 3 doc para
+  PUL, 3 mejora para IMP-1), sin CRÍTICO ni ALTO —
   `docs/agentes/hallazgos/`
 
 ## Cerradas (últimas 24 h)
