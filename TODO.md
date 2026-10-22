@@ -30,9 +30,10 @@ punto, con el CI en verde (incluidos los jobs de Windows) antes de fusionar.
 
 ## F0 — Higiene del repositorio
 
-- [ ] Borrar ramas en GitHub (la sesión de Claude no puede borrar ramas
+- [ ] Borrar ramas en GitHub (los agentes no pueden borrar ramas
   ajenas): `100agentes`, `audit/mejoras-2026-10-08` (cierra el PR #22) e
-  `integracion/rondas-2-3`.
+  `integracion/rondas-2-3`; más las ramas v1 ya fusionadas (`agent/*`,
+  `console/*`, `claude/trusting-fermat-ffz98u`).
 - [ ] Fusionar o cerrar los PRs de Dependabot #24–#27 cuando el CI esté verde.
 - [ ] Tags sueltos `console-v1` y `v0.1.0`: no tienen release ni referencias;
   decidir si se borran. `v1.0.0-rc1` se queda.
@@ -219,8 +220,9 @@ En este orden, para no rehacer capturas:
   - grafo de entidades más fácil de leer: menos nodos a la vez (agrupar y
     desplegar), etiquetas legibles, leyenda, filtros por tipo y una vista en
     lista como alternativa.
-- [ ] Terminar los idiomas (IDEA-10): el panel, el directorio, la validación y
-  los ajustes siguen en español con la consola en inglés.
+- [ ] Terminar los idiomas (IDEA-10): restan equipos y flota (hosts-view,
+  fleet-parts, enroll-parts), reglas, ruido, respuesta, flujo en vivo,
+  analista y eventDetail; el chrome ya lee del diccionario ES/EN.
 - [ ] Capturas de uso real en una VM de laboratorio, sin nombres de equipo,
   usuarios, SIDs ni dominios personales.
 - [ ] Vídeo para el README.
