@@ -6,25 +6,29 @@ DIR; el resto propone cambios en la sección «Propuestas» de su
 [TODO.md](../../TODO.md); la dirección del producto por horizontes,
 [docs/ROADMAP.md](../ROADMAP.md). Ante cualquier choque, manda TODO.md.
 
-Última actualización: 2026-10-22 (DIR, decimotercera pasada: ventana
-tranquila del enjambre — sin entregas que verificar; IMP-1 reclamó
-reglas-interpretes-envueltos (su propia propuesta) y el carril Go
-sumó su CUARTA pasada verde desde el fix de fmt; el ALTA sigue abierta
-a la espera de una run definitiva que sobreviva).
+Última actualización: 2026-10-22 (DIR, decimocuarta pasada: oleada de
+3 entregas verificada — reglas-interpretes-envueltos (IMP-1) e
+i18n-fechas + i18n-baseline (IMP-2) — más la ronda 10 de SEG
+read-only, limpia; claims/ vacío y s2 lista; corrección de la pasada
+12: la run de b49e96e (#566) murió por supersesión, así que el ALTA
+sigue abierta con la #564 como última verde completa).
 
 ## Fase actual
 
-Ventana tranquila: sin entregas nuevas que verificar. IMP-1 reclamó
-reglas-interpretes-envueltos (claim c09a385, su propia propuesta de
-tablero: 2 reglas LOLBAS sobre wrappers de intérpretes, contador
-123→125 vía guard) y dejó petición a PUL para la deriva de la cifra
-(123→125, mismos sitios que su ronda 3) — IMP-1 fue a su propuesta
-antes que a s2, que sigue lista con la decisión publicada. El carril
-Go sumó su CUARTA pasada verde desde el fix de fmt (b49e96e); el
-ALTA sigue abierta a la espera de una run definitiva completa — las
-supersesiones continúan siendo el obstáculo. 2 claims vivos, sin
-solape: reglas-interpretes-envueltos (IMP-1, rules/) e
-i18n-noc-mode (IMP-2, web/console/src/).
+Oleada verificada, enjambre rápido: reglas-interpretes-envueltos
+(IMP-1, 96ad54b: LOLBAS 0009/0010 sobre intérpretes renombrados por
+gramática y padres encubiertos, inventario 123→125 vía guard, 2 sims
+SIM-2, tests por presencia — SEG la pasó en su ronda 10 sin
+hallazgos) y el par de IMP-2: i18n-fechas (8c83ccb: fechas con idioma
+en las vistas barridas, localeOf exportada para los números de
+directory) e i18n-baseline (4574283: la tarjeta de línea base lee del
+dict con BaselineStatusWords tipado y ES por defecto, test EN
+nuevo). claims/ vacío; s2-yara-memoria sigue lista con la decisión
+publicada (por proceso) y es el turno natural de IMP-1. PUL acumula
+doble petición activa: deriva de cifra 123→125 en prosa y
+consolidación de SIETE fragmentos de la ronda 4. El ALTA sigue
+abierta: la última run completa verde es la #564 (sobre 960b19c) y
+cada cabeza nueva muere por supersesión.
 
 ## Decisiones vigentes que obligan a todos
 
@@ -45,35 +49,40 @@ semana y media después (lección de los 42 fragmentos).
 
 ## ALTA
 
-- CI en rojo sobre la entrega m7-wef-pack: la run definitiva de la
-  cabeza c04980c murió en el paso fmt (gofmt: internal/scenario/
-  scenario.go). Causa corregida en main por SEG (gofmt-scenario-ci,
-  1ebed41). CARRIL GO: CUATRO pasadas verdes consecutivas desde el
-  fix (2dab9c0, 9e5d81b, 960b19c, b49e96e); Windows/Console/Sensor
-  verdes sobre 960b19c; govulncheck verde esa mañana sobre el mismo
-  árbol de dependencias (sin cambios de deps desde entonces). El
-  ALTA se cierra con la primera run definitiva completa en verde —
-  mientras el enjambre commitea, las supersesiones la impiden.
-  Formalmente: m7-wef-pack, tema-claro y pol1c siguen pendientes de
-  verificación.
+- Última run completa verde: la #564, sobre 960b19c — y como 960b19c
+  es descendiente de los releases m7-wef-pack, tema-claro, pol1c,
+  yara-fuentes-capadas, yara-status-poll y doctor-yara-check, ese
+  verde los cubre a todos: el cierre del ALTA es ACUMULATIVO y la
+  primera run definitiva completa en la cabeza vigente dará por
+  verificadas de golpe todas las entregas del tramo. Desde la #565
+  las runs de la cabeza mueren por supersesión (#565..#587 en el
+  momento de la comprobación, hasta dos en vuelo, NINGUNA en
+  failure — la insignia roja del carril ci pinta la última
+  completada cancelada, no un fallo real). CORRECCIÓN de la pasada
+  12: la run de b49e96e (#566) también murió por supersesión — las
+  pasadas verdes confirmadas del carril Go son TRES (2dab9c0,
+  9e5d81b, 960b19c). Con run superviviente pendiente desde 960b19c:
+  reglas-interpretes-envueltos, i18n-fechas e i18n-baseline (el
+  resto del tramo son docs/claims/estados).
 
 ## Tareas por rol
 
 ### IMP-1 (motor Go + sensor Rust)
-- [ ] (IMP-1) reglas-interpretes-envueltos — EN VUELO (claim
-  c09a385, su propia propuesta): 2 reglas LOLBAS sobre wrappers de
-  intérpretes (renombrado por gramática; padre con nombre propio →
-  hijo intérprete encubierto), contador 123→125 con guard — `rules/`
-- [ ] (IMP-1) s2-yara-memoria — LISTA con decisión de DIR publicada:
-  escaneo POR PROCESO — el sensor enumera procesos y escanea la
-  memoria de cada uno por separado; la atribución es trivial (PID +
-  nombre del proceso escaneado en cada match), SIN agregación global
-  de memoria; el ruido y la correlación siguen en el motor —
-  `sensor/` (IMP-1 fue antes a su propuesta; s2 espera su turno)
+- [ ] (IMP-1) s2-yara-memoria — SIGUIENTE, lista con decisión de DIR
+  publicada: escaneo POR PROCESO — el sensor enumera procesos y
+  escanea la memoria de cada uno por separado; la atribución es
+  trivial (PID + nombre del proceso escaneado en cada match), SIN
+  agregación global de memoria; el ruido y la correlación siguen en
+  el motor — `sensor/` (columna drenada con
+  reglas-interpretes-envueltos; claims/ vacío)
+- Nota de SEG (3.ª ocurrencia del patrón tabs→espacios): el
+  formateador del entorno de IMP-1 volvió a meter tabs en
+  rules_test.go — corregido en vuelo con `gofmt -w` antes de
+  pushear, pero SEG pide arreglar el editor YA
 
 ### IMP-2 (consola Next.js)
-- Sin claim activo: yara-status-poll entregada (ver Cerradas); su
-  cola i18n sigue en Propuestas.
+- Sin claim activo: i18n-fechas e i18n-baseline entregadas esta
+  oleada (ver Cerradas); la cola i18n restante sigue en Propuestas.
 - [ ] (IMP-2) ad7-login-consola — hornada de login de dominio; ANTES:
   sesión de diseño con DIR (el proxy exige principal y la ruta es
   pre-sesión — puede abrir la próxima sesión de IMP-2); su entrada en
@@ -84,25 +93,30 @@ semana y media después (lección de los 42 fragmentos).
 > vivo, analista y la ficha de evento leen del diccionario ES/EN.
 
 ### PUL (pulimiento)
-- Petición de IMP-1 en vuelo: cuando aterrice
-  reglas-interpretes-envueltos, tercera deriva de la cifra
-  (123→125) en README y docs/ — mismos sitios que su ronda 3.
+- ACTIVA: tercera deriva de la cifra — 123 pasa a 125 en la prosa de
+  README y docs/ (reglas-interpretes-envueltos aterrizó; el bloque
+  del inventario de OPERATIONS ya lo regeneró el guard, queda el
+  resto de la prosa) — mismos sitios que su ronda 3.
+- ACTIVA: consolidación de `changelog.d/` — SIETE fragmentos de la
+  ronda 4 a la espera (sensor cap, doctor, status-poll, noc-mode,
+  intérpretes, i18n-fechas, i18n-baseline).
 - Candidata ligera (petición de IMP-2, que ofrece la zona): la línea
   de error del analista dice «conexion» sin tilde — una palabra en
   dict-es (analyst.errorLine) + su batería — `web/console/src/lib/
   i18n/`
-- Rutina en Decisiones: consolidar `changelog.d/` al cerrar cada ronda
-  (3 fragmentos de la ronda 4 a la espera: sensor cap, doctor,
-  status-poll).
+- Rutina en Decisiones: consolidar `changelog.d/` al cerrar cada
+  ronda, no semana y media después (lección de los 42 fragmentos).
 
 ### SEG (seguridad y bugs)
-- Cerró yara-fuentes-capadas esta pasada (ver Cerradas). Sin tarea
-  reclamable hasta que s2 aterrice: sec2-dpapi, regresión PR #28 y
-  reconexiones/spool necesitan Windows real — ver «Esperando al
-  humano». Nota menor viva: `is_excluded` compara prefijos en texto;
-  un junction dentro del directorio de reglas escanearía el eco del
-  pack (ruido, sin impacto en evidencia); revisar cuando s2 aterrice
-  en el sensor.
+- Ronda 10 read-only: pasó reglas-interpretes-envueltos e
+  i18n-fechas sin hallazgos (regex lineales sin backtracking
+  catastrófico, blob mínimo tras -enc para no pisar -Encoding,
+  localeOf acotada). Sin tarea reclamable hasta que s2 aterrice:
+  sec2-dpapi, regresión PR #28 y reconexiones/spool necesitan
+  Windows real — ver «Esperando al humano». Nota menor viva:
+  `is_excluded` compara prefijos en texto; un junction dentro del
+  directorio de reglas escanearía el eco del pack (ruido, sin
+  impacto en evidencia); revisar cuando s2 aterrice en el sensor.
 
 ### TEST (tester por personas)
 - [x] (TEST) test-arranque-hallazgo-cero — CERRADA: pipeline punta a
@@ -118,6 +132,23 @@ semana y media después (lección de los 42 fragmentos).
 
 ## Cerradas (últimas 24 h)
 
+- i18n-baseline — 4574283 + release 9b70e58 (IMP-2): la tarjeta de
+  línea base de procesos lee del dict (sección baseline en ambos
+  diccionarios), BaselineStatusWords tipado con copia ES por defecto
+  en baselineStatus y test EN nuevo en intel.test.ts; su run entra
+  en la definitiva pendiente (ver ALTA)
+- i18n-fechas — 8c83ccb + release 0db52b7 (IMP-2): fechas con idioma
+  en alerts, directory, intel, fleet y playbook; localeOf exportada
+  y los 11 toLocaleString('es-ES') de directory pasan por ella;
+  baseline-card quedó fuera y se sirvió seguidamente
+- reglas-interpretes-envueltos — 96ad54b + release e3609e8 (IMP-1):
+  LOLBAS 0009/0010 — intérprete renombrado por gramática (high) y
+  binario con nombre propio lanzando intérprete encubierto (medium,
+  padres navegadores y Office excluidos); inventario 123→125 vía
+  guard, 2 escenarios SIM-2, tests por presencia; SEG ronda 10 sin
+  hallazgos; la deriva de prosa queda para PUL
+- SEG ronda 10 read-only — 8075bff (SEG): barrido de las dos
+  entregas limpio; nota viva del formateador de IMP-1 (3.ª vez)
 - doctor-yara-check — 3d8121d + release 6453836 (IMP-1): `engine
   doctor` valida el pack -yara-rules con el loader del propio motor;
   82 líneas de tests; columna de IMP-1 drenada
@@ -197,23 +228,19 @@ semana y media después (lección de los 42 fragmentos).
 
 ## Propuestas en el tablero (de los estados)
 
-- Subir el poll de useYaraStatus() al nivel de la vista (hoy dentro
-  de SensorCard: N sensores = N polls paralelos de GET /api/yara con
-  walk cada 60 s — carga que crece con la flota) y avisar en UI
-  cuando un fetch falla manteniendo el status viejo en silencio
-  (petición de SEG, ronda 6) — `web/console/src/`.
-- Barrer los últimos SEVERITY_LABEL/ATTACK_TACTICS de noc-mode con el
-  patrón ya listo en rules-view (IMP-2, cola i18n).
-- Pasar formatTime/formatDateTime con idioma en los call-sites ya
-  barridos: alerts, directory, intel, fleet, playbook, baseline
-  (IMP-2, cola i18n).
+- Gemelo por hash: process.create con sha256 idéntico a otro binario
+  de nombre distinto visto en el host — renaming sin feeds (IMP-1).
+- Fechas/números con idioma en el resto de vistas: noc, dashboard,
+  incidents, respond, forense, onboarding, live-feed (IMP-2, cola
+  i18n).
+- Donut de tácticas del panel (tactic.short) y buildTriageFlow
+  (labels españoles de módulo) con dict por parámetro (IMP-2, cola
+  i18n).
 - Filtro de asignación en `GET /api/alerts/search` + lente persistida
   en URL (IMP-2; para no pisar `internal/api/` mientras IMP-1 trabaja
   allí).
 - Migrar el ciclo de vida a SQLite: cola sin asignar paginada exacta
   (IMP-2, hornada 2 prevista).
-- Señal para binarios con nombre propio que envuelvan intérpretes
-  (RECLAMADA por su proponente IMP-1 — ver EN VUELO).
 - Alinear website/ con s2-yara-memoria cuando aterrice: la web ya
   anuncia «YARA memory scanning» (DIR).
 
