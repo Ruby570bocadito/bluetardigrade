@@ -54,8 +54,9 @@
 // settings), `shared` (the state every callback shares), `enrich`
 // (the image-hash thread), `winimage` (NT device / image path queries),
 // `handlers` (one decoder per provider callback), `health` (the
-// minute heartbeat). This file owns the session lifecycle: start with
-// recovery, the run loop, and the stop paths.
+// minute heartbeat), `sessions` (the session starts with recovery),
+// `stop` (STOP_REQUESTED and the stop paths). This file owns the run
+// loop that ties them together.
 
 #![cfg(target_os = "windows")]
 
@@ -63,15 +64,18 @@ mod config;
 mod enrich;
 mod handlers;
 mod health;
+mod sessions;
 mod shared;
+mod stop;
 mod winimage;
 
 pub use config::{Capture, Delivery};
+pub use stop::{stop_sessions, STOP_REQUESTED};
 
 use anyhow::{Context, Result};
-use ferrisetw::provider::{kernel_providers, EventFilter, Provider};
+use ferrisetw::provider::{kernel_providers, Provider};
 use ferrisetw::schema_locator::SchemaLocator;
-use ferrisetw::trace::{KernelTrace, TraceTrait, UserTrace};
+use ferrisetw::trace::{KernelTrace, TraceTrait};
 use ferrisetw::EventRecord;
 use std::collections::HashSet;
 use std::path::Path;
@@ -89,17 +93,15 @@ use crate::transport::Sender;
 use crate::yara::{self, YaraStats};
 
 use self::config::{
-    ENRICH_QUEUE, EVENT_DNS_QUERY_COMPLETED, EVENT_FILE_CREATE, EVENT_FILE_WRITE, EVENT_KP_PROCESS_START,
-    EVENT_REG_CLOSE_KEY, EVENT_REG_CREATE_KEY, EVENT_REG_OPEN_KEY, EVENT_REG_SET_VALUE, EVENT_TCP4_CONNECT,
-    EVENT_TCP6_CONNECT, FILE_NAMES_CAP, FILE_SESSION_NAME, KERNEL_FILE, KERNEL_FILE_KEYWORDS, KERNEL_NETWORK,
-    KERNEL_NETWORK_KEYWORDS, KERNEL_PROCESS, KERNEL_PROCESS_KEYWORD, KERNEL_REGISTRY, KERNEL_REGISTRY_KEYWORDS,
-    NETREG_SESSION_NAME, PROCESS_TABLE_CAP, REGISTRY_NAMES_CAP, REGISTRY_PARKED_CAP, RECENT_IMAGES_CAP,
-    RECENT_IMAGES_KEEP, SESSION_NAME, YARA_QUEUE,
+    ENRICH_QUEUE, FILE_NAMES_CAP, FILE_SESSION_NAME, NETREG_SESSION_NAME, PROCESS_TABLE_CAP, REGISTRY_NAMES_CAP,
+    REGISTRY_PARKED_CAP, RECENT_IMAGES_CAP, RECENT_IMAGES_KEEP, SESSION_NAME, YARA_QUEUE,
 };
 use self::enrich::start_enricher;
-use self::handlers::{handle_dns, handle_file, handle_network, handle_process, handle_process_image, handle_registry};
+use self::handlers::handle_process;
 use self::health::start_heartbeat;
+use self::sessions::{start_filewatch, start_netreg, start_with_recovery};
 use self::shared::{emit_to, Shared, FileNames};
+use self::stop::install_console_handler;
 use self::winimage::device_map;
 
 /// Runs the blocking ETW event loop. It returns only on fatal errors.
@@ -305,175 +307,6 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
     result.map(|_| ())
 }
 
-/// Starts a named session; a session left behind by a previous run that
-/// was killed (kernel sessions outlive their process) is stopped and the
-/// start retried once.
-fn start_with_recovery<R, E: std::fmt::Debug>(name: &str, start: impl Fn() -> std::result::Result<R, E>) -> Result<R> {
-    // ferrisetw's TraceError implements neither Display nor
-    // std::error::Error, so anyhow's `?` cannot lift it: map errors
-    // explicitly through their Debug form.
-    let started = match start() {
-        Err(e) if format!("{e:?}").contains("AlreadyExist") => {
-            eprintln!("[SENSOR] stopping the ETW session left behind by a previous run ({name})");
-            if let Err(stop_err) = ferrisetw::trace::stop_trace_by_name(name) {
-                eprintln!("[SENSOR] could not stop it ({stop_err:?}): run the sensor elevated, or stop it with 'logman stop {name} -ets'");
-            }
-            start()
-        }
-        other => other,
-    };
-    started.map_err(|e| {
-        let detail = format!("{e:?}");
-        if detail.contains("-2147024891") {
-            // E_ACCESSDENIED: kernel sessions need elevation
-            anyhow::anyhow!("starting ETW trace {name}: access denied - run the sensor from an elevated (Administrator) prompt ({detail})")
-        } else {
-            anyhow::anyhow!("starting ETW trace {name}: {detail}")
-        }
-    })
-}
-
-/// Starts the network/DNS/registry/process-image session on its own
-/// thread. Best effort: a failure is reported and None returned.
-fn start_netreg(ctx: &Arc<Shared>, network: bool, dns: bool, registry: bool, images: bool) -> Option<(UserTrace, std::thread::JoinHandle<()>)> {
-    let build = || {
-        let mut builder = UserTrace::new().named(String::from(NETREG_SESSION_NAME));
-        if images {
-            let ctx = Arc::clone(ctx);
-            builder = builder.enable(
-                Provider::by_guid(KERNEL_PROCESS)
-                    .any(KERNEL_PROCESS_KEYWORD)
-                    .add_filter(EventFilter::ByEventIds(vec![EVENT_KP_PROCESS_START]))
-                    .add_callback(move |record: &EventRecord, schema_locator: &SchemaLocator| handle_process_image(record, schema_locator, &ctx))
-                    .build(),
-            );
-        }
-        if network {
-            let ctx = Arc::clone(ctx);
-            builder = builder.enable(
-                Provider::by_guid(KERNEL_NETWORK)
-                    .any(KERNEL_NETWORK_KEYWORDS)
-                    .add_filter(EventFilter::ByEventIds(vec![EVENT_TCP4_CONNECT, EVENT_TCP6_CONNECT]))
-                    .add_callback(move |record: &EventRecord, schema_locator: &SchemaLocator| handle_network(record, schema_locator, &ctx))
-                    .build(),
-            );
-        }
-        if dns {
-            let ctx = Arc::clone(ctx);
-            builder = builder.enable(
-                Provider::by_guid(config::DNS_CLIENT)
-                    .any(u64::MAX)
-                    .add_filter(EventFilter::ByEventIds(vec![EVENT_DNS_QUERY_COMPLETED]))
-                    .add_callback(move |record: &EventRecord, schema_locator: &SchemaLocator| handle_dns(record, schema_locator, &ctx))
-                    .build(),
-            );
-        }
-        if registry {
-            let ctx = Arc::clone(ctx);
-            builder = builder.enable(
-                Provider::by_guid(KERNEL_REGISTRY)
-                    .any(KERNEL_REGISTRY_KEYWORDS)
-                    .add_filter(EventFilter::ByEventIds(vec![EVENT_REG_CREATE_KEY, EVENT_REG_OPEN_KEY, EVENT_REG_SET_VALUE, EVENT_REG_CLOSE_KEY]))
-                    .add_callback(move |record: &EventRecord, schema_locator: &SchemaLocator| handle_registry(record, schema_locator, &ctx))
-                    .build(),
-            );
-        }
-        builder.start()
-    };
-    match start_with_recovery(NETREG_SESSION_NAME, build) {
-        Ok((trace, handle)) => {
-            let thread = std::thread::Builder::new()
-                .name("etw-netreg".into())
-                .spawn(move || {
-                    if let Err(e) = UserTrace::process_from_handle(handle) {
-                        eprintln!("[SENSOR] network/registry session ended: {e:?}");
-                    }
-                })
-                .ok()?;
-            Some((trace, thread))
-        }
-        Err(err) => {
-            let what = [(network, "network"), (dns, "DNS"), (registry, "registry"), (images, "process-image")]
-                .iter()
-                .filter(|w| w.0)
-                .map(|w| w.1)
-                .collect::<Vec<_>>()
-                .join("+");
-            eprintln!("[SENSOR] warning: the {what} session could not start ({err})");
-            None
-        }
-    }
-}
-
-/// Starts the file-write session (Microsoft-Windows-Kernel-File, the
-/// YARA lane) on its own thread. Best effort: a failure is reported and
-/// None returned; the sensor keeps every other stream.
-fn start_filewatch(ctx: &Arc<Shared>) -> Option<(UserTrace, std::thread::JoinHandle<()>)> {
-    let build = || {
-        let ctx = Arc::clone(ctx);
-        UserTrace::new()
-            .named(String::from(FILE_SESSION_NAME))
-            .enable(
-                Provider::by_guid(KERNEL_FILE)
-                    .any(KERNEL_FILE_KEYWORDS)
-                    .add_filter(EventFilter::ByEventIds(vec![EVENT_FILE_CREATE, EVENT_FILE_WRITE]))
-                    .add_callback(move |record: &EventRecord, schema_locator: &SchemaLocator| {
-                        handle_file(record, schema_locator, &ctx)
-                    })
-                    .build(),
-            )
-            .start()
-    };
-    match start_with_recovery(FILE_SESSION_NAME, build) {
-        Ok((trace, handle)) => {
-            let thread = std::thread::Builder::new()
-                .name("etw-filewatch".into())
-                .spawn(move || {
-                    if let Err(e) = UserTrace::process_from_handle(handle) {
-                        eprintln!("[SENSOR] file session ended: {e:?}");
-                    }
-                })
-                .ok()?;
-            Some((trace, thread))
-        }
-        Err(err) => {
-            eprintln!("[SENSOR] warning: the file session could not start ({err})");
-            None
-        }
-    }
-}
-
-/// Set by stop_sessions: a stop asked for before the sessions exist
-/// (the first-start enrollment) is seen too.
-pub static STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
-
 pub fn hostname() -> String {
     std::env::var("COMPUTERNAME").unwrap_or_else(|_| "unknown-host".into())
-}
-
-/// Stops both ETW sessions: ProcessTrace returns and run() finishes
-/// through its normal path (queue drained, counters reported). Used by
-/// the Ctrl+C handler and by the service's Stop control.
-pub fn stop_sessions() {
-    STOP_REQUESTED.store(true, Ordering::Release);
-    let _ = ferrisetw::trace::stop_trace_by_name(NETREG_SESSION_NAME);
-    let _ = ferrisetw::trace::stop_trace_by_name(FILE_SESSION_NAME);
-    let _ = ferrisetw::trace::stop_trace_by_name(SESSION_NAME);
-}
-
-/// Stops both sessions on Ctrl+C, Ctrl+Break or console close, so
-/// ProcessTrace returns and the sensor exits through its normal path
-/// (session ended, counters reported) without leaving a session running
-/// in the kernel.
-fn install_console_handler() {
-    unsafe extern "system" fn on_console_event(_ctrl_type: u32) -> windows_sys::core::BOOL {
-        stop_sessions();
-        1 // handled: the main thread finishes once ProcessTrace returns
-    }
-    // SAFETY: registers a plain function with the documented signature;
-    // the handler only calls ControlTrace through ferrisetw.
-    let ok = unsafe { windows_sys::Win32::System::Console::SetConsoleCtrlHandler(Some(on_console_event), 1) };
-    if ok == 0 {
-        eprintln!("[SENSOR] warning: could not install the Ctrl+C handler; stop the sessions with 'logman stop {SESSION_NAME} -ets' and 'logman stop {NETREG_SESSION_NAME} -ets' and 'logman stop {FILE_SESSION_NAME} -ets' after exiting");
-    }
 }
