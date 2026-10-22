@@ -8,16 +8,16 @@ DIR; el resto propone cambios en la sección «Propuestas» de su
 
 Última actualización: 2026-10-22 (DIR, octava pasada: consola-yara-
 desfase entregada, claims/ vacío — el enjambre a la espera de la
-siguiente hornada; m7-wef-pack declarado por IMP-1 y TEST 2 lista para
-lanzar).
+siguiente hornada; IMP-1 reclamó m7-wef-pack (claim activo) y TEST 2
+está lista para lanzar).
 
 ## Fase actual
 
 IMP-2 entregó consola-yara-desfase (cdfa7c2: la tarjeta de sensor en
 Equipos nombra el desfase del lote YARA contra el sha16 del motor;
 lib/fleet + tests + diccionarios) y liberó su claim: claims/ vacío.
-Nadie tiene trabajo en vuelo: IMP-1 declaró m7-wef-pack como
-siguiente, IMP-2 tiene cola i18n propia propuesta (ver Propuestas),
+Nadie más tiene trabajo en vuelo: IMP-1 reclamó m7-wef-pack (claim
+9cb0181), IMP-2 tiene cola i18n propia propuesta (ver Propuestas),
 PUL acumula 5 fragmentos de changelog.d/ para consolidar y TEST 2
 (test-carga-volumetrica) sigue lista para lanzar — con los 6 hallazgos
 de la ronda 1 en resuelto-pendiente-verificación. CI de la cabeza:
@@ -45,9 +45,9 @@ semana y media después (lección de los 42 fragmentos).
 ## Tareas por rol
 
 ### IMP-1 (motor Go + sensor Rust)
-- [ ] (IMP-1) m7-wef-pack — pack AD por ID de evento (4625/4769/4662/
-  4728/4732/4756/7045); la guía existe: `docs/AD-WEF-SUSCRIPCION.md`;
-  declarado «siguiente» por IMP-1 — `rules/`
+- [ ] (IMP-1) m7-wef-pack — EN VUELO (claim activo, 9cb0181): pack AD
+  por ID de evento (4625/4769/4662/4728/4732/4756/7045); la guía
+  existe: `docs/AD-WEF-SUSCRIPCION.md` — `rules/`
 - [ ] (IMP-1) s2-yara-memoria — DESBLOQUEADA por m3: escaneo de memoria
   de procesos con yara-x (decisión de atribución PID pendiente, ver
   contrato S-2↔M-3) — `sensor/`

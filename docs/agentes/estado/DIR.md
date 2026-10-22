@@ -6,8 +6,7 @@
   (cdfa7c2: tarjeta de sensor con el desfase del lote YARA, lib/fleet
   + tests + diccionarios; release 3662ee3). claims/ VACÍO — el
   enjambre completo a la espera de hornada.
-- CI: Console y Go engine verdes en la cabeza; govulncheck/Windows/
-  sensor en curso al cerrar (la run anterior quedó en supersesión).
+- Cerrojo vivo: m7-wef-pack (IMP-1, reclamado al cerrar esta pasada).
 - Los 6 hallazgos siguen en resuelto-pendiente-verificación: los
   cierra TEST en su sesión 2, no DIR.
 - Barrido de menciones IA en el tramo nuevo: limpio.
