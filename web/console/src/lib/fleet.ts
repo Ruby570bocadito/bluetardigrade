@@ -18,6 +18,11 @@ export type FleetSensor = {
   dropped: number
   last_heartbeat: string
   run_mode?: 'service' | 'console'
+  // YARA rule pack as the heartbeat reported it (M-3): the count of
+  // compiled rules and the content fingerprint the engine compares.
+  // Absent on sensors without YARA and on pre-M-3 builds.
+  yara_rules?: number
+  yara_rules_sha?: string
 }
 
 export type FleetHost = {
@@ -48,6 +53,42 @@ export type FleetPayload = {
 
 export function fetchFleet(): Promise<EngineResult<FleetPayload>> {
   return engineCall<FleetPayload>('GET', '/api/fleet')
+}
+
+// The engine's curated YARA rule pack (GET /api/yara, M-3): the sha16
+// the sensors' heartbeats must match, plus the version, files and
+// problems the pack carries. The console only reads it.
+export type YaraStatus = {
+  enabled: boolean
+  dir?: string
+  version?: string
+  sha16?: string
+  files: { name: string; bytes: number }[]
+  total_bytes: number
+  problems: string[]
+}
+
+export function fetchYaraStatus(): Promise<EngineResult<YaraStatus>> {
+  return engineCall<YaraStatus>('GET', '/api/yara')
+}
+
+export type YaraSkew =
+  | { kind: 'unavailable' } // the engine publishes no pack (no -yara-rules or empty): nothing to compare
+  | { kind: 'no-report' } // the sensor heartbeat carries no pack fields
+  | { kind: 'match'; rules: number } // the sensor's sha equals the engine's sha16
+  | { kind: 'stale'; rules: number } // a different sha: old pack or a file the sensor failed to compile
+
+/** Compare the pack a sensor reports in its heartbeat with the pack the
+ * engine publishes. Nothing is inferred: each state names exactly what
+ * each side said (or did not say). */
+export function yaraSkew(
+  sensor: { yara_rules?: number; yara_rules_sha?: string } | undefined,
+  engine: Pick<YaraStatus, 'enabled' | 'sha16'> | null | undefined,
+): YaraSkew {
+  if (!engine || !engine.enabled || !engine.sha16) return { kind: 'unavailable' }
+  if (!sensor?.yara_rules_sha) return { kind: 'no-report' }
+  if (sensor.yara_rules_sha === engine.sha16) return { kind: 'match', rules: sensor.yara_rules ?? 0 }
+  return { kind: 'stale', rules: sensor.yara_rules ?? 0 }
 }
 
 export const FLEET_STATUS_LABEL: Record<FleetStatus, string> = {

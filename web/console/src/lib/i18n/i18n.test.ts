@@ -480,6 +480,14 @@ describe('i18n dictionaries', () => {
     expect(DICTS.en.analyst.title).toBe('AI analyst')
     expect(DICTS.en.analyst.metaHosts(2)).toBe('2 hosts')
   })
+
+  test('the yara pack skew words are bilingual', () => {
+    expect(dictEs.fleet.yara.rowLabel).toBe('Lote YARA')
+    expect(dictEs.fleet.yara.match(12)).toBe('12 reglas · sincronizado')
+    expect(dictEs.fleet.yara.stale(9)).toBe('9 reglas · desfasado del motor')
+    expect(DICTS.en.fleet.yara.match(12)).toBe('12 rules · in sync')
+    expect(DICTS.en.fleet.yara.stale(9)).toBe('9 rules · behind the engine')
+  })
 })
 
 describe('language resolution', () => {

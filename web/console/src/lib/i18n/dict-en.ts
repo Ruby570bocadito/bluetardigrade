@@ -2022,6 +2022,15 @@ export const dictEn: Dict = {
   // identity, peers, enrollment hint) travels verbatim.
   fleet: {
     status: { online: 'online', silent: 'no signal', idle: 'idle' },
+    // YARA pack (M-3): the sha the sensor declares in its heartbeat
+    // against the one the engine publishes. Literal states, no guessing.
+    yara: {
+      rowLabel: 'YARA pack',
+      match: (rules: number): string => `${rules} rules · in sync`,
+      stale: (rules: number): string => `${rules} rules · behind the engine`,
+      noReport: 'no report from the sensor',
+      unavailable: 'the engine publishes no pack',
+    },
     noInventory: 'not in inventory',
     noInventoryTitle: 'The engine does not have this host in its inventory (it only appears in old alerts or events)',
     versionChipTitle: (sensor: string, engine: string): string =>

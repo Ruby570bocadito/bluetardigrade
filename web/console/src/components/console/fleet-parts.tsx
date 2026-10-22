@@ -7,7 +7,7 @@
 // enrollment state (GET /api/enroll); nothing is sent to a machine.
 
 import { useEffect, useId, useRef, useState } from 'react'
-import { Broadcast, CheckCircle, Copy, Cpu, Desktop, Fingerprint, HardDrives, PlugsConnected, Plus, Power, ShieldCheck, Timer, WarningCircle, WifiSlash } from '@phosphor-icons/react'
+import { Broadcast, CheckCircle, Copy, Cpu, Desktop, Files, Fingerprint, HardDrives, PlugsConnected, Plus, Power, ShieldCheck, Timer, WarningCircle, WifiSlash } from '@phosphor-icons/react'
 import { ConsoleDialog } from './console-dialog'
 import { StatTile } from './ui-bits'
 import { TABLIST_CLASS, tabButtonClass } from './ui-tabs'
@@ -15,7 +15,7 @@ import { useFleet } from './fleet-provider'
 import { useI18n } from './i18n-provider'
 import { EnrollmentRow, TokenEnrollment } from './enroll-parts'
 import { enrolledFor } from '@/lib/enroll'
-import { enrollmentPlan, formatDuration, isValidHostName, outdatedCount, outdatedSensor, runModeText, secondsSince, type FleetHost, type FleetStatus } from '@/lib/fleet'
+import { enrollmentPlan, fetchYaraStatus, formatDuration, isValidHostName, outdatedCount, outdatedSensor, runModeText, secondsSince, yaraSkew, type FleetHost, type FleetStatus, type YaraStatus } from '@/lib/fleet'
 import { formatDateTime } from '@/lib/console-types'
 import { useEngine } from './engine-provider'
 
@@ -85,11 +85,34 @@ export function FleetSummary({ onEnroll }: { onEnroll: () => void }) {
   )
 }
 
+/** The engine's YARA pack status (GET /api/yara): fetched on mount and
+ * refreshed on a slow cadence — the pack changes when the operator
+ * edits the directory, and the sensor heartbeats follow within a
+ * minute. */
+function useYaraStatus(): YaraStatus | null {
+  const [yara, setYara] = useState<YaraStatus | null>(null)
+  useEffect(() => {
+    let alive = true
+    const load = () =>
+      fetchYaraStatus().then((res) => {
+        if (alive && res.ok) setYara(res.data)
+      })
+    load()
+    const timer = setInterval(load, 60_000)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [])
+  return yara
+}
+
 /** Health of the sensor on one host. */
 export function SensorCard({ host }: { host?: FleetHost }) {
   const { enroll } = useFleet()
   const { stats } = useEngine()
   const { dict } = useI18n()
+  const yara = useYaraStatus()
   const engineVersion = stats?.version
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -106,8 +129,22 @@ export function SensorCard({ host }: { host?: FleetHost }) {
   const s = host.sensor
   const beatAgo = secondsSince(s?.last_heartbeat, now)
   const silentFor = secondsSince(host.silent_since, now)
+  const skew = s ? yaraSkew(s, yara) : null
   const rows: { icon: React.ElementType; label: string; value: React.ReactNode }[] = [
     { icon: Cpu, label: dict.fleet.sensorCard.rowSensor, value: s ? `${s.kind ?? dict.fleet.sensorCard.kindUnknown}${s.version ? ` · ${s.version}` : ''}` : dict.fleet.sensorCard.noBeat },
+    {
+      icon: Files,
+      label: dict.fleet.yara.rowLabel,
+      value: !s || !skew
+        ? '—'
+        : skew.kind === 'match'
+          ? dict.fleet.yara.match(skew.rules)
+          : skew.kind === 'stale'
+            ? <span className="text-amber-300">{dict.fleet.yara.stale(skew.rules)}</span>
+            : skew.kind === 'no-report'
+              ? dict.fleet.yara.noReport
+              : dict.fleet.yara.unavailable,
+    },
     { icon: HardDrives, label: dict.fleet.sensorCard.rowOs, value: s?.os || '—' },
     { icon: ShieldCheck, label: dict.fleet.sensorCard.rowCapture, value: s?.capture || host.sources.join(', ') || '—' },
     { icon: Power, label: dict.fleet.sensorCard.rowMode, value: runModeText(s?.run_mode, dict.fleet.modes) },

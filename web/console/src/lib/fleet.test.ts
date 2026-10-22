@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { outdatedCount, outdatedSensor, enrollmentPlan, formatDuration, identityName, isValidHostName, secondsSince, runModeText, type FleetHost } from './fleet'
+import { outdatedCount, outdatedSensor, enrollmentPlan, formatDuration, identityName, isValidHostName, secondsSince, runModeText, yaraSkew, type FleetHost } from './fleet'
 
 describe('fleet formatting', () => {
   test('durations read naturally at every scale', () => {
@@ -82,5 +82,31 @@ describe('outdated sensor detection (C-5)', () => {
     expect(outdatedCount(hosts, 'v1.0.0')).toBe(2)
     expect(outdatedCount(hosts, undefined)).toBe(0)
     expect(outdatedCount([], 'v1.0.0')).toBe(0)
+  })
+})
+
+// The pack comparison (M-3): each state names exactly what each side
+// said — the engine's /api/yara against the heartbeat's yara_rules_sha.
+describe('yaraSkew', () => {
+  const engine = { enabled: true, sha16: 'abc123def4567890' }
+
+  test('an engine without a published pack gives nothing to compare', () => {
+    expect(yaraSkew({ yara_rules: 3, yara_rules_sha: 'x' }, { enabled: false })).toEqual({ kind: 'unavailable' })
+    expect(yaraSkew({ yara_rules: 3, yara_rules_sha: 'x' }, { enabled: true, sha16: '' })).toEqual({ kind: 'unavailable' })
+    expect(yaraSkew({ yara_rules: 3, yara_rules_sha: 'x' }, null)).toEqual({ kind: 'unavailable' })
+    expect(yaraSkew({ yara_rules: 3, yara_rules_sha: 'x' }, undefined)).toEqual({ kind: 'unavailable' })
+  })
+
+  test('a sensor without pack fields says so instead of guessing', () => {
+    expect(yaraSkew(undefined, engine)).toEqual({ kind: 'no-report' })
+    expect(yaraSkew({ yara_rules: 3 }, engine)).toEqual({ kind: 'no-report' })
+    expect(yaraSkew({ yara_rules: 3, yara_rules_sha: '' }, engine)).toEqual({ kind: 'no-report' })
+  })
+
+  test('equal shas match, different shas are stale', () => {
+    expect(yaraSkew({ yara_rules: 12, yara_rules_sha: 'abc123def4567890' }, engine)).toEqual({ kind: 'match', rules: 12 })
+    expect(yaraSkew({ yara_rules: 9, yara_rules_sha: 'dead00beef123456' }, engine)).toEqual({ kind: 'stale', rules: 9 })
+    // a heartbeat with the sha but no count still compares; the count is cosmetic
+    expect(yaraSkew({ yara_rules_sha: 'abc123def4567890' }, engine)).toEqual({ kind: 'match', rules: 0 })
   })
 })

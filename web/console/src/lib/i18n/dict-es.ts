@@ -2069,6 +2069,15 @@ export const dictEs = {
   // (kind/os/capture, identidad, peers, hint del alta) viajan literales.
   fleet: {
     status: { online: 'en línea', silent: 'sin señal', idle: 'inactivo' },
+    // Lote YARA (M-3): el sha que el sensor declara en su latido contra
+    // el que publica el motor. Estados literales: nada se infiere.
+    yara: {
+      rowLabel: 'Lote YARA',
+      match: (rules: number): string => `${rules} reglas · sincronizado`,
+      stale: (rules: number): string => `${rules} reglas · desfasado del motor`,
+      noReport: 'sin informe del sensor',
+      unavailable: 'el motor no publica lote',
+    },
     noInventory: 'sin inventario',
     noInventoryTitle: 'El motor no tiene este equipo en su inventario (solo aparece en alertas o eventos antiguos)',
     versionChipTitle: (sensor: string, engine: string): string =>
