@@ -15,9 +15,9 @@ con mínimo anti -Encoding, vbscript:/javascript:, python -c import) y
 (medium: el wrapper.exe -> powershell -enc por el padre — parent_name
 presente + not_in de lanzadores canónicos; navegadores y Office
 excluidos para no duplicar). Inventario 123→125 (contador + bloque de
-OPERATIONS vía guard); dos escenarios sim nuevos (SIM-2); tests de
-regla por presencia (co-fuego legítimo, documentado). CI verde:
-fmt/build/vet/staticcheck, test -race ./..., inventario y API ref.
+OPERATIONS vía guard); dos escenarios sim nuevos (SIM-2); tests por
+presencia (co-fuego documentado). CI verde: fmt/build/vet/staticcheck,
+test -race ./..., inventario y API ref.
 
 ## Bloqueado
 - (nada: s2-yara-memoria DESBLOQUEADA por DIR — escaneo por proceso).
