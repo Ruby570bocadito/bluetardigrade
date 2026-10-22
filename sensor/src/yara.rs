@@ -52,6 +52,13 @@ const RELOAD_EVERY: Duration = Duration::from_secs(60);
 /// the rule files (see is_rule_file for the YARA source extensions).
 pub const MANIFEST_NAME: &str = "bundle.json";
 
+/// A rule source or the manifest bigger than this is refused by the
+/// reader (the file is named as a load failure), never slurped: the
+/// engine caps every distributed file at MaxPackBytes (32 MiB) and the
+/// sensor keeps the same ceiling, so a stray giant file in the rules
+/// directory cannot take the scanner's memory with it.
+const MAX_RULE_SOURCE_BYTES: u64 = 32 << 20;
+
 /// Event budget: attributes and strings are evidence, not a dump.
 const MAX_META_ENTRIES: usize = 8;
 const MAX_STRINGS: usize = 5;
@@ -127,6 +134,10 @@ pub struct LoadedRules {
     pub sha16: String,
     pub version: String,
     pub count: usize,
+    /// Files the reader refused or the compiler dropped while the rest
+    /// kept loading: reported, never silently skipped (the
+    /// collect_sources contract).
+    pub errors: Vec<String>,
 }
 
 /// One YARA source file worth compiling: relative path (the origin the
@@ -149,7 +160,9 @@ fn collect_sources(dir: &Path) -> (Vec<Source>, String, Vec<String>) {
     let mut pre_errors = Vec::new();
     for (rel, path) in files {
         if rel == MANIFEST_NAME {
-            if let Ok(text) = fs::read_to_string(&path) {
+            if let Ok(text) = read_capped(&path.to_string_lossy(), MAX_RULE_SOURCE_BYTES)
+                .and_then(|bytes| String::from_utf8(bytes).map_err(|err| err.to_string()))
+            {
                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
                     if let Some(v) = value.get("version").and_then(|v| v.as_str()) {
                         version = v.to_string();
@@ -158,7 +171,7 @@ fn collect_sources(dir: &Path) -> (Vec<Source>, String, Vec<String>) {
             }
             continue;
         }
-        match fs::read(&path) {
+        match read_capped(&path.to_string_lossy(), MAX_RULE_SOURCE_BYTES) {
             Ok(bytes) => match String::from_utf8(bytes) {
                 Ok(code) => sources.push(Source { rel, code }),
                 Err(_) => pre_errors.push(format!("{rel}: not valid UTF-8 (YARA source is text)")),
@@ -272,7 +285,7 @@ pub fn load(dir: &Path) -> Result<LoadedRules, Vec<String>> {
         }
         let sha16 = hex(&content.finish())[..16].to_string();
         let count = rules.iter().count();
-        return Ok(LoadedRules { rules, fingerprint: fingerprint(dir).unwrap_or_default(), sha16, version, count });
+        return Ok(LoadedRules { rules, fingerprint: fingerprint(dir).unwrap_or_default(), sha16, version, count, errors });
     }
 }
 
@@ -427,6 +440,9 @@ fn worker(host: String, config: YaraConfig, rx: Receiver<String>, stats: Arc<Yar
                 "[SENSOR] yara: {} rules loaded (sha {}, version '{}') from {}",
                 loaded.count, loaded.sha16, loaded.version, config.rules_dir.display()
             );
+            for err in &loaded.errors {
+                eprintln!("[SENSOR] yara: {err}");
+            }
             stats.set_rules(loaded.count, &loaded.sha16);
             Some(loaded)
         }
@@ -462,6 +478,9 @@ fn worker(host: String, config: YaraConfig, rx: Receiver<String>, stats: Arc<Yar
                                 "[SENSOR] yara: reloaded {} rules (sha {}, version '{}')",
                                 reloaded.count, reloaded.sha16, reloaded.version
                             );
+                            for err in &reloaded.errors {
+                                eprintln!("[SENSOR] yara: {err}");
+                            }
                             stats.set_rules(reloaded.count, &reloaded.sha16);
                             loaded = Some(reloaded);
                         }
@@ -680,6 +699,52 @@ rule bluetardigrade_test_hit : test_tag {
         .unwrap();
         let loaded = load(tmp.path()).unwrap();
         assert_eq!(loaded.version, "2026-10-21.1");
+    }
+
+    #[test]
+    fn a_rule_source_beyond_the_cap_is_refused_not_slurped() {
+        let tmp = TempDir::new("rulecap");
+        write_rules(tmp.path(), None);
+        // 32 MiB + 1 of blanks: over MAX_RULE_SOURCE_BYTES. The reader
+        // refuses it whole (never compiled, never held in memory) and
+        // names it; the real rule keeps the load.
+        let giant = vec![b' '; (MAX_RULE_SOURCE_BYTES + 1) as usize];
+        fs::write(tmp.path().join("giant.yar"), &giant).unwrap();
+        let loaded = load(tmp.path()).unwrap();
+        assert_eq!(loaded.count, 1, "the tiny rule still loads");
+        assert!(
+            loaded.errors.iter().any(|e| e.contains("giant.yar")),
+            "the refused file is named: {:?}",
+            loaded.errors
+        );
+    }
+
+    #[test]
+    fn the_manifest_beyond_the_cap_just_leaves_the_version_empty() {
+        let tmp = TempDir::new("manifestcap");
+        write_rules(tmp.path(), None);
+        let giant = vec![b'{'; (MAX_RULE_SOURCE_BYTES + 1) as usize];
+        fs::write(tmp.path().join(MANIFEST_NAME), giant).unwrap();
+        let loaded = load(tmp.path()).unwrap();
+        assert_eq!(loaded.version, "", "an unreadable manifest adds no version");
+        assert_eq!(loaded.count, 1, "the rules still load");
+        assert!(loaded.errors.is_empty(), "the manifest is not a rule failure: {:?}", loaded.errors);
+    }
+
+    #[test]
+    fn dropped_files_are_reported_when_the_rest_loads() {
+        // collect_sources' contract: files that cannot become YARA
+        // source are reported, never silently skipped — also when at
+        // least one other file compiles (the success path used to drop
+        // the failures).
+        let tmp = TempDir::new("partial");
+        write_rules(tmp.path(), Some(("broken.yar", "this file is definitely not YARA source")));
+        fs::write(tmp.path().join("binary.yar"), [0xFFu8, 0xFE, 0x00, 0x01]).unwrap();
+        let loaded = load(tmp.path()).unwrap();
+        assert_eq!(loaded.count, 1, "the valid rule loads");
+        let named = loaded.errors.iter().any(|e| e.contains("broken.yar"))
+            && loaded.errors.iter().any(|e| e.contains("binary.yar"));
+        assert!(named, "both dropped files are named: {:?}", loaded.errors);
     }
 
     #[test]
