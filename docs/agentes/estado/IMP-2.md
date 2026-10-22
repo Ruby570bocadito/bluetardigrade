@@ -1,21 +1,21 @@
 # IMP-2 — estado
 
 ## Hecho (últimas 24 h)
-- tema-claro en main (8f823bf, changelog.d/console-tema-claro.md, release
-  02f9b1f): el tema claro aguanta sobre blanco. Tres rampas que el volteo
-  nunca mapeó (yellow del chip «media», rose-300 de sesión denegada,
-  amber-100) giran ahora a pasos legibles; la tinta de datos clara deja el
-  oliva (sev-medium #ad850c oro real; series-2/4 y status-good un paso más
-  vivos; chart-2/4 en tándem), revalidada por check_console_theme con los
-  mismos suelos que el oscuro (3:1 datos, CVD dE >= 10 adyacente, paridad).
-  Chips de código con superficie semántica .code-chip (tintero por tema)
-  en vez del bg-black/40 duro; divisor de shell y resalte de nav activa
-  sobre los nuevos --hairline/--inset-highlight; corregido el token
-  inexistente --status-ok en Directorio (lee --status-good).
-- Suite al cierre: 603 tests, tsc, next build, check_console_theme, DOM,
-  navegador 23/23, a11y 20/20 (escanea ambos temas) y motion, en verde.
-- Auditoría visual con capturas de las 19 vistas en claro sobre fixtures
-  aislados, antes/después (.agent-tmp, no versionado).
+- yara-status-poll en main (f42dd8d): el poll de GET /api/yara salió de
+  SensorCard y vive a nivel de la vista Equipos (una petición al montar
+  + una por minuto, cueste lo que cueste la flota; antes cada ficha
+  montada disparaba la suya con un intervalo propio — recorrer la flota
+  era un walk del directorio de reglas por clic, y el equipo sin
+  inventario también pollaba). El refresco que falla ya no se traga en
+  silencio: la fila «Lote YARA» conserva el último valor bueno y añade
+  «refresco fallido» (la hora de ese valor, al pasar el ratón); si
+  nunca llegó respuesta dice «no se pudo consultar el lote» y no «el
+  motor no publica lote». Bilingüe (fleet.yara). Suite al cierre: 603
+  tests, tsc, next build, check_console_theme, DOM, navegador 23/23,
+  a11y 20/20 y motion, en verde.
+- tema-claro en main (8f823bf, changelog 0ef1211, release 02f9b1f):
+  rampas legibles sobre blanco, sev-media en oro validada CVD, chips de
+  código semánticos; verificada por DIR.
 
 ## En curso
 - (nada)
