@@ -20,9 +20,6 @@ RC4 4769, grupo privilegiado 4728/4732/4756, servicio 7045 con
 intérprete o ruta escribible), umbral thr-ad-spray (4625) y escenarios
 sim-wef-*. Inventario regenerado: 123 reglas, 13 tipos. CI verde.
 
-## En curso
-- (nada)
-
 ## Bloqueado
 - s2-yara-memoria: decisión de atribución PID pendiente (DIR).
 
