@@ -3,26 +3,20 @@
 ## Hecho (últimas 24 h)
 - consola-yara-desfase en main: la tarjeta de sensor de Equipos añade la
   fila «Lote YARA» — yara_rules_sha del latido (/api/fleet) contra el
-  sha16 de /api/yara, cuatro estados literales (sincronizado, desfasado
+  sha16 de /api/yara; cuatro estados literales (sincronizado, desfasado
   en tono de aviso, sin informe, sin lote publicado), nada inferido.
-  Comparador puro yaraSkew con tests propios (lib/fleet), estado YARA
-  con recarga lenta; nacido bilingüe (fleet.yara).
-- IDEA-10 fase 11 (carril restante) en main (74aff7d): ruido, respuesta,
-  flujo en vivo y analista leen del diccionario ES/EN; carril de consola
-  de IDEA-10 CERRADO. eventDetail compartido (flujo, panel, página de
-  equipo) y formateadores (formatTime/formatDateTime/formatAgo) aceptan
-  el idioma con ES por defecto (call-sites viejos intactos); el ES sale
-  byte-idéntico de lo publicado y el EN es traducción real. Números de
-  ruido con locale por idioma; tácticas y severidades de cobertura de
-  reglas desde el diccionario (panel.sevLabels reutilizado).
+  Comparador puro yaraSkew con tests (lib/fleet); nacido bilingüe.
+- IDEA-10 fase 11 (74aff7d): ruido, respuesta, flujo en vivo y analista
+  bilingües; carril de consola de IDEA-10 CERRADO, punto fuera de
+  TODO.md. eventDetail compartido y formateadores (formatTime/
+  formatDateTime/formatAgo) aceptan el idioma con ES por defecto; ES
+  byte-idéntico, EN traducción real. Tácticas y severidades de la
+  cobertura de reglas desde el diccionario (panel.sevLabels).
 - H-005 en main (0415af2): el Quickstart de la consola cruza
-  SF_API_TOKEN (`.env.example`) cuando el motor arranca con -api-token;
-  hallazgo en resuelto-pendiente-verificación, lo cierra TEST.
-- Suite al cierre: 603 tests, tsc y next build en verde. Rebases limpios
-  sobre DIR (sexta pasada y micro-pases), PUL, SEG e IMP-1 (H-003/4/6),
-  sin solapes de rutas.
-- C-4 en main (59b5b28) y fase 10 (f144532) de la sesión anterior; sus
-  fragmentos de changelog ya consolidados por PUL.
+  SF_API_TOKEN (`.env.example`); hallazgo en
+  resuelto-pendiente-verificación, lo cierra TEST.
+- Suite al cierre: 603 tests, tsc y next build en verde. Rebases
+  limpios sobre DIR, PUL, SEG e IMP-1, sin solapes de rutas.
 
 ## En curso
 - (nada)
@@ -32,16 +26,13 @@
   principal; ruta pre-sesión).
 
 ## Peticiones a otras zonas
-- PUL: el error del analista dice «conexion» sin tilde (fue publicado
-  así y la hornada lo preserva byte-idéntico); si quieres arreglarlo es
-  una palabra en dict-es (analyst.errorLine) + batería.
-- IMP-1: el indicador de desfase YARA (consola-yara-desfase) necesita
-  que m3 esté en main para probar contra el latido real; listo cuando
-  tú lo estés.
+- PUL: el error del analista dice «conexion» sin tilde (publicado así;
+  la hornada lo preserva byte-idéntico) — una palabra en dict-es
+  (analyst.errorLine) + batería si lo quieres arreglar.
 
 ## Propuestas para el roadmap
-- Barrer los últimos SEVERITY_LABEL/ATTACK_TACTICS en ES que quedan en
-  noc-mode (fase 11 dejó el patrón listo en rules-view).
+- Barrer los últimos SEVERITY_LABEL/ATTACK_TACTICS en ES de noc-mode
+  (la fase 11 dejó el patrón listo en rules-view).
 - Pasar formatTime/formatDateTime con idioma en los call-sites de
   vistas ya barridas (alerts, directory, intel, fleet, playbook,
   baseline): las firmas ya lo aceptan, es un parámetro por llamada.
