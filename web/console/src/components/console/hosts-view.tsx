@@ -13,7 +13,7 @@ import { useEngine } from './engine-provider'
 import { useI18n } from './i18n-provider'
 import { useIncidents } from './incidents-provider'
 import { useFleet } from './fleet-provider'
-import { EnrollDialog, FleetStatusPill, FleetSummary, SensorCard, SensorVersionChip } from './fleet-parts'
+import { EnrollDialog, FleetStatusPill, FleetSummary, SensorCard, SensorVersionChip, useYaraStatus, type YaraStatusState } from './fleet-parts'
 import { BaselineCard } from './baseline-card'
 import { PendingHosts } from './enroll-parts'
 import type { FleetHost, FleetStatus } from '@/lib/fleet'
@@ -104,6 +104,8 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
   const rows = useHostIndex()
   const { status, stats } = useEngine()
   const { dict } = useI18n()
+  // one YARA pack poll per view: every sensor card below reads from it
+  const yara = useYaraStatus()
   const engineVersion = stats?.version
   const [selected, setSelectedState] = useState('')
   const [query, setQuery] = useState('')
@@ -220,7 +222,7 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
       </div>
 
       {current ? (
-        <HostPage key={current.host} row={current} onHunt={onHunt} onOpenAlert={onOpenAlert} onOpenIncident={onOpenIncident} />
+        <HostPage key={current.host} row={current} yara={yara} onHunt={onHunt} onOpenAlert={onOpenAlert} onOpenIncident={onOpenIncident} />
       ) : (
         <div className="panel">
           <EmptyState icon={Desktop} title={dict.hosts.pickTitle} hint={dict.hosts.pickHint} />
@@ -231,8 +233,9 @@ export function HostsView({ onHunt, onOpenAlert, onOpenIncident }: {
   )
 }
 
-function HostPage({ row, onHunt, onOpenAlert, onOpenIncident }: {
+function HostPage({ row, yara, onHunt, onOpenAlert, onOpenIncident }: {
   row: HostRow
+  yara: YaraStatusState
   onHunt: (q: string) => void
   onOpenAlert: (alertId: string) => void
   onOpenIncident: (id: string) => void
@@ -304,7 +307,7 @@ function HostPage({ row, onHunt, onOpenAlert, onOpenIncident }: {
         </div>
       </header>
 
-      <SensorCard host={row.fleet} />
+      <SensorCard host={row.fleet} yara={yara} />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <StatTile icon={Lightning} label={dict.hosts.worstTile.label} value={hostAlerts.length} hint={worst ? dict.hosts.worstTile.worst(dict.alerts.sevLabels[worst].toLowerCase()) : dict.hosts.worstTile.none} warn={worst === 'critical'} />

@@ -85,17 +85,33 @@ export function FleetSummary({ onEnroll }: { onEnroll: () => void }) {
   )
 }
 
-/** The engine's YARA pack status (GET /api/yara): fetched on mount and
- * refreshed on a slow cadence — the pack changes when the operator
- * edits the directory, and the sensor heartbeats follow within a
- * minute. */
-function useYaraStatus(): YaraStatus | null {
-  const [yara, setYara] = useState<YaraStatus | null>(null)
+/** What the view knows about the engine's YARA pack (GET /api/yara):
+ * the last good status, when it was fetched, and whether the latest
+ * refresh attempt failed — a failed refresh keeps the last good value
+ * and says so instead of staying silent. */
+export type YaraStatusState = {
+  yara: YaraStatus | null
+  /** the latest refresh failed: yara (if any) is the last good value */
+  failed: boolean
+  /** ISO time of the successful fetch behind yara (null = none yet) */
+  asOf: string | null
+}
+
+/** The engine's YARA pack status (GET /api/yara), polled at the view
+ * level: one request on mount plus one per minute for the whole Equipos
+ * view, however many hosts the analyst opens (the pack changes when the
+ * operator edits the directory, and the sensor heartbeats follow within
+ * a minute). engineCall never rejects — every failure arrives as
+ * ok:false and only flips `failed`. */
+export function useYaraStatus(): YaraStatusState {
+  const [state, setState] = useState<YaraStatusState>({ yara: null, failed: false, asOf: null })
   useEffect(() => {
     let alive = true
     const load = () =>
       fetchYaraStatus().then((res) => {
-        if (alive && res.ok) setYara(res.data)
+        if (!alive) return
+        if (res.ok) setState({ yara: res.data, failed: false, asOf: new Date().toISOString() })
+        else setState((prev) => ({ ...prev, failed: true }))
       })
     load()
     const timer = setInterval(load, 60_000)
@@ -104,15 +120,15 @@ function useYaraStatus(): YaraStatus | null {
       clearInterval(timer)
     }
   }, [])
-  return yara
+  return state
 }
 
-/** Health of the sensor on one host. */
-export function SensorCard({ host }: { host?: FleetHost }) {
+/** Health of the sensor on one host. The YARA pack state arrives from
+ * the view-level poll (props): the card never requests on its own. */
+export function SensorCard({ host, yara }: { host?: FleetHost; yara: YaraStatusState }) {
   const { enroll } = useFleet()
   const { stats } = useEngine()
   const { dict } = useI18n()
-  const yara = useYaraStatus()
   const engineVersion = stats?.version
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -129,7 +145,7 @@ export function SensorCard({ host }: { host?: FleetHost }) {
   const s = host.sensor
   const beatAgo = secondsSince(s?.last_heartbeat, now)
   const silentFor = secondsSince(host.silent_since, now)
-  const skew = s ? yaraSkew(s, yara) : null
+  const skew = s ? yaraSkew(s, yara.yara) : null
   const rows: { icon: React.ElementType; label: string; value: React.ReactNode }[] = [
     { icon: Cpu, label: dict.fleet.sensorCard.rowSensor, value: s ? `${s.kind ?? dict.fleet.sensorCard.kindUnknown}${s.version ? ` · ${s.version}` : ''}` : dict.fleet.sensorCard.noBeat },
     {
@@ -137,13 +153,24 @@ export function SensorCard({ host }: { host?: FleetHost }) {
       label: dict.fleet.yara.rowLabel,
       value: !s || !skew
         ? '—'
-        : skew.kind === 'match'
-          ? dict.fleet.yara.match(skew.rules)
-          : skew.kind === 'stale'
-            ? <span className="text-amber-300">{dict.fleet.yara.stale(skew.rules)}</span>
-            : skew.kind === 'no-report'
-              ? dict.fleet.yara.noReport
-              : dict.fleet.yara.unavailable,
+        : yara.failed && !yara.yara
+          // the poll never got an answer: no pack state is inferred
+          ? <span className="text-amber-300">{dict.fleet.yara.queryFailed}</span>
+          : <>
+              {skew.kind === 'match'
+                ? dict.fleet.yara.match(skew.rules)
+                : skew.kind === 'stale'
+                  ? <span className="text-amber-300">{dict.fleet.yara.stale(skew.rules)}</span>
+                  : skew.kind === 'no-report'
+                    ? dict.fleet.yara.noReport
+                    : dict.fleet.yara.unavailable}
+              {yara.failed && (
+                <> · <span
+                  className="text-amber-300"
+                  title={dict.fleet.yara.refreshFailedTitle(yara.asOf ? formatDateTime(yara.asOf) : '—')}
+                >{dict.fleet.yara.refreshFailed}</span></>
+              )}
+            </>,
     },
     { icon: HardDrives, label: dict.fleet.sensorCard.rowOs, value: s?.os || '—' },
     { icon: ShieldCheck, label: dict.fleet.sensorCard.rowCapture, value: s?.capture || host.sources.join(', ') || '—' },
