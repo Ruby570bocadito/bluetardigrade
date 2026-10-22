@@ -1599,6 +1599,35 @@ export const dictEn: Dict = {
     flowState: 'State',
   },
 
+  // Process baseline (baseline-card, host page). The status travels as
+  // typed words (statusWords) that baselineStatus accepts with the ES
+  // copy as default — same discipline as enrollmentPlan/runModeText.
+  baseline: {
+    title: 'Process baseline',
+    subtitle: 'What the engine considers normal on this host',
+    learnsSince: (time: string): string => `Learning since ${time}`,
+    learningUntil: (time: string): string => `until ${time}`,
+    activeSince: (time: string): string => `active since ${time}`,
+    knownCount: (n: number): string => `${n} ${n === 1 ? 'known process' : 'known processes'}`,
+    novelties: (n: number): string => `New processes in the window (${n})`,
+    filterLabel: 'Filter known processes',
+    listAria: 'Known processes',
+    shownCount: (shown: number, total: number): string => `Showing ${shown} of ${total}; type to narrow it down.`,
+    noneMatch: (query: string): string => `No known process matches “${query}”.`,
+    emptyTitle: 'No processes yet',
+    emptyHint: 'The list is built from the sensor’s process.create events.',
+    unavailable: 'This engine does not expose /api/baseline: update it to see the baseline.',
+    statusWords: {
+      disabled: 'Baseline disabled on the engine (-baseline-learn 0).',
+      noProcs: 'The engine has not seen a process start on this host yet.',
+      full: 'The 4096-process limit was reached: this host no longer learns new names.',
+      learning: (left: string): string => `Learning: new processes will be flagged within ${left}.`,
+      seconds: 'a few seconds',
+      active: 'Active: a process outside this list raises a low alert.',
+      learnUnits: { disabled: 'disabled', day: 'day', days: 'days' },
+    },
+  },
+
   // Active Directory view (IDEA-10 phase 7): the view chrome speaks both
   // languages; engine text (findings, warnings, errors, status hints)
   // travels verbatim, as the file itself declares. Mirrors the ES shape.

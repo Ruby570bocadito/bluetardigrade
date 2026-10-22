@@ -1641,6 +1641,35 @@ export const dictEs = {
     flowState: 'Estado',
   },
 
+  // Línea base de procesos (baseline-card, ficha de equipo). El estado
+  // viaja como palabras tipadas (statusWords) que baselineStatus acepta
+  // con copia ES por defecto, igual que enrollmentPlan/runModeText.
+  baseline: {
+    title: 'Línea base de procesos',
+    subtitle: 'Lo que el motor considera normal en este equipo',
+    learnsSince: (time: string): string => `Aprende desde ${time}`,
+    learningUntil: (time: string): string => `hasta ${time}`,
+    activeSince: (time: string): string => `activa desde ${time}`,
+    knownCount: (n: number): string => `${n} ${n === 1 ? 'proceso conocido' : 'procesos conocidos'}`,
+    novelties: (n: number): string => `Procesos nuevos en la ventana (${n})`,
+    filterLabel: 'Filtrar procesos conocidos',
+    listAria: 'Procesos conocidos',
+    shownCount: (shown: number, total: number): string => `Se muestran ${shown} de ${total}; filtra para ver el resto.`,
+    noneMatch: (query: string): string => `Ningún proceso conocido coincide con «${query}».`,
+    emptyTitle: 'Sin procesos todavía',
+    emptyHint: 'La lista se forma con los eventos process.create del sensor.',
+    unavailable: 'Este motor no expone /api/baseline: actualízalo para ver la línea base.',
+    statusWords: {
+      disabled: 'Línea base desactivada en el motor (-baseline-learn 0).',
+      noProcs: 'El motor todavía no ha visto arrancar procesos en este equipo.',
+      full: 'Límite de 4096 procesos alcanzado: el equipo ya no aprende nombres nuevos.',
+      learning: (left: string): string => `Aprendiendo: avisará de procesos nuevos dentro de ${left}.`,
+      seconds: 'unos segundos',
+      active: 'Activa: un proceso que no esté en esta lista genera una alerta baja.',
+      learnUnits: { disabled: 'desactivada', day: 'día', days: 'días' },
+    },
+  },
+
   // Directorio activo (IDEA-10 fase 7): el chrome de la vista habla los
   // dos idiomas; el texto del motor (hallazgos, avisos, errores, hints de
   // estado) viaja literal, como el propio archivo declara. El ES sale

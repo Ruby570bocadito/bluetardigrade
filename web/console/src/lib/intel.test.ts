@@ -41,6 +41,24 @@ test('baseline status reads the host state', () => {
   expect(baselineStatus(base)).toContain('Activa')
 })
 
+test('baseline status speaks English when the caller passes the dict words', () => {
+  const base = { enabled: true, learn_s: 86400, host: 'pc', known: true, learning: false, processes: [], full: false }
+  const now = new Date('2026-10-04T10:00:00Z')
+  const en = {
+    disabled: 'Baseline disabled on the engine (-baseline-learn 0).',
+    noProcs: 'The engine has not seen a process start on this host yet.',
+    full: 'The 4096-process limit was reached: this host no longer learns new names.',
+    learning: (left: string): string => `Learning: new processes will be flagged within ${left}.`,
+    seconds: 'a few seconds',
+    active: 'Active: a process outside this list raises a low alert.',
+    learnUnits: { disabled: 'disabled', day: 'day', days: 'days' },
+  }
+  expect(baselineStatus({ ...base, enabled: false }, new Date(), en)).toBe('Baseline disabled on the engine (-baseline-learn 0).')
+  expect(baselineStatus({ ...base, learning: true, learning_until: '2026-10-04T12:30:00Z' }, now, en)).toBe('Learning: new processes will be flagged within 2 h 30 min.')
+  expect(baselineStatus({ ...base, learning: true, learning_until: '2026-10-04T09:59:59Z' }, now, en)).toContain('a few seconds')
+  expect(baselineStatus(base, new Date(), en)).toBe('Active: a process outside this list raises a low alert.')
+})
+
 test('process filter is a capped case-insensitive substring match', () => {
   const names = ['excel.exe', 'explorer.exe', 'outlook.exe']
   expect(filterProcesses(names, 'XPL')).toEqual({ shown: ['explorer.exe'], total: 1 })
