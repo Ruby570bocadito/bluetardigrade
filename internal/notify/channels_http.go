@@ -36,9 +36,10 @@ func (c *httpTimeoutClient) post(ctx context.Context, url string, payload []byte
 // there is no separate Authorization header, exactly like every
 // normal Slack integration.
 type Slack struct {
-	name string
-	url  string
-	hc   *httpTimeoutClient
+	name       string
+	url        string
+	consoleURL string
+	hc         *httpTimeoutClient
 }
 
 // NewSlack builds a Slack channel for an incoming webhook URL. The
@@ -50,6 +51,8 @@ func NewSlack(name, url string) *Slack {
 // Name implements the Channel interface: stable channel identifier.
 func (s *Slack) Name() string { return s.name }
 
+func (s *Slack) setConsoleURL(u string) { s.consoleURL = u }
+
 // Deliver posts the alert as a single Slack text block. The payload
 // carries only the rendered human line — the structured JSON already
 // reaches SIEM consumers through the engine webhook, and keeping chat
@@ -57,7 +60,7 @@ func (s *Slack) Name() string { return s.name }
 func (s *Slack) Deliver(ctx context.Context, a alert.Alert) error {
 	payload, err := json.Marshal(struct {
 		Text string `json:"text"`
-	}{Text: truncate(renderText(a), maxChatRunes)})
+	}{Text: truncate(withLink(renderText(a), alertLink(s.consoleURL, a)), maxChatRunes)})
 	if err != nil {
 		return err
 	}
@@ -72,11 +75,12 @@ func (s *Slack) Retryable(err error) bool { return isRetryable(err) }
 // overridable so tests and self-hosted Bot API servers can point the
 // channel somewhere else without touching the token.
 type Telegram struct {
-	name   string
-	token  string
-	chatID string
-	apiURL string // default https://api.telegram.org, no trailing slash
-	hc     *httpTimeoutClient
+	name       string
+	token      string
+	chatID     string
+	apiURL     string // default https://api.telegram.org, no trailing slash
+	consoleURL string
+	hc         *httpTimeoutClient
 }
 
 // NewTelegram builds a Telegram channel. apiURL may be empty for the
@@ -91,6 +95,8 @@ func NewTelegram(name, token, chatID, apiURL string) *Telegram {
 // Name implements the Channel interface: stable channel identifier.
 func (t *Telegram) Name() string { return t.name }
 
+func (t *Telegram) setConsoleURL(u string) { t.consoleURL = u }
+
 // Deliver posts one sendMessage request. disable_web_page_preview
 // keeps alert links from turning into noisy preview cards.
 func (t *Telegram) Deliver(ctx context.Context, a alert.Alert) error {
@@ -100,7 +106,7 @@ func (t *Telegram) Deliver(ctx context.Context, a alert.Alert) error {
 		DisableWebPagePreview bool   `json:"disable_web_page_preview"`
 	}{
 		ChatID:                t.chatID,
-		Text:                  truncate(renderText(a), maxChatRunes),
+		Text:                  truncate(withLink(renderText(a), alertLink(t.consoleURL, a)), maxChatRunes),
 		DisableWebPagePreview: true,
 	})
 	if err != nil {

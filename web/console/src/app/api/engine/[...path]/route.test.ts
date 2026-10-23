@@ -502,6 +502,25 @@ describe('engine proxy with analyst accounts', () => {
     expect((await PUT(new Request(base + '/api/settings/groups', { method: 'PUT', headers: as('jefa'), body: huge }))).status).toBe(413)
   })
 
+  test('only an administrator saves and tests the notification channels', async () => {
+    const { POST, PUT } = await loadRoute()
+    const writes: [typeof POST, string, string][] = [
+      [PUT, 'PUT', '/api/settings/notify'],
+      [POST, 'POST', '/api/notify/test'],
+    ]
+    for (const [handler, method, path] of writes) {
+      expect((await handler(new Request(base + path, { method, headers: as('ana'), body: '{}' }))).status).toBe(403)
+    }
+    expect(captured).toHaveLength(0)
+    for (const [handler, method, path] of writes) {
+      expect((await handler(new Request(base + path, { method, headers: as('jefa'), body: '{"channels":[]}' }))).status).toBe(200)
+    }
+    expect(captured.map((c) => `${c.init.method} ${new URL(c.url).pathname}`)).toEqual(['PUT /api/settings/notify', 'POST /api/notify/test'])
+    // the body cap mirrors the engine's (32 KiB)
+    const huge = JSON.stringify({ channels: [{ type: 'slack', name: 'x'.repeat(33 * 1024) }] })
+    expect((await PUT(new Request(base + '/api/settings/notify', { method: 'PUT', headers: as('jefa'), body: huge }))).status).toBe(413)
+  })
+
   test('only an administrator sends the M-4 SQL console, body verbatim', async () => {
     const { POST } = await loadRoute()
     const body = JSON.stringify({ sql: 'SELECT alert_id FROM alerts LIMIT 1' })

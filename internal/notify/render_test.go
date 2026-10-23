@@ -66,7 +66,7 @@ func TestTruncateIsRuneSafe(t *testing.T) {
 }
 
 func TestMailBodyCarriesFullPayload(t *testing.T) {
-	body := renderMailBody(sampleAlert())
+	body := renderMailBody(sampleAlert(), "")
 	for _, want := range []string{
 		"[CRITICAL] LSASS dump via comsvcs @ LAB-WKS-01",
 		"---\n",

@@ -87,16 +87,10 @@ y cuentas: [OPERATIONS](docs/OPERATIONS.md#console-accounts-roles-and-audit).
 
 ## F3 — Funciones
 
-- [ ] **Avisos al correo y al móvil.** El motor ya envía las alertas a Slack,
-  Telegram y correo (`-notify`); `sf-start` ya pasa el fichero
-  (`tools\config\notify.yaml`, con `notify.example.yaml` de plantilla) y
-  `sf-engine doctor` lo valida sin enviar nada. Falta:
-  - configurarlo en Ajustes → Notificaciones: canales, gravedad mínima y botón
-    «Enviar prueba», sin reiniciar el motor;
-  - avisos push al móvil con un servicio que se pueda alojar uno mismo (ntfy),
-    además de Telegram;
-  - en cada aviso, el enlace a la alerta en la consola; enrutado y silencios
-    en IDEA-1 (Plataforma).
+- [ ] **Avisos al correo y al móvil.** *(Entregado: canales editables en
+  Ajustes → Avisos externos sin reiniciar el motor, «Enviar prueba», push con
+  ntfy y el enlace a la alerta en cada aviso.)* Falta: enrutado y silencios
+  en IDEA-1 (Plataforma).
 - [ ] **Móvil:** administración reducida desde el teléfono.
   - La consola como aplicación web instalable (PWA), con una vista para
     pantalla pequeña: alertas críticas, reconocer o cerrar, incidentes abiertos
@@ -228,6 +222,9 @@ Detalle en [docs/PRUEBAS-PENDIENTES.md](docs/PRUEBAS-PENDIENTES.md).
 - [ ] Inicio de sesión con una cuenta del dominio real (AD-7): un
   usuario de cada grupo mapeado, uno sin grupo, contraseña errónea y el
   DC apagado, con `tools\config\domain-auth.yaml`.
+- [ ] Avisos reales desde Ajustes → Avisos externos: un correo por SMTP de
+  la empresa, Telegram y ntfy en un móvil (prioridad y toque que abre la
+  alerta).
 - [ ] Suspensión del portátil: cerrar y abrir la tapa sin falsos «sin señal».
 - [ ] Spool con caídas largas del motor (horas) y reinicios del equipo a mitad.
 - [ ] CPU y memoria durante una semana, también con compilaciones y

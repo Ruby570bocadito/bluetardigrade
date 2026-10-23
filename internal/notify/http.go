@@ -59,12 +59,18 @@ func postJSON(ctx context.Context, hc *http.Client, url string, payload []byte) 
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body) // drain so the connection is reusable
+	return classifyStatus(resp.StatusCode)
+}
+
+// classifyStatus is the shared answer classification: 2xx succeeds,
+// 429 and 5xx are retryable, any other answer is permanent.
+func classifyStatus(code int) error {
 	switch {
-	case resp.StatusCode >= 200 && resp.StatusCode < 300:
+	case code >= 200 && code < 300:
 		return nil
-	case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500:
-		return &deliveryError{err: fmt.Errorf("receiver answered %d", resp.StatusCode), retryable: true}
+	case code == http.StatusTooManyRequests || code >= 500:
+		return &deliveryError{err: fmt.Errorf("receiver answered %d", code), retryable: true}
 	default:
-		return &deliveryError{err: fmt.Errorf("receiver answered %d", resp.StatusCode), retryable: false}
+		return &deliveryError{err: fmt.Errorf("receiver answered %d", code), retryable: false}
 	}
 }

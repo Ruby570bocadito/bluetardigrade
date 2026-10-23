@@ -86,6 +86,11 @@ tags:
     description: bulk download (JSONL / CSV) for SIEM import and forensics
   - name: incidents
     description: investigation cases grouping alerts, with status, owner and timeline
+  - name: notify
+    description: >
+      external notification channels (Slack, Telegram, email, ntfy push):
+      their settings, edited live from the console, and a test message;
+      armed only with -notify, writes behind -api-write
   - name: reputation
     description: opt-in, on-demand VirusTotal and AbuseIPDB lookups
   - name: respond
@@ -2911,6 +2916,194 @@ paths:
               schema:
                 $ref: '#/components/schemas/ADSettings'
 
+  /api/settings/notify:
+    get:
+      tags: [notify]
+      operationId: getNotifySettings
+      summary: The notification channels as the console edits them (F3)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        The `-notify` file (a missing file is an empty list) plus the
+        live per-channel counters. Secrets are never served: a Slack hook
+        URL comes back as `url_set` and `url_label` (scheme and host), a
+        Telegram or ntfy token as `token_set`, an SMTP password as
+        `password_set`.
+
+        Admin surface, like `/api/settings/ad`: 403 while the engine runs
+        without `-api-write`, 501 without `-notify`.
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: API writes are disabled (no -api-write at startup)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "api writes are disabled: restart the engine with -api-write (or SF_API_WRITE=1) to manage notifications"
+        '501':
+          description: Notifications are not armed (no -notify at startup)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The -notify file on disk does not load
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: The channels, secret-free, and their counters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotifySettings'
+    put:
+      tags: [notify]
+      operationId: putNotifySettings
+      summary: Validate, commit and swap in the notification channels (F3)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        Validates the whole list with the loader's own rules (a rejected
+        change never touches the disk), commits the YAML atomically
+        (0600: the file may hold literal secrets) and swaps the running
+        channels for the new ones without restarting the engine; the old
+        channels drain what they had queued in the background.
+
+        Secrets are write-only: a `url` (Slack), `token` or `password`
+        left empty keeps the stored value of the channel with the same
+        name and type; `clear_secret` drops the literal token or
+        password; a value in `token_env`/`password_env` replaces it. A
+        renamed channel is a new one and inherits nothing.
+
+        409 when the file changed on disk since the engine loaded or last
+        wrote it. Every committed change leaves one line in the engine
+        log, never a secret.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotifySettingsUpdate'
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          description: Configuration rejected (validation) or malformed body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: API writes are disabled (no -api-write at startup)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "api writes are disabled: restart the engine with -api-write (or SF_API_WRITE=1) to manage notifications"
+        '501':
+          description: Notifications are not armed (no -notify at startup)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The -notify file drifted on disk (hand edit not reconciled)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: The -notify file is not writable (engine log has the detail)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: The committed channels, secret-free
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotifySettings'
+  /api/notify/test:
+    post:
+      tags: [notify]
+      operationId: testNotify
+      summary: Send a test message to one channel or to every channel (F3)
+      security:
+        - bearerAuth: []
+        - {}
+      description: |
+        "Enviar prueba": one message, plainly marked as a test, to the
+        channel named (`{"name":"..."}`) or to every running channel
+        (`{}`), synchronously and in parallel within 20 seconds. Tests
+        bypass the queues, the severity floors and the counters. Each
+        result carries the channel's own error, which never includes the
+        endpoint or a credential.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: channel to test; empty or absent tests every channel
+      responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          description: Malformed body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: API writes are disabled (no -api-write at startup)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "api writes are disabled: restart the engine with -api-write (or SF_API_WRITE=1) to manage notifications"
+        '501':
+          description: Notifications are not armed (no -notify at startup)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No running channel has that name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '200':
+          description: One result per channel tested
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [results]
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/NotifyTestResult'
   /api/ad/test:
     post:
       tags: [ad]
@@ -3799,6 +3992,128 @@ components:
               score:
                 type: integer
                 description: the 0-100 score that sync computed
+    NotifyChannel:
+      type: object
+      description: |
+        One notification channel. `url`, `token` and `password` are
+        write-only secrets (empty on GET; see the `*_set` flags) — except
+        the ntfy `url`, which is the server address and is served.
+      required: [type, name]
+      properties:
+        type:
+          type: string
+          enum: [slack, telegram, email, ntfy]
+        name:
+          type: string
+        min_severity:
+          type: string
+          enum: ['', info, low, medium, high, critical]
+        url:
+          type: string
+          description: Slack hook (secret) or ntfy server
+        url_set:
+          type: boolean
+        url_label:
+          type: string
+          description: scheme and host of a secret URL
+        topic:
+          type: string
+          description: ntfy topic
+        token:
+          type: string
+          description: Telegram bot or ntfy access token (write-only)
+        token_env:
+          type: string
+        token_set:
+          type: boolean
+        chat_id:
+          type: string
+        api_url:
+          type: string
+        server:
+          type: string
+          description: SMTP host:port
+        from:
+          type: string
+        to:
+          type: array
+          items:
+            type: string
+        username:
+          type: string
+        username_env:
+          type: string
+        password:
+          type: string
+          description: SMTP password (write-only)
+        password_env:
+          type: string
+        password_set:
+          type: boolean
+        starttls:
+          type: boolean
+        hello:
+          type: string
+        clear_secret:
+          type: boolean
+          description: PUT only; drop the stored literal token or password
+    NotifySettings:
+      type: object
+      required: [path, exists, console_url, channels, stats]
+      properties:
+        path:
+          type: string
+        exists:
+          type: boolean
+          description: false until the first channel is saved
+        console_url:
+          type: string
+          description: when set, every message links to its alert in the console
+        channels:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotifyChannel'
+        stats:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              type:
+                type: string
+              sent:
+                type: integer
+              failed:
+                type: integer
+              dropped:
+                type: integer
+              filtered:
+                type: integer
+    NotifySettingsUpdate:
+      type: object
+      required: [channels]
+      additionalProperties: false
+      properties:
+        console_url:
+          type: string
+        channels:
+          type: array
+          maxItems: 8
+          items:
+            $ref: '#/components/schemas/NotifyChannel'
+    NotifyTestResult:
+      type: object
+      required: [name, type, ok]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        ok:
+          type: boolean
+        error:
+          type: string
     ADSettings:
       type: object
       required: [server, port, start_tls, base_dn, ca_file, ca_file_present,

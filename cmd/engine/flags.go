@@ -106,7 +106,7 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 	fs.StringVar(&o.webhookToken, "webhook-token", "",
 		"Bearer token sent on every webhook delivery as 'Authorization: Bearer' (falls back to SF_WEBHOOK_TOKEN); empty disables the header")
 	fs.StringVar(&o.notifyPath, "notify", "",
-		"YAML config with external notification channels (slack, telegram, email); loaded fail-loud at startup; empty disables")
+		"YAML config with external notification channels (slack, telegram, email, ntfy); an existing file loads fail-loud at startup, a missing one starts with no channels; the console edits it live (Ajustes -> Avisos externos, needs -api-write); empty disables")
 	fs.StringVar(&o.elasticURL, "elastic", "",
 		"Elasticsearch base URL for SIEM indexing (e.g. http://127.0.0.1:9200); alerts are bulk-indexed into <index>-YYYY.MM.DD with a deterministic _id per alert, so retries never duplicate; empty disables")
 	fs.StringVar(&o.elasticIndex, "elastic-index", "sf-alerts",
