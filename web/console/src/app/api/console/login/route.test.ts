@@ -334,6 +334,16 @@ describe('proxy gate', () => {
     expect(res.headers.get('strict-transport-security')).toBeNull()
   })
 
+  test('installing the app needs no session: the manifest and its icons, and nothing else', async () => {
+    withAccounts()
+    for (const path of ['/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/icon-maskable-512.png', '/icons/apple-touch-icon.png']) {
+      expect((await proxy(nav(path))).status).toBe(200)
+    }
+    // the phone view itself stays behind the gate, and so does anything else under /icons
+    expect((await proxy(nav('/movil'))).status).toBe(303)
+    expect((await proxy(nav('/icons/other.png'))).status).not.toBe(200)
+  })
+
   test('behind a TLS front end every answer, refusals included, carries HSTS', async () => {
     withAccounts()
     const https = { 'x-forwarded-proto': 'https' }

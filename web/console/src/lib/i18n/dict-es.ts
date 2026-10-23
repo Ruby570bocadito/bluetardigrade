@@ -183,6 +183,7 @@ export const dictEs = {
   // Fixed chrome strings (sidebar, header, footer, badges' tooltips).
   chrome: {
     skipToContent: 'Ir al contenido',
+    mobileView: 'Vista móvil',
     navLabel: 'Secciones de la consola',
     live: 'En vivo',
     connecting: 'Conectando',
@@ -242,6 +243,32 @@ export const dictEs = {
     prose: 'Los atajos de navegación se ignoran mientras escribes, durante la composición de texto y dentro de menús o ventanas abiertas.',
   },
 
+  mobile: {
+    title: 'Guardia',
+    subtitle: 'Vista para el móvil',
+    tabs: { alerts: 'Alertas', incidents: 'Incidentes', hosts: 'Equipos' },
+    tabsAria: 'Secciones de la vista móvil',
+    floors: { critical: 'Críticas', high: 'Altas y críticas', all: 'Todas' },
+    floorsAria: 'Gravedad de las alertas mostradas',
+    ack: 'Reconocer',
+    close: 'Cerrar',
+    reopen: 'Reabrir',
+    acked: 'reconocida',
+    actionAria: (action: string, rule: string): string => `${action}: ${rule}`,
+    readOnly: 'Tu rol es de lectura: no puedes cambiar el estado de las alertas.',
+    noAlerts: 'Nada abierto a esta gravedad. Buen momento para un café.',
+    noIncidents: 'Ningún incidente abierto.',
+    noHosts: 'Sin equipos en el inventario del motor.',
+    hostsSummary: (online: number, silent: number, idle: number): string => `${online} en línea · ${silent} sin señal · ${idle} inactivos`,
+    hostStatus: { online: 'en línea', silent: 'sin señal', idle: 'inactivo' } as Record<'online' | 'silent' | 'idle', string>,
+    incidentMeta: (alerts: number, hosts: number): string => `${alerts} alerta${alerts === 1 ? '' : 's'} · ${hosts} equipo${hosts === 1 ? '' : 's'}`,
+    openFull: 'Abrir en la consola completa',
+    fullConsole: 'Consola completa',
+    live: 'En vivo',
+    offline: 'Sin conexión con el motor',
+    more: (n: number): string => `Se muestran ${n}. El resto, en la consola completa.`,
+    installHint: 'Para tenerla como app: en el menú del navegador, «Instalar aplicación» o «Añadir a pantalla de inicio».',
+  },
   theme: {
     next: {
       system: 'Cambiar a seguir el sistema',
