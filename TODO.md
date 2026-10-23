@@ -91,17 +91,15 @@ y cuentas: [OPERATIONS](docs/OPERATIONS.md#console-accounts-roles-and-audit).
   Ajustes → Avisos externos sin reiniciar el motor, «Enviar prueba», push con
   ntfy y el enlace a la alerta en cada aviso.)* Falta: enrutado y silencios
   en IDEA-1 (Plataforma).
-- [ ] **Móvil:** administración reducida desde el teléfono.
-  - La consola como aplicación web instalable (PWA), con una vista para
-    pantalla pequeña: alertas críticas, reconocer o cerrar, incidentes abiertos
-    y estado de los equipos.
+- [ ] **Móvil:** administración reducida desde el teléfono. *(Entregado: la
+  consola como app instalable (PWA) que abre en `/movil`, con alertas por
+  gravedad para reconocer o cerrar, incidentes abiertos y equipos; y la guía
+  para publicarla por HTTPS en la VPN, en OPERATIONS.)* Falta:
   - Emparejar el móvil escaneando un QR que muestra la consola (Ajustes →
     Móvil): sesión propia del dispositivo, con verificación en dos pasos,
     caducidad y revocación desde la consola.
   - Respuesta desde el móvil solo cuando exista la respuesta ampliada, con la
     misma aprobación.
-  - Necesita la consola accesible fuera del servidor (HTTPS, o la VPN de la
-    empresa): documentar cómo hacerlo sin exponerla a internet.
 - [ ] **Reglas de SigmaHQ:** una selección revisada del repositorio SigmaHQ,
   convertida con `sf-engine sigma` e incluida en el repositorio (licencia DRL
   1.1, con la atribución que pide).
@@ -225,6 +223,8 @@ Detalle en [docs/PRUEBAS-PENDIENTES.md](docs/PRUEBAS-PENDIENTES.md).
 - [ ] Avisos reales desde Ajustes → Avisos externos: un correo por SMTP de
   la empresa, Telegram y ntfy en un móvil (prioridad y toque que abre la
   alerta).
+- [ ] La consola en un móvil real por HTTPS en la VPN: instalarla como app
+  (Android e iPhone), reconocer y cerrar una alerta desde `/movil`.
 - [ ] Suspensión del portátil: cerrar y abrir la tapa sin falsos «sin señal».
 - [ ] Spool con caídas largas del motor (horas) y reinicios del equipo a mitad.
 - [ ] CPU y memoria durante una semana, también con compilaciones y

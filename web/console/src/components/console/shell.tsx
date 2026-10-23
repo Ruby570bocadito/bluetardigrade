@@ -8,7 +8,7 @@ import { describeTelemetrySources } from '@/lib/telemetry-source'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { ActivityIcon, BatteryCharging, ChatsCircle, Database, Desktop, Files, Flask, FlowArrow, FolderOpen, Gauge, Gear, Keyboard, Lightning, ListMagnifyingGlass, MagnifyingGlass, Prohibit, RocketLaunch, ShieldCheck, SpeakerHigh, SquaresFour, TreeStructure, Warning, CornersOut } from '@phosphor-icons/react'
+import { ActivityIcon, BatteryCharging, ChatsCircle, Database, Desktop, DeviceMobile, Files, Flask, FlowArrow, FolderOpen, Gauge, Gear, Keyboard, Lightning, ListMagnifyingGlass, MagnifyingGlass, Prohibit, RocketLaunch, ShieldCheck, SpeakerHigh, SquaresFour, TreeStructure, Warning, CornersOut } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { BlurText } from '@/components/reactbits/blur-text'
 import { ShinyText } from '@/components/reactbits/shiny-text'
@@ -420,8 +420,12 @@ export function ConsoleShell() {
           <header className="glass sticky top-0 z-20 border-b border-white/[0.06]">
             <div className="flex min-h-16 items-center justify-between gap-3 px-4 py-2.5 lg:px-8">
               <div className="flex min-w-0 shrink-0 items-center gap-3 lg:shrink">
-                <div className="lg:hidden">
+                <div className="flex items-center gap-2 lg:hidden">
                   <BrandRow />
+                  {/* the phone view (app/movil): the same data, cards instead of tables */}
+                  <a href="/movil" className="chip px-2 py-1 text-[11px] text-zinc-300 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <DeviceMobile size={13} aria-hidden /> {dict.chrome.mobileView}
+                  </a>
                 </div>
                 <div className="hidden min-w-0 lg:block">
                   {/* the sign-in page's eyebrow: the section the view lives in */}

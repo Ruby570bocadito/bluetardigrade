@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
@@ -18,6 +18,16 @@ export const metadata: Metadata = {
   description:
     "Consola de operaciones de seguridad en tiempo real: telemetría del sensor, reglas YAML, triage de alertas MITRE ATT&CK y export JSONL/CSV.",
   keywords: ["EDR", "detección de amenazas", "SOC", "MITRE ATT&CK", "telemetría"],
+  // installable app (app/manifest.ts, start page /movil)
+  appleWebApp: { capable: true, title: "bluetardigrade", statusBarStyle: "black-translucent" },
+  icons: { apple: "/icons/apple-touch-icon.png" },
+};
+
+// the phone view draws under the notch (env(safe-area-inset-*)); the
+// browser chrome takes the sign-in page's night navy
+export const viewport: Viewport = {
+  themeColor: "#0b1220",
+  viewportFit: "cover",
 };
 
 // THEME boot: resolves the theme before the first paint so the console
