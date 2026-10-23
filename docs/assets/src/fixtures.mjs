@@ -260,6 +260,23 @@ export function fixtureEngine() {
     summary: { events: 4, process_creates: 2, network_connects: 0, file_writes: 1, registry_sets: 0, process_accesses: 1, other: 0, distinct_users: 1, distinct_images: ['winword.exe', 'rundll32.exe'] },
   }
 
+  // notification channels (GET/PUT /api/settings/notify): secrets never
+  // travel, the stored ones show as *_set like the engine answers
+  const notifySettings = {
+    path: 'C:\\bluetardigrade\\tools\\config\\notify.yaml',
+    exists: true,
+    console_url: 'https://soc.lab.local',
+    channels: [
+      { type: 'ntfy', name: 'guardia-movil', min_severity: 'high', url: 'https://ntfy.lab.local', url_set: true, topic: 'soc-lab-alertas', token_set: true, password_set: false },
+      { type: 'email', name: 'soc-correo', min_severity: 'medium', server: 'smtp.lab.local:587', from: 'bluetardigrade@lab.local', to: ['soc@lab.local'], username: 'bluetardigrade', password_set: true, starttls: true, url_set: false, token_set: false },
+      { type: 'telegram', name: 'guardia-telegram', min_severity: 'critical', chat_id: '-1001234567890', token_set: true, url_set: false, password_set: false },
+    ],
+    stats: [
+      { name: 'guardia-movil', type: 'ntfy', sent: 14, failed: 0, dropped: 0, filtered: 9 },
+      { name: 'soc-correo', type: 'email', sent: 19, failed: 1, dropped: 0, filtered: 4 },
+      { name: 'guardia-telegram', type: 'telegram', sent: 4, failed: 0, dropped: 0, filtered: 19 },
+    ],
+  }
   const stamp = iso(0)
   return async (page) => {
     await page.addInitScript(() => {
@@ -288,9 +305,16 @@ export function fixtureEngine() {
       else if (p === '/api/incidents') data = incidents
       else if (p === '/api/respond/state') data = respondState
       else if (p === '/api/respond/audit') data = respondAudit
+      else if (p === '/api/settings/notify') data = notifySettings
+      else if (p === '/api/notify/test') data = { results: notifySettings.channels.map((c) => ({ name: c.name, type: c.type, ok: true })) }
       else if (p === '/api/alerts/search') data = { items: alerts.slice(8), source: 'sqlite', has_more: false, next_cursor: '', page_cursor: '', scanned: 10, scan_limited: false }
       else if (p.startsWith('/api/alerts/') && p.endsWith('/forensics')) data = forensics
-      else if (p.startsWith('/api/alerts/') && route.request().method() === 'POST') data = { alert_id: 'x', status: 'acknowledged', at: stamp }
+      else if (p.startsWith('/api/alerts/') && route.request().method() === 'POST') {
+        // triage echoes the decision on the alert it names, like the engine
+        let wanted = 'acknowledged'
+        try { wanted = JSON.parse(route.request().postData() || '{}').status || wanted } catch {}
+        data = { alert_id: p.split('/')[3], status: wanted, by: 'consola', at: stamp }
+      }
       else { await route.fulfill({ status: 404, body: '' }); return }
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) })
     })

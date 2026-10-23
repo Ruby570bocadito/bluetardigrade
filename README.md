@@ -17,7 +17,7 @@ Named after the most resilient animal on Earth.
 [![Next.js](https://img.shields.io/badge/console-Next.js-000000?logo=nextdotjs&logoColor=white)](web/console/)
 [![ATT&CK](https://img.shields.io/badge/rules-125%20·%20MITRE%20ATT%26CK-d03b3b)](rules/)
 
-[**Watch the demo**](#see-it-in-action) · [**Quickstart**](#quickstart) · [Features](#what-you-get) · [Console tour](#console-tour) · [Security](#security-model) · [Architecture](#architecture) · [Docs](#documentation) · [**Guía en español**](docs/GUIA-INICIO.md)
+[**Watch the demo**](#see-it-in-action) · [**Quickstart**](#quickstart) · [Features](#what-you-get) · [Console tour](#console-tour) · [**On your phone**](#on-your-phone) · [Notifications](#notifications) · [Security](#security-model) · [Architecture](#architecture) · [Docs](#documentation) · [**Guía en español**](docs/GUIA-INICIO.md)
 
 </div>
 
@@ -26,7 +26,7 @@ Named after the most resilient animal on Earth.
 </p>
 
 <p align="center">
-  <a href="docs/assets/demo/bluetardigrade-demo.mp4"><b>▶&nbsp; Full tour in video (MP4, 1 min 40 s)</b></a>
+  <a href="docs/assets/demo/bluetardigrade-demo.mp4"><b>▶&nbsp; Full tour in video (MP4, 2 min 12 s)</b></a>
 </p>
 
 A sensor on each Windows machine streams process, network, DNS, registry and
@@ -117,6 +117,37 @@ audited.
 links survive a refresh, and **NOC mode** turns a wall monitor into a rotating
 situation board.
 
+### 9 · Get alerts by mail, chat and on your phone
+
+<img src="docs/assets/demo/notify.webp" alt="Ajustes, Avisos externos: notification channels with their minimum severity, a test message delivered and a new channel added" width="100%" />
+
+Email, Telegram, Slack and **ntfy** push channels, each with its minimum
+severity, edited in **Ajustes → Avisos externos** and applied without
+restarting the engine. **Enviar prueba** asks each channel to answer, and
+every message links to its alert. [More below](#notifications).
+
+### 10 · On call from your phone
+
+<table>
+<tr>
+<td width="34%" valign="top"><img src="docs/assets/demo/mobile.webp" alt="The phone view: filtering critical alerts, closing one from its card, then the open incidents and the hosts" width="100%" /></td>
+<td valign="top">
+
+`/movil` is the console built for a phone, and it **installs as an app**:
+
+- the open alerts at or above a severity, with **Reconocer** and
+  **Cerrar** on each card;
+- the open incidents, most severe first;
+- the machines, the silent ones first;
+- one tap opens the same record in the full console.
+
+Same sign-in, same roles, same audit trail as the desktop.
+[How to connect it](#on-your-phone).
+
+</td>
+</tr>
+</table>
+
 ---
 
 ## Why bluetardigrade
@@ -186,6 +217,7 @@ access and active response that stays off until you arm it.
 - Alert lifecycle, **assignment**, notes and saved searches.
 - **Incidents** with graph, timeline and Markdown or printable reports.
 - **Active Directory** directory and posture, read-only.
+- A **phone view** that installs as an app (`/movil`).
 - Optional **AI analyst** with your own model.
 
 </td>
@@ -203,8 +235,8 @@ access and active response that stays off until you arm it.
 <td width="50%" valign="top">
 
 ### 🔌 Integrate
-- **Webhooks**, **Elasticsearch**, **Splunk HEC**, **Slack**, **Telegram**
-  and **email**.
+- **Webhooks**, **Elasticsearch**, **Splunk HEC**, **Slack**, **Telegram**,
+  **email** and **ntfy** phone push, the channels edited from the console.
 - **REST + SSE** API with an OpenAPI contract checked in CI; **Prometheus**
   metrics.
 - Imports **Suricata, Zeek, osquery, Cowrie**, Windows firewall logs,
@@ -409,13 +441,143 @@ proxy, so the API token never reaches the browser.
 | **Detección** | Rules, kill chains, threat intel, suppressions, rule tester, noise report and detection validation |
 | **Respuesta activa** | Arming state and the forensic response audit |
 | **Analista IA** | Optional triage assistant with your own model |
-| **Ajustes** | Language, accounts, host groups, the AD connector and integrations |
+| **Ajustes** | Language, accounts, host groups, the AD connector, notification channels and integrations |
 
 </details>
 
 There is also a keyboard-driven **terminal workspace**: `engine run -i` (see
 the [operations guide](docs/OPERATIONS.md)). To run the console from source:
 [web/console/README.md](web/console/README.md).
+
+## Notifications
+
+<p align="center">
+  <img src="docs/assets/showcase/avisos.webp" alt="Ajustes, Avisos externos: an ntfy, an email and a Telegram channel with their counters" width="100%" />
+</p>
+
+Every alert that passes a channel's minimum severity reaches that channel,
+without ever slowing detection down (one bounded queue per channel, three
+attempts, every outcome counted on `/api/stats` and `/metrics`).
+
+| Channel | What arrives | You need |
+|---|---|---|
+| **ntfy** | A push on the phone: `[CRITICAL] rule @ host` as the title, the severity as the priority (critical rings through *do not disturb*), a tap opens the alert | The ntfy app and a topic on [ntfy.sh](https://ntfy.sh) or on your own server |
+| **Email** | The alert line, its link and the full alert as JSON (the mailbox doubles as a record) | An SMTP relay (StartTLS by default) |
+| **Telegram** | The alert line and its link | A bot from BotFather and the chat id |
+| **Slack** | The alert line and its link | An incoming webhook |
+
+**From the console** (administrators, engine started with `-api-write` —
+`sf-start` does both): **Ajustes → Avisos externos**, add a channel, choose
+its minimum severity, fill in the console address so every message links to
+its alert, **Guardar avisos**, then **Enviar prueba**. Secrets are
+write-only: the console shows «guardado» and never reads them back.
+
+**Phone push in three steps:**
+
+1. Install **ntfy** on the phone (Android or iPhone) and subscribe to a
+   hard-to-guess topic, e.g. `soc-acme-7f3k`.
+2. In **Ajustes → Avisos externos**, add an **ntfy** channel with the
+   server (`https://ntfy.sh`, or yours) and that topic, minimum severity
+   **Alta**.
+3. **Enviar prueba**: the phone rings. From now on, so does every high or
+   critical alert.
+
+**Or as a file** — `tools\config\notify.yaml`, the same one the console
+writes ([full example](notify.example.yaml)):
+
+```yaml
+console_url: https://soc.acme.local          # every message links to its alert
+channels:
+  - type: ntfy
+    name: guardia-movil
+    min_severity: high
+    url: https://ntfy.acme.local             # or https://ntfy.sh
+    topic: soc-acme-7f3k
+    token_env: SF_NTFY_TOKEN                 # only if the server has access control
+  - type: email
+    name: soc-correo
+    min_severity: medium
+    server: smtp.acme.local:587
+    from: bluetardigrade@acme.local
+    to: [soc@acme.local]
+    username_env: SF_SMTP_USER
+    password_env: SF_SMTP_PASSWORD
+  - type: telegram
+    name: guardia-telegram
+    min_severity: critical
+    token_env: SF_TELEGRAM_TOKEN
+    chat_id: "-1001234567890"
+```
+
+Details: [External notifications](docs/OPERATIONS.md#external-notifications-slack-telegram-email-ntfy).
+
+## On your phone
+
+<p align="center">
+  <img src="docs/assets/showcase/movil.webp" alt="Three phones with the phone view: the hosts, the alert queue and the light theme" width="100%" />
+</p>
+
+`https://<your console>/movil` is the console for whoever is on call, and it
+**installs as an app** (home-screen icon, full screen, opens straight on the
+alerts).
+
+| Tab | What you do there |
+|---|---|
+| **Alertas** | Open alerts filtered to *Críticas*, *Altas y críticas* or *Todas*; **Reconocer** or **Cerrar** from the card; ↗ opens the alert in the full console |
+| **Incidentes** | Open incidents, most severe and most recently touched first, with their alerts, hosts and owner |
+| **Equipos** | Every machine, the ones that stopped sending heartbeats first |
+
+The badges on the tabs count critical alerts, open incidents and silent
+machines. A viewer sees the cards without the buttons; every decision is
+signed with the session's account, exactly as on the desktop.
+
+### Connecting a phone
+
+A phone reaches the console over the network, and browsers only install apps
+from **HTTPS**. Publish it **inside the company network or its VPN — never to
+the internet**:
+
+1. **Accounts with two-step sign-in** for everyone who will use a phone:
+
+   ```powershell
+   sf-console -AddUser ana -Role analyst
+   sf-console -RequireMfa admin,analyst
+   ```
+
+2. **Let the console answer to the name the phones use, and only from the
+   VPN.** Add it to the console's allowed hosts and open the port in the
+   server firewall to the VPN range only (no port forwarding on the router):
+
+   ```powershell
+   # then sf-stop and sf-start from a new terminal
+   [Environment]::SetEnvironmentVariable('CONSOLE_ALLOWED_HOSTS', 'soc.acme.local', 'User')
+   New-NetFirewallRule -DisplayName 'bluetardigrade console (VPN)' -Direction Inbound `
+     -Protocol TCP -LocalPort 443 -RemoteAddress 10.8.0.0/16 -Action Allow
+   ```
+
+3. **Put HTTPS in front** with a certificate the phones trust (your company
+   CA). For example with [Caddy](https://caddyserver.com) on the same server:
+
+   ```caddyfile
+   soc.acme.local {
+       tls C:/certs/soc.acme.local.crt C:/certs/soc.acme.local.key
+       reverse_proxy 127.0.0.1:3000
+   }
+   ```
+
+   Caddy sends `X-Forwarded-Proto: https`, so the console marks its session
+   cookie `Secure` and sends HSTS. IIS with URL Rewrite or nginx work the same
+   way.
+
+4. **On the phone** (connected to the VPN), open `https://soc.acme.local/movil`
+   and sign in. Then:
+   - **Android (Chrome):** menu ⋮ → **Instalar aplicación**.
+   - **iPhone (Safari):** Share → **Añadir a pantalla de inicio**.
+
+Sessions on the phone follow the desktop rules: they expire when idle and
+after 12 hours, end on sign-out, and end on the server when the account
+changes. Pairing a phone by QR code with per-device sessions is on the
+roadmap. Details: [The console on a phone](docs/OPERATIONS.md#the-console-on-a-phone).
 
 ## Security model
 
@@ -555,8 +717,8 @@ docs/assets/src/make_media.sh              # demo/*.webp + the MP4 tour
 - **Next:**
   - extended response, opt-in at install: isolate a host, quarantine a file,
     signed and audited orders to the sensor, one- or two-person approval;
-  - notifications configured from the console, self-hosted push (ntfy) and a
-    phone view;
+  - pairing a phone by QR code, with per-device sessions revocable from the
+    console;
   - a reviewed SigmaHQ pack, a rule editor and YARA management in the console;
   - continuous anti-phishing (IMAP mailbox, SPF/DKIM/DMARC, look-alike domains,
     QR codes).
