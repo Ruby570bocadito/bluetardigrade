@@ -171,6 +171,7 @@ export const dictEn: Dict = {
 
   chrome: {
     skipToContent: 'Skip to content',
+    mobileView: 'Phone view',
     navLabel: 'Console sections',
     live: 'Live',
     connecting: 'Connecting',
@@ -226,6 +227,32 @@ export const dictEn: Dict = {
     prose: 'Navigation shortcuts are ignored while you type, during text composition and inside open menus or dialogs.',
   },
 
+  mobile: {
+    title: 'On call',
+    subtitle: 'Phone view',
+    tabs: { alerts: 'Alerts', incidents: 'Incidents', hosts: 'Hosts' },
+    tabsAria: 'Sections of the phone view',
+    floors: { critical: 'Critical', high: 'High and critical', all: 'All' },
+    floorsAria: 'Severity of the alerts shown',
+    ack: 'Acknowledge',
+    close: 'Close',
+    reopen: 'Reopen',
+    acked: 'acknowledged',
+    actionAria: (action: string, rule: string): string => `${action}: ${rule}`,
+    readOnly: 'Your role is read-only: you cannot change alert states.',
+    noAlerts: 'Nothing open at this severity. Good time for a coffee.',
+    noIncidents: 'No open incidents.',
+    noHosts: 'No hosts in the engine inventory.',
+    hostsSummary: (online: number, silent: number, idle: number): string => `${online} online · ${silent} silent · ${idle} idle`,
+    hostStatus: { online: 'online', silent: 'silent', idle: 'idle' } as Record<'online' | 'silent' | 'idle', string>,
+    incidentMeta: (alerts: number, hosts: number): string => `${alerts} alert${alerts === 1 ? '' : 's'} · ${hosts} host${hosts === 1 ? '' : 's'}`,
+    openFull: 'Open in the full console',
+    fullConsole: 'Full console',
+    live: 'Live',
+    offline: 'No connection to the engine',
+    more: (n: number): string => `Showing ${n}. The rest, in the full console.`,
+    installHint: 'To keep it as an app: in the browser menu, «Install app» or «Add to Home screen».',
+  },
   theme: {
     next: {
       system: 'Switch to follow the system',

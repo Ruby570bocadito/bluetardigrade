@@ -29,10 +29,15 @@ import { authorized, unauthorizedResponse } from './lib/access'
 import { safeNext } from './lib/login'
 import { requestIsHttps } from './lib/sessions'
 
-// Reachable without a session: the sign-in page, its form target and
-// the favicon. Everything else, the bundle under /_next included, stays
-// behind the gate.
-const PUBLIC_PATHS = new Set(['/login', '/api/console/login', '/icon.svg'])
+// Reachable without a session: the sign-in page, its form target, the
+// favicon and what installing the console as an app needs (the web app
+// manifest and its icons: the browser fetches them without the session
+// cookie, and they say nothing the sign-in page does not). Everything
+// else, the bundle under /_next included, stays behind the gate.
+const PUBLIC_PATHS = new Set([
+  '/login', '/api/console/login', '/icon.svg', '/manifest.webmanifest',
+  '/icons/icon-192.png', '/icons/icon-512.png', '/icons/icon-maskable-512.png', '/icons/apple-touch-icon.png',
+])
 
 // A browser opening a console page without a session is sent to the
 // sign-in page (keeping where it was going); API calls, assets and
