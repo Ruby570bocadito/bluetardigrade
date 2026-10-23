@@ -14,8 +14,10 @@
 // default 30), reaches its absolute lifetime (CONSOLE_SESSION_MAX_HOURS,
 // default 12), the operator signs out, or the credential that opened it
 // changes: a new password, role or host groups in the users file, a
-// removed account or a rotated shared token.
+// removed account, a rotated shared token or, for a domain account,
+// domain sign-in turned off in the console.
 
+import { domainStamp } from './domain-auth'
 import { accountStamp, type Principal, type Role } from './users'
 
 export const SESSION_COOKIE = 'sf_session'
@@ -24,6 +26,7 @@ type Session = {
   name: string
   role: Role
   mode: 'users' | 'token'
+  source?: 'domain'
   groups: string[]
   stamp: string
   created: number
@@ -87,7 +90,7 @@ export async function openSession(principal: Principal, stamp: string, now = Dat
     sessions.delete(oldest)
   }
   const id = newId()
-  sessions.set(await sha256Hex(id), { name: principal.name, role: principal.role, mode: principal.mode, groups: principal.groups ?? [], stamp, created: now, lastSeen: now })
+  sessions.set(await sha256Hex(id), { name: principal.name, role: principal.role, mode: principal.mode, ...(principal.source ? { source: principal.source } : {}), groups: principal.groups ?? [], stamp, created: now, lastSeen: now })
   return id
 }
 
@@ -104,14 +107,14 @@ export async function sessionPrincipal(id: string | undefined, now = Date.now())
     sessions.delete(key)
     return null
   }
-  const current = s.mode === 'users' ? await accountStamp(s.name) : await tokenStamp()
+  const current = s.source === 'domain' ? await domainStamp() : s.mode === 'users' ? await accountStamp(s.name) : await tokenStamp()
   if (current !== s.stamp) {
     sessions.delete(key)
     return null
   }
   s.lastSeen = now
   // the stamp covers the groups: they are still the account's
-  return { name: s.name, role: s.role, mode: s.mode, ...(s.groups.length ? { groups: s.groups } : {}) }
+  return { name: s.name, role: s.role, mode: s.mode, ...(s.source ? { source: s.source } : {}), ...(s.groups.length ? { groups: s.groups } : {}) }
 }
 
 export async function closeSession(id: string | undefined): Promise<void> {

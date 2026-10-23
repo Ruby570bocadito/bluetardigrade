@@ -15,8 +15,14 @@
 // page instead of a redirect: they are shown once. An account whose
 // password an administrator reset (must_change) then posts
 // step=password with its new password before its session opens.
+//
+// realm=dominio sends the credentials to the engine's domain sign-in
+// instead (lib/domain-auth.ts): the directory verifies the password
+// and the AD groups give the role; the session opens like a local
+// one, under the name DOMINIO\usuario.
 
 import { accessToken, tokenEquals } from '@/lib/access'
+import { domainAuthEnabled, domainLogin, type DomainFailure } from '@/lib/domain-auth'
 import {
   challengeCookie, clearedChallengeCookie, closeChallenge, failedAttempt, openChallenge, readChallenge, readChallengeCookie,
 } from '@/lib/challenges'
@@ -33,7 +39,7 @@ export const dynamic = 'force-dynamic'
 const MAX_BODY = 4096
 const NAME_RE = /^[\p{L}\p{N}._@ -]{1,64}$/u
 
-type Fields = { user: string; password: string; next: string; step: string; code: string; newPassword: string; repeat: string }
+type Fields = { user: string; password: string; next: string; step: string; code: string; newPassword: string; repeat: string; realm: string }
 
 // readCapped stops at MAX_BODY bytes: this route is public, so an
 // oversized body must not be buffered whole before it is refused.
@@ -92,6 +98,7 @@ async function readFields(request: Request, json: boolean): Promise<Fields | nul
     code: str(get('code')).slice(0, 64),
     newPassword: str(get('new_password')),
     repeat: str(get('repeat')),
+    realm: str(get('realm')),
   }
 }
 
@@ -194,6 +201,31 @@ async function secondStep(request: Request, reply: Reply, code: string): Promise
   return authenticated(request, { ...reply, next: pending.next }, principal, stamp, [cleared], 'codes' in result ? result.codes : undefined)
 }
 
+const DOMAIN_STATUS: Record<DomainFailure, number> = {
+  credenciales: 401, formato: 400, sin_rol: 403, mfa_dominio: 403, bloqueado: 429, dominio_apagado: 501, dominio: 502, motor: 502,
+}
+
+// auditName keeps a domain login name readable in the audit trail
+// (CORP\ana, ana@corp.example) without control characters or length.
+const auditName = (raw: string) => raw.replace(/[^\p{L}\p{N}._@\\ -]/gu, '').slice(0, 64) || '?'
+
+// domainSignIn: the engine checks the credentials against the domain;
+// the console opens its own session with the role the groups grant.
+async function domainSignIn(request: Request, reply: Reply, fields: Fields): Promise<Response> {
+  const back = (reason: string, status: number) =>
+    reply.back(`dom_${reason}`, status, `/login?realm=dominio&error=dom_${reason}&next=${encodeURIComponent(reply.next)}`)
+  if (!domainAuthEnabled()) return back('dominio_apagado', 501)
+  const result = await domainLogin(fields.user, fields.password)
+  if (!result.ok) {
+    const status = DOMAIN_STATUS[result.reason]
+    audited(auditName(fields.user), '', '/login/dominio', status, 'denied')
+    return back(result.reason, status)
+  }
+  const { principal } = result
+  audited(principal.name, principal.role, '/login/dominio', 200, 'ok')
+  return signedIn(request, reply, principal, 'domain')
+}
+
 export async function POST(request: Request): Promise<Response> {
   const json = (request.headers.get('content-type') ?? '').toLowerCase().includes('application/json')
   const fields = await readFields(request, json)
@@ -213,7 +245,11 @@ export async function POST(request: Request): Promise<Response> {
   if (!users && !token) return json ? Response.json({ ok: true, next }) : redirectTo(next)
   if (users && fields && (fields.step === 'code' || fields.step === 'enroll')) return secondStep(request, reply, fields.code)
   if (users && fields && fields.step === 'password') return passwordStep(request, reply, fields)
-  if (!fields || !fields.password || fields.password.length > 1024 || fields.user.length > 64) return reply.back('credenciales', 401)
+  // a domain UPN may run past a local name: the engine's own cap is 256
+  const maxUser = fields?.realm === 'dominio' ? 256 : 64
+  if (!fields || !fields.password || fields.password.length > 1024 || fields.user.length > maxUser) return reply.back('credenciales', 401)
+
+  if (users && fields.realm === 'dominio') return domainSignIn(request, reply, fields)
 
   const typedName = NAME_RE.test(fields.user) ? fields.user : '?'
   if (!users) {

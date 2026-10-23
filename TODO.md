@@ -84,13 +84,6 @@ y cuentas: [OPERATIONS](docs/OPERATIONS.md#console-accounts-roles-and-audit).
   - auditar en los equipos los servicios de Windows con permisos débiles (el
     sensor, solo lectura: DACL del servicio, del ejecutable y rutas sin
     comillas), con alerta y su sección en la ficha del equipo.
-- [ ] **Login con cuentas del dominio** (AD-7): bind LDAPS con las credenciales
-  del usuario y grupos de AD que dan cada rol; las cuentas locales siguen como
-  respaldo.
-  *(mitad motor entregada el 2026-10-22: `POST /api/auth/domain` con bind
-  LDAPS y grupos→roles en `internal/ad/` + `internal/api/domain_auth.go`;
-  falta la hornada de consola — su entrada en el WRITES del proxy aterriza
-  con esa UI, no antes.)*
 
 ## F3 — Funciones
 
@@ -232,6 +225,9 @@ Detalle en [docs/PRUEBAS-PENDIENTES.md](docs/PRUEBAS-PENDIENTES.md).
   11 (alta de equipos) de la hoja de pruebas.
 - [ ] Parar el motor un rato y volver a arrancar: el volcado del atasco no debe
   descontrolar el flujo, el grafo ni el riesgo (arreglo del PR #28).
+- [ ] Inicio de sesión con una cuenta del dominio real (AD-7): un
+  usuario de cada grupo mapeado, uno sin grupo, contraseña errónea y el
+  DC apagado, con `tools\config\domain-auth.yaml`.
 - [ ] Suspensión del portátil: cerrar y abrir la tapa sin falsos «sin señal».
 - [ ] Spool con caídas largas del motor (horas) y reinicios del equipo a mitad.
 - [ ] CPU y memoria durante una semana, también con compilaciones y

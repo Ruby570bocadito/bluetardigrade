@@ -26,6 +26,8 @@ export async function POST(request: Request): Promise<Response> {
   const principal = await principalFor(request)
   if (!principal) return unauthorizedResponse()
   if (principal.mode !== 'users') return Response.json({ error: 'no_accounts' }, { status: 400 })
+  // the directory owns a domain account's password and second step
+  if (principal.source === 'domain') return Response.json({ error: 'domain_account' }, { status: 400 })
   if (Number(request.headers.get('content-length') ?? 0) > MAX_BODY) return redirectTo('/cuenta/dos-pasos?error=codigo')
   const form = new URLSearchParams((await request.text()).slice(0, MAX_BODY))
   const action = form.get('action') ?? ''

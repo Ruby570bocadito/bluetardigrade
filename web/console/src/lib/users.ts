@@ -57,6 +57,11 @@ export type Principal = {
   mode: 'users' | 'token' | 'open'
   // the account's host groups (accounts of the users file only)
   groups?: string[]
+  // 'domain': a domain account the engine verified (lib/domain-auth.ts).
+  // It rides mode 'users' — attributed, audited, signed out with the
+  // rest — but has no entry in the users file: its password and second
+  // step live in the directory.
+  source?: 'domain'
 }
 
 type Account = {
