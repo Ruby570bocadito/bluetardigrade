@@ -264,8 +264,8 @@ func doctorNotifyChecks(root string) []doctorCheck {
 	path := filepath.Join(root, "tools", "config", "notify.yaml")
 	if !fileExists(path) {
 		return []doctorCheck{{"Avisos externos", "skip",
-			"Sin tools/config/notify.yaml; el motor arranca sin canales de correo o chat",
-			"Copia notify.example.yaml a tools/config/notify.yaml y rellena tus canales"}}
+			"Sin tools/config/notify.yaml; el motor arranca sin canales de correo, chat o movil",
+			"Crealos en la consola (Ajustes -> Avisos externos) o copia notify.example.yaml a tools/config/notify.yaml y rellena tus canales"}}
 	}
 	svc, err := notify.Load(path)
 	if err != nil {

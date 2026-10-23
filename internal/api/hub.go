@@ -132,6 +132,10 @@ type Hub struct {
 	adReloadPending atomic.Bool
 	adReloadRecord  atomic.Pointer[adReloadRecord]
 
+	// F3 notification settings (notify_settings.go): armed only with
+	// -notify, handlers additionally demand -api-write.
+	notifySettings *notifySettings
+
 	// AD-7 domain sign-in (domain_auth.go): armed only with
 	// -domain-auth. domainAuthMu guards the per-remote failure
 	// boxes of the endpoint, independent from the bearer throttle.
@@ -288,6 +292,7 @@ func newHub(ln net.Listener, reloader *tlsutil.Reloader) (*Hub, error) {
 	h.registerNoise(mux)
 	h.registerAD(mux)
 	h.registerDomainAuth(mux)
+	h.registerNotifySettings(mux)
 	mux.HandleFunc("GET /api/intel", h.handleIntel)
 	mux.HandleFunc("GET /api/yara", h.handleYara)
 	mux.HandleFunc("GET /api/yara/bundle", h.handleYaraBundle)

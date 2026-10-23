@@ -53,13 +53,12 @@ function Get-SfEngineArguments {
     # the service account's password file).
     $ad = Join-Path $Root 'tools\config\ad.yaml'
     if (Test-Path -LiteralPath $ad) { $arguments += " -ad `"$ad`"" }
-    # External notifications (Slack, Telegram, email): armed only when the
-    # operator wrote tools\config\notify.yaml (copy of notify.example.yaml).
-    # Without it the engine starts without channels and mail or Telegram can
-    # never arrive; a broken file stops the engine fail-loud at startup
-    # (sf-engine doctor names the exact problem before that).
-    $notify = Join-Path $Root 'tools\config\notify.yaml'
-    if (Test-Path -LiteralPath $notify) { $arguments += " -notify `"$notify`"" }
+    # External notifications (Slack, Telegram, email, ntfy): always armed,
+    # so the console can create tools\config\notify.yaml from Ajustes ->
+    # Avisos externos and the engine applies it without a restart; a
+    # missing file is no channels, a broken one stops the engine fail-loud
+    # at startup (sf-engine doctor names the exact problem before that).
+    $arguments += " -notify `"$Root\tools\config\notify.yaml`""
     # Domain sign-in (AD-7): armed only when the operator wrote
     # tools\config\domain-auth.yaml (copy of domain-auth.example.yaml);
     # sf-console turns the console's «Cuenta del dominio» on from the

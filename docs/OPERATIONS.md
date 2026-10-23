@@ -266,7 +266,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `-respond-protected` | — | optional extra protected process names merged with the platform defaults (hot-reloaded) |
 | `-respond-audit` | `./respond-audit.jsonl` | append-only JSONL audit, one line per attempt, fsync per line, 64 MiB ceiling |
 | `-webhook` / `-webhook-token` | — | SIEM/SOAR connector URL / outbound Bearer token |
-| `-notify` | — | YAML config with external notification channels (slack, telegram, email); loaded fail-loud at startup; empty disables — see [External notifications](#external-notifications-slack-telegram-email) |
+| `-notify` | — | YAML config with external notification channels (slack, telegram, email, ntfy); an existing file loads fail-loud at startup, a missing one starts with no channels; edited live from the console (Ajustes → Avisos externos, needs `-api-write`); empty disables — see [External notifications](#external-notifications-slack-telegram-email-ntfy) |
 | `-elastic` / `-elastic-index` / `-elastic-api-key` | — / `sf-alerts` / — | Elasticsearch bulk indexing (daily `-YYYY.MM.DD` index, deterministic `_id`) / index prefix / API key (falls back to `SF_ELASTIC_API_KEY`) |
 | `-splunk` / `-splunk-token` | — | Splunk HEC collector base URL (events POSTed to `/services/collector/event`) / HEC token (falls back to `SF_SPLUNK_TOKEN`) |
 | `-store` / `-store-retention` | off / `72h` | SQLite persistence / pruning window (`0` keeps everything) |
@@ -333,7 +333,7 @@ The engine serves a small read-only API used by the web console and handy for SI
 | `GET /api/noise?window=24h&host=&limit=10` | the noise report: processes, DNS domains and rules that most generate events or alerts, each with its triage overlay; JSON only, fleet-wide by default, `host=` narrows to one machine — see [SOC reports and noise](#soc-reports-and-noise-rep-1) |
 
 <!-- BEGIN API REFERENCE -->
-Complete operation index generated from `api/openapi.yaml` (POL-5): **51 routes, 56 operations**. The guard `scripts/dev-tests/check_api_reference.py` fails CI when the spec and this index drift; regenerate in the same round as the spec change with `python3 scripts/dev-tests/check_api_reference.py --write`.
+Complete operation index generated from `api/openapi.yaml` (POL-5): **53 routes, 59 operations**. The guard `scripts/dev-tests/check_api_reference.py` fails CI when the spec and this index drift; regenerate in the same round as the spec change with `python3 scripts/dev-tests/check_api_reference.py --write`.
 
 | Method | Route | Summary | Tags |
 |--------|-------|---------|------|
@@ -369,6 +369,7 @@ Complete operation index generated from `api/openapi.yaml` (POL-5): **51 routes,
 | POST | /api/incidents/{id}/notes | Append an analyst note to the timeline | incidents |
 | GET | /api/intel | Offline threat-intel lists and per-host baseline state (read-only) | status |
 | GET | /api/noise | Processes, DNS domains and rules that most generate events or alerts (§2.4) | noise |
+| POST | /api/notify/test | Send a test message to one channel or to every channel (F3) | notify |
 | GET | /api/reports | REP-1 report catalog (kinds, parameters, formats) | reports |
 | GET | /api/reports/{kind} | One report of the catalog (JSON or CSV) | reports |
 | GET | /api/reputation | Configured providers, or one indicator's reputation | reputation |
@@ -385,6 +386,8 @@ Complete operation index generated from `api/openapi.yaml` (POL-5): **51 routes,
 | GET | /api/settings/ad | Effective Active Directory connector configuration (AD-6) | ad |
 | PUT | /api/settings/ad | Validate, commit and hot-reload the AD connector settings (AD-6) | ad |
 | PUT | /api/settings/groups | Replace every host group (console editor) | status |
+| GET | /api/settings/notify | The notification channels as the console edits them (F3) | notify |
+| PUT | /api/settings/notify | Validate, commit and swap in the notification channels (F3) | notify |
 | GET | /api/stats | Runtime counters | status |
 | GET | /api/stream | Server-Sent Events feed of live events and alerts | stream |
 | GET | /api/suppressions | Operator allowlist | status |
@@ -666,7 +669,7 @@ The Splunk sink speaks the HTTP Event Collector: one event per POST to `/service
 
 Delivery semantics are at-least-once on both paths (the Elasticsearch `_id` makes them effectively deduplicated; HEC has no client-side event key, so downstream dedup can key on the alert `id` every event carries). The end-to-end delivery contract — wire shapes, auth enforcement, negative control and wrong-credential visibility — is pinned by `scripts/dev-tests/e2e_siem.sh` with its labeled lab receivers.
 
-### External notifications (Slack, Telegram, email)
+### External notifications (Slack, Telegram, email, ntfy)
 
 
 The webhook speaks JSON to machines; `-notify` speaks human to the on-call. One YAML config file arms any combination of chat and mail channels, and every raised alert — the same stream the webhook and the console see — fans out to each channel without ever blocking detection:
@@ -675,9 +678,10 @@ The webhook speaks JSON to machines; `-notify` speaks human to the on-call. One 
 bin/engine -notify /etc/bluetardigrade/notify.yaml
 ```
 
-On a Windows install the launchers arm it for you: `sf-start`, `sf-console` and `start-engine` pass `-notify tools\config\notify.yaml` to the engine whenever that file exists (copy `notify.example.yaml` from the repository root and fill in your channels), and `sf-engine doctor` validates the file — with the same fail-loud loader the engine uses, without sending anything and without disclosing secrets — so a wrong channel is named before the engine ever refuses to start on it.
+On a Windows install the launchers arm it for you: `sf-start`, `sf-console` and `start-engine` always pass `-notify tools\config\notify.yaml` to the engine. A file that does not exist yet means no channels: create them from the console (**Ajustes → Avisos externos**) or copy `notify.example.yaml` from the repository root and fill it in. `sf-engine doctor` validates the file — with the same fail-loud loader the engine uses, without sending anything and without disclosing secrets — so a wrong channel is named before the engine ever refuses to start on it.
 
 ```yaml
+console_url: https://soc.corp.example   # optional: every message links to its alert in the console
 channels:
   - type: slack
     name: soc-slack              # label for stats/metrics; defaults to the type
@@ -693,11 +697,19 @@ channels:
     username_env: SF_SMTP_USER
     password_env: SF_SMTP_PASS
     starttls: true               # the default: the engine refuses to downgrade to cleartext
+  - type: ntfy                   # phone push through an ntfy server (https://ntfy.sh or self-hosted)
+    url: https://ntfy.corp.example
+    topic: soc-alerts            # the phone's ntfy app subscribes to it
+    token_env: SF_NTFY_TOKEN     # optional access token (Authorization: Bearer)
 ```
+
+**Editing from the console.** With `-api-write`, administrators manage the channels in **Ajustes → Avisos externos**: add, edit and remove channels, set each minimum severity and the console address, and save — the engine validates the list with the loader's own rules, commits the file atomically (0600) and swaps the running channels in without a restart (the old ones drain what they had queued). **Enviar prueba** sends a message plainly marked as a test to one channel or to all and shows each channel's answer. Secrets are write-only: a Slack hook URL, a Telegram or ntfy token and an SMTP password are never read back (the console shows «guardado»); an empty field keeps the stored value of the channel with the same name, and a value in `*_env` replaces it. A file edited by hand after the engine started refuses console saves with 409 until the engine is restarted. API: `GET`/`PUT /api/settings/notify` and `POST /api/notify/test`.
+
+**ntfy** publishes JSON to the server root: the title is `[SEVERITY] rule @ host`, the priority follows the severity (critical 5 — rings through do-not-disturb profiles that honour urgent — down to info 1), and with `console_url` a tap on the notification opens the alert. With `console_url`, Slack, Telegram and email messages also end with the alert's link (`<console_url>/?view=alertas&alert=<id>`).
 
 Delivery follows the same discipline as the SIEM webhook: one bounded queue (256) and worker per channel, three attempts with linear backoff (transport errors, 429 and 5xx retry; definitive 4xx fail fast), and a dead channel never touches detection — its frames are counted instead. Every channel reports `sent` / `failed` / `dropped` / `filtered` on `/api/stats` (`notify_channels`) and as the labeled families `sf_notify_*_total{channel=...}` on `/metrics`; `filtered` is the operator-configured silence of a `min_severity` floor, reported as data rather than hidden.
 
-Email transport is deliberate about plaintext: STARTTLS defaults to **on** and a relay that does not offer it is a loud startup-and-delivery refusal, not a silent downgrade; AUTH PLAIN never sends credentials over an unencrypted connection (the net/smtp loopback exception is what makes local relays testable). Chat message bodies carry the rendered human line `[SEVERITY] rule @ host — summary`; email additionally carries the full structured alert in the body so the mailbox doubles as a forensic record. The config loader is fail-loud at startup (unknown channel type, missing endpoint, unresolved secret env var, duplicate names, more than 8 channels, file above 4 MiB all stop the engine), because a notification channel that silently never fires is a silent control. The same deliberateness has a boundary the operator should know: the loader accepts `http://` for Slack and Telegram endpoints (self-hosted relays and lab LANs are legitimate), but a Slack hook URL *is* the credential and the Telegram token travels inside the request path — on any network you do not control, keep both on `https://` (their public defaults already are) so the secret never crosses the wire in cleartext.
+Email transport is deliberate about plaintext: STARTTLS defaults to **on** and a relay that does not offer it is a loud startup-and-delivery refusal, not a silent downgrade; AUTH PLAIN never sends credentials over an unencrypted connection (the net/smtp loopback exception is what makes local relays testable). Chat message bodies carry the rendered human line `[SEVERITY] rule @ host — summary`; email additionally carries the full structured alert in the body so the mailbox doubles as a forensic record. The config loader is fail-loud at startup (unknown channel type, missing endpoint, unresolved secret env var, duplicate names, more than 8 channels, file above 4 MiB all stop the engine; an explicit `channels: []` is accepted — it is what the console writes when the last channel goes), because a notification channel that silently never fires is a silent control. The same deliberateness has a boundary the operator should know: the loader accepts `http://` for Slack and Telegram endpoints (self-hosted relays and lab LANs are legitimate), but a Slack hook URL *is* the credential and the Telegram token travels inside the request path — on any network you do not control, keep both on `https://` (their public defaults already are) so the secret never crosses the wire in cleartext.
 
 ---
 
@@ -1797,7 +1809,7 @@ path (no subcommand) and on `engine run`.
 | `-reload-every dur` | `15s` | hot-reload interval for rules, sequences and suppressions; `0` disables |
 | `-webhook url` | empty | POST every alert as JSON to this URL (SIEM/SOAR connector) |
 | `-webhook-token t` | empty | Bearer token on every webhook delivery (falls back to `SF_WEBHOOK_TOKEN`) |
-| `-notify file` | empty | YAML config with external notification channels (slack, telegram, email); loaded fail-loud at startup; empty disables — see [External notifications](#external-notifications-slack-telegram-email) |
+| `-notify file` | empty | YAML config with external notification channels (slack, telegram, email, ntfy); an existing file loads fail-loud at startup, a missing one starts with no channels; edited live from the console (Ajustes → Avisos externos, needs `-api-write`); empty disables — see [External notifications](#external-notifications-slack-telegram-email-ntfy) |
 | `-elastic url` | empty | Elasticsearch base URL; alerts bulk-indexed into `<index>-YYYY.MM.DD` with the alert ID as deterministic `_id` — see [SIEM sinks](#siem-sinks-elasticsearch--splunk) |
 | `-elastic-index prefix` | `sf-alerts` | index name prefix used with `-elastic` |
 | `-elastic-api-key k` | empty | Elasticsearch API key sent as `Authorization: ApiKey` (falls back to `SF_ELASTIC_API_KEY`); empty disables the header |

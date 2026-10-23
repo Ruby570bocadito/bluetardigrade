@@ -101,6 +101,10 @@ type Service struct {
 	// zero value means drainDefault; tests shrink it to keep the
 	// deadline behavior fast and deterministic.
 	drainBudget time.Duration
+
+	// consoleURL is the configured console address (no trailing
+	// slash), "" without one.
+	consoleURL string
 }
 
 // New builds a Service delivering to the given channels without a
@@ -306,4 +310,130 @@ func (w *worker) dropRemaining() {
 			return
 		}
 	}
+}
+
+// TestResult is the outcome of one channel's test message.
+type TestResult struct {
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
+// testTimeout bounds the whole "Enviar prueba" round: the slowest
+// channel (SMTP with TLS and AUTH) fits, a wedged one answers as failed.
+const testTimeout = 20 * time.Second
+
+// TestAlert is the message the test sends: plainly a test, no alert id
+// (so no console link pointing at nothing), severity info.
+func TestAlert(now time.Time) alert.Alert {
+	return alert.Alert{
+		Timestamp: now.UTC().Format(time.RFC3339),
+		RuleID:    "notify-test",
+		RuleName:  "Prueba de notificación",
+		Severity:  "info",
+		Host:      "bluetardigrade",
+		Summary:   "Mensaje de prueba enviado desde la consola (Ajustes -> Avisos externos). No es una alerta.",
+	}
+}
+
+// Test sends the test message to every channel (name "") or to the one
+// named, synchronously and in parallel, bypassing the queues, the
+// severity floor and the counters: a test is a question to the
+// receiver, not a delivery. The errors are the channels' own, which
+// redact endpoints and credentials. An unknown name returns nothing.
+func (s *Service) Test(ctx context.Context, name string) []TestResult {
+	ctx, cancel := context.WithTimeout(ctx, testTimeout)
+	defer cancel()
+	msg := TestAlert(time.Now())
+	var picked []*worker
+	for _, w := range s.workers {
+		if name == "" || w.ch.Name() == name {
+			picked = append(picked, w)
+		}
+	}
+	out := make([]TestResult, len(picked))
+	var wg sync.WaitGroup
+	for i, w := range picked {
+		wg.Add(1)
+		go func(i int, w *worker) {
+			defer wg.Done()
+			r := TestResult{Name: w.ch.Name(), Type: w.typ, OK: true}
+			if err := w.ch.Deliver(ctx, msg); err != nil {
+				r.OK, r.Error = false, err.Error()
+			}
+			out[i] = r
+		}(i, w)
+	}
+	wg.Wait()
+	return out
+}
+
+// Live is the engine's handle on the notification channels: it owns
+// the running Service and swaps it for a new one when the settings
+// change (Ajustes -> Avisos externos), without restarting the engine.
+// The outgoing Service stops taking alerts at once and drains what it
+// had queued under its usual shutdown budget, in the background.
+type Live struct {
+	parent context.Context
+
+	mu      sync.RWMutex
+	svc     *Service
+	cancel  context.CancelFunc
+	retired sync.WaitGroup
+}
+
+// NewLive starts svc under parent; parent's cancellation is the
+// engine shutdown for every Service this Live ever runs.
+func NewLive(parent context.Context, svc *Service) *Live {
+	l := &Live{parent: parent}
+	l.start(svc)
+	return l
+}
+
+func (l *Live) start(svc *Service) {
+	ctx, cancel := context.WithCancel(l.parent)
+	svc.Run(ctx)
+	l.svc, l.cancel = svc, cancel
+}
+
+// Swap replaces the running Service.
+func (l *Live) Swap(svc *Service) {
+	l.mu.Lock()
+	old, oldCancel := l.svc, l.cancel
+	l.start(svc)
+	l.mu.Unlock()
+	oldCancel()
+	l.retired.Add(1)
+	go func() {
+		defer l.retired.Done()
+		old.Wait()
+	}()
+}
+
+func (l *Live) current() *Service {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.svc
+}
+
+// Handle hands the alert to the running Service.
+func (l *Live) Handle(a alert.Alert) { l.current().Handle(a) }
+
+// Stats is the running Service's per-channel snapshot.
+func (l *Live) Stats() []ChannelStats { return l.current().Stats() }
+
+// Summary names the running channels.
+func (l *Live) Summary() []string { return l.current().Summary() }
+
+// Test runs Service.Test on the running channels.
+func (l *Live) Test(ctx context.Context, name string) []TestResult {
+	return l.current().Test(ctx, name)
+}
+
+// Wait blocks until the running Service and every retired one have
+// drained (call after cancelling the parent context).
+func (l *Live) Wait() {
+	l.current().Wait()
+	l.retired.Wait()
 }

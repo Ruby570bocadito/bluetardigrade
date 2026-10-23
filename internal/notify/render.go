@@ -3,6 +3,7 @@ package notify
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/alert"
@@ -87,15 +88,39 @@ func renderText(a alert.Alert) string {
 	return b.String()
 }
 
+// linker is implemented by the channels that put the alert's console
+// link in their message; Build hands them the configured console_url.
+type linker interface {
+	setConsoleURL(string)
+}
+
+// alertLink is the console address of an alert (the alert queue with
+// that alert open; the console falls back to the history when it is no
+// longer in the live window), or "" without a console_url or an id.
+func alertLink(consoleURL string, a alert.Alert) string {
+	if consoleURL == "" || a.ID == "" {
+		return ""
+	}
+	return consoleURL + "/?view=alertas&alert=" + url.QueryEscape(a.ID)
+}
+
+// withLink appends the alert's console link on its own line.
+func withLink(text, link string) string {
+	if link == "" {
+		return text
+	}
+	return text + "\n" + link
+}
+
 // renderMailBody is the email body: the shared human line first, then
 // the full structured payload, so the mailbox keeps a forensic copy
 // exactly like the webhook's JSON consumers do.
-func renderMailBody(a alert.Alert) string {
+func renderMailBody(a alert.Alert, link string) string {
 	payload, err := json.Marshal(a)
 	if err != nil {
-		return renderText(a)
+		return withLink(renderText(a), link)
 	}
-	return renderText(a) + "\n\n---\n" + string(payload)
+	return withLink(renderText(a), link) + "\n\n---\n" + string(payload)
 }
 
 // mailSubject renders the email subject and clamps it to a length

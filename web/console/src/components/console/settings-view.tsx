@@ -3,7 +3,9 @@
 // Settings (SET-1): the sections the TODO names on one page — General,
 // Ingesta, Active Directory (AD-6), Integraciones, Notificaciones, Cuentas
 // and Apariencia, plus the host groups (host-groups-panel.tsx, GET
-// /api/groups and PUT /api/settings/groups). Three sections write.
+// /api/groups and PUT /api/settings/groups) and the external
+// notification channels (notify-settings-panel.tsx, GET/PUT
+// /api/settings/notify + POST /api/notify/test). Four sections write.
 // Active Directory (GET/PUT
 // /api/settings/ad + POST /api/ad/test): the form edits a draft, only
 // the changed fields travel, the password is write-only and the honest
@@ -20,6 +22,7 @@ import { CheckCircle, Globe, Monitor, Moon, Sun, Warning } from '@phosphor-icons
 import { Switch } from '@/components/ui/switch'
 import { AccountsManager } from './accounts-manager'
 import { HostGroupsPanel } from './host-groups-panel'
+import { NotifySettingsPanel } from './notify-settings-panel'
 import { useEngine } from './engine-provider'
 import { useFleet } from './fleet-provider'
 import { useI18n } from './i18n-provider'
@@ -704,6 +707,7 @@ export function SettingsView({ onNavigate, onOpenOnboarding }: { onNavigate: (vi
       <IngestPanel onNavigate={onNavigate} />
       <HostGroupsPanel />
       <AdSettingsPanel />
+      <NotifySettingsPanel />
       <IntegrationsPanel />
       <NotificationsPanel />
       <AccountsPanel onOpenOnboarding={onOpenOnboarding} />

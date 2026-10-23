@@ -106,6 +106,11 @@ const WRITES: WriteRoute[] = [
   { method: 'PUT', path: /^\/api\/settings\/ad$/, limit: 8 * KIB, role: 'admin' },
   { method: 'POST', path: /^\/api\/ad\/test$/, limit: 8 * KIB, role: 'admin' },
   { method: 'PUT', path: /^\/api\/settings\/groups$/, limit: 256 * KIB, role: 'admin' },
+  // the notification channels (Ajustes -> Avisos externos): the PUT
+  // mirrors the engine's 32 KiB body cap; the test sends real messages,
+  // so it is an administrator's call too
+  { method: 'PUT', path: /^\/api\/settings\/notify$/, limit: 32 * KIB, role: 'admin' },
+  { method: 'POST', path: /^\/api\/notify\/test$/, limit: 4 * KIB, role: 'admin' },
 ]
 
 function writeRoute(method: string, path: string): WriteRoute | undefined {

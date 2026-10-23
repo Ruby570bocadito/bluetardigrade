@@ -38,6 +38,7 @@ type Email struct {
 	password string
 	starttls bool
 	hello    string // optional EHLO domain
+	link     string // console_url, for the alert's link in the body
 	timeout  time.Duration
 	tlsCfg   *tls.Config // test seam; nil builds the standard config
 }
@@ -63,6 +64,8 @@ func NewEmail(name, server, from string, to []string, username, password string,
 
 // Name implements the Channel interface: stable channel identifier.
 func (e *Email) Name() string { return e.name }
+
+func (e *Email) setConsoleURL(u string) { e.link = u }
 
 // Deliver sends one message. The body carries the shared human line
 // plus the full structured alert, so the mailbox doubles as a
@@ -165,7 +168,7 @@ func (e *Email) buildMessage(a alert.Alert, payload []byte) []byte {
 	b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
 	b.WriteString("Content-Transfer-Encoding: 8bit\r\n")
 	b.WriteString("\r\n")
-	b.WriteString(renderMailBody(a))
+	b.WriteString(renderMailBody(a, alertLink(e.link, a)))
 	b.WriteString("\r\n")
 	return []byte(b.String())
 }

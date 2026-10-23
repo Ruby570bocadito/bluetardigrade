@@ -50,26 +50,33 @@ func startWebhook(o *options, whCtx context.Context, hub *api.Hub) *webhook.Clie
 	return wh
 }
 
-// startNotify launches the external notification channels (chat +
-// mail) when -notify is set. Fail loud: a config that cannot be
-// honored exactly stops the engine here, because a channel that
-// silently never fires is a silent control. The returned error must
-// make the caller cancel the webhook worker and stop the engine.
-func startNotify(o *options, whCtx context.Context, hub *api.Hub) (*notify.Service, error) {
-	var nt *notify.Service
-	if o.notifyPath != "" {
-		svc, err := notify.Load(o.notifyPath)
-		if err != nil {
-			// Same contract as every config surface: name the problem in
-			// the log (legacyMain exits 1 silently), then stop the engine.
-			log.Printf("[ENGINE] notify config rejected: %v", err)
-			return nil, err
-		}
-		nt = svc
-		go nt.Run(whCtx)
-		if hub != nil {
-			hub.SetNotifyStats(nt.Stats)
-		}
+// startNotify launches the external notification channels (chat,
+// mail and ntfy push) when -notify is set. A file that does not exist
+// yet is no channels: the console creates it from Ajustes ->
+// Notificaciones and the engine swaps the channels in without a
+// restart (notify.Live). An existing file that cannot be honored
+// exactly still stops the engine here, because a channel that silently
+// never fires is a silent control. The returned error must make the
+// caller cancel the webhook worker and stop the engine.
+func startNotify(o *options, whCtx context.Context, hub *api.Hub) (*notify.Live, error) {
+	if o.notifyPath == "" {
+		return nil, nil
+	}
+	svc, err := notify.LoadOptional(o.notifyPath)
+	if err != nil {
+		// Same contract as every config surface: name the problem in
+		// the log (legacyMain exits 1 silently), then stop the engine.
+		log.Printf("[ENGINE] notify config rejected: %v", err)
+		return nil, err
+	}
+	nt := notify.NewLive(whCtx, svc)
+	if hub != nil {
+		hub.SetNotifyStats(nt.Stats)
+		hub.SetNotifySettings(o.notifyPath, nt)
+	}
+	if len(nt.Summary()) == 0 {
+		fmt.Printf("[ENGINE] notify: no channels yet in %s (Ajustes -> Avisos externos creates them)\n", o.notifyPath)
+	} else {
 		fmt.Printf("[ENGINE] notify: %d channel(s): %s\n", len(nt.Summary()), strings.Join(nt.Summary(), ", "))
 	}
 	return nt, nil

@@ -1,8 +1,10 @@
 # External notification channels — example configuration.
 #
-#   Copy me to tools\config\notify.yaml and fill in your channels; the
-#   Windows launchers (sf-start, sf-console, start-engine) pass the file
-#   to the engine (-notify) automatically once it exists, and
+#   Copy me to tools\config\notify.yaml and fill in your channels, or
+#   create them from the console (Ajustes -> Avisos externos, which writes
+#   this same file and applies it without restarting the engine). The
+#   Windows launchers (sf-start, sf-console, start-engine) always pass the
+#   file to the engine (-notify; a missing file is no channels), and
 #   `sf-engine doctor` validates it without sending anything.
 #
 # Every raised alert — the same stream the webhook and the console see —
@@ -20,6 +22,10 @@
 # Optional min_severity per channel (info, low, medium, high, critical):
 # a floor is a deliberate silence, reported as the channel's "filtered"
 # counter rather than hidden. Cap: 8 channels per file.
+
+# Optional: the console's address as the people receiving the messages
+# open it. Every message then links to its alert in the console.
+# console_url: https://soc.internal.example.com
 
 channels:
   # Slack incoming webhook: create it under your workspace's
@@ -59,3 +65,16 @@ channels:
     password_env: SF_SMTP_PASSWORD
     # starttls: true
     # hello: internal.example.com
+
+  # Push to the phone through ntfy (https://ntfy.sh, or a server you host):
+  # install the ntfy app and subscribe to the topic. The priority follows
+  # the alert severity (critical rings through do-not-disturb) and, with
+  # console_url, a tap opens the alert. token/token_env only when the
+  # server requires access control; pick a hard-to-guess topic on a
+  # public server.
+  - type: ntfy
+    name: soc-movil
+    min_severity: high
+    url: https://ntfy.internal.example.com
+    topic: soc-alertas
+    # token_env: SF_NTFY_TOKEN

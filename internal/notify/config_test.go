@@ -50,7 +50,7 @@ channels:
 
 func TestLoadFailsLoudOnBrokenConfigs(t *testing.T) {
 	cases := map[string]string{
-		"no channels":        "channels: []\n",
+		"no channels key":    "other: 1\n",
 		"empty file":         "",
 		"unknown type":       "channels:\n  - type: pigeon\n    url: http://x\n",
 		"bad slack url":      "channels:\n  - type: slack\n    url: not-a-url\n",
