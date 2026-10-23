@@ -23,6 +23,13 @@ remains regenerable.
 | `console-supresiones.png`   | output  | operator suppressions: scope, reason and expiry |
 | `console-respuesta-activa.png` | output | active response: armed surface, audit decisions, denial codes and attempts |
 | `src/capture_console.mjs`   | source  | Playwright script that captures every `console-*.png`: real-engine lab by default, `CONSOLE_CAPTURE_FIXTURES=1` for contract-true fixtures without a Go toolchain (lab recipe in its header) |
+| `showcase/*.webp`           | output  | the README's framed images: each capture in a browser window over the sign-in page's navy, and `hero.webp` with the light theme over the dark one |
+| `demo/*.webp`               | output  | the README's demo clips, one per part of the console (sign-in, triage, incidents, hosts, detection, telemetry, response, navigation), animated WebP |
+| `demo/bluetardigrade-demo.mp4` | output | every clip in one H.264 tour, linked from the README |
+| `src/fixtures.mjs`          | source  | contract-true engine fixtures (OpenAPI shapes, LAB-* hosts, `source=simulate`) shared by the capture and recording scripts |
+| `src/frame_shots.mjs`       | source  | renders `showcase/*.webp` from the `console-*.png` captures |
+| `src/record_demo.mjs`       | source  | drives the console like an operator (visible pointer, captions, keyboard) and records one clip per part into `demo/raw/` (ignored by git) |
+| `src/make_media.sh`         | source  | trims the raw clips and encodes `demo/*.webp` and the MP4 tour (ffmpeg) |
 
 ## Diagrams
 
@@ -53,3 +60,23 @@ The scenario's events carry `source=simulate`, so the header shows the
 **demo** label in every capture: the console never hides that the
 window contains generated test events. For host-telemetry captures,
 run the Rust sensor or `sf-sensor` instead and say so in the README.
+
+## Regenerating the framed images and the demo clips
+
+All of it runs against a production console build and the fixtures, so it
+needs no engine:
+
+1. Start the console twice: once without accounts (`bun run start`) for
+   the clips and captures, and once with an accounts file holding
+   `demo` / `demo-de-la-consola` and `CONSOLE_DOMAIN_AUTH=1` on another
+   port for the sign-in clip.
+2. `CONSOLE_CAPTURE_FIXTURES=1 node docs/assets/src/capture_console.mjs`,
+   then `node docs/assets/src/frame_shots.mjs`.
+3. `CONSOLE_URL=… CONSOLE_LOGIN_URL=… node docs/assets/src/record_demo.mjs`
+   (`DEMO_ONLY=triage,hosts` re-records a few), then
+   `docs/assets/src/make_media.sh`.
+
+`CONSOLE_CHROMIUM_PATH` points the three scripts at a local Chromium.
+The clips draw their own pointer and captions into the page (a recorded
+video has no cursor), and `make_media.sh` trims each clip to the moment
+its first screen has data.
