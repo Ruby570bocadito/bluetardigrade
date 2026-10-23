@@ -291,7 +291,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `NEXT_PUBLIC_CONSOLE_URL` | web console | point the UI at a remote hub |
 | `NEXT_PUBLIC_ENGINE_API` | web console | direct engine API base for polling (default same-origin proxy `/api/engine`) |
 | `CONSOLE_ALLOWED_HOSTS` | web console | comma-separated hostnames the console proxy serves besides loopback (`localhost`/`127.0.0.1`/`::1` are always served); any other `Host` gets a `403` naming this var — the console posture mirrors the engine's: loopback friction-free, beyond loopback loud and explicit |
-| `CONSOLE_ACCESS_TOKEN` | web console | console credential: every page, asset and proxied API call requires HTTP Basic auth (any user name, this token as the password). Required when `CONSOLE_ALLOWED_HOSTS` lists a non-loopback host — host pinning only stops browsers, any other client can send `Host: localhost` |
+| `CONSOLE_ACCESS_TOKEN` | web console | console credential: every page, asset and proxied API call requires HTTP Basic auth (any user name, this token as the password). Required when `CONSOLE_ALLOWED_HOSTS` lists a non-loopback host and the console has no per-analyst accounts (`CONSOLE_USERS_FILE`, which are a credential of their own) — host pinning only stops browsers, any other client can send `Host: localhost` |
 | `CONSOLE_ALLOW_UNAUTHENTICATED` | web console | `1` declares that a front end (reverse proxy, SSO) already authenticates operators, so extra hosts are served without `CONSOLE_ACCESS_TOKEN` |
 | `HUB_ACCESS_TOKEN` | console-service + web console | token every analyst socket must present; the browser obtains it from the console's authenticated `/api/hub-token` route. Required when the hub binds beyond loopback (`CONSOLE_HOST`), otherwise the hub refuses to start |
 | `HUB_ALLOW_UNAUTHENTICATED` | console-service | `1` lets a non-loopback hub start without `HUB_ACCESS_TOKEN` (an authenticating front end is in place) |
@@ -972,6 +972,21 @@ gets in acts as administrator. That stays unchanged unless
   HTTP Basic alike. For Basic clients, verified credentials are cached
   for 10 minutes so the slow key derivation does not run on every
   request.
+
+### The console on a phone
+
+`/movil` is the console for whoever is on call: three tabs — the open alerts at or above a severity (critical, high and critical, or all), with **Reconocer** and **Cerrar** on each card; the open incidents; and the machines, silent first — and a link on every card that opens the same record in the full console. It reads the same engine stream and writes through the same lifecycle route as the full console, so the role rules hold (a viewer sees the cards without the buttons) and every decision is signed with the session's account. The full console links to it from its header on small screens.
+
+The console also installs as an app (web app manifest, `/manifest.webmanifest`, opening on `/movil`): in the browser menu, **Instalar aplicación** or **Añadir a pantalla de inicio**. The manifest and its icons are the only new paths reachable without a session; `/movil` itself sits behind the same sign-in as everything else.
+
+Browsers only install apps from HTTPS (or `localhost`), and a phone reaches the console over the network, so this needs the console published beyond the server — **never to the internet**:
+
+1. **Accounts first.** Turn on per-analyst accounts (`sf-console -AddUser`) and, for anyone who will sign in from a phone, the two-step sign-in (`sf-console -RequireMfa admin,analyst`).
+2. **Reach it only from the company network or its VPN.** List the name the phones use in `CONSOLE_ALLOWED_HOSTS` (the console refuses any other `Host`) and allow the console port in the server firewall only from the VPN or office ranges. No port forwarding on the internet router.
+3. **Put TLS in front.** A reverse proxy on the server (IIS with URL Rewrite, Caddy, nginx) terminates HTTPS with a certificate the phones trust (the company CA, deployed to the managed phones) and forwards to `http://127.0.0.1:3000` with `X-Forwarded-Proto: https`; the console then marks the session cookie `Secure` and sends HSTS.
+4. Open `https://<name>/movil` on the phone, sign in, and install it.
+
+Sessions on a phone follow the same rules as on a desktop (idle and absolute limits, sign-out, server-side revocation when the account changes). Pairing a phone with a QR code and per-device sessions are still on the roadmap.
 
 ### Host groups
 

@@ -164,6 +164,8 @@ const VIEWS = [
   { view: 'respuesta', theme: 'dark' },
   { view: 'analista', theme: 'dark' },
   { view: 'ajustes', theme: 'dark' }, { view: 'ajustes', theme: 'light' },
+  // the phone view (app/movil) is its own page, not a ?view= of the shell
+  { view: 'movil', path: '/movil', theme: 'dark' }, { view: 'movil', path: '/movil', theme: 'light' },
 ]
 
 let server
@@ -193,10 +195,15 @@ try {
   // only lives in the current document
   await page.addInitScript(axeSource)
 
-  for (const { view, theme } of VIEWS) {
+  for (const { view, path, theme } of VIEWS) {
     await page.addInitScript(([t]) => localStorage.setItem('bt-theme', t), [theme])
-    await page.goto(`${base}/?view=${view}`, { waitUntil: 'networkidle' })
-    await page.waitForFunction((v) => (new URLSearchParams(location.search).get('view') || 'panel') === v, view, { timeout: 15_000 })
+    if (path) {
+      await page.goto(`${base}${path}`, { waitUntil: 'networkidle' })
+      await page.locator('#console-main').waitFor({ timeout: 15_000 })
+    } else {
+      await page.goto(`${base}/?view=${view}`, { waitUntil: 'networkidle' })
+      await page.waitForFunction((v) => (new URLSearchParams(location.search).get('view') || 'panel') === v, view, { timeout: 15_000 })
+    }
     // let the first poll and the chart layouts land
     await page.waitForTimeout(2500)
     const result = await page.evaluate(async ([tags, strict]) => {

@@ -16,7 +16,7 @@
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import { mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { fixtureEngine } from './fixtures.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -28,6 +28,9 @@ const loginBase = (process.env.CONSOLE_LOGIN_URL || '').replace(/\/$/, '')
 const OUT = process.env.DEMO_OUT || path.join(here, '..', 'demo', 'raw')
 const ONLY = (process.env.DEMO_ONLY || '').split(',').filter(Boolean)
 const SIZE = { width: 1440, height: 900 }
+// the phone clips: a 390 x 844 phone
+const PHONE = { width: 390, height: 844 }
+const PHONE_CLIPS = new Set(['mobile'])
 
 // The pointer and the caption are drawn into the page: a recorded video
 // has no cursor of its own.
@@ -39,9 +42,12 @@ const OVERLAY = () => {
       #demo-pointer { position: fixed; z-index: 2147483647; left: 0; top: 0; width: 22px; height: 22px; pointer-events: none; transform: translate(-3px, -2px); transition: transform .05s linear; filter: drop-shadow(0 2px 4px rgba(0,0,0,.5)); }
       #demo-pointer.down::after { content: ""; position: absolute; left: -11px; top: -11px; width: 26px; height: 26px; border-radius: 50%; border: 2px solid #4dc3ff; animation: demo-ripple .45s ease-out forwards; }
       @keyframes demo-ripple { from { opacity: 1; transform: scale(.4); } to { opacity: 0; transform: scale(1.6); } }
-      #demo-caption { position: fixed; z-index: 2147483646; left: 50%; bottom: 26px; transform: translateX(-50%); max-width: 80vw; padding: 10px 18px 10px 14px; border-radius: 999px; display: flex; align-items: center; gap: 10px; font: 600 15px/1.3 "Segoe UI", system-ui, sans-serif; color: #e8eef7; background: rgba(11, 18, 32, .92); border: 1px solid rgba(77, 195, 255, .35); box-shadow: 0 18px 40px -16px rgba(0,0,0,.8); backdrop-filter: blur(8px); pointer-events: none; transition: opacity .25s; }
+      #demo-caption { position: fixed; z-index: 2147483646; left: 50%; bottom: var(--demo-caption-bottom, 26px); transform: translateX(-50%); max-width: 88vw; width: max-content; padding: 10px 18px 10px 14px; border-radius: 999px; display: flex; align-items: center; gap: 10px; font: 600 var(--demo-caption-size, 15px)/1.3 "Segoe UI", system-ui, sans-serif; color: #e8eef7; background: rgba(11, 18, 32, .92); border: 1px solid rgba(77, 195, 255, .35); box-shadow: 0 18px 40px -16px rgba(0,0,0,.8); backdrop-filter: blur(8px); pointer-events: none; transition: opacity .25s; }
       #demo-caption b { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; font-size: 12px; color: #06101f; background: linear-gradient(180deg, #4dc3ff, #2f6fed); }
-      #demo-caption:empty { opacity: 0; }`
+      #demo-caption:empty { opacity: 0; }
+      html.demo-touch #demo-pointer svg { display: none; }
+      html.demo-touch #demo-pointer { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.22); border: 2px solid rgba(255,255,255,.75); transform: translate(-17px, -17px); }
+      html.demo-touch #demo-pointer.down::after { left: -6px; top: -6px; width: 42px; height: 42px; }`
     document.head.appendChild(style)
     const p = document.createElement('div')
     p.id = 'demo-pointer'
@@ -102,8 +108,18 @@ async function open(page, query = '', theme = 'dark') {
   await page.goto(base + '/' + query)
   await page.locator('#console-main').waitFor()
   await page.waitForTimeout(2500)
-  await moveTo(page, SIZE.width * 0.62, SIZE.height * 0.55, 1)
+  const vp = page.viewportSize() ?? SIZE
+  await moveTo(page, vp.width * 0.62, vp.height * 0.55, 1)
   readyAt = Date.now()
+}
+
+// the phone: a finger instead of an arrow, captions above the tab bar
+async function phoneLook(page) {
+  await page.evaluate(() => {
+    document.documentElement.classList.add('demo-touch')
+    document.documentElement.style.setProperty('--demo-caption-bottom', '92px')
+    document.documentElement.style.setProperty('--demo-caption-size', '13px')
+  })
 }
 
 const CLIPS = {
@@ -209,6 +225,46 @@ const CLIPS = {
     await clickOn(page, page.getByRole('button', { name: 'Abrir modo NOC' }))
     await page.waitForTimeout(4200)
   },
+  // 9. notifications to mail, chat and phone (Ajustes -> Avisos externos)
+  notify: async (page) => {
+    await open(page, '?view=ajustes')
+    const panel = page.locator('.panel', { hasText: 'Avisos externos: correo' })
+    await panel.evaluate((el) => window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 96, behavior: 'smooth' }))
+    await page.waitForTimeout(900)
+    await caption(page, 1, 'Avisos al correo, a Telegram, a Slack o al móvil con ntfy')
+    await page.waitForTimeout(2400)
+    await caption(page, 2, 'Cada canal con su gravedad mínima, aplicado sin reiniciar el motor')
+    await clickOn(page, panel.locator('select').first())
+    await page.waitForTimeout(1600)
+    await page.keyboard.press('Escape')
+    await caption(page, 3, '«Enviar prueba» y la respuesta del canal')
+    await clickOn(page, panel.getByRole('button', { name: /Enviar un mensaje de prueba al canal guardia-movil/ }))
+    await page.waitForTimeout(2400)
+    await caption(page, 4, 'Añadir un canal es un clic')
+    await clickOn(page, panel.getByRole('button', { name: /^Slack$/ }))
+    await page.waitForTimeout(800)
+    await scrollBy(page, 260)
+    await page.waitForTimeout(2200)
+  },
+  // 10. on call from the phone (app/movil, installable)
+  mobile: async (page) => {
+    await open(page, 'movil')
+    await phoneLook(page)
+    await caption(page, 1, 'La guardia desde el móvil')
+    await page.waitForTimeout(2000)
+    await caption(page, 2, 'Solo lo crítico, o todo')
+    await clickOn(page, page.getByRole('button', { name: /^Críticas/ }))
+    await page.waitForTimeout(1600)
+    await caption(page, 3, 'Cerrar desde la tarjeta')
+    await clickOn(page, page.getByRole('button', { name: /^Cerrar: / }).first())
+    await page.waitForTimeout(1800)
+    await caption(page, 4, 'Incidentes abiertos')
+    await clickOn(page, page.getByRole('navigation', { name: 'Secciones de la vista móvil' }).getByRole('button', { name: /Incidentes/ }))
+    await page.waitForTimeout(1800)
+    await caption(page, 5, 'Equipos: primero los que no dan señal')
+    await clickOn(page, page.getByRole('navigation', { name: 'Secciones de la vista móvil' }).getByRole('button', { name: /Equipos/ }))
+    await page.waitForTimeout(2600)
+  },
   // 8. sign-in: local or domain account
   login: async (page) => {
     if (!loginBase) throw new Error('CONSOLE_LOGIN_URL is not set')
@@ -239,14 +295,19 @@ async function center(locator) {
 }
 
 mkdirSync(OUT, { recursive: true })
-const trim = {}
+// re-recording a few clips (DEMO_ONLY) keeps the others' trims
+let trim = {}
+try { trim = JSON.parse(readFileSync(path.join(OUT, 'trim.json'), 'utf8')) } catch {}
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CONSOLE_CHROMIUM_PATH || undefined })
 try {
   for (const [name, run] of Object.entries(CLIPS)) {
     if (ONLY.length && !ONLY.includes(name)) continue
     const tmp = path.join(OUT, '.tmp-' + name)
     rmSync(tmp, { recursive: true, force: true })
-    const context = await browser.newContext({ viewport: SIZE, deviceScaleFactor: 1, locale: 'es-ES', colorScheme: 'dark', recordVideo: { dir: tmp, size: SIZE } })
+    const phone = PHONE_CLIPS.has(name)
+    const viewport = phone ? PHONE : SIZE
+    // the recorder never upscales: a phone clip is recorded at the phone's own size
+    const context = await browser.newContext({ viewport, deviceScaleFactor: 1, isMobile: phone, hasTouch: phone, locale: 'es-ES', colorScheme: 'dark', recordVideo: { dir: tmp, size: viewport } })
     const startedAt = Date.now()
     readyAt = startedAt
     const page = await context.newPage()

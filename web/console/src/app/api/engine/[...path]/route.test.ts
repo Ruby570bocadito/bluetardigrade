@@ -417,6 +417,19 @@ describe('engine proxy with analyst accounts', () => {
     expect(captured).toHaveLength(1)
   })
 
+  test('accounts are a credential: a phone reaches the console by name without the shared token', async () => {
+    process.env.CONSOLE_ALLOWED_HOSTS = 'soc.acme.local'
+    const { GET } = await loadRoute()
+    const phone = (headers: Record<string, string> = {}) => new Request('http://soc.acme.local/api/engine/api/stats', { headers: { host: 'soc.acme.local', ...headers } })
+    // no session, no account credential: refused as unauthenticated, never forwarded
+    expect((await GET(phone())).status).toBe(401)
+    // a signed-in account is served on the allowed name
+    expect((await GET(phone(as('luis')))).status).toBe(200)
+    expect(captured).toHaveLength(1)
+    // a name that is not allowed still is not
+    expect((await GET(new Request('http://otro.acme.local/api/engine/api/stats', { headers: { host: 'otro.acme.local', ...as('luis') } }))).status).toBe(403)
+  })
+
   test('the account name replaces "by" on attributed writes', async () => {
     const { POST } = await loadRoute()
     const res = await POST(new Request(base + '/api/alerts/0123456789abcdef/status', { method: 'POST', headers: as('ana'), body: JSON.stringify({ status: 'closed', by: 'consola' }) }))

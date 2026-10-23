@@ -56,7 +56,7 @@
 
 import { accessToken, principalFor, unauthorizedResponse } from '@/lib/access'
 import { LOOPBACK_HOSTS, crossSiteContext, extraHosts, hostAllowed } from '@/lib/request-guard'
-import { ROLE_LABEL, attribute, audit, roleAtLeast, scopeOf, type Principal, type Role } from '@/lib/users'
+import { ROLE_LABEL, attribute, audit, roleAtLeast, scopeOf, usersFile, type Principal, type Role } from '@/lib/users'
 
 const ENGINE_URL = process.env.ENGINE_API_URL || 'http://127.0.0.1:7778'
 
@@ -124,11 +124,13 @@ function apiToken(): string {
 }
 
 // exposedWithoutCredentials: the operator allowed hosts beyond loopback
-// but configured no console credential and did not declare an
+// but configured no console credential — neither per-analyst accounts
+// (every request then needs a session or the account's own Basic
+// credential) nor the shared token — and did not declare an
 // authenticating front end.
 function exposedWithoutCredentials(): boolean {
   const beyondLoopback = extraHosts().some((h) => !LOOPBACK_HOSTS.has(h))
-  return beyondLoopback && !accessToken() && process.env.CONSOLE_ALLOW_UNAUTHENTICATED !== '1'
+  return beyondLoopback && !usersFile() && !accessToken() && process.env.CONSOLE_ALLOW_UNAUTHENTICATED !== '1'
 }
 
 export const dynamic = 'force-dynamic'
@@ -234,7 +236,7 @@ async function refused(request: Request, principal: Principal | null): Promise<R
     return reject(
       request,
       'console_auth_not_configured',
-      'CONSOLE_ALLOWED_HOSTS expone la consola más allá de loopback sin credenciales: define CONSOLE_ACCESS_TOKEN (o CONSOLE_ALLOW_UNAUTHENTICATED=1 si un proxy inverso ya autentica a los operadores).',
+      'CONSOLE_ALLOWED_HOSTS expone la consola más allá de loopback sin credenciales: crea cuentas (CONSOLE_USERS_FILE, sf-console -AddUser) o define CONSOLE_ACCESS_TOKEN (o CONSOLE_ALLOW_UNAUTHENTICATED=1 si un proxy inverso ya autentica a los operadores).',
     )
   }
   if (!hostAllowed(request)) {

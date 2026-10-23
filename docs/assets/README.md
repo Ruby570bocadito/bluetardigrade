@@ -22,9 +22,11 @@ remains regenerable.
 | `console-cadenas.png`       | output  | kill-chain sequences with per-step alerts and completed campaigns |
 | `console-supresiones.png`   | output  | operator suppressions: scope, reason and expiry |
 | `console-respuesta-activa.png` | output | active response: armed surface, audit decisions, denial codes and attempts |
+| `console-avisos.png`        | output  | Ajustes → Avisos externos: the notification channels with their counters |
+| `console-movil-*.png`       | output  | the phone view (`/movil`) on a 390 × 844 phone: alerts, incidents, hosts and the light theme |
 | `src/capture_console.mjs`   | source  | Playwright script that captures every `console-*.png`: real-engine lab by default, `CONSOLE_CAPTURE_FIXTURES=1` for contract-true fixtures without a Go toolchain (lab recipe in its header) |
-| `showcase/*.webp`           | output  | the README's framed images: each capture in a browser window over the sign-in page's navy, and `hero.webp` with the light theme over the dark one |
-| `demo/*.webp`               | output  | the README's demo clips, one per part of the console (sign-in, triage, incidents, hosts, detection, telemetry, response, navigation), animated WebP |
+| `showcase/*.webp`           | output  | the README's framed images: each capture in a browser window over the sign-in page's navy, `hero.webp` with the light theme over the dark one, and `movil.webp` with three phones |
+| `demo/*.webp`               | output  | the README's demo clips, one per part of the console (sign-in, triage, incidents, hosts, detection, telemetry, response, navigation, notifications, and the phone view recorded on a phone), animated WebP |
 | `demo/bluetardigrade-demo.mp4` | output | every clip in one H.264 tour, linked from the README |
 | `src/fixtures.mjs`          | source  | contract-true engine fixtures (OpenAPI shapes, LAB-* hosts, `source=simulate`) shared by the capture and recording scripts |
 | `src/frame_shots.mjs`       | source  | renders `showcase/*.webp` from the `console-*.png` captures |

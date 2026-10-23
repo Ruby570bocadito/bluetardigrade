@@ -34,7 +34,8 @@
 //
 // Env: CONSOLE_URL (default http://127.0.0.1:3000), CONSOLE_TEST_TOOLS
 // (directory with playwright, default tools/console-tests),
-// CONSOLE_CAPTURE_FIXTURES=1, CONSOLE_CHROMIUM_PATH. The fixtures live in
+// CONSOLE_CAPTURE_FIXTURES=1, CONSOLE_CHROMIUM_PATH, CAPTURE_ONLY (comma-
+// separated file names without .png, to retake a few). The fixtures live in
 // fixtures.mjs, shared with record_demo.mjs.
 
 import { createRequire } from 'node:module'
@@ -51,6 +52,7 @@ const base = (process.env.CONSOLE_URL || 'http://127.0.0.1:3000').replace(/\/$/,
 const FIXTURES = process.env.CONSOLE_CAPTURE_FIXTURES === '1'
 
 // ------------------------------------------------------------------ shots
+const ONLY = (process.env.CAPTURE_ONLY || '').split(',').filter(Boolean)
 const SHOTS = [
   { file: 'console-panel.png', query: '', height: 1000 },
   { file: 'console-panel-light.png', query: '', height: 1000, theme: 'light' },
@@ -66,16 +68,25 @@ const SHOTS = [
   { file: 'console-supresiones.png', query: '?view=supresiones', height: 1000 },
   { file: 'console-respuesta-activa.png', query: '?view=respuesta', height: 1000 },
   { file: 'console-noc.png', query: '', height: 1000, noc: true },
+  // Ajustes -> Avisos externos, scrolled to its panel
+  { file: 'console-avisos.png', query: '?view=ajustes', height: 1000, scrollTo: 'Avisos externos: correo' },
+  // the phone view (app/movil) on a 390 x 844 phone
+  { file: 'console-movil-alertas.png', path: 'movil', phone: true },
+  { file: 'console-movil-incidentes.png', path: 'movil', phone: true, tab: 'Incidentes' },
+  { file: 'console-movil-equipos.png', path: 'movil', phone: true, tab: 'Equipos' },
+  { file: 'console-movil-claro.png', path: 'movil', phone: true, theme: 'light' },
 ]
 
 // CONSOLE_CHROMIUM_PATH: a Chromium to use instead of playwright's own download
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CONSOLE_CHROMIUM_PATH || undefined })
 try {
   for (const shot of SHOTS) {
-    const page = await browser.newPage({ viewport: { width: 1600, height: shot.height }, deviceScaleFactor: 2, reducedMotion: 'reduce', locale: 'es-ES' })
+    if (ONLY.length && !ONLY.includes(shot.file.replace(/\.png$/, ''))) continue
+    const viewport = shot.phone ? { width: 390, height: 844 } : { width: 1600, height: shot.height }
+    const page = await browser.newPage({ viewport, deviceScaleFactor: shot.phone ? 3 : 2, isMobile: !!shot.phone, hasTouch: !!shot.phone, reducedMotion: 'reduce', locale: 'es-ES' })
     if (FIXTURES) await fixtureEngine()(page)
     await page.addInitScript(([theme]) => localStorage.setItem('bt-theme', theme ?? 'dark'), [shot.theme])
-    await page.goto(base + '/' + shot.query)
+    await page.goto(base + '/' + (shot.path ?? shot.query))
     await page.locator('#console-main').waitFor()
     // let the first poll, the snapshot and the chart layouts land
     await page.waitForTimeout(5000)
@@ -88,6 +99,15 @@ try {
       const boxes = page.getByRole('checkbox', { name: /^Seleccionar .+\(/ })
       for (let i = 0; i < shot.pickRows; i++) await boxes.nth(i).check()
       await page.getByRole('region', { name: 'Acciones sobre la selección' }).waitFor()
+    }
+    if (shot.tab) {
+      await page.getByRole('navigation', { name: 'Secciones de la vista móvil' }).getByRole('button', { name: shot.tab }).click()
+      await page.waitForTimeout(800)
+    }
+    if (shot.scrollTo) {
+      // below the sticky header (about 80 px)
+      await page.locator('.panel', { hasText: shot.scrollTo }).evaluate((el) => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 96))
+      await page.waitForTimeout(800)
     }
     if (shot.noc) {
       await page.getByRole('button', { name: 'Abrir modo NOC' }).click()
