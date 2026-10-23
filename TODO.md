@@ -196,15 +196,15 @@ En este orden, para no rehacer capturas:
 
 - [ ] **Rediseño de la consola** a un aspecto más profesional, con el kit de
   componentes compartidos (POL-7: botón, campo, tabla, pestañas, insignia,
-  diálogo) en todas las vistas:
+  diálogo) en todas las vistas. *(Paleta, superficies, barra lateral y tema
+  claro ya siguen el estilo de la página de inicio de sesión; queda lo de
+  abajo.)*
   - fuera de Panel y Estado las vistas se ven vacías o poco cuidadas: cabecera
     con los indicadores de cada vista, estados vacíos que digan qué hacer e
     información densa pero ordenada (Alertas, Incidentes, Equipos, Directorio,
     Informes, Detección, Respuesta y Ajustes);
   - adaptable a la pantalla: móvil, portátil, monitor grande y modo NOC, sin
     desbordes ni tablas cortadas;
-  - rehacer el tema claro, que hoy se ve mal (contraste, superficies y
-    gráficas);
   - temas a elegir en Ajustes además de claro y oscuro (alto contraste y
     algunas paletas), guardados por cuenta;
   - grafo de entidades más fácil de leer: menos nodos a la vez (agrupar y

@@ -292,6 +292,7 @@ export function ConsoleShell() {
   const openAlerts = alerts.filter((a) => a.status !== 'closed')
   const openCritical = openAlerts.some((a) => a.severity === 'critical')
   const destination = nav.find((item) => item.id === view)
+  const currentGroup = sidebar.find((item) => isCurrent(item.id, view))?.group
 
   return (
     <div className="relative min-h-[100dvh] bg-zinc-950 text-zinc-100">
@@ -302,7 +303,7 @@ export function ConsoleShell() {
           con la misma contención y congelado bajo prefers-reduced-motion. */}
       <DotGridLayer />
       <div className="relative flex min-h-[100dvh] w-full flex-col lg:flex-row">
-        <aside className="glass sticky top-0 hidden h-[100dvh] w-64 shrink-0 flex-col border-r border-white/[0.06] lg:flex">
+        <aside className="sidebar-shell theme-island-dark sticky top-0 hidden h-[100dvh] w-64 shrink-0 flex-col border-r border-white/[0.06] lg:flex">
           <BrandBlock live={status === 'live'} />
           <nav aria-label={dict.chrome.navLabel} className="mt-2 flex-1 overflow-y-auto px-3">
             <ul className="space-y-0.5">
@@ -319,7 +320,7 @@ export function ConsoleShell() {
                       aria-current={current ? 'page' : undefined}
                       title={hintTitle(item.id)}
                       className={`relative flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                        current ? 'text-zinc-50' : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
+                        current ? 'text-zinc-50' : 'text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-100'
                       }`}
                     >
                       {/* píldora activa con layoutId: el resalte viaja entre
@@ -328,7 +329,7 @@ export function ConsoleShell() {
                       {current && (
                         <motion.span
                           layoutId="nav-pill"
-                          className="pointer-events-none absolute inset-0 rounded-lg border border-primary/25 bg-gradient-to-r from-primary-tint/[0.16] via-primary-tint/[0.07] to-transparent shadow-[inset_0_1px_0_0_var(--inset-highlight)]"
+                          className="pointer-events-none absolute inset-0 rounded-lg border border-primary/35 bg-gradient-to-r from-primary-tint/[0.26] via-primary-tint/[0.1] to-transparent shadow-[inset_0_1px_0_0_var(--inset-highlight),0_8px_20px_-12px_rgba(47,111,237,0.6)]"
                           transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 380, damping: 32 }}
                         />
                       )}
@@ -418,11 +419,13 @@ export function ConsoleShell() {
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="glass sticky top-0 z-20 border-b border-white/[0.06]">
             <div className="flex min-h-16 items-center justify-between gap-3 px-4 py-2.5 lg:px-8">
-              <div className="flex min-w-0 items-center gap-3">
+              <div className="flex min-w-0 shrink-0 items-center gap-3 lg:shrink">
                 <div className="lg:hidden">
                   <BrandRow />
                 </div>
                 <div className="hidden min-w-0 lg:block">
+                  {/* the sign-in page's eyebrow: the section the view lives in */}
+                  {currentGroup && <p className="text-[10px] font-semibold uppercase leading-4 tracking-[0.14em] text-primary">{currentGroup}</p>}
                   {/* BlurText (React Bits): la entrada palabra a palabra marca el
                       cambio de vista; key={view} reinicia la secuencia. */}
                   <h1 className="truncate text-[15px] font-semibold tracking-tight text-zinc-50">
@@ -612,7 +615,7 @@ function BrandBlock({ live }: { live: boolean }) {
           <span className="block text-[15px] font-semibold tracking-tight text-zinc-50">bluetardigrade</span>
           {/* DecryptedText (React Bits): la etiqueta se descodifica una vez
               al montar; gesto temático y contenido, cero ruido después. */}
-          <DecryptedText text="Security Operations Center" className="block text-[11px] text-zinc-500" />
+          <DecryptedText text="Security Operations" className="mt-0.5 block text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500" />
         </span>
       </div>
       <div aria-hidden className="mt-4 h-px bg-gradient-to-r from-primary/35 via-[var(--hairline)] to-transparent" />

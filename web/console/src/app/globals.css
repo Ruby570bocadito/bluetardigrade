@@ -48,84 +48,96 @@
 }
 
 /* bluetardigrade SOC console: dual-theme product UI, dark by default.
-   Neutral zinc structure, one interaction accent carried by the
-   --primary* token family (--primary on dark, --primary-strong on
-   light; zinc ink, not hue — the accent brightens/darkens like the
-   canonical zinc theme, never colors) and two validated data palettes
-   (see the viz tokens): severity is an ordered status scale, categorical
-   series never reuse its hues. The light theme lives in the html.light
-   block at the end of this file; scripts/dev-tests/check_console_theme.py
-   validates both. */
+   Navy structure (the zinc utility ramp is remapped to a blue-tinted
+   slate below, so every view inherits it), one interaction accent
+   carried by the --primary* token family — the mark's own blue, the
+   same the sign-in pages use (lib/login.ts) — and two validated data
+   palettes (see the viz tokens): severity is an ordered status scale,
+   categorical series never reuse its hues. The light theme lives in the
+   html.light block at the end of this file;
+   scripts/dev-tests/check_console_theme.py validates both. */
 :root {
-  --radius: 0.5rem;
-  --background: #09090b; /* zinc-950 */
-  --foreground: #f4f4f5; /* zinc-100 */
-  --card: #18181b; /* zinc-900 */
-  --card-foreground: #f4f4f5;
-  --popover: #18181b;
-  --popover-foreground: #f4f4f5;
-  --primary: #d4d4d8; /* zinc-300: accent ink, AA 12.6:1 on the page */
-  --primary-foreground: #09090b; /* zinc-950: AA on the accent fill */
-  /* accent roles: single source for the zinc interaction family; views
+  --radius: 0.625rem;
+  --background: #070b12; /* page: the sign-in page's night navy */
+  --foreground: #e8eef7;
+  --card: #0f1726;
+  --card-foreground: #e8eef7;
+  --popover: #0f1726;
+  --popover-foreground: #e8eef7;
+  --primary: #5b9dff; /* accent ink: links, active nav, focus marks */
+  --primary-foreground: #06101f; /* AA on the accent fill */
+  /* accent roles: single source for the interaction family; views
      must use these (THEME-2) instead of hand-picked utilities */
-  --primary-strong: #52525b; /* zinc-600: solid fills, white label AA 7.1:1 */
-  --primary-tint: #71717a; /* zinc-500: tint fills and the solid-button hover */
-  --primary-link: #d4d4d8; /* zinc-300: links and hints */
-  --primary-soft: #e4e4e7; /* zinc-200: soft labels on tint chips */
-  --secondary: #27272a; /* zinc-800 */
-  --secondary-foreground: #f4f4f5;
-  --muted: #18181b;
-  --muted-foreground: #a1a1aa; /* zinc-400 */
-  --accent: #27272a;
-  --accent-foreground: #f4f4f5;
+  --primary-strong: #1d5fd6; /* solid fills, white label AA */
+  --primary-tint: #2563eb; /* tint fills and the solid-button hover */
+  --primary-link: #7cb4ff; /* links and hints */
+  --primary-soft: #cfe2ff; /* soft labels on tint chips */
+  --secondary: #1a2538;
+  --secondary-foreground: #e8eef7;
+  --muted: #0f1726;
+  --muted-foreground: #a3b1c6;
+  --accent: #1a2538;
+  --accent-foreground: #e8eef7;
   --destructive: #ef4444; /* red-500 */
-  --border: #27272a; /* zinc-800 */
-  --input: #27272a;
-  /* zinc-500 is the muted-hint tier on dark surfaces; Tailwind's raw
-     #71717a sits at 4.12:1 on the page — below AA for the small hint
-     text it carries. This brightening keeps the tier visibly dimmer
-     than zinc-400 while clearing 4.5:1 on page, card and viz surface. */
-  --color-zinc-500: #93939a;
-  --ring: #d4d4d8; /* opaque focus indicator on dark surfaces */
+  --border: #1e2a3d;
+  --input: #2b3a52;
+  /* The zinc utility ramp, re-tinted navy: Tailwind's zinc utilities
+     read var(--color-zinc-*) at the point of use, so this one block
+     carries the whole console onto the sign-in page's palette. The
+     roles stay those of zinc: 950 page, 900 raised, 800 structure,
+     400/500 muted text (500 is the hint tier, kept >= 4.5:1 on page,
+     card and viz surface). */
+  --color-zinc-50: #f5f8fc;
+  --color-zinc-100: #e8eef7;
+  --color-zinc-200: #d5deea;
+  --color-zinc-300: #b9c6d8;
+  --color-zinc-400: #a3b1c6;
+  --color-zinc-500: #8796ad;
+  --color-zinc-600: #56657d;
+  --color-zinc-700: #33425a;
+  --color-zinc-800: #1e2a3d;
+  --color-zinc-900: #0f1726;
+  --color-zinc-950: #070b12;
+  --ring: #4dc3ff; /* the mark's cyan: opaque focus indicator */
   --chart-1: #3987e5;
   --chart-2: #199e70;
   --chart-3: #9085e9;
   --chart-4: #d55181;
-  --chart-5: #52525b;
-  --sidebar: #09090b;
-  --sidebar-foreground: #f4f4f5;
-  --sidebar-primary: #d4d4d8;
-  --sidebar-primary-foreground: #09090b;
-  --sidebar-accent: #27272a;
-  --sidebar-accent-foreground: #f4f4f5;
-  --sidebar-border: #27272a;
-  --sidebar-ring: #d4d4d8;
+  --chart-5: #4b5a70;
+  --sidebar: #0b1220;
+  --sidebar-foreground: #e8eef7;
+  --sidebar-primary: #5b9dff;
+  --sidebar-primary-foreground: #06101f;
+  --sidebar-accent: #1a2538;
+  --sidebar-accent-foreground: #e8eef7;
+  --sidebar-border: #1e2a3d;
+  --sidebar-ring: #4dc3ff;
 
   /* Data-viz tokens. Validated with the dataviz six-checks script against
-     --viz-surface (#101012, the panel fill over zinc-950, dark mode):
+     --viz-surface (#0d1422, the panel fill over the navy page, dark mode):
      - severity critical/high/medium/low/info: adjacent CVD dE >= 13.8,
        normal-vision dE >= 17.4, every step >= 3:1 on the surface. It is
        a status scale: always shipped with an icon and a text label.
      - categorical (fixed order, never cycled; folds into "otros" past 4):
        all checks pass, worst adjacent CVD dE 16.0.
      - sequential (one hue, ordinal steps >= 2:1 on the surface). */
-  --viz-surface: #101012;
-  --viz-raised: #18181b;
-  --viz-grid: #1f1f23;
-  --viz-axis: #2e2e33;
-  --viz-ink: #f4f4f5;
-  --viz-ink-2: #d4d4d8;
-  --viz-muted: #a1a1aa;
+  --viz-surface: #0d1422;
+  --viz-raised: #131d2f;
+  --viz-grid: #1a2538;
+  --viz-axis: #2a374d;
+  --viz-ink: #e8eef7;
+  --viz-ink-2: #c8d4e6;
+  --viz-muted: #a3b1c6;
   --sev-critical: #d03b3b;
   --sev-high: #f98924;
   --sev-medium: #f6d732;
   --sev-low: #3987e5;
-  --sev-info: #6b6b75;
+  --sev-info: #6e7d94;
   --series-1: #3987e5;
   --series-2: #199e70;
   --series-3: #9085e9;
   --series-4: #d55181;
-  --series-other: #52525b;
+  --series-other: #4b5a70;
   --seq-1: #184f95;
   --seq-2: #1c5cab;
   --seq-3: #2a78d6;
@@ -140,15 +152,15 @@
   /* Theme-aware paints used by JS/SVG layers (dot-grid canvas, entity
      graph SVG, spotlight/star-border halos, kbd keycaps). html.light
      restates every one below. */
-  --dot-grid-ink: rgba(255, 255, 255, 0.05);
-  --dot-grid-pulse-rgb: 212, 212, 216;
-  --accent-halo: rgba(212, 212, 216, 0.1);
-  --sb-accent: rgba(212, 212, 216, 0.55);
+  --dot-grid-ink: rgba(148, 163, 184, 0.07);
+  --dot-grid-pulse-rgb: 77, 195, 255;
+  --accent-halo: rgba(77, 195, 255, 0.12);
+  --sb-accent: rgba(77, 195, 255, 0.6);
   --viz-edge: rgba(255, 255, 255, 0.14);
   --viz-edge-strong: rgba(255, 255, 255, 0.25);
   --kbd-edge: rgba(0, 0, 0, 0.5);
-  --hairline: rgba(255, 255, 255, 0.1);
-  --inset-highlight: rgba(255, 255, 255, 0.06);
+  --hairline: rgba(148, 163, 184, 0.14);
+  --inset-highlight: rgba(255, 255, 255, 0.05);
 }
 
 @layer base {
@@ -270,17 +282,17 @@
    unlayered gana a @layer utilities en la cascada y los estados rojo/verde
    de los chips mueren en silencio (defecto #36, ronda 04-A 2026-09-30). */
 @layer components {
-/* Surfaces: hairline border, a faint vertical light fill, an inner top
-   highlight and a soft ambient shadow. Depth without noise. The fill
-   over zinc-950 averages #101012, the surface the palettes were
-   validated on. */
+/* Surfaces: the sign-in card's language (lib/login.ts) — a navy fill a
+   step above the page, a slate hairline, an inner top highlight and a
+   deep soft shadow. The fill over the page averages #0d1422, the
+   surface the palettes were validated on. */
 .panel {
-  border-radius: 0.875rem;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.014));
+  border-radius: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: linear-gradient(180deg, rgba(20, 30, 49, 0.78), rgba(13, 20, 34, 0.78));
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.05),
-    0 12px 32px -18px rgba(0, 0, 0, 0.75);
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.04),
+    0 24px 48px -28px rgba(0, 0, 0, 0.85);
 }
 .panel-hover {
   transition:
@@ -290,11 +302,12 @@
 }
 .panel-hover:hover,
 .panel-hover:focus-within {
-  border-color: rgba(255, 255, 255, 0.13);
+  border-color: rgba(77, 195, 255, 0.28);
   transform: translateY(-1px);
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
-    0 18px 44px -20px rgba(0, 0, 0, 0.85);
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.05),
+    0 0 0 1px rgba(77, 195, 255, 0.06),
+    0 26px 52px -26px rgba(0, 0, 0, 0.9);
 }
 @media (prefers-reduced-motion: reduce) {
   .panel-hover,
@@ -309,24 +322,25 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem 0.75rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
   padding: 0.75rem 1rem;
 }
 .chip {
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
-  border-radius: 0.5rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+  border-radius: 0.625rem;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(148, 163, 184, 0.05);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.03);
 }
+/* the sign-in page's eyebrow: small caps, wide tracking */
 .kicker {
   font-size: 0.6875rem;
-  font-weight: 500;
-  letter-spacing: 0.08em;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #71717a;
+  color: #8796ad;
 }
 /* Inline code chip (commands, tokens, flags): dark inkwell in dark mode,
    light gray inkwell in light mode — the text rides each theme's ink so
@@ -344,13 +358,13 @@
   align-items: center;
   justify-content: center;
   border-radius: 0.5rem;
-  border: 1px solid rgba(212, 212, 216, 0.25);
-  background: linear-gradient(180deg, rgba(212, 212, 216, 0.16), rgba(212, 212, 216, 0.06));
-  color: #d4d4d8;
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(77, 195, 255, 0.26);
+  background: linear-gradient(180deg, rgba(77, 195, 255, 0.14), rgba(47, 111, 237, 0.06));
+  color: #4dc3ff;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
 }
 .glass {
-  background: rgba(9, 9, 11, 0.72);
+  background: rgba(7, 11, 18, 0.74);
   backdrop-filter: blur(14px) saturate(1.4);
   -webkit-backdrop-filter: blur(14px) saturate(1.4);
 }
@@ -361,13 +375,45 @@
   min-width: 9rem;
   max-width: 16rem;
   border-radius: 0.625rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(24, 24, 27, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 38, 0.97);
   padding: 0.5rem 0.625rem;
   box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.9);
   backdrop-filter: blur(8px);
   font-size: 0.75rem;
   color: var(--viz-ink-2);
+}
+/* The sidebar is the sign-in page's brand panel: night navy with the
+   mark's two blue glows and a dotted grid fading downwards. It stays
+   dark in the light theme too (.theme-island-dark, below). */
+.sidebar-shell {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(140% 50% at 0% 0%, rgba(77, 195, 255, 0.13), transparent 60%),
+    radial-gradient(120% 45% at 100% 100%, rgba(47, 111, 237, 0.18), transparent 60%),
+    #0b1220;
+}
+.sidebar-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(148, 163, 184, 0.14) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.1) 70%);
+}
+/* primary command: the sign-in button's blue gradient */
+.btn-gradient {
+  background: linear-gradient(180deg, #4f8ff7, #2f6fed);
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.18),
+    0 8px 20px -10px rgba(47, 111, 237, 0.7);
+}
+.btn-gradient:hover:not(:disabled) {
+  filter: brightness(1.08);
 }
 }
 
@@ -442,9 +488,9 @@
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(700px 190px at 15% -12%, rgba(255, 255, 255, 0.07), transparent 70%),
-    radial-gradient(560px 170px at 88% -18%, rgba(255, 255, 255, 0.04), transparent 70%),
-    radial-gradient(1100px 480px at 50% 118%, rgba(255, 255, 255, 0.025), transparent 72%);
+    radial-gradient(760px 220px at 12% -12%, rgba(77, 195, 255, 0.09), transparent 70%),
+    radial-gradient(620px 200px at 90% -18%, rgba(47, 111, 237, 0.1), transparent 70%),
+    radial-gradient(1100px 480px at 50% 118%, rgba(47, 111, 237, 0.05), transparent 72%);
 }
 
 /* StarBorder: borde de 1px con degradado en movimiento. En reposo es el
@@ -453,17 +499,17 @@
    border-box y un relleno opaco en padding-box que enmascara el centro,
    dejando solo el anillo del borde vivo. */
 .star-border {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.14);
 }
 .star-border--active {
   border-color: transparent;
   background:
-    radial-gradient(120% 120% at 50% 50%, #10141a 0%, #10141a 100%) padding-box,
+    radial-gradient(120% 120% at 50% 50%, #0f1726 0%, #0f1726 100%) padding-box,
     linear-gradient(
         var(--sb-angle, 120deg),
-        rgba(16, 20, 26, 0) 20%,
-        var(--sb-color, var(--sb-accent, rgba(212, 212, 216, 0.55))) 45%,
-        rgba(16, 20, 26, 0) 70%
+        rgba(15, 23, 38, 0) 20%,
+        var(--sb-color, var(--sb-accent, rgba(77, 195, 255, 0.6))) 45%,
+        rgba(15, 23, 38, 0) 70%
       )
       border-box;
   background-size: 250% 250%;
@@ -491,7 +537,7 @@
    largas) y selección coherente con el acento. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+  scrollbar-color: rgba(148, 163, 184, 0.22) transparent;
 }
 *::-webkit-scrollbar {
   width: 8px;
@@ -501,15 +547,15 @@
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(148, 163, 184, 0.2);
   border-radius: 4px;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(212, 212, 216, 0.35);
+  background: rgba(77, 195, 255, 0.4);
 }
 ::selection {
-  background: rgba(212, 212, 216, 0.28);
-  color: #e7eaed;
+  background: rgba(77, 195, 255, 0.28);
+  color: #f5f8fc;
 }
 
 /* NOC mode: progress of the current slide (static under reduced motion). */
@@ -546,41 +592,41 @@
 html.light {
   color-scheme: light;
 
-  --background: #f4f4f5; /* zinc-100: page, so white panels separate */
-  --foreground: #18181b;
+  --background: #eef2f7; /* the sign-in page's light slate: white panels separate */
+  --foreground: #0f172a;
   --card: #ffffff;
-  --card-foreground: #18181b;
+  --card-foreground: #0f172a;
   --popover: #ffffff;
-  --popover-foreground: #18181b;
-  --primary: #27272a; /* zinc-800: AA 13.5:1 with the white label */
+  --popover-foreground: #0f172a;
+  --primary: #1d4ed8; /* accent ink, AA with the white label */
   --primary-foreground: #ffffff;
-  --primary-strong: #27272a;
-  --primary-tint: #52525b;
-  --primary-link: #3f3f46;
-  --primary-soft: #18181b;
-  --secondary: #e4e4e7;
-  --secondary-foreground: #27272a;
-  --muted: #f4f4f5;
-  --muted-foreground: #6b6b74; /* zinc-500 flipped: >= 4.5:1 on #f4f4f5 and white */
-  --accent: #e4e4e7;
-  --accent-foreground: #27272a;
+  --primary-strong: #1d4ed8;
+  --primary-tint: #2563eb;
+  --primary-link: #1e40af; /* holds AA at the /80 the hints use */
+  --primary-soft: #1e3a8a;
+  --secondary: #e2e8f0;
+  --secondary-foreground: #1e293b;
+  --muted: #eef2f7;
+  --muted-foreground: #475569;
+  --accent: #e2e8f0;
+  --accent-foreground: #1e293b;
   --destructive: #dc2626;
-  --border: #e4e4e7;
-  --input: #d4d4d8;
-  --ring: #18181b;
+  --border: #dbe3ee;
+  --input: #c3cfdf;
+  --ring: #2563eb;
   --chart-1: #2563eb;
   --chart-2: #059669;
   --chart-3: #7c3aed;
   --chart-4: #db2777;
-  --chart-5: #a1a1aa;
-  --sidebar: #fafafa;
-  --sidebar-foreground: #18181b;
-  --sidebar-primary: #27272a;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #e4e4e7;
-  --sidebar-accent-foreground: #27272a;
-  --sidebar-border: #e4e4e7;
-  --sidebar-ring: #18181b;
+  --chart-5: #94a3b8;
+  --sidebar: #0b1220;
+  --sidebar-foreground: #e8eef7;
+  --sidebar-primary: #5b9dff;
+  --sidebar-primary-foreground: #06101f;
+  --sidebar-accent: #1a2538;
+  --sidebar-accent-foreground: #e8eef7;
+  --sidebar-border: #1e2a3d;
+  --sidebar-ring: #4dc3ff;
 
   /* Data-viz tokens, light surface (--viz-surface #ffffff):
      severity critical/high/medium/low/info >= 3:1 on white, adjacent CVD
@@ -588,22 +634,22 @@ html.light {
      categorical fixed order, worst adjacent CVD dE >= 10; sequential one
      hue, ordinal steps >= 2:1 on the surface. */
   --viz-surface: #ffffff;
-  --viz-raised: #fafafa;
-  --viz-grid: #e4e4e7;
-  --viz-axis: #d4d4d8;
-  --viz-ink: #18181b;
-  --viz-ink-2: #27272a;
-  --viz-muted: #6b6b74;
+  --viz-raised: #f8fafc;
+  --viz-grid: #e2e8f0;
+  --viz-axis: #cbd5e1;
+  --viz-ink: #0f172a;
+  --viz-ink-2: #1e293b;
+  --viz-muted: #556377;
   --sev-critical: #991b1b;
   --sev-high: #c2410c;
   --sev-medium: #ad850c;
   --sev-low: #2563eb;
-  --sev-info: #52525b;
+  --sev-info: #526075;
   --series-1: #2563eb;
   --series-2: #059669;
   --series-3: #7c3aed;
   --series-4: #db2777;
-  --series-other: #71717a;
+  --series-other: #64748b;
   --seq-1: #1e3a8a;
   --seq-2: #2352b8;
   --seq-3: #2a6bd6;
@@ -614,28 +660,29 @@ html.light {
   --status-serious: #c2410c;
   --status-critical: #991b1b;
 
-  --dot-grid-ink: rgba(9, 9, 11, 0.06);
-  --dot-grid-pulse-rgb: 9, 9, 11;
-  --accent-halo: rgba(9, 9, 11, 0.06);
-  --sb-accent: rgba(39, 39, 42, 0.55);
-  --viz-edge: rgba(9, 9, 11, 0.16);
-  --viz-edge-strong: rgba(9, 9, 11, 0.3);
-  --kbd-edge: rgba(9, 9, 11, 0.16);
-  --hairline: rgba(9, 9, 11, 0.1);
+  --dot-grid-ink: rgba(15, 23, 42, 0.06);
+  --dot-grid-pulse-rgb: 37, 99, 235;
+  --accent-halo: rgba(37, 99, 235, 0.08);
+  --sb-accent: rgba(37, 99, 235, 0.5);
+  --viz-edge: rgba(15, 23, 42, 0.16);
+  --viz-edge-strong: rgba(15, 23, 42, 0.3);
+  --kbd-edge: rgba(15, 23, 42, 0.16);
+  --hairline: rgba(15, 23, 42, 0.1);
   --inset-highlight: rgba(255, 255, 255, 0.8);
 
-  /* zinc ramp flip: elevation inverts, text steps keep their roles */
-  --color-zinc-50: #09090b;
-  --color-zinc-100: #18181b;
-  --color-zinc-200: #27272a;
-  --color-zinc-300: #3f3f46;
-  --color-zinc-400: #52525b;
-  --color-zinc-500: #6b6b74;
-  --color-zinc-600: #a1a1aa;
-  --color-zinc-700: #d4d4d8;
-  --color-zinc-800: #e4e4e7;
-  --color-zinc-900: #fafafa;
-  --color-zinc-950: #f4f4f5;
+  /* zinc ramp flip onto slate: elevation inverts, text steps keep
+     their roles (500 stays the AA hint tier on page and white) */
+  --color-zinc-50: #020617;
+  --color-zinc-100: #0f172a;
+  --color-zinc-200: #1e293b;
+  --color-zinc-300: #334155;
+  --color-zinc-400: #475569;
+  --color-zinc-500: #556377;
+  --color-zinc-600: #94a3b8;
+  --color-zinc-700: #cbd5e1;
+  --color-zinc-800: #dbe3ee;
+  --color-zinc-900: #f8fafc;
+  --color-zinc-950: #eef2f7;
 
   /* status hues: text steps (200/300) become their readable-on-white
      counterparts, solid fills (400) deepen one step; 500 keeps working */
@@ -650,7 +697,7 @@ html.light {
   --color-red-300: #b91c1c;
   --color-red-400: #dc2626;
   --color-orange-200: #9a3412;
-  --color-orange-300: #c2410c;
+  --color-orange-300: #b23b0a; /* AA on its own /10 chip tint too */
   --color-sky-300: #0369a1;
   --color-sky-400: #0284c7;
   --color-violet-300: #6d28d9;
@@ -664,84 +711,141 @@ html.light {
 }
 
 /* Faint light ink over dark surfaces flips to faint dark ink over white.
-   Attribute-substring scope, one tier: every shade in use sits in the same
-   0.02–0.08 band. Property-scoped (border/background/divide) so data-ink
+   Attribute scope, one tier: every shade in use sits in the same
+   0.02–0.08 band. Bare classes match at the start of the attribute or
+   after a space; their hover: forms only while hovered — a plain
+   substring match would also catch hover:bg-white/… and paint the
+   hover fill on every nav item and tab at rest. Property-scoped (border/background/divide) so data-ink
    classes such as text-white/… on heatmap fills are never touched. */
-html.light [class*="border-white/"] { border-color: rgba(9, 9, 11, 0.1); }
-html.light [class*="bg-white/"] { background-color: rgba(9, 9, 11, 0.035); }
-html.light [class*="divide-white/"] > :not([hidden]) ~ :not([hidden]) { border-color: rgba(9, 9, 11, 0.08); }
+html.light :is([class^="border-white/"], [class*=" border-white/"]) { border-color: rgba(15, 23, 42, 0.1); }
+html.light [class*="hover:border-white/"]:hover { border-color: rgba(15, 23, 42, 0.18); }
+html.light :is([class^="bg-white/"], [class*=" bg-white/"]) { background-color: rgba(15, 23, 42, 0.035); }
+html.light [class*="hover:bg-white/"]:hover { background-color: rgba(15, 23, 42, 0.05); }
+html.light :is([class^="divide-white/"], [class*=" divide-white/"]) > :not([hidden]) ~ :not([hidden]) { border-color: rgba(15, 23, 42, 0.08); }
 
 /* Surface system, restated for light (same shapes, reversed light). */
 html.light .panel {
-  border-color: rgba(9, 9, 11, 0.08);
-  background: linear-gradient(180deg, #ffffff, #fbfbfc);
+  border-color: #dbe3ee;
+  background: #ffffff;
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.8),
-    0 12px 32px -18px rgba(9, 9, 11, 0.18);
+    0 1px 2px 0 rgba(15, 23, 42, 0.04),
+    0 20px 40px -28px rgba(15, 23, 42, 0.28);
 }
 html.light .panel-hover:hover,
 html.light .panel-hover:focus-within {
-  border-color: rgba(9, 9, 11, 0.16);
+  border-color: rgba(37, 99, 235, 0.35);
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.8),
-    0 18px 44px -20px rgba(9, 9, 11, 0.24);
+    0 1px 2px 0 rgba(15, 23, 42, 0.04),
+    0 24px 44px -26px rgba(15, 23, 42, 0.32);
 }
-html.light .panel-head { border-bottom-color: rgba(9, 9, 11, 0.07); }
+html.light .panel-head { border-bottom-color: #e2e8f0; }
 html.light .chip {
-  border-color: rgba(9, 9, 11, 0.1);
-  background: rgba(9, 9, 11, 0.03);
+  border-color: #dbe3ee;
+  background: #f8fafc;
   box-shadow: none;
 }
 html.light .icon-tile {
-  border-color: rgba(39, 39, 42, 0.22);
-  background: linear-gradient(180deg, rgba(39, 39, 42, 0.1), rgba(39, 39, 42, 0.04));
-  color: #3f3f46;
+  border-color: rgba(37, 99, 235, 0.24);
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.1), rgba(37, 99, 235, 0.04));
+  color: #1d4ed8;
   box-shadow: none;
 }
 html.light .glass {
-  background: rgba(244, 244, 245, 0.8);
+  background: rgba(238, 242, 247, 0.82);
 }
 html.light .viz-tooltip {
-  border-color: rgba(9, 9, 11, 0.1);
+  border-color: #dbe3ee;
   background: rgba(255, 255, 255, 0.97);
-  box-shadow: 0 12px 32px -12px rgba(9, 9, 11, 0.2);
+  box-shadow: 0 12px 32px -12px rgba(15, 23, 42, 0.2);
 }
 html.light .ambient-glow::before {
   background:
-    radial-gradient(700px 190px at 15% -12%, rgba(9, 9, 11, 0.04), transparent 70%),
-    radial-gradient(560px 170px at 88% -18%, rgba(9, 9, 11, 0.03), transparent 70%),
-    radial-gradient(1100px 480px at 50% 118%, rgba(9, 9, 11, 0.02), transparent 72%);
+    radial-gradient(760px 220px at 12% -12%, rgba(37, 99, 235, 0.07), transparent 70%),
+    radial-gradient(620px 200px at 90% -18%, rgba(14, 165, 233, 0.06), transparent 70%),
+    radial-gradient(1100px 480px at 50% 118%, rgba(37, 99, 235, 0.03), transparent 72%);
 }
-html.light .star-border { border-color: rgba(9, 9, 11, 0.1); }
+html.light .star-border { border-color: #dbe3ee; }
 html.light .star-border--active {
   background:
     radial-gradient(120% 120% at 50% 50%, #ffffff 0%, #ffffff 100%) padding-box,
     linear-gradient(
         var(--sb-angle, 120deg),
         rgba(255, 255, 255, 0) 20%,
-        var(--sb-color, var(--sb-accent, rgba(39, 39, 42, 0.55))) 45%,
+        var(--sb-color, var(--sb-accent, rgba(37, 99, 235, 0.5))) 45%,
         rgba(255, 255, 255, 0) 70%
       )
       border-box;
 }
 html.light .shiny-text { color: #047857; }
-html.light .kicker { color: #6b6b74; }
+html.light .kicker { color: #556377; }
 html.light .code-chip {
-  background: rgba(9, 9, 11, 0.06);
-  color: var(--color-zinc-200, #27272a);
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--color-zinc-200, #1e293b);
 }
 
 /* Cabin polish: one scrollbar and one selection per theme. */
 html.light * {
-  scrollbar-color: rgba(9, 9, 11, 0.22) transparent;
+  scrollbar-color: rgba(15, 23, 42, 0.22) transparent;
 }
 html.light *::-webkit-scrollbar-thumb {
-  background: rgba(9, 9, 11, 0.18);
+  background: rgba(15, 23, 42, 0.18);
 }
 html.light *::-webkit-scrollbar-thumb:hover {
-  background: rgba(9, 9, 11, 0.3);
+  background: rgba(37, 99, 235, 0.4);
 }
 html.light ::selection {
-  background: rgba(9, 9, 11, 0.15);
-  color: #09090b;
+  background: rgba(37, 99, 235, 0.18);
+  color: #020617;
 }
+
+/* Dark island: the sidebar stays the sign-in page's night-navy brand
+   panel in the light theme too, as the sign-in page's own does. Inside
+   it the dark tokens and ramp come back, and the light flips above
+   step aside (revert-layer hands the white-alpha utilities back to
+   Tailwind's own values). */
+html.light .theme-island-dark {
+  color-scheme: dark;
+  --background: #070b12;
+  --foreground: #e8eef7;
+  --card: #0f1726;
+  --primary: #5b9dff;
+  --primary-foreground: #06101f;
+  --primary-strong: #1d5fd6;
+  --primary-tint: #2563eb;
+  --primary-link: #7cb4ff;
+  --primary-soft: #cfe2ff;
+  --muted-foreground: #a3b1c6;
+  --border: #1e2a3d;
+  --ring: #4dc3ff;
+  --hairline: rgba(148, 163, 184, 0.14);
+  --inset-highlight: rgba(255, 255, 255, 0.05);
+  --color-zinc-50: #f5f8fc;
+  --color-zinc-100: #e8eef7;
+  --color-zinc-200: #d5deea;
+  --color-zinc-300: #b9c6d8;
+  --color-zinc-400: #a3b1c6;
+  --color-zinc-500: #8796ad;
+  --color-zinc-600: #56657d;
+  --color-zinc-700: #33425a;
+  --color-zinc-800: #1e2a3d;
+  --color-zinc-900: #0f1726;
+  --color-zinc-950: #070b12;
+  --color-emerald-400: #34d399;
+  --color-amber-200: #fde68a;
+  --color-red-300: #fca5a5;
+  color: #e8eef7;
+}
+html.light .theme-island-dark :is([class^="border-white/"], [class*=" border-white/"]) { border-color: revert-layer; }
+html.light .theme-island-dark [class*="hover:border-white/"]:hover { border-color: revert-layer; }
+html.light .theme-island-dark :is([class^="bg-white/"], [class*=" bg-white/"]) { background-color: revert-layer; }
+html.light .theme-island-dark [class*="hover:bg-white/"]:hover { background-color: revert-layer; }
+html.light .theme-island-dark .panel {
+  border-color: rgba(148, 163, 184, 0.12);
+  background: linear-gradient(180deg, rgba(20, 30, 49, 0.78), rgba(13, 20, 34, 0.78));
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+}
+html.light .theme-island-dark .chip {
+  border-color: rgba(148, 163, 184, 0.14);
+  background: rgba(148, 163, 184, 0.05);
+}
+html.light .theme-island-dark .kicker { color: #8796ad; }
