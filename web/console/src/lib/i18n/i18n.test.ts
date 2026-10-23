@@ -468,6 +468,12 @@ describe('i18n dictionaries', () => {
     expect(dictEs.analyst.suppress.note('todos los hosts')).toBe('Supresiones activas para esta regla: todos los hosts.')
   })
 
+  test('the analyst error line spells «conexión» with its accent', () => {
+    expect(dictEs.analyst.errorLine('timeout')).toBe(
+      'El analista no pudo completar la respuesta: timeout. Comprueba la conexión y vuelve a intentarlo.',
+    )
+  })
+
   test('phase 11 english copy is a real translation of the remaining lane', () => {
     expect(DICTS.en.rules.loadedTitle).toBe('Rules loaded in the engine')
     expect(DICTS.en.rules.coverage.tacticSubtitle(3, 14, 11)).toBe('3 of 14 tactics covered · 11 with no rules')

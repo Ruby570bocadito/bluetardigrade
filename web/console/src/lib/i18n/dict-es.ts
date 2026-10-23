@@ -2617,7 +2617,7 @@ export const dictEs = {
     waitingHint: 'Elige una detección de la cola y el modelo la explicará: qué ha pasado, por qué importa, riesgo y primeros pasos',
     analyzePrefix: 'Analizar ',
     analyzeIncidentPrefix: 'Analizar incidente ',
-    errorLine: (err: string): string => `El analista no pudo completar la respuesta: ${err}. Comprueba la conexion y vuelve a intentarlo.`,
+    errorLine: (err: string): string => `El analista no pudo completar la respuesta: ${err}. Comprueba la conexión y vuelve a intentarlo.`,
     questionPlaceholder: 'Pregunta opcional para el analista (p. ej. contenido recomendado)',
     questionAria: 'Pregunta para el analista',
     analyze: 'Analizar',
