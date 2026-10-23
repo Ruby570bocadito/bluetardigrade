@@ -870,6 +870,26 @@ gets in acts as administrator. That stays unchanged unless
   malformed locks the console instead of opening it, and the sign-in
   page says why. Put TLS in front when the console leaves the machine;
   behind it the console sends HSTS.
+- Domain accounts (AD-7, optional): with `CONSOLE_DOMAIN_AUTH=1` and a
+  users file, the sign-in page offers **Cuenta local** and **Cuenta del
+  dominio**. A domain sign-in is checked by the engine's
+  `POST /api/auth/domain` (armed with `-domain-auth`, see
+  `domain-auth.example.yaml`): an LDAPS bind as the user, and the AD
+  groups give the console role. The console calls it server side with
+  the bridge token (`SF_API_TOKEN`); it is not on the browser's write
+  list. The session opens like a local one under the name
+  `DOMINIO\usuario` (the `domain` label of the engine's config,
+  uppercased), which no users-file account can carry, so it is
+  attributed and audited (`/login/dominio`) without ever reaching a
+  local account of the same name. The directory owns its password and
+  second step: **Cambiar contraseña** and **Verificación en dos pasos**
+  do not apply, and a role the users file asks a second step of
+  (`mfa_required`) is refused for domain sign-in rather than opened
+  with one factor. Turning `CONSOLE_DOMAIN_AUTH` off ends every domain
+  session. Local accounts stay as the fallback: a domain controller that
+  does not answer never locks the administrators out. On Windows,
+  `tools\config\domain-auth.yaml` arms both halves: `sf-start` passes
+  `-domain-auth` to the engine and turns the switch on in the console.
 - Accounts from the console: administrators manage them in **Ajustes →
   Cuentas**. They can create an account, change its role, disable or
   enable it, reset its password, remove its second step or delete it.

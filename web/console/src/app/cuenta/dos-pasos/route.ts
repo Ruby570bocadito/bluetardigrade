@@ -19,6 +19,7 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: Request): Promise<Response> {
   const principal = await principalFor(request)
   if (!principal) return redirectTo('/login?next=%2Fcuenta%2Fdos-pasos')
+  if (principal.source === 'domain') return htmlResponse(unavailablePage('dos-pasos', 'domain'))
   const state = principal.mode === 'users' ? mfaState(principal.name) : null
   if (!state) return htmlResponse(unavailablePage('dos-pasos'))
   const error = new URL(request.url).searchParams.get('error')

@@ -221,6 +221,12 @@ if (-not (Test-PortLocal $ConsolePort)) {
     # next start would point the console at a missing file (locked).
     if (Test-Path -LiteralPath $usersFile) { $env:CONSOLE_USERS_FILE = $usersFile }
     elseif ($env:CONSOLE_USERS_FILE -eq $usersFile) { Remove-Item Env:CONSOLE_USERS_FILE -ErrorAction SilentlyContinue }
+    # Domain sign-in (AD-7): the same file that arms the engine's
+    # -domain-auth (runtime.ps1) offers «Cuenta del dominio» on the
+    # login page; it needs the accounts file too (local accounts stay
+    # as the fallback).
+    if (Test-Path -LiteralPath (Join-Path $root 'tools\config\domain-auth.yaml')) { $env:CONSOLE_DOMAIN_AUTH = '1' }
+    else { Remove-Item Env:CONSOLE_DOMAIN_AUTH -ErrorAction SilentlyContinue }
     New-Item -ItemType Directory -Path (Join-Path $root 'data') -Force | Out-Null
     $env:CONSOLE_AUDIT_FILE = Join-Path $root 'data\console-audit.jsonl'
     $nextBin = Join-Path $web 'console\node_modules\next\dist\bin\next'

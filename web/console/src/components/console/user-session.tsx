@@ -160,7 +160,7 @@ export function UserChip() {
           <p className={`mt-3 text-xs ${me.scope?.length ? 'text-zinc-200' : 'text-zinc-400'}`}>{scopeText(me)}</p>
           {me.mode === 'users' && <p className="mt-3 text-[11px] text-zinc-500">Tus cambios quedan firmados en el motor con tu nombre de cuenta.</p>}
           {me.mode === 'users' && me.mfa && <TwoStepCard mfa={me.mfa} />}
-          {me.mode === 'users' && (
+          {me.mode === 'users' && me.source !== 'domain' && (
             <a href="/cuenta/contrasena" className="mt-2 inline-block text-[11px] text-zinc-400 underline-offset-4 hover:text-zinc-100 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               Cambiar contraseña
             </a>

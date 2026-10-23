@@ -60,6 +60,12 @@ function Get-SfEngineArguments {
     # (sf-engine doctor names the exact problem before that).
     $notify = Join-Path $Root 'tools\config\notify.yaml'
     if (Test-Path -LiteralPath $notify) { $arguments += " -notify `"$notify`"" }
+    # Domain sign-in (AD-7): armed only when the operator wrote
+    # tools\config\domain-auth.yaml (copy of domain-auth.example.yaml);
+    # sf-console turns the console's «Cuenta del dominio» on from the
+    # same file.
+    $domainAuth = Join-Path $Root 'tools\config\domain-auth.yaml'
+    if (Test-Path -LiteralPath $domainAuth) { $arguments += " -domain-auth `"$domainAuth`"" }
     # Host groups (sites, departments, OUs): always armed, so the console
     # can create the file from Ajustes -> Grupos; a missing file is an
     # empty list, a broken one stops the engine (sf-engine doctor names it).

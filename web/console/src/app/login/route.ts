@@ -7,9 +7,13 @@
 // account an administrator reset: they need the pending sign-in its
 // password opened (lib/challenges.ts), and fall back to the password
 // form when it is gone.
+//
+// With CONSOLE_DOMAIN_AUTH=1 the form offers the domain account next
+// to the local one (lib/domain-auth.ts).
 
 import { accessToken, lockedReason, principalFor } from '@/lib/access'
 import { readChallenge, readChallengeCookie } from '@/lib/challenges'
+import { domainAuthEnabled } from '@/lib/domain-auth'
 import { codePage, enrollPage, htmlResponse, loginPage, passwordPage, redirectTo, safeNext } from '@/lib/login'
 import { qrSvg } from '@/lib/qr'
 import { otpauthUri } from '@/lib/totp'
@@ -23,6 +27,8 @@ export async function GET(request: Request): Promise<Response> {
   const error = url.searchParams.get('error')
   const mode = usersFile() ? 'users' : accessToken() ? 'token' : null
   if (!mode || (await principalFor(request))) return redirectTo(next)
+  // ?realm=dominio keeps the domain switch on after a failed attempt
+  const sides = { domain: domainAuthEnabled(), realm: url.searchParams.get('realm') === 'dominio' ? 'dominio' as const : 'local' as const }
   const step = url.searchParams.get('paso')
   if (mode === 'users' && step) {
     const pending = await readChallenge(readChallengeCookie(request))
@@ -32,7 +38,7 @@ export async function GET(request: Request): Promise<Response> {
       const qr = qrSvg(otpauthUri(pending.secret, pending.user), { title: 'Código QR para tu app de autenticación' })
       return htmlResponse(enrollPage({ user: pending.user, roleLabel: ROLE_LABEL[pending.role], secret: pending.secret, qr, next: pending.next, error }))
     }
-    return htmlResponse(loginPage({ mode, next, error: 'caducado', locked: lockedReason() }))
+    return htmlResponse(loginPage({ mode, next, error: 'caducado', locked: lockedReason(), ...sides }))
   }
-  return htmlResponse(loginPage({ mode, next, error, locked: lockedReason() }))
+  return htmlResponse(loginPage({ mode, next, error, locked: lockedReason(), ...sides }))
 }

@@ -8,6 +8,9 @@ export type ConsoleMe = {
   name: string
   role: ConsoleRole
   mode: 'users' | 'token' | 'open'
+  // 'domain': a domain account (AD-7) — no password or second step to
+  // manage here, the directory owns both
+  source?: 'domain'
   can_triage: boolean
   can_respond: boolean
   audit: boolean
@@ -39,6 +42,7 @@ export const ROLE_TEXT: Record<ConsoleRole, string> = { admin: 'Administrador', 
 export const DEFAULT_ME: ConsoleMe = { name: 'local', role: 'admin', mode: 'open', can_triage: true, can_respond: true, audit: false }
 
 export function modeText(me: ConsoleMe): string {
+  if (me.source === 'domain') return 'Cuenta del dominio: el rol lo dan tus grupos de Active Directory'
   if (me.mode === 'users') return 'Cuenta de analista (CONSOLE_USERS_FILE)'
   if (me.mode === 'token') return 'Token compartido (CONSOLE_ACCESS_TOKEN): todos actúan como administrador'
   return 'Sin cuentas: acceso por loopback, actúas como administrador'

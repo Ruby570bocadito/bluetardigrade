@@ -13,7 +13,7 @@ import { POST as login } from './route'
 import { POST as logout } from '../logout/route'
 import { GET as loginPage } from '../../../login/route'
 
-const KEYS = ['CONSOLE_USERS_FILE', 'CONSOLE_ACCESS_TOKEN', 'CONSOLE_AUDIT_FILE', 'CONSOLE_ALLOWED_HOSTS'] as const
+const KEYS = ['CONSOLE_USERS_FILE', 'CONSOLE_ACCESS_TOKEN', 'CONSOLE_AUDIT_FILE', 'CONSOLE_ALLOWED_HOSTS', 'CONSOLE_DOMAIN_AUTH', 'SF_API_TOKEN'] as const
 const saved: Record<string, string | undefined> = {}
 let dir = ''
 
@@ -192,6 +192,111 @@ describe('GET /login', () => {
     withAccounts()
     const cookie = cookieOf(await login(formPost('/api/console/login', { user: 'ana', password: 'contraseña-de-ana' })))
     expect((await loginPage(new Request(BASE + '/login', { headers: { cookie } }))).status).toBe(303)
+  })
+})
+
+describe('domain sign-in (AD-7)', () => {
+  const realFetch = globalThis.fetch
+  let calls: { url: string; init: RequestInit }[] = []
+  const engineAnswers = (status: number, body: unknown) => {
+    calls = []
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      calls.push({ url: String(url), init })
+      return Response.json(body, { status })
+    }) as unknown as typeof fetch
+  }
+  afterEach(() => {
+    globalThis.fetch = realFetch
+  })
+  const domainPost = (user: string, password: string, next = '/') =>
+    login(formPost('/api/console/login', { realm: 'dominio', user, password, next }))
+
+  test('the engine verifies the account and the session opens as DOMINIO\\usuario', async () => {
+    withAccounts()
+    process.env.CONSOLE_DOMAIN_AUTH = '1'
+    process.env.SF_API_TOKEN = 'puente'
+    engineAnswers(200, { ok: true, user: 'ana', role: 'admin', groups: ['SOC-Admins'], domain: 'corp' })
+    const res = await domainPost('CORP\\ana', 'clave-del-dominio', '/?view=alertas')
+    expect(res.status).toBe(303)
+    expect(res.headers.get('location')).toBe('/?view=alertas')
+    expect(calls[0].url).toEndWith('/api/auth/domain')
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({ user: 'CORP\\ana', password: 'clave-del-dominio' })
+    expect((calls[0].init.headers as Record<string, string>).authorization).toBe('Bearer puente')
+    expect(await principalFor(asBrowser(cookieOf(res)))).toEqual({ name: 'CORP\\ana', role: 'admin', mode: 'users', source: 'domain' })
+    expect(auditLines().at(-1)).toMatchObject({ user: 'CORP\\ana', role: 'admin', path: '/login/dominio', outcome: 'ok' })
+  })
+
+  test('a long UPN reaches the engine (its cap is 256, not the local 64)', async () => {
+    withAccounts()
+    process.env.CONSOLE_DOMAIN_AUTH = '1'
+    engineAnswers(200, { ok: true, user: 'ana', role: 'viewer' })
+    const upn = 'ana.garcia.lopez@' + 'sede-central.'.repeat(6) + 'corp.example'
+    expect(upn.length).toBeGreaterThan(64)
+    expect((await domainPost(upn, 'x')).status).toBe(303)
+    expect(calls).toHaveLength(1)
+  })
+
+  test('a domain session never reaches the local account of the same name', async () => {
+    withAccounts()
+    process.env.CONSOLE_DOMAIN_AUTH = '1'
+    engineAnswers(200, { ok: true, user: 'ana', role: 'viewer', groups: [] })
+    const cookie = cookieOf(await domainPost('ana', 'x'))
+    const me = await principalFor(asBrowser(cookie))
+    expect(me?.name).toBe('DOMINIO\\ana')
+    expect(me?.role).toBe('viewer')
+  })
+
+  test('each engine refusal comes back as its own message, audited, keeping the domain switch', async () => {
+    withAccounts()
+    process.env.CONSOLE_DOMAIN_AUTH = '1'
+    const cases: [number, string][] = [[401, 'dom_credenciales'], [403, 'dom_sin_rol'], [429, 'dom_bloqueado'], [501, 'dom_dominio_apagado'], [502, 'dom_dominio'], [500, 'dom_motor']]
+    for (const [status, error] of cases) {
+      engineAnswers(status, { ok: false })
+      const res = await domainPost('CORP\\ana', 'mala')
+      expect(res.headers.get('location')).toBe(`/login?realm=dominio&error=${error}&next=%2F`)
+      expect(res.headers.get('set-cookie')).toBeNull()
+    }
+    expect(auditLines().filter((l) => l.path === '/login/dominio' && l.outcome === 'denied')).toHaveLength(cases.length)
+  })
+
+  test('off in the console: the engine is never asked', async () => {
+    withAccounts()
+    engineAnswers(200, { ok: true, user: 'ana', role: 'admin' })
+    const res = await domainPost('ana', 'x')
+    expect(res.headers.get('location')).toContain('error=dom_dominio_apagado')
+    expect(calls).toHaveLength(0)
+  })
+
+  test('a role the users file asks a second step of is refused, not signed in with one factor', async () => {
+    const file = join(dir, 'console-users.json')
+    writeFileSync(file, JSON.stringify({ mfa_required: ['admin'], users: [entry('ana', 'analyst', 'contraseña-de-ana')] }))
+    process.env.CONSOLE_USERS_FILE = file
+    process.env.CONSOLE_AUDIT_FILE = join(dir, 'audit.jsonl')
+    process.env.CONSOLE_DOMAIN_AUTH = '1'
+    engineAnswers(200, { ok: true, user: 'jefe', role: 'admin' })
+    const res = await domainPost('jefe', 'x')
+    expect(res.headers.get('location')).toContain('error=dom_mfa_dominio')
+    expect(res.headers.get('set-cookie')).toBeNull()
+  })
+
+  test('turning domain sign-in off ends the domain sessions', async () => {
+    withAccounts()
+    process.env.CONSOLE_DOMAIN_AUTH = '1'
+    engineAnswers(200, { ok: true, user: 'ana', role: 'analyst' })
+    const cookie = cookieOf(await domainPost('ana', 'x'))
+    expect(await principalFor(asBrowser(cookie))).not.toBeNull()
+    delete process.env.CONSOLE_DOMAIN_AUTH
+    expect(await principalFor(asBrowser(cookie))).toBeNull()
+  })
+
+  test('the login page offers the switch only when domain sign-in is on', async () => {
+    withAccounts()
+    expect(await (await loginPage(new Request(BASE + '/login'))).text()).not.toContain('name="realm"')
+    process.env.CONSOLE_DOMAIN_AUTH = '1'
+    const html = await (await loginPage(new Request(BASE + '/login?realm=dominio&error=dom_sin_rol'))).text()
+    expect(html).toContain('id="realm-dominio" name="realm" value="dominio" checked')
+    expect(html).toContain('ningún grupo con acceso a la consola')
+    expect(html).not.toContain('<script')
   })
 })
 

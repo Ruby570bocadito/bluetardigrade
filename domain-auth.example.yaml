@@ -1,11 +1,13 @@
 # Inicio de sesión con cuentas del dominio (AD-7) — configuración de
 # ejemplo.
 #
-#   Copia este fichero a tools\config\domain-auth.yaml, rellena tu
-#   despliegue y arranca el motor con -domain-auth <fichero>. La
-#   consola llama a POST /api/auth/domain (puntea el token del puente
-#   como siempre) y abre su sesión con el rol que los grupos AD del
-#   usuario conceden. Las cuentas locales de la consola
+#   Copia este fichero a tools\config\domain-auth.yaml y rellena tu
+#   despliegue: sf-start arranca el motor con -domain-auth <fichero> y
+#   activa «Cuenta del dominio» en la página de inicio de sesión
+#   (CONSOLE_DOMAIN_AUTH=1; fuera de Windows, ponlo tú). La consola
+#   llama a POST /api/auth/domain desde el servidor (con el token del
+#   puente como siempre) y abre su sesión con el rol que los grupos AD
+#   del usuario conceden, con el nombre DOMINIO\usuario. Las cuentas locales de la consola
 #   (CONSOLE_USERS_FILE) siguen funcionando como respaldo: esta vía no
 #   las sustituye, se suma.
 #
