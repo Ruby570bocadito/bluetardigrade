@@ -6,9 +6,38 @@ roadmap sin criterios de aceptación es una lista de deseos. El estado
 "shipped" de cada horizontal vive en el [CHANGELOG](../CHANGELOG.md) y
 la arquitectura vigente en [ARCHITECTURE.md](ARCHITECTURE.md).
 
-Última actualización: 2026-10-20 (plan por fases del responsable).
+Última actualización: 2026-10-24 (estado de las fases tras las entregas del 22 al 24 de octubre).
 
 ---
+
+## Estado de las fases (2026-10-24)
+
+Entregado desde el plan del 20 de octubre (detalle en el CHANGELOG y en
+`changelog.d/`; lo pendiente con detalle, en [TODO.md](../TODO.md)):
+
+- **F2 — Acceso:** inicio de sesión con cuentas del dominio (AD-7, las dos
+  mitades: bind LDAPS y grupos→roles en el motor; selector «Cuenta del
+  dominio» en la consola, sesión `DOMINIO\usuario`) y página de inicio de
+  sesión rediseñada. Queda: el analista IA para cuentas con grupos y la
+  auditoría de servicios con permisos débiles.
+- **F3 — Avisos:** canales editables en Ajustes → Avisos externos sin
+  reiniciar el motor, «Enviar prueba», push al móvil con ntfy y el enlace a
+  la alerta en cada aviso. Queda: enrutado y silencios (IDEA-1).
+- **F3 — Móvil (primera parte):** la consola como app instalable (PWA) que
+  abre en `/movil`, con alertas para reconocer o cerrar, incidentes y
+  equipos, y la guía para publicarla por HTTPS en la VPN. Queda: emparejar
+  el móvil por QR con sesiones por dispositivo.
+- **F3 — YARA:** escaneo de memoria por proceso en el sensor, además de
+  ficheros y bajo demanda. Queda: gestión de reglas en la consola.
+- **F5 — Escaparate:** la consola adopta el estilo del inicio de sesión
+  (paleta azul marino, superficies, barra lateral, tema claro rehecho y
+  validado) y el README se rehace con un vídeo por apartado, capturas
+  enmarcadas y el recorrido completo en MP4. Queda: cabeceras de
+  indicadores por vista, estados vacíos, el grafo de entidades y las
+  capturas de una VM de laboratorio.
+
+Pendiente para la `v1.0.0`: las pruebas en un Windows real (prueba de uso de
+24–48 h, suspensión, caídas largas del motor; [PRUEBAS-PENDIENTES](PRUEBAS-PENDIENTES.md)).
 
 ## Plan por fases (2026-10-20)
 
@@ -82,6 +111,8 @@ PR pequeño por punto, con el CI en verde antes de fusionar.
 
 - Rediseño del dashboard, luego capturas en una VM de laboratorio (sin
   nombres de equipo, usuarios ni dominios reales), luego vídeo y README.
+  *(Rediseño de estilo, vídeos y README entregados el 2026-10-23/24 con
+  los datos de demostración del repositorio; quedan las capturas de la VM.)*
 
 ---
 
@@ -132,9 +163,9 @@ esa evidencia.
   exponerlos en el bundle y enlazar con TI local (MISP offline) cuando
   esté configurado. Cierre: enriquecimiento de hash en el bundle + flag
   `-misp-url`.
-- **Retención configurable** — `-forensic-retention` con pruner
-  periódico en vez de solo el tope de 256 ficheros. Cierre: flag +
-  ticker + tests de prunning.
+- **Retención configurable: entregada** — `-forensic-retention` sustituye
+  al tope fijo de 256 paquetes (evicción FIFO contra el tope configurado,
+  sin modo ilimitado a propósito).
 
 ## H3 — Sensor: telemetría más rica
 
