@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -227,6 +228,45 @@ func TestServiceShutdownDrainsQueueBestEffort(t *testing.T) {
 	stats := s.Stats()[0]
 	if stats.Sent != queueSize || stats.Failed != 0 || stats.Dropped != 0 {
 		t.Fatalf("stats = %+v, want sent=%d failed=0 dropped=0", stats, queueSize)
+	}
+}
+
+// cancelledAfterFirstCheck looks alive to the loop's check before the
+// select and cancelled from then on, while Done never fires: the select
+// can only pop a queued frame, which is what Go's select arbitration
+// does when a real cancel lands in the middle of the pop.
+type cancelledAfterFirstCheck struct {
+	context.Context
+	checks atomic.Int32
+}
+
+func (c *cancelledAfterFirstCheck) Done() <-chan struct{} { return nil }
+
+func (c *cancelledAfterFirstCheck) Err() error {
+	if c.checks.Add(1) == 1 {
+		return nil
+	}
+	return context.Canceled
+}
+
+// A frame popped in the same instant the cancel lands was queued before
+// the shutdown, so it gets the drain's best-effort attempt like the
+// frames behind it. Regression for the intermittent loss behind
+// TestLiveSwapsWithoutLosingTheQueue (45 failures in 500 runs on
+// Windows): deliver counted that frame as dropped without trying it.
+func TestServiceShutdownDrainsTheFramePoppedAtTheCancel(t *testing.T) {
+	probe := &shutdownProbe{name: "probe"}
+	s := New(probe)
+	s.Handle(sampleAlert())
+	s.Handle(sampleAlert())
+	s.Run(&cancelledAfterFirstCheck{Context: context.Background()})
+	s.Wait()
+
+	if probe.attempts != 2 || probe.deadCtxSeen != 0 {
+		t.Fatalf("attempts = %d (%d with a dead context), want both frames tried with a live one", probe.attempts, probe.deadCtxSeen)
+	}
+	if stats := s.Stats()[0]; stats.Sent != 2 || stats.Failed != 0 || stats.Dropped != 0 {
+		t.Fatalf("stats = %+v, want sent=2 failed=0 dropped=0", stats)
 	}
 }
 

@@ -217,7 +217,15 @@ func (w *worker) loop(ctx context.Context, backoff, drainBudget time.Duration) {
 			w.drain(drainBudget)
 			return
 		case a := <-w.queue:
-			w.deliver(ctx, a, backoff)
+			if !w.deliver(ctx, a, backoff) {
+				// The cancel landed while the select was popping
+				// this frame. It was queued before the shutdown, so
+				// it opens the drain with the same best-effort
+				// attempt as the frames behind it instead of being
+				// lost untried.
+				w.drain(drainBudget, a)
+				return
+			}
 		}
 	}
 }
@@ -225,24 +233,22 @@ func (w *worker) loop(ctx context.Context, backoff, drainBudget time.Duration) {
 // deliver sends one alert with up to maxAttempts tries. Retries apply
 // only to errors the channel classifies as retryable; a definitive
 // rejection (bad URL, refused mailbox, 4xx) fails immediately because
-// retrying it would only delay the rest of the queue.
-func (w *worker) deliver(ctx context.Context, a alert.Alert, backoff time.Duration) {
+// retrying it would only delay the rest of the queue. It reports
+// whether the frame was attempted at all.
+func (w *worker) deliver(ctx context.Context, a alert.Alert, backoff time.Duration) (attempted bool) {
 	// The cancel can land between the loop's check and this pop
-	// (select arbitration): a frame consumed that way was never
-	// really attempted, so it counts as dropped (shutdown owns it)
-	// instead of failed — failed means the receiver said no, dropped
-	// means we never tried. The drain that follows gives the rest of
-	// the queue its single best-effort attempt.
+	// (select arbitration). Trying with the dead context would be a
+	// doomed attempt, and the frame was queued before the shutdown,
+	// so nothing is counted here: the loop hands it to the drain.
 	if ctx.Err() != nil {
-		w.dropped.Add(1)
-		return
+		return false
 	}
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		err := w.ch.Deliver(ctx, a)
 		if err == nil {
 			w.sent.Add(1)
-			return
+			return true
 		}
 		lastErr = err
 		if !w.ch.Retryable(err) || attempt == maxAttempts {
@@ -251,12 +257,13 @@ func (w *worker) deliver(ctx context.Context, a alert.Alert, backoff time.Durati
 		select {
 		case <-ctx.Done():
 			w.failed.Add(1)
-			return
+			return true
 		case <-time.After(backoff * time.Duration(attempt)):
 		}
 	}
 	w.failed.Add(1)
 	log.Printf("[NOTIFY %s] delivery failed: %v", w.ch.Name(), lastErr)
+	return true
 }
 
 // drain empties the queue after cancellation with one attempt per
@@ -272,33 +279,49 @@ func (w *worker) deliver(ctx context.Context, a alert.Alert, backoff time.Durati
 // With the previous between-frames check the first frame ran without
 // any ceiling, and a wedged SMTP server turned the 2s drain into a
 // ~17s shutdown (2s budget + one full 15s smtpTimeout).
-func (w *worker) drain(budget time.Duration) {
+//
+// popped carries a frame the loop had already taken off the queue when
+// the cancel landed; it goes first, inside the same budget.
+func (w *worker) drain(budget time.Duration, popped ...alert.Alert) {
 	deadline := time.Now().Add(budget)
+	for _, a := range popped {
+		if !w.drainOne(a, deadline) {
+			return
+		}
+	}
 	for {
 		select {
 		case a := <-w.queue:
-			remaining := time.Until(deadline)
-			if remaining <= 0 {
-				// Budget spent: this frame was popped but never
-				// attempted (failed means the receiver said no,
-				// dropped means we never tried), and neither was
-				// anything still queued.
-				w.dropped.Add(1)
-				w.dropRemaining()
+			if !w.drainOne(a, deadline) {
 				return
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), remaining)
-			err := w.ch.Deliver(ctx, a)
-			cancel()
-			if err != nil {
-				w.failed.Add(1)
-			} else {
-				w.sent.Add(1)
 			}
 		default:
 			return
 		}
 	}
+}
+
+// drainOne gives one frame its best-effort attempt with what is left
+// of the drain budget, and reports false once the budget is spent.
+func (w *worker) drainOne(a alert.Alert, deadline time.Time) bool {
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		// Budget spent: this frame was popped but never attempted
+		// (failed means the receiver said no, dropped means we never
+		// tried), and neither was anything still queued.
+		w.dropped.Add(1)
+		w.dropRemaining()
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), remaining)
+	err := w.ch.Deliver(ctx, a)
+	cancel()
+	if err != nil {
+		w.failed.Add(1)
+	} else {
+		w.sent.Add(1)
+	}
+	return true
 }
 
 func (w *worker) dropRemaining() {
