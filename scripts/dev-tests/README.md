@@ -35,6 +35,28 @@ una instalación real de motor/colector en Windows PowerShell 5.1.
 | `check_powershell_syntax.ps1` | Guard de sintaxis PowerShell: parsea cada `.ps1` del árbol con el parser AST real de PowerShell (`Parser::ParseFile`) y falla en el primer error con fichero, línea y mensaje. Nació de un incidente real: `"cannot verify $Url: …"` en `install.ps1` es un error de PARSEO (`InvalidVariableReferenceWithDrive`: `:` tras una variable se lee como calificador de ámbito/drive, igual que `$env:`), así que `irm \| iex` abortaba antes de ejecutar un solo paso — con el CI en verde porque nada parseaba los `.ps`. CI lo ejecuta dos veces (pwsh en Ubuntu y **Windows PowerShell 5.1** en el job Windows, el parser que de verdad corre `irm \| iex` en una máquina stock); `make ci` lo corre si hay pwsh en el PATH. La verificación de conducta de Windows (smoke_respond) es un check aparte: este guard certifica solo que los scripts PARSEAN, no lo que hacen. | pwsh 7 o Windows PowerShell 5.1 |
 | `check_installer_native_stderr.py` | Guard de redirección de stderr en nativos: ninguna línea de `install.ps1`/`uninstall.ps1` puede contener `2>&1` o `2>$null` fuera del helper `Invoke-Native` (que corre con `EAP=Continue` y juzga por exit code). Nació del segundo crash real del instalador: `git clone` SIEMPRE abre con una línea de stderr («Cloning into …»), y bajo `$ErrorActionPreference='Stop'` PowerShell 5.1 convierte la primera línea redirigida en `NativeCommandError` terminante — `2>&1` y `2>$null` materializan el ErrorRecord ANTES de descartarlo, así que el instalador moría en el propio banner de progreso de git (con `2>$null`, el mismo efecto en cualquier probe `reg`/`netsh` que escribiera stderr). El helper `Invoke-Native` es el único patrón sancionado: muestra el progreso, conserva el texto para el diagnóstico y hace throw con el exit code y el detalle real. `--self-test` mantiene en el árbol las 3 fixtures del crash original (clone `2>&1`, probe `2>$null`, versión por variable) que DEBEN producir hallazgo. | python3 (stdlib) |
 
+## En Windows (Git Bash)
+
+Los scripts `.sh` corren en Git Bash sin tocar el repositorio, con estos
+ajustes del entorno:
+
+- `python3` suele ser el alias de la Microsoft Store: pon delante del
+  PATH un `python3` que haga `exec python "$@"`.
+- `rg` (ripgrep) tiene que estar en el PATH: lo usan beacon, threshold,
+  risk, siem, scenarios y respond.
+- `go test -race` necesita un compilador de C (cgo); sin él,
+  `go test -count=1 ./...`. El CI ejecuta `-race` en Linux.
+- `e2e_respond_kill.sh` es solo Linux; en Windows el mismo contrato lo
+  cubre `scripts/windows/smoke_respond.ps1` (Windows PowerShell 5.1 o
+  pwsh), con kills reales de procesos propios.
+- Las pruebas de navegador usan el Chromium de Playwright o el ejecutable
+  de `CONSOLE_CHROMIUM_PATH` (por ejemplo,
+  `C:\Program Files\Google\Chrome\Application\chrome.exe`).
+- Con la consola en UTF-8 (página de códigos 65001), Windows PowerShell
+  5.1 antepone un BOM a lo que pasa por tubería a un programa nativo: el
+  motor, el collector, `engine secret-write` y `console-user.mjs` lo
+  descartan.
+
 ## Uso
 
 ```bash

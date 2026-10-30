@@ -1,0 +1,17 @@
+# Line endings the toolchains rely on, whatever core.autocrlf says on the
+# machine: gofmt and `make ci` compare bytes (a CRLF checkout made every
+# .go file "unformatted" on Windows), and bash, make and cargo expect LF.
+*.go        text eol=lf
+go.mod      text eol=lf
+go.sum      text eol=lf
+*.sh        text eol=lf
+Makefile    text eol=lf
+*.rs        text eol=lf
+Cargo.lock  text eol=lf
+Cargo.toml  text eol=lf
+
+# Media: never converted.
+*.png   binary
+*.webp  binary
+*.gif   binary
+*.mp4   binary

@@ -35,7 +35,7 @@ set -u
 # would be aimed at the wrong processes; scripts/windows/smoke_respond.ps1
 # runs the same contract with real Windows kills.
 if [ "$(uname -s)" != "Linux" ]; then
-  echo "SKIP: e2e_respond_kill.sh is Linux-only; on Windows run: pwsh scripts/windows/smoke_respond.ps1"
+  echo "SKIP: e2e_respond_kill.sh is Linux-only; on Windows run: powershell -File scripts\windows\smoke_respond.ps1 (5.1 or pwsh)"
   exit 0
 fi
 

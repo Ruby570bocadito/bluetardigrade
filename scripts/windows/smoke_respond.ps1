@@ -27,10 +27,10 @@
 #
 # Uso:
 #   pwsh scripts/windows/smoke_respond.ps1
-#   pwsh scripts/windows/smoke_respond.ps1 -Engine ./engine-smoke.exe
+#   powershell -File scripts\windows\smoke_respond.ps1 -Engine .\engine-smoke.exe
 #
-# Requiere: PowerShell 7 (pwsh, por -SkipHttpErrorCheck), go para
-# compilar si no hay -Engine, y los puertos de prueba libres.
+# Requiere: Windows PowerShell 5.1 (el de serie) o PowerShell 7, go
+# para compilar si no hay -Engine, y los puertos de prueba libres.
 
 param(
     [string]$Engine = "",
@@ -40,11 +40,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-if ($PSVersionTable.PSVersion.Major -lt 7) {
-    throw 'smoke_respond.ps1 needs PowerShell 7 (pwsh): Invoke-WebRequest -SkipHttpErrorCheck and Join-Path with several children do not exist in Windows PowerShell 5.1.'
-}
-
-$REPO = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
+$REPO = (Resolve-Path (Join-Path (Join-Path $PSScriptRoot '..') '..')).Path
 $API_BASE = "http://127.0.0.1:$ApiPort"
 $API_DISARM_BASE = "http://127.0.0.1:$($ApiPort + 10)"
 $TOKEN = "smoke-respond-token"
@@ -131,7 +127,7 @@ function Wait-Health([string]$Base, [string]$Tag, $proc) {
             return $false
         }
         try {
-            $null = Invoke-WebRequest -Uri "$Base/api/health" -Method Get -TimeoutSec 2
+            $null = Invoke-WebRequest -UseBasicParsing -Uri "$Base/api/health" -Method Get -TimeoutSec 2
             return $true
         } catch { Start-Sleep -Milliseconds 200 }
     }
@@ -144,10 +140,24 @@ function Wait-Health([string]$Base, [string]$Tag, $proc) {
 function Post-Kill([string]$Base, [hashtable]$Body, [bool]$WithToken) {
     $headers = @{ 'Content-Type' = 'application/json' }
     if ($WithToken) { $headers['Authorization'] = "Bearer $TOKEN" }
-    $r = Invoke-WebRequest -Uri "$Base/api/respond/kill" -Method Post `
-        -Headers $headers -Body ($Body | ConvertTo-Json -Compress) `
-        -SkipHttpErrorCheck -TimeoutSec 10
-    [pscustomobject]@{ code = [int]$r.StatusCode; body = $r.Content }
+    $request = @{
+        Uri = "$Base/api/respond/kill"; Method = 'Post'; Headers = $headers
+        Body = ($Body | ConvertTo-Json -Compress); TimeoutSec = 10; UseBasicParsing = $true
+    }
+    # pwsh hands every status back with -SkipHttpErrorCheck; Windows
+    # PowerShell 5.1 has no such switch and throws a WebException that
+    # still carries the response, so the denials are read from there.
+    if ($PSVersionTable.PSVersion.Major -ge 7) { $request.SkipHttpErrorCheck = $true }
+    try {
+        $r = Invoke-WebRequest @request
+        return [pscustomobject]@{ code = [int]$r.StatusCode; body = $r.Content }
+    } catch [System.Net.WebException] {
+        $resp = $_.Exception.Response
+        if ($null -eq $resp) { throw }
+        # 5.1 has already drained the response stream into ErrorDetails
+        $text = if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $_.ErrorDetails.Message } else { '' }
+        return [pscustomobject]@{ code = [int]$resp.StatusCode; body = $text }
+    }
 }
 
 function New-Victim {
@@ -189,7 +199,8 @@ function Wait-Dead($proc, [int]$TimeoutMs = 5000) {
 }
 
 try {
-    "version: 1`nnames:`n  - smoke-op" | Set-Content -Path $OPS -Encoding utf8NoBOM
+    # UTF-8 without BOM on both editions (5.1 has no -Encoding utf8NoBOM)
+    [System.IO.File]::WriteAllText($OPS, "version: 1`nnames:`n  - smoke-op`n", (New-Object System.Text.UTF8Encoding($false)))
 
     Write-Host "== arranque: engine armado + engine desarmado =="
     $eng = Start-Engine -Tag "armed" -Armed $true
