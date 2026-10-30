@@ -244,7 +244,6 @@ describe('i18n dictionaries', () => {
 
   test('phase 5 (settings + AD-6) keeps the spanish copy byte-identical', () => {
     expect(dictEs.settings.sectionAria).toBe('Ajustes de la consola')
-    expect(dictEs.settings.noWriteApi).toBe('Todavía no hay API de escritura para esto: se declara al arrancar el motor o el servicio de la consola.')
     expect(dictEs.settings.general.heading).toBe('General')
     expect(dictEs.settings.general.langEs).toBe('Español')
     expect(dictEs.settings.ingesta.openHosts).toBe('Abrir Equipos')

@@ -772,7 +772,6 @@ export const dictEn: Dict = {
   settings: {
     sectionAria: 'Console settings',
     adminNote: 'Every change is validated by the engine, leaves an audit line and is done by an administrator only.',
-    noWriteApi: 'There is no write API for this yet: it is declared when the engine or the console service starts.',
     general: {
       heading: 'General',
       prose: 'The organization and the time zone of the installation live in the server configuration; there is no API to edit them here yet.',

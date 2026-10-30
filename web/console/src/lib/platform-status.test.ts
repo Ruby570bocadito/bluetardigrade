@@ -107,6 +107,8 @@ describe('platformStatus', () => {
   test('uptime and rules render with the shared helpers, mode names the source', () => {
     const report = platformStatus(baseStats())!
     expect(row(report, 'uptime').display).toBe('1h 01m')
+    // from a day on, days and hours: a week is not "168h 00m"
+    expect(row(platformStatus(baseStats({ uptime_s: 7 * 86400 + 3 * 3600 + 59 }))!, 'uptime').display).toBe('7d 03h')
     expect(row(report, 'rules').display).toBe('12')
     expect(row(report, 'mode').display).toBe('conectado al motor')
   })

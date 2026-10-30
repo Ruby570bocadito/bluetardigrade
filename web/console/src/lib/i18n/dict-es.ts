@@ -798,7 +798,6 @@ export const dictEs = {
   settings: {
     sectionAria: 'Ajustes de la consola',
     adminNote: 'Cada cambio se valida en el motor, queda auditado y solo lo hace un administrador.',
-    noWriteApi: 'Todavía no hay API de escritura para esto: se declara al arrancar el motor o el servicio de la consola.',
     general: {
       heading: 'General',
       prose: 'La organización y la zona horaria de la instalación viven en la configuración del servidor; no tienen todavía API para editarlas aquí.',

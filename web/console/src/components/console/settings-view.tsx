@@ -164,11 +164,13 @@ function CounterRow({ label, sent, failed, dropped, filtered }: { label: string;
     <li className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
       <span className="text-xs font-medium text-zinc-200">{label}</span>
       {any ? (
+        // one element per counter: bare text runs inside a flex box merge
+        // into a single item, and the gap never separated them
         <span className="flex flex-wrap gap-x-3 text-[11px] tabular-nums text-zinc-500">
-          {dict.settings.integraciones.delivered(sent ?? 0)}
-          {dict.settings.integraciones.failed(failed ?? 0)}
-          {dict.settings.integraciones.dropped(dropped ?? 0)}
-          {filtered !== undefined && dict.settings.integraciones.filtered(filtered)}
+          <span>{dict.settings.integraciones.delivered(sent ?? 0)}</span>
+          <span>{dict.settings.integraciones.failed(failed ?? 0)}</span>
+          <span>{dict.settings.integraciones.dropped(dropped ?? 0)}</span>
+          {filtered !== undefined && <span>{dict.settings.integraciones.filtered(filtered)}</span>}
         </span>
       ) : (
         <span className="text-[11px] text-zinc-500">{dict.settings.integraciones.quiet}</span>
@@ -702,7 +704,6 @@ export function SettingsView({ onNavigate, onOpenOnboarding }: { onNavigate: (vi
   const { dict } = useI18n()
   return (
     <section aria-label={dict.settings.sectionAria} className="space-y-4">
-      <p className="text-xs text-zinc-500">{dict.settings.noWriteApi}</p>
       <GeneralPanel />
       <IngestPanel onNavigate={onNavigate} />
       <HostGroupsPanel />

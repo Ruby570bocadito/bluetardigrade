@@ -475,9 +475,12 @@ export function formatDateTime(iso: string, lang: Lang = 'es'): string {
 }
 
 export function formatUptime(s: number): string {
+  const d = Math.floor(s / 86400)
   const h = Math.floor(s / 3600)
   const m = Math.floor((s % 3600) / 60)
   const sec = Math.floor(s % 60)
+  // a week reads "7d 00h", not "168h 00m"
+  if (d > 0) return `${d}d ${String(h % 24).padStart(2, '0')}h`
   if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`
   if (m > 0) return `${m}m ${String(sec).padStart(2, '0')}s`
   return `${sec}s`
