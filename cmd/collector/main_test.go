@@ -55,6 +55,39 @@ func TestCollectorWindowsExportEncodings(t *testing.T) {
 	}
 }
 
+// One corrupt record (a truncated last line, a rotated log) stops the
+// import by default and the error points at -skip-invalid; with it the
+// valid records go through, the skipped line is reported by number and
+// never by content, and input with no valid record at all still fails.
+func TestCollectorSkipInvalid(t *testing.T) {
+	row := `{"timestamp":"2026-10-02T10:00:00Z","event_type":"flow","src_ip":"10.0.0.1","dest_ip":"8.8.8.8","proto":"TCP"}`
+	mixed := row + "\n{\"truncated\": fixture-password\n" + row + "\n"
+	strict := options{source: "suricata", observer: "LAB", stdout: true}
+	err := run(context.Background(), strict, strings.NewReader(mixed), io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "line 2") || !strings.Contains(err.Error(), "-skip-invalid") {
+		t.Fatalf("default mode must stop at line 2 and name -skip-invalid: %v", err)
+	}
+	lenient := strict
+	lenient.skipInvalid = true
+	var output, diagnostics bytes.Buffer
+	if err := run(context.Background(), lenient, strings.NewReader(mixed), &output, &diagnostics); err != nil {
+		t.Fatalf("-skip-invalid must import the valid records: %v", err)
+	}
+	if n := strings.Count(strings.TrimSpace(output.String()), "\n") + 1; n != 2 {
+		t.Fatalf("%d events written, want 2", n)
+	}
+	diag := diagnostics.String()
+	if !strings.Contains(diag, "line 2 skipped") || !strings.Contains(diag, "1 invalid skipped") {
+		t.Fatalf("skipped line not reported or counted:\n%s", diag)
+	}
+	if strings.Contains(diag, "fixture-password") {
+		t.Fatalf("the skipped record content leaked into the diagnostics:\n%s", diag)
+	}
+	if err := run(context.Background(), lenient, strings.NewReader("nope\nstill nope\n"), io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "check -source") {
+		t.Fatalf("input without any valid record must fail: %v", err)
+	}
+}
+
 func TestCollectorCancellationUnblocksInputPipe(t *testing.T) {
 	reader, writer := io.Pipe()
 	defer writer.Close()

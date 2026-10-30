@@ -43,7 +43,15 @@ make build
 observó la evidencia; por defecto toma el hostname del colector.
 `-stdout` normaliza offline sin conectar al motor. La salida es JSONL;
 los recuentos y errores van a stderr. Un error detiene la importación y
-indica la línea sin imprimir su contenido.
+indica la línea sin imprimir su contenido. Con `-skip-invalid` las líneas
+mal formadas se saltan (cada una se indica por su número y se cuentan en
+el resumen) y el resto se importa; si no queda ningún registro válido, el
+colector termina con error (casi siempre, un `-source` equivocado).
+
+Los ficheros pueden ser UTF-8 con o sin BOM, que es lo que escribe
+`Set-Content -Encoding UTF8` en Windows PowerShell 5.1. Un fichero UTF-16,
+lo que dejan ahí `Out-File` y `>`, se rechaza con el comando para
+convertirlo.
 
 Sin `-stdout`, el destino por defecto es `127.0.0.1:7777`:
 

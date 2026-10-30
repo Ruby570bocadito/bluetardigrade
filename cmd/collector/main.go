@@ -20,8 +20,13 @@ import (
 
 type options struct {
 	source, file, observer, addr, ca, zone string
-	tls, stdout                            bool
+	tls, stdout, skipInvalid               bool
 }
+
+// maxReportedInvalid bounds the per-line notices of -skip-invalid: past
+// it the skipped lines are only counted, so a wrong -source cannot flood
+// stderr with one notice per record.
+const maxReportedInvalid = 20
 
 func main() {
 	host, _ := os.Hostname()
@@ -34,6 +39,7 @@ func main() {
 	flag.StringVar(&opts.ca, "tls-ca", "", "PEM CA for verified TLS ingest")
 	flag.StringVar(&opts.zone, "firewall-timezone", "", "IANA timezone of source host when firewall uses Local")
 	flag.BoolVar(&opts.stdout, "stdout", false, "offline normalization to JSONL; no network connection")
+	flag.BoolVar(&opts.skipInvalid, "skip-invalid", false, "skip malformed records instead of stopping at the first one (each reported by line number, never by content; counted in the summary)")
 	flag.Parse()
 	if flag.NArg() != 0 {
 		fmt.Fprintln(os.Stderr, "collector: unexpected positional arguments")
@@ -84,7 +90,7 @@ func run(ctx context.Context, opts options, input io.Reader, output, diagnostics
 		}
 		defer transport.Close()
 	}
-	accepted, ignored := 0, 0
+	accepted, ignored, invalid := 0, 0, 0
 	emit := func(ev *model.Event) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -140,7 +146,19 @@ func run(ctx context.Context, opts options, input io.Reader, output, diagnostics
 				continue
 			}
 			if err != nil {
-				return fmt.Errorf("line %d: %w", line, err)
+				if !opts.skipInvalid {
+					return fmt.Errorf("line %d: %w (-skip-invalid imports the remaining records)", line, err)
+				}
+				// A truncated last line or one corrupt record of a rotated
+				// log no longer costs the rest of the import; the content
+				// is never echoed, only where it was and why it failed.
+				invalid++
+				if invalid <= maxReportedInvalid {
+					fmt.Fprintf(diagnostics, "collector: line %d skipped: %v\n", line, err)
+				} else if invalid == maxReportedInvalid+1 {
+					fmt.Fprintln(diagnostics, "collector: further invalid lines are only counted")
+				}
+				continue
 			}
 			if err := emit(ev); err != nil {
 				return fmt.Errorf("line %d: %w", line, err)
@@ -156,6 +174,13 @@ func run(ctx context.Context, opts options, input io.Reader, output, diagnostics
 			return errors.New("input read failed or record exceeded 1 MiB")
 		}
 	}
-	fmt.Fprintf(diagnostics, "collector: %d records written, %d ignored (transport writes are not processing acknowledgements)\n", accepted, ignored)
+	skipped := ""
+	if invalid > 0 {
+		skipped = fmt.Sprintf(", %d invalid skipped", invalid)
+	}
+	fmt.Fprintf(diagnostics, "collector: %d records written, %d ignored%s (transport writes are not processing acknowledgements)\n", accepted, ignored, skipped)
+	if accepted == 0 && invalid > 0 {
+		return fmt.Errorf("no valid record among %d invalid lines: check -source", invalid)
+	}
 	return nil
 }
