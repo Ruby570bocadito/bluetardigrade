@@ -498,6 +498,38 @@ func TestDecodeTruncatesOversizedNetworkDestination(t *testing.T) {
 	}
 }
 
+// Attribute values reach the search haystacks too
+// (model.ObservationSearchFields), so a separator planted in one would
+// forge a field boundary exactly like one in the host or the user.
+func TestDecodeStripsFieldSepFromAttributes(t *testing.T) {
+	ev := &model.Event{ID: "obs-1", Type: model.TypeProcessCreate, Host: "h", Source: "test",
+		Attributes: map[string]string{"query": "evil" + fieldSep + "payload"}}
+	line, err := ev.Encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	got, err := decode(line)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if v := got.Attributes["query"]; v != "evilpayload" {
+		t.Fatalf("attribute = %q, want the separator stripped", v)
+	}
+}
+
+// The identity caps sit far above real values, so the common call must
+// not pay for a []rune copy: the byte length bounds the rune count, and
+// a value whose bytes fit comes back as is.
+func TestTruncateRunesFitsWithoutAllocating(t *testing.T) {
+	host := strings.Repeat("h", 200)
+	if allocs := testing.AllocsPerRun(100, func() { _ = truncateRunes(host, maxHostRunes) }); allocs != 0 {
+		t.Fatalf("truncateRunes allocated %v times for a value that already fits", allocs)
+	}
+	if got := truncateRunes("ñandú", 4); got != "ñand" {
+		t.Fatalf("truncateRunes = %q, want the first four runes", got)
+	}
+}
+
 // TestDecodeKeepsNormalIdentityFields: the caps sit far above any
 // legitimate value — real hostnames, usernames and UUIDs must pass
 // through byte-identical.

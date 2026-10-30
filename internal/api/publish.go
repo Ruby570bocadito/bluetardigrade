@@ -116,6 +116,16 @@ type frame struct {
 // with a full buffer miss messages instead of blocking the engine.
 // hosts are the machines the payload is about.
 func (h *Hub) broadcast(topic string, payload any, hosts ...string) {
+	// No console subscribed: skip the marshal. It runs for every
+	// ingested event, and with nobody listening it was pure waste on
+	// the hot path. A client subscribing right after the check only
+	// misses this frame, as it would by subscribing a moment later.
+	h.mu.Lock()
+	idle := len(h.subs) == 0
+	h.mu.Unlock()
+	if idle {
+		return
+	}
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return

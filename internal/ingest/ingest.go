@@ -688,11 +688,22 @@ func stripFieldSep(ev *model.Event) {
 	for i, t := range ev.Tags {
 		ev.Tags[i] = noSep(t)
 	}
+	// attribute values reach the haystacks too (ObservationSearchFields)
+	for k, v := range ev.Attributes {
+		if clean := noSep(v); clean != v {
+			ev.Attributes[k] = clean
+		}
+	}
 }
 
 func noSep(s string) string { return strings.ReplaceAll(s, fieldSep, "") }
 
 func truncateRunes(s string, max int) string {
+	// A string never has more runes than bytes: when the bytes fit, so
+	// do the runes, and the common short value skips the []rune copy.
+	if len(s) <= max {
+		return s
+	}
 	r := []rune(s)
 	if len(r) <= max {
 		return s

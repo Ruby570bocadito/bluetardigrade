@@ -83,6 +83,9 @@ func FuzzDecode(f *testing.F) {
 		if ev.Registry != nil {
 			sepFields = append(sepFields, ev.Registry.Key, ev.Registry.ValueName, ev.Registry.Value, ev.Registry.Operation)
 		}
+		for _, v := range ev.Attributes {
+			sepFields = append(sepFields, v)
+		}
 		for i, s := range sepFields {
 			if strings.Contains(s, fieldSep) {
 				t.Fatalf("field separator survived in haystack field %d: %q", i, s)

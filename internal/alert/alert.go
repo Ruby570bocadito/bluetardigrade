@@ -386,6 +386,10 @@ func pidOf(ev *model.Event) int {
 // multi-byte UTF-8 sequence: byte slicing would corrupt command lines
 // containing accented or non-Latin characters.
 func truncateRunes(s string, max int) string {
+	// no more runes than bytes: a value whose bytes fit needs no copy
+	if len(s) <= max {
+		return s
+	}
 	r := []rune(s)
 	if len(r) <= max {
 		return s

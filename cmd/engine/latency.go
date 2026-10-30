@@ -67,7 +67,10 @@ func (t *alertLatencyTracker) snapshot() (count uint64, p50, p95, max float64) {
 	}
 	sort.Float64s(sample)
 	p50 = sample[(len(sample)-1)/2]
-	p95 = sample[(len(sample)*95)/100]
+	// nearest rank: the ceil(0.95n)-th smallest sample. Rounding 0.95n
+	// down read one rank too high whenever it was whole, and a window
+	// of 20 reported its maximum as the p95.
+	p95 = sample[(len(sample)*95+99)/100-1]
 	max = sample[len(sample)-1]
 	return count, p50, p95, max
 }
