@@ -948,7 +948,9 @@ rule meta_hit {
         assert_eq!(stats.errors.load(Ordering::Relaxed), 0);
         let lines = events.lock().unwrap();
         assert_eq!(lines.len(), 1);
-        assert!(lines[0].contains(&path));
+        // the event is JSON: a Windows path arrives with its backslashes escaped
+        let json_path = serde_json::to_string(&path).unwrap();
+        assert!(lines[0].contains(json_path.trim_matches('"')));
         assert!(loaded.count == 1);
         // the worker published what it loaded to the shared slot: the
         // memory scanner (memscan.rs) consumes exactly this
