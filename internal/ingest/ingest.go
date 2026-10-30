@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"sync"
@@ -57,6 +58,11 @@ const (
 	// token fits comfortably in 4 KiB; past it the connection is
 	// rejected and closed before the buffer grows.
 	maxAuthLine = 4 << 10
+
+	// rejectLinger and rejectDrainMax bound the graceful close of a
+	// rejected connection (see drainBeforeClose).
+	rejectLinger   = time.Second
+	rejectDrainMax = 1 << 20
 )
 
 // utf8BOM is what a Windows sender may put in front of its stream: a
@@ -104,6 +110,23 @@ func writeAck(conn net.Conn, line string) bool {
 }
 
 func errorAck(msg string) string { return fmt.Sprintf(`{"ack":"error","error":%q}`, msg) }
+
+// drainBeforeClose lets a rejected client read its error ack. Closing a
+// socket whose input was not read sends a RST instead of a FIN, and on
+// Windows the RST makes the peer discard the ack it has not read yet:
+// a client that pipelined data behind the refused line saw "connection
+// forcibly closed" instead of the reason. The write side is shut first,
+// so the peer reads the ack and then EOF; what it already sent is
+// discarded, bounded in time and bytes so a client that keeps talking
+// cannot hold the handler (which counts against maxConns until the
+// close).
+func drainBeforeClose(conn net.Conn) {
+	if cw, ok := conn.(interface{ CloseWrite() error }); ok {
+		_ = cw.CloseWrite()
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(rejectLinger))
+	_, _ = io.Copy(io.Discard, io.LimitReader(conn, rejectDrainMax))
+}
 
 // Server is a concurrent NDJSON-over-TCP listener. Connections arrive
 // either in clear text (New) or wrapped in TLS (NewTLS); the handlers
@@ -357,7 +380,13 @@ func (s *Server) Shutdown() {
 // a concurrent Shutdown stops force-closing it.
 func (s *Server) handle(conn net.Conn) {
 	defer s.conns.Done()
+	// linger is set when the handler ends on a rejection; the drain runs
+	// while the conn is still in open, so Shutdown can cut it short.
+	linger := false
 	defer func() {
+		if linger {
+			drainBeforeClose(conn)
+		}
 		s.mu.Lock()
 		delete(s.open, conn)
 		s.mu.Unlock()
@@ -411,6 +440,7 @@ func (s *Server) handle(conn net.Conn) {
 			if authPending || isAuthLine(line) {
 				id, ok := s.checkAuth(conn, line)
 				if !ok {
+					linger = true
 					return
 				}
 				who = id
@@ -454,6 +484,7 @@ func (s *Server) handle(conn net.Conn) {
 	switch {
 	case errors.Is(scanner.Err(), errAuthLineTooLong):
 		s.rejected.Add(1)
+		linger = true
 		writeAck(conn, `{"ack":"error","error":"auth failed: AUTH line too long"}`)
 	case errors.Is(scanner.Err(), bufio.ErrTooLong):
 		// A data-phase line over maxLineSize used to close the
@@ -464,6 +495,7 @@ func (s *Server) handle(conn net.Conn) {
 		// close. Plain read errors (idle deadline, reset) stay
 		// uncounted — a client that goes quiet is not a rejection.
 		s.rejected.Add(1)
+		linger = true
 		writeAck(conn, fmt.Sprintf(`{"ack":"error","error":"line too long (limit %d bytes)"}`, maxLineSize))
 	}
 }

@@ -123,6 +123,26 @@ func TestTokenlessEngineRejectsAuthLine(t *testing.T) {
 	}
 }
 
+// A client that pipelines data behind a refused line must still read
+// the reason. Closing with that input unread sends a RST: on Windows the
+// client's next write fails, or the RST discards the error ack before
+// the client reads it (the intermittent "read ack: ... forcibly closed"
+// of the test above). The pause before the read lets everything land
+// first, which made the failure certain on Windows.
+func TestRejectionAckSurvivesPipelinedInput(t *testing.T) {
+	_, _, addr := startTestServer(t, "")
+	lines := []string{"AUTH whatever"}
+	for i := 0; i < 200; i++ { // ~20 KiB queued behind the refused line
+		lines = append(lines, sampleEvent(t))
+	}
+	conn, r := dialAndSend(t, addr, lines...)
+	time.Sleep(300 * time.Millisecond)
+	if ack := readAck(t, r); !strings.Contains(ack, "no ingest token") {
+		t.Fatalf("ack = %q, want the auth-config error", ack)
+	}
+	expectClosed(t, conn)
+}
+
 // Token configured + correct AUTH: ack ok and events flow.
 func TestTokenAuthOK(t *testing.T) {
 	srv, events, addr := startTestServer(t, "s3cret")
