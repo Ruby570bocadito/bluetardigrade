@@ -162,7 +162,7 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 	fs.BoolVar(&o.forensic, "forensic", true,
 		"freeze an evidence bundle (alert + 5m host timeline) for every high/critical alert; -forensic=false disables")
 	fs.StringVar(&o.forensicDir, "forensic-dir", "",
-		"directory for forensic evidence bundles (default: <forensics> resolved next to the rules directory)")
+		"directory for forensic evidence bundles (default: ./forensics of the working directory, or <engine dir>/../forensics when only that one exists; the Windows launchers run from the install root)")
 	fs.IntVar(&o.forensicRetain, "forensic-retention", 256,
 		"how many forensic evidence bundles -forensic-dir keeps, oldest evicted first; disk grows with this number (>= 1; default 256)")
 	fs.StringVar(&o.pidFile, "pidfile", "",
