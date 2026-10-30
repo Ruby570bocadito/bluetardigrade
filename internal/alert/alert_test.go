@@ -104,6 +104,22 @@ func TestRaiseDedupExpiresInInsertionOrder(t *testing.T) {
 	}
 }
 
+// Hits without a process identity shared the key rule|host|0, so
+// distinct events (three run keys planted within the TTL) raised once.
+// They dedup by the event itself now: distinct events each raise, and
+// an exact replay of one of them stays silenced.
+func TestRaiseWithoutProcessDedupsByEvent(t *testing.T) {
+	raised := 0
+	m := New(&strings.Builder{}, func(Alert) { raised++ })
+	hit := rules.Hit{Rule: &rules.Rule{ID: "r-run-key", Name: "n", Severity: rules.SevLow}}
+	for _, id := range []string{"reg-1", "reg-2", "reg-3", "reg-1"} {
+		m.Raise(&model.Event{ID: id, Type: model.TypeRegistrySet, Host: "h"}, hit)
+	}
+	if raised != 3 {
+		t.Fatalf("raised %d alerts for three distinct events and one replay, want 3", raised)
+	}
+}
+
 // Dedup within the TTL still drops repeated hits for the same key.
 func TestRaiseDedupsWithinTTL(t *testing.T) {
 	m := New(&strings.Builder{}, nil)

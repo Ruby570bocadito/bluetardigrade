@@ -205,6 +205,13 @@ func (m *Manager) Raise(ev *model.Event, hit rules.Hit) {
 	// distinct mail, IDS and query records while deduplicating exact replays.
 	if ev.Attributes["observer_host"] != "" {
 		key = fmt.Sprintf("%s|%s|%s|%s", hit.Rule.ID, ev.Host, ev.Source, ev.ID)
+	} else if pidOf(ev) == 0 {
+		// No process identity either: keyed on the pid alone, every such
+		// hit of a rule on a host collapsed into one alert per TTL (five
+		// run keys planted in a minute raised once). Dedup by the event
+		// itself instead: distinct occurrences each raise, and an exact
+		// replay of the same event stays silenced.
+		key = fmt.Sprintf("%s|%s|%s|%s", hit.Rule.ID, ev.Host, ev.Type, ev.ID)
 	}
 	m.mu.Lock()
 	// read the clock under mu: concurrent Raise calls then append to
