@@ -96,7 +96,10 @@ func startAPIHub(b apiBoot) (*api.Hub, string, string, func()) {
 			hub, err = api.New(b.o.apiAddr)
 		}
 		if err != nil {
+			// Not fatal by design (detection outlives the UI), but the
+			// operator must know why the console reads "engine offline".
 			log.Printf("[ENGINE] api disabled: %v", err)
+			log.Printf("[ENGINE] api disabled: the console and 'sf-engine doctor' cannot reach this engine while detection keeps running; free %s or start with -api <host:port>", b.o.apiAddr)
 			hub = nil
 		} else {
 			if hub.TLS() {

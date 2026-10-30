@@ -59,11 +59,18 @@ func startIngest(o *options, events chan *model.Event) (*ingest.Server, *enroll.
 		// comparing errno: bind error text is locale-dependent
 		// on Windows ("Solo se permite un uso de cada...").
 		if listening(o.addr) {
-			if o.apiAddr != "0" && apiHealthy(o.apiAddr) {
+			switch ingestPortOwner(o) {
+			case ownerEngine:
 				fmt.Printf("[ENGINE] another engine instance is already running (ingest %s, api %s)\n",
 					o.addr, o.apiAddr)
-			} else {
-				fmt.Printf("[ENGINE] cannot bind %s: another process is already listening on it\n", o.addr)
+			case ownerForeign:
+				// Not an engine: exiting 0 with "stop it: sf-console
+				// -Stop" told a supervisor all was well and sent the
+				// operator after the wrong program.
+				log.Fatalf("[ENGINE] cannot bind %s: another program is listening on it and %s does not answer as an engine API; free the port or start with -addr <host:port>",
+					o.addr, o.apiAddr)
+			default:
+				fmt.Printf("[ENGINE] cannot bind %s: another process is already listening on it (with the API off or on TLS the engine cannot tell whether it is another engine)\n", o.addr)
 			}
 			fmt.Println("[ENGINE]   view alerts:  sf-console   (web UI)")
 			fmt.Println("[ENGINE]   stop it:      sf-console -Stop")

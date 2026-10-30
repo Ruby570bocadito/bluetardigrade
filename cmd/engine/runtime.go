@@ -126,6 +126,39 @@ func listening(addr string) bool {
 // Same redirect posture as every outbound client (report, doctor, the
 // sinks): a 3xx is a definitive failure, never a follow — a redirect
 // would turn the health probe into a GET at a URL the engine never chose.
+// portOwner classifies the program that already holds the ingest port.
+type portOwner int
+
+const (
+	ownerUnknown portOwner = iota // API off or on TLS: the plain probe cannot tell
+	ownerEngine                   // its API answers /api/health: another engine
+	ownerForeign                  // the API never answered: some other program
+)
+
+// ownerProbeWindow is how long ingestPortOwner waits for the API of an
+// engine that is still starting: an engine binds its ingest port before
+// its API, so a second instance launched a moment later must not call it
+// foreign. A variable so the tests can shorten it.
+var ownerProbeWindow = 3 * time.Second
+
+// ingestPortOwner reports whether the program holding o.addr is another
+// bluetardigrade engine, judged by its API on o.apiAddr.
+func ingestPortOwner(o *options) portOwner {
+	if o.apiAddr == "0" || o.apiCert != "" {
+		return ownerUnknown
+	}
+	deadline := time.Now().Add(ownerProbeWindow)
+	for {
+		if apiHealthy(o.apiAddr) {
+			return ownerEngine
+		}
+		if time.Now().After(deadline) {
+			return ownerForeign
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
 func apiHealthy(addr string) bool {
 	host := addr
 	if strings.HasPrefix(host, ":") {
