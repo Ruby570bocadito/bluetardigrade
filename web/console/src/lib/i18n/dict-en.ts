@@ -1298,7 +1298,7 @@ export const dictEn: Dict = {
     tabsAria: 'Panel sections',
     offlineTitle: 'Engine offline',
     offlineHint:
-      'The console shows no invented data. Start the engine (cmd/engine) with its API on 127.0.0.1:7778 and this screen recovers on its own.',
+      'The console shows no invented data. Start the engine (cmd/engine) and check that its API answers where ENGINE_API_URL points (127.0.0.1:7778 by default); this screen recovers on its own.',
     unavailableTitle: 'No connection to the engine',
     unavailableHint: 'The chart returns as soon as the engine answers; no stale data is drawn.',
     sevLabels: { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', info: 'Info' },

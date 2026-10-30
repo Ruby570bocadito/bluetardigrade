@@ -113,7 +113,7 @@ async function readPassword() {
         // Windows PowerShell 5.1 starts a native command's stdin with a
         // UTF-8 byte-order mark when the console code page is 65001: kept,
         // it would become an invisible first character of the password.
-        resolve(answer.replace(/^﻿/, ''))
+        resolve(answer.replace(/^\uFEFF/, ''))
       })
     })
   try {

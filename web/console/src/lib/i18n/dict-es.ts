@@ -1340,7 +1340,7 @@ export const dictEs = {
     tabsAria: 'Secciones del panel',
     offlineTitle: 'Motor offline',
     offlineHint:
-      'La consola no muestra datos inventados. Arranca el motor (cmd/engine) con su API en 127.0.0.1:7778 y esta pantalla se recupera sola.',
+      'La consola no muestra datos inventados. Arranca el motor (cmd/engine) y comprueba que su API responde donde apunta ENGINE_API_URL (por defecto 127.0.0.1:7778); esta pantalla se recupera sola.',
     unavailableTitle: 'Sin conexión con el motor',
     unavailableHint: 'El gráfico vuelve en cuanto el motor responda; no se dibujan datos antiguos.',
     sevLabels: { critical: 'Crítica', high: 'Alta', medium: 'Media', low: 'Baja', info: 'Info' },

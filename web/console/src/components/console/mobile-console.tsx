@@ -136,7 +136,7 @@ function AlertsTab({ floor, setFloor, counts, link }: { floor: MobileFloor; setF
           </button>
         ))}
       </div>
-      {!me.can_triage && <p className="mb-3 rounded-lg border border-zinc-800 px-3 py-2 text-xs text-zinc-400">{t.readOnly}</p>}
+      {!me.can_triage && !me.pending && <p className="mb-3 rounded-lg border border-zinc-800 px-3 py-2 text-xs text-zinc-400">{t.readOnly}</p>}
       {link !== 'live' ? (
         <NoReading link={link} />
       ) : queue.length === 0 ? (

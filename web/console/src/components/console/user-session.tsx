@@ -9,6 +9,7 @@ import { ArrowClockwise, Check, Eye, Prohibit, ShieldCheck, ShieldWarning, SignO
 import { ConsoleDialog } from './console-dialog'
 import {
   DEFAULT_ME,
+  PENDING_ME,
   ROLE_TEXT,
   describeAction,
   fetchAudit,
@@ -25,10 +26,10 @@ import {
 const Ctx = createContext<ConsoleMe>(DEFAULT_ME)
 
 export function ConsoleUserProvider({ children }: { children: ReactNode }) {
-  const [me, setMe] = useState<ConsoleMe>(DEFAULT_ME)
+  const [me, setMe] = useState<ConsoleMe>(PENDING_ME)
   useEffect(() => {
     let alive = true
-    void fetchMe().then((next) => { if (alive && next) setMe(next) })
+    void fetchMe().then((next) => { if (alive) setMe(next ?? DEFAULT_ME) })
     return () => { alive = false }
   }, [])
   return <Ctx.Provider value={me}>{children}</Ctx.Provider>
@@ -122,6 +123,15 @@ export function UserChip() {
   const descId = useId()
   const closeRef = useRef<HTMLButtonElement>(null)
   const viewer = me.role === 'viewer'
+  if (me.pending) {
+    // who is signed in is not known yet: a neutral chip, never a role
+    return (
+      <span role="status" aria-label="Cargando la sesión" className="chip shrink-0 gap-1.5 whitespace-nowrap px-2.5 py-1.5 text-zinc-400">
+        <UserCircle size={15} aria-hidden className="text-zinc-500" />
+        <span className="text-xs">…</span>
+      </span>
+    )
+  }
   return (
     <>
       <button
@@ -184,7 +194,7 @@ export function UserChip() {
 // an error.
 export function ReadOnlyBanner() {
   const me = useConsoleUser()
-  if (me.role !== 'viewer') return null
+  if (me.pending || me.role !== 'viewer') return null
   return (
     <div role="status" className="border-b border-white/[0.06] bg-zinc-900/70 px-4 py-1.5 text-center text-[11px] text-zinc-400 lg:px-8">
       <Eye size={12} aria-hidden className="mr-1 inline align-[-2px]" /> Modo lectura: tu cuenta ({me.name}) puede consultar todo, pero no cambiar alertas, incidentes, supresiones ni lanzar respuesta.

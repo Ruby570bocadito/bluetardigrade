@@ -19,6 +19,8 @@ export type ConsoleMe = {
   scope?: string[] | null
   // two-step sign-in, accounts of the users file only
   mfa?: { enrolled: boolean; required: boolean; recovery_left: number }
+  // true only before /api/console/me has answered (see PENDING_ME)
+  pending?: boolean
 }
 
 export type ConsoleAuditEntry = {
@@ -40,6 +42,13 @@ export const ROLE_TEXT: Record<ConsoleRole, string> = { admin: 'Administrador', 
 // Until /api/console/me answers, the UI behaves like a console without
 // accounts (the server enforces the real role either way).
 export const DEFAULT_ME: ConsoleMe = { name: 'local', role: 'admin', mode: 'open', can_triage: true, can_respond: true, audit: false }
+
+// PENDING_ME is the session until /api/console/me answers: no name and
+// no rights. Starting from DEFAULT_ME showed every account as «local ·
+// Administrador», with the triage buttons live, for that first moment;
+// the server always refused the writes, but the screen should not offer
+// them. A failed lookup still falls back to DEFAULT_ME (open consoles).
+export const PENDING_ME: ConsoleMe = { name: '', role: 'viewer', mode: 'open', can_triage: false, can_respond: false, audit: false, pending: true }
 
 export function modeText(me: ConsoleMe): string {
   if (me.source === 'domain') return 'Cuenta del dominio: el rol lo dan tus grupos de Active Directory'

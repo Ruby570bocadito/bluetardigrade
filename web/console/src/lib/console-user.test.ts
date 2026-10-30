@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { DEFAULT_ME, describeAction, modeText, permissions, scopeText } from './console-user'
+import { DEFAULT_ME, PENDING_ME, describeAction, modeText, permissions, scopeText } from './console-user'
 
 test('audit actions are described in words, unknown ones verbatim', () => {
   expect(describeAction({ method: 'POST', path: '/api/alerts/0123456789abcdef/status' })).toBe('Triaje de alerta')
@@ -22,4 +22,11 @@ test('the session panel says which machines the account sees', () => {
   expect(scopeText({ ...DEFAULT_ME, scope: null })).toBe('Ves todos los equipos.')
   expect(scopeText({ ...DEFAULT_ME, role: 'analyst', mode: 'users', scope: ['madrid'] })).toStartWith('Ves solo los equipos del grupo madrid:')
   expect(scopeText({ ...DEFAULT_ME, role: 'viewer', mode: 'users', scope: ['madrid', 'servidores'] })).toStartWith('Ves solo los equipos de los grupos madrid, servidores:')
+})
+
+test('before /api/console/me answers the session grants nothing', () => {
+  expect(PENDING_ME.pending).toBe(true)
+  expect(PENDING_ME.can_triage || PENDING_ME.can_respond).toBe(false)
+  expect(permissions(PENDING_ME).filter((p) => p.allowed).map((p) => p.label)).toEqual(['Ver alertas, eventos, equipos e informes', 'Probar reglas (sin cambiar nada)'])
+  expect(DEFAULT_ME.pending).toBeUndefined()
 })
