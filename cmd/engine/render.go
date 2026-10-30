@@ -126,6 +126,13 @@ func renderVersion(b buildInfo) string {
 	var sb strings.Builder
 	sb.WriteString(titleStyle.Render("bluetardigrade engine") + dimStyle.Render("  "+b.Version) + "\n")
 	sb.WriteString(line("version", b.Version) + "\n")
+	if b.Commit != "" {
+		commit := b.Commit
+		if b.Dirty {
+			commit += " (con cambios locales)"
+		}
+		sb.WriteString(line("commit", commit) + "\n")
+	}
 	sb.WriteString(line("runtime", b.Go) + "\n")
 	sb.WriteString(line("plataforma", b.OS+"/"+b.Arch) + "\n")
 	return sb.String()
