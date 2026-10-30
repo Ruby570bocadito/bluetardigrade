@@ -338,11 +338,19 @@ func buildHelp(cmd *cobra.Command) string {
 
 	if cmd.HasAvailableSubCommands() {
 		sb.WriteString("\n" + sectionSty.Render("COMANDOS") + "\n")
+		// the column fits the longest name: a fixed 11 glued
+		// "ingest-identity" and "operator-credential" to their text
+		width := 11
+		for _, sub := range cmd.Commands() {
+			if !sub.Hidden && sub.IsAvailableCommand() && len(sub.Name())+2 > width {
+				width = len(sub.Name()) + 2
+			}
+		}
 		for _, sub := range cmd.Commands() {
 			if sub.Hidden || !sub.IsAvailableCommand() {
 				continue
 			}
-			sb.WriteString("  " + okStyle.Render(pad(sub.Name(), 11)) + sub.Short + "\n")
+			sb.WriteString("  " + okStyle.Render(pad(sub.Name(), width)) + sub.Short + "\n")
 		}
 	}
 

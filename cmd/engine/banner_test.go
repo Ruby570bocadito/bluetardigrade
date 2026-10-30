@@ -30,3 +30,18 @@ func TestIngestAuthBannerNamesTheCredential(t *testing.T) {
 		t.Fatalf("identities-only banner must name the per-sensor credential: %q", identitiesOnly)
 	}
 }
+
+// Every command name in the help stays apart from its description: a
+// fixed-width column glued the long ones ("ingest-identityGenera...").
+func TestHelpCommandColumnFitsTheLongestName(t *testing.T) {
+	help := buildHelp(newRootCmd())
+	for _, name := range []string{"ingest-identity", "operator-credential", "secret-write", "doctor"} {
+		i := strings.Index(help, name)
+		if i < 0 {
+			t.Fatalf("%s missing from the help:\n%s", name, help)
+		}
+		if next := help[i+len(name)]; next != ' ' {
+			t.Fatalf("%q is glued to its description (next byte %q):\n%s", name, next, help)
+		}
+	}
+}
