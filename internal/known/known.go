@@ -20,7 +20,7 @@ package known
 import (
 	"fmt"
 	"os"
-	"path/filepath"
+	"path"
 	"regexp"
 	"strings"
 	"sync"
@@ -127,7 +127,7 @@ func Validate(sw Software) error {
 		}
 	}
 	if sw.Image != "" {
-		if _, err := filepath.Match(normalize(sw.Image), ""); err != nil {
+		if _, err := path.Match(normalize(sw.Image), ""); err != nil {
 			return fmt.Errorf("entry %q: bad image glob: %w", sw.Name, err)
 		}
 	}
@@ -223,7 +223,7 @@ func (m *Manager) Match(ev *model.Event) (string, bool) {
 	defer m.mu.RUnlock()
 	for _, e := range m.entries {
 		if e.hasGlob && image != "" {
-			if ok, err := filepath.Match(e.glob, image); err == nil && ok {
+			if ok, err := path.Match(e.glob, image); err == nil && ok {
 				return e.sw.Name, true
 			}
 		}
