@@ -137,7 +137,6 @@ function Hero() {
                   archivo
                 </span>
               </div>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={LIVE_DEMO.gif}
                 alt="Archived SOC console capture with generated test inputs"

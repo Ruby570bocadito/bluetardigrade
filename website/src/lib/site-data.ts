@@ -180,7 +180,22 @@ export const FEATURES = [
   },
 ];
 
-export const QUICKSTART = {
+/** One line of a quickstart terminal; the flags pick its colour (home-view). */
+export type TerminalLine = {
+  text: string;
+  dim?: boolean;
+  cmd?: boolean;
+  copy?: boolean;
+  ok?: boolean;
+  warn?: boolean;
+  crit?: boolean;
+};
+
+export const QUICKSTART: {
+  windows: { label: string; lines: TerminalLine[] };
+  terminals: { title: string; lines: TerminalLine[] }[];
+  note: string;
+} = {
   windows: {
     label: "Windows · one command",
     lines: [
