@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -133,7 +134,9 @@ func TestLoadWriteRoundTrip(t *testing.T) {
 	if !reflect.DeepEqual(again.Groups(), orig.Groups()) {
 		t.Errorf("round trip changed the groups:\n%+v\n%+v", again.Groups(), orig.Groups())
 	}
-	if info, err := os.Stat(path); err != nil || info.Mode().Perm()&0o077 != 0 {
+	// Windows has no POSIX mode bits: Go reports 0666 for any writable file
+	// (the ACL comes from the directory), so the mode is asserted elsewhere only.
+	if info, err := os.Stat(path); err != nil || (runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0) {
 		t.Errorf("file mode = %v, %v", info.Mode(), err)
 	}
 	if err := os.WriteFile(path, []byte("version: 1\ngroups:\n  - name: Bad\n"), 0o600); err != nil {

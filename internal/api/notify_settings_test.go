@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -142,7 +143,9 @@ func TestNotifySettingsPutCreatesTheFileAndSwapsLive(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("PUT: %d %s", res.StatusCode, raw)
 	}
-	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
+	// Windows has no POSIX mode bits: Go reports 0666 for any writable file
+	// (the ACL comes from the directory), so the mode is asserted elsewhere only.
+	if info, err := os.Stat(path); err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0o600) {
 		t.Fatalf("file not committed 0600: %v %v", err, info)
 	}
 	if got := live.Summary(); len(got) != 1 || got[0] != "movil (ntfy)" {

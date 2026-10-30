@@ -23,6 +23,11 @@ import (
 // respond tests use) and waits for its image link.
 func respondSleeper(t *testing.T) *exec.Cmd {
 	t.Helper()
+	// The kill path under test resolves the target image through /proc; on
+	// Windows it runs for real in scripts/windows/smoke_respond.ps1.
+	if _, err := os.Stat("/proc/self/exe"); err != nil {
+		t.Skip("needs /proc (Linux); the Windows kill path is covered by scripts/windows/smoke_respond.ps1")
+	}
 	cmd := exec.Command("sleep", "30")
 	if err := cmd.Start(); err != nil {
 		t.Skipf("cannot spawn sleep: %v", err)

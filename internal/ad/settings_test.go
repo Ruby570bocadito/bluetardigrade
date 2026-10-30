@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -152,7 +153,9 @@ func TestConfigWriteFileRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	// Windows has no POSIX mode bits: Go reports 0666 for any writable file
+	// (the ACL comes from the directory), so the mode is asserted elsewhere only.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("config file mode %o, want 0600", info.Mode().Perm())
 	}
 	loaded, err := Load(path)

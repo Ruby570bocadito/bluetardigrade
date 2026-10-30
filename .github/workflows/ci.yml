@@ -180,11 +180,19 @@ jobs:
       - name: build engine (nativo Windows)
         run: go build -o engine-smoke.exe ./cmd/engine
       - name: Windows unit tests and provider fixtures
+        # pwsh fails a step only on the LAST native exit code (the runner
+        # appends `exit $LASTEXITCODE`), so a red `go test` followed by
+        # green smokes used to pass unseen. Every native command checks
+        # its own exit code.
         run: |
           go test -count=1 ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go build -o collector-smoke.exe ./cmd/collector
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python scripts/dev-tests/smoke_soc_pipeline.py --engine engine-smoke.exe --collector collector-smoke.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python scripts/dev-tests/smoke_file_forensics.py --engine engine-smoke.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Shared launcher configuration and process ownership
         shell: powershell
         run: ./scripts/dev-tests/check_runtime_behavior.ps1
