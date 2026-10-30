@@ -82,6 +82,9 @@ func (s *Store) readOnly() (*sql.DB, error) {
 		}
 		s.roDB = db
 	})
+	if s.roDB == nil && s.roErr == nil {
+		return nil, fmt.Errorf("store: closed")
+	}
 	return s.roDB, s.roErr
 }
 

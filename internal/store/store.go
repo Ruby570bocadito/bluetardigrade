@@ -142,7 +142,7 @@ func Open(path string) (*Store, error) {
 	} {
 		if _, err := db.Exec(pragma); err != nil {
 			db.Close()
-			return nil, fmt.Errorf("store: %s: %w", pragma, err)
+			return nil, fmt.Errorf("store: %s: %s: %w", path, pragma, err)
 		}
 	}
 	schema := `
@@ -230,8 +230,21 @@ func ensurePrivateFile(path string) error {
 	return f.Close()
 }
 
-// Close closes the database.
-func (s *Store) Close() error { return s.db.Close() }
+// Close closes the database, including the lazily opened read-only
+// handle of QueryRO: left open it keeps the file locked on Windows
+// (no delete, rename or restore while the process lives). The empty Do
+// settles the lazy open first, so a query racing Close either sees the
+// handle (and Close closes it) or never opens one afterwards.
+func (s *Store) Close() error {
+	s.roOnce.Do(func() {})
+	err := s.db.Close()
+	if s.roDB != nil {
+		if rerr := s.roDB.Close(); err == nil {
+			err = rerr
+		}
+	}
+	return err
+}
 
 // Counts returns the live row counts (maintained incrementally; the
 // values include rows that predate this process start).
