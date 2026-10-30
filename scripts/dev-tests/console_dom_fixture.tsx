@@ -285,7 +285,8 @@ async function main() {
   console.log('PASS: older engines show an actionable search capability error without stale rows')
 
   const forensicToggle=()=>document.querySelector<HTMLButtonElement>('[aria-label="Línea de tiempo forense"]')!
-  root.render(<ForensicPanel alertId={alert.id} />)
+  // the panel reads its copy from the dictionary, like ReportPanel below
+  root.render(<I18nProvider><ForensicPanel alertId={alert.id} /></I18nProvider>)
   await until(()=>Boolean(forensicToggle()))
   let forensicMode: 'error' | 'bundle' | 'hold' = 'error'
   let releaseForensic: (()=>void) | null = null
@@ -342,7 +343,7 @@ async function main() {
   }
   console.log('PASS: forensic export buttons download complete JSON/JSONL and clean their temporary URLs')
 
-  root.render(<ForensicPanel alertId={historicalAlert.id} />)
+  root.render(<I18nProvider><ForensicPanel alertId={historicalAlert.id} /></I18nProvider>)
   await until(()=>forensicToggle()?.getAttribute('aria-expanded')==='false')
   assert.equal(document.querySelector('[aria-label="Descargar evidencia JSON"]'),null)
   forensicMode='error'
@@ -356,12 +357,12 @@ async function main() {
   assert.equal(forensicReads.at(-1),historicalAlert.id)
   console.log('PASS: changing alerts resets evidence, and reopening a failed panel really re-queries')
 
-  root.render(<ForensicPanel alertId={alert.id} />)
+  root.render(<I18nProvider><ForensicPanel alertId={alert.id} /></I18nProvider>)
   await until(()=>forensicToggle()?.getAttribute('aria-expanded')==='false')
   forensicMode='hold'
   forensicToggle().click()
   await until(()=>releaseForensic!==null)
-  root.render(<ForensicPanel alertId={historicalAlert.id} />)
+  root.render(<I18nProvider><ForensicPanel alertId={historicalAlert.id} /></I18nProvider>)
   await until(()=>forensicToggle()?.getAttribute('aria-expanded')==='false')
   forensicMode='bundle'
   forensicToggle().click()
@@ -374,7 +375,7 @@ async function main() {
   window.localStorage.clear()
   let huntQuery = 'fresh typing before URL debounce'
   let applied = ''
-  const renderSearches = () => root.render(<SavedSearches kind="alerts" getLens={() => alertSearchLens('critical','open','history',huntQuery)} onApply={(lens)=>{applied=JSON.stringify(lens)}} />)
+  const renderSearches = () => root.render(<I18nProvider><SavedSearches kind="alerts" getLens={() => alertSearchLens('critical','open','history',huntQuery)} onApply={(lens)=>{applied=JSON.stringify(lens)}} /></I18nProvider>)
   renderSearches()
   const savedToggle=()=>[...document.querySelectorAll('button')].find(b=>b.textContent?.includes('Búsquedas guardadas'))!
   await until(()=>Boolean(savedToggle()))
