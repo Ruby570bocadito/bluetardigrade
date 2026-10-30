@@ -123,11 +123,18 @@ func run(ctx context.Context, opts options, input io.Reader, output, diagnostics
 		line := 0
 		for scanner.Scan() {
 			line++
-			if len(scanner.Bytes()) == 0 {
+			record := scanner.Bytes()
+			if line == 1 {
+				var err error
+				if record, err = collector.FirstLine(record); err != nil {
+					return fmt.Errorf("line 1: %w", err)
+				}
+			}
+			if len(record) == 0 {
 				ignored++
 				continue
 			}
-			ev, err := decoder.Decode(scanner.Bytes())
+			ev, err := decoder.Decode(record)
 			if errors.Is(err, collector.ErrIgnored) {
 				ignored++
 				continue
