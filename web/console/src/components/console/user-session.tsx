@@ -144,7 +144,7 @@ export function UserChip() {
       >
         {viewer ? <Eye size={15} aria-hidden className="text-zinc-400" /> : <UserCircle size={15} aria-hidden className="text-zinc-400" />}
         <span className="max-w-[9rem] truncate text-xs">{me.name}</span>
-        <span className="hidden rounded bg-white/[0.06] px-1 text-[10px] text-zinc-400 2xl:inline">{ROLE_TEXT[me.role]}</span>
+        <span className="hidden rounded bg-white/[0.06] px-1 text-[10px] text-zinc-400 min-[1800px]:inline">{ROLE_TEXT[me.role]}</span>
         {me.scope?.length ? <span className="hidden rounded bg-white/[0.06] px-1 text-[10px] text-zinc-400 xl:inline">{me.scope.length === 1 ? me.scope[0] : `${me.scope.length} grupos`}</span> : null}
       </button>
       <ConsoleDialog open={open} onClose={() => setOpen(false)} titleId={titleId} descriptionId={descId} initialFocus={closeRef} className="max-w-2xl">

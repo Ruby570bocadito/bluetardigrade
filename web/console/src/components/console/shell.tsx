@@ -8,6 +8,7 @@ import { describeTelemetrySources } from '@/lib/telemetry-source'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
+import { useEntrance } from '@/components/reactbits/entrance'
 import { ActivityIcon, BatteryCharging, ChatsCircle, Database, Desktop, DeviceMobile, Files, Flask, FlowArrow, FolderOpen, Gauge, Gear, Keyboard, Lightning, ListMagnifyingGlass, MagnifyingGlass, Prohibit, RocketLaunch, ShieldCheck, SpeakerHigh, SquaresFour, TreeStructure, Warning, CornersOut } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
 import { BlurText } from '@/components/reactbits/blur-text'
@@ -438,7 +439,12 @@ export function ConsoleShell() {
                   {destination && <p className="truncate text-xs text-zinc-500">{destination.description}</p>}
                 </div>
               </div>
-              <div className="ml-auto flex min-w-0 items-center gap-2 overflow-x-auto">
+              {/* Wraps instead of scrolling: the old overflow-x-auto hid the
+                  last controls (detectors, clock) off the edge at every
+                  laptop width from 1280 to 1536 px, with nothing showing
+                  they were there. The search button stays compact until
+                  its label fits next to everything else. */}
+              <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => { setHelpOpen(false); setPaletteOpen(true) }}
@@ -446,12 +452,12 @@ export function ConsoleShell() {
                   aria-haspopup="dialog"
                   aria-keyshortcuts="Control+k Meta+k"
                   title={dict.chrome.commandsTitle}
-                  className="chip shrink-0 gap-2 px-2.5 py-1.5 text-zinc-400 transition-colors hover:border-primary/40 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:min-w-[200px]"
+                  className="chip shrink-0 gap-2 px-2.5 py-1.5 text-zinc-400 transition-colors hover:border-primary/40 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring min-[1700px]:min-w-[200px]"
                 >
                   <MagnifyingGlass size={15} aria-hidden />
-                  <span className="hidden text-xs sm:inline">{dict.chrome.searchViewsCommands}</span>
+                  <span className="hidden text-xs min-[1700px]:inline">{dict.chrome.searchViewsCommands}</span>
                   {' '}
-                  <kbd aria-hidden className="ml-auto hidden rounded border border-zinc-700 px-1 font-mono text-[10px] text-zinc-400 md:inline">Ctrl K</kbd>
+                  <kbd aria-hidden className="ml-auto hidden rounded border border-zinc-700 px-1 font-mono text-[10px] text-zinc-400 min-[1400px]:inline">Ctrl K</kbd>
                 </button>
                 <div className="chip shrink-0 whitespace-nowrap px-2.5 py-1.5">
                   <span className="relative flex h-2 w-2" aria-hidden>
@@ -562,7 +568,7 @@ function UtcClock() {
   }, [])
   if (!now) return null
   return (
-    <span className="chip hidden shrink-0 whitespace-nowrap px-2.5 py-1.5 font-mono text-[11px] tabular-nums text-zinc-400 2xl:flex" title={dict.chrome.utcTitle}>
+    <span className="chip hidden shrink-0 whitespace-nowrap px-2.5 py-1.5 font-mono text-[11px] tabular-nums text-zinc-400 min-[1800px]:flex" title={dict.chrome.utcTitle}>
       {/* text-zinc-500: the AA-remapped hint tier (PUL-B axe round) — raw
           zinc-600 is 2.6:1 here and this label is real text on wide screens */}
       <span className="text-zinc-500">UTC</span>
@@ -636,13 +642,16 @@ function BrandRow() {
   )
 }
 
-/** Cross-fade between views (state transition, nothing decorative). */
+/** Cross-fade between views (state transition, nothing decorative). The
+ *  first render never animates (useEntrance: the server cannot know the
+ *  reduced-motion preference); later view changes cross-fade unless the
+ *  user asked for reduced motion. */
 function AnimatedView({ viewKey, children }: { viewKey: string; children: React.ReactNode }) {
-  const reduce = useReducedMotion()
+  const initial = useEntrance({ opacity: 0, y: 6 })
   return (
     <motion.div
       key={viewKey}
-      initial={reduce ? false : { opacity: 0, y: 6 }}
+      initial={initial}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2, ease: 'easeOut' }}
     >

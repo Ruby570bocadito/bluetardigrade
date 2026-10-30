@@ -7,6 +7,7 @@
 // prefers-reduced-motion.
 
 import { motion, useReducedMotion } from 'motion/react'
+import { useEntrance } from './entrance'
 
 type AnimatedItemProps = {
   index: number
@@ -16,10 +17,11 @@ type AnimatedItemProps = {
 
 export function AnimatedItem({ index, children, className = '' }: AnimatedItemProps) {
   const reduce = useReducedMotion()
+  const initial = useEntrance({ opacity: 0, y: 8 })
   const delay = Math.min(index * 0.04, 0.32)
   return (
     <motion.div
-      initial={reduce ? false : { opacity: 0, y: 8 }}
+      initial={initial}
       animate={{ opacity: 1, y: 0 }}
       // Con initial=false no hay animación que cortar; el duration:0
       // explícito cierra el caso raro de la preferencia llegando a mitad

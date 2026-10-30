@@ -278,12 +278,24 @@ try {
     await waitView('panel')
     await page.getByRole('region', { name: 'Resumen de operación' }).waitFor()
     await page.waitForTimeout(500)
-    // The server renders entrance animations at opacity 0; the client must
-    // lift them even when it skips the motion. Hover-only halos are exempt.
+    // No block may stay transparent once the client runs, whatever the
+    // motion preference. Hover-only halos are exempt.
     const hidden = await page.locator('#console-main').evaluate((main) =>
       [...main.querySelectorAll('*')].filter((el) => el instanceof HTMLElement && el.offsetParent !== null
         && getComputedStyle(el).opacity === '0' && !el.classList.contains('spotlight-card__halo')).length)
     assert.equal(hidden, 0, 'dashboard blocks stayed transparent under reduced motion')
+  })
+  await check('the server HTML paints the final frame of every entrance', async () => {
+    // Entrance animations start only after hydration (useEntrance). The
+    // server cannot know the reduced-motion preference: its old hidden
+    // frame mismatched a reduced-motion client (an attribute diff React
+    // leaves unpatched) and kept every block invisible until the scripts
+    // ran. A production build does not diff attributes, so the guard reads
+    // the HTML itself.
+    const html = await (await fetch(base + '/')).text()
+    const main = html.slice(html.indexOf('id="console-main"'))
+    assert.ok(main.length < html.length, 'the server HTML has no console main')
+    assert.deepEqual(main.match(/style="[^"]*opacity:0[^"]*"/g) ?? [], [], 'the server HTML still renders hidden entrance frames')
   })
   await check('dashboard shortcuts open the counted live lens and Back restores the prior investigation', async () => {
     await waitView('panel')
@@ -367,6 +379,21 @@ try {
     assert.ok(await palette().evaluate((dialog) => dialog.scrollWidth <= dialog.clientWidth))
     await page.screenshot({ path: join(captures, 'palette-desktop.png') })
     await page.keyboard.press('Escape')
+  })
+  await check('header controls stay on screen at every laptop width', async () => {
+    // The control group scrolled sideways (overflow-x-auto) and hid its last
+    // controls off the edge at every width from 1280 to 1536 px; it wraps
+    // now, so every control is reachable without a hidden scroll.
+    const header = page.getByRole('button', { name: /^Abrir comandos/ }).locator('xpath=ancestor::header[1]')
+    for (const width of [1280, 1366, 1440, 1536]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.waitForTimeout(150)
+      const outside = await header.evaluate((node) => [...node.querySelectorAll('button, a')]
+        .filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && (r.right > innerWidth + 0.5 || r.left < -0.5) })
+        .map((el) => el.getAttribute('aria-label') || el.textContent.trim()))
+      assert.deepEqual(outside, [], `${width} px: header controls outside the viewport`)
+    }
+    await page.setViewportSize({ width: 1280, height: 900 })
   })
   await check('mobile viewport opens the palette and backdrop closes it with reduced motion', async () => {
     await page.setViewportSize({ width: 390, height: 844 })

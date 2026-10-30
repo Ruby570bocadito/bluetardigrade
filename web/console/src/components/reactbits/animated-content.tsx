@@ -7,6 +7,7 @@
 // prefers-reduced-motion el bloque aparece directamente.
 
 import { motion, useReducedMotion } from 'motion/react'
+import { useEntrance } from './entrance'
 
 type AnimatedContentProps = {
   children: React.ReactNode
@@ -19,14 +20,14 @@ type AnimatedContentProps = {
 
 export function AnimatedContent({ children, order = 0, distance = 14, className }: AnimatedContentProps) {
   const reduce = useReducedMotion()
-  // Always a motion element: the server renders the hidden initial
-  // state (it cannot know the preference), and only motion rewrites
-  // that inline style on the client. A plain <div> for reduced motion
-  // would hydrate over the server's opacity:0 and stay invisible.
+  // The first render shows the final frame on the server and the client
+  // alike (useEntrance): the old hidden server frame hydrated against a
+  // visible reduced-motion client, a mismatch React left unpatched.
+  const initial = useEntrance({ opacity: 0, y: distance, filter: 'blur(3px)' })
   return (
     <motion.div
       className={className}
-      initial={reduce ? false : { opacity: 0, y: distance, filter: 'blur(3px)' }}
+      initial={initial}
       animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
       transition={reduce ? { duration: 0 } : { duration: 0.5, delay: Math.min(order * 0.06, 0.48), ease: [0.16, 1, 0.3, 1] }}
     >
