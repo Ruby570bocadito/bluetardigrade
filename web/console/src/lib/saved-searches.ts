@@ -101,10 +101,16 @@ export function searchForSavedLens(search: string, lens: SavedLens): string {
   return writeViewToSearch(writeFeedToSearch(search, lens.eventType, lens.q), 'flujo')
 }
 
-export function describeSavedLens(lens: SavedLens): string {
+const LENS_WORDS = {
+  es: { history: 'Histórico', live: 'En vivo', allSeverities: 'todas las severidades', allStates: 'todos los estados', feed: 'Flujo', allTypes: 'todos los tipos' },
+  en: { history: 'History', live: 'Live', allSeverities: 'all severities', allStates: 'all states', feed: 'Feed', allTypes: 'all types' },
+}
+
+export function describeSavedLens(lens: SavedLens, lang: 'es' | 'en' = 'es'): string {
+  const w = LENS_WORDS[lang]
   const filters = lens.kind === 'alerts'
-    ? [lens.scope === 'history' ? 'Histórico' : 'En vivo', lens.severity === 'all' ? 'todas las severidades' : lens.severity, lens.state === 'all' ? 'todos los estados' : lens.state]
-    : ['Flujo', lens.eventType === 'all' ? 'todos los tipos' : lens.eventType]
+    ? [lens.scope === 'history' ? w.history : w.live, lens.severity === 'all' ? w.allSeverities : lens.severity, lens.state === 'all' ? w.allStates : lens.state]
+    : [w.feed, lens.eventType === 'all' ? w.allTypes : lens.eventType]
   if (lens.q) filters.push(`«${lens.q}»`)
   return filters.join(' · ')
 }

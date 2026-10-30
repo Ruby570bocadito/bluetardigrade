@@ -43,7 +43,7 @@ export async function engineCall<T>(
           ? body.hint
           : body && 'error' in body
             ? String(body.error)
-            : text.trim() || `el motor respondió ${res.status}`
+            : text.trim() || `HTTP ${res.status}`
       return { ok: false, status: res.status, error: message }
     }
     return { ok: true, data: parsed as T }

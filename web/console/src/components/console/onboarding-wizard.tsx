@@ -68,7 +68,7 @@ export function OnboardingWizard({ open, onClose }: { open: boolean; onClose: ()
   const { enroll, fleet, loaded } = useFleet()
   const me = useConsoleUser()
   const { status: engineStatus } = useEngine()
-  const { dict } = useI18n()
+  const { dict, lang } = useI18n()
   const [stayClosed, setStayClosed] = useState(false)
   const closeRef = useRef<HTMLButtonElement>(null)
 
@@ -134,18 +134,16 @@ export function OnboardingWizard({ open, onClose }: { open: boolean; onClose: ()
         <ol className="mt-4 space-y-2.5">
           <Step id="acceso" status={statuses.acceso}>
             <p>
-              <span className="font-medium text-zinc-300">{dict.onboarding.acceso.howNow}</span> {modeText(me)}.
+              <span className="font-medium text-zinc-300">{dict.onboarding.acceso.howNow}</span> {modeText(me, lang)}.{' '}
               {dict.onboarding.acceso.effectiveRole} {me.role === 'admin' ? dict.onboarding.acceso.roles.admin : me.role === 'analyst' ? dict.onboarding.acceso.roles.analyst : dict.onboarding.acceso.roles.viewer}.
             </p>
             {me.mode !== 'users' && (
               <p>
                 {dict.onboarding.acceso.usersProseA}
-                <code className="code-chip rounded px-1 font-mono text-[11px]">bun scripts/console-user.mjs &lt;usuario&gt; admin</code>
+                <code className="code-chip rounded px-1 font-mono text-[11px]">sf-console -AddUser &lt;usuario&gt;</code>
                 {dict.onboarding.acceso.usersProseB}
-                <code className="code-chip rounded px-1 font-mono text-[11px]">web/console</code>
+                <code className="code-chip rounded px-1 font-mono text-[11px]">node scripts/console-user.mjs --file &lt;fichero&gt; &lt;usuario&gt; admin</code>
                 {dict.onboarding.acceso.usersProseC}
-                <code className="code-chip rounded px-1 font-mono text-[11px]">CONSOLE_USERS_FILE</code>
-                {dict.onboarding.acceso.usersProseD}
               </p>
             )}
             <p className="text-[11px] text-zinc-500">

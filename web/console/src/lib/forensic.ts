@@ -163,36 +163,54 @@ export function buildForensicExport(bundle: ForensicBundle, format: 'json' | 'js
   }
 }
 
+// The connective words of the timeline lines, by console language
+// (Spanish stays the default so existing call sites keep their output).
+const LINE_WORDS = {
+  es: {
+    verdict: 'veredicto', undeclared: 'no declarado', mail: 'Correo', noSubject: '(sin asunto)', created: 'proceso creado',
+    endOf: 'fin de', process: 'proceso', netConn: 'conexion de red', writes: 'escribe', fileWrite: 'escritura de fichero',
+    registry: 'registro', registryWrite: 'escritura de registro', accesses: 'accede a', otherProcess: 'otro proceso',
+    loads: 'carga', moduleLoad: 'carga de modulo',
+  },
+  en: {
+    verdict: 'verdict', undeclared: 'not declared', mail: 'Mail', noSubject: '(no subject)', created: 'process created',
+    endOf: 'end of', process: 'process', netConn: 'network connection', writes: 'writes', fileWrite: 'file write',
+    registry: 'registry', registryWrite: 'registry write', accesses: 'accesses', otherProcess: 'another process',
+    loads: 'loads', moduleLoad: 'module load',
+  },
+}
+
 // One-line description of a timeline event, the same vocabulary the
 // live feed uses so operators read both surfaces with one eye.
-export function forensicEventLine(ev: ForensicEvent): string {
+export function forensicEventLine(ev: ForensicEvent, lang: 'es' | 'en' = 'es'): string {
   const a = ev.attributes ?? {}
+  const w = LINE_WORDS[lang]
   switch (ev.type) {
-    case 'network.alert': return `IDS ${a.ids_signature ?? '?'} · veredicto ${a.ids_verdict ?? 'no declarado'}`
+    case 'network.alert': return `IDS ${a.ids_signature ?? '?'} · ${w.verdict} ${a.ids_verdict ?? w.undeclared}`
     case 'host.query': return `osquery ${a.query_name ?? '?'} · ${a.query_action ?? '?'}`
     case 'network.firewall': return `Firewall ${a.firewall_action ?? '?'} ${a.firewall_direction ?? ''}`
-    case 'email.message': return `Correo ${a.mail_subject ?? '(sin asunto)'}`
+    case 'email.message': return `${w.mail} ${a.mail_subject ?? w.noSubject}`
     case 'honeypot.connect':
     case 'honeypot.login':
     case 'honeypot.command': return `Cowrie ${a.honeypot_event ?? ev.type} ${a.honeypot_input ?? ''}`
     case 'process.create':
-      return ev.process?.command_line || ev.process?.name || 'proceso creado'
+      return ev.process?.command_line || ev.process?.name || w.created
     case 'process.terminate':
-      return `fin de ${ev.process?.name ?? 'proceso'} (pid ${ev.process?.pid ?? '?'})`
+      return `${w.endOf} ${ev.process?.name ?? w.process} (pid ${ev.process?.pid ?? '?'})`
     case 'network.connect': {
       const n = ev.network
-      if (!n) return 'conexion de red'
+      if (!n) return w.netConn
       const dest = n.domain || n.destination_ip
-      return dest ? `${n.protocol ?? 'net'} -> ${dest}${n.destination_port ? ':' + n.destination_port : ''}` : 'conexion de red'
+      return dest ? `${n.protocol ?? 'net'} -> ${dest}${n.destination_port ? ':' + n.destination_port : ''}` : w.netConn
     }
     case 'file.write':
-      return ev.file?.path ? `escribe ${ev.file.path}` : 'escritura de fichero'
+      return ev.file?.path ? `${w.writes} ${ev.file.path}` : w.fileWrite
     case 'registry.set':
-      return ev.registry?.key ? `registro ${ev.registry.key}` : 'escritura de registro'
+      return ev.registry?.key ? `${w.registry} ${ev.registry.key}` : w.registryWrite
     case 'process.access':
-      return `${ev.process?.name || 'proceso'} accede a ${ev.target?.name || 'otro proceso'}${ev.access?.granted_access ? ` (${ev.access.granted_access})` : ''}`
+      return `${ev.process?.name || w.process} ${w.accesses} ${ev.target?.name || w.otherProcess}${ev.access?.granted_access ? ` (${ev.access.granted_access})` : ''}`
     case 'image.load':
-      return ev.file?.path ? `carga ${ev.file.path}` : 'carga de modulo'
+      return ev.file?.path ? `${w.loads} ${ev.file.path}` : w.moduleLoad
     default:
       return ev.type
   }

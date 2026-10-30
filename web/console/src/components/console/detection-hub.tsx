@@ -8,6 +8,7 @@
 
 import { BatteryCharging, Flask, FlowArrow, ListMagnifyingGlass, Prohibit, ShieldCheck, SpeakerHigh } from '@phosphor-icons/react'
 import { useEngine } from './engine-provider'
+import { useI18n } from './i18n-provider'
 import { ConsoleTablist, type ConsoleTab } from './ui-tabs'
 import { RulesView } from './rules-view'
 import { SequencesView } from './sequences-view'
@@ -30,8 +31,11 @@ const TABS: ConsoleTab<DetectionView>[] = [
 
 export function DetectionHub({ tab, onTab, onOpenRule }: { tab: DetectionView; onTab: (tab: DetectionView) => void; onOpenRule: (id: string) => void }) {
   const { rules, sequences, suppressions } = useEngine()
+  const { dict } = useI18n()
   const counts: Partial<Record<DetectionView, number>> = { reglas: rules.length, cadenas: sequences.length, supresiones: suppressions.length }
-  const tabs = TABS.map((t) => ({ ...t, count: counts[t.id] }))
+  // the labels come from the navigation dictionary: the literals above are
+  // only the Spanish fallback the tab list was written with
+  const tabs = TABS.map((t) => ({ ...t, label: dict.nav[t.id].label, count: counts[t.id] }))
   return (
     <div className="space-y-4">
       <ConsoleTablist idPrefix="detection" ariaLabel="Contenido de detección" tabs={tabs} value={tab} onSelect={onTab} />

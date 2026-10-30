@@ -38,7 +38,6 @@ import {
   createIncident,
   createSuppression,
   expiryInDays,
-  INCIDENT_STATUS_LABEL,
   isPublicIPv4,
   killProcess,
   eventSha256,
@@ -85,6 +84,8 @@ export function AlertActionBar({ alerts, onClear, onAnalyze, onAnalyzeGroup, onO
   onOpenIncident?: (id: string) => void
 }) {
   const { applyTriage } = useEngine()
+  const { dict } = useI18n()
+  const w = dict.alertActions
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
@@ -105,49 +106,48 @@ export function AlertActionBar({ alerts, onClear, onAnalyze, onAnalyzeGroup, onO
     }
     setBusy(false)
     setNote('')
-    setMessage(errors.length ? `${ok} actualizadas, ${errors.length} con error: ${errors[0]}` : `${ok} alertas actualizadas.`)
+    setMessage(w.triageResult(ok, errors.length, errors[0] ?? ''))
   }
 
-  const { dict } = useI18n()
   const [assignOpen, setAssignOpen] = useState(false)
 
   function exportSelection(format: 'jsonl' | 'csv') {
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
     if (format === 'jsonl') {
-      download(`alertas-seleccion-${stamp}.jsonl`, alerts.map((a) => JSON.stringify(a)).join('\n') + '\n', 'application/x-ndjson')
+      download(`${w.exportName}-${stamp}.jsonl`, alerts.map((a) => JSON.stringify(a)).join('\n') + '\n', 'application/x-ndjson')
       return
     }
     const cols = ['id', 'timestamp', 'severity', 'rule_id', 'rule_name', 'host', 'user', 'event_type', 'status', 'summary'] as const
     const rows = alerts.map((a) => cols.map((c) => csvCell(a[c])).join(','))
-    download(`alertas-seleccion-${stamp}.csv`, [cols.join(','), ...rows].join('\n') + '\n', 'text/csv')
+    download(`${w.exportName}-${stamp}.csv`, [cols.join(','), ...rows].join('\n') + '\n', 'text/csv')
   }
 
   const top = [...alerts].sort((a, b) => RANK[b.severity] - RANK[a.severity])[0]
 
   return (
-    <div role="region" aria-label="Acciones sobre la selección" className="sticky top-16 z-10 mb-3 rounded-xl border border-primary/25 bg-zinc-900/95 px-3 py-2.5 shadow-lg backdrop-blur">
+    <div role="region" aria-label={w.selectionAria} className="sticky top-16 z-10 mb-3 rounded-xl border border-primary/25 bg-zinc-900/95 px-3 py-2.5 shadow-lg backdrop-blur">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium text-primary-soft">{alerts.length} seleccionadas</span>
-        <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} aria-label="Nota común para el triaje" placeholder="nota común (opcional)"
+        <span className="text-xs font-medium text-primary-soft">{w.selected(alerts.length)}</span>
+        <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} aria-label={w.noteAria} placeholder={w.notePlaceholder}
           className="h-8 w-44 rounded-md border border-zinc-800 bg-zinc-950 px-2 text-xs text-zinc-100 placeholder:text-zinc-600" />
         <button type="button" className={btn} disabled={busy || withId.length === 0} onClick={() => void triage('acknowledged')}>
-          <Eye size={13} aria-hidden /> Reconocer ({withId.length})
+          <Eye size={13} aria-hidden /> {w.acknowledge(withId.length)}
         </button>
         <button type="button" className={btn} disabled={busy || withId.length === 0} onClick={() => void triage('closed')}>
-          <XCircle size={13} aria-hidden /> Cerrar ({withId.length})
+          <XCircle size={13} aria-hidden /> {w.close(withId.length)}
         </button>
         <button type="button" className={btn} disabled={busy || withId.length === 0} onClick={() => void triage('new')}>
-          <ArrowCounterClockwise size={13} aria-hidden /> Reabrir ({withId.length})
+          <ArrowCounterClockwise size={13} aria-hidden /> {w.reopen(withId.length)}
         </button>
         <span aria-hidden className="mx-1 h-5 w-px bg-white/10" />
         <button type="button" className={btn} disabled={busy || withId.length === 0} onClick={() => setAssignOpen(true)}>
           <UserPlus size={13} aria-hidden /> {dict.alerts.bulkAssign} ({withId.length})
         </button>
         <button type="button" className={btn} disabled={withId.length === 0} onClick={() => setDialog('incident')}>
-          <FolderPlus size={13} aria-hidden /> Añadir a incidente
+          <FolderPlus size={13} aria-hidden /> {w.addToIncident}
         </button>
         <button type="button" className={btn} onClick={() => setDialog('suppress')}>
-          <Prohibit size={13} aria-hidden /> Suprimir
+          <Prohibit size={13} aria-hidden /> {w.suppress}
         </button>
         <button type="button" className={btn} onClick={() => exportSelection('jsonl')}>
           <DownloadSimple size={13} aria-hidden /> JSONL
@@ -156,8 +156,8 @@ export function AlertActionBar({ alerts, onClear, onAnalyze, onAnalyzeGroup, onO
           <DownloadSimple size={13} aria-hidden /> CSV
         </button>
         {onAnalyze && top && (
-          <button type="button" className={btn} onClick={() => onAnalyze(top)} title="El analista estudia la alerta más grave de la selección">
-            <Sparkle size={13} weight="fill" aria-hidden /> Analizar la más grave
+          <button type="button" className={btn} onClick={() => onAnalyze(top)} title={w.analyzeTopTitle}>
+            <Sparkle size={13} weight="fill" aria-hidden /> {w.analyzeTop}
           </button>
         )}
         {onAnalyzeGroup && (
@@ -165,12 +165,12 @@ export function AlertActionBar({ alerts, onClear, onAnalyze, onAnalyzeGroup, onO
             type="button"
             className={btn}
             onClick={() => onAnalyzeGroup(alerts)}
-            title="El analista estudia la selección como conjunto: agrupa por equipo y ventana y adjunta el bundle forense de la alerta más grave"
+            title={w.analyzeGroupTitle}
           >
-            <Sparkle size={13} weight="fill" aria-hidden /> Analizar la selección ({Math.min(alerts.length, 8)})
+            <Sparkle size={13} weight="fill" aria-hidden /> {w.analyzeGroup(Math.min(alerts.length, 8))}
           </button>
         )}
-        <button type="button" onClick={onClear} aria-label="Quitar la selección" className="ml-auto rounded-md p-1.5 text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <button type="button" onClick={onClear} aria-label={w.clearSelection} className="ml-auto rounded-md p-1.5 text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           <X size={14} aria-hidden />
         </button>
       </div>
@@ -278,7 +278,7 @@ export function AssignDialog({ alerts, onClose }: {
         )}
       </div>
       <div className="flex justify-end gap-2 border-t border-zinc-800 px-5 py-3">
-        <button type="button" onClick={onClose} className="rounded-md px-3 py-2 text-xs text-zinc-400 hover:text-zinc-100">{result ? 'Hecho' : 'Cancelar'}</button>
+        <button type="button" onClick={onClose} className="rounded-md px-3 py-2 text-xs text-zinc-400 hover:text-zinc-100">{result ? dict.alertActions.done : dict.alertActions.cancel}</button>
         {!result && (
           <button type="button" className={primary} disabled={busy || needsName || ids.length === 0} onClick={() => void submit()}>
             {busy ? '…' : target === 'none' ? dict.alerts.submitUnassign : dict.alerts.submitAssign}
@@ -297,30 +297,31 @@ export function AlertQuickActions({ alert, onHost, onOpenIncident }: {
   onOpenIncident?: (id: string) => void
 }) {
   const { respondState } = useEngine()
+  const w = useI18n().dict.alertActions
   const [dialog, setDialog] = useState<'incident' | 'suppress' | 'kill' | null>(null)
   return (
     <div className="mt-4">
-      <p className="text-[10px] uppercase tracking-wider text-zinc-500">Acciones</p>
+      <p className="text-[10px] uppercase tracking-wider text-zinc-500">{w.actions}</p>
       <div className="mt-1.5 flex flex-wrap gap-1.5">
         {onHost && alert.host && (
           <button type="button" className={btn} onClick={() => onHost(alert.host)}>
-            <Desktop size={13} aria-hidden /> Ficha del equipo
+            <Desktop size={13} aria-hidden /> {w.hostPage}
           </button>
         )}
         <button type="button" className={btn} disabled={!alert.id} onClick={() => setDialog('incident')}>
-          <FolderPlus size={13} aria-hidden /> Añadir a incidente
+          <FolderPlus size={13} aria-hidden /> {w.addToIncident}
         </button>
         <button type="button" className={btn} onClick={() => setDialog('suppress')}>
-          <Prohibit size={13} aria-hidden /> Suprimir en este equipo
+          <Prohibit size={13} aria-hidden /> {w.suppressHere}
         </button>
         <button
           type="button"
           className={`${btn} border-red-400/25 text-red-200 hover:border-red-400/50`}
           disabled={!respondState}
-          title={respondState ? 'Terminar el proceso en el equipo (credencial de operador)' : 'La respuesta activa no está armada en el motor'}
+          title={respondState ? w.containOn : w.containOff}
           onClick={() => setDialog('kill')}
         >
-          <Skull size={13} aria-hidden /> Contener proceso
+          <Skull size={13} aria-hidden /> {w.contain}
         </button>
       </div>
       <ReputationPanel alert={alert} />
@@ -339,13 +340,15 @@ function IncidentDialog({ alerts, onClose, onOpenIncident }: {
   onOpenIncident?: (id: string) => void
 }) {
   const { incidents, available, upsert } = useIncidents()
+  const { dict } = useI18n()
+  const w = dict.alertActions
   const active = incidents.filter((i) => i.status !== 'closed')
   const id = useId()
   const first = useRef<HTMLInputElement>(null)
   const [target, setTarget] = useState(active[0]?.id ?? 'new')
   const hosts = [...new Set(alerts.map((a) => a.host).filter(Boolean))]
   const [title, setTitle] = useState(
-    alerts.length === 1 ? `${alerts[0].rule_name} en ${alerts[0].host}` : `${alerts.length} alertas en ${hosts.slice(0, 2).join(', ')}${hosts.length > 2 ? '…' : ''}`,
+    alerts.length === 1 ? w.incidentDefaultOne(alerts[0].rule_name, alerts[0].host) : w.incidentDefaultMany(alerts.length, `${hosts.slice(0, 2).join(', ')}${hosts.length > 2 ? '…' : ''}`),
   )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -359,7 +362,7 @@ function IncidentDialog({ alerts, onClose, onOpenIncident }: {
       ? await createIncident({ title, severity: worstOf(alerts), alert_ids: ids, hosts })
       : await addIncidentAlerts(target, ids, hosts)
     setBusy(false)
-    if (!res.ok) return setError(res.status === 404 || res.status === 405 ? 'Este motor no ofrece incidentes: actualiza la instalación.' : res.error)
+    if (!res.ok) return setError(res.status === 404 || res.status === 405 ? w.noIncidents : res.error)
     upsert(res.data)
     setDone(res.data.id)
   }
@@ -367,20 +370,20 @@ function IncidentDialog({ alerts, onClose, onOpenIncident }: {
   return (
     <ConsoleDialog open onClose={onClose} titleId={`${id}-t`} initialFocus={first}>
       <div className="border-b border-zinc-800 px-5 py-4">
-        <h2 id={`${id}-t`} className="text-sm font-semibold text-zinc-100">Añadir {alerts.length === 1 ? 'la alerta' : `${alerts.length} alertas`} a un incidente</h2>
-        <p className="mt-0.5 text-xs text-zinc-500">Los equipos y la severidad del caso se actualizan con las alertas.</p>
+        <h2 id={`${id}-t`} className="text-sm font-semibold text-zinc-100">{w.incidentTitle(alerts.length)}</h2>
+        <p className="mt-0.5 text-xs text-zinc-500">{w.incidentIntro}</p>
       </div>
       <div className="space-y-2 px-5 py-4">
-        {!available && <p className="text-xs text-amber-300">No se pudo leer la lista de incidentes del motor.</p>}
+        {!available && <p className="text-xs text-amber-300">{w.incidentsUnreadable}</p>}
         <fieldset className="space-y-1.5">
-          <legend className="sr-only">Incidente de destino</legend>
+          <legend className="sr-only">{w.targetLegend}</legend>
           <label className="flex items-center gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-xs text-zinc-200">
             <input ref={first} type="radio" name={`${id}-target`} checked={target === 'new'} onChange={() => setTarget('new')} />
-            Nuevo incidente
+            {w.newIncident}
           </label>
           {target === 'new' && (
             <label className="block pl-1 text-xs text-zinc-400">
-              Título
+              {w.titleLabel}
               <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} className={field} />
             </label>
           )}
@@ -389,23 +392,23 @@ function IncidentDialog({ alerts, onClose, onOpenIncident }: {
               <input type="radio" name={`${id}-target`} checked={target === inc.id} onChange={() => setTarget(inc.id)} />
               <SeverityBadge severity={inc.severity} />
               <span className="min-w-0 flex-1 truncate">{inc.title}</span>
-              <span className="text-[11px] text-zinc-500">{INCIDENT_STATUS_LABEL[inc.status]} · {inc.alert_ids.length}</span>
+              <span className="text-[11px] text-zinc-500">{dict.incidents.statusLabels[inc.status]} · {inc.alert_ids.length}</span>
             </label>
           ))}
         </fieldset>
         {error && <p role="alert" className="text-xs text-red-300">{error}</p>}
         {done && (
           <p role="status" className="flex items-center gap-2 text-xs text-emerald-300">
-            <CheckCircle size={14} weight="fill" aria-hidden /> Guardado en el incidente.
-            {onOpenIncident && <button type="button" onClick={() => { onClose(); onOpenIncident(done) }} className="underline underline-offset-4">Abrir incidente</button>}
+            <CheckCircle size={14} weight="fill" aria-hidden /> {w.savedToIncident}
+            {onOpenIncident && <button type="button" onClick={() => { onClose(); onOpenIncident(done) }} className="underline underline-offset-4">{w.openIncident}</button>}
           </p>
         )}
       </div>
       <div className="flex justify-end gap-2 border-t border-zinc-800 px-5 py-3">
-        <button type="button" onClick={onClose} className="rounded-md px-3 py-2 text-xs text-zinc-400 hover:text-zinc-100">{done ? 'Hecho' : 'Cancelar'}</button>
+        <button type="button" onClick={onClose} className="rounded-md px-3 py-2 text-xs text-zinc-400 hover:text-zinc-100">{done ? w.done : w.cancel}</button>
         {!done && (
           <button type="button" className={primary} disabled={busy || (target === 'new' && !title.trim())} onClick={() => void submit()}>
-            {busy ? 'Guardando…' : target === 'new' ? 'Crear incidente' : 'Añadir'}
+            {busy ? w.saving : target === 'new' ? w.createIncident : w.add}
           </button>
         )}
       </div>
@@ -432,6 +435,7 @@ function SuppressDialog({ alerts, onClose }: { alerts: SfAlert[]; onClose: () =>
 /** Shared suppression form: reason (mandatory, audited in the YAML),
  * optional fleet-wide scope with its honest warning, and expiry. */
 export function SuppressionDialog({ targets, onClose }: { targets: SuppressionTarget[]; onClose: () => void }) {
+  const w = useI18n().dict.alertActions
   const id = useId()
   const first = useRef<HTMLTextAreaElement>(null)
   const pairs = targets
@@ -449,7 +453,7 @@ export function SuppressionDialog({ targets, onClose }: { targets: SuppressionTa
     for (const p of unique) {
       const res = await createSuppression({ rule_id: p.rule_id, host: p.host || undefined, reason: reason.trim(), expires: days === 'never' ? undefined : expiryInDays(Number(days)) })
       if (res.ok) ok++
-      else errors.push(res.status === 403 ? 'el motor no acepta supresiones desde la API: arráncalo con -api-write (sf-console lo hace tras actualizar)' : res.error)
+      else errors.push(res.status === 403 ? w.apiWriteOff : res.error)
     }
     setBusy(false)
     setResult({ ok, errors: [...new Set(errors)] })
@@ -458,8 +462,8 @@ export function SuppressionDialog({ targets, onClose }: { targets: SuppressionTa
   return (
     <ConsoleDialog open onClose={onClose} titleId={`${id}-t`} initialFocus={first}>
       <div className="border-b border-zinc-800 px-5 py-4">
-        <h2 id={`${id}-t`} className="text-sm font-semibold text-zinc-100">Suprimir {pairs.length === 1 ? 'la regla' : `${pairs.length} reglas`}</h2>
-        <p className="mt-0.5 text-xs text-zinc-500">Los eventos que coincidan dejarán de generar alertas, de llegar al webhook y de contar para las cadenas.</p>
+        <h2 id={`${id}-t`} className="text-sm font-semibold text-zinc-100">{w.suppressTitle(pairs.length)}</h2>
+        <p className="mt-0.5 text-xs text-zinc-500">{w.suppressIntro}</p>
       </div>
       <div className="space-y-3 px-5 py-4">
         <ul className="space-y-1 rounded-lg border border-zinc-800 p-2">
@@ -467,38 +471,38 @@ export function SuppressionDialog({ targets, onClose }: { targets: SuppressionTa
             <li key={p.rule_id + p.host} className="flex items-center gap-2 text-xs">
               <Prohibit size={13} aria-hidden className="text-zinc-500" />
               <span className="min-w-0 flex-1 truncate text-zinc-200">{p.rule_name}</span>
-              <span className="font-mono text-[11px] text-zinc-500">{allHosts ? 'todos los equipos' : p.host}</span>
+              <span className="font-mono text-[11px] text-zinc-500">{allHosts ? w.allHosts : p.host}</span>
             </li>
           ))}
         </ul>
         <label className="flex items-start gap-2 text-xs text-zinc-300">
           <input type="checkbox" checked={allHosts} onChange={(e) => setAllHosts(e.target.checked)} className="mt-0.5" />
-          <span>Aplicar a todos los equipos <span className="block text-[11px] text-amber-300/90">Desaconsejado: también silencia a un atacante que haga lo mismo en otra máquina.</span></span>
+          <span>{w.applyAll} <span className="block text-[11px] text-amber-300/90">{w.applyAllWarn}</span></span>
         </label>
         <label className="block text-xs text-zinc-400">
-          Motivo (obligatorio, queda en suppressions.yaml)
-          <textarea ref={first} value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={500} placeholder="p. ej. copia nocturna aprobada (CHG-2207)" className={field} />
+          {w.reasonLabel}
+          <textarea ref={first} value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={500} placeholder={w.reasonPlaceholder} className={field} />
         </label>
         <label className="block text-xs text-zinc-400">
-          Caducidad
+          {w.expiry}
           <select value={days} onChange={(e) => setDays(e.target.value)} className={field}>
-            <option value="1">24 horas</option>
-            <option value="7">7 días</option>
-            <option value="30">30 días</option>
-            <option value="never">Sin caducidad</option>
+            <option value="1">{w.expiry24h}</option>
+            <option value="7">{w.expiry7d}</option>
+            <option value="30">{w.expiry30d}</option>
+            <option value="never">{w.expiryNever}</option>
           </select>
         </label>
         {result && (
           <p role={result.errors.length ? 'alert' : 'status'} className={`text-xs ${result.errors.length ? 'text-red-300' : 'text-emerald-300'}`}>
-            {result.ok} supresiones guardadas{result.errors.length ? `. Error: ${result.errors[0]}` : '. El motor ya las aplica.'}
+            {w.suppressResult(result.ok, result.errors[0] ?? '')}
           </p>
         )}
       </div>
       <div className="flex justify-end gap-2 border-t border-zinc-800 px-5 py-3">
-        <button type="button" onClick={onClose} className="rounded-md px-3 py-2 text-xs text-zinc-400 hover:text-zinc-100">{result && !result.errors.length ? 'Hecho' : 'Cancelar'}</button>
+        <button type="button" onClick={onClose} className="rounded-md px-3 py-2 text-xs text-zinc-400 hover:text-zinc-100">{result && !result.errors.length ? w.done : w.cancel}</button>
         {!(result && !result.errors.length) && (
           <button type="button" className={primary} disabled={busy || reason.trim().length < 5} onClick={() => void submit()}>
-            {busy ? 'Guardando…' : 'Suprimir'}
+            {busy ? w.saving : w.suppress}
           </button>
         )}
       </div>
@@ -508,19 +512,12 @@ export function SuppressionDialog({ targets, onClose }: { targets: SuppressionTa
 
 // ---- containment (kill_process) -------------------------------------------
 
-const DENIAL: Record<string, string> = {
-  operator_credential_invalid: 'La credencial de operador no es válida.',
-  operator_not_allowed: 'Ese operador no está en la lista autorizada del motor.',
-  pid_mismatch: 'El PID ya no corresponde a ese proceso (terminó o se reutilizó).',
-  pid_invalid: 'PID no válido.',
-  host_mismatch: 'Solo se pueden contener procesos del equipo donde corre el motor.',
-  protected_process: 'Es un proceso protegido del sistema: el motor se niega a terminarlo.',
-  process_not_found: 'El proceso ya no existe.',
-  audit_unavailable: 'El registro de auditoría no está disponible: el motor no actúa sin auditar.',
-}
+// The engine's refusal codes read as sentences from the dictionary
+// (alertActions.denials); an unknown code shows as the engine sent it.
 
 function KillDialog({ alert, onClose }: { alert: SfAlert; onClose: () => void }) {
   const { events } = useEngine()
+  const w = useI18n().dict.alertActions
   const id = useId()
   const first = useRef<HTMLInputElement>(null)
   const ev = events.find((e) => e.id === alert.event_id)
@@ -528,7 +525,7 @@ function KillDialog({ alert, onClose }: { alert: SfAlert; onClose: () => void })
   const [name, setName] = useState(ev?.process?.name ?? '')
   const [operator, setOperator] = useState('')
   const [token, setToken] = useState('')
-  const [reason, setReason] = useState(`Contención de la alerta «${alert.rule_name}»`)
+  const [reason, setReason] = useState(w.killReason(alert.rule_name))
   const [confirmed, setConfirmed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [outcome, setOutcome] = useState<{ ok: boolean; text: string } | null>(null)
@@ -538,37 +535,37 @@ function KillDialog({ alert, onClose }: { alert: SfAlert; onClose: () => void })
     const res = await killProcess({ host: alert.host, pid: Number(pid), process_name: name.trim(), operator: operator.trim(), reason: reason.trim(), rule_id: alert.rule_id, alert_id: alert.id }, token)
     setBusy(false)
     setToken('')
-    if (res.ok) setOutcome({ ok: true, text: `Proceso terminado (${res.data.signal ?? 'SIGKILL'}). Acción ${res.data.action_id} registrada en el audit.` })
-    else setOutcome({ ok: false, text: DENIAL[res.error] ?? res.error })
+    if (res.ok) setOutcome({ ok: true, text: w.killDone(res.data.signal ?? 'SIGKILL', res.data.action_id) })
+    else setOutcome({ ok: false, text: w.denials[res.error] ?? res.error })
   }
 
   const valid = Number(pid) > 1 && name.trim() && operator.trim() && token && reason.trim() && confirmed
   return (
     <ConsoleDialog open onClose={onClose} titleId={`${id}-t`} initialFocus={first}>
       <div className="border-b border-red-400/20 px-5 py-4">
-        <h2 id={`${id}-t`} className="flex items-center gap-2 text-sm font-semibold text-red-200"><Skull size={16} aria-hidden /> Contener: terminar el proceso</h2>
-        <p className="mt-0.5 text-xs text-zinc-500">El motor verifica el nombre real del PID, tu credencial de operador y la lista de procesos protegidos, y deja el intento en el audit antes de actuar.</p>
+        <h2 id={`${id}-t`} className="flex items-center gap-2 text-sm font-semibold text-red-200"><Skull size={16} aria-hidden /> {w.killTitle}</h2>
+        <p className="mt-0.5 text-xs text-zinc-500">{w.killIntro}</p>
       </div>
       <div className="grid gap-3 px-5 py-4 sm:grid-cols-2">
-        <label className="text-xs text-zinc-400">Equipo<input value={alert.host} readOnly className={field + ' opacity-70'} /></label>
+        <label className="text-xs text-zinc-400">{w.hostLabel}<input value={alert.host} readOnly className={field + ' opacity-70'} /></label>
         <label className="text-xs text-zinc-400">PID<input ref={first} value={pid} onChange={(e) => setPid(e.target.value.replace(/\D/g, ''))} inputMode="numeric" className={field} /></label>
-        <label className="text-xs text-zinc-400 sm:col-span-2">Proceso (nombre real esperado)<input value={name} onChange={(e) => setName(e.target.value)} className={field} /></label>
-        <label className="text-xs text-zinc-400">Operador<input value={operator} onChange={(e) => setOperator(e.target.value)} autoComplete="username" className={field} /></label>
-        <label className="text-xs text-zinc-400">Credencial de operador<input type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="current-password" className={field} /></label>
-        <label className="text-xs text-zinc-400 sm:col-span-2">Motivo<textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={512} className={field} /></label>
+        <label className="text-xs text-zinc-400 sm:col-span-2">{w.processLabel}<input value={name} onChange={(e) => setName(e.target.value)} className={field} /></label>
+        <label className="text-xs text-zinc-400">{w.operatorLabel}<input value={operator} onChange={(e) => setOperator(e.target.value)} autoComplete="username" className={field} /></label>
+        <label className="text-xs text-zinc-400">{w.credentialLabel}<input type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="current-password" className={field} /></label>
+        <label className="text-xs text-zinc-400 sm:col-span-2">{w.reasonShort}<textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={512} className={field} /></label>
         <label className="flex items-start gap-2 text-xs text-zinc-300 sm:col-span-2">
           <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} className="mt-0.5" />
-          Entiendo que el proceso se termina de inmediato y sin guardar su trabajo.
+          {w.killConfirm}
         </label>
-        {!ev && <p className="text-[11px] text-amber-300/90 sm:col-span-2">El evento de la alerta ya no está en la ventana: comprueba el PID en la evidencia forense antes de actuar.</p>}
+        {!ev && <p className="text-[11px] text-amber-300/90 sm:col-span-2">{w.eventGone}</p>}
         {outcome && <p role={outcome.ok ? 'status' : 'alert'} className={`text-xs sm:col-span-2 ${outcome.ok ? 'text-emerald-300' : 'text-red-300'}`}>{outcome.text}</p>}
       </div>
       <div className="flex justify-end gap-2 border-t border-zinc-800 px-5 py-3">
-        <button type="button" onClick={onClose} className="rounded-md px-3 py-2 text-xs text-zinc-400 hover:text-zinc-100">{outcome?.ok ? 'Hecho' : 'Cancelar'}</button>
+        <button type="button" onClick={onClose} className="rounded-md px-3 py-2 text-xs text-zinc-400 hover:text-zinc-100">{outcome?.ok ? w.done : w.cancel}</button>
         {!outcome?.ok && (
           <button type="button" disabled={!valid || busy} onClick={() => void submit()}
             className="inline-flex items-center gap-1.5 rounded-lg bg-red-500 px-3.5 py-2 text-xs font-medium text-white hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <Skull size={13} aria-hidden /> {busy ? 'Enviando…' : 'Terminar proceso'}
+            <Skull size={13} aria-hidden /> {busy ? w.sending : w.killSubmit}
           </button>
         )}
       </div>
@@ -595,6 +592,7 @@ function useReputationProviders(): Record<string, boolean> {
 function ReputationPanel({ alert }: { alert: SfAlert }) {
   const providers = useReputationProviders()
   const { events } = useEngine()
+  const w = useI18n().dict.alertActions
   const enabled = Object.values(providers).some(Boolean)
   const ev = events.find((e) => e.id === alert.event_id)
   const ips = [...new Set([alert.network?.destination_ip, alert.network?.source_ip, ev?.network?.destination_ip].filter(isPublicIPv4))]
@@ -608,14 +606,14 @@ function ReputationPanel({ alert }: { alert: SfAlert }) {
   if (!enabled || indicators.length === 0) return null
 
   async function lookup(kind: 'ip' | 'hash', value: string) {
-    setReports((r) => ({ ...r, [value]: 'consultando…' }))
+    setReports((r) => ({ ...r, [value]: w.querying }))
     const res = await lookupReputation(kind, value)
     setReports((r) => ({ ...r, [value]: res.ok ? res.data : res.error }))
   }
 
   return (
     <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-      <p className="flex items-center gap-1.5 text-[11px] font-medium text-zinc-300"><Globe size={13} aria-hidden className="text-primary" /> Reputación (consulta bajo demanda)</p>
+      <p className="flex items-center gap-1.5 text-[11px] font-medium text-zinc-300"><Globe size={13} aria-hidden className="text-primary" /> {w.reputationTitle}</p>
       <ul className="mt-2 space-y-2">
         {indicators.map(({ kind, value }) => {
           const r = reports[value]
@@ -624,7 +622,7 @@ function ReputationPanel({ alert }: { alert: SfAlert }) {
               <div className="flex min-w-0 items-center gap-2">
                 {kind === 'hash' && <span className="shrink-0 rounded bg-white/[0.06] px-1 text-[10px] text-zinc-400">SHA-256</span>}
                 <span className="min-w-0 truncate font-mono text-xs text-zinc-200" title={value}>{value}</span>
-                {!r && <button type="button" className={btn + ' ml-auto shrink-0 py-1'} onClick={() => void lookup(kind, value)}>Consultar</button>}
+                {!r && <button type="button" className={btn + ' ml-auto shrink-0 py-1'} onClick={() => void lookup(kind, value)}>{w.lookup}</button>}
                 {typeof r === 'string' && <span className="ml-auto text-[11px] text-zinc-400">{r}</span>}
               </div>
               {r && typeof r !== 'string' && (
@@ -633,19 +631,19 @@ function ReputationPanel({ alert }: { alert: SfAlert }) {
                     <li key={res.provider} className="text-[11px] text-zinc-400">
                       <span className="font-medium text-zinc-200">{res.provider === 'abuseipdb' ? 'AbuseIPDB' : 'VirusTotal'}</span>
                       {res.status !== 'ok' ? (
-                        <span> · {res.status === 'not_found' ? 'sin datos' : res.detail ?? res.status}</span>
+                        <span> · {res.status === 'not_found' ? w.noData : res.detail ?? res.status}</span>
                       ) : res.provider === 'abuseipdb' ? (
                         <span className="mt-1 flex items-center gap-2">
                           <Meter className="max-w-40 flex-1" value={res.score ?? 0} max={100} color={(res.score ?? 0) >= 75 ? 'var(--status-critical)' : (res.score ?? 0) >= 25 ? 'var(--status-warning)' : 'var(--status-good)'} />
-                          <span className="tabular-nums text-zinc-200">{res.score}%</span> abuso · {res.reports} informes{res.country ? ` · ${res.country}` : ''}
+                          <span className="tabular-nums text-zinc-200">{res.score}%</span> {w.abuse} · {w.reports(res.reports ?? 0)}{res.country ? ` · ${res.country}` : ''}
                         </span>
                       ) : (
-                        <span> · <span className={res.malicious ? 'text-red-300' : 'text-zinc-200'}>{res.malicious ?? 0} motores lo marcan malicioso</span> de {(res.malicious ?? 0) + (res.suspicious ?? 0) + (res.harmless ?? 0) + (res.undetected ?? 0)}{res.owner ? ` · ${res.owner}` : ''}</span>
+                        <span> · <span className={res.malicious ? 'text-red-300' : 'text-zinc-200'}>{w.vtMalicious(res.malicious ?? 0)}</span> {w.of} {(res.malicious ?? 0) + (res.suspicious ?? 0) + (res.harmless ?? 0) + (res.undetected ?? 0)}{res.owner ? ` · ${res.owner}` : ''}</span>
                       )}
-                      {res.link && <a href={res.link} target="_blank" rel="noreferrer noopener" className="ml-1 text-primary-link underline-offset-4 hover:underline">ver</a>}
+                      {res.link && <a href={res.link} target="_blank" rel="noreferrer noopener" className="ml-1 text-primary-link underline-offset-4 hover:underline">{w.view}</a>}
                     </li>
                   ))}
-                  {r.cached && <li className="text-[10px] text-zinc-500">respuesta en caché del motor</li>}
+                  {r.cached && <li className="text-[10px] text-zinc-500">{w.cached}</li>}
                 </ul>
               )}
             </li>

@@ -23,6 +23,7 @@ import { readForensicBundle, forensicEventLine, buildForensicExport, type Forens
 import { formatTime } from '@/lib/console-types'
 import { buildProcessTree } from '@/lib/entity-graph'
 import { ProcessTree } from '@/components/charts/process-tree'
+import { useI18n } from './i18n-provider'
 
 type Props = { alertId?: string }
 
@@ -33,6 +34,7 @@ export function ForensicPanel({ alertId }: Props) {
 }
 
 function ForensicQuery({ alertId }: Props) {
+  const words = useI18n().dict.forensic
   const [open, setOpen] = useState(false)
   const [result, setResult] = useState<ForensicResult | null>(null)
   const [busy, setBusy] = useState(false)
@@ -57,9 +59,9 @@ function ForensicQuery({ alertId }: Props) {
     // panel says so instead of hiding the feature silently
     return (
       <div className="mt-5 rounded-md border border-zinc-800 bg-zinc-950/60 p-3">
-        <p className="text-[10px] uppercase tracking-wider text-zinc-500">Forense</p>
+        <p className="text-[10px] uppercase tracking-wider text-zinc-500">{words.heading}</p>
         <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-500">
-          Esta alerta no lleva id del motor: la captura de evidencia requiere el motor actualizado.
+          {words.noEngineId}
         </p>
       </div>
     )
@@ -71,18 +73,18 @@ function ForensicQuery({ alertId }: Props) {
         type="button"
         onClick={toggle}
         aria-expanded={open}
-        aria-label="Línea de tiempo forense"
+        aria-label={words.title}
         aria-controls={`${id}-content`}
         id={`${id}-toggle`}
         className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-zinc-900/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-wider text-zinc-400">
           <Fingerprint size={12} aria-hidden />
-          Línea de tiempo forense
+          {words.title}
         </span>
         <span className="flex items-center gap-2 text-[10px] text-zinc-500">
           {busy && <CircleNotch size={12} className="animate-spin" aria-hidden />}
-          ventana del motor
+          {words.engineWindow}
           <motion.span
             animate={{ rotate: open ? 180 : 0 }}
             transition={reduce ? { duration: 0 } : { duration: 0.15 }}
@@ -107,30 +109,29 @@ function ForensicQuery({ alertId }: Props) {
           {busy && (
             <div role="status" className="flex items-center gap-2 py-2 text-xs text-zinc-500">
               <CircleNotch size={13} className="animate-spin" aria-hidden />
-              consultando evidencia guardada...
+              {words.loading}
             </div>
           )}
 
           {result?.kind === 'error' && (
             <div className="space-y-2">
               <Note tone="amber">
-                No se pudo cargar evidencia válida del motor. Reintenta la consulta.
+                {words.loadError}
               </Note>
               <button type="button" onClick={load} disabled={busy}
                 className="rounded-md border border-zinc-700 px-2 py-1 text-[11px] text-zinc-300 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
-                Reintentar evidencia
+                {words.retry}
               </button>
             </div>
           )}
           {result?.kind === 'disabled' && (
             <Note tone="zinc">
-              Captura forense desactivada en este motor: arranca sin <code className="font-mono">-forensic=false</code>.
+              {words.disabledA}<code className="font-mono">-forensic=false</code>{words.disabledB}
             </Note>
           )}
           {result?.kind === 'missing' && (
             <Note tone="zinc">
-              Sin bundle para esta alerta: solo las severidades high/critical congelan evidencia, y la
-              retención del directorio desaloja los bundles más antiguos.
+              {words.missing}
             </Note>
           )}
 
@@ -142,15 +143,17 @@ function ForensicQuery({ alertId }: Props) {
 }
 
 function BundleView({ result }: { result: Extract<ForensicResult, { kind: 'bundle' }> }) {
+  const { dict, lang } = useI18n()
+  const words = dict.forensic
   const { bundle } = result
   const s = bundle.summary
   const chips: Array<[string, number]> = [
-    ['procesos', s.process_creates],
-    ['red', s.network_connects],
-    ['ficheros', s.file_writes],
-    ['registro', s.registry_sets],
-    ['accesos', s.process_accesses],
-    ['otros', s.other],
+    [words.chips.processes, s.process_creates],
+    [words.chips.network, s.network_connects],
+    [words.chips.files, s.file_writes],
+    [words.chips.registry, s.registry_sets],
+    [words.chips.accesses, s.process_accesses],
+    [words.chips.other, s.other],
   ]
   const active = chips.filter(([, n]) => n > 0)
   const images = bundle.summary.distinct_images.slice(0, 12)
@@ -185,20 +188,20 @@ function BundleView({ result }: { result: Extract<ForensicResult, { kind: 'bundl
     <div className="min-w-0">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <span className="font-mono text-[10px] text-zinc-500" title={bundle.captured_at}>
-          Capturada {formatTime(bundle.captured_at)} · {bundle.timeline.length} eventos
+          {words.captured(formatTime(bundle.captured_at), bundle.timeline.length)}
         </span>
-        <div role="group" aria-label="Exportar evidencia forense" className="flex items-center gap-1.5">
+        <div role="group" aria-label={words.exportAria} className="flex items-center gap-1.5">
           {(['json', 'jsonl'] as const).map((format) => (
             <button key={format} type="button" onClick={() => download(format)}
-              aria-label={`Descargar evidencia ${format.toUpperCase()}`}
-              title="Descarga la captura guardada: alerta completa, metadatos y eventos. La captura tiene la ventana y los límites del motor."
+              aria-label={words.downloadAria(format.toUpperCase())}
+              title={words.downloadTitle}
               className="inline-flex items-center gap-1 rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1 font-mono text-[10px] text-zinc-300 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               <DownloadSimple size={11} aria-hidden />{format}
             </button>
           ))}
         </div>
       </div>
-      {exportError && <p role="alert" className="mb-2 text-[11px] text-amber-300">No se pudo iniciar la descarga. Reintenta con el botón de exportación.</p>}
+      {exportError && <p role="alert" className="mb-2 text-[11px] text-amber-300">{words.downloadError}</p>}
       <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[10px] text-zinc-500">
         <span className="flex items-center gap-1">
           <ClockCountdown size={11} aria-hidden />
@@ -209,7 +212,7 @@ function BundleView({ result }: { result: Extract<ForensicResult, { kind: 'bundl
             {n} {label}
           </span>
         ))}
-        {s.distinct_users > 1 && <span className="font-mono tabular-nums">{s.distinct_users} usuarios</span>}
+        {s.distinct_users > 1 && <span className="font-mono tabular-nums">{words.users(s.distinct_users)}</span>}
       </div>
 
       {images.length > 0 && (
@@ -220,17 +223,17 @@ function BundleView({ result }: { result: Extract<ForensicResult, { kind: 'bundl
 
       {tree.length > 0 && (
         <div className="mb-3 rounded-lg border border-zinc-800 bg-zinc-950/40 p-2">
-          <p className="mb-1.5 px-1 text-[11px] font-medium text-zinc-300">Árbol de procesos</p>
+          <p className="mb-1.5 px-1 text-[11px] font-medium text-zinc-300">{words.tree}</p>
           <ProcessTree roots={tree} />
         </div>
       )}
 
       {bundle.timeline.length === 0 ? (
         <p className="py-1 text-[11px] text-zinc-500">
-          El motor no observó eventos de este equipo dentro de la ventana (sensor caído o flujo recién iniciado).
+          {words.noEvents}
         </p>
       ) : (
-        <ol className="max-h-72 overflow-y-auto" aria-label="Línea de tiempo de evidencia">
+        <ol className="max-h-72 overflow-y-auto" aria-label={words.timelineAria}>
           {bundle.timeline.map((ev, index) => (
             <li
               key={`${ev.id}:${index}`}
@@ -241,8 +244,8 @@ function BundleView({ result }: { result: Extract<ForensicResult, { kind: 'bundl
               </span>
               <span className="min-w-0">
                 <span className="font-mono text-[10px] text-zinc-500">{ev.type}</span>
-                <span className="block truncate font-mono text-[11px] text-zinc-300" title={forensicEventLine(ev)}>
-                  {forensicEventLine(ev)}
+                <span className="block truncate font-mono text-[11px] text-zinc-300" title={forensicEventLine(ev, lang)}>
+                  {forensicEventLine(ev, lang)}
                 </span>
               </span>
             </li>
@@ -252,7 +255,7 @@ function BundleView({ result }: { result: Extract<ForensicResult, { kind: 'bundl
 
       {bundle.timeline.length >= 200 && (
         <p className="mt-2 text-[10px] text-zinc-500">
-          Límite de 200 eventos: el motor conserva la cola y el evento que disparó la alerta si aún lo tenía registrado.
+          {words.cap}
         </p>
       )}
     </div>

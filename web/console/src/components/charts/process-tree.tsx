@@ -8,12 +8,15 @@
 
 import { GearSix, Warning } from '@phosphor-icons/react'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
+import { useI18n } from '@/components/console/i18n-provider'
 import type { ProcessNode } from '@/lib/entity-graph'
 import { formatTime } from '@/lib/console-types'
 
 const MAX_ROWS = 60
 
-export function ProcessTree({ roots, label = 'Árbol de procesos' }: { roots: ProcessNode[]; label?: string }) {
+export function ProcessTree({ roots, label }: { roots: ProcessNode[]; label?: string }) {
+  const { dict } = useI18n()
+  const words = dict.hosts.treeCard
   let budget = MAX_ROWS
   let index = 0
   let hidden = 0
@@ -42,11 +45,11 @@ export function ProcessTree({ roots, label = 'Árbol de procesos' }: { roots: Pr
               )}
               <span className={`shrink-0 font-mono text-[11px] ${node.focus ? 'font-semibold text-zinc-50' : 'text-zinc-200'}`}>{node.name}</span>
               {node.external ? (
-                <span className="shrink-0 text-[10px] text-zinc-500">padre fuera de la ventana</span>
+                <span className="shrink-0 text-[10px] text-zinc-500">{words.parentOutside}</span>
               ) : (
                 <span className="shrink-0 font-mono text-[10px] tabular-nums text-zinc-500">pid {node.pid}</span>
               )}
-              {node.focus && <span className="shrink-0 rounded bg-red-500/15 px-1 text-[10px] text-red-200">disparó la alerta</span>}
+              {node.focus && <span className="shrink-0 rounded bg-red-500/15 px-1 text-[10px] text-red-200">{words.firedAlert}</span>}
               {node.commandLine && <span className="min-w-0 truncate font-mono text-[10px] text-zinc-500">{node.commandLine}</span>}
               {node.timestamp && <span className="ml-auto shrink-0 font-mono text-[10px] tabular-nums text-zinc-500">{formatTime(node.timestamp)}</span>}
             </div>
@@ -61,8 +64,8 @@ export function ProcessTree({ roots, label = 'Árbol de procesos' }: { roots: Pr
   const tree = render(roots, 0)
   return (
     <div className="min-w-0 overflow-x-auto">
-      <ul aria-label={label} className="min-w-[420px] space-y-0.5">{tree}</ul>
-      {hidden > 0 && <p className="mt-1 text-[10px] text-zinc-500">{hidden} procesos más en el bundle (ver la línea de tiempo o la exportación).</p>}
+      <ul aria-label={label ?? words.defaultAria} className="min-w-[420px] space-y-0.5">{tree}</ul>
+      {hidden > 0 && <p className="mt-1 text-[10px] text-zinc-500">{words.moreInBundle(hidden)}</p>}
     </div>
   )
 }

@@ -7,10 +7,11 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { ArrowClockwise, Check, Eye, Prohibit, ShieldCheck, ShieldWarning, SignOut, UserCircle, X } from '@phosphor-icons/react'
 import { ConsoleDialog } from './console-dialog'
+import { useI18n } from './i18n-provider'
 import {
   DEFAULT_ME,
   PENDING_ME,
-  ROLE_TEXT,
+  roleText,
   describeAction,
   fetchAudit,
   fetchMe,
@@ -48,64 +49,66 @@ const OUTCOME_CLASS: Record<ConsoleAuditEntry['outcome'], string> = {
 // TwoStepCard links to /cuenta/dos-pasos, a server page like /login: a
 // plain link, so enrolling never depends on the console bundle.
 function TwoStepCard({ mfa }: { mfa: NonNullable<ConsoleMe['mfa']> }) {
-  const text = mfaText(mfa)
+  const { dict, lang } = useI18n()
+  const text = mfaText(mfa, lang)
   const Icon = mfa.enrolled ? ShieldCheck : ShieldWarning
   return (
     <section aria-labelledby="two-step-title" className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] px-3 py-2.5">
       <div className="flex min-w-0 items-start gap-2">
         <Icon size={16} aria-hidden className={`mt-0.5 shrink-0 ${mfa.enrolled ? 'text-emerald-400' : text.warn ? 'text-amber-300' : 'text-zinc-500'}`} />
         <div className="min-w-0">
-          <h3 id="two-step-title" className="text-xs font-medium text-zinc-100">Verificación en dos pasos: {text.label}</h3>
+          <h3 id="two-step-title" className="text-xs font-medium text-zinc-100">{dict.session.twoStep(text.label)}</h3>
           <p className={`text-[11px] ${text.warn ? 'text-amber-300' : 'text-zinc-500'}`}>{text.detail}</p>
         </div>
       </div>
       <a href="/cuenta/dos-pasos" className="chip shrink-0 px-2.5 py-1.5 text-xs text-zinc-300 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        {mfa.enrolled ? 'Gestionar' : 'Activar'}
+        {mfa.enrolled ? dict.session.twoStepManage : dict.session.twoStepEnable}
       </a>
     </section>
   )
 }
 
 function AuditTable() {
+  const { dict, lang } = useI18n()
   const [state, setState] = useState<{ loading: boolean; entries: ConsoleAuditEntry[]; enabled: boolean; error: string }>({ loading: true, entries: [], enabled: true, error: '' })
   const load = useCallback(async () => {
     setState((s) => ({ ...s, loading: true }))
-    const res = await fetchAudit(100)
+    const res = await fetchAudit(100, lang)
     if (res.ok) setState({ loading: false, entries: res.entries, enabled: res.enabled, error: res.error ?? '' })
     else setState({ loading: false, entries: [], enabled: true, error: res.error })
-  }, [])
+  }, [lang])
   useEffect(() => { void load() }, [load])
 
   return (
     <section aria-labelledby="audit-title" className="mt-5">
       <div className="flex items-center justify-between gap-2">
-        <h3 id="audit-title" className="text-sm font-medium text-zinc-100">Auditoría de la consola</h3>
+        <h3 id="audit-title" className="text-sm font-medium text-zinc-100">{dict.session.auditTitle}</h3>
         <button type="button" onClick={() => void load()} className="chip gap-1.5 px-2 py-1 text-[11px] text-zinc-400 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          <ArrowClockwise size={12} aria-hidden className={state.loading ? 'animate-spin motion-reduce:animate-none' : ''} /> Actualizar
+          <ArrowClockwise size={12} aria-hidden className={state.loading ? 'animate-spin motion-reduce:animate-none' : ''} /> {dict.session.auditRefresh}
         </button>
       </div>
-      <p className="mt-0.5 text-[11px] text-zinc-500">Cada cambio enviado al motor desde la consola, permitido o denegado, con la cuenta que lo hizo. Lo más reciente primero.</p>
-      {!state.enabled && <p className="mt-3 text-xs text-zinc-400">La auditoría está desactivada: define CONSOLE_AUDIT_FILE (el lanzador de Windows la guarda en data\console-audit.jsonl).</p>}
+      <p className="mt-0.5 text-[11px] text-zinc-500">{dict.session.auditProse}</p>
+      {!state.enabled && <p className="mt-3 text-xs text-zinc-400">{dict.session.auditOff}</p>}
       {state.error && <p role="alert" className="mt-3 text-xs text-amber-300">{state.error}</p>}
-      {state.enabled && !state.error && !state.loading && state.entries.length === 0 && <p className="mt-3 text-xs text-zinc-500">Todavía no hay cambios registrados.</p>}
+      {state.enabled && !state.error && !state.loading && state.entries.length === 0 && <p className="mt-3 text-xs text-zinc-500">{dict.session.auditEmpty}</p>}
       {state.entries.length > 0 && (
         <div className="mt-3 max-h-72 overflow-auto rounded-lg border border-white/[0.06]">
           <table className="w-full text-left text-[11px]">
             <thead className="sticky top-0 bg-zinc-900 text-zinc-500">
               <tr>
-                <th scope="col" className="px-2 py-1.5 font-medium">Hora (UTC)</th>
-                <th scope="col" className="px-2 py-1.5 font-medium">Cuenta</th>
-                <th scope="col" className="px-2 py-1.5 font-medium">Acción</th>
-                <th scope="col" className="px-2 py-1.5 font-medium">Resultado</th>
+                <th scope="col" className="px-2 py-1.5 font-medium">{dict.session.colTime}</th>
+                <th scope="col" className="px-2 py-1.5 font-medium">{dict.session.colAccount}</th>
+                <th scope="col" className="px-2 py-1.5 font-medium">{dict.session.colAction}</th>
+                <th scope="col" className="px-2 py-1.5 font-medium">{dict.session.colOutcome}</th>
               </tr>
             </thead>
             <tbody>
               {state.entries.map((e, i) => (
                 <tr key={`${e.at}-${i}`} className="border-t border-white/[0.04] text-zinc-300">
                   <td className="whitespace-nowrap px-2 py-1.5 font-mono tabular-nums text-zinc-400">{e.at.replace('T', ' ').slice(0, 19)}</td>
-                  <td className="px-2 py-1.5">{e.user}{e.role && <span className="text-zinc-500"> · {ROLE_TEXT[e.role] ?? e.role}</span>}</td>
-                  <td className="px-2 py-1.5" title={`${e.method} ${e.path}`}>{describeAction(e)}{e.target && <span className="text-zinc-500"> · {e.target}</span>}</td>
-                  <td className={`whitespace-nowrap px-2 py-1.5 ${OUTCOME_CLASS[e.outcome] ?? ''}`}>{outcomeText(e)} <span className="text-zinc-500">({e.status})</span></td>
+                  <td className="px-2 py-1.5">{e.user}{e.role && <span className="text-zinc-500"> · {roleText(e.role, lang)}</span>}</td>
+                  <td className="px-2 py-1.5" title={`${e.method} ${e.path}`}>{describeAction(e, lang)}{e.target && <span className="text-zinc-500"> · {e.target}</span>}</td>
+                  <td className={`whitespace-nowrap px-2 py-1.5 ${OUTCOME_CLASS[e.outcome] ?? ''}`}>{outcomeText(e, lang)} <span className="text-zinc-500">({e.status})</span></td>
                 </tr>
               ))}
             </tbody>
@@ -118,6 +121,7 @@ function AuditTable() {
 
 export function UserChip() {
   const me = useConsoleUser()
+  const { dict, lang } = useI18n()
   const [open, setOpen] = useState(false)
   const titleId = useId()
   const descId = useId()
@@ -126,7 +130,7 @@ export function UserChip() {
   if (me.pending) {
     // who is signed in is not known yet: a neutral chip, never a role
     return (
-      <span role="status" aria-label="Cargando la sesión" className="chip shrink-0 gap-1.5 whitespace-nowrap px-2.5 py-1.5 text-zinc-400">
+      <span role="status" aria-label={dict.session.loading} className="chip shrink-0 gap-1.5 whitespace-nowrap px-2.5 py-1.5 text-zinc-400">
         <UserCircle size={15} aria-hidden className="text-zinc-500" />
         <span className="text-xs">…</span>
       </span>
@@ -138,48 +142,48 @@ export function UserChip() {
         type="button"
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
-        aria-label={`Sesión: ${me.name}, ${ROLE_TEXT[me.role]}${me.scope?.length ? `, grupos ${me.scope.join(', ')}` : ''}`}
-        title={`${me.name} · ${ROLE_TEXT[me.role]}`}
+        aria-label={dict.session.chipAria(me.name, roleText(me.role, lang), me.scope?.join(', ') ?? '')}
+        title={`${me.name} · ${roleText(me.role, lang)}`}
         className="chip shrink-0 gap-1.5 whitespace-nowrap px-2.5 py-1.5 text-zinc-300 transition-colors hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {viewer ? <Eye size={15} aria-hidden className="text-zinc-400" /> : <UserCircle size={15} aria-hidden className="text-zinc-400" />}
         <span className="max-w-[9rem] truncate text-xs">{me.name}</span>
-        <span className="hidden rounded bg-white/[0.06] px-1 text-[10px] text-zinc-400 min-[1800px]:inline">{ROLE_TEXT[me.role]}</span>
-        {me.scope?.length ? <span className="hidden rounded bg-white/[0.06] px-1 text-[10px] text-zinc-400 xl:inline">{me.scope.length === 1 ? me.scope[0] : `${me.scope.length} grupos`}</span> : null}
+        <span className="hidden rounded bg-white/[0.06] px-1 text-[10px] text-zinc-400 min-[1800px]:inline">{roleText(me.role, lang)}</span>
+        {me.scope?.length ? <span className="hidden rounded bg-white/[0.06] px-1 text-[10px] text-zinc-400 xl:inline">{me.scope.length === 1 ? me.scope[0] : dict.session.groupsCount(me.scope.length)}</span> : null}
       </button>
       <ConsoleDialog open={open} onClose={() => setOpen(false)} titleId={titleId} descriptionId={descId} initialFocus={closeRef} className="max-w-2xl">
         <div className="p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 id={titleId} className="text-base font-semibold text-zinc-50">{me.name}</h2>
-              <p id={descId} className="mt-0.5 text-xs text-zinc-400">{ROLE_TEXT[me.role]} · {modeText(me)}</p>
+              <p id={descId} className="mt-0.5 text-xs text-zinc-400">{roleText(me.role, lang)} · {modeText(me, lang)}</p>
             </div>
-            <button ref={closeRef} type="button" onClick={() => setOpen(false)} aria-label="Cerrar" className="rounded-md p-1 text-zinc-400 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <button ref={closeRef} type="button" onClick={() => setOpen(false)} aria-label={dict.session.close} className="rounded-md p-1 text-zinc-400 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               <X size={16} aria-hidden />
             </button>
           </div>
-          <ul className="mt-4 space-y-1.5" aria-label="Permisos de tu rol">
-            {permissions(me).map((p) => (
+          <ul className="mt-4 space-y-1.5" aria-label={dict.session.permissionsAria}>
+            {permissions(me, lang).map((p) => (
               <li key={p.label} className={`flex items-center gap-2 text-xs ${p.allowed ? 'text-zinc-200' : 'text-zinc-500'}`}>
                 {p.allowed ? <Check size={13} aria-hidden className="text-emerald-400" /> : <Prohibit size={13} aria-hidden className="text-zinc-500" />}
                 <span>{p.label}</span>
-                <span className="sr-only">{p.allowed ? 'permitido' : 'no permitido'}</span>
+                <span className="sr-only">{p.allowed ? dict.session.allowed : dict.session.notAllowed}</span>
               </li>
             ))}
           </ul>
-          <p className={`mt-3 text-xs ${me.scope?.length ? 'text-zinc-200' : 'text-zinc-400'}`}>{scopeText(me)}</p>
-          {me.mode === 'users' && <p className="mt-3 text-[11px] text-zinc-500">Tus cambios quedan firmados en el motor con tu nombre de cuenta.</p>}
+          <p className={`mt-3 text-xs ${me.scope?.length ? 'text-zinc-200' : 'text-zinc-400'}`}>{scopeText(me, lang)}</p>
+          {me.mode === 'users' && <p className="mt-3 text-[11px] text-zinc-500">{dict.session.signedNote}</p>}
           {me.mode === 'users' && me.mfa && <TwoStepCard mfa={me.mfa} />}
           {me.mode === 'users' && me.source !== 'domain' && (
             <a href="/cuenta/contrasena" className="mt-2 inline-block text-[11px] text-zinc-400 underline-offset-4 hover:text-zinc-100 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              Cambiar contraseña
+              {dict.session.changePassword}
             </a>
           )}
           {me.mode !== 'open' && (
             // a plain form: the server clears the cookie and redirects to /login
             <form method="post" action="/api/console/logout" className="mt-4">
               <button type="submit" className="chip gap-1.5 px-2.5 py-1.5 text-xs text-zinc-300 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                <SignOut size={14} aria-hidden /> Cerrar sesión
+                <SignOut size={14} aria-hidden /> {dict.session.signOut}
               </button>
             </form>
           )}
@@ -194,10 +198,11 @@ export function UserChip() {
 // an error.
 export function ReadOnlyBanner() {
   const me = useConsoleUser()
+  const { dict } = useI18n()
   if (me.pending || me.role !== 'viewer') return null
   return (
     <div role="status" className="border-b border-white/[0.06] bg-zinc-900/70 px-4 py-1.5 text-center text-[11px] text-zinc-400 lg:px-8">
-      <Eye size={12} aria-hidden className="mr-1 inline align-[-2px]" /> Modo lectura: tu cuenta ({me.name}) puede consultar todo, pero no cambiar alertas, incidentes, supresiones ni lanzar respuesta.
+      <Eye size={12} aria-hidden className="mr-1 inline align-[-2px]" /> {dict.session.readOnly(me.name)}
     </div>
   )
 }

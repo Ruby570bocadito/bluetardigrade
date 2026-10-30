@@ -141,7 +141,7 @@ export async function downloadReport(query: ReportQuery, format: 'json' | 'csv')
     const res = await fetch(reportPath(query, format), { cache: 'no-store', signal: AbortSignal.timeout(15000) })
     if (!res.ok) {
       const text = await res.text().catch(() => '')
-      return { ok: false, error: `el motor respondió ${res.status}${text ? `: ${text.trim().slice(0, 200)}` : ''}` }
+      return { ok: false, error: `HTTP ${res.status}${text ? `: ${text.trim().slice(0, 200)}` : ''}` }
     }
     const body = format === 'json' ? JSON.stringify(await res.json(), null, 2) : await res.text()
     const filename = `${query.kind}-${downloadStamp()}.${format}`
