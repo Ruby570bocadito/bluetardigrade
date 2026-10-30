@@ -84,7 +84,8 @@ fi
 # --- lab PKI: self-signed leaf that is its own CA, IP SAN = 127.0.0.1,
 #     plus a second unrelated one for the wrong-CA rejection
 gen_cert() { # $1 = cert out, $2 = key out, $3 = CN
-  openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+  # MSYS2_ARG_CONV_EXCL: Git Bash would turn "/CN=..." into a Windows path
+  MSYS2_ARG_CONV_EXCL='/CN=' openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
     -keyout "$2" -out "$1" -days 2 -nodes -subj "/CN=$3" \
     -addext "subjectAltName=IP:127.0.0.1" \
     -addext "basicConstraints=critical,CA:TRUE" \

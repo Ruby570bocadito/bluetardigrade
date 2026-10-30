@@ -36,7 +36,7 @@ try {
   start(process.execPath, [join(repo, 'web/console/node_modules/next/dist/bin/next'), 'start', '-H', '127.0.0.1', '-p', '3102'], join(repo, 'web/console'), { NEXT_TELEMETRY_DISABLED: '1' })
   await ready('http://127.0.0.1:3003/health')
   await ready(base)
-  browser = await chromium.launch(process.env.BROWSER_EXE ? { executablePath: process.env.BROWSER_EXE } : {})
+  browser = await chromium.launch({ executablePath: process.env.CONSOLE_CHROMIUM_PATH || process.env.BROWSER_EXE })
   const page = await browser.newPage()
   const cspErrors = []
   page.on('console', message => {

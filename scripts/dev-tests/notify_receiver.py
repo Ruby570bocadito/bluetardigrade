@@ -22,7 +22,6 @@ Requires: python3 standard library only.
 
 import argparse
 import json
-import signal
 import sys
 import threading
 import time
@@ -72,7 +71,11 @@ print(f"notify_receiver listening on 127.0.0.1:{args.port}", flush=True)
 
 if not args.expect:
     try:
-        signal.pause()
+        # signal.pause() does not exist on Windows; a bounded wait loop
+        # works everywhere and still ends on Ctrl+C or SIGTERM.
+        idle = threading.Event()
+        while not idle.wait(0.5):
+            pass
     except KeyboardInterrupt:
         pass
     print(json.dumps({"captured": captured, "last_path": last_path}))

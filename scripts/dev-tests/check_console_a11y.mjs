@@ -187,7 +187,7 @@ try {
       if (Date.now() > end) throw new Error('Console server did not become ready. Build web/console first.')
     }
   }
-  browser = await chromium.launch({ headless: true })
+  browser = await chromium.launch({ headless: true, executablePath: process.env.CONSOLE_CHROMIUM_PATH || process.env.BROWSER_EXE })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce', locale: 'es-ES' })
   const page = await context.newPage()
   await fixtureEngine(page)

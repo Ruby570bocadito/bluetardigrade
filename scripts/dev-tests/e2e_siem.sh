@@ -197,9 +197,9 @@ check "cero frames malformados en splunk" "$( [ "$(json_field "$SPLUNK_JSON" bad
 check "autorización ApiKey presente en todos los bulks" "$( [ "$(json_field "$ELASTIC_JSON" with_auth)" = "$N" ] && echo 1 || echo 0)"
 check "autorización Splunk presente en todos los eventos" "$( [ "$(json_field "$SPLUNK_JSON" with_auth)" = "$N" ] && echo 1 || echo 0)"
 check "índices con sufijo diario sf-alerts-YYYY.MM.DD" "$(python3 -c "
-import json
-idx = set(json.load(open('$ELASTIC_JSON'))['indexes'])
-print(1 if idx and all(i.startswith('sf-alerts-') and len(i) == len('sf-alerts-2006.01.02') for i in idx) else 0)" 2>/dev/null || echo 0)"
+import json, sys
+idx = set(json.load(open(sys.argv[1]))['indexes'])
+print(1 if idx and all(i.startswith('sf-alerts-') and len(i) == len('sf-alerts-2006.01.02') for i in idx) else 0)" "$ELASTIC_JSON" 2>/dev/null || echo 0)"
 
 # ------------------------------------------------------------- FASE B
 echo "== Fase B: control negativo (motor sin sinks) =="

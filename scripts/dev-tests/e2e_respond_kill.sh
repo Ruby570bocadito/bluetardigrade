@@ -30,6 +30,15 @@
 # Puertos por defecto 18117/18118: fuera del rango de los demás e2e.
 set -u
 
+# Linux only: the victims are POSIX `sleep` children watched through
+# /proc. Under Git Bash their pids are not Windows pids, so the engine
+# would be aimed at the wrong processes; scripts/windows/smoke_respond.ps1
+# runs the same contract with real Windows kills.
+if [ "$(uname -s)" != "Linux" ]; then
+  echo "SKIP: e2e_respond_kill.sh is Linux-only; on Windows run: pwsh scripts/windows/smoke_respond.ps1"
+  exit 0
+fi
+
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 INGEST_PORT="${SF_E2E_INGEST_PORT:-18117}"
 API_PORT="${SF_E2E_API_PORT:-18118}"

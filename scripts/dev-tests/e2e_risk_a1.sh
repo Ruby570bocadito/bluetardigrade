@@ -275,6 +275,7 @@ for line in sys.stdin:
 else:
     print(-1)" 2>/dev/null || echo -1)
 check "paridad: risk_hosts_tracked stats=$S == sf_risk_hosts_tracked=$M" "$([ "$S" = "$M" ] && [ "$S" = "1" ] && echo 1 || echo 0)"
+SC=$(hot0 score) # the score decays: compare with a read taken right before /metrics
 MSCORE=$(curl -s "$BASE/metrics" | python3 -c "
 import sys
 for line in sys.stdin:
@@ -295,10 +296,10 @@ check "tras reiniciar: hot_hosts=[] (got $EMPTY)" "$EMPTY"
 SERIE=$(curl -s "$BASE/metrics" | rg -c "^sf_host_risk_score\{" 2>/dev/null || echo 0)
 check "serie sf_host_risk_score ABSENTE sin hosts calientes (got $SERIE)" "$([ "$SERIE" = "0" ] && echo 1 || echo 0)"
 AUD=$(python3 -c "
-import json
-d = json.load(open('$TMPDIR_E2E/lifecycle.json'))
+import json, sys
+d = json.load(open(sys.argv[1]))
 e = d.get('entries', [])
-print(1 if len(e) == 3 and all(x.get('status') == 'closed' for x in e) else 0)" 2>/dev/null || echo 0)
+print(1 if len(e) == 3 and all(x.get('status') == 'closed' for x in e) else 0)" "$TMPDIR_E2E/lifecycle.json" 2>/dev/null || echo 0)
 check "el registro de triaje SOBREVIVE en el fichero lifecycle (3 closed)" "$AUD"
 RING=$(curl -s "$BASE/api/alerts?limit=200" | jqpy "print(len(d))" 2>/dev/null || echo -1)
 check "modo anillo: las alertas del proceso anterior ya no se sirven (got $RING)" "$([ "$RING" = "0" ] && echo 1 || echo 0)"

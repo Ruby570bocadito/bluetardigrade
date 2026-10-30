@@ -27,6 +27,9 @@
 set -u
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
+# Expected counts come from the shipped content, never a frozen number:
+# the pack grows (11 -> 13 sequences went unnoticed by this E2E).
+NSEQ_EXP=$(cat "$REPO"/sequences/*.yaml | grep -c '^- name:')
 INGEST_PORT="${SF_E2E_INGEST_PORT:-18077}"
 API_PORT="${SF_E2E_API_PORT:-18078}"
 BASE="http://127.0.0.1:$API_PORT"
@@ -124,7 +127,7 @@ kill "$DPID" 2>/dev/null; wait "$DPID" 2>/dev/null
 
 SEQ_JSON=$(curl -s "$BASE/api/sequences")
 NSEQ=$(printf '%s' "$SEQ_JSON" | jqpy 'print(len(d))' 2>/dev/null || echo 0)
-check "/api/sequences (ruta 10) sirve 11 secuencias (got $NSEQ)" "$([ "$NSEQ" = "11" ] && echo 1 || echo 0)"
+check "/api/sequences (ruta 10) sirve $NSEQ_EXP secuencias (got $NSEQ)" "$([ "$NSEQ" = "$NSEQ_EXP" ] && echo 1 || echo 0)"
 SCHEMA_OK=$(printf '%s' "$SEQ_JSON" | jqpy 'need={"id","name","description","severity","window_seconds","tags","steps"}; print(1 if d and all(need <= set(s) for s in d) else 0)' 2>/dev/null || echo 0)
 check "cada secuencia lleva id/name/description/severity/window_seconds/tags/steps" "$SCHEMA_OK"
 
@@ -133,8 +136,8 @@ SE_EN=$(printf '%s' "$ST" | jqpy 'print(1 if d.get("store_enabled") is True else
 check "stats.store_enabled == true" "$SE_EN"
 N=$(printf '%s' "$ST" | jqpy 'print(d.get("store_events", -1))' 2>/dev/null || echo -1)
 check "stats.store_events > 0 tras el feed (got $N; canónico del devsensor: 19)" "$([ "$N" -gt 0 ] 2>/dev/null && echo 1 || echo 0)"
-CORR=$(printf '%s' "$ST" | jqpy 'print(1 if d.get("correlator_sequences")==11 and d.get("correlator_cap")==8192 else 0)' 2>/dev/null || echo 0)
-check "stats correlator_sequences=11, correlator_cap=8192" "$CORR"
+CORR=$(printf '%s' "$ST" | jqpy "print(1 if d.get('correlator_sequences')==$NSEQ_EXP and d.get('correlator_cap')==8192 else 0)" 2>/dev/null || echo 0)
+check "stats correlator_sequences=$NSEQ_EXP, correlator_cap=8192" "$CORR"
 LIST_A=$(curl -s "$BASE/api/events?limit=1000" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0)
 check "lista /api/events coherente con el contador del store ($LIST_A >= $N)" "$([ "$LIST_A" -ge "$N" ] 2>/dev/null && echo 1 || echo 0)"
 
@@ -159,7 +162,7 @@ wait_health || bail_with_log
 check "motor rearrancado con retención 1s" 1
 # grep -c ya imprime 0 sin match (y sale 1): || true, nunca || echo 0
 # (el eco extra producía "0\n0" y reventaba el -ge siguiente)
-PRUNED_LOG=$(grep -c "store pruned .* events / .* alerts older than 1s" "$LOG" 2>/dev/null || true)
+PRUNED_LOG=$(grep -c "store pruned .* events / .* alerts.* older than 1s" "$LOG" 2>/dev/null || true)
 check "log de poda presente: 'store pruned ... older than 1s' ($PRUNED_LOG línea)" "$([ "$PRUNED_LOG" -ge 1 ] && echo 1 || echo 0)"
 STC=$(curl -s "$BASE/api/stats")
 SEV=$(printf '%s' "$STC" | jqpy 'print(d.get("store_events", -1))' 2>/dev/null || echo -1)

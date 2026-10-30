@@ -40,6 +40,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    throw 'smoke_respond.ps1 needs PowerShell 7 (pwsh): Invoke-WebRequest -SkipHttpErrorCheck and Join-Path with several children do not exist in Windows PowerShell 5.1.'
+}
+
 $REPO = (Resolve-Path (Join-Path $PSScriptRoot '..' '..')).Path
 $API_BASE = "http://127.0.0.1:$ApiPort"
 $API_DISARM_BASE = "http://127.0.0.1:$($ApiPort + 10)"

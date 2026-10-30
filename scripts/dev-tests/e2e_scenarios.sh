@@ -3,13 +3,13 @@
 # sobre binarios reales, sin mocks. Fases:
 #
 #   A. 'engine scenarios list' carga la biblioteca del repositorio y
-#      la presenta (127 escenarios: uno por regla y por cadena).
+#      la presenta (un escenario por regla y por cadena).
 #   B. 'engine scenarios replay' contra un motor de laboratorio real
 #      (loopback): un subconjunto representativo (reglas de proceso,
 #      registro, fichero, red e integraciones, mas una cadena de
 #      kill-chains) dispara TODAS sus expectativas; las alertas leidas
 #      por la API llevan la etiqueta "simulation" y hosts LAB-SIM-*.
-#   C. La bateria completa (SF_E2E_FULL=1): los 127 escenarios.
+#   C. La bateria completa (SF_E2E_FULL=1): toda la biblioteca.
 #   D. Guardias: destino no loopback rechazado antes de tocar nada;
 #      -only con id inexistente falla; una expectativa que el motor no
 #      conoce (FALTA-CATALOGO) falla sin esperar timeouts.
@@ -31,6 +31,9 @@
 set -u
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
+# One scenario per rule and per chain: counted from the library itself,
+# never a frozen number (127 -> 138 went unnoticed by this E2E).
+N_LIB=$(find "$REPO/scenarios" -name '*.yaml' -exec cat {} + | grep -c '^- name:')
 INGEST_PORT="${SF_E2E_INGEST_PORT:-18117}"
 API_PORT="${SF_E2E_API_PORT:-18118}"
 BASE="http://127.0.0.1:$API_PORT"
@@ -104,8 +107,8 @@ LIST_OUT="$("$ENGINE" scenarios list -dir "$REPO/scenarios" 2>"$TMPDIR_E2E/list.
 RC=$?
 check "'scenarios list' sale 0" "$([ $RC -eq 0 ] && echo 1 || echo 0)"
 N_SCEN=$(echo "$LIST_OUT" | rg -c '^sim-' || true)
-check "la biblioteca lista 127 escenarios (una por regla y cadena)" \
-  "$([ "${N_SCEN:-0}" -eq 127 ] && echo 1 || echo 0)"
+check "la biblioteca lista $N_LIB escenarios (una por regla y cadena; got ${N_SCEN:-0})" \
+  "$([ "${N_SCEN:-0}" -eq "$N_LIB" ] && echo 1 || echo 0)"
 echo "$LIST_OUT" | rg -q '^sim-lsass-comsvcs' \
   && ok "list incluye sim-lsass-comsvcs" || bad "list no incluye sim-lsass-comsvcs"
 
@@ -139,7 +142,7 @@ check "todas las alertas son de hosts LAB-SIM-*" \
 
 # --------------------------------------------------------------------- fase C
 if [ "${SF_E2E_FULL:-0}" = "1" ]; then
-  echo "Fase C: bateria completa (127 escenarios) contra el motor de laboratorio"
+  echo "Fase C: bateria completa ($N_LIB escenarios) contra el motor de laboratorio"
   "$ENGINE" scenarios replay -dir "$REPO/scenarios" -ingest "$EADDR" -api "$BASE" \
     -host-suffix "-e2ec" >"$TMPDIR_E2E/full-replay.txt" 2>&1
   RC=$?
@@ -147,7 +150,7 @@ if [ "${SF_E2E_FULL:-0}" = "1" ]; then
   rg -q 'REPLAY completo' "$TMPDIR_E2E/full-replay.txt" \
     && ok "bateria completa: informe final" || bad "bateria completa sin informe final"
 else
-  echo "Fase C: saltada (SF_E2E_FULL=1 para la bateria completa de 127 escenarios)"
+  echo "Fase C: saltada (SF_E2E_FULL=1 para la bateria completa de $N_LIB escenarios)"
 fi
 
 # --------------------------------------------------------------------- fase D
@@ -217,19 +220,20 @@ LIB=$(curl -s "$BASE/api/scenarios")
 echo "$LIB" | python3 -c '
 import json,sys
 lib = json.load(sys.stdin)
+n = int(sys.argv[1])
 assert lib["armed"] is True, lib
-assert lib["count"] == 127, lib["count"]
-assert len(lib["scenarios"]) == 127
+assert lib["count"] == n, (lib["count"], n)
+assert len(lib["scenarios"]) == n
 ids = [s["id"] for s in lib["scenarios"]]
 assert ids == sorted(ids)
 assert any(s["id"] == "sim-lsass-comsvcs" for s in lib["scenarios"])
-' && ok "GET /api/scenarios sirve la biblioteca (127, ordenada)" \
+' "$N_LIB" && ok "GET /api/scenarios sirve la biblioteca ($N_LIB, ordenada)" \
   || bad "GET /api/scenarios: biblioteca incorrecta"
 
 # Lanzo la bateria (subconjunto o completa) y espero el resultado.
 if [ "${SF_E2E_FULL:-0}" = "1" ]; then
   RUN_BODY=""
-  N_EXPECT=127
+  N_EXPECT=$N_LIB
 else
   RUN_BODY='{"only":["sim-lsass-comsvcs","sim-run-key-registry","sim-office-payload-drop","sim-dga-dns","sim-ids-priority-high","sim-chain-cf86-be62"],"timeout_ms":15000}'
   N_EXPECT=6

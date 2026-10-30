@@ -73,7 +73,7 @@ const isSpinner = (a) => a.name === 'spin' || /animate-spin/.test(a.target)
 
 try {
   await startServer()
-  browser = await chromium.launch({ headless: true })
+  browser = await chromium.launch({ headless: true, executablePath: process.env.CONSOLE_CHROMIUM_PATH || process.env.BROWSER_EXE })
 
   // 1. Reduced motion: the console must be still.
   const reduceContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce', locale: 'es-ES' })
