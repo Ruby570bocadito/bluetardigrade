@@ -35,6 +35,23 @@ func TestSecretWriteRoundTrip(t *testing.T) {
 	}
 }
 
+// From a Windows PowerShell pipe with the console in UTF-8, stdin starts
+// with a byte-order mark: the stored secret must be the password alone.
+func TestSecretWriteDropsWindowsBOM(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ad-bind.secret")
+	if err := runSecretWrite(strings.NewReader("\xEF\xBB\xBFs3cr3t-pw-7f3a\r\n"), &bytes.Buffer{}, path); err != nil {
+		t.Fatalf("runSecretWrite: %v", err)
+	}
+	got, _, err := secretfile.Read(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(got) != "s3cr3t-pw-7f3a" {
+		t.Errorf("stored %q, want the password without the byte-order mark", got)
+	}
+	secretfile.Zero(got)
+}
+
 func TestSecretWriteRejectsEmptyStdin(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "ad-bind.secret")

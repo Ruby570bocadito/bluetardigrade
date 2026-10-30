@@ -142,6 +142,30 @@ func TestTokenAuthOK(t *testing.T) {
 	}
 }
 
+// A sender writing through a UTF-8 Windows console, or replaying a file
+// saved by Notepad, starts its stream with a byte-order mark: the
+// handshake (or, without a token, the first event) must survive it.
+func TestByteOrderMarkBeforeTheFirstLine(t *testing.T) {
+	_, events, addr := startTestServer(t, "s3cret")
+	_, r := dialAndSend(t, addr, "\xEF\xBB\xBFAUTH s3cret", sampleEvent(t))
+	if ack := readAck(t, r); ack != `{"ack":"ok"}` {
+		t.Fatalf("ack = %q, want ok after a byte-order mark", ack)
+	}
+	if got := <-events; got.ID != "test-1" {
+		t.Fatalf("got event id %q, want test-1", got.ID)
+	}
+	_, plain, plainAddr := startTestServer(t, "")
+	dialAndSend(t, plainAddr, "\xEF\xBB\xBF"+sampleEvent(t))
+	select {
+	case got := <-plain:
+		if got.ID != "test-1" {
+			t.Fatalf("got event id %q, want test-1", got.ID)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("first event behind a byte-order mark was dropped")
+	}
+}
+
 // Token configured + wrong AUTH: reject, close, never deliver events.
 func TestTokenAuthWrong(t *testing.T) {
 	srv, events, addr := startTestServer(t, "s3cret")

@@ -75,8 +75,11 @@ func Read(path string) ([]byte, []string, error) {
 	}
 	// Legacy raw file: the exact bytes a password file held before
 	// SEC-2, with the same trailing-newline trim the connector always
-	// applied.
-	pw := bytes.Trim(raw, "\r\n")
+	// applied (and the Windows byte-order mark dropped, see TextSecret).
+	pw, err := TextSecret(raw)
+	if err != nil {
+		return nil, nil, fmt.Errorf("secretfile: %s: %w", path, err)
+	}
 	if len(pw) == 0 {
 		return nil, nil, fmt.Errorf("secretfile: %s is empty", path)
 	}
@@ -88,6 +91,25 @@ func Read(path string) ([]byte, []string, error) {
 			path, path)}, nil
 	}
 	return out, nil, nil
+}
+
+// utf8BOM is what Windows puts in front of UTF-8 text: Notepad's "UTF-8
+// with BOM", Set-Content -Encoding UTF8 in Windows PowerShell 5.1, and the
+// stdin of a native command when the console code page is 65001.
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
+// TextSecret turns the bytes of a text secret (the stdin of
+// "engine secret-write" or a legacy raw file) into the secret: trailing
+// newlines are dropped as always, and so is a leading UTF-8 byte-order
+// mark, which would otherwise become an invisible first character of the
+// password. UTF-16 text (Windows PowerShell 5.1's '>' and Out-File) is
+// refused: its bytes are not the password the operator typed. The result
+// aliases raw.
+func TextSecret(raw []byte) ([]byte, error) {
+	if bytes.HasPrefix(raw, []byte{0xFF, 0xFE}) || bytes.HasPrefix(raw, []byte{0xFE, 0xFF}) {
+		return nil, fmt.Errorf("the secret is UTF-16 text (Windows PowerShell 5.1 '>' or Out-File): save it as UTF-8 or pipe it through cmd /c with '<'")
+	}
+	return bytes.Trim(bytes.TrimPrefix(raw, utf8BOM), "\r\n"), nil
 }
 
 // Write atomically installs secret at path using the platform default

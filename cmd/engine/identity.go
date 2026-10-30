@@ -90,7 +90,10 @@ func credentialToken(in io.Reader, fromStdin bool) (string, error) {
 		if err != nil && !errors.Is(err, io.EOF) {
 			return "", fmt.Errorf("leyendo el token de stdin: %w", err)
 		}
-		token := strings.TrimRight(line, "\r\n")
+		// the BOM a Windows PowerShell pipe on a UTF-8 console puts in
+		// front of stdin is not part of the token: kept, the stored hash
+		// would never match what the sensor or the operator sends
+		token := strings.TrimPrefix(strings.TrimRight(line, "\r\n"), "\uFEFF")
 		if len(token) < 16 {
 			return "", errors.New("el token de stdin debe tener al menos 16 caracteres")
 		}

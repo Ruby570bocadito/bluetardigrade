@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 
@@ -17,6 +16,11 @@ exigidos en cada lectura. El secreto entra SOLO por stdin, jamas por
 argv ni por entorno:
 
   engine secret-write /etc/bluetardigrade/ad-bind.secret < contrasena.txt
+
+PowerShell no admite '<' y una tuberia de Windows PowerShell 5.1 cambia
+los caracteres no ASCII por '?': en Windows, pasalo por cmd:
+
+  cmd /c "sf-engine secret-write C:\ProgramData\bluetardigrade\ad-bind.secret < contrasena.txt"
 
 El fichero resultante se referencia desde password_file de la
 configuracion -ad. La consola jamas lo devuelve por la API y el motor
@@ -43,8 +47,12 @@ func runSecretWrite(in io.Reader, out io.Writer, path string) error {
 	}
 	// Mismo convenio que el fichero en bruto legado: se recortan los
 	// saltos de linea del final (lo que entra por "cat fichero |" o por
-	// una linea interactiva), el resto es el secreto, byte a byte.
-	secret := bytes.Trim(raw, "\r\n")
+	// una linea interactiva) y el BOM que Windows antepone al texto; el
+	// resto es el secreto, byte a byte.
+	secret, err := secretfile.TextSecret(raw)
+	if err != nil {
+		return fmt.Errorf("leyendo el secreto de stdin: %w", err)
+	}
 	if len(secret) == 0 {
 		return fmt.Errorf("stdin no trajo ningun secreto: pasalo por stdin (p. ej. 'engine secret-write <fichero> < contrasena.txt')")
 	}

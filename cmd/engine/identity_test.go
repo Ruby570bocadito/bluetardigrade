@@ -91,3 +91,13 @@ func TestOperatorCredentialRoundTrip(t *testing.T) {
 		t.Fatal("YAML-breaking operator name accepted")
 	}
 }
+
+// A token piped from Windows PowerShell on a UTF-8 console arrives behind
+// a byte-order mark: the credential is the token alone.
+func TestCredentialTokenDropsTheByteOrderMark(t *testing.T) {
+	const tok = "0123456789abcdef0123456789abcdef"
+	got, err := credentialToken(strings.NewReader("\uFEFF"+tok+"\r\n"), true)
+	if err != nil || got != tok {
+		t.Fatalf("token %q, %v; want %q", got, err, tok)
+	}
+}

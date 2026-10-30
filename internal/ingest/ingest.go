@@ -20,6 +20,7 @@ package ingest
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -57,6 +58,10 @@ const (
 	// rejected and closed before the buffer grows.
 	maxAuthLine = 4 << 10
 )
+
+// utf8BOM is what a Windows sender may put in front of its stream: a
+// PowerShell pipe on a UTF-8 console, or a file saved by Notepad.
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 
 // errAuthLineTooLong ends the scan of a connection whose first line
 // outgrew maxAuthLine while authentication was still pending.
@@ -388,6 +393,12 @@ func (s *Server) handle(conn net.Conn) {
 	first := true
 	for scanner.Scan() {
 		line := scanner.Bytes()
+		if first {
+			// The byte-order mark is not part of the first line: kept,
+			// it turns "AUTH <token>" into a refused handshake and an
+			// event into a malformed line.
+			line = bytes.TrimPrefix(line, utf8BOM)
+		}
 		if len(line) == 0 {
 			continue
 		}

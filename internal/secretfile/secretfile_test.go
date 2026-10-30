@@ -173,6 +173,39 @@ func TestReadAcceptsLegacyRawFile(t *testing.T) {
 	}
 }
 
+// Text saved or piped on Windows starts with a UTF-8 byte-order mark
+// (Notepad, Set-Content -Encoding UTF8, a UTF-8 console's pipe): it is
+// not part of the password. UTF-16 ('>' in Windows PowerShell 5.1) is
+// refused instead of handing its bytes to the bind.
+func TestTextSecretDropsBOMAndRefusesUTF16(t *testing.T) {
+	got, err := TextSecret([]byte("\xEF\xBB\xBF" + testSecret + "\r\n"))
+	if err != nil || string(got) != testSecret {
+		t.Fatalf("UTF-8 BOM not dropped: %q %v", got, err)
+	}
+	if got, err := TextSecret([]byte(testSecret + "\n")); err != nil || string(got) != testSecret {
+		t.Fatalf("plain text changed: %q %v", got, err)
+	}
+	for _, bom := range []string{"\xFF\xFE", "\xFE\xFF"} {
+		if _, err := TextSecret([]byte(bom + "p\x00w\x00")); err == nil || !strings.Contains(err.Error(), "UTF-16") {
+			t.Fatalf("UTF-16 secret %x accepted: %v", bom, err)
+		}
+	}
+}
+
+func TestReadLegacyRawFileWithWindowsEncodings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ad-password")
+	writeRaw(t, path, []byte("\xEF\xBB\xBF"+testSecret+"\r\n"), 0o600)
+	got, _, err := Read(path)
+	if err != nil || string(got) != testSecret {
+		t.Fatalf("legacy file with BOM: got %q, %v; want %q", got, err, testSecret)
+	}
+	utf16 := filepath.Join(t.TempDir(), "ad-password-utf16")
+	writeRaw(t, utf16, []byte("\xFF\xFEp\x00w\x00\r\x00\n\x00"), 0o600)
+	if _, _, err := Read(utf16); err == nil || !strings.Contains(err.Error(), "UTF-16") {
+		t.Fatalf("UTF-16 legacy file must be refused with the fix, got %v", err)
+	}
+}
+
 // A plain envelope on Windows is the "plain where dpapi is expected"
 // case: it still works (laboratory parity) with a one-line warning.
 func TestPlainEnvelopeOnWindowsWarns(t *testing.T) {
