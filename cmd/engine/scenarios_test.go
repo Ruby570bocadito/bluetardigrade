@@ -105,3 +105,30 @@ func TestScenarioClientRefusesRedirects(t *testing.T) {
 		t.Fatalf("redirect target received %d requests, want 0", hits)
 	}
 }
+
+// TestScenarioHostsKeepCrossHostChainsApart pins the replay fix: the
+// cross-host chain of the shipped library spreads its events over two
+// hosts (min_hosts: 2), and the per-run suffix must keep them apart
+// instead of collapsing every event onto the scenario host.
+func TestScenarioHostsKeepCrossHostChainsApart(t *testing.T) {
+	lib, err := scenario.LoadDir("../../scenarios/chains")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var chain *scenario.Scenario
+	for _, sc := range lib {
+		if sc.ID == "sim-chain-24c5-e409" {
+			chain = sc
+		}
+	}
+	if chain == nil {
+		t.Fatal("sim-chain-24c5-e409 not in the library")
+	}
+	got := scenarioHosts(chain, "-42")
+	if strings.Join(got, ",") != "LAB-SIM-LAT1-42,LAB-SIM-LAT2-42" {
+		t.Fatalf("hosts %v, want each event host with the suffix", got)
+	}
+	if got := scenarioHosts(chain, ""); strings.Join(got, ",") != "LAB-SIM-LAT1,LAB-SIM-LAT2" {
+		t.Fatalf("-host-suffix none: hosts %v", got)
+	}
+}

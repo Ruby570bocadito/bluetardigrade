@@ -216,17 +216,19 @@ func runScenariosReplay(out io.Writer, o replayOptions) error {
 				sc.ID, sc.Name, strings.Join(missing, ", "))
 			continue
 		}
-		host := sc.Host
-		if suffix != hostSuffixNone {
-			host += suffix
+		runSuffix := suffix
+		if suffix == hostSuffixNone {
+			runSuffix = ""
 		}
-		sent, err := streamScenario(sc, host, o)
+		hosts := scenarioHosts(sc, runSuffix)
+		host := strings.Join(hosts, ", ")
+		sent, err := streamScenario(sc, runSuffix, o)
 		if err != nil {
 			failures++
 			fmt.Fprintf(out, "[ERROR] %s (%s): %v\n", sc.ID, sc.Name, err)
 			continue
 		}
-		fired, untagged, err := waitForExpectations(sc, host, o)
+		fired, untagged, err := waitForExpectations(sc, hosts, o)
 		if err != nil {
 			failures++
 			fmt.Fprintf(out, "[ERROR] %s (%s): %v\n", sc.ID, sc.Name, err)
@@ -247,8 +249,12 @@ func runScenariosReplay(out io.Writer, o replayOptions) error {
 			fmt.Fprintf(out, "[FALTA] %s (%s): no se detecto -> %s\n", sc.ID, sc.Name, strings.Join(parts, "; "))
 			continue
 		}
-		fmt.Fprintf(out, "[OK] %s (%s): %d evento(s) en host %s, %d expectativa(s) cumplida(s)\n",
-			sc.ID, sc.Name, sent, host, len(sc.Expected))
+		where := "host " + host
+		if len(hosts) > 1 {
+			where = "hosts " + host
+		}
+		fmt.Fprintf(out, "[OK] %s (%s): %d evento(s) en %s, %d expectativa(s) cumplida(s)\n",
+			sc.ID, sc.Name, sent, where, len(sc.Expected))
 	}
 	fmt.Fprintln(out)
 	if failures > 0 {
@@ -335,10 +341,29 @@ func loopbackAPI(raw string) error {
 	return nil
 }
 
+// scenarioHosts lists, in first-seen order, the hosts a replay of sc
+// writes to: each event's own host (the loader fills the scenario host
+// in when an event names none) plus the per-run suffix. Cross-host
+// chains place their steps on different hosts on purpose; collapsing
+// them onto the scenario host made a min_hosts sequence impossible on a
+// clean engine (it only passed on leftovers of earlier replays).
+func scenarioHosts(sc *scenario.Scenario, suffix string) []string {
+	var hosts []string
+	seen := map[string]bool{}
+	for _, ev := range sc.Events {
+		h := ev.Host + suffix
+		if !seen[h] {
+			seen[h] = true
+			hosts = append(hosts, h)
+		}
+	}
+	return hosts
+}
+
 // streamScenario dials the ingest (plain TCP or TLS), performs the
 // AUTH handshake when a token is configured and writes the scenario
 // events as NDJSON lines. It returns the number of events sent.
-func streamScenario(sc *scenario.Scenario, host string, o replayOptions) (int, error) {
+func streamScenario(sc *scenario.Scenario, suffix string, o replayOptions) (int, error) {
 	conn, err := dialIngest(o)
 	if err != nil {
 		return 0, fmt.Errorf("conectar a %s: %w", o.ingest, err)
@@ -348,10 +373,12 @@ func streamScenario(sc *scenario.Scenario, host string, o replayOptions) (int, e
 		return 0, err
 	}
 	sent := 0
-	for _, ev := range sc.Events {
-		// the loader pins the scenario host; the per-run suffix keeps
-		// repeated replays clear of the engine's 60 s alert dedup
-		ev.Host = host
+	for _, sev := range sc.Events {
+		// scenario.Event wraps a *model.Event: suffix a copy so the
+		// loaded library keeps its hosts. The per-run suffix keeps
+		// repeated replays clear of the engine's 60 s alert dedup.
+		ev := *sev.Event
+		ev.Host += suffix
 		line, err := ev.Encode()
 		if err != nil {
 			return sent, fmt.Errorf("codificar evento %s: %w", ev.ID, err)
@@ -460,38 +487,40 @@ func fetchCatalog(o replayOptions) (*scenario.Catalog, error) {
 	return scenario.NewCatalog(ruleIDs, seqIDs), nil
 }
 
-// waitForExpectations polls GET /api/alerts?host=... until every
-// expectation of the scenario is satisfied or the timeout expires.
-// It returns the fired counts and how many matching alerts arrived
-// WITHOUT the simulation tag (an anomaly worth reporting, never
-// counted as success).
-func waitForExpectations(sc *scenario.Scenario, host string, o replayOptions) (map[string]int, int, error) {
+// waitForExpectations polls GET /api/alerts?host=... for every host of
+// the scenario until every expectation is satisfied or the timeout
+// expires (a cross-host chain alert lands on one of them). It returns
+// the fired counts and how many matching alerts arrived WITHOUT the
+// simulation tag (an anomaly worth reporting, never counted as success).
+func waitForExpectations(sc *scenario.Scenario, hosts []string, o replayOptions) (map[string]int, int, error) {
 	deadline := time.Now().Add(o.timeout)
 	var fired map[string]int
 	untagged := 0
 	for {
-		var alerts []apiAlert
-		if err := getJSON(o, "/api/alerts?limit=500&host="+url.QueryEscape(host), &alerts); err != nil {
-			return nil, 0, err
-		}
 		fired = map[string]int{}
 		untagged = 0
-		for _, a := range alerts {
-			if a.Host != host {
-				continue
+		for _, host := range hosts {
+			var alerts []apiAlert
+			if err := getJSON(o, "/api/alerts?limit=500&host="+url.QueryEscape(host), &alerts); err != nil {
+				return nil, 0, err
 			}
-			tagged := false
-			for _, t := range a.Tags {
-				if t == alert.SimulationTag {
-					tagged = true
-					break
+			for _, a := range alerts {
+				if a.Host != host {
+					continue
 				}
+				tagged := false
+				for _, t := range a.Tags {
+					if t == alert.SimulationTag {
+						tagged = true
+						break
+					}
+				}
+				if !tagged {
+					untagged++
+					continue
+				}
+				fired[a.RuleID]++
 			}
-			if !tagged {
-				untagged++
-				continue
-			}
-			fired[a.RuleID]++
 		}
 		if satisfied(sc, fired) {
 			return fired, untagged, nil
