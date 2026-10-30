@@ -241,6 +241,10 @@ export const dictEn: Dict = {
     actionAria: (action: string, rule: string): string => `${action}: ${rule}`,
     readOnly: 'Your role is read-only: you cannot change alert states.',
     noAlerts: 'Nothing open at this severity. Good time for a coffee.',
+    noReading: {
+      connecting: 'Connecting to the engine: no reading yet.',
+      down: 'No connection to the engine: no reading. This does not mean nothing is open.',
+    },
     noIncidents: 'No open incidents.',
     noHosts: 'No hosts in the engine inventory.',
     hostsSummary: (online: number, silent: number, idle: number): string => `${online} online · ${silent} silent · ${idle} idle`,

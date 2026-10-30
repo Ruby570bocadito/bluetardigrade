@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { fullConsoleHref, hostsByAttention, mobileCounts, mobileQueue, openIncidents, MOBILE_MAX_ITEMS } from './mobile'
+import { fullConsoleHref, hostsByAttention, mobileCountLabel, mobileCounts, mobileQueue, openIncidents, MOBILE_MAX_ITEMS } from './mobile'
 import type { SfAlert } from './console-types'
 import type { Incident } from './engine-writes'
 import type { FleetHost, FleetPayload } from './fleet'
@@ -46,5 +46,14 @@ describe('phone view helpers', () => {
     expect(fullConsoleHref('alert', 'abc')).toBe('/?view=alertas&alert=abc')
     expect(fullConsoleHref('incident', '0123456789abcdef')).toBe('/?view=incidentes&incidente=0123456789abcdef')
     expect(fullConsoleHref('host', 'LAB WKS')).toBe('/?view=equipos&host=LAB+WKS')
+  })
+})
+
+describe('phone view without a live engine', () => {
+  test('a count is a number only while the engine is live, never a fake zero', () => {
+    expect(mobileCountLabel('live', 0)).toBe('0')
+    expect(mobileCountLabel('live', 31)).toBe('31')
+    expect(mobileCountLabel('connecting', 0)).toBe('—')
+    expect(mobileCountLabel('down', 31)).toBe('—')
   })
 })

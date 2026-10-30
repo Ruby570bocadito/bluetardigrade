@@ -257,6 +257,10 @@ export const dictEs = {
     actionAria: (action: string, rule: string): string => `${action}: ${rule}`,
     readOnly: 'Tu rol es de lectura: no puedes cambiar el estado de las alertas.',
     noAlerts: 'Nada abierto a esta gravedad. Buen momento para un café.',
+    noReading: {
+      connecting: 'Conectando con el motor: todavía no hay lectura.',
+      down: 'Sin conexión con el motor: no hay lectura. Esto no quiere decir que no haya nada abierto.',
+    },
     noIncidents: 'Ningún incidente abierto.',
     noHosts: 'Sin equipos en el inventario del motor.',
     hostsSummary: (online: number, silent: number, idle: number): string => `${online} en línea · ${silent} sin señal · ${idle} inactivos`,

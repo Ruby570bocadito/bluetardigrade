@@ -20,7 +20,7 @@ import { BrandMark } from './brand-mark'
 import { SEVERITY_STYLE, type SfAlert, type SfAlertStatus } from '@/lib/console-types'
 import { postAlertStatus } from '@/lib/lifecycle'
 import { formatAgo } from '@/lib/soc-metrics'
-import { fullConsoleHref, hostsByAttention, mobileCounts, mobileQueue, openIncidents, MOBILE_MAX_ITEMS, type MobileFloor } from '@/lib/mobile'
+import { fullConsoleHref, hostsByAttention, mobileCountLabel, mobileCounts, mobileQueue, openIncidents, MOBILE_MAX_ITEMS, type MobileFloor, type MobileLink } from '@/lib/mobile'
 
 type Tab = 'alerts' | 'incidents' | 'hosts'
 
@@ -40,10 +40,12 @@ export function MobileConsole() {
   const openInc = useMemo(() => openIncidents(incidents), [incidents])
   const live = status === 'live'
 
+  // Without a live engine the badges stay off: a stale or empty buffer
+  // is not a reading.
   const tabs: { id: Tab; icon: React.ElementType; badge: number; tone: string }[] = [
-    { id: 'alerts', icon: Bell, badge: counts.critical, tone: 'bg-red-500/90 text-white' },
-    { id: 'incidents', icon: FolderOpen, badge: openInc.length, tone: 'bg-amber-400/90 text-zinc-950' },
-    { id: 'hosts', icon: Desktop, badge: fleet?.silent ?? 0, tone: 'bg-red-500/90 text-white' },
+    { id: 'alerts', icon: Bell, badge: live ? counts.critical : 0, tone: 'bg-red-500/90 text-white' },
+    { id: 'incidents', icon: FolderOpen, badge: live ? openInc.length : 0, tone: 'bg-amber-400/90 text-zinc-950' },
+    { id: 'hosts', icon: Desktop, badge: live ? (fleet?.silent ?? 0) : 0, tone: 'bg-red-500/90 text-white' },
   ]
 
   return (
@@ -66,9 +68,9 @@ export function MobileConsole() {
       </header>
 
       <main id="console-main" className="flex-1 px-3 pb-28 pt-3">
-        {tab === 'alerts' && <AlertsTab floor={floor} setFloor={setFloor} counts={counts} />}
-        {tab === 'incidents' && <IncidentsTab />}
-        {tab === 'hosts' && <HostsTab />}
+        {tab === 'alerts' && <AlertsTab floor={floor} setFloor={setFloor} counts={counts} link={status} />}
+        {tab === 'incidents' && (live ? <IncidentsTab /> : <NoReading link={status} />)}
+        {tab === 'hosts' && (live ? <HostsTab /> : <NoReading link={status} />)}
         <p className="mt-6 px-2 text-center text-[11px] leading-relaxed text-zinc-500">{t.installHint}</p>
       </main>
 
@@ -100,7 +102,19 @@ export function MobileConsole() {
   )
 }
 
-function AlertsTab({ floor, setFloor, counts }: { floor: MobileFloor; setFloor: (f: MobileFloor) => void; counts: Record<MobileFloor, number> }) {
+// An empty list means "nothing open" only with a live engine; connecting
+// or down, the phone says there is no reading instead of all clear.
+function NoReading({ link }: { link: MobileLink }) {
+  const { dict } = useI18n()
+  const t = dict.mobile
+  return (
+    <p role="status" className="panel px-4 py-8 text-center text-sm text-zinc-400">
+      {link === 'connecting' ? t.noReading.connecting : t.noReading.down}
+    </p>
+  )
+}
+
+function AlertsTab({ floor, setFloor, counts, link }: { floor: MobileFloor; setFloor: (f: MobileFloor) => void; counts: Record<MobileFloor, number>; link: MobileLink }) {
   const { dict } = useI18n()
   const t = dict.mobile
   const me = useConsoleUser()
@@ -118,12 +132,14 @@ function AlertsTab({ floor, setFloor, counts }: { floor: MobileFloor; setFloor: 
             aria-pressed={floor === f}
             className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${floor === f ? 'border-primary/50 bg-primary-tint/20 text-zinc-50' : 'border-zinc-800 text-zinc-400'}`}
           >
-            {t.floors[f]} <span className="tabular-nums text-zinc-500">{counts[f]}</span>
+            {t.floors[f]} <span className="tabular-nums text-zinc-500">{mobileCountLabel(link, counts[f])}</span>
           </button>
         ))}
       </div>
       {!me.can_triage && <p className="mb-3 rounded-lg border border-zinc-800 px-3 py-2 text-xs text-zinc-400">{t.readOnly}</p>}
-      {queue.length === 0 ? (
+      {link !== 'live' ? (
+        <NoReading link={link} />
+      ) : queue.length === 0 ? (
         <p className="panel px-4 py-8 text-center text-sm text-zinc-400">{t.noAlerts}</p>
       ) : (
         <ul className="space-y-2.5">
@@ -132,7 +148,7 @@ function AlertsTab({ floor, setFloor, counts }: { floor: MobileFloor; setFloor: 
           ))}
         </ul>
       )}
-      {queue.length >= MOBILE_MAX_ITEMS && <p className="mt-3 text-center text-[11px] text-zinc-500">{t.more(MOBILE_MAX_ITEMS)}</p>}
+      {link === 'live' && queue.length >= MOBILE_MAX_ITEMS && <p className="mt-3 text-center text-[11px] text-zinc-500">{t.more(MOBILE_MAX_ITEMS)}</p>}
     </section>
   )
 }

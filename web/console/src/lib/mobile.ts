@@ -11,6 +11,19 @@ import type { Severity, SfAlert } from './console-types'
 
 export type MobileFloor = 'critical' | 'high' | 'all'
 
+/** The engine link as the phone sees it (use-engine-stream's EngineStatus). */
+export type MobileLink = 'connecting' | 'live' | 'down'
+
+/**
+ * A count the phone may show: a number only while the engine is live.
+ * Connecting or down there is no reading, and an on-call screen must not
+ * turn that into a zero (the full console's rule: a missing reading is
+ * "—", never 0).
+ */
+export function mobileCountLabel(link: MobileLink, n: number): string {
+  return link === 'live' ? String(n) : '—'
+}
+
 const RANK: Record<Severity, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 }
 
 /** Cap of cards on the phone: past it, the full console. */
