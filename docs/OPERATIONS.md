@@ -1202,6 +1202,10 @@ OpenAPI 3.0 at [`api/openapi.yaml`](api/openapi.yaml).
   JSON document `{"version":1,"created_at":"...","scheme":"...","ciphertext":"..."}`
   written by `engine secret-write <file> < pw.txt`. The secret itself
   arrives on **stdin**, never on the command line or the environment.
+  PowerShell has no `<` and a Windows PowerShell 5.1 pipe turns
+  non-ASCII characters into `?`, so on Windows run it through cmd:
+  `cmd /c "sf-engine secret-write <file> < pw.txt"`. A UTF-8 byte-order
+  mark in front of the secret is dropped and UTF-16 input is refused.
   On **Windows** the envelope is encrypted with DPAPI in the
   LOCAL_MACHINE scope (the engine runs as a service; a user-scope blob
   would break the sync the day the service account changes) — the blob
@@ -1211,7 +1215,8 @@ OpenAPI 3.0 at [`api/openapi.yaml`](api/openapi.yaml).
   plain envelope read with group/other bits set is a hard, actionable
   error, because a made-up cipher with no honest key source would be a
   worse trade than ownership enforced by the filesystem;
-- the **legacy raw text** (UTF-8, trailing newline tolerated), still
+- the **legacy raw text** (UTF-8 with or without a byte-order mark,
+  trailing newline tolerated; UTF-16 is refused with the fix), still
   accepted for lab parity. On Windows a non-encrypted credential file
   surfaces a one-line warning on `GET /api/ad/status` suggesting
   `engine secret-write` — nothing is ever rewritten behind the
@@ -1789,7 +1794,7 @@ Windows installer installs it as `sf-engine`). Subcommands:
 | `engine operator-credential --name NAME [--token-stdin]` | generate the credential of an active-response operator (token + YAML entry for `-respond-operators` v2); reads an existing token from stdin with `--token-stdin` — see [Active response](#active-response-kill_process-opt-in) |
 | `engine scenarios list [-dir dir] [-only ids]` | print the detection-validation scenario library as a table (id, ATT&CK techniques, events, expectations, synthetic host) |
 | `engine scenarios replay [-dir dir] [-ingest addr] [-api url] [-only ids] [-token t] [-tls] [-ca file] [-interval d] [-timeout d] [-host-suffix s]` | replay the library against a LABORATORY engine (loopback literal only) and verify every expected alert fires; exit 0 only when all expectations fire |
-| `engine version` | print the engine version and exit |
+| `engine version` | print the engine version (a source build reports the newest released version of the changelog) and, when it was built from a git checkout, the commit and whether it had local changes |
 
 #### Interactive terminal
 
@@ -1904,6 +1909,8 @@ throughput  : ~830 ev/s sustained at that rate cap
 Two honest caveats the harness documents by design: the numbers are loopback on a development host — a Windows endpoint under real Sysmon load will see higher ingest-side latency, and the bench measures the engine, not the sensor; and the SSE fan-out is best-effort (slow subscribers miss frames instead of stalling the engine), so a burst at unlimited speed (~128k ev/s) shows the alerts still produced 2000/2000 while the bench client's frames arrive late — backpressure, not loss.
 
 The nightly's second pass quantifies what the opt-in SQLite store costs on that same clock: in its most recent run, p99 moved from 365 µs (rings) to 870 µs with `-store` attached — a +505 µs (+138%) overhead recorded as data, not a verdict, with both passes still far inside the phase-1 contract. That is the price of the durable history described in [Persistent storage](#persistent-storage-sqlite-opt-in); the caveat above about real endpoints applies to both passes equally.
+
+On a Windows 11 workstation (12 logical CPUs, Defender real-time protection on, 125 rules, SQLite on; 2026-10-30) the same harness measured about 7,300 events/s sustained over 16 loopback connections for events that raise no alert, with the store keeping up. When every event raises a high alert the pace is set by the evidence bundles: about 900 alerts/s with `-forensic` on, about 5,200/s with `-forensic=false`, about 11,000/s without the store as well. A bundle is one JSON file written synchronously per high/critical alert, before any response can act on the process, by design; during an alert storm that write paces ingestion and the detection latency grows to seconds. Recorded as data: the bundles are the evidence.
 
 Run it yourself against a live engine (re-runs are safe: the bench
 uses a per-run host, so the engine's 60 s alert dedup never swallows
