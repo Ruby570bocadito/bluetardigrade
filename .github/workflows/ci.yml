@@ -1,8 +1,9 @@
 # Continuous integration: every push and pull request re-verifies the
-# three build surfaces of the project with the same commands the agents
+# build surfaces of the project with the same commands the agents
 # run locally (see the Makefile and docs/OPERATIONS.md):
 #   engine : gofmt + build + vet + test -race (Go from go.mod, 1.26+)
 #   console: hub (bun test, tsc), web console (bun test, tsc, next build) and the DOM regression fixture
+#   website: the public landing page (bun install, eslint, next build)
 #   spec   : OpenAPI drift guard against internal/api/api.go
 # The Windows-first ETW sensor gets `cargo check --locked` on two
 # targets: the host and a Windows cross-check (x86_64-pc-windows-msvc,
@@ -307,6 +308,25 @@ jobs:
           path: captures/browser-regression/
           retention-days: 7
           if-no-files-found: ignore
+
+  # The public landing page (website/) is a Bun package of its own,
+  # apart from the console, and no job built it: a TypeScript error and
+  # an ESLint error sat on main unseen. `next build` type-checks, but
+  # Next.js 16 no longer lints during the build, hence the separate
+  # lint. Same Bun and pins as the console job.
+  website:
+    name: Website (install, lint, next build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - name: website install + lint + build
+        working-directory: website
+        run: |
+          bun install --frozen-lockfile
+          bun run lint
+          bun run build
 
   sensor:
     name: Sensor (check, tests, clippy; locked)

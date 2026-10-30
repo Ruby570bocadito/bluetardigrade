@@ -1,0 +1,1 @@
+- **CI builds the landing page.** The new `website` job installs `website/` from its lockfile, lints it and runs `next build` on every push and pull request: the landing page had been failing TypeScript and ESLint on main without any job noticing.
