@@ -13,6 +13,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/beacon"
@@ -142,7 +143,7 @@ func openStore(o *options) *store.Store {
 	}
 	st, err := store.Open(o.storePath)
 	if err != nil {
-		log.Fatalf("[ENGINE] %v", err)
+		log.Fatalf("[ENGINE] %v%s", err, storeOpenHint(err))
 	}
 	if o.storeRetention > 0 {
 		fmt.Printf("[ENGINE] store on %s (retention %s)\n", o.storePath, o.storeRetention)
@@ -266,4 +267,14 @@ func openIncidents(o *options) *incident.Store {
 		fmt.Printf("[ENGINE] incidents: %d loaded (%d open) from %s\n", total, open, incPath)
 	}
 	return incStore
+}
+
+// storeOpenHint adds the way out when the store file itself is unusable:
+// SQLite names the problem ("file is not a database"), not what to do.
+func storeOpenHint(err error) string {
+	msg := err.Error()
+	if strings.Contains(msg, "file is not a database") || strings.Contains(msg, "database disk image is malformed") {
+		return "\n[ENGINE] the store file is damaged or is not a bluetardigrade database: move it aside so the engine starts a new store, or restore it from a backup"
+	}
+	return ""
 }
