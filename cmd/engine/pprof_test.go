@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"testing"
 )
 
@@ -25,6 +26,9 @@ func assertGzipFile(t *testing.T, path string) {
 // second stop here also exercises.
 func TestStartProfilingWritesProfiles(t *testing.T) {
 	dir := t.TempDir()
+	// No GC while the test runs: the os.File finalizer must not close a
+	// leaked CPU handle behind stop's back and hide the leak checked below.
+	defer debug.SetGCPercent(debug.SetGCPercent(-1))
 	stop, err := startProfiling(dir)
 	if err != nil {
 		t.Fatalf("startProfiling: %v", err)
@@ -39,6 +43,12 @@ func TestStartProfilingWritesProfiles(t *testing.T) {
 	stop() // second call must not panic or corrupt anything
 	for _, name := range []string{"cpu.pb.gz", "heap.pb.gz", "goroutine.pb.gz"} {
 		assertGzipFile(t, filepath.Join(dir, name))
+	}
+	// stop closes the CPU profile: Windows cannot remove an open file,
+	// and the TempDir cleanup failed whenever the GC had not finalized
+	// the leaked handle yet.
+	if err := os.Remove(filepath.Join(dir, "cpu.pb.gz")); err != nil {
+		t.Fatalf("cpu profile still open after stop: %v", err)
 	}
 }
 

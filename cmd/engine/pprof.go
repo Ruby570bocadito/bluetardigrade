@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/pprof"
+	"sync"
 )
 
 // -pprof-dir turns on whole-run profiling of the engine's hot path
@@ -37,8 +38,17 @@ func startProfiling(dir string) (stop func(), err error) {
 		cpu.Close()
 		return nil, fmt.Errorf("-pprof-dir %s: %w", dir, err)
 	}
+	// The CPU file is closed explicitly: left to the GC finalizer, the
+	// handle outlived the profile, and Windows refuses to move or delete
+	// an open file.
+	var closeCPU sync.Once
 	return func() {
 		pprof.StopCPUProfile()
+		closeCPU.Do(func() {
+			if err := cpu.Close(); err != nil {
+				log.Printf("[ENGINE] cpu.pb.gz profile in %s: %v", dir, err)
+			}
+		})
 		writeSnapshot(dir, "heap.pb.gz", func(f *os.File) error { return pprof.WriteHeapProfile(f) })
 		writeSnapshot(dir, "goroutine.pb.gz", func(f *os.File) error {
 			return pprof.Lookup("goroutine").WriteTo(f, 0)
