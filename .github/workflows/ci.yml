@@ -1,13 +1,16 @@
 # Continuous integration: every push and pull request re-verifies the
-# three build surfaces of the project with the same commands the agents
+# build surfaces of the project with the same commands the agents
 # run locally (see the Makefile and docs/OPERATIONS.md):
 #   engine : gofmt + build + vet + test -race (Go from go.mod, 1.26+)
 #   console: hub (bun test, tsc), web console (bun test, tsc, next build) and the DOM regression fixture
+#   website: the public landing page (bun install, eslint, next build)
 #   spec   : OpenAPI drift guard against internal/api/api.go
 # The Windows-first ETW sensor gets `cargo check --locked` on two
 # targets: the host and a Windows cross-check (x86_64-pc-windows-msvc,
-# type/borrow check, no linking). A full Windows cross-build (a linked
-# .exe) stays a release concern, not a CI concern.
+# type/borrow check, no linking), and `cargo test --locked` on two
+# hosts: Linux and a native Windows runner, the only place where the
+# Windows-only modules link and their tests run. The release build
+# (lto, the shipped .exe) stays a release concern, not a CI concern.
 #
 # Reading runs: a "cancelled" run is
 # concurrency supersession (cancel-in-progress on the next push), NOT a
@@ -308,6 +311,25 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # The public landing page (website/) is a Bun package of its own,
+  # apart from the console, and no job built it: a TypeScript error and
+  # an ESLint error sat on main unseen. `next build` type-checks, but
+  # Next.js 16 no longer lints during the build, hence the separate
+  # lint. Same Bun and pins as the console job.
+  website:
+    name: Website (install, lint, next build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - name: website install + lint + build
+        working-directory: website
+        run: |
+          bun install --frozen-lockfile
+          bun run lint
+          bun run build
+
   sensor:
     name: Sensor (check, tests, clippy; locked)
     runs-on: ubuntu-latest
@@ -328,12 +350,45 @@ jobs:
       - name: cargo clippy --locked (warnings are errors)
         run: cargo clippy --locked --all-targets --manifest-path sensor/Cargo.toml -- -D warnings
       # Windows cross-check: the sensor is Windows-first (ETW
-      # collector) and this check is the only way to verify that code
-      # without a Windows host; cost ~1-2 min per push. Counter-argument
-      # on record: "release concern, not CI concern" - worth revisiting
-      # if CI time ever gets tight.
+      # collector). The sensor-windows job builds and tests that code
+      # on a real Windows host; clippy over the Windows-only modules
+      # still runs only here. Cost ~1-2 min per push.
       - name: cargo check --locked (Windows cross-check)
         run: |
           rustup target add x86_64-pc-windows-msvc
           cargo check --locked --target x86_64-pc-windows-msvc --manifest-path sensor/Cargo.toml
           cargo clippy --locked --target x86_64-pc-windows-msvc --manifest-path sensor/Cargo.toml -- -D warnings
+
+  # Native Windows run of the sensor tests. The collector, transport,
+  # enrollment and service modules only exist for target_os = "windows",
+  # and the shared ones take Windows-only branches (memory scan, paths
+  # with backslashes): the ubuntu job type-checks that code but never
+  # links it or runs its tests. A test that failed on every Windows
+  # host (the YARA worker comparing a raw path against JSON) sat unseen
+  # behind a green CI for that reason. Rust is installed as in the
+  # ubuntu job; like it, no build cache: every run is cold.
+  sensor-windows:
+    name: Sensor Windows (native cargo test; locked)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    # No debug info and no incremental state: nothing in CI reads them
+    # (a failed assertion still reports file and line) and a cold MSVC
+    # build pays for both. Measured on a 12-thread workstation:
+    # 145 s -> 105 s, and a 2.8 GB -> 1.6 GB target.
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: ensure a recent stable Rust (>= 1.85, as in the ubuntu sensor job)
+        # pwsh fails a step only on the LAST native exit code: each
+        # native command checks its own (see engine-windows). The
+        # image maintains its own rustup: no self-update, which on
+        # Windows would replace the running rustup.exe.
+        run: |
+          rustup toolchain install --profile minimal --no-self-update stable
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup default stable
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: cargo test --locked (x86_64-pc-windows-msvc, native)
+        run: cargo test --locked --manifest-path sensor/Cargo.toml
