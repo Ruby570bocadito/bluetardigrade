@@ -87,7 +87,11 @@ func startNotify(o *options, whCtx context.Context, hub *api.Hub) (*notify.Live,
 func startElastic(o *options, sinkCtx context.Context, hub *api.Hub) *siem.Elastic {
 	var elasticSink *siem.Elastic
 	if o.elasticURL != "" {
-		elasticSink, err := siem.NewElastic(o.elasticURL, o.elasticIndex)
+		// Assign, never ':=': a short declaration here shadows the
+		// returned variable, the caller gets nil and no alert is ever
+		// handed to the sink while its worker runs and reports 0/0/0.
+		var err error
+		elasticSink, err = siem.NewElastic(o.elasticURL, o.elasticIndex)
 		if err != nil {
 			log.Fatalf("[ENGINE] %v", err)
 		}
@@ -117,7 +121,8 @@ func startElastic(o *options, sinkCtx context.Context, hub *api.Hub) *siem.Elast
 func startSplunk(o *options, sinkCtx context.Context, hub *api.Hub) *siem.Splunk {
 	var splunkSink *siem.Splunk
 	if o.splunkURL != "" {
-		splunkSink, err := siem.NewSplunk(o.splunkURL)
+		var err error // assign, never ':=' (see startElastic)
+		splunkSink, err = siem.NewSplunk(o.splunkURL)
 		if err != nil {
 			log.Fatalf("[ENGINE] %v", err)
 		}
