@@ -140,6 +140,8 @@ mod memscan;
 use anyhow::Result;
 use std::path::PathBuf;
 
+const USAGE: &str = "usage: security-sensor [--addr <ip:port>] [--token <shared-token>] [--tls-ca <ca.pem>] [--queue <events>] [--spool <file>] [--spool-max-mb <MiB>] [--no-network] [--no-registry] [--registry-all] [--no-dns] [--no-hash] [--debug-registry <fragment>] [--yara-rules <dir>] [--yara-max-mb <MiB>] [--yara-mem] [--yara-mem-every <min>] [--yara-mem-max-mb <MiB>] [--service] [--log <file>] [--token-file <file>] [--enroll-token <token> | --enroll-token-file <file>] | scan <PATH>... --rules <dir> [--max-mb <MiB>] | scan --memory [--pid <N>]... --rules <dir> [--mem-max-mb <MiB>]";
+
 fn main() -> Result<()> {
     // The `scan` subcommand (S-2, on demand) does not share the capture
     // flags: it parses its own, works wherever the binary compiles, and
@@ -270,11 +272,14 @@ fn main() -> Result<()> {
             "--spool-max-mb" => {
                 spool_max_mb = parse_number(args.next(), "--spool-max-mb");
             }
+            // asking for help is not an error: usage on stdout, exit 0
+            "-h" | "--help" => {
+                println!("{USAGE}");
+                std::process::exit(0);
+            }
             other => {
                 eprintln!("unknown argument: {other}");
-                eprintln!(
-                    "usage: security-sensor [--addr <ip:port>] [--token <shared-token>] [--tls-ca <ca.pem>] [--queue <events>] [--spool <file>] [--spool-max-mb <MiB>] [--no-network] [--no-registry] [--registry-all] [--no-dns] [--no-hash] [--debug-registry <fragment>] [--yara-rules <dir>] [--yara-max-mb <MiB>] [--yara-mem] [--yara-mem-every <min>] [--yara-mem-max-mb <MiB>] [--service] [--log <file>] [--token-file <file>] [--enroll-token <token> | --enroll-token-file <file>] | scan <PATH>... --rules <dir> [--max-mb <MiB>] | scan --memory [--pid <N>]... --rules <dir> [--mem-max-mb <MiB>]"
-                );
+                eprintln!("{USAGE}");
                 std::process::exit(2);
             }
         }
