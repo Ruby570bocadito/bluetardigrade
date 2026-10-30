@@ -524,7 +524,9 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
                     <th scope="col" className="border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">{dict.alerts.thAlert}</th>
                     <th scope="col" className={`hidden w-[180px] border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500 ${hostColumn}`}>{dict.alerts.thHostUser}</th>
                     <th scope="col" className="hidden w-[104px] border-b border-zinc-800 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500 md:table-cell">{dict.alerts.thTechnique}</th>
-                    <th scope="col" className="w-[84px] border-b border-zinc-800 px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-zinc-500">{dict.alerts.thTime}</th>
+                    {/* on phones the time moves under the alert name: its 84 px
+                        column left the name about five letters wide */}
+                    <th scope="col" className="hidden w-[84px] border-b border-zinc-800 px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-zinc-500 sm:table-cell">{dict.alerts.thTime}</th>
                     <th scope="col" className="w-9 border-b border-zinc-800 px-2 py-2"><span className="sr-only">{dict.alerts.thDetail}</span></th>
                   </tr>
                 </thead>
@@ -574,7 +576,10 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
                             </button>
                             {al.assignee && <AssignChip who={al.assignee} />}
                           </span>
-                          <span className="block truncate font-mono text-xs text-zinc-500">{al.summary}</span>
+                          <span className="block truncate font-mono text-xs text-zinc-500">
+                            <span className="tabular-nums text-zinc-400 sm:hidden">{formatTime(al.timestamp, lang)} · </span>
+                            {al.summary}
+                          </span>
                         </td>
                         <td className={`hidden px-3 py-2.5 align-middle ${hostColumn}`}>
                           <span className="block truncate font-mono text-xs text-zinc-300">{al.host}</span>
@@ -589,7 +594,7 @@ export function AlertsView({ compact = false, onAnalyze, onAnalyzeGroup, onHost,
                             <span className="text-xs text-zinc-500">{dict.alerts.nd}</span>
                           )}
                         </td>
-                        <td className="whitespace-nowrap px-3 py-2.5 text-right align-middle font-mono text-xs tabular-nums text-zinc-400">
+                        <td className="hidden whitespace-nowrap px-3 py-2.5 text-right align-middle font-mono text-xs tabular-nums text-zinc-400 sm:table-cell">
                           {formatTime(al.timestamp, lang)}
                         </td>
                         <td className="px-2 py-2.5 text-right align-middle">
