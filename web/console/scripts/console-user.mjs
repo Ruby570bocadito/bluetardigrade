@@ -45,12 +45,12 @@ const ROLES = ['admin', 'analyst', 'viewer']
 const GROUP_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/
 const MAX_GROUPS = 64
 const USAGE = [
-  'uso: node scripts/console-user.mjs <usuario> <admin|analyst|viewer>',
-  '     node scripts/console-user.mjs --file <ruta> <usuario> <admin|analyst|viewer>',
-  '     node scripts/console-user.mjs --file <ruta> --remove <usuario>',
-  '     node scripts/console-user.mjs --file <ruta> --reset-mfa <usuario>',
-  '     node scripts/console-user.mjs --file <ruta> --require-mfa <admin,analyst,viewer|none>',
-  '     node scripts/console-user.mjs --file <ruta> --groups <usuario> <grupo,grupo|none>',
+  'usage: node scripts/console-user.mjs <user> <admin|analyst|viewer>',
+  '       node scripts/console-user.mjs --file <path> <user> <admin|analyst|viewer>',
+  '       node scripts/console-user.mjs --file <path> --remove <user>',
+  '       node scripts/console-user.mjs --file <path> --reset-mfa <user>',
+  '       node scripts/console-user.mjs --file <path> --require-mfa <admin,analyst,viewer|none>',
+  '       node scripts/console-user.mjs --file <path> --groups <user> <group,group|none>',
 ].join('\n')
 
 function usage() {
@@ -72,7 +72,7 @@ let groups = []
 if (command === '--groups') {
   groups = role === 'none' ? [] : [...new Set(role.split(',').map((g) => g.trim().toLowerCase()))]
   if ((!groups.length && role !== 'none') || groups.length > MAX_GROUPS || !groups.every((g) => GROUP_RE.test(g))) {
-    console.error('grupos no válidos: nombres en minúsculas, cifras, - y _ separados por comas (o none)')
+    console.error('invalid groups: lowercase names, digits, - and _ separated by commas (or none)')
     process.exit(2)
   }
 }
@@ -97,11 +97,11 @@ async function readPassword() {
   const pending = new Set()
   rl.on('close', () => {
     closed = true
-    for (const reject of pending) reject(new Error('no se recibió ninguna contraseña'))
+    for (const reject of pending) reject(new Error('no password received'))
   })
   const ask = (prompt) =>
     new Promise((resolve, reject) => {
-      if (closed) return reject(new Error('no se recibió ninguna contraseña'))
+      if (closed) return reject(new Error('no password received'))
       pending.add(reject)
       // a whole line of its own, on screen before the blind typing: a
       // prompt without its newline can stay buffered until Enter under
@@ -119,24 +119,25 @@ async function readPassword() {
   try {
     // piped: one password, no repetition (a script knows what it sends)
     if (!tty) {
-      const only = await ask(`Contraseña para ${user}:`)
-      if (only.length < MIN_PASSWORD) throw new Error(`usa al menos ${MIN_PASSWORD} caracteres`)
+      const only = await ask(`Password for ${user}:`)
+      if (only.length < MIN_PASSWORD) throw new Error(`use at least ${MIN_PASSWORD} characters`)
       return only
     }
     // interactive: the rules up front, then up to PASSWORD_TRIES
     // attempts — a slip must not fail the whole command (sf-start's
     // first-account flow would re-ask the name otherwise)
-    process.stderr.write(`mínimo ${MIN_PASSWORD} caracteres; no se ve mientras la escribes\n`)
-    let problem = 'las contraseñas no coinciden'
+    process.stderr.write(`at least ${MIN_PASSWORD} characters; it stays hidden while you type\n`)
+    const MISMATCH = 'the passwords do not match'
+    let problem = MISMATCH
     for (let attempt = 1; attempt <= PASSWORD_TRIES; attempt++) {
-      const first = await ask(`Contraseña para ${user}:`)
-      const second = await ask('Repite la contraseña:')
+      const first = await ask(`Password for ${user}:`)
+      const second = await ask('Repeat the password:')
       if (first === second && first.length >= MIN_PASSWORD) return first
-      problem = first !== second ? 'las contraseñas no coinciden' : `usa al menos ${MIN_PASSWORD} caracteres`
+      problem = first !== second ? MISMATCH : `use at least ${MIN_PASSWORD} characters`
       if (attempt < PASSWORD_TRIES) {
-        process.stderr.write(problem === 'las contraseñas no coinciden'
-          ? 'no coinciden: escríbela de nuevo\n'
-          : `demasiado corta (${first.length} de ${MIN_PASSWORD}): escríbela de nuevo\n`)
+        process.stderr.write(problem === MISMATCH
+          ? 'they do not match: type it again\n'
+          : `too short (${first.length} of ${MIN_PASSWORD}): type it again\n`)
       }
     }
     throw new Error(problem)
@@ -159,7 +160,7 @@ function readDoc() {
   if (!existsSync(file)) return { users: [] }
   const doc = JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, ''))
   if (Array.isArray(doc)) return { users: doc }
-  if (!doc || !Array.isArray(doc.users)) throw new Error(`${file} no tiene la forma {"users": [...]}; corrígelo a mano`)
+  if (!doc || !Array.isArray(doc.users)) throw new Error(`${file} is not shaped {"users": [...]}; fix it by hand`)
   return doc
 }
 
@@ -178,44 +179,44 @@ try {
   } else if (command === '--remove') {
     const doc = readDoc()
     const gone = doc.users.find(same)
-    if (!gone) throw new Error(`no hay ninguna cuenta ${user}`)
+    if (!gone) throw new Error(`there is no account ${user}`)
     const kept = doc.users.filter((u) => !same(u))
     // an empty file locks the console (users.ts): going back to a console
     // without accounts is deleting the file, a step of its own
-    if (kept.length === 0) throw new Error(`${gone.user} es la última cuenta; para volver a la consola sin cuentas borra ${file} y reinicia la consola`)
-    if (!kept.some((u) => u?.role === 'admin')) console.error('aviso: no queda ninguna cuenta admin (la respuesta activa y la auditoría solo las ve un admin)')
+    if (kept.length === 0) throw new Error(`${gone.user} is the last account; to go back to a console without accounts, delete ${file} and restart the console`)
+    if (!kept.some((u) => u?.role === 'admin')) console.error('warning: no admin account is left (only an admin sees active response and the audit)')
     writeDoc({ ...doc, users: kept })
-    console.error(`cuenta ${gone.user} eliminada; sus sesiones abiertas terminan`)
+    console.error(`account ${gone.user} removed; its open sessions end`)
   } else if (command === '--reset-mfa') {
     const doc = readDoc()
     const account = doc.users.find(same)
-    if (!account) throw new Error(`no hay ninguna cuenta ${user}`)
-    if (!account.totp) throw new Error(`${account.user} no tiene verificación en dos pasos`)
+    if (!account) throw new Error(`there is no account ${user}`)
+    if (!account.totp) throw new Error(`${account.user} has no two-step sign-in`)
     delete account.totp
     delete account.recovery
     writeDoc(doc)
     const enrolls = (doc.mfa_required ?? []).includes(account.role)
-    console.error(`verificación en dos pasos de ${account.user} quitada; sus sesiones abiertas terminan${enrolls ? ' y al entrar la configurará de nuevo' : ''}`)
+    console.error(`two-step sign-in of ${account.user} removed; its open sessions end${enrolls ? ' and the next sign-in sets it up again' : ''}`)
   } else if (command === '--groups') {
     const doc = readDoc()
     const account = doc.users.find(same)
-    if (!account) throw new Error(`no hay ninguna cuenta ${user}`)
+    if (!account) throw new Error(`there is no account ${user}`)
     if (groups.length) account.groups = groups
     else delete account.groups
     writeDoc(doc)
     console.error(groups.length
-      ? `${account.user} ve solo los equipos de: ${groups.join(', ')}${account.role === 'admin' ? ' (es admin: seguirá viéndolos todos mientras lo sea)' : ''}; sus sesiones abiertas terminan`
-      : `${account.user} ve todos los equipos; sus sesiones abiertas terminan`)
+      ? `${account.user} sees only the hosts of: ${groups.join(', ')}${account.role === 'admin' ? ' (an admin: it still sees every host while it stays one)' : ''}; its open sessions end`
+      : `${account.user} sees every host; its open sessions end`)
   } else if (command === '--require-mfa') {
     const doc = readDoc()
-    if (doc.users.length === 0) throw new Error(`${file} no tiene cuentas`)
+    if (doc.users.length === 0) throw new Error(`${file} has no accounts`)
     if (required.length) doc.mfa_required = [...new Set(required)]
     else delete doc.mfa_required
     writeDoc(doc)
     const pending = doc.users.filter((u) => required.includes(u?.role) && !u.totp).map((u) => u.user)
     console.error(required.length
-      ? `verificación en dos pasos obligatoria para: ${required.join(', ')}${pending.length ? `; la configurarán al entrar: ${pending.join(', ')}` : ''}`
-      : 'verificación en dos pasos opcional para todos los roles')
+      ? `two-step sign-in required for: ${required.join(', ')}${pending.length ? `; set up at their next sign-in: ${pending.join(', ')}` : ''}`
+      : 'two-step sign-in optional for every role')
   } else {
     const doc = readDoc()
     const entry = entryFor(await readPassword())
@@ -227,7 +228,7 @@ try {
       delete doc.users[at].must_change
     } else doc.users.push(entry)
     writeDoc(doc)
-    console.error(at >= 0 ? `cuenta ${doc.users[at].user} actualizada (${role}); sus sesiones abiertas terminan` : `cuenta ${user} creada (${role})`)
+    console.error(at >= 0 ? `account ${doc.users[at].user} updated (${role}); its open sessions end` : `account ${user} created (${role})`)
   }
 } catch (err) {
   console.error(String(err?.message ?? err))

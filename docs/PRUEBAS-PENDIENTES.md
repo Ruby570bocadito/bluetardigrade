@@ -250,7 +250,7 @@ sesión y queda registrado quién hace cada cosa.
 - [ ] **[normal]** `sf-stop` y después `sf-start`. Antes de arrancar pregunta «create the
   administrator account now? [Y/n]». Pulsa Intro, acepta el nombre que propone (o escribe
   `jefa`) y una contraseña de al menos 12 caracteres, dos veces. No se ve al escribirla.
-  Debe decir «cuenta … creada (admin)» y, al final, «sign-in: console accounts (…)».
+  Debe decir «account … created (admin)» y, al final, «sign-in: console accounts (…)».
 - [ ] **[normal]** Crea una cuenta de solo lectura:
 
   ```powershell
