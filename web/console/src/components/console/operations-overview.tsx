@@ -58,7 +58,9 @@ export function OperationsOverview({ onNavigate, onTriage }: {
 
   return (
     <section aria-label={dict.operations.sectionAria} className="panel overflow-hidden">
-      <div className="panel-head justify-between">
+      {/* the header band carries the verdict's colour: green in order,
+          amber when something needs a look, the plain wash while offline */}
+      <div className={'panel-head justify-between ' + (!available ? '' : attention ? 'border-amber-400/25 bg-amber-400/[0.08]' : 'border-emerald-400/20 bg-emerald-400/[0.07]')}>
         <div className={'flex items-center gap-2 text-sm font-medium ' + color}>
           <Icon size={18} weight="fill" aria-hidden />
           <span role="status">{label}</span>

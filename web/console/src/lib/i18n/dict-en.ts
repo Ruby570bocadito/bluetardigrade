@@ -1446,6 +1446,10 @@ export const dictEn: Dict = {
     manyBad: (n): string => `${n} counters need attention`,
     maxRisk: 'highest risk:',
     lastRead: 'last read ',
+    health: { ok: 'In order', warn: 'Attention', bad: 'Failing', off: 'No data' },
+    stageOff: 'Off',
+    absentLead: 'Not published by this engine: ',
+    pipelineAria: 'The path of an event through the engine',
     unavailableProseA: 'The TODO also asks for ',
     unavailableProseB: '. None is published today on ',
     unavailableProseC:

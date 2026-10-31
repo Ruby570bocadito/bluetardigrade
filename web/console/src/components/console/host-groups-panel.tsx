@@ -7,7 +7,8 @@
 // and the field; this panel shows that message as it comes.
 
 import { useCallback, useEffect, useId, useState } from 'react'
-import { PencilSimple, Plus, Trash } from '@phosphor-icons/react'
+import { PencilSimple, Plus, Trash, UsersFour } from '@phosphor-icons/react'
+import { PanelHeading } from './ui-bits'
 import { useI18n } from './i18n-provider'
 import { useConsoleUser } from './user-session'
 import {
@@ -140,9 +141,9 @@ export function HostGroupsPanel() {
   }
 
   return (
-    <div className="panel px-5 py-4">
+    <div data-area="fleet" className="panel px-5 py-4">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="text-sm font-medium text-zinc-100">{t.heading}</h3>
+        <PanelHeading icon={UsersFour}>{t.heading}</PanelHeading>
         {canEdit && !editing && (
           <button type="button" onClick={() => setEditing({ index: -1, draft: { name: '', label: '', hosts: '', ad_ou: '', identities: '' } })} className={QUIET}>
             <Plus size={12} aria-hidden /> {t.add}

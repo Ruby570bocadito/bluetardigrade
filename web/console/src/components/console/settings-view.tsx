@@ -18,7 +18,7 @@
 // API yet — nothing is invented.
 
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle, Globe, Monitor, Moon, Sun, Warning } from '@phosphor-icons/react'
+import { BellRinging, Broadcast, CheckCircle, Gear, Globe, Monitor, Moon, PaintBrush, PlugsConnected, Sun, TreeStructure, UsersThree, Warning } from '@phosphor-icons/react'
 import { Switch } from '@/components/ui/switch'
 import { AccountsManager } from './accounts-manager'
 import { HostGroupsPanel } from './host-groups-panel'
@@ -44,6 +44,8 @@ import {
 } from '@/lib/settings'
 import { applyTheme, resolveTheme, THEME_STORAGE_KEY, type ThemeChoice } from '@/lib/theme'
 import type { ConsoleView } from './dashboard'
+import type { Area } from '@/lib/areas'
+import { PanelHeading } from './ui-bits'
 
 const inputCls =
   'h-8 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 text-xs text-zinc-100 placeholder:text-zinc-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -59,10 +61,11 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   )
 }
 
-function Panel({ heading, children }: { heading: string; children: React.ReactNode }) {
+/** One settings block, in the colour of the area it configures. */
+function Panel({ heading, icon, area, children }: { heading: string; icon: React.ElementType; area: Area; children: React.ReactNode }) {
   return (
-    <div className="panel px-5 py-4">
-      <h3 className="mb-3 text-sm font-medium text-zinc-100">{heading}</h3>
+    <div data-area={area} className="panel px-5 py-4">
+      <PanelHeading icon={icon} className="mb-3">{heading}</PanelHeading>
       {children}
     </div>
   )
@@ -89,7 +92,7 @@ function GeneralPanel() {
     { id: 'en', label: dict.settings.general.langEn },
   ]
   return (
-    <Panel heading={dict.settings.general.heading}>
+    <Panel heading={dict.settings.general.heading} icon={Gear} area="core">
       <p className="mb-3 text-xs leading-relaxed text-zinc-500">{dict.settings.general.prose}</p>
       <div className="max-w-md">
         <p className="text-xs text-zinc-400">{dict.settings.general.langLabel}</p>
@@ -122,7 +125,7 @@ function IngestPanel({ onNavigate }: { onNavigate: (view: ConsoleView) => void }
   const { stats } = useEngine()
   const { enroll } = useFleet()
   return (
-    <Panel heading={dict.settings.ingesta.heading}>
+    <Panel heading={dict.settings.ingesta.heading} icon={Broadcast} area="telemetry">
       <p className="mb-3 text-xs leading-relaxed text-zinc-500">{dict.settings.ingesta.prose}</p>
       <ul className="mb-3 space-y-1.5 text-xs text-zinc-300">
         <li className="flex items-center gap-2">
@@ -183,7 +186,7 @@ function IntegrationsPanel() {
   const { dict } = useI18n()
   const { stats } = useEngine()
   return (
-    <Panel heading={dict.settings.integraciones.heading}>
+    <Panel heading={dict.settings.integraciones.heading} icon={PlugsConnected} area="connect">
       <p className="mb-3 text-xs leading-relaxed text-zinc-500">{dict.settings.integraciones.prose}</p>
       <ul className="space-y-2">
         <CounterRow label={dict.settings.integraciones.webhook} sent={stats?.webhook_sent} failed={stats?.webhook_failed} dropped={stats?.webhook_dropped} />
@@ -222,7 +225,7 @@ function NotificationsPanel() {
   }
 
   return (
-    <Panel heading={dict.settings.notificaciones.heading}>
+    <Panel heading={dict.settings.notificaciones.heading} icon={BellRinging} area="alerts">
       <p className="mb-3 text-xs leading-relaxed text-zinc-500">{dict.notify.prose}</p>
       <div className="space-y-2.5">
         <div className="flex items-center justify-between gap-4">
@@ -265,7 +268,7 @@ function AccountsPanel({ onOpenOnboarding }: { onOpenOnboarding: () => void }) {
   }, [])
   const modeText = me ? (me.mode === 'users' ? dict.settings.cuentas.modeUsers : me.mode === 'token' ? dict.settings.cuentas.modeToken : dict.settings.cuentas.modeOpen) : null
   return (
-    <Panel heading={dict.settings.cuentas.heading}>
+    <Panel heading={dict.settings.cuentas.heading} icon={UsersThree} area="core">
       {me ? (
         <dl className="mb-3 grid gap-2 text-xs sm:grid-cols-2">
           <div>
@@ -337,7 +340,7 @@ function AppearancePanel() {
     applyTheme(resolveTheme(next, typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: light)').matches))
   }
   return (
-    <Panel heading={dict.settings.apariencia.heading}>
+    <Panel heading={dict.settings.apariencia.heading} icon={PaintBrush} area="core">
       <div className="max-w-md">
         <p className="text-xs text-zinc-400">{dict.settings.apariencia.themeLabel}</p>
         <div role="group" aria-label={dict.settings.apariencia.themeLabel} className="mt-1.5 flex gap-1.5">
@@ -460,14 +463,14 @@ function AdSettingsPanel() {
 
   if (phase === 'loading') {
     return (
-      <Panel heading={dict.settings.ad.heading}>
+      <Panel heading={dict.settings.ad.heading} icon={TreeStructure} area="fleet">
         <p className="text-xs text-zinc-500">{dict.settings.ad.loading}</p>
       </Panel>
     )
   }
   if (phase === 'forbidden' || phase === 'error') {
     return (
-      <Panel heading={dict.settings.ad.heading}>
+      <Panel heading={dict.settings.ad.heading} icon={TreeStructure} area="fleet">
         <p role="alert" className="text-xs text-red-300">{loadError}</p>
       </Panel>
     )
@@ -475,9 +478,9 @@ function AdSettingsPanel() {
   const unarmed = phase === 'unarmed'
 
   return (
-    <div className="panel px-5 py-4">
+    <div data-area="fleet" className="panel px-5 py-4">
       <div className="mb-1 flex flex-wrap items-center gap-2">
-        <h3 className="text-sm font-medium text-zinc-100">{dict.settings.ad.heading}</h3>
+        <PanelHeading icon={TreeStructure}>{dict.settings.ad.heading}</PanelHeading>
         {current && (
           <>
             <StateChip ok={current.password_stored} on={dict.settings.ad.passwordStored} off={dict.settings.ad.passwordMissing} />

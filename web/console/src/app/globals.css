@@ -147,6 +147,19 @@
   --status-warning: #fab219;
   --status-serious: #ec835a;
   --status-critical: #d03b3b;
+  /* Area hues (lib/areas.ts): the colour of each area of the console on
+     its nav icon, the icon of every card about it and that card's header
+     wash. Identity, never data and never status (health keeps --status-*,
+     alerts keep the severity scale). Cool hues inform; the one warm hue
+     is the area that asks the operator to act. Each holds 4.5:1 on page,
+     card, viz surface and the sidebar, so it may carry words too
+     (check_console_theme.py). */
+  --area-core: #5b9dff; /* panel, estado, informes, consulta, ajustes: the mark's blue */
+  --area-telemetry: #4dc3ff; /* flujo en vivo, ingesta: the mark's cyan */
+  --area-alerts: #ff8a76; /* alertas, incidentes, respuesta activa */
+  --area-fleet: #3dd6b4; /* equipos, directorio */
+  --area-detection: #a592ff; /* detección and its tabs */
+  --area-connect: #f285c4; /* analista, entrega externa */
   color-scheme: dark;
 
   /* Theme-aware paints used by JS/SVG layers (dot-grid canvas, entity
@@ -317,6 +330,15 @@
     transition: none;
   }
 }
+/* An element with data-area colours its subtree in that area's hue
+   (lib/areas.ts maps views and cards): icon tiles, header washes and
+   any `var(--area)` paint inside. Without one, the core blue. */
+[data-area="core"] { --area: var(--area-core); }
+[data-area="telemetry"] { --area: var(--area-telemetry); }
+[data-area="alerts"] { --area: var(--area-alerts); }
+[data-area="fleet"] { --area: var(--area-fleet); }
+[data-area="detection"] { --area: var(--area-detection); }
+[data-area="connect"] { --area: var(--area-connect); }
 .panel-head {
   display: flex;
   flex-wrap: wrap;
@@ -324,6 +346,12 @@
   gap: 0.5rem 0.75rem;
   border-bottom: 1px solid rgba(148, 163, 184, 0.1);
   padding: 0.75rem 1rem;
+  /* a flat wash of the card's area: the header says what it is about */
+  background-color: color-mix(in srgb, var(--area, var(--area-core)) 7%, transparent);
+}
+.panel > .panel-head:first-child {
+  border-top-left-radius: calc(1rem - 1px);
+  border-top-right-radius: calc(1rem - 1px);
 }
 .chip {
   display: inline-flex;
@@ -358,10 +386,9 @@
   align-items: center;
   justify-content: center;
   border-radius: 0.5rem;
-  border: 1px solid rgba(77, 195, 255, 0.26);
-  background: linear-gradient(180deg, rgba(77, 195, 255, 0.14), rgba(47, 111, 237, 0.06));
-  color: #4dc3ff;
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+  border: 1px solid color-mix(in srgb, var(--area, var(--area-core)) 32%, transparent);
+  background: color-mix(in srgb, var(--area, var(--area-core)) 15%, transparent);
+  color: var(--area, var(--area-core));
 }
 .glass {
   background: rgba(7, 11, 18, 0.74);
@@ -659,6 +686,12 @@ html.light {
   --status-warning: #a16207;
   --status-serious: #c2410c;
   --status-critical: #991b1b;
+  --area-core: #1d4ed8;
+  --area-telemetry: #0369a1;
+  --area-alerts: #c2412d;
+  --area-fleet: #0f766e;
+  --area-detection: #6d28d9;
+  --area-connect: #be185d;
 
   --dot-grid-ink: rgba(15, 23, 42, 0.06);
   --dot-grid-pulse-rgb: 37, 99, 235;
@@ -738,17 +771,18 @@ html.light .panel-hover:focus-within {
     0 1px 2px 0 rgba(15, 23, 42, 0.04),
     0 24px 44px -26px rgba(15, 23, 42, 0.32);
 }
-html.light .panel-head { border-bottom-color: #e2e8f0; }
+html.light .panel-head {
+  border-bottom-color: #e2e8f0;
+  background-color: color-mix(in srgb, var(--area, var(--area-core)) 5%, transparent);
+}
 html.light .chip {
   border-color: #dbe3ee;
   background: #f8fafc;
   box-shadow: none;
 }
 html.light .icon-tile {
-  border-color: rgba(37, 99, 235, 0.24);
-  background: linear-gradient(180deg, rgba(37, 99, 235, 0.1), rgba(37, 99, 235, 0.04));
-  color: #1d4ed8;
-  box-shadow: none;
+  border-color: color-mix(in srgb, var(--area, var(--area-core)) 24%, transparent);
+  background: color-mix(in srgb, var(--area, var(--area-core)) 9%, transparent);
 }
 html.light .glass {
   background: rgba(238, 242, 247, 0.82);
@@ -833,6 +867,12 @@ html.light .theme-island-dark {
   --color-emerald-400: #34d399;
   --color-amber-200: #fde68a;
   --color-red-300: #fca5a5;
+  --area-core: #5b9dff;
+  --area-telemetry: #4dc3ff;
+  --area-alerts: #ff8a76;
+  --area-fleet: #3dd6b4;
+  --area-detection: #a592ff;
+  --area-connect: #f285c4;
   color: #e8eef7;
 }
 html.light .theme-island-dark :is([class^="border-white/"], [class*=" border-white/"]) { border-color: revert-layer; }

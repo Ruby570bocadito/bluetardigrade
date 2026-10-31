@@ -10,7 +10,8 @@
 // (no -notify), 403 (no -api-write), 409 (the file was edited on disk).
 
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle, PaperPlaneTilt, Plus, Trash, WarningCircle } from '@phosphor-icons/react'
+import { CheckCircle, Megaphone, PaperPlaneTilt, Plus, Trash, WarningCircle } from '@phosphor-icons/react'
+import { PanelHeading } from './ui-bits'
 import { useI18n } from './i18n-provider'
 import {
   channelProblems,
@@ -125,10 +126,10 @@ export function NotifySettingsPanel() {
     })
   }
 
-  const heading = <h3 className="mb-1 text-sm font-medium text-zinc-100">{t.heading}</h3>
+  const heading = <PanelHeading icon={Megaphone} className="mb-2">{t.heading}</PanelHeading>
   if (phase !== 'ready') {
     return (
-      <div className="panel px-5 py-4">
+      <div data-area="connect" className="panel px-5 py-4">
         {heading}
         {phase === 'loading' && <p className="text-xs text-zinc-500">{t.loading}</p>}
         {phase === 'unarmed' && <p className="text-xs leading-relaxed text-zinc-400">{t.unarmed}</p>}
@@ -138,7 +139,7 @@ export function NotifySettingsPanel() {
   }
 
   return (
-    <div className="panel px-5 py-4">
+    <div data-area="connect" className="panel px-5 py-4">
       {heading}
       <p className="mb-4 text-xs leading-relaxed text-zinc-500">{t.prose}</p>
 

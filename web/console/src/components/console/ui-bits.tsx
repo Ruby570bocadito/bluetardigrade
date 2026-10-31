@@ -6,6 +6,7 @@
 // decorative or infinite loops anywhere.
 
 import { SEVERITY_STYLE, type Severity } from '@/lib/console-types'
+import type { Health } from '@/lib/platform-status'
 import { cn } from '@/lib/utils'
 import { SeverityIcon } from '@/components/charts/severity'
 import { Badge } from '@/components/ui/badge'
@@ -22,17 +23,65 @@ export function SeverityBadge({ severity, className }: { severity: Severity; cla
   )
 }
 
-/** Stat tile: label, value (proportional sans figures) and a context line. */
+/** Stat tile: label, value (proportional sans figures) and a context line;
+ * the icon takes the hue of the area it sits in (lib/areas.ts). */
 export function StatTile({ icon: Icon, label, value, hint, warn = false }: { icon: React.ElementType; label: string; value: React.ReactNode; hint: React.ReactNode; warn?: boolean }) {
   return (
     <div className="panel px-4 py-3.5">
       <p className="flex items-center gap-2 text-xs text-zinc-400">
-        <Icon size={15} aria-hidden className="text-primary" />
+        <Icon size={16} weight="duotone" aria-hidden className="text-[color:var(--area,var(--primary))]" />
         {label}
       </p>
       <p className="mt-2 text-[26px] font-semibold leading-none text-zinc-50">{value}</p>
       <p className={`mt-1.5 truncate text-[11px] ${warn ? 'text-amber-300' : 'text-zinc-500'}`}>{hint}</p>
     </div>
+  )
+}
+
+// the 200 inks: the pill sits on an area wash, and the light theme's
+// 300 green fell to 4.49:1 there (axe, estado/light)
+const HEALTH_PILL: Record<Health, string> = {
+  ok: 'border-emerald-400/25 bg-emerald-400/10 text-emerald-200',
+  warn: 'border-amber-400/30 bg-amber-400/10 text-amber-200',
+  bad: 'border-red-400/30 bg-red-500/10 text-red-300',
+  off: 'border-zinc-700 bg-zinc-800/40 text-zinc-400',
+}
+
+const HEALTH_DOT: Record<Health, string> = {
+  ok: 'bg-emerald-400',
+  warn: 'bg-amber-400',
+  bad: 'bg-red-400',
+  off: 'bg-zinc-500',
+}
+
+/** Verdict of a section or a stage: a dot and its word, in the status
+ * colours (never an area hue). `compact` keeps only the dot, for the
+ * reading that needs no word; the word stays for screen readers. */
+export function HealthPill({ health, label, compact = false, className }: { health: Health; label: string; compact?: boolean; className?: string }) {
+  if (compact) {
+    return (
+      <span title={label} className={cn('inline-flex shrink-0 items-center', className)}>
+        <span aria-hidden className={cn('h-2 w-2 rounded-full', HEALTH_DOT[health])} />
+        <span className="sr-only">{label}</span>
+      </span>
+    )
+  }
+  return (
+    <span title={label} className={cn('inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium', HEALTH_PILL[health], className)}>
+      <span aria-hidden className={cn('h-1.5 w-1.5 shrink-0 rounded-full', HEALTH_DOT[health])} />
+      <span className="truncate">{label}</span>
+    </span>
+  )
+}
+
+/** Heading of a settings-style block: the block's icon in the tile of
+ * its area (the closest data-area), then the words. */
+export function PanelHeading({ icon: Icon, children, className }: { icon: React.ElementType; children: React.ReactNode; className?: string }) {
+  return (
+    <h3 className={cn('flex items-center gap-2.5 text-sm font-medium text-zinc-100', className)}>
+      <span className="icon-tile"><Icon size={15} weight="duotone" aria-hidden /></span>
+      {children}
+    </h3>
   )
 }
 

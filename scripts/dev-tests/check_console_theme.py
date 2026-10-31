@@ -47,6 +47,9 @@ CVD_MATRICES: dict[str, tuple[tuple[float, ...], ...]] = {
 
 FAILURES: list[str] = []
 
+# the console's areas, in lib/areas.ts order
+AREAS = ("core", "telemetry", "alerts", "fleet", "detection", "connect")
+
 
 def fail(msg: str) -> None:
     FAILURES.append(msg)
@@ -239,6 +242,14 @@ def main() -> int:
             check(f"status-{label}", contrast(parse_hex(tok[f"--status-{label}"]), viz), 3.0, "data")
         check("viz-muted / viz-surface", contrast(parse_hex(tok["--viz-muted"]), viz), 4.5, "text")
 
+        # area hues (lib/areas.ts): identity ink on icons, header washes and
+        # the pipeline strip's labels, so held to the text floor
+        print(f"[{theme}] area hues (>= 4.5:1, they may carry words)")
+        for area in AREAS:
+            hue = parse_hex(tok[f"--area-{area}"])
+            for label, bg in (("background", surface), ("card", card), ("viz-surface", viz)):
+                check(f"area-{area} / {label}", contrast(hue, bg), 4.5, "text")
+
         print(f"[{theme}] sequential ramp (>= 2:1 ordinal steps)")
         seq = [tok[f"--seq-{i}"] for i in range(1, 6)]
         for i, value in enumerate(seq, 1):
@@ -257,6 +268,15 @@ def main() -> int:
             print(f"  {'ok ' if worst >= 10 else 'FAIL'} series {i + 1}->{i + 2:<19} dE {worst:5.1f} (>= 10)")
             if worst < 10:
                 fail(f"{theme}: series {i + 1}->{i + 2} CVD dE {worst:.1f} < 10")
+
+    # the sidebar stays dark in the light theme: its island restates the
+    # dark area hues, checked on the sidebar's own navy
+    island = parse_block(css, "html.light .theme-island-dark")
+    print()
+    print("[island] area hues on the dark sidebar of the light theme")
+    sidebar = parse_hex(dark["--sidebar"])
+    for area in AREAS:
+        check(f"island area-{area} / sidebar", contrast(parse_hex(island[f"--area-{area}"]), sidebar), 4.5, "text")
 
     # The two surfaces (near-black vs white) sit on different absolute dE
     # scales, so exact cross-theme dE equality is not the binding rule; the

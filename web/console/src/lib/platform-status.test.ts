@@ -7,7 +7,7 @@
 //   bun test            (from web/console/)
 
 import { describe, expect, test } from 'bun:test'
-import { MAX_CHANNEL_ROWS, platformStatus, topHostLine } from './platform-status'
+import { MAX_CHANNEL_ROWS, pipelineStages, platformStatus, rowsHealth, topHostLine } from './platform-status'
 import type { EngineStats } from './console-types'
 
 function baseStats(overrides: Partial<EngineStats> = {}): EngineStats {
@@ -286,5 +286,67 @@ describe('platformStatus', () => {
   test('sin-motor mode names the local view instead of the engine', () => {
     const report = platformStatus(baseStats({ mode: 'sin-motor' }))!
     expect(row(report, 'mode').display).toBe('sin motor (vista local)')
+  })
+})
+
+describe('section health and the pipeline strip', () => {
+  test('health is the worst published tone; nothing published is off', () => {
+    const report = platformStatus(baseStats({ dropped: 3 }))!
+    expect(rowsHealth(section(report, 'motor').rows)).toBe('ok')
+    expect(rowsHealth(section(report, 'ingesta').rows)).toBe('warn')
+    expect(rowsHealth(section(platformStatus(baseStats({ store_enabled: true, store_events: 9, store_alerts: 1, store_write_failures: 2 }))!, 'almacen').rows)).toBe('bad')
+    expect(rowsHealth([{ key: 'x', label: 'x', display: 'no publicado', absent: true, tone: 'neutral' }])).toBe('off')
+    expect(rowsHealth([])).toBe('off')
+  })
+
+  test('five stages in the order an event crosses them, from the same snapshot', () => {
+    const stats = baseStats({
+      events_per_min: 412, events_total: 1842317, rules_count: 18, correlator_cap: 8192, correlator_states: 26,
+      alerts_total: 18, risk_hosts_tracked: 5, store_enabled: true, store_events: 1771004, store_alerts: 18,
+      webhook_sent: 132, elastic_sent: 4021, elastic_failed: 0, elastic_dropped: 0,
+    })
+    const stages = pipelineStages(stats, platformStatus(stats))
+    expect(stages.map((s) => s.key)).toEqual(['ingest', 'correlation', 'alerts', 'store', 'delivery'])
+    const [ingest, correlation, alerts, store, delivery] = stages
+    expect(`${ingest.value} ${ingest.unit}`).toBe('412 eventos/min')
+    expect(ingest.detail).toBe('1.842.317 aceptados')
+    expect(correlation.detail).toBe('26 cadenas en curso')
+    expect(`${alerts.value} ${alerts.unit} · ${alerts.detail}`).toBe('18 alertas · 5 equipos con riesgo')
+    expect(store.value).toBe('1.771.004')
+    // the delivered total is the sum of what each sink reports as sent
+    expect(delivery.value).toBe('4153')
+    expect(delivery.detail).toBe('webhook 132 · elastic 4021')
+    expect(stages.every((s) => s.health === 'ok')).toBe(true)
+  })
+
+  test('a stage takes the health of the sections that count it', () => {
+    const stats = baseStats({ webhook_sent: 10, webhook_failed: 2, ingest_identity_violations: 1 })
+    const stages = pipelineStages(stats, platformStatus(stats))
+    expect(stages.find((s) => s.key === 'delivery')!.health).toBe('bad')
+    expect(stages.find((s) => s.key === 'ingest')!.health).toBe('bad')
+    // the verdict names the counter behind it
+    expect(stages.find((s) => s.key === 'ingest')!.flag).toBe('Violaciones de identidad: 1')
+    expect(stages.find((s) => s.key === 'alerts')!.flag).toBeUndefined()
+    expect(stages.find((s) => s.key === 'alerts')!.health).not.toBe('bad')
+  })
+
+  test('a store or an outbound side that is not there says so instead of a zero', () => {
+    const stats = baseStats({ store_enabled: false })
+    delete (stats as Partial<EngineStats>).webhook_sent
+    delete (stats as Partial<EngineStats>).webhook_failed
+    delete (stats as Partial<EngineStats>).webhook_dropped
+    const stages = pipelineStages(stats, platformStatus(stats))
+    const store = stages.find((s) => s.key === 'store')!
+    const delivery = stages.find((s) => s.key === 'delivery')!
+    expect([store.value, store.health, store.detail]).toEqual(['—', 'off', 'sin persistencia (engine -store)'])
+    expect([delivery.value, delivery.health, delivery.detail]).toEqual(['—', 'off', 'sin conectores de salida'])
+    expect(stages.find((s) => s.key === 'correlation')!.detail).toBe('correlador de cadenas apagado')
+  })
+
+  test('no snapshot, no strip; English figures and words', () => {
+    expect(pipelineStages(null, null)).toEqual([])
+    const stats = baseStats({ events_per_min: 1234, events_total: 5000 })
+    const [ingest] = pipelineStages(stats, platformStatus(stats, 'en'), 'en')
+    expect([ingest.label, ingest.value, ingest.unit, ingest.detail]).toEqual(['Ingest', '1,234', 'events/min', '5,000 accepted'])
   })
 })

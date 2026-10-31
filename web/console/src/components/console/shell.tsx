@@ -59,6 +59,7 @@ import {
 } from '@/lib/keyboard-nav'
 import { useAnalystChannel } from './socket-provider'
 import { writeTriageDestination, type TriageTarget } from '@/lib/operations'
+import { areaColor, areaOf, areaSelection } from '@/lib/areas'
 
 const NAV_ICONS: Record<ConsoleView, React.ElementType> = {
   panel: SquaresFour, estado: Gauge, flujo: ActivityIcon, alertas: Warning, incidentes: FolderOpen, equipos: Desktop, informes: Files,
@@ -310,6 +311,7 @@ export function ConsoleShell() {
             <ul className="space-y-0.5">
               {sidebar.map((item, idx) => {
                 const current = isCurrent(item.id, view)
+                const area = areaOf(item.id)
                 return (
                   <li key={item.id}>
                     {(idx === 0 || sidebar[idx - 1].group !== item.group) && (
@@ -324,20 +326,22 @@ export function ConsoleShell() {
                         current ? 'text-zinc-50' : 'text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-100'
                       }`}
                     >
-                      {/* píldora activa con layoutId: el resalte viaja entre
-                          secciones. pointer-events-none: durante el vuelo del
+                      {/* píldora activa con layoutId, en el tono del área de la
+                          sección (lib/areas.ts): el resalte viaja entre secciones y
+                          cambia de color. pointer-events-none: durante el vuelo del
                           spring nunca intercepta clicks de los vecinos. */}
                       {current && (
                         <motion.span
                           layoutId="nav-pill"
-                          className="pointer-events-none absolute inset-0 rounded-lg border border-primary/35 bg-gradient-to-r from-primary-tint/[0.26] via-primary-tint/[0.1] to-transparent shadow-[inset_0_1px_0_0_var(--inset-highlight),0_8px_20px_-12px_rgba(47,111,237,0.6)]"
+                          style={areaSelection(area)}
+                          className="pointer-events-none absolute inset-0 rounded-lg border"
                           transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 380, damping: 32 }}
                         />
                       )}
                       {current && (
-                        <span aria-hidden className="pointer-events-none absolute -left-3 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />
+                        <span aria-hidden style={{ background: areaColor(area) }} className="pointer-events-none absolute -left-3 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full" />
                       )}
-                      <item.icon size={17} weight={current ? 'fill' : 'regular'} aria-hidden className={`relative ${current ? 'text-primary' : ''}`} />
+                      <item.icon size={17} weight={current ? 'fill' : 'duotone'} aria-hidden style={{ color: areaColor(area) }} className="relative" />
                       <span className="relative">{item.label}</span>
                       {item.id === 'alertas' && openAlerts.length > 0 && (
                         <span
@@ -430,7 +434,7 @@ export function ConsoleShell() {
                 </div>
                 <div className="hidden min-w-0 lg:block">
                   {/* the sign-in page's eyebrow: the section the view lives in */}
-                  {currentGroup && <p className="text-[10px] font-semibold uppercase leading-4 tracking-[0.14em] text-primary">{currentGroup}</p>}
+                  {currentGroup && <p style={{ color: areaColor(areaOf(view)) }} className="text-[10px] font-semibold uppercase leading-4 tracking-[0.14em]">{currentGroup}</p>}
                   {/* BlurText (React Bits): la entrada palabra a palabra marca el
                       cambio de vista; key={view} reinicia la secuencia. */}
                   <h1 className="truncate text-[15px] font-semibold tracking-tight text-zinc-50">
@@ -496,24 +500,29 @@ export function ConsoleShell() {
 
           {/* Mobile nav: explicit collapse of the sidebar */}
           <nav aria-label={dict.chrome.navLabel} className="flex gap-1 overflow-x-auto border-b border-white/[0.06] px-3 py-2 lg:hidden">
-            {sidebar.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setView(item.id)}
-                aria-current={isCurrent(item.id, view) ? 'page' : undefined}
-                title={hintTitle(item.id)}
-                className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  isCurrent(item.id, view) ? 'border-primary/30 bg-primary-tint/[0.14] text-zinc-100' : 'border-transparent text-zinc-400'
-                }`}
-              >
-                <item.icon size={14} aria-hidden className={isCurrent(item.id, view) ? 'text-primary' : ''} />
-                {item.label}
-              </button>
-            ))}
+            {sidebar.map((item) => {
+              const current = isCurrent(item.id, view)
+              const area = areaOf(item.id)
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setView(item.id)}
+                  aria-current={current ? 'page' : undefined}
+                  title={hintTitle(item.id)}
+                  style={current ? areaSelection(area) : undefined}
+                  className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                    current ? 'text-zinc-100' : 'border-transparent text-zinc-400'
+                  }`}
+                >
+                  <item.icon size={14} weight={current ? 'fill' : 'duotone'} aria-hidden style={{ color: areaColor(area) }} />
+                  {item.label}
+                </button>
+              )
+            })}
           </nav>
 
-          <main id="console-main" tabIndex={-1} className="flex-1 px-4 py-5 outline-none lg:px-8 lg:py-6">
+          <main id="console-main" tabIndex={-1} data-area={areaOf(view)} className="flex-1 px-4 py-5 outline-none lg:px-8 lg:py-6">
             <div className="mx-auto w-full max-w-[1560px]">
               <AnimatedView viewKey={view}>
                 {view === 'panel' && <Dashboard onAnalyze={openInAnalyst} onNavigate={setView} onTriage={openTriage} onHunt={openHunt} onHost={openHost} onScenarioTactic={openScenarioTactic} />}

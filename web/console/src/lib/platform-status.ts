@@ -212,6 +212,23 @@ const T = {
     unavailableLastReport: 'último informe programado',
     riskWord: 'riesgo',
     oldEngine: 'motor anterior a f8853eb',
+    // pipeline strip (the page's first block)
+    stageIngest: 'Ingesta',
+    stageCorrelation: 'Correlación',
+    stageAlerts: 'Alertas',
+    stageStore: 'Almacén',
+    stageDelivery: 'Entrega',
+    stageAccepted: (n: string) => `${n} aceptados`,
+    stageRules: 'reglas',
+    stageChains: (n: string) => `${n} cadenas en curso`,
+    stageChainsOff: 'correlador de cadenas apagado',
+    stageAlertsUnit: 'alertas',
+    stageRiskHosts: (n: string) => `${n} equipos con riesgo`,
+    stageStored: 'eventos',
+    stageStoredAlerts: (n: string) => `${n} alertas guardadas`,
+    stageStoreOff: 'sin persistencia (engine -store)',
+    stageDelivered: 'entregas',
+    stageNoSinks: 'sin conectores de salida',
   },
   en: {
     notPublished: 'not published',
@@ -331,6 +348,22 @@ const T = {
     unavailableLastReport: 'last scheduled report',
     riskWord: 'risk',
     oldEngine: 'engine predating f8853eb',
+    stageIngest: 'Ingest',
+    stageCorrelation: 'Correlation',
+    stageAlerts: 'Alerts',
+    stageStore: 'Storage',
+    stageDelivery: 'Delivery',
+    stageAccepted: (n: string) => `${n} accepted`,
+    stageRules: 'rules',
+    stageChains: (n: string) => `${n} chains in flight`,
+    stageChainsOff: 'chain correlator off',
+    stageAlertsUnit: 'alerts',
+    stageRiskHosts: (n: string) => `${n} hosts at risk`,
+    stageStored: 'events',
+    stageStoredAlerts: (n: string) => `${n} alerts stored`,
+    stageStoreOff: 'no persistence (engine -store)',
+    stageDelivered: 'deliveries',
+    stageNoSinks: 'no outbound connectors',
   },
 } as const
 
@@ -566,6 +599,113 @@ export function platformStatus(stats: EngineStats | null, lang: Lang = 'es'): Pl
 
   const bad = sections.some((s) => s.rows.some((r) => r.tone === 'bad'))
   return { sections, unavailable, healthy: !bad }
+}
+
+/** At-a-glance health of a section or a pipeline stage: the worst tone
+ * among its published rows, and 'off' when the engine publishes none of
+ * them. A clean counter is neutral in its row and «en orden» here — the
+ * same reading as the page's healthy banner, never an invented verdict. */
+export type Health = 'ok' | 'warn' | 'bad' | 'off'
+
+export function rowsHealth(rows: StatusRow[]): Health {
+  const published = rows.filter((r) => !r.absent)
+  if (published.length === 0) return 'off'
+  if (published.some((r) => r.tone === 'bad')) return 'bad'
+  if (published.some((r) => r.tone === 'warn')) return 'warn'
+  return 'ok'
+}
+
+export type PipelineStageKey = 'ingest' | 'correlation' | 'alerts' | 'store' | 'delivery'
+
+/** One stage of the pipeline strip: sensors in, alerts and storage, out. */
+export type PipelineStage = {
+  key: PipelineStageKey
+  label: string
+  /** headline figure in the language's format; '—' when the stage is off */
+  value: string
+  unit: string
+  detail: string
+  health: Health
+  /** the first counter behind a warn or bad health, as «label: value» */
+  flag?: string
+}
+
+/** The five stages an event crosses, from the same snapshot and report
+ * as the sections below (one fact, one source): each stage's health is
+ * the health of the sections that count it. */
+export function pipelineStages(stats: EngineStats | null, report: PlatformStatusReport | null, lang: Lang = 'es'): PipelineStage[] {
+  if (!stats || !report) return []
+  const t = T[lang]
+  const n = (v: number) => fmt2(v, lang)
+  const rowsOf = (...keys: string[]) => report.sections.filter((s) => keys.includes(s.key)).flatMap((s) => s.rows)
+
+  const sinks = (['webhook', 'elastic', 'splunk'] as const)
+    .map((sink) => ({ sink, triple: pickTriple(stats, sink) }))
+    .filter((s): s is { sink: 'webhook' | 'elastic' | 'splunk'; triple: DeliveryTriple } => s.triple !== undefined)
+  const channels = stats.notify_channels ?? []
+  const delivered = sinks.reduce((sum, s) => sum + s.triple.sent, 0) + channels.reduce((sum, c) => sum + c.sent, 0)
+  const active = [
+    ...sinks.filter((s) => s.triple.sent > 0).map((s) => `${s.sink} ${n(s.triple.sent)}`),
+    ...channels.filter((c) => c.sent > 0).map((c) => `${c.name} ${n(c.sent)}`),
+  ]
+  const hasOutbound = sinks.length > 0 || channels.length > 0
+  const correlatorLive = (stats.correlator_cap ?? 0) > 0
+  // a running stage whose sections publish nothing to judge (an engine
+  // predating the quota counters) has nothing flagged: it is in order;
+  // a flagged one names the first counter behind its verdict
+  const judged = (rows: StatusRow[]): { health: Health; flag?: string } => {
+    const health = rowsHealth(rows)
+    if (health === 'off' || health === 'ok') return { health: 'ok' }
+    const row = rows.find((r) => !r.absent && r.tone === health)
+    return { health, flag: row ? `${row.label}: ${row.display}` : undefined }
+  }
+
+  return [
+    {
+      key: 'ingest',
+      label: t.stageIngest,
+      value: n(stats.events_per_min),
+      unit: t.perMin,
+      detail: t.stageAccepted(n(stats.events_total)),
+      ...judged(rowsOf('ingesta')),
+    },
+    {
+      key: 'correlation',
+      label: t.stageCorrelation,
+      value: n(stats.rules_count),
+      unit: t.stageRules,
+      detail: correlatorLive ? t.stageChains(n(stats.correlator_states)) : t.stageChainsOff,
+      ...judged(rowsOf('colas', 'deteccion')),
+    },
+    {
+      key: 'alerts',
+      label: t.stageAlerts,
+      value: n(stats.alerts_total),
+      unit: t.stageAlertsUnit,
+      detail: stats.risk_hosts_tracked !== undefined ? t.stageRiskHosts(n(stats.risk_hosts_tracked)) : t.sinceBoot,
+      ...judged(rowsOf('cuotas')),
+    },
+    stats.store_enabled
+      ? {
+          key: 'store',
+          label: t.stageStore,
+          value: n(stats.store_events ?? 0),
+          unit: t.stageStored,
+          detail: t.stageStoredAlerts(n(stats.store_alerts ?? 0)),
+          ...judged(rowsOf('almacen')),
+        }
+      : { key: 'store', label: t.stageStore, value: '—', unit: '', detail: t.stageStoreOff, health: 'off' },
+    hasOutbound
+      ? {
+          key: 'delivery',
+          label: t.stageDelivery,
+          value: n(delivered),
+          unit: t.stageDelivered,
+          detail: active.length ? active.join(' · ') : t.idle,
+          ...judged(rowsOf('entrega')),
+        }
+      : { key: 'delivery', label: t.stageDelivery, value: '—', unit: '', detail: t.stageNoSinks, health: 'off' },
+  ]
 }
 
 /** Safe triple read: the hub forwards the sinks when the engine reports them. */

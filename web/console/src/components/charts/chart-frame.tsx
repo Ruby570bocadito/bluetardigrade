@@ -9,6 +9,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { ChartBar, DownloadSimple, Table } from '@phosphor-icons/react'
 import { cn } from '@/lib/utils'
+import type { Area } from '@/lib/areas'
 import { useI18n } from '../console/i18n-provider'
 import {
   chartToPngDataUrl,
@@ -79,10 +80,14 @@ export function ChartCard({
   bodyClassName,
   children,
   label,
+  area,
 }: {
   title: string
   subtitle?: ReactNode
   icon?: React.ElementType
+  /** the area the card is about (lib/areas.ts): its icon takes that hue;
+   * without it the card follows the view's area */
+  area?: Area
   actions?: ReactNode
   legend?: LegendItem[]
   table?: TableTwin
@@ -98,9 +103,12 @@ export function ChartCard({
   const sectionRef = useRef<HTMLElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   return (
-    <section ref={sectionRef} aria-labelledby={label ? undefined : headingId} aria-label={label} className={cn('panel flex min-w-0 flex-col', className)}>
-      <div className="flex items-start justify-between gap-3 px-4 pt-3.5">
-        <div className="flex min-w-0 flex-1 items-start gap-2.5">
+    <section ref={sectionRef} aria-labelledby={label ? undefined : headingId} aria-label={label} data-area={area} className={cn('panel flex min-w-0 flex-col', className)}>
+      {/* the title keeps a readable width: in a narrow card the buttons
+          wrap under it (still right-aligned) instead of squeezing it to
+          one word per line */}
+      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 px-4 pt-3.5">
+        <div className="flex min-w-[min(100%,12rem)] flex-1 items-start gap-2.5">
           {Icon && (
             <span className="icon-tile mt-0.5">
               <Icon size={14} aria-hidden />
@@ -111,7 +119,7 @@ export function ChartCard({
             {subtitle && <p className="mt-0.5 text-xs text-zinc-500">{subtitle}</p>}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           {actions}
           <ChartExportMenu title={title} table={table} sectionRef={sectionRef} bodyRef={bodyRef} />
           {table && <ViewToggle tableView={tableView} setTableView={setTableView} />}

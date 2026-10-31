@@ -229,6 +229,7 @@ function ActivityCard({ activity, eventsCount, down }: { activity: ReturnType<ty
       title={dict.panel.activity.title}
       subtitle={dict.panel.activity.subtitle}
       icon={Pulse}
+      area="telemetry"
       legend={[
         { key: 'events', label: dict.panel.activity.legendEvents, color: 'var(--series-1)', shape: 'line' },
         ...SEVERITIES.filter((s) => activity.markers.some((m) => m.color === SEV_COLOR[s])).map((s) => ({
@@ -272,6 +273,7 @@ function InvestigationGraphPanel({ onHunt, onHost }: { onHunt?: (lens: HuntLens)
       title={dict.panel.graph.title}
       subtitle={dict.panel.graph.subtitle}
       icon={Graph}
+      area="detection"
       table={{
         caption: dict.panel.graph.tableCaption,
         columns: [dict.panel.graph.colEntity, dict.panel.graph.colType, dict.panel.graph.colConnections, dict.panel.graph.colWeight],
@@ -307,6 +309,7 @@ function HeatmapPanel({ onHost }: { onHost?: (host: string) => void }) {
       title={dict.panel.heat.title}
       subtitle={dict.panel.heat.subtitle}
       icon={GridFour}
+      area="fleet"
     >
       {status === 'down' ? <Unavailable /> : matrix.hosts.length === 0 ? (
         <EmptyState icon={GridFour} title={dict.panel.heat.emptyTitle} hint={dict.panel.heat.emptyHint} />
@@ -332,6 +335,7 @@ function SeverityPanel({ alerts, down, onHunt }: { alerts: SfAlert[]; down: bool
       title={dict.panel.severity.title}
       subtitle={dict.panel.severity.subtitle(total)}
       icon={ShieldWarning}
+      area="alerts"
       table={{
         caption: dict.panel.severity.tableCaption,
         columns: [dict.panel.severity.colSeverity, dict.panel.severity.colAlerts, dict.panel.severity.colShare],
@@ -408,6 +412,7 @@ function TacticDonutPanel({ alerts, down }: { alerts: SfAlert[]; down: boolean }
       title={dict.panel.donutTactic.title}
       subtitle={dict.panel.donutTactic.subtitle(alerts.length)}
       icon={ChartPie}
+      area="detection"
       legend={donutLegend(model, colors)}
       table={donutTable(model, dict.panel.donutTactic.tableCaption, dict.panel.donutTactic.colKind, dict.panel.severity.colAlerts, dict.panel.severity.colShare)}
       footer={model.fold ? dict.panel.donutTactic.footerFold(model.fold.count, model.fold.value) : undefined}
@@ -438,6 +443,7 @@ function SourceDonutPanel({ alerts, down }: { alerts: SfAlert[]; down: boolean }
       title={dict.panel.donutSource.title}
       subtitle={dict.panel.donutSource.subtitle(alerts.length)}
       icon={ChartPie}
+      area="telemetry"
       legend={donutLegend(model, colors)}
       table={donutTable(model, dict.panel.donutSource.tableCaption, dict.panel.donutSource.colKind, dict.panel.severity.colAlerts, dict.panel.severity.colShare)}
       footer={model.fold ? dict.panel.donutSource.footerFold(model.fold.count, model.fold.value) : dict.panel.donutSource.footerPlain}
@@ -469,6 +475,7 @@ function FleetDonutPanel() {
       title={dict.panel.donutFleet.title}
       subtitle={fleet ? dict.panel.donutFleet.subtitleHosts(fleet.hosts.length) : dict.panel.donutFleet.subtitleApi}
       icon={Desktop}
+      area="fleet"
       legend={model ? donutLegend(model, colors) : undefined}
       table={model ? {
         caption: dict.panel.donutFleet.tableCaption,
@@ -501,6 +508,7 @@ function TriageFlowPanel({ alerts, down }: { alerts: SfAlert[]; down: boolean })
       title={dict.panel.triageFlow.title}
       subtitle={dict.panel.triageFlow.subtitle}
       icon={FlowArrow}
+      area="alerts"
       legend={series.map((s) => ({ key: s.key, label: s.label, color: s.color, shape: 'rect' as const }))}
       table={{
         caption: dict.panel.triageFlow.tableCaption,
@@ -548,6 +556,7 @@ function TimelinePanel({ alerts, down }: { alerts: SfAlert[]; down: boolean }) {
       title={dict.panel.timeline.title}
       subtitle={dict.panel.timeline.subtitle}
       icon={Stack}
+      area="alerts"
       legend={SEVERITIES.map((s, i) => ({ key: s, label: dict.panel.sevLabels[s], color: SEV_COLOR[s], value: counts[i] }))}
       table={{
         caption: dict.panel.timeline.tableCaption,
@@ -596,6 +605,7 @@ function HotHostsPanel({ onHost }: { onHost?: (host: string) => void }) {
       title={dict.panel.hot.title}
       subtitle={dict.panel.hot.subtitle(String(stats?.risk_hosts_tracked ?? '—'))}
       icon={Flame}
+      area="fleet"
       table={hot.length ? {
         caption: dict.panel.hot.tableCaption,
         columns: [dict.panel.hot.colHost, dict.panel.hot.colScore, dict.panel.hot.colAlerts, dict.panel.hot.colLevel],
@@ -685,6 +695,7 @@ function AttackPanel({ onHunt, onScenarioTactic }: { onHunt?: (lens: HuntLens) =
       title={dict.panel.attack.title}
       subtitle={dict.panel.attack.subtitle(coveredOf(cells), validation ? dict.panel.attack.subtitleValidated(validatedScenarios, validatedTactics) : '')}
       icon={Crosshair}
+      area="detection"
       table={{
         caption: dict.panel.attack.tableCaption,
         columns: [dict.panel.attack.colTactic, dict.panel.attack.colRules, dict.panel.attack.colAlerts, dict.panel.attack.colScenarios],
@@ -724,6 +735,7 @@ function TopRulesPanel({ alerts, down, onHunt }: { alerts: SfAlert[]; down: bool
       title={dict.panel.topRules.title}
       subtitle={dict.panel.topRules.subtitle(ranked.distinct)}
       icon={ListBullets}
+      area="detection"
       table={{ caption: dict.panel.topRules.tableCaption, columns: [dict.panel.topRules.colRule, dict.panel.topRules.colAlerts], rows: ranked.top.map((r) => [r.key, r.count]) }}
       footer={ranked.rest > 0 ? dict.panel.topRules.footer(ranked.rest) : undefined}
     >
@@ -750,6 +762,7 @@ function TelemetryMixPanel({ down }: { down: boolean }) {
       title={dict.panel.mix.title}
       subtitle={dict.panel.mix.subtitle(events.length)}
       icon={Waveform}
+      area="telemetry"
       table={{ caption: dict.panel.mix.tableCaption, columns: [dict.panel.mix.colType, dict.panel.mix.colEvents], rows: mix.top.map((r) => [r.key, r.count]) }}
       footer={mix.rest > 0 ? dict.panel.mix.footer(mix.rest, mix.distinct - mix.top.length) : undefined}
     >
@@ -781,6 +794,7 @@ function LifecycleTacticPanel({ alerts, down }: { alerts: SfAlert[]; down: boole
       title={dict.panel.lifecycleTactic.title}
       subtitle={dict.panel.lifecycleTactic.subtitle}
       icon={ListBullets}
+      area="alerts"
       legend={series.map((s, i) => ({ key: s.key, label: s.label, color: s.color, value: counts[i] }))}
       table={{
         caption: dict.panel.lifecycleTactic.tableCaption,
@@ -850,6 +864,7 @@ function RiskEvolutionPanel({ down }: { down: boolean }) {
       title={dict.panel.risk.title}
       subtitle={dict.panel.risk.subtitle(RISK_SLOT_MS / 1000, (RISK_SLOTS * RISK_SLOT_MS) / 60000)}
       icon={ChartLineUp}
+      area="fleet"
       legend={series.map((s) => ({ key: s.key, label: s.label, color: s.color, shape: 'line' as const }))}
       table={
         tableRows.length
@@ -978,6 +993,7 @@ function AlertHeatmapPanel({ down }: { down: boolean }) {
       title={dict.panel.weekHeat.title}
       subtitle={dict.panel.weekHeat.subtitle}
       icon={CalendarDots}
+      area="alerts"
       actions={
         <Button
           type="button"
@@ -1092,9 +1108,9 @@ function EngineSummary({ status }: { status: EngineStatus }) {
   const webhookIssues = stats ? stats.webhook_failed + stats.webhook_dropped : 0
   const storeFailures = stats?.store_write_failures ?? 0
 
-  const rows: { label: string; value: React.ReactNode; bad?: boolean }[] = [
+  const rows: { label: string; value: React.ReactNode; bad?: boolean; mono?: boolean }[] = [
     { label: dict.panel.engine.labels.mode, value: stats?.mode ?? (stats ? 'engine' : dict.panel.engine.noStats) },
-    { label: dict.panel.engine.labels.api, value: endpoint },
+    { label: dict.panel.engine.labels.api, value: endpoint, mono: true },
     { label: dict.panel.engine.labels.events, value: stats?.events_total.toLocaleString('es-ES') ?? '—' },
     { label: dict.panel.engine.labels.dropped, value: stats ? `${stats.dropped} / ${stats.ingest_rejected}` : '— / —', bad: ingestIssues > 0 },
     { label: dict.panel.engine.labels.webhooks, value: stats ? dict.panel.engine.webhooksValue(stats.webhook_sent, stats.webhook_failed) : '—', bad: webhookIssues > 0 },
@@ -1109,7 +1125,7 @@ function EngineSummary({ status }: { status: EngineStatus }) {
   ]
 
   return (
-    <section aria-label={dict.panel.engine.sectionAria} className="panel min-w-0">
+    <section aria-label={dict.panel.engine.sectionAria} data-area="core" className="panel min-w-0">
       <div className="flex flex-wrap items-center gap-2.5 px-4 pt-3.5">
         <span className="icon-tile"><Cpu size={14} aria-hidden /></span>
         <h2 className="text-sm font-medium text-zinc-100">{dict.panel.engine.title}</h2>
@@ -1125,18 +1141,18 @@ function EngineSummary({ status }: { status: EngineStatus }) {
         </Badge>
         <p className="ml-auto hidden max-w-[60ch] truncate text-[11px] text-zinc-500 lg:block">{statusLine}</p>
       </div>
-      {/* Hoja de especificación: 2×4 dentro de la tarjeta (antes 8 columnas
-          apretadas en la mitad de la pantalla), etiqueta en micro-mayúsculas
-          como las cabeceras de tabla y marcador ámbar a la izquierda cuando
-          la fila pide atención (descartes, webhooks fallidos, SQLite). */}
+      {/* Hoja de especificación: 2×4 dentro de la tarjeta, cada celda con
+          un lavado del área del motor, la etiqueta en minúscula legible y la
+          cifra en la tipografía del texto (monoespaciada solo la ruta de la
+          API); ámbar a la izquierda cuando la fila pide atención. */}
       <dl className="grid grid-cols-2 gap-2 p-4 pt-3 sm:grid-cols-4">
         {rows.map((row) => (
           <div
             key={row.label}
-            className={`min-w-0 rounded-md border-l-2 px-3 py-2 ${row.bad ? 'border-l-amber-400/60 bg-amber-400/[0.06]' : 'border-l-transparent bg-white/[0.02]'}`}
+            className={`min-w-0 rounded-lg border-l-2 px-3 py-2.5 ${row.bad ? 'border-l-amber-400/70 bg-amber-400/[0.08]' : 'border-l-transparent bg-[color-mix(in_srgb,var(--area)_7%,transparent)]'}`}
           >
-            <dt className="text-[10px] uppercase leading-tight tracking-wide text-zinc-500" title={row.label}>{row.label}</dt>
-            <dd className={`mt-1 truncate font-mono text-xs tabular-nums ${row.bad ? 'text-amber-300' : 'text-zinc-200'}`} title={String(row.value)}>{row.value}</dd>
+            <dt className="truncate text-[11px] leading-tight text-zinc-400" title={row.label}>{row.label}</dt>
+            <dd className={`mt-1 truncate text-sm font-semibold tabular-nums ${row.mono ? 'font-mono text-xs font-medium' : ''} ${row.bad ? 'text-amber-300' : 'text-zinc-100'}`} title={String(row.value)}>{row.value}</dd>
           </div>
         ))}
       </dl>

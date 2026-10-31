@@ -14,16 +14,20 @@ import { SpotlightCard } from '@/components/reactbits/spotlight-card'
 import { Sparkline } from '@/components/charts/bars'
 import { counterDelta, type StatsSample } from '@/lib/soc-metrics'
 import type { EngineStats } from '@/lib/console-types'
+import type { Area } from '@/lib/areas'
 
 function Tile({
   label,
   icon: Icon,
+  area,
   value,
   trend,
   children,
 }: {
   label: string
   icon: React.ElementType
+  /** what the figure is about (lib/areas.ts): its icon and trend take that hue */
+  area: Area
   value: number | undefined
   trend?: number[]
   children: React.ReactNode
@@ -34,15 +38,17 @@ function Tile({
   return (
     <GlareHover className="rounded-[0.875rem]">
     <SpotlightCard className="panel panel-hover min-w-0 px-4 py-3.5">
-      <p className="flex items-center gap-2 text-xs text-zinc-400">
-        <Icon size={15} aria-hidden className="text-primary" />
-        {label}
-      </p>
-      <div className="mt-2 flex items-end justify-between gap-2">
-        <KpiNumber value={value} />
-        {trend && <Sparkline values={trend} width={84} height={30} />}
+      <div data-area={area}>
+        <p className="flex items-center gap-2 text-xs text-zinc-300">
+          <Icon size={16} weight="duotone" aria-hidden className="text-[color:var(--area)]" />
+          {label}
+        </p>
+        <div className="mt-2 flex items-end justify-between gap-2">
+          <KpiNumber value={value} />
+          {trend && <Sparkline values={trend} width={84} height={30} color="var(--area)" />}
+        </div>
+        <div className="mt-1.5 min-h-4 truncate text-[11px] text-zinc-500">{children}</div>
       </div>
-      <div className="mt-1.5 min-h-4 truncate text-[11px] text-zinc-500">{children}</div>
     </SpotlightCard>
     </GlareHover>
   )
@@ -82,27 +88,27 @@ export function KpiRow({ stats }: { stats: EngineStats | null }) {
 
   return (
     <div aria-label={dict.kpi.sectionAria} className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-      <Tile label={dict.kpi.eventsMin} icon={ActivityIcon} value={stats?.events_per_min} trend={pick(history, (s) => s.eventsPerMin)}>
+      <Tile label={dict.kpi.eventsMin} icon={ActivityIcon} area="telemetry" value={stats?.events_per_min} trend={pick(history, (s) => s.eventsPerMin)}>
         {stats ? dict.kpi.eventsTotal(stats.events_total.toLocaleString('es-ES'), !!stats.scoped) : dict.kpi.noDataLower}
       </Tile>
 
-      <Tile label={dict.kpi.alerts} icon={Siren} value={stats?.alerts_total} trend={pick(history, (s) => s.alertsTotal)}>
+      <Tile label={dict.kpi.alerts} icon={Siren} area="alerts" value={stats?.alerts_total} trend={pick(history, (s) => s.alertsTotal)}>
         {!stats ? dict.kpi.noDataLower : <Delta value={counterDelta(history, (s) => s.alertsTotal)} span={spanLabel} pending={dict.kpi.trendPending} flat={dict.kpi.trendFlat} />}
       </Tile>
 
-      <Tile label={dict.kpi.hostsRisk} icon={Flame} value={stats?.risk_hosts_tracked} trend={pick(history, (s) => s.riskHosts)}>
+      <Tile label={dict.kpi.hostsRisk} icon={Flame} area="fleet" value={stats?.risk_hosts_tracked} trend={pick(history, (s) => s.riskHosts)}>
         {top ? <span title={top.host}>{dict.kpi.maxHost(top.host, top.score.toFixed(1))}</span> : stats ? dict.kpi.noRisk : dict.kpi.noDataLower}
       </Tile>
 
-      <Tile label={dict.kpi.rulesActive} icon={ShieldCheck} value={stats?.rules_count}>
+      <Tile label={dict.kpi.rulesActive} icon={ShieldCheck} area="detection" value={stats?.rules_count}>
         {stats ? dict.kpi.rulesCovered(stats.rules_types.length) : dict.kpi.noDataLower}
       </Tile>
 
-      <Tile label={dict.kpi.buffer} icon={UploadSimple} value={stats?.events_buffered}>
+      <Tile label={dict.kpi.buffer} icon={UploadSimple} area="core" value={stats?.events_buffered}>
         {!stats ? dict.kpi.noDataLower : ingestIssues > 0 ? <span className="text-orange-300">{dict.kpi.bufferIssues(ingestIssues)}</span> : dict.kpi.bufferOk}
       </Tile>
 
-      <Tile label={dict.kpi.webhookDeliveries} icon={WebhooksLogo} value={stats?.webhook_sent} trend={pick(history, (s) => s.webhookSent)}>
+      <Tile label={dict.kpi.webhookDeliveries} icon={WebhooksLogo} area="connect" value={stats?.webhook_sent} trend={pick(history, (s) => s.webhookSent)}>
         {!stats ? dict.kpi.noDataLower : webhookIssues > 0 ? <span className="text-orange-300">{dict.kpi.webhookIssues(webhookIssues)}</span> : dict.kpi.webhookOk}
       </Tile>
     </div>

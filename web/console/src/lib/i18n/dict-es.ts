@@ -1493,6 +1493,11 @@ export const dictEs = {
     manyBad: (n: number): string => `${n} contadores necesitan atención`,
     maxRisk: 'riesgo máximo:',
     lastRead: 'última lectura ',
+    // veredicto de cada sección y de cada etapa del recorrido
+    health: { ok: 'En orden', warn: 'Atención', bad: 'Fallo', off: 'Sin datos' },
+    stageOff: 'Apagado',
+    absentLead: 'No publicado por este motor: ',
+    pipelineAria: 'Recorrido de un evento por el motor',
     unavailableProseA: 'El TODO pide además ',
     unavailableProseB: '. Ninguno se publica hoy en ',
     unavailableProseC:

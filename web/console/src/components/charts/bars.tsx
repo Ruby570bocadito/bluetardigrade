@@ -110,7 +110,7 @@ export function Meter({ value, max, color, className }: { value: number; max: nu
   )
 }
 
-/** Trend line for a stat tile: de-emphasis hue, current point in the accent. */
+/** Trend line for a stat tile, in the tile's hue with a flat wash under it. */
 export function Sparkline({ values, width = 96, height = 28, color = 'var(--series-1)' }: { values: number[]; width?: number; height?: number; color?: string }) {
   if (values.length < 2) {
     return <svg aria-hidden width={width} height={height} className="block" />
@@ -123,9 +123,12 @@ export function Sparkline({ values, width = 96, height = 28, color = 'var(--seri
   const y = (v: number) => (max === min ? height / 2 : pad + (1 - (v - min) / span) * (height - pad * 2))
   const d = values.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')
   const last = values.length - 1
+  // the line in the tile's hue over a flat 14% wash down to the baseline
+  const area = `${d} L${x(last).toFixed(1)},${height} L${x(0).toFixed(1)},${height} Z`
   return (
     <svg aria-hidden width={width} height={height} className="block overflow-visible">
-      <path d={d} fill="none" stroke="var(--series-other)" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+      {max !== min && <path d={area} fill={color} fillOpacity={0.14} stroke="none" />}
+      <path d={d} fill="none" stroke={color} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />
       <circle cx={x(last)} cy={y(values[last])} r={3} fill={color} stroke="var(--viz-surface)" strokeWidth={2} />
     </svg>
   )
