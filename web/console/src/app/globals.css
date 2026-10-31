@@ -307,6 +307,23 @@
     inset 0 1px 0 0 rgba(255, 255, 255, 0.04),
     0 24px 48px -28px rgba(0, 0, 0, 0.85);
 }
+/* A card inside an area wears it (lib/areas.ts): an edge tinted with the
+   hue and a 2px cap of it along the top. Before .panel-hover, so the
+   hover state still wins. */
+[data-area] .panel,
+.panel[data-area] {
+  border-color: color-mix(in srgb, var(--area) 28%, rgba(148, 163, 184, 0.12));
+  box-shadow:
+    inset 0 2px 0 0 color-mix(in srgb, var(--area) 65%, transparent),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.04),
+    0 24px 48px -28px rgba(0, 0, 0, 0.85);
+}
+/* stat tiles: the area's colour rising from the top of the tile */
+.kpi-tile {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--area) 17%, transparent), color-mix(in srgb, var(--area) 3%, transparent) 80%),
+    linear-gradient(180deg, rgba(20, 30, 49, 0.78), rgba(13, 20, 34, 0.78));
+}
 .panel-hover {
   transition:
     border-color 0.2s ease,
@@ -344,14 +361,79 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem 0.75rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  border-bottom: 1px solid color-mix(in srgb, var(--area, var(--area-core)) 22%, rgba(148, 163, 184, 0.1));
   padding: 0.75rem 1rem;
   /* a flat wash of the card's area: the header says what it is about */
-  background-color: color-mix(in srgb, var(--area, var(--area-core)) 7%, transparent);
+  background-color: color-mix(in srgb, var(--area, var(--area-core)) 13%, transparent);
 }
 .panel > .panel-head:first-child {
   border-top-left-radius: calc(1rem - 1px);
   border-top-right-radius: calc(1rem - 1px);
+}
+/* every view glows faintly in its area's hue at the top (shell main) */
+.area-aura {
+  position: relative;
+  isolation: isolate;
+}
+.area-aura::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 560px;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 320px at 8% -60px, color-mix(in srgb, var(--area, var(--area-core)) 20%, transparent), transparent 70%),
+    radial-gradient(760px 280px at 92% -80px, color-mix(in srgb, var(--area, var(--area-core)) 12%, transparent), transparent 70%);
+}
+/* Estado's pipeline: each link carries the hues of the two stages it
+   joins, and a packet travels it while the engine is live (hidden under
+   reduced motion: the link alone still reads as a flow) */
+.pipeline-node {
+  position: relative;
+  display: flex;
+  height: 3rem;
+  width: 3rem;
+  margin: 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 2px solid var(--area);
+  background: color-mix(in srgb, var(--area) 16%, var(--card));
+  color: var(--area);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--area) 11%, transparent);
+}
+/* from the edge of one node's ring to the edge of the next: the stages
+   are equal columns, so the link spans one column minus a node */
+.pipeline-link {
+  position: absolute;
+  top: calc(1.25rem + 1.5rem - 1.5px);
+  left: calc(50% + 34px);
+  width: calc(100% - 68px);
+  height: 3px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, var(--from), var(--to));
+}
+.pipeline-packet {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 9px;
+  height: 9px;
+  margin-top: -4.5px;
+  border-radius: 9999px;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--to) 45%, transparent);
+  animation: pipeline-packet 2.6s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+}
+@keyframes pipeline-packet {
+  0% { left: 0; opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { left: calc(100% - 9px); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pipeline-packet { display: none; }
 }
 .chip {
   display: inline-flex;
@@ -764,6 +846,22 @@ html.light .panel {
     0 1px 2px 0 rgba(15, 23, 42, 0.04),
     0 20px 40px -28px rgba(15, 23, 42, 0.28);
 }
+html.light [data-area] .panel,
+html.light .panel[data-area] {
+  border-color: color-mix(in srgb, var(--area) 30%, #dbe3ee);
+  box-shadow:
+    inset 0 2px 0 0 color-mix(in srgb, var(--area) 75%, transparent),
+    0 1px 2px 0 rgba(15, 23, 42, 0.04),
+    0 20px 40px -28px rgba(15, 23, 42, 0.28);
+}
+html.light .kpi-tile {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--area) 11%, #ffffff), #ffffff 80%);
+}
+html.light .area-aura::before {
+  background:
+    radial-gradient(900px 320px at 8% -60px, color-mix(in srgb, var(--area, var(--area-core)) 12%, transparent), transparent 70%),
+    radial-gradient(760px 280px at 92% -80px, color-mix(in srgb, var(--area, var(--area-core)) 7%, transparent), transparent 70%);
+}
 html.light .panel-hover:hover,
 html.light .panel-hover:focus-within {
   border-color: rgba(37, 99, 235, 0.35);
@@ -772,8 +870,8 @@ html.light .panel-hover:focus-within {
     0 24px 44px -26px rgba(15, 23, 42, 0.32);
 }
 html.light .panel-head {
-  border-bottom-color: #e2e8f0;
-  background-color: color-mix(in srgb, var(--area, var(--area-core)) 5%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--area, var(--area-core)) 22%, #e2e8f0);
+  background-color: color-mix(in srgb, var(--area, var(--area-core)) 8%, transparent);
 }
 html.light .chip {
   border-color: #dbe3ee;

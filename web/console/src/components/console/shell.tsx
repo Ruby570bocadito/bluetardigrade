@@ -522,7 +522,7 @@ export function ConsoleShell() {
             })}
           </nav>
 
-          <main id="console-main" tabIndex={-1} data-area={areaOf(view)} className="flex-1 px-4 py-5 outline-none lg:px-8 lg:py-6">
+          <main id="console-main" tabIndex={-1} data-area={areaOf(view)} className="area-aura flex-1 px-4 py-5 outline-none lg:px-8 lg:py-6">
             <div className="mx-auto w-full max-w-[1560px]">
               <AnimatedView viewKey={view}>
                 {view === 'panel' && <Dashboard onAnalyze={openInAnalyst} onNavigate={setView} onTriage={openTriage} onHunt={openHunt} onHost={openHost} onScenarioTactic={openScenarioTactic} />}

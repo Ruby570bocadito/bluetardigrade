@@ -33,12 +33,13 @@ import { useEngine } from './engine-provider'
 import { useI18n } from './i18n-provider'
 import { EmptyState, HealthPill, SectionHeader } from './ui-bits'
 import { Meter } from '@/components/charts/bars'
-import type { Area } from '@/lib/areas'
+import { areaColor, type Area } from '@/lib/areas'
 import {
   pipelineStages,
   platformStatus,
   rowsHealth,
   topHostLine,
+  type Health,
   type PipelineStage,
   type PipelineStageKey,
   type StatusRow,
@@ -161,48 +162,55 @@ function StatusPanel({ section }: { section: StatusSection }) {
   )
 }
 
-/** The path an event takes, one stage per area colour; the dashes of
- * each link flow while the engine is live (still under reduced motion). */
+const HEALTH_BADGE: Record<Health, string> = {
+  ok: 'bg-emerald-400',
+  warn: 'bg-amber-400',
+  bad: 'bg-red-400',
+  off: 'bg-zinc-500',
+}
+
+/** The path an event takes: one node per stage in its area's colour,
+ * joined by links that carry the hues of both stages; while the engine
+ * is live a packet travels each link. The node's badge is the stage's
+ * verdict, and a stage that is not in order names the counter behind it. */
 function PipelineStrip({ stages, live }: { stages: PipelineStage[]; live: boolean }) {
   const { dict } = useI18n()
   const st = dict.status
   return (
-    <ol aria-label={st.pipelineAria} className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5">
+    <ol aria-label={st.pipelineAria} className="grid grid-cols-1 py-1 sm:grid-cols-2 xl:grid-cols-5">
       {stages.map((stage, i) => {
         const Icon = STAGE_ICONS[stage.key]
-        const last = i === stages.length - 1
+        const next = stages[i + 1]
+        const verdict = stage.health === 'off' ? st.stageOff : st.health[stage.health]
         return (
           <li
             key={stage.key}
             data-area={STAGE_AREA[stage.key]}
-            className={'relative min-w-0 px-5 py-4 ' + (last ? 'sm:col-span-2 xl:col-span-1' : '')}
+            className={'relative min-w-0 px-3 pb-4 pt-5 text-center ' + (next ? '' : 'sm:col-span-2 xl:col-span-1')}
           >
-            <div className="flex min-w-0 items-center gap-2.5">
-              <span className="icon-tile h-8 w-8 rounded-full"><Icon size={16} weight="duotone" aria-hidden /></span>
-              <span className="truncate text-[13px] font-semibold text-[color:var(--area)]">{stage.label}</span>
-              {stage.health === 'ok' && <HealthPill health="ok" label={st.health.ok} compact />}
-            </div>
-            <p className="mt-3 flex min-w-0 items-baseline gap-1.5">
-              <span className="text-[26px] font-semibold leading-none tracking-tight tabular-nums text-zinc-50">{stage.value}</span>
-              {stage.unit && <span className="truncate text-xs text-zinc-400">{stage.unit}</span>}
-            </p>
-            <p className="mt-1.5 truncate text-[11px] text-zinc-500" title={stage.detail}>{stage.detail}</p>
-            {/* a stage that is not in order says why, in the status colour */}
-            {stage.health !== 'ok' && (
-              <HealthPill
-                health={stage.health}
-                label={stage.flag ?? (stage.health === 'off' ? st.stageOff : st.health[stage.health])}
-                className="mt-2.5 max-w-full"
-              />
-            )}
-            {!last && (
-              <svg
-                aria-hidden width="28" height="12" viewBox="0 0 28 12"
-                className="absolute right-0 top-[26px] hidden translate-x-1/2 overflow-visible xl:block"
+            {next && (
+              <span
+                aria-hidden
+                className="pipeline-link hidden xl:block"
+                style={{ '--from': areaColor(STAGE_AREA[stage.key]), '--to': areaColor(STAGE_AREA[next.key]) } as React.CSSProperties}
               >
-                <line x1="1" y1="6" x2="21" y2="6" stroke="var(--area)" strokeWidth="2" strokeLinecap="round" className={live ? 'edge-flow' : undefined} strokeDasharray={live ? undefined : '4 6'} />
-                <path d="M20 1.5 L26 6 L20 10.5" fill="none" stroke="var(--area)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+                {live && <span className="pipeline-packet" style={{ animationDelay: `${i * 0.45}s` }} />}
+              </span>
+            )}
+            <span className="pipeline-node">
+              <Icon size={22} weight="duotone" aria-hidden />
+              <span title={verdict} className={'absolute -right-0.5 -top-0.5 h-3.5 w-3.5 rounded-full ring-[3px] ring-[color:var(--card)] ' + HEALTH_BADGE[stage.health]}>
+                <span className="sr-only">{verdict}</span>
+              </span>
+            </span>
+            <p className="mt-3 text-[13px] font-semibold text-[color:var(--area)]">{stage.label}</p>
+            <p className="mt-1 flex flex-wrap items-baseline justify-center gap-x-1.5">
+              <span className="text-[26px] font-semibold leading-tight tracking-tight tabular-nums text-zinc-50">{stage.value}</span>
+              {stage.unit && <span className="text-xs text-zinc-400">{stage.unit}</span>}
+            </p>
+            <p className="mt-0.5 truncate text-[11px] text-zinc-400" title={stage.detail}>{stage.detail}</p>
+            {stage.health !== 'ok' && (
+              <HealthPill health={stage.health} label={stage.flag ?? verdict} className="mt-2.5 max-w-full" />
             )}
           </li>
         )

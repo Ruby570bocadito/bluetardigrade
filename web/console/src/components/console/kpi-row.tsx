@@ -36,27 +36,28 @@ function Tile({
   // el foco dentro; en reposo es la superficie del panel sin cambios.
   // GlareHover (React Bits): a reflection crosses the tile on hover/focus.
   return (
+    <div data-area={area} className="min-w-0">
     <GlareHover className="rounded-[0.875rem]">
-    <SpotlightCard className="panel panel-hover min-w-0 px-4 py-3.5">
-      <div data-area={area}>
-        <p className="flex items-center gap-2 text-xs text-zinc-300">
-          <Icon size={16} weight="duotone" aria-hidden className="text-[color:var(--area)]" />
-          {label}
-        </p>
-        <div className="mt-2 flex items-end justify-between gap-2">
-          <KpiNumber value={value} />
-          {trend && <Sparkline values={trend} width={84} height={30} color="var(--area)" />}
-        </div>
-        <div className="mt-1.5 min-h-4 truncate text-[11px] text-zinc-500">{children}</div>
+    <SpotlightCard className="panel panel-hover kpi-tile min-w-0 px-4 py-3.5">
+      <p className="flex items-center gap-2 text-xs text-zinc-300">
+        <Icon size={16} weight="duotone" aria-hidden className="text-[color:var(--area)]" />
+        {label}
+      </p>
+      <div className="mt-2 flex items-end justify-between gap-2">
+        <KpiNumber value={value} />
+        {trend && <Sparkline values={trend} width={84} height={30} color="var(--area)" />}
       </div>
+      <div className="mt-1.5 min-h-4 truncate text-[11px] text-zinc-400">{children}</div>
     </SpotlightCard>
     </GlareHover>
+    </div>
   )
 }
 
 function KpiNumber({ value }: { value: number | undefined }) {
   const { dict } = useI18n()
-  const className = 'block text-[26px] font-semibold leading-none tracking-tight text-zinc-50'
+  // the figure in its tile's hue: the row reads as six areas at a glance
+  const className = 'block text-[28px] font-semibold leading-none tracking-tight text-[color:var(--area)]'
   return value === undefined
     ? <span className={className} aria-label={dict.kpi.noData}>—</span>
     : <CountUp to={value} className={className} />

@@ -17,7 +17,7 @@ export const TABLIST_CLASS = 'flex flex-wrap items-center gap-1 rounded-xl borde
 export function tabButtonClass(active: boolean): string {
   return `inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
     active
-      ? 'bg-primary-tint/15 text-primary-soft ring-1 ring-inset ring-primary/25'
+      ? 'bg-[color-mix(in_srgb,var(--area,var(--primary))_17%,transparent)] text-zinc-50 ring-1 ring-inset ring-[color-mix(in_srgb,var(--area,var(--primary))_45%,transparent)]'
       : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-100'
   }`
 }
@@ -93,7 +93,7 @@ export function ConsoleTablist<K extends string>({
             onClick={() => onSelect(id)}
             className={tabButtonClass(active)}
           >
-            {Icon && <Icon size={14} weight={active ? 'fill' : 'regular'} aria-hidden className={active ? 'text-primary' : ''} />}
+            {Icon && <Icon size={14} weight={active ? 'fill' : 'regular'} aria-hidden className={active ? 'text-[color:var(--area,var(--primary))]' : ''} />}
             {label}
             {count !== undefined && <span className="rounded bg-white/[0.06] px-1.5 text-[10px] tabular-nums text-zinc-400">{count}</span>}
           </button>

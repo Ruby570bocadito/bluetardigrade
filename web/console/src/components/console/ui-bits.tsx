@@ -55,17 +55,8 @@ const HEALTH_DOT: Record<Health, string> = {
 }
 
 /** Verdict of a section or a stage: a dot and its word, in the status
- * colours (never an area hue). `compact` keeps only the dot, for the
- * reading that needs no word; the word stays for screen readers. */
-export function HealthPill({ health, label, compact = false, className }: { health: Health; label: string; compact?: boolean; className?: string }) {
-  if (compact) {
-    return (
-      <span title={label} className={cn('inline-flex shrink-0 items-center', className)}>
-        <span aria-hidden className={cn('h-2 w-2 rounded-full', HEALTH_DOT[health])} />
-        <span className="sr-only">{label}</span>
-      </span>
-    )
-  }
+ * colours (never an area hue). */
+export function HealthPill({ health, label, className }: { health: Health; label: string; className?: string }) {
   return (
     <span title={label} className={cn('inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium', HEALTH_PILL[health], className)}>
       <span aria-hidden className={cn('h-1.5 w-1.5 shrink-0 rounded-full', HEALTH_DOT[health])} />
@@ -110,7 +101,11 @@ export function SectionHeader({
   return (
     <div className={cn('flex flex-wrap items-center justify-between gap-x-4 gap-y-2 pb-2', className)}>
       <div className="flex min-w-0 flex-wrap items-baseline gap-2">
-        <h2 className="text-sm font-medium text-zinc-100">{title}</h2>
+        <h2 className="flex items-center gap-2 text-sm font-medium text-zinc-100">
+          {/* the view's area colour marks where each section starts */}
+          <span aria-hidden className="h-3.5 w-1 rounded-full bg-[color:var(--area,var(--primary))]" />
+          {title}
+        </h2>
         {typeof count === 'number' && (
           <span className="font-mono text-xs tabular-nums text-zinc-500">{count}</span>
         )}
