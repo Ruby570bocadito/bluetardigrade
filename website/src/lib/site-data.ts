@@ -257,7 +257,7 @@ export const ROADMAP = [
     phase: "Phase 2",
     window: "weeks 7–14 · 2026",
     title: "Deep telemetry",
-    desc: "YARA memory scanning and an eBPF collector. SQLite persistence already shipped with -store (Sept 2026).",
+    desc: "Shipped: YARA in the sensor (written files, on demand and process memory) and SQLite persistence with -store. Ahead: YARA rules kept in the engine and pushed signed to the sensors; an eBPF collector stays design-only.",
     done: false,
   },
   {
