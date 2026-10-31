@@ -99,7 +99,7 @@ export function fixtureEngine() {
   })
 
   const stats = {
-    uptime_s: 3 * DAY + 7 * HOUR + 920,
+    uptime_s: (3 * DAY + 7 * HOUR) / 1000 + 920, // the constants are in ms
     events_total: 1_842_317,
     alerts_total: alerts.length,
     events_per_min: 412,
@@ -159,7 +159,7 @@ export function fixtureEngine() {
         capture: 'procesos, red, DNS, registro',
         run_mode: 'servicio de Windows',
         interval_s: 60,
-        uptime_s: 2 * DAY + i * HOUR,
+        uptime_s: (2 * DAY + i * HOUR) / 1000,
         spooled: 0,
         dropped: 0,
         last_heartbeat: iso((i === 3 ? 14 : 1 + i) * MIN),
