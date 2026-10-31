@@ -2,5 +2,10 @@
 # the policy stated in .github/workflows/deps-audit.yml: never silence a
 # scanner without a written reason, and an unused ignore fails the scan.
 #
-# No active ignores: GHSA-vfj7-8cjw-p6xm (braces) stopped matching the
-# locked braces 3.0.3 and was removed as unused (2026-10-30).
+# GHSA-vfj7-8cjw-p6xm (braces) stopped matching the locked braces 3.0.3
+# and was removed as unused (2026-10-30).
+
+[[IgnoredVulns]]
+id = "GHSA-g3hv-75wg-m249"
+ignoreUntil = 2026-12-31T00:00:00Z
+reason = "minimatch glob-expansion DoS, fixed only in 11.0.1. It reaches website/ through the ESLint toolchain alone (eslint and its plugins pin ^3, typescript-eslint ^10; the latest eslint, 10.14, still asks for ^10.2.6), so no usable fixed version exists. It runs at lint time over the repository's own patterns, never on input from a visitor, and nothing of it ships in the static site. Revisit when eslint or typescript-eslint moves to minimatch 11."
