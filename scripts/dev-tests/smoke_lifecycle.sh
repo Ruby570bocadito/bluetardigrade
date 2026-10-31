@@ -75,13 +75,19 @@ import socket,sys
 s=socket.create_connection(('127.0.0.1',$INGEST),timeout=2)
 s.sendall(sys.stdin.buffer.read()); s.close()"
 
-sleep 0.5
-ALERTS=$(api "/api/alerts?limit=10")
-ALERT_ID=$(printf '%s' "$ALERTS" | python3 -c "
+# poll instead of one fixed nap: a loaded host (Windows with a build
+# running) took longer than half a second to raise the alert
+ALERT_ID=""
+for _ in $(seq 1 25); do
+  sleep 0.2
+  ALERTS=$(api "/api/alerts?limit=10")
+  ALERT_ID=$(printf '%s' "$ALERTS" | python3 -c "
 import json,sys
 data=json.load(sys.stdin)
 hits=[a for a in data if a.get('event_id')=='$EVENT_ID']
-print(hits[0]['id'] if hits else '')")
+print(hits[0]['id'] if hits else '')" 2>/dev/null)
+  [ -n "$ALERT_ID" ] && break
+done
 if [ -n "$ALERT_ID" ]; then ok "alert raised with engine id $ALERT_ID"; else bad "no alert for event $EVENT_ID"; cat "$WORK/engine.log"; exit 1; fi
 
 STATUS0=$(printf '%s' "$ALERTS" | python3 -c "

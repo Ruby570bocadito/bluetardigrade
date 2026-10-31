@@ -135,7 +135,8 @@ json_field() { # json_field <fichero> <clave>
 # reintentos en silencio por cada entrega.
 echo "== Fase 0: guard de esquema del sink (fail-loud) =="
 GD_LOG="$TMPDIR_E2E/guard.log"
-"$ENGINE" -api "$APIADDR" -elastic "ftp://127.0.0.1:1" -elastic-index sf-alerts >"$GD_LOG" 2>&1
+# its own ingest port: the default :7777 may belong to a running engine
+"$ENGINE" -addr "$EADDR" -api "$APIADDR" -elastic "ftp://127.0.0.1:1" -elastic-index sf-alerts >"$GD_LOG" 2>&1
 GD_RC=$?
 if [ "$GD_RC" = "1" ] && rg -q 'esquema "ftp" invalido' "$GD_LOG"; then
   ok "engine rechaza -elastic ftp:// en el arranque (exit 1, mensaje accionable)"

@@ -252,7 +252,9 @@ func TestDoctorHTTPSRequiresVerifiedCA(t *testing.T) {
 			t.Fatalf("unverified TLS configuration: %v", err)
 		}
 		transport := &http.Transport{TLSClientConfig: cfg}
-		checks := doctorEngine(context.Background(), &http.Client{Timeout: time.Second, Transport: transport}, srv.URL, "", time.Minute)
+		// a TLS handshake plus three requests: one second failed on a
+		// loaded Windows host, which read as an unhealthy engine
+		checks := doctorEngine(context.Background(), &http.Client{Timeout: 10 * time.Second, Transport: transport}, srv.URL, "", time.Minute)
 		transport.CloseIdleConnections()
 		if doctorCheckStatus(checks, "API del motor") != tc.expected {
 			t.Fatalf("CA %q: %+v", tc.ca, checks)

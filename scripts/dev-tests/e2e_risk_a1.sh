@@ -219,9 +219,12 @@ AC=$(hot0 alerts)
 check "hot_hosts[0].alerts=3 (got $AC)" "$([ "$AC" = "3" ] && echo 1 || echo 0)"
 LS=$(hot0 last_seen)
 check "last_seen parseable RFC 3339 ($LS)" "$(python3 -c "
+import re
 from datetime import datetime
 try:
-    datetime.fromisoformat('$LS'.replace('Z','+00:00')); print(1)
+    # RFC 3339 allows any number of decimals (Windows clocks give 7);
+    # Python's parser takes at most 6
+    datetime.fromisoformat(re.sub(r'(\.\d{6})\d+', r'\1', '$LS').replace('Z','+00:00')); print(1)
 except Exception: print(0)" 2>/dev/null || echo 0)"
 SHAPE=$(curl -s "$BASE/api/stats" | jqpy "
 hh = (d.get('hot_hosts') or [{}])[0]

@@ -12,6 +12,24 @@ En el laboratorio local, con motor real y navegador, se probó además:
 - las cuentas con roles: el lector es rechazado y el triaje queda firmado con la
   cuenta, no con «consola».
 
+**Pase automático en Windows 11 (31 de octubre)**, con binarios reales y puertos
+propios (17xxx/18xxx), sin tocar la instalación en marcha:
+- toda la batería E2E de `scripts/dev-tests` (autenticación, TLS de ingesta,
+  ciclo de vida, avisos externos, almacén SQLite, beaconing, umbrales, riesgo,
+  escenarios, SIEM, Sigma, informes y ruido, secuencias), el canal SOC completo
+  y la forense de ficheros;
+- `scripts/windows/smoke_respond.ps1`: respuesta activa con kills reales,
+  29/29;
+- `go test ./...`, el PATH del instalador (7/7) y el lanzador;
+- tres pruebas dependían del entorno y ahora no: un tiempo de espera de 1 s en
+  `doctor` con TLS, una espera fija de 0,5 s en `smoke_lifecycle`, y el motor de
+  `e2e_siem` arrancando en el 7777 por defecto; además `e2e_risk_a1` no leía
+  fechas con 7 decimales, que es lo que da el reloj de Windows.
+
+No se pasó `check_installer_behavior.ps1` porque detiene las tareas
+programadas de arranque por su nombre global y pararía una instalación en
+uso; la cubre el CI en un Windows limpio.
+
 Lo de esta lista necesita **tu Windows real**: privilegios de administrador,
 Sysmon o un segundo equipo. Marca cada casilla al terminar.
 
