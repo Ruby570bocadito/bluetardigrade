@@ -88,7 +88,34 @@ function Start-SfEngine {
 '@
     & (Join-Path $testRoot 'scripts\start-engine.ps1')
     Assert ((Get-Content (Join-Path $testRoot 'run\resolved-root.txt')) -eq $testRoot) 'NoConsole startup depends on web sources'
-    Write-Output 'PASS: persisted settings, precedence, child environment, API token and engine arguments (validation and AD included), stable state directory, stale PID protection and NoConsole startup root'
+    # Port ownership: free, another program (this test's own listener
+    # without the pid file) and ours (the same listener once the pid file
+    # names it); the console port sticks and falls back to 3000.
+    foreach ($name in @('Get-CimInstance', 'Stop-Process')) { Remove-Item ('Function:' + $name) -ErrorAction SilentlyContinue }
+    $listener = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback, 0)
+    $listener.Start()
+    try {
+        $port = ([Net.IPEndPoint]$listener.LocalEndpoint).Port
+        $foreign = Get-SfPortOwner -Port $port -Root $testRoot -PidName 'console.pid'
+        Assert ($foreign.State -eq 'foreign' -and $foreign.Pid -eq $PID -and $foreign.Name) "Own listener not reported as another program: $($foreign.State)"
+        # an elevated process shows its name but not its path
+        function Get-CimInstance { param($ClassName, $Filter, $ErrorAction); return [pscustomobject]@{ Name = 'sf-engine.exe'; ExecutablePath = $null; CommandLine = $null } }
+        Assert ((Get-SfPortOwner -Port $port -Root $testRoot).State -eq 'hidden') 'A process with a hidden path was not reported as such'
+        Remove-Item Function:Get-CimInstance
+        function Get-CimInstance { param($ClassName, $Filter, $ErrorAction); return [pscustomobject]@{ Name = 'node.exe'; ExecutablePath = 'C:\Program Files\nodejs\node.exe'; CommandLine = '"node" "C:\video\node_modules\@remotion\cli\remotion-cli.js" render Diary' } }
+        Assert ((Get-SfPortOwner -Port $port -Root $testRoot).Detail -eq 'remotion-cli.js') 'The script a foreign node.exe runs was not named'
+        Remove-Item Function:Get-CimInstance
+        New-Item -ItemType Directory (Join-Path $testRoot 'run') -Force | Out-Null
+        Set-Content (Join-Path $testRoot 'run\console.pid') $PID
+        Assert ((Get-SfPortOwner -Port $port -Root $testRoot -PidName 'console.pid').State -eq 'ours') 'Pid file did not prove ownership'
+    } finally { $listener.Stop() }
+    Assert ((Get-SfPortOwner -Port $port -Root $testRoot).State -eq 'free') 'Closed port not reported free'
+    Assert ((Get-SfConsolePort $testRoot) -eq 3000) 'Default console port is not 3000'
+    Set-SfConsolePort $testRoot 3100
+    Assert ((Get-SfConsolePort $testRoot) -eq 3100) 'Console port did not stick'
+    Set-Content (Join-Path $testRoot 'run\console.port') 'garbage'
+    Assert ((Get-SfConsolePort $testRoot) -eq 3000) 'Unreadable console port did not fall back to 3000'
+    Write-Output 'PASS: persisted settings, precedence, child environment, API token and engine arguments (validation and AD included), stable state directory, stale PID protection, NoConsole startup root, port ownership and the sticky console port'
 } finally {
     foreach ($key in $saved.Keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key], 'Process') }
     foreach ($name in @('Start-Process', 'Get-CimInstance', 'Stop-Process')) { Remove-Item ('Function:' + $name) -ErrorAction SilentlyContinue }

@@ -35,17 +35,24 @@ $ErrorActionPreference = 'Continue'
 $ServiceName = 'bluetardigrade-sensor'
 $consolePs1 = Join-Path $PSScriptRoot 'sf-console.ps1'
 $etwPs1 = Join-Path $PSScriptRoot 'sensor-service.ps1'
-$ports = @{ ConsolePort = $ConsolePort; ServicePort = $ServicePort }
+$root = Split-Path -Parent $PSScriptRoot
+if (-not (Test-Path (Join-Path $root 'web'))) { $root = Split-Path -Parent $root }
+. (Join-Path $PSScriptRoot 'runtime.ps1')
+# -ConsolePort only when given: otherwise sf-console keeps the port the
+# console last ran on (a console moved to :3100 stays there)
+$ports = @{ ServicePort = $ServicePort }
+if ($PSBoundParameters.ContainsKey('ConsolePort')) { $ports.ConsolePort = $ConsolePort }
 
 function Get-SfSensorService {
     return Get-Service $ServiceName -ErrorAction SilentlyContinue
 }
 
 # Only from an interactive sf-start: the logon autostart runs sf-console
-# hidden, where a question would wait forever.
+# hidden, where a question would wait forever. A created account sets
+# $script:accountCreated, so the start restarts a running console to ask
+# for sign-in (a return value would also capture the account tool's
+# output and hide it from the operator).
 function Request-FirstAccount {
-    $root = Split-Path -Parent $PSScriptRoot
-    if (-not (Test-Path (Join-Path $root 'web'))) { $root = Split-Path -Parent $root }
     $config = Join-Path $root 'tools\config'
     $declined = Join-Path $config 'no-console-accounts'
     if ((Test-Path -LiteralPath (Join-Path $config 'console-users.json')) -or (Test-Path -LiteralPath $declined)) { return }
@@ -67,16 +74,18 @@ function Request-FirstAccount {
             Write-Host '  use letters, digits and . _ @ - (no spaces)'
             continue
         }
-        & $consolePs1 -AddUser $name -Role admin
-        if ($LASTEXITCODE -eq 0) { return }
+        & $consolePs1 -AddUser $name -Role admin -NoRestartHint
+        if ($LASTEXITCODE -eq 0) { $script:accountCreated = $true; return }
     }
     Write-Host '  no account created; the console opens without signing in (sf-console -AddUser <name>)' -ForegroundColor Yellow
 }
 
 if ($Start) {
+    $script:accountCreated = $false
     Request-FirstAccount
-    # engine first: a sensor that starts before it only waits and queues
-    & $consolePs1 -NoBrowser -StopHint 'sf-stop' @ports
+    # engine first: a sensor that starts before it only waits and queues;
+    # a console already running restarts so the new account applies
+    & $consolePs1 -NoBrowser -StopHint 'sf-stop' -Restart:$script:accountCreated @ports
     if (-not $NoSensor) {
         $svc = Get-SfSensorService
         if (-not $svc) {
@@ -88,7 +97,7 @@ if ($Start) {
             & $etwPs1 -Start
         }
     }
-    if (-not $NoBrowser) { Start-Process "http://localhost:$ConsolePort" }
+    if (-not $NoBrowser) { Start-Process "http://localhost:$(Get-SfConsolePort $root)" }
     return
 }
 

@@ -152,3 +152,69 @@ function Stop-SfTrackedProcesses {
         ($_.ExecutablePath -match '(?i)[\\/](sf-)?engine\.exe$' -or $_.CommandLine -match 'console-service|next|server\.js')
     } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 }
+
+# Who listens on a local port, and whether it belongs to this install.
+# A bare connect test cannot tell the console from any other program on
+# 3000: sf-console announced "console already running" for a port another
+# program held while sf-status said stopped. State is 'free', 'ours',
+# 'foreign' (another program, named) or 'unknown' (something answers but
+# its listener is not visible). A process started from an elevated window
+# hides its path from a normal one, so the pid file recorded at start
+# also proves ownership.
+function Get-SfPortOwner {
+    param([int]$Port, [string]$Root, [string]$PidName)
+    $listen = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
+    if ($listen.Count -eq 0) {
+        $client = New-Object Net.Sockets.TcpClient
+        $answers = $false
+        try { $client.Connect('127.0.0.1', $Port); $answers = $true } catch { } finally { $client.Close() }
+        $state = if ($answers) { 'unknown' } else { 'free' }
+        return [pscustomobject]@{ State = $state; Pid = 0; Name = ''; Detail = '' }
+    }
+    $ownerPid = [int]$listen[0].OwningProcess
+    $process = Get-CimInstance Win32_Process -Filter "ProcessId = $ownerPid" -ErrorAction SilentlyContinue
+    $name = if ($process) { [string]$process.Name } else { [string](Get-Process -Id $ownerPid -ErrorAction SilentlyContinue).ProcessName }
+    # node.exe alone says little: the script it runs names the program
+    # (a video render holding :3000 reads "remotion-cli.js")
+    $detail = ''
+    if ($process -and [string]$process.CommandLine -match '([^\\/"\s]+\.(?:m?js|cjs|ts|py))(?=["\s]|$)') { $detail = $Matches[1] }
+    $tracked = 0
+    if ($PidName) {
+        $file = Join-Path (Join-Path $Root 'run') $PidName
+        if (Test-Path -LiteralPath $file) { [void][int]::TryParse([string](Get-Content -LiteralPath $file -First 1), [ref]$tracked) }
+    }
+    # an administrator's (or another user's) process hides its path from
+    # a normal window: it may be this installation started elevated
+    $state = if ((Test-SfOwnedProcess $process $Root) -or ($tracked -gt 0 -and $tracked -eq $ownerPid)) { 'ours' }
+             elseif ($process -and -not $process.ExecutablePath) { 'hidden' }
+             else { 'foreign' }
+    return [pscustomobject]@{ State = $state; Pid = $ownerPid; Name = $name; Detail = $detail }
+}
+
+# The console port of the last start (sf-console -ConsolePort 3100 sticks
+# for sf-start, sf-status and the browser), 3000 when none was recorded.
+function Get-SfConsolePort {
+    param([string]$Root)
+    $file = Join-Path (Join-Path $Root 'run') 'console.port'
+    $port = 0
+    if ((Test-Path -LiteralPath $file) -and [int]::TryParse([string](Get-Content -LiteralPath $file -First 1), [ref]$port) -and $port -gt 0 -and $port -lt 65536) { return $port }
+    return 3000
+}
+
+function Set-SfConsolePort {
+    param([string]$Root, [int]$Port)
+    $run = Join-Path $Root 'run'
+    New-Item -ItemType Directory -Path $run -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $run 'console.port') -Value $Port
+}
+
+# One status line: name, port, a coloured state and the detail, aligned
+# like the installer's [ok] / [!] lines.
+function Write-SfStatusLine {
+    param([string]$Name, [string]$Port, [ValidateSet('ok', 'off', 'warn')][string]$Kind, [string]$Text)
+    $mark = @{ ok = '[ok]'; off = '[--]'; warn = '[!] ' }[$Kind]
+    $color = @{ ok = 'Green'; off = 'DarkGray'; warn = 'Yellow' }[$Kind]
+    Write-Host ('  {0,-8} {1,-6} ' -f $Name, $Port) -NoNewline
+    Write-Host $mark -ForegroundColor $color -NoNewline
+    Write-Host " $Text"
+}

@@ -94,7 +94,7 @@ The installer downloads the repository, provisions portable Go, Node and Bun und
 | `sf-engine`     | detection engine, prints alerts live           |
 | `sf-sensor`     | streams REAL host telemetry through the engine via Sysmon (`-SetupSysmon` installs it in one command) |
 | `sf-collector`  | imports observed IDS/NDR/osquery/honeypot/firewall logs and offline EML |
-| `sf-console`    | starts engine, hub and web console (no sensor) and opens the browser |
+| `sf-console`    | starts engine, hub and web console (no sensor) and opens the browser; a port another program holds moves the console to the next free one, remembered for `sf-start` and `sf-status` (`-ConsolePort` picks it), and `-Restart` restarts the console so a new account applies |
 | `sf-update`     | updates the code and rebuilds                  |
 | `sf-uninstall`  | removes everything                             |
 

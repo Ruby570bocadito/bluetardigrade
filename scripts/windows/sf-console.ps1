@@ -4,7 +4,9 @@
 #   sf-console              start hub + console, open the browser
 #   sf-console -Stop        stop both
 #   sf-console -Status      show what is running
-#   sf-console -ConsolePort 3000 -ServicePort 3003   (custom ports)
+#   sf-console -Restart     restart the console only (applies new accounts)
+#   sf-console -ConsolePort 3100 -ServicePort 3003   (custom ports; the
+#                           console port sticks for sf-start and sf-status)
 #   sf-console -AddUser ana [-Role analyst]   create a console account
 #                           (default role admin), or reset its password
 #                           and role; the console then asks to sign in
@@ -20,6 +22,7 @@
 param(
     [switch]$Stop,
     [switch]$Status,
+    [switch]$Restart,
     [switch]$NoBrowser,
     [int]$ConsolePort = 3000,
     [int]$ServicePort = 3003,
@@ -35,7 +38,9 @@ param(
     [string]$RequireMfa,
     # host groups an account is limited to (comma separated, or none)
     [string]$SetGroups,
-    [string]$Groups
+    [string]$Groups,
+    # sf-start restarts the console itself after the first account
+    [switch]$NoRestartHint
 )
 
 # 'Continue' (the default the script used to override away): failures
@@ -51,6 +56,15 @@ if (-not (Test-Path (Join-Path $root 'web'))) { $root = Split-Path -Parent $root
 . (Join-Path $PSScriptRoot 'runtime.ps1')
 # same token the engine is started with (created on first use)
 $env:SF_API_TOKEN = Initialize-SfApiToken $root
+# without -ConsolePort, the port the console last ran on
+$consolePortGiven = $PSBoundParameters.ContainsKey('ConsolePort')
+if (-not $consolePortGiven) { $ConsolePort = Get-SfConsolePort $root }
+
+function Format-SfOwner($Owner) {
+    if ($Owner.Name -and $Owner.Detail) { return "$($Owner.Name) ($($Owner.Detail), pid $($Owner.Pid))" }
+    if ($Owner.Name) { return "$($Owner.Name) (pid $($Owner.Pid))" }
+    return 'another program'
+}
 
 $web      = Join-Path $root 'web'
 $run      = Join-Path $root 'run'
@@ -128,31 +142,32 @@ if ($AddUser -or $RemoveUser -or $ResetMfa -or $RequireMfa -or $SetGroups) {
     else { & $nodeExe $userTool --file $usersFile --require-mfa $RequireMfa }
     if ($LASTEXITCODE -ne 0) { return }
     # a console started without the file never looks for it
-    if (-not $hadFile -and (Test-PortLocal $ConsolePort)) {
-        Write-Host '  the running console still opens without signing in; restart it to apply: sf-stop, then sf-start' -ForegroundColor Yellow
+    if (-not $hadFile -and -not $NoRestartHint -and (Get-SfPortOwner -Port $ConsolePort -Root $root -PidName 'console.pid').State -eq 'ours') {
+        Write-Host '  the running console still opens without signing in; apply it now: sf-console -Restart' -ForegroundColor Yellow
     }
     return
 }
 
 if ($Status) {
-    $svcPid = Read-PidFile -Name 'console-service.pid'
-    $appPid = Read-PidFile -Name 'console.pid'
-    $engPid = Read-PidFile -Name 'engine.pid'
-    Write-Host '  security-framework console status'
-    $svcState = 'stopped'
-    if (Test-PortLocal $ServicePort) { $svcState = 'running' }
-    if ($svcPid -and $svcState -eq 'running') { $svcState = "running (pid $svcPid)" }
-    $appState = 'stopped'
-    if (Test-PortLocal $ConsolePort) { $appState = 'running' }
-    if ($appPid -and $appState -eq 'running') { $appState = "running (pid $appPid)" }
-    Write-Host "  hub     :$ServicePort  $svcState"
-    Write-Host "  console :$ConsolePort  $appState"
-    if (Test-PortLocal 7777) {
-        if ($engPid) { Write-Host "  engine  :7777  listening (pid $engPid)" }
-        else         { Write-Host '  engine  :7777  listening (no pid file: started outside sf-console)' }
-    } else {
-        Write-Host '  engine  :7777  not running (start it with sf-engine)'
+    Write-Host '  bluetardigrade status'
+    $parts = @(
+        @{ Name = 'engine'; Port = 7777; PidName = 'engine.pid' },
+        @{ Name = 'hub'; Port = $ServicePort; PidName = 'console-service.pid' },
+        @{ Name = 'console'; Port = $ConsolePort; PidName = 'console.pid' }
+    )
+    $consoleUp = $false
+    foreach ($part in $parts) {
+        $owner = Get-SfPortOwner -Port $part.Port -Root $root -PidName $part.PidName
+        $port = ":$($part.Port)"
+        switch ($owner.State) {
+            'ours'    { Write-SfStatusLine $part.Name $port 'ok' "running (pid $($owner.Pid))"; if ($part.Name -eq 'console') { $consoleUp = $true } }
+            'free'    { Write-SfStatusLine $part.Name $port 'off' 'stopped' }
+            'foreign' { Write-SfStatusLine $part.Name $port 'warn' "stopped; the port is used by $(Format-SfOwner $owner)" }
+            'hidden'  { Write-SfStatusLine $part.Name $port 'warn' "the port is used by $(Format-SfOwner $owner), started as administrator: check it from an elevated window" }
+            default   { Write-SfStatusLine $part.Name $port 'warn' 'stopped; another program answers on this port' }
+        }
     }
+    if ($consoleUp) { Write-Host "  console:  http://localhost:$ConsolePort" }
     Write-SignInMode
     return
 }
@@ -163,10 +178,13 @@ if ($Stop) {
     # elevated window: Win32_Process hides their path from a normal one.
     # Never claim a stop that did not happen.
     Start-Sleep -Milliseconds 500
+    # only this installation's processes count: another program on the
+    # same port is not something sf-console started or can stop
     $left = @()
-    if (Test-PortLocal 7777) { $left += 'engine :7777' }
-    if (Test-PortLocal $ServicePort) { $left += "hub :$ServicePort" }
-    if (Test-PortLocal $ConsolePort) { $left += "console :$ConsolePort" }
+    $mine = @('ours', 'hidden')
+    if ((Get-SfPortOwner -Port 7777 -Root $root -PidName 'engine.pid').State -in $mine) { $left += 'engine :7777' }
+    if ((Get-SfPortOwner -Port $ServicePort -Root $root -PidName 'console-service.pid').State -in $mine) { $left += "hub :$ServicePort" }
+    if ((Get-SfPortOwner -Port $ConsolePort -Root $root -PidName 'console.pid').State -in $mine) { $left += "console :$ConsolePort" }
     if ($left.Count -gt 0) {
         Write-Host "  [!] still running: $($left -join ', ')" -ForegroundColor Yellow
         Write-Host '      if they were started from an Administrator window, run sf-console -Stop there' -ForegroundColor Yellow
@@ -182,8 +200,38 @@ if (-not (Test-Path (Join-Path $web 'console-service\index.ts'))) {
     return
 }
 
+# The console port is settled first: the hub is started with the
+# console's origin allowed. A port another program holds moves the
+# console to the next free one, unless -ConsolePort asked for it.
+$previousPort = Get-SfConsolePort $root
+$console = Get-SfPortOwner -Port $ConsolePort -Root $root -PidName 'console.pid'
+if ($Restart -and $console.State -eq 'ours') {
+    Stop-Process -Id $console.Pid -Force -ErrorAction SilentlyContinue
+    for ($i = 0; $i -lt 40 -and (Test-PortLocal $ConsolePort); $i++) { Start-Sleep -Milliseconds 250 }
+    $console = Get-SfPortOwner -Port $ConsolePort -Root $root -PidName 'console.pid'
+}
+if ($console.State -ne 'ours' -and $console.State -ne 'free') {
+    $taken = $ConsolePort
+    if ($consolePortGiven) {
+        Write-Host "  [x] port $taken is used by $(Format-SfOwner $console): choose another one, e.g. sf-console -ConsolePort $($taken + 100)" -ForegroundColor Red
+        return
+    }
+    $free = 0
+    foreach ($candidate in ($taken + 1)..($taken + 20)) {
+        if ((Get-SfPortOwner -Port $candidate -Root $root).State -eq 'free') { $free = $candidate; break }
+    }
+    if (-not $free) {
+        Write-Host "  [x] port $taken is used by $(Format-SfOwner $console) and the next 20 are taken too: sf-console -ConsolePort <port>" -ForegroundColor Red
+        return
+    }
+    Write-Host "  [!] port $taken is used by $(Format-SfOwner $console); the console moves to :$free" -ForegroundColor Yellow
+    $ConsolePort = $free
+    $console = [pscustomobject]@{ State = 'free'; Pid = 0; Name = ''; Detail = '' }
+}
+
 # engine first: the console bridge picks it up from :7778
-if (-not (Test-PortLocal 7777)) {
+$engine = Get-SfPortOwner -Port 7777 -Root $root -PidName 'engine.pid'
+if ($engine.State -eq 'free') {
     if (Test-Path $engineExe) {
         $eng = Start-SfEngine -Root $root -Executable $engineExe
         Write-PidFile -Name 'engine.pid' -Value $eng.Id
@@ -195,24 +243,38 @@ if (-not (Test-PortLocal 7777)) {
     } else {
         Write-Host '  [!] engine binary not found; install first (sf-update)' -ForegroundColor Yellow
     }
+} elseif ($engine.State -eq 'ours') {
+    Write-Host "  engine already running (pid $($engine.Pid))"
+} elseif ($engine.State -eq 'hidden') {
+    Write-Host "  engine already running as administrator ($(Format-SfOwner $engine))"
 } else {
-    Write-Host '  engine already running'
+    Write-Host "  [!] port 7777 is used by $(Format-SfOwner $engine), not by this installation's engine: close that program and run this again" -ForegroundColor Yellow
 }
 
-if (-not (Test-PortLocal $ServicePort)) {
+$hub = Get-SfPortOwner -Port $ServicePort -Root $root -PidName 'console-service.pid'
+if ($hub.State -eq 'ours') {
+    Write-Host "  hub already running (pid $($hub.Pid))"
+    if ($ConsolePort -ne $previousPort) {
+        Write-Host "      it was started for the console on :$previousPort; if the analyst does not answer, restart everything (sf-stop, then sf-start)" -ForegroundColor Yellow
+    }
+} elseif ($hub.State -eq 'hidden') {
+    Write-Host "  hub already running as administrator ($(Format-SfOwner $hub))"
+} elseif ($hub.State -ne 'free') {
+    Write-Host "  [!] port $ServicePort is used by $(Format-SfOwner $hub), not by the hub: the analyst stays off (sf-console -ServicePort <port>)" -ForegroundColor Yellow
+} else {
     $env:CONSOLE_SERVICE_PORT = [string]$ServicePort
     $env:CONSOLE_CORS_ORIGIN = (@($env:CONSOLE_CORS_ORIGIN, "http://localhost:$ConsolePort", "http://127.0.0.1:$ConsolePort") | Where-Object { $_ }) -join ','
     $svc = Start-Process -FilePath $bunExe -ArgumentList "`"$web\console-service\index.ts`"" `
         -WorkingDirectory (Join-Path $web 'console-service') -WindowStyle Hidden -PassThru
     Write-PidFile -Name 'console-service.pid' -Value $svc.Id
-    if (-not (Wait-Port -Port $ServicePort -Seconds 20)) {
+    if (Wait-Port -Port $ServicePort -Seconds 20) {
+        Write-Host "  hub started (:$ServicePort)"
+    } else {
         Write-Host '  [!] hub did not come up on port' $ServicePort -ForegroundColor Yellow
     }
-} else {
-    Write-Host '  hub already running'
 }
 
-if (-not (Test-PortLocal $ConsolePort)) {
+if ($console.State -eq 'free') {
     # Analyst accounts (docs/OPERATIONS.md): only when the file exists;
     # without it the console keeps its loopback/token behavior. Console
     # writes are always audited under data\.
@@ -235,11 +297,14 @@ if (-not (Test-PortLocal $ConsolePort)) {
     Write-PidFile -Name 'console.pid' -Value $app.Id
     if (-not (Wait-Port -Port $ConsolePort -Seconds 60)) {
         Write-Host '  [!] console did not come up on port' $ConsolePort -ForegroundColor Yellow
-        Write-Host '      try another port:  sf-console -ConsolePort 3100'
+        Write-Host "      try another port:  sf-console -ConsolePort $($ConsolePort + 100)"
         return
     }
+    Set-SfConsolePort $root $ConsolePort
+    if ($Restart) { Write-Host "  console restarted (:$ConsolePort)" } else { Write-Host "  console started (:$ConsolePort)" }
 } else {
-    Write-Host '  console already running'
+    Set-SfConsolePort $root $ConsolePort
+    Write-Host "  console already running (pid $($console.Pid))"
 }
 
 if (-not $NoBrowser) { Start-Process "http://localhost:$ConsolePort" }

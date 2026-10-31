@@ -273,7 +273,9 @@ sf-engine version
 **3. Install a sensor once**: the Rust ETW sensor with `sf-etw -Install` (one
 UAC prompt), or Sysmon with `sf-sensor -SetupSysmon`.
 
-**4. Start everything.** The browser opens at <http://localhost:3000>:
+**4. Start everything.** The browser opens at <http://localhost:3000> (when
+another program holds that port, the console moves to the next free one and
+remembers it):
 
 ```powershell
 sf-start      # engine, console, AI hub and the sensor service
@@ -301,7 +303,7 @@ within seconds.
 | `sf-stop` | Stops everything (`-KeepSensor` keeps the sensor capturing) |
 | `sf-status` | Shows what is running |
 | `sf-engine` | The detection engine (`doctor`, `version`, `report`, `sigma`…) |
-| `sf-console` | Engine + console without the sensor; manages console accounts |
+| `sf-console` | Engine + console without the sensor; manages console accounts (`-Restart` applies a new one) |
 | `sf-etw` | Installs and manages the ETW sensor service |
 | `sf-sensor` | Sysmon sensor |
 | `sf-collector` | Log and mail importer |
