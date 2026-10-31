@@ -415,6 +415,24 @@ function Ensure-Bun {
 }
 
 # ---------------------------------------------------------------- source
+# A .go file deleted upstream stays behind in an updated tree (git stops
+# tracking it, an overlay copy never removes it) and redeclares the names
+# of its package, so the next build fails with "redeclared in this block".
+# Such files are renamed, never deleted: the operator keeps them and Go no
+# longer compiles them.
+function Move-StaleGoSources {
+    param([string]$Root, [string[]]$Stale)
+    $stamp = Get-Date -Format 'yyyyMMdd'
+    foreach ($rel in @($Stale)) {
+        if (-not $rel) { continue }
+        $path = Join-Path $Root $rel
+        if (-not (Test-Path -LiteralPath $path)) { continue }
+        $target = "$path.stale-$stamp"
+        Move-Item -LiteralPath $path -Destination $target -Force
+        Write-Warn2 "source file left by an older version moved aside: $rel -> $(Split-Path $target -Leaf)"
+    }
+}
+
 function Get-SourceTree {
     param([string]$Root, [string]$RepoId, [string]$Br, [bool]$IsUpdate)
     $Root = Resolve-InstallRoot $Root
@@ -431,6 +449,15 @@ function Get-SourceTree {
             Stop-SfProcesses -Root $Root
             Assert-InstallNotRunning -Root $Root
             $null = Invoke-Native -Command { & git merge --ff-only FETCH_HEAD } -Quiet -Utf8 -Activity 'git fast-forward'
+            # Untracked Go sources that the history knows were deleted
+            # upstream; a file nobody ever committed is someone's new
+            # work and stays where it is.
+            $untracked = @(Invoke-Native -Command { & git ls-files --others -- cmd internal pkg } -Quiet -Activity 'git ls-files') | Where-Object { $_ -like '*.go' }
+            $stale = foreach ($rel in $untracked) {
+                $seen = ((Invoke-Native -Command { & git log -1 --format=%h -- $rel } -Quiet -AllowFailure -Activity 'git log') -join '').Trim()
+                if ($seen) { $rel -replace '/', '\' }
+            }
+            Move-StaleGoSources -Root $Root -Stale $stale
         } finally { Pop-Location }
         Write-Ok "source updated"
         return
@@ -462,6 +489,17 @@ function Get-SourceTree {
         Stop-SfProcesses -Root $Root
         Assert-InstallNotRunning -Root $Root
         New-Item -ItemType Directory -Path $Root -Force | Out-Null
+        # The overlay never removes files: Go sources the new tree no
+        # longer ships are moved aside before the copy.
+        $stale = foreach ($dir in @('cmd', 'internal', 'pkg')) {
+            $old = Join-Path $Root $dir
+            if (-not (Test-Path $old)) { continue }
+            foreach ($file in Get-ChildItem $old -Recurse -File -Filter '*.go') {
+                $rel = $file.FullName.Substring($Root.TrimEnd('\').Length + 1)
+                if (-not (Test-Path -LiteralPath (Join-Path $source $rel))) { $rel }
+            }
+        }
+        Move-StaleGoSources -Root $Root -Stale $stale
         foreach ($entry in Get-ChildItem $source -Force) {
             Copy-Item -LiteralPath $entry.FullName -Destination $Root -Recurse -Force
         }
