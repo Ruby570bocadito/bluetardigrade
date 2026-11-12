@@ -2,6 +2,7 @@ package beacon
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sync"
@@ -616,8 +617,9 @@ func TestArrivalJitterDoesNotHideBeacon(t *testing.T) {
 	}
 }
 
-// Late events are placed in order; a far older one restarts the ring
-// instead of being silently pruned forever.
+// Late events are placed in order. A far older one is dropped while
+// the key is live (it must not reset the detector) and restarts the
+// ring only once the key has been quiet for a window.
 func TestLateAndDiscontinuousSamples(t *testing.T) {
 	m, _ := LoadFile(writeProfiles(t, strictProfile), nil)
 	var got int
@@ -630,19 +632,55 @@ func TestLateAndDiscontinuousSamples(t *testing.T) {
 	if got != 1 {
 		t.Fatalf("reordered regular samples fired %d alerts, want 1", got)
 	}
-	// clock stepped back an hour: the ring restarts at the new time
 	m.mu.Lock()
 	var st *keyState
 	for _, s := range m.state {
 		st = s
 	}
 	m.mu.Unlock()
+	// un evento de hace una hora con la clave viva: se descarta, el
+	// anillo y la marca de cooldown siguen intactos
 	m.Observe(netEvAt(base.Add(-time.Hour)), base.Add(3*time.Minute))
+	m.mu.Lock()
+	n, fired := len(st.times), st.lastFired
+	m.mu.Unlock()
+	if n != 9 || fired.IsZero() {
+		t.Fatalf("a stale sample reset a live key: %d samples, lastFired %v", n, fired)
+	}
+	// y la baliza que sigue no vuelve a disparar dentro del cooldown
+	for i := 9; i < 14; i++ {
+		m.Observe(netEvAt(base.Add(time.Duration(i)*10*time.Second)), base.Add(3*time.Minute))
+	}
+	if got != 1 {
+		t.Fatalf("a stale sample let the beacon re-fire inside its cooldown: %d alerts", got)
+	}
+	// reloj atrasado de verdad: la clave lleva mas de una ventana
+	// callada y el anillo arranca en el tiempo nuevo
+	m.Observe(netEvAt(base.Add(-time.Hour)), base.Add(20*time.Minute))
 	m.mu.Lock()
 	n, first := len(st.times), st.times[0]
 	m.mu.Unlock()
 	if n != 1 || !first.Equal(base.Add(-time.Hour)) {
 		t.Fatalf("discontinuity did not restart the ring: %d samples, first %v", n, first)
+	}
+}
+
+// Dos conexiones con la misma marca de tiempo cuentan como una: un
+// intervalo cero no puede anular la deteccion mientras siga en el anillo.
+func TestDuplicateTimestampsDoNotBlindTheDetector(t *testing.T) {
+	m, _ := LoadFile(writeProfiles(t, strictProfile), nil)
+	var got int
+	m.SetEmit(func(alert.Alert) { got++ })
+	base := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < 9; i++ {
+		ts := base.Add(time.Duration(i) * 10 * time.Second)
+		m.Observe(netEvAt(ts), base.Add(2*time.Minute))
+		if i == 1 || i == 4 {
+			m.Observe(netEvAt(ts), base.Add(2*time.Minute)) // duplicado exacto
+		}
+	}
+	if got != 1 {
+		t.Fatalf("a regular beacon with duplicated timestamps fired %d alerts, want 1", got)
 	}
 }
 
@@ -821,5 +859,106 @@ func TestHostQuotaFreesWhenKeysGoStale(t *testing.T) {
 	}
 	if got := m.QuotaRejected(); got != 0 {
 		t.Fatalf("QuotaRejected=%d, want 0 (hubo sitio tras la reclamacion)", got)
+	}
+}
+
+// ---- perfil lento (balizas de minutos) ------------------------------
+
+// feedJittered replays n connections whose sleep is interval +-jitter
+// (uniform), on event time, and returns the alerts' rule ids.
+func feedJittered(t *testing.T, m *Manager, host, ip string, n int, interval time.Duration, jitter float64, seed int64) []string {
+	t.Helper()
+	var ids []string
+	m.SetEmit(func(a alert.Alert) { ids = append(ids, a.RuleID) })
+	rng := rand.New(rand.NewSource(seed))
+	at := time.Date(2026, 10, 2, 8, 0, 0, 0, time.UTC)
+	for i := 0; i < n; i++ {
+		ev := netEv(host, ip, "", 443)
+		ev.Timestamp = at
+		m.Observe(ev, at)
+		f := 1 + jitter*(2*rng.Float64()-1)
+		at = at.Add(time.Duration(float64(interval) * f))
+	}
+	return ids
+}
+
+// Un implant que duerme minutos con jitter real queda fuera del perfil
+// web (12 conexiones en 15 min) y lo recoge el perfil lento.
+func TestShippedSlowProfileCatchesMinuteBeacons(t *testing.T) {
+	cases := []struct {
+		name     string
+		interval time.Duration
+		jitter   float64
+		n        int
+	}{
+		{"5m sleep, 20% jitter", 5 * time.Minute, 0.20, 40},
+		{"10m sleep, 30% jitter", 10 * time.Minute, 0.30, 30},
+		{"30m sleep, 10% jitter", 30 * time.Minute, 0.10, 12},
+		{"2m sleep, 25% jitter", 2 * time.Minute, 0.25, 60},
+	}
+	for _, c := range cases {
+		for seed := int64(1); seed <= 5; seed++ {
+			m, err := LoadFile(filepath.Join("..", "..", "beacons.yaml"), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ids := feedJittered(t, m, "LAB-WKS-07", "185.220.101.47", c.n, c.interval, c.jitter, seed)
+			if len(ids) != 1 || ids[0] != "bcn-periodic-slow" {
+				t.Errorf("%s (seed %d): alerts %v, want one bcn-periodic-slow", c.name, seed, ids)
+			}
+		}
+	}
+}
+
+// Trafico humano (intervalos exponenciales, CV ~ 1) al mismo destino
+// durante horas no es una baliza.
+func TestShippedSlowProfileIgnoresIrregularTraffic(t *testing.T) {
+	for seed := int64(1); seed <= 20; seed++ {
+		m, err := LoadFile(filepath.Join("..", "..", "beacons.yaml"), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ids []string
+		m.SetEmit(func(a alert.Alert) { ids = append(ids, a.RuleID) })
+		rng := rand.New(rand.NewSource(seed))
+		at := time.Date(2026, 10, 2, 8, 0, 0, 0, time.UTC)
+		for i := 0; i < 80; i++ {
+			ev := netEv("LAB-WKS-07", "93.184.216.34", "", 443)
+			ev.Timestamp = at
+			m.Observe(ev, at)
+			at = at.Add(time.Duration(rng.ExpFloat64() * float64(6*time.Minute)))
+		}
+		if len(ids) != 0 {
+			t.Errorf("seed %d: irregular traffic fired %v", seed, ids)
+		}
+	}
+}
+
+// Con varios perfiles cargados, uno solo no agota la cuota del equipo:
+// el perfil de ventana larga se queda en su mitad y el corto sigue
+// admitiendo destinos nuevos en ese mismo equipo.
+func TestOneProfileCannotTakeTheWholeHostQuota(t *testing.T) {
+	const two = `
+- {name: lento, id: bcn-slow, severity: medium, window: 4h, min_count: 8, max_jitter: 0.2, ports: [443]}
+- {name: corto, id: bcn-short, severity: high, window: 5m, min_count: 8, max_jitter: 0.2, ports: [8443]}
+`
+	m, err := LoadFile(writeProfiles(t, two), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < MaxKeysPerHost; i++ {
+		m.Observe(netEv("BUSY", fmt.Sprintf("10.9.%d.%d", i/256%256, i%256), "", 443), at)
+		at = at.Add(time.Millisecond)
+	}
+	if n := len(m.state); n != MaxKeysPerHostProfile {
+		t.Fatalf("the long-window profile holds %d keys of the host, want its share %d", n, MaxKeysPerHostProfile)
+	}
+	if got := m.QuotaRejected(); got != uint64(MaxKeysPerHost-MaxKeysPerHostProfile) {
+		t.Fatalf("QuotaRejected=%d", got)
+	}
+	m.Observe(netEv("BUSY", "185.220.101.47", "", 8443), at)
+	if n := len(m.state); n != MaxKeysPerHostProfile+1 {
+		t.Fatalf("the short-window profile was refused on the busy host: state=%d", n)
 	}
 }

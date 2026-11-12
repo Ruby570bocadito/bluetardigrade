@@ -36,8 +36,8 @@ func suppressed(m *suppress.Manager, ruleID, host string, ev *model.Event, now t
 	if m == nil {
 		return false
 	}
-	ok, entry := m.SuppressedAt(ruleID, host, now)
-	return ok && entry.MatchesEvent(ev)
+	ok, _ := m.SuppressedEvent(ruleID, host, ev, now)
+	return ok
 }
 
 var storeFails uint64

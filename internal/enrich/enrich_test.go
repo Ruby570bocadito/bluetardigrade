@@ -247,22 +247,72 @@ func TestParentResolvedOnNonCreateEvent(t *testing.T) {
 	}
 }
 
-// The TTL sweep retires idle identities; Sweep is exported so this
-// does not need a wall-clock sleep.
-func TestSweepRetiresIdleEntries(t *testing.T) {
+// A long-lived parent (IIS worker, SQL Server, Office) idles for hours
+// between two children. Neither the sweep nor the lookup may retire it
+// for inactivity, or the webshell / Office->shell rules go mute.
+func TestIdleParentSurvivesSweep(t *testing.T) {
 	en := New()
-	now := time.Now()
+	en.Apply(&model.Event{
+		Type:    model.TypeProcessCreate,
+		Host:    "iis-01",
+		Process: &model.Process{PID: 500, Name: "w3wp.exe", Image: `C:\Windows\System32\inetsrv\w3wp.exe`},
+	})
+	idle := time.Now().Add(-6 * time.Hour)
+	e := en.hosts["iis-01"][500]
+	e.lastSeen = idle
+	en.hosts["iis-01"][500] = e
+	// Otro proceso mantiene vivo el host: solo el padre esta ocioso.
+	en.Apply(&model.Event{Type: model.TypeProcessCreate, Host: "iis-01",
+		Process: &model.Process{PID: 501, Name: "svchost.exe"}})
+	en.Sweep(time.Now())
+	child := &model.Event{Type: model.TypeProcessCreate, Host: "iis-01",
+		Process: &model.Process{PID: 502, PPID: 500, Name: "cmd.exe"}}
+	en.Apply(child)
+	if got := child.Enrichment["parent_name"]; got != "w3wp.exe" {
+		t.Fatalf("parent_name = %q, want w3wp.exe after 6h idle", got)
+	}
+	if got := en.hosts["iis-01"][500].lastSeen; !got.After(idle) {
+		t.Fatalf("resolving a parent must refresh its lastSeen (still %v)", got)
+	}
+}
+
+// A host that stopped reporting altogether is retired as a whole.
+func TestSweepRetiresSilentHost(t *testing.T) {
+	en := New()
 	en.Apply(&model.Event{
 		Type:    model.TypeProcessCreate,
 		Host:    "lab-01",
 		Process: &model.Process{PID: 500, Name: "idle.exe"},
 	})
+	en.Sweep(time.Now().Add(hostIdleTTL - time.Minute))
 	if en.Tracked() != 1 {
-		t.Fatalf("tracked = %d, want 1", en.Tracked())
+		t.Fatalf("tracked = %d, want 1 before the host idle TTL", en.Tracked())
 	}
-	en.Sweep(now.Add(procTTL + time.Minute))
+	en.Sweep(time.Now().Add(hostIdleTTL + time.Minute))
 	if got := en.Tracked(); got != 0 {
 		t.Fatalf("tracked after sweep = %d, want 0", got)
+	}
+}
+
+// The cap trim drops the oldest lastSeen first: a parent that has just
+// spawned a child must outlive a storm of unrelated pids.
+func TestCapTrimKeepsActiveParent(t *testing.T) {
+	en := New()
+	en.Apply(&model.Event{Type: model.TypeProcessCreate, Host: "lab-01",
+		Process: &model.Process{PID: 1, Name: "w3wp.exe"}})
+	for i := 10; i < 10+maxProcsPerHost-2; i++ {
+		en.Apply(&model.Event{Type: model.TypeProcessCreate, Host: "lab-01",
+			Process: &model.Process{PID: i, Name: "p.exe"}})
+	}
+	time.Sleep(20 * time.Millisecond)
+	en.Apply(&model.Event{Type: model.TypeProcessCreate, Host: "lab-01",
+		Process: &model.Process{PID: 5000, PPID: 1, Name: "cmd.exe"}})
+	for i := 6000; i < 6010; i++ {
+		en.Apply(&model.Event{Type: model.TypeProcessCreate, Host: "lab-01",
+			Process: &model.Process{PID: i, Name: "p.exe"}})
+	}
+	if _, ok := en.hosts["lab-01"][1]; !ok {
+		t.Fatalf("the cap trim evicted a parent that had just spawned a child")
 	}
 }
 
@@ -295,17 +345,6 @@ func TestPartialTelemetryPreservesParentIdentity(t *testing.T) {
 	en.Apply(child)
 	if child.Enrichment["parent_name"] != "WINWORD.EXE" || child.Enrichment["parent_image"] != `C:\Office\WINWORD.EXE` {
 		t.Fatalf("partial telemetry erased the Office parent: %v", child.Enrichment)
-	}
-}
-
-func TestParentLookupRejectsExpiredEntryWithoutSweep(t *testing.T) {
-	en := New()
-	en.hosts["lab-01"] = map[int64]procEntry{100: {name: "winword.exe", lastSeen: time.Now().Add(-procTTL - time.Minute)}}
-	child := &model.Event{Type: model.TypeProcessCreate, Host: "lab-01",
-		Process: &model.Process{PID: 101, PPID: 100, Name: "cmd.exe"}}
-	en.Apply(child)
-	if _, ok := child.Enrichment["parent_name"]; ok {
-		t.Fatalf("expired parent was attributed before the periodic sweep: %v", child.Enrichment)
 	}
 }
 

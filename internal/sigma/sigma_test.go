@@ -107,7 +107,8 @@ func TestConvertWildcardTable(t *testing.T) {
 		{"cmd*", "istartswith", "cmd"},
 		{"*cmd.exe", "iendswith", "cmd.exe"},
 		{"8443", "eq", "8443"}, // sin letras: conserva el fast path exacto
-		{`C:\Windows\*\cmd.exe`, "regex", `(?i)^C:\\Windows\\.*\\cmd\.exe$`},
+		// barra + comodin se escribe `\\*` en Sigma (`\*` es un asterisco literal)
+		{`C:\Windows\\*\cmd.exe`, "regex", `(?i)^C:\\Windows\\.*\\cmd\.exe$`},
 		{"cmd?.exe", "regex", `(?i)^cmd.\.exe$`}, // ? -> . (comodín), el . literal va escapado
 	}
 	for _, c := range cases {
@@ -342,9 +343,11 @@ level: medium
 		t.Errorf("nombres de la division mal: %q / %q",
 			res.Converted[0].Name, res.Converted[1].Name)
 	}
-	// mismo id (la identidad Sigma se conserva), condiciones distintas
-	if res.Converted[0].ID != res.Converted[1].ID {
-		t.Error("la division OR debe conservar el id Sigma")
+	// cada rama lleva un id propio y determinista derivado del id Sigma:
+	// el motor rechaza ids duplicados al cargar
+	if res.Converted[0].ID != "aaaaaaaa-2222-2222-2222-222222222222-or1" ||
+		res.Converted[1].ID != "aaaaaaaa-2222-2222-2222-222222222222-or2" {
+		t.Errorf("ids de la division OR: %q / %q", res.Converted[0].ID, res.Converted[1].ID)
 	}
 }
 
@@ -603,5 +606,113 @@ func TestConvertCaseInsensitiveSemantics(t *testing.T) {
 	}
 	if re.MatchString("mimikatzX") {
 		t.Errorf("el patrón ancla mal: %q", val)
+	}
+}
+
+// Los escapes de Sigma se procesan antes de elegir operador: `\\` es
+// una barra literal, `\*` y `\?` son caracteres literales y una barra
+// suelta se conserva.
+func TestSigmaEscapesAreProcessed(t *testing.T) {
+	cases := []struct {
+		in, mod, op, want string
+	}{
+		{`\\\\127.0.0.1\\ADMIN$`, "contains", "icontains", `\\127.0.0.1\ADMIN$`},
+		{`\cmd.exe`, "endswith", "iendswith", `\cmd.exe`},
+		{`C:\\Windows\\cmd.exe`, "", "ieq", `C:\Windows\cmd.exe`},
+		{`2\*3`, "", "eq", `2*3`},
+		{`que\?`, "contains", "icontains", `que?`},
+		{`*\*.dmp`, "", "iendswith", `*.dmp`},
+		{`a\*b*`, "", "istartswith", `a*b`},
+		{`a\\*b`, "", "regex", `(?i)^a\\.*b$`},
+		{`x\*y?z`, "contains", "regex", `(?i)x\*y.z`},
+	}
+	for _, c := range cases {
+		op, val, err := translateString(c.in, c.mod)
+		if err != nil {
+			t.Fatalf("%q|%s: %v", c.in, c.mod, err)
+		}
+		if op != c.op || val != c.want {
+			t.Errorf("%q|%s -> %s %q, want %s %q", c.in, c.mod, op, val, c.op, c.want)
+		}
+	}
+	op, val, err := translateString([]any{`\\\\srv\\c$`, `\*lit`}, "contains")
+	if err != nil || op != "icontains_any" {
+		t.Fatalf("lista con escapes: %s %v %v", op, val, err)
+	}
+	if got := val.([]any); got[0] != `\\srv\c$` || got[1] != `*lit` {
+		t.Errorf("lista con escapes: %q", got)
+	}
+}
+
+// `Campo: null` significa campo vacio: se emite eq "" (el motor lee un
+// campo ausente como ""), nunca el literal "<nil>"; con modificador no
+// tiene traduccion y la regla se omite con su motivo.
+func TestSigmaNullValue(t *testing.T) {
+	op, val, err := translateString(nil, "")
+	if err != nil || op != "eq" || val != "" {
+		t.Fatalf("null -> %s %q %v, want eq \"\"", op, val, err)
+	}
+	if _, _, err := translateString(nil, "contains"); err == nil {
+		t.Error("null con modificador debe rechazarse")
+	}
+	op, val, err = translateString([]any{nil, "cmd.exe"}, "")
+	if err != nil || op != "iin" || val.([]any)[0] != "" {
+		t.Fatalf("lista con null -> %s %v %v", op, val, err)
+	}
+	if _, _, err := translateString([]any{nil, "x"}, "endswith"); err == nil {
+		t.Error("lista con null y modificador debe rechazarse")
+	}
+	src := `
+title: Linea de comandos vacia
+id: aaaaaaaa-9999-9999-9999-999999999999
+logsource: {product: windows, category: process_creation}
+detection:
+    sel:
+        Image|endswith: '\rundll32.exe'
+        CommandLine: null
+    condition: sel
+level: medium
+`
+	res, err := ConvertDir(writeCorpus(t, map[string]string{"null.yml": src}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Converted) != 1 {
+		t.Fatalf("converted=%d skipped=%+v", len(res.Converted), res.Skipped)
+	}
+	for _, c := range res.Converted[0].Conditions {
+		if c.Field == "process.command_line" && (c.Operator != "eq" || c.Value != "") {
+			t.Errorf("null emitido como %s %q", c.Operator, c.Value)
+		}
+	}
+	bad := strings.Replace(src, "CommandLine: null", "CommandLine|contains: null", 1)
+	res, err = ConvertDir(writeCorpus(t, map[string]string{"null.yml": bad}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Converted) != 0 || len(res.Skipped) != 1 || !strings.Contains(res.Skipped[0].Reason, "null") {
+		t.Fatalf("null con modificador debe omitirse con motivo: %+v", res)
+	}
+}
+
+// Un segundo fichero con el id de una regla ya dividida en ramas OR
+// sigue siendo un duplicado.
+func TestORSplitKeepsDuplicateDetection(t *testing.T) {
+	src := `
+title: Or campos distintos
+id: aaaaaaaa-2222-2222-2222-222222222222
+logsource: {product: windows, category: process_creation}
+detection:
+    S1: {Image|endswith: 'whoami.exe'}
+    S2: {CommandLine|contains: '/grant'}
+    condition: S1 or S2
+level: medium
+`
+	res, err := ConvertDir(writeCorpus(t, map[string]string{"a.yml": src, "b.yml": src}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Converted) != 2 || len(res.Skipped) != 1 || !strings.Contains(res.Skipped[0].Reason, "duplicado") {
+		t.Fatalf("converted=%d skipped=%+v", len(res.Converted), res.Skipped)
 	}
 }

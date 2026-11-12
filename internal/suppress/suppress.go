@@ -272,12 +272,10 @@ func (m *Manager) Count(now time.Time) int {
 }
 
 // SuppressedAt reports whether a rule/host pair is currently silenced,
-// and if so returns the entry that matched (for engine logs). When the
-// matched entry is CONDITIONAL the caller decides with
-// MatchesEvent: pass the triggering event where one exists, nil for
-// aggregated alerts (a conditional entry then reports as not
-// suppressed — the failure direction is an alert the operator still
-// sees).
+// and if so returns the FIRST entry naming the pair, conditional or
+// not. It answers "is there an entry for this pair"; the alert path
+// uses SuppressedEvent, which evaluates the conditions of every
+// candidate entry against the triggering event.
 func (m *Manager) SuppressedAt(ruleID, host string, now time.Time) (bool, Parsed) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -294,6 +292,33 @@ func (m *Manager) SuppressedAt(ruleID, host string, now time.Time) (bool, Parsed
 		}
 		// both fields empty was rejected at load; here at least one matched
 		return true, e
+	}
+	return false, Parsed{}
+}
+
+// SuppressedEvent reports whether any live entry for the rule/host pair
+// silences this event, and returns that entry. Every candidate is
+// tried: stopping at the first rule/host match would let one
+// conditional entry hide a later one (or a later unconditional one)
+// for the same rule. ev is nil for aggregated alerts, which only an
+// unconditional entry silences.
+func (m *Manager) SuppressedEvent(ruleID, host string, ev *model.Event, now time.Time) (bool, Parsed) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	hostLow := strings.ToLower(strings.TrimSpace(host))
+	for _, e := range m.entries {
+		if e.Expired(now) {
+			continue
+		}
+		if e.RuleID != "" && e.RuleID != ruleID {
+			continue
+		}
+		if e.Host != "" && e.Host != hostLow {
+			continue
+		}
+		if e.MatchesEvent(ev) {
+			return true, e
+		}
 	}
 	return false, Parsed{}
 }

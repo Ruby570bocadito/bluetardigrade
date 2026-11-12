@@ -114,3 +114,54 @@ func TestHostViewListsWhatIsKnown(t *testing.T) {
 		t.Fatal("disabled baseline has no end of learning")
 	}
 }
+
+// Diez senuelos agotan el presupuesto de la hora; la herramienta real
+// que llega despues no se aprende en silencio: sigue siendo desconocida
+// y se informa en cuanto vuelve a haber presupuesto.
+func TestRateLimitedValueIsNotLearned(t *testing.T) {
+	tr := New(time.Hour)
+	tr.Observe(proc("PC", "a.exe"), t0)
+	after := t0.Add(2 * time.Hour)
+	for i := 0; i < noveltyBurst; i++ {
+		if tr.Observe(proc("PC", fmt.Sprintf("decoy%d.exe", i)), after) == nil {
+			t.Fatalf("decoy %d should be reported", i)
+		}
+	}
+	tr.TakePending()
+	if tr.Observe(proc("PC", "rclone.exe"), after.Add(time.Minute)) != nil {
+		t.Fatal("the budget is exhausted")
+	}
+	if p := tr.TakePending(); len(p) != 0 {
+		t.Fatalf("a value whose novelty was dropped must not be learned: %+v", p)
+	}
+	n := tr.Observe(proc("PC", "rclone.exe"), after.Add(61*time.Minute))
+	if n == nil || n.Value != "rclone.exe" || n.Saturated {
+		t.Fatalf("the dropped value must be reported once the budget returns: %+v", n)
+	}
+	if tr.Observe(proc("PC", "rclone.exe"), after.Add(62*time.Minute)) != nil {
+		t.Fatal("once reported it is learned")
+	}
+}
+
+// Con la tabla del equipo llena no se aprende mas, pero el equipo no
+// enmudece: lo desconocido se sigue informando, marcado como saturado.
+func TestFullTableStillReports(t *testing.T) {
+	tr := New(time.Hour)
+	for i := 0; i < maxValues+10; i++ {
+		tr.Observe(proc("PC", fmt.Sprintf("p%d.exe", i)), t0)
+	}
+	if v, _ := tr.Host("PC", t0); !v.Full || len(v.Processes) != maxValues {
+		t.Fatalf("table should be full: full=%v n=%d", v.Full, len(v.Processes))
+	}
+	after := t0.Add(2 * time.Hour)
+	n := tr.Observe(proc("PC", "rclone.exe"), after)
+	if n == nil || !n.Saturated || n.Value != "rclone.exe" {
+		t.Fatalf("a full table must still report unknown values: %+v", n)
+	}
+	if again := tr.Observe(proc("PC", "rclone.exe"), after.Add(time.Minute)); again == nil || !again.Saturated {
+		t.Fatal("an unlearned value keeps being reported while the budget lasts")
+	}
+	if tr.Observe(proc("PC", "p5.exe"), after) != nil {
+		t.Fatal("a known value is never a novelty")
+	}
+}

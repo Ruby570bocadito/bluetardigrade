@@ -754,3 +754,34 @@ func TestHostQuotaFreesWhenKeysExpire(t *testing.T) {
 		t.Fatalf("QuotaRejected=%d, want 0 (hubo sitio tras la purga)", got)
 	}
 }
+
+func TestSaturatedRuleRecoversWhenItsKeysExpire(t *testing.T) {
+	// Una regla que llego a su cuota vuelve a admitir claves nuevas
+	// cuando las suyas han caducado: sin esa purga dejaba de contar
+	// para siempre cualquier origen nuevo.
+	defs := `
+- name: Flood
+  id: thr-a
+  severity: low
+  event_type: file.write
+  threshold: { count: 4096, window: 1m }
+`
+	d := loadForTest(t, defs)
+	for i := 0; i < MaxKeysPerRule; i++ {
+		d.Observe(&model.Event{ID: fmt.Sprintf("f%d", i), Type: "file.write", Host: fmt.Sprintf("OLD%d", i), Timestamp: t0}, t0)
+	}
+	before := d.KeysTracked()
+	d.Observe(&model.Event{ID: "x", Type: "file.write", Host: "EXTRA", Timestamp: t0}, t0)
+	if d.KeysTracked() != before {
+		t.Fatalf("la cuota admitio una clave de mas con las anteriores vivas")
+	}
+	later := t0.Add(10 * time.Minute)
+	d.Observe(&model.Event{ID: "new", Type: "file.write", Host: "NEW", Timestamp: later}, later)
+	d.mu.Lock()
+	_, ok := d.keys[key{ruleID: "thr-a", host: "new"}]
+	per := d.perRule["thr-a"]
+	d.mu.Unlock()
+	if !ok {
+		t.Fatalf("la clave nueva no se admitio tras caducar las %d anteriores (cuota=%d)", before, per)
+	}
+}

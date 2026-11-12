@@ -16,11 +16,18 @@ import (
 // Parent-tracking limits: a flight recorder of (host, pid) -> process
 // identity used to resolve parent names. Caps bound identity counts
 // across the endpoint farm; memory also depends on retained names,
-// image paths and map overhead. The sweep retires idle entries.
+// image paths and map overhead.
+//
+// An entry is never retired for being idle: w3wp.exe, sqlservr.exe or
+// explorer.exe live for days between two children, and losing them
+// mutes every rule keyed on enrichment.parent_name. Entries leave on
+// process.terminate, on PID reuse (a newer process.create) or when the
+// per-host cap needs room; the sweep only retires whole hosts that
+// stopped reporting.
 const (
 	maxHosts        = 256
 	maxProcsPerHost = 2048
-	procTTL         = 30 * time.Minute
+	hostIdleTTL     = 24 * time.Hour
 )
 
 // procEntry is one remembered process identity.
@@ -132,10 +139,6 @@ func (en *Enricher) trackProcess(ev *model.Event) {
 
 	m := en.hosts[host]
 	old, known := m[int64(p.PID)]
-	if known && now.Sub(old.lastSeen) > procTTL {
-		delete(m, int64(p.PID))
-		known = false
-	}
 	if known && !ev.Timestamp.IsZero() && !old.created.IsZero() && ev.Timestamp.Before(old.created) {
 		// A delayed event/termination from an earlier PID incarnation
 		// must not overwrite or evict the process that replaced it.
@@ -150,9 +153,11 @@ func (en *Enricher) trackProcess(ev *model.Event) {
 	}
 	if p.PPID > 0 && p.PPID != p.PID {
 		if parent, ok := m[int64(p.PPID)]; ok {
-			if now.Sub(parent.lastSeen) > procTTL {
-				delete(m, int64(p.PPID))
-			} else if ev.Timestamp.IsZero() || parent.created.IsZero() || !ev.Timestamp.Before(parent.created) {
+			if ev.Timestamp.IsZero() || parent.created.IsZero() || !ev.Timestamp.Before(parent.created) {
+				// A parent that keeps spawning is in use: refresh it so
+				// the cap trim (oldest lastSeen first) keeps it.
+				parent.lastSeen = now
+				m[int64(p.PPID)] = parent
 				if parent.name != "" {
 					ev.Enrichment["parent_name"] = parent.name
 				}
@@ -252,19 +257,16 @@ func (en *Enricher) trimHost(m map[int64]procEntry, now time.Time) {
 	}
 }
 
-// Sweep drops process entries idle beyond procTTL. The engine calls
-// it from a low-frequency ticker; it is exported so tests can drive
-// aging without sleeping.
+// Sweep drops hosts with no process telemetry for hostIdleTTL: the
+// endpoint is gone and its PIDs mean nothing after a reboot. Entries
+// of a reporting host are kept however idle (see the limits above).
+// The engine calls it from a low-frequency ticker; it is exported so
+// tests can drive aging without sleeping.
 func (en *Enricher) Sweep(now time.Time) {
 	en.mu.Lock()
 	defer en.mu.Unlock()
 	for h, m := range en.hosts {
-		for pid, e := range m {
-			if now.Sub(e.lastSeen) > procTTL {
-				delete(m, pid)
-			}
-		}
-		if len(m) == 0 {
+		if len(m) == 0 || now.Sub(en.latestActivity(m)) > hostIdleTTL {
 			delete(en.hosts, h)
 		}
 	}
