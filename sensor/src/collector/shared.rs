@@ -38,8 +38,9 @@ pub(super) struct Shared {
     /// --debug-registry: lowercase fragment and the handles it matched
     pub(super) debug_registry: Option<(String, Mutex<HashSet<usize>>)>,
     /// process starts that went out without their SHA-256 because the
-    /// enrichment thread could not take them; the heartbeat reports it
-    pub(super) hash_dropped: AtomicU64,
+    /// enrichment thread could not take them or its read of the image
+    /// did not finish in time; the heartbeat reports it
+    pub(super) hash_dropped: Arc<AtomicU64>,
     /// hashing was requested for this run: the counter only counts the
     /// events denied enrichment when hashing was wanted at all
     pub(super) hash_enabled: bool,

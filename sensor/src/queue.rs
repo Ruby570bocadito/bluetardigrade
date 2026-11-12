@@ -19,18 +19,29 @@
 // next start. Replays can repeat lines already delivered, which the
 // engine absorbs: stored evidence is first-write-wins by event id.
 //
+// The queue is bounded twice: by lines (--queue) and by bytes
+// (QUEUE_MAX_BYTES). A command line can be 32 K characters, so a line
+// count alone would let a burst of long events hold gigabytes; past
+// either bound the line takes the same road as any overflow (spool,
+// else a counted drop).
+//
 // Shutdown (Pipeline::shutdown, on Ctrl+C or console close) loses
 // nothing that a spool can hold: the stop flag makes the transport give
 // up its retry loop, the line it was holding and everything still in
 // the queue get one immediate delivery attempt each and are spilled to
 // the spool when the engine is unreachable, and an interrupted replay
 // keeps its file for the next start. Across a shutdown, order is
-// best-effort; every event keeps its own timestamp.
+// best-effort; every event keeps its own timestamp. Lines pushed after
+// the shutdown began (worker threads finishing up) skip the queue and
+// go to the spool directly.
+//
+// A spool line that is not valid UTF-8 (a write torn by an abrupt stop)
+// is skipped and counted; the lines after it are still replayed.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -41,6 +52,12 @@ const IDLE_POLL: Duration = Duration::from_millis(500);
 
 /// Minimum interval between two drop reports on stderr.
 const REPORT_EVERY: Duration = Duration::from_secs(10);
+
+/// Ceiling for the bytes waiting in the in-memory queue, whatever the
+/// line count allows. Typical events are a few hundred bytes (50 000 of
+/// them, the default --queue, is ~25 MB); this only bites on bursts of
+/// very long lines.
+pub const QUEUE_MAX_BYTES: usize = 64 << 20;
 
 /// On-disk overflow for the queue. Every operation opens and closes the
 /// file under the owner's mutex, so the drain thread can rename it
@@ -111,9 +128,28 @@ struct Shared {
     spooling: AtomicBool,
     dropped: AtomicU64,
     spooled: AtomicU64,
+    /// bytes waiting in the in-memory queue, and their ceiling
+    queued_bytes: AtomicUsize,
+    max_queued_bytes: usize,
 }
 
 impl Shared {
+    /// Reserves room in the queue for a line of `len` bytes; false when
+    /// it would pass the byte ceiling. An empty queue takes any line, so
+    /// one oversized event is delivered rather than refused forever.
+    fn reserve(&self, len: usize) -> bool {
+        let before = self.queued_bytes.fetch_add(len, Ordering::AcqRel);
+        if before > 0 && before.saturating_add(len) > self.max_queued_bytes {
+            self.queued_bytes.fetch_sub(len, Ordering::AcqRel);
+            return false;
+        }
+        true
+    }
+
+    fn release(&self, len: usize) {
+        self.queued_bytes.fetch_sub(len, Ordering::AcqRel);
+    }
+
     fn spill(&self, line: &str) {
         let Some(spool) = &self.spool else {
             self.dropped.fetch_add(1, Ordering::Relaxed);
@@ -160,6 +196,20 @@ impl Pipeline {
     where
         F: FnMut(&str) -> anyhow::Result<()> + Send + 'static,
     {
+        Self::start_bounded(capacity, QUEUE_MAX_BYTES, spool, stopping, send)
+    }
+
+    /// `start` with an explicit byte ceiling for the queue.
+    pub fn start_bounded<F>(
+        capacity: usize,
+        max_queued_bytes: usize,
+        spool: Option<Spool>,
+        stopping: Arc<AtomicBool>,
+        send: F,
+    ) -> (Self, JoinHandle<()>)
+    where
+        F: FnMut(&str) -> anyhow::Result<()> + Send + 'static,
+    {
         let (tx, rx) = sync_channel(capacity.max(1));
         let pending = spool
             .as_ref()
@@ -171,6 +221,8 @@ impl Pipeline {
             spooling: AtomicBool::new(pending),
             dropped: AtomicU64::new(0),
             spooled: AtomicU64::new(0),
+            queued_bytes: AtomicUsize::new(0),
+            max_queued_bytes,
         });
         let worker = Arc::clone(&shared);
         let handle = std::thread::Builder::new()
@@ -183,15 +235,22 @@ impl Pipeline {
     /// Hands one line to the delivery thread without blocking on the
     /// network: queue, else spool, else counted drop.
     pub fn push(&self, line: String) {
-        if self.shared.spooling.load(Ordering::Acquire) {
+        // while stopping the delivery thread is emptying the queue for
+        // the last time (or is gone): a late line goes to the spool
+        if self.shared.spooling.load(Ordering::Acquire) || self.shared.stopping.load(Ordering::Acquire) {
+            self.shared.spill(&line);
+            return;
+        }
+        let len = line.len();
+        if !self.shared.reserve(len) {
             self.shared.spill(&line);
             return;
         }
         match self.tx.try_send(line) {
             Ok(()) => {}
-            Err(TrySendError::Full(line)) => self.shared.spill(&line),
-            Err(TrySendError::Disconnected(_)) => {
-                self.shared.dropped.fetch_add(1, Ordering::Relaxed);
+            Err(TrySendError::Full(line) | TrySendError::Disconnected(line)) => {
+                self.shared.release(len);
+                self.shared.spill(&line);
             }
         }
     }
@@ -252,6 +311,7 @@ where
             // one fast attempt per queued line; what the engine cannot
             // take now waits in the spool for the next start
             while let Ok(line) = rx.try_recv() {
+                shared.release(line.len());
                 if !deliver(&line) {
                     shared.spill(&line);
                 }
@@ -260,6 +320,7 @@ where
         }
         match rx.recv_timeout(IDLE_POLL) {
             Ok(line) => {
+                shared.release(line.len());
                 if !deliver(&line) {
                     shared.spill(&line);
                 }
@@ -311,20 +372,22 @@ fn drain_spool<F: FnMut(&str) -> bool>(shared: &Shared, deliver: &mut F) {
 /// Replays a drained spool file and removes it. When delivery is
 /// interrupted by a shutdown the file is kept: the next start replays it
 /// from the beginning (lines already delivered are repeated, which the
-/// engine's first-write-wins store absorbs).
+/// engine's first-write-wins store absorbs). A line that is not valid
+/// UTF-8 (a write torn by an abrupt stop, a damaged sector) is skipped
+/// and counted; it does not cost the lines after it.
 fn replay<F: FnMut(&str) -> bool>(path: &Path, deliver: &mut F) {
     match File::open(path) {
         Ok(f) => {
-            for line in BufReader::new(f).lines() {
-                match line {
-                    Ok(l) if !l.is_empty() => {
-                        if !deliver(&l) {
-                            return; // stopping: keep the file for the next start
-                        }
-                    }
+            let mut reader = BufReader::new(f);
+            let mut raw = Vec::new();
+            let mut skipped = 0u64;
+            loop {
+                raw.clear();
+                match reader.read_until(b'\n', &mut raw) {
+                    Ok(0) => break,
                     Ok(_) => {}
                     Err(err) => {
-                        // a torn last line (crash mid-append) ends the replay
+                        // the file itself cannot be read any further
                         eprintln!(
                             "[SENSOR] spool {} unreadable past this point: {err}",
                             path.display()
@@ -332,6 +395,23 @@ fn replay<F: FnMut(&str) -> bool>(path: &Path, deliver: &mut F) {
                         break;
                     }
                 }
+                let Ok(text) = std::str::from_utf8(&raw) else {
+                    skipped += 1;
+                    continue;
+                };
+                let line = text.trim_end_matches(['\n', '\r']);
+                if line.is_empty() {
+                    continue;
+                }
+                if !deliver(line) {
+                    return; // stopping: keep the file for the next start
+                }
+            }
+            if skipped > 0 {
+                eprintln!(
+                    "[SENSOR] spool {}: {skipped} damaged line(s) skipped (not valid UTF-8)",
+                    path.display()
+                );
             }
             if let Err(err) = fs::remove_file(path) {
                 eprintln!(
@@ -565,5 +645,88 @@ mod tests {
         std::thread::sleep(Duration::from_millis(50));
         p.shutdown(h, Duration::from_secs(5));
         assert_eq!(fs::read_to_string(&draining).unwrap(), "a\nb\nc\n");
+    }
+
+    // A write torn by an abrupt stop leaves bytes that are not UTF-8 in
+    // the middle of the spool: that line is lost, the rest is not.
+    #[test]
+    fn a_damaged_spool_line_does_not_cost_the_lines_after_it() {
+        let path = tmp("torn");
+        let mut draining = path.clone().into_os_string();
+        draining.push(".draining");
+        let draining = PathBuf::from(draining);
+        let mut bytes = b"before-1\nbefore-2\n".to_vec();
+        bytes.extend_from_slice(&[b'{', 0xff, 0xfe, 0xc3, b'\n']);
+        bytes.extend_from_slice(b"after-1\r\n\nafter-2\n");
+        fs::write(&draining, bytes).unwrap();
+        let (tx, rx) = channel::<String>();
+        let send = move |line: &str| {
+            tx.send(line.to_string()).unwrap();
+            Ok(())
+        };
+        let (_p, _h) = Pipeline::start(8, Some(Spool::new(path, 1 << 20).unwrap()), no_stop(), send);
+        let mut got = Vec::new();
+        for _ in 0..4 {
+            got.push(rx.recv_timeout(Duration::from_secs(5)).unwrap());
+        }
+        assert_eq!(got, ["before-1", "before-2", "after-1", "after-2"]);
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while draining.exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(!draining.exists(), "the replayed file is removed");
+    }
+
+    // 32 K command lines: the line count alone would let them pile up.
+    #[test]
+    fn the_queue_is_bounded_in_bytes_as_well_as_in_lines() {
+        let path = tmp("bytes");
+        let (send, got, gate) = gated();
+        let (p, _h) = Pipeline::start_bounded(1000, 250, Some(Spool::new(path, 1 << 20).unwrap()), no_stop(), send);
+        let line = "x".repeat(100);
+        for _ in 0..10 {
+            p.push(line.clone());
+        }
+        // far under the 1000-line bound, yet most lines had to overflow:
+        // at most one in the stalled send and two (200 bytes) queued
+        let spooled = p.stats().spooled;
+        assert!((7..=8).contains(&spooled), "spooled = {spooled}");
+        assert_eq!(p.stats().dropped, 0);
+        for _ in 0..20 {
+            gate.send(()).unwrap();
+        }
+        assert_eq!(wait_for(&got, 10).len(), 10, "everything is still delivered");
+    }
+
+    #[test]
+    fn a_line_over_the_byte_bound_still_gets_through_an_empty_queue() {
+        let (tx, rx) = channel::<String>();
+        let send = move |line: &str| {
+            tx.send(line.to_string()).unwrap();
+            Ok(())
+        };
+        let (p, _h) = Pipeline::start_bounded(8, 16, None, no_stop(), send);
+        p.push("y".repeat(64));
+        assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap().len(), 64);
+        assert_eq!(p.stats().dropped, 0);
+    }
+
+    // Worker threads may still emit after the shutdown began: those
+    // lines must reach the spool, not a queue nobody reads any more.
+    #[test]
+    fn lines_pushed_after_the_shutdown_go_to_the_spool() {
+        let path = tmp("late");
+        let stop = no_stop();
+        let (p, h) = Pipeline::start(
+            8,
+            Some(Spool::new(path.clone(), 1 << 20).unwrap()),
+            Arc::clone(&stop),
+            engine_down(Arc::clone(&stop)),
+        );
+        p.shutdown(h, Duration::from_secs(5));
+        p.push("late-1".into());
+        p.push("late-2".into());
+        assert_eq!(spool_lines(&path), ["late-1", "late-2"]);
+        assert_eq!(p.stats().dropped, 0);
     }
 }

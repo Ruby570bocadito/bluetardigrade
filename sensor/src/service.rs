@@ -8,6 +8,12 @@
 // its usual path (queue drained to the engine or the spool) before the
 // service reports it has stopped.
 //
+// A run that ends with an error is reported as SERVICE_STOPPED with a
+// non-zero exit code. The service manager only applies the recovery
+// actions (restart) to that when the service's failure-actions flag is
+// set, which sf-etw -Install does (sc.exe failureflag): without it a
+// reported error leaves the sensor stopped.
+//
 // Without a console, the output goes to the file given with --log
 // (log_to_file), rotated once when it passes LOG_ROTATE_BYTES.
 //
@@ -125,8 +131,10 @@ unsafe extern "system" fn service_main(_argc: u32, _argv: *mut windows_sys::core
 unsafe extern "system" fn control_handler(control: u32, _event_type: u32, _event_data: *mut c_void, _context: *mut c_void) -> u32 {
     match control {
         SERVICE_CONTROL_STOP | SERVICE_CONTROL_SHUTDOWN => {
-            // the collector drains its queue (up to 10 s) before returning
-            set_state(SERVICE_STOP_PENDING, 0, 15_000);
+            // the collector hands its queue to the engine or the spool
+            // (up to 10 s) and then gives its worker threads a few
+            // seconds each before returning
+            set_state(SERVICE_STOP_PENDING, 0, 20_000);
             eprintln!("[SENSOR] service stop requested");
             if let Some(stop) = *STOP.lock().unwrap_or_else(|p| p.into_inner()) {
                 stop();

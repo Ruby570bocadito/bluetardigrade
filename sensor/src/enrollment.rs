@@ -10,8 +10,10 @@
 // start finds the credential in --token-file and skips this step.
 //
 // An engine that is not reachable yet (boot order, network still coming
-// up) is retried with backoff; a refusal (expired, used up, revoked or
-// unknown token) is final and says why.
+// up), or that cuts the exchange before answering, is retried with
+// backoff; a refusal (expired, used up, revoked or unknown token) is
+// final and says why, and so is a channel the token must not travel on
+// (no TLS towards another machine, see transport.rs).
 
 use anyhow::{bail, Context, Result};
 use std::io::Write;
@@ -19,7 +21,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use crate::transport;
+use crate::transport::{self, Wire};
 
 /// Obtains a credential with the enrollment token and stores it in
 /// `token_file`. `token_source` is the file the enrollment token came
@@ -28,7 +30,7 @@ pub fn obtain_credential(
     addr: &str,
     enroll_token: &str,
     host: &str,
-    tls_ca: Option<&Path>,
+    wire: Wire,
     token_file: &Path,
     token_source: Option<&Path>,
     stop: &AtomicBool,
@@ -36,7 +38,7 @@ pub fn obtain_credential(
     eprintln!("[SENSOR] enrolling {host} with {addr} (first start: no credential in {} yet)", token_file.display());
     let mut backoff = 1u64;
     let answer = loop {
-        match transport::enroll(addr, enroll_token, host, tls_ca) {
+        match transport::enroll(addr, enroll_token, host, wire) {
             Ok(answer) => break answer,
             Err(err) if transport::is_transient(&err) => {
                 eprintln!("[SENSOR] enrollment: engine {addr} not reachable yet ({err:#}); retrying in {backoff}s");

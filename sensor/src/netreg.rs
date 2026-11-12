@@ -21,8 +21,9 @@
 //     forwarded (persistence, defense evasion, privilege escalation).
 
 use crate::regnames::UNKNOWN_ROOT;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::net::IpAddr;
+use std::time::{Duration, Instant};
 
 /// A TDH "Port" field read in native byte order -> the real port.
 pub fn port_from_wire(raw: u16) -> u16 {
@@ -184,15 +185,24 @@ pub fn interesting_registry(key: &str, value_name: &str) -> bool {
 /// rundown events, so network and registry events (which only carry a
 /// PID) get a name and, for the registry, the writer's hive. Bounded:
 /// past the cap the oldest half is forgotten.
+///
+/// A process that exits is not forgotten at once: its network, DNS and
+/// registry events travel through another ETW session with its own flush
+/// timer and arrive after the Process/End, so the entry is kept for
+/// `ended_keep` and then purged. A start that reuses the PID replaces it.
 pub struct ProcessTable {
     cap: usize,
+    ended_keep: Duration,
     entries: HashMap<u32, (u64, String, Option<String>)>,
+    /// exited processes in the order they ended: (pid, the entry's tick,
+    /// when). The tick tells an entry from a newer one under the same PID.
+    ended: VecDeque<(u32, u64, Instant)>,
     tick: u64,
 }
 
 impl ProcessTable {
-    pub fn new(cap: usize) -> Self {
-        Self { cap: cap.max(16), entries: HashMap::new(), tick: 0 }
+    pub fn new(cap: usize, ended_keep: Duration) -> Self {
+        Self { cap: cap.max(16), ended_keep, entries: HashMap::new(), ended: VecDeque::new(), tick: 0 }
     }
 
     pub fn insert(&mut self, pid: u32, name: String, user: Option<String>) {
@@ -209,8 +219,24 @@ impl ProcessTable {
         }
     }
 
-    pub fn remove(&mut self, pid: u32) {
-        self.entries.remove(&pid);
+    /// The process exited: its entry stays for `ended_keep` (see the
+    /// type's comment) and the ones whose time is up are purged. The
+    /// exits waiting are bounded by the same cap as the table.
+    pub fn end(&mut self, pid: u32, now: Instant) {
+        if let Some((tick, _, _)) = self.entries.get(&pid) {
+            self.ended.push_back((pid, *tick, now));
+        }
+        while let Some(&(old_pid, tick, at)) = self.ended.front() {
+            if now.saturating_duration_since(at) < self.ended_keep && self.ended.len() <= self.cap {
+                break;
+            }
+            self.ended.pop_front();
+            // only the entry that ended: a reused PID's new start has
+            // another tick and stays
+            if self.entries.get(&old_pid).is_some_and(|(t, _, _)| *t == tick) {
+                self.entries.remove(&old_pid);
+            }
+        }
     }
 
     /// Known name, or "pid <n>" so the event still reads.
@@ -352,7 +378,7 @@ mod tests {
 
     #[test]
     fn the_process_table_names_and_stays_bounded() {
-        let mut table = ProcessTable::new(16);
+        let mut table = ProcessTable::new(16, Duration::from_secs(60));
         table.insert(100, "powershell.exe".into(), Some("S-1-5-21-1-2-3-1001".into()));
         assert_eq!(table.name(100), "powershell.exe");
         assert_eq!(table.user(100).as_deref(), Some("S-1-5-21-1-2-3-1001"));
@@ -369,12 +395,63 @@ mod tests {
         // a later start replaces both name and user
         table.insert(100, "powershell.exe".into(), None);
         assert_eq!(table.user(100), None);
-        table.remove(100);
-        assert_eq!(table.name(100), "pid 100");
         for pid in 0..100 {
             table.insert(1000 + pid, format!("p{pid}.exe"), None);
         }
         assert!(table.len() <= 16);
         assert_eq!(table.name(1099), "p99.exe", "the newest entries survive");
+    }
+
+    #[test]
+    fn an_exited_process_keeps_its_name_until_the_late_events_arrived() {
+        let t0 = Instant::now();
+        let secs = Duration::from_secs;
+        let mut table = ProcessTable::new(64, secs(60));
+        table.insert(500, "reg.exe".into(), Some("S-1-5-21-1-2-3-1001".into()));
+        table.end(500, t0);
+        // the registry write of the short-lived process arrives ~1 s later
+        assert_eq!(table.name(500), "reg.exe");
+        assert_eq!(table.user(500).as_deref(), Some("S-1-5-21-1-2-3-1001"));
+        // other exits inside the window do not purge it
+        table.insert(501, "cmd.exe".into(), None);
+        table.end(501, t0 + secs(30));
+        assert_eq!(table.name(500), "reg.exe");
+        // past the window the next exit purges it (and only it)
+        table.insert(502, "whoami.exe".into(), None);
+        table.end(502, t0 + secs(61));
+        assert_eq!(table.name(500), "pid 500");
+        assert_eq!(table.user(500), None);
+        assert_eq!(table.name(501), "cmd.exe");
+        // an exit of a PID the table never saw is harmless
+        table.end(9999, t0 + secs(62));
+    }
+
+    #[test]
+    fn a_reused_pid_replaces_the_exited_entry_and_outlives_its_purge() {
+        let t0 = Instant::now();
+        let secs = Duration::from_secs;
+        let mut table = ProcessTable::new(64, secs(60));
+        table.insert(700, "old.exe".into(), Some("S-1-5-18".into()));
+        table.end(700, t0);
+        table.insert(700, "new.exe".into(), None);
+        assert_eq!(table.name(700), "new.exe", "the new start replaces the exited entry");
+        assert_eq!(table.user(700), None);
+        // the old entry's purge comes due: the new process must survive it
+        table.insert(701, "x.exe".into(), None);
+        table.end(701, t0 + secs(120));
+        assert_eq!(table.name(700), "new.exe");
+    }
+
+    #[test]
+    fn exits_waiting_for_their_purge_stay_bounded() {
+        let t0 = Instant::now();
+        let mut table = ProcessTable::new(16, Duration::from_secs(3600));
+        for pid in 0..1000u32 {
+            table.insert(pid, format!("p{pid}.exe"), None);
+            table.end(pid, t0);
+        }
+        assert!(table.len() <= 17, "len = {}", table.len());
+        assert!(table.ended.len() <= 16, "ended = {}", table.ended.len());
+        assert_eq!(table.name(999), "p999.exe", "the latest exit is still named");
     }
 }

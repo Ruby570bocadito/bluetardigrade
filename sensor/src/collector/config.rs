@@ -80,10 +80,29 @@ pub(super) const EVENT_DNS_QUERY_COMPLETED: u16 = 3008;
 pub(super) const HASH_CACHE_CAP: usize = 4096;
 pub(super) const HASH_MAX_BYTES: u64 = 100 << 20;
 pub(super) const ENRICH_QUEUE: usize = 2048;
+/// How long the enrichment thread waits for one image hash: the hashing
+/// budget plus slack for the stat and the hand-off. Past it the event
+/// goes out without the hash (see imagehash::BoundedHasher).
+pub(super) const HASH_WAIT: Duration = Duration::from_secs(crate::imagehash::HASH_BUDGET.as_secs() + 1);
 
 /// Names kept for PID lookups (a busy host runs a few hundred processes;
 /// the table only forgets once this is exceeded).
 pub(super) const PROCESS_TABLE_CAP: usize = 8192;
+/// How long an exited process keeps its name and user in the table. The
+/// network/DNS/registry session delivers on its own flush timer, so the
+/// events of a short-lived process (reg.exe add ...\Run) arrive after
+/// its Process/End; the same reason RECENT_IMAGES_KEEP exists.
+pub(super) const PROCESS_ENDED_KEEP: Duration = Duration::from_secs(60);
+
+/// A user-mode session that ended on its own (stopped from outside, or
+/// ProcessTrace failed) is started again after this long, doubling up to
+/// the ceiling while it keeps failing.
+pub(super) const SESSION_RESTART_MIN: Duration = Duration::from_secs(5);
+pub(super) const SESSION_RESTART_MAX: Duration = Duration::from_secs(300);
+/// How long the shutdown waits for each worker thread (memory sweep,
+/// image hashing, YARA) before leaving it behind: the queue is already
+/// with the engine or in the spool by then.
+pub(super) const WORKER_JOIN_WAIT: Duration = Duration::from_secs(2);
 
 /// Delivery settings: the bounded queue between the ETW threads and the
 /// network, and the optional on-disk spool behind it (see queue.rs).
