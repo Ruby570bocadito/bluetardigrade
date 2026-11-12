@@ -156,3 +156,35 @@ func TestQueryAuditTruncatesStatementText(t *testing.T) {
 		t.Fatalf("stored statement length %v, cap is %d", rows[0][0], auditSQLCap)
 	}
 }
+
+// The row cap does not bound memory on its own: a single computed value
+// is refused by the connection's length limit before it exists, and a
+// result of many large rows stops at the byte budget.
+func TestQueryROBoundsMemoryNotOnlyRows(t *testing.T) {
+	st := openTestStore(t)
+	seedEvents(t, st, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if _, _, _, err := st.QueryRO(ctx, "SELECT hex(zeroblob(900000000))", 10); err == nil {
+		t.Fatal("a 1.8 GB value was built and returned")
+	} else if !strings.Contains(err.Error(), "too big") {
+		t.Fatalf("err = %v, want SQLite's length-limit refusal", err)
+	}
+
+	// 64 rows of 1 MiB each: well under the row cap, twice the budget
+	const big = `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i < 64)
+                 SELECT hex(zeroblob(524288)) FROM n`
+	_, rows, truncated, err := st.QueryRO(ctx, big, 5000)
+	if err != nil {
+		t.Fatalf("QueryRO: %v", err)
+	}
+	if !truncated || len(rows) == 0 || len(rows) > roMaxResultBytes>>20 {
+		t.Fatalf("rows=%d truncated=%t, want a result cut at the %d MiB budget", len(rows), truncated, roMaxResultBytes>>20)
+	}
+
+	// the limit does not get in the way of ordinary evidence
+	if _, rows, truncated, err := st.QueryRO(ctx, "SELECT json FROM events", 10); err != nil || truncated || len(rows) != 1 {
+		t.Fatalf("ordinary query after the bounded ones: rows=%d truncated=%t err=%v", len(rows), truncated, err)
+	}
+}

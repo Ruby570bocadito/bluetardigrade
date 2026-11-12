@@ -45,7 +45,7 @@ func (s *Store) SaveFleetHosts(docs map[string][]byte) error {
 	}
 	s.wmu.Lock()
 	defer s.wmu.Unlock()
-	tx, err := s.db.Begin()
+	tx, err := s.w.Begin()
 	if err != nil {
 		return fmt.Errorf("store: fleet begin: %w", err)
 	}
@@ -69,7 +69,7 @@ func (s *Store) DeleteFleetHosts(hosts []string) error {
 	s.wmu.Lock()
 	defer s.wmu.Unlock()
 	for _, host := range hosts {
-		if _, err := s.db.Exec(`DELETE FROM fleet_hosts WHERE host = ?`, strings.ToLower(host)); err != nil {
+		if _, err := s.w.Exec(`DELETE FROM fleet_hosts WHERE host = ?`, strings.ToLower(host)); err != nil {
 			return fmt.Errorf("store: fleet delete: %w", err)
 		}
 	}
@@ -109,7 +109,7 @@ func (s *Store) AddBaseline(entries []BaselineEntry) error {
 	}
 	s.wmu.Lock()
 	defer s.wmu.Unlock()
-	tx, err := s.db.Begin()
+	tx, err := s.w.Begin()
 	if err != nil {
 		return fmt.Errorf("store: baseline begin: %w", err)
 	}

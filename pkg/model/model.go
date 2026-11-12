@@ -141,5 +141,19 @@ func (e *Event) Validate() error {
 	if e.Timestamp.IsZero() {
 		e.Timestamp = time.Now().UTC()
 	}
+	if e.Timestamp.Before(minTimestamp) || !e.Timestamp.Before(maxTimestamp) {
+		return ErrTimestampRange
+	}
 	return nil
 }
+
+// Bounds of an acceptable event timestamp. They are deliberately wide -
+// old logs are imported, and a clock that is merely wrong is handled
+// downstream (DetectionTime, the store's index) - and exist to keep out
+// what no clock produces: a year the nanosecond representation used for
+// storage and windows cannot hold (it covers 1678-2262), or a date
+// before the epoch.
+var (
+	minTimestamp = time.Unix(0, 0)
+	maxTimestamp = time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC)
+)

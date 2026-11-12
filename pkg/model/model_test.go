@@ -207,3 +207,30 @@ func TestEventTypeConstants(t *testing.T) {
 		}
 	}
 }
+
+// A timestamp no clock produces is refused instead of wrapping around
+// in the nanosecond representation; an old or a merely wrong one is not.
+func TestValidateRejectsImpossibleTimestamps(t *testing.T) {
+	for _, ts := range []time.Time{
+		time.Date(1601, 1, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(1969, 12, 31, 23, 59, 59, 0, time.UTC),
+		time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(9999, 12, 31, 0, 0, 0, 0, time.UTC),
+	} {
+		ev := &Event{ID: "x", Type: TypeProcessCreate, Timestamp: ts}
+		if err := ev.Validate(); !errors.Is(err, ErrTimestampRange) {
+			t.Errorf("Validate(%s) = %v, want ErrTimestampRange", ts.Format(time.RFC3339), err)
+		}
+	}
+	for _, ts := range []time.Time{
+		time.Unix(0, 0),
+		time.Date(2003, 5, 1, 0, 0, 0, 0, time.UTC),
+		time.Now().Add(72 * time.Hour),
+		time.Date(2199, 12, 31, 0, 0, 0, 0, time.UTC),
+	} {
+		ev := &Event{ID: "x", Type: TypeProcessCreate, Timestamp: ts}
+		if err := ev.Validate(); err != nil {
+			t.Errorf("Validate(%s) = %v, want nil", ts.Format(time.RFC3339), err)
+		}
+	}
+}
