@@ -298,3 +298,45 @@ describe('EngineBridge (agent-04 hardening)', () => {
     await Promise.race([running, new Promise((r) => setTimeout(r, 500))])
   }, 15000)
 })
+
+describe('EngineBridge liveness', () => {
+  test('a stream that goes silent is dropped and reconnected', async () => {
+    const rec = recorder(); const streams: ReadableStreamDefaultController<Uint8Array>[] = []
+    let syncs = 0; rec.cb.onSync = () => { syncs++ }
+    globalThis.fetch = stubEngine({ sequences: [], suppressions: { entries: [] }, stats: STATS, streams })
+    const bridge = new EngineBridge(rec.cb, { retryMs: 5, streamIdleMs: 60, statsPollMs: 10 }); const running = bridge.start()
+    // the stub stream never writes a byte: stats keep answering, and that
+    // alone must not keep a dead stream "connected"
+    await until(() => rec.downs >= 1 && rec.ups >= 2, 3000, 'reconnect after silence')
+    expect(streams.length).toBeGreaterThanOrEqual(2)
+    expect(syncs).toBeGreaterThanOrEqual(2)
+    bridge.stop(); await running
+  })
+  test('heartbeats keep a quiet stream connected', async () => {
+    const rec = recorder(); const streams: ReadableStreamDefaultController<Uint8Array>[] = []
+    globalThis.fetch = stubEngine({ sequences: [], suppressions: { entries: [] }, stats: STATS, streams })
+    const bridge = new EngineBridge(rec.cb, { retryMs: 5, streamIdleMs: 80 }); const running = bridge.start()
+    await until(() => streams.length === 1, 2000, 'stream')
+    const beat = setInterval(() => streams[0].enqueue(new TextEncoder().encode(': hb\n\n')), 20)
+    await new Promise((r) => setTimeout(r, 300))
+    clearInterval(beat)
+    expect(rec.downs).toBe(0); expect(streams).toHaveLength(1)
+    bridge.stop(); await running
+  })
+  test('stats polls never overlap behind a slow engine', async () => {
+    const rec = recorder(); const streams: ReadableStreamDefaultController<Uint8Array>[] = []
+    const base = stubEngine({ sequences: [], suppressions: { entries: [] }, stats: STATS, streams })
+    let inFlight = 0; let peak = 0; let polls = 0
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if (!String(input).endsWith('/api/stats')) return base(input, init)
+      inFlight++; polls++; peak = Math.max(peak, inFlight)
+      await new Promise((r) => setTimeout(r, 40))
+      inFlight--
+      return base(input, init)
+    }) as typeof fetch
+    const bridge = new EngineBridge(rec.cb, { retryMs: 5, statsPollMs: 5 }); const running = bridge.start()
+    await until(() => polls >= 4, 3000, 'four polls')
+    expect(peak).toBe(1)
+    bridge.stop(); await running
+  })
+})

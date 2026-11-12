@@ -115,7 +115,7 @@ export type EnrollStep = {
 }
 
 const SENSOR_DIR = 'C:\\Program Files\\bluetardigrade'
-const DATA_DIR = 'C:\\ProgramData\\bluetardigrade\\sensor'
+const DATA_DIR = 'C:\\ProgramData\\bluetardigrade-sensor'
 
 /** Wording of the token enrollment steps; the defaults keep the shipped
  * ES copy, a bilingual caller passes its own (dict.enroll.plan). `copy`

@@ -41,3 +41,18 @@ export function storedLang(storage: Pick<Storage, 'getItem'> | null | undefined,
   }
   return resolveLang(stored, browserLanguage)
 }
+
+/** The dictionary of the operator's language for code that runs outside
+ * React (lib helpers that build a message for the UI). It reads the same
+ * stored choice as the provider; on the server it is Spanish, like the
+ * server render. */
+export function activeDict(): Dict {
+  if (typeof window === 'undefined') return dictEs
+  let storage: Storage | null = null
+  try {
+    storage = window.localStorage
+  } catch {
+    // blocked storage: the browser preference decides
+  }
+  return DICTS[storedLang(storage, typeof navigator === 'undefined' ? null : navigator.language)]
+}

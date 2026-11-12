@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import {
   alertKey, engineDisplayEndpoint, mergeNewest, prependLive, prependLiveBatch,
-  readEngineJson, readOptionalEngineJson, settledBatch,
+  readEngineJson, readOptionalEngineJson, readRoleGatedEngineJson, settledBatch, streamRetryPlan,
 } from './engine-client'
 
 const realFetch = globalThis.fetch
@@ -85,5 +85,48 @@ describe('bounded requests and optional surfaces', () => {
     expect(engineDisplayEndpoint('https://user:secret@engine.example/private?token=hidden')).toBe('https://engine.example')
     expect(engineDisplayEndpoint('/api/engine')).toBe('proxy local · /api/engine')
     expect(engineDisplayEndpoint('bad URL')).toBe('API del motor')
+  })
+})
+
+describe('reads refused to the account role', () => {
+  test('the first 403 ends the polling of that read; other failures do not', async () => {
+    let calls = 0
+    let status = 500
+    stub(async () => {
+      calls++
+      return status === 200 ? Response.json({ records: [] }) : new Response('{}', { status })
+    })
+    const gate = { denied: false }
+    // a transient failure keeps the gate open and reports "unknown"
+    expect(await readRoleGatedEngineJson('', '/api/respond/audit', signal(), gate)).toBeUndefined()
+    expect(gate.denied).toBe(false)
+    status = 404
+    expect(await readRoleGatedEngineJson('', '/api/respond/audit', signal(), gate)).toBeNull()
+    status = 200
+    expect(await readRoleGatedEngineJson<{ records: unknown[] }>('', '/api/respond/audit', signal(), gate)).toEqual({ records: [] })
+    status = 403
+    expect(await readRoleGatedEngineJson('', '/api/respond/audit', signal(), gate)).toBeUndefined()
+    expect(gate.denied).toBe(true)
+    // from here on nothing is requested, whatever the server would say
+    status = 200
+    const before = calls
+    for (let i = 0; i < 5; i++) expect(await readRoleGatedEngineJson('', '/api/respond/audit', signal(), gate)).toBeUndefined()
+    expect(calls).toBe(before)
+  })
+})
+
+describe('live stream retry', () => {
+  test('a stream the browser is still retrying is left alone', () => {
+    expect(streamRetryPlan(false, 1000, 15000)).toEqual({ recreateAfterMs: null, nextRetryMs: 1000 })
+  })
+  test('a closed stream is recreated with a delay that doubles up to the ceiling', () => {
+    const delays: number[] = []
+    let retry = 1000
+    for (let i = 0; i < 7; i++) {
+      const plan = streamRetryPlan(true, retry, 15000)
+      delays.push(plan.recreateAfterMs as number)
+      retry = plan.nextRetryMs
+    }
+    expect(delays).toEqual([1000, 2000, 4000, 8000, 15000, 15000, 15000])
   })
 })

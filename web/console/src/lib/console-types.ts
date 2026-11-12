@@ -389,7 +389,12 @@ export type AnalystStep = { label: string; state: 'run' | 'done' }
 export type AnalystMessage = {
   id: string
   role: 'user' | 'analyst'
+  // on an analyst message: the request its frames are tagged with
+  requestId?: string
   alertName?: string
+  // the alert a single-alert request analysed, kept on the user message
+  // so a follow-up question and «Repetir» address that same alert
+  alert?: SfAlert
   // multi-alert analysis (incident case or selection of the queue)
   incidentTitle?: string
   incidentMeta?: string

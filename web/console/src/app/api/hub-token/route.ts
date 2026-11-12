@@ -13,34 +13,16 @@
 // accounts that see the whole fleet.
 
 import { principalFor, unauthorizedResponse } from '@/lib/access'
+import { readRefused } from '@/lib/request-guard'
 import { scopeOf } from '@/lib/users'
 
 export const dynamic = 'force-dynamic'
 
-const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
-
-function hostAllowed(request: Request): boolean {
-  const raw = request.headers.get('host') ?? new URL(request.url).host
-  if (/[\s/@\\?#]/.test(raw)) return false
-  let hostname: string
-  try {
-    hostname = new URL('http://' + raw).hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
-  } catch {
-    return false
-  }
-  const extra = (process.env.CONSOLE_ALLOWED_HOSTS || '')
-    .split(',')
-    .map((h) => h.trim().toLowerCase())
-    .filter(Boolean)
-  return LOOPBACK_HOSTS.has(hostname) || extra.includes(hostname)
-}
-
 export async function GET(request: Request): Promise<Response> {
   const principal = await principalFor(request)
   if (!principal) return unauthorizedResponse()
-  if (!hostAllowed(request) || request.headers.get('sec-fetch-site') === 'cross-site') {
-    return Response.json({ error: 'host_not_allowed' }, { status: 403 })
-  }
+  const refused = readRefused(request)
+  if (refused) return refused
   if (scopeOf(principal)) {
     return Response.json(
       { error: 'scoped_account', hint: 'El analista IA lee todos los equipos: no está disponible para cuentas limitadas a grupos de equipos.' },

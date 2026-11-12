@@ -48,6 +48,7 @@ const MESSAGES: Record<string, string> = {
   sesion: 'Tu sesión ha terminado. Vuelve a iniciar sesión.',
   codigo: 'Código incorrecto o ya usado. Escribe el que muestra ahora tu app.',
   bloqueada: 'Demasiados códigos incorrectos: la verificación de esta cuenta queda bloqueada 15 minutos.',
+  intentos: 'Demasiados intentos fallidos. Espera unos minutos antes de volver a intentarlo.',
   caducado: 'El inicio de sesión ha caducado (5 minutos o 5 códigos incorrectos). Vuelve a escribir tu contraseña.',
   escritura: 'No se pudo guardar el cambio en el fichero de cuentas. Revisa que la consola pueda escribirlo.',
   desactivada: 'Has desactivado la verificación en dos pasos. Vuelve a iniciar sesión.',

@@ -121,6 +121,29 @@ describe('POST /api/console/login', () => {
     expect(bad.headers.get('set-cookie')).toBeNull()
   })
 
+  test('the shared token has an attempt limit: after it, the right token is refused too', async () => {
+    process.env.CONSOLE_ACCESS_TOKEN = 'console-secret'
+    process.env.CONSOLE_AUDIT_FILE = join(dir, 'audit.jsonl')
+    const from = { 'x-forwarded-for': '203.0.113.7' }
+    for (let i = 0; i < 10; i++) {
+      const bad = await login(formPost('/api/console/login', { user: 'marta', password: `guess-${i}` }, from))
+      expect(bad.headers.get('location')).toContain('error=credenciales')
+    }
+    const locked = await login(formPost('/api/console/login', { user: 'marta', password: 'console-secret' }, from))
+    expect(locked.headers.get('set-cookie')).toBeNull()
+    expect(locked.headers.get('location')).toContain('error=intentos')
+    expect(auditLines().at(-1)).toMatchObject({ path: '/login', status: 429, outcome: 'denied' })
+    const json = await login(new Request(BASE + '/api/console/login', {
+      method: 'POST',
+      headers: { host: '127.0.0.1:3000', origin: BASE, 'content-type': 'application/json', ...from },
+      body: JSON.stringify({ user: 'marta', password: 'console-secret' }),
+    }))
+    expect(json.status).toBe(429)
+    // another address is not locked out by this one
+    const other = await login(formPost('/api/console/login', { user: 'marta', password: 'console-secret' }, { 'x-forwarded-for': '203.0.113.8' }))
+    expect(other.headers.get('set-cookie')).toContain('sf_session=')
+  })
+
   test('JSON clients get JSON, oversized bodies are refused before parsing', async () => {
     withAccounts()
     const ok = await login(new Request(BASE + '/api/console/login', {

@@ -5,8 +5,8 @@ import type { EngineStatus } from './use-engine-stream'
 import type { SfAlertLifecycle } from '@/lib/console-types'
 import { EngineHttpError, engineApiBase, mapAlert, readEngineJson } from '@/lib/engine-client'
 import {
-  alertSearchPath, applyAlertLifecycle, matchesAlertState,
-  type AlertSearchFilters, type AlertSearchPage,
+  alertHistoryError, alertSearchPath, applyAlertLifecycle, matchesAlertState,
+  type AlertHistoryError, type AlertSearchFilters, type AlertSearchPage,
 } from '@/lib/alert-search'
 
 export function useAlertHistory(enabled: boolean, filters: AlertSearchFilters, status: EngineStatus, lifecycleUpdates: SfAlertLifecycle[]) {
@@ -16,7 +16,8 @@ export function useAlertHistory(enabled: boolean, filters: AlertSearchFilters, s
   const cursor = nav.cursors[nav.index]
   const [revision, setRevision] = useState(0)
   const [result, setResult] = useState<{ key: string; cursor: string; page: AlertSearchPage } | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  // a code, worded by the view in the operator's language
+  const [error, setError] = useState<AlertHistoryError | null>(null)
   const [loading, setLoading] = useState(false)
   const decisions = useRef(new Map<string, SfAlertLifecycle>())
   const available = enabled && status === 'live'
@@ -64,13 +65,7 @@ export function useAlertHistory(enabled: boolean, filters: AlertSearchFilters, s
         })
         .catch((err) => {
           if (ctrl.signal.aborted) return
-          setError(err instanceof EngineHttpError && err.status === 404
-            ? 'Este motor no ofrece búsqueda paginada. Actualiza el motor o usa la vista en vivo.'
-            : err instanceof EngineHttpError && err.status === 400
-              ? 'La búsqueda ha caducado o sus filtros han cambiado. Actualiza para empezar de nuevo.'
-              : err instanceof EngineHttpError && err.status === 504
-                ? 'La consulta superó su tiempo de lectura. Reduce la búsqueda por regla, host o severidad y vuelve a intentarlo.'
-              : 'No se pudo consultar el histórico. Comprueba la conexión y vuelve a intentarlo.')
+          setError(alertHistoryError(err instanceof EngineHttpError ? err.status : undefined))
         })
         .finally(() => { if (!ctrl.signal.aborted) setLoading(false) })
     }, 250)

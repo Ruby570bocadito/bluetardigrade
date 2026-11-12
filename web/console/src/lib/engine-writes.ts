@@ -4,6 +4,7 @@
 // helpers keep the wire shapes in one place and turn every failure into
 // a sentence the UI can show inline.
 
+import { activeDict } from './i18n'
 import type { Severity, SfEvent } from './console-types'
 
 function engineApiBase(): string {
@@ -48,8 +49,8 @@ export async function engineCall<T>(
     }
     return { ok: true, data: parsed as T }
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'error de red'
-    return { ok: false, status: 0, error: `no se pudo contactar con el motor: ${message}` }
+    const words = activeDict().chrome
+    return { ok: false, status: 0, error: words.engineUnreachable(err instanceof Error ? err.message : words.networkError) }
   }
 }
 

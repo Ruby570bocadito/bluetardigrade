@@ -93,6 +93,23 @@ test('repeated failures lock the account for a while', async () => {
   expect((await accountPrincipal(basic('ana', 'contraseña-de-ana'), t0 + 6 * 60 * 1000))?.name).toBe('ana')
 })
 
+// The proxy and the route handlers are separate bundles: each gets its
+// own copy of this module, and the lockout only holds if they count on
+// the same map.
+test('the lockout state is shared through globalThis, not held per module copy', async () => {
+  writeUsers({ users: [entry('ana', 'analyst', 'contraseña-de-ana')] })
+  const t0 = 1_000_000
+  for (let i = 0; i < 4; i++) expect(await accountPrincipal(basic('ana', `mala-${i}`), t0)).toBeNull()
+  const shared = globalThis as { __sfConsoleLockout?: { failures: Map<string, { count: number }>; verified: Map<string, unknown> } }
+  expect(shared.__sfConsoleLockout?.failures.get('ana')?.count).toBe(4)
+  // what another bundle counted is honoured here: six more failures
+  // recorded on the shared map complete the limit
+  shared.__sfConsoleLockout!.failures.set('ana', { count: 10, since: t0 } as { count: number })
+  expect(await accountPrincipal(basic('ana', 'contraseña-de-ana'), t0 + 1000)).toBeNull()
+  expect((await accountPrincipal(basic('ana', 'contraseña-de-ana'), t0 + 6 * 60 * 1000))?.name).toBe('ana')
+  expect(shared.__sfConsoleLockout?.verified.size).toBe(1)
+})
+
 test('roles are ordered viewer < analyst < admin', () => {
   expect(roleAtLeast('admin', 'analyst')).toBe(true)
   expect(roleAtLeast('analyst', 'analyst')).toBe(true)

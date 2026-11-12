@@ -1,7 +1,9 @@
 // Request guards shared by the routes that act on a browser's behalf:
-// the engine proxy (app/api/engine) and the login routes. Host pinning
-// stops DNS rebinding; the cross-site check stops another page from
-// driving a write (or a login) through the operator's browser.
+// the engine proxy (app/api/engine), the login routes and the console's
+// own API (app/api/console, app/api/hub-token). Host pinning stops DNS
+// rebinding; the cross-site check stops another page from driving a
+// write (or a login) through the operator's browser, or from firing a
+// read that has a cost or an answer worth probing.
 
 // Loopback hostnames served by default; everything else must be
 // allowlisted explicitly via CONSOLE_ALLOWED_HOSTS.
@@ -60,4 +62,14 @@ export function crossSiteContext(request: Request): boolean {
     }
   }
   return request.headers.get('sec-fetch-site') === 'cross-site'
+}
+
+// readRefused is the guard of the console's own GET handlers (who am I,
+// the audit trail, the accounts, the hub credential): the pinned Host,
+// and no cross-site browser context. It returns the 403 to send, or
+// null when the read may go on. Same-origin fetches and navigations
+// pass; so do clients without browser headers (curl, scripts).
+export function readRefused(request: Request): Response | null {
+  if (hostAllowed(request) && !crossSiteContext(request)) return null
+  return Response.json({ error: 'host_not_allowed' }, { status: 403, headers: { 'cache-control': 'no-store' } })
 }

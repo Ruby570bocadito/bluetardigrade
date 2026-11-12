@@ -11,7 +11,7 @@ import { severityOf } from '@/lib/console-types'
 import { applyAlertLifecycle } from '@/lib/alert-search'
 import {
   alertKey, engineApiBase, engineDisplayEndpoint, mapAlert, mergeNewest, prependLive,
-  prependLiveBatch, readEngineJson, readOptionalEngineJson, settledBatch,
+  prependLiveBatch, readEngineJson, readOptionalEngineJson, readRoleGatedEngineJson, settledBatch, streamRetryPlan,
 } from '@/lib/engine-client'
 
 export type EngineStatus = 'connecting' | 'live' | 'down'
@@ -40,6 +40,8 @@ export type EngineState = {
 
 const STATS_POLL_MS = 2000
 const REBOOT_DELAY_MS = 3000
+const STREAM_RETRY_MIN_MS = 1000
+const STREAM_RETRY_MAX_MS = 15000
 const MAX_EVENTS = 300
 const MAX_ALERTS = 128
 // Event frames are applied in batches: a sensor draining its backlog
@@ -112,6 +114,8 @@ export function useEngineStream(): EngineState {
     let pollTimer: ReturnType<typeof setTimeout> | null = null
     let retryTimer: ReturnType<typeof setTimeout> | null = null
     let es: EventSource | null = null
+    let streamTimer: ReturnType<typeof setTimeout> | null = null
+    let streamRetryMs = STREAM_RETRY_MIN_MS
     let syncPending: Promise<boolean> | null = null
     let liveEvents: SfEvent[] = []
     let flushTimer: ReturnType<typeof setTimeout> | null = null
@@ -125,6 +129,11 @@ export function useEngineStream(): EngineState {
     const base = engineApiBase()
     const getJson = <T,>(path: string) => readEngineJson<T>(base, path, ctrl.signal)
     const optional = <T,>(path: string) => readOptionalEngineJson<T>(base, path, ctrl.signal)
+    // the active-response audit is an administrator's read: for any
+    // other account the first refusal ends the polling of it
+    const auditGate = { denied: false }
+    const readAudit = () =>
+      readRoleGatedEngineJson<SfRespondAudit>(base, '/api/respond/audit?limit=' + auditLimitRef.current, ctrl.signal, auditGate)
 
     function dropLiveEvents() {
       liveEvents = []
@@ -186,7 +195,7 @@ export function useEngineStream(): EngineState {
           optional<{ entries?: SfSuppression[] }>('/api/suppressions'),
           optional<SfSequence[]>('/api/sequences'),
           optional<SfRespondState>('/api/respond/state'),
-          optional<SfRespondAudit>('/api/respond/audit?limit=' + auditLimitRef.current),
+          readAudit(),
         ])
         if (disposed) return false
         const receivedEvents = [...syncEvents]
@@ -239,7 +248,7 @@ export function useEngineStream(): EngineState {
           optional<{ entries?: SfSuppression[] }>('/api/suppressions'),
           optional<SfSequence[]>('/api/sequences'),
           optional<SfRespondState>('/api/respond/state'),
-          optional<SfRespondAudit>('/api/respond/audit?limit=' + auditLimitRef.current),
+          readAudit(),
         ])
         if (disposed) return
         if (syncPending) {
@@ -303,11 +312,29 @@ export function useEngineStream(): EngineState {
       })
       es.onopen = () => {
         if (disposed) return
+        streamRetryMs = STREAM_RETRY_MIN_MS
         setStreamStatus('live')
         void syncAll() // repair gaps on every browser-side reconnect
       }
       es.onerror = () => {
-        if (!disposed) setStreamStatus(offline ? 'down' : 'retrying')
+        if (disposed) return
+        setStreamStatus(offline ? 'down' : 'retrying')
+        // The browser only retries by itself after a network error. A
+        // non-200 answer (the proxy's 502 while the engine restarts, a
+        // 401 on an expired session) leaves the EventSource CLOSED for
+        // good: without a new one the console would keep polling stats
+        // and never show another live alert until a page reload.
+        const plan = streamRetryPlan(Boolean(es && es.readyState === EventSource.CLOSED), streamRetryMs, STREAM_RETRY_MAX_MS)
+        if (es && plan.recreateAfterMs !== null) {
+          es.close()
+          es = null
+          if (streamTimer) clearTimeout(streamTimer)
+          streamTimer = setTimeout(() => {
+            streamTimer = null
+            if (!disposed) startStream()
+          }, plan.recreateAfterMs)
+          streamRetryMs = plan.nextRetryMs
+        }
       }
     }
 
@@ -331,6 +358,7 @@ export function useEngineStream(): EngineState {
       ctrl.abort()
       es?.close()
       dropLiveEvents()
+      if (streamTimer) clearTimeout(streamTimer)
       if (pollTimer) clearTimeout(pollTimer)
       if (retryTimer) clearTimeout(retryTimer)
     }

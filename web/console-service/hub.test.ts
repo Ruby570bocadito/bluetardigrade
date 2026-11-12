@@ -1,8 +1,9 @@
 // Integration tests for the whole hub: HTTP surface (status page,
-// health JSON, 404/405), the socket.io contract the console consumes,
-// the analyst pipeline end to end (against a local OpenAI-compatible
-// mock) and the real engine bridge lifecycle against a fake engine
-// that speaks the Go API (sync + SSE stream + stats poll).
+// health JSON, 404/405), the analyst pipeline end to end over socket.io
+// (against a local OpenAI-compatible mock) and the real engine bridge
+// lifecycle against a fake engine that speaks the Go API (sync + SSE
+// stream + stats poll). Sockets carry analyst frames only: the bridge
+// tests read the hub's own state and assert that none of it is pushed.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { io as clientIo, type Socket } from 'socket.io-client'
@@ -279,20 +280,20 @@ describe('hub HTTP surface (engine down)', () => {
     expect(await res.text()).toBe('')
   })
 
-  test('snapshot keeps the exact console contract while offline', async () => {
+  test('a connecting socket is sent nothing until it asks', async () => {
     const socket = connect(base)
-    const snap = await waitEvent<Record<string, unknown>>(socket, 'console:snapshot')
-    expect(Object.keys(snap).sort()).toEqual(['alerts', 'events', 'rules', 'sequences', 'started_at', 'stats', 'suppressions'])
-    expect((snap.stats as Record<string, unknown>).mode).toBe('sin-motor')
-    expect(snap.events).toEqual([])
-    expect(snap.rules).toEqual([])
+    const seen: string[] = []
+    socket.onAny((event: string) => seen.push(event))
+    await waitEvent(socket, 'connect')
+    await sleep(300)
+    expect(seen).toEqual([])
     socket.disconnect()
   })
 
   test('health counts connected clients', async () => {
     const s1 = connect(base)
     const s2 = connect(base)
-    await Promise.all([waitEvent(s1, 'console:snapshot'), waitEvent(s2, 'console:snapshot')])
+    await Promise.all([waitEvent(s1, 'connect'), waitEvent(s2, 'connect')])
     let body: Record<string, any> = {}
     const clients = async () =>
       ((await (await fetch(`${base}/health`)).json()) as Record<string, any>).clients.connected as number
@@ -535,58 +536,66 @@ describe('engine bridge lifecycle', () => {
     expect(html).toContain('4321'.replace('4321', '3')) // events_total 3
   }, 15000)
 
-  test('snapshot delivers synced events, alerts, rules and engine stats', async () => {
-    const socket = connect(base)
-    const snap = await waitEvent<Record<string, any>>(socket, 'console:snapshot')
-    expect(snap.events.map((e: SfEvent) => e.id)).toEqual(['ev-3', 'ev-2', 'ev-1'])
-    expect(snap.alerts.length).toBe(1)
-    expect(snap.alerts[0].id).toBe('ev-2:r-lsass')
-    expect(snap.alerts[0].notify).toBe(true)
-    expect(snap.rules.length).toBe(1)
-    expect(snap.rules[0].mitre).toBe('T1003.001')
-    expect(snap.rules[0].tactic).toBe('Credential Access')
-    expect(snap.stats.mode).toBe('engine')
-    expect(snap.stats.uptime_s).toBe(777)
-    socket.disconnect()
-  })
+  test('the sync fills the hub state with events, alerts, rules and engine stats', async () => {
+    expect(hub.state.events.map((e: SfEvent) => e.id)).toEqual(['ev-3', 'ev-2', 'ev-1'])
+    expect(hub.state.alerts.length).toBe(1)
+    expect(hub.state.alerts[0]?.id).toBe('ev-2:r-lsass')
+    expect(hub.state.alerts[0]?.notify).toBe(true)
+    expect(hub.state.rules.length).toBe(1)
+    expect(hub.state.rules[0]?.mitre).toBe('T1003.001')
+    expect(hub.state.rules[0]?.tactic).toBe('Credential Access')
+    await pollUntil(() => hub.state.stats().mode === 'engine', 7000)
+    expect(hub.state.stats().uptime_s).toBe(777)
+    expect(hub.state.stats().events_per_min).toBe(42)
+  }, 10000)
 
-  test('forwards SSE frames as console events and alerts', async () => {
+  // The hub holds every machine's telemetry and has no notion of the
+  // console's accounts: a socket must never be handed that feed, whether
+  // on connect or as the engine produces it.
+  test('SSE frames update the hub state and are not broadcast to sockets', async () => {
     const socket = connect(base)
-    await waitEvent(socket, 'console:snapshot')
-    const nextEvent = waitEvent<SfEvent>(socket, 'console:event')
-    const nextAlert = waitEvent<Record<string, any>>(socket, 'console:alert')
+    const seen: string[] = []
+    socket.onAny((event: string) => seen.push(event))
+    await waitEvent(socket, 'connect')
     pushFrame?.(`event: event\ndata: ${JSON.stringify({ id: 'ev-4', timestamp: '2026-09-30T10:00:04Z', type: 'process.create', source: 'sf-sensor (Sysmon real)', host: 'LAB-WKS-01' })}\n\n`)
     pushFrame?.(`event: alert\ndata: ${JSON.stringify({ ...fakeRawAlert, event_id: 'ev-9' })}\n\n`)
-    const ev = await nextEvent
-    expect(ev.id).toBe('ev-4')
-    const al = await nextAlert
-    expect(al.id).toBe('ev-9:r-lsass')
+    await pollUntil(() => hub.state.alerts[0]?.id === 'ev-9:r-lsass', 5000)
     expect(hub.state.events[0]?.id).toBe('ev-4')
-    expect(hub.state.alerts[0]?.id).toBe('ev-9:r-lsass')
-    socket.disconnect()
-  })
-
-  test('stats polling reaches the console', async () => {
-    const socket = connect(base)
-    await waitEvent(socket, 'console:snapshot')
-    const st = await waitEvent<Record<string, any>>(socket, 'console:stats', 7000)
-    expect(st.mode).toBe('engine')
-    expect(st.events_per_min).toBe(42)
+    // a replayed frame is not stored twice
+    pushFrame?.(`event: alert\ndata: ${JSON.stringify({ ...fakeRawAlert, event_id: 'ev-9' })}\n\n`)
+    // long enough for a stats poll (2 s) to have been broadcast before
+    await sleep(2500)
+    expect(hub.state.alerts.filter((a) => a.id === 'ev-9:r-lsass')).toHaveLength(1)
+    expect(seen).toEqual([])
     socket.disconnect()
   }, 10000)
 
-  test('when the engine dies the hub reports sin-motor, not stale data', async () => {
+  test('the analyst still works on the engine copy the hub synced', async () => {
+    process.env.ANALYST_BASE_URL = `${llmMock.url.origin}/v1`
+    process.env.ANALYST_API_KEY = 'sk-test'
+    process.env.ANALYST_MODEL = 'test-model'
     const socket = connect(base)
-    await waitEvent(socket, 'console:snapshot')
-    const downStats = waitEvent<Record<string, any>>(socket, 'console:stats', 10000)
+    await waitEvent(socket, 'connect')
+    try {
+      socket.emit('analyst:ask', { alert: { id: 'ev-2:r-lsass', rule_id: 'r-lsass', summary: 'COPIA DEL NAVEGADOR' } })
+      const done = await waitEvent<{ text: string }>(socket, 'analyst:done', 8000)
+      expect(done.text).toBe('analisis de prueba')
+      expect(llmLastPrompt).toContain('mimikatz sekurlsa::logonpasswords')
+      expect(llmLastPrompt).not.toContain('COPIA DEL NAVEGADOR')
+    } finally {
+      for (const key of ANALYST_KEYS) delete process.env[key]
+      socket.disconnect()
+    }
+  }, 10000)
+
+  test('when the engine dies the hub reports sin-motor and drops its copy', async () => {
     fakeEngine.stop(true)
     await pollUntil(() => hub.state.mode === 'sin-motor', 9000)
     const body = (await (await fetch(`${base}/health`)).json()) as Record<string, any>
     expect(body.status).toBe('degraded')
     expect(body.engine.events_total).toBe(0)
-    const st = await downStats
-    expect(st.mode).toBe('sin-motor')
-    socket.disconnect()
+    expect(body.buffers).toMatchObject({ events: 0, alerts: 0 })
+    expect(hub.state.stats().mode).toBe('sin-motor')
   }, 15000)
 })
 

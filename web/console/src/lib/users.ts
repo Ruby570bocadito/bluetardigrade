@@ -40,6 +40,7 @@
 
 import { appendFileSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { base32Decode } from './totp'
+import { resetTokenAttempts } from './attempts'
 
 // The paths come from the operator's environment at run time; the
 // turbopackIgnore markers keep the build from tracing the whole project
@@ -221,7 +222,7 @@ export function loadAccounts(): Parsed & { signature: string } {
   }
   const parsed = parseUsers(text)
   cached = { signature, ...parsed }
-  verified.clear()
+  lockout().verified.clear()
   return cached
 }
 
@@ -243,13 +244,26 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
 // by a digest of the Authorization header, never the header itself.
 const VERIFIED_TTL_MS = 10 * 60 * 1000
 const MAX_VERIFIED = 512
-const verified = new Map<string, { principal: Principal; until: number }>()
 
 // Failed logins per account: past the limit the account is refused
 // without checking the password until the window passes.
 const FAIL_LIMIT = 10
 const FAIL_WINDOW_MS = 5 * 60 * 1000
-const failures = new Map<string, { count: number; since: number }>()
+
+// Both maps live on globalThis, like the sessions (lib/sessions.ts):
+// Next.js bundles the request proxy and the route handlers separately,
+// and a module-level Map would give each bundle its own failure count,
+// so the lockout would allow FAIL_LIMIT guesses per bundle.
+type Lockout = {
+  verified: Map<string, { principal: Principal; until: number }>
+  failures: Map<string, { count: number; since: number }>
+}
+const sharedLockout = globalThis as typeof globalThis & { __sfConsoleLockout?: Lockout }
+
+function lockout(): Lockout {
+  if (!sharedLockout.__sfConsoleLockout) sharedLockout.__sfConsoleLockout = { verified: new Map(), failures: new Map() }
+  return sharedLockout.__sfConsoleLockout
+}
 
 async function headerDigest(header: string): Promise<string> {
   const d = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(header)))
@@ -280,6 +294,7 @@ export async function verifyAccount(user: string, password: string, now = Date.n
   // failures are tracked for real accounts only: invented names cannot
   // grow the table (or flush it to reset a real account's lockout)
   const failKey = account?.user.toLowerCase() ?? ''
+  const { failures } = lockout()
   const fails = account ? failures.get(failKey) : undefined
   if (fails && now - fails.since < FAIL_WINDOW_MS && fails.count >= FAIL_LIMIT) return null
   // unknown accounts cost the same derivation as known ones
@@ -319,6 +334,7 @@ export async function accountPrincipal(header: string | null, now = Date.now()):
   const creds = basicCredentials(header)
   if (!creds || !header) return null
   const digest = await headerDigest(header)
+  const { verified } = lockout()
   const hit = verified.get(digest)
   if (hit && hit.until > now) return hit.principal
   const principal = await verifyAccount(creds.user, creds.password, now)
@@ -509,6 +525,6 @@ export function readAudit(limit: number): { entries: AuditEntry[]; error?: strin
 // test hook: forget cached file contents, verified sessions and failures
 export function resetUsersCache(): void {
   cached = null
-  verified.clear()
-  failures.clear()
+  sharedLockout.__sfConsoleLockout = undefined
+  resetTokenAttempts()
 }

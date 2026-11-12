@@ -20,12 +20,17 @@ import { useEngine } from './engine-provider'
 import { useI18n } from './i18n-provider'
 import { EmptyState, OfflineNotice, SeverityBadge } from './ui-bits'
 import { StarBorder } from '@/components/reactbits/star-border'
+import {
+  ANALYST_MARKDOWN_GUARD, acceptsFrame, alertKey, analystTarget, withDelta, withDone, withError, withStep,
+} from '@/lib/analyst-channel'
 import { digestBundle, pickBundleAlert, type BundleDigest, type PendingIncidentAnalysis } from '@/lib/incident-analysis'
 import { readForensicBundle } from '@/lib/forensic'
 import type { Dict } from '@/lib/i18n'
 import { formatTime, type AnalystMessage, type SfAlert, type SfSuppression } from '@/lib/console-types'
 
-type AskPayload = { alert: SfAlert; question?: string }
+// requestId tags every frame of the answer; lang is the language the
+// hub answers and labels its steps in.
+type AskPayload = { alert: SfAlert; question?: string; requestId: string; lang: string }
 
 type SuppressWords = Dict['analyst']['suppress']
 
@@ -79,8 +84,8 @@ export function AnalystPanel({
   clearPendingIncident?: () => void
 }) {
   const { alerts, suppressions } = useEngine()
-  const { dict } = useI18n()
-  const { status: channelStatus, getSocket } = useAnalystChannel()
+  const { dict, lang } = useI18n()
+  const { status: channelStatus, socket } = useAnalystChannel()
   const reduce = useReducedMotion()
   const [messages, setMessages] = useState<AnalystMessage[]>([])
   const [question, setQuestion] = useState('')
@@ -88,64 +93,70 @@ export function AnalystPanel({
   const [pickerId, setPickerId] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const channelLive = channelStatus === 'live'
-
-  // Live updates while the analyst works.
+  // The request whose frames the panel is waiting for; null when idle.
+  const activeRequest = useRef<string | null>(null)
+  // read by the disconnect handler, which outlives a language change
+  const disconnectedText = useRef(dict.analyst.disconnected)
   useEffect(() => {
-    const socket = getSocket()
+    disconnectedText.current = dict.analyst.disconnected
+  }, [dict])
+
+  // Live updates while the analyst works. The socket is created after
+  // the provider's credential fetch, so on a direct load of this view it
+  // arrives after the first render: the effect depends on it and
+  // subscribes when it does. Frames of any request but the active one
+  // are ignored (lib/analyst-channel).
+  useEffect(() => {
     if (!socket) return
-    const onStep = ({ label, state }: { label: string; state: 'run' | 'done' }) => {
-      setMessages((prev) => {
-        const next = [...prev]
-        const last = next[next.length - 1]
-        if (!last || last.role !== 'analyst') return prev
-        const steps = [...(last.steps ?? [])]
-        const idx = steps.findIndex((s) => s.label === label)
-        if (idx >= 0) steps[idx] = { label, state }
-        else steps.push({ label, state })
-        next[next.length - 1] = { ...last, steps }
-        return next
-      })
-    }
-    const onDelta = ({ text }: { text: string }) => {
-      setMessages((prev) => {
-        const next = [...prev]
-        const last = next[next.length - 1]
-        if (!last || last.role !== 'analyst') return prev
-        next[next.length - 1] = { ...last, text: (last.text ?? '') + text }
-        return next
-      })
-    }
-    const onDone = ({ text }: { text: string }) => {
-      setMessages((prev) => {
-        const next = [...prev]
-        const last = next[next.length - 1]
-        if (!last || last.role !== 'analyst') return prev
-        next[next.length - 1] = { ...last, text: last.text || text }
-        return next
-      })
+    type Frame<T> = T & { requestId?: string }
+    const active = (frame: Frame<unknown>): string | null =>
+      acceptsFrame(activeRequest.current, frame as { requestId?: unknown }) ? activeRequest.current : null
+    const finish = () => {
+      activeRequest.current = null
       setRunning(false)
     }
-    const onError = ({ message }: { message: string }) => {
-      setMessages((prev) => {
-        const next = [...prev]
-        const last = next[next.length - 1]
-        if (!last || last.role !== 'analyst') return prev
-        next[next.length - 1] = { ...last, error: message }
-        return next
-      })
-      setRunning(false)
+    const onStep = (frame: Frame<{ label: string; state: 'run' | 'done' }>) => {
+      const id = active(frame)
+      if (id) setMessages((prev) => withStep(prev, id, frame))
+    }
+    const onDelta = (frame: Frame<{ text: string }>) => {
+      const id = active(frame)
+      if (id) setMessages((prev) => withDelta(prev, id, frame.text))
+    }
+    const onDone = (frame: Frame<{ text: string }>) => {
+      const id = active(frame)
+      if (!id) return
+      setMessages((prev) => withDone(prev, id, frame.text))
+      finish()
+    }
+    const onError = (frame: Frame<{ message: string }>) => {
+      const id = active(frame)
+      if (!id) return
+      setMessages((prev) => withError(prev, id, frame.message))
+      finish()
+    }
+    // The hub cancels the analyses of a socket that drops: no further
+    // frame will arrive for the one in flight, so it ends here instead
+    // of leaving the panel "analysing" for good.
+    const onDisconnect = () => {
+      const id = activeRequest.current
+      if (!id) return
+      setMessages((prev) => withError(prev, id, disconnectedText.current))
+      finish()
     }
     socket.on('analyst:step', onStep)
     socket.on('analyst:delta', onDelta)
     socket.on('analyst:done', onDone)
     socket.on('analyst:error', onError)
+    socket.on('disconnect', onDisconnect)
     return () => {
       socket.off('analyst:step', onStep)
       socket.off('analyst:delta', onDelta)
       socket.off('analyst:done', onDone)
       socket.off('analyst:error', onError)
+      socket.off('disconnect', onDisconnect)
     }
-  }, [getSocket])
+  }, [socket])
 
   // Keep the transcript pinned to the newest line.
   useEffect(() => {
@@ -153,22 +164,26 @@ export function AnalystPanel({
   }, [messages])
 
   function analyze(alert: SfAlert, q?: string) {
-    const socket = getSocket()
     if (!socket || running || !channelLive) return
+    const requestId = crypto.randomUUID()
+    activeRequest.current = requestId
     setRunning(true)
-    setPickerId(null)
+    // the queue highlights the alert the conversation is about, whether
+    // it was picked here or handed over from the alerts view
+    setPickerId(alertKey(alert))
     setMessages((prev) => [
       ...prev,
       {
         id: crypto.randomUUID(),
         role: 'user',
         alertName: alert.rule_name,
+        alert,
         question: q,
         suppressionNote: suppressionNote(alert, suppressions, dict.analyst.suppress),
       },
-      { id: crypto.randomUUID(), role: 'analyst', steps: [], text: '' },
+      { id: crypto.randomUUID(), role: 'analyst', requestId, steps: [], text: '' },
     ])
-    const payload: AskPayload = { alert }
+    const payload: AskPayload = { alert, requestId, lang }
     if (q && q.trim()) payload.question = q.trim()
     socket.emit('analyst:ask', payload)
   }
@@ -179,8 +194,9 @@ export function AnalystPanel({
   // engine answers. Without a bundle the payload travels without one
   // (the hub never pretends there was evidence).
   async function analyzeIncident(pending: PendingIncidentAnalysis, q?: string) {
-    const socket = getSocket()
     if (!socket || running || !channelLive) return
+    const requestId = crypto.randomUUID()
+    activeRequest.current = requestId
     setRunning(true)
     setPickerId(null)
     const p = pending.payload
@@ -202,7 +218,7 @@ export function AnalystPanel({
         suppressionNote: incidentSuppressionNote(p.alerts, suppressions, dict.analyst.suppress),
         incidentPayload: p,
       },
-      { id: crypto.randomUUID(), role: 'analyst', steps: [], text: '' },
+      { id: crypto.randomUUID(), role: 'analyst', requestId, steps: [], text: '' },
     ])
     let bundle: BundleDigest | undefined
     const top = pickBundleAlert(p.alerts)
@@ -210,7 +226,10 @@ export function AnalystPanel({
       const res = await readForensicBundle(top.id)
       if (res.kind === 'bundle') bundle = digestBundle(res.bundle)
     }
-    const payload: Record<string, unknown> = { ...p }
+    // the socket dropped while the bundle was being read: the request
+    // was already closed with an error, sending it now would orphan it
+    if (activeRequest.current !== requestId) return
+    const payload: Record<string, unknown> = { ...p, requestId, lang }
     if (bundle) payload.bundle = bundle
     if (q && q.trim()) payload.question = q.trim()
     socket.emit('analyst:ask-incident', payload)
@@ -218,30 +237,45 @@ export function AnalystPanel({
 
   // Hand-off from the alerts view: open a fresh analysis immediately.
   // The zero-delay timeout defers the state updates out of the effect body.
+  // It waits for the channel: a hand-off that lands before the socket is
+  // up would otherwise be consumed without sending anything.
   useEffect(() => {
-    if (!pendingAlert) return
+    if (!pendingAlert || !socket || !channelLive) return
     const id = setTimeout(() => {
       analyze(pendingAlert, undefined)
       clearPending()
     }, 0)
     return () => clearTimeout(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingAlert])
+  }, [pendingAlert, socket, channelLive])
 
   // Hand-off from the incidents view (or the selection bar): same
   // deferred pattern, the bundle fetch happens inside analyzeIncident.
   useEffect(() => {
-    if (!pendingIncident) return
+    if (!pendingIncident || !socket || !channelLive) return
     const id = setTimeout(() => {
       void analyzeIncident(pendingIncident, undefined)
       clearPendingIncident?.()
     }, 0)
     return () => clearTimeout(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingIncident])
+  }, [pendingIncident, socket, channelLive])
 
   const lastUser = [...messages].reverse().find((m) => m.role === 'user')
-  const canRetry = Boolean(lastUser?.alertName || lastUser?.incidentPayload) && !running && channelLive
+  const canRetry = Boolean(lastUser?.alert || lastUser?.incidentPayload) && !running && channelLive
+
+  // A follow-up question and «Repetir» go to what the conversation is
+  // about (lib/analyst-channel, analystTarget), with the given question.
+  function askAgain(q?: string) {
+    const target = analystTarget(messages, alerts)
+    if (!target || running || !channelLive) return
+    if (target.kind === 'alert') {
+      analyze(target.alert, q)
+      return
+    }
+    const m = target.message
+    if (m.incidentPayload) void analyzeIncident({ payload: m.incidentPayload, label: m.incidentTitle ?? dict.analyst.previousAnalysis }, q)
+  }
 
   return (
     <section aria-label={dict.analyst.sectionAria} className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
@@ -257,13 +291,11 @@ export function AnalystPanel({
               <li key={`${al.event_id}:${al.rule_id}`}>
                 <button
                   type="button"
-                  onClick={() => {
-                    setPickerId(`${al.event_id}:${al.rule_id}`)
-                    void analyze(al, undefined)
-                  }}
+                  onClick={() => analyze(al, undefined)}
                   disabled={running || !channelLive}
+                  aria-current={pickerId === alertKey(al) ? 'true' : undefined}
                   className={`w-full px-4 py-2.5 text-left transition-colors hover:bg-zinc-800/40 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
-                    pickerId === `${al.event_id}:${al.rule_id}` ? 'bg-primary-tint/[0.08]' : ''
+                    pickerId === alertKey(al) ? 'bg-primary-tint/[0.08]' : ''
                   }`}
                 >
                   <span className="flex items-center gap-2">
@@ -271,7 +303,7 @@ export function AnalystPanel({
                     <span className="truncate text-xs text-zinc-200">{al.rule_name}</span>
                   </span>
                   <span className="mt-1 block font-mono text-[11px] text-zinc-500">
-                    {formatTime(al.timestamp)} {al.host}
+                    {formatTime(al.timestamp, lang)} {al.host}
                   </span>
                 </button>
               </li>
@@ -371,6 +403,7 @@ export function AnalystPanel({
                           className="max-w-[75ch] space-y-2 text-sm leading-relaxed text-zinc-300 [&_code]:rounded-sm [&_code]:bg-zinc-800 [&_code]:px-1 [&_code]:font-mono [&_code]:text-xs [&_li]:ml-4 [&_li]:list-disc [&_p]:leading-relaxed [&_strong]:font-semibold [&_strong]:text-zinc-100"
                         >
                           <ReactMarkdown
+                            {...ANALYST_MARKDOWN_GUARD}
                             components={{
                               p: (p) => <p {...(p as object)} />,
                               ul: (p) => <ul {...(p as object)} />,
@@ -403,9 +436,8 @@ export function AnalystPanel({
           className="flex items-center gap-2 border-t border-zinc-800 px-3 py-2.5"
           onSubmit={(e) => {
             e.preventDefault()
-            const al = alerts.find((a) => `${a.event_id}:${a.rule_id}` === pickerId) ?? alerts[0]
-            if (!al || running || !channelLive) return
-            analyze(al, question)
+            if (running || !channelLive || !analystTarget(messages, alerts)) return
+            askAgain(question)
             setQuestion('')
           }}
         >
@@ -417,7 +449,7 @@ export function AnalystPanel({
             aria-label={dict.analyst.questionAria}
             disabled={!channelLive}
           />
-          <Button type="submit" size="sm" disabled={running || alerts.length === 0 || !channelLive} className="gap-1.5 rounded-md">
+          <Button type="submit" size="sm" disabled={running || !analystTarget(messages, alerts) || !channelLive} className="gap-1.5 rounded-md">
             {running ? <CircleNotch size={14} className="animate-spin" aria-hidden /> : <Sparkle size={14} weight="fill" aria-hidden />}
             {running ? dict.analyst.analyzing : dict.analyst.analyze}
           </Button>
@@ -428,14 +460,7 @@ export function AnalystPanel({
               variant="ghost"
               className="gap-1.5 rounded-md text-zinc-400 hover:text-zinc-100"
               aria-label={dict.analyst.retryAria}
-              onClick={() => {
-                if (lastUser?.incidentPayload) {
-                  void analyzeIncident({ payload: lastUser.incidentPayload, label: lastUser.incidentTitle ?? dict.analyst.previousAnalysis }, lastUser?.question)
-                  return
-                }
-                const al = alerts.find((a) => a.rule_name === lastUser?.alertName) ?? alerts[0]
-                if (al) analyze(al, lastUser?.question)
-              }}
+              onClick={() => askAgain(lastUser?.question)}
             >
               <ArrowsClockwise size={14} aria-hidden />
               <span className="hidden sm:inline">{dict.analyst.retry}</span>

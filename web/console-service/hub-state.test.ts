@@ -1,4 +1,4 @@
-// Unit tests for the hub state (ring buffers, snapshot contract,
+// Unit tests for the hub state (ring buffers, reconnect policy,
 // health payload) and the slot limiter. No network involved.
 
 import { describe, expect, test } from 'bun:test'
@@ -44,18 +44,28 @@ describe('HubState ring buffers', () => {
   })
 })
 
-describe('HubState snapshot', () => {
-  test('keeps the exact console contract shape', () => {
+describe('HubState rings across engine reconnects', () => {
+  test('a replayed event or alert is not stored twice', () => {
     const st = new HubState({})
+    for (const id of ['e1', 'e2', 'e1', 'e2']) st.recordEvent(ev(id))
+    expect(st.events.map((e) => e.id)).toEqual(['e2', 'e1'])
+    st.recordAlert(al('a1'))
+    st.recordAlert(al('a2'))
+    st.recordAlert({ ...al('a1'), status: 'closed' })
+    expect(st.alerts.map((a) => a.id)).toEqual(['a2', 'a1'])
+    // the replayed copy wins: it carries the current lifecycle
+    expect(st.alerts[1]?.status).toBe('closed')
+  })
+
+  test('setDown drops both rings so a restarted engine starts clean', () => {
+    const st = new HubState({})
+    st.setUp('http://e')
     st.recordEvent(ev('e1'))
     st.recordAlert(al('a1'))
-    st.setRules([{ id: 'r1', name: 'n', description: '', severity: 'low', event_type: 't', mitre: '', tactic: '', tags: [], conditions: [] }])
-    const snap = st.snapshot()
-    expect(Object.keys(snap).sort()).toEqual(['alerts', 'events', 'rules', 'sequences', 'started_at', 'stats', 'suppressions'])
-    expect(snap.events.map((e) => e.id)).toEqual(['e1'])
-    expect(snap.rules.length).toBe(1)
-    expect(snap.stats.mode).toBe('sin-motor')
-    expect(Number.isNaN(new Date(snap.started_at).getTime())).toBe(false)
+    st.setDown()
+    expect(st.events).toEqual([])
+    expect(st.alerts).toEqual([])
+    expect(st.health('0.0.0-test').buffers.alerts).toBe(0)
   })
 })
 

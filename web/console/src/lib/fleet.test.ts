@@ -43,7 +43,10 @@ describe('enrollment', () => {
     expect(run.cmd).toContain('--token "<token de pc-conta-01>"')
     expect(run.cmd).toContain('--tls-ca')
     expect(plan.some((step) => step.where === 'server-admin' && step.cmd?.includes('LocalPort 7777'))).toBe(true)
-    expect(enrollmentPlan('PC-01', '10.0.0.5', false).at(-1)!.cmd).not.toContain('--tls-ca')
+    const plain = enrollmentPlan('PC-01', '10.0.0.5', false).at(-1)!.cmd
+    expect(plain).not.toContain('--tls-ca')
+    expect(plain).toContain('--allow-plaintext-token')
+    expect(run.cmd).not.toContain('--allow-plaintext-token')
   })
 })
 

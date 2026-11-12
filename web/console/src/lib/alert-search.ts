@@ -70,3 +70,15 @@ export function matchesAssignee(alert: SfAlert, lens: AssigneeLens, me: string):
   if (lens === 'unassigned') return owner === ''
   return owner !== '' && owner.toLowerCase() === me.trim().toLowerCase()
 }
+
+// Why a history page could not be read, as a code the view words in the
+// operator's language (dict.alerts.historyErrors). `status` is the HTTP
+// status of the failed search, or undefined for a transport failure.
+export type AlertHistoryError = 'unsupported' | 'expired' | 'timeout' | 'failed'
+
+export function alertHistoryError(status: number | undefined): AlertHistoryError {
+  if (status === 404) return 'unsupported' // an engine without /api/alerts/search
+  if (status === 400) return 'expired' // stale cursor or changed filters
+  if (status === 504) return 'timeout'
+  return 'failed'
+}

@@ -4,8 +4,10 @@
 // stream, the JSON endpoints and the JSONL/CSV exports all behave
 // exactly as the engine serves them.
 //
-// Surface policy: everything the engine serves as GET is forwarded as
-// is. Writes go through a closed allowlist (WRITES below): alert triage
+// Surface policy: what the engine serves as GET is forwarded as is,
+// except a short list of administration reads that need the same role
+// as their writes (lib/engine-reads.ts). Writes go through a closed allowlist
+// (WRITES below): alert triage
 // and assignment, incidents, the rule tester dry run, suppressions (the
 // engine refuses them unless started with -api-write), sensor enrollment
 // (tokens and the approval of new machines, administrators only) and
@@ -28,9 +30,13 @@
 //    else gets a 403 that names the escape hatch — fail-loud, like the
 //    engine's 0.0.0.0-without-token warning.
 //
-// 2. Same-origin writes. The triage POST is forwarded only when there
-//    is no evidence of a cross-site browser context (Origin header
-//    mismatch or Sec-Fetch-Site: cross-site). A hostile page in the
+// 2. Same-origin requests. Nothing is forwarded when there is evidence
+//    of a cross-site browser context (Origin header mismatch or
+//    Sec-Fetch-Site: cross-site), reads included: a page on another
+//    site can point an <img> at this route, and some engine reads cost
+//    something (a reputation lookup spends the provider quota) while
+//    the default console, on loopback without credentials, answers
+//    whoever asks. For writes the stake is higher: a hostile page in the
 //    operator's browser can fire a "simple request" at the console
 //    with a JSON body in text/plain — the engine's status handler
 //    parses the body regardless of content type — so the guard must
@@ -55,6 +61,7 @@
 //    header narrows what the token may see, it cannot widen it.
 
 import { accessToken, principalFor, unauthorizedResponse } from '@/lib/access'
+import { readRole } from '@/lib/engine-reads'
 import { LOOPBACK_HOSTS, crossSiteContext, extraHosts, hostAllowed } from '@/lib/request-guard'
 import { ROLE_LABEL, attribute, audit, roleAtLeast, scopeOf, usersFile, type Principal, type Role } from '@/lib/users'
 
@@ -228,8 +235,8 @@ function reject(request: Request, error: string, hint: string): Response {
 }
 
 // The boundary every forwarded request crosses: credentials and the
-// exposure check first, then host pinning (it protects reads and
-// writes alike), then the same-origin write guard.
+// exposure check first, then host pinning, then the same-origin guard.
+// All three protect reads and writes alike.
 async function refused(request: Request, principal: Principal | null): Promise<Response | null> {
   if (!principal) return unauthorizedResponse()
   if (exposedWithoutCredentials()) {
@@ -246,20 +253,41 @@ async function refused(request: Request, principal: Principal | null): Promise<R
       'La consola solo responde en loopback (localhost/127.0.0.1/::1). Para otro host añádelo a CONSOLE_ALLOWED_HOSTS y asume que quien alcance la consola alcanza la telemetría del motor.',
     )
   }
-  if (request.method !== 'GET' && crossSiteContext(request)) {
-    return reject(
-      request,
-      'cross_site_write',
-      'Escritura rechazada: contexto cross-site. Solo la propia consola (mismo origen) puede escribir en el motor.',
-    )
+  if (crossSiteContext(request)) {
+    return request.method === 'GET'
+      ? reject(
+          request,
+          'cross_site_read',
+          'Lectura rechazada: contexto cross-site. Abre la consola y consulta el motor desde ella.',
+        )
+      : reject(
+          request,
+          'cross_site_write',
+          'Escritura rechazada: contexto cross-site. Solo la propia consola (mismo origen) puede escribir en el motor.',
+        )
   }
   return null
+}
+
+function roleForbidden(principal: Principal, needed: Role): Response {
+  return Response.json(
+    {
+      error: 'role_forbidden',
+      hint: `Tu cuenta (${principal.name}, ${ROLE_LABEL[principal.role].toLowerCase()}) no puede hacer esto: hace falta el rol ${ROLE_LABEL[needed].toLowerCase()}.`,
+    },
+    { status: 403, headers: { 'cache-control': 'no-store' } },
+  )
 }
 
 export async function GET(request: Request): Promise<Response> {
   const principal = await principalFor(request)
   const guard = await refused(request, principal)
   if (guard || !principal) return guard ?? unauthorizedResponse()
+  const needed = readRole(new URL(request.url).pathname.replace(/^\/api\/engine/, '') || '/')
+  if (needed === 'malformed') return Response.json({ error: 'bad_path' }, { status: 400 })
+  // Not written to the console audit trail: it records writes, and the
+  // console polls some of these reads for every signed-in account.
+  if (needed && !roleAtLeast(principal.role, needed)) return roleForbidden(principal, needed)
   return forward(request, principal)
 }
 
@@ -283,13 +311,7 @@ async function write(request: Request): Promise<Response> {
     })
   if (route && !roleAtLeast(principal.role, route.role)) {
     record(403)
-    return Response.json(
-      {
-        error: 'role_forbidden',
-        hint: `Tu cuenta (${principal.name}, ${ROLE_LABEL[principal.role].toLowerCase()}) no puede hacer esto: hace falta el rol ${ROLE_LABEL[route.role].toLowerCase()}.`,
-      },
-      { status: 403 },
-    )
+    return roleForbidden(principal, route.role)
   }
   if (!route) {
     return Response.json(

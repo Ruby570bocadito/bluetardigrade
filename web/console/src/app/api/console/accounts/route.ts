@@ -11,7 +11,7 @@
 
 import { principalFor, unauthorizedResponse } from '@/lib/access'
 import { accountAction, listAccounts } from '@/lib/accounts'
-import { crossSiteContext, hostAllowed } from '@/lib/request-guard'
+import { crossSiteContext, hostAllowed, readRefused } from '@/lib/request-guard'
 import { audit, type Principal } from '@/lib/users'
 
 export const dynamic = 'force-dynamic'
@@ -33,6 +33,8 @@ async function administrator(request: Request): Promise<Principal | Response> {
 export async function GET(request: Request): Promise<Response> {
   const actor = await administrator(request)
   if (actor instanceof Response) return actor
+  const refused = readRefused(request)
+  if (refused) return refused
   const list = listAccounts()
   if ('error' in list) return Response.json({ error: 'fichero', hint: list.error }, { status: 500, headers: NO_STORE })
   return Response.json(list, { headers: NO_STORE })

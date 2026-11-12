@@ -10,7 +10,7 @@ describe('token enrollment plan', () => {
     expect(run.where).toBe('remote-admin')
     expect(run.cmd).toContain('--addr 192.168.1.10:7777')
     expect(run.cmd).toContain(`--enroll-token ${SECRET}`)
-    expect(run.cmd).toContain('--token-file "C:\\ProgramData\\bluetardigrade\\sensor\\ingest.token"')
+    expect(run.cmd).toContain('--token-file "C:\\ProgramData\\bluetardigrade-sensor\\ingest.token"')
     expect(run.cmd).toContain('--tls-ca')
   })
 

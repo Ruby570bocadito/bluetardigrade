@@ -22,6 +22,7 @@
 // one, under the name DOMINIO\usuario.
 
 import { accessToken, tokenEquals } from '@/lib/access'
+import { clientAddress, tokenAttemptAllowed, tokenAttemptFailed, tokenAttemptSucceeded } from '@/lib/attempts'
 import { domainAuthEnabled, domainLogin, type DomainFailure } from '@/lib/domain-auth'
 import {
   challengeCookie, clearedChallengeCookie, closeChallenge, failedAttempt, openChallenge, readChallenge, readChallengeCookie,
@@ -253,10 +254,19 @@ export async function POST(request: Request): Promise<Response> {
 
   const typedName = NAME_RE.test(fields.user) ? fields.user : '?'
   if (!users) {
+    // the shared token has no account to lock: lib/attempts.ts limits
+    // the guesses per client address and overall, here and for Basic
+    const client = clientAddress(request)
+    if (!tokenAttemptAllowed(client)) {
+      audit({ at: new Date().toISOString(), user: typedName, role: '', mode: 'token', method: 'POST', path: '/login', status: 429, outcome: 'denied' })
+      return reply.back('intentos', 429)
+    }
     if (!(await tokenEquals(fields.password, token))) {
+      tokenAttemptFailed(client)
       audit({ at: new Date().toISOString(), user: typedName, role: '', mode: 'token', method: 'POST', path: '/login', status: 401, outcome: 'denied' })
       return reply.back('credenciales', 401)
     }
+    tokenAttemptSucceeded(client)
     const principal: Principal = { name: typedName === '?' ? 'operador' : typedName, role: 'admin', mode: 'token' }
     audit({ at: new Date().toISOString(), user: principal.name, role: 'admin', mode: 'token', method: 'POST', path: '/login', status: 200, outcome: 'ok' })
     return signedIn(request, reply, principal, (await tokenStamp()) as string)

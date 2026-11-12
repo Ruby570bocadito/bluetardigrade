@@ -24,6 +24,13 @@ Go engine (internal/api, 127.0.0.1:7778)
 console-service (Bun, socket.io :3003)   ->  AI analyst only
 ```
 
+The hub keeps its own engine-fed copy of recent alerts, events and rules
+so the analyst works on the engine's record of an alert, not the
+browser's. It sends sockets analyst frames only (`analyst:step`, `:delta`,
+`:done`, `:error`, each tagged with the `requestId` of the request it
+answers); no telemetry is pushed to a socket. A console that disconnects
+cancels its analyses.
+
 Telemetry comes straight from the engine API; the hub
 (`console-service/`) is only used for the AI analyst. If the engine is
 unreachable the console says so (`Motor offline`) and clears stale telemetry
@@ -316,13 +323,19 @@ view, dark and light themes) — `make console-a11y`.
   to engine telemetry, so any other Host gets a 403 that names this
   var — the console posture mirrors the engine's: loopback
   friction-free, beyond loopback loud and explicit.
-- Same-origin writes: the triage POST is forwarded only when the
-  request shows no cross-site browser context (mismatched `Origin` or
-  `Sec-Fetch-Site: cross-site`), so a hostile page cannot drive-by
-  close alerts through the proxy; headerless clients (curl, the
-  dev-tests smokes) keep working. Covered by `bun test`
-  (`route.test.ts`, 10 tests) alongside the live-fire matrix of the
-  role report.
+- Same-origin requests: nothing is forwarded, reads included, when the
+  request shows a cross-site browser context (mismatched `Origin` or
+  `Sec-Fetch-Site: cross-site`), so a hostile page can neither drive-by
+  close alerts nor make the console query the engine on its behalf (a
+  reputation lookup spends provider quota); headerless clients (curl,
+  the dev-tests smokes), the console's own requests and a typed address
+  keep working. Covered by `bun test` (`route.test.ts`) alongside the
+  live-fire matrix of the role report.
+- Administration reads: with accounts, `GET` of `/api/settings/*`,
+  `/api/enroll`, `/api/respond/audit` and `/metrics` needs an
+  administrator, like their writes. Every other read stays open to any
+  account. The Respuesta activa view tells the other roles that the
+  audit is an administrator's read.
 - `NEXT_PUBLIC_ENGINE_API` (console, client side): bypass the proxy and
   talk to the engine directly (only useful when the engine serves CORS).
 - `NEXT_PUBLIC_CONSOLE_URL` (console): point the analyst socket at a
@@ -342,10 +355,15 @@ view, dark and light themes) — `make console-a11y`.
   their limits: `docs/OPERATIONS.md`, "Console accounts, roles and
   audit". Extra hosts without it are refused unless
   `CONSOLE_ALLOW_UNAUTHENTICATED=1` declares an authenticating front
-  end. The analyst hub accepts sockets only with `HUB_ACCESS_TOKEN` when
+  end. With `CONSOLE_ACCESS_TOKEN` alone, wrong tokens are limited per
+  client address and overall (ten per address, two hundred in total,
+  per five minutes), at the sign-in form and for HTTP Basic. The analyst
+  hub accepts sockets only with `HUB_ACCESS_TOKEN` when
   it is set (mandatory when the hub binds beyond loopback); the browser
   obtains it from the authenticated `/api/hub-token` route, never from
-  the bundle.
+  the bundle. With the token set, the hub's status page and the detail
+  of `GET /health` need it too (`Authorization: Bearer`); without it
+  `/health` answers `{service, status}` only.
 - Analyst triage (console-service): `ANALYST_BASE_URL`,
   `ANALYST_API_KEY` and `ANALYST_MODEL` for any OpenAI-compatible
   endpoint. Without configuration the analyst panel reports it clearly

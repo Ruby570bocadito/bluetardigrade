@@ -40,13 +40,19 @@ export function createSlotLimiter(max: number): SlotLimiter {
 export type RateLimiter = {
   /** Records one request; false when the window budget is exhausted. */
   tryTake(): boolean
+  /** Gives back the newest request taken: the caller charged the
+   * window and then did no work for it (a later gate refused). */
+  refund(): void
   /** Requests taken inside the current window (after pruning). */
   taken(): number
   readonly max: number
   readonly windowMs: number
 }
 
-export function createRateLimiter(max: number, windowMs: number, now: () => number = Date.now): RateLimiter {
+// The default clock is monotonic: Date.now() jumps with NTP corrections
+// and manual clock changes, which would either free the whole window at
+// once or freeze it until the wall clock catches up.
+export function createRateLimiter(max: number, windowMs: number, now: () => number = () => performance.now()): RateLimiter {
   const budget = Math.max(1, Math.floor(max))
   const window = Math.max(1, Math.floor(windowMs))
   const stamps: number[] = []
@@ -62,6 +68,9 @@ export function createRateLimiter(max: number, windowMs: number, now: () => numb
       if (stamps.length >= budget) return false
       stamps.push(t)
       return true
+    },
+    refund() {
+      stamps.pop()
     },
     taken() {
       prune(now())

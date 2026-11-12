@@ -9,6 +9,7 @@
 
 import { DownloadSimple } from '@phosphor-icons/react'
 import type { SfRespondAudit } from '@/lib/console-types'
+import { useI18n } from './i18n-provider'
 
 const linkCls =
   'inline-flex h-8 items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900 px-2.5 font-mono text-[11px] text-zinc-300 transition-colors hover:border-zinc-700 hover:bg-zinc-800 hover:text-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -24,26 +25,26 @@ export function ExportButtons({
   /** Rows the active filter hides from the view but the export keeps. */
   hiddenCount?: number
 }) {
-  const noun = kind === 'alerts' ? 'alertas' : 'eventos'
+  const w = useI18n().dict.chrome
+  const noun = w.exportNoun[kind]
+  const limit = kind === 'alerts' ? 256 : 1000
   // Same honesty rule as the audit export below (O4 precedent): the
   // bulk endpoint serves the engine's COMPLETE ring by design — the
   // view filter is a lens over the queue, not a data selector, and a
   // silently filtered file would masquerade as the full ring. With a
   // filter active, the tooltips say so explicitly instead of leaving
   // it implied by the buttons sitting next to the filter controls.
-  const filterNote = filterLabel
-    ? ` No aplica el filtro activo (${filterLabel}); puede incluir registros fuera de esta vista${hiddenCount === undefined ? '' : `, incluidos ${hiddenCount} ocultos en el búfer recibido`}.`
-    : ''
+  const filterNote = filterLabel ? w.exportFilterNote(filterLabel, hiddenCount) : ''
   return (
-    <div role="group" aria-label={`Exportar ${noun}`} className="flex items-center gap-1.5">
+    <div role="group" aria-label={w.exportGroupAria(noun)} className="flex items-center gap-1.5">
       <span className="hidden items-center gap-1 text-[11px] uppercase tracking-wider text-zinc-500 sm:flex">
         <DownloadSimple size={12} aria-hidden />
         Export
       </span>
-      <a href={`/api/engine/api/${kind}/export?format=jsonl`} download className={linkCls} title={`Descargar ${noun} en JSON Lines. Hasta ${kind === 'alerts' ? '256' : '1000'} registros recientes del motor o SQLite.${filterNote}`}>
+      <a href={`/api/engine/api/${kind}/export?format=jsonl`} download className={linkCls} title={w.exportTitle(noun, 'JSON Lines', limit) + filterNote}>
         jsonl
       </a>
-      <a href={`/api/engine/api/${kind}/export?format=csv`} download className={linkCls} title={`Descargar ${noun} en CSV. Hasta ${kind === 'alerts' ? '256' : '1000'} registros recientes del motor o SQLite.${filterNote}`}>
+      <a href={`/api/engine/api/${kind}/export?format=csv`} download className={linkCls} title={w.exportTitle(noun, 'CSV', limit) + filterNote}>
         csv
       </a>
     </div>
@@ -72,6 +73,7 @@ export function AuditExportButton({
   /** Records the active filter hides from the view but the export keeps. */
   hiddenCount?: number
 }) {
+  const w = useI18n().dict.chrome
   const records = audit?.records ?? []
   const disabled = records.length === 0
 
@@ -96,13 +98,13 @@ export function AuditExportButton({
       type="button"
       onClick={download}
       disabled={disabled}
-      aria-label="Exportar la cola del audit como jsonl"
+      aria-label={w.auditExportAria}
       title={
         disabled
-          ? 'Sin intentos en la cola: nada que exportar todavía'
+          ? w.auditExportEmpty
           : filterLabel
-            ? `Exporta la ventana completa, independiente del filtro «${filterLabel}»: los ${records.length} registros de la cola, incluidos los ${hiddenCount ?? 0} que el filtro oculta en la vista, más recientes primero, línea a línea como la escribe el motor; el archivo completo vive en el host del motor (append-only, nunca se trunca)`
-            : `Descarga la cola de la ventana (${records.length} registros, más recientes primero) línea a línea como la escribe el motor; el archivo completo vive en el host del motor (append-only, nunca se trunca)`
+            ? w.auditExportFiltered(filterLabel, records.length, hiddenCount ?? 0)
+            : w.auditExportAll(records.length)
       }
       className={`${linkCls} disabled:cursor-not-allowed disabled:opacity-50`}
     >
