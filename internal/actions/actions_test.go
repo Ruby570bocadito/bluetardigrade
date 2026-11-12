@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -308,5 +310,76 @@ func TestWebhookBuildErrorRedactsURL(t *testing.T) {
 	}
 	if !strings.Contains(logged, "invalid URL escape") {
 		t.Fatalf("la causa debe nombrar el fallo sin el endpoint:\n%s", logged)
+	}
+}
+
+// Con los 8 huecos ocupados las entregas esperan en una cola acotada;
+// llena la cola, se descarta la de menor severidad: una alerta critica
+// que llega detras de una rafaga de bajas se entrega igualmente.
+func TestWebhookQueueKeepsTheMostSevere(t *testing.T) {
+	gate := make(chan struct{})
+	var mu sync.Mutex
+	got := map[string]int{}
+	var arrived atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		arrived.Add(1)
+		<-gate
+		var payload struct {
+			Severity string `json:"severity"`
+		}
+		_ = json.Unmarshal(body, &payload)
+		mu.Lock()
+		got[payload.Severity]++
+		mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	d := New(nil)
+	hook := []rules.Action{{Type: "webhook", Config: map[string]string{"url": srv.URL, "timeout": "20s"}}}
+	send := func(sev string) {
+		a := alert.Alert{RuleID: "r", RuleName: "regla", Severity: sev, Host: "H"}
+		d.Prepare(&a, hook)
+	}
+	for i := 0; i < maxInFlight; i++ {
+		send("low")
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for arrived.Load() < maxInFlight {
+		if time.Now().After(deadline) {
+			t.Fatalf("only %d deliveries in flight", arrived.Load())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	for i := 0; i < maxQueued; i++ {
+		send("low")
+	}
+	if d.Dropped() != 0 {
+		t.Fatalf("dropped %d before the queue was full", d.Dropped())
+	}
+	send("critical") // cola llena: expulsa una baja
+	send("low")      // cola llena y nada menos severo: se descarta ella
+	if d.Dropped() != 2 {
+		t.Fatalf("Dropped = %d, want 2", d.Dropped())
+	}
+	close(gate)
+	want := maxInFlight + maxQueued
+	for {
+		mu.Lock()
+		n := got["low"] + got["critical"]
+		mu.Unlock()
+		if n == want {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("delivered %d of %d", n, want)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if got["critical"] != 1 || got["low"] != want-1 {
+		t.Fatalf("deliveries by severity = %v, want 1 critical and %d low", got, want-1)
 	}
 }

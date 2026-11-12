@@ -21,6 +21,7 @@ package respond
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -40,6 +41,7 @@ var (
 	procQueryFullProcessImageNameW = modkernel32.NewProc("QueryFullProcessImageNameW")
 	procTerminateProcess           = modkernel32.NewProc("TerminateProcess")
 	procCloseHandle                = modkernel32.NewProc("CloseHandle")
+	procIsProcessCritical          = modkernel32.NewProc("IsProcessCritical")
 )
 
 // resolvedTarget carries the pinned process handle.
@@ -96,6 +98,15 @@ func resolveProcessName(pid int) (string, error) {
 // imageBasename queries the full image path through the pinned
 // handle and returns its basename.
 func imageBasename(h syscall.Handle) (string, error) {
+	full, err := imagePath(h)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Base(full), nil
+}
+
+// imagePath queries the full Win32 image path through the handle.
+func imagePath(h syscall.Handle) (string, error) {
 	var buf [1024]uint16
 	size := uint32(len(buf))
 	r1, _, _ := procQueryFullProcessImageNameW.Call(
@@ -107,7 +118,7 @@ func imageBasename(h syscall.Handle) (string, error) {
 	if r1 == 0 {
 		return "", errProcessAccess
 	}
-	return filepath.Base(windows.UTF16ToString(buf[:size])), nil
+	return windows.UTF16ToString(buf[:size]), nil
 }
 
 // nameMatches implements R2 for Windows: case-insensitive basename
@@ -120,21 +131,88 @@ func nameMatches(resolved, want string) bool {
 // protectedSystemNames are the irre-killable Windows system processes
 // (R6): killing any of them by an allowlist mistake is not reversible
 // by relaunching — the whole boot degrades. Matched case-insensitively
-// with .exe tolerance (the shipped names carry no suffix; real image
-// basenames usually do).
-var protectedSystemNames = []string{"csrss", "smss", "wininit", "services", "lsass"}
+// with .exe tolerance, and only for the image under the system
+// directory: a binary that merely borrows one of these names from
+// another folder is exactly what an operator needs to kill.
+var protectedSystemNames = []string{"csrss", "smss", "wininit", "winlogon", "services", "lsass"}
 
-// isProtectedDefault implements R6 for Windows: the documented
-// system set above, never a guess from the operator file alone.
-func isProtectedDefault(pid int, resolved string) bool {
-	_ = pid
-	base := stripExe(resolved)
-	for _, n := range protectedSystemNames {
+// protectedProductNames are the product's own binaries. They are
+// protected when they run from the directory of this executable (the
+// install's bin folder): killing the sensor blinds the host, and the
+// name alone would again shield an impostor elsewhere.
+var protectedProductNames = []string{"engine", "sf-engine", "collector", "security-sensor"}
+
+// protectedImage decides R6 from a full image path. systemDir is the
+// Windows system directory and selfDir the folder of this executable;
+// an empty directory disables its family.
+func protectedImage(fullPath, systemDir, selfDir string) bool {
+	base := stripExe(filepath.Base(fullPath))
+	dir := filepath.Dir(fullPath)
+	sameDir := func(want string) bool {
+		return want != "" && strings.EqualFold(filepath.Clean(dir), filepath.Clean(want))
+	}
+	if sameDir(systemDir) && nameInList(base, protectedSystemNames) {
+		return true
+	}
+	return sameDir(selfDir) && nameInList(base, protectedProductNames)
+}
+
+func nameInList(base string, names []string) bool {
+	for _, n := range names {
 		if strings.EqualFold(base, n) {
 			return true
 		}
 	}
 	return false
+}
+
+// protectedDirs returns the system directory and the folder of this
+// executable ("" when either cannot be resolved).
+func protectedDirs() (systemDir, selfDir string) {
+	systemDir, _ = windows.GetSystemDirectory()
+	if exe, err := os.Executable(); err == nil {
+		selfDir = filepath.Dir(exe)
+	}
+	return systemDir, selfDir
+}
+
+// isCritical reports whether Windows flags the process as critical
+// (its termination bug-checks the machine): the svchost.exe hosting
+// DcomLaunch/RPCSS and whatever else the OS marks, without a name
+// list. A failed query answers false: the path check has already run,
+// and IsProcessCritical is absent before Windows 8.1.
+func isCritical(h syscall.Handle) bool {
+	if procIsProcessCritical.Find() != nil {
+		return false
+	}
+	var critical int32
+	r1, _, _ := procIsProcessCritical.Call(uintptr(h), uintptr(unsafe.Pointer(&critical)))
+	return r1 != 0 && critical != 0
+}
+
+// protectedHandle applies both R6 checks to an open process.
+func protectedHandle(h syscall.Handle) (bool, error) {
+	full, err := imagePath(h)
+	if err != nil {
+		return false, err
+	}
+	systemDir, selfDir := protectedDirs()
+	return protectedImage(full, systemDir, selfDir) || isCritical(h), nil
+}
+
+// isProtectedDefault implements R6 for Windows: the documented system
+// set by full path, the product's own binaries and anything the OS
+// marks critical. If the image path cannot be read the decision falls
+// back to the bare name, refusing rather than guessing.
+func isProtectedDefault(pid int, resolved string) bool {
+	h, _, _ := procOpenProcess.Call(uintptr(_processQueryLimitedInformation), 0, uintptr(pid))
+	if h != 0 {
+		defer closeTarget(resolvedTarget{handle: syscall.Handle(h)})
+		if protected, err := protectedHandle(syscall.Handle(h)); err == nil {
+			return protected
+		}
+	}
+	return nameInList(stripExe(resolved), protectedSystemNames)
 }
 
 // nameInSet checks the resolved name against the operator-supplied
@@ -186,6 +264,13 @@ var killVerified = func(pid int, want string) (string, string, error) {
 		// hollowing — the flag text says so and the kill decision
 		// stays with the operator.
 		return mech, "", errNameMismatch
+	}
+	// The guard judged the path through another handle; the object
+	// pinned here is the one that dies, so it is judged again.
+	if protected, perr := protectedHandle(t.handle); perr != nil {
+		return mech, "", perr
+	} else if protected {
+		return mech, "", errProcessProtected
 	}
 	r1, _, _ := procTerminateProcess.Call(uintptr(t.handle), 1)
 	if r1 == 0 {

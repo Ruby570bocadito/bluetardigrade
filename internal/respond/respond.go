@@ -129,12 +129,15 @@ func httpStatusFor(code string) int {
 // RemoteAddr (R5a attribution: with a shared token, the address is
 // the only extra attribution the engine gets for free).
 type Request struct {
-	Host           string
-	PID            int
-	ProcessName    string
-	RuleID         string
-	AlertID        string
-	Operator       string
+	Host        string
+	PID         int
+	ProcessName string
+	RuleID      string
+	AlertID     string
+	Operator    string
+	// Account is the console account behind the request (header
+	// X-SF-Account), recorded in the audit line and nothing else.
+	Account        string
 	Reason         string
 	IdempotencyKey string
 	Source         string
@@ -186,6 +189,13 @@ type Manager struct {
 type coKey struct {
 	host string
 	pid  int
+}
+
+// cooldownKey folds the host the way the R3 host check compares it
+// (trimmed, case-insensitive): "HOST", "host" and " host" are one
+// machine and must share one cooldown.
+func cooldownKey(req Request) coKey {
+	return coKey{strings.ToLower(strings.TrimSpace(req.Host)), req.PID}
 }
 
 // NewManager builds the manager around an opened audit writer. A nil
@@ -415,7 +425,7 @@ func (m *Manager) checkBudgets(req Request, now time.Time) string {
 			delete(m.cooldown, k)
 		}
 	}
-	if _, active := m.cooldown[coKey{req.Host, req.PID}]; active {
+	if _, active := m.cooldown[cooldownKey(req)]; active {
 		return CodeCooldownActive
 	}
 	cut := now.Add(-time.Minute)
@@ -513,7 +523,7 @@ func (m *Manager) recordCommit(req Request, now time.Time) bool {
 	}
 	m.globalTimes = append(m.globalTimes, now)
 	m.opTimes[req.Operator] = append(m.opTimes[req.Operator], now)
-	m.cooldown[coKey{req.Host, req.PID}] = now
+	m.cooldown[cooldownKey(req)] = now
 	return true
 }
 
@@ -528,6 +538,7 @@ func (m *Manager) auditRecord(req Request, now time.Time, actionID string) Recor
 		PID:      req.PID,
 		Process:  req.ProcessName,
 		Operator: req.Operator,
+		Account:  req.Account,
 		RuleID:   req.RuleID,
 		AlertID:  req.AlertID,
 		Reason:   req.Reason,

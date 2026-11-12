@@ -21,6 +21,10 @@ var (
 	// errProcessAccess: the object exists but the engine lacks the
 	// permission to verify and/or signal it (EACCES/EPERM family).
 	errProcessAccess = errors.New("process exists but the engine lacks permission to verify or signal it")
+	// errProcessProtected: the object pinned for the kill turned out
+	// to be a protected system process (the guard saw another object
+	// at that PID, or could not see this one's path).
+	errProcessProtected = errors.New("process is protected")
 )
 
 // processCodeFor maps a platform error onto its audit/HTTP denial
@@ -32,6 +36,8 @@ func processCodeFor(err error) string {
 		return CodePIDNotFound
 	case errors.Is(err, errNameMismatch):
 		return CodePIDMismatch
+	case errors.Is(err, errProcessProtected):
+		return CodeProcessProtected
 	default:
 		return CodePIDAccessDenied
 	}
