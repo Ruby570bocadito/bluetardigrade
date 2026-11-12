@@ -14,10 +14,10 @@
   event_type: process.create
   conditions:
     - field: process.name
-      operator: eq
+      operator: ieq
       value: "schtasks.exe"
     - field: process.command_line
-      operator: contains
+      operator: icontains
       value: "/create"
   actions:
     - type: alert
@@ -39,10 +39,10 @@
   event_type: process.create
   conditions:
     - field: process.name
-      operator: eq
+      operator: ieq
       value: "wmic.exe"
     - field: process.command_line
-      operator: contains
+      operator: icontains
       value: "process call create"
   actions:
     - type: alert
@@ -64,13 +64,13 @@
   event_type: process.create
   conditions:
     - field: process.name
-      operator: eq
-      value: "powershell.exe"
+      operator: iin
+      value: ["powershell.exe", "pwsh.exe"]
     - field: process.command_line
-      operator: contains
+      operator: icontains
       value: "Set-MpPreference"
     - field: process.command_line
-      operator: contains_any
+      operator: icontains_any
       value: ["-DisableRealtimeMonitoring", "-DisableBehaviorMonitoring", "-ExclusionPath"]
   actions:
     - type: alert
@@ -92,10 +92,10 @@
   event_type: process.create
   conditions:
     - field: process.name
-      operator: eq
+      operator: ieq
       value: "vssadmin.exe"
     - field: process.command_line
-      operator: contains
+      operator: icontains
       value: "delete shadows"
   actions:
     - type: alert

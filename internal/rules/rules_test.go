@@ -259,6 +259,39 @@ func TestRealtimePackDetectsLsassAccess(t *testing.T) {
 	}
 }
 
+// La mascara es un campo de bits: cualquier combinacion que lleve
+// PROCESS_VM_READ (0x0010) dispara; las que no lo llevan, no.
+func TestRealtimePackLsassAccessIsABitmask(t *testing.T) {
+	e := loadTestEngine(t)
+	access := func(mask string) int {
+		ev := &model.Event{
+			ID: "test-lsass-mask", Timestamp: time.Now().UTC(),
+			Type: model.TypeProcessAccess, Source: "sysmon", Host: "LAB-WKS-01",
+			Process: &model.Process{PID: 700, Name: "dump.exe", Image: `C:\Users\Public\dump.exe`},
+			Target:  &model.Process{PID: 744, Name: "LSASS.EXE", Image: `C:\Windows\system32\lsass.exe`},
+			Access:  &model.ProcessAccess{GrantedAccess: mask},
+		}
+		n := 0
+		for _, h := range e.Evaluate(ev) {
+			if h.Rule.Name == "Acceso a memoria de LSASS" {
+				n++
+			}
+		}
+		return n
+	}
+	for _, mask := range []string{"0x1010", "0x1033", "0x1410", "0x147a", "0x1fffff",
+		"0x1438", "0x143a", "0x1f3fff", "0x1F1FFF", "0x1011", "0x10", "0x0010", "0x1FFFFF"} {
+		if access(mask) != 1 {
+			t.Errorf("mask %s carries PROCESS_VM_READ and must fire", mask)
+		}
+	}
+	for _, mask := range []string{"0x1000", "0x1400", "0x0400", "0x100000", "0x1", "0x1fffef", "0x2000", "", "1010"} {
+		if access(mask) != 0 {
+			t.Errorf("mask %q has no PROCESS_VM_READ and must not fire", mask)
+		}
+	}
+}
+
 func TestRealtimePackDetectsDgaDomain(t *testing.T) {
 	e := loadTestEngine(t)
 	ev := &model.Event{
@@ -360,6 +393,10 @@ func TestOperators(t *testing.T) {
 		{"istartswith", "rundll32", "RUNDLL32.exe", true},
 		{"iendswith", ".exe", "RUNDLL32.EXE", true},
 		{"iin", []any{"certutil.exe", "bitsadmin.exe"}, "BITSADMIN.EXE", true},
+		{"ineq", "explorer.exe", "Explorer.EXE", false},
+		{"ineq", "explorer.exe", "cmd.exe", true},
+		{"inot_in", []any{"winword.exe", "excel.exe"}, "WINWORD.EXE", false},
+		{"inot_in", []any{"winword.exe", "excel.exe"}, "cmd.exe", true},
 	}
 	// F2 (adenda 11h02): la tabla pasa por el Matcher — el unico
 	// camino de evaluacion que existe desde el refactor.
@@ -584,6 +621,7 @@ func TestMatcherDefensiveCopyOfSliceValues(t *testing.T) {
 func TestCompileRejectsUnknownOperator(t *testing.T) {
 	r := &Rule{
 		Name:       "regla con operador desconocido",
+		ID:         "op-desconocido",
 		EventType:  "process.create",
 		Severity:   SevHigh,
 		Conditions: []Condition{{Field: "f", Operator: "regexi", Value: "x"}},
@@ -595,5 +633,50 @@ func TestCompileRejectsUnknownOperator(t *testing.T) {
 	r.Conditions[0].Operator = "icontains"
 	if _, err := compile(r); err != nil {
 		t.Fatalf("compile rechazó icontains: %v", err)
+	}
+}
+
+// La carga falla en alto con un id duplicado, un id o nombre vacio o un
+// event_type que el motor no conoce: cualquiera de ellos dejaria una
+// regla muda o alertas imposibles de distinguir.
+func TestLoadRejectsBrokenIdentityAndEventType(t *testing.T) {
+	const ok = "- {name: a, id: a, event_type: process.create, severity: low}\n"
+	cases := []struct {
+		name, yaml, want string
+	}{
+		{"duplicate id", ok + "- {name: b, id: a, event_type: file.write, severity: low}\n", "duplicate id"},
+		{"duplicate id on a disabled rule", ok + "- {name: b, id: a, event_type: file.write, severity: low, enabled: false}\n", "duplicate id"},
+		{"empty id", "- {name: a, event_type: process.create, severity: low}\n", "missing id"},
+		{"blank id", "- {name: a, id: '  ', event_type: process.create, severity: low}\n", "missing id"},
+		{"empty name", "- {id: a, event_type: process.create, severity: low}\n", "missing name"},
+		{"typo in event_type", "- {name: a, id: a, event_type: process.created, severity: low}\n", "unknown event_type"},
+		{"event_type case", "- {name: a, id: a, event_type: Process.Create, severity: low}\n", "unknown event_type"},
+	}
+	for _, c := range cases {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "r.yaml"), []byte(c.yaml), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := LoadDir(dir)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want %q", c.name, err, c.want)
+		}
+	}
+	// el duplicado tambien se detecta entre ficheros
+	dir := t.TempDir()
+	for _, f := range []string{"a.yaml", "b.yaml"} {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte(ok), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := LoadDir(dir); err == nil || !strings.Contains(err.Error(), "duplicate id") {
+		t.Errorf("duplicate across files: err = %v", err)
+	}
+	dir = t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "r.yaml"), []byte(ok), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadDir(dir); err != nil {
+		t.Errorf("a well-formed rule must load: %v", err)
 	}
 }

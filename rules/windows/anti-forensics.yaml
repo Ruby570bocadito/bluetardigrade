@@ -23,7 +23,7 @@
   event_type: process.create
   conditions:
     - field: process.name
-      operator: in
+      operator: iin
       value: ["powershell.exe", "pwsh.exe"]
     - field: process.command_line
       operator: regex
@@ -48,7 +48,7 @@
   event_type: process.create
   conditions:
     - field: process.name
-      operator: eq
+      operator: ieq
       value: "wmic.exe"
     - field: process.command_line
       operator: regex
@@ -99,7 +99,7 @@
   event_type: process.create
   conditions:
     - field: process.name
-      operator: eq
+      operator: ieq
       value: "bcdedit.exe"
     - field: process.command_line
       operator: regex
@@ -124,7 +124,7 @@
   event_type: process.create
   conditions:
     - field: process.name
-      operator: eq
+      operator: ieq
       value: "fsutil.exe"
     - field: process.command_line
       operator: regex
@@ -150,7 +150,7 @@
   event_type: process.create
   conditions:
     - field: process.name
-      operator: eq
+      operator: ieq
       value: "ntdsutil.exe"
     - field: process.command_line
       operator: regex

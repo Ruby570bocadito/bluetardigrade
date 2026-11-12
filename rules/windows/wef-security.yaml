@@ -35,10 +35,10 @@
   severity: critical
   event_type: windows.event
   conditions:
-    - {field: attributes.win_event_id, operator: eq, value: "4662"}
-    - {field: attributes.win_object_server, operator: eq, value: "DS"}
+    - {field: attributes.win_event_id, operator: ieq, value: "4662"}
+    - {field: attributes.win_object_server, operator: ieq, value: "DS"}
     - {field: attributes.win_property, operator: icontains_any, value: ["1131f6ad", "1131f6aa", "89e95b76"]}
-    - {field: attributes.win_subject_is_machine, operator: neq, value: "true"}
+    - {field: attributes.win_subject_is_machine, operator: ineq, value: "true"}
   actions:
     - type: alert
       config:
@@ -59,8 +59,8 @@
   severity: high
   event_type: windows.event
   conditions:
-    - {field: attributes.win_event_id, operator: eq, value: "4769"}
-    - {field: attributes.win_ticket_encryption, operator: eq, value: "0x17"}
+    - {field: attributes.win_event_id, operator: ieq, value: "4769"}
+    - {field: attributes.win_ticket_encryption, operator: ieq, value: "0x17"}
   actions:
     - type: alert
       config:
@@ -84,7 +84,7 @@
   conditions:
     - {field: attributes.win_event_id, operator: icontains_any, value: ["4728", "4732", "4756"]}
     - {field: attributes.win_group, operator: icontains_any, value: ["admins", "administrator", "administrador", "operator", "operador"]}
-    - {field: attributes.win_member_is_machine, operator: neq, value: "true"}
+    - {field: attributes.win_member_is_machine, operator: ineq, value: "true"}
   actions:
     - type: alert
       config:
@@ -106,7 +106,7 @@
   severity: high
   event_type: windows.event
   conditions:
-    - {field: attributes.win_event_id, operator: eq, value: "7045"}
+    - {field: attributes.win_event_id, operator: ieq, value: "7045"}
     - {field: attributes.win_image_path, operator: icontains_any, value: ["powershell", "cmd.exe", "mshta", "rundll32", "wscript", "cscript", "%comspec%", "-enc", "\\temp\\", "\\appdata\\", "\\programdata\\", "\\users\\public\\"]}
   actions:
     - type: alert

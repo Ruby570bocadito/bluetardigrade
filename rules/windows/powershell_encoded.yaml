@@ -11,8 +11,8 @@
   event_type: process.create
   conditions:
     - field: process.name
-      operator: eq
-      value: "powershell.exe"
+      operator: iin
+      value: ["powershell.exe", "pwsh.exe"]
     - field: process.command_line
       # regex instead of contains_any: a bare "-enc" substring also
       # matched "-Encoding UTF8" in legitimate sign/scripts and raised
@@ -20,8 +20,14 @@
       # every real flag (-enc, -eNcoDeDcommand...) and drops -Encoding.
       operator: regex
       # (?i): powershell flags are case-insensitive (-ENC works); the
-      # colon/space class covers both -w hidden and -w:hidden syntax
-      value: '(?i)-e(nc(odedcommand)?)?\b|-w(indowstyle)?[: =]+hidden\b'
+      # colon/space class covers both -w hidden and -w:hidden syntax.
+      # PowerShell accepts ANY prefix of a parameter name (-e, -ec,
+      # -enco, -encod... and -w, -win, -windowst...), a slash or a
+      # Unicode dash instead of the hyphen, and pwsh.exe takes the
+      # same flags: the nested optionals spell every prefix out. The
+      # encoded flag must be followed by its argument, which is what
+      # keeps -Encoding out.
+      value: '(?i)(^|\s)([-/\x{2013}\x{2014}\x{2015}]e(c|n(c(o(d(e(d(c(o(m(m(a(n(d)?)?)?)?)?)?)?)?)?)?)?)?)?[\s:]+\S|[-/\x{2013}\x{2014}\x{2015}]w(i(n(d(o(w(s(t(y(l(e)?)?)?)?)?)?)?)?)?)?[\s:=]+["'']?(hid\w*|1)\b)'
   actions:
     - type: alert
       config:
