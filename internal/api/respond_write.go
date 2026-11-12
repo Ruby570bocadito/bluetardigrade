@@ -81,6 +81,7 @@ func (h *Hub) handleRespondKill(w http.ResponseWriter, r *http.Request) {
 		RuleID:         in.RuleID,
 		AlertID:        in.AlertID,
 		Operator:       in.Operator,
+		Account:        auditSafe(r.Header.Get("X-SF-Account"), adAuditAccountCap),
 		Reason:         in.Reason,
 		IdempotencyKey: in.IdempotencyKey,
 		Source:         r.RemoteAddr,

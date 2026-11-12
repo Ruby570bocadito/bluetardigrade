@@ -12,6 +12,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/respond"
@@ -61,6 +62,14 @@ func (h *Hub) handleRespondState(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// A caller limited to host groups (scope.go) learns that the
+	// surface is armed - it may act on its own machines - and nothing
+	// about the platform behind it: no file paths of the engine host,
+	// no operator or protected-process counts, no audit size.
+	if scopeFrom(r) != nil {
+		writeJSON(w, respondStatePayload{Armed: true, Signal: respond.Signal})
+		return
+	}
 	writeJSON(w, respondStatePayload{
 		Armed:          true,
 		Signal:         respond.Signal,
@@ -107,7 +116,9 @@ func (h *Hub) handleRespondAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	records, skipped, truncated, err := respond.ReadAuditTail(auditPath, limit)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		// the error names the audit file on the engine host
+		log.Printf("[API] respond audit unreadable: %v", err)
+		http.Error(w, "the respond audit is not readable (see engine log)", http.StatusInternalServerError)
 		return
 	}
 	// a caller limited to host groups (scope.go) reads the actions on

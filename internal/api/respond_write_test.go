@@ -285,3 +285,44 @@ func TestRespondKillScopedDenialLeavesATrace(t *testing.T) {
 		t.Fatalf("the scope denial must leave a DENIED trace in the engine log, got: %q", buf.String())
 	}
 }
+
+// The audit line names the console account behind the request next to
+// the operator: the operator is typed by whoever acts, the account is
+// who was signed in. A hostile header stays one bounded line.
+func TestRespondKillAuditsTheConsoleAccount(t *testing.T) {
+	h, base := newTestHub(t)
+	auditPath := filepath.Join(t.TempDir(), "audit.jsonl")
+	a, err := respond.OpenAudit(auditPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = a.Close() })
+	h.EnableRespondKill(respond.NewManager(respondHostNameForTest(), a))
+	body, _ := json.Marshal(map[string]any{
+		"host": respondHostNameForTest(), "pid": 2147483647, "process_name": "sleep",
+		"operator": "ana", "reason": "account attribution",
+	})
+	req, _ := http.NewRequest(http.MethodPost, "http://"+base+"/api/respond/kill", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-SF-Account", "maria.lopez\t"+strings.Repeat("x", 200))
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	raw, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	var rec respond.Record
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &rec); err != nil {
+		t.Fatalf("audit line: %v (%q)", err, raw)
+	}
+	if rec.Operator != "ana" || !strings.HasPrefix(rec.Account, "maria.lopez") {
+		t.Fatalf("audit = operator %q account %q", rec.Operator, rec.Account)
+	}
+	if len([]rune(rec.Account)) > 64 || strings.ContainsAny(rec.Account, "\t\r\n") {
+		t.Fatalf("account not bounded to one clean line: %q", rec.Account)
+	}
+}

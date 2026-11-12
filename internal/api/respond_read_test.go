@@ -17,6 +17,13 @@ import (
 func armedRespondReadHub(t *testing.T) (string, string) {
 	t.Helper()
 	h, base := newTestHub(t)
+	_, auditPath := armedRespondReadHubOn(t, h)
+	return base, auditPath
+}
+
+// armedRespondReadHubOn arms the read surface on an existing hub.
+func armedRespondReadHubOn(t *testing.T, h *Hub) (string, string) {
+	t.Helper()
 	dir := t.TempDir()
 	auditPath := filepath.Join(dir, "audit.jsonl")
 	a, err := respond.OpenAudit(auditPath)
@@ -34,7 +41,7 @@ func armedRespondReadHub(t *testing.T) (string, string) {
 	}
 	h.EnableRespondKill(m)
 	h.SetRespondPaths(opsPath, "", auditPath)
-	return base, auditPath
+	return opsPath, auditPath
 }
 
 func getRespondJSON(t *testing.T, url string) (int, map[string]any, string) {

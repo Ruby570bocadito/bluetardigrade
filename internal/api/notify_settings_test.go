@@ -276,3 +276,83 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+// A stored secret belongs to the destination it was configured for, and
+// the engine's environment is not a secret store the API may read from.
+func TestNotifySettingsPutDoesNotLeakSecretsToANewDestination(t *testing.T) {
+	var mu sync.Mutex
+	var auths []string
+	evil := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		auths = append(auths, r.Header.Get("Authorization"))
+		mu.Unlock()
+	}))
+	t.Cleanup(evil.Close)
+	t.Setenv("SF_API_TOKEN", "engine-api-token")
+	t.Setenv("LEGACY_NTFY_TOKEN", "legacy-token")
+	t.Setenv("SF_NOTIFY_NTFY_TOKEN", "dedicated-token")
+
+	h, addr := newTestHub(t)
+	armWrites(h)
+	path, _ := armNotify(t, h, `channels:
+  - type: ntfy
+    name: movil
+    url: https://ntfy.example.org
+    topic: soc
+    token: "tk_STORED"
+  - type: ntfy
+    name: legado
+    url: https://ntfy.example.org
+    topic: soc
+    token_env: LEGACY_NTFY_TOKEN
+  - type: email
+    name: correo
+    server: smtp.example.org:587
+    from: soc@example.org
+    to: [a@example.org]
+    username: soc
+    password: "STOREDPW"
+`)
+	const keep = `{"type":"ntfy","name":"movil","url":"https://ntfy.example.org","topic":"soc"},
+	  {"type":"ntfy","name":"legado","url":"https://ntfy.example.org","topic":"soc","token_env":"LEGACY_NTFY_TOKEN"},
+	  {"type":"email","name":"correo","server":"smtp.example.org:587","from":"soc@example.org","to":["a@example.org"],"username":"soc"}`
+	put := func(channels string) (int, string) {
+		res, raw := doJSON(t, "PUT", "http://"+addr+"/api/settings/notify", `{"channels":[`+channels+`]}`)
+		return res.StatusCode, raw
+	}
+	for name, channels := range map[string]string{
+		"engine secret through token_env": `{"type":"ntfy","name":"x","url":"` + evil.URL + `","topic":"t","token_env":"SF_API_TOKEN"}`,
+		"password_env outside the prefix": `{"type":"email","name":"x","server":"127.0.0.1:25","from":"a@b","to":["c@d"],"username":"u","password_env":"SF_API_TOKEN"}`,
+		"username_env outside the prefix": `{"type":"email","name":"x","server":"127.0.0.1:25","from":"a@b","to":["c@d"],"username_env":"SF_API_TOKEN","password":"p"}`,
+		"stored token, new url":           `{"type":"ntfy","name":"movil","url":"` + evil.URL + `","topic":"soc"}`,
+		"stored env name, new url":        `{"type":"ntfy","name":"legado","url":"` + evil.URL + `","topic":"soc","token_env":"LEGACY_NTFY_TOKEN"}`,
+		"stored password, new server":     `{"type":"email","name":"correo","server":"127.0.0.1:25","from":"soc@example.org","to":["a@example.org"],"username":"soc"}`,
+	} {
+		if code, raw := put(channels); code != http.StatusBadRequest {
+			t.Fatalf("%s: %d %s, want 400", name, code, raw)
+		}
+	}
+	_, _ = doJSON(t, "POST", "http://"+addr+"/api/notify/test", `{}`)
+	mu.Lock()
+	if len(auths) != 0 {
+		t.Fatalf("a rejected channel reached the new destination: %q", auths)
+	}
+	mu.Unlock()
+
+	// unchanged destinations keep what the file had, legacy env name included
+	if code, raw := put(keep); code != http.StatusOK {
+		t.Fatalf("round trip of the stored config: %d %s", code, raw)
+	}
+	cfg, _, _, err := notify.ReadFileConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Channels[0].Token != "tk_STORED" || cfg.Channels[1].TokenEnv != "LEGACY_NTFY_TOKEN" || cfg.Channels[2].Password != "STOREDPW" {
+		t.Fatalf("stored secrets not kept: %+v", cfg.Channels)
+	}
+	// a new destination is fine with its own secret, literal or namespaced
+	if code, raw := put(`{"type":"ntfy","name":"movil","url":"` + evil.URL + `","topic":"soc","token":"tk_NEW"},
+	  {"type":"ntfy","name":"legado","url":"` + evil.URL + `","topic":"soc","token_env":"SF_NOTIFY_NTFY_TOKEN"}`); code != http.StatusOK {
+		t.Fatalf("new destination with its own secret: %d %s", code, raw)
+	}
+}

@@ -242,11 +242,19 @@ func (h *Hub) handleAlertAssignBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := assignBatchResponse{Assigned: []string{}, Failed: []assignFailure{}}
+	// First resolve every id, then write the survivors in ONE store
+	// operation: the lifecycle file is rewritten whole per persist, and
+	// a full selection used to rewrite it once per id.
+	ids := make([]string, 0, len(req.IDs))
+	hosts := make(map[string]string, len(req.IDs))
 	for _, id := range req.IDs {
 		if !alertIDPattern.MatchString(id) {
 			out.Failed = append(out.Failed, assignFailure{ID: id,
 				Error: "malformed alert id: want 16 lowercase hex characters"})
 			continue
+		}
+		if _, dup := hosts[id]; dup {
+			continue // the same id twice is one assignment
 		}
 		// existence first, for EVERY caller: no phantom assignments in bulk
 		target, found, lookupErr := h.alertByID(r.Context(), id)
@@ -263,24 +271,27 @@ func (h *Hub) handleAlertAssignBatch(w http.ResponseWriter, r *http.Request) {
 			out.Failed = append(out.Failed, assignFailure{ID: id, Error: "unknown alert id"})
 			continue
 		}
-		e, err := h.lifecycle.Assign(id, req.Assignee, req.By)
-		if err != nil {
-			if errors.Is(err, lifecycle.ErrPersistFailed) {
-				// every remaining id will hit the same disk: stop the
-				// batch here, the response shows exactly how far it got
-				log.Printf("[API] alert lifecycle persist FAILED for %s: %v", id, err)
-				out.Failed = append(out.Failed, assignFailure{ID: id,
-					Error: "assignment recorded in memory but persistence failed (see engine log)"})
-				for _, rest := range req.IDs[len(out.Assigned)+len(out.Failed):] {
-					out.Failed = append(out.Failed, assignFailure{ID: rest, Error: "not attempted (persistence failing)"})
-				}
-				break
-			}
-			out.Failed = append(out.Failed, assignFailure{ID: id, Error: err.Error()})
-			continue
+		ids = append(ids, id)
+		hosts[id] = target.Host
+	}
+	entries, err := h.lifecycle.AssignBatch(ids, req.Assignee, req.By)
+	switch {
+	case errors.Is(err, lifecycle.ErrPersistFailed):
+		// one write for the whole batch: none of it reached the disk
+		log.Printf("[API] alert lifecycle persist FAILED for a batch of %d: %v", len(ids), err)
+		for _, id := range ids {
+			out.Failed = append(out.Failed, assignFailure{ID: id,
+				Error: "assignment recorded in memory but persistence failed (see engine log)"})
 		}
-		out.Assigned = append(out.Assigned, id)
-		h.broadcast("alert_lifecycle", e, target.Host)
+	case err != nil:
+		for _, id := range ids {
+			out.Failed = append(out.Failed, assignFailure{ID: id, Error: err.Error()})
+		}
+	default:
+		for _, e := range entries {
+			out.Assigned = append(out.Assigned, e.AlertID)
+			h.broadcast("alert_lifecycle", e, hosts[e.AlertID])
+		}
 	}
 	if req.Assignee == "" {
 		log.Printf("[API] assign-batch: %d unassigned, %d failed (by=%s)",

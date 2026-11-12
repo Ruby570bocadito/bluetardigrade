@@ -343,6 +343,36 @@ func refusePathChange(w http.ResponseWriter, in *adSettingsUpdate, base ad.Confi
 	return true
 }
 
+// refuseStoredCredentialElsewhere answers 400 when the request points
+// the bind somewhere else - another server, port or account - without
+// carrying the password. The stored credential was entrusted to one
+// destination: reusing it for whatever host a request names would hand
+// the service account's password to that host, on a probe at once and
+// on a PUT at the next sync.
+func refuseStoredCredentialElsewhere(w http.ResponseWriter, in *adSettingsUpdate, base, candidate ad.Config) bool {
+	if in.Password != nil {
+		return false
+	}
+	field := ""
+	switch {
+	case !strings.EqualFold(candidate.Server, base.Server):
+		field = "server"
+	case candidate.Port != base.Port:
+		field = "port"
+	case candidate.BindDN != base.BindDN:
+		field = "bind_dn"
+	}
+	if field == "" {
+		return false
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"error": "password required: " + field + " differs from the stored configuration, and the stored credential is only used against the destination it was saved for",
+	})
+	return true
+}
+
 // currentADBase returns the config any merge starts from: the armed
 // connector's effective configuration, or the zero config when the
 // surface runs without -ad.
@@ -367,12 +397,20 @@ func (h *Hub) handleADSettingsPut(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// The base is read and merged INSIDE the write lock: a PUT changes
+	// only the fields it names, so two overlapping ones that each
+	// merged into the config they saw before the lock would commit one
+	// after the other and the second would silently undo the first.
+	h.adWriteMu.Lock()
+	defer h.adWriteMu.Unlock()
+
 	c := h.adConnector()
 	if c == nil {
 		h.adOffJSON(w)
 		return
 	}
-	candidate := c.Config()
+	base := c.Config()
+	candidate := base
 	if refusePathChange(w, in, candidate) {
 		return
 	}
@@ -381,9 +419,9 @@ func (h *Hub) handleADSettingsPut(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("configuration rejected: %v", err), http.StatusBadRequest)
 		return
 	}
-
-	h.adWriteMu.Lock()
-	defer h.adWriteMu.Unlock()
+	if refuseStoredCredentialElsewhere(w, in, base, candidate) {
+		return
+	}
 
 	// Drift gate: the file is the shared source of truth; overwriting
 	// an unmerged hand edit would destroy the operator's work. The
@@ -505,13 +543,17 @@ func (h *Hub) handleADTest(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	candidate := h.currentADBase()
+	base := h.currentADBase()
+	candidate := base
 	if refusePathChange(w, in, candidate) {
 		return
 	}
 	in.apply(&candidate)
 	if err := candidate.Validate(); err != nil {
 		http.Error(w, fmt.Sprintf("configuration rejected: %v", err), http.StatusBadRequest)
+		return
+	}
+	if refuseStoredCredentialElsewhere(w, in, base, candidate) {
 		return
 	}
 

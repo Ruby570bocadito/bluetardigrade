@@ -15,6 +15,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -38,7 +39,12 @@ import (
 // watchFleetSilence raises one "sensor sin señal" alert per outage of
 // a sensor that sends heartbeats; it goes through the same suppression
 // gate, so a planned maintenance can be silenced per host.
-func watchFleetSilence(ctx context.Context, fleetTracker *fleet.Tracker, baseTracker *baseline.Tracker, st *store.Store, emitAllowlisted func(alert.Alert)) {
+//
+// The returned function saves once more what the trackers learned; the
+// caller runs it after the pipeline drained, because the events
+// processed after the context was cancelled teach the baseline too.
+func watchFleetSilence(ctx context.Context, fleetTracker *fleet.Tracker, baseTracker *baseline.Tracker, st *store.Store, emitAllowlisted func(alert.Alert)) (finalFlush func()) {
+	flusher := &learnedFlusher{base: baseTracker, fleet: fleetTracker, st: st}
 	go func() {
 		const every = 30 * time.Second
 		t := time.NewTicker(every)
@@ -47,6 +53,10 @@ func watchFleetSilence(ctx context.Context, fleetTracker *fleet.Tracker, baseTra
 		for {
 			select {
 			case <-ctx.Done():
+				// one last save: what was learned since the previous
+				// tick (up to 30 s of baseline and inventory) would
+				// otherwise be gone at every restart
+				flusher.flush(time.Now())
 				return
 			case now := <-t.C:
 				// wall clock (Round(0) drops the monotonic reading, which may
@@ -62,28 +72,67 @@ func watchFleetSilence(ctx context.Context, fleetTracker *fleet.Tracker, baseTra
 						emitAllowlisted(silentSensorAlert(tr.Host, now))
 					}
 				}
-				// drained on every tick, with or without a store: without
-				// one the pending lists would only grow
-				learned := baseTracker.TakePending()
-				retired := fleetTracker.TakeRetired()
-				if st != nil {
-					rows := make([]store.BaselineEntry, 0, len(learned))
-					for _, e := range learned {
-						rows = append(rows, store.BaselineEntry{Host: e.Host, Kind: e.Kind, Value: e.Value, FirstSeen: e.FirstSeen})
-					}
-					if err := st.AddBaseline(rows); err != nil {
-						log.Printf("[BASELINE] saving FAILED: %v", err)
-					}
-					if err := st.SaveFleetHosts(fleetTracker.Export(false, now)); err != nil {
-						log.Printf("[FLEET] saving the inventory FAILED: %v", err)
-					}
-					if err := st.DeleteFleetHosts(retired); err != nil {
-						log.Printf("[FLEET] retiring hosts FAILED: %v", err)
-					}
-				}
+				flusher.flush(now)
 			}
 		}
 	}()
+	return func() { flusher.flush(time.Now()) }
+}
+
+// learnedCarryMax bounds what a failing store can make the flusher
+// hold: past it the oldest unsaved baseline rows are dropped (and
+// logged), the trade the trackers' own caps already make.
+const learnedCarryMax = 100_000
+
+// learnedFlusher saves what the trackers learned since the last call.
+// The trackers hand their pending lists over exactly once, so whatever
+// a failed write did not save is kept here and retried on the next
+// call instead of being lost.
+type learnedFlusher struct {
+	base  *baseline.Tracker
+	fleet *fleet.Tracker
+	st    *store.Store
+
+	mu      sync.Mutex            // the ticker and the final save may overlap
+	rows    []store.BaselineEntry // learned, not saved yet
+	retired []string              // retired hosts, not deleted yet
+}
+
+func (f *learnedFlusher) flush(now time.Time) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	// drained on every call, with or without a store: without one the
+	// pending lists would only grow
+	learned := f.base.TakePending()
+	retired := f.fleet.TakeRetired()
+	if f.st == nil {
+		return
+	}
+	for _, e := range learned {
+		f.rows = append(f.rows, store.BaselineEntry{Host: e.Host, Kind: e.Kind, Value: e.Value, FirstSeen: e.FirstSeen})
+	}
+	f.retired = append(f.retired, retired...)
+	if err := f.st.AddBaseline(f.rows); err != nil {
+		if over := len(f.rows) - learnedCarryMax; over > 0 {
+			f.rows = append([]store.BaselineEntry{}, f.rows[over:]...)
+			log.Printf("[BASELINE] saving FAILED: %v (%d oldest unsaved entries dropped)", err, over)
+		} else {
+			log.Printf("[BASELINE] saving FAILED: %v (%d entries kept for the next attempt)", err, len(f.rows))
+		}
+	} else {
+		f.rows = nil
+	}
+	if err := f.st.SaveFleetHosts(f.fleet.Export(false, now)); err != nil {
+		log.Printf("[FLEET] saving the inventory FAILED: %v", err)
+	}
+	if err := f.st.DeleteFleetHosts(f.retired); err != nil {
+		if over := len(f.retired) - learnedCarryMax; over > 0 {
+			f.retired = append([]string{}, f.retired[over:]...)
+		}
+		log.Printf("[FLEET] retiring hosts FAILED: %v (kept for the next attempt)", err)
+	} else {
+		f.retired = nil
+	}
 }
 
 // startSweeps retires idle pid->identity entries (30 min TTL) so a
@@ -275,7 +324,13 @@ func startStorePruner(ctx context.Context, st *store.Store, retention time.Durat
 				case <-ctx.Done():
 					return
 				case <-t.C:
-					if dEv, dAl, dAu, perr := st.Prune(retention); perr == nil && dEv+dAl+dAu > 0 {
+					// a failing prune is a store that grows without bound:
+					// it must not be silent
+					dEv, dAl, dAu, perr := st.Prune(retention)
+					if perr != nil {
+						log.Printf("[ENGINE] store prune FAILED: %v", perr)
+					}
+					if dEv+dAl+dAu > 0 {
 						fmt.Printf("[ENGINE] store pruned %d events / %d alerts / %d audit rows older than %s\n", dEv, dAl, dAu, retention)
 					}
 				}

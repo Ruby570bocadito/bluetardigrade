@@ -227,7 +227,7 @@ func runEngine(o *options, interactive bool) error {
 	if bcn != nil {
 		bcn.SetEmit(emitAllowlisted)
 	}
-	watchFleetSilence(ctx, fleetTracker, baseTracker, st, emitAllowlisted)
+	saveLearned := watchFleetSilence(ctx, fleetTracker, baseTracker, st, emitAllowlisted)
 	if thr != nil {
 		// Threshold alerts NEVER feed the correlator (Q3): one
 		// threshold alert already aggregates N events, and
@@ -294,6 +294,8 @@ func runEngine(o *options, interactive bool) error {
 	} else {
 		pipe.loop(events)
 	}
+
+	saveLearned() // the queue is drained: nothing else will teach the trackers
 
 	whCancel() // stop accepting; drain pending deliveries (webhook + notify share the context)
 	if wh != nil {
