@@ -246,3 +246,45 @@ func TestWhenExpiredDoesNotMatch(t *testing.T) {
 		t.Fatal("an expired conditional entry must not match (like any expired entry)")
 	}
 }
+
+// Dos entradas condicionales para la misma regla: la segunda tiene que
+// evaluarse aunque la primera nombre el mismo par regla/equipo, y una
+// entrada condicional anterior no puede tapar una incondicional.
+func TestSuppressedEventTriesEveryEntry(t *testing.T) {
+	m := loadWhen(t, `
+- rule_id: `+whenTestRule+`
+  when:
+    - field: process.command_line
+      operator: contains
+      value: 'Get-Clipboard'
+  reason: primera forma
+- rule_id: `+whenTestRule+`
+  when:
+    - field: process.command_line
+      operator: contains
+      value: 'Get-Date'
+  reason: segunda forma
+- rule_id: `+whenTestRule+`
+  host: LAB-SRV-09
+  reason: equipo de pruebas
+`)
+	now := time.Now()
+	ok, entry := m.SuppressedEvent(whenTestRule, "LAB-WKS-01", whenEvent("powershell.exe Get-Date"), now)
+	if !ok || entry.Reason != "segunda forma" {
+		t.Fatalf("the second conditional entry must silence its shape: ok=%v entry=%+v", ok, entry.Reason)
+	}
+	if ok, _ := m.SuppressedEvent(whenTestRule, "LAB-WKS-01", whenEvent("powershell.exe Get-Process"), now); ok {
+		t.Fatal("an invocation no entry names must still alert")
+	}
+	ok, entry = m.SuppressedEvent(whenTestRule, "lab-srv-09", whenEvent("powershell.exe Get-Process"), now)
+	if !ok || entry.Reason != "equipo de pruebas" {
+		t.Fatalf("an earlier conditional entry hid the unconditional one: ok=%v", ok)
+	}
+	// alerta agregada (sin evento): solo la incondicional silencia
+	if ok, _ := m.SuppressedEvent(whenTestRule, "LAB-WKS-01", nil, now); ok {
+		t.Fatal("conditional entries must not silence an aggregated alert")
+	}
+	if ok, _ := m.SuppressedEvent(whenTestRule, "LAB-SRV-09", nil, now); !ok {
+		t.Fatal("the unconditional entry must silence an aggregated alert")
+	}
+}

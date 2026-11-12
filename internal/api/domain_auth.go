@@ -14,15 +14,16 @@
 //   401 {"ok":false,"reason":"credenciales"}  bad password OR unknown user (never distinguished)
 //   403 {"ok":false,"reason":"sin_rol"}   valid user, no mapped AD group
 //   502 {"ok":false,"reason":"dominio"}   DC unreachable, TLS refused, search failed
-//   429 plain JSON error when the address burns its failure budget
+//   429 {"ok":false,"reason":"bloqueado"}  the address or the account burnt its failure budget
 //
 // The endpoint is registered unconditionally and answers 501 with an
 // arming hint while the engine runs without -domain-auth, the same
 // contract the /api/ad family follows. Passwords are read once into a
 // caller-owned buffer, zeroed after the attempt and never logged;
-// failures are throttled per remote address with a budget tighter
-// than the bearer-auth one, because every failure here is a real
-// credential guess against the domain.
+// failures are throttled per remote address and per target account
+// with a budget tighter than the bearer-auth one, because every failure
+// here is a real credential guess against the domain. The block is
+// decided before the bind, so a blocked attempt never reaches the DC.
 
 package api
 
@@ -32,6 +33,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Ruby570bocadito/bluetardigrade/internal/ad"
@@ -42,7 +44,7 @@ const (
 	// 401 brute-force throttle of the domain endpoint: TIGHTER than
 	// the bearer budget (auth.go) because a failure here is a live
 	// password guess the DC would otherwise see at line rate; the
-	// address gets 429s for the rest of the window.
+	// address and the account get 429s for the rest of the window.
 	domainFailBudget   = 15
 	domainFailWindow   = time.Minute
 	domainFailMaxAddrs = 4096
@@ -76,10 +78,38 @@ func (h *Hub) registerDomainAuth(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/domain", unscopedOnly(what, h.handleDomainAuth))
 }
 
-// tooManyDomainFails records one failed domain sign-in from addr and
-// reports whether the address exhausted its budget for the window.
-func (h *Hub) tooManyDomainFails(addr string) bool {
-	key := remoteIP(addr)
+// domainThrottleKeys names the two windows one attempt counts against:
+// the remote address and the account it targets. The address alone is
+// the console's for every user (the console is the caller), so a guess
+// run against one account is also bounded on the account itself,
+// wherever it comes from. An unparseable login name has no account key;
+// it never reaches the directory either.
+func domainThrottleKeys(remoteAddr, user string) []string {
+	keys := []string{"addr:" + remoteIP(remoteAddr)}
+	if acct := strings.ToLower(ad.LoginAccount(user)); acct != "" {
+		keys = append(keys, "acct:"+acct)
+	}
+	return keys
+}
+
+// domainBlocked reports whether any of the keys already exhausted its
+// budget for the current window, without recording anything. It is
+// asked BEFORE the bind: once blocked, no further guess reaches the
+// domain controller and a correct password is not told apart.
+func (h *Hub) domainBlocked(keys []string) bool {
+	now := time.Now()
+	h.domainAuthMu.Lock()
+	defer h.domainAuthMu.Unlock()
+	for _, key := range keys {
+		if box := h.domainAuthFails[key]; box != nil && now.Sub(box.windowStart) <= domainFailWindow && box.failures >= domainFailBudget {
+			return true
+		}
+	}
+	return false
+}
+
+// domainFailed records one rejected credential against every key.
+func (h *Hub) domainFailed(keys []string) {
 	now := time.Now()
 	h.domainAuthMu.Lock()
 	defer h.domainAuthMu.Unlock()
@@ -90,19 +120,20 @@ func (h *Hub) tooManyDomainFails(addr string) bool {
 			}
 		}
 	}
-	if _, known := h.domainAuthFails[key]; !known && len(h.domainAuthFails) >= domainFailMaxAddrs {
-		for k := range h.domainAuthFails {
-			delete(h.domainAuthFails, k)
-			break
+	for _, key := range keys {
+		if _, known := h.domainAuthFails[key]; !known && len(h.domainAuthFails) >= domainFailMaxAddrs {
+			for k := range h.domainAuthFails {
+				delete(h.domainAuthFails, k)
+				break
+			}
 		}
+		box := h.domainAuthFails[key]
+		if box == nil || now.Sub(box.windowStart) > domainFailWindow {
+			box = &domainFailBox{windowStart: now}
+			h.domainAuthFails[key] = box
+		}
+		box.failures++
 	}
-	box := h.domainAuthFails[key]
-	if box == nil || now.Sub(box.windowStart) > domainFailWindow {
-		box = &domainFailBox{windowStart: now}
-		h.domainAuthFails[key] = box
-	}
-	box.failures++
-	return box.failures > domainFailBudget
 }
 
 // domainAuthConfig returns the armed config under the hub lock (nil =
@@ -160,6 +191,15 @@ func (h *Hub) handleDomainAuth(w http.ResponseWriter, r *http.Request) {
 	password := []byte(req.Password)
 	defer secretfile.Zero(password)
 
+	throttleKeys := domainThrottleKeys(r.RemoteAddr, req.User)
+	if h.domainBlocked(throttleKeys) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprintln(w, `{"ok":false,"reason":"bloqueado"}`)
+		return
+	}
+
 	identity, err := domainLogin(r.Context(), cfg, req.User, password)
 	if err != nil {
 		switch {
@@ -168,12 +208,7 @@ func (h *Hub) handleDomainAuth(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, ad.ErrLoginCredentials):
 			// One response for bad password and unknown user; the
 			// throttle counts it, the log line does not say which.
-			if h.tooManyDomainFails(r.RemoteAddr) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusTooManyRequests)
-				fmt.Fprintln(w, `{"ok":false,"reason":"bloqueado"}`)
-				return
-			}
+			h.domainFailed(throttleKeys)
 			// The audit line keeps the ACCOUNT the attempt was
 			// addressed to (SEC-9): capped, control-escaped, without
 			// the domain half of a UPN — the raw input never reaches

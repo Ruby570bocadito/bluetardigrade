@@ -192,7 +192,7 @@ sf-etw -Uninstall      # -Purge also removes its data
 
 - The service is `bluetardigrade-sensor`. It runs as SYSTEM, starts automatically, and Windows restarts it if it fails (after 5 s, 10 s, then every minute).
 - `-Install` copies the binary to `Program Files\bluetardigrade\sensor`: a SYSTEM service must not run a file the user can replace, and the per-user install under `%LOCALAPPDATA%` is user-writable.
-- Its data lives in `ProgramData\bluetardigrade\sensor`, readable only by SYSTEM and Administrators: the spool, the log (`sensor.log`, rotated past 8 MiB) and the ingest token, read with `--token-file` so it never shows in the service's command line.
+- Its data lives in `ProgramData\bluetardigrade-sensor` (`ProgramData\bluetardigrade\sensor` before; the next `sf-etw -Install` moves it), created restricted to SYSTEM and Administrators and refused if it already exists with another owner or with an entry for another account: the spool, the log (`sensor.log`, rotated past 8 MiB) and the ingest token, read with `--token-file` so it never shows in the service's command line.
 - `-Install` again updates the binary and the settings. `-Addr`, `-Token` and `-TlsCa` point it at a remote engine.
 - A sensor started by hand refuses to run while the service is up, because both would use the same ETW sessions.
 - The heartbeat reports `run_mode` (`service` or `console`), and **Equipos** shows it on the host page.
@@ -293,7 +293,7 @@ Everything the engine does is a flag with a safe default; everything secret can 
 | `CONSOLE_ALLOWED_HOSTS` | web console | comma-separated hostnames the console proxy serves besides loopback (`localhost`/`127.0.0.1`/`::1` are always served); any other `Host` gets a `403` naming this var — the console posture mirrors the engine's: loopback friction-free, beyond loopback loud and explicit |
 | `CONSOLE_ACCESS_TOKEN` | web console | console credential: every page, asset and proxied API call requires HTTP Basic auth (any user name, this token as the password). Required when `CONSOLE_ALLOWED_HOSTS` lists a non-loopback host and the console has no per-analyst accounts (`CONSOLE_USERS_FILE`, which are a credential of their own) — host pinning only stops browsers, any other client can send `Host: localhost` |
 | `CONSOLE_ALLOW_UNAUTHENTICATED` | web console | `1` declares that a front end (reverse proxy, SSO) already authenticates operators, so extra hosts are served without `CONSOLE_ACCESS_TOKEN` |
-| `HUB_ACCESS_TOKEN` | console-service + web console | token every analyst socket must present; the browser obtains it from the console's authenticated `/api/hub-token` route. Required when the hub binds beyond loopback (`CONSOLE_HOST`), otherwise the hub refuses to start |
+| `HUB_ACCESS_TOKEN` | console-service + web console | token every analyst socket must present; the browser obtains it from the console's authenticated `/api/hub-token` route. With it set, the hub's `/` status needs `Authorization: Bearer <token>` and `/health` answers only `{service, status}` without it. Set it whenever console accounts are limited to host groups: without a token any socket from an allowed origin may ask for the analysis of an alert of any host. Required when the hub binds beyond loopback (`CONSOLE_HOST`), otherwise the hub refuses to start |
 | `HUB_ALLOW_UNAUTHENTICATED` | console-service | `1` lets a non-loopback hub start without `HUB_ACCESS_TOKEN` (an authenticating front end is in place) |
 | `ANALYST_BASE_URL` / `ANALYST_API_KEY` / `ANALYST_MODEL` | console-service | OpenAI-compatible endpoint for the AI triage analyst |
 | `PORT` / `CONSOLE_SERVICE_PORT`, `CONSOLE_HOST`, `CONSOLE_CORS_ORIGIN` | console-service | hub networking and allowed origins |
@@ -431,7 +431,7 @@ Worth alerting on: `sf_ingest_rejected_total` climbing (a probe against the inge
 Every bounded in-memory structure the detectors share is partitioned per host with an admission ceiling of 25% of the table (v1.1 "cuotas por equipo"): a noisy machine — a scanner, a misbehaving agent, a hostile feed — cannot fill the shared tables and wash out the evidence the other hosts are accumulating.
 
 - **Threshold keys** (`thresholds.yaml`): at most 2048 keys per host (the same ceiling the per-rule quota sets). Existing keys of a saturated host keep counting and firing; only NEW keys are refused, and dead evidence (2x window without signal) is purged before the refusal, so a host whose keys all expired recovers itself without waiting for the global cap to fill.
-- **Beacon keys** (`beacons.yaml`): at most 2048 destination keys per host, same admission-ceiling semantics. Existing beacons of the saturated host keep accumulating evidence and firing; stale keys are reclaimed before a refusal.
+- **Beacon keys** (`beacons.yaml`): at most 2048 destination keys per host, same admission-ceiling semantics. Existing beacons of the saturated host keep accumulating evidence and firing; stale keys are reclaimed before a refusal. With more than one profile loaded, a single profile holds at most half of a host's share (1024 keys): keys live for twice their profile's window, so the slow profile (4 h window) would otherwise take the whole share and leave the short-window profiles without room on a busy host.
 - **View rings** (`/api/events`, `/api/alerts`, SSE): the rings trim oldest-first by design; a host filling the ring rotates the others' recent records out. That rotation is counted per host and served in `/api/stats` (`ring_dropped_events`, `ring_dropped_alerts`), so the loss is visible, never silent. With `-store` attached the full history stays in SQLite regardless of the rings.
 - **Kill-chain correlator**: no extra per-host quota is needed — one host can hold at most one state per sequence, and the sequence ceiling (512) already bounds any host's share to a quarter of the tracking cap (8192).
 
@@ -949,12 +949,27 @@ gets in acts as administrator. That stays unchanged unless
   (host pinning plus an Origin and `Sec-Fetch-Site` check), so another
   site can neither sign the browser in to an account of its choosing
   nor sign it out.
-- Roles: **viewer** reads everything and may dry-run rules; **analyst**
-  also triages alerts, manages incidents and notes, and edits
-  suppressions; **admin** also runs active response (which still asks
-  for the operator credential). The engine proxy enforces the role on
-  every write; the UI shows the account and role in the header and a
-  read-only banner for viewers.
+- Roles: **viewer** reads the telemetry (events, alerts, rules, fleet,
+  reports) and may dry-run rules; **analyst** also triages alerts,
+  manages incidents and notes, and edits suppressions; **admin** also
+  runs active response (which still asks for the operator credential)
+  and is the only role that reads the platform surfaces: notification
+  and Active Directory settings (`/api/settings/*`), sensor enrollment
+  (`/api/enroll`), the active-response audit (`/api/respond/audit`)
+  and `/metrics`. The engine proxy enforces the role on every write and
+  on those reads, and refuses a cross-site request (`Sec-Fetch-Site:
+  cross-site`) for reads as it does for writes: a link to
+  `/api/engine/...` placed on another site answers 403. The UI shows
+  the account and role in the header and a read-only banner for
+  viewers.
+- Sign-in attempts are bounded. With accounts, ten failures lock the
+  account for five minutes. With the shared `CONSOLE_ACCESS_TOKEN`,
+  ten failures from one address (or 200 in total) within five minutes
+  answer 429 to new sign-ins, the right token included, until the
+  window ends; open sessions keep working.
+- The kill request carries the signed-in account to the engine, which
+  writes it as `account` next to `operator` in the active-response
+  audit. It is attribution only and never authorizes anything.
 - Host groups: an account that is not an administrator may be limited
   to some host groups; it then sees and acts on their machines only.
   See "Access by host group" below.
@@ -1362,6 +1377,11 @@ one a host never ran before: the tool nobody wrote a rule for (an
   visto en este equipo") with the image path and when learning started.
   Each name is novel once per host. At most 10 novelties per host per
   hour, so a software rollout raises a handful of alerts, not a storm.
+  A name that shows up while that hourly budget is spent is NOT
+  learned: it stays unknown and is reported the next time it runs with
+  budget available (ten decoy names cannot buy silence for the eleventh).
+  A host whose table is full (4096 names) no longer learns, but keeps
+  reporting unknown names within the same limit instead of going quiet.
 - With `-store` the baseline is persisted every 30 s (`baseline` and
   `baseline_hosts` tables) and restored at startup, so a restart neither
   forgets what was learned nor restarts the learning period.
@@ -1420,7 +1440,7 @@ The engine also ships a behavioral detector that no single-event rule can expres
 
 **Time model (beaconing, thresholds and kill chains).** Every time-window detector runs on the event's own timestamp, not on its arrival: an offline import of a day of Zeek, firewall or honeypot logs reaches the engine in seconds, and a batching sensor delivers a minute of activity at once — on arrival time the first looked like one huge burst and the second hid a beacon's cadence. Timestamps more than 5 minutes ahead of the engine clock are clamped to it. Late events are placed where they belong (beacon rings stay ordered; a threshold window counts events that are less than one window late); an event more than one window behind its key is treated as a discontinuity (clock stepped back, another capture) and restarts that key. The engine clock only decides which state is dead weight and stamps when the alert was raised.
 
-Profiles live in `beacons.yaml` (committed and loaded by default; `-beacons ""` turns the detector off; a file that exists but does not parse is FATAL at startup — the same fail-loud standard as suppressions). DNS query events (`protocol: dns`) never take part — applications re-resolve names on a timer (record TTLs, connectivity checks), which reads as a perfect cadence; the connection that follows a lookup carries the domain and is what counts — and neither do loopback, link-local or multicast destinations (local plumbing such as a router answering DNS on `fe80::`), nor the Windows DNS Client service (`svchost.exe`) talking to the configured resolver on port 53 or 853, which it does at a steady pace for every process on the host (DNS tunnels show in the query events; any other process talking to port 53 is still tracked). Each profile can list `exclude_domains`: services whose keep-alives are regular by design. An entry covers the domain and its subdomains (`whatsapp.com` covers `web.whatsapp.com`, never `evilwhatsapp.com`), connections known only by IP are never excluded, and a bare TLD is refused. The shipped profiles exclude WhatsApp (`whatsapp.com`, `whatsapp.net`), whose app keeps its connection alive every ~60 s. The shipped pack is deliberately conservative: the web profile needs 12 regular connections inside a 15-minute window with a mean interval of at least 2 s — CDNs, load balancers and NTP pools are regular too, but at sub-second cadences the `min_interval` floor keeps that chatter out by construction. Detections honor the rest of the pipeline for free: profile+host suppressions, triage lifecycle, store, webhook and console, because a beacon alert is just another alert (its `rule_id` is the profile's id). The tracker's state is bounded (8192 keys, weakest-evicted-first — a flood of one-connection fake destinations can only evict other flood entries, never wash out evidence that is building), and re-fires are throttled per key by the profile's `cooldown`. `/api/stats` exposes the live signal (`beacons_tracked` / `beacons_cap` / `beacons_fired`) and `/metrics` the same families as `sf_beacon_keys_tracked` / `sf_beacon_cap` / `sf_beacons_fired_total`. The console header summarizes every behavioral detector in one **detectores** chip (correlator, beaconing, thresholds, threat intel and process baseline, each row hidden while its detector is off): it turns red the moment a tracker reaches its cap (new destinations or hosts silently stop being tracked, which is detection loss on a flooded feed) and amber when the intel lists matched; the drop-down shows each detector's numbers (`beacons_tracked` / `beacons_cap`, `threshold_rules` / `threshold_keys` / `threshold_fired`, ...).
+Profiles live in `beacons.yaml` (committed and loaded by default; `-beacons ""` turns the detector off; a file that exists but does not parse is FATAL at startup — the same fail-loud standard as suppressions). DNS query events (`protocol: dns`) never take part — applications re-resolve names on a timer (record TTLs, connectivity checks), which reads as a perfect cadence; the connection that follows a lookup carries the domain and is what counts — and neither do loopback, link-local or multicast destinations (local plumbing such as a router answering DNS on `fe80::`), nor the Windows DNS Client service (`svchost.exe`) talking to the configured resolver on port 53 or 853, which it does at a steady pace for every process on the host (DNS tunnels show in the query events; any other process talking to port 53 is still tracked). Each profile can list `exclude_domains`: services whose keep-alives are regular by design. An entry covers the domain and its subdomains (`whatsapp.com` covers `web.whatsapp.com`, never `evilwhatsapp.com`), connections known only by IP are never excluded, and a bare TLD is refused. The shipped profiles exclude WhatsApp (`whatsapp.com`, `whatsapp.net`), whose app keeps its connection alive every ~60 s. The shipped pack has three profiles. `bcn-periodic-web` and `bcn-periodic-fast` only see cadences of up to about 80 s (12 connections in 15 minutes, 20 in 5); `bcn-periodic-slow` (medium severity) covers implants that sleep for minutes: 8 connections inside a 4-hour window to one web port (80, 443, 8080, 8443), mean interval from 75 s to about 34 minutes, jitter up to CV 0.25, silent for 24 h per destination after firing. Software that polls on a fixed timer (updaters, sync clients, telemetry) fits the same shape: list those services in the profile's `exclude_domains` or suppress profile+host. A sample more than one window older than the newest one of its destination is ignored (it restarts the series only when that destination has also been quiet for a whole window), and two connections with the same timestamp count once. The web profile is deliberately conservative: it needs 12 regular connections inside a 15-minute window with a mean interval of at least 2 s — CDNs, load balancers and NTP pools are regular too, but at sub-second cadences the `min_interval` floor keeps that chatter out by construction. Detections honor the rest of the pipeline for free: profile+host suppressions, triage lifecycle, store, webhook and console, because a beacon alert is just another alert (its `rule_id` is the profile's id). The tracker's state is bounded (8192 keys, weakest-evicted-first — a flood of one-connection fake destinations can only evict other flood entries, never wash out evidence that is building), and re-fires are throttled per key by the profile's `cooldown`. `/api/stats` exposes the live signal (`beacons_tracked` / `beacons_cap` / `beacons_fired`) and `/metrics` the same families as `sf_beacon_keys_tracked` / `sf_beacon_cap` / `sf_beacons_fired_total`. The console header summarizes every behavioral detector in one **detectores** chip (correlator, beaconing, thresholds, threat intel and process baseline, each row hidden while its detector is off): it turns red the moment a tracker reaches its cap (new destinations or hosts silently stop being tracked, which is detection loss on a flooded feed) and amber when the intel lists matched; the drop-down shows each detector's numbers (`beacons_tracked` / `beacons_cap`, `threshold_rules` / `threshold_keys` / `threshold_fired`, ...).
 
 ### Active response (kill_process, opt-in)
 
@@ -1467,9 +1487,16 @@ carries the errno name that defeated `pidfd_open` in the response and
 in the audit followup (`enosys` = old kernel, permanent and expected;
 `emfile`/`enfile` = fd exhaustion of a mechanism that was alive,
 transient and worth watching). PID 0/1/negative,
-self/ancestor, and protected names (Windows defaults: csrss, smss,
-wininit, services, lsass; extend with `-respond-protected`) are
-refused with their own audit codes.
+self/ancestor, and protected processes are refused with their own
+audit codes. The Windows defaults are decided by full image path, not
+by name: csrss, smss, wininit, winlogon, services and lsass under the
+system directory (`%SystemRoot%\System32`), the product's own binaries
+(engine, collector, sensor) running from the engine's folder, and any
+process Windows itself marks critical (the `svchost.exe` hosting
+DcomLaunch/RPCSS, for one). A binary that only borrows one of those
+names from another folder (`C:\Users\Public\lsass.exe`) is NOT
+protected and can be killed. Names added with `-respond-protected`
+still match by name, wherever the binary lives.
 
 Two honest limits, in the flag text and the audit: the name check
 protects against the mechanical error (wrong PID through recycling),
@@ -1496,15 +1523,16 @@ against real child processes (native pidfd and forced fallback),
 matrix over real Linux binaries, and CI runs
 `scripts/windows/smoke_respond.ps1` on a native Windows runner (job
 `engine-windows`): real kills of throwaway processes the smoke itself
-spawns, the protected set denied via a decoy `csrss.exe` in temp
-(the real one is never touched — the guard refuses before signaling),
-and the audit JSONL asserted end to end. The Windows handle path is
+spawns, the protected set denied via a decoy named in
+`-respond-protected` (the guard refuses before signaling), an impostor
+`csrss.exe` in temp killed because a system name only protects under
+System32, and the audit JSONL asserted end to end. The Windows handle path is
 verified in conduct, not just in compilation.
 
 ### Detection rules
 
 
-Rules live in `rules/` as YAML, are validated at load, and hot-reload every 15 seconds by default (disable with `-reload-every 0`). The loader carries the same house caps as every other config surface: 4 MiB per file (checked before reading), a nesting-depth pre-scan and a 2048 enabled-rules ceiling — enforced fail-loud on startup and on every hot-reload tick, so an oversized or hostile file aborts startup, or keeps the previous set on reload, instead of degrading a running engine. The shipped pack uses 125 of those 2048 slots. The shared guard also rejects cyclic aliases and caps projected expansion and composed flow depth before typed decoding.
+Rules live in `rules/` as YAML, are validated at load, and hot-reload every 15 seconds by default (disable with `-reload-every 0`). The loader carries the same house caps as every other config surface: 4 MiB per file (checked before reading), a nesting-depth pre-scan and a 2048 enabled-rules ceiling — enforced fail-loud on startup and on every hot-reload tick, so an oversized or hostile file aborts startup, or keeps the previous set on reload, instead of degrading a running engine. The same fail-loud load rejects a rule without `name` or `id`, an `id` used by two rules (in any file, disabled rules included) and an `event_type` outside the event schema (`process.created` instead of `process.create` used to load and never fire). The shipped pack uses 125 of those 2048 slots. The shared guard also rejects cyclic aliases and caps projected expansion and composed flow depth before typed decoding.
 
 ```yaml
 - name: "PowerShell con comando codificado"
@@ -1522,7 +1550,7 @@ Rules live in `rules/` as YAML, are validated at load, and hot-reload every 15 s
   enabled: true
 ```
 
-Operators (17): case-sensitive `eq`, `neq`, `contains`, `contains_any`, `startswith`, `endswith`, `regex`, `in`, `not_in`, `gt`, `lt`, plus the case-insensitive `i*` family — `ieq`, `icontains`, `icontains_any`, `istartswith`, `iendswith`, `iin` — which shares one Unicode folding semantics across all six operators and the `(?i)` regex fallback (the same property the Sigma mapping table below relies on).
+Operators (19): case-sensitive `eq`, `neq`, `contains`, `contains_any`, `startswith`, `endswith`, `regex`, `in`, `not_in`, `gt`, `lt` (numeric only: false when the field is missing or either side is not a number), plus the case-insensitive `i*` family — `ieq`, `icontains`, `icontains_any`, `istartswith`, `iendswith`, `iin`, `ineq`, `inot_in` — which shares one Unicode folding semantics across all eight operators and the `(?i)` regex fallback (the same property the Sigma mapping table below relies on).
 
 The enabled rule inventory is generated from the YAML files themselves:
 `python3 scripts/dev-tests/check_rule_inventory.py --write`. CI checks it on
@@ -1738,8 +1766,10 @@ Rules can declare an `actions` list; the engine executes it every time the rule 
         message: "Robo de credenciales en {host} por {user}"
         notify: "true"
 
-    # real HTTP POST of the full alert JSON (background delivery,
-    # bounded in-flight queue, never blocks detection)
+    # real HTTP POST of the full alert JSON (background delivery: 8 at
+    # a time, up to 64 more waiting, most severe first; when both are
+    # full the lowest severity is dropped and logged; never blocks
+    # detection)
     - type: webhook
       config:
         url: "https://siem.example.com/hooks/edr"
@@ -1766,11 +1796,13 @@ What converts (v1 scope):
 | logsource category | `event_type`: `process_creation`→`process.create`, `file_event`→`file.write`, `network_connection`→`network.connect`, `registry_*`→`registry.set`, `image_loaded`/`driver_load`→`image.load`, `process_access`→`process.access` (Windows product only) |
 | field names | the normalized schema (`Image`→`process.image`, `CommandLine`→`process.command_line`, `TargetObject`→`registry.key`, `DestinationIp`→`network.destination_ip`, …) — a field with no real equivalent skips the rule, naming it |
 | wildcards | `*x*`→`contains`, `x*`→`startswith`, `*x`→`endswith`, exact→`eq`, anything else→anchored `regex` (literals escaped, `?`→`.`); values with letters use the case-insensitive `i*` family instead (`icontains`, `ieq`, …) and the regex fallback carries `(?i)` — Sigma string matching is case-insensitive by corpus convention, and all three paths share one Unicode folding semantics |
+| escapes | Sigma escaping is applied before the operator is chosen: `\\` is one backslash (`'\\\\host\\share'` matches `\\host\share`), `\*` and `\?` are literal characters, a backslash before anything else stands for itself (`'\cmd.exe'`); a backslash followed by a wildcard is written `\\*` |
+| `null` | `Field: null` → `eq ""` (the field is empty or absent); `null` under a modifier skips the rule |
 | value lists | `in` / `contains_any`, or a single alternation regex that keeps per-element anchoring |
 | `condition` | `A`, `A and B…`, `A or B…`, `1 of them`, `all of them`, `1 of prefix*` — same-field ORs merge into one rule (`contains_any`/`in`), different-field ORs split into one rule per branch; `not`, parentheses and mixed `and/or` are skipped |
 | modifiers | `contains`, `startswith`, `endswith`, `re`, `gt`, `lt` — encoding modifiers (`base64*`, `utf16*`, `wide`), `all` and `exists` are skipped |
 
-Provenance travels in the converted rule: author, status, date, references and declared false positives are folded into the description (`[Sigma] …` line), the Sigma UUID stays as the rule `id`, and a `sigma` tag is prepended so imported rules are identifiable in `engine rules`, the console and the API. Bounds apply to the whole run (4 MiB per file, 512 emitted rules, per-rule caps on selections/fields/condition length). The E2E (`scripts/dev-tests/e2e_sigma.sh`) converts a committed fixture corpus and proves the converted rules fire on real telemetry through the engine's TCP feed.
+Provenance travels in the converted rule: author, status, date, references and declared false positives are folded into the description (`[Sigma] …` line), the Sigma UUID stays as the rule `id` (the branches of a split OR get `<uuid>-or1`, `<uuid>-or2`, … in selection-name order, since rule ids must be unique), and a `sigma` tag is prepended so imported rules are identifiable in `engine rules`, the console and the API. Bounds apply to the whole run (4 MiB per file, 512 emitted rules, per-rule caps on selections/fields/condition length). The E2E (`scripts/dev-tests/e2e_sigma.sh`) converts a committed fixture corpus and proves the converted rules fire on real telemetry through the engine's TCP feed.
 
 ---
 
@@ -1841,7 +1873,7 @@ path (no subcommand) and on `engine run`.
 | `-api-write` | off | arm `POST`/`DELETE /api/suppressions` (falls back to `SF_API_WRITE=1`); writes go to the `-suppressions` file, which stays the source of truth; refused at startup when the API has no token beyond loopback |
 | `-allow-kill` | off | arm `POST /api/respond/kill` (falls back to `SF_ALLOW_KILL=1`): active response, kill_process, SIGKILL fixed; REQUIRES `-api-token`/`SF_API_TOKEN` even on loopback and an openable `-respond-audit` (otherwise the surface stays disabled, loud); the name check protects against killing the wrong PID, not against malware disguising its identity |
 | `-respond-operators file` | `./respond-operators.yaml` | YAML allowlist (`{version: 1, names: [ana, beto]}`, or version 2 with per-operator credentials, see [Active response](#active-response-kill_process-opt-in)) of operators allowed to run active response; missing file = empty allowlist = every action denied; malformed file is fatal; hot-reloaded on the `-reload-every` ticker |
-| `-respond-protected file` | empty | optional YAML (`{version: 1, names: [...]}`) with extra protected process names, merged with the platform defaults (Windows: csrss/smss/wininit/services/lsass); malformed file is fatal; hot-reloaded |
+| `-respond-protected file` | empty | optional YAML (`{version: 1, names: [...]}`) with extra protected process names, merged with the platform defaults (Windows: csrss/smss/wininit/winlogon/services/lsass under System32, the product's own binaries and OS-critical processes, see [Active response](#active-response-kill_process-opt-in)); malformed file is fatal; hot-reloaded |
 | `-respond-audit file` | `./respond-audit.jsonl` | append-only JSONL audit file, one line per attempt (denials included), fsync per line, 64 MiB ceiling: beyond it every action denies with `audit_unavailable` until the file is rotated |
 | `-token t` | empty | shared ingest token (falls back to `SF_INGEST_TOKEN`); empty disables auth |
 | `-token-previous t` | empty | previous ingest token, still accepted during a rotation window (falls back to `SF_INGEST_TOKEN_PREVIOUS`) |
@@ -1853,7 +1885,7 @@ path (no subcommand) and on `engine run`.
 | `-incidents file` | `./incidents.json` | JSON file persisting incidents (cases grouping alerts, with status, owner and timeline); empty keeps them in memory only — see [Incidents](#incidents-cases) |
 | `-store path` | empty | SQLite file persisting events and alerts beyond the in-memory rings (e.g. `./sf-store.db`); empty disables — see [Persistent storage](#persistent-storage-sqlite-opt-in) |
 | `-store-retention dur` | `72h` | delete stored events/alerts older than this on a 5-minute ticker; `0` keeps everything |
-| `-forensic` | `true` | freeze evidence bundles (alert + 5-minute host timeline) for high/critical alerts; `-forensic=false` disables capture and the API answers `501` |
+| `-forensic` | `true` | freeze evidence bundles (alert + 5-minute host timeline, measured back from the triggering event's own timestamp so a skewed endpoint clock or an imported backlog still yields its context) for high/critical alerts; `-forensic=false` disables capture and the API answers `501` |
 | `-forensic-dir path` | `./forensics` of the working directory, or `<engine dir>/../forensics` when only that one exists | where evidence bundles are written (atomic per bundle, capped at 256 files) |
 | `-pidfile path` | empty | write the process PID at startup and remove it on shutdown (lets `sf-console -Stop` stop an engine it did not start) |
 | `-i`, `--interactive` | off | interactive TUI: live stats and alert feed in the terminal (degrades to the classic flat run when stdout is not a TTY) |

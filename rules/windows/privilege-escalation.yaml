@@ -90,8 +90,8 @@
       operator: regex
       value: '(?i)\\Windows\\(System32|SysWOW64)\\(sethc|utilman|osk|narrator|magnify|displayswitch|atbroker)\.exe$'
     - field: process.name
-      operator: not_in
-      value: ["TiWorker.exe", "TrustedInstaller.exe", "tiworker.exe", "trustedinstaller.exe"]
+      operator: inot_in
+      value: ["tiworker.exe", "trustedinstaller.exe"]
   actions:
     - type: alert
       config:

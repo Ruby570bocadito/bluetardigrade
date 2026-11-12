@@ -167,9 +167,35 @@ func channelToWire(cc notify.ChannelConfig) notifyChannelWire {
 	return out
 }
 
+// notifyEnvPrefix is the namespace a *_env name must live in to be
+// accepted through the API. The loader resolves the name against the
+// engine's own environment, so an unrestricted name would let a caller
+// with write access aim any process secret (the API token, the AD bind
+// password) at a destination of their choosing. The YAML file loaded at
+// startup is not restricted: whoever edits it already owns the host.
+const notifyEnvPrefix = "SF_NOTIFY_"
+
+// secretDestination is where a channel sends its credential: the ntfy
+// server, the Telegram API base, the SMTP relay. A Slack hook URL is
+// the credential itself and has no separate destination.
+func secretDestination(cc notify.ChannelConfig) string {
+	switch strings.ToLower(strings.TrimSpace(cc.Type)) {
+	case "ntfy":
+		return strings.TrimSpace(cc.URL)
+	case "telegram":
+		return strings.TrimSpace(cc.APIURL)
+	case "email":
+		return strings.TrimSpace(cc.Server)
+	}
+	return ""
+}
+
 // wireToChannel builds the config channel from a PUT entry, filling the
 // secrets left empty from the stored channel of the same name and type.
-func wireToChannel(in notifyChannelWire, prev map[string]notify.ChannelConfig) notify.ChannelConfig {
+// A stored secret is bound to the destination it was configured for: a
+// request that moves the channel elsewhere must carry the secret again,
+// or the stored one would be handed to whatever host the request names.
+func wireToChannel(in notifyChannelWire, prev map[string]notify.ChannelConfig) (notify.ChannelConfig, error) {
 	typ := strings.ToLower(strings.TrimSpace(in.Type))
 	cc := notify.ChannelConfig{
 		Type:        typ,
@@ -195,25 +221,49 @@ func wireToChannel(in notifyChannelWire, prev map[string]notify.ChannelConfig) n
 			cc.To = append(cc.To, r)
 		}
 	}
-	old, ok := prev[cc.ChannelName()]
-	if !ok || !strings.EqualFold(old.Type, typ) {
-		return cc
+	name := cc.ChannelName()
+	old, ok := prev[name]
+	ok = ok && strings.EqualFold(strings.TrimSpace(old.Type), typ)
+	sameDest := ok && secretDestination(old) == secretDestination(cc)
+
+	// An env name outside the namespace survives only as the file already
+	// had it, on the same channel and towards the same destination.
+	for _, e := range []struct{ field, got, stored string }{
+		{"token_env", cc.TokenEnv, old.TokenEnv},
+		{"username_env", cc.UsernameEnv, old.UsernameEnv},
+		{"password_env", cc.PasswordEnv, old.PasswordEnv},
+	} {
+		if e.got == "" || strings.HasPrefix(e.got, notifyEnvPrefix) {
+			continue
+		}
+		if !sameDest || e.got != strings.TrimSpace(e.stored) {
+			return cc, fmt.Errorf("channel %q: %s must name a variable starting with %s", name, e.field, notifyEnvPrefix)
+		}
+	}
+	if !ok {
+		return cc, nil
 	}
 	if urlIsSecret(typ) && cc.URL == "" {
 		cc.URL = old.URL
 	}
 	if in.ClearSecret {
 		cc.Token, cc.Password = "", ""
-		return cc
+		return cc, nil
 	}
 	// a secret moved to the environment does not keep the literal
-	if cc.Token == "" && cc.TokenEnv == "" {
+	if cc.Token == "" && cc.TokenEnv == "" && old.Token != "" {
+		if !sameDest {
+			return cc, fmt.Errorf("channel %q: its destination changed; send the token again (or clear_secret)", name)
+		}
 		cc.Token = old.Token
 	}
-	if cc.Password == "" && cc.PasswordEnv == "" {
+	if cc.Password == "" && cc.PasswordEnv == "" && old.Password != "" {
+		if !sameDest {
+			return cc, fmt.Errorf("channel %q: its destination changed; send the password again (or clear_secret)", name)
+		}
 		cc.Password = old.Password
 	}
-	return cc
+	return cc, nil
 }
 
 func (ns *notifySettings) wire(cfg *notify.FileConfig, exists bool) *notifySettingsWire {
@@ -281,7 +331,12 @@ func (h *Hub) handleNotifySettingsPut(w http.ResponseWriter, r *http.Request) {
 	}
 	next := &notify.FileConfig{ConsoleURL: strings.TrimSpace(in.ConsoleURL), Channels: []notify.ChannelConfig{}}
 	for _, c := range in.Channels {
-		next.Channels = append(next.Channels, wireToChannel(c, prev))
+		cc, err := wireToChannel(c, prev)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, fmt.Sprintf("configuration rejected: %v", err))
+			return
+		}
+		next.Channels = append(next.Channels, cc)
 	}
 	svc, err := notify.Build(ns.path, next)
 	if err != nil {

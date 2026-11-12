@@ -154,3 +154,27 @@ func TestTrackedAccountSkipsIdentitiesSharedByEveryMachine(t *testing.T) {
 		}
 	}
 }
+
+// Los equipos de una cadena de usuario caducan con la ventana: tres
+// saltos repartidos en 1h45 no son "tres equipos en una hora".
+func TestUserScopeHostsAgeOutOfTheWindow(t *testing.T) {
+	c := &collector{}
+	m, err := LoadDir(writeSeq(t, lateralYAML), c.emit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Observe(userEv("A", `CORP\ana`, 0), "PsExec")
+	m.Observe(userEv("B", `CORP\ana`, 50*time.Minute), "PsExec")
+	m.Observe(userEv("C", `CORP\ana`, 105*time.Minute), "PsExec")
+	if c.count() != 0 {
+		t.Fatalf("hosts hit 1h45 apart must not complete a 1h chain: %+v", c.alerts)
+	}
+	// B (09:50) y C (10:45) siguen dentro de la ventana de D (10:49)
+	m.Observe(userEv("D", `CORP\ana`, 109*time.Minute), "PsExec")
+	if c.count() != 1 || c.alerts[0].RuleID != "lat-2" {
+		t.Fatalf("three hosts inside one hour must fire: %+v", c.alerts)
+	}
+	if s := c.alerts[0].Summary; !strings.Contains(s, "3 equipos (B, C, D)") {
+		t.Fatalf("the summary must list only the hosts inside the window: %q", s)
+	}
+}

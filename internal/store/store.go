@@ -41,9 +41,16 @@ import (
 // "...ab\x1fcd..." across two fields.
 const fieldSep = "\x1f"
 
+// readConns is the size of the readers' pool.
+const readConns = 4
+
 // Store is an open SQLite persistence handle.
 type Store struct {
-	db *sql.DB
+	db *sql.DB // readers (API history, exports, reports)
+	// w is the writer's own connection. Every write goes through it
+	// under wmu, so the detection loop's inserts never wait for a
+	// pooled connection that slow history scans are holding.
+	w *sql.DB
 
 	wmu sync.Mutex // serializes writes (single-writer discipline)
 
@@ -113,25 +120,24 @@ func Open(path string) (*Store, error) {
 	if err := ensurePrivateFile(path); err != nil {
 		return nil, fmt.Errorf("store: create %s: %w", path, err)
 	}
-	// The pool is two connections with the pragmas in the DSN, so EVERY
-	// pooled connection runs them (busy_timeout first — the driver
-	// applies that ordering itself). One connection kept the pragmas
-	// honest but serialized the API's history scans (LIKE over `search`
-	// with no index) against the detection loop's synchronous inserts:
-	// a slow query could stall ingest for its whole duration, which is
-	// the exact "readers never block the engine loop" contract this
-	// package documents — and could not honor with a single handle.
-	// WAL allows one writer plus concurrent readers; the second
-	// connection is the reader. The engine still writes from one loop,
-	// so writer-writer contention stays pathological (busy_timeout
-	// absorbs the rare retention-prune overlap).
+	// Two handles with the pragmas in the DSN, so EVERY connection
+	// runs them (busy_timeout first — the driver applies that
+	// ordering itself). WAL allows one writer plus concurrent
+	// readers, and that is exactly the split: `w` is a single
+	// connection only the writers use (they are serialized by wmu),
+	// `db` is the readers' pool. With one shared pool, two slow
+	// history scans (LIKE over `search` with no index) took every
+	// connection and the detection loop's synchronous insert waited
+	// for them — "readers never block the engine loop" is the
+	// contract this package documents, and a pool the writer shares
+	// cannot honor it.
 	dsn := path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("store: open %s: %w", path, err)
 	}
-	db.SetMaxOpenConns(2)
-	db.SetMaxIdleConns(2)
+	db.SetMaxOpenConns(readConns)
+	db.SetMaxIdleConns(readConns)
 	// One eager pragma round-trip keeps the old fail-loud contract: a
 	// broken/corrupt file or an unwritable directory still fails Open
 	// instead of the first insert.
@@ -174,38 +180,63 @@ CREATE INDEX IF NOT EXISTS alerts_id_idx ON alerts(CASE WHEN json_valid(json) TH
 		db.Close()
 		return nil, fmt.Errorf("store: schema: %w", err)
 	}
-	s := &Store{db: db, path: path}
+	w, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("store: open %s: %w", path, err)
+	}
+	w.SetMaxOpenConns(1)
+	w.SetMaxIdleConns(1)
+	if err := w.Ping(); err != nil {
+		w.Close()
+		db.Close()
+		return nil, fmt.Errorf("store: open %s: %w", path, err)
+	}
+	s := &Store{db: db, w: w, path: path}
 	if err := s.migrateSearchIndex(); err != nil {
+		w.Close()
+		db.Close()
+		return nil, err
+	}
+	if err := s.migrateReceivedAt(); err != nil {
+		w.Close()
 		db.Close()
 		return nil, err
 	}
 	if err := s.migrateState(); err != nil {
+		w.Close()
 		db.Close()
 		return nil, err
 	}
 	if err := s.migrateScenarioRuns(); err != nil {
+		w.Close()
 		db.Close()
 		return nil, err
 	}
 	if err := s.migrateAD(); err != nil {
+		w.Close()
 		db.Close()
 		return nil, err
 	}
 	if err := s.migrateQueryAudit(); err != nil {
+		w.Close()
 		db.Close()
 		return nil, err
 	}
 	if err := s.migrateADReadAudit(); err != nil {
+		w.Close()
 		db.Close()
 		return nil, err
 	}
 	// seed the live counters with what is already on disk (a restart
 	// keeps serving history, so the stats must reflect it)
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM events`).Scan(&s.events); err != nil {
+		w.Close()
 		db.Close()
 		return nil, fmt.Errorf("store: count events: %w", err)
 	}
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM alerts`).Scan(&s.alerts); err != nil {
+		w.Close()
 		db.Close()
 		return nil, fmt.Errorf("store: count alerts: %w", err)
 	}
@@ -237,7 +268,10 @@ func ensurePrivateFile(path string) error {
 // handle (and Close closes it) or never opens one afterwards.
 func (s *Store) Close() error {
 	s.roOnce.Do(func() {})
-	err := s.db.Close()
+	err := s.w.Close()
+	if derr := s.db.Close(); err == nil {
+		err = derr
+	}
 	if s.roDB != nil {
 		if rerr := s.roDB.Close(); err == nil {
 			err = rerr
@@ -276,9 +310,28 @@ type BatchResult struct {
 }
 
 // insertEventSQL is the append-only insert shared by both write paths.
-const insertEventSQL = `INSERT INTO events (id, ts, type, host, search, json)
-                 VALUES (?, ?, ?, ?, ?, ?)
+const insertEventSQL = `INSERT INTO events (id, ts, received_at, type, host, search, json)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)
                  ON CONFLICT(id) DO NOTHING`
+
+// indexTime is the value of the ts column for a record whose declared
+// time is t and which reached the store at now. The JSON evidence keeps
+// the declared timestamp untouched; the column is what "newest first"
+// and the since/until filters run on, and it is fed by the sender's
+// clock: a record dated years ahead would otherwise sit on top of every
+// listing for good, and one outside 1678-2262 overflows UnixNano into
+// an arbitrary position. Ahead of now by more than the skew the
+// detectors tolerate it sorts as "arrived now"; before the epoch it
+// sorts first.
+func indexTime(t, now time.Time) int64 {
+	switch {
+	case t.After(now.Add(model.MaxFutureSkew)):
+		return now.UnixNano()
+	case t.Before(time.Unix(0, 0)):
+		return 0
+	}
+	return t.UnixNano()
+}
 
 // InsertEvents persists a batch in ONE transaction: SQLite pays its
 // commit once per batch instead of once per event (about 6x cheaper per
@@ -329,7 +382,7 @@ func (s *Store) InsertEvents(evs []*model.Event) BatchResult {
 // Caller holds wmu. Counters are only updated after a successful commit.
 func (s *Store) insertBatchLocked(evs []*model.Event, payloads []string, ok []bool) (BatchResult, error) {
 	var res BatchResult
-	tx, err := s.db.Begin()
+	tx, err := s.w.Begin()
 	if err != nil {
 		return res, fmt.Errorf("store: begin event batch: %w", err)
 	}
@@ -339,11 +392,12 @@ func (s *Store) insertBatchLocked(evs []*model.Event, payloads []string, ok []bo
 		return res, fmt.Errorf("store: prepare event insert: %w", err)
 	}
 	defer stmt.Close()
+	now := time.Now()
 	for i, ev := range evs {
 		if !ok[i] {
 			continue
 		}
-		r, err := stmt.Exec(ev.ID, ev.Timestamp.UnixNano(), ev.Type, strings.ToLower(ev.Host),
+		r, err := stmt.Exec(ev.ID, indexTime(ev.Timestamp, now), now.UnixNano(), ev.Type, strings.ToLower(ev.Host),
 			eventHaystack(ev), payloads[i])
 		if err != nil {
 			return BatchResult{}, fmt.Errorf("store: insert event %s: %w", ev.ID, err)
@@ -381,16 +435,17 @@ func (s *Store) InsertAlert(a alert.Alert) error {
 	if err != nil {
 		return fmt.Errorf("store: marshal alert: %w", err)
 	}
-	ts := time.Now()
+	now := time.Now()
+	ts := now
 	if parsed, perr := time.Parse(time.RFC3339Nano, a.Timestamp); perr == nil {
 		ts = parsed
 	}
 	s.wmu.Lock()
 	defer s.wmu.Unlock()
-	_, err = s.db.Exec(
-		`INSERT INTO alerts (ts, severity, rule_id, host, search, json)
-                 VALUES (?, ?, ?, ?, ?, ?)`,
-		ts.UnixNano(), strings.ToLower(a.Severity), a.RuleID, strings.ToLower(a.Host),
+	_, err = s.w.Exec(
+		`INSERT INTO alerts (ts, received_at, severity, rule_id, host, search, json)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		indexTime(ts, now), now.UnixNano(), strings.ToLower(a.Severity), a.RuleID, strings.ToLower(a.Host),
 		alertHaystack(a), string(payload),
 	)
 	if err != nil {
@@ -517,7 +572,12 @@ WITH RECURSIVE h(x) AS (
 }
 
 // Prune deletes rows older than the retention window and reports how
-// many were removed per family: events, alerts and the audit tables
+// many were removed per family. Events and alerts age by the moment the
+// engine RECEIVED them (received_at), never by the timestamp the sender
+// declared: with the declared one a record dated in the future was
+// never pruned and a backdated one - an imported log, a sensor with a
+// dead clock battery, an attacker hiding its tracks - was gone at the
+// next pass. The other families are the audit tables
 // (query_audit, ad_read_audit) plus the AD posture history, which
 // carries personal data and addresses and so ages out under the same
 // window (SEC-9: retention configurable for everything personal). A
@@ -531,12 +591,12 @@ func (s *Store) Prune(retention time.Duration) (events, alerts, auditRows int64,
 	cutoffSec := now.Unix()
 	s.wmu.Lock()
 	defer s.wmu.Unlock()
-	res, err := s.db.Exec(`DELETE FROM events WHERE ts < ?`, cutoffNano)
+	res, err := s.w.Exec(`DELETE FROM events WHERE received_at < ?`, cutoffNano)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("store: prune events: %w", err)
 	}
 	events, _ = res.RowsAffected()
-	res, err = s.db.Exec(`DELETE FROM alerts WHERE ts < ?`, cutoffNano)
+	res, err = s.w.Exec(`DELETE FROM alerts WHERE received_at < ?`, cutoffNano)
 	if err != nil {
 		return events, 0, 0, fmt.Errorf("store: prune alerts: %w", err)
 	}
@@ -548,7 +608,7 @@ func (s *Store) Prune(retention time.Duration) (events, alerts, auditRows int64,
 		`DELETE FROM ad_read_audit WHERE ts < ?`,
 		`DELETE FROM ad_posture_history WHERE at < ?`,
 	} {
-		res, err := s.db.Exec(stmt, cutoffSec)
+		res, err := s.w.Exec(stmt, cutoffSec)
 		if err != nil {
 			return events, alerts, auditRows, fmt.Errorf("store: prune audit: %w", err)
 		}

@@ -31,7 +31,7 @@
   event_type: process.create
   conditions:
     - field: process.name
-      operator: eq
+      operator: ieq
       value: "mshta.exe"
     - field: process.command_line
       operator: regex
@@ -57,7 +57,7 @@
   event_type: process.create
   conditions:
     - field: process.name
-      operator: eq
+      operator: ieq
       value: "rundll32.exe"
     - field: process.command_line
       operator: regex
@@ -82,7 +82,7 @@
   event_type: process.create
   conditions:
     - field: process.name
-      operator: eq
+      operator: ieq
       value: "installutil.exe"
     - field: process.command_line
       operator: regex
@@ -107,7 +107,7 @@
   event_type: process.create
   conditions:
     - field: process.name
-      operator: eq
+      operator: ieq
       value: "forfiles.exe"
     - field: process.command_line
       operator: regex
@@ -136,8 +136,8 @@
       operator: iin
       value: ["winword.exe", "excel.exe", "powerpnt.exe", "mspub.exe", "winproj.exe", "wordview.exe", "xlview.exe"]
     - field: process.name
-      operator: in
-      value: ["cmd.exe", "powershell.exe", "wscript.exe", "cscript.exe", "mshta.exe", "rundll32.exe"]
+      operator: iin
+      value: ["cmd.exe", "powershell.exe", "pwsh.exe", "wscript.exe", "cscript.exe", "mshta.exe", "rundll32.exe"]
   actions:
     - type: alert
       config:
@@ -159,7 +159,7 @@
   event_type: process.create
   conditions:
     - field: process.name
-      operator: in
+      operator: iin
       value: ["wscript.exe", "cscript.exe", "mshta.exe"]
     - field: process.command_line
       operator: regex
@@ -185,7 +185,7 @@
   event_type: process.create
   conditions:
     - field: process.name
-      operator: in
+      operator: iin
       value: ["powershell.exe", "pwsh.exe"]
     - field: process.command_line
       operator: regex
@@ -214,8 +214,8 @@
       operator: iin
       value: ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "acrobat.exe", "acrord32.exe"]
     - field: process.name
-      operator: in
-      value: ["cmd.exe", "powershell.exe", "wscript.exe", "mshta.exe"]
+      operator: iin
+      value: ["cmd.exe", "powershell.exe", "pwsh.exe", "wscript.exe", "mshta.exe"]
   actions:
     - type: alert
       config:
@@ -243,11 +243,11 @@
   event_type: process.create
   conditions:
     - field: process.name
-      operator: not_in
+      operator: inot_in
       value: ["powershell.exe", "pwsh.exe", "cmd.exe", "wscript.exe", "cscript.exe", "mshta.exe", "rundll32.exe", "installutil.exe", "python.exe", "pythonw.exe", "python3.exe", "py.exe", "node.exe"]
     - field: process.command_line
       operator: regex
-      value: '(?i)(-encodedcommand(\s|=)|-enc\s+["'']?[A-Za-z0-9+/=]{20,}|\bvbscript:|\bjavascript:|-c\s*["'']?(import|from)\s+(os|sys|socket|subprocess|ctypes|base64)\b)'
+      value: '(?i)([-/\x{2013}\x{2014}\x{2015}]e(c|n(c(o(d(e(d(c(o(m(m(a(n(d)?)?)?)?)?)?)?)?)?)?)?)?)?[\s:]+["'']?[A-Za-z0-9+/=]{20,}|\bvbscript:|\bjavascript:|-c\s*["'']?(import|from)\s+(os|sys|socket|subprocess|ctypes|base64)\b)'
   actions:
     - type: alert
       config:
@@ -276,17 +276,17 @@
   event_type: process.create
   conditions:
     - field: enrichment.parent_name
-      operator: neq
+      operator: ineq
       value: ""
     - field: enrichment.parent_name
-      operator: not_in
+      operator: inot_in
       value: ["cmd.exe", "powershell.exe", "pwsh.exe", "wscript.exe", "cscript.exe", "mshta.exe", "explorer.exe", "services.exe", "svchost.exe", "taskhostw.exe", "taskeng.exe", "wmiprvse.exe", "userinit.exe", "conhost.exe", "python.exe", "pythonw.exe", "node.exe", "rundll32.exe", "regsvr32.exe", "msiexec.exe", "chrome.exe", "msedge.exe", "firefox.exe", "winword.exe", "excel.exe", "powerpnt.exe", "w3wp.exe", "java.exe"]
     - field: process.name
-      operator: in
+      operator: iin
       value: ["powershell.exe", "pwsh.exe", "wscript.exe", "cscript.exe", "mshta.exe", "cmd.exe"]
     - field: process.command_line
       operator: regex
-      value: '(?i)(-encodedcommand(\s|=)|-enc\s+["'']?[A-Za-z0-9+/=]{20,}|-w\s+hidden\b|-windowstyle\s+hidden\b|\bvbscript:)'
+      value: '(?i)([-/\x{2013}\x{2014}\x{2015}]e(c|n(c(o(d(e(d(c(o(m(m(a(n(d)?)?)?)?)?)?)?)?)?)?)?)?)?[\s:]+["'']?[A-Za-z0-9+/=]{20,}|[-/\x{2013}\x{2014}\x{2015}]w(i(n(d(o(w(s(t(y(l(e)?)?)?)?)?)?)?)?)?)?[\s:=]+["'']?(hid\w*|1)\b|\bvbscript:)'
   actions:
     - type: alert
       config:

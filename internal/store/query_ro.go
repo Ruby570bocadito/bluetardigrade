@@ -13,6 +13,23 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
+)
+
+// Memory bounds of the read-only surface. The row cap alone bounds
+// nothing: one row can hold a value of any size, and a value can be
+// computed (hex(zeroblob(N)), a group_concat over the whole table)
+// rather than read.
+const (
+	// roMaxValueBytes is the SQLite length limit of the connection a
+	// query runs on: the engine refuses to build a larger string or
+	// blob ("string or blob too big"), before it exists in memory.
+	roMaxValueBytes = 16 << 20
+	// roMaxResultBytes is the budget of one buffered result; past it
+	// the result is truncated like past the row cap.
+	roMaxResultBytes = 32 << 20
 )
 
 // auditKeepRows caps the query_audit table: it is operator telemetry
@@ -90,9 +107,9 @@ func (s *Store) readOnly() (*sql.DB, error) {
 
 // QueryRO runs one statement on the read-only handle and returns up to
 // maxRows rows (the caller's guard already clamps it; this is the last
-// line of defense against an unbounded scan being buffered whole).
-// When the statement yields more, truncated reports true and the extra
-// rows are never read. Values come back as nil, int64, float64 or
+// line of defense against an unbounded scan being buffered whole) and
+// at most roMaxResultBytes of values. When the statement yields more,
+// truncated reports true and the extra rows are never read. Values come back as nil, int64, float64 or
 // string (driver []byte is copied to string so the JSON encoder never
 // base64-hides a text column).
 func (s *Store) QueryRO(ctx context.Context, statement string, maxRows int) (cols []string, rows [][]any, truncated bool, err error) {
@@ -103,7 +120,17 @@ func (s *Store) QueryRO(ctx context.Context, statement string, maxRows int) (col
 	if err != nil {
 		return nil, nil, false, err
 	}
-	rs, err := db.QueryContext(ctx, statement)
+	// The length limit belongs to a connection, not to the pool: the
+	// query runs on the one it was just set on.
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	defer conn.Close()
+	if _, err := sqlite.Limit(conn, sqlite3.SQLITE_LIMIT_LENGTH, roMaxValueBytes); err != nil {
+		return nil, nil, false, fmt.Errorf("store: read-only length limit: %w", err)
+	}
+	rs, err := conn.QueryContext(ctx, statement)
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -113,6 +140,7 @@ func (s *Store) QueryRO(ctx context.Context, statement string, maxRows int) (col
 		return nil, nil, false, err
 	}
 	out := make([][]any, 0, min(maxRows, 64))
+	used := 0
 	for rs.Next() {
 		if len(out) == maxRows {
 			truncated = true
@@ -126,11 +154,23 @@ func (s *Store) QueryRO(ctx context.Context, statement string, maxRows int) (col
 		if err := rs.Scan(ptrs...); err != nil {
 			return nil, nil, false, err
 		}
+		size := 0
 		for i, v := range raw {
-			if b, ok := v.([]byte); ok {
-				raw[i] = string(b)
+			switch x := v.(type) {
+			case []byte:
+				raw[i] = string(x)
+				size += len(x)
+			case string:
+				size += len(x)
+			default:
+				size += 8
 			}
 		}
+		if used+size > roMaxResultBytes {
+			truncated = true
+			break
+		}
+		used += size
 		out = append(out, raw)
 	}
 	// After an early stop the iteration ended on purpose; Err is only
@@ -154,13 +194,13 @@ func (s *Store) RecordQueryAudit(a QueryAuditRow) error {
 	}
 	s.wmu.Lock()
 	defer s.wmu.Unlock()
-	if _, err := s.db.Exec(
+	if _, err := s.w.Exec(
 		`INSERT INTO query_audit (ts, remote, sql, status, rows, duration_ms, error) VALUES (?,?,?,?,?,?,?)`,
 		a.TS.Unix(), a.Remote, text, a.Status, a.Rows, a.DurationMS, a.Error,
 	); err != nil {
 		return fmt.Errorf("store: query audit: %w", err)
 	}
-	if _, err := s.db.Exec(
+	if _, err := s.w.Exec(
 		`DELETE FROM query_audit WHERE id NOT IN (SELECT id FROM query_audit ORDER BY id DESC LIMIT ?)`,
 		auditKeepRows,
 	); err != nil {

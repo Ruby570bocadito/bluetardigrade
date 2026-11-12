@@ -368,3 +368,59 @@ func TestAssignPersistsAndReloads(t *testing.T) {
 		t.Fatalf("pre-assignment entry = %+v ok=%v", e, ok)
 	}
 }
+
+// Every persist flushes the temp file before the rename, and a batch of
+// assignments is one persist, not one per alert.
+func TestAssignBatchPersistsOnceAndSyncs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lifecycle.json")
+	s, err := New(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	syncs := 0
+	prev := syncFile
+	syncFile = func(f *os.File) error { syncs++; return prev(f) }
+	defer func() { syncFile = prev }()
+
+	if _, err := s.Set("a000000000000001", StatusAcknowledged, "", "mine", "ana"); err != nil {
+		t.Fatal(err)
+	}
+	if syncs != 1 {
+		t.Fatalf("a single write flushed %d times, want 1", syncs)
+	}
+	ids := make([]string, 300)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("a%015d", i+1)
+	}
+	entries, err := s.AssignBatch(ids, "luis", "ana")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if syncs != 2 {
+		t.Fatalf("a batch of %d flushed the file %d times, want once", len(ids), syncs-1)
+	}
+	if len(entries) != len(ids) || entries[0].AlertID != ids[0] || entries[0].Assignee != "luis" {
+		t.Fatalf("entries = %d, first %+v", len(entries), entries[0])
+	}
+	// triage survives the assignment, and everything reloads
+	re, err := New(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if re.Count() != len(ids) {
+		t.Fatalf("reloaded %d entries, want %d", re.Count(), len(ids))
+	}
+	if e, _ := re.Get("a000000000000001"); e.Status != StatusAcknowledged || e.Assignee != "luis" || e.AssignedBy != "ana" {
+		t.Fatalf("reloaded entry = %+v", e)
+	}
+	// unassign in bulk clears the trio
+	if _, err := s.AssignBatch(ids[:2], "", "ana"); err != nil {
+		t.Fatal(err)
+	}
+	if e, _ := s.Get(ids[1]); e.Assignee != "" || e.AssignedAt != "" {
+		t.Fatalf("unassigned entry = %+v", e)
+	}
+	if _, err := s.AssignBatch(ids, strings.Repeat("x", MaxAssigneeLen+1), "ana"); err == nil {
+		t.Fatal("an oversized assignee was accepted")
+	}
+}

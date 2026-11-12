@@ -202,7 +202,9 @@ export function enrollmentPlan(host: string, serverAddress: string, tls: boolean
   start: 'Arranca el sensor apuntando al servidor, con el token de su identidad. En menos de un minuto aparece aquí «en línea».',
 }): EnrollmentStep[] {
   const id = identityName(host)
-  const tlsArg = tls ? ` --tls-ca "${SENSOR_DIR}\\ingest-cert.pem"` : ''
+  // Without a certificate on the server the token crosses the network in
+  // clear, and the sensor refuses that unless the command says so.
+  const tlsArg = tls ? ` --tls-ca "${SENSOR_DIR}\\ingest-cert.pem"` : ' --allow-plaintext-token'
   const steps: EnrollmentStep[] = [
     {
       where: 'server',

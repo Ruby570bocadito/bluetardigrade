@@ -3,6 +3,7 @@
 // sent it. Administrators only; newest first.
 
 import { principalFor, unauthorizedResponse } from '@/lib/access'
+import { readRefused } from '@/lib/request-guard'
 import { auditFile, readAudit, roleAtLeast } from '@/lib/users'
 
 export const dynamic = 'force-dynamic'
@@ -13,9 +14,8 @@ export async function GET(request: Request): Promise<Response> {
   if (!roleAtLeast(principal.role, 'admin')) {
     return Response.json({ error: 'role_forbidden', hint: 'Solo un administrador puede ver la auditoría de la consola.' }, { status: 403 })
   }
-  if (request.headers.get('sec-fetch-site') === 'cross-site') {
-    return Response.json({ error: 'cross_site' }, { status: 403 })
-  }
+  const refused = readRefused(request)
+  if (refused) return refused
   const requested = Number(new URL(request.url).searchParams.get('limit') ?? 200)
   const limit = Number.isFinite(requested) ? Math.min(Math.max(Math.trunc(requested), 1), 1000) : 200
   const { entries, error } = readAudit(limit)

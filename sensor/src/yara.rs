@@ -30,7 +30,7 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -47,6 +47,13 @@ const CACHE_CAP: usize = 4096;
 /// How often the worker re-checks the rules directory (the engine's
 /// distribution lands there without a sensor restart).
 const RELOAD_EVERY: Duration = Duration::from_secs(60);
+
+/// A written file the writer still holds without sharing (the scan is
+/// triggered by the Write event, usually before the handle is closed) is
+/// read again after these waits, then given up on and counted as an
+/// error. Bounded in tries and in files waiting.
+const RETRY_DELAYS: [Duration; 3] = [Duration::from_millis(500), Duration::from_secs(2), Duration::from_secs(8)];
+const RETRY_CAP: usize = 256;
 
 /// The optional manifest the rule distribution (M-3) may drop next to
 /// the rule files (see is_rule_file for the YARA source extensions).
@@ -197,6 +204,7 @@ fn collect_sources(dir: &Path) -> (Vec<Source>, String, Vec<String>) {
     for (rel, path) in files {
         if rel == MANIFEST_NAME {
             if let Ok(text) = read_capped(&path.to_string_lossy(), MAX_RULE_SOURCE_BYTES)
+                .map_err(|err| err.to_string())
                 .and_then(|bytes| String::from_utf8(bytes).map_err(|err| err.to_string()))
             {
                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
@@ -436,10 +444,16 @@ impl ScanCache {
         ScanCache { seen: HashMap::new(), order: VecDeque::new() }
     }
 
-    /// True when this exact state was scanned before; remembers it otherwise.
-    fn remember(&mut self, key: String) -> bool {
+    /// True when this exact state was scanned before.
+    fn contains(&self, key: &str) -> bool {
+        self.seen.contains_key(key)
+    }
+
+    /// Remembers a state that was scanned. Only called once the scan
+    /// succeeded: a file that could not be read must be tried again.
+    fn remember(&mut self, key: String) {
         if self.seen.contains_key(&key) {
-            return true;
+            return;
         }
         if self.seen.len() >= CACHE_CAP {
             if let Some(old) = self.order.pop_front() {
@@ -448,14 +462,69 @@ impl ScanCache {
         }
         self.seen.insert(key.clone(), ());
         self.order.push_back(key);
-        false
+    }
+}
+
+/// What scan_one did with a file.
+#[derive(Debug, PartialEq, Eq)]
+enum Scan {
+    /// scanned, or skipped for good (policy, gone, already scanned, error)
+    Done,
+    /// the writer still holds it without sharing: worth another try
+    Busy(String),
+}
+
+/// Files waiting for another read: (path, tries made, not before).
+struct RetryQueue {
+    waiting: VecDeque<(String, usize, Instant)>,
+}
+
+impl RetryQueue {
+    fn new() -> Self {
+        RetryQueue { waiting: VecDeque::new() }
+    }
+
+    /// Schedules the next try of `path` after `tries` failed ones. False
+    /// when the tries are used up or the queue is full: the caller
+    /// reports the file as unreadable. A path already waiting keeps its
+    /// slot (every further write of the file asks again).
+    fn defer(&mut self, path: &str, tries: usize, now: Instant) -> bool {
+        if self.waiting.iter().any(|(p, _, _)| p == path) {
+            return true;
+        }
+        match RETRY_DELAYS.get(tries.saturating_sub(1)) {
+            Some(delay) if self.waiting.len() < RETRY_CAP => {
+                self.waiting.push_back((path.to_string(), tries, now + *delay));
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// The files whose wait is over, with the tries they already made.
+    fn take_due(&mut self, now: Instant) -> Vec<(String, usize)> {
+        let mut due = Vec::new();
+        for _ in 0..self.waiting.len() {
+            match self.waiting.pop_front() {
+                Some((path, tries, at)) if at <= now => due.push((path, tries)),
+                Some(later) => self.waiting.push_back(later),
+                None => break,
+            }
+        }
+        due
+    }
+
+    fn is_empty(&self) -> bool {
+        self.waiting.is_empty()
     }
 }
 
 /// The scan worker: takes Win32 file paths from the write handler, and
 /// once a minute re-checks the rules directory. One job = one file: stat,
 /// dedupe, read (capped, hashing while reading), scan, emit. Exits when
-/// the collector drops the channel (normal shutdown) and reports why.
+/// the collector drops the channel (normal shutdown) and reports why;
+/// with `stop` set it exits at once and leaves what is still queued
+/// unscanned (a shutdown does not wait for up to a queue of file reads).
 /// Every successful load or reload is published to the shared slot for
 /// the memory scanner (memscan.rs).
 pub fn start_worker(
@@ -465,14 +534,23 @@ pub fn start_worker(
     stats: Arc<YaraStats>,
     emit: impl Fn(EventJson) + Send + 'static,
     slot: RulesSlot,
+    stop: Arc<AtomicBool>,
 ) -> Option<JoinHandle<()>> {
     std::thread::Builder::new()
         .name("yara-scan".into())
-        .spawn(move || worker(host, config, rx, stats, emit, slot))
+        .spawn(move || worker(host, config, rx, stats, emit, slot, stop))
         .ok()
 }
 
-fn worker(host: String, config: YaraConfig, rx: Receiver<String>, stats: Arc<YaraStats>, emit: impl Fn(EventJson), slot: RulesSlot) {
+fn worker(
+    host: String,
+    config: YaraConfig,
+    rx: Receiver<String>,
+    stats: Arc<YaraStats>,
+    emit: impl Fn(EventJson),
+    slot: RulesSlot,
+    stop: Arc<AtomicBool>,
+) {
     let mut loaded: Option<Arc<LoadedRules>> = match load(&config.rules_dir) {
         Ok(loaded) => {
             eprintln!(
@@ -495,16 +573,37 @@ fn worker(host: String, config: YaraConfig, rx: Receiver<String>, stats: Arc<Yar
         }
     };
     let mut cache = ScanCache::new();
+    let mut retries = RetryQueue::new();
     let mut last_reload = Instant::now();
+    // One try of one file; a file its writer still holds is scheduled
+    // for another one, and reported once the tries are used up.
+    let attempt = |rules: &LoadedRules, path: &str, tries: usize, cache: &mut ScanCache, retries: &mut RetryQueue| {
+        if let Scan::Busy(err) = scan_one(&host, rules, &config, path, &stats, &emit, cache) {
+            if !retries.defer(path, tries + 1, Instant::now()) {
+                stats.errors.fetch_add(1, Ordering::Relaxed);
+                eprintln!("[SENSOR] yara: {path}: {err} (still held after {} tries; not scanned)", tries + 1);
+            }
+        }
+    };
     loop {
-        match rx.recv_timeout(Duration::from_secs(1)) {
+        if stop.load(Ordering::Relaxed) {
+            break;
+        }
+        // with files waiting for another read the worker wakes up sooner
+        let idle = if retries.is_empty() { Duration::from_secs(1) } else { Duration::from_millis(200) };
+        match rx.recv_timeout(idle) {
             Ok(path) => {
                 if let Some(rules) = &loaded {
-                    scan_one(&host, rules, &config, &path, &stats, &emit, &mut cache);
+                    attempt(rules, &path, 0, &mut cache, &mut retries);
                 }
             }
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => break,
+        }
+        if let Some(rules) = &loaded {
+            for (path, tries) in retries.take_due(Instant::now()) {
+                attempt(rules, &path, tries, &mut cache, &mut retries);
+            }
         }
         if last_reload.elapsed() >= RELOAD_EVERY {
             last_reload = Instant::now();
@@ -537,7 +636,10 @@ fn worker(host: String, config: YaraConfig, rx: Receiver<String>, stats: Arc<Yar
 }
 
 /// Scans one written file: dedupe by (path, size, mtime), skip files over
-/// the cap, read hashing as we go, emit one event per matching rule.
+/// the cap, read hashing as we go, emit one event per matching rule. The
+/// state is remembered only once it was scanned: a file that could not
+/// be read (its writer still holds it) comes back as Busy and is not
+/// mistaken for scanned on the next look.
 fn scan_one(
     host: &str,
     loaded: &LoadedRules,
@@ -546,15 +648,18 @@ fn scan_one(
     stats: &YaraStats,
     emit: &impl Fn(EventJson),
     cache: &mut ScanCache,
-) {
+) -> Scan {
     if is_excluded(path, &config.exclude) {
-        return; // the sensor's own spool, log, token or rules: never scanned
+        return Scan::Done; // the sensor's own spool, log, token or rules: never scanned
+    }
+    if crate::imagehash::is_remote_path(path) {
+        return Scan::Done; // a share on another machine: never opened as SYSTEM
     }
     let Ok(meta) = fs::metadata(path) else {
-        return; // written and gone (temp files) before the worker looked
+        return Scan::Done; // written and gone (temp files) before the worker looked
     };
     if !meta.is_file() {
-        return;
+        return Scan::Done;
     }
     let mtime = meta
         .modified()
@@ -563,19 +668,20 @@ fn scan_one(
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     let key = format!("{path}\0{}\0{mtime}", meta.len());
-    if cache.remember(key) {
-        return; // scanned in this exact state already
+    if cache.contains(&key) {
+        return Scan::Done; // scanned in this exact state already
     }
     let size = meta.len();
     if size > config.max_file_bytes {
-        return; // static policy (--yara-max-mb): skipped, not an error
+        return Scan::Done; // static policy (--yara-max-mb): skipped, not an error
     }
     let data = match read_capped(path, config.max_file_bytes) {
         Ok(data) => data,
-        Err(err) => {
+        Err(ReadError::Busy(err)) => return Scan::Busy(err),
+        Err(ReadError::Failed(err)) => {
             stats.errors.fetch_add(1, Ordering::Relaxed);
             eprintln!("[SENSOR] yara: {path}: {err}");
-            return;
+            return Scan::Done;
         }
     };
     let digest = {
@@ -586,6 +692,7 @@ fn scan_one(
     stats.scans.fetch_add(1, Ordering::Relaxed);
     match scan(&loaded.rules, &data) {
         Ok(hits) => {
+            cache.remember(key);
             stats.matches.fetch_add(hits.len() as u64, Ordering::Relaxed);
             for hit in &hits {
                 emit(hit_event(host, path, size, &digest, hit));
@@ -596,6 +703,7 @@ fn scan_one(
             eprintln!("[SENSOR] yara: {path}: scan failed: {err}");
         }
     }
+    Scan::Done
 }
 
 /// True when `path` is one of the excluded paths or under an excluded
@@ -616,14 +724,42 @@ pub fn is_excluded(path: &str, exclude: &[PathBuf]) -> bool {
 /// Reads at most `max` bytes (a file that grew past the cap between the
 /// stat and this read is skipped, not truncated: a partial scan would
 /// report hits it cannot vouch for).
-fn read_capped(path: &str, max: u64) -> Result<Vec<u8>, String> {
-    let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
+fn read_capped(path: &str, max: u64) -> Result<Vec<u8>, ReadError> {
+    let mut file = fs::File::open(path).map_err(ReadError::from_io)?;
     let mut data = Vec::new();
-    (&mut file).take(max + 1).read_to_end(&mut data).map_err(|e| e.to_string())?;
+    (&mut file).take(max + 1).read_to_end(&mut data).map_err(ReadError::from_io)?;
     if data.len() as u64 > max {
-        return Err(format!("grew past the {} byte cap while reading", max));
+        return Err(ReadError::Failed(format!("grew past the {} byte cap while reading", max)));
     }
     Ok(data)
+}
+
+/// Why a file could not be read.
+#[derive(Debug)]
+enum ReadError {
+    /// another handle holds it without sharing (ERROR_SHARING_VIOLATION,
+    /// ERROR_LOCK_VIOLATION): the writer has not finished, try again
+    Busy(String),
+    Failed(String),
+}
+
+impl std::fmt::Display for ReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReadError::Busy(err) | ReadError::Failed(err) => f.write_str(err),
+        }
+    }
+}
+
+impl ReadError {
+    fn from_io(err: std::io::Error) -> Self {
+        // Win32 codes: elsewhere the same numbers mean something else
+        if cfg!(windows) && matches!(err.raw_os_error(), Some(32 | 33)) {
+            ReadError::Busy(err.to_string())
+        } else {
+            ReadError::Failed(err.to_string())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -930,6 +1066,7 @@ rule meta_hit {
             Arc::clone(&stats),
             move |event| sink.lock().unwrap().push(serde_json::to_string(&event).unwrap()),
             Arc::clone(&slot),
+            Arc::new(AtomicBool::new(false)),
         )
         .unwrap();
         let path = sample.to_string_lossy().to_string();
@@ -1011,5 +1148,103 @@ rule meta_hit {
         );
         // 1024 == cap: scanned normally (not over the cap)
         assert_eq!(stats.scans.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn the_retry_queue_spaces_the_tries_and_stays_bounded() {
+        let t0 = Instant::now();
+        let mut q = RetryQueue::new();
+        assert!(q.is_empty());
+        assert!(q.defer(r"C:\a.bin", 1, t0));
+        // the same file asked again while it waits keeps its one slot
+        assert!(q.defer(r"C:\a.bin", 1, t0));
+        assert_eq!(q.waiting.len(), 1);
+        assert!(q.take_due(t0).is_empty(), "not before its delay");
+        assert_eq!(q.take_due(t0 + RETRY_DELAYS[0]), vec![(r"C:\a.bin".to_string(), 1)]);
+        assert!(q.is_empty());
+        // the tries are bounded: after the last delay there is no other
+        assert!(q.defer(r"C:\a.bin", RETRY_DELAYS.len(), t0));
+        assert!(!q.defer(r"C:\b.bin", RETRY_DELAYS.len() + 1, t0), "tries used up");
+        // ...and so are the files waiting
+        let mut q = RetryQueue::new();
+        for i in 0..RETRY_CAP {
+            assert!(q.defer(&format!("f{i}"), 1, t0));
+        }
+        assert!(!q.defer("one-too-many", 1, t0));
+        assert_eq!(q.waiting.len(), RETRY_CAP);
+    }
+
+    // The scan is triggered by the Write event, usually while the writer
+    // still holds the file: that read must not mark the file as scanned.
+    #[cfg(windows)]
+    #[test]
+    fn a_file_its_writer_still_holds_is_retried_not_remembered() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let tmp = TempDir::new("held");
+        write_rules(tmp.path(), None);
+        let loaded = load(tmp.path()).unwrap();
+        let sample = tmp.path().join("dropped.bin");
+        fs::write(&sample, PAYLOAD).unwrap();
+        let path = sample.to_string_lossy().to_string();
+        let config = YaraConfig { rules_dir: tmp.path().to_path_buf(), max_file_bytes: 1 << 20, exclude: vec![] };
+        let stats = YaraStats::default();
+        let mut cache = ScanCache::new();
+        let hits = std::cell::Cell::new(0usize);
+        let emit = |_event: EventJson| hits.set(hits.get() + 1);
+        // the writer: an exclusive handle (share mode 0)
+        let writer = fs::OpenOptions::new().write(true).share_mode(0).open(&sample).unwrap();
+        let held = scan_one("LAB-01", &loaded, &config, &path, &stats, &emit, &mut cache);
+        assert!(matches!(held, Scan::Busy(_)), "{held:?}");
+        assert_eq!(stats.scans.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.errors.load(Ordering::Relaxed), 0, "a try that will be repeated is not an error yet");
+        drop(writer);
+        // same path, size and mtime as before: it must be read now
+        assert_eq!(scan_one("LAB-01", &loaded, &config, &path, &stats, &emit, &mut cache), Scan::Done);
+        assert_eq!(stats.scans.load(Ordering::Relaxed), 1);
+        assert_eq!(hits.get(), 1);
+        // and only now is the state remembered
+        assert_eq!(scan_one("LAB-01", &loaded, &config, &path, &stats, &emit, &mut cache), Scan::Done);
+        assert_eq!(stats.scans.load(Ordering::Relaxed), 1, "deduped after the successful scan");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_worker_scans_a_held_file_once_its_writer_lets_go() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let tmp = TempDir::new("held-worker");
+        write_rules(tmp.path(), None);
+        let sample = tmp.path().join("dropped.bin");
+        fs::write(&sample, PAYLOAD).unwrap();
+        let config = YaraConfig { rules_dir: tmp.path().to_path_buf(), max_file_bytes: 1 << 20, exclude: vec![] };
+        let stats = Arc::new(YaraStats::default());
+        let (tx, rx) = sync_channel::<String>(8);
+        let stop = Arc::new(AtomicBool::new(false));
+        let writer = fs::OpenOptions::new().write(true).share_mode(0).open(&sample).unwrap();
+        let handle = start_worker(
+            "LAB-01".into(),
+            config,
+            rx,
+            Arc::clone(&stats),
+            |_event| {},
+            Arc::new(Mutex::new(None)),
+            Arc::clone(&stop),
+        )
+        .unwrap();
+        // the one Write event, while the writer still holds the file
+        tx.send(sample.to_string_lossy().to_string()).unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        assert_eq!(stats.scans.load(Ordering::Relaxed), 0);
+        drop(writer);
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while stats.matches.load(Ordering::Relaxed) == 0 {
+            assert!(Instant::now() < deadline, "the held file was never scanned");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert_eq!(stats.scans.load(Ordering::Relaxed), 1);
+        assert_eq!(stats.errors.load(Ordering::Relaxed), 0);
+        // a stop ends the worker even with its channel still open
+        stop.store(true, Ordering::Relaxed);
+        handle.join().unwrap();
+        drop(tx);
     }
 }

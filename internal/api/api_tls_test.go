@@ -140,3 +140,44 @@ func TestAuthThrottleAfterBudget(t *testing.T) {
 		t.Fatal("brute force past the budget must hit a 429")
 	}
 }
+
+// Past the budget the right token is answered like a wrong one: the
+// block is decided before the comparison, so the throttle does not
+// leave a 200-vs-429 oracle running at line rate.
+func TestAuthThrottleBlocksBeforeComparing(t *testing.T) {
+	h, err := New("127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Shutdown()
+	h.SetToken("secret-token")
+	go func() { _ = h.Run() }()
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	get := func(token string) int {
+		req, _ := http.NewRequest("GET", "http://"+h.Addr()+"/api/stats", nil)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if code := get("secret-token"); code != http.StatusOK {
+		t.Fatalf("right token before any failure: %d, want 200", code)
+	}
+	for i := 0; i < authFailBudget; i++ {
+		if code := get("wrong"); code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d: status %d, want 401", i, code)
+		}
+	}
+	if code := get("secret-token"); code != http.StatusTooManyRequests {
+		t.Fatalf("right token from a blocked address: %d, want 429", code)
+	}
+	if code := get(""); code != http.StatusTooManyRequests {
+		t.Fatalf("blocked address: %d, want 429", code)
+	}
+}

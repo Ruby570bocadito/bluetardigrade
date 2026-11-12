@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 
 	"github.com/go-asn1-ber/asn1-ber"
@@ -206,9 +207,14 @@ func (c *Connector) fetchAll(conn *ldap.Conn) (*searchResults, bool, error) {
 				continue
 			}
 			if f.kind == store.ADKindGroup {
-				for _, m := range e.GetAttributeValues(attrMember) {
+				members, err := groupMembers(conn, e)
+				if err != nil {
+					return nil, false, fmt.Errorf("ad: members of a group: %w", err)
+				}
+				for _, m := range members {
 					res.edges = append(res.edges, store.ADGroupEdge{GroupDN: dn, MemberDN: m})
 				}
+				obj.Attributes["member_count"] = fmt.Sprintf("%d", len(members))
 			}
 			res.objects = append(res.objects, obj)
 			if sid := obj.SID; strings.HasPrefix(sid, "S-1-5-21-") {
@@ -218,6 +224,104 @@ func (c *Connector) fetchAll(conn *ldap.Conn) (*searchResults, bool, error) {
 		remaining -= len(entries)
 	}
 	return res, truncated, nil
+}
+
+// memberRangeMaxRequests bounds the follow-up searches of one group: at
+// the 1500 values a domain controller serves per request it covers
+// three million members, far above the object cap, and a server that
+// keeps answering ranges cannot hold the sync forever.
+const memberRangeMaxRequests = 2000
+
+// groupMembers returns every value of a group's member attribute. Active
+// Directory serves a multi-valued attribute in slices (MaxValRange,
+// 1500 by default): past that the entry carries no "member" at all but
+// "member;range=0-1499", and the rest must be asked for slice by slice
+// until the server answers with an open upper bound ("N-*"). Without
+// this a large group synced with zero members. The follow-up is a
+// base-scope read of the DN the server itself returned, with a literal
+// filter: nothing here composes LDAP from operator input.
+func groupMembers(conn *ldap.Conn, e *ldap.Entry) ([]string, error) {
+	if direct := e.GetAttributeValues(attrMember); len(direct) > 0 {
+		return direct, nil
+	}
+	values, high, last, ok := rangedValues(e, attrMember, 0)
+	if !ok {
+		return nil, nil // an empty group
+	}
+	members := append([]string{}, values...)
+	for n := 0; !last && n < memberRangeMaxRequests; n++ {
+		low := high + 1
+		req := ldap.NewSearchRequest(
+			e.DN,
+			ldap.ScopeBaseObject,
+			ldap.NeverDerefAliases,
+			1,
+			30,
+			false,
+			"(objectClass=*)",
+			[]string{fmt.Sprintf("%s;range=%d-*", attrMember, low)},
+			nil,
+		)
+		result, err := conn.Search(req)
+		if err != nil {
+			return nil, err
+		}
+		if len(result.Entries) == 0 {
+			break // the group went away between the two reads
+		}
+		values, high, last, ok = rangedValues(result.Entries[0], attrMember, low)
+		if !ok || len(values) == 0 {
+			break
+		}
+		members = append(members, values...)
+	}
+	return members, nil
+}
+
+// rangedValues finds the "<attr>;range=<low>-<high>" slice of an entry
+// that starts at wantLow. last is true when the upper bound is "*": the
+// server has nothing after this slice.
+func rangedValues(e *ldap.Entry, attr string, wantLow int) (values []string, high int, last, ok bool) {
+	for _, a := range e.Attributes {
+		low, hi, final, isRange := parseRangeAttr(a.Name, attr)
+		if !isRange || low != wantLow {
+			continue
+		}
+		return a.Values, hi, final, true
+	}
+	return nil, 0, false, false
+}
+
+// parseRangeAttr parses an attribute description carrying the range
+// option, e.g. "member;range=1500-2999" or "member;range=3000-*".
+// Attribute names and the option are case-insensitive (RFC 4512).
+func parseRangeAttr(name, attr string) (low, high int, last, ok bool) {
+	base, opts, found := strings.Cut(name, ";")
+	if !found || !strings.EqualFold(base, attr) {
+		return 0, 0, false, false
+	}
+	for _, opt := range strings.Split(opts, ";") {
+		if len(opt) < 6 || !strings.EqualFold(opt[:6], "range=") {
+			continue
+		}
+		lo, hi, cut := strings.Cut(opt[6:], "-")
+		if !cut {
+			return 0, 0, false, false
+		}
+		l, err := strconv.Atoi(lo)
+		if err != nil || l < 0 {
+			return 0, 0, false, false
+		}
+		if hi == "*" {
+			return l, 0, true, true
+		}
+		h, err := strconv.Atoi(hi)
+		if err != nil || h < l {
+			return 0, 0, false, false
+		}
+		return l, h, false, true
+	}
+	return 0, 0, false, false
 }
 
 // ouAllowed applies the include/exclude OU filters to a DN. Include

@@ -60,3 +60,36 @@
   ports: [53, 80, 443, 8080]
   tags: [ttp:T1071.001, beacon]
   exclude_domains: [whatsapp.com, whatsapp.net]
+
+  # ---------- baliza lenta: implant que duerme minutos ----------
+  # El perfil web de arriba necesita 12 conexiones en 15 min, asi que
+  # solo ve cadencias de hasta ~80 s. Un implant configurado para
+  # dormir 5, 10 o 30 minutos (lo habitual en una intrusion real) queda
+  # fuera. Este perfil mira una ventana de 4 h y le bastan 8
+  # conexiones: cubre intervalos medios de 75 s a ~34 min. Tolera mas
+  # jitter (CV <= 0.25, el de un sleep con +-30 % de variacion)
+  # porque los implants lo aleatorizan a proposito.
+  # A cambio dispara tambien con software legitimo que sondea a ritmo fijo
+  # (actualizadores, sincronizacion, telemetria): por eso es de
+  # severidad media, calla 24 h por destino y se limita a puertos web.
+  # Anade a exclude_domains los servicios periodicos de tu red.
+  # Coste: sus claves viven 8 h (2x ventana); con varios perfiles
+  # cargados un perfil ocupa como mucho la mitad de la cuota de claves
+  # de cada equipo, asi que no deja sin sitio a los perfiles rapidos.
+- name: C2 beacon lento (minutos)
+  id: bcn-periodic-slow
+  description: >
+    Cadencia regular (CV <= 0.25) hacia un mismo destino web con
+    intervalo medio entre 75 s y unos 34 minutos, sostenida durante
+    horas: el patron de un implant con sleep largo y jitter. Tambien
+    lo producen programas legitimos que sondean a ritmo fijo; revisar
+    el proceso y el destino antes de escalar.
+  severity: medium
+  window: 4h
+  min_count: 8
+  max_jitter: 0.25
+  min_interval: 75s
+  cooldown: 24h
+  ports: [80, 443, 8080, 8443]
+  tags: [ttp:T1071.001, ttp:T1029, beacon]
+  exclude_domains: [whatsapp.com, whatsapp.net]

@@ -251,3 +251,44 @@ func TestDomainAuthLogKeepsTheAccountOnly(t *testing.T) {
 		t.Errorf("log holds more than the %d-rune cap", domainAuditAccountCap)
 	}
 }
+
+// Once blocked, an attempt never reaches the directory and a correct
+// password is not told apart from a wrong one; the block follows the
+// account as well as the address.
+func TestDomainAuthBlockIsDecidedBeforeTheBind(t *testing.T) {
+	h, addr := newTestHub(t)
+	h.SetDomainAuth(&ad.DomainAuthConfig{Server: "dc01", BaseDN: "DC=x", CAFile: "ca.pem"})
+	calls := stubDomainLogin(t, func(_ context.Context, _ *ad.DomainAuthConfig, _ string, pw []byte) (*ad.DomainIdentity, error) {
+		if string(pw) == "buena" {
+			return &ad.DomainIdentity{User: "ana", Role: "analyst"}, nil
+		}
+		return nil, ad.ErrLoginCredentials
+	})
+	for i := 0; i < domainFailBudget; i++ {
+		if res := postDomainLoginLive(t, addr, `{"user":"ana","password":"mala"}`); res.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("intento %d: status = %d, want 401", i, res.StatusCode)
+		}
+	}
+	before := len(*calls)
+	res := postDomainLoginLive(t, addr, `{"user":"ana","password":"buena"}`)
+	if res.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("contraseña correcta estando bloqueado: status = %d, want 429", res.StatusCode)
+	}
+	if v := decodeVerdict(t, res); v.OK || v.Reason != "bloqueado" {
+		t.Errorf("verdict = %+v", v)
+	}
+	if len(*calls) != before {
+		t.Errorf("un intento bloqueado llegó al directorio (%d llamadas nuevas)", len(*calls)-before)
+	}
+
+	// La cuenta queda bloqueada también desde otra dirección, en
+	// cualquiera de las formas en que se escriba.
+	for _, user := range []string{"ana", "ANA@corp.example"} {
+		if !h.domainBlocked(domainThrottleKeys("198.51.100.9:4000", user)) {
+			t.Errorf("la cuenta %q no quedó bloqueada desde otra dirección", user)
+		}
+	}
+	if h.domainBlocked(domainThrottleKeys("198.51.100.9:4000", "luis")) {
+		t.Error("otra cuenta desde otra dirección no debe estar bloqueada")
+	}
+}

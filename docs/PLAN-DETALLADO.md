@@ -61,7 +61,7 @@ Implementado en la rama `feat/sensor-service`: `--service`, `--log`, `--token-fi
        válido.
      - Crea una **identidad pendiente** con un secreto propio de 256 bits y contesta
        `{"ack":"enrolled","identity":"…","secret":"…","state":"pending"}`.
-     - El sensor guarda el secreto en `ProgramData\bluetardigrade\sensor\ingest.token` (los permisos
+     - El sensor guarda el secreto en `ProgramData\bluetardigrade-sensor\ingest.token` (los permisos
        de §1.1) y desde entonces abre siempre con `AUTH <secreto>`.
   3. **Estado pendiente.** Mientras no se aprueba, la ingesta acepta la conexión, pero sus eventos se
      **retienen** (un tope pequeño, 10.000) o se descartan con contador. No llegan a reglas, alertas
@@ -100,7 +100,7 @@ Implementado en la rama `feat/sensor-service`: `--service`, `--log`, `--token-fi
      - propiedades públicas `SERVER`, `ENROLL_TOKEN` y `CA` (opcional) que se escriben en la
        configuración;
      - un `UpgradeCode` fijo, para que instalar una versión nueva sea una actualización.
-  2. **El propio sensor**, en modo servicio, crea `ProgramData\bluetardigrade\sensor` con permisos
+  2. **El propio sensor**, en modo servicio, crea `ProgramData\bluetardigrade-sensor` con permisos
      solo para SYSTEM y Administradores la primera vez. Así el MSI no necesita acciones personalizadas
      (la parte frágil de los MSI).
   3. **El asistente de la consola** entrega:

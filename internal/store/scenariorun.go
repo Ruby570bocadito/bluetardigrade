@@ -60,7 +60,7 @@ func (s *Store) SaveScenarioRun(r *scenrun.Run) error {
 	}
 	s.wmu.Lock()
 	defer s.wmu.Unlock()
-	tx, err := s.db.Begin()
+	tx, err := s.w.Begin()
 	if err != nil {
 		return fmt.Errorf("store: scenario run begin: %w", err)
 	}

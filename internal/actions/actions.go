@@ -9,7 +9,8 @@
 //     config.notify flag so downstream consumers can filter on it.
 //   - webhook: POSTs the full alert JSON to config.url, optionally
 //     with a Bearer secret and a per-action timeout, through a bounded
-//     in-flight queue so a slow receiver can never stall ingestion.
+//     queue (most severe first) so a slow receiver can never stall
+//     ingestion.
 //
 // Webhook delivery is asynchronous by design: rendering must happen
 // before the alert is written (so the JSON log line carries the
@@ -51,6 +52,7 @@ import (
 
 const (
 	maxInFlight    = 8                // webhooks delivered concurrently
+	maxQueued      = 64               // deliveries waiting for a free slot
 	defaultTimeout = 5 * time.Second  // per-webhook, overridable per action
 	maxTimeout     = 30 * time.Second // hard ceiling
 )
@@ -71,8 +73,107 @@ type Dispatcher struct {
 	mu     sync.Mutex
 	once   map[string]bool // "unsupported action type" warnings, once each
 	client *http.Client
-	sem    chan struct{}
 	log    *log.Logger
+
+	// Delivery queue. With every slot busy a delivery waits here
+	// instead of being dropped; when the queue is full too, the lowest
+	// severity goes first, so a burst of low alerts against a slow
+	// receiver cannot cost the critical one that follows it.
+	qmu      sync.Mutex
+	inFlight int
+	queue    []delivery
+	dropped  uint64
+}
+
+// delivery is one webhook POST waiting for, or holding, a slot.
+type delivery struct {
+	rawURL  string
+	secret  string
+	timeout time.Duration
+	payload []byte
+	name    string
+	rank    int // severity rank, higher delivers first
+}
+
+// severityRank orders deliveries; an unknown severity ranks lowest.
+func severityRank(sev string) int {
+	switch sev {
+	case rules.SevCritical:
+		return 4
+	case rules.SevHigh:
+		return 3
+	case rules.SevMedium:
+		return 2
+	case rules.SevLow:
+		return 1
+	}
+	return 0
+}
+
+// Dropped reports how many webhook deliveries were discarded because
+// the queue was full (since start).
+func (d *Dispatcher) Dropped() uint64 {
+	d.qmu.Lock()
+	defer d.qmu.Unlock()
+	return d.dropped
+}
+
+// enqueue hands a delivery to a free slot or parks it in the bounded
+// queue. A full queue evicts its lowest-severity entry (the oldest of
+// them) for a more severe newcomer; otherwise the newcomer is the one
+// dropped.
+func (d *Dispatcher) enqueue(j delivery) {
+	d.qmu.Lock()
+	if d.inFlight < maxInFlight {
+		d.inFlight++
+		d.qmu.Unlock()
+		go d.run(j)
+		return
+	}
+	lost := j
+	if len(d.queue) < maxQueued {
+		d.queue = append(d.queue, j)
+		d.qmu.Unlock()
+		return
+	}
+	low := 0
+	for i, q := range d.queue {
+		if q.rank < d.queue[low].rank {
+			low = i
+		}
+	}
+	if d.queue[low].rank < j.rank {
+		lost = d.queue[low]
+		d.queue = append(append(d.queue[:low:low], d.queue[low+1:]...), j)
+	}
+	d.dropped++
+	n := d.dropped
+	d.qmu.Unlock()
+	d.log.Printf("webhook %s: cola llena (%d en vuelo, %d en espera), entrega descartada (%d en total)",
+		lost.name, maxInFlight, maxQueued, n)
+}
+
+// run delivers j and then keeps draining the queue, most severe first
+// (arrival order within one severity), until it is empty.
+func (d *Dispatcher) run(j delivery) {
+	for {
+		d.deliver(j.rawURL, j.secret, j.timeout, j.payload, j.name)
+		d.qmu.Lock()
+		if len(d.queue) == 0 {
+			d.inFlight--
+			d.qmu.Unlock()
+			return
+		}
+		best := 0
+		for i, q := range d.queue {
+			if q.rank > d.queue[best].rank {
+				best = i
+			}
+		}
+		j = d.queue[best]
+		d.queue = append(d.queue[:best], d.queue[best+1:]...)
+		d.qmu.Unlock()
+	}
 }
 
 // New creates a Dispatcher. logf receives delivery diagnostics; pass
@@ -92,7 +193,6 @@ func New(logf *log.Logger) *Dispatcher {
 		client: &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		}},
-		sem: make(chan struct{}, maxInFlight),
 		log: logf,
 	}
 }
@@ -200,16 +300,8 @@ func (d *Dispatcher) fire(a *alert.Alert, cfg map[string]string) {
 	secret := cfg["secret"]
 	name := u.Host
 
-	select {
-	case d.sem <- struct{}{}:
-	default:
-		d.log.Printf("webhook %s: cola llena (%d en vuelo), entrega descartada", name, maxInFlight)
-		return
-	}
-	go func() {
-		defer func() { <-d.sem }()
-		d.deliver(rawURL, secret, timeout, payload, name)
-	}()
+	d.enqueue(delivery{rawURL: rawURL, secret: secret, timeout: timeout, payload: payload,
+		name: name, rank: severityRank(a.Severity)})
 }
 
 // deliver performs one HTTP POST and logs any failure. Receiver errors

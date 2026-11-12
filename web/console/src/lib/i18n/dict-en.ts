@@ -190,6 +190,20 @@ export const dictEn: Dict = {
     footerTagline: 'detection, investigation and response for Windows endpoints',
     analystDown: 'analyst service offline',
     selectionLabel: 'Queue selection',
+    exportNoun: { alerts: 'alerts', events: 'events' },
+    exportGroupAria: (noun: string): string => `Export ${noun}`,
+    exportTitle: (noun: string, format: string, limit: number): string =>
+      `Download ${noun} as ${format}. Up to ${limit} recent records from the engine or SQLite.`,
+    exportFilterNote: (filter: string, hidden?: number): string =>
+      ` The active filter (${filter}) is not applied; the file may include records outside this view${hidden === undefined ? '' : `, including ${hidden} hidden in the received buffer`}.`,
+    auditExportAria: 'Export the audit tail as jsonl',
+    auditExportEmpty: 'No attempts in the tail: nothing to export yet',
+    auditExportFiltered: (filter: string, total: number, hidden: number): string =>
+      `Exports the whole window, regardless of the "${filter}" filter: the ${total} records of the tail, including the ${hidden} the filter hides in the view, newest first, line by line as the engine writes them; the complete file lives on the engine host (append-only, never truncated)`,
+    auditExportAll: (total: number): string =>
+      `Downloads the tail of the window (${total} records, newest first) line by line as the engine writes them; the complete file lives on the engine host (append-only, never truncated)`,
+    engineUnreachable: (detail: string): string => `could not reach the engine: ${detail}`,
+    networkError: 'network error',
     detectionTab: 'Detection',
   },
 
@@ -603,6 +617,12 @@ export const dictEn: Dict = {
     historySourceMemory: 'Memory only: the latest 256 alerts held by the engine. Turn on -store to keep the history.',
     historyPaging: '25 per page, most recent first by arrival. Refresh to include new arrivals.',
     historyScanLimited: 'The read limit of this query was reached; continue with «Keep searching».',
+    historyErrors: {
+      unsupported: 'This engine has no paged search. Update the engine or use the live view.',
+      expired: 'The search expired or its filters changed. Refresh to start again.',
+      timeout: 'The query ran past its read time. Narrow the search by rule, host or severity and try again.',
+      failed: 'The history could not be read. Check the connection and try again.',
+    },
     linkedProseA: 'The linked alert (',
     linkedProseB:
       ') is not in this queue: the live ring keeps only the latest alerts and the history pages in blocks. Use the search or the pagination (the link resolves as soon as the alert appears on the loaded page).',
@@ -2665,6 +2685,7 @@ export const dictEn: Dict = {
   respond: {
     sectionAria: 'Active response',
     title: 'Active response',
+    auditAdminOnly: 'The audit record of active response (who attempted what, and what was denied) is visible to administrators only. The state of the surface is still shown above.',
     killHint: 'kill_process · iteration 1',
     introA: 'The engine’s only active action: ',
     introB:
@@ -2836,6 +2857,7 @@ export const dictEn: Dict = {
     analyzePrefix: 'Analyze ',
     analyzeIncidentPrefix: 'Analyze incident ',
     errorLine: (err: string): string => `The analyst could not complete the answer: ${err}. Check the connection and try again.`,
+    disconnected: 'the connection to the analyst service was lost before it finished',
     questionPlaceholder: 'Optional question for the analyst (e.g. recommended content)',
     questionAria: 'Question for the analyst',
     analyze: 'Analyze',

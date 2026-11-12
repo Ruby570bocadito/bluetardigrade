@@ -599,3 +599,106 @@ func TestADTestUsesStoredCredentialWhenArmed(t *testing.T) {
 		t.Fatalf("probe bind_dn %q, want the armed config's", got.BindDN)
 	}
 }
+
+// The stored credential is only used against the destination it was
+// saved for: a request that names another server, port or account must
+// carry the password, on the probe and on the PUT alike.
+func TestADStoredCredentialDoesNotFollowANewDestination(t *testing.T) {
+	h, addr := newTestHub(t)
+	cfgPath, _ := writeADConfig(t)
+	armWrites(h)
+	armADConnector(t, h, cfgPath)
+	h.SetADSettings(cfgPath, func(*ad.Config) error { return nil })
+	before, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"server":  `{"server":"elsewhere.example.invalid"}`,
+		"port":    `{"port":3269}`,
+		"bind_dn": `{"bind_dn":"CN=other,DC=corp,DC=example,DC=invalid"}`,
+	} {
+		for _, route := range []struct{ method, path string }{
+			{"POST", "/api/ad/test"},
+			{"PUT", "/api/settings/ad"},
+		} {
+			res, raw := doJSON(t, route.method, "http://"+addr+route.path, body)
+			if res.StatusCode != http.StatusBadRequest || !strings.Contains(raw, "password required") {
+				t.Fatalf("%s %s with a new %s and no password: %d %s, want 400", route.method, route.path, name, res.StatusCode, raw)
+			}
+		}
+	}
+	if after, _ := os.ReadFile(cfgPath); string(after) != string(before) {
+		t.Fatal("a refused PUT changed the config file")
+	}
+	// the current values sent back are not a change
+	same := `{"server":"DC01.corp.example.invalid","port":636,"bind_dn":"CN=soc-ro,DC=corp,DC=example,DC=invalid"}`
+	if res, raw := doJSON(t, "POST", "http://"+addr+"/api/ad/test", same); res.StatusCode != http.StatusOK {
+		t.Fatalf("probe with the stored destination: %d %s", res.StatusCode, raw)
+	}
+	// with its own password the new destination is accepted
+	moved := `{"server":"elsewhere.example.invalid","password":"` + brandNewPassword + `"}`
+	if res, raw := doJSON(t, "POST", "http://"+addr+"/api/ad/test", moved); res.StatusCode != http.StatusOK {
+		t.Fatalf("probe of a new server with its password: %d %s", res.StatusCode, raw)
+	}
+	if res, raw := doJSON(t, "PUT", "http://"+addr+"/api/settings/ad", moved); res.StatusCode != http.StatusOK {
+		t.Fatalf("PUT of a new server with its password: %d %s", res.StatusCode, raw)
+	}
+}
+
+// Overlapping PUTs that each change a different field must all land:
+// the merge starts from the config published by the previous one.
+func TestADSettingsConcurrentPUTsDoNotLoseUpdates(t *testing.T) {
+	h, addr := newTestHub(t)
+	cfgPath, _ := writeADConfig(t)
+	armWrites(h)
+	st := armADConnector(t, h, cfgPath)
+	h.SetADSettings(cfgPath, func(cfg *ad.Config) error {
+		next, err := ad.New(cfg, st, log.New(io.Discard, "", 0), nil)
+		if err != nil {
+			return err
+		}
+		h.SetAD(next)
+		return nil
+	})
+	bodies := []string{
+		`{"interval_seconds": 1200}`,
+		`{"inactive_days": 45}`,
+		`{"krbtgt_max_age_days": 200}`,
+		`{"max_objects": 5000}`,
+		`{"page_size": 500}`,
+		`{"work_start": "07:00", "work_end": "19:00"}`,
+		`{"exclude_ous": ["OU=Lab,DC=corp,DC=example,DC=invalid"]}`,
+	}
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for _, body := range bodies {
+		wg.Add(1)
+		go func(body string) {
+			defer wg.Done()
+			<-start
+			req, _ := http.NewRequest(http.MethodPut, "http://"+addr+"/api/settings/ad", strings.NewReader(body))
+			res, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Errorf("PUT %s: %v", body, err)
+				return
+			}
+			defer res.Body.Close()
+			raw, _ := io.ReadAll(res.Body)
+			if res.StatusCode != http.StatusOK {
+				t.Errorf("PUT %s: %d %s", body, res.StatusCode, raw)
+			}
+		}(body)
+	}
+	close(start)
+	wg.Wait()
+	got, err := ad.Load(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Interval != 1200*time.Second || got.InactiveDays != 45 || got.KrbtgtMaxAgeDays != 200 ||
+		got.MaxObjects != 5000 || got.PageSize != 500 || got.WorkStart != "07:00" || got.WorkEnd != "19:00" ||
+		len(got.ExcludeOUs) != 1 {
+		t.Fatalf("an overlapping PUT was lost: %+v", got)
+	}
+}

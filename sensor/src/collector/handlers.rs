@@ -50,8 +50,10 @@ pub(super) fn handle_process(record: &EventRecord, schema_locator: &SchemaLocato
         return;
     };
     if opcode == OPCODE_PROCESS_END {
+        // kept for a while, not removed: the process's network, DNS and
+        // registry events arrive through another session after this
         if let Ok(mut table) = ctx.processes.lock() {
-            table.remove(pid);
+            table.end(pid, Instant::now());
         }
         return;
     }

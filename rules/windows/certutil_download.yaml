@@ -12,10 +12,10 @@
   event_type: process.create
   conditions:
     - field: process.name
-      operator: in
+      operator: iin
       value: ["certutil.exe", "bitsadmin.exe"]
     - field: process.command_line
-      operator: contains_any
+      operator: icontains_any
       value: ["-urlcache", "/transfer"]
   actions:
     - type: alert

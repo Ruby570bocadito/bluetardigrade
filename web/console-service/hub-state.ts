@@ -1,29 +1,18 @@
-// Hub state: the single source of truth both the socket.io bus and the
-// HTTP status surface read from. It only ever holds real engine data:
-// ring buffers of events and alerts, the active rule set, the last
-// stats poll and connection counters. There is no simulator and no
-// synthetic fallback anywhere in this module.
+// Hub state: what the analyst pipeline and the HTTP status surface read
+// from. It only ever holds real engine data: ring buffers of events and
+// alerts, the active rule set, the last stats poll and connection
+// counters. None of it is pushed to sockets: the rings exist so the
+// analyst works on the engine's copy of an alert instead of the
+// browser's. There is no simulator and no synthetic fallback anywhere
+// in this module.
 
 import type { HubHealth, HubStats, RuleMeta, SfAlert, SfEvent, SfSequence, SfSuppression, SfAlertLifecycle } from './types'
 import { analystStatusFromEnv, type AnalystStatus } from './analyst'
 
 export const MAX_EVENTS = 160
 export const MAX_ALERTS = 48
-// The initial snapshot the console gets after connecting; smaller than
-// the ring so the first paint stays light. Part of the existing contract.
-export const SNAPSHOT_EVENTS = 120
 
 export type HubMode = 'engine' | 'sin-motor'
-
-export type ConsoleSnapshot = {
-  events: SfEvent[]
-  alerts: SfAlert[]
-  rules: RuleMeta[]
-  suppressions?: SfSuppression[]
-  sequences?: SfSequence[]
-  stats: HubStats
-  started_at: string
-}
 
 export class HubState {
   readonly startedAtMs = Date.now()
@@ -58,16 +47,37 @@ export class HubState {
     this.analystStatus = analystStatusFromEnv(env)
   }
 
+  // Both rings are keyed by id: every reconnect replays the engine's
+  // recent window, and a record already held must not be stored twice
+  // (duplicates would push real entries out of a 160/48-slot ring).
   recordEvent(ev: SfEvent) {
     this.lastEngineDataAtMs = Date.now()
+    if (ev.id && this.events.some((e) => e.id === ev.id)) return
     this.events.unshift(ev)
     if (this.events.length > MAX_EVENTS) this.events.length = MAX_EVENTS
   }
 
+  // A repeated alert replaces the stored copy in place: the replayed one
+  // carries the engine's current lifecycle overlay.
   recordAlert(al: SfAlert) {
     this.lastEngineDataAtMs = Date.now()
+    const at = al.id ? this.alerts.findIndex((a) => a.id === al.id) : -1
+    if (at >= 0) {
+      this.alerts[at] = al
+      return
+    }
     this.alerts.unshift(al)
     if (this.alerts.length > MAX_ALERTS) this.alerts.length = MAX_ALERTS
+  }
+
+  // Drops both rings. Called whenever the engine goes away, also when a
+  // connection attempt failed halfway (the sync filled the rings and the
+  // stream never opened): an engine restarted in between may have lost
+  // those records, and the analyst must not answer from a copy the
+  // engine no longer holds.
+  clearRings() {
+    this.events = []
+    this.alerts = []
   }
 
   // r6 triage: patch the stored alert in place (the lifecycle frame
@@ -104,6 +114,7 @@ export class HubState {
     this.lastStats = null
     this.suppressions = []
     this.sequences = []
+    this.clearRings()
   }
 
   setStats(st: HubStats) {
@@ -122,24 +133,6 @@ export class HubState {
 
   stats(): HubStats {
     return this.lastStats ?? offlineStats()
-  }
-
-  /** The shape the console has always received on 'console:snapshot'. */
-  snapshot(): ConsoleSnapshot {
-    // Between onUp and the first stats poll there is a brief window with
-    // a connected engine and no numbers yet: report the real mode instead
-    // of a stale 'sin-motor' label. No synthetic values either way.
-    const stats = this.lastStats ?? { ...offlineStats(), mode: this.mode }
-    return {
-      events: this.events.slice(0, SNAPSHOT_EVENTS),
-      alerts: this.alerts.slice(0, MAX_ALERTS),
-      rules: this.rules,
-      suppressions: this.suppressions,
-      sequences: this.sequences,
-      stats,
-      // engine session start, derived from the engine's own uptime
-      started_at: new Date(Date.now() - stats.uptime_s * 1000).toISOString(),
-    }
   }
 
   health(version: string): HubHealth {

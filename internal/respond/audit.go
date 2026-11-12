@@ -35,14 +35,19 @@ var ErrCeiling = errors.New("respond audit file reached its 64 MiB ceiling (rota
 // become \u00XX escapes, so one attempt is always exactly one JSONL
 // line — noted as a contract, not left to luck.
 type Record struct {
-	TS        string `json:"ts"`                      // RFC3339Nano, UTC
-	ActionID  string `json:"action_id"`               // one id per attempt
-	Decision  string `json:"decision"`                // executed | denied
-	Code      string `json:"code,omitempty"`          // denial code (R5a vocabulary)
-	PID       int    `json:"pid"`                     // requested pid
-	Process   string `json:"process_name"`            // requested name
-	Resolved  string `json:"resolved_name,omitempty"` // platform-resolved basename when known
-	Operator  string `json:"operator"`
+	TS       string `json:"ts"`                      // RFC3339Nano, UTC
+	ActionID string `json:"action_id"`               // one id per attempt
+	Decision string `json:"decision"`                // executed | denied
+	Code     string `json:"code,omitempty"`          // denial code (R5a vocabulary)
+	PID      int    `json:"pid"`                     // requested pid
+	Process  string `json:"process_name"`            // requested name
+	Resolved string `json:"resolved_name,omitempty"` // platform-resolved basename when known
+	Operator string `json:"operator"`
+	// Account is the console account that sent the request, when the
+	// console named one. Operator is an identity of the engine's own
+	// allowlist and is typed by whoever acts; the account is who was
+	// signed in. Attribution only: it is never used to authorize.
+	Account   string `json:"account,omitempty"`
 	RuleID    string `json:"rule_id,omitempty"`
 	AlertID   string `json:"alert_id,omitempty"`
 	Reason    string `json:"reason"`

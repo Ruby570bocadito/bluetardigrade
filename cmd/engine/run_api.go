@@ -332,9 +332,13 @@ func startAPIHub(b apiBoot) (*api.Hub, string, string, func()) {
 				if aerr != nil {
 					log.Fatalf("[ENGINE] %v", aerr)
 				}
-				if aerr := adConn.Run(b.ctx); aerr != nil {
-					log.Printf("[ENGINE] active directory: %v", aerr)
-				}
+				// The first sync runs in the background: this point is
+				// ahead of the API listener and of the detection
+				// pipeline, and a slow or silent domain controller must
+				// not hold either. /api/ad/status reports the attempt
+				// in flight; the snapshot routes serve what the store
+				// kept until it completes.
+				adConn.Start(b.ctx)
 				// the inline original released the connector with a
 				// deferred Stop; the caller defers this cleanup at the
 				// same point of the startup flow, so the shutdown
@@ -348,8 +352,8 @@ func startAPIHub(b apiBoot) (*api.Hub, string, string, func()) {
 				// commit (publication order == commit order), so the
 				// `current` bookkeeping below needs no lock of its own.
 				// ad.New is validation only, no I/O; the long-lived work —
-				// start the next loop, stop the previous one — still happens
-				// in background goroutines. Shutdown relies on ctx
+				// the next connector's sync loop, stopping the previous
+				// one — happens in background goroutines. Shutdown relies on ctx
 				// cancellation for hot-swapped connectors (their loops
 				// select on ctx.Done); the initial connector keeps its
 				// explicit Stop above. A late sync of the PREVIOUS
@@ -364,11 +368,7 @@ func startAPIHub(b apiBoot) (*api.Hub, string, string, func()) {
 					prev := current
 					current = next
 					hub.SetAD(next)
-					go func() {
-						if rerr := next.Run(b.ctx); rerr != nil {
-							adLogger.Printf("[AD] sync after settings change failed: %v", rerr)
-						}
-					}()
+					next.Start(b.ctx)
 					if prev != nil {
 						go prev.Stop()
 					}

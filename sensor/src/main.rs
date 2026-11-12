@@ -11,7 +11,8 @@
 //
 // Usage:
 //   security-sensor --addr 127.0.0.1:7777 [--token <shared-token>]
-//                   [--tls-ca <ca.pem>] [--queue <events>]
+//                   [--tls-ca <ca.pem>] [--allow-plaintext-token]
+//                   [--queue <events>]
 //                   [--spool <file>] [--spool-max-mb <MiB>]
 //                   [--no-network] [--no-registry] [--registry-all]
 //                   [--no-dns] [--no-hash] [--debug-registry <fragment>]
@@ -86,7 +87,10 @@
 // SF_INGEST_CA environment variable) the connection to the engine is
 // TLS and the engine's certificate must chain to the given CA bundle;
 // there is no skip-verification mode: an unverifiable engine is a
-// refused connection, not a trusted one.
+// refused connection, not a trusted one. Without --tls-ca a sensor that
+// holds a token (ingest or enrollment) only talks to an engine on this
+// machine: sending "AUTH <token>" in clear to another host is refused
+// unless --allow-plaintext-token says the operator accepts it.
 
 // Transport is exercised only by the ETW collector (Windows-only).
 // normalize moves with the YARA scanner below: the yara.match event is
@@ -140,7 +144,17 @@ mod memscan;
 use anyhow::Result;
 use std::path::PathBuf;
 
-const USAGE: &str = "usage: security-sensor [--addr <ip:port>] [--token <shared-token>] [--tls-ca <ca.pem>] [--queue <events>] [--spool <file>] [--spool-max-mb <MiB>] [--no-network] [--no-registry] [--registry-all] [--no-dns] [--no-hash] [--debug-registry <fragment>] [--yara-rules <dir>] [--yara-max-mb <MiB>] [--yara-mem] [--yara-mem-every <min>] [--yara-mem-max-mb <MiB>] [--service] [--log <file>] [--token-file <file>] [--enroll-token <token> | --enroll-token-file <file>] | scan <PATH>... --rules <dir> [--max-mb <MiB>] | scan --memory [--pid <N>]... --rules <dir> [--mem-max-mb <MiB>]";
+const USAGE: &str = "usage: security-sensor [--addr <ip:port>] [--token <shared-token>] [--tls-ca <ca.pem>] [--allow-plaintext-token] [--queue <events>] [--spool <file>] [--spool-max-mb <MiB>] [--no-network] [--no-registry] [--registry-all] [--no-dns] [--no-hash] [--debug-registry <fragment>] [--yara-rules <dir>] [--yara-max-mb <MiB>] [--yara-mem] [--yara-mem-every <min>] [--yara-mem-max-mb <MiB>] [--service] [--log <file>] [--token-file <file>] [--enroll-token <token> | --enroll-token-file <file>] | scan <PATH>... --rules <dir> [--max-mb <MiB>] | scan --memory [--pid <N>]... --rules <dir> [--mem-max-mb <MiB>]";
+
+/// Printed after the usage line on --help: the flags whose effect the
+/// usage line cannot carry.
+const HELP_NOTES: &str = "\
+  --tls-ca <ca.pem>         connect over TLS; the engine's certificate must chain to this CA bundle
+                            (also SF_INGEST_CA). There is no skip-verification mode.
+  --allow-plaintext-token   send the ingest or enrollment token WITHOUT TLS to an engine on another
+                            machine. Refused by default: the token would cross the network in clear
+                            and anyone on the path could reuse it. Only for a lab or a link that is
+                            already protected below; prefer --tls-ca. Not needed for 127.0.0.1.";
 
 fn main() -> Result<()> {
     // The `scan` subcommand (S-2, on demand) does not share the capture
@@ -163,6 +177,7 @@ fn main() -> Result<()> {
     let mut addr = String::from("127.0.0.1:7777");
     let mut token: Option<String> = None;
     let mut tls_ca: Option<PathBuf> = None;
+    let mut allow_plaintext_token = false;
     // process-start events are a few hundred bytes: 50 000 of them is
     // hours of a busy host held in a bounded ~25 MB
     let mut queue_cap: usize = 50_000;
@@ -208,6 +223,7 @@ fn main() -> Result<()> {
                     std::process::exit(2);
                 })));
             }
+            "--allow-plaintext-token" => allow_plaintext_token = true,
             "--queue" => {
                 queue_cap = parse_number(args.next(), "--queue");
             }
@@ -275,6 +291,7 @@ fn main() -> Result<()> {
             // asking for help is not an error: usage on stdout, exit 0
             "-h" | "--help" => {
                 println!("{USAGE}");
+                println!("{HELP_NOTES}");
                 std::process::exit(0);
             }
             other => {
@@ -294,7 +311,7 @@ fn main() -> Result<()> {
         eprintln!("[SENSOR] started {} (pid {}){}", normalize::now_rfc3339(), std::process::id(), if service_mode { " as a Windows service" } else { "" });
     }
     #[cfg(not(target_os = "windows"))]
-    let _ = (&log, service_mode, yara_max_mb, yara_mem, yara_mem_every, yara_mem_max_mb);
+    let _ = (&log, service_mode, yara_max_mb, yara_mem, yara_mem_every, yara_mem_max_mb, allow_plaintext_token);
     // the credential: --token, then --token-file; an enrollment token
     // only matters while --token-file holds nothing yet
     if enroll_token.is_none() {
@@ -364,7 +381,7 @@ fn main() -> Result<()> {
         .join("+");
     eprintln!("[SENSOR] addr={addr} auth={} tls={} queue={queue_cap} spool={} capture={captured}",
         if token.is_some() { "token" } else if enroll_with.is_some() { "enroll" } else { "none" },
-        if tls_ca.is_some() { "verified-ca" } else { "off" },
+        if tls_ca.is_some() { "verified-ca" } else if allow_plaintext_token { "off (plaintext token allowed)" } else { "off" },
         spool
             .as_ref()
             .map(|p| format!("{} (max {spool_max_mb} MiB)", p.display()))
@@ -421,20 +438,21 @@ fn main() -> Result<()> {
         };
         let capture = collector::Capture { network, registry, registry_all, dns, hash, yara, yara_mem: yara_mem_cfg, debug_registry, as_service: service_mode };
         let start = move || -> Result<()> {
+            let wire = transport::Wire { tls_ca: tls_ca.as_deref(), allow_plaintext_token };
             let token = match (token, enroll_with, token_file) {
                 (Some(token), _, _) => Some(token),
                 (None, Some(enroll), Some(file)) => Some(enrollment::obtain_credential(
                     &addr,
                     &enroll,
                     &collector::hostname(),
-                    tls_ca.as_deref(),
+                    wire,
                     &file,
                     enroll_token_file.as_deref(),
                     &collector::STOP_REQUESTED,
                 )?),
                 _ => None,
             };
-            collector::run(&addr, token.as_deref(), tls_ca.as_deref(), delivery, capture)
+            collector::run(&addr, token.as_deref(), wire, delivery, capture)
         };
         if service_mode {
             return service::run(Box::new(start), collector::stop_sessions);

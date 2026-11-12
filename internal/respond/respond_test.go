@@ -766,3 +766,26 @@ func readAll(t *testing.T, path string) string {
 	}
 	return string(data)
 }
+
+// El cooldown se indexa por el host normalizado igual que lo compara la
+// guarda R3: distinta caja o espacios no abren un segundo presupuesto.
+func TestCooldownKeyIgnoresHostCaseAndSpace(t *testing.T) {
+	m, _, _ := newTestManager(t, "ana")
+	now := time.Now()
+	req := killReq(4242, "sleep")
+	if !m.recordCommit(req, now) {
+		t.Fatal("first commit refused")
+	}
+	for _, host := range []string{"ENGINE-LAB", "engine-lab", " Engine-Lab ", "engine-lab\t"} {
+		again := req
+		again.Host = host
+		if code := m.checkBudgets(again, now.Add(time.Second)); code != CodeCooldownActive {
+			t.Errorf("host %q: code = %q, want %q", host, code, CodeCooldownActive)
+		}
+	}
+	other := req
+	other.PID = 4243
+	if code := m.checkBudgets(other, now.Add(time.Second)); code != "" {
+		t.Errorf("another pid must not inherit the cooldown: %q", code)
+	}
+}

@@ -218,3 +218,45 @@ function Write-SfStatusLine {
     Write-Host $mark -ForegroundColor $color -NoNewline
     Write-Host " $Text"
 }
+
+# The ETW sensor's sessions live in the kernel, not in its process: a
+# sensor that is killed (Stop-ScheduledTask, Stop-Process, a service
+# deleted while it stops) leaves them consuming buffers until the next
+# boot. They are stopped by name once no sensor process is left; a
+# session that is not running is not an error. While a sensor still runs
+# they are its own and are left alone. Returns the names that are still
+# there afterwards (stopping them needs elevation). The names are the
+# ones in sensor\src\collector\config.rs.
+function Stop-SfEtwSessions {
+    param([int]$WaitSeconds = 5)
+    $deadline = (Get-Date).AddSeconds($WaitSeconds)
+    while ((Get-Process -Name 'security-sensor' -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 250
+    }
+    if (Get-Process -Name 'security-sensor' -ErrorAction SilentlyContinue) { return @() }
+    $left = @()
+    foreach ($name in @('bluetardigrade-sensor-netreg', 'bluetardigrade-sensor-file', 'bluetardigrade-sensor')) {
+        # logman reports "not found" on stdout with a non-zero exit code
+        & logman.exe stop $name -ets | Out-Null
+        & logman.exe query $name -ets | Out-Null
+        if ($LASTEXITCODE -eq 0) { $left += $name }
+    }
+    return $left
+}
+
+# Where the Sysmon sensor resumes. EventRecordID only grows inside ONE
+# log: after the log is cleared, or Sysmon is reinstalled, the ids start
+# again from 1 and a bookmark from the old log is above every new record,
+# so "EventRecordID > bookmark" would match nothing for good while the
+# heartbeats keep saying the sensor is alive. Newest is the id of the
+# newest record now (0: the log is empty, below 0: it could not be read,
+# and then nothing is concluded). Returns the id to resume after and
+# whether the bookmark had to be dropped; a dropped bookmark resumes at 0
+# because everything in the new log is still unsent.
+function Resolve-SfRecordBookmark {
+    param([long]$Bookmark, [long]$Newest)
+    if ($Bookmark -gt 0 -and $Newest -ge 0 -and $Bookmark -gt $Newest) {
+        return @{ Id = [long]0; Reset = $true }
+    }
+    return @{ Id = $Bookmark; Reset = $false }
+}

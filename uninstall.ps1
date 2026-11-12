@@ -68,11 +68,52 @@ function Remove-SfServerBootTasks {
         Stop-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -ErrorAction SilentlyContinue
         Unregister-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -Confirm:$false -ErrorAction Stop
         Write-Ok "removed server boot task $($task.TaskName)"
+        # the task was ended without a Ctrl+C: its sensor could not stop
+        # its own ETW sessions
+        if ($task.TaskName -eq 'bluetardigrade-server-etw') { Stop-SfEtwSessions }
     }
+}
+
+# The ETW sensor's sessions live in the kernel, not in its process: a
+# sensor that is killed (a stopped task, a service deleted while it
+# stops) leaves them consuming buffers until the next boot. Stopped by
+# name once no sensor process is left (while one runs they are its own);
+# a session that is not running is not an error. Says which ones are
+# still there (stopping them needs elevation). The names are the ones in
+# sensor\src\collector\config.rs.
+function Stop-SfEtwSessions {
+    $deadline = (Get-Date).AddSeconds(5)
+    while ((Get-Process -Name 'security-sensor' -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 250
+    }
+    if (Get-Process -Name 'security-sensor' -ErrorAction SilentlyContinue) { return }
+    $left = @()
+    foreach ($name in @('bluetardigrade-sensor-netreg', 'bluetardigrade-sensor-file', 'bluetardigrade-sensor')) {
+        # logman reports "not found" on stdout with a non-zero exit code
+        & logman.exe stop $name -ets | Out-Null
+        & logman.exe query $name -ets | Out-Null
+        if ($LASTEXITCODE -eq 0) { $left += $name }
+    }
+    if ($left.Count -gt 0) {
+        Write-Warn2 "ETW sessions still running: $($left -join ', '). From an elevated terminal: logman stop <name> -ets"
+    }
+}
+
+function Wait-SfSensorServiceStopped {
+    param([int]$Seconds = 30)
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    while ((Get-Date) -lt $deadline) {
+        $svc = Get-Service 'bluetardigrade-sensor' -ErrorAction SilentlyContinue
+        if (-not $svc -or $svc.Status -eq 'Stopped') { return $true }
+        Start-Sleep -Milliseconds 500
+    }
+    return $false
 }
 
 # The ETW sensor service runs a copy under Program Files as SYSTEM: it
 # must go before the install directory, and removing it needs elevation.
+# Each step is checked: a service still stopping keeps its binary locked,
+# and announcing "removed" over files that are still there would hide it.
 function Remove-SfSensorService {
     $svc = Get-Service 'bluetardigrade-sensor' -ErrorAction SilentlyContinue
     if (-not $svc) { return }
@@ -80,11 +121,22 @@ function Remove-SfSensorService {
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
         throw 'The ETW sensor runs as a Windows service: remove it first with "sf-etw -Uninstall" (it asks for administrator), then run sf-uninstall again.'
     }
-    if ($svc.Status -ne 'Stopped') { Stop-Service 'bluetardigrade-sensor' -Force -ErrorAction SilentlyContinue }
+    if ($svc.Status -ne 'Stopped') {
+        Stop-Service 'bluetardigrade-sensor' -Force -ErrorAction SilentlyContinue
+        if (-not (Wait-SfSensorServiceStopped 30)) { throw 'the service bluetardigrade-sensor did not stop within 30 s; try again in a moment' }
+    }
     & sc.exe delete 'bluetardigrade-sensor' | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "sc.exe delete bluetardigrade-sensor failed (exit $LASTEXITCODE)" }
+    Stop-SfEtwSessions
     $program = Join-Path $env:ProgramFiles 'bluetardigrade\sensor'
     if (Test-Path -LiteralPath $program) { Remove-Item -LiteralPath $program -Recurse -Force -ErrorAction SilentlyContinue }
-    Write-Ok 'removed the ETW sensor service (its data stays in ProgramData\bluetardigrade\sensor)'
+    if (Test-Path -LiteralPath $program) {
+        Write-Warn2 "the ETW sensor service was deleted, but its files are still in $program (in use?): delete that folder by hand"
+    } else {
+        Write-Ok 'removed the ETW sensor service and its binary'
+    }
+    $dataDirs = @(@((Join-Path $env:ProgramData 'bluetardigrade-sensor'), (Join-Path $env:ProgramData 'bluetardigrade\sensor')) | Where-Object { Test-Path -LiteralPath (Join-Path $_ 'sensor.log') })
+    if ($dataDirs.Count -gt 0) { Write-Info "its data (spool, log, token) stays in $($dataDirs -join ', '); delete it by hand if you do not need it" }
 }
 
 function Remove-LogonEntries {
@@ -145,37 +197,67 @@ function Stop-SfProcesses {
     Remove-LogonEntries
 }
 
+# Reading the rule needs no elevation, deleting it does: an uninstall
+# from a normal terminal used to leave inbound TCP 7777 open without a
+# word. Returns 'absent', 'removed' or 'kept'.
 function Remove-FirewallRule {
+    $rule = 'name=security-framework engine'
     try {
-        $out = netsh advfirewall firewall delete rule "name=security-framework engine"
-        if ($LASTEXITCODE -eq 0) { Write-Ok "firewall rule removed" }
+        netsh advfirewall firewall show rule $rule | Out-Null
+        if ($LASTEXITCODE -ne 0) { return 'absent' }
+        netsh advfirewall firewall delete rule $rule | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Ok 'firewall rule removed'
+            return 'removed'
+        }
     } catch { }
+    Write-Warn2 'the inbound firewall rule "security-framework engine" (TCP 7777) is STILL in place: removing it needs administrator rights.'
+    Write-Info '  from an elevated terminal:  netsh advfirewall firewall delete rule name="security-framework engine"'
+    return 'kept'
+}
+
+# The user PATH is read and written through the registry API, like the
+# installer does (install.ps1, Get-UserPathRaw): reg.exe output is
+# decoded with the console code page, so a folder with an accent came
+# back garbled and was written back that way, and 'reg add' re-parses the
+# value as a command-line argument. -KeyPath lets the checks use a
+# scratch key.
+function Get-UserPathRaw {
+    param([string]$KeyPath = 'Environment')
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($KeyPath)
+    if (-not $key) { return $null }
+    try { return $key.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) }
+    finally { $key.Close() }
+}
+
+function Set-UserPathRaw {
+    param([string]$Value, [string]$KeyPath = 'Environment')
+    $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($KeyPath)
+    try {
+        if ($Value) { $key.SetValue('Path', $Value, [Microsoft.Win32.RegistryValueKind]::ExpandString) }
+        else { $key.DeleteValue('Path', $false) }
+    } finally { $key.Close() }
+    if ($KeyPath -eq 'Environment') {
+        # broadcast WM_SETTINGCHANGE so new terminals see the change
+        [Environment]::SetEnvironmentVariable('BLUETARDIGRADE_PATH_REFRESH', '1', 'User')
+        [Environment]::SetEnvironmentVariable('BLUETARDIGRADE_PATH_REFRESH', $null, 'User')
+    }
 }
 
 function Remove-FromUserPath {
-    param([string]$Dir)
+    param([string]$Dir, [string]$KeyPath = 'Environment')
     $dirLow = $Dir.TrimEnd('\').ToLower()
-    $raw = $null
-    try {
-        $q = reg query HKCU\Environment /v Path
-        if ($q) {
-            foreach ($l in $q) {
-                if ($l -match '^\s*Path\s+REG_(EXPAND_)?SZ\s+(.*)$') { $raw = $Matches[2] }
-            }
-        }
-    } catch { }
+    try { $raw = Get-UserPathRaw -KeyPath $KeyPath }
+    catch { Write-Warn2 "could not read user PATH: $($_.Exception.Message)"; return }
     if (-not $raw) { return }
-    $kept = $raw -split ';' | Where-Object {
-        $_ -and ([Environment]::ExpandEnvironmentVariables($_).TrimEnd('\').ToLower()) -ne $dirLow
-    }
+    $raw = [string]$raw
+    $kept = @($raw -split ';' | Where-Object {
+        $_ -and ([Environment]::ExpandEnvironmentVariables($_).Trim().TrimEnd('\').ToLower()) -ne $dirLow
+    })
     $new = $kept -join ';'
     if ($new -ne $raw) {
         try {
-            if ($new -eq '') {
-                reg delete HKCU\Environment /v Path /f | Out-Null
-            } else {
-                reg add HKCU\Environment /v Path /t REG_EXPAND_SZ /d $new /f | Out-Null
-            }
+            Set-UserPathRaw -Value $new -KeyPath $KeyPath
             Write-Ok "removed from user PATH (already-open terminals keep it until reopened)"
         } catch { Write-Warn2 "PATH cleanup failed: $($_.Exception.Message)" }
     }
@@ -212,7 +294,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         Write-Host ''
         Write-Host '==> stopping processes and tasks'
         Stop-SfProcesses -Root $root
-        Remove-FirewallRule
+        $firewall = Remove-FirewallRule
 
         Write-Host ''
         Write-Host '==> removing install directory'
@@ -229,7 +311,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         }
     } else {
         Write-Info "$root not found (already removed?)"
-        Remove-FirewallRule
+        $firewall = Remove-FirewallRule
         foreach ($t in @('security-framework-engine', 'security-framework-console')) {
             try { Unregister-ScheduledTask -TaskName $t -Confirm:$false -ErrorAction SilentlyContinue } catch { }
         }
@@ -243,6 +325,10 @@ if ($MyInvocation.InvocationName -ne '.') {
     Write-Host ''
     Write-Host '============================================================'
     Write-Host ' uninstall complete'
+    if ($firewall -eq 'kept') {
+        Write-Host ' - the firewall rule for TCP 7777 is still there (see above):' -ForegroundColor Yellow
+        Write-Host '   it needs an elevated terminal to be removed' -ForegroundColor Yellow
+    }
     Write-Host ' - portable Go / Node / Bun went with the install folder'
     Write-Host ' - toolchains you had before (Rust, MSVC, system Go...) are'
     Write-Host '   untouched; remove them with winget if you want'

@@ -12,11 +12,16 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react'
 import type { Socket } from 'socket.io-client'
 import { io } from 'socket.io-client'
+import { analystSocketOptions } from '@/lib/analyst-channel'
 
 export type AnalystConnStatus = 'connecting' | 'live' | 'down' | 'scoped'
 
 type AnalystState = {
   status: AnalystConnStatus
+  // The socket once it exists (it is created after the credential
+  // fetch): state, so a consumer mounted before that re-renders and can
+  // subscribe. getSocket reads the same socket without subscribing.
+  socket: Socket | null
   getSocket: () => Socket | null
 }
 
@@ -37,6 +42,7 @@ function consoleServiceUrl(): string {
 
 export function AnalystProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<AnalystConnStatus>('connecting')
+  const [liveSocket, setLiveSocket] = useState<Socket | null>(null)
   const socketRef = useRef<Socket | null>(null)
 
   useEffect(() => {
@@ -58,18 +64,9 @@ export function AnalystProvider({ children }: { children: React.ReactNode }) {
         // offline console or older server: connect without credentials
       }
       if (cancelled) return
-      socket = io(consoleServiceUrl(), {
-        // keep in sync with the socket.io server path (console-service)
-        path: '/',
-        transports: ['websocket', 'polling'],
-        forceNew: true,
-        reconnection: true,
-        reconnectionAttempts: 10,
-        reconnectionDelay: 1500,
-        timeout: 8000,
-        auth: token ? { token } : {},
-      })
+      socket = io(consoleServiceUrl(), analystSocketOptions(token))
       socketRef.current = socket
+      setLiveSocket(socket)
       socket.on('connect', () => setStatus('live'))
       socket.on('disconnect', () => setStatus('down'))
       socket.on('connect_error', () => setStatus('down'))
@@ -79,12 +76,13 @@ export function AnalystProvider({ children }: { children: React.ReactNode }) {
       cancelled = true
       socket?.disconnect()
       socketRef.current = null
+      setLiveSocket(null)
     }
   }, [])
 
   const getSocket = useCallback(() => socketRef.current, [])
 
-  return <Ctx.Provider value={{ status, getSocket }}>{children}</Ctx.Provider>
+  return <Ctx.Provider value={{ status, socket: liveSocket, getSocket }}>{children}</Ctx.Provider>
 }
 
 export function useAnalystChannel(): AnalystState {

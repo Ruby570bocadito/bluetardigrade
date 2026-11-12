@@ -288,7 +288,8 @@ mod win {
     /// One sweep over every process (or, with `only`, just those PIDs):
     /// per process, open, walk, read, scan, emit. Errors are counted and
     /// the sweep moves on — a protected process must not stop the host's
-    /// memory scan.
+    /// memory scan. `stop` ends it between two processes or two regions:
+    /// a sweep takes minutes and a shutdown must not wait for it.
     pub fn sweep(
         loaded: &LoadedRules,
         config: &MemConfig,
@@ -296,10 +297,14 @@ mod win {
         only: &[u32],
         stats: &YaraStats,
         emit: &mut dyn FnMut(EventJson),
+        stop: &AtomicBool,
     ) -> SweepSummary {
         let mut summary = SweepSummary::default();
         let own = std::process::id();
         for (pid, name) in enumerate_processes() {
+            if stop.load(AtomicOrdering::Relaxed) {
+                break;
+            }
             if pid == own {
                 continue; // our own heap holds the file bytes we just scanned
             }
@@ -307,7 +312,7 @@ mod win {
                 continue;
             }
             summary.processes += 1;
-            scan_process(pid, &name, loaded, config, host, stats, emit, &mut summary);
+            scan_process(pid, &name, loaded, config, host, stats, emit, &mut summary, stop);
         }
         summary
     }
@@ -322,7 +327,8 @@ mod win {
         emit: &mut dyn FnMut(EventJson),
     ) -> SweepSummary {
         let stats = YaraStats::default();
-        sweep(loaded, config, host, only, &stats, emit)
+        // on demand there is nobody to ask for a stop: Ctrl+C ends the process
+        sweep(loaded, config, host, only, &stats, emit, &AtomicBool::new(false))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -335,6 +341,7 @@ mod win {
         stats: &YaraStats,
         emit: &mut dyn FnMut(EventJson),
         summary: &mut SweepSummary,
+        stop: &AtomicBool,
     ) {
         use windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory;
         use windows_sys::Win32::System::Memory::{VirtualQueryEx, MEMORY_BASIC_INFORMATION};
@@ -357,6 +364,9 @@ mod win {
             let mut events = 0usize;
             let mut addr: usize = 0;
             loop {
+                if stop.load(AtomicOrdering::Relaxed) {
+                    break; // the handle is closed below
+                }
                 let mut mbi: MEMORY_BASIC_INFORMATION = std::mem::zeroed();
                 if VirtualQueryEx(
                     handle,
@@ -435,7 +445,8 @@ mod win {
     /// the rules the file worker last loaded from the shared slot (none:
     /// the sweep waits for the next tick — a broken pack disables file
     /// and memory scanning alike) and sweeps. Wakes up once a second to
-    /// notice a stop, so shutdown never waits longer than that.
+    /// notice a stop, and a sweep under way checks the same flag between
+    /// regions, so shutdown waits for one region's scan at most.
     pub fn start_memscan(
         host: String,
         config: MemConfig,
@@ -465,7 +476,11 @@ mod win {
                     let Some(loaded) = loaded else {
                         continue; // rules not loaded (yet): nothing to scan with
                     };
-                    let summary = sweep(&loaded, &config, &host, &[], &stats, &mut emit);
+                    let summary = sweep(&loaded, &config, &host, &[], &stats, &mut emit, &stop);
+                    if stop.load(AtomicOrdering::Relaxed) {
+                        eprintln!("[SENSOR] yara-mem: sweep cut short by the stop: {}", summary.line());
+                        break;
+                    }
                     stats.sweeps.fetch_add(1, AtomicOrdering::Relaxed);
                     eprintln!("[SENSOR] yara-mem: sweep: {}", summary.line());
                 }

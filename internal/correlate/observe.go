@@ -39,13 +39,9 @@ func (m *Manager) Observe(ev *model.Event, ruleName string) {
 			if len(m.state) >= maxTrackedStates && !m.reclaimLocked(wall, false) {
 				continue
 			}
-			st = &state{at: map[int]time.Time{}, hosts: map[string]string{}}
+			st = &state{at: map[int]time.Time{}, hosts: map[string]hostHit{}}
 		}
-		if h := strings.ToLower(ev.Host); h != "" && len(st.hosts) < maxMinHosts {
-			if _, ok := st.hosts[h]; !ok {
-				st.hosts[h] = ev.Host
-			}
-		}
+		st.touchHost(ev.Host, ts, c.window)
 		// Any contributing event marked as simulated flags the whole
 		// chain: the alert fired on completion carries the same tag.
 		if alert.EventIsSimulated(ev) {
@@ -74,7 +70,7 @@ func (m *Manager) Observe(ev *model.Event, ruleName string) {
 		}
 		st.at[stepIdx] = ts
 		st.expires = wall.Add(c.window)
-		if len(st.at) == len(c.seq.Steps) && len(st.hosts) >= c.minHosts {
+		if len(st.at) == len(c.seq.Steps) && len(st.liveHosts(c.window)) >= c.minHosts {
 			if span := st.span(); span <= c.window {
 				completed = append(completed, m.fire(c, span, ev, st))
 				delete(m.state, key) // re-arm
@@ -166,10 +162,7 @@ func (m *Manager) fire(c *compiled, span time.Duration, ev *model.Event, st *sta
 	span = span.Round(time.Second)
 	summary := fmt.Sprintf("%s en %d pasos: %s", strings.Join(steps, " -> "), len(steps), span)
 	if c.scope == ScopeUser {
-		hosts := make([]string, 0, len(st.hosts))
-		for _, h := range st.hosts {
-			hosts = append(hosts, h)
-		}
+		hosts := st.liveHosts(c.window)
 		sort.Strings(hosts)
 		summary = fmt.Sprintf("la cuenta %s en %d equipos (%s): %s, en %s",
 			ev.User, len(hosts), strings.Join(hosts, ", "), strings.Join(steps, " -> "), span)

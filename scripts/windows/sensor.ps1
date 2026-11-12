@@ -523,6 +523,9 @@ if ($session.GetLogNames() -notcontains $sysmonLog) {
 
 $xpath = '<QueryList><Query Id="0" Path="' + $sysmonLog + '"><Select Path="' + $sysmonLog + '">*[System[(EventID=' + ($watchedIds -join ') or (EventID=') + ')]]</Select></Query></QueryList>'
 
+# The id of the newest record in the Sysmon log: 0 when the log is empty,
+# -1 when it could not be read (so a read error is never mistaken for a
+# cleared log).
 function Get-NewestRecordId {
     try {
         $query = New-Object System.Diagnostics.Eventing.Reader.EventLogQuery($sysmonLog, [System.Diagnostics.Eventing.Reader.PathType]::LogName)
@@ -536,8 +539,20 @@ function Get-NewestRecordId {
         Write-Host '[SENSOR] access denied reading the Sysmon log. Run this terminal as admin, or (recommended)' -ForegroundColor Red
         Write-Host '[SENSOR] add your user to the local "Event Log Readers" group and re-open the session.'
         exit 1
-    } catch { }
+    } catch { return -1 }
     return 0
+}
+
+# Drops a bookmark that points past the end of the log (the log was
+# cleared or Sysmon reinstalled: see Resolve-SfRecordBookmark) and says
+# so. Returns the record id to resume after.
+function Reset-StaleBookmark([long]$Bookmark, [long]$Newest) {
+    $resume = Resolve-SfRecordBookmark -Bookmark $Bookmark -Newest $Newest
+    if ($resume.Reset) {
+        Write-Host "[SENSOR] [!] the Sysmon log restarted its record ids (newest is $Newest, the bookmark was $Bookmark): the log was cleared or Sysmon reinstalled." -ForegroundColor Yellow
+        Write-Host '[SENSOR] [!] bookmark dropped; sending the current log from its beginning.' -ForegroundColor Yellow
+    }
+    return $resume.Id
 }
 
 
@@ -606,10 +621,15 @@ Write-Host '[SENSOR] press Ctrl+C to stop (engine keeps running)'
 $newestRecordId = Get-NewestRecordId
 $lastRecordId = Load-LastRecordId
 if ($lastRecordId -gt 0) {
-    Write-Host "[SENSOR] resuming after record id $lastRecordId (events during the cut are re-sent)"
+    # a bookmark above the newest record belongs to a log that is gone
+    $resumeId = Reset-StaleBookmark $lastRecordId $newestRecordId
+    if ($resumeId -eq $lastRecordId) {
+        Write-Host "[SENSOR] resuming after record id $lastRecordId (events during the cut are re-sent)"
+    }
+    $lastRecordId = $resumeId
 } else {
     # first run: start from now, never replay the whole log
-    $lastRecordId = $newestRecordId
+    $lastRecordId = [Math]::Max([long]0, [long]$newestRecordId)
 }
 $sent = 0
 $sensorStarted = Get-Date
@@ -671,14 +691,22 @@ while ($true) {
                 $xml = [xml]$rec.ToXml()
                 $rid = 0
                 if ($xml.Event.System.EventRecordID) { $rid = [long]$xml.Event.System.EventRecordID }
-                if ($rid -gt $lastRecordId) { $lastRecordId = $rid }
                 $data = @{}
                 foreach ($d in $xml.Event.EventData.Data) {
                     if ($d.Name) { $data[$d.Name] = $d.'#text' }
                 }
                 $ev = ConvertFrom-SysmonRecord $rec.Id $data $rec.TimeCreated
-                if ($null -eq $ev) { continue }
+                if ($null -eq $ev) {
+                    # nothing to send for this record: it is done
+                    if ($rid -gt $lastRecordId) { $lastRecordId = $rid }
+                    continue
+                }
                 Send-EventLine $writer $client $ev
+                # The bookmark moves only once the event is written and
+                # flushed: a send that throws leaves it on the previous
+                # record, so the reconnect sends this one again instead
+                # of the finally block storing an id that never left.
+                if ($rid -gt $lastRecordId) { $lastRecordId = $rid }
                 $sent++
                 $batch++
                 if (-not $Quiet) {
@@ -694,6 +722,9 @@ while ($true) {
             if ($batch -gt 0) { Save-LastRecordId $lastRecordId }
             $now = Get-Date
             if (($now - $lastBeat).TotalSeconds -ge $HeartbeatSeconds) {
+                # a log cleared while the sensor runs: without this the
+                # passes would find nothing new for good
+                if ($batch -eq 0) { $lastRecordId = Reset-StaleBookmark $lastRecordId (Get-NewestRecordId) }
                 # also detects a dead connection while the host is quiet
                 Send-EventLine $writer $client (New-HeartbeatEvent $osLabel $sensorVersion $sensorStarted $now $sent)
                 $lastBeat = $now

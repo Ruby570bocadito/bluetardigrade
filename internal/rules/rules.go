@@ -249,9 +249,11 @@ func matchCondition(c Condition, val any, re *regexp.Regexp) bool {
 		}
 		return true
 	case "gt":
-		return compareNumeric(val, c.Value) > 0
+		cmp, ok := compareNumeric(val, c.Value)
+		return ok && cmp > 0
 	case "lt":
-		return compareNumeric(val, c.Value) < 0
+		cmp, ok := compareNumeric(val, c.Value)
+		return ok && cmp < 0
 	case "ieq":
 		return strings.EqualFold(asString(val), asString(c.Value))
 	case "icontains":
@@ -275,6 +277,15 @@ func matchCondition(c Condition, val any, re *regexp.Regexp) bool {
 			}
 		}
 		return false
+	case "ineq":
+		return !strings.EqualFold(asString(val), asString(c.Value))
+	case "inot_in":
+		for _, v := range toList(c.Value) {
+			if strings.EqualFold(asString(val), asString(v)) {
+				return false
+			}
+		}
+		return true
 	default:
 		return false
 	}
@@ -408,34 +419,69 @@ func compareEqual(a, b any) bool {
 	return asString(a) == asString(b)
 }
 
-func compareNumeric(a, b any) int {
+// compareNumeric orders two numeric values. ok is false when either
+// side is not a number: gt/lt then answer false. Falling back to string
+// order made "lt 1024" match every event WITHOUT the field ("" sorts
+// before any digit) and compared "9" > "10".
+func compareNumeric(a, b any) (cmp int, ok bool) {
 	af, aok := toFloat(a)
 	bf, bok := toFloat(b)
 	if !aok || !bok {
-		return strings.Compare(asString(a), asString(b))
+		return 0, false
 	}
 	switch {
 	case af > bf:
-		return 1
+		return 1, true
 	case af < bf:
-		return -1
+		return -1, true
 	default:
-		return 0
+		return 0, true
 	}
 }
 
+// toFloat reads a number from the shapes event fields and YAML values
+// arrive in. NaN is not a number here: it would compare false both
+// ways and is never a threshold anyone meant.
 func toFloat(v any) (float64, bool) {
+	var f float64
 	switch n := v.(type) {
 	case float64:
-		return n, true
+		f = n
+	case float32:
+		f = float64(n)
 	case int:
-		return float64(n), true
+		f = float64(n)
+	case int8:
+		f = float64(n)
+	case int16:
+		f = float64(n)
+	case int32:
+		f = float64(n)
+	case int64:
+		f = float64(n)
+	case uint:
+		f = float64(n)
+	case uint8:
+		f = float64(n)
+	case uint16:
+		f = float64(n)
+	case uint32:
+		f = float64(n)
+	case uint64:
+		f = float64(n)
 	case string:
-		f, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
-		return f, err == nil
+		p, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+		if err != nil {
+			return 0, false
+		}
+		f = p
 	default:
 		return 0, false
 	}
+	if f != f {
+		return 0, false
+	}
+	return f, true
 }
 
 // AsString normalizes any scalar event field value to the string form
@@ -486,6 +532,7 @@ func toList(v any) []any {
 // load parses every rule file under dir and indexes enabled rules.
 func (e *Engine) load(dir string) error {
 	count := 0
+	ids := map[string]string{} // rule id -> "file: name" of its first owner
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -522,6 +569,14 @@ func (e *Engine) load(dir string) error {
 			if err != nil {
 				return fmt.Errorf("%s: rule %q: %w", path, rules[i].Name, err)
 			}
+			// Alerts, suppressions, dedup and the API all key on the id:
+			// two rules sharing one are indistinguishable downstream.
+			// Disabled rules count too, so re-enabling one cannot be
+			// what breaks the load.
+			if owner, dup := ids[rules[i].ID]; dup {
+				return fmt.Errorf("%s: rule %q: duplicate id %q (already used by %s)", path, rules[i].Name, rules[i].ID, owner)
+			}
+			ids[rules[i].ID] = fmt.Sprintf("%s: %q", path, rules[i].Name)
 			if !cr.rule.IsEnabled() {
 				continue
 			}
@@ -555,6 +610,7 @@ var validOperators = map[string]bool{
 	"in": true, "not_in": true, "gt": true, "lt": true,
 	"ieq": true, "icontains": true, "icontains_any": true,
 	"istartswith": true, "iendswith": true, "iin": true,
+	"ineq": true, "inot_in": true,
 }
 
 // IsValidOperator reports whether op belongs to the closed operator set
@@ -565,10 +621,45 @@ var validOperators = map[string]bool{
 // instead of silencing nothing while looking armed.
 func IsValidOperator(op string) bool { return validOperators[op] }
 
+// knownEventTypes is the event schema (pkg/model). A rule is indexed by
+// its event_type, so one outside this set is never even evaluated.
+var knownEventTypes = map[string]bool{
+	model.TypeProcessCreate:    true,
+	model.TypeProcessTerminate: true,
+	model.TypeProcessAccess:    true,
+	model.TypeFileWrite:        true,
+	model.TypeNetworkConnect:   true,
+	model.TypeImageLoad:        true,
+	model.TypeRegistrySet:      true,
+	model.TypeNetworkAlert:     true,
+	model.TypeHostQuery:        true,
+	model.TypeHoneypotConnect:  true,
+	model.TypeHoneypotLogin:    true,
+	model.TypeHoneypotCommand:  true,
+	model.TypeNetworkFirewall:  true,
+	model.TypeEmailMessage:     true,
+	model.TypeWindowsEvent:     true,
+}
+
+// IsKnownEventType reports whether t is an event type of the schema.
+func IsKnownEventType(t string) bool { return knownEventTypes[t] }
+
 func compile(r *Rule) (compiledRule, error) {
 	cr := compiledRule{rule: r}
+	// Fail loud, like the operator check below: a rule with a mistyped
+	// event_type ("process.created") or no identity loads fine and then
+	// never fires, or fires alerts nothing can address.
+	if strings.TrimSpace(r.Name) == "" {
+		return cr, fmt.Errorf("missing name")
+	}
+	if strings.TrimSpace(r.ID) == "" {
+		return cr, fmt.Errorf("missing id")
+	}
 	if r.EventType == "" {
 		return cr, fmt.Errorf("missing event_type")
+	}
+	if !knownEventTypes[r.EventType] {
+		return cr, fmt.Errorf("unknown event_type %q", r.EventType)
 	}
 	switch r.Severity {
 	case SevInfo, SevLow, SevMedium, SevHigh, SevCritical:

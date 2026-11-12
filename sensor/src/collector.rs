@@ -54,7 +54,17 @@
 // shows up in the machine inventory instead of only in a log line.
 //
 // The network/registry session is best effort: if it cannot start, the
-// sensor says so and keeps streaming process events. On Windows 8+ both
+// sensor says so and keeps streaming process events. Once running, a
+// user-mode session that ends on its own is started again (sessions.rs)
+// and the heartbeat's capture label leaves its streams out meanwhile; the
+// kernel session ending without a stop request ends the run with an
+// error, so the service manager restarts the sensor.
+//
+// Shutdown is bounded: the sessions stop, the delivery queue goes to the
+// engine or the spool FIRST, and only then are the worker threads given
+// a short wait each (what they still emit lands in the spool). A worker
+// held by a file or a long scan is left behind instead of keeping the
+// queue in memory until the service manager kills the process. On Windows 8+ both
 // run as named sessions, so they do not take the single "NT Kernel
 // Logger" slot. Field decoding lives in procinfo.rs and netreg.rs.
 //
@@ -86,11 +96,11 @@ use ferrisetw::schema_locator::SchemaLocator;
 use ferrisetw::trace::{KernelTrace, TraceTrait};
 use ferrisetw::EventRecord;
 use std::collections::HashSet;
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use crate::dns::DnsState;
 use crate::memscan;
@@ -98,31 +108,33 @@ use crate::netreg::ProcessTable;
 use crate::ntpath::RecentImages;
 use crate::queue::{Pipeline, Spool};
 use crate::regnames::KeyNames;
-use crate::transport::Sender;
+use crate::transport::{Sender, Wire};
 use crate::yara::{self, YaraStats};
 
 use self::config::{
-    ENRICH_QUEUE, FILE_NAMES_CAP, FILE_SESSION_NAME, NETREG_SESSION_NAME, PROCESS_TABLE_CAP, REGISTRY_NAMES_CAP,
-    REGISTRY_PARKED_CAP, RECENT_IMAGES_CAP, RECENT_IMAGES_KEEP, SESSION_NAME, YARA_QUEUE,
+    ENRICH_QUEUE, FILE_NAMES_CAP, FILE_SESSION_NAME, NETREG_SESSION_NAME, PROCESS_ENDED_KEEP, PROCESS_TABLE_CAP,
+    REGISTRY_NAMES_CAP, REGISTRY_PARKED_CAP, RECENT_IMAGES_CAP, RECENT_IMAGES_KEEP, SESSION_NAME, WORKER_JOIN_WAIT,
+    YARA_QUEUE,
 };
 use self::enrich::start_enricher;
 use self::handlers::handle_process;
-use self::health::start_heartbeat;
-use self::sessions::{start_filewatch, start_netreg, start_with_recovery};
+use self::health::{start_heartbeat, CaptureState};
+use self::sessions::{start_filewatch, start_netreg, start_with_recovery, Session};
 use self::shared::{emit_to, Shared, FileNames};
 use self::stop::install_console_handler;
 use self::winimage::device_map;
 
 /// Runs the blocking ETW event loop. It returns only on fatal errors.
 /// token (when set) is the shared ingest token sent on every
-/// (re)connection to the engine. tls_ca (when set) upgrades every
+/// (re)connection to the engine. wire.tls_ca (when set) upgrades every
 /// (re)connection to TLS with the engine's certificate verified
 /// against that CA bundle (no skip-verification mode).
-pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Delivery, capture: Capture) -> Result<()> {
+pub fn run(addr: &str, token: Option<&str>, wire: Wire, delivery: Delivery, capture: Capture) -> Result<()> {
     // Configuration errors (CA bundle, TLS verification, rejected token)
-    // fail loudly here; an engine that is not listening yet does not:
-    // the sensor starts and the queue/spool hold events until it is.
-    let sender = Sender::connect(addr, token, tls_ca)?;
+    // fail loudly here; an engine that is not listening yet, or that cut
+    // the handshake because it is restarting, does not: the sensor
+    // starts and the queue/spool hold events until it answers.
+    let sender = Sender::connect(addr, token, wire)?;
     let spool = match delivery.spool {
         Some(path) => Some(
             Spool::new(path.clone(), delivery.spool_max_bytes)
@@ -144,9 +156,13 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
     );
     let pipeline = Arc::new(pipeline);
     let images = Arc::new(Mutex::new(RecentImages::new(RECENT_IMAGES_CAP, RECENT_IMAGES_KEEP)));
+    let hash_dropped = Arc::new(AtomicU64::new(0));
+    // set at shutdown: the worker threads (image hashing, YARA, memory
+    // sweep) stop taking on file and memory reads
+    let workers_stop = Arc::new(AtomicBool::new(false));
     let (enrich_tx, enricher) = if capture.hash {
         let (tx, rx) = sync_channel(ENRICH_QUEUE);
-        match start_enricher(Arc::clone(&pipeline), rx, Arc::clone(&images)) {
+        match start_enricher(Arc::clone(&pipeline), rx, Arc::clone(&images), Arc::clone(&hash_dropped), Arc::clone(&workers_stop)) {
             Some(thread) => (Some(tx), Some(thread)),
             None => {
                 eprintln!("[SENSOR] warning: image hashing unavailable (thread could not start)");
@@ -174,6 +190,7 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
                 Arc::clone(&stats),
                 move |event| emit_to(&pipeline_for_yara, &event),
                 Arc::clone(&slot),
+                Arc::clone(&workers_stop),
             ) {
                 Some(thread) => (Some(tx), Some(stats), Some(thread), Some(slot)),
                 None => {
@@ -191,16 +208,14 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
     let mem_thread = match (&capture.yara_mem, &yara_stats, &yara_thread, &yara_slot) {
         (Some(mem), Some(stats), Some(_), Some(slot)) => {
             let pipeline_for_mem = Arc::clone(&pipeline);
-            let mem_stop = Arc::new(AtomicBool::new(false));
-            let handle = memscan::start_memscan(
+            memscan::start_memscan(
                 hostname(),
                 mem.clone(),
                 Arc::clone(slot),
                 Arc::clone(stats),
                 move |event| emit_to(&pipeline_for_mem, &event),
-                Arc::clone(&mem_stop),
-            );
-            handle.map(|thread| (thread, mem_stop))
+                Arc::clone(&workers_stop),
+            )
         }
         _ => None,
     };
@@ -208,7 +223,7 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
         host: hostname(),
         own_pid: std::process::id(),
         pipeline: Arc::clone(&pipeline),
-        processes: Mutex::new(ProcessTable::new(PROCESS_TABLE_CAP)),
+        processes: Mutex::new(ProcessTable::new(PROCESS_TABLE_CAP, PROCESS_ENDED_KEEP)),
         registry_all: capture.registry_all,
         dns: Mutex::new(DnsState::new()),
         enrich: Mutex::new(enrich_tx),
@@ -217,7 +232,7 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
         images_live: AtomicBool::new(false),
         regkeys: Mutex::new(KeyNames::new(REGISTRY_NAMES_CAP, REGISTRY_PARKED_CAP)),
         debug_registry: capture.debug_registry.as_ref().map(|f| (f.to_ascii_lowercase(), Mutex::new(HashSet::new()))),
-        hash_dropped: AtomicU64::new(0),
+        hash_dropped,
         hash_enabled: capture.hash,
         filenames: Mutex::new(FileNames::new(FILE_NAMES_CAP)),
         yara: Mutex::new(yara_tx),
@@ -248,7 +263,7 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
     // that fails: if it cannot start, DNS and then the image provider are
     // left out, so one failing provider never costs the others.
     let mut dns_live = false;
-    let mut netreg = None;
+    let mut netreg: Option<Session> = None;
     let attempts = [(capture.dns, true), (false, true), (false, false)];
     for (i, &(dns, images)) in attempts.iter().enumerate() {
         if i > 0 && attempts[i - 1] == (dns, images) {
@@ -288,65 +303,101 @@ pub fn run(addr: &str, token: Option<&str>, tls_ca: Option<&Path>, delivery: Del
     let what = streams.iter().filter(|s| s.0).map(|s| s.2).collect::<Vec<_>>().join(", ");
     eprintln!("[SENSOR] ETW sessions active - streaming {what}");
 
-    // health report for the engine's machine inventory, every minute
-    let capture_label = streams.iter().filter(|s| s.0).map(|s| s.1).collect::<Vec<_>>().join("+");
-    // the memory sweep is not an ETW session, but the capture label
-    // names it so the inventory shows what the host really runs
-    let capture_label = if mem_thread.is_some() { format!("{capture_label}+yara-mem") } else { capture_label };
-    let heartbeat_stop = Arc::new(AtomicBool::new(false));
+    // health report for the engine's machine inventory, every minute.
+    // The label is asked again for every beat: a stream whose session
+    // ended leaves it until the session is running again. The memory
+    // sweep is not an ETW session, but the label names it so the
+    // inventory shows what the host really runs.
+    let netreg_alive = netreg.as_ref().map(Session::alive);
+    let file_alive = filewatch.as_ref().map(Session::alive);
+    let mut state = CaptureState::default();
+    for (on, label, _) in streams {
+        if on {
+            let alive = match label {
+                "network" | "dns" | "registry" => netreg_alive.clone(),
+                "yara" => file_alive.clone(),
+                _ => None,
+            };
+            state.stream(label, alive);
+        }
+    }
+    if mem_thread.is_some() {
+        state.stream("yara-mem", None);
+    }
     // the sessions whose ETW loss the heartbeat reports: the kernel one
-    // always runs, the network/registry one only when it started
-    let mut sessions = vec![String::from(SESSION_NAME)];
+    // always runs, the others only while they are up
+    state.session(SESSION_NAME, None);
     if live {
-        sessions.push(String::from(NETREG_SESSION_NAME));
+        state.session(NETREG_SESSION_NAME, netreg_alive);
     }
     if yara_live {
-        sessions.push(String::from(FILE_SESSION_NAME));
+        state.session(FILE_SESSION_NAME, file_alive);
     }
+    let heartbeat_stop = Arc::new(AtomicBool::new(false));
     let run_mode = if capture.as_service { "service" } else { "console" };
-    let heartbeat_thread = start_heartbeat(Arc::clone(&ctx), capture_label.to_string(), run_mode, queue_cap, sessions, Arc::clone(&heartbeat_stop));
+    let heartbeat_thread = start_heartbeat(Arc::clone(&ctx), state, run_mode, queue_cap, Arc::clone(&heartbeat_stop));
 
     // The kernel session must stay alive while events are processed;
     // dropping `trace` stops it. process_from_handle blocks on this
     // thread until the trace is stopped or ProcessTrace fails.
     let _session = trace;
-    let result = KernelTrace::process_from_handle(handle).map_err(|e| anyhow::anyhow!("ETW processing ended: {e:?}"));
-    if let Some((netreg_trace, netreg_thread)) = netreg {
-        drop(netreg_trace); // stops the session, ProcessTrace returns
-        let _ = netreg_thread.join();
+    let result = match KernelTrace::process_from_handle(handle) {
+        // Stopped, but not by this sensor (logman, another tool): process
+        // telemetry is gone. An error exit is what makes the service
+        // manager start the sensor again.
+        Ok(()) if !STOP_REQUESTED.load(Ordering::Acquire) => {
+            Err(anyhow::anyhow!("the kernel ETW session {SESSION_NAME} ended without a stop request (stopped from outside?)"))
+        }
+        Ok(()) => Ok(()),
+        Err(e) => Err(anyhow::anyhow!("ETW processing ended: {e:?}")),
+    };
+    if let Some(session) = netreg {
+        session.stop();
     }
-    if let Some((file_trace, file_thread)) = filewatch {
-        drop(file_trace); // stops the session, ProcessTrace returns
-        let _ = file_thread.join();
+    if let Some(session) = filewatch {
+        session.stop();
     }
     heartbeat_stop.store(true, Ordering::Relaxed);
     if let Some(thread) = heartbeat_thread {
-        let _ = thread.join();
+        let _ = thread.join(); // it wakes up once a second
     }
-    // the sweep thread wakes up once a second: it notices its stop flag
-    // within one tick
-    if let Some((thread, mem_stop)) = mem_thread {
-        mem_stop.store(true, Ordering::Relaxed);
-        let _ = thread.join();
-    }
-    // closing the hand-offs lets both worker threads drain and finish
+    // The workers are told to stop and their hand-offs closed, but not
+    // waited for yet: the queue goes to the engine or the spool first,
+    // so a worker held by a file or a long scan cannot keep up to
+    // queue_cap events in memory until the process is killed.
+    workers_stop.store(true, Ordering::Relaxed);
     if let Ok(mut tx) = ctx.enrich.lock() {
         tx.take();
-    }
-    if let Some(thread) = enricher {
-        let _ = thread.join();
     }
     if let Ok(mut tx) = ctx.yara.lock() {
         tx.take();
     }
-    if let Some(thread) = yara_thread {
-        let _ = thread.join();
-    }
-    // hand everything still in memory to the engine or the spool
     pipeline.shutdown(delivery_thread, Duration::from_secs(10));
+    // what the workers still emit from here on goes straight to the
+    // spool (Pipeline::push while stopping)
+    for (name, thread) in [("memory sweep", mem_thread), ("image hashing", enricher), ("YARA scan", yara_thread)] {
+        if let Some(thread) = thread {
+            join_within(name, thread, WORKER_JOIN_WAIT);
+        }
+    }
     let stats = pipeline.stats();
     eprintln!("[SENSOR] ETW session ended: {} events spooled, {} dropped", stats.spooled, stats.dropped);
-    result.map(|_| ())
+    result
+}
+
+/// Waits up to `wait` for a worker thread; one that is still busy (a
+/// read the kernel does not complete, a scan of a large region) is left
+/// behind rather than holding the shutdown.
+fn join_within(name: &str, thread: JoinHandle<()>, wait: Duration) {
+    let deadline = Instant::now() + wait;
+    while !thread.is_finished() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    if thread.is_finished() {
+        let _ = thread.join();
+    } else {
+        eprintln!("[SENSOR] the {name} thread is still busy after {}s; not waiting for it", wait.as_secs());
+    }
 }
 
 pub fn hostname() -> String {

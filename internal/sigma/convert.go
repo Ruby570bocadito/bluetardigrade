@@ -156,6 +156,9 @@ func translateValue(fv fieldValue) (string, any, error) {
 		case "re":
 			return translateRegex(fv.value)
 		case "gt", "lt":
+			if fv.value == nil {
+				return "", nil, errNullModified
+			}
 			return fv.modifiers[0], fmt.Sprint(fv.value), nil
 		case "contains", "startswith", "endswith":
 			return translateString(fv.value, fv.modifiers[0])
@@ -175,20 +178,89 @@ func translateRegex(v any) (string, any, error) {
 	return "regex", s, nil
 }
 
+// sigmaTok is one character of a Sigma value after escape processing:
+// a literal rune or a wildcard (* or ?).
+type sigmaTok struct {
+	r    rune
+	wild bool
+}
+
+// tokenize applies the Sigma escaping rules to a raw value: `\\` is one
+// literal backslash, `\*` and `\?` are literal characters, and a
+// backslash before anything else stands for itself (so the customary
+// '\cmd.exe' keeps its backslash). Unescaped * and ? are wildcards.
+// Skipping this step emitted '\\\\host\\share' with every backslash
+// doubled (a rule that never matches) and turned a literal `\*` into
+// backslash + wildcard.
+func tokenize(s string) []sigmaTok {
+	rs := []rune(s)
+	out := make([]sigmaTok, 0, len(rs))
+	for i := 0; i < len(rs); i++ {
+		c := rs[i]
+		switch {
+		case c == '\\' && i+1 < len(rs) && (rs[i+1] == '\\' || rs[i+1] == '*' || rs[i+1] == '?'):
+			out = append(out, sigmaTok{r: rs[i+1]})
+			i++
+		case c == '*' || c == '?':
+			out = append(out, sigmaTok{r: c, wild: true})
+		default:
+			out = append(out, sigmaTok{r: c})
+		}
+	}
+	return out
+}
+
+// hasWild reports whether any token is a wildcard.
+func hasWild(toks []sigmaTok) bool {
+	for _, t := range toks {
+		if t.wild {
+			return true
+		}
+	}
+	return false
+}
+
+// literal renders the tokens as the plain string they stand for.
+func literal(toks []sigmaTok) string {
+	var b strings.Builder
+	for _, t := range toks {
+		b.WriteRune(t.r)
+	}
+	return b.String()
+}
+
+// isStar reports whether the token is the multi-character wildcard.
+func isStar(t sigmaTok) bool { return t.wild && t.r == '*' }
+
+// errNullModified rejects `Field|modifier: null`: only the bare form
+// has a meaning (the field is empty) the engine can express.
+var errNullModified = fmt.Errorf("valor null con modificador no soportado (solo 'Campo: null' = campo vacio)")
+
 // translateString handles scalar and list values with the optional
 // string modifier ("" = plain equality context).
 func translateString(v any, modifier string) (string, any, error) {
 	if list, ok := v.([]any); ok {
 		return translateList(list, modifier)
 	}
-	s := fmt.Sprint(v)
+	if v == nil {
+		// Sigma null = the field is absent or empty. The engine reads a
+		// missing field as "", so eq "" is the exact translation;
+		// fmt.Sprint(nil) would emit the literal "<nil>" and a rule
+		// that can never fire.
+		if modifier != "" {
+			return "", nil, errNullModified
+		}
+		return "eq", "", nil
+	}
+	toks := tokenize(fmt.Sprint(v))
 	// A modified value keeps its literal meaning; if it carries
 	// wildcards the semantics shift to regex so nothing changes
 	// silently.
 	if modifier != "" {
-		if strings.ContainsAny(s, "*?") {
-			return wildcardRegex(s, modifier)
+		if hasWild(toks) {
+			return wildcardRegex(toks, modifier)
 		}
+		s := literal(toks)
 		if hasLetters(s) {
 			// The Sigma corpus matches strings case-insensitively (it writes
 			// 'mimikatz' and expects Invoke-Mimikatz to hit); the i* operators
@@ -198,38 +270,33 @@ func translateString(v any, modifier string) (string, any, error) {
 		return modifier, s, nil
 	}
 	// Plain value: wildcard -> operator translation.
-	switch {
-	case !strings.ContainsAny(s, "*?"):
+	n := len(toks)
+	fold := func(op string, inner []sigmaTok) (string, any, error) {
+		s := literal(inner)
 		if hasLetters(s) {
-			return "ieq", s, nil
+			return "i" + op, s, nil
 		}
-		return "eq", s, nil
-	case strings.HasPrefix(s, "*") && strings.HasSuffix(s, "*") && len(s) >= 2 &&
-		!strings.ContainsAny(s[1:len(s)-1], "*?"):
-		if hasLetters(s[1 : len(s)-1]) {
-			return "icontains", s[1 : len(s)-1], nil
-		}
-		return "contains", s[1 : len(s)-1], nil
-	case strings.HasSuffix(s, "*") && !strings.ContainsAny(s[:len(s)-1], "*?"):
-		if hasLetters(s[:len(s)-1]) {
-			return "istartswith", s[:len(s)-1], nil
-		}
-		return "startswith", s[:len(s)-1], nil
-	case strings.HasPrefix(s, "*") && !strings.ContainsAny(s[1:], "*?"):
-		if hasLetters(s[1:]) {
-			return "iendswith", s[1:], nil
-		}
-		return "endswith", s[1:], nil
+		return op, s, nil
+	}
+	switch {
+	case !hasWild(toks):
+		return fold("eq", toks)
+	case n >= 2 && isStar(toks[0]) && isStar(toks[n-1]) && !hasWild(toks[1:n-1]):
+		return fold("contains", toks[1:n-1])
+	case isStar(toks[n-1]) && !hasWild(toks[:n-1]):
+		return fold("startswith", toks[:n-1])
+	case isStar(toks[0]) && !hasWild(toks[1:]):
+		return fold("endswith", toks[1:])
 	default:
-		return wildcardRegex(s, "")
+		return wildcardRegex(toks, "")
 	}
 }
 
-// wildcardRegex builds an engine-compatible regex from a Sigma
-// wildcard pattern. modifier narrows the anchoring (contains keeps it
-// unanchored, startswith anchors the head, endswith the tail; plain
-// values anchor both sides).
-func wildcardRegex(pattern, modifier string) (string, any, error) {
+// wildcardRegex builds an engine-compatible regex from a tokenized
+// Sigma wildcard pattern. modifier narrows the anchoring (contains
+// keeps it unanchored, startswith anchors the head, endswith the tail;
+// plain values anchor both sides).
+func wildcardRegex(toks []sigmaTok, modifier string) (string, any, error) {
 	var b strings.Builder
 	// Wildcard matching in Sigma is case-insensitive by corpus
 	// convention (house finding F1, over da6382c).
@@ -240,14 +307,14 @@ func wildcardRegex(pattern, modifier string) (string, any, error) {
 	default:
 		b.WriteString("^")
 	}
-	for _, c := range pattern {
-		switch c {
-		case '*':
+	for _, t := range toks {
+		switch {
+		case isStar(t):
 			b.WriteString(".*")
-		case '?':
+		case t.wild:
 			b.WriteString(".")
 		default:
-			b.WriteString(regexp.QuoteMeta(string(c)))
+			b.WriteString(regexp.QuoteMeta(string(t.r)))
 		}
 	}
 	switch modifier {
@@ -259,7 +326,7 @@ func wildcardRegex(pattern, modifier string) (string, any, error) {
 	}
 	re := b.String()
 	if _, err := regexp.Compile(re); err != nil {
-		return "", nil, fmt.Errorf("patron %q no traducible a regex: %w", pattern, err)
+		return "", nil, fmt.Errorf("patron %q no traducible a regex: %w", literal(toks), err)
 	}
 	return "regex", re, nil
 }
@@ -299,11 +366,19 @@ func translateList(list []any, modifier string) (string, any, error) {
 	}
 
 	wildcardFree := true
+	toks := make([][]sigmaTok, len(list))
 	vals := make([]string, len(list))
 	for i, el := range list {
-		s := fmt.Sprint(el)
-		vals[i] = s
-		if strings.ContainsAny(s, "*?") {
+		if el == nil {
+			// null in a plain list = "or the field is empty"
+			if modifier != "" {
+				return "", nil, errNullModified
+			}
+			continue
+		}
+		toks[i] = tokenize(fmt.Sprint(el))
+		vals[i] = literal(toks[i])
+		if hasWild(toks[i]) {
 			wildcardFree = false
 		}
 	}
@@ -328,16 +403,16 @@ func translateList(list []any, modifier string) (string, any, error) {
 	// semantics of (value, modifier), joined so each alternative keeps
 	// its own anchors.
 	parts := make([]string, len(list))
-	for i, el := range list {
-		s := fmt.Sprint(el)
-		if strings.ContainsAny(s, "*?") {
-			_, pat, err := wildcardRegex(s, modifier)
+	for i := range list {
+		if hasWild(toks[i]) {
+			_, pat, err := wildcardRegex(toks[i], modifier)
 			if err != nil {
 				return "", nil, err
 			}
 			parts[i] = pat.(string)
 			continue
 		}
+		s := vals[i]
 		switch modifier {
 		case "contains":
 			parts[i] = regexp.QuoteMeta(s)

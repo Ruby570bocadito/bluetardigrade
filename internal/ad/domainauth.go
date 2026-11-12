@@ -322,6 +322,18 @@ func DomainLogin(ctx context.Context, cfg *DomainAuthConfig, username string, pa
 		return nil, fmt.Errorf("%w: %v", ErrLoginDomainDown, err)
 	}
 	defer conn.Close()
+	// timeout_ms is the budget of the whole sign-in, not of the
+	// handshake alone: the bind and the searches below share what is
+	// left of it, and the connection is torn down when it runs out (or
+	// when the caller goes away), which fails the request in flight.
+	defer context.AfterFunc(ctx, func() { conn.Close() })()
+	if d, ok := ctx.Deadline(); ok {
+		left := time.Until(d)
+		if left <= 0 {
+			return nil, fmt.Errorf("%w: timeout", ErrLoginDomainDown)
+		}
+		conn.SetTimeout(left)
+	}
 
 	if err := conn.Bind(bindName, string(password)); err != nil {
 		var lerr *ldap.Error
@@ -331,39 +343,27 @@ func DomainLogin(ctx context.Context, cfg *DomainAuthConfig, username string, pa
 		return nil, fmt.Errorf("%w: bind: %v", ErrLoginDomainDown, err)
 	}
 
-	// Product literals + escaped user values (threat model §3): the
-	// only variable parts are the escaped sam candidate and the
-	// escaped login as typed (the UPN branch).
-	upnCandidate := samPart
-	if strings.Contains(bindName, "@") {
-		upnCandidate = bindName
+	// The role must come from the entry of the principal that just
+	// authenticated, so the search keys on the ONE attribute the typed
+	// form names. Matching sAMAccountName OR userPrincipalName let a
+	// user whose UPN prefix equals someone else's account name (or an
+	// account of a trusted domain with a local namesake) be handed the
+	// other entry, and its groups.
+	attr, value, ok := loginSearchKey(cfg, bindName, samPart)
+	if !ok {
+		// A domain this directory does not hold: same verdict as a bad
+		// password.
+		return nil, ErrLoginCredentials
 	}
-	filter := fmt.Sprintf("(&(objectCategory=person)(|(sAMAccountName=%s)(userPrincipalName=%s)))",
-		ldap.EscapeFilter(samPart), ldap.EscapeFilter(upnCandidate))
-	req := ldap.NewSearchRequest(
-		cfg.BaseDN,
-		ldap.ScopeWholeSubtree,
-		ldap.NeverDerefAliases,
-		5,  // at most a handful of candidates; exact match picks below
-		10, // seconds per the search, inside the per-attempt timeout
-		false,
-		filter,
-		loginAttrs,
-		[]ldap.Control{},
-	)
-	result, err := conn.Search(req)
+	entry, err := searchLoginEntry(conn, cfg.BaseDN, attr, value)
 	if err != nil {
-		return nil, fmt.Errorf("%w: search: %v", ErrLoginDomainDown, err)
+		return nil, err
 	}
-
-	var entry *ldap.Entry
-	for _, e := range result.Entries {
-		sam := e.GetAttributeValue(attrName)
-		upn := e.GetAttributeValue(attrUPN)
-		if strings.EqualFold(sam, samPart) || strings.EqualFold(upn, upnCandidate) {
-			if entry == nil || e.DN < entry.DN { // deterministic pick on ambiguity
-				entry = e
-			}
+	if entry == nil && attr == attrUPN && strings.EqualFold(domainOf(bindName), dnsNameOfBaseDN(cfg.BaseDN)) {
+		// The implicit UPN (sam@dns-domain) binds even when the entry
+		// carries another explicit UPN, or none.
+		if entry, err = searchLoginEntry(conn, cfg.BaseDN, attrName, samPart); err != nil {
+			return nil, err
 		}
 	}
 	if entry == nil {
@@ -390,6 +390,84 @@ func DomainLogin(ctx context.Context, cfg *DomainAuthConfig, username string, pa
 		Groups:      groups,
 		Domain:      cfg.Domain,
 	}, nil
+}
+
+// loginSearchKey picks the attribute the post-bind search matches on
+// from the form the user typed. ok is false when the name carries a
+// domain this configuration does not serve.
+func loginSearchKey(cfg *DomainAuthConfig, bindName, samPart string) (attr, value string, ok bool) {
+	if strings.Contains(bindName, "@") {
+		return attrUPN, bindName, true
+	}
+	if i := strings.LastIndex(bindName, "\\"); i >= 0 {
+		prefix := bindName[:i]
+		dns := dnsNameOfBaseDN(cfg.BaseDN)
+		first, _, _ := strings.Cut(dns, ".")
+		label := strings.TrimSpace(cfg.Domain)
+		if !(label != "" && strings.EqualFold(prefix, label)) &&
+			!strings.EqualFold(prefix, dns) && !strings.EqualFold(prefix, first) {
+			return "", "", false
+		}
+	}
+	return attrName, samPart, true
+}
+
+// domainOf returns what follows the @ of a UPN.
+func domainOf(upn string) string {
+	_, d, _ := strings.Cut(upn, "@")
+	return d
+}
+
+// dnsNameOfBaseDN turns "DC=corp,DC=example,DC=com" into
+// "corp.example.com". Components other than DC are skipped.
+func dnsNameOfBaseDN(base string) string {
+	dn, err := ldap.ParseDN(base)
+	if err != nil {
+		return ""
+	}
+	var labels []string
+	for _, rdn := range dn.RDNs {
+		for _, a := range rdn.Attributes {
+			if strings.EqualFold(a.Type, "DC") {
+				labels = append(labels, a.Value)
+			}
+		}
+	}
+	return strings.Join(labels, ".")
+}
+
+// searchLoginEntry returns the single person entry whose attr equals
+// value, nil when there is none. More than one is refused: an
+// ambiguous identity is never resolved by picking.
+func searchLoginEntry(conn *ldap.Conn, baseDN, attr, value string) (*ldap.Entry, error) {
+	// Product literals + escaped user values (threat model §3).
+	filter := fmt.Sprintf("(&(objectCategory=person)(%s=%s))", attr, ldap.EscapeFilter(value))
+	req := ldap.NewSearchRequest(
+		baseDN,
+		ldap.ScopeWholeSubtree,
+		ldap.NeverDerefAliases,
+		5,  // a unique attribute: more than one hit is refused below
+		10, // seconds per search, inside the per-attempt timeout
+		false,
+		filter,
+		loginAttrs,
+		[]ldap.Control{},
+	)
+	result, err := conn.Search(req)
+	if err != nil {
+		return nil, fmt.Errorf("%w: search: %v", ErrLoginDomainDown, err)
+	}
+	var entry *ldap.Entry
+	for _, e := range result.Entries {
+		if !strings.EqualFold(e.GetAttributeValue(attr), value) {
+			continue
+		}
+		if entry != nil {
+			return nil, fmt.Errorf("%w: identidad ambigua en el directorio", ErrLoginCredentials)
+		}
+		entry = e
+	}
+	return entry, nil
 }
 
 // resolve maps memberOf DNs to the console role with the precedence

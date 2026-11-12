@@ -22,6 +22,7 @@
 // credential crosses the wire at sign-in, so terminate TLS in front of
 // the console when it leaves the machine.
 
+import { clientAddress, tokenAttemptAllowed, tokenAttemptFailed, tokenAttemptSucceeded } from './attempts'
 import { readSessionCookie, sessionPrincipal } from './sessions'
 import { accountPrincipal, basicCredentials, loadAccounts, usersFile, type Principal } from './users'
 
@@ -76,7 +77,18 @@ export async function principalFor(request: Request): Promise<Principal | null> 
   const header = request.headers.get('authorization')
   if (users) return accountPrincipal(header)
   const supplied = basicPassword(header)
-  if (supplied === null || !(await tokenEquals(supplied, token))) return null
+  if (supplied === null) return null
+  // The shared token has no account to lock: guesses are limited per
+  // client address and overall (lib/attempts.ts). A request without
+  // credentials is not an attempt. The proxy and the route both resolve
+  // the principal, so one refused Basic request may count twice.
+  const client = clientAddress(request)
+  if (!tokenAttemptAllowed(client)) return null
+  if (!(await tokenEquals(supplied, token))) {
+    tokenAttemptFailed(client)
+    return null
+  }
+  tokenAttemptSucceeded(client)
   const user = basicCredentials(header)?.user.trim().slice(0, 64)
   return { name: user || 'operador', role: 'admin', mode: 'token' }
 }

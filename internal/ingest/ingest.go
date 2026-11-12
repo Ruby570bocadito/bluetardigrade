@@ -100,6 +100,10 @@ func init() {
 	ackTimeoutNanos.Store(int64(defaultAckTimeout))
 }
 
+// refusalSlots bounds the goroutines writing "connection limit
+// reached" to over-limit connections.
+var refusalSlots = make(chan struct{}, 64)
+
 // writeAck writes one ack line with a bounded deadline and reports
 // whether the client took it.
 func writeAck(conn net.Conn, line string) bool {
@@ -341,9 +345,24 @@ func (s *Server) Serve() {
 		if len(s.open) >= maxConns {
 			s.mu.Unlock()
 			s.rejected.Add(1)
-			// bounded: this runs in the accept loop itself
-			writeAck(conn, `{"ack":"error","error":"connection limit reached, retry shortly"}`)
-			conn.Close()
+			// The refusal is written off the accept loop. On a TLS
+			// listener the first Write runs the handshake, which
+			// READS the ClientHello: a silent peer would park the
+			// loop itself and no sensor could connect again. The
+			// deadline covers both directions and bounds the
+			// goroutine; past refusalSlots pending refusals the
+			// connection is closed without the courtesy line.
+			select {
+			case refusalSlots <- struct{}{}:
+				go func(c net.Conn) {
+					defer func() { <-refusalSlots }()
+					_ = c.SetDeadline(time.Now().Add(time.Duration(ackTimeoutNanos.Load())))
+					_, _ = fmt.Fprintln(c, `{"ack":"error","error":"connection limit reached, retry shortly"}`)
+					c.Close()
+				}(conn)
+			default:
+				conn.Close()
+			}
 			continue
 		}
 		s.conns.Add(1)

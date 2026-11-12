@@ -5,6 +5,7 @@
 
 import { principalFor, unauthorizedResponse } from '@/lib/access'
 import { mfaState } from '@/lib/mfa'
+import { readRefused } from '@/lib/request-guard'
 import { auditFile, roleAtLeast, scopeOf } from '@/lib/users'
 
 export const dynamic = 'force-dynamic'
@@ -12,6 +13,8 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: Request): Promise<Response> {
   const principal = await principalFor(request)
   if (!principal) return unauthorizedResponse()
+  const refused = readRefused(request)
+  if (refused) return refused
   // two-step sign-in, for accounts of the users file only
   const mfa = principal.mode === 'users' ? mfaState(principal.name) : null
   return Response.json(

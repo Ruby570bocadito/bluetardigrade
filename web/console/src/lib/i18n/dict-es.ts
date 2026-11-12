@@ -202,6 +202,23 @@ export const dictEs = {
     footerTagline: 'detección, investigación y respuesta para endpoints Windows',
     analystDown: 'servicio de analista sin conexión',
     selectionLabel: 'Selección de la cola',
+    // Bulk export controls (export-menu.tsx), shared by the alert queue,
+    // the live feed and the active-response audit.
+    exportNoun: { alerts: 'alertas', events: 'eventos' },
+    exportGroupAria: (noun: string): string => `Exportar ${noun}`,
+    exportTitle: (noun: string, format: string, limit: number): string =>
+      `Descargar ${noun} en ${format}. Hasta ${limit} registros recientes del motor o SQLite.`,
+    exportFilterNote: (filter: string, hidden?: number): string =>
+      ` No aplica el filtro activo (${filter}); puede incluir registros fuera de esta vista${hidden === undefined ? '' : `, incluidos ${hidden} ocultos en el búfer recibido`}.`,
+    auditExportAria: 'Exportar la cola del audit como jsonl',
+    auditExportEmpty: 'Sin intentos en la cola: nada que exportar todavía',
+    auditExportFiltered: (filter: string, total: number, hidden: number): string =>
+      `Exporta la ventana completa, independiente del filtro «${filter}»: los ${total} registros de la cola, incluidos los ${hidden} que el filtro oculta en la vista, más recientes primero, línea a línea como la escribe el motor; el archivo completo vive en el host del motor (append-only, nunca se trunca)`,
+    auditExportAll: (total: number): string =>
+      `Descarga la cola de la ventana (${total} registros, más recientes primero) línea a línea como la escribe el motor; el archivo completo vive en el host del motor (append-only, nunca se trunca)`,
+    // engine calls made outside React (lib/engine-writes.ts)
+    engineUnreachable: (detail: string): string => `no se pudo contactar con el motor: ${detail}`,
+    networkError: 'error de red',
     detectionTab: 'Detección',
   },
 
@@ -634,6 +651,12 @@ export const dictEs = {
     historySourceMemory: 'Solo memoria: últimas 256 alertas del motor. Activa -store para conservar el histórico.',
     historyPaging: '25 por página, más recientes por orden de recepción. Actualiza para incluir nuevas llegadas.',
     historyScanLimited: 'Se alcanzó el límite de lectura de esta consulta; continúa con «Seguir buscando».',
+    historyErrors: {
+      unsupported: 'Este motor no ofrece búsqueda paginada. Actualiza el motor o usa la vista en vivo.',
+      expired: 'La búsqueda ha caducado o sus filtros han cambiado. Actualiza para empezar de nuevo.',
+      timeout: 'La consulta superó su tiempo de lectura. Reduce la búsqueda por regla, host o severidad y vuelve a intentarlo.',
+      failed: 'No se pudo consultar el histórico. Comprueba la conexión y vuelve a intentarlo.',
+    },
     linkedProseA: 'La alerta enlazada (',
     linkedProseB:
       ') no está en esta cola: el anillo en vivo guarda solo las últimas alertas y el histórico pagina por bloques. Usa la búsqueda o la paginación (el enlace resuelve en cuanto la alerta aparezca en la página cargada).',
@@ -2722,6 +2745,7 @@ export const dictEs = {
   respond: {
     sectionAria: 'Respuesta activa',
     title: 'Respuesta activa',
+    auditAdminOnly: 'El registro de auditoría de la respuesta activa (quién intentó qué, y qué se denegó) solo lo ve un administrador. El estado de la superficie sigue visible arriba.',
     killHint: 'kill_process · iteración 1',
     introA: 'La única acción activa del motor: ',
     introB:
@@ -2893,6 +2917,7 @@ export const dictEs = {
     analyzePrefix: 'Analizar ',
     analyzeIncidentPrefix: 'Analizar incidente ',
     errorLine: (err: string): string => `El analista no pudo completar la respuesta: ${err}. Comprueba la conexión y vuelve a intentarlo.`,
+    disconnected: 'se perdió la conexión con el servicio del analista antes de terminar',
     questionPlaceholder: 'Pregunta opcional para el analista (p. ej. contenido recomendado)',
     questionAria: 'Pregunta para el analista',
     analyze: 'Analizar',

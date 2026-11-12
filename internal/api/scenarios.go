@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -55,12 +56,25 @@ func notArmed(w http.ResponseWriter) {
 		"scenario validation is not armed on this engine", scenarioHint)
 }
 
-// registerScenarios wires the four routes into the mux.
+// registerScenarios wires the four routes into the mux. The battery
+// replays synthetic telemetry through the whole engine and its results
+// describe the detection coverage of the platform, not of a set of
+// machines: like the other platform surfaces, an account limited to
+// host groups does not reach it.
 func (h *Hub) registerScenarios(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/scenarios", h.handleScenarioLibrary)
-	mux.HandleFunc("POST /api/scenarios/run", h.handleScenarioRun)
-	mux.HandleFunc("GET /api/scenarios/runs", h.handleScenarioRuns)
-	mux.HandleFunc("GET /api/scenarios/runs/{id}", h.handleScenarioRunDetail)
+	const what = "La validación con escenarios"
+	mux.HandleFunc("GET /api/scenarios", unscopedOnly(what, h.handleScenarioLibrary))
+	mux.HandleFunc("POST /api/scenarios/run", unscopedOnly(what, h.handleScenarioRun))
+	mux.HandleFunc("GET /api/scenarios/runs", unscopedOnly(what, h.handleScenarioRuns))
+	mux.HandleFunc("GET /api/scenarios/runs/{id}", unscopedOnly(what, h.handleScenarioRunDetail))
+}
+
+// scenarioFailure answers 500 with a fixed body: the cause (a loader
+// or store error, which names files on the engine host) goes to the
+// engine log, not to the client.
+func scenarioFailure(w http.ResponseWriter, what string, err error) {
+	log.Printf("[API] scenarios: %s: %v", what, err)
+	writeErr(w, http.StatusInternalServerError, what+" (see engine log)")
 }
 
 // handleScenarioLibrary serves the loaded scenario library
@@ -73,7 +87,7 @@ func (h *Hub) handleScenarioLibrary(w http.ResponseWriter, _ *http.Request) {
 	}
 	views, err := s.Library()
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		scenarioFailure(w, "the scenario library does not load", err)
 		return
 	}
 	writeJSON(w, map[string]any{
@@ -88,7 +102,7 @@ func (h *Hub) handleScenarioLibrary(w http.ResponseWriter, _ *http.Request) {
 // The run proceeds in the background: 202 carries the run record as
 // it stands at launch and the caller polls the history routes. A run
 // already in flight answers 409 naming it; a broken library answers
-// 500 with the loader error verbatim.
+// 500 and leaves the loader error in the engine log.
 func (h *Hub) handleScenarioRun(w http.ResponseWriter, r *http.Request) {
 	s := h.scenarioService()
 	if s == nil {
@@ -119,17 +133,17 @@ func (h *Hub) handleScenarioRun(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, scenrun.ErrNotArmed):
 		notArmed(w)
 	default:
-		// Library load errors and unknown scenario ids are the
-		// caller's information: name them verbatim (400 when the
-		// request picked the scenarios, 500 when the library itself
-		// is broken). Classified with the sentinel, never with the
-		// message text: error wording must not decide status codes
+		// An unknown scenario id is the caller's information: 400
+		// naming it. Anything else is the library itself being broken:
+		// 500, with the loader error (file paths of the engine host)
+		// kept for the log. Classified with the sentinel, never with
+		// the message text: error wording must not decide status codes
 		// (the same contract handleAlertStatus documents).
-		code := http.StatusInternalServerError
 		if errors.Is(err, scenrun.ErrUnknownScenario) {
-			code = http.StatusBadRequest
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
 		}
-		writeErr(w, code, err.Error())
+		scenarioFailure(w, "the scenario run could not start", err)
 	}
 }
 
@@ -159,7 +173,7 @@ func (h *Hub) handleScenarioRuns(w http.ResponseWriter, r *http.Request) {
 			notArmed(w)
 			return
 		}
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		scenarioFailure(w, "the scenario run history is not readable", err)
 		return
 	}
 	if runs == nil {
@@ -189,7 +203,7 @@ func (h *Hub) handleScenarioRunDetail(w http.ResponseWriter, r *http.Request) {
 			notArmed(w)
 			return
 		}
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		scenarioFailure(w, "the scenario run is not readable", err)
 		return
 	}
 	if run == nil {

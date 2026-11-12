@@ -155,6 +155,9 @@ type Detector struct {
 	byID    map[string]*compiled
 	keys    map[key]*keyState
 	perRule map[string]int
+	// lastRulePurge throttles the expired-key sweep a saturated rule
+	// runs before refusing a new key (see admitLocked).
+	lastRulePurge time.Time
 	// perHost is the per-host twin of perRule (v1.1 cuotas por
 	// equipo): the quota is an admission ceiling per host, and a
 	// host whose keys all expired recovers itself (dead evidence
@@ -415,6 +418,10 @@ func (d *Detector) Observe(ev *model.Event, now time.Time) {
 	}
 }
 
+// rulePurgeEvery is the minimum gap between two expired-key sweeps
+// triggered by a rule at its quota.
+const rulePurgeEvery = time.Second
+
 // admitLocked returns the state for k, creating it under the bound
 // policy documented in the package doc. A nil return means the event
 // is DROPPED for this rule (F1: quota = admission ceiling). Caller
@@ -426,8 +433,21 @@ func (d *Detector) admitLocked(k key, _ *compiled, t, now time.Time) *keyState {
 	// F1.1: quota is an ADMISSION CEILING, never an eviction trigger.
 	// No key #2049 for a saturated rule — and no eviction path may
 	// bypass this by making room.
+	// Expired keys are dead evidence, not admitted state: without
+	// this purge a rule grouped by source IP that once reached its
+	// ceiling stopped counting every NEW address for good, because
+	// nothing else swept its table. Dropping them is not an eviction
+	// (live keys are never touched), and the scan is throttled so a
+	// flood against a saturated rule cannot make every event walk
+	// the whole table.
 	if d.perRule[k.ruleID] >= MaxKeysPerRule {
-		return nil
+		if now.Sub(d.lastRulePurge) >= rulePurgeEvery {
+			d.lastRulePurge = now
+			d.purgeExpiredLocked(now)
+		}
+		if d.perRule[k.ruleID] >= MaxKeysPerRule {
+			return nil
+		}
 	}
 	// Host quota (v1.1 cuotas por equipo): the same admission ceiling
 	// per host — a noisy machine cannot fill the table the others

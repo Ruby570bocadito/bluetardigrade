@@ -15,7 +15,9 @@
 // back through the API for the lifetime of the retention window.
 //
 // Every bound in this file is a deliberate worst-case cap: memory is
-// bounded by maxHosts x maxEventsPerHost pointers; disk by the bundle
+// bounded by maxHosts x maxEventsPerHost events and, because one event
+// can be as large as an ingest line, by maxHosts x maxBytesPerHost;
+// disk by the bundle
 // retention cap (the -forensic-retention flag, default
 // defaultBundleFiles) x the serialized size of timelineCap events.
 // There is no unbounded mode on purpose: an evidence directory that
@@ -43,7 +45,7 @@ import (
 type Recorder struct {
 	mu    sync.Mutex
 	dir   string // bundle output directory; "" disables disk writes
-	hosts map[string][]*model.Event
+	hosts map[string]*hostRing
 	order []string // LRU order of hosts, order[0] = coldest
 
 	// bundleCap is the bundle-directory retention cap: once this
@@ -69,12 +71,28 @@ type Recorder struct {
 	seeded  bool     // el FIFO ya refleja el estado real del directorio
 }
 
+// hostRing is one host's recent events, oldest first, with the size
+// each one was charged at admission (an event may gain enrichment
+// later; the charge must come back exactly on eviction).
+type hostRing struct {
+	events []*model.Event
+	sizes  []int
+	bytes  int
+}
+
 // Bounds and constants. See the package comment: each one caps a
 // specific worst case, and the numbers trade evidence depth against
 // footprint on a long-lived engine.
 const (
 	maxHosts         = 64
 	maxEventsPerHost = 256
+
+	// maxBytesPerHost bounds one host's ring by size as well as by
+	// count: an ingest line can reach 1 MiB, so 256 events alone allow
+	// 256 MiB per host and ~16 GiB across maxHosts on a hostile feed.
+	// Ordinary events are around a kilobyte, far under this; only
+	// oversized ones shorten the ring (the newest event always stays).
+	maxBytesPerHost = 4 << 20
 
 	// CaptureWindow is how far back the timeline of a bundle reaches
 	// from the alert timestamp.
@@ -145,7 +163,7 @@ func NewWithRetention(dir string, retention int) *Recorder {
 	if retention < 1 {
 		retention = defaultBundleFiles
 	}
-	return &Recorder{dir: dir, bundleCap: retention, hosts: make(map[string][]*model.Event)}
+	return &Recorder{dir: dir, bundleCap: retention, hosts: make(map[string]*hostRing)}
 }
 
 // Dir reports the bundle directory ("" when disk capture is off).
@@ -159,11 +177,73 @@ func (r *Recorder) ObserveEvent(ev *model.Event) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.hosts[ev.Host] = append(r.hosts[ev.Host], ev)
-	if len(r.hosts[ev.Host]) > maxEventsPerHost {
-		r.hosts[ev.Host] = r.hosts[ev.Host][len(r.hosts[ev.Host])-maxEventsPerHost:]
+	ring := r.hosts[ev.Host]
+	if ring == nil {
+		ring = &hostRing{}
+		r.hosts[ev.Host] = ring
+	}
+	size := approxSize(ev)
+	ring.events = append(ring.events, ev)
+	ring.sizes = append(ring.sizes, size)
+	ring.bytes += size
+	drop := 0
+	for len(ring.events)-drop > 1 &&
+		(len(ring.events)-drop > maxEventsPerHost || ring.bytes > maxBytesPerHost) {
+		ring.bytes -= ring.sizes[drop]
+		drop++
+	}
+	if drop > 0 {
+		// copy down instead of reslicing: a resliced head would keep
+		// the dropped events reachable through the backing array
+		n := copy(ring.events, ring.events[drop:])
+		clear(ring.events[n:])
+		ring.events = ring.events[:n]
+		ring.sizes = ring.sizes[:copy(ring.sizes, ring.sizes[drop:])]
 	}
 	r.touchHost(ev.Host)
+}
+
+// approxSize estimates the memory one event holds: its variable-length
+// text plus a flat allowance for the structs. It only has to be
+// proportional (it feeds maxBytesPerHost), not exact.
+func approxSize(ev *model.Event) int {
+	n := 256 + len(ev.ID) + len(ev.Type) + len(ev.Source) + len(ev.Host) + len(ev.User)
+	proc := func(p *model.Process) {
+		if p == nil {
+			return
+		}
+		n += len(p.Name) + len(p.CommandLine) + len(p.Image)
+		for k, v := range p.Hashes {
+			n += len(k) + len(v)
+		}
+	}
+	proc(ev.Process)
+	proc(ev.Target)
+	if a := ev.Access; a != nil {
+		n += len(a.GrantedAccess) + len(a.CallTrace)
+	}
+	if f := ev.File; f != nil {
+		n += len(f.Path) + len(f.Extension)
+		for k, v := range f.Hashes {
+			n += len(k) + len(v)
+		}
+	}
+	if nw := ev.Network; nw != nil {
+		n += len(nw.Protocol) + len(nw.SourceIP) + len(nw.DestinationIP) + len(nw.Domain)
+	}
+	if g := ev.Registry; g != nil {
+		n += len(g.Key) + len(g.ValueName) + len(g.Value) + len(g.Operation)
+	}
+	for _, t := range ev.Tags {
+		n += len(t)
+	}
+	for k, v := range ev.Attributes {
+		n += len(k) + len(v)
+	}
+	for k, v := range ev.Enrichment {
+		n += len(k) + len(v)
+	}
+	return n
 }
 
 // touchHost moves host to the MRU end of the eviction order. Called
@@ -220,15 +300,32 @@ func (r *Recorder) Capture(a alert.Alert, now time.Time) (string, bool, error) {
 		Alert:      a,
 		CapturedAt: now.UTC().Format(time.RFC3339Nano),
 		Host:       a.Host,
-		Window:     CaptureWindow.String() + " before alert (plus the triggering event)",
+		Window:     CaptureWindow.String() + " before the triggering event (before the alert when it has none)",
 		Timeline:   make([]*model.Event, 0),
 	}
 
 	r.mu.Lock()
-	cutoff := alerted.Add(-CaptureWindow)
-	ring := r.hosts[a.Host]
+	var ring []*model.Event
+	if hr := r.hosts[a.Host]; hr != nil {
+		ring = hr.events
+	}
+	// The ring is stamped by the sensor, the alert by the engine. With
+	// a skewed endpoint clock or an imported backlog the two disagree
+	// by hours and a window measured from the engine's time holds
+	// nothing but the trigger. The triggering event carries the
+	// sensor's own notion of "when": anchor on it whenever it is known.
+	anchor := alerted
+	if a.EventID != "" {
+		for _, ev := range ring {
+			if ev.ID == a.EventID && !ev.Timestamp.IsZero() {
+				anchor = ev.Timestamp
+				break
+			}
+		}
+	}
+	cutoff := anchor.Add(-CaptureWindow)
 	for _, ev := range ring {
-		if (!ev.Timestamp.Before(cutoff) && !ev.Timestamp.After(alerted)) || ev.ID == a.EventID {
+		if (!ev.Timestamp.Before(cutoff) && !ev.Timestamp.After(anchor)) || ev.ID == a.EventID {
 			b.Timeline = append(b.Timeline, ev)
 		}
 	}
@@ -478,7 +575,7 @@ func (r *Recorder) TrackedEvents() int {
 	defer r.mu.Unlock()
 	n := 0
 	for _, ring := range r.hosts {
-		n += len(ring)
+		n += len(ring.events)
 	}
 	return n
 }

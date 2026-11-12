@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button'
 import { useEngine } from './engine-provider'
 import { useI18n } from './i18n-provider'
+import { useConsoleUser } from './user-session'
 import { EmptyState, SectionHeader, MonoTag } from './ui-bits'
 import { AuditExportButton } from './export-menu'
 import { AnimatedItem } from '@/components/reactbits/animated-list'
@@ -41,12 +42,16 @@ function formatBytes(n: number): string {
 export function RespondView() {
   const { respondState, respondAudit, status } = useEngine()
   const { dict } = useI18n()
+  const me = useConsoleUser()
+  // the audit is an administrator's read (the proxy refuses it to the
+  // other roles): without this note the view would read as "no attempts"
+  const auditWithheld = !me.pending && me.role !== 'admin'
 
   return (
     <section aria-label={dict.respond.sectionAria}>
       <SectionHeader
         title={dict.respond.title}
-        count={respondAudit?.records.length}
+        count={auditWithheld ? undefined : respondAudit?.records.length}
         hint={dict.respond.killHint}
       />
 
@@ -73,8 +78,14 @@ export function RespondView() {
       ) : (
         <div className="space-y-5">
           <SurfaceCard state={respondState} />
-          <AuditSummary />
-          <AuditFeed />
+          {auditWithheld ? (
+            <p role="note" className="panel px-4 py-3 text-xs leading-relaxed text-zinc-400">{dict.respond.auditAdminOnly}</p>
+          ) : (
+            <>
+              <AuditSummary />
+              <AuditFeed />
+            </>
+          )}
         </div>
       )}
     </section>

@@ -1,6 +1,7 @@
 package correlate
 
 import (
+	"strings"
 	"time"
 )
 
@@ -16,14 +17,73 @@ type state struct {
 	// weight (last update + window). It only drives reclamation of the
 	// tracking cap; completion is decided on event times.
 	expires time.Time
-	// hosts the chain touched (lowercase, bounded by maxMinHosts):
-	// user-scoped chains complete only once they span MinHosts of them
-	hosts map[string]string
+	// hosts the chain touched (lowercase key, bounded by maxMinHosts)
+	// with the event time of the last hit on each: user-scoped chains
+	// complete only once MinHosts of them were hit inside one window.
+	hosts map[string]hostHit
 	// simulated is set as soon as any contributing event carries the
 	// simulation tag (detection validation, SIM-1): the completed
 	// chain alert is tagged in turn, so a replay on a lab engine can
 	// never be mistaken for real evidence.
 	simulated bool
+}
+
+// hostHit is one host a chain touched: the name as the sensor reported
+// it and the event time of its most recent hit.
+type hostHit struct {
+	name string
+	at   time.Time
+}
+
+// touchHost records a hit on host at ts. Hosts whose last hit fell out
+// of the window are dropped first, so they neither count towards
+// MinHosts nor hold one of the maxMinHosts slots.
+func (st *state) touchHost(host string, ts time.Time, window time.Duration) {
+	h := strings.ToLower(host)
+	if h == "" {
+		return
+	}
+	if prev, ok := st.hosts[h]; ok {
+		if ts.After(prev.at) {
+			prev.at = ts
+			st.hosts[h] = prev
+		}
+		return
+	}
+	newest := st.newestHost()
+	for k, hit := range st.hosts {
+		if newest.Sub(hit.at) > window {
+			delete(st.hosts, k)
+		}
+	}
+	if len(st.hosts) < maxMinHosts {
+		st.hosts[h] = hostHit{name: host, at: ts}
+	}
+}
+
+// newestHost returns the most recent host hit time.
+func (st *state) newestHost() time.Time {
+	var hi time.Time
+	for _, hit := range st.hosts {
+		if hit.at.After(hi) {
+			hi = hit.at
+		}
+	}
+	return hi
+}
+
+// liveHosts returns the hosts whose last hit lies within window of the
+// newest one. Without the bound a single-step chain would add up hosts
+// forever and report "3 hosts in one hour" for hits hours apart.
+func (st *state) liveHosts(window time.Duration) []string {
+	newest := st.newestHost()
+	out := make([]string, 0, len(st.hosts))
+	for _, hit := range st.hosts {
+		if newest.Sub(hit.at) <= window {
+			out = append(out, hit.name)
+		}
+	}
+	return out
 }
 
 // span returns the spread between the oldest and newest step times.

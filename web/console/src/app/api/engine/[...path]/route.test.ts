@@ -257,6 +257,42 @@ describe('engine proxy boundary', () => {
     expect(captured).toHaveLength(1)
   })
 
+  // The default console (loopback, no credentials) answers whoever asks:
+  // a page on another site must not be able to make it query the engine.
+  test('a cross-site GET is refused before anything is forwarded', async () => {
+    const { GET } = await loadRoute()
+    const url = 'http://localhost:3000/api/engine/api/reputation?ip=203.0.113.7'
+    const cross: Record<string, string>[] = [
+      { 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'no-cors', 'sec-fetch-dest': 'image' },
+      { 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'navigate' },
+      { origin: 'https://evil.example' },
+      { origin: 'null' },
+    ]
+    for (const headers of cross) {
+      const res = await GET(new Request(url, { headers: { host: 'localhost:3000', ...headers } }))
+      expect(res.status).toBe(403)
+      expect(((await res.json()) as { error: string }).error).toBe('cross_site_read')
+    }
+    expect(captured).toHaveLength(0)
+  })
+
+  test('the console itself, a typed address and headerless clients keep reading', async () => {
+    const { GET } = await loadRoute()
+    const url = 'http://localhost:3000/api/engine/api/alerts/export?format=csv'
+    const own: Record<string, string>[] = [
+      {}, // curl, the dev-tests smokes
+      { 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'cors' }, // fetch and EventSource of the console
+      { 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'navigate' }, // an export link clicked in the console
+      { 'sec-fetch-site': 'none', 'sec-fetch-mode': 'navigate' }, // address bar, bookmark
+      { 'sec-fetch-site': 'same-origin', origin: 'http://localhost:3000' },
+    ]
+    for (const headers of own) {
+      const res = await GET(new Request(url, { headers: { host: 'localhost:3000', ...headers } }))
+      expect(res.status).toBe(200)
+    }
+    expect(captured).toHaveLength(own.length)
+  })
+
   test('malformed Origin is never forwarded on', async () => {
     const { POST } = await loadRoute()
     const res = await POST(
@@ -415,6 +451,47 @@ describe('engine proxy with analyst accounts', () => {
     expect((await GET(new Request(base + '/api/stats'))).status).toBe(401)
     expect((await GET(new Request(base + '/api/stats', { headers: as('luis') }))).status).toBe(200)
     expect(captured).toHaveLength(1)
+  })
+
+  test('administration reads need an administrator; telemetry reads stay open to every account', async () => {
+    const { GET } = await loadRoute()
+    const admin = ['/api/settings/notify', '/api/settings/ad', '/api/settings/groups', '/api/enroll', '/api/respond/audit?limit=50', '/metrics']
+    for (const path of admin) {
+      for (const user of ['luis', 'ana']) {
+        const res = await GET(new Request(base + path, { headers: as(user) }))
+        expect(res.status).toBe(403)
+        const body = (await res.json()) as { error: string; hint: string }
+        expect(body.error).toBe('role_forbidden')
+        expect(body.hint).toContain('administrador')
+      }
+      expect(captured).toHaveLength(0)
+      expect((await GET(new Request(base + path, { headers: as('jefa') }))).status).toBe(200)
+      expect(captured.pop()?.url).toBe('http://127.0.0.1:7778' + path)
+    }
+    // what the console shows a viewer keeps working
+    const open = ['/api/stats', '/api/alerts?limit=5', '/api/events', '/api/rules', '/api/stream', '/api/suppressions', '/api/sequences',
+      '/api/respond/state', '/api/groups', '/api/fleet', '/api/incidents', '/api/ad/status', '/api/ad/objects/users?q=ana', '/api/reputation?ip=203.0.113.7']
+    for (const path of open) {
+      expect((await GET(new Request(base + path, { headers: as('luis') }))).status).toBe(200)
+    }
+    expect(captured).toHaveLength(open.length)
+  })
+
+  test('a spelling the engine would still route does not get around the read table', async () => {
+    const { GET } = await loadRoute()
+    const { readRole } = await import('@/lib/engine-reads')
+    const spellings = ['/api/%73ettings/ad', '/api//settings/ad', '/api/settings//notify', '/api/settings/', '/api/enroll/', '/%6detrics', '/api/respond/%61udit', '/api\\settings/ad']
+    for (const path of spellings) {
+      expect(readRole(path)).toBe('admin')
+      expect((await GET(new Request(base + path, { headers: as('luis') }))).status).toBe(403)
+    }
+    for (const path of ['/api/%zz', '/api/x/%2e%2e/settings/ad', '/api/./settings/ad']) expect(readRole(path)).toBe('malformed')
+    expect((await GET(new Request(base + '/api/x/%2e%2e/settings/ad', { headers: as('luis') }))).status).not.toBe(200)
+    // near misses are not administration reads
+    for (const path of ['/api/settingsx', '/api/enrollment', '/api/respond/state', '/api/respond/auditx', '/metricsx', '/api/stats']) expect(readRole(path)).toBeNull()
+    expect(captured).toHaveLength(0)
+    // refused reads are not written to the audit trail (it records writes)
+    expect(() => readFileSync(audit, 'utf8')).toThrow()
   })
 
   test('accounts are a credential: a phone reaches the console by name without the shared token', async () => {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,11 +38,17 @@ func TestEmptyBundleUsesJSONArrayCollections(t *testing.T) {
 	}
 }
 
-func TestCaptureExcludesFutureEventsButRetainsTrigger(t *testing.T) {
+// La ventana se ancla en la hora del evento disparador (reloj del
+// sensor), no en la del motor: con el reloj del equipo adelantado dos
+// horas el bundle sigue trayendo lo que precedio al disparador y deja
+// fuera lo posterior.
+func TestCaptureWindowFollowsTheTriggerClock(t *testing.T) {
 	r := New(t.TempDir())
-	r.ObserveEvent(mkEvent("before", "lab-01", model.TypeProcessCreate, base.Add(-time.Minute)))
-	r.ObserveEvent(mkEvent("future", "lab-01", model.TypeProcessCreate, base.Add(time.Hour)))
-	r.ObserveEvent(mkEvent("ev-0123456789abcdef", "lab-01", model.TypeFileWrite, base.Add(2*time.Hour)))
+	skew := 2 * time.Hour
+	r.ObserveEvent(mkEvent("old", "lab-01", model.TypeProcessCreate, base.Add(skew-10*time.Minute)))
+	r.ObserveEvent(mkEvent("before", "lab-01", model.TypeProcessCreate, base.Add(skew-time.Minute)))
+	r.ObserveEvent(mkEvent("ev-0123456789abcdef", "lab-01", model.TypeFileWrite, base.Add(skew)))
+	r.ObserveEvent(mkEvent("after", "lab-01", model.TypeProcessCreate, base.Add(skew+time.Second)))
 	a := mkAlert("0123456789abcdef", "lab-01", "high", base.Format(time.RFC3339))
 	if _, ok, err := r.Capture(a, base); err != nil || !ok {
 		t.Fatalf("Capture: ok=%v err=%v", ok, err)
@@ -51,13 +58,32 @@ func TestCaptureExcludesFutureEventsButRetainsTrigger(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(b.Timeline) != 2 || b.Timeline[0].ID != "before" || b.Timeline[1].ID != a.EventID {
+		t.Fatalf("a skewed sensor clock emptied or contaminated the bundle: %+v", b.Timeline)
+	}
+}
+
+// Sin evento disparador en el anillo la ventana sigue anclada en la
+// hora de la alerta y lo posterior queda fuera.
+func TestCaptureWithoutTriggerUsesAlertTime(t *testing.T) {
+	r := New(t.TempDir())
+	r.ObserveEvent(mkEvent("before", "lab-01", model.TypeProcessCreate, base.Add(-time.Minute)))
+	r.ObserveEvent(mkEvent("future", "lab-01", model.TypeProcessCreate, base.Add(time.Hour)))
+	a := mkAlert("0123456789abcdef", "lab-01", "high", base.Format(time.RFC3339))
+	if _, ok, err := r.Capture(a, base); err != nil || !ok {
+		t.Fatalf("Capture: ok=%v err=%v", ok, err)
+	}
+	b, err := r.Load(a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Timeline) != 1 || b.Timeline[0].ID != "before" {
 		t.Fatalf("events outside the upper bound contaminated evidence: %+v", b.Timeline)
 	}
 }
 
 func TestTruncationRetainsObservedTrigger(t *testing.T) {
 	r := New(t.TempDir())
-	r.ObserveEvent(mkEvent("ev-0123456789abcdef", "lab-01", model.TypeProcessCreate, base.Add(-10*time.Minute)))
+	r.ObserveEvent(mkEvent("ev-0123456789abcdef", "lab-01", model.TypeProcessCreate, base))
 	for i := 0; i < timelineCap+10; i++ {
 		r.ObserveEvent(mkEvent(fmt.Sprintf("e%d", i), "lab-01", model.TypeNetworkConnect, base.Add(-time.Minute)))
 	}
@@ -71,6 +97,46 @@ func TestTruncationRetainsObservedTrigger(t *testing.T) {
 	}
 	if len(b.Timeline) != timelineCap || b.Timeline[0].ID != a.EventID || b.Timeline[timelineCap-1].ID != "e209" {
 		t.Fatalf("truncated evidence lost the trigger/latest event: %+v", b.Timeline)
+	}
+}
+
+// El anillo de un equipo esta acotado tambien en bytes: eventos enormes
+// lo acortan en vez de retener cientos de MiB, y el ultimo siempre queda.
+func TestPerHostRingIsBoundedByBytes(t *testing.T) {
+	r := New(t.TempDir())
+	big := strings.Repeat("A", 1<<20)
+	for i := 0; i < 40; i++ {
+		ev := mkEvent(fmt.Sprintf("big%d", i), "lab-01", model.TypeProcessCreate, base)
+		ev.Process.CommandLine = big
+		r.ObserveEvent(ev)
+	}
+	ring := r.hosts["lab-01"]
+	if ring.bytes > maxBytesPerHost || len(ring.events) > maxBytesPerHost>>20 {
+		t.Fatalf("ring holds %d events / %d bytes, cap %d", len(ring.events), ring.bytes, maxBytesPerHost)
+	}
+	if got := ring.events[len(ring.events)-1].ID; got != "big39" {
+		t.Fatalf("newest event = %q, want big39", got)
+	}
+	sum := 0
+	for _, n := range ring.sizes {
+		sum += n
+	}
+	if sum != ring.bytes || len(ring.sizes) != len(ring.events) {
+		t.Fatalf("byte tally drifted: sum=%d bytes=%d", sum, ring.bytes)
+	}
+	// un evento mayor que el tope entero se conserva solo
+	huge := mkEvent("huge", "lab-01", model.TypeProcessCreate, base)
+	huge.Process.CommandLine = strings.Repeat("B", maxBytesPerHost+1)
+	r.ObserveEvent(huge)
+	if len(ring.events) != 1 || ring.events[0].ID != "huge" {
+		t.Fatalf("an oversized event must stay alone in the ring: %d events", len(ring.events))
+	}
+	// y los eventos normales no pierden profundidad
+	for i := 0; i < maxEventsPerHost*2; i++ {
+		r.ObserveEvent(mkEvent(fmt.Sprintf("n%d", i), "lab-02", model.TypeProcessCreate, base))
+	}
+	if got := len(r.hosts["lab-02"].events); got != maxEventsPerHost {
+		t.Fatalf("ordinary events: ring = %d, want %d", got, maxEventsPerHost)
 	}
 }
 

@@ -51,7 +51,7 @@ func (s *Store) RecordADReadAudit(a ADReadAuditRow) error {
 	}
 	s.wmu.Lock()
 	defer s.wmu.Unlock()
-	if _, err := s.db.Exec(
+	if _, err := s.w.Exec(
 		`INSERT INTO ad_read_audit (ts, remote, account, q, status, rows) VALUES (?,?,?,?,?,?)`,
 		a.TS.Unix(), a.Remote, a.Account, string(q), a.Status, a.Rows,
 	); err != nil {

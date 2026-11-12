@@ -203,7 +203,8 @@ func (h *Hub) handleGroupsPut(w http.ResponseWriter, r *http.Request) {
 	if raw, err := os.ReadFile(path); err == nil {
 		current = sha256.Sum256(raw)
 	} else if !os.IsNotExist(err) {
-		writeErr(w, http.StatusInternalServerError, "cannot read the host-groups file: "+err.Error())
+		log.Printf("[API] WRITE host-groups FAILED (file unreadable): %v", err)
+		writeErr(w, http.StatusInternalServerError, "cannot read the host-groups file (see engine log)")
 		return
 	}
 	if current != baseline {
@@ -212,12 +213,14 @@ func (h *Hub) handleGroupsPut(w http.ResponseWriter, r *http.Request) {
 	}
 	data, err := next.Marshal()
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		log.Printf("[API] WRITE host-groups FAILED (encode): %v", err)
+		writeErr(w, http.StatusInternalServerError, "the host groups could not be encoded (see engine log)")
 		return
 	}
 	sum, err := hostgroup.WriteFile(path, data)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
+		log.Printf("[API] WRITE host-groups FAILED (file): %v", err)
+		writeErr(w, http.StatusInternalServerError, "the host-groups file is not writable (see engine log)")
 		return
 	}
 	h.SetHostGroups(path, next, sum)

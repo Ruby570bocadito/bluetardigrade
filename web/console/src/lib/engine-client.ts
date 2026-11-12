@@ -66,6 +66,33 @@ export async function readOptionalEngineJson<T>(
   }
 }
 
+// A read the console refuses to this account's role (403 from the
+// proxy's read table) will be refused on every poll: the first refusal
+// closes the gate and later calls answer without a request. Like a
+// transient failure it reports "unknown" (undefined), never "absent".
+export type RoleGate = { denied: boolean }
+
+export async function readRoleGatedEngineJson<T>(
+  base: string, path: string, lifetime: AbortSignal, gate: RoleGate,
+): Promise<T | null | undefined> {
+  if (gate.denied) return undefined
+  try {
+    return await readEngineJson<T>(base, path, lifetime)
+  } catch (error) {
+    if (error instanceof EngineHttpError && error.status === 403) gate.denied = true
+    return error instanceof EngineHttpError && error.status === 404 ? null : undefined
+  }
+}
+
+// What to do when the live stream reports an error. The browser retries
+// an EventSource by itself only after a network error; one that ended
+// CLOSED (a non-200 answer) must be recreated, after `delayMs`, and the
+// delay doubles up to the ceiling until a stream opens again.
+export function streamRetryPlan(closed: boolean, retryMs: number, maxMs: number): { recreateAfterMs: number | null; nextRetryMs: number } {
+  if (!closed) return { recreateAfterMs: null, nextRetryMs: retryMs }
+  return { recreateAfterMs: retryMs, nextRetryMs: Math.min(retryMs * 2, maxMs) }
+}
+
 export function mergeNewest<T extends { timestamp: string }>(
   preferred: readonly T[], snapshot: readonly T[], key: (item: T) => string, limit: number,
 ): T[] {

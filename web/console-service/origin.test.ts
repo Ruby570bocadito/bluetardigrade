@@ -13,7 +13,7 @@ for (const transport of ['websocket', 'polling'] as const) {
       try {
         const result = new Promise<boolean>((resolve, reject) => {
           const timer = setTimeout(() => reject(new Error('handshake timed out')), 3000)
-          socket.on('console:snapshot', () => { clearTimeout(timer); resolve(true) })
+          socket.on('connect', () => { clearTimeout(timer); resolve(true) })
           socket.on('connect_error', () => { clearTimeout(timer); resolve(false) })
         })
         socket.connect()

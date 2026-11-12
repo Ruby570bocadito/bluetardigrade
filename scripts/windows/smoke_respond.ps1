@@ -67,6 +67,7 @@ if (-not (Test-Path $Engine)) { throw "engine no encontrado: $Engine" }
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("sf-smoke-respond-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
 New-Item -ItemType Directory -Path $tmp | Out-Null
 $OPS = Join-Path $tmp "respond-operators.yaml"
+$PROTECTED = Join-Path $tmp "respond-protected.yaml"
 $AUDIT = Join-Path $tmp "respond-audit.jsonl"
 $PIDFILE = Join-Path $tmp "engine.pid"
 
@@ -108,6 +109,7 @@ function Start-Engine([string]$Tag, [bool]$Armed) {
         "-rules", (Join-Path $REPO "rules"), "-api-token", $TOKEN)
     if ($Armed) {
         $eargs += @("-allow-kill", "-respond-operators", $OPS,
+            "-respond-protected", $PROTECTED,
             "-respond-audit", $AUDIT, "-pidfile", $PIDFILE)
     }
     $outLog = Join-Path $tmp "engine-$Tag.out"
@@ -201,6 +203,7 @@ function Wait-Dead($proc, [int]$TimeoutMs = 5000) {
 try {
     # UTF-8 without BOM on both editions (5.1 has no -Encoding utf8NoBOM)
     [System.IO.File]::WriteAllText($OPS, "version: 1`nnames:`n  - smoke-op`n", (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllText($PROTECTED, "version: 1`nnames:`n  - sf-smoke-protegido`n", (New-Object System.Text.UTF8Encoding($false)))
 
     Write-Host "== arranque: engine armado + engine desarmado =="
     $eng = Start-Engine -Tag "armed" -Armed $true
@@ -274,19 +277,36 @@ try {
     Check "la victima sobrevive al mismatch" (Test-Alive $v2)
     $script:decoys += $v2
 
-    # ---- g. protegido por defecto R6 (sebo csrss.exe) ----------------
+    # ---- g. protegido R6 ----------------------------------------------
+    # Los nombres de sistema se protegen por RUTA (System32): un binario
+    # que solo se llama csrss.exe desde otra carpeta es justo lo que un
+    # operador tiene que poder matar. La negativa se prueba con un nombre
+    # propio de la lista -respond-protected, sin tocar nada del sistema.
     Write-Host "== g. protegido R6 -> 403 process_protected (sebo propio) =="
-    $decoyPath = Join-Path $tmp "csrss.exe"
+    $decoyPath = Join-Path $tmp "sf-smoke-protegido.exe"
     Copy-Item "$env:SystemRoot\System32\cmd.exe" $decoyPath -Force
     $decoy = Start-Process -FilePath $decoyPath -PassThru -WindowStyle Hidden
     $script:decoys += $decoy
-    if (-not (Wait-Alive $decoy)) { throw "el sebo csrss.exe no arranco" }
+    if (-not (Wait-Alive $decoy)) { throw "el sebo protegido no arranco" }
     $res = Post-Kill $API_BASE @{
-        host = $HOSTNAME_SMOKE; pid = $decoy.Id; process_name = "csrss.exe"
-        operator = "smoke-op"; reason = "smoke protegido (sebo, no el real)"
+        host = $HOSTNAME_SMOKE; pid = $decoy.Id; process_name = "sf-smoke-protegido.exe"
+        operator = "smoke-op"; reason = "smoke protegido (sebo propio)"
     } $true
     Check "HTTP 403 process_protected" (($res.code -eq 403) -and ($res.body -like '*process_protected*'))
-    Check "el sebo csrss.exe sobrevive (el guard nego antes de senialar)" (Test-Alive $decoy)
+    Check "el sebo protegido sobrevive (el guard nego antes de senialar)" (Test-Alive $decoy)
+
+    Write-Host "== g2. impostor csrss.exe fuera de System32 -> 200, muere =="
+    $fakePath = Join-Path $tmp "csrss.exe"
+    Copy-Item "$env:SystemRoot\System32\cmd.exe" $fakePath -Force
+    $fake = Start-Process -FilePath $fakePath -PassThru -WindowStyle Hidden
+    $script:decoys += $fake
+    if (-not (Wait-Alive $fake)) { throw "el impostor csrss.exe no arranco" }
+    $res = Post-Kill $API_BASE @{
+        host = $HOSTNAME_SMOKE; pid = $fake.Id; process_name = "csrss.exe"
+        operator = "smoke-op"; reason = "smoke impostor (no es el del sistema)"
+    } $true
+    Check "HTTP 200: el nombre de sistema no protege a un impostor" ($res.code -eq 200)
+    Check "el impostor csrss.exe murio de verdad" (Wait-Dead $fake)
 
     # ---- h. cooldown --------------------------------------------------
     Write-Host "== h. cooldown -> 429 en el 2o kill del mismo pid =="
@@ -340,7 +360,7 @@ try {
         Check "todas las lineas llevan source y action_id (R5a)" (($recs | Where-Object { -not $_.source -or -not $_.action_id } | Measure-Object).Count -eq 0)
         $exec = @($recs | Where-Object { $_.decision -eq "executed" })
         Check "hay kills felices en el audit" ($exec.Count -ge 2)
-        Check "los kills felices registran resolved_name=ping.exe (O1)" (($exec | Where-Object { $_.resolved_name -ne "ping.exe" } | Measure-Object).Count -eq 0)
+        Check "los kills felices registran el nombre resuelto: ping.exe o el impostor csrss.exe (O1)" (($exec | Where-Object { $_.resolved_name -notin @("ping.exe", "csrss.exe") } | Measure-Object).Count -eq 0)
         Check "la linea ejecutada lleva signal=SIGKILL (Q1)" (($exec | Where-Object { $_.signal -ne "SIGKILL" } | Measure-Object).Count -eq 0)
         Check "fallback_reason AUSENTE en todo el JSONL (camino handle)" (-not ($rawAudit -like '*fallback_reason*'))
         $codes = @($recs | Where-Object { $_.code } | ForEach-Object { $_.code } | Select-Object -Unique)

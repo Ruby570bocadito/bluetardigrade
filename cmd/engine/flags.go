@@ -132,7 +132,7 @@ func newRunFlagSet(name string, o *options, interactive *bool, errMode flag.Erro
 	fs.StringVar(&o.respondOperators, "respond-operators", "./respond-operators.yaml",
 		"YAML allowlist ({version: 1, names: [ana, beto]}, or {version: 2, operators: [{name, token_sha256}]} with per-operator credentials sent as X-SF-Operator-Token) of operators allowed to run active response actions; missing file = empty allowlist = every action denied; malformed file = fatal; hot-reloaded on the -reload-every ticker")
 	fs.StringVar(&o.respondProtected, "respond-protected", "",
-		"optional YAML ({version: 1, names: [...]}) with extra protected process names, merged with the platform defaults (Windows: csrss/smss/wininit/services/lsass); missing file = defaults only; malformed file = fatal; hot-reloaded")
+		"optional YAML ({version: 1, names: [...]}) with extra protected process names, merged with the platform defaults (Windows: csrss/smss/wininit/winlogon/services/lsass under System32, the product's own binaries next to the engine and every process the OS marks critical; a same-named binary elsewhere is NOT protected); missing file = defaults only; malformed file = fatal; hot-reloaded")
 	fs.StringVar(&o.respondAudit, "respond-audit", "./respond-audit.jsonl",
 		"append-only JSONL audit file, one line per attempt (denials included), fsync per line, 64 MiB ceiling (beyond it every action denies with audit_unavailable until the file is rotated)")
 	fs.StringVar(&o.token, "token", "",

@@ -279,9 +279,54 @@ func (s *Store) Assign(id, assignee, by string) (Entry, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	e := s.assignLocked(id, assignee, by, time.Now().UTC().Format(time.RFC3339Nano))
+	s.evictLocked()
+	if err := s.persistLocked(); err != nil {
+		return e, fmt.Errorf("%w: %w", ErrPersistFailed, err)
+	}
+	return e, nil
+}
+
+// AssignBatch is Assign for a list of alerts with ONE write of the
+// file: the store is rewritten whole on every persist, so a selection
+// of hundreds assigned one by one meant hundreds of full rewrites (and
+// as many fsyncs) with the mutex held. The entries come back in the
+// order of ids. On ErrPersistFailed the in-memory state holds every
+// assignment and none of them reached the disk.
+func (s *Store) AssignBatch(ids []string, assignee, by string) ([]Entry, error) {
+	if len(assignee) > MaxAssigneeLen {
+		return nil, fmt.Errorf("lifecycle: assignee longer than %d characters", MaxAssigneeLen)
+	}
+	if len(by) > MaxByLen {
+		return nil, fmt.Errorf("lifecycle: by longer than %d characters", MaxByLen)
+	}
+	for _, id := range ids {
+		if id == "" {
+			return nil, errors.New("lifecycle: empty alert id")
+		}
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	out := make([]Entry, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, s.assignLocked(id, assignee, by, now))
+	}
+	s.evictLocked()
+	if err := s.persistLocked(); err != nil {
+		return out, fmt.Errorf("%w: %w", ErrPersistFailed, err)
+	}
+	return out, nil
+}
+
+// assignLocked applies one assignment in memory. Caller holds mu.
+func (s *Store) assignLocked(id, assignee, by, now string) Entry {
 	e, ok := s.entries[id]
 	if !ok {
-		e = Entry{AlertID: id, Status: StatusNew, At: time.Now().UTC().Format(time.RFC3339Nano)}
+		e = Entry{AlertID: id, Status: StatusNew, At: now}
 		s.order = append(s.order, id)
 	}
 	if assignee == "" {
@@ -289,20 +334,21 @@ func (s *Store) Assign(id, assignee, by string) (Entry, error) {
 		// assignee would be a stale reference to an owner that is gone
 		e.Assignee, e.AssignedBy, e.AssignedAt = "", "", ""
 	} else {
-		e.Assignee, e.AssignedBy, e.AssignedAt = assignee, by, time.Now().UTC().Format(time.RFC3339Nano)
+		e.Assignee, e.AssignedBy, e.AssignedAt = assignee, by, now
 	}
 	s.entries[id] = e
-	// FIFO eviction BEFORE writing keeps the file at or under the cap
-	// even when entries churn (same rationale as Set).
+	return e
+}
+
+// evictLocked drops the oldest entries past the cap. FIFO eviction
+// BEFORE writing keeps the file at or under the cap even when entries
+// churn (same rationale as Set). Caller holds mu.
+func (s *Store) evictLocked() {
 	for len(s.order) > MaxEntries {
 		oldest := s.order[0]
 		s.order = s.order[1:]
 		delete(s.entries, oldest)
 	}
-	if err := s.persistLocked(); err != nil {
-		return e, fmt.Errorf("%w: %w", ErrPersistFailed, err)
-	}
-	return e, nil
 }
 
 // Get returns the entry for an alert, if any. No entry = the alert is
@@ -337,6 +383,10 @@ func (s *Store) List() []Entry {
 	return out
 }
 
+// syncFile flushes a file to stable storage; a variable so the tests
+// can observe that every persist does it, and count them.
+var syncFile = func(f *os.File) error { return f.Sync() }
+
 // persistLocked writes the file atomically: temp file in the same
 // directory + rename, so a crash mid-write leaves either the old file
 // or the new one, never a truncated mix. Memory-only stores skip it.
@@ -369,6 +419,15 @@ func (s *Store) persistLocked() error {
 	}
 	tmpName := tmp.Name()
 	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return err
+	}
+	// Flushed before the rename: a rename is durable as metadata long
+	// before the data blocks it points at are, so after a power loss
+	// the "new" file could be empty - and a triage file that does not
+	// parse stops the engine at startup (New fails loud on purpose).
+	if err := syncFile(tmp); err != nil {
 		tmp.Close()
 		os.Remove(tmpName)
 		return err

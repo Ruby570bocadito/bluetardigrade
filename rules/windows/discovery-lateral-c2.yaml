@@ -203,7 +203,7 @@
       operator: iin
       value: ["powershell.exe", "pwsh.exe", "rundll32.exe", "regsvr32.exe", "mshta.exe", "wscript.exe", "cscript.exe", "cmd.exe"]
     - field: network.destination_port
-      operator: in
+      operator: iin
       value: [4444, 4445, 5555, 1337, 31337, 6666, 8888]
   actions:
     - type: alert

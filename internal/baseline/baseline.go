@@ -45,6 +45,10 @@ type Novelty struct {
 	Kind      string
 	Value     string
 	LearnedOn time.Time // when the host's learning started
+	// Saturated marks a novelty from a host whose table is full: the
+	// value could not be learned, so it is reported again each time it
+	// shows up (within the rate limit) instead of once.
+	Saturated bool
 }
 
 type hostState struct {
@@ -114,13 +118,13 @@ func (t *Tracker) Observe(ev *model.Event, now time.Time) *Novelty {
 	if _, seen := h.values[k]; seen {
 		return nil
 	}
-	if len(h.values) >= maxValues {
-		return nil // full: stop learning rather than evict history
-	}
-	h.values[k] = struct{}{}
-	t.pending = append(t.pending, Entry{Host: host, Kind: kind, Value: value, FirstSeen: now})
+	full := len(h.values) >= maxValues
 	if t.learn <= 0 || now.Sub(h.firstSeen) < t.learn {
-		return nil // still learning
+		// still learning (or novelties off): learn while there is room
+		if !full {
+			t.learnLocked(h, host, kind, value, k, now)
+		}
+		return nil
 	}
 	// rate limit per host
 	cut := now.Add(-noveltyInterval)
@@ -132,11 +136,28 @@ func (t *Tracker) Observe(ev *model.Event, now time.Time) *Novelty {
 	}
 	h.recent = kept
 	if len(h.recent) >= noveltyBurst {
+		// Not learned: a value whose novelty was dropped stays unknown
+		// and is reported once the budget returns. Learning it here let
+		// ten decoy names burn the budget and the real tool slip in
+		// unreported.
 		return nil
 	}
 	h.recent = append(h.recent, now)
 	t.novel++
-	return &Novelty{Host: ev.Host, Kind: kind, Value: value, LearnedOn: h.firstSeen}
+	if !full {
+		t.learnLocked(h, host, kind, value, k, now)
+	}
+	// A full table cannot learn (history is not evicted), but it must
+	// not go silent either: the unknown value is still reported, flagged
+	// so the operator knows why it repeats.
+	return &Novelty{Host: ev.Host, Kind: kind, Value: value, LearnedOn: h.firstSeen, Saturated: full}
+}
+
+// learnLocked records a value as known on the host and queues it for
+// persistence. Caller holds mu.
+func (t *Tracker) learnLocked(h *hostState, host, kind, value, k string, now time.Time) {
+	h.values[k] = struct{}{}
+	t.pending = append(t.pending, Entry{Host: host, Kind: kind, Value: value, FirstSeen: now})
 }
 
 // Novelties counts the novelties reported since the engine started.

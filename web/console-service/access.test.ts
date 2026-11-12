@@ -8,7 +8,7 @@ function connect(port: number, auth?: Record<string, unknown>) {
   })
   const result = new Promise<boolean>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('handshake timed out')), 3000)
-    socket.on('console:snapshot', () => { clearTimeout(timer); resolve(true) })
+    socket.on('connect', () => { clearTimeout(timer); resolve(true) })
     socket.on('connect_error', () => { clearTimeout(timer); resolve(false) })
   })
   socket.connect()
@@ -47,4 +47,33 @@ test('loopback detection and token comparison', () => {
   expect(hubTokenMatches('a', 'a')).toBe(true)
   expect(hubTokenMatches('a', 'ab')).toBe(false)
   expect(hubTokenMatches(undefined, 'a')).toBe(false)
+})
+
+test('with a token the status surface needs it and /health answers liveness only', async () => {
+  const env = { HUB_ACCESS_TOKEN: 'hub-secret', ANALYST_BASE_URL: 'http://provider.internal/v1', ANALYST_API_KEY: 'k', ANALYST_MODEL: 'private-model', CONSOLE_CORS_ORIGIN: 'https://soc.internal' }
+  const hub = createHub({ port: 0, quiet: true, engineApi: 'http://127.0.0.1:1', env })
+  await hub.start()
+  const base = `http://127.0.0.1:${hub.address()!.port}`
+  try {
+    for (const headers of [undefined, { authorization: 'Bearer wrong' }, { authorization: 'Basic aHViLXNlY3JldA==' }]) {
+      const health = await fetch(`${base}/health`, { headers })
+      expect(health.status).toBe(200)
+      const text = await health.text()
+      expect(Object.keys(JSON.parse(text)).sort()).toEqual(['service', 'status'])
+      for (const secret of ['provider.internal', 'private-model', 'soc.internal', '127.0.0.1:1']) expect(text).not.toContain(secret)
+      const page = await fetch(`${base}/`, { headers: { accept: 'text/html', ...headers } })
+      expect(page.status).toBe(401)
+      expect(page.headers.get('www-authenticate')).toBe('Bearer')
+      expect(await page.text()).not.toContain('private-model')
+    }
+    const auth = { authorization: 'Bearer hub-secret' }
+    const full = (await (await fetch(`${base}/healthz`, { headers: auth })).json()) as Record<string, any>
+    expect(full.analyst.model).toBe('private-model')
+    expect(full.engine.endpoint).toBeDefined()
+    const page = await fetch(`${base}/`, { headers: { accept: 'text/html', ...auth } })
+    expect(page.status).toBe(200)
+    expect(await page.text()).toContain('private-model')
+  } finally {
+    await hub.stop()
+  }
 })

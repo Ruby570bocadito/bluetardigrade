@@ -174,34 +174,58 @@ func dialTLS(ctx context.Context, cfg *Config) (*ldap.Conn, *tls.ConnectionState
 		scheme = "ldap"
 	}
 	addr := net.JoinHostPort(cfg.Server, fmt.Sprintf("%d", cfg.Port))
-	raw, err := net.DialTimeout("tcp", addr, 10*time.Second)
+	// One deadline covers everything up to an established TLS session:
+	// the caller's, capped at dialHandshakeTimeout. It is set on the raw
+	// connection because neither handshake path below is otherwise
+	// bounded: a server that accepts TCP and then stays silent would
+	// hold the caller (the sync loop, a login request) forever.
+	deadline := time.Now().Add(dialHandshakeTimeout)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	dctx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+	raw, err := (&net.Dialer{}).DialContext(dctx, "tcp", addr)
 	if err != nil {
 		return nil, nil, fmt.Errorf("dial %s://%s: %w", scheme, addr, err)
 	}
+	_ = raw.SetDeadline(deadline)
 	if cfg.StartTLS {
 		// The upgrade happens inside the client library (RFC 4511
 		// §4.14): the handshake there is the same tls.Config, but its
 		// state is not exposed, so the probe reports no TLS version.
 		conn := ldap.NewConn(raw, false)
 		conn.Start() // the background reader DialURL would have started
+		// before the upgrade: the wait for the extended response honours
+		// the request timeout, and none is set on a fresh connection
+		conn.SetTimeout(requestTimeout)
 		if err := conn.StartTLS(tlsCfg); err != nil {
 			conn.Close()
 			return nil, nil, fmt.Errorf("start TLS on %s: %w", addr, err)
 		}
-		conn.SetTimeout(30 * time.Second)
+		_ = raw.SetDeadline(time.Time{})
 		return conn, nil, nil
 	}
 	tc := tls.Client(raw, tlsCfg)
-	if err := tc.HandshakeContext(ctx); err != nil {
+	if err := tc.HandshakeContext(dctx); err != nil {
 		raw.Close()
 		return nil, nil, fmt.Errorf("TLS handshake with %s: %w", addr, err)
 	}
+	// from here on the per-request timeout of the LDAP client applies
+	_ = raw.SetDeadline(time.Time{})
 	state := tc.ConnectionState()
 	conn := ldap.NewConn(tc, true)
 	conn.Start() // the background reader DialURL would have started
-	conn.SetTimeout(30 * time.Second)
+	conn.SetTimeout(requestTimeout)
 	return conn, &state, nil
 }
+
+const (
+	// dialHandshakeTimeout bounds TCP connect plus TLS establishment.
+	dialHandshakeTimeout = 15 * time.Second
+	// requestTimeout bounds each LDAP request once connected.
+	requestTimeout = 30 * time.Second
+)
 
 // tlsConfigFor builds the handshake policy the connector always uses:
 // ONLY the organization's CA (never the system pool), the pinned
@@ -222,10 +246,11 @@ func tlsConfigFor(cfg *Config) (*tls.Config, error) {
 	}, nil
 }
 
-// Connector.connect keeps its signature and now shares the one
-// transport path with the probe.
-func (c *Connector) connect(password string) (*ldap.Conn, error) {
-	conn, _, err := openLDAP(context.Background(), c.cfg, password)
+// Connector.connect shares the one transport path with the probe. ctx
+// is the sync loop's: stopping the connector abandons a dial or a
+// handshake in flight.
+func (c *Connector) connect(ctx context.Context, password string) (*ldap.Conn, error) {
+	conn, _, err := openLDAP(ctx, c.cfg, password)
 	return conn, err
 }
 

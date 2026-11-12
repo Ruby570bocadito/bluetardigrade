@@ -68,6 +68,18 @@ func (h *Hub) tooManyAuthFails(addr string) bool {
 	return box.failures > authFailBudget
 }
 
+// authBlocked reports whether addr already exhausted its budget for
+// the current window, WITHOUT recording anything. The bearer check
+// consults it before comparing: a throttle that only answered 429 to
+// wrong tokens would still tell the right one apart at line rate.
+func (h *Hub) authBlocked(addr string) bool {
+	key := remoteIP(addr)
+	h.authMu.Lock()
+	defer h.authMu.Unlock()
+	box := h.authFails[key]
+	return box != nil && time.Since(box.windowStart) <= authFailWindow && box.failures >= authFailBudget
+}
+
 // remoteIP strips the port from a RemoteAddr ("host:port" for TCP).
 func remoteIP(addr string) string {
 	if host, _, err := net.SplitHostPort(addr); err == nil {
@@ -82,8 +94,9 @@ func remoteIP(addr string) string {
 // matched case-insensitively (RFC 7235) and rejections carry a
 // WWW-Authenticate challenge plus an actionable error body, so an
 // operator hitting the 401 knows exactly which knob to set. Addresses
-// that burn the failure budget get a 429 for the rest of the window:
-// the constant-time compare removes timing as an oracle, this removes
+// that burn the failure budget get a 429 for the rest of the window,
+// decided BEFORE the comparison and whatever the token: the
+// constant-time compare removes timing as an oracle, this removes
 // volume as one.
 func (h *Hub) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -91,17 +104,18 @@ func (h *Hub) auth(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		if h.authBlocked(r.RemoteAddr) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			fmt.Fprintln(w, `{"error":"too many unauthorized requests from this address; retry after the window"}`)
+			return
+		}
 		got := r.Header.Get("Authorization")
 		const prefix = "Bearer "
 		ok := len(got) > len(prefix) && strings.EqualFold(got[:len(prefix)], prefix) &&
 			subtle.ConstantTimeCompare([]byte(got[len(prefix):]), []byte(h.token)) == 1
 		if !ok {
-			if h.tooManyAuthFails(r.RemoteAddr) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusTooManyRequests)
-				fmt.Fprintln(w, `{"error":"too many unauthorized requests from this address; retry after the window"}`)
-				return
-			}
+			h.tooManyAuthFails(r.RemoteAddr)
 			w.Header().Set("WWW-Authenticate", `Bearer realm="bluetardigrade api"`)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)

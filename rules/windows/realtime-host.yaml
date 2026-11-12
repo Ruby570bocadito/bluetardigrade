@@ -26,7 +26,7 @@
   event_type: registry.set
   conditions:
     - field: registry.operation
-      operator: eq
+      operator: ieq
       value: "SetValue"
     - field: registry.key
       operator: regex
@@ -54,7 +54,7 @@
   event_type: registry.set
   conditions:
     - field: registry.operation
-      operator: eq
+      operator: ieq
       value: "SetValue"
     - field: registry.value_name
       operator: regex
@@ -81,7 +81,7 @@
   event_type: registry.set
   conditions:
     - field: registry.operation
-      operator: in
+      operator: iin
       value: ["SetValue", "CreateKey"]
     - field: registry.key
       operator: regex
@@ -168,11 +168,15 @@
   event_type: process.access
   conditions:
     - field: target.name
-      operator: eq
+      operator: ieq
       value: "lsass.exe"
     - field: access.granted_access
       operator: regex
-      value: '(?i)^0x(1010|1033|1410|147a|1fffff)$'
+      # The mask is a bit field, not a list of known values: any mask
+      # with PROCESS_VM_READ (0x0010) set can read LSASS memory, so the
+      # test is on that bit (odd second-lowest hex digit). An exact list
+      # (0x1010, 0x1410...) is evaded by adding any other right.
+      value: '(?i)^0x[0-9a-f]*[13579bdf][0-9a-f]$'
   actions:
     - type: alert
       config:
@@ -198,7 +202,7 @@
   event_type: network.connect
   conditions:
     - field: network.protocol
-      operator: eq
+      operator: ieq
       value: "dns"
     - field: network.domain
       operator: regex
@@ -237,7 +241,7 @@
       operator: regex
       value: '(?i)\.dll$'
     - field: file.path
-      operator: contains_any
+      operator: icontains_any
       value: ["\\AppData\\", "\\Windows\\Temp\\", "\\Users\\Public\\"]
   actions:
     - type: alert

@@ -11,13 +11,13 @@
   event_type: process.create
   conditions:
     - field: process.name
-      operator: eq
+      operator: ieq
       value: "rundll32.exe"
     - field: process.command_line
-      operator: contains
+      operator: icontains
       value: "comsvcs.dll"
     - field: process.command_line
-      operator: contains
+      operator: icontains
       value: "MiniDump"
   actions:
     - type: alert

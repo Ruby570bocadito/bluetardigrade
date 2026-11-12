@@ -69,6 +69,10 @@ try {
 } catch {
     Write-Error ('Server component ' + $Component + ' stopped: ' + $_.Exception.Message) -ErrorAction Continue
 } finally {
+    # A sensor that died without stopping its ETW sessions leaves them in
+    # the kernel. A task stopped from outside never gets here: server.ps1
+    # -Action Stop/Remove and the uninstaller do the same cleanup.
+    if ($Component -eq 'ETW') { try { [void](Stop-SfEtwSessions) } catch { } }
     if ($transcriptStarted) { Stop-Transcript -ErrorAction SilentlyContinue | Out-Null }
     foreach ($key in $previous.Keys) { [Environment]::SetEnvironmentVariable($key, $previous[$key], 'Process') }
     Set-Location -LiteralPath $previousDirectory.Path

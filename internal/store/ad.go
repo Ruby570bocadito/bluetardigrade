@@ -118,7 +118,7 @@ func (s *Store) migrateAD() error {
 func (s *Store) ReplaceADSnapshot(objects []*ADObject, edges []ADGroupEdge) error {
 	s.wmu.Lock()
 	defer s.wmu.Unlock()
-	tx, err := s.db.Begin()
+	tx, err := s.w.Begin()
 	if err != nil {
 		return fmt.Errorf("store: ad snapshot begin: %w", err)
 	}
@@ -287,7 +287,7 @@ func (s *Store) ADGroupEdges() ([]ADGroupEdge, error) {
 func (s *Store) SaveADPostureJSON(at int64, score int, doc string) error {
 	s.wmu.Lock()
 	defer s.wmu.Unlock()
-	tx, err := s.db.Begin()
+	tx, err := s.w.Begin()
 	if err != nil {
 		return fmt.Errorf("store: ad posture begin: %w", err)
 	}

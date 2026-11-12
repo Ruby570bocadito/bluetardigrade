@@ -324,3 +324,54 @@ func TestResolvePrecedenceAndCNMatch(t *testing.T) {
 		t.Errorf("sin mapeo: role=%q, want vacio", role)
 	}
 }
+
+// The role comes from the entry of the principal that authenticated:
+// a UPN whose prefix is someone else's account name must not be handed
+// that other entry, and a prefix naming another domain is refused.
+func TestDomainLoginResolvesOnlyTheAuthenticatedEntry(t *testing.T) {
+	entries := []fixtureEntry{
+		fixtureUser("CN=Alta Sofia,OU=Usuarios,"+fixtureBase, "salta", 512, map[string][]string{
+			"memberOf": {"CN=SOC-Admins,OU=Grupos," + fixtureBase},
+		}),
+		fixtureUser("CN=Zoe Baja,OU=Usuarios,"+fixtureBase, "zbaja", 512, map[string][]string{
+			"userPrincipalName": {"salta@testdom.example.com"},
+			"memberOf":          {"CN=SOC-Lectores,OU=Grupos," + fixtureBase},
+		}),
+	}
+	s, caPath, _ := newFixtureServer(t, entries, true)
+	t.Cleanup(s.close)
+	cfg := &DomainAuthConfig{
+		Server: "localhost",
+		Port:   s.listener.Addr().(*net.TCPAddr).Port,
+		BaseDN: fixtureBase,
+		CAFile: caPath,
+		Domain: "TESTDOM",
+		Roles:  DomainRoles{Admin: []string{"SOC-Admins"}, Viewer: []string{"SOC-Lectores"}},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("config: %v", err)
+	}
+
+	s.allowBind("salta@testdom.example.com", "pw-zoe")
+	id, err := DomainLogin(context.Background(), cfg, "salta@testdom.example.com", []byte("pw-zoe"))
+	if err != nil {
+		t.Fatalf("DomainLogin por UPN: %v", err)
+	}
+	if id.User != "zbaja" || id.Role != "viewer" {
+		t.Errorf("el UPN recibio la identidad de otra cuenta: %+v", id)
+	}
+
+	s.allowBind(`OTRODOM\salta`, "pw-ajena")
+	if _, err := DomainLogin(context.Background(), cfg, `OTRODOM\salta`, []byte("pw-ajena")); !errors.Is(err, ErrLoginCredentials) {
+		t.Errorf("una cuenta de otro dominio obtuvo err = %v, want ErrLoginCredentials", err)
+	}
+
+	s.allowBind("zbaja@testdom.example.com", "pw-zoe")
+	id, err = DomainLogin(context.Background(), cfg, "zbaja@testdom.example.com", []byte("pw-zoe"))
+	if err != nil {
+		t.Fatalf("DomainLogin por UPN implicito: %v", err)
+	}
+	if id.User != "zbaja" {
+		t.Errorf("UPN implicito: %+v", id)
+	}
+}

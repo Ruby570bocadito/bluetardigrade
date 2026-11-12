@@ -214,6 +214,16 @@ func TestPruneRespectsCutoffAndCounts(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// retention runs on the arrival, so the two old records are aged
+	// the way two days in the store would have aged them
+	for _, stmt := range []string{
+		`UPDATE events SET received_at = ts WHERE id = 'old'`,
+		`UPDATE alerts SET received_at = ts`,
+	} {
+		if _, err := s.w.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
 	dEv, dAl, _, err := s.Prune(24 * time.Hour)
 	if err != nil {
 		t.Fatalf("Prune: %v", err)
@@ -495,5 +505,35 @@ func TestInsertEventsReportsFailures(t *testing.T) {
 	}
 	if e, _ := s.Counts(); e != 0 {
 		t.Fatalf("failed batch moved the counter to %d", e)
+	}
+}
+
+// Readers holding every pooled connection (slow history scans) must not
+// make the detection loop's insert wait: the writer has a connection of
+// its own.
+func TestInsertDoesNotWaitForBusyReaders(t *testing.T) {
+	s := openTestStore(t)
+	at := time.Now()
+	if res := s.InsertEvents([]*model.Event{ev("seed", "H", model.TypeProcessCreate, "a", at)}); res.Inserted != 1 {
+		t.Fatalf("seed insert: %+v", res)
+	}
+	for i := 0; i < readConns; i++ {
+		rows, err := s.db.Query(`SELECT id FROM events`)
+		if err != nil {
+			t.Fatalf("reader %d: %v", i, err)
+		}
+		defer rows.Close() // an open result set pins its connection
+	}
+	done := make(chan BatchResult, 1)
+	go func() {
+		done <- s.InsertEvents([]*model.Event{ev("late", "H", model.TypeProcessCreate, "b", at)})
+	}()
+	select {
+	case res := <-done:
+		if res.Inserted != 1 {
+			t.Fatalf("insert under busy readers: %+v", res)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("insert waited for a connection the readers were holding")
 	}
 }

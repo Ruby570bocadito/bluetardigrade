@@ -37,9 +37,11 @@
 //     transport — sensor batching, a Sysmon poll, an offline import
 //     replaying a day of Zeek logs in seconds — not the beacon. Late
 //     events are inserted in order; an event more than one window
-//     older than the newest sample of its key is a discontinuity
-//     (clock stepped back, a different capture) and restarts the
-//     ring. The wall clock only decides which keys are dead weight.
+//     older than the newest sample of its key is dropped while the
+//     key is live, and restarts the ring only when the key has also
+//     been quiet for a window on the wall clock (clock stepped back,
+//     a different capture). The wall clock otherwise only decides
+//     which keys are dead weight.
 //   - A beacon alert flows through the SAME alert.Manager pipeline as
 //     rule and sequence alerts: dedup, lifecycle triage, store
 //     persistence, webhook and console come for free, and the
@@ -86,6 +88,15 @@ const (
 	// others' beacons live in. Dead evidence is reclaimed before the
 	// refusal, so a host whose keys all went stale recovers itself.
 	MaxKeysPerHost = MaxKeys / 4
+
+	// MaxKeysPerHostProfile is the share of a host's quota ONE profile
+	// may hold when several are loaded. Keys live for twice their
+	// profile's window, so a long-window profile (hours) keeps every
+	// destination a host touched far longer than a 5-minute one;
+	// without this ceiling it would use up the host's whole quota and
+	// the short-window profiles would be refused new destinations on
+	// that host.
+	MaxKeysPerHostProfile = MaxKeysPerHost / 2
 
 	// ringCap caps the timestamps kept per key. 64 samples give a
 	// solid CV estimate while capping per-key memory; min_count above
@@ -162,7 +173,7 @@ func (c *compiled) excludes(domain string) bool {
 type keyState struct {
 	times     []time.Time // connection event times, oldest first
 	lastFired time.Time   // event time of the last fire; zero until the key fired once
-	seen      time.Time   // wall clock of the last observation (staleness only)
+	seen      time.Time   // wall clock of the last accepted sample (staleness only)
 	// simulated is set as soon as any connection of the key carries
 	// the simulation tag (detection validation, SIM-1): the beacon
 	// alert is tagged in turn so a lab replay is never real evidence.
@@ -170,13 +181,17 @@ type keyState struct {
 }
 
 // insertSorted adds t to times keeping them in ascending order (the
-// common in-order case is a plain append).
-func insertSorted(times []time.Time, t time.Time) []time.Time {
+// common in-order case is a plain append). A timestamp already present
+// is not added again; the second result reports whether t went in.
+func insertSorted(times []time.Time, t time.Time) ([]time.Time, bool) {
 	i := sort.Search(len(times), func(i int) bool { return times[i].After(t) })
+	if i > 0 && times[i-1].Equal(t) {
+		return times, false
+	}
 	times = append(times, time.Time{})
 	copy(times[i+1:], times[i:])
 	times[i] = t
-	return times
+	return times, true
 }
 
 // beaconKey identifies one tracked destination. A struct, not a
@@ -190,6 +205,12 @@ type beaconKey struct {
 	port      int
 }
 
+// hostProfile keys the per-profile split of a host's quota.
+type hostProfile struct {
+	profileID string
+	host      string
+}
+
 // Manager evaluates network events against the loaded profiles.
 // Safe for concurrent use.
 type Manager struct {
@@ -199,8 +220,9 @@ type Manager struct {
 	// perHost is the per-host share tally of the key table (v1.1
 	// cuotas por equipo) -- see MaxKeysPerHost.
 	perHost       map[string]int
-	quotaRejected uint64            // host-quota refusals since startup
-	quotaHosts    map[string]uint64 // refusal tally by host, capped
+	perHostProf   map[hostProfile]int // same tally split by profile
+	quotaRejected uint64              // host-quota refusals since startup
+	quotaHosts    map[string]uint64   // refusal tally by host, capped
 	emit          func(alert.Alert)
 	fired         uint64
 }
@@ -209,7 +231,7 @@ type Manager struct {
 // once per detected beacon (wire it to alert.Manager.Emit through the
 // suppression wrapper, exactly like the correlator's).
 func LoadFile(path string, emit func(alert.Alert)) (*Manager, error) {
-	m := &Manager{state: map[beaconKey]*keyState{}, emit: emit, perHost: map[string]int{}, quotaHosts: map[string]uint64{}}
+	m := &Manager{state: map[beaconKey]*keyState{}, emit: emit, perHost: map[string]int{}, perHostProf: map[hostProfile]int{}, quotaHosts: map[string]uint64{}}
 	if err := m.load(path); err != nil {
 		return nil, err
 	}
@@ -361,9 +383,10 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 			// destinations cannot fill the table the others' beacons
 			// live in. Reclaim runs first so a host whose keys all
 			// went stale recovers itself instead of staying blocked.
-			if m.perHost[host] >= MaxKeysPerHost {
+			hp := hostProfile{profileID: c.p.ID, host: host}
+			if m.overQuotaLocked(hp) {
 				m.reclaimLocked(c, now)
-				if m.perHost[host] >= MaxKeysPerHost {
+				if m.overQuotaLocked(hp) {
 					m.quotaRejectLocked(host)
 					continue
 				}
@@ -378,18 +401,34 @@ func (m *Manager) Observe(ev *model.Event, now time.Time) {
 			st = &keyState{}
 			m.state[key] = st
 			m.perHost[host]++
+			m.perHostProf[hostProfile{profileID: c.p.ID, host: host}]++
+		}
+		// A sample more than one window older than the newest one
+		// cannot join the ring. While the key is live it is dropped:
+		// restarting on it let one late event wipe up to ringCap
+		// samples and the cooldown mark, so a beacon could be reset at
+		// will or made to fire again. Only when the key has also been
+		// quiet for a whole window on the wall clock is it a real
+		// discontinuity (clock stepped back, another capture) and the
+		// ring restarts at the new time.
+		if n := len(st.times); n > 0 && st.times[n-1].Sub(t) > c.window {
+			if now.Sub(st.seen) <= c.window {
+				continue
+			}
+			st.times = st.times[:0]
+			st.lastFired = time.Time{}
 		}
 		st.seen = now
 		if alert.EventIsSimulated(ev) {
 			st.simulated = true
 		}
-		// a sample more than one window older than the newest one is
-		// a discontinuity, not a late arrival: restart the ring
-		if n := len(st.times); n > 0 && st.times[n-1].Sub(t) > c.window {
-			st.times = st.times[:0]
-			st.lastFired = time.Time{}
+		var added bool
+		if st.times, added = insertSorted(st.times, t); !added {
+			// Same instant as a sample already held: nothing new about
+			// the cadence, and a zero interval would void the
+			// regularity test for as long as the pair stayed in the ring.
+			continue
 		}
-		st.times = insertSorted(st.times, t)
 		// window prune: drop samples older than the profile window,
 		// measured back from the newest event time of the key
 		cutoff := st.times[len(st.times)-1].Add(-c.window)
@@ -499,6 +538,22 @@ func (m *Manager) dropStateLocked(k beaconKey) {
 	} else {
 		m.perHost[k.host]--
 	}
+	hp := hostProfile{profileID: k.profileID, host: k.host}
+	if m.perHostProf[hp] <= 1 {
+		delete(m.perHostProf, hp)
+	} else {
+		m.perHostProf[hp]--
+	}
+}
+
+// overQuotaLocked reports whether the host has no room for a new key
+// of this profile: its whole quota is taken or, with several profiles
+// loaded, this profile already holds its share of it. Caller holds mu.
+func (m *Manager) overQuotaLocked(hp hostProfile) bool {
+	if m.perHost[hp.host] >= MaxKeysPerHost {
+		return true
+	}
+	return len(m.profs) > 1 && m.perHostProf[hp] >= MaxKeysPerHostProfile
 }
 
 // maxQuotaHostEntries caps the refusal tally by host: honesty about

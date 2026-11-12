@@ -16,6 +16,9 @@ export type EngineBridgeCallbacks = {
   onSuppressions: (entries: SfSuppression[]) => void
   onSequences: (seqs: SfSequence[]) => void
   onLifecycle: (entry: SfAlertLifecycle) => void
+  /** A fresh sync is about to be replayed: whatever a previous
+   * connection left behind is stale from here on. */
+  onSync?: () => void
   onUp: () => void
   onDown: () => void
 }
@@ -39,6 +42,14 @@ function authHeaders(): Record<string, string> {
 
 // Header-phase budget for the SSE stream itself (see establish()).
 const STREAM_HEADERS_TIMEOUT_MS = 8000
+// The engine writes a ": hb" comment every 15 s on an otherwise quiet
+// stream (internal/api, heartbeatEvery). Three missed heartbeats mean
+// the connection is half-open or the engine is frozen: without this
+// deadline the read would wait forever and the hub would keep
+// reporting "connected" over data that stopped moving. Stats answers
+// do not count as stream activity: a working /api/stats says nothing
+// about a stream that delivers no alerts.
+const STREAM_IDLE_TIMEOUT_MS = 45_000
 
 export type EngineBridgeOptions = {
   /** Engine API root override (tests). Default: ENGINE_API env or 127.0.0.1:7778. */
@@ -49,10 +60,28 @@ export type EngineBridgeOptions = {
   maxAlerts?: number
   /** Retry delay between reconnect attempts (tests use a small value). */
   retryMs?: number
+  /** Silence on the SSE stream that ends the connection (tests). */
+  streamIdleMs?: number
+  /** Pause between two stats polls (tests). */
+  statsPollMs?: number
 }
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
+}
+
+// Resolves after ms, or as soon as the signal aborts.
+function pause(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve()
+    const done = () => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', done)
+      resolve()
+    }
+    const timer = setTimeout(done, ms)
+    signal.addEventListener('abort', done, { once: true })
+  })
 }
 
 function shortTimeout(ms: number): AbortSignal {
@@ -67,8 +96,9 @@ export class EngineBridge {
   private maxEvents: number
   private maxAlerts: number
   private retryMs: number
+  private streamIdleMs: number
+  private statsPollMs: number
   private ctrl: AbortController | null = null
-  private statsTimer: ReturnType<typeof setInterval> | null = null
   private stopped = false
   // last suppressions / sequences JSON seen, so the hub only re-emits
   // on real changes (both change on 15 s hot-reloads, not every poll).
@@ -84,6 +114,8 @@ export class EngineBridge {
     this.maxEvents = options.maxEvents ?? 160
     this.maxAlerts = options.maxAlerts ?? 48
     this.retryMs = options.retryMs ?? RETRY_MS
+    this.streamIdleMs = options.streamIdleMs ?? STREAM_IDLE_TIMEOUT_MS
+    this.statsPollMs = options.statsPollMs ?? STATS_POLL_MS
   }
 
   get endpoint(): string {
@@ -92,8 +124,6 @@ export class EngineBridge {
 
   stop() {
     this.stopped = true
-    if (this.statsTimer) clearInterval(this.statsTimer)
-    this.statsTimer = null
     this.ctrl?.abort()
     this.ctrl = null
     this.lastSuppressions = ''
@@ -145,6 +175,7 @@ export class EngineBridge {
       this.getJson<unknown[]>(`${this.base}/api/alerts?limit=${this.maxAlerts}`),
     ])
     if (this.stopped) return
+    this.cb.onSync?.()
     this.cb.onRules(rules.map((r) => mapRule(r as Record<string, unknown>)))
     // API returns newest first; replay oldest first so the ring order holds
     for (let i = events.length - 1; i >= 0; i--) this.cb.onEvent(events[i] as SfEvent)
@@ -153,7 +184,13 @@ export class EngineBridge {
     const ctrl = new AbortController()
     this.ctrl = ctrl
     let headerTimer: ReturnType<typeof setTimeout> | undefined
-    let statsTimer: ReturnType<typeof setInterval> | undefined
+    let idleTimer: ReturnType<typeof setTimeout> | undefined
+    // (re)armed on every chunk the stream delivers, heartbeats included
+    const alive = () => {
+      clearTimeout(idleTimer)
+      idleTimer = setTimeout(() => ctrl.abort(), this.streamIdleMs)
+      idleTimer.unref?.()
+    }
     try {
       const res = await Promise.race([
         fetch(`${this.base}/api/stream`, { signal: ctrl.signal, headers: authHeaders() }),
@@ -166,26 +203,35 @@ export class EngineBridge {
       if (this.stopped) { await res.body?.cancel(); return }
       if (!res.ok || !res.body) throw new Error(`stream failed (${res.status})`)
       this.cb.onUp()
-      void this.pullStats()
-      statsTimer = setInterval(() => { void this.pullStats() }, STATS_POLL_MS)
-      this.statsTimer = statsTimer
-      await this.pumpSSE(res.body, ctrl.signal)
+      void this.pollStats(ctrl.signal)
+      alive()
+      await this.pumpSSE(res.body, ctrl.signal, alive)
     } finally {
       clearTimeout(headerTimer)
-      if (statsTimer) clearInterval(statsTimer)
-      if (this.statsTimer === statsTimer) this.statsTimer = null
+      clearTimeout(idleTimer)
       ctrl.abort()
       if (this.ctrl === ctrl) this.ctrl = null
     }
   }
 
-  private async pullSuppressions() {
+  // One poll at a time, the next one scheduled when the previous has
+  // finished: a fixed interval would stack requests behind a slow engine
+  // and let an old answer land after a newer one. The signal belongs to
+  // one connection, so a poll that outlives it reports nothing.
+  private async pollStats(signal: AbortSignal) {
+    while (!this.stopped && !signal.aborted) {
+      await this.pullStats(signal)
+      await pause(this.statsPollMs, signal)
+    }
+  }
+
+  private async pullSuppressions(signal: AbortSignal) {
     // Best effort: the suppressions view is secondary telemetry. A
     // transient failure here must not flap the engine-up/down state,
     // which only the stats poll and the SSE stream are allowed to touch.
     try {
       const raw = await this.getJson<Record<string, unknown>>(`${this.base}/api/suppressions`)
-      if (this.stopped) return
+      if (this.stopped || signal.aborted) return
       const entries = (raw.entries as SfSuppression[]) ?? []
       const json = JSON.stringify(entries)
       if (json === this.lastSuppressions) return
@@ -196,13 +242,13 @@ export class EngineBridge {
     }
   }
 
-  private async pullSequences() {
+  private async pullSequences(signal: AbortSignal) {
     // Same contract as suppressions: secondary telemetry, change-only
     // re-emit, transient failures stay silent. Sequences only change on
     // the engine's 15 s hot-reload of the sequences/ directory.
     try {
       const seqs = await this.getJson<SfSequence[]>(`${this.base}/api/sequences`)
-      if (this.stopped) return
+      if (this.stopped || signal.aborted) return
       const json = JSON.stringify(seqs)
       if (json === this.lastSequences) return
       this.lastSequences = json
@@ -218,22 +264,23 @@ export class EngineBridge {
     return (await res.json()) as T
   }
 
-  private async pullStats() {
-    if (this.stopped) return
+  private async pullStats(signal: AbortSignal) {
+    const over = () => this.stopped || signal.aborted
+    if (over()) return
     try {
       const st = await this.getJson<Record<string, unknown>>(`${this.base}/api/stats`)
-      if (this.stopped) return
+      if (over()) return
       this.cb.onStats(mapStats(st))
     } catch {
       /* transient; the SSE stream will signal a real disconnection */
     }
-    if (this.stopped) return
-    await this.pullSuppressions()
-    if (this.stopped) return
-    await this.pullSequences()
+    if (over()) return
+    await this.pullSuppressions(signal)
+    if (over()) return
+    await this.pullSequences(signal)
   }
 
-  private async pumpSSE(body: ReadableStream<Uint8Array>, signal: AbortSignal) {
+  private async pumpSSE(body: ReadableStream<Uint8Array>, signal: AbortSignal, alive: () => void = () => {}) {
     const reader = body.getReader()
     const decoder = new TextDecoder()
     const cancel = () => { void reader.cancel().catch(() => {}) }
@@ -244,6 +291,7 @@ export class EngineBridge {
       while (!this.stopped && !signal.aborted) {
         const { done, value } = await reader.read()
         if (done) break
+        alive()
         buf += decoder.decode(value, { stream: true })
         let idx: number
         while ((idx = buf.indexOf('\n\n')) >= 0) {

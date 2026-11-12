@@ -84,6 +84,10 @@ type Result struct {
 	Converted []Rule
 	Skipped   []Skip
 	Files     int // files scanned
+
+	// ids maps every Sigma id already consumed, and every id emitted
+	// for an OR branch, to the rule name that owns it.
+	ids map[string]string
 }
 
 // Emit renders the converted rules as an engine-loadable YAML list
@@ -260,11 +264,9 @@ func convertRule(sr *sigmaRule, res *Result) {
 		res.skip(sr, "%q: description mayor de %d caracteres", sr.Title, MaxDescriptionLen)
 		return
 	}
-	for _, c := range res.Converted {
-		if c.ID == sr.ID {
-			res.skip(sr, "id duplicado %q (ya convertido como %q)", sr.ID, c.Name)
-			return
-		}
+	if name, dup := res.ids[sr.ID]; dup {
+		res.skip(sr, "id duplicado %q (ya convertido como %q)", sr.ID, name)
+		return
 	}
 
 	// ---- status: deprecated rules must not resurrect ----
@@ -349,7 +351,7 @@ func convertRule(sr *sigmaRule, res *Result) {
 		for _, o := range outs {
 			conds = append(conds, o.conds...)
 		}
-		res.Converted = append(res.Converted, buildRule(sr, sev, et, conds, ""))
+		res.emit(buildRule(sr, sev, et, conds, "", ""))
 		return
 	}
 
@@ -357,24 +359,50 @@ func convertRule(sr *sigmaRule, res *Result) {
 	// three CommandLine selections as ONE rule); otherwise split into
 	// one rule per selection (semantically identical: any branch fires).
 	if merged, ok := mergeOR(outs); ok {
-		res.Converted = append(res.Converted, buildRule(sr, sev, et, merged, ""))
+		res.emit(buildRule(sr, sev, et, merged, "", ""))
 		return
 	}
 	sort.Slice(outs, func(i, j int) bool { return outs[i].name < outs[j].name })
+	// Each branch is a rule of its own and needs an id of its own: the
+	// engine rejects duplicate ids at load, and alerts, suppressions and
+	// dedup all key on it. The suffix is positional over the sorted
+	// selection names, so the same corpus always yields the same ids.
+	for i := range outs {
+		id := fmt.Sprintf("%s-or%d", sr.ID, i+1)
+		if len(id) > MaxIDLen {
+			res.skip(sr, "%q: id demasiado largo para numerar las ramas OR (maximo %d caracteres)", sr.Title, MaxIDLen)
+			return
+		}
+		if name, dup := res.ids[id]; dup {
+			res.skip(sr, "%q: el id de rama OR %q choca con %q", sr.Title, id, name)
+			return
+		}
+	}
 	for i, o := range outs {
 		if len(res.Converted) >= MaxRulesOut {
 			res.skip(sr, "tope de salida alcanzado (%d reglas) durante la division OR", MaxRulesOut)
 			return
 		}
 		suffix := fmt.Sprintf(" (or %d/%d)", i+1, len(outs))
-		res.Converted = append(res.Converted, buildRule(sr, sev, et, o.conds, suffix))
+		res.emit(buildRule(sr, sev, et, o.conds, suffix, fmt.Sprintf("-or%d", i+1)))
 	}
+	// the bare Sigma id stays taken so a second copy is still a duplicate
+	res.ids[sr.ID] = sr.Title
+}
+
+// emit appends one converted rule and reserves its id.
+func (r *Result) emit(rule Rule) {
+	if r.ids == nil {
+		r.ids = map[string]string{}
+	}
+	r.ids[rule.ID] = rule.Name
+	r.Converted = append(r.Converted, rule)
 }
 
 // buildRule assembles the native rule with provenance folded into the
 // description and a deterministic alert action (the Sigma title as
 // message: no invented content, rendered by the engine's templates).
-func buildRule(sr *sigmaRule, sev, et string, conds []Condition, nameSuffix string) Rule {
+func buildRule(sr *sigmaRule, sev, et string, conds []Condition, nameSuffix, idSuffix string) Rule {
 	desc := strings.TrimSpace(sr.Description)
 	if desc == "" {
 		desc = sr.Title
@@ -401,7 +429,7 @@ func buildRule(sr *sigmaRule, sev, et string, conds []Condition, nameSuffix stri
 	tags := append([]string{"sigma"}, sr.Tags...)
 	return Rule{
 		Name:        sr.Title + nameSuffix,
-		ID:          sr.ID,
+		ID:          sr.ID + idSuffix,
 		Description: desc,
 		Severity:    sev,
 		EventType:   et,

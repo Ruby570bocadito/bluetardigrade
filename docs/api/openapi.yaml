@@ -47,7 +47,9 @@ info:
       (see `securitySchemes.bearerAuth`). Rejections answer `401` with
       a `WWW-Authenticate: Bearer` challenge and a JSON error body
       naming the flag to set; the scheme is matched case-insensitively
-      (RFC 7235) and the token comparison is constant-time.
+      (RFC 7235) and the token comparison is constant-time. An address
+      that fails 30 times within a minute answers `429` to every
+      request for the rest of that minute, the right token included.
     - **Access by host group**: a request carrying `X-SF-Scope:
       <group>,<group>` (the console proxy sends it for accounts
       limited to host groups, see `/api/groups`) sees and acts on the
@@ -61,8 +63,9 @@ info:
         scope.
       - An alert, incident or bundle outside the scope answers `404`,
         and writes naming foreign machines are refused.
-      - Active Directory, `/metrics`, enrollment writes and group edits
-        answer `403`.
+      - Active Directory, `/metrics`, enrollment writes, group edits
+        and the scenario battery answer `403`.
+      - `/api/respond/state` reports only `armed` and `signal`.
       - A group name the engine does not have matches nothing.
 
       The header only narrows: whoever holds the token can always ask
@@ -155,8 +158,13 @@ paths:
         console role with precedence admin > analyst > viewer. Bad
         password and unknown user are the same verdict (no account
         existence leak); failures are throttled per source address
-        (429 past the budget). The password crosses once, is never
-        logged and never echoed. Disarmed engines answer `501`.
+        and per target account (15 a minute each). Past the budget
+        every attempt answers 429 before any bind, so nothing more
+        reaches the domain controller and a correct password is not
+        told apart until the window ends. `timeout_ms` of the
+        `-domain-auth` file bounds the whole attempt (handshake, bind
+        and search). The password crosses once, is never logged and
+        never echoed. Disarmed engines answer `501`.
       requestBody:
         required: true
         content:
@@ -199,7 +207,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/DomainLoginVerdict'
         '429':
-          description: The address exhausted its failed-attempt budget for the window
+          description: The address or the account exhausted its failed-attempt budget for the window (`bloqueado`)
           content:
             application/json:
               schema:
@@ -1395,7 +1403,9 @@ paths:
         with an arming `hint` instead of a misleading 404. The library
         is reloaded from disk on every call, so an edited scenario
         takes effect without a restart; a malformed file surfaces here
-        as a `500` naming the file.
+        as a `500` (the file is named in the engine log, not in the
+        body). An account limited to host groups answers `403` on the
+        whole `/api/scenarios` family.
 
         Every scenario is inert synthetic telemetry on `LAB-SIM-*`
         hosts: replaying it executes nothing on any machine and the
@@ -1405,7 +1415,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '500':
-          description: The scenario library failed to load (the error names the file)
+          description: The scenario library failed to load (the cause is in the engine log)
           content:
             application/json:
               schema:
@@ -1893,7 +1903,9 @@ paths:
         file size against its 64 MiB ceiling. The same contract as
         `POST /api/respond/kill` applies: a disarmed engine answers a
         real `404`, identical to any unknown path, so probing learns
-        nothing about a surface that does not exist for it.
+        nothing about a surface that does not exist for it. A caller
+        limited to host groups (`X-SF-Scope`) receives `armed` and
+        `signal` only: counts are zero and paths empty.
       responses:
         '200':
           description: The surface is armed (`armed` is always true in a 200).
@@ -1997,6 +2009,10 @@ paths:
         expressions. Values come back as JSON scalars (text columns as
         strings, never base64); a statement yielding more rows than
         `max_rows` answers `truncated: true` with the first rows.
+
+        Memory is bounded as well as rows: a single value above 16 MiB
+        is refused by SQLite itself (`400`, "string or blob too big"),
+        and a result is cut at 32 MiB of values with `truncated: true`.
       requestBody:
         required: true
         content:
@@ -2863,7 +2879,11 @@ paths:
         Guard rails: 409 when the `-ad` file changed on disk since the
         engine loaded or last wrote it (hand edits are reconciled by a
         human, never clobbered); 400 carries the loader's own validation
-        message. Every committed change leaves one audit line in the
+        message, and also refuses a change of `server`, `port` or
+        `bind_dn` that does not carry `password` (the stored credential
+        is never sent to a new destination). Overlapping PUTs each merge
+        into the configuration the previous one committed, so none of
+        them undoes another. Every committed change leaves one audit line in the
         engine log listing the changed field names — the password value is
         never logged, echoed or stored in the YAML.
       requestBody:
@@ -2983,6 +3003,15 @@ paths:
         name and type; `clear_secret` drops the literal token or
         password; a value in `token_env`/`password_env` replaces it. A
         renamed channel is a new one and inherits nothing.
+
+        A stored secret stays with its destination: when the `url` of an
+        ntfy channel, the `api_url` of a Telegram one or the `server` of
+        an email one changes, the token or password must be sent again
+        (400 otherwise). `token_env`, `username_env` and `password_env`
+        must name a variable starting with `SF_NOTIFY_`; any other name
+        is accepted only as the file already had it, on the same channel
+        and destination (the file itself, edited on the engine host, is
+        not restricted).
 
         409 when the file changed on disk since the engine loaded or last
         wrote it. Every committed change leaves one line in the engine
@@ -3131,7 +3160,10 @@ paths:
         credential could make the engine read any file and send it as a
         bind password. One probe at a time: a double click cannot hammer
         the domain controller. The password, when the request carries
-        one, crosses only this call and is never stored by it.
+        one, crosses only this call and is never stored by it. The
+        stored credential is used only against the stored destination:
+        a request whose `server`, `port` or `bind_dn` differ from the
+        running configuration must carry `password` (400 otherwise).
       requestBody:
         required: true
         content:
@@ -5204,6 +5236,9 @@ components:
         process_name:
           type: string
           description: name the operator requested
+        account:
+          type: string
+          description: console account that sent the request (header X-SF-Account), when the console named one; attribution only, never used to authorize
         resolved_name:
           type: string
           description: platform-resolved real basename when known (re-revision O1 - denials included)

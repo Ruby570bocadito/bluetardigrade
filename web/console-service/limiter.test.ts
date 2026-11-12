@@ -56,3 +56,32 @@ describe('createSlotLimiter (regression)', () => {
     expect(sl.inFlight()).toBe(0)
   })
 })
+
+describe('createRateLimiter refund', () => {
+  test('a refunded request does not count against the window', () => {
+    const rl = createRateLimiter(2, 60_000, () => 0)
+    expect(rl.tryTake()).toBe(true)
+    expect(rl.tryTake()).toBe(true)
+    expect(rl.tryTake()).toBe(false)
+    rl.refund()
+    expect(rl.taken()).toBe(1)
+    expect(rl.tryTake()).toBe(true)
+    // refunding an empty window is harmless
+    const empty = createRateLimiter(1, 1_000, () => 0)
+    empty.refund()
+    expect(empty.taken()).toBe(0)
+  })
+
+  test('the default clock does not follow wall-clock jumps', () => {
+    const realNow = Date.now
+    const rl = createRateLimiter(1, 60_000)
+    try {
+      expect(rl.tryTake()).toBe(true)
+      // a wall clock set an hour ahead must not free the window
+      Date.now = () => realNow() + 3_600_000
+      expect(rl.tryTake()).toBe(false)
+    } finally {
+      Date.now = realNow
+    }
+  })
+})
