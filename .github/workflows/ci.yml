@@ -162,7 +162,8 @@ jobs:
   # GOOS=windows cross-check in the engine job); the respond package
   # closure criteria demanded behavior on a real Windows host. This
   # job runs it on every push with real kills over processes the
-  # smoke itself starts (disposable ping, csrss.exe decoy in temp) —
+  # smoke itself starts (disposable ping, a decoy named in
+  # -respond-protected, an impostor csrss.exe in temp that must die) —
   # nothing on the runner is touched: the R6 guard denies the
   # protected process before signaling and the rest of the kills fall
   # on the smoke's own children.
@@ -214,6 +215,9 @@ jobs:
       - name: installer PATH order, running-binary lock and UTF-8 tool output (scratch registry key)
         shell: powershell
         run: ./scripts/dev-tests/check_installer_path.ps1
+      - name: sensor service and installer functions (temp directories, scratch registry key, no elevation)
+        shell: powershell
+        run: ./scripts/dev-tests/check_sensor_installers.ps1
       - name: installer behavior (Windows PowerShell 5.1, real engine/collector/console installation)
         shell: powershell
         run: ./scripts/dev-tests/check_installer_behavior.ps1

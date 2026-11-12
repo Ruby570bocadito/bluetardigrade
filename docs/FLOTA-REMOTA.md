@@ -60,7 +60,7 @@ Sin crear identidades a mano ni copiar YAML:
    Así queda como servicio de Windows.
 4. **Primer arranque del sensor:**
    - cambia el token por una credencial propia;
-   - la guarda en `C:\ProgramData\bluetardigrade\sensor\ingest.token`;
+   - la guarda en `C:\ProgramData\bluetardigrade-sensor\ingest.token`;
    - borra el token de su disco.
 
    El equipo aparece en **Equipos → Pendientes de aprobación** con su IP y la
