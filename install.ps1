@@ -226,6 +226,73 @@ function Resolve-InstallRoot {
     return $full
 }
 
+# ------------------------------------------------- privileged directories
+# A directory whose contents end up running as SYSTEM or elevated must
+# never be one an ordinary user prepared. ProgramData lets any local
+# account create folders, so a pre-created root with a planted toolchain
+# or with an ACE of its own would hand that account code execution (or
+# the tokens) as soon as an administrator installs into it.
+function Get-SfTrustedSids {
+    # SYSTEM, Administrators, TrustedInstaller and the (already verified
+    # elevated) account running this script.
+    $sids = @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')
+    $me = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    if ($me) { $sids += $me.Value }
+    return $sids
+}
+
+function Test-SfDirectoryTrusted {
+    # -Strict: owner trusted, inheritance cut and every Allow ACE belongs
+    # to a trusted SID (what this installer itself produces).
+    # Without it: owner trusted and nobody else may delete or replace
+    # children, change the ACL or take ownership (enough for a parent).
+    param([string]$Path, [string[]]$TrustedSids = (Get-SfTrustedSids), [switch]$Strict)
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return $false }
+    $sidType = [Security.Principal.SecurityIdentifier]
+    $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
+    if ($TrustedSids -notcontains $acl.GetOwner($sidType).Value) { return $false }
+    if ($Strict -and -not $acl.AreAccessRulesProtected) { return $false }
+    $dangerous = [Security.AccessControl.FileSystemRights]'Delete, DeleteSubdirectoriesAndFiles, ChangePermissions, TakeOwnership'
+    foreach ($rule in $acl.GetAccessRules($true, $true, $sidType)) {
+        if ($rule.AccessControlType -ne 'Allow' -or $TrustedSids -contains $rule.IdentityReference.Value) { continue }
+        if ($Strict) { return $false }
+        if ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) { continue }
+        if ($rule.FileSystemRights -band $dangerous) { return $false }
+    }
+    return $true
+}
+
+function Initialize-SfProtectedDirectory {
+    # Creates Path already restricted to SYSTEM and Administrators (the
+    # ACL is part of the creation, so there is no window with the
+    # inherited one) or, when it exists, accepts it only in that state.
+    param([string]$Path, [string[]]$TrustedSids = (Get-SfTrustedSids))
+    if (-not (Test-Path -LiteralPath $Path)) {
+        $parent = Split-Path -Parent $Path
+        if (-not (Test-Path -LiteralPath $parent -PathType Container)) { throw "The parent directory of $Path does not exist." }
+        $acl = New-Object Security.AccessControl.DirectorySecurity
+        $acl.SetAccessRuleProtection($true, $false)
+        $acl.SetOwner((New-Object Security.Principal.SecurityIdentifier('S-1-5-32-544')))
+        foreach ($sid in @('S-1-5-32-544', 'S-1-5-18')) {
+            $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier($sid)), 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
+        }
+        try {
+            if ('System.IO.FileSystemAclExtensions' -as [type]) { [void][IO.FileSystemAclExtensions]::CreateDirectory($acl, $Path) }
+            else { [void][IO.Directory]::CreateDirectory($Path, $acl) }
+        } catch {
+            # Without the privilege to assign another owner (tests, odd
+            # policies) the directory keeps the creator as owner.
+            $acl.SetOwner([Security.Principal.WindowsIdentity]::GetCurrent().User)
+            if ('System.IO.FileSystemAclExtensions' -as [type]) { [void][IO.FileSystemAclExtensions]::CreateDirectory($acl, $Path) }
+            else { [void][IO.Directory]::CreateDirectory($Path, $acl) }
+        }
+    }
+    if (-not (Test-SfDirectoryTrusted -Path $Path -TrustedSids $TrustedSids -Strict)) {
+        throw "$Path already exists and is not restricted to SYSTEM and Administrators (owner, inherited permissions or an entry for another account). It may have been prepared by another user: inspect it and remove it, or choose another directory."
+    }
+}
+
 # ---------------------------------------------------------------- net
 function Invoke-Download {
     # Fail-closed by default: a toolchain binary with no verifiable
@@ -611,15 +678,25 @@ function Write-Shims {
     $scripts = Join-Path $Root 'scripts'
     New-Item -ItemType Directory -Path $bin -Force | Out-Null
     $nl = "`r`n"
-    $enc = $null
-    try { $enc = [Text.Encoding]::GetEncoding(0) } catch { $enc = [Text.Encoding]::ASCII }
-    $consolePs1   = Join-Path $scripts 'sf-console.ps1'
-    $stackPs1     = Join-Path $scripts 'sf-stack.ps1'
-    $sensorPs1    = Join-Path $scripts 'sensor.ps1'
-    $etwPs1       = Join-Path $scripts 'sensor-service.ps1'
-    $installPs1   = Join-Path $scripts 'install.ps1'
-    $uninstallPs1 = Join-Path $scripts 'uninstall.ps1'
-    $updateArgs = "-Update -InstallDir `"$Root`" -Repo `"$RepoId`" -Branch `"$Ref`""
+    # The shims carry no absolute path. cmd.exe decodes a batch file with
+    # the console's code page (OEM by default, whatever 'chcp' set
+    # otherwise), so a path written in the ANSI code page broke for an
+    # install under C:\Users\Jose-with-an-accent, and no single encoding
+    # is right for every console. %~dp0 is expanded by cmd from the
+    # shim's real location (UTF-16 inside cmd, no code page involved),
+    # which leaves the files pure ASCII: they read the same under any
+    # code page. Switching the console to UTF-8 (chcp 65001) from the shim
+    # was the alternative; it changes the caller's console for good.
+    # $scriptsRel: <Root>\bin\..\scripts, as cmd sees it from the shim.
+    $scriptsRel = '%~dp0..\scripts'
+    $consolePs1   = "$scriptsRel\sf-console.ps1"
+    $stackPs1     = "$scriptsRel\sf-stack.ps1"
+    $sensorPs1    = "$scriptsRel\sensor.ps1"
+    $etwPs1       = "$scriptsRel\sensor-service.ps1"
+    # sf-update and sf-uninstall run from a copy in %TEMP% (see below),
+    # where %~dp0 is no longer the install: the original passes the
+    # install root to the copy as its second argument (%~2).
+    $updateArgs = "-Update -InstallDir `"%~2`" -Repo `"$RepoId`" -Branch `"$Ref`""
     if ($ConsoleExcluded) { $updateArgs += ' -NoConsole' }
     # sf-engine is exposed as a hard-linked exe, not a .cmd wrapper:
     # Ctrl+C on a batch wrapper makes cmd ask 'Terminate batch job
@@ -665,22 +742,25 @@ function Write-Shims {
             '@echo off'
             'if "%~1"=="-run" goto :run'
             'copy /y "%~f0" "%TEMP%\sf-update.cmd" >nul'
-            '"%TEMP%\sf-update.cmd" -run'
+            '"%TEMP%\sf-update.cmd" -run "%~dp0.."'
             ':run'
-            "powershell -NoProfile -ExecutionPolicy Bypass -File `"$installPs1`" $updateArgs"
+            "powershell -NoProfile -ExecutionPolicy Bypass -File `"%~2\scripts\install.ps1`" $updateArgs"
         ) -join $nl) + $nl
         'sf-uninstall.cmd' = (@(
             '@echo off'
             'if "%~1"=="-run" goto :run'
             'copy /y "%~f0" "%TEMP%\sf-uninstall.cmd" >nul'
-            "copy /y `"$uninstallPs1`" `"%TEMP%\sf-uninstall.ps1`" >nul"
-            '"%TEMP%\sf-uninstall.cmd" -run'
+            "copy /y `"$scriptsRel\uninstall.ps1`" `"%TEMP%\sf-uninstall.ps1`" >nul"
+            '"%TEMP%\sf-uninstall.cmd" -run "%~dp0.."'
             ':run'
-            "powershell -NoProfile -ExecutionPolicy Bypass -File `"%TEMP%\sf-uninstall.ps1`" -InstallDir `"$Root`""
+            'powershell -NoProfile -ExecutionPolicy Bypass -File "%TEMP%\sf-uninstall.ps1" -InstallDir "%~2"'
         ) -join $nl) + $nl
     }
     foreach ($k in $shims.Keys) {
-        [IO.File]::WriteAllText((Join-Path $bin $k), $shims[$k], $enc)
+        # ASCII on purpose (see above); a character outside it could only
+        # come from -Repo/-Branch and would not survive any code page
+        if ($shims[$k] -match '[^\x00-\x7F]') { Write-Warn2 "$k contains non-ASCII characters (-Repo/-Branch?): it may not run from every console" }
+        [IO.File]::WriteAllText((Join-Path $bin $k), $shims[$k], [Text.Encoding]::ASCII)
     }
     Write-Ok "sf-start / sf-stop / sf-status / sf-engine / sf-collector / sf-sensor / sf-etw / sf-console / sf-update / sf-uninstall"
 }
@@ -810,8 +890,14 @@ function Add-FirewallRule {
         Write-Info "configure a token and re-run:  .\install.ps1 -Firewall -IngestToken 'a-long-random-secret'"
         $chk = Invoke-Native -Command { & netsh advfirewall firewall show rule "name=security-framework engine" } -Quiet -AllowFailure
         if ("$chk" -match 'security-framework engine') {
-            netsh advfirewall firewall delete rule "name=security-framework engine" | Out-Null
-            Write-Warn2 "existing firewall rule REMOVED (it predates the token requirement; remote sensors need the token anyway)"
+            # deleting needs elevation: say "removed" only when netsh did
+            $null = Invoke-Native -Command { & netsh advfirewall firewall delete rule "name=security-framework engine" } -Quiet -AllowFailure
+            if ($LASTEXITCODE -eq 0) {
+                Write-Warn2 "existing firewall rule REMOVED (it predates the token requirement; remote sensors need the token anyway)"
+            } else {
+                Write-Warn2 "an existing firewall rule still opens TCP $ENGINE_PORT WITHOUT a token and could not be removed (not elevated). In an ADMIN terminal:"
+                Write-Info "netsh advfirewall firewall delete rule name=`"security-framework engine`""
+            }
         }
         return
     }
@@ -826,7 +912,9 @@ function Add-FirewallRule {
             if ($p.ExitCode -ne 0) { throw "netsh exited with $($p.ExitCode)" }
         } catch {
             Write-Warn2 "elevation declined or failed (local sensors still work). To do it manually, in an ADMIN terminal:"
-            Write-Info "netsh advfirewall firewall add rule name=`"security-framework engine`" dir=in action=allow protocol=TCP localport=$ENGINE_PORT"
+            # the same rule, profiles included: without them netsh opens
+            # the port on public networks too
+            Write-Info "netsh $netshArgs"
             return
         }
     } else {
@@ -1034,6 +1122,17 @@ if ($MyInvocation.InvocationName -ne '.') {
         $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
         $principal = New-Object Security.Principal.WindowsPrincipal($identity)
         if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw '-Server requires an elevated PowerShell session; no automatic elevation is attempted.' }
+        # The root is created restricted BEFORE anything is fetched,
+        # built or run from it; an existing one is accepted only in the
+        # state a previous -Server installation left it in.
+        $serverParent = Split-Path -Parent $root
+        while ($serverParent -and ($serverParent.TrimEnd('\') + '\') -ine $serverBase) {
+            if ((Test-Path -LiteralPath $serverParent) -and -not (Test-SfDirectoryTrusted -Path $serverParent)) { throw "-Server refuses $serverParent in the installation path: it is owned or controlled by an unprivileged account." }
+            $next = Split-Path -Parent $serverParent
+            if (-not $next -or $next -eq $serverParent) { break }
+            $serverParent = $next
+        }
+        Initialize-SfProtectedDirectory -Path $root
     }
     $tools = Join-Path $root 'tools'
     $binDir = Join-Path $root 'bin'

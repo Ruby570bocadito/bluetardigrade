@@ -1,12 +1,18 @@
 # bluetardigrade detection engine — production container
-FROM golang:1.27-alpine AS builder
+#
+# Both base images are pinned by digest (the multi-arch index): a tag can
+# be moved to different content, a digest cannot. The tag stays next to it
+# for readers and for update tooling. To refresh after a base image
+# release: `docker buildx imagetools inspect golang:1.27-alpine` (and
+# alpine:3.24) and copy the "Digest:" line.
+FROM golang:1.27-alpine@sha256:eb61c3873c97416fff0116553fff65d67a3549f72e11d9758849a689cdd8b523 AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/engine ./cmd/engine
 
-FROM alpine:3.24
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 RUN adduser -D -H -g "bluetardigrade engine" sensor
 COPY --from=builder /out/engine /usr/local/bin/engine
 COPY rules/ /opt/bluetardigrade/rules/

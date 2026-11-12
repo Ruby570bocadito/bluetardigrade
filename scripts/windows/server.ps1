@@ -163,6 +163,19 @@ function Get-SfServerOwnedTasks {
     }
 }
 
+# Stop-ScheduledTask ends the ETW sensor without a Ctrl+C, so it cannot
+# stop its own ETW sessions: they would stay in the kernel until the next
+# boot. Stopped by name here (Stop-SfEtwSessions, runtime.ps1).
+function Stop-SfServerEtwSessions {
+    param([string]$TaskName)
+    if ($TaskName -ne 'bluetardigrade-server-etw') { return }
+    . (Join-Path $PSScriptRoot 'runtime.ps1')
+    $left = @(Stop-SfEtwSessions)
+    if ($left.Count -gt 0) {
+        Write-Warning ('The sensor task was stopped but these ETW sessions are still running: ' + ($left -join ', ') + '. Stop each one with: logman stop <name> -ets')
+    }
+}
+
 function Register-SfServerTasks {
     param([string]$Root, [bool]$Console = $false, [string]$Source = 'none')
     Assert-SfServerAdmin
@@ -204,6 +217,7 @@ function Register-SfServerTasks {
     foreach ($task in $oldTasks) {
         if ($plan.Name -notcontains $task.TaskName) {
             Stop-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -ErrorAction SilentlyContinue
+            Stop-SfServerEtwSessions $task.TaskName
             Unregister-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -Confirm:$false -ErrorAction Stop
         }
     }
@@ -228,9 +242,13 @@ if ($MyInvocation.InvocationName -ne '.') {
         foreach ($task in $tasks) {
             switch ($Action) {
                 'Start' { Start-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -ErrorAction Stop }
-                'Stop' { Stop-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -ErrorAction SilentlyContinue }
+                'Stop' {
+                    Stop-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -ErrorAction SilentlyContinue
+                    Stop-SfServerEtwSessions $task.TaskName
+                }
                 'Remove' {
                     Stop-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -ErrorAction SilentlyContinue
+                    Stop-SfServerEtwSessions $task.TaskName
                     Unregister-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -Confirm:$false -ErrorAction Stop
                 }
                 'Status' {
