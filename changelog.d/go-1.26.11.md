@@ -1,0 +1,1 @@
+- **Go 1.26.11.** `go.mod`, the installer's portable Go and the README move from 1.26.10 to 1.26.11, the patch release that fixes the standard-library advisories `govulncheck` reported (net/http, crypto/tls, crypto/x509, net/textproto). The `deps-audit` workflow had been failing on them.

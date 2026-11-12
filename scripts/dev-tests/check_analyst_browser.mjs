@@ -42,17 +42,26 @@ try {
   page.on('console', message => {
     if (/violates.*Content Security Policy/i.test(message.text())) cspErrors.push(message.text())
   })
-  const snapshot = new Promise((resolveSnapshot, reject) => {
-    const timer = setTimeout(() => reject(new Error('Analyst WebSocket did not receive a real hub snapshot')), 10000)
+  // The hub no longer pushes fleet telemetry to sockets, so the proof of
+  // a working channel is the Socket.IO connect packet ("40" + sid) the
+  // hub answers over the WebSocket once the handshake is accepted. No
+  // console:* telemetry frame may follow it.
+  const telemetry = []
+  const connected = new Promise((resolveConnected, reject) => {
+    const timer = setTimeout(() => reject(new Error('Analyst WebSocket did not complete the Socket.IO handshake with the real hub')), 10000)
     page.on('websocket', socket => socket.on('framereceived', frame => {
-      if (String(frame.payload).includes('console:snapshot')) { clearTimeout(timer); resolveSnapshot() }
+      const payload = String(frame.payload)
+      if (payload.includes('"console:')) telemetry.push(payload.slice(0, 80))
+      if (/^40\{.*"sid"/.test(payload)) { clearTimeout(timer); resolveConnected() }
     }))
   })
   const response = await page.goto(base)
   assert.equal(response.status(), 200)
-  await snapshot
+  await connected
+  await new Promise(r => setTimeout(r, 1000))
+  assert.deepEqual(telemetry, [], 'the hub must not push fleet telemetry to a socket')
   assert.deepEqual(cspErrors, [])
-  console.log('PASS: production browser receives real analyst hub snapshot without CSP violations')
+  console.log('PASS: production browser completes the analyst hub handshake without CSP violations or telemetry frames')
 } finally {
   await browser?.close()
   for (const child of children) {

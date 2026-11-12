@@ -74,7 +74,7 @@ if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') {
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
 $ProgressPreference = 'SilentlyContinue'   # makes Invoke-WebRequest usable on PS 5.1
 
-$GO_VERSION   = '1.26.10'
+$GO_VERSION   = '1.26.11'
 $NODE_VERSION = 'v22.23.3'
 $BUN_VERSION  = 'v1.4.2'
 $ENGINE_PORT  = 7777
