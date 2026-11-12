@@ -569,3 +569,71 @@ func TestTLSCertReloadNotify(t *testing.T) {
 		t.Fatalf("notify payload wrong: %+v", got[0])
 	}
 }
+
+// A silent peer over the connection cap must not park the accept loop:
+// on a TLS listener the refusal line runs the handshake, which reads
+// the ClientHello the peer never sends. A sensor has to get in as soon
+// as a slot frees, while the silent connection is still open.
+func TestTLSSilentPeerOverCapDoesNotBlockAccept(t *testing.T) {
+	srv, events, certPath := startTLSTestServer(t, "")
+	held := make([]net.Conn, 0, maxConns)
+	defer func() {
+		for _, c := range held {
+			c.Close()
+		}
+	}()
+	for i := 0; i < maxConns; i++ {
+		c, err := net.Dial("tcp", srv.Addr())
+		if err != nil {
+			t.Fatalf("dial %d: %v", i, err)
+		}
+		held = append(held, c)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		srv.mu.Lock()
+		n := len(srv.open)
+		srv.mu.Unlock()
+		if n >= maxConns {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("only %d of %d connections registered", n, maxConns)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	silent, err := net.Dial("tcp", srv.Addr())
+	if err != nil {
+		t.Fatalf("dial silent: %v", err)
+	}
+	defer silent.Close()
+	time.Sleep(100 * time.Millisecond) // let the accept loop take it
+
+	for _, c := range held {
+		c.Close()
+	}
+	held = held[:0]
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		srv.mu.Lock()
+		n := len(srv.open)
+		srv.mu.Unlock()
+		if n == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d connections never released", n)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	conn, _ := dialTLS(t, srv.Addr(), certPath)
+	if _, err := conn.Write([]byte(sampleEvent(t) + "\n")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	select {
+	case <-events:
+	case <-time.After(3 * time.Second):
+		t.Fatal("accept loop parked behind a silent over-cap connection")
+	}
+}
