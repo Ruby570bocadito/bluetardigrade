@@ -343,7 +343,7 @@ $tag = 'v1.0.0-rc1'   # a published release tag you reviewed
 <details>
 <summary><b>Linux, macOS or Docker (engine + collectors)</b></summary>
 
-The source path needs **Go 1.26.10 or newer** (<https://go.dev/dl/>) and
+The source path needs **Go 1.26.11 or newer** (<https://go.dev/dl/>) and
 **make**; Docker needs neither.
 
 ```bash
