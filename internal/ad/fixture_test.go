@@ -80,6 +80,16 @@ type fixtureServer struct {
 	// DC enforces MaxPageSize no matter what the client asks for).
 	pageSize int
 
+	// rangeLimit, when > 0, is the fixture's MaxValRange: a member
+	// attribute with more values is served as "member;range=0-N" and
+	// the rest only to a base-scope read asking for "member;range=M-*",
+	// the way a real DC does.
+	rangeLimit int
+
+	// muteBind makes the fixture swallow bind requests without ever
+	// answering: a DC that completed TLS and then went silent.
+	muteBind bool
+
 	// bindOK gates the connection loop: after a refused bind the
 	// response carries the result code and the connection closes.
 	bindOK bool
@@ -179,6 +189,9 @@ func (s *fixtureServer) serveConn(raw net.Conn) {
 		op := p.Children[1]
 		switch {
 		case op.ClassType == ber.ClassApplication && op.Tag == ApplicationBindRequest:
+			if s.muteBind {
+				continue
+			}
 			ok := s.handleBind(conn, msgID, op, raw)
 			if !ok {
 				return // refused: result code sent, close like a real DC
@@ -417,6 +430,29 @@ func (s *fixtureServer) serveSearch(conn net.Conn, msgID int64, top, op *ber.Pac
 		}
 	}
 
+	// Range retrieval: a base-scope read of one entry asking for the
+	// next slice of member.
+	if low, ok := requestedMemberRange(op); ok {
+		for _, e := range s.entries {
+			if e.dn != base {
+				continue
+			}
+			all := e.attrs["member"]
+			if low >= len(all) {
+				break
+			}
+			end, name := len(all), fmt.Sprintf("member;range=%d-*", low)
+			if s.rangeLimit > 0 && low+s.rangeLimit < len(all) {
+				end = low + s.rangeLimit
+				name = fmt.Sprintf("member;range=%d-%d", low, end-1)
+			}
+			s.sendEntries(conn, msgID, []fixtureEntry{{dn: e.dn, attrs: map[string][]string{name: all[low:end]}}})
+			return
+		}
+		s.sendEntries(conn, msgID, nil)
+		return
+	}
+
 	matched := []fixtureEntry{}
 	if base == fixtureBase {
 		for _, e := range s.entries {
@@ -428,6 +464,7 @@ func (s *fixtureServer) serveSearch(conn net.Conn, msgID int64, top, op *ber.Pac
 
 	sendPage := func(entries []fixtureEntry, cookie []byte, withControl bool) {
 		for _, e := range entries {
+			e = s.rangeLimited(e)
 			msg := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAPMessage")
 			msg.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, msgID, "MessageID"))
 			entry := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ApplicationSearchResultEntry, nil, "SearchResultEntry")
@@ -511,6 +548,71 @@ func (s *fixtureServer) serveSearch(conn net.Conn, msgID int64, top, op *ber.Pac
 	next := make([]byte, 4)
 	binary.LittleEndian.PutUint32(next, uint32(end))
 	sendPage(page, next, true)
+}
+
+// rangeLimited applies the fixture's MaxValRange to one entry: an
+// over-long member comes back under its ranged name, first slice only.
+func (s *fixtureServer) rangeLimited(e fixtureEntry) fixtureEntry {
+	all := e.attrs["member"]
+	if s.rangeLimit <= 0 || len(all) <= s.rangeLimit {
+		return e
+	}
+	attrs := make(map[string][]string, len(e.attrs))
+	for k, v := range e.attrs {
+		if k != "member" {
+			attrs[k] = v
+		}
+	}
+	attrs[fmt.Sprintf("member;range=0-%d", s.rangeLimit-1)] = all[:s.rangeLimit]
+	return fixtureEntry{dn: e.dn, attrs: attrs}
+}
+
+// requestedMemberRange reports the low bound of a "member;range=N-*"
+// entry in the search request's attribute list.
+func requestedMemberRange(op *ber.Packet) (int, bool) {
+	if len(op.Children) < 8 {
+		return 0, false
+	}
+	for _, a := range op.Children[7].Children {
+		name, _ := a.Value.(string)
+		var low int
+		if _, err := fmt.Sscanf(name, "member;range=%d-*", &low); err == nil {
+			return low, true
+		}
+	}
+	return 0, false
+}
+
+// sendEntries answers an unpaged search with the given entries.
+func (s *fixtureServer) sendEntries(conn net.Conn, msgID int64, entries []fixtureEntry) {
+	for _, e := range entries {
+		msg := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAPMessage")
+		msg.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, msgID, "MessageID"))
+		entry := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ApplicationSearchResultEntry, nil, "SearchResultEntry")
+		entry.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, e.dn, "objectName"))
+		attrs := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "attributes")
+		for name, values := range e.attrs {
+			a := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "attribute")
+			a.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, name, "type"))
+			vals := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSet, nil, "vals")
+			for _, v := range values {
+				vals.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, v, "value"))
+			}
+			a.AppendChild(vals)
+			attrs.AppendChild(a)
+		}
+		entry.AppendChild(attrs)
+		msg.AppendChild(entry)
+		conn.Write(msg.Bytes())
+	}
+	done := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ApplicationSearchResultDone, nil, "SearchResultDone")
+	done.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagEnumerated, int64(0), "resultCode"))
+	done.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, "", "matchedDN"))
+	done.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, "", "errorMessage"))
+	msg := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAPMessage")
+	msg.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, msgID, "MessageID"))
+	msg.AppendChild(done)
+	conn.Write(msg.Bytes())
 }
 
 // filterEquality walks a filter packet and returns the FIRST equality

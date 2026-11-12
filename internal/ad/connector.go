@@ -105,43 +105,66 @@ func (c *Connector) setStatus(fn func(*Status)) {
 
 // Run starts the periodic sync (one immediate, then every interval)
 // until ctx is cancelled. It returns after the FIRST sync completes,
-// so callers can log the initial state; later syncs run in the
-// background. Calling Run twice is a programming error (use one
-// connector per engine).
+// so callers can inspect the initial state; later syncs run in the
+// background. The engine uses Start instead: a first sync against a
+// slow or silent domain controller must not hold its startup. Calling
+// Run or Start twice is a programming error (one connector per engine).
 func (c *Connector) Run(ctx context.Context) error {
 	ctx, c.cancel = context.WithCancel(ctx)
-	if err := c.SyncOnce(ctx); err != nil {
+	c.firstSync(ctx)
+	go c.loop(ctx)
+	return nil
+}
+
+// Start is Run without the wait: the first sync happens in the
+// background too. Until it completes the status reads as "never
+// synced, next attempt now" (Syncs counts the attempt as soon as it
+// begins) and the snapshot routes serve what the store kept from the
+// previous run. The cancel function is in place when Start returns, so
+// Stop is safe immediately after.
+func (c *Connector) Start(ctx context.Context) {
+	ctx, c.cancel = context.WithCancel(ctx)
+	now := time.Now()
+	c.setStatus(func(s *Status) { s.NextSyncAt = &now })
+	go func() {
+		c.firstSync(ctx)
+		c.loop(ctx)
+	}()
+}
+
+func (c *Connector) firstSync(ctx context.Context) {
+	if err := c.SyncOnce(ctx); err != nil && ctx.Err() == nil {
 		// The first failure is logged and surfaced in the status, not
 		// fatal: a domain controller briefly offline at engine start
 		// must not take the engine down. The loop keeps retrying.
 		c.log.Printf("[AD] initial sync failed: %v", err)
 	}
-	// Scheduled synchronously so callers that inspect the status right
-	// after Run see the next sync already promised (no startup race).
+	// Scheduled before the loop starts so callers that inspect the
+	// status right after Run see the next sync already promised.
 	next := time.Now().Add(c.cfg.Interval)
 	c.setStatus(func(s *Status) { s.NextSyncAt = &next })
-	go func() {
-		defer close(c.done)
-		ticker := time.NewTicker(c.cfg.Interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := c.SyncOnce(ctx); err != nil {
-					c.log.Printf("[AD] sync failed: %v", err)
-				}
-				n := time.Now().Add(c.cfg.Interval)
-				c.setStatus(func(s *Status) { s.NextSyncAt = &n })
+}
+
+func (c *Connector) loop(ctx context.Context) {
+	defer close(c.done)
+	ticker := time.NewTicker(c.cfg.Interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := c.SyncOnce(ctx); err != nil && ctx.Err() == nil {
+				c.log.Printf("[AD] sync failed: %v", err)
 			}
+			n := time.Now().Add(c.cfg.Interval)
+			c.setStatus(func(s *Status) { s.NextSyncAt = &n })
 		}
-	}()
-	return nil
+	}
 }
 
 // Stop cancels the loop and waits for it (used on shutdown paths and
-// by tests). Safe to call once; Run must have been called.
+// by tests). Safe to call once; Run or Start must have been called.
 func (c *Connector) Stop() {
 	if c.cancel != nil {
 		c.cancel()
@@ -171,13 +194,16 @@ func (c *Connector) SyncOnce(ctx context.Context) error {
 	// that copy is a documented limit of the library API, it lives only
 	// inside the TLS-protected bind call and it is never logged. The
 	// buffer WE own is wiped right after the attempt either way.
-	conn, err := c.connect(string(secret))
+	conn, err := c.connect(ctx, string(secret))
 	secretfile.Zero(secret)
 	if err != nil {
 		c.failSync(err)
 		return err
 	}
 	defer conn.Close()
+	// Stop must not wait out a long read: closing the connection fails
+	// the request in flight at once.
+	defer context.AfterFunc(ctx, func() { conn.Close() })()
 
 	res, truncated, err := c.fetchAll(conn)
 	if err != nil {
