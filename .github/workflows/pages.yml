@@ -1,0 +1,61 @@
+# Publishes the public landing page (website/) on GitHub Pages: a static
+# export of the same Next.js site under the repository path, built with
+# the same Bun setup as the CI website job. It runs on every change to
+# the website on main, and on demand from Actions.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# one deployment at a time; a newer push waits instead of cancelling a
+# deployment halfway
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Static export of the website
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - id: pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - name: website install + static export
+        working-directory: website
+        env:
+          # /bluetardigrade for a project site; next.config switches to
+          # the static export when this is set
+          PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+        run: |
+          bun install --frozen-lockfile
+          bun run build:pages
+          touch out/.nojekyll
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: website/out
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -28,6 +28,20 @@ bun run build
 bun run start
 ```
 
+## GitHub Pages
+
+La misma web se publica como estática en
+<https://ruby570bocadito.github.io/bluetardigrade/> con el workflow
+`.github/workflows/pages.yml`, en cada cambio de `website/` en `main` (o a
+mano desde Actions). Para probar la exportación en local:
+
+```bash
+PAGES_BASE_PATH=/bluetardigrade bun run build:pages   # deja el sitio en out/
+```
+
+Pages no envía cabeceras propias: la política CSP viaja como `<meta>` en la
+página (sin `frame-ancestors`, que solo funciona como cabecera).
+
 ## Notas
 
 - Tema oscuro, tipografía Instrument Serif (display) + Geist (texto)

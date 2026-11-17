@@ -58,9 +58,13 @@ export const STATS: Stat[] = [
   },
 ];
 
+// Under GitHub Pages the site lives below the repository path; plain <img>
+// and <video> sources need that prefix (empty for the standalone server).
+const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
 export const LIVE_DEMO = {
-  gif: "/console-live.gif",
-  poster: "/console-panel.png",
+  gif: `${BASE}/console-live.gif`,
+  poster: `${BASE}/console-panel.png`,
   caption:
     "Archived console capture with generated test inputs. Product installations collect observed telemetry; this capture does not certify a live endpoint deployment.",
   badges: [

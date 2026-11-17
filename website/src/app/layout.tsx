@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import "./globals.css";
+import { META_CSP } from "@/lib/security-policy";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -53,6 +54,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
+      {/* GitHub Pages sends no custom headers: the static export carries its CSP here */}
+      {process.env.NEXT_PUBLIC_BASE_PATH !== undefined && (
+        <head>
+          <meta httpEquiv="Content-Security-Policy" content={META_CSP} />
+        </head>
+      )}
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} antialiased bg-background text-foreground`}
       >
