@@ -32,6 +32,7 @@ import { QueueTable } from './queue-table'
 import { QueueList } from './queue-list'
 import { Timeline } from './timeline'
 import { BulkBar, type Notice } from './bulk-bar'
+import { SavedSearches } from './saved-searches'
 import { Board } from './board'
 import { FocusMode } from './focus'
 import { AlertDetail } from './alert-detail'
@@ -240,7 +241,24 @@ export function AlertsView() {
             </div>
           </div>
         </div>
-        <QueueToolbar lens={lens} onLens={setLens} chips={chips} scope={scope} onScope={setScope} />
+        <QueueToolbar
+          lens={lens}
+          onLens={setLens}
+          chips={chips}
+          scope={scope}
+          onScope={setScope}
+          saved={
+            <SavedSearches
+              lens={lens}
+              scope={scope}
+              onApply={(next, nextScope) => {
+                setLens(next)
+                setScope(nextScope)
+              }}
+              onNotice={(message) => notify({ message })}
+            />
+          }
+        />
         {view === 'lista' && !phone && (
           <label className="v2-check">
             <input type="checkbox" checked={grouped} onChange={(e) => setGrouped(e.target.checked)} />

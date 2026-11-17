@@ -1,9 +1,9 @@
 'use client'
 
-// v2 shell: the section rail, the top bar (live state, clock, language,
-// way back to the classic console) and the content area. Sections that
-// are not rebuilt yet open their classic view, so the new console is
-// usable end to end while it grows section by section.
+// v2 shell: the section rail, the top bar (command palette, live state,
+// clock, language, way back to the classic console), the keyboard layer
+// and the content area. Sections that are not rebuilt yet open their
+// classic view, so the new console is usable end to end while it grows.
 import type { ComponentType, ReactNode } from 'react'
 import { MotionConfig } from 'motion/react'
 import {
@@ -17,12 +17,16 @@ import {
   House,
   Lightning,
   MagnifyingGlass,
+  Pulse,
   Siren,
+  TreeStructure,
   type IconProps,
 } from '@phosphor-icons/react'
 import { useI18n } from '@/components/console/i18n-provider'
 import { useEngine } from '@/components/console/engine-provider'
 import type { Dict } from '@/lib/i18n'
+import { V2_SECTIONS } from '@/lib/v2/palette-model'
+import { CommandLayer, PaletteButton } from './command-layer'
 import { CriticalAlerts } from './critical-alerts'
 import { TardigradeMark } from './logo'
 import { useNow } from './use-now'
@@ -31,17 +35,22 @@ type SectionId = keyof Dict['v2']['nav']
 
 type Section = { id: SectionId; href: string; icon: ComponentType<IconProps>; ready?: boolean }
 
-const SECTIONS: readonly Section[] = [
-  { id: 'inicio', href: '/v2', icon: House, ready: true },
-  { id: 'alertas', href: '/v2/alertas', icon: Siren, ready: true },
-  { id: 'incidentes', href: '/v2/incidentes', icon: Briefcase, ready: true },
-  { id: 'investigar', href: '/v2/investigar', icon: MagnifyingGlass, ready: true },
-  { id: 'equipos', href: '/v2/equipos', icon: Desktop, ready: true },
-  { id: 'deteccion', href: '/v2/deteccion', icon: Crosshair, ready: true },
-  { id: 'respuesta', href: '/v2/respuesta', icon: Lightning, ready: true },
-  { id: 'informes', href: '/v2/informes', icon: FileText, ready: true },
-  { id: 'ajustes', href: '/v2/ajustes', icon: GearSix, ready: true },
-]
+const ICONS: Record<SectionId, ComponentType<IconProps>> = {
+  inicio: House,
+  alertas: Siren,
+  incidentes: Briefcase,
+  investigar: MagnifyingGlass,
+  equipos: Desktop,
+  directorio: TreeStructure,
+  deteccion: Crosshair,
+  respuesta: Lightning,
+  informes: FileText,
+  plataforma: Pulse,
+  ajustes: GearSix,
+}
+
+// one list of sections for the rail, the palette and the keyboard chords
+const SECTIONS: readonly Section[] = V2_SECTIONS.map((s) => ({ id: s.id, href: s.href, icon: ICONS[s.id], ready: true }))
 
 function Rail({ current }: { current: SectionId }) {
   const { dict } = useI18n()
@@ -123,6 +132,7 @@ export function V2Shell({ current, title, children }: { current: SectionId; titl
     <MotionConfig reducedMotion="user">
       <div className="v2">
         <CriticalAlerts />
+        <CommandLayer />
         <a className="v2-skip" href="#v2-content">
           {dict.v2.skip}
         </a>
@@ -133,6 +143,7 @@ export function V2Shell({ current, title, children }: { current: SectionId; titl
               <h1 className="v2-title">{title}</h1>
               <LiveState />
               <div className="v2-topbar-spacer" />
+              <PaletteButton />
               <Clock />
               <LanguageSwitch />
               <a className="v2-btn v2-hide-sm" href="/">

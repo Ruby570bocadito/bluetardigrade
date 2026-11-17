@@ -3,7 +3,7 @@
 // The lens of the queue: search, state, assignment, live or history, and
 // one chip per severity with how many alerts it holds under the rest of
 // the lens (no counts on a history page: they would only describe it).
-import { useId } from 'react'
+import { useId, type ReactNode } from 'react'
 import { MagnifyingGlass } from '@phosphor-icons/react'
 import { useI18n } from '@/components/console/i18n-provider'
 import { alertStateFromParam, type AlertScope, type AssigneeLens } from '@/lib/alert-search'
@@ -22,12 +22,15 @@ export function QueueToolbar({
   chips,
   scope,
   onScope,
+  saved,
 }: {
   lens: QueueLens
   onLens: (patch: Partial<QueueLens>) => void
   chips: (Record<Severity, number> & { all: number }) | null
   scope: AlertScope
   onScope: (scope: AlertScope) => void
+  /** the saved searches menu, at the end of the first row */
+  saved?: ReactNode
 }) {
   const { dict } = useI18n()
   const t = dict.v2.alertsView
@@ -91,6 +94,7 @@ export function QueueToolbar({
             ))}
           </select>
         </label>
+        {saved}
       </div>
       <div className="v2-toolbar-row v2-toolbar-split">
         <div className="v2-chips" role="group" aria-label={dict.alerts.sevFilterAria}>
