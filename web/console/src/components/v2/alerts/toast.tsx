@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import { X } from '@phosphor-icons/react'
 import { useI18n } from '@/components/console/i18n-provider'
 
-export type ToastState = { id: number; message: string; undo?: () => Promise<void> } | null
+export type ToastState = { id: number; message: string; undo?: () => Promise<void>; link?: { href: string; label: string } } | null
 
 const LIFE_MS = 6000
 
@@ -47,6 +47,11 @@ export function Toast({ toast, onClose }: { toast: ToastState; onClose: () => vo
       onBlur={() => setPaused(false)}
     >
       <span>{toast.message}</span>
+      {toast.link && (
+        <a className="v2-link" href={toast.link.href}>
+          {toast.link.label}
+        </a>
+      )}
       {toast.undo && (
         <button
           type="button"

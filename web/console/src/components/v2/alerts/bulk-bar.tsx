@@ -10,11 +10,13 @@ import { useI18n } from '@/components/console/i18n-provider'
 import { useEngine } from '@/components/console/engine-provider'
 import { useConsoleUser } from '@/components/console/user-session'
 import { postAlertAssignBatch } from '@/lib/lifecycle'
+import { createIncident } from '@/lib/engine-writes'
+import { hostsOf, v2IncidentLink, worstSeverity } from '@/lib/v2/incidents-model'
 import type { SfAlert, SfAlertStatus } from '@/lib/console-types'
 import { bulkChanges } from '@/lib/v2/alerts-model'
 import { undoWrite, useStatusWriter } from './writes'
 
-export type Notice = { message: string; undo?: () => Promise<void> }
+export type Notice = { message: string; undo?: () => Promise<void>; link?: { href: string; label: string } }
 
 export function BulkBar({ alerts, onClear, onNotice }: { alerts: SfAlert[]; onClear: () => void; onNotice: (n: Notice) => void }) {
   const { dict } = useI18n()
@@ -62,6 +64,32 @@ export function BulkBar({ alerts, onClear, onNotice }: { alerts: SfAlert[]; onCl
     onClear()
   }
 
+  // the picked alerts become a case (the other way into Incidentes)
+  async function makeCase() {
+    if (ids.length === 0 || busy) return
+    const withId = alerts.filter((a) => a.id)
+    const hosts = hostsOf(withId)
+    const title =
+      withId.length === 1
+        ? w.incidentDefaultOne(withId[0].rule_name, withId[0].host)
+        : w.incidentDefaultMany(withId.length, `${hosts.slice(0, 2).join(', ')}${hosts.length > 2 ? '…' : ''}`)
+    setBusy(true)
+    const res = await createIncident({
+      title,
+      severity: worstSeverity(withId),
+      alert_ids: ids.slice(0, 500),
+      hosts,
+      by: me.mode === 'users' ? me.name : 'consola',
+    })
+    setBusy(false)
+    if (!res.ok) {
+      onNotice({ message: res.status === 404 || res.status === 405 ? w.noIncidents : res.error })
+      return
+    }
+    onNotice({ message: dict.v2.incidentsView.created, link: { href: v2IncidentLink(res.data.id), label: dict.v2.incidentsView.openCase } })
+    onClear()
+  }
+
   return (
     <div className="v2-bulk" role="region" aria-label={w.selectionAria}>
       <strong>{w.selected(alerts.length)}</strong>
@@ -81,6 +109,9 @@ export function BulkBar({ alerts, onClear, onNotice }: { alerts: SfAlert[]; onCl
               {t.assignMineBulk(ids.length)}
             </button>
           )}
+          <button type="button" className="v2-btn" disabled={busy || ids.length === 0} onClick={() => void makeCase()}>
+            {t.createCase(ids.length)}
+          </button>
         </div>
       )}
       <button type="button" className="v2-icon-btn" aria-label={w.clearSelection} onClick={onClear}>

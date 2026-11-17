@@ -33,7 +33,7 @@ type Section = { id: SectionId; href: string; icon: ComponentType<IconProps>; re
 const SECTIONS: readonly Section[] = [
   { id: 'inicio', href: '/v2', icon: House, ready: true },
   { id: 'alertas', href: '/v2/alertas', icon: Siren, ready: true },
-  { id: 'incidentes', href: '/?view=incidentes', icon: Briefcase },
+  { id: 'incidentes', href: '/v2/incidentes', icon: Briefcase, ready: true },
   { id: 'investigar', href: '/?view=flujo', icon: MagnifyingGlass },
   { id: 'equipos', href: '/?view=equipos', icon: Desktop },
   { id: 'deteccion', href: '/?view=reglas', icon: Crosshair },
