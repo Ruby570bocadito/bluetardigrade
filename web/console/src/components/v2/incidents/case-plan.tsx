@@ -53,11 +53,19 @@ function Ring({ done, total, label }: { done: number; total: number; label: stri
   )
 }
 
-export function CasePlan({ incident }: { incident: Incident }) {
+export type PlanState = ReturnType<typeof usePlan>
+
+/**
+ * The plan of a case. A caller that edits the same plan elsewhere (the
+ * evidence and the chronology in Respuesta) passes its own state, so both
+ * write one object and neither overwrites the other's changes.
+ */
+export function CasePlan({ incident, state }: { incident: Incident; state?: PlanState }) {
   const { dict } = useI18n()
   const t = dict.v2.incidentsView
   const p = dict.playbook
-  const { plan, save, error } = usePlan(incident.id)
+  const own = usePlan(incident.id)
+  const { plan, save, error } = state ?? own
   const { run } = useCaseWrite()
   const [confirming, setConfirming] = useState(false)
 
@@ -140,9 +148,12 @@ export function CasePlan({ incident }: { incident: Incident }) {
       )}
       <p className="v2-dim v2-small">
         {p.browserNote}{' '}
-        <a className="v2-link" href={`/?view=incidentes&incidente=${encodeURIComponent(incident.id)}`}>
-          {t.planClassic}
-        </a>
+        {/* inside Respuesta the evidence and the chronology are right below */}
+        {!state && (
+          <a className="v2-link" href={`/v2/respuesta?vista=planes&caso=${encodeURIComponent(incident.id)}`}>
+            {t.planClassic}
+          </a>
+        )}
       </p>
     </div>
   )

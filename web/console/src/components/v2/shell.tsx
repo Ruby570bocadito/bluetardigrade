@@ -37,7 +37,7 @@ const SECTIONS: readonly Section[] = [
   { id: 'investigar', href: '/v2/investigar', icon: MagnifyingGlass, ready: true },
   { id: 'equipos', href: '/v2/equipos', icon: Desktop, ready: true },
   { id: 'deteccion', href: '/v2/deteccion', icon: Crosshair, ready: true },
-  { id: 'respuesta', href: '/?view=respuesta', icon: Lightning },
+  { id: 'respuesta', href: '/v2/respuesta', icon: Lightning, ready: true },
   { id: 'informes', href: '/?view=informes', icon: FileText },
   { id: 'ajustes', href: '/?view=ajustes', icon: GearSix },
 ]

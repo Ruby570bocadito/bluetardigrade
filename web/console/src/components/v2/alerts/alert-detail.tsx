@@ -12,6 +12,7 @@ import { alertKey } from '@/lib/engine-client'
 import { formatAgo } from '@/lib/soc-metrics'
 import { formatDateTime, type SfAlert } from '@/lib/console-types'
 import { alertTacticOf, classicLink, otherTags, statusOf, techniqueIds } from '@/lib/v2/alerts-model'
+import { v2RespondLink } from '@/lib/v2/respond-model'
 import { SEV_COLOR } from '../home/parts'
 import { useNow } from '../use-now'
 import { useGeo } from '../use-geo'
@@ -179,6 +180,9 @@ export function AlertDetail({ alert, onClose, autoFocus = false }: { alert: SfAl
       <AssignBox alert={alert} />
 
       <nav className="v2-detail-links" aria-label={t.closeDetail}>
+        <a className="v2-btn" href={v2RespondLink(alertKey(alert))}>
+          {dict.v2.respondView.actOpen}
+        </a>
         <a className="v2-btn" href={classicLink.host(alert.host)}>
           {t.links.host}
         </a>
