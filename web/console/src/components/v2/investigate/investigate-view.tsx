@@ -13,6 +13,7 @@ import { useEngine } from '@/components/console/engine-provider'
 import type { SfEvent } from '@/lib/console-types'
 import { currentSearch, replaceOperatorState } from '@/lib/url-state'
 import { setSearchParam } from '@/lib/v2/alerts-model'
+import { v2DraftLink } from '@/lib/v2/detection-model'
 import {
   addToken,
   formatQuery,
@@ -265,6 +266,11 @@ export function InvestigateView() {
             <span className="v2-dim v2-small v2-inv-scope" role="status">
               {scopeLine}
             </span>
+            {tokens.length > 0 && (
+              <a className="v2-link v2-small" href={v2DraftLink(formatQuery(tokens, lang))}>
+                {dict.v2.detectionView.draftFromInvestigate}
+              </a>
+            )}
           </div>
           {inv.error && <p className="v2-error">{t.historyError(inv.error)}</p>}
           {inv.truncated && <p className="v2-dim v2-small">{t.truncated(inv.base.length)}</p>}
