@@ -7,6 +7,7 @@
 
 import { engineCall, type EngineResult } from './engine-writes'
 import { downloadText } from './chart-export'
+import { engineApiBase } from './engine-client'
 
 export type ReportKind = 'executive' | 'incident' | 'fleet' | 'soc'
 
@@ -138,7 +139,9 @@ export function reportPath(query: ReportQuery, format: 'json' | 'csv' = 'json'):
  * fetch and turns every failure into a sentence. */
 export async function downloadReport(query: ReportQuery, format: 'json' | 'csv'): Promise<{ ok: true; filename: string } | { ok: false; error: string }> {
   try {
-    const res = await fetch(reportPath(query, format), { cache: 'no-store', signal: AbortSignal.timeout(15000) })
+    // through the engine proxy, like every other engine read (reportPath is
+    // the engine-side path; alone it reached no route of the console)
+    const res = await fetch(engineApiBase() + reportPath(query, format), { cache: 'no-store', signal: AbortSignal.timeout(15000) })
     if (!res.ok) {
       const text = await res.text().catch(() => '')
       return { ok: false, error: `HTTP ${res.status}${text ? `: ${text.trim().slice(0, 200)}` : ''}` }

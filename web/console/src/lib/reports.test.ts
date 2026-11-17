@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { downloadStamp, fetchReport, fetchReportCatalog, reportPath, reportWindowPreset, type ExecutiveReport, type ReportCatalog } from './reports'
+import { downloadReport, downloadStamp, fetchReport, fetchReportCatalog, reportPath, reportWindowPreset, type ExecutiveReport, type ReportCatalog } from './reports'
 
 const realFetch = globalThis.fetch
 let sent: { url: string; init: RequestInit }[] = []
@@ -70,5 +70,14 @@ describe('window presets', () => {
     expect(reportWindowPreset('7d')).toBe('7d')
     expect(reportWindowPreset('99d')).toBe('7d')
     expect(reportWindowPreset(null)).toBe('7d')
+  })
+})
+
+describe('report download', () => {
+  test('the bytes come through the engine proxy, like every other engine read', async () => {
+    respond(200, JSON.stringify({ kind: 'executive' }))
+    // outside a browser the file cannot be handed over; the request is what counts here
+    await downloadReport({ kind: 'executive', window: '7d' }, 'json')
+    expect(sent[0].url).toBe('/api/engine/api/reports/executive?window=7d')
   })
 })
