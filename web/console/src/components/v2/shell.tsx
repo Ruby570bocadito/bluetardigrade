@@ -23,6 +23,7 @@ import {
 import { useI18n } from '@/components/console/i18n-provider'
 import { useEngine } from '@/components/console/engine-provider'
 import type { Dict } from '@/lib/i18n'
+import { CriticalAlerts } from './critical-alerts'
 import { TardigradeMark } from './logo'
 import { useNow } from './use-now'
 
@@ -39,7 +40,7 @@ const SECTIONS: readonly Section[] = [
   { id: 'deteccion', href: '/v2/deteccion', icon: Crosshair, ready: true },
   { id: 'respuesta', href: '/v2/respuesta', icon: Lightning, ready: true },
   { id: 'informes', href: '/v2/informes', icon: FileText, ready: true },
-  { id: 'ajustes', href: '/?view=ajustes', icon: GearSix },
+  { id: 'ajustes', href: '/v2/ajustes', icon: GearSix, ready: true },
 ]
 
 function Rail({ current }: { current: SectionId }) {
@@ -121,6 +122,7 @@ export function V2Shell({ current, title, children }: { current: SectionId; titl
   return (
     <MotionConfig reducedMotion="user">
       <div className="v2">
+        <CriticalAlerts />
         <a className="v2-skip" href="#v2-content">
           {dict.v2.skip}
         </a>
