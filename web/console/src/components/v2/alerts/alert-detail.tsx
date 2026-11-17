@@ -12,6 +12,7 @@ import { alertKey } from '@/lib/engine-client'
 import { formatAgo } from '@/lib/soc-metrics'
 import { formatDateTime, type SfAlert } from '@/lib/console-types'
 import { alertTacticOf, classicLink, otherTags, statusOf, techniqueIds } from '@/lib/v2/alerts-model'
+import { v2WriteUpLink } from '@/lib/v2/reports-model'
 import { v2RespondLink } from '@/lib/v2/respond-model'
 import { SEV_COLOR } from '../home/parts'
 import { useNow } from '../use-now'
@@ -183,6 +184,11 @@ export function AlertDetail({ alert, onClose, autoFocus = false }: { alert: SfAl
         <a className="v2-btn" href={v2RespondLink(alertKey(alert))}>
           {dict.v2.respondView.actOpen}
         </a>
+        {alert.id && (
+          <a className="v2-btn" href={v2WriteUpLink(alert.id)}>
+            {dict.v2.reportsView.tabs.analista}
+          </a>
+        )}
         <a className="v2-btn" href={classicLink.host(alert.host)}>
           {t.links.host}
         </a>
