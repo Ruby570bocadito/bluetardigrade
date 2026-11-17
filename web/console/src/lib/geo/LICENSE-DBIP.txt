@@ -1,0 +1,7 @@
+IP Geolocation by DB-IP (https://db-ip.com)
+
+dbip-ipv4.ts is built from dbip-country-lite-2026-11.csv.gz, the free
+"IP to Country Lite" database of DB-IP, licensed under the Creative Commons
+Attribution 4.0 International licence (https://creativecommons.org/licenses/by/4.0/).
+The console reshapes it (IPv4 only, contiguous ranges of one country merged)
+with scripts/build-geoip.mjs; the country of every range is DB-IP's.

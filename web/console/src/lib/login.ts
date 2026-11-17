@@ -7,6 +7,7 @@
 // operator has signed in, and nothing on these pages runs code.
 
 import { groupSecret } from './totp'
+import { logoSvg } from './brand-logo'
 
 export type LoginMode = 'users' | 'token'
 
@@ -71,115 +72,95 @@ export function messageFor(key: string | null | undefined): string {
   return key ? MESSAGES[key] ?? '' : ''
 }
 
-// The sign-in pages share one look: a brand panel (hidden on small
-// screens, where the mark sits above the card) and the form card. Dark
-// by default, light under prefers-color-scheme; the accent is the
-// mark's own blue. No script and no external asset: the pages render
-// before the console bundle is reachable.
+// The sign-in pages share the look of the v2 command center: a dark,
+// neutral ground, one amber accent for the primary action and the
+// bluetardigrade mark. Split on wide screens: the brand on the left over
+// a faint dot grid, the form on the right. They still run no script and
+// load nothing but this document (the console bundle under /_next stays
+// behind the access gate until the operator has signed in).
 const STYLE = `
-  :root { color-scheme: dark light; --bg: #070b12; --panel: #0b1220; --card: #0f1726; --field: #0a111d; --line: #1e2a3d; --line-strong: #2b3a52; --text: #e8eef7; --muted: #8fa0b8; --faint: #64748b; --accent: #3b82f6; --accent-2: #4dc3ff; --accent-ink: #ffffff; --ring: rgba(77, 195, 255, .45); --warn: #fbbf24; --warn-bg: rgba(251, 191, 36, .08); --danger: #f87171; --danger-bg: rgba(248, 113, 113, .08); --ok: #34d399; }
-  @media (prefers-color-scheme: light) { :root { --bg: #eef2f7; --panel: #0b1220; --card: #ffffff; --field: #f8fafc; --line: #dbe3ee; --line-strong: #c3cfdf; --text: #0f172a; --muted: #475569; --faint: #64748b; --accent: #2563eb; --accent-2: #0ea5e9; --ring: rgba(37, 99, 235, .35); --warn: #92400e; --warn-bg: #fffbeb; --danger: #b91c1c; --danger-bg: #fef2f2; } }
+  :root { color-scheme: dark; --bg: #0f1012; --side: #121316; --panel: #17181b; --field: #101113; --line: #26272c; --line-strong: #34353b; --text: #e7e7ea; --muted: #a3a4ab; --faint: #74757d; --accent: #f5a524; --accent-ink: #1b1405; --ring: rgba(245, 165, 36, .32); --warn: #f5a524; --warn-bg: rgba(245, 165, 36, .08); --danger: #f2555a; --ok: #3fb950; }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
-  body { margin: 0; min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr); background: var(--bg); color: var(--text); font: 14px/1.55 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; }
-  @media (min-width: 960px) { body { grid-template-columns: minmax(420px, 46%) minmax(0, 1fr); } }
+  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); font: 14px/1.55 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; }
+  .frame { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+  @media (min-width: 960px) { .frame { grid-template-columns: minmax(440px, 48%) minmax(0, 1fr); grid-template-rows: 1fr; } }
 
-  aside { display: none; position: relative; overflow: hidden; padding: 48px 56px; color: #e8eef7; background: radial-gradient(120% 80% at 0% 0%, rgba(77, 195, 255, .16), transparent 60%), radial-gradient(90% 70% at 100% 100%, rgba(47, 111, 237, .22), transparent 60%), var(--panel); border-right: 1px solid rgba(148, 163, 184, .12); }
-  aside::before { content: ""; position: absolute; inset: 0; background-image: radial-gradient(rgba(148, 163, 184, .16) 1px, transparent 1px); background-size: 22px 22px; mask-image: linear-gradient(180deg, rgba(0,0,0,.9), rgba(0,0,0,.2)); pointer-events: none; }
-  @media (min-width: 960px) { aside { display: flex; flex-direction: column; justify-content: space-between; } }
-  aside > * { position: relative; }
-  .wordmark { display: flex; align-items: center; gap: 12px; font-weight: 650; font-size: 17px; letter-spacing: .01em; }
-  .wordmark small { display: block; font-size: 11px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: #8fa0b8; }
-  .pitch h2 { margin: 0 0 12px; font-size: 30px; line-height: 1.2; font-weight: 650; letter-spacing: -.01em; max-width: 15em; }
-  .pitch p { margin: 0 0 28px; color: #9fb0c8; max-width: 30em; }
-  .pitch ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
-  .pitch li { display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start; color: #c8d4e6; }
-  .pitch li strong { display: block; color: #e8eef7; font-weight: 600; }
-  .pitch li span { color: #8fa0b8; font-size: 13px; }
-  .pitch .ico { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: rgba(77, 195, 255, .1); border: 1px solid rgba(77, 195, 255, .25); color: #4dc3ff; }
-  .legal { font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 8px; }
-  .legal .dot { width: 6px; height: 6px; border-radius: 50%; background: #34d399; box-shadow: 0 0 0 3px rgba(52, 211, 153, .15); }
+  .brand { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 32px 16px 0; }
+  @media (min-width: 960px) { .brand { align-items: stretch; justify-content: space-between; padding: 40px 56px 36px; border-right: 1px solid var(--line); background-image: radial-gradient(rgba(255, 255, 255, .06) 1px, transparent 1.2px); background-size: 22px 22px; } }
+  .wordmark { display: flex; align-items: center; gap: 12px; }
+  .wordmark svg { flex: none; }
+  .wordmark strong { font-size: 19px; font-weight: 650; letter-spacing: -.01em; }
+  .pitch h2 { margin: 0; font-size: 18px; font-weight: 600; color: var(--muted); letter-spacing: -.01em; }
+  .pitch p, .legal { display: none; }
+  @media (min-width: 960px) {
+    .pitch h2 { margin: 0 0 18px; font-size: 56px; line-height: 1.02; font-weight: 650; color: var(--text); letter-spacing: -.035em; }
+    .pitch p { display: block; margin: 0; max-width: 32em; color: var(--muted); font-size: 16px; line-height: 1.6; }
+    .legal { display: block; font-size: 12px; color: var(--faint); }
+  }
+  .legal .dot { display: inline-block; width: 6px; height: 6px; margin-right: 8px; border-radius: 50%; background: var(--ok); vertical-align: middle; }
 
-  .stage { display: grid; place-items: center; padding: 32px 16px; min-height: 100vh; }
+  .stage { display: grid; place-items: start center; padding: 28px 16px 40px; }
+  @media (min-width: 960px) { .stage { place-items: center; padding: 40px 56px; background: var(--side); } }
   main { width: 100%; max-width: 400px; }
   main.wide { max-width: 460px; }
-  .mobile-brand { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 22px; font-weight: 650; font-size: 16px; }
-  @media (min-width: 960px) { .mobile-brand { display: none; } }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 32px 28px 28px; box-shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 24px 48px -24px rgba(0, 0, 0, .55); }
-  @media (prefers-color-scheme: light) { .card { box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 20px 40px -24px rgba(15, 23, 42, .25); } }
-  .eyebrow { margin: 0 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--accent-2); }
-  @media (prefers-color-scheme: light) { .eyebrow { color: var(--accent); } }
-  h1 { margin: 0 0 6px; font-size: 22px; line-height: 1.25; font-weight: 650; letter-spacing: -.01em; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 28px 26px 26px; }
+  .eyebrow { margin: 0 0 6px; font: 500 11px/1.2 ui-monospace, "Cascadia Mono", Consolas, monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
+  h1 { margin: 0 0 6px; font-size: 22px; line-height: 1.25; font-weight: 650; letter-spacing: -.015em; }
   h2 { margin: 24px 0 4px; font-size: 14px; font-weight: 600; }
   p { margin: 8px 0; }
   p.sub, .note { color: var(--muted); font-size: 13px; }
-  p.sub { margin: 0 0 22px; }
+  p.sub { margin: 0 0 20px; }
   label { display: block; margin: 16px 0 6px; font-size: 12.5px; font-weight: 550; color: var(--text); }
-  input { width: 100%; height: 42px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--field); color: var(--text); font: inherit; transition: border-color .15s, box-shadow .15s; }
+  input { width: 100%; height: 42px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line-strong); background: var(--field); color: var(--text); font: inherit; transition: border-color .15s, box-shadow .15s; }
   input::placeholder { color: var(--faint); }
-  input:hover:not(:disabled) { border-color: var(--muted); }
+  input:hover:not(:disabled) { border-color: #4a4b52; }
   input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
   input:disabled { opacity: .55; cursor: not-allowed; }
   input.code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 17px; letter-spacing: .12em; }
-  button:focus-visible, a:focus-visible, .realm input:focus-visible + label { outline: 2px solid var(--accent-2); outline-offset: 2px; }
-  button, a.button { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 44px; margin-top: 24px; padding: 0 16px; border: 0; border-radius: 10px; background: linear-gradient(180deg, #4f8ff7, #2f6fed); color: var(--accent-ink); font: inherit; font-weight: 600; text-align: center; text-decoration: none; cursor: pointer; box-shadow: 0 1px 0 rgba(255,255,255,.18) inset, 0 8px 20px -8px rgba(47, 111, 237, .7); transition: filter .15s, transform .05s; }
-  button:hover:not(:disabled), a.button:hover { filter: brightness(1.08); }
-  button:active:not(:disabled) { transform: translateY(1px); }
-  button.quiet { margin-top: 12px; background: transparent; color: var(--text); border: 1px solid var(--line-strong); font-weight: 500; box-shadow: none; }
-  button:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+  button:focus-visible, a:focus-visible, .realm input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button, a.button { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 42px; margin-top: 22px; padding: 0 16px; border: 0; border-radius: 6px; background: var(--accent); color: var(--accent-ink); font: inherit; font-weight: 650; text-align: center; text-decoration: none; cursor: pointer; transition: background-color .15s; }
+  button:hover:not(:disabled), a.button:hover { background: #f7b23f; }
+  button.quiet { margin-top: 12px; background: transparent; color: var(--text); border: 1px solid var(--line-strong); font-weight: 500; }
+  button.quiet:hover:not(:disabled) { background: #1d1e22; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
   a { color: inherit; }
-  .msg { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 6px; padding: 11px 13px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); background: var(--warn-bg); color: var(--warn); font-size: 13px; }
-  .msg::before { content: "!"; flex: none; width: 18px; height: 18px; margin-top: 1px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--warn); color: var(--card); }
-  .realm { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; margin: 0 0 4px; border-radius: 11px; background: var(--field); border: 1px solid var(--line); }
+  .msg { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--warn) 38%, transparent); background: var(--warn-bg); color: var(--warn); font-size: 13px; }
+  .msg::before { content: "!"; flex: none; width: 18px; height: 18px; margin-top: 1px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--warn); color: var(--accent-ink); }
+  .realm { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; margin: 0 0 4px; border-radius: 8px; background: var(--field); border: 1px solid var(--line); }
   .realm input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
-  .realm label { margin: 0; height: 34px; display: flex; align-items: center; justify-content: center; gap: 7px; border-radius: 8px; font-size: 13px; font-weight: 550; color: var(--muted); cursor: pointer; transition: background .15s, color .15s; }
+  .realm label { margin: 0; height: 34px; display: flex; align-items: center; justify-content: center; gap: 7px; border-radius: 5px; font-size: 13px; font-weight: 550; color: var(--muted); cursor: pointer; transition: background .15s, color .15s; }
   .realm label:hover { color: var(--text); }
-  .realm input:checked + label { background: color-mix(in srgb, var(--accent) 16%, var(--card)); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.25), 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
-  .realm input:checked + label svg { color: var(--accent-2); }
-  @media (prefers-color-scheme: light) { .realm input:checked + label svg { color: var(--accent); } }
+  .realm input:checked + label { background: #1d1e22; color: var(--text); box-shadow: inset 0 0 0 1px var(--line-strong); }
+  .realm input:checked + label svg { color: var(--accent); }
   @media (max-width: 420px) { .realm label { font-size: 12.5px; gap: 5px; } .realm label svg { display: none; } }
   .realm input:disabled + label { cursor: not-allowed; opacity: .55; }
   .hint { display: none; margin: 8px 2px 0; font-size: 12px; color: var(--faint); }
   form:has(#realm-local:checked) .hint-local, form:has(#realm-dominio:checked) .hint-dominio { display: block; }
-  .meta { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 18px; font-size: 12px; color: var(--faint); }
+  .meta { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 16px; font-size: 12px; color: var(--faint); }
   .meta svg { flex: none; }
   .qr { display: flex; justify-content: center; margin: 14px 0 6px; }
-  .qr svg { width: 196px; height: 196px; border-radius: 10px; background: #fff; padding: 6px; }
-  code.secret { display: block; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--field); font: 14px/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace; letter-spacing: .06em; word-break: break-all; user-select: all; }
-  ol.codes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; margin: 12px 0; padding: 12px 12px 12px 34px; border-radius: 10px; border: 1px solid var(--line); background: var(--field); font: 14px/1.6 ui-monospace, "Cascadia Mono", Consolas, monospace; user-select: all; }
+  .qr svg { width: 196px; height: 196px; border-radius: 8px; background: #fff; padding: 6px; }
+  code.secret { display: block; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line-strong); background: var(--field); font: 14px/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace; letter-spacing: .06em; word-break: break-all; user-select: all; }
+  ol.codes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; margin: 12px 0; padding: 12px 12px 12px 34px; border-radius: 6px; border: 1px solid var(--line); background: var(--field); font: 14px/1.6 ui-monospace, "Cascadia Mono", Consolas, monospace; user-select: all; }
   .back { display: block; margin-top: 18px; font-size: 12.5px; color: var(--muted); text-align: center; text-decoration: none; }
   .back:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
   hr { border: 0; border-top: 1px solid var(--line); margin: 24px 0 0; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 `
 
-// The mark (docs/assets/logo.svg) inlined; each copy carries its own
-// gradient ids, since the brand panel's copy is display:none on phones
-// and a hidden <defs> paints nothing.
-function logo(size: number, id: string): string {
-  return `<svg viewBox="0 0 64 64" width="${size}" height="${size}" aria-hidden="true"><defs><linearGradient id="${id}-b" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4dc3ff"/><stop offset="1" stop-color="#2f6fed"/></linearGradient><linearGradient id="${id}-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4dc3ff" stop-opacity=".35"/><stop offset="1" stop-color="#2f6fed" stop-opacity=".05"/></linearGradient></defs><circle cx="32" cy="34" r="26" fill="url(#${id}-g)"/><g stroke="url(#${id}-b)" stroke-width="3.4" stroke-linecap="round" fill="none"><path d="M22 30 C17 29 14 26 13 22"/><path d="M21 37 C15 37 11 35 9 32"/><path d="M22 44 C16 45 13 48 12 52"/><path d="M42 30 C47 29 50 26 51 22"/><path d="M43 37 C49 37 53 35 55 32"/><path d="M42 44 C48 45 51 48 52 52"/></g><g fill="url(#${id}-b)"><rect x="20" y="24" width="24" height="22" rx="11"/><rect x="21.5" y="32" width="21" height="1.6" rx=".8" opacity=".28"/><rect x="21.5" y="38" width="21" height="1.6" rx=".8" opacity=".28"/></g><circle cx="32" cy="25.5" r="7.5" fill="url(#${id}-b)"/><circle cx="29" cy="24" r="1.7" fill="#060a10"/><circle cx="35" cy="24" r="1.7" fill="#060a10"/></svg>`
-}
-
 const ICON = {
-  pulse: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>',
-  shield: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>',
-  graph: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="8" r="2.5"/><circle cx="9" cy="18" r="2.5"/><path d="M8.3 7.2l7.4 1.2M7 8.4l1.4 7.2M16.5 10.2l-5.6 6"/></svg>',
   lock: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
   user: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>',
   domain: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/></svg>',
 }
 
 function brandPanel(): string {
-  return `<aside>
-  <div class="wordmark">${logo(40, 'bt-aside')}<div>bluetardigrade<small>Security Operations</small></div></div>
+  return `<aside class="brand">
+  <div class="wordmark">${logoSvg(40)}<strong>bluetardigrade</strong></div>
   <div class="pitch">
-    <h2>Detecta, investiga y responde desde un solo sitio.</h2>
-    <p>La consola del SOC para tus equipos Windows: telemetría del sensor ETW, reglas mapeadas a MITRE ATT&amp;CK y respuesta auditada.</p>
-    <ul>
-      <li class="feat"><span class="ico">${ICON.pulse}</span><div><strong>Telemetría en vivo</strong><span>Procesos, red, registro y ficheros de cada equipo.</span></div></li>
-      <li class="feat"><span class="ico">${ICON.graph}</span><div><strong>Correlación y riesgo</strong><span>Cadenas de ataque, incidentes y riesgo por equipo.</span></div></li>
-      <li class="feat"><span class="ico">${ICON.shield}</span><div><strong>Respuesta con control</strong><span>Acciones cerradas, firmadas y auditadas.</span></div></li>
-    </ul>
+    <h2>Centro de mando</h2>
+    <p>Accede al centro de operaciones para vigilar tus equipos, investigar lo que detectan las reglas y responder a los incidentes.</p>
   </div>
   <div class="legal"><span class="dot" aria-hidden="true"></span>Acceso restringido a personal autorizado. Toda la actividad queda registrada.</div>
 </aside>`
@@ -192,20 +173,22 @@ function shell(title: string, body: string, wide = false): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
+<meta name="color-scheme" content="dark">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <title>${escapeHtml(title)} · bluetardigrade</title>
 <style>${STYLE}</style>
 </head>
 <body>
+<div class="frame">
 ${brandPanel()}
 <div class="stage">
 <main${wide ? ' class="wide"' : ''}>
-  <div class="mobile-brand" aria-hidden="true">${logo(30, 'bt-top')}bluetardigrade</div>
   <div class="card">
 ${body}
   </div>
   <p class="meta">${ICON.lock}<span>La sesión se cierra sola tras un rato sin actividad</span></p>
 </main>
+</div>
 </div>
 </body>
 </html>

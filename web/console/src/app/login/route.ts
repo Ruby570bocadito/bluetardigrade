@@ -23,7 +23,9 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url)
-  const next = safeNext(url.searchParams.get('next'))
+  // signing in without a destination opens the new command center (/v2);
+  // a link that asked for another page (?next=...) still lands there
+  const next = url.searchParams.has('next') ? safeNext(url.searchParams.get('next')) : '/v2'
   const error = url.searchParams.get('error')
   const mode = usersFile() ? 'users' : accessToken() ? 'token' : null
   if (!mode || (await principalFor(request))) return redirectTo(next)
