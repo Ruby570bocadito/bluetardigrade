@@ -14,6 +14,7 @@ import type { SfAlert } from '@/lib/console-types'
 import type { HomeKpis, HomeStatus } from '@/lib/v2/home-model'
 import { worldMap } from '@/lib/v2/world-map'
 import { v2AlertLink } from '@/lib/v2/alerts-model'
+import { v2HostsLink } from '@/lib/v2/hosts-model'
 import { gridPoint, markRadius, type CountryMark } from '@/lib/v2/geo-map'
 import { useNow } from '../use-now'
 
@@ -99,7 +100,7 @@ export function StatusBand({ status, kpis, latest, map }: { status: HomeStatus; 
     Icon = Warning
     state = t.waiting
     sentence = t.subWaiting
-    action = { href: '/?view=equipos', label: t.connect }
+    action = { href: v2HostsLink('alta'), label: t.connect }
   } else if (status.kind === 'alert') {
     tone = status.severity === 'critical' ? 'danger' : 'warn'
     Icon = WarningOctagon

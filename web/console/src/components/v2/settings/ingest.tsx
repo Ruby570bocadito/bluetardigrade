@@ -7,6 +7,7 @@
 // All of it is set with the engine's flags; here it is the real signal.
 import { CaretRight } from '@phosphor-icons/react'
 import { useI18n } from '@/components/console/i18n-provider'
+import { v2HostsLink } from '@/lib/v2/hosts-model'
 import { useEngine, useStatsHistory } from '@/components/console/engine-provider'
 import { useFleet } from '@/components/console/fleet-provider'
 import { Figure } from '../reports/parts'
@@ -75,7 +76,7 @@ export function Ingest() {
             <li className="v2-small v2-dim">{stats.store_enabled ? s.storeOn : s.storeOff}</li>
           </ul>
         )}
-        <a className="v2-btn" href="/v2/equipos?vista=alta">
+        <a className="v2-btn" href={v2HostsLink('alta')}>
           {t.inOpenEnroll}
           <CaretRight aria-hidden="true" />
         </a>

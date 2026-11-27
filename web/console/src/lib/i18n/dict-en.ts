@@ -3065,7 +3065,7 @@ export const dictEn: Dict = {
       links: {
         host: 'Open the host',
         flow: 'Investigate in the stream',
-        classic: 'Graph, forensics, report and response in the classic console',
+        tree: 'Process tree of the host',
       },
       linkedMissing: 'The linked alert is not in the live queue: the ring keeps only the latest ones.',
       linkedSearch: 'Search the history',

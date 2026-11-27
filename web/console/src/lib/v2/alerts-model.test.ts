@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { SfAlert } from '@/lib/console-types'
 import {
-  DEFAULT_LENS, boardColumns, bulkChanges, classicLink, focusStart, groupByHost, isFiltering, matchesQuery, otherTags, queueAlerts,
+  DEFAULT_LENS, boardColumns, bulkChanges, focusStart, groupByHost, isFiltering, matchesQuery, otherTags, queueAlerts,
   queueViewFromParam, setSearchParam, severityChips, statusOf, techniqueIds, timelineDots, v2AlertLink,
 } from './alerts-model'
 
@@ -75,9 +75,6 @@ describe('helpers', () => {
   })
 
   test('links keep their parameters encoded', () => {
-    expect(classicLink.host('CORP host&1')).toBe('/?view=equipos&host=CORP%20host%261')
-    expect(classicLink.flow('WS-014')).toBe('/?view=flujo&fq=WS-014')
-    expect(classicLink.alert('a b')).toBe('/?view=alertas&alert=a%20b')
     expect(v2AlertLink('0123456789abcdef')).toBe('/v2/alertas?alert=0123456789abcdef')
   })
 })

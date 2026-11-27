@@ -24,6 +24,7 @@ import {
   sensorHealth,
   statusFilterFromParam,
   v2HostLink,
+  v2HostsLink,
 } from './hosts-model'
 
 const NOW = Date.parse('2026-11-17T10:00:00Z')
@@ -244,5 +245,7 @@ describe('series and url', () => {
     expect(statusFilterFromParam('nope')).toBe('all')
     expect(v2HostLink('WS-014')).toBe('/v2/equipos?equipo=WS-014')
     expect(v2HostLink('WS 1', 'sensor')).toBe('/v2/equipos?equipo=WS%201&pestana=sensor')
+    expect(v2HostsLink()).toBe('/v2/equipos')
+    expect(v2HostsLink('alta')).toBe('/v2/equipos?vista=alta')
   })
 })

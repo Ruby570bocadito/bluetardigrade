@@ -3125,7 +3125,7 @@ export const dictEs = {
       links: {
         host: 'Ver el equipo',
         flow: 'Investigar en el flujo',
-        classic: 'Grafo, forense, informe y respuesta en la consola clásica',
+        tree: 'Árbol de procesos del equipo',
       },
       linkedMissing: 'La alerta enlazada no está en la cola en vivo: el anillo guarda solo las últimas.',
       linkedSearch: 'Buscar en el histórico',

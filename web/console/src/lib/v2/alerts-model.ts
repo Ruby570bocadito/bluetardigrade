@@ -78,13 +78,6 @@ export function alertTacticOf(a: Pick<SfAlert, 'tags'>): TacticSlug | null {
   return alertTactic(a)
 }
 
-/** Where the classic console opens what v2 does not rebuild yet. */
-export const classicLink = {
-  alert: (key: string): string => `/?view=alertas&alert=${encodeURIComponent(key)}`,
-  host: (host: string): string => `/?view=equipos&host=${encodeURIComponent(host)}`,
-  flow: (host: string): string => `/?view=flujo&fq=${encodeURIComponent(host)}`,
-}
-
 /** The v2 queue with one alert open (Inicio links here). */
 export function v2AlertLink(key: string): string {
   return `/v2/alertas?alert=${encodeURIComponent(key)}`

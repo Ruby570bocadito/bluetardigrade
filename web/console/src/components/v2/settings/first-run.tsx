@@ -12,6 +12,7 @@ import { useFleet } from '@/components/console/fleet-provider'
 import { useConsoleUser } from '@/components/console/user-session'
 import { modeText, roleText } from '@/lib/console-user'
 import { stepStatuses, type StepId, type StepStatus } from '@/lib/onboarding'
+import { v2HostsLink } from '@/lib/v2/hosts-model'
 import type { SettingsTab } from '@/lib/v2/settings-model'
 import { Empty } from '../home/parts'
 import { onboardingFacts } from './settings-map'
@@ -59,7 +60,7 @@ export function FirstRun({ onOpen }: { onOpen: (tab: SettingsTab) => void }) {
         <p className="v2-small">
           {!facts.enroll ? o.token.pending : usable > 0 ? o.token.done(usable, nextExpiry ? new Date(nextExpiry).toLocaleDateString(lang) : null) : o.sensor.pendienteProse}
         </p>
-        <a className="v2-link v2-small" href="/v2/equipos?vista=alta">
+        <a className="v2-link v2-small" href={v2HostsLink('alta')}>
           {t.frOpenEnroll}
         </a>
       </>

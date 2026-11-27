@@ -5,6 +5,7 @@
 // Investigar.
 import { useI18n } from '@/components/console/i18n-provider'
 import { eventDetail, formatTime, type SfEvent } from '@/lib/console-types'
+import { v2InvestigateLink } from '@/lib/v2/investigate-model'
 import { Empty, Panel } from './parts'
 
 export function EventLog({ events }: { events: SfEvent[] }) {
@@ -18,7 +19,7 @@ export function EventLog({ events }: { events: SfEvent[] }) {
       title={t.title}
       subtitle={t.subtitle}
       action={
-        <a className="v2-btn" href="/?view=flujo">
+        <a className="v2-btn" href={v2InvestigateLink('')}>
           {t.all}
         </a>
       }

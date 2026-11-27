@@ -138,6 +138,11 @@ export function filterRows(rows: readonly HostRow[], f: { q: string; status: Sta
   )
 }
 
+/** The v2 Equipos page on one of its views. */
+export function v2HostsLink(view: HostsView = 'inventario'): string {
+  return view === 'inventario' ? '/v2/equipos' : `/v2/equipos?vista=${view}`
+}
+
 /** The v2 Equipos page with one machine open. */
 export function v2HostLink(host: string, tab: HostTab = 'resumen'): string {
   return `/v2/equipos?equipo=${encodeURIComponent(host)}${tab === 'resumen' ? '' : `&pestana=${tab}`}`

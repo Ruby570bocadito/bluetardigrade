@@ -6,6 +6,7 @@
 import { useI18n } from '@/components/console/i18n-provider'
 import type { HotHost } from '@/lib/console-types'
 import { riskLevel } from '@/lib/v2/home-model'
+import { v2HostLink } from '@/lib/v2/hosts-model'
 import { Empty, Panel } from './parts'
 
 const LEVEL_TONE = { critical: 'danger', elevated: 'warn', low: 'muted' } as const
@@ -28,7 +29,7 @@ export function HostHealth({ hosts }: { hosts: HotHost[] }) {
             const score = h.score.toLocaleString(locale, { maximumFractionDigits: 1 })
             return (
               <li key={h.host} data-tone={LEVEL_TONE[level]}>
-                <a href="/?view=equipos" aria-label={t.rowAria(h.host, score, t.levels[level], h.alerts)}>
+                <a href={v2HostLink(h.host)} aria-label={t.rowAria(h.host, score, t.levels[level], h.alerts)}>
                   <span className="v2-health-top">
                     <strong className="v2-mono">{h.host}</strong>
                     <span className="v2-health-level">

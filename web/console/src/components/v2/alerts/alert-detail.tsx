@@ -6,12 +6,14 @@
 // and the way to the classic console for what v2 does not rebuild yet
 // (graph, forensics, report, response).
 import { useEffect, useRef } from 'react'
-import { ArrowLeft, ArrowSquareOut, BellRinging, X } from '@phosphor-icons/react'
+import { ArrowLeft, BellRinging, X } from '@phosphor-icons/react'
 import { useI18n } from '@/components/console/i18n-provider'
 import { alertKey } from '@/lib/engine-client'
 import { formatAgo } from '@/lib/soc-metrics'
 import { formatDateTime, type SfAlert } from '@/lib/console-types'
-import { alertTacticOf, classicLink, otherTags, statusOf, techniqueIds } from '@/lib/v2/alerts-model'
+import { alertTacticOf, otherTags, statusOf, techniqueIds } from '@/lib/v2/alerts-model'
+import { v2HostLink } from '@/lib/v2/hosts-model'
+import { formatQuery, v2InvestigateLink } from '@/lib/v2/investigate-model'
 import { v2WriteUpLink } from '@/lib/v2/reports-model'
 import { v2RespondLink } from '@/lib/v2/respond-model'
 import { SEV_COLOR } from '../home/parts'
@@ -51,6 +53,8 @@ export function AlertDetail({ alert, onClose, autoFocus = false }: { alert: SfAl
   useEffect(() => {
     if (autoFocus) title.current?.focus()
   }, [autoFocus])
+
+  const hostQuery = v2InvestigateLink(formatQuery([{ field: 'host', value: alert.host, negate: false }], lang))
 
   return (
     <div className="v2-detail-body">
@@ -189,15 +193,14 @@ export function AlertDetail({ alert, onClose, autoFocus = false }: { alert: SfAl
             {dict.v2.reportsView.tabs.analista}
           </a>
         )}
-        <a className="v2-btn" href={classicLink.host(alert.host)}>
+        <a className="v2-btn" href={v2HostLink(alert.host)}>
           {t.links.host}
         </a>
-        <a className="v2-btn" href={classicLink.flow(alert.host)}>
+        <a className="v2-btn" href={`${hostQuery}${alert.event_id ? `&evento=${encodeURIComponent(alert.event_id)}` : ''}`}>
           {t.links.flow}
         </a>
-        <a className="v2-link" href={classicLink.alert(alertKey(alert))}>
-          <ArrowSquareOut aria-hidden="true" />
-          {t.links.classic}
+        <a className="v2-btn" href={v2InvestigateLink(formatQuery([{ field: 'host', value: alert.host, negate: false }], lang), 'arbol')}>
+          {t.links.tree}
         </a>
       </nav>
     </div>
