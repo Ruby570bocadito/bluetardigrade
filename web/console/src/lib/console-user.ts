@@ -47,7 +47,7 @@ const WORDS = {
     roles: { admin: 'Administrador', analyst: 'Analista', viewer: 'Lector' } as Record<ConsoleRole, string>,
     mode: {
       domain: 'Cuenta del dominio: el rol lo dan tus grupos de Active Directory',
-      users: 'Cuenta de analista (CONSOLE_USERS_FILE)',
+      users: 'Cuenta personal (CONSOLE_USERS_FILE)',
       token: 'Token compartido (CONSOLE_ACCESS_TOKEN): todos actúan como administrador',
       open: 'Sin cuentas: acceso por loopback, actúas como administrador',
     },
@@ -72,7 +72,7 @@ const WORDS = {
     roles: { admin: 'Administrator', analyst: 'Analyst', viewer: 'Viewer' } as Record<ConsoleRole, string>,
     mode: {
       domain: 'Domain account: your Active Directory groups give the role',
-      users: 'Analyst account (CONSOLE_USERS_FILE)',
+      users: 'Personal account (CONSOLE_USERS_FILE)',
       token: 'Shared token (CONSOLE_ACCESS_TOKEN): everyone acts as administrator',
       open: 'No accounts: loopback access, you act as administrator',
     },

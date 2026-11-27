@@ -81,6 +81,11 @@ agent/
 alert-lifecycle.json
 alert-lifecycle.json.tmp
 
+# Incident cases (-incidents, ./incidents.json by default): same
+# operator-owned class as the triage file above
+incidents.json
+incidents.json.tmp-*
+
 # Active-response runtime state: the audit JSONL records real hosts,
 # processes and operator identities per attempt, and the operators
 # allowlist names the team — same operator-owned class as the triage
